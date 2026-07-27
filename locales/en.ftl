@@ -237,6 +237,12 @@ legend-unchanged = the sandbox already held the same content
 
 status-item-login = Docker Sandboxes login
 status-item-session-inspection = Active session inspection
+open-connecting = Connecting to { $sandbox } for { $project }.
+open-worktrees = Managed worktrees in this sandbox:
+
+select-open-heading = Which project do you want to open?
+select-stop-heading = Which projects do you want to stop?
+
 legend-heading = Legend
 legend-ready = available and matching the expected state
 legend-missing = not present

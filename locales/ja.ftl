@@ -237,6 +237,12 @@ legend-unchanged = Sandboxに同じ内容が既にありました
 
 status-item-login = Docker Sandboxesへのlogin (Docker Sandboxes login)
 status-item-session-inspection = active session検査 (Active session inspection)
+open-connecting = { $project } のSandbox { $sandbox } へ接続します。
+open-worktrees = このSandboxのmanaged worktree:
+
+select-open-heading = どの案件を開きますか?
+select-stop-heading = どの案件を停止しますか?
+
 legend-heading = 状態値の凡例
 legend-ready = 期待どおり利用できます
 legend-missing = 存在しません

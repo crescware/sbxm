@@ -31,16 +31,20 @@ pub enum TimeoutClass {
     SandboxLifecycle,
     /// Git cloneとfetch。転送量がrepositoryの大きさで決まる。
     RepositoryTransfer,
+    /// 利用者が操作している対話接続。終わる時期を決めるのは利用者である。
+    Interactive,
 }
 
 impl TimeoutClass {
-    pub fn duration(self) -> Duration {
+    /// 待機の上限。対話中の接続にはtimeoutを課さない。
+    pub fn duration(self) -> Option<Duration> {
         match self {
-            TimeoutClass::Probe => Duration::from_secs(10),
-            TimeoutClass::LocalFilesystem => Duration::from_secs(60),
-            TimeoutClass::ImageBuild => Duration::from_secs(1800),
-            TimeoutClass::SandboxLifecycle => Duration::from_secs(600),
-            TimeoutClass::RepositoryTransfer => Duration::from_secs(1800),
+            TimeoutClass::Probe => Some(Duration::from_secs(10)),
+            TimeoutClass::LocalFilesystem => Some(Duration::from_secs(60)),
+            TimeoutClass::ImageBuild => Some(Duration::from_secs(1800)),
+            TimeoutClass::SandboxLifecycle => Some(Duration::from_secs(600)),
+            TimeoutClass::RepositoryTransfer => Some(Duration::from_secs(1800)),
+            TimeoutClass::Interactive => None,
         }
     }
 }
@@ -57,6 +61,11 @@ pub enum OutputPolicy {
     /// 長時間かかる工程の進捗を実行中に見せるために使う。sbxmは独自のprogress表示を
     /// 重ねない。captureしないため、失敗の診断にstderrの原文は含まれない。
     Passthrough,
+    /// terminalそのものを引き渡す。
+    ///
+    /// SSH接続のように、利用者が入力する対話processへ使う。stdinも継承するため、
+    /// 既存のterminal動作がそのまま保たれる。
+    Inherit,
 }
 
 const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
@@ -95,6 +104,15 @@ impl CommandSpec {
     pub fn passthrough(program: &str, args: &[&str]) -> CommandSpec {
         CommandSpec {
             output: OutputPolicy::Passthrough,
+            ..CommandSpec::capture(program, args)
+        }
+    }
+
+    /// terminalを引き渡す対話command。
+    pub fn inherit(program: &str, args: &[&str]) -> CommandSpec {
+        CommandSpec {
+            output: OutputPolicy::Inherit,
+            timeout: TimeoutClass::Interactive,
             ..CommandSpec::capture(program, args)
         }
     }
@@ -182,13 +200,20 @@ pub fn run(spec: &CommandSpec) -> Result<CommandOutcome> {
     if let Some(directory) = &spec.working_dir {
         command.current_dir(directory);
     }
-    command.stdin(Stdio::null());
     match spec.output {
         OutputPolicy::Capture => {
+            command.stdin(Stdio::null());
             command.stdout(Stdio::piped());
             command.stderr(Stdio::piped());
         }
         OutputPolicy::Passthrough => {
+            command.stdin(Stdio::null());
+            command.stdout(Stdio::inherit());
+            command.stderr(Stdio::inherit());
+        }
+        OutputPolicy::Inherit => {
+            // 利用者の入力をそのまま渡す。
+            command.stdin(Stdio::inherit());
             command.stdout(Stdio::inherit());
             command.stderr(Stdio::inherit());
         }
@@ -274,7 +299,19 @@ fn spawn_reader<R: Read + Send + 'static>(mut pipe: R) -> std::thread::JoinHandl
 }
 
 fn wait_with_timeout(child: &mut Child, spec: &CommandSpec) -> Result<ExitStatus> {
-    let limit = spec.timeout.duration();
+    let Some(limit) = spec.timeout.duration() else {
+        // 対話processは、利用者が終えるまで待つ。
+        return child.wait().map_err(|error| {
+            Error::new(
+                ErrorId::ExternalCommandSpawnFailed,
+                msg!(
+                    "error-external-command-spawn-failed",
+                    program = spec.program,
+                    detail = error
+                ),
+            )
+        });
+    };
     let deadline = Instant::now() + limit;
     loop {
         match child.try_wait() {
@@ -366,16 +403,21 @@ mod tests {
 
     #[test]
     fn timeout_classes_match_the_documented_defaults() {
-        assert_eq!(TimeoutClass::Probe.duration(), Duration::from_secs(10));
+        assert_eq!(
+            TimeoutClass::Probe.duration(),
+            Some(Duration::from_secs(10))
+        );
         assert_eq!(
             TimeoutClass::LocalFilesystem.duration(),
-            Duration::from_secs(60)
+            Some(Duration::from_secs(60))
         );
         // 長い工程ほど、途中で切ると成果物が中途半端に残る。
         assert!(
             TimeoutClass::SandboxLifecycle.duration() > TimeoutClass::LocalFilesystem.duration()
         );
         assert!(TimeoutClass::ImageBuild.duration() > TimeoutClass::SandboxLifecycle.duration());
+        // 対話接続を終える時期を決めるのは利用者である。
+        assert_eq!(TimeoutClass::Interactive.duration(), None);
     }
 
     #[test]

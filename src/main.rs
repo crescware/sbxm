@@ -31,7 +31,8 @@ use metadata::CreationMode;
 use workflow::Reporter;
 use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
-use workflow::{add, ls, sandbox, status_global, sync_files};
+use workflow::select::TerminalProjectPrompt;
+use workflow::{add, ls, open, sandbox, status_global, sync_files};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();
@@ -234,6 +235,63 @@ fn dispatch(
                     print_sync_output(&catalog, &output);
                     ExitCode::Success
                 }
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
+        Command::Open(project) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            let mut prompt = TerminalProjectPrompt {
+                heading: "select-open-heading",
+            };
+            let prepared = match open::prepare(
+                &config,
+                location,
+                project.as_ref(),
+                &RealHost,
+                &mut prompt,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+                open::Poll::default(),
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    report(&catalog, &error);
+                    return error.exit_code();
+                }
+            };
+
+            // 接続先はterminalを引き渡す前に見せる。
+            let mut stderr = std::io::stderr();
+            let _ = writeln!(
+                stderr,
+                "{}",
+                format_or_report(
+                    &catalog,
+                    &msg!(
+                        "open-connecting",
+                        project = prepared.project,
+                        sandbox = prepared.sandbox
+                    )
+                )
+            );
+            if !prepared.worktrees.is_empty() {
+                let _ = writeln!(stderr, "{}", text_or_report(&catalog, "open-worktrees"));
+                for worktree in &prepared.worktrees {
+                    let _ = writeln!(stderr, "  {worktree}");
+                }
+            }
+
+            match open::connect(&RealHost, &prepared) {
+                Ok(()) => ExitCode::Success,
                 Err(error) => {
                     report(&catalog, &error);
                     error.exit_code()
