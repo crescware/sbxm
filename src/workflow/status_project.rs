@@ -616,16 +616,16 @@ fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &mut 
 
 /// `git worktree list --porcelain -z`の1件。
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct WorktreeEntry {
-    path: String,
-    bare: bool,
-    detached: bool,
+pub struct WorktreeEntry {
+    pub path: String,
+    pub bare: bool,
+    pub detached: bool,
 }
 
 /// NUL区切りのporcelain出力をparseする。
 ///
 /// 空のfieldがrecordの区切りとなる。pathを持たないrecordは受け付けない。
-fn parse_worktree_list(output: &str) -> Result<Vec<WorktreeEntry>> {
+pub fn parse_worktree_list(output: &str) -> Result<Vec<WorktreeEntry>> {
     let mut entries = Vec::new();
     let mut current: Option<WorktreeEntry> = None;
 

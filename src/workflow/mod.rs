@@ -13,6 +13,7 @@ pub mod init;
 pub mod inventory;
 pub mod ls;
 pub mod open;
+pub mod protection;
 pub mod repository;
 pub mod sandbox;
 pub mod secret;
