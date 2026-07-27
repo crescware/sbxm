@@ -18,6 +18,9 @@ use super::daemon;
 use super::template::LoadedTemplate;
 
 /// 中立Workspaceのroot。
+///
+/// 共有されるdirectoryの下にあるため、rootとその下のworkspaceの両方を、現在の
+/// 利用者だけが使えるdirectoryとして検証または作成する。
 pub const WORKSPACE_ROOT: &str = "/tmp/docker-sandboxes";
 
 /// Sandboxへ渡すagent kit。対話shellを持つ最小構成を使う。
@@ -47,6 +50,8 @@ pub fn ensure(
     template: &LoadedTemplate,
     workspace_root: &Path,
 ) -> Result<ReadySandbox> {
+    // rootを別accountが所有していると、その下のworkspaceを入れ替えられる。
+    paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
     let workspace = workspace_path(workspace_root, sandbox);
     paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
 
@@ -302,6 +307,14 @@ mod tests {
         }
     }
 
+    /// 中立Workspaceのrootを、実行時と同じ条件で用意する。
+    fn workspace_root() -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("temporary workspace root");
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(PRIVATE_DIR_MODE))
+            .expect("the root belongs to the current user only");
+        root
+    }
+
     fn sandbox() -> SandboxName {
         SandboxName::derive(
             &ProjectId::parse("example-org/example-repo")
@@ -327,7 +340,7 @@ mod tests {
 
     #[test]
     fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         let workspace = workspace_path(root.path(), &sandbox());
         let host = FakeSbx::listing(&["[]", &listing(&workspace, &template().name, "running")]);
 
@@ -366,7 +379,7 @@ mod tests {
 
     #[test]
     fn a_sandbox_that_matches_the_expected_state_is_reused_whoever_made_it() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         let workspace = workspace_path(root.path(), &sandbox());
         let host = FakeSbx::listing(&[&listing(&workspace, &template().name, "stopped")]);
 
@@ -384,7 +397,7 @@ mod tests {
 
     #[test]
     fn a_sandbox_with_another_workspace_or_template_stops_the_run() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         let workspace = workspace_path(root.path(), &sandbox());
 
         let elsewhere = root.path().join("elsewhere");
@@ -402,7 +415,7 @@ mod tests {
 
     #[test]
     fn a_runtime_that_hides_the_workspace_or_the_template_is_not_guessed_at() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         for listing in [
             format!(
                 r#"[{{"name":"{}","state":"running","template":"{}"}}]"#,
@@ -424,7 +437,7 @@ mod tests {
 
     #[test]
     fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         let real = root.path().join("real");
         fs::create_dir_all(&real).unwrap();
         std::os::unix::fs::symlink(&real, workspace_path(root.path(), &sandbox())).unwrap();

@@ -164,17 +164,26 @@ security-config-permission-remediation = chmod { $expected } { $path } を実行
 security-config-symlink-description = { $path } はsymbolic linkです。追跡するとsbxmの設定directory外のfileを読み書きする可能性があります。
 security-config-symlink-remediation = { $path } を自分が所有する通常fileへ置き換えるか、実体の設定fileをこのpathへ戻してください。
 
+security-config-owner-description = { $path } の所有者はuser ID { $observed } で、現在の利用者は { $expected } です。ほかのaccountが所有する設定fileは、いつでも置き換えられる可能性があります。
+security-config-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するfileをこのpathへ戻してください。
+
 security-config-dir-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。そこへ置くlockと設定を観測または置換される可能性があります。
 security-config-dir-permission-remediation = chmod { $expected } { $path } を実行し、directoryの所有者が自分であることを確認してください。
 
 security-config-dir-symlink-description = { $path } はsymbolic linkです。lockと設定が意図しないdirectoryへ作られます。
 security-config-dir-symlink-remediation = { $path } を自分が所有するdirectoryへ置き換えてください。
 
+security-config-dir-owner-description = { $path } の所有者はuser ID { $observed } で、現在の利用者は { $expected } です。lockと設定が、ほかのaccountの管理下にあるdirectoryへ置かれます。
+security-config-dir-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するdirectoryをこのpathへ戻してください。
+
 security-project-path-symlink-description = { $path } はsymbolic linkです。追跡すると案件directoryの外へfileを作成または置き換えるため、sbxmは追跡しません。
 security-project-path-symlink-remediation = { $path } を自分が所有する通常fileまたはdirectoryへ置き換えてから、もう一度実行してください。
 
 security-project-file-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。この機械上のほかのaccountが読み書きできるfileをsbxmは使用しません。
 security-project-file-permission-remediation = chmod { $expected } { $path } を実行し、fileの所有者が自分であることを確認してください。
+
+security-project-path-owner-description = { $path } の所有者はuser ID { $observed } で、現在の利用者は { $expected } です。modeにかかわらず、ほかのaccountが所有するpathの上に案件を構築しません。
+security-project-path-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するpathをこのpathへ戻してください。
 
 security-base-path-escape-description = { $path } はsymbolic linkの解決後に { $resolved } となります。案件が指定したdirectoryの外に作られます。
 security-base-path-escape-remediation = 解決後も意図したdirectory配下に収まるbase pathを指定してください。

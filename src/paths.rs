@@ -84,6 +84,24 @@ pub fn permission_too_open(mode: u32) -> bool {
     mode & 0o077 != 0
 }
 
+/// このprocessの実効user ID。
+///
+/// permissionだけでは、ほかのaccountが所有する`0700`のdirectoryを自分のものと
+/// 区別できない。所有関係は観測した値で判定する。
+pub fn current_user() -> u32 {
+    // SAFETY: geteuid(2)は引数を取らず、失敗しない。
+    unsafe { libc::geteuid() }
+}
+
+/// 現在の利用者が所有していないpathを、内容を変更せず拒否する。
+fn require_owned_by_current_user(path: &Path, observed: u32, scope: PathScope) -> Result<()> {
+    let expected = current_user();
+    if observed == expected {
+        return Ok(());
+    }
+    Err(scope.owner_error(path, observed, expected))
+}
+
 /// modeを`0o600`のような表示にする。
 pub fn format_mode(mode: u32) -> String {
     format!("{:04o}", mode & 0o7777)
@@ -91,7 +109,8 @@ pub fn format_mode(mode: u32) -> String {
 
 /// `~/.sbxm`のような、利用者専用directoryを検証または作成する。
 ///
-/// symlinkは拒否し、既存directoryのpermissionが過剰なら作成も修復もしない。
+/// symlinkは拒否し、既存directoryの所有者が別accountの場合、またはpermissionが
+/// 過剰な場合は、作成も修復もしない。
 pub fn ensure_private_dir(path: &Path, mode: u32, scope: PathScope) -> Result<()> {
     if is_symlink(path) {
         return Err(scope.symlink_error(path));
@@ -101,6 +120,8 @@ pub fn ensure_private_dir(path: &Path, mode: u32, scope: PathScope) -> Result<()
             if !metadata.is_dir() {
                 return Err(unexpected_type(path, "directory", &metadata));
             }
+            // 別accountが先に作った`0700`のdirectoryを、自分のものとして使わない。
+            require_owned_by_current_user(path, metadata.uid(), scope)?;
             let observed = metadata.permissions().mode();
             if permission_too_open(observed) {
                 return Err(scope.permission_error(path, observed, mode));
@@ -170,6 +191,33 @@ impl PathScope {
         Error::single(
             Diagnostic::new(id, msg!(description, path = display(path)))
                 .remediation(msg!(remediation, path = display(path))),
+        )
+    }
+
+    pub fn owner_error(self, path: &Path, observed: u32, expected: u32) -> Error {
+        let (id, description, remediation) = match self {
+            PathScope::ConfigFile => (
+                ErrorId::ConfigNotOwned,
+                "security-config-owner-description",
+                "security-config-owner-remediation",
+            ),
+            PathScope::ConfigDir => (
+                ErrorId::ConfigDirNotOwned,
+                "security-config-dir-owner-description",
+                "security-config-dir-owner-remediation",
+            ),
+            PathScope::ProjectPath => (
+                ErrorId::ProjectPathNotOwned,
+                "security-project-path-owner-description",
+                "security-project-path-owner-remediation",
+            ),
+        };
+        Error::single(
+            Diagnostic::new(
+                id,
+                msg!(description, path = display(path), observed = observed),
+            )
+            .remediation(msg!(remediation, path = display(path), expected = expected)),
         )
     }
 
@@ -437,7 +485,7 @@ pub fn atomic_replace(target: &Path, contents: &str, mode: u32) -> Result<()> {
     })
 }
 
-/// 開いたfileが、所有者だけが読み書きできる通常fileであることを確認する。
+/// 開いたfileが、現在の利用者だけが読み書きできる通常fileであることを確認する。
 fn require_private_file(file: &File, path: &Path, mode: u32, scope: PathScope) -> Result<()> {
     let metadata = file
         .metadata()
@@ -445,6 +493,7 @@ fn require_private_file(file: &File, path: &Path, mode: u32, scope: PathScope) -
     if !metadata.is_file() {
         return Err(unexpected_type(path, "regular file", &metadata));
     }
+    require_owned_by_current_user(path, metadata.uid(), scope)?;
     let observed = metadata.permissions().mode();
     if permission_too_open(observed) {
         return Err(scope.permission_error(path, observed, mode));
@@ -550,8 +599,7 @@ impl Drop for ExclusiveLock {
 /// 一致しない場合は削除済みの古いlock fileとみなして取り直す。
 ///
 /// permission、file type、所有関係が不正なlock fileは、安全に置換できないため
-/// 取得せずに終了する。所有関係は、書き込みのために開けたことと、所有者以外に
-/// 権限が残っていないことの両方で判定する。
+/// 取得せずに終了する。所有関係は、fileの所有者が現在の利用者であることで判定する。
 pub fn acquire_exclusive_lock(
     path: &Path,
     timeout: Duration,
@@ -968,6 +1016,66 @@ mod tests {
         let error = ensure_private_dir(&link, PRIVATE_DIR_MODE, PathScope::ConfigDir)
             .expect_err("symlinked directories are refused");
         assert_eq!(error.first_id(), Some(ErrorId::ConfigDirSymlink));
+    }
+
+    #[test]
+    fn a_private_directory_the_current_user_owns_is_accepted() {
+        let dir = temp_dir();
+        let target = dir.path().join("sbxm");
+        ensure_private_dir(&target, PRIVATE_DIR_MODE, PathScope::ProjectPath).expect("create");
+        assert_eq!(
+            fs::symlink_metadata(&target).unwrap().uid(),
+            current_user(),
+            "a directory sbxm creates belongs to the user who ran it"
+        );
+        ensure_private_dir(&target, PRIVATE_DIR_MODE, PathScope::ProjectPath)
+            .expect("a directory the user owns is reused");
+    }
+
+    #[test]
+    fn a_path_another_account_owns_is_refused_for_the_scope_it_protects() {
+        // 別accountが所有するpathはtestから作れないため、観測値だけを差し替える。
+        let dir = temp_dir();
+        let target = dir.path().join("owned-by-someone-else");
+        fs::create_dir(&target).expect("create");
+        let other = current_user().wrapping_add(1);
+
+        for (scope, expected) in [
+            (PathScope::ProjectPath, ErrorId::ProjectPathNotOwned),
+            (PathScope::ConfigDir, ErrorId::ConfigDirNotOwned),
+            (PathScope::ConfigFile, ErrorId::ConfigNotOwned),
+        ] {
+            let error = require_owned_by_current_user(&target, other, scope)
+                .expect_err("a path another account owns is never used");
+            assert_eq!(error.first_id(), Some(expected));
+            let diagnostic = &error.diagnostics()[0];
+            assert!(
+                diagnostic.remediation.is_some(),
+                "{scope:?} must tell the user what to do"
+            );
+        }
+
+        // 所有者が一致する場合だけ通る。permissionは別の判定である。
+        require_owned_by_current_user(&target, current_user(), PathScope::ProjectPath)
+            .expect("the current user owns this path");
+    }
+
+    #[test]
+    fn a_lock_file_another_account_owns_is_never_taken() {
+        // 所有者の判定はopenできたかではなく、観測したowner IDで行う。
+        let dir = temp_dir();
+        let path = dir.path().join("project.lock");
+        fs::write(&path, b"").expect("seed the lock file");
+        fs::set_permissions(&path, fs::Permissions::from_mode(PRIVATE_FILE_MODE)).expect("mode");
+
+        let file = File::open(&path).expect("open");
+        require_private_file(&file, &path, PRIVATE_FILE_MODE, PathScope::ProjectPath)
+            .expect("a lock file the user owns is usable");
+        assert_eq!(
+            fs::symlink_metadata(&path).unwrap().uid(),
+            current_user(),
+            "the check compares the observed owner with the current user"
+        );
     }
 
     fn base(path: &Path) -> AbsoluteBasePath {

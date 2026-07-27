@@ -164,17 +164,26 @@ security-config-permission-remediation = Run chmod { $expected } { $path } and c
 security-config-symlink-description = { $path } is a symbolic link. Following it could read or overwrite a file outside the sbxm configuration directory.
 security-config-symlink-remediation = Replace { $path } with a regular file that you own, or move the real configuration back to that path.
 
+security-config-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. A configuration another account owns can be replaced under sbxm at any moment.
+security-config-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a file you own at that path.
+
 security-config-dir-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. Locks and configuration stored there could be observed or replaced.
 security-config-dir-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the directory.
 
 security-config-dir-symlink-description = { $path } is a symbolic link. sbxm would create locks and configuration outside the intended directory.
 security-config-dir-symlink-remediation = Replace { $path } with a directory that you own.
 
+security-config-dir-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. Locks and configuration placed there would sit in a directory another account controls.
+security-config-dir-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a directory you own at that path.
+
 security-project-path-symlink-description = { $path } is a symbolic link. sbxm does not follow it, because creating or replacing files through it would act on a location outside the project directory.
 security-project-path-symlink-remediation = Replace { $path } with a regular file or directory that you own, then run the command again.
 
 security-project-file-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a file that other accounts on this machine can read or change.
 security-project-file-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the file.
+
+security-project-path-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. sbxm does not build a project on a path another account owns, whatever its mode says.
+security-project-path-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a path you own there.
 
 security-base-path-escape-description = { $path } resolves to { $resolved } after symbolic links are followed. Projects would be created outside the directory you chose.
 security-base-path-escape-remediation = Choose a base path whose resolved location stays inside the directory you intend to use.
