@@ -685,7 +685,8 @@ user_email = "user@example.com"
     #[test]
     fn an_unsupported_language_is_rejected() {
         let (dir, location) = location();
-        let text = valid_config_text(dir.path()).replace("\"ja\"", "\"fr\"");
+        // 組み込みlocaleにならないtagを使う。
+        let text = valid_config_text(dir.path()).replace("\"ja\"", "\"zz\"");
         write_config(&location, &text);
         let error = load(&location).expect_err("unsupported languages fail");
         assert_eq!(error.first_id(), Some(ErrorId::ConfigInvalidValue));

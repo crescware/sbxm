@@ -340,7 +340,8 @@ mod tests {
         assert_eq!(Locale::from_language_tag("ja_JP.UTF-8"), Some(Locale::Ja));
         assert_eq!(Locale::from_language_tag("en_US.UTF-8"), Some(Locale::En));
         assert_eq!(Locale::from_language_tag("C"), Some(Locale::En));
-        assert_eq!(Locale::from_language_tag("fr-FR"), None);
+        // 組み込みlocaleにならないtagを使う。どの言語を足してもこのtestは意味を保つ。
+        assert_eq!(Locale::from_language_tag("zz-ZZ"), None);
         assert_eq!(Locale::from_language_tag(""), None);
     }
 

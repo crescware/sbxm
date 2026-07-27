@@ -928,7 +928,7 @@ mod tests {
             parse_apple_languages("(\n    \"en-US\",\n    \"ja-JP\"\n)\n"),
             Some(Locale::En)
         );
-        assert_eq!(parse_apple_languages("(\n    \"fr-FR\"\n)\n"), None);
+        assert_eq!(parse_apple_languages("(\n    \"zz-ZZ\"\n)\n"), None);
         assert_eq!(parse_apple_languages(""), None);
     }
 }

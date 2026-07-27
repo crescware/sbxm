@@ -786,8 +786,8 @@ mod tests {
         );
         assert_eq!(peek_lang(&argv(&["ls"])), PeekedLang::Absent);
         assert_eq!(
-            peek_lang(&argv(&["--lang", "fr", "ls"])),
-            PeekedLang::Invalid("fr".to_string())
+            peek_lang(&argv(&["--lang", "zz", "ls"])),
+            PeekedLang::Invalid("zz".to_string())
         );
         // `--`以降は先読みしない。
         assert_eq!(
@@ -810,7 +810,7 @@ mod tests {
 
     #[test]
     fn an_unsupported_language_is_rejected_without_reading_anything_else() {
-        let error = invalid_lang_error("fr");
+        let error = invalid_lang_error("zz");
         assert_eq!(error.first_id(), Some(ErrorId::InvalidLang));
     }
 
@@ -1282,7 +1282,8 @@ mod tests {
 
     #[test]
     fn an_invalid_lang_value_is_reported_as_a_value_error_by_the_parser() {
-        let error = run(&["--lang", "fr", "ls"], tty()).expect_err("fr is not supported");
+        // 組み込みlocaleにならないtagを使う。
+        let error = run(&["--lang", "zz", "ls"], tty()).expect_err("zz is not a locale");
         assert_eq!(error.first_id(), Some(ErrorId::InvalidValue));
     }
 
