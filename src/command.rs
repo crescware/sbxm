@@ -29,6 +29,8 @@ pub enum TimeoutClass {
     ImageBuild,
     /// Template load、Sandboxの作成・起動・停止、Sandbox内commandの実行。
     SandboxLifecycle,
+    /// Git cloneとfetch。転送量がrepositoryの大きさで決まる。
+    RepositoryTransfer,
 }
 
 impl TimeoutClass {
@@ -38,6 +40,7 @@ impl TimeoutClass {
             TimeoutClass::LocalFilesystem => Duration::from_secs(60),
             TimeoutClass::ImageBuild => Duration::from_secs(1800),
             TimeoutClass::SandboxLifecycle => Duration::from_secs(600),
+            TimeoutClass::RepositoryTransfer => Duration::from_secs(1800),
         }
     }
 }

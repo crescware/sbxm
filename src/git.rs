@@ -58,6 +58,64 @@ pub fn branch_of_origin_ref(value: &str) -> Option<&str> {
     Some(branch)
 }
 
+/// 対応するhosting service。MVPはGitHubだけを対象とする。
+const GITHUB_HOST: &str = "github.com";
+
+/// host cloneが使うSSH remote。
+pub fn ssh_remote_url(owner: &str, repository: &str) -> String {
+    format!("git@{GITHUB_HOST}:{owner}/{repository}.git")
+}
+
+/// Sandbox内のcloneが使うHTTPS remote。
+pub fn https_remote_url(owner: &str, repository: &str) -> String {
+    format!("https://{GITHUB_HOST}/{owner}/{repository}.git")
+}
+
+/// remote URLを比較用のcanonical project IDへ正規化する。
+///
+/// 同じrepositoryを指すSSHとHTTPSの表記を同じ値へ寄せる。GitHub以外を指すURLと、
+/// `<owner>/<repository>`を読み取れないURLは`None`とする。
+pub fn canonical_id_of_remote(url: &str) -> Option<String> {
+    let url = url.trim();
+    let rest = if let Some(rest) = url.strip_prefix("git@") {
+        // git@github.com:owner/repository.git
+        let (host, path) = rest.split_once(':')?;
+        require_github(host)?;
+        path
+    } else if let Some(rest) = url
+        .strip_prefix("ssh://git@")
+        .or_else(|| url.strip_prefix("ssh://"))
+        .or_else(|| url.strip_prefix("https://"))
+        .or_else(|| url.strip_prefix("http://"))
+        .or_else(|| url.strip_prefix("git://"))
+    {
+        let (authority, path) = rest.split_once('/')?;
+        // ssh://git@github.com:22/owner/repository.git
+        let host = authority.rsplit('@').next()?;
+        let host = host.split(':').next()?;
+        require_github(host)?;
+        path
+    } else {
+        return None;
+    };
+
+    let path = rest.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let (owner, repository) = path.split_once('/')?;
+    if owner.is_empty() || repository.is_empty() || repository.contains('/') {
+        return None;
+    }
+    Some(format!(
+        "{}/{}",
+        owner.to_ascii_lowercase(),
+        repository.to_ascii_lowercase()
+    ))
+}
+
+fn require_github(host: &str) -> Option<()> {
+    host.eq_ignore_ascii_case(GITHUB_HOST).then_some(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,6 +147,60 @@ mod tests {
                 "value {value:?} produced the wrong error"
             );
         }
+    }
+
+    #[test]
+    fn the_same_repository_normalizes_to_one_identifier_whichever_url_form_is_used() {
+        for url in [
+            "git@github.com:Example-Org/Example-Repo.git",
+            "git@github.com:Example-Org/Example-Repo",
+            "https://github.com/Example-Org/Example-Repo.git",
+            "https://github.com/example-org/example-repo/",
+            "ssh://git@github.com/Example-Org/Example-Repo.git",
+            "ssh://git@github.com:22/example-org/example-repo.git",
+            "  https://github.com/example-org/example-repo  ",
+        ] {
+            assert_eq!(
+                canonical_id_of_remote(url).as_deref(),
+                Some("example-org/example-repo"),
+                "{url} must normalize to the canonical project ID"
+            );
+        }
+    }
+
+    #[test]
+    fn remotes_that_do_not_name_a_github_repository_are_not_normalized() {
+        for url in [
+            "git@gitlab.com:example-org/example-repo.git",
+            "https://example.com/example-org/example-repo.git",
+            "https://github.com/example-org",
+            "https://github.com/example-org/nested/repo.git",
+            "/srv/git/example-repo.git",
+            "",
+        ] {
+            assert_eq!(
+                canonical_id_of_remote(url),
+                None,
+                "{url} is not a GitHub repository this build can manage"
+            );
+        }
+    }
+
+    #[test]
+    fn remote_urls_are_built_from_the_display_names() {
+        assert_eq!(
+            ssh_remote_url("Example-Org", "Example-Repo"),
+            "git@github.com:Example-Org/Example-Repo.git"
+        );
+        assert_eq!(
+            https_remote_url("Example-Org", "Example-Repo"),
+            "https://github.com/Example-Org/Example-Repo.git"
+        );
+        // 表記が違っても、正規化すれば同じ案件を指す。
+        assert_eq!(
+            canonical_id_of_remote(&ssh_remote_url("Example-Org", "Example-Repo")),
+            canonical_id_of_remote(&https_remote_url("example-org", "example-repo"))
+        );
     }
 
     #[test]

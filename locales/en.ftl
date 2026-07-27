@@ -86,6 +86,7 @@ error-invalid-branch-name = { $value } is not a usable branch name: { $detail }
 error-target-configuration-mismatch = { $project } was registered to be built as { $stored }, but this run asks for { $requested }.
 error-rebuild-intent-pending = { $project } is in the middle of a rebuild, so its first build cannot be continued.
 
+error-host-clone-unusable = The clone at { $path } cannot be used for this project: { $detail }
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 
@@ -117,6 +118,7 @@ error-network-policy-unobservable = The network policy could not be read: { $det
 error-daemon-unobservable = The Docker Sandboxes daemon state could not be read: { $detail }
 remediation-run-help = Run { $command } to see the accepted arguments.
 remediation-run-init = Run sbxm init to create the global configuration.
+remediation-host-clone-unusable = Inspect { $path } yourself, then move it aside or fix its origin before running the command again.
 remediation-run-rebuild = Run { $command } to finish the rebuild.
 remediation-target-configuration-mismatch = Run { $command } without those options to continue with the stored target, or destroy the project first to build it differently.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.

@@ -83,6 +83,9 @@ pub enum ErrorId {
     TargetConfigurationMismatch,
     RebuildIntentPending,
 
+    // --- Host clone ---
+    HostCloneUnusable,
+
     // --- 案件のhost path ---
     ProjectPathSymlink,
     ProjectPathUnexpectedType,
@@ -175,6 +178,8 @@ impl ErrorId {
             ErrorId::InvalidBranchName => "invalid-branch-name",
             ErrorId::TargetConfigurationMismatch => "target-configuration-mismatch",
             ErrorId::RebuildIntentPending => "rebuild-intent-pending",
+
+            ErrorId::HostCloneUnusable => "host-clone-unusable",
 
             ErrorId::ProjectPathSymlink => "project-path-symlink",
             ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
@@ -487,6 +492,7 @@ mod tests {
             ErrorId::MetadataDuplicateProject,
             ErrorId::SandboxNameCollision,
             ErrorId::InvalidBranchName,
+            ErrorId::HostCloneUnusable,
             ErrorId::ProjectPathSymlink,
             ErrorId::ProjectPathUnexpectedType,
             ErrorId::ProjectPathUnreadable,

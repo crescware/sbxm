@@ -86,6 +86,7 @@ error-invalid-branch-name = { $value } はbranch名として使用できませ�
 error-target-configuration-mismatch = { $project } は { $stored } として構築するよう登録されていますが、この実行は { $requested } を指定しています。
 error-rebuild-intent-pending = { $project } は再構築の途中であるため、初回構築を継続できません。
 
+error-host-clone-unusable = { $path } のcloneはこの案件には使用できません: { $detail }
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
 
@@ -117,6 +118,7 @@ error-network-policy-unobservable = network policyを読み取れません: { $d
 error-daemon-unobservable = Docker Sandboxes daemonの状態を読み取れません: { $detail }
 remediation-run-help = { $command } を実行すると指定できる引数を確認できます。
 remediation-run-init = sbxm init を実行してglobal設定を作成してください。
+remediation-host-clone-unusable = { $path } を確認し、退避するかoriginを直してから、もう一度実行してください。
 remediation-run-rebuild = { $command } を実行して再構築を完了してください。
 remediation-target-configuration-mismatch = 保存済みの目標構成で続けるには { $command } をoptionなしで実行し、別の構成で作り直すには先に案件を破棄してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。
