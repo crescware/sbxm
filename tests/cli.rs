@@ -304,7 +304,6 @@ fn commands_that_are_not_implemented_yet_say_so_after_validating_their_arguments
         vec!["rebuild", "owner/repo"],
         vec!["open", "owner/repo"],
         vec!["stop", "owner/repo"],
-        vec!["ls"],
         vec!["status", "owner/repo"],
         vec!["destroy", "--force", "owner/repo"],
     ] {
@@ -360,6 +359,24 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
     );
     assert!(written.contains("owner = \"Example-Org\""), "{written}");
     assert!(written.contains("mode = \"attached\""), "{written}");
+}
+
+#[test]
+fn ls_needs_the_sandbox_runtime_before_it_can_answer() {
+    let home = temp_home();
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).unwrap();
+    write_config(home.path(), &base, "en");
+
+    // 一覧はSandbox runtimeの状態から作るため、読めなければ何も出さない。
+    let run = sbxm(home.path(), &["--lang", "en", "ls"]);
+    assert_eq!(run.code, 1, "{}", run.stdout);
+    assert!(run.stdout.is_empty(), "no partial listing: {}", run.stdout);
+    assert!(
+        run.stderr.contains("external-command-not-found"),
+        "{}",
+        run.stderr
+    );
 }
 
 #[test]

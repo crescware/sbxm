@@ -31,7 +31,7 @@ use metadata::CreationMode;
 use workflow::Reporter;
 use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
-use workflow::{add, sandbox, status_global, sync_files};
+use workflow::{add, ls, sandbox, status_global, sync_files};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();
@@ -241,6 +241,30 @@ fn dispatch(
             }
         }
 
+        Command::Ls => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            match ls::run(
+                &config,
+                &RealHost,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+            ) {
+                Ok(listing) => {
+                    print_listing(&catalog, &listing);
+                    ExitCode::Success
+                }
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
         other => {
             // 未実装のcommandも、configがなければ先に`sbxm init`を案内する。
             match effective_catalog(location, lang_option, false) {
@@ -361,6 +385,64 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
     for file in &output.files {
         values.push(placement_legend(file.placement));
     }
+    if let Some(legend) = reporter.render_value_legend(&values) {
+        print!("\n{legend}");
+    }
+    let _ = std::io::stdout().flush();
+}
+
+/// `ls`の出力。
+///
+/// 0件でもheaderを表示する。
+fn print_listing(catalog: &Catalog, listing: &ls::Listing) {
+    let reporter = Reporter::new(catalog);
+    let projects: Vec<Vec<String>> = listing
+        .projects
+        .iter()
+        .map(|row| {
+            vec![
+                row.project.clone(),
+                row.sandbox.clone(),
+                row.state.as_str().to_string(),
+            ]
+        })
+        .collect();
+    println!("{}", text_or_report(catalog, "ls-projects-section"));
+    print!(
+        "{}",
+        reporter.render_value_table(
+            &["column-project", "column-sandbox", "column-state"],
+            &projects,
+        )
+    );
+
+    if !listing.unmanaged.is_empty() {
+        let unmanaged: Vec<Vec<String>> = listing
+            .unmanaged
+            .iter()
+            .map(|row| {
+                vec![
+                    row.sandbox.clone(),
+                    row.state.clone(),
+                    row.workspace.clone(),
+                ]
+            })
+            .collect();
+        println!("\n{}", text_or_report(catalog, "ls-unmanaged-section"));
+        print!(
+            "{}",
+            reporter.render_value_table(
+                &["column-sandbox", "column-state", "column-workspace"],
+                &unmanaged,
+            )
+        );
+    }
+
+    let values: Vec<(&str, &str)> = listing
+        .projects
+        .iter()
+        .map(|row| (row.state.as_str(), row.state.legend_id()))
+        .collect();
     if let Some(legend) = reporter.render_value_legend(&values) {
         print!("\n{legend}");
     }
