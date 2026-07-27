@@ -92,35 +92,18 @@ pub fn format_mode(mode: u32) -> String {
 /// `~/.sbxm`のような、利用者専用directoryを検証または作成する。
 ///
 /// symlinkは拒否し、既存directoryのpermissionが過剰なら作成も修復もしない。
-pub fn ensure_private_dir(path: &Path, mode: u32, symlink_error: SymlinkError) -> Result<()> {
+pub fn ensure_private_dir(path: &Path, mode: u32, scope: PathScope) -> Result<()> {
     if is_symlink(path) {
-        return Err(symlink_error.into_error(path));
+        return Err(scope.symlink_error(path));
     }
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if !metadata.is_dir() {
-                return fail(
-                    ErrorId::ConfigDirSymlink,
-                    msg!("error-base-path-not-directory", path = display(path)),
-                );
+                return Err(unexpected_type(path, "directory", &metadata));
             }
             let observed = metadata.permissions().mode();
             if permission_too_open(observed) {
-                return Err(Error::single(
-                    Diagnostic::new(
-                        ErrorId::ConfigDirPermissionTooOpen,
-                        msg!(
-                            "security-config-dir-permission-description",
-                            path = display(path),
-                            observed = format_mode(observed)
-                        ),
-                    )
-                    .remediation(msg!(
-                        "security-config-dir-permission-remediation",
-                        path = display(path),
-                        expected = format_mode(mode)
-                    )),
-                ));
+                return Err(scope.permission_error(path, observed, mode));
             }
             Ok(())
         }
@@ -147,40 +130,38 @@ pub fn ensure_private_dir(path: &Path, mode: u32, symlink_error: SymlinkError) -
             })?;
             Ok(())
         }
-        Err(error) => fail(
-            ErrorId::ConfigUnreadable,
-            msg!(
-                "error-config-unreadable",
-                path = display(path),
-                detail = error
-            ),
-        ),
+        Err(error) => Err(scope.unreadable_error(path, &error.to_string())),
     }
 }
 
-/// symlinkを検出したときに使うsecurity message。
+/// pathの用途。security messageの系列を選ぶ。
+///
+/// 同じ検査でも、対象がglobal設定なのか案件の成果物なのかで、利用者が取るべき
+/// 対処が変わる。判定そのものは共通で、報告だけを用途ごとに分ける。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SymlinkError {
+pub enum PathScope {
+    /// `~/.sbxm/config.toml`のようなglobal設定file。
     ConfigFile,
+    /// `~/.sbxm`のようなglobal設定directory。
     ConfigDir,
     /// 案件directory配下のfileとdirectory。
     ProjectPath,
 }
 
-impl SymlinkError {
-    fn into_error(self, path: &Path) -> Error {
+impl PathScope {
+    pub fn symlink_error(self, path: &Path) -> Error {
         let (id, description, remediation) = match self {
-            SymlinkError::ConfigFile => (
+            PathScope::ConfigFile => (
                 ErrorId::ConfigSymlink,
                 "security-config-symlink-description",
                 "security-config-symlink-remediation",
             ),
-            SymlinkError::ConfigDir => (
+            PathScope::ConfigDir => (
                 ErrorId::ConfigDirSymlink,
                 "security-config-dir-symlink-description",
                 "security-config-dir-symlink-remediation",
             ),
-            SymlinkError::ProjectPath => (
+            PathScope::ProjectPath => (
                 ErrorId::ProjectPathSymlink,
                 "security-project-path-symlink-description",
                 "security-project-path-symlink-remediation",
@@ -190,6 +171,62 @@ impl SymlinkError {
             Diagnostic::new(id, msg!(description, path = display(path)))
                 .remediation(msg!(remediation, path = display(path))),
         )
+    }
+
+    pub fn permission_error(self, path: &Path, observed: u32, expected: u32) -> Error {
+        let (id, description, remediation) = match self {
+            PathScope::ConfigFile => (
+                ErrorId::ConfigPermissionTooOpen,
+                "security-config-permission-description",
+                "security-config-permission-remediation",
+            ),
+            PathScope::ConfigDir => (
+                ErrorId::ConfigDirPermissionTooOpen,
+                "security-config-dir-permission-description",
+                "security-config-dir-permission-remediation",
+            ),
+            PathScope::ProjectPath => (
+                ErrorId::ProjectFilePermissionTooOpen,
+                "security-project-file-permission-description",
+                "security-project-file-permission-remediation",
+            ),
+        };
+        Error::single(
+            Diagnostic::new(
+                id,
+                msg!(
+                    description,
+                    path = display(path),
+                    observed = format_mode(observed)
+                ),
+            )
+            .remediation(msg!(
+                remediation,
+                path = display(path),
+                expected = format_mode(expected)
+            )),
+        )
+    }
+
+    fn unreadable_error(self, path: &Path, detail: &str) -> Error {
+        match self {
+            PathScope::ConfigFile | PathScope::ConfigDir => Error::new(
+                ErrorId::ConfigUnreadable,
+                msg!(
+                    "error-config-unreadable",
+                    path = display(path),
+                    detail = detail
+                ),
+            ),
+            PathScope::ProjectPath => Error::new(
+                ErrorId::ProjectPathUnreadable,
+                msg!(
+                    "error-project-path-unreadable",
+                    path = display(path),
+                    detail = detail
+                ),
+            ),
+        }
     }
 }
 
@@ -226,7 +263,7 @@ fn unexpected_type(path: &Path, expected: &'static str, metadata: &fs::Metadata)
 /// 内容を変更せず拒否する。
 pub fn ensure_directory(path: &Path) -> Result<()> {
     if is_symlink(path) {
-        return Err(SymlinkError::ProjectPath.into_error(path));
+        return Err(PathScope::ProjectPath.symlink_error(path));
     }
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() => Ok(()),
@@ -385,10 +422,25 @@ pub fn atomic_replace(target: &Path, contents: &str, mode: u32) -> Result<()> {
     })
 }
 
+/// 開いたfileが、所有者だけが読み書きできる通常fileであることを確認する。
+fn require_private_file(file: &File, path: &Path, mode: u32, scope: PathScope) -> Result<()> {
+    let metadata = file
+        .metadata()
+        .map_err(|error| scope.unreadable_error(path, &error.to_string()))?;
+    if !metadata.is_file() {
+        return Err(unexpected_type(path, "regular file", &metadata));
+    }
+    let observed = metadata.permissions().mode();
+    if permission_too_open(observed) {
+        return Err(scope.permission_error(path, observed, mode));
+    }
+    Ok(())
+}
+
 /// 置き換え対象として妥当なfileのidentity。
 fn replaceable_identity(target: &Path, mode: u32) -> Result<FileIdentity> {
     if is_symlink(target) {
-        return Err(SymlinkError::ProjectPath.into_error(target));
+        return Err(PathScope::ProjectPath.symlink_error(target));
     }
     let metadata = fs::symlink_metadata(target).map_err(|error| {
         Error::new(
@@ -446,11 +498,20 @@ impl Drop for ExclusiveLock {
 ///
 /// lock取得後、開いたfileと現在のlock pathのidentityが一致することを確認し、
 /// 一致しない場合は削除済みの古いlock fileとみなして取り直す。
-pub fn acquire_exclusive_lock(path: &Path, timeout: Duration, mode: u32) -> Result<ExclusiveLock> {
+///
+/// permission、file type、所有関係が不正なlock fileは、安全に置換できないため
+/// 取得せずに終了する。所有関係は、書き込みのために開けたことと、所有者以外に
+/// 権限が残っていないことの両方で判定する。
+pub fn acquire_exclusive_lock(
+    path: &Path,
+    timeout: Duration,
+    mode: u32,
+    scope: PathScope,
+) -> Result<ExclusiveLock> {
     let deadline = Instant::now() + timeout;
     loop {
         if is_symlink(path) {
-            return Err(SymlinkError::ConfigFile.into_error(path));
+            return Err(scope.symlink_error(path));
         }
         let file = OpenOptions::new()
             .read(true)
@@ -469,6 +530,7 @@ pub fn acquire_exclusive_lock(path: &Path, timeout: Duration, mode: u32) -> Resu
                     ),
                 )
             })?;
+        require_private_file(&file, path, mode, scope)?;
 
         let acquired = loop {
             match file.try_lock() {
@@ -826,7 +888,7 @@ mod tests {
     fn private_dir_is_created_with_the_requested_mode() {
         let dir = temp_dir();
         let target = dir.path().join("sbxm");
-        ensure_private_dir(&target, CONFIG_DIR_MODE, SymlinkError::ConfigDir).expect("create");
+        ensure_private_dir(&target, CONFIG_DIR_MODE, PathScope::ConfigDir).expect("create");
         let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, CONFIG_DIR_MODE);
     }
@@ -838,7 +900,7 @@ mod tests {
         fs::create_dir(&target).expect("create");
         fs::set_permissions(&target, fs::Permissions::from_mode(0o777)).expect("widen");
 
-        let error = ensure_private_dir(&target, CONFIG_DIR_MODE, SymlinkError::ConfigDir)
+        let error = ensure_private_dir(&target, CONFIG_DIR_MODE, PathScope::ConfigDir)
             .expect_err("an open directory is not repaired automatically");
         assert_eq!(error.first_id(), Some(ErrorId::ConfigDirPermissionTooOpen));
         let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
@@ -853,7 +915,7 @@ mod tests {
         let link = dir.path().join("link");
         std::os::unix::fs::symlink(&real, &link).expect("symlink");
 
-        let error = ensure_private_dir(&link, CONFIG_DIR_MODE, SymlinkError::ConfigDir)
+        let error = ensure_private_dir(&link, CONFIG_DIR_MODE, PathScope::ConfigDir)
             .expect_err("symlinked directories are refused");
         assert_eq!(error.first_id(), Some(ErrorId::ConfigDirSymlink));
     }
@@ -1036,13 +1098,24 @@ mod tests {
         let dir = temp_dir();
         let path = dir.path().join("init.lock");
 
-        let held = acquire_exclusive_lock(&path, LOCK_TIMEOUT, PRIVATE_FILE_MODE).expect("acquire");
+        let held = acquire_exclusive_lock(
+            &path,
+            LOCK_TIMEOUT,
+            PRIVATE_FILE_MODE,
+            PathScope::ConfigFile,
+        )
+        .expect("acquire");
 
         let contended = {
             let path = path.clone();
             thread::spawn(move || {
-                acquire_exclusive_lock(&path, Duration::from_millis(150), PRIVATE_FILE_MODE)
-                    .map(|_| ())
+                acquire_exclusive_lock(
+                    &path,
+                    Duration::from_millis(150),
+                    PRIVATE_FILE_MODE,
+                    PathScope::ConfigFile,
+                )
+                .map(|_| ())
             })
         };
         let error = contended
@@ -1053,8 +1126,53 @@ mod tests {
 
         drop(held);
 
-        acquire_exclusive_lock(&path, LOCK_TIMEOUT, PRIVATE_FILE_MODE)
-            .expect("the lock can be taken again once the first holder releases it");
+        acquire_exclusive_lock(
+            &path,
+            LOCK_TIMEOUT,
+            PRIVATE_FILE_MODE,
+            PathScope::ConfigFile,
+        )
+        .expect("the lock can be taken again once the first holder releases it");
+    }
+
+    #[test]
+    fn a_lock_file_that_is_not_private_is_never_taken() {
+        let dir = temp_dir();
+        let path = dir.path().join("project.lock");
+        fs::write(&path, b"").expect("seed the lock file");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o666)).expect("widen");
+
+        let error = acquire_exclusive_lock(
+            &path,
+            LOCK_TIMEOUT,
+            PRIVATE_FILE_MODE,
+            PathScope::ProjectPath,
+        )
+        .expect_err("a lock other accounts can take is not a lock");
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ProjectFilePermissionTooOpen)
+        );
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o666, "sbxm must not repair permissions on its own");
+    }
+
+    #[test]
+    fn a_symlinked_lock_path_is_reported_for_the_scope_it_protects() {
+        let dir = temp_dir();
+        let real = dir.path().join("real.lock");
+        fs::write(&real, b"").unwrap();
+        let link = dir.path().join("project.lock");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        for (scope, expected) in [
+            (PathScope::ProjectPath, ErrorId::ProjectPathSymlink),
+            (PathScope::ConfigFile, ErrorId::ConfigSymlink),
+        ] {
+            let error = acquire_exclusive_lock(&link, LOCK_TIMEOUT, PRIVATE_FILE_MODE, scope)
+                .expect_err("symlinked lock paths are refused");
+            assert_eq!(error.first_id(), Some(expected));
+        }
     }
 
     #[test]
@@ -1062,8 +1180,13 @@ mod tests {
         let dir = temp_dir();
         let path = dir.path().join("init.lock");
         {
-            let _lock =
-                acquire_exclusive_lock(&path, LOCK_TIMEOUT, PRIVATE_FILE_MODE).expect("acquire");
+            let _lock = acquire_exclusive_lock(
+                &path,
+                LOCK_TIMEOUT,
+                PRIVATE_FILE_MODE,
+                PathScope::ConfigFile,
+            )
+            .expect("acquire");
         }
         assert!(
             path.exists(),

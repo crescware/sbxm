@@ -13,7 +13,7 @@ use crate::config::{
 use crate::error::{Error, ErrorId, Msg, Result, fail};
 use crate::i18n::{Catalog, Locale, shell_locale};
 use crate::msg;
-use crate::paths::{self, AbsoluteBasePath, LOCK_TIMEOUT, PRIVATE_FILE_MODE};
+use crate::paths::{self, AbsoluteBasePath, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 
 use super::status_global::HostEnvironment;
 
@@ -68,7 +68,12 @@ pub fn run(
     // 7. `~/.sbxm`を検証または作成し、init.lockを取得する。
     config::ensure_config_dir(location)?;
     let lock_path = location.init_lock();
-    let _lock = paths::acquire_exclusive_lock(&lock_path, LOCK_TIMEOUT, PRIVATE_FILE_MODE)?;
+    let _lock = paths::acquire_exclusive_lock(
+        &lock_path,
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ConfigFile,
+    )?;
 
     // 8-9. lock取得後にconfigの有無と妥当性を再確認する。
     if let Some(output) = already_initialized(location, request)? {
@@ -729,9 +734,13 @@ mod tests {
         config::ensure_config_dir(&location).unwrap();
 
         // 先行processがlockを保持している状態を作る。
-        let held =
-            paths::acquire_exclusive_lock(&location.init_lock(), LOCK_TIMEOUT, PRIVATE_FILE_MODE)
-                .unwrap();
+        let held = paths::acquire_exclusive_lock(
+            &location.init_lock(),
+            LOCK_TIMEOUT,
+            PRIVATE_FILE_MODE,
+            PathScope::ConfigFile,
+        )
+        .unwrap();
 
         let location_for_thread = location.clone();
         let base_for_thread = base.clone();
@@ -786,15 +795,20 @@ mod tests {
     fn a_lock_held_for_longer_than_the_timeout_fails_without_writing() {
         let (dir, location) = home();
         config::ensure_config_dir(&location).unwrap();
-        let _held =
-            paths::acquire_exclusive_lock(&location.init_lock(), LOCK_TIMEOUT, PRIVATE_FILE_MODE)
-                .unwrap();
+        let _held = paths::acquire_exclusive_lock(
+            &location.init_lock(),
+            LOCK_TIMEOUT,
+            PRIVATE_FILE_MODE,
+            PathScope::ConfigFile,
+        )
+        .unwrap();
 
         // timeoutの経過をtestで待たないよう、lock取得だけを直接検証する。
         let error = paths::acquire_exclusive_lock(
             &location.init_lock(),
             std::time::Duration::from_millis(100),
             PRIVATE_FILE_MODE,
+            PathScope::ConfigFile,
         )
         .expect_err("a held lock is not stolen");
         assert_eq!(error.first_id(), Some(ErrorId::LockTimeout));

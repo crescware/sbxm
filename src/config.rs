@@ -13,8 +13,8 @@ use crate::error::{Diagnostic, Error, ErrorId, Msg, Result, fail};
 use crate::i18n::Locale;
 use crate::msg;
 use crate::paths::{
-    self, AbsoluteBasePath, CONFIG_DIR_MODE, PRIVATE_FILE_MODE, SymlinkError, atomic_create,
-    format_mode, permission_too_open,
+    self, AbsoluteBasePath, CONFIG_DIR_MODE, PRIVATE_FILE_MODE, PathScope, atomic_create,
+    permission_too_open,
 };
 
 /// このbuildが読み書きするconfigのversion。
@@ -182,19 +182,7 @@ pub fn load(location: &ConfigLocation) -> Result<ConfigState> {
     let path = location.config_file();
 
     if paths::is_symlink(&path) {
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::ConfigSymlink,
-                msg!(
-                    "security-config-symlink-description",
-                    path = paths::display(&path)
-                ),
-            )
-            .remediation(msg!(
-                "security-config-symlink-remediation",
-                path = paths::display(&path)
-            )),
-        ));
+        return Err(PathScope::ConfigFile.symlink_error(&path));
     }
 
     let metadata = match fs::symlink_metadata(&path) {
@@ -227,21 +215,7 @@ pub fn load(location: &ConfigLocation) -> Result<ConfigState> {
 
     let mode = metadata.permissions().mode();
     if permission_too_open(mode) {
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::ConfigPermissionTooOpen,
-                msg!(
-                    "security-config-permission-description",
-                    path = paths::display(&path),
-                    observed = format_mode(mode)
-                ),
-            )
-            .remediation(msg!(
-                "security-config-permission-remediation",
-                path = paths::display(&path),
-                expected = format_mode(PRIVATE_FILE_MODE)
-            )),
-        ));
+        return Err(PathScope::ConfigFile.permission_error(&path, mode, PRIVATE_FILE_MODE));
     }
 
     let text = fs::read_to_string(&path).map_err(|error| {
@@ -474,7 +448,7 @@ fn toml_string(value: &str) -> String {
 /// `~/.sbxm`を`0700`で検証または作成する。
 pub fn ensure_config_dir(location: &ConfigLocation) -> Result<PathBuf> {
     let dir = location.dir();
-    paths::ensure_private_dir(&dir, CONFIG_DIR_MODE, SymlinkError::ConfigDir)?;
+    paths::ensure_private_dir(&dir, CONFIG_DIR_MODE, PathScope::ConfigDir)?;
     Ok(dir)
 }
 

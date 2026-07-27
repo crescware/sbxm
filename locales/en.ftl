@@ -134,7 +134,7 @@ security-config-dir-symlink-remediation = Replace { $path } with a directory tha
 security-project-path-symlink-description = { $path } is a symbolic link. sbxm does not follow it, because creating or replacing files through it would act on a location outside the project directory.
 security-project-path-symlink-remediation = Replace { $path } with a regular file or directory that you own, then run the command again.
 
-security-project-file-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to rewrite a file that other accounts on this machine can read or change.
+security-project-file-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a file that other accounts on this machine can read or change.
 security-project-file-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the file.
 
 security-base-path-escape-description = { $path } resolves to { $resolved } after symbolic links are followed. Projects would be created outside the directory you chose.
