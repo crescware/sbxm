@@ -230,6 +230,7 @@ column-result = RESULT
 add-already-built = { $project } is already built, so nothing was changed.
 add-mise-heading = These managed worktrees carry a mise configuration. sbxm does not run mise for you:
 add-mise-hint = Run mise trust and mise install inside the sandbox when you want to use them.
+files-secret-hint = Declared files carry configuration, not credentials. Keep tokens, secrets and private keys out of them and hand those to the sandbox with the secret feature of Docker Sandboxes instead.
 sync-files-done = { $count } declared files of { $project } were placed into { $sandbox }.
 legend-attached = the worktree follows a branch that tracks the remote
 legend-detached = the worktree sits on a commit without a branch

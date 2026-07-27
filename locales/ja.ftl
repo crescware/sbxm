@@ -230,6 +230,7 @@ column-result = 結果 (RESULT)
 add-already-built = { $project } は構築済みのため、何も変更しませんでした。
 add-mise-heading = 次のmanaged worktreeはmiseの設定を持ちます。sbxmはmiseを自動実行しません:
 add-mise-hint = 使用する場合は、Sandbox内で mise trust と mise install を実行してください。
+files-secret-hint = 宣言fileは設定を運ぶためのもので、credentialのためのものではありません。token、secret、秘密鍵は宣言fileへ入れず、Docker Sandboxesのsecret機能でSandboxへ渡してください。
 sync-files-done = { $project } の宣言file { $count } 件を { $sandbox } へ配置しました。
 legend-attached = remoteをtrackingするbranch上のworktreeです
 legend-detached = branchを持たないcommit上のworktreeです

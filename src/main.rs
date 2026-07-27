@@ -341,6 +341,7 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
                 &files,
             )
         );
+        println!("{}", text_or_report(catalog, "files-secret-hint"));
     }
 
     if !output.mise_candidates.is_empty() {
@@ -402,6 +403,7 @@ fn print_sync_output(catalog: &Catalog, output: &workflow::sync_files::SyncOutpu
                 &files,
             )
         );
+        println!("{}", text_or_report(catalog, "files-secret-hint"));
         let values: Vec<(&str, &str)> = output
             .files
             .iter()
