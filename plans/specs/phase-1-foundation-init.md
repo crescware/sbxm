@@ -57,7 +57,7 @@ SandboxHomeRelativePath(PathBuf)
 
 ## 4. CLI parse
 
-Phase 1で9 commandと全optionをparserへ登録する。Phase 1では`init`と`status --global`を実装し、`status <project>`を含む未実装処理はparse後にlocalizedな`not implemented in this build`を返してexit code `3`とする。これによりhelpとusageの翻訳・snapshotをPhase 1で固定する。
+Phase 1で9 commandと全optionをparserへ登録する。Phase 1では`init`と`status --global`を実装し、`status <project>`を含む未実装処理はparse後にlocalizedな`not implemented in this build`を返してexit code `1`とする。これによりhelpとusageの翻訳・snapshotをPhase 1で固定する。
 
 validation順:
 
@@ -69,14 +69,14 @@ validation順:
 6. 外部command
 7. mutation
 
-`add --worktrees 0`、`add --worktrees >= 2`かつ`--detach`なしはconfigやfilesystemを読む前にexit code `2`とする。
+`add --worktrees 0`、`add --worktrees >= 2`かつ`--detach`なしはconfigやfilesystemを読む前にexit code `1`とする。
 
 `init`は次の2 modeとする。
 
 - 対話mode: `--lang`、`--base-path`、`--git-user-name`、`--git-user-email`を1つも指定しない
 - option mode: 4 optionをすべて指定する
 
-4 optionの一部だけを指定した場合は、TTYかどうかやconfigの有無にかかわらず、不足optionを表示してconfigやfilesystemを読む前にexit code `2`とする。option modeではpromptを表示しない。
+4 optionの一部だけを指定した場合は、TTYかどうかやconfigの有無にかかわらず、不足optionを表示してconfigやfilesystemを読む前にexit code `1`とする。option modeではpromptを表示しない。
 
 ## 5. Locale決定
 
@@ -88,18 +88,18 @@ validation順:
 4. shell locale
 5. `en`
 
-`init`と`status --global`以外のcommandでconfigが存在しない場合は、`sbxm init`を案内してexit code `4`とする。error表示は3〜5で選んだbootstrap localeを使う。
+`init`と`status --global`以外のcommandでconfigが存在しない場合は、`sbxm init`を案内してexit code `1`とする。error表示はbootstrap localeを使う。
 
 macOS優先言語は`defaults read -g AppleLanguages`の出力をparseする。先頭が`ja`または`ja-*`なら、TTY上でJapanese / Englishを選択させる。その他はpromptなしで`en`とする。command失敗またはparse失敗時だけ`LC_ALL`、`LC_MESSAGES`、`LANG`の順にfallbackする。
 
-新規作成へ進む対話modeの`init`はstdinとstderrの両方がTTYであることを必須とする。どちらかがTTYでなければ何も作成せずexit code `2`とする。既に有効なconfigがある場合はTTYかどうかに関係なくno-op成功とする。option modeはTTYかどうかに関係なく実行できる。
+新規作成へ進む対話modeの`init`はstdinとstderrの両方がTTYであることを必須とする。どちらかがTTYでなければ何も作成せずexit code `1`とする。既に有効なconfigがある場合はTTYかどうかに関係なくno-op成功とする。option modeはTTYかどうかに関係なく実行できる。
 
 ## 6. FTL契約
 
 - message IDは意味と用途を表すkebab-case
 - 英語と日本語のID集合およびplaceholder集合を完全一致させる
 - help、usage、prompt、正常出力、warning、errorをFTLから生成する
-- format失敗は対象message IDとlocaleを示してexit code `4`
+- format失敗は対象message IDとlocaleを示してexit code `1`
 - 外部stderrをFTL placeholderへ埋め込まず、localized説明とは別blockで出す
 - security messageは`title`、`description`、`remediation`の3 IDを必須とする
 
@@ -118,7 +118,7 @@ configとmetadataは次の手順で書く。
 
 更新時は既存fileのpermissionとidentityを検証し、同一directoryの一時fileからatomic renameする。symlinkは拒否する。秘密情報を一時fileへ書かない。
 
-processが中断した一時fileは次回起動時に自動削除せず、pathと安全な削除方法を表示してexit code `4`とする。
+processが中断した一時fileは次回起動時に自動削除せず、pathと安全な削除方法を表示してexit code `1`とする。
 
 ## 8. Config loadとvalidation
 
@@ -126,7 +126,7 @@ processが中断した一時fileは次回起動時に自動削除せず、path�
 
 - `init`: 新規作成へ進む
 - `status --global`: configを`missing`として診断し、`sbxm init`を案内する
-- その他: `sbxm init`を案内してexit code `4`
+- その他: `sbxm init`を案内してexit code `1`
 
 ### 8.2 有効
 
@@ -134,7 +134,7 @@ processが中断した一時fileは次回起動時に自動削除せず、path�
 
 ### 8.3 無効
 
-構文不正、未知version、必須値欠落、permission過剰、symlink、relative base pathはpathと原因を示してexit code `4`。`init`も自動修復・上書きしない。
+構文不正、未知version、必須値欠落、permission過剰、symlink、relative base pathはpathと原因を示してexit code `1`。`init`も自動修復・上書きしない。
 
 `base_path`はstandardizeしたabsolute pathとして保存する。存在しなければ`init`が確認後に作成する。既存ならdirectoryであり、利用者がwrite可能であることを確認する。
 
@@ -143,7 +143,7 @@ processが中断した一時fileは次回起動時に自動削除せず、path�
 - `base_path`直下のowner directoryと、その直下の`*.project/.sbxm/project.toml`だけを読む
 - directory entryとmetadata fileのsymlinkは追跡しない
 - すべてのmetadataをparseしてから結果を返す
-- canonical ID重複、導出path不一致、Sandbox名衝突は一覧化してexit code `4`
+- canonical ID重複、導出path不一致、Sandbox名衝突は一覧化してexit code `1`
 - 1件の破損を無視して部分的な案件一覧を返さない
 - 並び順はcanonical IDのbyte昇順
 
@@ -171,7 +171,7 @@ timeout class
 - security-sensitiveな`sbx`起動では`SSH_AUTH_SOCK`を必ず除外する
 - secret値をargumentやdebug表示へ渡さない
 - stdoutとstderrを別々にbyte列として保持し、lossy変換した場合はその事実を診断する
-- timeout時はchildを終了し、command名とtimeoutを表示してexit code `5`
+- timeout時はchildを終了し、command名とtimeoutを表示してexit code `1`
 - testではfake executableをPATH先頭へ置き、program、args、cwd、environment、streamを記録する
 
 timeout既定値:
@@ -217,10 +217,10 @@ ls_json_fixture_version = 1
 
 runtimeではexact versionを検出する。
 
-- 0.37.0未満: exit code `3`
+- 0.37.0未満: exit code `1`
 - fixtureと一致するversion: 続行
-- patch versionだけ異なる: read-only commandはwarning付きで許可、mutationはexit code `3`
-- minor/majorまたはparse不能: exit code `3`
+- patch versionだけ異なる: read-only commandはwarning付きで許可、mutationはexit code `1`
+- minor/majorまたはparse不能: exit code `1`
 
 新version対応はfixture、parser test、manifestを更新するPRで行う。
 
@@ -238,9 +238,9 @@ MVPではdaemonの安全性を永続markerやinstance IDから推測しない。
 
 daemon操作全体では`~/.sbxm/runtime/daemon.lock`をexclusive取得する。directoryは`0700`、lock fileは`0600`とし、lock fileはworkflow終了後も削除しない。
 
-- active sessionを1件でも検出した場合はdaemonを変更せず、対象sessionと終了方法を表示してexit code `6`
-- structuredなsession検査が存在しない、またはsession不在を証明できない場合はdaemonを変更せずexit code `6`
-- session検査commandの失敗、timeout、parse不能は外部状態を観測できないためexit code `5`
+- active sessionを1件でも検出した場合はdaemonを変更せず、対象sessionと終了方法を表示してexit code `1`
+- structuredなsession検査が存在しない、またはsession不在を証明できない場合はdaemonを変更せずexit code `1`
+- session検査commandの失敗、timeout、parse不能は外部状態を観測できないためexit code `1`
 - session不在を確認できた場合だけ、`sbx daemon stop`と、`SSH_AUTH_SOCK`をunsetした`sbx daemon start --detach`を実行する
 
 毎回のdaemon再起動による所要時間はMVPで受け入れる。安全性を保ったまま再起動を省略する最適化は、MVP利用後の非機能要件として検討する。
@@ -256,7 +256,7 @@ configがない場合だけ新規作成する。既存の有効configは再利�
 configをread-onlyで事前確認し、新規作成へ進む場合だけ`~/.sbxm/init.lock`を開いてexclusiveなOS file lockを取得する。
 
 - lock待機は10秒
-- timeoutはlock pathを表示してexit code `5`
+- timeoutはlock pathを表示してexit code `1`
 - lockはworkflow終了まで保持する
 - `init.lock`はworkflow終了後も削除しない
 - lock取得後にconfigの有無と妥当性を再確認する
@@ -294,7 +294,7 @@ Git identityの既定候補はhostの`git config --global user.name`と`user.ema
 
 hostとglobal環境をread-onlyで診断する。login、setup、file更新、daemon起動・停止を行わない。問題がある場合は、利用者が直接実行する外部commandを表示する。
 
-`-g`を`--global`の短縮形とする。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `2`とする。
+`-g`を`--global`の短縮形とする。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `1`とする。
 
 ### 14.2 検査順と項目
 
@@ -315,12 +315,9 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 ### 14.3 Exit
 
 - 全検査成功: `0`
-- configまたはbase path不正: `4`
-- 前提command、version、host環境の非対応: `3`
-- external observation失敗: `5`
-- daemonの安全性を証明できない: `6`
+- 1件以上のerror: `1`
 
-複数分類がある場合は最大の安全重要度として`6 > 5 > 4 > 3`を返す。
+複数種類のerrorがあってもexit codeは`1`とし、個々のerror IDと診断をすべて表示する。
 
 ## 15. 自動test
 
@@ -338,8 +335,8 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 - TTY/non-TTY、Esc、Ctrl-C
 - command runnerのenvironment、timeout、stream
 - compatibility fixtureの全parser
-- global `status`の全検査、partial result、remediation、exit優先順位
-- external command失敗時のexit code mapping
+- global `status`の全検査、partial result、remediation、複数error時の診断
+- CLI parserと外部commandの非ゼロstatusを`1`へ写像し、原値を診断へ保持すること
 
 ## 16. 受入条件
 

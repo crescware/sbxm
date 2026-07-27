@@ -38,12 +38,12 @@ running Sandboxを削除する通常modeの`rebuild`と`destroy`は、同じacti
 
 | 状態 | 動作 |
 |---|---|
-| `unmanaged` | exit `4`、`add`を案内 |
+| `unmanaged` | exit `1`、`add`を案内 |
 | `registered`、rebuild intentなし | 初回構築未完了として`add`を案内 |
 | `registered`、rebuild intentあり | 新世代成果物とSandbox不在を検証し、再作成を継続 |
 | `stopped` | 内部状態を観測するため`open`後の再実行を案内して拒否 |
 | `running` | 共通データ保護検査後に再構築 |
-| `inconsistent` | exit `4`、自動変更しない |
+| `inconsistent` | exit `1`、自動変更しない |
 
 Dockerfile hashがmetadataの適用済みhashと同一で、rebuild intentがない場合は、変更がないことを表示して何も変更せずexit code `0`とする。
 
@@ -54,7 +54,7 @@ rebuild intentがある場合は通常の状態表よりintentの継続規則を
 | 不在 | target世代の成果物を検証し、Sandbox作成から継続 |
 | `previous_dockerfile_sha256`世代 | identityを検証し、共通データ保護検査を再実行して旧Sandbox削除から継続 |
 | `target_dockerfile_sha256`世代 | identityと構築済み工程を検証し、最初の未完了工程から継続 |
-| target、previousのどちらでもない | 帰属不能として自動変更せずexit code `4` |
+| target、previousのどちらでもない | 帰属不能として自動変更せずexit code `1` |
 
 previous世代のSandboxがstoppedの場合に限り、intentからの復旧に必要な共通データ保護検査を行うため、Phase 1の共通手順でdaemonを安全に再起動し、対象Sandboxを非対話で起動してから検査する。これは新規`rebuild`がstopped Sandboxを拒否する規則の唯一の例外とする。active session、保存状態不合格、検査不能、identity不一致では削除しない。
 
@@ -96,11 +96,11 @@ rebuild intentの記録後は次を行う。
 
 利用者が編集したDockerfile、host clone、exports、global config、GitHub secretは保持する。旧image、旧archive、旧Templateの自動cleanupはMVP対象外とする。
 
-Sandbox削除後に失敗した場合は、metadataとrebuild intentを保持し、exit code `5`で終了する。利用者は同じ`sbxm rebuild <owner>/<repository>`を再実行する。rebuild intentがある状態では`add`、`sync-files`、`open`、`stop`、通常の新規`rebuild`を開始せず、同じtarget hashの`rebuild`継続だけを許可する。
+Sandbox削除後に失敗した場合は、metadataとrebuild intentを保持し、exit code `1`で終了する。利用者は同じ`sbxm rebuild <owner>/<repository>`を再実行する。rebuild intentがある状態では`add`、`sync-files`、`open`、`stop`、通常の新規`rebuild`を開始せず、同じtarget hashの`rebuild`継続だけを許可する。
 
 intent記録後に現在のDockerfileが変わっていても、検証済みのtarget image、archive、Templateが揃っている場合は、それらを用いてintentの世代を完成させる。現在のDockerfileを上書きせず、成功後の適用済みhashはintentのtarget hashとし、現在のDockerfileに未適用の変更が残っていることと、もう一度`rebuild`を実行する案内を表示する。
 
-target成果物が欠落または不正な場合は、現在のDockerfile hashがtarget hashと一致するときだけ成果物を再生成できる。hashが異なる場合は世代を混在させずexit code `4`とし、期待するtarget hash、欠落または不正な成果物、Dockerfileを期待内容へ復元して再実行する方法を表示する。復元できない場合は、保持対象と失われる対象を示したうえで、明示的な最終手段として`sbxm destroy --force <owner>/<repository>`を案内する。metadataのintentを手動編集または削除する案内は行わない。
+target成果物が欠落または不正な場合は、現在のDockerfile hashがtarget hashと一致するときだけ成果物を再生成できる。hashが異なる場合は世代を混在させずexit code `1`とし、期待するtarget hash、欠落または不正な成果物、Dockerfileを期待内容へ復元して再実行する方法を表示する。復元できない場合は、保持対象と失われる対象を示したうえで、明示的な最終手段として`sbxm destroy --force <owner>/<repository>`を案内する。metadataのintentを手動編集または削除する案内は行わない。
 
 ### 3.4 Confirmationとforce
 
@@ -139,11 +139,11 @@ host Docker image、loaded Template、中立Workspace、secretのcleanupはMVP�
 
 | 状態 | 動作 |
 |---|---|
-| `unmanaged` | exit `4` |
+| `unmanaged` | exit `1` |
 | `registered` / `not-created` | Sandboxは削除済みとして、管理情報を破棄して`unmanaged` |
 | `stopped` | 通常modeでは内部状態を観測できないため削除を拒否し、完全指定した`destroy --force`を案内 |
 | `running` | 通常modeではsession終了を要求し、worktree検査後に削除 |
-| `inconsistent` | exit `4`、自動削除しない |
+| `inconsistent` | exit `1`、自動削除しない |
 
 `destroy`成功後はmetadataを削除するため、常に`unmanaged`となる。以後の再構築は`add`で新規登録する。
 
@@ -171,12 +171,12 @@ force modeでは、`registered`は管理情報を破棄し、`stopped`と`runnin
 
 通常modeでは、Codex、Claude Code、SSH、editor、development serverなどのsession状態を`sbx` structured outputから判定する。
 
-- active sessionを検出: 対象sessionを表示し、終了方法と`destroy --force`を案内してexit code `6`
-- 対象versionがstructuredなsession検査を提供しない: session不在を証明できないことと`destroy --force`を案内してexit code `6`
-- 対象versionが提供するsession検査commandの実行失敗、timeout、parse失敗: 外部状態を観測できないためexit code `5`
+- active sessionを検出: 対象sessionを表示し、終了方法と`destroy --force`を案内してexit code `1`
+- 対象versionがstructuredなsession検査を提供しない: session不在を証明できないことと`destroy --force`を案内してexit code `1`
+- 対象versionが提供するsession検査commandの実行失敗、timeout、parse失敗: 外部状態を観測できないためexit code `1`
 - inactiveを確認: worktreeと保存状態の検査へ進む
 
-通常modeは実行回数を記録せず、「初回」と「再実行」を区別しない。session検査を提供しないversionでは、通常modeを再実行しても毎回exit code `6`とする。
+通常modeは実行回数を記録せず、「初回」と「再実行」を区別しない。session検査を提供しないversionでは、通常modeを再実行しても毎回exit code `1`とする。
 
 force modeではactive sessionを検査せず、session終了を要求しない。
 
@@ -230,7 +230,7 @@ force modeでは本sectionのworktree列挙と保存状態検査を行わない�
 
 ## 10. 停止中Sandbox
 
-通常modeでは停止中Sandboxを起動せず、内部のworktreeと保存状態を観測不能としてexit code `6`で削除を拒否する。完全指定した次のcommandを案内する。
+通常modeでは停止中Sandboxを起動せず、内部のworktreeと保存状態を観測不能としてexit code `1`で削除を拒否する。完全指定した次のcommandを案内する。
 
 ```text
 sbxm destroy --force <owner>/<repository>
@@ -265,7 +265,7 @@ sbxm-owner-repository-0123456789ab
 ```
 
 - 完全一致: 続行
-- 空または不一致: 削除せずexit `10`
+- 空または不一致: 削除せずexit `1`
 - Ctrl-C/Esc: exit `130`
 
 projectを完全指定した非TTYの通常modeとforce modeでは対話確認を行わない。force modeでは、データ保護検査を省略して削除することをstderrへ明示する。
@@ -281,13 +281,13 @@ sbx rm --force <sandbox-name>
 
 削除後、`sbx ls --json`を最大60秒pollし、nameが存在しないことを確認する。`registered`では削除commandを実行せず、一覧で不在を1回確認して管理情報のcleanupへ進む。
 
-- command失敗: metadataやhost成果物を変更せずexit `5`
-- timeout: exit `5`
+- command失敗: metadataやhost成果物を変更せずexit `1`
+- timeout: exit `1`
 - 不在確認成功: 管理情報のcleanupへ進む
 
 Sandbox不在を確認した後、`.sbxm/.cache`を削除し、`project.toml`を削除する。metadata削除を管理解除のcommit pointとする。最後の保護対象mutationとして、project lockを保持したまま`project.lock`を削除し、その後lockを解放する。lock file削除後は、表示を除いてproject状態を変更しない。
 
-cleanupに失敗した場合は残ったpathを表示してexit code `5`とする。metadata削除前の失敗では案件は引き続き管理対象であり、`destroy`を再実行できる。metadata削除後にlock fileだけが残った場合、案件は`unmanaged`として扱い、残存lock fileのcleanup失敗をwarningとして表示してexit code `0`とする。
+cleanupに失敗した場合は残ったpathを表示してexit code `1`とする。metadata削除前の失敗では案件は引き続き管理対象であり、`destroy`を再実行できる。metadata削除後にlock fileだけが残った場合、案件は`unmanaged`として扱い、残存lock fileのcleanup失敗をwarningとして表示してexit code `0`とする。
 
 削除前から古いlock fileを開いて待機していたprocessは、lock取得後に現在のpathとのidentity不一致を検出し、Phase 2の共通取得手順に従って新しいlock fileで取得をやり直す。これにより、`destroy`後の`add`が新規作成したlock fileと、削除済みinodeを待っていたprocessが同時に保護区間へ入ることを防ぐ。lock fileはprojectの管理状態そのものではないが、`destroy`ではsbxm管理物を残さないため削除する。
 

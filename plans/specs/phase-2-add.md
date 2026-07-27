@@ -46,14 +46,14 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - detached modeでは全managed worktreeを同じ`origin/<BRANCH>` commitから作る
 - attached modeではremote default branchをtrackingするlocal branchを1つ作る
 
-再実行した`add`でoptionを省略した場合はmetadataに保存された目標構成を使用する。optionを指定した場合は保存値と完全一致することを要求し、不一致ならmutation前にexit code `2`とする。
+再実行した`add`でoptionを省略した場合はmetadataに保存された目標構成を使用する。optionを指定した場合は保存値と完全一致することを要求し、不一致ならmutation前にexit code `1`とする。
 
 ## 4. Project単位の排他
 
 既存projectではmutationの前に`<project-root>/.sbxm/project.lock`をexclusive lockする。新規projectではowner directory、project root、`.sbxm`を作成または検証した直後にproject lockを取得し、以後のmutationへ進む。
 
 - lock待機は10秒
-- timeoutは対象projectを表示してexit code `5`
+- timeoutは対象projectを表示してexit code `1`
 - lockはworkflow終了まで保持する
 - daemonを操作する区間はPhase 1のglobal daemon lockをproject lockの後に取得する
 - 複数lockが必要な将来機能ではcanonical ID昇順に取得する
@@ -68,7 +68,7 @@ lock fileの存在自体は処理中を意味しない。OS file lockの取得�
 4. pathが存在しない、symlinkである、またはidentityが一致しない場合は、削除済みの古いlock fileを取得したものとして解放し、現在のpathで取得をやり直す
 5. identityが一致した後にmetadata、filesystem、外部状態を再取得し、preconditionを判定する
 
-retryを含む全体へ10秒のlock timeoutを適用する。permission、owner、file typeが不正な場合は安全に置換せずexit code `4`とする。
+retryを含む全体へ10秒のlock timeoutを適用する。permission、owner、file typeが不正な場合は安全に置換せずexit code `1`とする。
 
 ## 5. Project metadataの作成と構築継続
 
@@ -92,14 +92,14 @@ retryを含む全体へ10秒のlock timeoutを適用する。permission、owner�
 - 構築未完了: 保存済み目標構成から構築を継続する
 - rebuild intentが存在する: `sbxm rebuild <owner>/<repository>`を案内し、`add`では継続しない
 - 構築完了: 構築済みであることを表示し、何も変更せずexit code `0`
-- 保存済み目標構成とoptionが不一致: exit code `2`
-- canonical ID、成果物、所有関係が不一致: exit code `4`
+- 保存済み目標構成とoptionが不一致: exit code `1`
+- canonical ID、成果物、所有関係が不一致: exit code `1`
 
 各工程では次の共通規則を使用する。
 
 - 成果物が期待状態と一致する: skip
 - 成果物がない: 実行
-- 所有関係または内容を証明できない: exit code `4`
+- 所有関係または内容を証明できない: exit code `1`
 
 再実行では保存済みのmode、resolved start ref、requested countを使用する。GitHub側default branchが変わっても自動変更しない。現在のDockerfile hashがmetadataの適用済みhashと異なり、対応imageのbuild前なら、現在のDockerfileを初回構築の目標としてhashを更新して続行する。対応imageが既に完成している場合は、保存済みhashの世代を使って初回構築を完了し、現在のDockerfileを反映する`sbxm rebuild <owner>/<repository>`を成功出力で案内する。初回構築の途中へ別世代を混在させない。
 
@@ -142,7 +142,7 @@ io.crescware.sbxm.metadata-version=1
 
 - owner directory、project root、`.sbxm`、`exports`、`.cache`はsymlinkを拒否
 - 新規directoryのpermissionは利用者のumaskに従う。ただし`.sbxm`と`.cache`は`0700`
-- 既存の非directoryはexit code `4`
+- 既存の非directoryはexit code `1`
 
 ### 7.2 Host clone
 
@@ -161,7 +161,7 @@ git clone
 - `origin`の正規化済みremoteがcanonical IDと一致
 - `.git`がproject root外を指すworktree fileではない
 
-dirty状態は`add`の構築継続を妨げない。remote不一致、複数origin、壊れたrepositoryはexit code `4`。
+dirty状態は`add`の構築継続を妨げない。remote不一致、複数origin、壊れたrepositoryはexit code `1`。
 
 ### 7.3 Dockerfile
 
@@ -221,17 +221,17 @@ Phase 1 fixtureで確定した次の操作を使用する。
 sbx template load <template-archive>
 ```
 
-load後、fixtureで定義したread-only commandにより、Templateが期待image IDと対応することを検証する。runtimeが対応関係を観測できない場合、既存Templateは再利用せず、同名存在時にexit code `4`とする。
+load後、fixtureで定義したread-only commandにより、Templateが期待image IDと対応することを検証する。runtimeが対応関係を観測できない場合、既存Templateは再利用せず、同名存在時にexit code `1`とする。
 
 ### 7.6 Safe daemon
 
 Phase 1の共通手順を使用する。global daemon lockを取得し、全Sandboxのactive session不在をstructured outputから確認した後、`sbx daemon stop`を実行し、`SSH_AUTH_SOCK`をunsetした環境で`sbx daemon start --detach`を実行する。
 
-active sessionを検出した場合、またはsession不在を証明できない場合は、daemonを変更せずSandboxも作成せずexit code `6`とする。session検査commandの失敗、timeout、parse不能はexit code `5`とする。
+active sessionを検出した場合、またはsession不在を証明できない場合は、daemonを変更せずSandboxも作成せずexit code `1`とする。session検査commandの失敗、timeout、parse不能はexit code `1`とする。
 
 ### 7.7 Sandbox create
 
-中立Workspaceを`0700`で作り、symlinkを拒否する。sbxm独自のownership markerや作成履歴fileは置かない。既存workspaceはowner、permission、file type、real pathと内容がvalidation規則を満たす場合に、作成元を問わず再利用する。満たさない場合は内容を変更せずexit code `4`とする。
+中立Workspaceを`0700`で作り、symlinkを拒否する。sbxm独自のownership markerや作成履歴fileは置かない。既存workspaceはowner、permission、file type、real pathと内容がvalidation規則を満たす場合に、作成元を問わず再利用する。満たさない場合は内容を変更せずexit code `1`とする。
 
 期待する外部command:
 
@@ -252,7 +252,7 @@ sbx create
 - Template/image identityがinspect可能で一致
 - metadataのcanonical IDと対応
 
-1項目でも確認不能または不一致ならexit code `4`。誰が作成したか、またはsbxm独自のmarkerがあるかは条件にしない。
+1項目でも確認不能または不一致ならexit code `1`。誰が作成したか、またはsbxm独自のmarkerがあるかは条件にしない。
 
 ### 7.8 宣言fileの配置と`sync-files`
 
@@ -273,14 +273,14 @@ sbx exec --user root <sandbox-name> --
 - Sandbox側の親directoryは`0700`、fileは`0600`、owner/groupは`agent`
 - 一時fileは成功・失敗のどちらでも削除する
 - 既存destinationが同一内容ならskipする
-- `add`では既存destinationが異なる場合は上書きせず、対象pathを示してexit code `4`
+- `add`では既存destinationが異なる場合は上書きせず、対象pathを示してexit code `1`
 - `sync-files`では現在のglobal configにある宣言を明示的な再配置要求として扱い、既存destinationが異なる場合も安全な一時fileとrenameを使って上書きする
 - global configから削除された宣言のdestinationは、`sync-files`でもSandboxから削除しない
-- sourceが存在しない、または安全性を検証できない場合はcopyせずexit code `4`
+- sourceが存在しない、または安全性を検証できない場合はcopyせずexit code `1`
 - file内容をstdout、stderr、log、metadataへ出力しない
 - credential、token、秘密鍵には使用せず、Docker Sandboxesのsecret機能を案内する
 
-`sync-files`はproject metadata、Sandbox identity、running stateをread-onlyで検証してから、本sectionのfile配置だけを実行する。stopped Sandboxを暗黙に起動せず、`sbxm open <owner>/<repository>`後の再実行を案内してexit code `3`とする。registered、unmanaged、inconsistentでは何も配置しない。
+`sync-files`はproject metadata、Sandbox identity、running stateをread-onlyで検証してから、本sectionのfile配置だけを実行する。stopped Sandboxを暗黙に起動せず、`sbxm open <owner>/<repository>`後の再実行を案内してexit code `1`とする。registered、unmanaged、inconsistentでは何も配置しない。
 
 ### 7.9 Git identityとprotocol
 
@@ -292,7 +292,7 @@ git config --global user.email <config.git.user_email>
 gh config set git_protocol https --host github.com
 ```
 
-既存値が同一ならskip。異なる場合は、別利用者のSandboxである可能性があるため自動上書きせずexit code `4`。
+既存値が同一ならskip。異なる場合は、別利用者のSandboxである可能性があるため自動上書きせずexit code `1`。
 
 ### 7.10 GitHub secret
 
@@ -306,7 +306,7 @@ sbx secret set <sandbox-name> github
 
 存在確認はPhase 1 fixtureで固定したread-only commandとstructured outputだけを使用する。secret値を取得・表示しない。
 
-未登録なら、発行条件と上記commandを表示して前提条件不足のexit code `3`で停止する。登録後は同じ`add`を再実行し、Sandboxを再利用して次工程へ進む。
+未登録なら、発行条件と上記commandを表示して前提条件不足のexit code `1`で停止する。登録後は同じ`add`を再実行し、Sandboxを再利用して次工程へ進む。
 
 ### 7.11 Bare clone
 
@@ -329,7 +329,7 @@ git --git-dir <bare-git-dir> fetch --prune origin
 - fetch refspecが完全一致
 - `git fsck --connectivity-only`が成功
 
-directoryは存在するが条件不一致なら自動削除せずexit code `4`。
+directoryは存在するが条件不一致なら自動削除せずexit code `1`。
 
 ### 7.12 Start ref解決
 
@@ -371,7 +371,7 @@ git --git-dir <bare-git-dir> worktree add
 - metadataに記録済みでGit状態も一致: skip
 - Sandboxを再構築した直後でmetadataに記録済みのpathがまだ存在しない: 保存済み宣言を作成予定pathとして使用し、作成後に同じmetadata entryを検証する
 - metadata未記録だが、期待path、期待HEAD、期待modeが一致し、作成予定indexである: interrupted createとしてmanagedへ採用
-- 内容、HEAD、modeのいずれかが不一致: exit code `4`
+- 内容、HEAD、modeのいずれかが不一致: exit code `1`
 - managed用名前空間外のGit worktree: unmanagedとして変更しない
 
 ## 8. 成功出力

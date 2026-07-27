@@ -12,7 +12,7 @@ Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧�
 - 対象解決と全validationをmutation前に完了する
 - `sbx` stateはPhase 1 fixtureのJSON parserで扱う
 - nameは完全一致とし、substring、prefix、表示textの`grep`を使わない
-- 未対応stateまたは重複nameはraw valueを示してexit code `5`
+- 未対応stateまたは重複nameはraw valueを示してexit code `1`
 
 ## 3. Sandbox stateの正規化
 
@@ -34,11 +34,11 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 
 | 状態 | 動作 |
 |---|---|
-| `unmanaged` | exit `4`、`add`を案内 |
-| `registered` / `not-created` | exit `4`、同じ目標構成の`add`再実行を案内 |
+| `unmanaged` | exit `1`、`add`を案内 |
+| `registered` / `not-created` | exit `1`、同じ目標構成の`add`再実行を案内 |
 | `stopped` | daemonを安全に再起動し、Sandboxを非対話で起動してSSH接続 |
 | `running` | daemonを安全に再起動してSSH接続 |
-| `inconsistent` | exit `4`、`status`を案内 |
+| `inconsistent` | exit `1`、`status`を案内 |
 
 `open`はSandboxを新規作成しない。
 
@@ -62,7 +62,7 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 sbx exec <sandbox-name> /bin/true
 ```
 
-SSH childにはstdin、stdout、stderrを継承する。SSHのexit statusが0なら`sbxm`も0、利用者による通常切断以外の非ゼロは外部command失敗としてexit code `5`に写像し、原値を表示する。
+SSH childにはstdin、stdout、stderrを継承する。SSHのexit statusが0なら`sbxm`も0、利用者による通常切断以外の非ゼロは外部command失敗としてexit code `1`に写像し、原値を表示する。
 
 通常開始directoryはDockerfileにより`/home/agent/work`とする。MVPではSSH commandへ自動`cd`を組み込まない。
 
@@ -71,8 +71,8 @@ SSH childにはstdin、stdout、stderrを継承する。SSHのexit statusが0な
 Phase 1の共通手順を使用し、`open`のたびにglobal daemon lockを取得してdaemonを安全に再起動する。
 
 - 全Sandboxのactive session不在をstructured outputから確認する
-- active sessionを検出した場合、またはsession不在を証明できない場合はdaemonを変更せずexit code `6`
-- session検査commandの失敗、timeout、parse不能はexit code `5`
+- active sessionを検出した場合、またはsession不在を証明できない場合はdaemonを変更せずexit code `1`
+- session検査commandの失敗、timeout、parse不能はexit code `1`
 - session不在を確認できた場合だけdaemonを停止し、`SSH_AUTH_SOCK`をunsetした環境で起動する
 
 毎回の再起動による所要時間はMVPで受け入れ、再起動省略はMVP利用後の非機能要件として検討する。
@@ -94,7 +94,7 @@ Phase 1の共通手順を使用し、`open`のたびにglobal daemon lockを取�
 5. stateを再取得してpreconditionを再確認
 6. runningだけを停止
 
-完全なtransaction rollbackは行わない。途中で外部commandが失敗した場合は後続対象を停止せず、対象ごとの`stopped`、`unchanged`、`failed`を表示してexit code `5`。
+完全なtransaction rollbackは行わない。途中で外部commandが失敗した場合は後続対象を停止せず、対象ごとの`stopped`、`unchanged`、`failed`を表示してexit code `1`。
 
 ### 5.3 状態別動作
 
@@ -135,10 +135,10 @@ owner/baz        sbxm-owner-baz-fedcba987654     not-created
 
 ### 6.3 Failure
 
-- `sbx ls`失敗: 一覧を一切出さずexit `5`
-- metadataが1件でも不正: 一覧を一切出さずexit `4`
-- 未対応raw state: 一覧を一切出さずexit `5`
-- 同名Sandbox複数、workspace不一致: 一覧を一切出さずexit `4`
+- `sbx ls`失敗: 一覧を一切出さずexit `1`
+- metadataが1件でも不正: 一覧を一切出さずexit `1`
+- 未対応raw state: 一覧を一切出さずexit `1`
+- 同名Sandbox複数、workspace不一致: 一覧を一切出さずexit `1`
 
 部分的に正しそうな一覧を出さない。
 
@@ -152,7 +152,7 @@ owner/baz        sbxm-owner-baz-fedcba987654     not-created
 
 診断は現在のmetadata、filesystem、Git、`sbx`の状態だけに基づき、作成元やsbxm独自のmarkerを検査しない。同じvalidation規則をmutation commandも使用し、手作業または別toolで作成されたvalidな状態を同じ結果として扱う。
 
-projectを省略した案件選択promptは設けない。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `2`とする。global環境の問題でproject検査を継続できない場合は、観測不能な項目と原因を表示し、`sbxm status --global`を案内する。
+projectを省略した案件選択promptは設けない。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `1`とする。global環境の問題でproject検査を継続できない場合は、観測不能な項目と原因を表示し、`sbxm status --global`を案内する。
 
 ### 7.2 検査順と項目
 
@@ -230,19 +230,17 @@ ssh-add -L
 ```
 
 - `SSH_AUTH_SOCK`未設定かつ`ssh-add -L`がagent接続不能: `not-exposed`
-- socket設定または公開鍵が1件以上: `exposed`、security exit `6`
-- command不在、timeout、判定不能: exit `5`
+- socket設定または公開鍵が1件以上: `exposed`、exit `1`
+- command不在、timeout、判定不能: exit `1`
 
 公開鍵本文は出力しない。
 
 ### 7.6 Exit
 
 - 全検査成功かつsecurity issueなし: `0`
-- 構成mismatch: `4`
-- external observation失敗: `5`
-- SSH Agent exposed: `6`
+- 1件以上のerror: `1`
 
-複数分類がある場合は最大の安全重要度として`6 > 5 > 4`を返す。
+複数種類のerrorがあってもexit codeは`1`とし、構成不一致、外部観測失敗、SSH Agent露出をそれぞれのerror IDと診断で表示する。
 
 ## 8. 自動test
 

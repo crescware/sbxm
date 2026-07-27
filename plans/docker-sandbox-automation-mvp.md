@@ -41,7 +41,7 @@
 ### 3.1 TTYと非TTY
 
 - projectを対象とするcommandは、非TTYではproject引数の完全指定を必須とする
-- 非TTYで対象を省略した場合は、config、metadata、filesystem、外部状態を読む前にexit code `2`で終了する
+- 非TTYで対象を省略した場合は、config、metadata、filesystem、外部状態を読む前にexit code `1`で終了する
 - 非TTYではcurrent directory、候補数、過去の選択から対象を推測または自動選択しない
 - TTYでは、仕様で許可されたcommandに限り対象省略時の選択promptを表示する
 - 引数が完全指定された非TTY操作は対話確認を要求せず、指定対象だけを処理する
@@ -272,15 +272,12 @@ previous_dockerfile_sha256 = "<sha256>"
 | Code | 意味 |
 |---:|---|
 | `0` | 成功、または仕様で成功と定めたno-op |
-| `2` | CLI usage、入力値、保存済み目標構成との不一致 |
-| `3` | 前提command、version、host環境、credentialなどの前提条件不足 |
-| `4` | configまたはmetadata不正、成果物の不整合 |
-| `5` | 外部command失敗、外部状態を観測不能 |
-| `6` | security条件を証明できない、または破壊操作を安全に実行不能 |
-| `10` | 利用者が通常の確認でキャンセル |
+| `1` | 引数不正、通常キャンセル、前提不足、設定・状態不正、外部command失敗、安全上の拒否を含む通常error |
 | `130` | Ctrl-CまたはEscによる対話キャンセル |
 
-外部commandのexit codeは`sbxm`のexit codeへ直接透過しない。原値は診断へ含める。
+CLI parserを含む内部libraryの既定exit codeを公開契約へ透過しない。helpとversionは`0`、parse errorは`1`とする。外部commandのexit codeも直接透過せず、原値を診断へ含める。
+
+失敗理由はexit codeで分類せず、翻訳しない安定した英語error ID、選択言語による説明、対象、観測値、対処方法、必要な場合はredact済みの外部stderrで示す。将来scriptが失敗理由による分岐を必要とする場合は、exit codeを増やさずstructured outputを検討する。
 
 ## 11. 実装順と品質gate
 
