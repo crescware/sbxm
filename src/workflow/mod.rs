@@ -4,6 +4,7 @@
 //! 状態値の凡例を加える。stderrはprompt、warning、errorに使用する。
 
 pub mod add;
+pub mod daemon;
 pub mod host_clone;
 pub mod image;
 pub mod init;
