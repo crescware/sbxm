@@ -92,6 +92,8 @@ pub enum ErrorId {
     ArchiveUnusable,
     TemplateUnusable,
     SandboxUnusable,
+    DeclaredFileUnusable,
+    DeclaredFileConflict,
 
     // --- 案件のhost path ---
     ProjectPathSymlink,
@@ -195,6 +197,8 @@ impl ErrorId {
             ErrorId::ArchiveUnusable => "archive-unusable",
             ErrorId::TemplateUnusable => "template-unusable",
             ErrorId::SandboxUnusable => "sandbox-unusable",
+            ErrorId::DeclaredFileUnusable => "declared-file-unusable",
+            ErrorId::DeclaredFileConflict => "declared-file-conflict",
 
             ErrorId::ProjectPathSymlink => "project-path-symlink",
             ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
@@ -515,6 +519,8 @@ mod tests {
             ErrorId::ArchiveUnusable,
             ErrorId::TemplateUnusable,
             ErrorId::SandboxUnusable,
+            ErrorId::DeclaredFileUnusable,
+            ErrorId::DeclaredFileConflict,
             ErrorId::ProjectPathSymlink,
             ErrorId::ProjectPathUnexpectedType,
             ErrorId::ProjectPathUnreadable,

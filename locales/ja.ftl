@@ -93,6 +93,8 @@ warning-build-context-left-behind = 一時build context { $path } を削除で�
 error-archive-unusable = Template archive { $path } は使用できません: { $detail }
 error-template-unusable = Template { $template } は使用できません: { $detail }
 error-sandbox-unusable = Sandbox { $sandbox } はこの案件には使用できません: { $detail }
+error-declared-file-unusable = 宣言file { $source } は配置できません: { $detail }
+error-declared-file-conflict = { $destination } には別の内容があるため、{ $source } を配置しませんでした。
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
 
@@ -129,6 +131,7 @@ remediation-run-init = sbxm init を実行してglobal設定を作成してく�
 remediation-host-clone-unusable = { $path } を確認し、退避するかoriginを直してから、もう一度実行してください。
 remediation-daemon-session-active = 対象Sandboxへ接続しているshellとeditorを終了してから、もう一度実行してください。
 remediation-daemon-session-unobservable = 接続中のsessionを示すversionのDocker Sandboxes CLIへ更新してから、もう一度実行してください。
+remediation-declared-file-conflict = 両者を確認したうえで、sbxm sync-files を実行すると宣言fileでSandbox側を置き換えられます。
 remediation-run-rebuild = { $command } を実行して再構築を完了してください。
 remediation-target-configuration-mismatch = 保存済みの目標構成で続けるには { $command } をoptionなしで実行し、別の構成で作り直すには先に案件を破棄してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。

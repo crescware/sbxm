@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{SandboxEntry, SandboxState};
 use crate::error::{Error, ErrorId, Result};
 use crate::msg;
@@ -92,6 +92,43 @@ pub fn ensure(
     })
 }
 
+/// Sandbox内でcommandを実行する。
+///
+/// 引数配列のまま渡し、shellを介さない。出力はparseまたは秘匿のためcaptureする。
+pub fn exec(host: &dyn HostEnvironment, sandbox: &str, args: &[&str]) -> Result<CommandOutcome> {
+    run_exec(host, sandbox, None, args)
+}
+
+/// Sandbox内でrootとしてcommandを実行する。
+pub fn exec_as_root(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    args: &[&str],
+) -> Result<CommandOutcome> {
+    run_exec(host, sandbox, Some("root"), args)
+}
+
+fn run_exec(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    user: Option<&str>,
+    args: &[&str],
+) -> Result<CommandOutcome> {
+    let mut full: Vec<&str> = vec!["exec"];
+    if let Some(user) = user {
+        full.push("--user");
+        full.push(user);
+    }
+    full.push(sandbox);
+    full.push("--");
+    full.extend_from_slice(args);
+
+    let spec = CommandSpec::capture("sbx", &full)
+        .env(EnvPolicy::InheritWithoutSshAgent)
+        .timeout(TimeoutClass::SandboxLifecycle);
+    host.run(&spec)
+}
+
 /// 名前が完全一致するSandboxを探す。
 ///
 /// 名前はcanonical project IDから決定的に導出されるため、名前の一致が案件との
@@ -167,7 +204,7 @@ fn unusable(name: &str, detail: String) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::CommandOutcome;
+
     use crate::project::ProjectId;
     use std::cell::RefCell;
     use std::os::unix::fs::PermissionsExt;

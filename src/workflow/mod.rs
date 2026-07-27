@@ -5,6 +5,7 @@
 
 pub mod add;
 pub mod daemon;
+pub mod files;
 pub mod host_clone;
 pub mod image;
 pub mod init;
