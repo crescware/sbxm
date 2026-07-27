@@ -91,6 +91,7 @@ pub enum ErrorId {
     BuildContextNotEmpty,
     ArchiveUnusable,
     TemplateUnusable,
+    SandboxUnusable,
 
     // --- 案件のhost path ---
     ProjectPathSymlink,
@@ -193,6 +194,7 @@ impl ErrorId {
             ErrorId::BuildContextNotEmpty => "build-context-not-empty",
             ErrorId::ArchiveUnusable => "archive-unusable",
             ErrorId::TemplateUnusable => "template-unusable",
+            ErrorId::SandboxUnusable => "sandbox-unusable",
 
             ErrorId::ProjectPathSymlink => "project-path-symlink",
             ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
@@ -512,6 +514,7 @@ mod tests {
             ErrorId::BuildContextNotEmpty,
             ErrorId::ArchiveUnusable,
             ErrorId::TemplateUnusable,
+            ErrorId::SandboxUnusable,
             ErrorId::ProjectPathSymlink,
             ErrorId::ProjectPathUnexpectedType,
             ErrorId::ProjectPathUnreadable,

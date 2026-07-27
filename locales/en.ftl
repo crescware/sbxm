@@ -92,6 +92,7 @@ error-build-context-not-empty = The build context { $path } holds { $observed } 
 warning-build-context-left-behind = The temporary build context { $path } could not be removed: { $detail }
 error-archive-unusable = The template archive { $path } cannot be used: { $detail }
 error-template-unusable = The template { $template } cannot be used: { $detail }
+error-sandbox-unusable = The sandbox { $sandbox } cannot be used for this project: { $detail }
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 

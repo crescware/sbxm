@@ -92,6 +92,7 @@ error-build-context-not-empty = build context { $path } に { $observed } 件の
 warning-build-context-left-behind = 一時build context { $path } を削除できませんでした: { $detail }
 error-archive-unusable = Template archive { $path } は使用できません: { $detail }
 error-template-unusable = Template { $template } は使用できません: { $detail }
+error-sandbox-unusable = Sandbox { $sandbox } はこの案件には使用できません: { $detail }
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
 
