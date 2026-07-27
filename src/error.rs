@@ -46,7 +46,6 @@ pub enum ErrorId {
     WorktreesRequireDetach,
     ProjectArgumentRequired,
     StatusScopeRequired,
-    NotImplemented,
 
     // --- Project識別子 ---
     InvalidProjectId,
@@ -105,6 +104,7 @@ pub enum ErrorId {
     SandboxStillRunning,
     SandboxStillPresent,
     RebuildGenerationMissing,
+    DestroyNotConfirmed,
     SshAgentExposed,
     UnsavedWork,
     SbxLoginMissing,
@@ -173,7 +173,6 @@ impl ErrorId {
             ErrorId::WorktreesRequireDetach => "worktrees-require-detach",
             ErrorId::ProjectArgumentRequired => "project-argument-required",
             ErrorId::StatusScopeRequired => "status-scope-required",
-            ErrorId::NotImplemented => "not-implemented",
 
             ErrorId::InvalidProjectId => "invalid-project-id",
             ErrorId::ReservedRepositoryName => "reserved-repository-name",
@@ -227,6 +226,7 @@ impl ErrorId {
             ErrorId::SandboxStillRunning => "sandbox-still-running",
             ErrorId::SandboxStillPresent => "sandbox-still-present",
             ErrorId::RebuildGenerationMissing => "rebuild-generation-missing",
+            ErrorId::DestroyNotConfirmed => "destroy-not-confirmed",
             ErrorId::SshAgentExposed => "ssh-agent-exposed",
             ErrorId::UnsavedWork => "unsaved-work",
             ErrorId::SbxLoginMissing => "sbx-login-missing",
@@ -524,7 +524,6 @@ mod tests {
             ErrorId::WorktreesRequireDetach,
             ErrorId::ProjectArgumentRequired,
             ErrorId::StatusScopeRequired,
-            ErrorId::NotImplemented,
             ErrorId::InvalidProjectId,
             ErrorId::ReservedRepositoryName,
             ErrorId::ConfigMissing,
@@ -573,6 +572,7 @@ mod tests {
             ErrorId::SandboxStillRunning,
             ErrorId::SandboxStillPresent,
             ErrorId::RebuildGenerationMissing,
+            ErrorId::DestroyNotConfirmed,
             ErrorId::SshAgentExposed,
             ErrorId::UnsavedWork,
             ErrorId::SbxLoginMissing,

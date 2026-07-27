@@ -2,7 +2,7 @@
 //!
 //! 解釈できない出力から状態を推測しない。parseできない出力はerrorとして扱う。
 
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::error::{Error, ErrorId, Result};
 use crate::msg;
 
 /// 要件となる最小version。
@@ -450,17 +450,6 @@ fn unparseable(program: &str, detail: &str) -> Error {
             program = program,
             detail = detail
         ),
-    )
-}
-
-/// 未対応のcommandを一時的に拒否する共通error。
-pub fn not_implemented(command: &str) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::NotImplemented,
-            msg!("error-not-implemented", command = command),
-        )
-        .remediation(msg!("remediation-run-help", command = "sbxm --help")),
     )
 }
 

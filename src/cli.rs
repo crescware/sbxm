@@ -19,7 +19,6 @@ use clap::builder::PossibleValuesParser;
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 
-use crate::compatibility;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result, fail};
 use crate::i18n::{Catalog, Locale};
 use crate::msg;
@@ -97,23 +96,6 @@ pub enum Command {
     Ls,
     Status(StatusScope),
     Destroy(DestroyArgs),
-}
-
-impl Command {
-    /// 診断へ表示するcommand名。翻訳しない。
-    pub fn name(&self) -> &'static str {
-        match self {
-            Command::Init(_) => "sbxm init",
-            Command::Add(_) => "sbxm add",
-            Command::SyncFiles(_) => "sbxm sync-files",
-            Command::Rebuild(_) => "sbxm rebuild",
-            Command::Open(_) => "sbxm open",
-            Command::Stop(_) => "sbxm stop",
-            Command::Ls => "sbxm ls",
-            Command::Status(_) => "sbxm status",
-            Command::Destroy(_) => "sbxm destroy",
-        }
-    }
 }
 
 /// parse結果。
@@ -727,11 +709,6 @@ fn require_prompt_capability(interactivity: Interactivity, command: &str) -> Res
     )
 }
 
-/// このbuildで未実装のcommandを拒否する。
-pub fn not_implemented(command: &Command) -> Error {
-    compatibility::not_implemented(command.name())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1283,11 +1260,5 @@ mod tests {
         // 組み込みlocaleにならないtagを使う。
         let error = run(&["--lang", "zz", "ls"], tty()).expect_err("zz is not a locale");
         assert_eq!(error.first_id(), Some(ErrorId::InvalidValue));
-    }
-
-    #[test]
-    fn unimplemented_commands_report_a_stable_error_id() {
-        let error = not_implemented(&Command::Ls);
-        assert_eq!(error.first_id(), Some(ErrorId::NotImplemented));
     }
 }

@@ -54,7 +54,6 @@ error-worktrees-out-of-range = managed worktreeの数は { $minimum } 以上 { $
 error-worktrees-require-detach = managed worktreeを2個以上作る場合は起点branchの明示が必要です。
 error-project-argument-required = 対話端末ではない実行では、{ $command } にowner/repositoryの完全指定が必要です。
 error-status-scope-required = global環境か1案件のどちらか一方だけを指定してください。
-error-not-implemented = { $command } はこのbuildでは未実装です。
 
 usage-hint = { $usage }
 
@@ -104,10 +103,12 @@ error-sandbox-still-running = Sandbox { $sandbox } は停止を要求したあ�
 error-unsaved-work = { $target } には失われる作業があります: { $detail }
 error-sandbox-still-present = Sandbox { $sandbox } は削除後も一覧に残っています。
 error-rebuild-generation-missing = { $project } の再構築は世代 { $target } に固定されていますが、その成果物も一致するDockerfileもありません。現在のDockerfileは { $observed } です。
+error-destroy-not-confirmed = Sandbox名が { $sandbox } と完全一致しなかったため、何も削除しませんでした。
 error-project-not-managed = { $project } は管理対象の案件ではありません。
 error-sandbox-not-created = { $project } は登録済みですが、Sandbox { $sandbox } はまだ存在しません。
 error-sandbox-not-running = Sandbox { $sandbox } は { $observed } です。このcommandはrunningのSandboxだけを対象とします。
 warning-dockerfile-changed-during-rebuild = { $project } のDockerfileは、再構築が世代を固定したあとに変更されました。この実行は固定済みの世代を適用しています。現在のDockerfileを適用するには { $command } をもう一度実行してください。
+warning-lock-file-left-behind = 案件の管理は解除しましたが、lock file { $path } を削除できませんでした: { $detail }
 warning-dockerfile-changed-during-build = { $project } のDockerfileが初回構築の途中で変わったため、開始時の世代のまま構築を完了しました。現在の内容を反映するには { $command } を実行してください。
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
@@ -162,6 +163,7 @@ remediation-no-managed-projects = { $command } を実行すると最初の案件
 remediation-remote-ssh-unconfigured = このhostでDocker SandboxesのRemote SSH連携を設定してから、もう一度実行してください。
 remediation-unsaved-work = 残す変更はcommitしてpushし、不要なfileは削除してから、もう一度実行してください。
 remediation-rebuild-generation-missing = その世代のDockerfileを復元してから、もう一度 rebuild を実行してください。復元できない場合、{ $command } はhost cloneとDockerfileを残したままSandboxと管理情報を削除します。
+remediation-destroy-force = 内部を確認せずに削除するには { $command } を実行してください。データ保護検査とactive session検査は省略されます。
 remediation-run-rebuild = { $command } を実行して再構築を完了してください。
 remediation-target-configuration-mismatch = 保存済みの目標構成で続けるには { $command } をoptionなしで実行し、別の構成で作り直すには先に案件を破棄してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。
@@ -252,6 +254,19 @@ status-item-login = Docker Sandboxesへのlogin (Docker Sandboxes login)
 status-item-session-inspection = active session検査 (Active session inspection)
 open-connecting = { $project } のSandbox { $sandbox } へ接続します。
 open-worktrees = このSandboxのmanaged worktree:
+
+destroy-confirm-prompt = 削除を確認するため、Sandbox名を入力してください
+destroy-removes = 削除対象:
+destroy-keeps = 保持対象:
+destroy-force-notice = force modeではデータ保護検査とactive session検査を省略します。
+destroy-done = { $project } の管理を解除しました。
+destroy-re-register = 再登録するには次を実行します: { $command }
+
+column-branch = branch (BRANCH)
+column-remote = remote (REMOTE)
+select-destroy-heading = どの案件を破棄しますか?
+rebuild-unchanged = { $project } のDockerfileは適用済みの内容と同じため、何も変更しませんでした。
+rebuild-applied = { $project } を再構築しました。{ $sandbox } は世代 { $generation } で動作します。
 
 select-open-heading = どの案件を開きますか?
 select-stop-heading = どの案件を停止しますか?

@@ -54,7 +54,6 @@ error-worktrees-out-of-range = The number of managed worktrees must be between {
 error-worktrees-require-detach = Creating more than one managed worktree requires an explicit start branch.
 error-project-argument-required = { $command } needs an explicit owner/repository argument when the session is not interactive.
 error-status-scope-required = Specify exactly one scope: either the global environment or one owner/repository.
-error-not-implemented = { $command } is not implemented in this build.
 
 usage-hint = { $usage }
 
@@ -104,10 +103,12 @@ error-sandbox-still-running = The sandbox { $sandbox } was still running after i
 error-unsaved-work = { $target } holds work that would be lost: { $detail }
 error-sandbox-still-present = The sandbox { $sandbox } was still listed after it was removed.
 error-rebuild-generation-missing = The rebuild of { $project } is fixed on generation { $target }, and neither its artifacts nor a matching Dockerfile is present. The Dockerfile now holds { $observed }.
+error-destroy-not-confirmed = The sandbox name was not entered exactly as { $sandbox }, so nothing was deleted.
 error-project-not-managed = { $project } is not a managed project.
 error-sandbox-not-created = { $project } is registered, but its sandbox { $sandbox } does not exist yet.
 error-sandbox-not-running = The sandbox { $sandbox } is { $observed }, and this command only acts on a running sandbox.
 warning-dockerfile-changed-during-rebuild = The Dockerfile of { $project } changed while the rebuild was already fixed on a generation, so this run applied the fixed one. Run { $command } again to apply the current Dockerfile.
+warning-lock-file-left-behind = The project is no longer managed, but its lock file { $path } could not be removed: { $detail }
 warning-dockerfile-changed-during-build = The Dockerfile of { $project } changed while its first build was still running, so the build finished with the generation it started from. Run { $command } to apply the current one.
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
@@ -162,6 +163,7 @@ remediation-no-managed-projects = Run { $command } to register the first one.
 remediation-remote-ssh-unconfigured = Set up the Remote SSH integration of Docker Sandboxes on this host, then run this command again.
 remediation-unsaved-work = Commit and push what you want to keep, remove what you do not, then run the command again.
 remediation-rebuild-generation-missing = Restore the Dockerfile of that generation and run the rebuild again. If it cannot be restored, { $command } deletes the sandbox and the management data, keeping the host clone and the Dockerfile.
+remediation-destroy-force = Run { $command } to delete it without looking inside. Data protection and active session checks are skipped.
 remediation-run-rebuild = Run { $command } to finish the rebuild.
 remediation-target-configuration-mismatch = Run { $command } without those options to continue with the stored target, or destroy the project first to build it differently.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.
@@ -252,6 +254,19 @@ status-item-login = Docker Sandboxes login
 status-item-session-inspection = Active session inspection
 open-connecting = Connecting to { $sandbox } for { $project }.
 open-worktrees = Managed worktrees in this sandbox:
+
+destroy-confirm-prompt = Type the sandbox name to confirm the deletion
+destroy-removes = These are deleted:
+destroy-keeps = These are kept:
+destroy-force-notice = Force mode skips the data protection and active session checks.
+destroy-done = { $project } is no longer managed.
+destroy-re-register = Register it again with: { $command }
+
+column-branch = BRANCH
+column-remote = REMOTE
+select-destroy-heading = Which project do you want to destroy?
+rebuild-unchanged = The Dockerfile of { $project } is the one that is applied, so nothing was changed.
+rebuild-applied = { $project } was rebuilt: { $sandbox } now runs generation { $generation }.
 
 select-open-heading = Which project do you want to open?
 select-stop-heading = Which projects do you want to stop?

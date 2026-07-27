@@ -294,28 +294,6 @@ fn commands_other_than_init_and_global_status_need_a_configuration() {
 }
 
 #[test]
-fn commands_that_are_not_implemented_yet_say_so_after_validating_their_arguments() {
-    let home = temp_home();
-    let base = home.path().join("Projects");
-    std::fs::create_dir_all(&base).unwrap();
-    write_config(home.path(), &base, "en");
-
-    for arguments in [
-        vec!["rebuild", "owner/repo"],
-        vec!["destroy", "--force", "owner/repo"],
-    ] {
-        let run = sbxm(home.path(), &arguments);
-        assert_eq!(run.code, 1, "{arguments:?}: {}", run.stderr);
-        assert!(
-            run.stderr.contains("not-implemented"),
-            "{arguments:?}: {}",
-            run.stderr
-        );
-    }
-}
-
-/// PATHを空にしているため、外部toolを必要とする工程まで進んだところで止まる。
-#[test]
 fn add_registers_the_project_before_it_reaches_the_host_tools() {
     use std::os::unix::fs::PermissionsExt;
     let home = temp_home();
