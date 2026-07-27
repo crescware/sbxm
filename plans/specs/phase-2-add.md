@@ -165,17 +165,29 @@ dirty状態は`add`の構築継続を妨げない。remote不一致、複数orig
 - mise、Codex、Claude Codeのinstallerはversionまたはdigestをpinする
 - interactive shellの開始位置を`/home/agent/work`にする
 - `WORKDIR /home/agent/work`
+- MVPではbuild context由来のfileを必要としないため、`COPY`と`ADD`を使用しない
 
 `add`は採用したDockerfileのSHA-256をmetadataとimage labelへ適用済みhashとして保存する。利用者による手修正を許可し、構築完了後の保存済みhashとの不一致だけを理由にmetadataやDockerfileを不正とは扱わない。変更の適用は`rebuild`が担当する。
 
 ### 7.4 Image buildとarchive
+
+各buildでは、Rustの`tempfile::TempDir`を使い、OSの一時領域へprefix `sbxm-build-context-`を持つ一時directoryを作成する。
+
+- 作成時permissionは`0700`
+- symlinkではない通常directoryであることを確認する
+- pathをcanonicalizeし、build直前にも空であることを確認する
+- project file、config、secretその他の内容を配置しない
+- Dockerfileはabsolute pathを`--file`へ渡し、一時directoryだけをbuild contextへ渡す
+- buildの成功・失敗にかかわらず`TempDir`のdropで削除する
+- cleanup失敗は残存pathをwarningとして表示する。build自体が成功していればcleanup失敗だけで成果物を失敗扱いにしない
+- process強制終了で残存しても次回実行では再利用せず、探索や自動削除を行わない
 
 ```text
 docker build
   --label <label> ...
   --tag <image-name>
   --file <dockerfile>
-  <project-root>/.sbxm
+  <ephemeral-empty-build-context>
 
 docker image save
   <image-name>
@@ -387,6 +399,7 @@ FILE  DESTINATION  RESULT
 - 再実行optionの省略、一致、不一致
 - host clone remote検証
 - 新規・既存Dockerfileの採用、初回build前のhash更新、構築済みDockerfile変更時の`rebuild`案内
+- 一時build contextのpermission、通常directory、空状態、`.cache`・`exports`非包含、成功・失敗時cleanup
 - Sandbox名完全一致とworkspace検証
 - safe daemon成功・不明・active session
 - 宣言fileのsource、destination、path逸脱、同一、`add`時の競合、`sync-files`時の上書き、宣言削除時の保持、一時file cleanup

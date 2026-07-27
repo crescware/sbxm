@@ -32,7 +32,7 @@ tests/
     └── sbx/<validated-version>/
 ```
 
-主なdependencyは`clap`、`serde`、`toml`、`thiserror`、`dirs`、`fluent-bundle`、`unic-langid`、`dialoguer`、`sha2`、`serde_json`とする。dependency versionは実装PRでlock fileとともに固定する。
+主なdependencyは`clap`、`serde`、`toml`、`thiserror`、`dirs`、`fluent-bundle`、`unic-langid`、`dialoguer`、`sha2`、`serde_json`、`tempfile`とする。dependency versionは実装PRでlock fileとともに固定する。
 
 ## 3. 共通domain型
 
