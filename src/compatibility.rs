@@ -330,6 +330,30 @@ fn active_sessions(object: &serde_json::Map<String, serde_json::Value>) -> Resul
     Ok(None)
 }
 
+/// `sbx secret ls`が示すsecretの名前。
+///
+/// 値は取得も表示もしない。存在の有無だけを読む。
+pub fn parse_secret_names(output: &str) -> Result<Vec<String>> {
+    let documents = json_documents("sbx secret ls", output)?;
+
+    let mut names = Vec::with_capacity(documents.len());
+    for document in documents {
+        let name = match &document {
+            // 名前だけを並べるversionがある。
+            serde_json::Value::String(name) => name.clone(),
+            serde_json::Value::Object(object) => string_field(object, "name")
+                .or_else(|| string_field(object, "Name"))
+                .ok_or_else(|| unparseable("sbx secret ls", "an entry has no name"))?,
+            _ => return Err(unparseable("sbx secret ls", "an entry has no name")),
+        };
+        if name.is_empty() {
+            return Err(unparseable("sbx secret ls", "an entry has an empty name"));
+        }
+        names.push(name);
+    }
+    Ok(names)
+}
+
 /// 一覧形式と1行1件のJSON形式のどちらでも読む。
 fn json_documents(program: &str, output: &str) -> Result<Vec<serde_json::Value>> {
     let trimmed = output.trim();
@@ -559,6 +583,24 @@ mod tests {
 
         for output in [r#"[{"image_id":"sha256:abc"}]"#, r#"[{"name":""}]"#, "12"] {
             let error = parse_template_list(output).expect_err("{output} must be refused");
+            assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+        }
+    }
+
+    #[test]
+    fn the_secret_parser_reads_names_only() {
+        assert_eq!(
+            parse_secret_names(r#"[{"name":"github"},{"name":"other"}]"#).unwrap(),
+            vec!["github".to_string(), "other".to_string()]
+        );
+        assert_eq!(
+            parse_secret_names(r#"["github"]"#).unwrap(),
+            vec!["github".to_string()]
+        );
+        assert!(parse_secret_names("").unwrap().is_empty());
+
+        for output in [r#"[{"value":"secret"}]"#, r#"[""]"#, "3"] {
+            let error = parse_secret_names(output).expect_err("{output} must be refused");
             assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
         }
     }

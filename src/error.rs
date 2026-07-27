@@ -94,6 +94,8 @@ pub enum ErrorId {
     SandboxUnusable,
     DeclaredFileUnusable,
     DeclaredFileConflict,
+    SandboxIdentityMismatch,
+    GithubSecretMissing,
 
     // --- 案件のhost path ---
     ProjectPathSymlink,
@@ -199,6 +201,8 @@ impl ErrorId {
             ErrorId::SandboxUnusable => "sandbox-unusable",
             ErrorId::DeclaredFileUnusable => "declared-file-unusable",
             ErrorId::DeclaredFileConflict => "declared-file-conflict",
+            ErrorId::SandboxIdentityMismatch => "sandbox-identity-mismatch",
+            ErrorId::GithubSecretMissing => "github-secret-missing",
 
             ErrorId::ProjectPathSymlink => "project-path-symlink",
             ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
@@ -521,6 +525,8 @@ mod tests {
             ErrorId::SandboxUnusable,
             ErrorId::DeclaredFileUnusable,
             ErrorId::DeclaredFileConflict,
+            ErrorId::SandboxIdentityMismatch,
+            ErrorId::GithubSecretMissing,
             ErrorId::ProjectPathSymlink,
             ErrorId::ProjectPathUnexpectedType,
             ErrorId::ProjectPathUnreadable,

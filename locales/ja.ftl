@@ -95,6 +95,8 @@ error-template-unusable = Template { $template } は使用できません: { $de
 error-sandbox-unusable = Sandbox { $sandbox } はこの案件には使用できません: { $detail }
 error-declared-file-unusable = 宣言file { $source } は配置できません: { $detail }
 error-declared-file-conflict = { $destination } には別の内容があるため、{ $source } を配置しませんでした。
+error-sandbox-identity-mismatch = { $sandbox } では { $key } が既に { $observed } であり、この案件が期待する値は { $expected } です。
+error-github-secret-missing = Sandbox { $sandbox } に { $secret } secretがないため、repositoryへaccessできません。
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
 
@@ -132,6 +134,8 @@ remediation-host-clone-unusable = { $path } を確認し、退避するかorigin
 remediation-daemon-session-active = 対象Sandboxへ接続しているshellとeditorを終了してから、もう一度実行してください。
 remediation-daemon-session-unobservable = 接続中のsessionを示すversionのDocker Sandboxes CLIへ更新してから、もう一度実行してください。
 remediation-declared-file-conflict = 両者を確認したうえで、sbxm sync-files を実行すると宣言fileでSandbox側を置き換えられます。
+remediation-sandbox-identity-mismatch = 誰のSandboxかを確認してください。sbxmは設定済みの値を上書きしません。
+remediation-github-secret-missing = 対象repositoryに限定したfine-grained personal access tokenを、Contents read/writeとMetadata readで発行してください。必要な場合だけPull requests、Issues、Actionsを追加します。{ $command } で登録してから、同じcommandをもう一度実行してください。
 remediation-run-rebuild = { $command } を実行して再構築を完了してください。
 remediation-target-configuration-mismatch = 保存済みの目標構成で続けるには { $command } をoptionなしで実行し、別の構成で作り直すには先に案件を破棄してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。

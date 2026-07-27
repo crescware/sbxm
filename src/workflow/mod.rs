@@ -7,9 +7,11 @@ pub mod add;
 pub mod daemon;
 pub mod files;
 pub mod host_clone;
+pub mod identity;
 pub mod image;
 pub mod init;
 pub mod sandbox;
+pub mod secret;
 pub mod status_global;
 pub mod template;
 
