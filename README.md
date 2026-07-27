@@ -68,11 +68,20 @@ cargo build
 cargo test
 ```
 
-Update the help snapshots only after reviewing an intentional change to them.
+The published CLI contract — command names, option names, value names, arity and order — is
+recorded in `tests/snapshots/cli-surface.txt`. It carries no translated text, so it does not
+change when a language is added. Update it only after reviewing an intentional change to the
+contract.
 
 ```sh
-SBXM_UPDATE_SNAPSHOTS=1 cargo test --test cli
+SBXM_UPDATE_SNAPSHOTS=1 cargo test --bin sbxm
 ```
+
+## Display languages
+
+Every user-facing string comes from an FTL resource in [locales/](locales/). Adding a language
+means adding one resource and one row to the locale definition table in `src/i18n.rs`; nothing
+else is edited. See [locales/README.md](locales/README.md) for the conventions.
 
 ## Docker Sandboxes CLI fixtures have not been collected
 

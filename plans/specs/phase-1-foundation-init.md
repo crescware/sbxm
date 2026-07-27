@@ -25,9 +25,12 @@ src/
     ├── init.rs
     └── status_global.rs
 locales/
+├── README.md
 ├── en.ftl
 └── ja.ftl
 tests/
+├── snapshots/
+│   └── cli-surface.txt
 └── fixtures/
     └── sbx/<validated-version>/
 ```
@@ -57,7 +60,9 @@ SandboxHomeRelativePath(PathBuf)
 
 ## 4. CLI parse
 
-Phase 1で9 commandと全optionをparserへ登録する。Phase 1では`init`と`status --global`を実装し、`status <project>`を含む未実装処理はparse後にlocalizedな`not implemented in this build`を返してexit code `1`とする。これによりhelpとusageの翻訳・snapshotをPhase 1で固定する。
+Phase 1で9 commandと全optionをparserへ登録する。Phase 1では`init`と`status --global`を実装し、`status <project>`を含む未実装処理はparse後にlocalizedな`not implemented in this build`を返してexit code `1`とする。これによりhelpとusageの翻訳をPhase 1で固定する。
+
+CLIの公開契約は、翻訳文を含まない記録1枚として`tests/snapshots/cli-surface.txt`へ固定する。記録はparserを内省して作り、command名、option名、short、value name、arity、必須性、並び順だけを持つ。localeに依存しないため、言語を増やしても変わらない。契約を変えるときはこの記録の差分をreviewする。
 
 validation順:
 
@@ -84,42 +89,53 @@ helpとusageを構築する前に、argvから`--lang`だけを副作用なく�
 
 優先順位:
 
-1. 有効な`--lang ja|en`
+1. 有効な`--lang <tag>`
 2. 有効なglobal configの`language`
 3. `init`実行時だけmacOS優先言語
 4. shell locale
-5. `en`
+5. 正本locale
 
 `init`と`status --global`以外のcommandでconfigが存在しない場合は、`sbxm init`を案内してexit code `1`とする。error表示はbootstrap localeを使う。
 
 helpとusageのlocaleは次の順で決定する。
 
-1. argvから先読みした有効な`--lang ja|en`
+1. argvから先読みした有効な`--lang <tag>`
 2. read-onlyかつbest-effortで読み込めた有効なglobal configの`language`
 3. shell locale
-4. `en`
+4. 正本locale
 
-- `--lang`が不正な場合はconfigを読まず、shell localeまたは`en`でparse errorを表示してexit `1`
+- `--lang`が不正な場合はconfigを読まず、shell localeまたは正本localeでparse errorを表示してexit `1`
 - configが不在の場合はshell localeへfallbackする
 - configが構文不正、未知version、permission不正、symlink、またはread失敗の場合もshell localeへfallbackし、help表示自体は妨げない
 - `--help`とcommand別helpは、config不正だけを理由に失敗させずexit `0`
 - help以外の通常commandは、parse成功後のconfig loadで同じconfig不正を診断してexit `1`
 - argv先読みはlocale選択だけに使用し、ほかのargument validationやcommand実行を行わない
 
-macOS優先言語は`defaults read -g AppleLanguages`の出力をparseする。新規作成へ進む対話modeで先頭が`ja`または`ja-*`なら、TTY上でJapanese / Englishを選択させる。option modeではpromptを表示せず、先頭が`ja`または`ja-*`なら`ja`、その他は`en`とする。command失敗またはparse失敗時だけ`LC_ALL`、`LC_MESSAGES`、`LANG`の順にfallbackする。
+macOS優先言語は`defaults read -g AppleLanguages`の出力をparseする。先頭のlanguage tagを組み込みlocaleのtagと突き合わせ、一致した場合だけ推測を確定させる。新規作成へ進む対話modeで推測が正本locale以外なら、TTY上で言語を選択させる。選択肢は組み込みlocaleの全体とし、各言語の名称はその言語自身のresourceから取る。option modeではpromptを表示せず推測をそのまま使う。一致しない、command失敗、またはparse失敗の場合だけ`LC_ALL`、`LC_MESSAGES`、`LANG`の順にfallbackする。
 
 新規作成へ進む対話modeの`init`はstdinとstderrの両方がTTYであることを必須とする。どちらかがTTYでなければ何も作成せずexit code `1`とする。既に有効なconfigがある場合はTTYかどうかに関係なくno-op成功とする。option modeはTTYかどうかに関係なく実行できる。
 
 ## 6. FTL契約
 
 - message IDは意味と用途を表すkebab-case
-- 英語と日本語のID集合およびplaceholder集合を完全一致させる
+- 正本localeを`en`とし、全localeのID集合とplaceholder集合を正本と完全一致させる
 - help、usage、prompt、正常出力、warning、errorをFTLから生成する
 - format失敗は対象message IDとlocaleを示してexit code `1`
 - 外部stderrをFTL placeholderへ埋め込まず、localized説明とは別blockで出す
 - security messageは`title`、`description`、`remediation`の3 IDを必須とする
 
-testではFTL parse、ID一致、placeholder一致、全command help snapshot、代表的なerror snapshotを検証する。
+言語ごとの内容は`locales/<tag>.ftl`だけが、言語ごとの同一性は`src/i18n.rs`の定義表だけが
+持つ。実装は特定の言語を名指しで分岐しない。凡例の要否のような言語別の振る舞いは、正本
+localeとの関係から導出する。resourceの規約は`locales/README.md`が1箇所で持ち、resourceへ
+コメントと見出しを書かない。言語を増やすときに触るのは、resource 1枚と定義表の1行だけと
+する。
+
+testではFTL parse、ID一致、placeholder一致、resourceがコメントを持たないこと、全localeで
+全commandのhelpが成功すること、全localeで利用者向けslotがresourceで埋まること、代表的な
+error snapshotを検証する。検査対象のlocaleは`locales/`から決め、testへ言語名を列挙しない。
+
+利用者向け出力の文言はresourceが正本であるため、localeごとの出力をsnapshotとして複製
+しない。文言のreviewはresourceに対して行う。
 
 ## 7. Atomic file write
 
@@ -342,7 +358,7 @@ network policyはfixtureで固定した`sbx policy ls`のread-only出力から�
 
 ### 14.3 出力
 
-global scopeはhostとglobal環境だけを診断するため、正常結果は`GLOBAL` sectionだけをstdoutへ表示する。projectの情報を混在させない。英語modeの列は`ITEM`と`STATUS`で固定し、14.2の検査順に並べる。
+global scopeはhostとglobal環境だけを診断するため、正常結果は`GLOBAL` sectionだけをstdoutへ表示する。projectの情報を混在させない。正本localeの列は`ITEM`と`STATUS`で固定し、14.2の検査順に並べる。
 
 ```text
 GLOBAL
@@ -363,7 +379,7 @@ Session inspection   ready
 
 取得できた行は後続検査が失敗しても省略しない。path、version、観測値、外部commandの失敗、対処方法などの詳細は表の列を増やさず、安定したerror IDを持つ診断としてstderrへ出す。これにより一覧性のある正常出力と、原因を特定できる詳細なerror情報を分離する。
 
-日本語modeではsection名、列名、項目名を翻訳し、状態値は翻訳しない。正常出力末尾のenum凡例は方向性文書の言語契約に従う。列間の空白幅は実装時のsnapshotで固定し、公開する英語modeの列構成と並び順は変更しない。
+正本locale以外ではsection名、列名、項目名を翻訳し、状態値はどのlocaleでも翻訳しない。状態値が正本localeの語であるため、正本locale以外は正常出力末尾へenum凡例を付ける。凡例の要否を言語ごとの設定として持たず、正本localeか否かから導出する。公開する正本localeの列構成と並び順は変更しない。列は項目名の表示幅から算出し、幅そのものを出力契約としない。
 
 ### 14.4 Exit
 
@@ -384,12 +400,12 @@ Session inspection   ready
 - 初期化済み`init`のTTY、非TTYと副作用なしのno-op
 - locale優先順位、bootstrap fallback
 - help・usageの`--lang`先読み、config language、config不在・不正時fallback、helpのexit `0`
-- FTL完全性とsnapshot
+- FTL完全性、locale定義表の一貫性、CLI公開契約の記録
 - CLI argument関係とmutation前validation
 - TTY/non-TTY、Esc、Ctrl-C
 - command runnerのenvironment、timeout、capture・passthrough・inheritの各stream policy
 - compatibility fixtureの全parser
-- global `status`の直接依存だけを対象とする全検査、`Balanced` network policy、出力snapshot、partial result、remediation、複数error時の診断
+- global `status`の直接依存だけを対象とする全検査、`Balanced` network policy、出力の section・列構成・項目順、partial result、remediation、複数error時の診断
 - CLI parserと外部commandの非ゼロstatusを`1`へ写像し、原値を診断へ保持すること
 
 ## 16. 受入条件

@@ -62,11 +62,19 @@ cargo build
 cargo test
 ```
 
-help snapshotを意図的に変更した場合だけ、差分を確認してから更新する。
+CLIの公開契約（command名、option名、value name、arity、並び順）は`tests/snapshots/cli-surface.txt`
+に記録する。翻訳文を含まないため、言語を増やしても変わらない。契約を意図的に変更した場合だけ、
+差分を確認してから更新する。
 
 ```sh
-SBXM_UPDATE_SNAPSHOTS=1 cargo test --test cli
+SBXM_UPDATE_SNAPSHOTS=1 cargo test --bin sbxm
 ```
+
+## 表示言語
+
+利用者向け文字列はすべて[locales/](../locales/)のFTL resourceが持つ。言語を増やすときに触るのは、
+resource 1枚と`src/i18n.rs`のlocale定義表1行だけとする。規約は
+[locales/README.md](../locales/README.md)が持つ。
 
 ## Docker Sandboxes CLI fixtureは未採取
 
