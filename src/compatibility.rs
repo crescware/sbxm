@@ -163,6 +163,75 @@ pub fn parse_network_policy(output: &str) -> Result<String> {
     }
 }
 
+/// `docker image inspect`から読むimageの同一性。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageIdentity {
+    /// `sha256:<hex>`。archiveのconfig blobと同じ値になる。
+    pub id: String,
+    pub labels: std::collections::BTreeMap<String, String>,
+}
+
+/// `docker image inspect <image>`のstructured outputをparseする。
+///
+/// 1件のimageを指すため、要素が1個の配列だけを受け付ける。labelを持たないimageは
+/// 空のlabel集合として扱い、labelの不足は呼び出し側が判定する。
+pub fn parse_image_inspect(output: &str) -> Result<ImageIdentity> {
+    let document: serde_json::Value = serde_json::from_str(output)
+        .map_err(|error| unparseable("docker image inspect", &error.to_string()))?;
+    let items = document
+        .as_array()
+        .ok_or_else(|| unparseable("docker image inspect", "the document is not an array"))?;
+    let [item] = items.as_slice() else {
+        return Err(unparseable(
+            "docker image inspect",
+            &format!(
+                "the document describes {} images instead of one",
+                items.len()
+            ),
+        ));
+    };
+    let object = item
+        .as_object()
+        .ok_or_else(|| unparseable("docker image inspect", "the entry is not an object"))?;
+
+    let id = string_field(object, "Id")
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| unparseable("docker image inspect", "the image has no Id"))?;
+
+    let mut labels = std::collections::BTreeMap::new();
+    match object.get("Config").and_then(|config| config.as_object()) {
+        Some(config) => match config.get("Labels") {
+            Some(serde_json::Value::Object(declared)) => {
+                for (key, value) in declared {
+                    let value = value.as_str().ok_or_else(|| {
+                        unparseable(
+                            "docker image inspect",
+                            &format!("label {key} does not hold a string"),
+                        )
+                    })?;
+                    labels.insert(key.clone(), value.to_string());
+                }
+            }
+            // labelを1つも持たないimageでは`null`になる。
+            Some(serde_json::Value::Null) | None => {}
+            Some(_) => {
+                return Err(unparseable(
+                    "docker image inspect",
+                    "Labels is neither an object nor null",
+                ));
+            }
+        },
+        None => {
+            return Err(unparseable(
+                "docker image inspect",
+                "the image has no Config section",
+            ));
+        }
+    }
+
+    Ok(ImageIdentity { id, labels })
+}
+
 fn string_field(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
     object
         .get(key)
@@ -261,6 +330,46 @@ mod tests {
         for output in ["{}", r#"{"state":"degraded"}"#, "[]", "oops"] {
             let error = parse_daemon_status(output).expect_err("unknown states are not guessed");
             assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+        }
+    }
+
+    #[test]
+    fn the_image_inspect_parser_reads_the_identity_and_the_labels() {
+        let output = r#"[{"Id":"sha256:abc","Config":{"Labels":{"io.crescware.sbxm.canonical-id":"example-org/example-repo"}}}]"#;
+        let identity = parse_image_inspect(output).expect("a single image parses");
+        assert_eq!(identity.id, "sha256:abc");
+        assert_eq!(
+            identity
+                .labels
+                .get("io.crescware.sbxm.canonical-id")
+                .map(String::as_str),
+            Some("example-org/example-repo")
+        );
+
+        // labelを持たないimageは、labelが空のimageとして読む。
+        let identity = parse_image_inspect(r#"[{"Id":"sha256:abc","Config":{"Labels":null}}]"#)
+            .expect("an image without labels parses");
+        assert!(identity.labels.is_empty());
+    }
+
+    #[test]
+    fn an_image_inspect_output_that_is_not_one_image_is_refused() {
+        for output in [
+            "[]",
+            r#"[{"Id":"sha256:a","Config":{}},{"Id":"sha256:b","Config":{}}]"#,
+            r#"[{"Config":{}}]"#,
+            r#"[{"Id":"","Config":{}}]"#,
+            r#"[{"Id":"sha256:a"}]"#,
+            r#"{"Id":"sha256:a"}"#,
+            r#"[{"Id":"sha256:a","Config":{"Labels":{"key":1}}}]"#,
+            "not json",
+        ] {
+            let error = parse_image_inspect(output).expect_err("{output} must be refused");
+            assert_eq!(
+                error.first_id(),
+                Some(ErrorId::ExternalOutputUnparseable),
+                "output {output} produced the wrong error"
+            );
         }
     }
 

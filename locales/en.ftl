@@ -87,6 +87,9 @@ error-target-configuration-mismatch = { $project } was registered to be built as
 error-rebuild-intent-pending = { $project } is in the middle of a rebuild, so its first build cannot be continued.
 
 error-host-clone-unusable = The clone at { $path } cannot be used for this project: { $detail }
+error-image-unusable = The image { $image } cannot be used for this project: { $detail }
+error-build-context-not-empty = The build context { $path } holds { $observed } entries, but sbxm builds only from an empty one.
+warning-build-context-left-behind = The temporary build context { $path } could not be removed: { $detail }
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 

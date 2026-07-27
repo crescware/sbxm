@@ -86,6 +86,10 @@ pub enum ErrorId {
     // --- Host clone ---
     HostCloneUnusable,
 
+    // --- Image ---
+    ImageUnusable,
+    BuildContextNotEmpty,
+
     // --- 案件のhost path ---
     ProjectPathSymlink,
     ProjectPathUnexpectedType,
@@ -180,6 +184,9 @@ impl ErrorId {
             ErrorId::RebuildIntentPending => "rebuild-intent-pending",
 
             ErrorId::HostCloneUnusable => "host-clone-unusable",
+
+            ErrorId::ImageUnusable => "image-unusable",
+            ErrorId::BuildContextNotEmpty => "build-context-not-empty",
 
             ErrorId::ProjectPathSymlink => "project-path-symlink",
             ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
@@ -493,6 +500,8 @@ mod tests {
             ErrorId::SandboxNameCollision,
             ErrorId::InvalidBranchName,
             ErrorId::HostCloneUnusable,
+            ErrorId::ImageUnusable,
+            ErrorId::BuildContextNotEmpty,
             ErrorId::ProjectPathSymlink,
             ErrorId::ProjectPathUnexpectedType,
             ErrorId::ProjectPathUnreadable,

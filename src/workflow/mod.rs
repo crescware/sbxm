@@ -5,6 +5,7 @@
 
 pub mod add;
 pub mod host_clone;
+pub mod image;
 pub mod init;
 pub mod status_global;
 
