@@ -3,6 +3,7 @@
 //! stdoutは正常結果に使用する。状態値は翻訳しないため、正本locale以外ではtableへ
 //! 状態値の凡例を加える。stderrはprompt、warning、errorに使用する。
 
+pub mod add;
 pub mod init;
 pub mod status_global;
 

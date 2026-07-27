@@ -13,8 +13,8 @@ use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::msg;
 use crate::project::CanonicalProjectId;
 
-/// `~/.sbxm`のpermission。
-pub const CONFIG_DIR_MODE: u32 = 0o700;
+/// `~/.sbxm`と案件の`.sbxm`のような、利用者専用directoryのpermission。
+pub const PRIVATE_DIR_MODE: u32 = 0o700;
 /// `~/.sbxm/config.toml`とproject metadataのpermission。
 pub const PRIVATE_FILE_MODE: u32 = 0o600;
 /// lock取得の待機上限。
@@ -208,7 +208,7 @@ impl PathScope {
         )
     }
 
-    fn unreadable_error(self, path: &Path, detail: &str) -> Error {
+    pub fn unreadable_error(self, path: &Path, detail: &str) -> Error {
         match self {
             PathScope::ConfigFile | PathScope::ConfigDir => Error::new(
                 ErrorId::ConfigUnreadable,
@@ -227,6 +227,21 @@ impl PathScope {
                 ),
             ),
         }
+    }
+}
+
+/// pathが通常fileとして存在するかを、symlinkを追跡せずに判定する。
+///
+/// symlink、directory、特殊fileは、内容を変更せず拒否する。
+pub fn regular_file_exists(path: &Path, scope: PathScope) -> Result<bool> {
+    if is_symlink(path) {
+        return Err(scope.symlink_error(path));
+    }
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(true),
+        Ok(metadata) => Err(unexpected_type(path, "regular file", &metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(scope.unreadable_error(path, &error.to_string())),
     }
 }
 
@@ -888,9 +903,9 @@ mod tests {
     fn private_dir_is_created_with_the_requested_mode() {
         let dir = temp_dir();
         let target = dir.path().join("sbxm");
-        ensure_private_dir(&target, CONFIG_DIR_MODE, PathScope::ConfigDir).expect("create");
+        ensure_private_dir(&target, PRIVATE_DIR_MODE, PathScope::ConfigDir).expect("create");
         let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, CONFIG_DIR_MODE);
+        assert_eq!(mode, PRIVATE_DIR_MODE);
     }
 
     #[test]
@@ -900,7 +915,7 @@ mod tests {
         fs::create_dir(&target).expect("create");
         fs::set_permissions(&target, fs::Permissions::from_mode(0o777)).expect("widen");
 
-        let error = ensure_private_dir(&target, CONFIG_DIR_MODE, PathScope::ConfigDir)
+        let error = ensure_private_dir(&target, PRIVATE_DIR_MODE, PathScope::ConfigDir)
             .expect_err("an open directory is not repaired automatically");
         assert_eq!(error.first_id(), Some(ErrorId::ConfigDirPermissionTooOpen));
         let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
@@ -915,7 +930,7 @@ mod tests {
         let link = dir.path().join("link");
         std::os::unix::fs::symlink(&real, &link).expect("symlink");
 
-        let error = ensure_private_dir(&link, CONFIG_DIR_MODE, PathScope::ConfigDir)
+        let error = ensure_private_dir(&link, PRIVATE_DIR_MODE, PathScope::ConfigDir)
             .expect_err("symlinked directories are refused");
         assert_eq!(error.first_id(), Some(ErrorId::ConfigDirSymlink));
     }

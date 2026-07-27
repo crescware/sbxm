@@ -80,6 +80,8 @@ pub enum ErrorId {
     MetadataDuplicateProject,
     SandboxNameCollision,
     InvalidBranchName,
+    TargetConfigurationMismatch,
+    RebuildIntentPending,
 
     // --- 案件のhost path ---
     ProjectPathSymlink,
@@ -171,6 +173,8 @@ impl ErrorId {
             ErrorId::MetadataDuplicateProject => "metadata-duplicate-project",
             ErrorId::SandboxNameCollision => "sandbox-name-collision",
             ErrorId::InvalidBranchName => "invalid-branch-name",
+            ErrorId::TargetConfigurationMismatch => "target-configuration-mismatch",
+            ErrorId::RebuildIntentPending => "rebuild-intent-pending",
 
             ErrorId::ProjectPathSymlink => "project-path-symlink",
             ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
@@ -471,6 +475,8 @@ mod tests {
             ErrorId::FileDeclarationInvalidDestination,
             ErrorId::MetadataUnreadable,
             ErrorId::MetadataInvalidSyntax,
+            ErrorId::TargetConfigurationMismatch,
+            ErrorId::RebuildIntentPending,
             ErrorId::MetadataUnknownVersion,
             ErrorId::MetadataMissingField,
             ErrorId::MetadataInvalidValue,

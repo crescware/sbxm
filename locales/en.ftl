@@ -83,6 +83,8 @@ error-metadata-path-mismatch = The metadata at { $path } declares { $canonical_i
 error-metadata-duplicate-project = { $canonical_id } is declared by more than one project directory: { $paths }
 error-sandbox-name-collision = Sandbox name { $sandbox } is derived from more than one project: { $projects }
 error-invalid-branch-name = { $value } is not a usable branch name: { $detail }
+error-target-configuration-mismatch = { $project } was registered to be built as { $stored }, but this run asks for { $requested }.
+error-rebuild-intent-pending = { $project } is in the middle of a rebuild, so its first build cannot be continued.
 
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
@@ -113,6 +115,8 @@ error-network-policy-unobservable = The network policy could not be read: { $det
 error-daemon-unobservable = The Docker Sandboxes daemon state could not be read: { $detail }
 remediation-run-help = Run { $command } to see the accepted arguments.
 remediation-run-init = Run sbxm init to create the global configuration.
+remediation-run-rebuild = Run { $command } to finish the rebuild.
+remediation-target-configuration-mismatch = Run { $command } without those options to continue with the stored target, or destroy the project first to build it differently.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.
 remediation-fix-config = Edit { $path } and run the command again.
 remediation-install-command = Install { $command } and make sure it is on PATH.

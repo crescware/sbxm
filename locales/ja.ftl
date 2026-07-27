@@ -83,6 +83,8 @@ error-metadata-path-mismatch = { $path } のmetadataは { $canonical_id } を宣
 error-metadata-duplicate-project = { $canonical_id } を複数の案件directoryが宣言しています: { $paths }
 error-sandbox-name-collision = Sandbox名 { $sandbox } が複数の案件から導出されています: { $projects }
 error-invalid-branch-name = { $value } はbranch名として使用できません: { $detail }
+error-target-configuration-mismatch = { $project } は { $stored } として構築するよう登録されていますが、この実行は { $requested } を指定しています。
+error-rebuild-intent-pending = { $project } は再構築の途中であるため、初回構築を継続できません。
 
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
@@ -113,6 +115,8 @@ error-network-policy-unobservable = network policyを読み取れません: { $d
 error-daemon-unobservable = Docker Sandboxes daemonの状態を読み取れません: { $detail }
 remediation-run-help = { $command } を実行すると指定できる引数を確認できます。
 remediation-run-init = sbxm init を実行してglobal設定を作成してください。
+remediation-run-rebuild = { $command } を実行して再構築を完了してください。
+remediation-target-configuration-mismatch = 保存済みの目標構成で続けるには { $command } をoptionなしで実行し、別の構成で作り直すには先に案件を破棄してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。
 remediation-fix-config = { $path } を編集してからもう一度実行してください。
 remediation-install-command = { $command } を導入し、PATH上に置いてください。
