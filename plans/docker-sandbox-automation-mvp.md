@@ -8,6 +8,19 @@
 
 実際の案件でMVPを使い、操作感を確認した後に設定項目や対応環境を拡張する。
 
+### コードオーナーの設計思想
+
+`sbxm`は、初心者向けの分かりやすさとプロフェッショナル向けの正確さを対立させない。同じ操作と出力が、経験の異なる利用者、人間とscript、日本語話者と英語話者の双方に役立つよう設計する。
+
+- 初心者には、日本語による状態説明、危険性、具体的な対処方法を提供する
+- ベテランや英語話者との共有には、英語を併記した診断ラベルと安定した英語のenum値を提供する
+- 人間が対象を省略した場合は、安全な対話選択を提供する
+- scriptや反復作業で対象を明示した場合は、案件選択promptを出さず決定的に実行する
+- 調査時には、選択言語による説明とともに外部commandのstderr原文を保持する
+- 日常利用には、全管理案件を短く確認できる`ls`を提供する
+
+便利さのために暗黙の文脈へ依存せず、画面に表示された情報だけで安全な判断、再現、他者への共有ができるCLIを目指す。新しい機能や省略記法を検討するときも、この原則に照らして初心者とプロのどちらか一方へ不要な危険や摩擦を押し付けないかを判断する。
+
 ## 2. CLIの操作モデル
 
 ### 2.1 設計原則
@@ -55,6 +68,64 @@ sbxm rm [project]
 
 `rm`の削除確認は案件選択promptとは別の安全確認であるため、引数指定時にも省略しない。それ以外のコマンドは、引数指定時にpromptを表示しない。
 
+### 2.3 表示言語
+
+セキュリティ上の状態、危険性、対処方法を利用者が理解できることをMVPの要件とする。日本語対応を付加的な翻訳機能ではなく、初学者を含む日本語話者が安全性を判断するための中核機能として扱う。
+
+MVPでは日本語と英語を組み込み、すべての利用者向け表示を翻訳辞書から生成する。
+
+- helpとusage
+- 対話prompt
+- 状態表示
+- warningとerror
+- errorの原因説明と対処方法
+- 破壊操作の確認
+- SSH Agent露出などのsecurity診断
+
+初回の`sbxm init`ではmacOSの優先言語を確認する。
+
+- 優先言語の先頭が`ja`または`ja-*`: Japanese / Englishの選択promptを表示する
+- それ以外: promptを出さず`en`に確定する
+- macOSの優先言語を取得できない: shell localeへfallbackし、それも判定できなければ`en`にする
+
+決定した言語はglobal configへ保存する。通常実行ではconfigを使用し、global optionの`--lang <locale>`が指定された場合だけ一時的に上書きする。
+
+```text
+sbxm --lang ja status owner/foo
+sbxm --lang en status owner/foo
+```
+
+locale識別子はBCP 47に沿う形を使用する。MVPは`ja`と`en`だけを組み込むが、将来`ko`、`zh-CN`、`zh-TW`などを翻訳辞書の追加で組み込める構造にする。
+
+日本語モードでは、診断結果を異なる言語の利用者同士で共有できるように、`ls`、`status`、error詳細、security診断などの技術的なラベルを`日本語 (English)`で表示する。
+
+```text
+案件 (Project):                 owner/foo
+Sandbox状態 (Sandbox state):    stopped
+ホスト側clone (Host clone):     ready
+SSH Agent露出 (SSH agent):      not-exposed
+```
+
+英語モードでは英語ラベルだけを表示する。説明文や対処手順まで常に日英併記すると可読性が下がるため、二言語併記は診断・共有に必要なラベルへ限定する。
+
+状態値などのenum、path、command、exit status、外部commandの出力は翻訳しない。これにより、日本語モードの出力を英語話者と共有するときも、表示言語を切り替えずに項目を特定でき、検索や再現に使う値も変化しない。
+
+英語以外のモードでは、出力に現れたenum値を選択言語で説明する凡例を出力末尾に表示する。英語モードでは凡例を表示しない。
+
+```text
+案件 (Project)  Sandbox状態 (Sandbox state)
+owner/foo        running
+owner/bar        stopped
+owner/baz        not-created
+
+凡例 (Legend):
+  running      起動中
+  stopped      停止中
+  not-created  未作成
+```
+
+凡例には、その出力に実際に現れた値だけを重複なく表示する。enum値自体と並び順はlocaleによって変更しない。将来追加する言語でも、辞書にenum値の説明を加えることで同じ仕組みを利用できるようにする。
+
 ## 3. MVPの前提
 
 MVPでは次を固定する。
@@ -71,6 +142,7 @@ MVPでは次を固定する。
 - Sandbox imageは`docker/sandbox-templates:shell-docker`を基にする
 - SandboxへホストのSSH Agent、SSH秘密鍵、Docker socketを渡さない
 - GitHub認証には案件単位のDocker Sandboxes secretを使用する
+- 組み込み表示言語は日本語と英語とする
 - 既存Sandboxや既存ファイルを暗黙に削除または上書きしない
 - `sbx`が保持する稼働状態を`sbxm`側へ複製しない
 
@@ -88,6 +160,7 @@ MVPでは次を固定する。
 
 ```toml
 version = 1
+language = "ja"
 base_path = "/Users/example/Projects"
 
 [git]
@@ -98,6 +171,7 @@ user_email = "user@example.com"
 責務:
 
 - `base_path`は全案件のホスト側配置の基準とする
+- `language`は通常実行時の表示言語とする
 - Git identityはSandbox内で使用する既定値とする
 - secret、token、Sandboxの稼働状態は保存しない
 - 将来の形式変更に備えて`version`を必須とする
@@ -148,6 +222,46 @@ Sandbox名、Template image名、project root、Dockerfile path、cache path、�
 
 Dockerfileは利用者が確認・編集できる案件別ファイルとして生成する。MVPでは組み込みtemplateから初回だけ作り、既存ファイルを暗黙に上書きしない。
 
+### 4.4 翻訳辞書
+
+翻訳辞書はFluent Translation List形式のresource fileとしてrepository内に置き、binaryへ組み込む。
+
+```text
+locales/
+├── en.ftl
+└── ja.ftl
+```
+
+英語辞書をmessage IDの正本とする。message IDは表示文そのものではなく、意味と用途を表す安定した名前にする。
+
+```text
+sandbox-list-failed
+project-select-prompt
+project-remove-confirmation
+security-ssh-agent-exposed-title
+security-ssh-agent-exposed-description
+security-ssh-agent-exposed-remediation
+```
+
+翻訳済みの短い断片をRust側で連結して文章を作らない。path、command、exit statusなどの動的な値はplaceholderとして辞書へ渡し、全言語でplaceholder名を一致させる。
+
+外部commandのstdoutとstderrは翻訳せず原文を保持する。その前に`sbxm`が選択言語で失敗の意味、考えられる原因、対処方法を表示し、利用者が理解できる説明と検索可能な原文を両方残す。
+
+診断ラベルは通常の文章messageと分け、安定したmessage IDを持たせる。日本語辞書の診断ラベルには対応する英語表記を含める。
+
+```text
+label-project = 案件 (Project)
+label-sandbox-state = Sandbox状態 (Sandbox state)
+label-command = 実行コマンド (Command)
+label-exit-status = 終了状態 (Exit status)
+label-legend = 凡例 (Legend)
+enum-sandbox-state-running = 起動中
+enum-sandbox-state-stopped = 停止中
+enum-sandbox-state-not-created = 未作成
+```
+
+組み込みの日本語・英語では翻訳欠落をtest failureとする。将来追加されるlocaleでmessageが欠落した場合は英語へfallbackできる設計にするが、fallbackの発生を検出可能にする。
+
 ## 5. コマンド設計
 
 ### 5.1 `sbxm init`
@@ -156,15 +270,16 @@ Dockerfileは利用者が確認・編集できる案件別ファイルとして�
 
 実行内容:
 
-1. macOS versionとCPU architectureを確認する
-2. `brew`、Docker Client・Server、`gh`、`sbx`の存在とversionを確認する
-3. Docker Engineへ接続できることを確認する
-4. `sbx`が未導入の場合は公式のHomebrew installコマンドを表示する
-5. `sbx login`が必要な場合は対話commandを起動する
-6. network policyを表示し、未設定の場合は`Balanced`を選ぶよう案内する
-7. `sbx setup ssh`を実行する
-8. `base_path`、Git user name、Git user emailを対話的に取得する
-9. `~/.sbxm/config.toml`を安全なpermissionで作成する
+1. macOSの優先言語を確認し、日本語環境だけJapanese / Englishの選択promptを表示する
+2. macOS versionとCPU architectureを確認する
+3. `brew`、Docker Client・Server、`gh`、`sbx`の存在とversionを確認する
+4. Docker Engineへ接続できることを確認する
+5. `sbx`が未導入の場合は公式のHomebrew installコマンドを表示する
+6. `sbx login`が必要な場合は対話commandを起動する
+7. network policyを表示し、未設定の場合は`Balanced`を選ぶよう案内する
+8. `sbx setup ssh`を実行する
+9. `base_path`、Git user name、Git user emailを対話的に取得する
+10. 選択した`language`を含む`~/.sbxm/config.toml`を安全なpermissionで作成する
 
 Homebrew packageのinstallはマシングローバルな変更となるため自動実行せず、正確なコマンドを表示して終了する。利用者がinstall後に`sbxm init`を再実行すると残りの確認から続行する。
 
@@ -414,6 +529,7 @@ src/
 ├── main.rs
 ├── cli.rs
 ├── config.rs
+├── i18n.rs
 ├── project.rs
 ├── paths.rs
 ├── command.rs
@@ -431,6 +547,7 @@ src/
 
 - `cli`: 7つの公開コマンドとargumentの定義
 - `config`: TOMLの読み書き、version検証
+- `i18n`: locale決定、辞書load、message format、fallback検出
 - `project`: 案件探索、対象解決、案件メタデータ
 - `paths`: 全導出pathの一元管理
 - `command`: 外部process実行、環境変数制御、error整形
@@ -443,13 +560,32 @@ src/
 
 - `clap`: CLI parser
 - `dialoguer`: 既定選択のない案件選択promptと削除確認
+- `fluent-bundle`: FTL翻訳辞書のloadとmessage format
+- `unic-langid`: BCP 47 locale識別子のparseと照合
 - `serde`と`toml`: 設定形式
 - `thiserror`: 利用者向けに文脈を付けたerror
 - `dirs`: home directoryの解決
 
 外部コマンドはRust libraryで再実装せず、引数配列を使って`git`、`docker`、`sbx`、`ssh`を呼び出す。shell文字列を組み立てないことで、owner名やpathのshell injectionを避ける。
 
-### 8.3 workflowの再開
+### 8.3 翻訳の実装規則
+
+- 利用者向け文字列をRust sourceへ直接埋め込まない
+- message IDを通して辞書から表示する
+- help、usage、prompt、正常出力、warning、errorを同じ仕組みで扱う
+- 英語をmessage IDとfallbackの正本にする
+- 組み込みの日本語と英語は全message IDを必須とする
+- 全言語でplaceholder名と必須placeholderを一致させる
+- security messageは少なくともtitle、description、remediationを持つ
+- 日本語の診断ラベルは対応する英語表記を括弧内に含める
+- 二言語併記は診断ラベルに限定し、説明文と対処手順は選択言語だけで表示する
+- enum値、path、command、exit statusはlocaleによって変更しない
+- 英語以外のlocaleでは、出力に現れたenum値の説明を選択言語の凡例として表示する
+- 英語localeではenum値の凡例を表示しない
+- 外部commandの出力は原文を保持し、選択言語による説明と分離して表示する
+- 翻訳format自体に失敗した場合は、そのmessage IDとlocaleを示して安全にerror終了する
+
+### 8.4 workflowの再開
 
 `add`の各内部工程は次のinterfaceを持つ単位として設計する。
 
@@ -464,13 +600,14 @@ src/
 
 不完全な成果物を自動削除してやり直さない。安全に再利用できない状態では、対象と手動復旧方法を表示して停止する。
 
-### 8.4 安全性の共通規則
+### 8.5 安全性の共通規則
 
 - ownerは`[A-Za-z0-9-]+`、repository名は`[A-Za-z0-9._-]+`で検証する
 - `base_path`は絶対pathかつ末尾のslashを除いた形で保持する
 - pathを文字列連結せず`PathBuf`で構築する
 - secret値をcommand argument、log、configへ書かない
 - 外部commandの失敗時はstatusと安全なstderrを示す
+- security warningには危険性と具体的な対処方法を選択言語で表示する
 - current directoryから操作対象を推測しない
 - 引数指定時は案件選択promptを出さず、引数省略時だけTTY上でpromptを出す
 - 非TTYで対象引数を省略した場合はusage errorで終了する
@@ -487,6 +624,9 @@ src/
 
 - Cargo projectを作成する
 - command parserと共通error表示を実装する
+- `en.ftl`と`ja.ftl`を追加し、翻訳辞書のloadとformatを実装する
+- macOSの優先言語、shell locale、`--lang`、configによるlocale決定を実装する
+- help、usage、prompt、errorの翻訳経路を実装する
 - 前提commandとversionの検出を実装する
 - global configのschema、permission、読み書きを実装する
 - 案件metadata、全案件探索、明示的な案件識別子、導出pathを実装する
@@ -497,6 +637,11 @@ src/
 完了条件:
 
 - 未導入の前提commandと未起動のDocker Engineを明確に報告できる
+- 英語環境では選択promptなしで`en`を保存できる
+- 日本語環境ではJapanese / Englishを選択して保存できる
+- `--lang`で保存済み言語を一時的に上書きできる
+- help、usage、prompt、errorを日本語と英語で表示できる
+- 日本語の診断出力を言語変更せず英語話者と項目単位で共有できる
 - `sbx setup ssh`までの初回準備を一巡できる
 - 一時HOMEを用いたtestで`~/.sbxm/config.toml`を安全に作成できる
 - `init`を再実行して既存設定を上書きしない
@@ -577,6 +722,22 @@ src/
 - promptに既定選択がなく、Enterだけで対象を確定しないこと
 - promptのEsc・Ctrl-Cによる副作用なしの終了
 - 引数省略かつ非TTYでのusage error
+- locale決定の優先順位と英語環境でのprompt省略
+- 日本語環境でのJapanese / English選択
+- `--lang`による一時上書き
+- `en.ftl`と`ja.ftl`のmessage ID完全一致
+- 全locale間のplaceholder一致
+- FTL syntax errorの検出
+- 日本語と英語のhelp、usage、prompt、errorのsnapshot
+- 日本語の全診断ラベルに対応する英語表記が含まれること
+- localeを変更してもenum値、path、command、exit statusが変化しないこと
+- 英語以外のlocaleで、出力に現れたenum値だけが重複なく凡例へ表示されること
+- 英語localeでenum値の凡例が表示されないこと
+- 全組み込みlocaleでenum値の説明が欠落していないこと
+- 説明文と対処手順が不要に二言語併記されないこと
+- security messageにtitle、description、remediationが存在すること
+- 外部stderrが原文のまま保持され、その前に選択言語の説明が表示されること
+- 組み込みlocaleでfallbackが発生しないこと
 - 入力値検証
 - 外部commandへ渡すprogram、arguments、cwd、environment
 - `SSH_AUTH_SOCK`の除外
@@ -597,25 +758,31 @@ src/
 
 実機でのみ確認できる内容は、専用のtest repositoryを使って手動検証する。
 
-1. `sbxm init`による前提確認、global config、SSH連携
-2. `sbxm add`によるhost側clone、image build、Template load
-3. secret未登録による安全な中断
-4. secret登録後の`add`再開とSandbox内clone
-5. 中立Workspaceとホストpathの非露出
-6. その日の最初の`open`と安全なdaemon起動
-7. Sandbox内の`SSH_AUTH_SOCK`と`ssh-add -L`
-8. Remote SSH接続と開始directory
-9. 2案件目の`open`でdaemonを不要に再起動しないこと
-10. 複数案件の起動、切り替え、一括停止
-11. stop後の状態保持と翌日の再起動
-12. `ls`による`running`、`stopped`、`not-created`の一覧
-13. `sbx ls`失敗時に推測した一覧を出さないこと
-14. 未管理Sandboxの分離表示
-15. 引数指定時のpromptなし実行
-16. 引数省略時の案件選択、キャンセル、非TTY拒否
-17. `status`による単一案件の構築・隔離診断
-18. `rm`の案件選択とは独立した保存・削除確認
-19. `rm`後の保持対象
+1. 英語環境の`sbxm init`でpromptなしに`en`が選ばれること
+2. 日本語環境の`sbxm init`でJapanese / Englishを選択できること
+3. 日本語と英語のhelp、error、security warningと対処方法
+4. 日本語モードの診断ラベルが英語話者にも識別可能であること
+5. 日本語モードでenum値が英語のまま表示され、日本語の凡例が付くこと
+6. 英語モードではenum値の凡例が付かないこと
+7. `sbxm init`による前提確認、global config、SSH連携
+8. `sbxm add`によるhost側clone、image build、Template load
+9. secret未登録による安全な中断
+10. secret登録後の`add`再開とSandbox内clone
+11. 中立Workspaceとホストpathの非露出
+12. その日の最初の`open`と安全なdaemon起動
+13. Sandbox内の`SSH_AUTH_SOCK`と`ssh-add -L`
+14. Remote SSH接続と開始directory
+15. 2案件目の`open`でdaemonを不要に再起動しないこと
+16. 複数案件の起動、切り替え、一括停止
+17. stop後の状態保持と翌日の再起動
+18. `ls`による`running`、`stopped`、`not-created`の一覧
+19. `sbx ls`失敗時に推測した一覧を出さないこと
+20. 未管理Sandboxの分離表示
+21. 引数指定時のpromptなし実行
+22. 引数省略時の案件選択、キャンセル、非TTY拒否
+23. `status`による単一案件の構築・隔離診断
+24. `rm`の案件選択とは独立した保存・削除確認
+25. `rm`後の保持対象
 
 ## 11. 最初の利用後にレビューする論点
 
@@ -624,6 +791,10 @@ MVPを実案件またはtest repositoryで一巡した後、次をレビュー�
 - `init`、`add`、`open`、`stop`、`ls`、`status`、`rm`の語彙と粒度は自然か
 - `ls`と`status`の責務分担は日常利用で自然か
 - 明示引数と対話選択の使い分けは業務利用で安全か
+- 日本語のsecurity messageは初学者が危険性と対処を判断できるか
+- 日本語の診断ラベルに英語を併記する範囲は過不足ないか
+- 英語以外のモードに付けるenum値の凡例は理解を助け、過度に冗長ではないか
+- 翻訳辞書だけで新しいlocaleを追加できる構造になっているか
 - `add`の中断理由と再開方法が利用者に明確か
 - daemon再起動確認が日常利用の妨げにならないか
 - runtime markerによる安全なdaemonの判定は十分に堅牢か
