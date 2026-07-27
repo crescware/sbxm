@@ -10,6 +10,7 @@ pub mod host_clone;
 pub mod identity;
 pub mod image;
 pub mod init;
+pub mod inventory;
 pub mod repository;
 pub mod sandbox;
 pub mod secret;
