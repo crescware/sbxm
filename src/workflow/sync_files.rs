@@ -325,8 +325,8 @@ mod tests {
 
         let (_home, config, workspace_root) = setup(vec![declaration(&source)]);
         let paths = write_metadata(&config, None);
-        let host = FakeSbx::listing(&listing(&workspace_root, "running"))
-            .watching_lock(paths.lock_file());
+        let host =
+            FakeSbx::listing(&listing(&workspace_root, "running")).watching_lock(paths.lock_file());
 
         run(&config, &project(), &host, &workspace_root).expect("sync");
 

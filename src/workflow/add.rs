@@ -241,7 +241,7 @@ pub fn run(
     let layout = SandboxLayout::new(&registration.metadata.canonical_id);
     let mut warnings = Vec::new();
 
-    if let Some(output) = already_built(host, &registration, &layout)? {
+    if let Some(output) = already_built(host, &registration, &layout, workspace_root)? {
         return Ok(output);
     }
 
@@ -304,10 +304,15 @@ pub fn run(
 }
 
 /// 構築が完了している案件を、何も変更せずに報告する。
+///
+/// metadataが構築完了を宣言していることだけでは足りない。名前が一致するSandboxが、
+/// この案件のworkspaceで、この案件のTemplateから動いていることを観測できた場合だけ
+/// 構築済みとして報告し、確認できない場合は同じ工程と同じ診断で停止する。
 fn already_built(
     host: &dyn HostEnvironment,
     registration: &Registration,
     layout: &SandboxLayout,
+    workspace_root: &Path,
 ) -> Result<Option<AddOutput>> {
     let metadata = &registration.metadata;
     let provisioning = &metadata.provisioning;
@@ -324,6 +329,10 @@ fn already_built(
     else {
         return Ok(None);
     };
+
+    // Templateは、metadataが適用済みとして持つ世代から導出する。
+    let template = image::image_name(&registration.sandbox, &provisioning.dockerfile_sha256);
+    sandbox::verify_identity(&entry, &registration.sandbox, &template, workspace_root)?;
 
     let worktrees = observed_worktrees(host, &entry.name, layout, metadata)?;
     Ok(Some(AddOutput {
@@ -535,6 +544,175 @@ mod tests {
             .permissions()
             .mode()
             & 0o777
+    }
+
+    const COMMIT: &str = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
+
+    /// `sbx ls`だけを答え、Sandbox内のcommandは成功として扱うhost。
+    struct FakeSbx {
+        listing: String,
+        calls: std::cell::RefCell<Vec<Vec<String>>>,
+    }
+
+    impl FakeSbx {
+        fn listing(output: &str) -> FakeSbx {
+            FakeSbx {
+                listing: output.to_string(),
+                calls: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+
+        fn ran(&self, needle: &str) -> bool {
+            self.calls
+                .borrow()
+                .iter()
+                .any(|args| args.join(" ").contains(needle))
+        }
+    }
+
+    impl crate::command::HostEnvironment for FakeSbx {
+        fn command_exists(&self, _program: &str) -> bool {
+            true
+        }
+
+        fn run(
+            &self,
+            spec: &crate::command::CommandSpec,
+        ) -> Result<crate::command::CommandOutcome> {
+            use std::os::unix::process::ExitStatusExt;
+            self.calls.borrow_mut().push(spec.args.clone());
+            let stdout = if spec.args.first().is_some_and(|arg| arg == "ls") {
+                self.listing.clone()
+            } else if spec.args.iter().any(|arg| arg == "rev-parse") {
+                format!("{COMMIT}\n")
+            } else {
+                String::new()
+            };
+            Ok(crate::command::CommandOutcome {
+                program: spec.program.clone(),
+                args: spec.args.clone(),
+                working_dir: spec.working_dir.clone(),
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: stdout.into_bytes(),
+                stderr: Vec::new(),
+                stderr_lossy: false,
+            })
+        }
+    }
+
+    /// 構築完了を宣言するmetadataへ書き換える。
+    fn record_complete_build(registration: &Registration) {
+        let mut metadata = registration.metadata.clone();
+        metadata.provisioning.start_ref = Some("main".to_string());
+        metadata.managed_worktrees = vec![crate::metadata::ManagedWorktree {
+            path: "example-repo.tree-0".to_string(),
+            created_from: crate::git::origin_ref("main"),
+        }];
+        metadata::update(&registration.paths, &metadata).expect("record the finished build");
+    }
+
+    fn sandbox_listing(name: &str, workspace: &Path, template: &str) -> String {
+        format!(
+            r#"[{{"name":"{name}","state":"running","workspace":"{}","template":"{template}","active_sessions":0}}]"#,
+            workspace.display()
+        )
+    }
+
+    #[test]
+    fn a_finished_project_is_reported_without_changing_anything() {
+        let (_dir, config) = setup();
+        let home = tempfile::tempdir().unwrap();
+        let location = ConfigLocation::from_home(home.path().to_path_buf());
+        let workspace_root = tempfile::tempdir().unwrap();
+
+        let registration =
+            register(&config, &request("example-org/example-repo", None, None)).expect("register");
+        record_complete_build(&registration);
+        let sandbox = registration.sandbox.clone();
+        let template = image::image_name(&sandbox, &registration.dockerfile_sha256);
+        let paths = registration.paths.clone();
+        drop(registration);
+
+        let host = FakeSbx::listing(&sandbox_listing(
+            sandbox.as_str(),
+            &sandbox::workspace_path(workspace_root.path(), &sandbox),
+            &template,
+        ));
+        let before = fs::read_to_string(paths.metadata_file()).unwrap();
+
+        let output = run(
+            &config,
+            &location,
+            &request("example-org/example-repo", None, None),
+            &host,
+            workspace_root.path(),
+        )
+        .expect("a finished project is a no-op success");
+
+        assert!(output.already_built);
+        assert_eq!(output.sandbox, sandbox.as_str());
+        assert_eq!(output.worktrees.len(), 1);
+        assert_eq!(output.worktrees[0].head.as_deref(), Some(COMMIT));
+        for forbidden in ["create", "build", "image save", "template load", "clone"] {
+            assert!(
+                !host.ran(forbidden),
+                "a finished project must not run {forbidden}: {:?}",
+                host.calls.borrow()
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(paths.metadata_file()).unwrap(),
+            before,
+            "the metadata of a finished project is left as it is"
+        );
+    }
+
+    #[test]
+    fn a_sandbox_that_cannot_be_identified_is_never_reported_as_finished() {
+        let (_dir, config) = setup();
+        let home = tempfile::tempdir().unwrap();
+        let location = ConfigLocation::from_home(home.path().to_path_buf());
+        let workspace_root = tempfile::tempdir().unwrap();
+
+        let registration =
+            register(&config, &request("example-org/example-repo", None, None)).expect("register");
+        record_complete_build(&registration);
+        let sandbox = registration.sandbox.clone();
+        let template = image::image_name(&sandbox, &registration.dockerfile_sha256);
+        let workspace = sandbox::workspace_path(workspace_root.path(), &sandbox);
+        drop(registration);
+
+        let elsewhere = workspace_root.path().join("elsewhere");
+        fs::create_dir_all(&elsewhere).unwrap();
+        let cases = [
+            // 別のworkspaceで動いているSandbox。
+            sandbox_listing(sandbox.as_str(), &elsewhere, &template),
+            // 別のTemplateから作られたSandbox。
+            sandbox_listing(
+                sandbox.as_str(),
+                &workspace,
+                "sbxm-other-template:222222222222",
+            ),
+            // workspaceもTemplateも報告しないruntime。
+            format!(r#"[{{"name":"{sandbox}","state":"running","active_sessions":0}}]"#),
+        ];
+
+        for listing in cases {
+            let host = FakeSbx::listing(&listing);
+            let error = run(
+                &config,
+                &location,
+                &request("example-org/example-repo", None, None),
+                &host,
+                workspace_root.path(),
+            )
+            .expect_err("a sandbox that cannot be identified is not this project's");
+            assert_eq!(
+                error.first_id(),
+                Some(ErrorId::SandboxUnusable),
+                "listing {listing} produced the wrong error"
+            );
+        }
     }
 
     #[test]
