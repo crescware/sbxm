@@ -101,7 +101,26 @@ Dockerfileは利用者が確認・編集できる案件別ファイルとして�
 
 MVPで提供するコマンドを次に絞る。
 
-### 4.1 `sbxm config init`
+### 4.1 `sbxm machine setup`
+
+Macで最初の1回だけ必要な準備を案内・確認する。
+
+実行内容:
+
+1. macOS versionとCPU architectureを確認する
+2. `brew`、Docker Client・Server、`gh`、`sbx`の存在とversionを確認する
+3. Docker Engineへ接続できることを確認する
+4. `sbx`が未導入の場合は、公式のHomebrew installコマンドを表示する
+5. `sbx login`が必要な場合は対話commandを起動する
+6. network policyを表示し、未設定の場合は`Balanced`を選ぶよう案内する
+7. `sbx setup ssh`を実行する
+8. `sbxm config init`相当のglobal config作成を行う
+
+Homebrew packageのinstallはマシングローバルな変更となるため自動実行せず、正確なコマンドを表示して終了する。利用者がinstall後に再実行すると、残りの確認から続行する。
+
+このcommandは再実行可能とする。完了済みの項目は成功として扱い、既存global configは上書きしない。
+
+### 4.2 `sbxm config init`
 
 global configを対話的に作成する。
 
@@ -111,7 +130,7 @@ global configを対話的に作成する。
 
 既存configがある場合は上書きせず終了する。変更用コマンドはMVPに含めず、ファイルを直接編集してもらう。
 
-### 4.2 `sbxm init <github-owner>/<repository-name>`
+### 4.3 `sbxm init <github-owner>/<repository-name>`
 
 案件のホスト側構成を初期化する。
 
@@ -126,7 +145,7 @@ global configを対話的に作成する。
 
 既存ファイルや既存cloneを発見した場合は、処理済みの範囲と衝突箇所を示して停止する。MVPでは不完全なdirectoryを推測して引き継がない。
 
-### 4.3 `sbxm create`
+### 4.4 `sbxm create`
 
 案件directory内で実行し、Sandboxを作成する。
 
@@ -147,7 +166,7 @@ daemonがすでにSSH Agent付きで起動している可能性は、`sbx create
 
 daemon停止は他のSandbox操作へ影響し得るため、実行前に何をするかを表示して確認を求める。非対話実行への対応はMVP利用後に検討する。
 
-### 4.4 `sbxm setup`
+### 4.5 `sbxm project setup`
 
 作成済みSandbox内の初期設定を行う。
 
@@ -161,9 +180,9 @@ daemon停止は他のSandbox操作へ影響し得るため、実行前に何を�
 
 `mise trust`と`mise install`はrepository由来コードの実行につながるため、自動実行しない。必要なコマンドを案内する。
 
-GitHub fine-grained personal access tokenの発行はブラウザ操作が必要であり、`sbxm`は自動化しない。`setup`の前に実行する正確な`sbx secret set`コマンドを表示する。secret未登録の場合はcloneを開始せず、登録手順を示して終了する。
+GitHub fine-grained personal access tokenの発行はブラウザ操作が必要であり、`sbxm`は自動化しない。`project setup`の前に実行する正確な`sbx secret set`コマンドを表示する。secret未登録の場合はcloneを開始せず、登録手順を示して終了する。
 
-### 4.5 `sbxm status`
+### 4.6 `sbxm status`
 
 案件の構成と状態を読み取り専用で表示する。
 
@@ -178,17 +197,42 @@ GitHub fine-grained personal access tokenの発行はブラウザ操作が必要
 
 機密値は表示しない。
 
-### 4.6 `sbxm shell`
+### 4.7 `sbxm start`
 
-対象Sandboxを必要に応じて起動し、`ssh <sandbox-name>.sbx`へ接続する。
+対象Sandboxを日常作業のために起動する。
+
+実行内容:
+
+1. Docker Engineへ接続できることを確認する
+2. Docker Sandboxes daemonがSSH Agentを引き継がない状態を保証する
+3. 対象Sandboxの現在状態を確認する
+4. `stopped`の場合は`sbx exec <sandbox-name> /bin/true`で端末を占有せずに起動する
+5. すでに起動中の場合は成功として扱う
+6. Sandbox名、状態、SSH hostname、repository pathを表示する
+
+daemonがホストの再起動後などに新しく起動する日の最初の実行では、`sbx daemon stop`後に`SSH_AUTH_SOCK`を除外した`sbx ls`で起動する。すでに安全なdaemonで別案件を利用中の場合は、案件切り替えのたびにdaemonを再起動しない。
+
+Docker Sandboxesがdaemonの起動環境を判定できる機械可読な手段を提供しない場合、MVPでは`sbxm`が当日そのdaemonを安全に起動したことをprocess外のruntime markerで記録する。markerは再生成可能なruntime情報であり、global configには保存しない。MacまたはDocker Desktop再起動後に古いmarkerを信用しない判定方法は実装前に検証する。
+
+### 4.8 `sbxm shell`
+
+`sbxm start`と同じ安全確認と起動処理を行った後、`ssh <sandbox-name>.sbx`へ接続する。
 
 通常の開始位置はDockerfileのshell設定により`/home/agent/work`とする。repository clone済みの場合でも、MVPではSSH commandを複雑化せず、接続後に移動先を表示する。
 
-### 4.7 `sbxm stop`
+### 4.9 `sbxm stop`
 
 対象Sandboxを停止する。内部Git repository、設定、package、Docker imageは保持される。
 
-### 4.8 `sbxm destroy`
+複数案件をまとめて停止するため、案件directory外ではSandbox名を複数指定できるようにする。
+
+```text
+sbxm stop <sandbox-name-1> <sandbox-name-2> <sandbox-name-3>
+```
+
+引数なしで案件directory内から実行した場合は、その案件だけを停止する。MVPでは全Sandboxを暗黙に停止するoptionを設けない。
+
+### 4.10 `sbxm destroy`
 
 Sandboxを削除する。
 
@@ -202,12 +246,67 @@ Sandboxを削除する。
 
 確認後に`sbx rm`を実行する。ホスト側project directory、中立Workspace、Template archive、Docker imageは削除しない。
 
-## 5. MVPに含めないもの
+## 5. 日常利用の流れ
+
+### 5.1 その日の最初
+
+Docker Desktopを起動した後、最初に使う案件directoryで次を実行する。
+
+```text
+sbxm start
+```
+
+`sbxm start`はDocker Engineを確認し、Docker Sandboxes daemonをSSH Agentなしで安全に起動したうえで、対象Sandboxを起動する。初回だけdaemon再起動が必要な場合は、他の稼働中Sandboxへの影響を表示して確認を求める。
+
+接続も同時に行う場合は次だけでよい。
+
+```text
+sbxm shell
+```
+
+### 5.2 案件を切り替える
+
+次の案件のhost側repositoryまたは`.project`配下へ移動し、起動または接続する。
+
+```text
+sbxm shell
+```
+
+短時間で戻るSandboxは起動したままでよい。当面戻らない案件は、その案件directoryで停止する。
+
+```text
+sbxm stop
+```
+
+現在の状態は任意の案件directoryで確認できる。
+
+```text
+sbxm status
+```
+
+MVPでは案件選択UIや`switch` commandを作らず、current directoryを案件選択として利用する。
+
+### 5.3 複数案件を扱う
+
+同時に必要な各案件で`sbxm start`を実行する。3案件程度を同時利用する場合も、daemonの安全な起動確認は最初の1回だけ行い、各Sandboxを独立して起動する。
+
+CPUやmemoryが不足した場合は、不要な開発server、test watcher、Sandboxの順に停止する。MVPではresource tuningを自動化しない。
+
+### 5.4 業務終了時
+
+エディタの未保存ファイルを保存し、Codex、Claude Code、開発server、test watcherを終了してから、その日に使用したSandboxを明示的に停止する。
+
+```text
+sbxm stop <sandbox-name-1> <sandbox-name-2> <sandbox-name-3>
+```
+
+続けて`sbxm status`で停止状態を確認する。`stop`は内部ストレージを保持し、日常利用では`destroy`を使用しない。
+
+## 6. MVPに含めないもの
 
 初回実装では次を独立コマンドにしない。
 
-- `start`: `shell`が必要時に起動する
-- `rebuild`: `destroy`、`create`、`setup`の組み合わせで検証する
+- `rebuild`: `destroy`、`create`、`project setup`の組み合わせで検証する
 - `export`: 既存の`sbx cp`コマンドを案内する
 - `doctor`: `status`へ最低限の前提確認を含める
 - `ports`: 既存の`sbx ports`コマンドを案内する
@@ -219,9 +318,9 @@ Sandboxを削除する。
 - Codex・Claude Codeの対話login自動化
 - `mise trust`およびrepository固有toolの自動install
 
-## 6. Rust実装方針
+## 7. Rust実装方針
 
-### 6.1 crate構成
+### 7.1 crate構成
 
 最初は単一binary crateとし、責務ごとにmoduleを分ける。
 
@@ -247,7 +346,7 @@ src/
 - `git`: host cloneとSandbox内Git初期化
 - `templates`: 組み込みDockerfile
 
-### 6.2 主なdependency
+### 7.2 主なdependency
 
 - `clap`: CLI parser
 - `serde`と`toml`: 設定形式
@@ -256,7 +355,7 @@ src/
 
 外部コマンドはRust libraryで再実装せず、引数配列を使って`git`、`docker`、`sbx`、`ssh`を呼び出す。shell文字列を組み立てないことで、owner名やpathのshell injectionを避ける。
 
-### 6.3 安全性の共通規則
+### 7.3 安全性の共通規則
 
 - ownerは`[A-Za-z0-9-]+`、repository名は`[A-Za-z0-9._-]+`で検証する
 - `base_path`は絶対pathかつ末尾のslashを除いた形で保持する
@@ -268,20 +367,24 @@ src/
 - `SSH_AUTH_SOCK`を除外すべきprocessを一箇所に集約してtestする
 - Sandboxの存在判定は`grep`相当の曖昧な部分一致ではなく、可能なら`sbx`の機械可読出力を利用する。利用できないversionでは行単位の正確一致を実装する
 
-## 7. 実装順
+## 8. 実装順
 
-### Phase 1: CLIと設定基盤
+### Phase 1: マシンセットアップと設定基盤
 
 - Cargo projectを作成する
 - command parserと共通error表示を実装する
+- 前提commandとversionの検出を実装する
 - global configのschema、permission、読み書きを実装する
 - 案件metadataと導出pathを実装する
+- `sbxm machine setup`を実装する
 - `sbxm config init`を実装する
 - configとpath導出のunit testを追加する
 
 完了条件:
 
 - 一時HOMEを用いたtestで`~/.sbxm/config.toml`を安全に作成できる
+- 未導入の前提commandと未起動のDocker Engineを明確に報告できる
+- `sbx setup ssh`までの初回準備を一巡できる
 - 不正なowner、repository、base pathを拒否できる
 - 主要な導出pathが文書どおりになる
 
@@ -304,19 +407,23 @@ src/
 - `sbxm create`を実装する
 - Claude settingsの条件付きコピーを実装する
 - `sbxm status`を実装する
-- `sbxm shell`と`sbxm stop`を実装する
+- 安全なdaemon起動判定とruntime markerを実機検証する
+- `sbxm start`、`sbxm shell`、`sbxm stop`を実装する
 - 外部コマンド実行をfake化したintegration testを追加する
 
 完了条件:
 
 - build、save、Template load、Sandbox createの順序が保証される
 - daemonをSSH Agentなしで起動する
+- 同じ日の案件切り替えで不要なdaemon再起動を行わない
+- 停止中、起動中のどちらへ`start`を実行しても安全に成功する
+- 複数Sandboxを明示的にまとめて停止できる
 - 既存Sandboxを上書きしない
 - Claude settingsを必要な場合だけmode `0600`で投入する
 
 ### Phase 4: Sandbox内セットアップと削除
 
-- `sbxm setup`を実装する
+- `sbxm project setup`を実装する
 - secret未設定時の案内を実装する
 - Sandbox内Git identity、HTTPS cloneを実装する
 - `sbxm destroy`と保存確認を実装する
@@ -328,7 +435,7 @@ src/
 - tokenやホストcredentialを成果物へ残さない
 - 未保存作業を確認せずSandboxを削除できない
 
-## 8. 検証方針
+## 9. 検証方針
 
 自動testでは外部環境を変更せず、次を確認する。
 
@@ -340,27 +447,35 @@ src/
 - 既存fileの非上書き
 - 各外部command失敗時の後続処理停止
 - destructive confirmation
+- daemonの安全な初回起動と同日中の再利用判定
+- `start`、`shell`、`stop`の冪等性
+- 複数Sandbox停止時の対象限定
 
 実機でのみ確認できる内容は、専用のtest repositoryを使って手動検証する。
 
 1. Docker Desktopと`sbx`の前提確認
-2. host側clone
-3. image buildとTemplate load
-4. Sandbox作成
-5. 中立Workspaceの表示
-6. SSH接続時の開始directory
-7. `SSH_AUTH_SOCK`と`ssh-add -L`
-8. GitHub secret経由のHTTPS clone
-9. Remote SSH接続
-10. stop後の状態保持
-11. destroy前の保存確認
+2. `sbxm machine setup`とSSH連携
+3. host側clone
+4. image buildとTemplate load
+5. Sandbox作成
+6. 中立Workspaceの表示
+7. その日の最初の`start`と安全なdaemon起動
+8. 2案件目の`start`でdaemonを不要に再起動しないこと
+9. SSH接続時の開始directory
+10. `SSH_AUTH_SOCK`と`ssh-add -L`
+11. GitHub secret経由のHTTPS clone
+12. Remote SSH接続
+13. 複数案件の起動、切り替え、一括停止
+14. stop後の状態保持と翌日の再起動
+15. destroy前の保存確認
 
-## 9. 最初の利用後にレビューする論点
+## 10. 最初の利用後にレビューする論点
 
 MVPを実案件またはtest repositoryで一巡した後、次だけをレビューする。
 
-- `init`、`create`、`setup`の分割は利用者の認知に合っているか
+- `init`、`create`、`project setup`の分割は利用者の認知に合っているか
 - daemon再起動確認が日常利用の妨げにならないか
+- runtime markerによる「その日の最初」の判定は十分に堅牢か
 - GitHub secret登録をどのcommandの導線へ置くべきか
 - Dockerfileを利用者が編集できる生成物にした判断は適切か
 - `shell`接続後にrepository rootへ自動移動する必要があるか
