@@ -232,6 +232,64 @@ pub fn parse_image_inspect(output: &str) -> Result<ImageIdentity> {
     Ok(ImageIdentity { id, labels })
 }
 
+/// `sbx template ls`が示すTemplate 1件。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateEntry {
+    pub name: String,
+    /// 対応するimage ID。runtimeが対応関係を示さない場合は`None`。
+    pub image_id: Option<String>,
+}
+
+/// `sbx template ls`のstructured outputをparseする。
+///
+/// 一覧形式と、1行1件のJSON形式のどちらでも読む。名前を持たないentryがある出力は、
+/// 一覧として信用できないためparse不能として扱う。
+pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        // 1件もないことは観測できた状態であり、推測ではない。
+        return Ok(Vec::new());
+    }
+
+    let documents: Vec<serde_json::Value> = match serde_json::from_str(trimmed) {
+        Ok(serde_json::Value::Array(items)) => items,
+        Ok(serde_json::Value::Object(object)) => vec![serde_json::Value::Object(object)],
+        Ok(_) => {
+            return Err(unparseable(
+                "sbx template ls",
+                "the document is neither an array nor an object",
+            ));
+        }
+        // 1行1件のJSONを出すversionがある。
+        Err(_) => trimmed
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                serde_json::from_str(line)
+                    .map_err(|error| unparseable("sbx template ls", &error.to_string()))
+            })
+            .collect::<Result<Vec<serde_json::Value>>>()?,
+    };
+
+    let mut entries = Vec::with_capacity(documents.len());
+    for document in documents {
+        let object = document
+            .as_object()
+            .ok_or_else(|| unparseable("sbx template ls", "an entry is not an object"))?;
+        let name = string_field(object, "name")
+            .or_else(|| string_field(object, "Name"))
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| unparseable("sbx template ls", "an entry has no name"))?;
+        let image_id = string_field(object, "image_id")
+            .or_else(|| string_field(object, "imageId"))
+            .or_else(|| string_field(object, "ImageId"))
+            .or_else(|| string_field(object, "image"))
+            .filter(|id| !id.is_empty());
+        entries.push(TemplateEntry { name, image_id });
+    }
+    Ok(entries)
+}
+
 fn string_field(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
     object
         .get(key)

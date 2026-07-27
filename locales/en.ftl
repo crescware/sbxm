@@ -91,6 +91,7 @@ error-image-unusable = The image { $image } cannot be used for this project: { $
 error-build-context-not-empty = The build context { $path } holds { $observed } entries, but sbxm builds only from an empty one.
 warning-build-context-left-behind = The temporary build context { $path } could not be removed: { $detail }
 error-archive-unusable = The template archive { $path } cannot be used: { $detail }
+error-template-unusable = The template { $template } cannot be used: { $detail }
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 

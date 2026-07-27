@@ -8,6 +8,7 @@ pub mod host_clone;
 pub mod image;
 pub mod init;
 pub mod status_global;
+pub mod template;
 
 use std::io::Write;
 

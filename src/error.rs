@@ -90,6 +90,7 @@ pub enum ErrorId {
     ImageUnusable,
     BuildContextNotEmpty,
     ArchiveUnusable,
+    TemplateUnusable,
 
     // --- 案件のhost path ---
     ProjectPathSymlink,
@@ -189,6 +190,7 @@ impl ErrorId {
             ErrorId::ImageUnusable => "image-unusable",
             ErrorId::BuildContextNotEmpty => "build-context-not-empty",
             ErrorId::ArchiveUnusable => "archive-unusable",
+            ErrorId::TemplateUnusable => "template-unusable",
 
             ErrorId::ProjectPathSymlink => "project-path-symlink",
             ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
@@ -505,6 +507,7 @@ mod tests {
             ErrorId::ImageUnusable,
             ErrorId::BuildContextNotEmpty,
             ErrorId::ArchiveUnusable,
+            ErrorId::TemplateUnusable,
             ErrorId::ProjectPathSymlink,
             ErrorId::ProjectPathUnexpectedType,
             ErrorId::ProjectPathUnreadable,
