@@ -9,5 +9,7 @@
 
 mod error;
 mod i18n;
+mod paths;
+mod project;
 
 fn main() {}
