@@ -23,7 +23,7 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - 単一の通常cloneではなく、Sandbox内にbare repositoryとmanaged worktreeを作る
 - Sandbox名へcanonical project IDのhashを付け、owner/repository間の衝突を防ぐ
 - `sbx ls`のtextへ`grep`せず、Phase 1で固定したJSONを完全一致でparseする
-- `SSH_AUTH_SOCK`を外した個別`sbx create`だけで安全とは見なさず、daemon instanceを検証する
+- `SSH_AUTH_SOCK`を外した個別`sbx create`だけで安全とは見なさず、全Sandboxのactive session不在を確認してdaemonを安全に再起動する
 - 中断時の目標構成をproject metadataへ保存し、以降は同じ`add`で継続する
 
 中立Workspace、host path非露出、案件限定GitHub secret、利用者がglobal configへ明示したfileの限定copy、Docker socket非共有という要件は維持する。
@@ -199,12 +199,9 @@ load後、fixtureで定義したread-only commandにより、Templateが期待im
 
 ### 7.6 Safe daemon
 
-Phase 1で選択した方式を使用する。
+Phase 1の共通手順を使用する。global daemon lockを取得し、全Sandboxのactive session不在をstructured outputから確認した後、`sbx daemon stop`を実行し、`SSH_AUTH_SOCK`をunsetした環境で`sbx daemon start --detach`を実行する。
 
-- marker方式: 現在daemon instance IDと安全markerを照合
-- restart方式: active sessionがないことを確認し、`sbx daemon stop`、`SSH_AUTH_SOCK`をunsetした`sbx daemon start --detach`
-
-安全性を証明できなければSandboxを作成せずexit code `6`。
+active sessionを検出した場合、またはsession不在を証明できない場合は、daemonを変更せずSandboxも作成せずexit code `6`とする。session検査commandの失敗、timeout、parse不能はexit code `5`とする。
 
 ### 7.7 Sandbox create
 

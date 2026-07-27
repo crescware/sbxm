@@ -77,7 +77,7 @@ rebuild intentの記録後は次を行う。
 1. active sessionがないことと共通データ保護条件を直前に再確認する
 2. 対象Sandboxを通常modeの削除commandで削除する
 3. `sbx ls --json`で不在を確認する
-4. Phase 2と同じ中立Workspace、safe daemon、新Templateで同名Sandboxを作成する
+4. Phase 1の共通手順でdaemonを安全に再起動し、Phase 2と同じ中立Workspaceと新Templateで同名Sandboxを作成する
 5. Git identity、protocol、宣言fileを配置する
 6. bare repositoryをcloneし、metadataにあるmanaged worktreeだけを同じmode、start ref、indexで再作成する
 7. Sandbox identity、worktree、credential隔離を検証する
@@ -338,7 +338,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 9. SSH AgentとDocker socketの非露出
 10. Codex、Claude Code、GitHub疎通
 11. `open`のstopped/running
-12. 2案件切替時のdaemon維持
+12. 案件切替時のactive session拒否とdaemon安全再起動
 13. `stop`の複数対象とno-op
 14. `ls`の3 stateとunmanaged Sandbox
 15. `status`のmanaged/unmanaged、dirty、security診断

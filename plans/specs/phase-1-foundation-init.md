@@ -224,24 +224,24 @@ runtimeではexact versionを検出する。
 
 ## 12. Daemon安全性probe
 
-`add`または`open`でdaemonを初めて起動・再利用する実機E2Eまでに、次を証明して結果を`tests/fixtures/sbx/<version>/daemon-security.md`へ記録する。probe未完了でも後続codeの実装は進めてよいが、Sandbox mutationを安全と判定する受入testは未完了のままにする。
+MVPではdaemonの安全性を永続markerやinstance IDから推測しない。`add`、`open`、およびSandboxを再作成する`rebuild`の各操作前に、全Sandboxのactive sessionがないことをstructured outputから確認し、daemonを停止してから`SSH_AUTH_SOCK`をunsetした環境で起動し直す。
+
+これらのcommandを実機で成功扱いする前に、次を証明して結果を`tests/fixtures/sbx/<version>/daemon-security.md`へ記録する。probe未完了でもdaemonに依存しないcodeの実装は進めてよいが、Sandbox mutationを安全と判定する受入testは未完了のままにする。
 
 1. `SSH_AUTH_SOCK`ありで起動したdaemonがSandboxへagentを転送すること
 2. `SSH_AUTH_SOCK`をunsetして`sbx daemon start --detach`したdaemonでは転送されないこと
-3. `sbx daemon status`またはOS process情報から、現在のdaemon instanceを一意に識別できること
-4. Docker Desktop再起動、Mac再起動、`sbx daemon stop/start`でinstance識別子が変わること
-5. markerとinstance識別子を比較できること
+3. 対象exact versionのstructured outputから、全Sandboxのactive session不在を判定できること
+4. active sessionあり、0件、command失敗、timeout、parse不能を区別できること
+5. daemon停止・起動後にSandboxを再利用または作成できること
 
-一意なinstance識別子を取得できない場合、runtime marker方式は採用しない。その場合のMVP仕様は、mutationを伴う`add`と最初の`open`の前にdaemonを停止し、`SSH_AUTH_SOCK`をunsetして起動し直すこととする。別Sandboxのactive sessionがある場合は自動停止せずexit code `6`とし、利用者へ停止方法を案内する。
+daemon操作全体では`~/.sbxm/runtime/daemon.lock`をexclusive取得する。directoryは`0700`、lock fileは`0600`とし、lock fileはworkflow終了後も削除しない。
 
-markerを採用できる場合:
+- active sessionを1件でも検出した場合はdaemonを変更せず、対象sessionと終了方法を表示してexit code `6`
+- structuredなsession検査が存在しない、またはsession不在を証明できない場合はdaemonを変更せずexit code `6`
+- session検査commandの失敗、timeout、parse不能は外部状態を観測できないためexit code `5`
+- session不在を確認できた場合だけ、`sbx daemon stop`と、`SSH_AUTH_SOCK`をunsetした`sbx daemon start --detach`を実行する
 
-- 保存先は`~/.sbxm/runtime/daemon.toml`
-- directory `0700`、file `0600`
-- `sbx`のexact version、daemon instance ID、起動時刻を保存
-- file lock `~/.sbxm/runtime/daemon.lock`をdaemon操作全体でexclusive取得
-- marker不在、不一致、parse失敗は安全と見なさない
-- markerだけを根拠にせず、毎回現在instance IDと一致させる
+毎回のdaemon再起動による所要時間はMVPで受け入れる。安全性を保ったまま再起動を省略する最適化は、MVP利用後の非機能要件として検討する。
 
 ## 13. `sbxm init`
 
@@ -306,7 +306,7 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 6. Docker Sandboxes login状態
 7. network policy状態
 8. Remote SSH対応状況
-9. daemon状態と、観測可能な場合はsafe markerとの対応
+9. daemon状態と、active session検査機能の対応状況
 
 未loginの場合は`sbx login`を、Remote SSH setupが必要な場合はfixtureで固定した公式commandを表示する。commandを自動実行しない。
 

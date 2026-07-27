@@ -36,8 +36,8 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 |---|---|
 | `unmanaged` | exit `4`、`add`を案内 |
 | `registered` / `not-created` | exit `4`、同じ目標構成の`add`再実行を案内 |
-| `stopped` | safe daemon確認、非対話で起動、SSH接続 |
-| `running` | safe daemon確認、SSH接続 |
+| `stopped` | daemonを安全に再起動し、Sandboxを非対話で起動してSSH接続 |
+| `running` | daemonを安全に再起動してSSH接続 |
 | `inconsistent` | exit `4`、`status`を案内 |
 
 `open`はSandboxを新規作成しない。
@@ -49,7 +49,7 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 3. Docker Engineへ接続確認
 4. `sbx ls --json`相当を1回実行
 5. Sandbox identity、workspace、stateを検証
-6. safe daemonを検証
+6. 全Sandboxのactive session不在を確認し、daemonを安全に再起動
 7. stoppedならfixtureで固定した非対話commandで起動
 8. runningになるまで2秒間隔、最大60秒poll
 9. managed worktree一覧をmetadataとGitから検証
@@ -68,12 +68,14 @@ SSH childにはstdin、stdout、stderrを継承する。SSHのexit statusが0な
 
 ### 4.3 Safe daemon
 
-- safe markerが現在instanceと一致: 続行
-- daemon停止中: `SSH_AUTH_SOCK`なしで起動しsafe markerを作る
-- daemon起動中だが安全性を証明不能: active sessionがなければ確認後に安全に再起動、非TTYまたはactive sessionありならexit code `6`
-- marker parse失敗:安全と見なさない
+Phase 1の共通手順を使用し、`open`のたびにglobal daemon lockを取得してdaemonを安全に再起動する。
 
-別案件切り替えのたびに安全なdaemonを再起動しない。
+- 全Sandboxのactive session不在をstructured outputから確認する
+- active sessionを検出した場合、またはsession不在を証明できない場合はdaemonを変更せずexit code `6`
+- session検査commandの失敗、timeout、parse不能はexit code `5`
+- session不在を確認できた場合だけdaemonを停止し、`SSH_AUTH_SOCK`をunsetした環境で起動する
+
+毎回の再起動による所要時間はMVPで受け入れ、再起動省略はMVP利用後の非機能要件として検討する。
 
 ## 5. `sbxm stop [project...]`
 
@@ -245,7 +247,7 @@ ssh-add -L
 - 各commandの引数あり・なし・非TTY・cancel
 - state mappingの全fixtureと未知state
 - `open`のnot-created拒否、stopped起動、running再利用
-- unsafe daemon、marker不一致、active session
+- daemon再起動、active session、session不在を証明不能
 - `stop`の事前全件validation、部分失敗report
 - `ls`のmanaged/unmanaged、0件、failure時一覧非出力
 - project `status`の必須対象、検査順、部分結果、not-applicable、global診断の案内
@@ -257,8 +259,8 @@ ssh-add -L
 
 ## 9. 実機受入条件
 
-- その日の最初の`open`でdaemonをSSH Agentなしにできる
-- 2案件目の`open`で安全なdaemonを不要に再起動しない
+- 各`open`でactive session不在を確認し、daemonをSSH Agentなしで安全に再起動できる
+- active sessionがある場合、またはsession不在を証明できない場合にdaemonを変更しない
 - stopped/runningから同じ操作でSSH接続できる
 - not-createdへの`open`が`add`再実行を正確に案内する
 - 複数Sandboxを対象限定で停止できる
