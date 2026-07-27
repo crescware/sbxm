@@ -70,10 +70,17 @@ pub enum ErrorId {
     FileDeclarationInvalidSource,
     FileDeclarationInvalidDestination,
 
+    // --- 案件のhost path ---
+    ProjectPathSymlink,
+    ProjectPathUnexpectedType,
+    ProjectPathUnreadable,
+    ProjectFilePermissionTooOpen,
+
     // --- 永続化 ---
     AtomicWriteFailed,
     TempFileLeftBehind,
     TargetAppearedConcurrently,
+    TargetChangedConcurrently,
     LockTimeout,
     LockUnavailable,
 
@@ -144,9 +151,15 @@ impl ErrorId {
             ErrorId::FileDeclarationInvalidSource => "file-declaration-invalid-source",
             ErrorId::FileDeclarationInvalidDestination => "file-declaration-invalid-destination",
 
+            ErrorId::ProjectPathSymlink => "project-path-symlink",
+            ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
+            ErrorId::ProjectPathUnreadable => "project-path-unreadable",
+            ErrorId::ProjectFilePermissionTooOpen => "project-file-permission-too-open",
+
             ErrorId::AtomicWriteFailed => "atomic-write-failed",
             ErrorId::TempFileLeftBehind => "temp-file-left-behind",
             ErrorId::TargetAppearedConcurrently => "target-appeared-concurrently",
+            ErrorId::TargetChangedConcurrently => "target-changed-concurrently",
             ErrorId::LockTimeout => "lock-timeout",
             ErrorId::LockUnavailable => "lock-unavailable",
 
@@ -435,9 +448,14 @@ mod tests {
             ErrorId::BasePathEscapesRoot,
             ErrorId::FileDeclarationInvalidSource,
             ErrorId::FileDeclarationInvalidDestination,
+            ErrorId::ProjectPathSymlink,
+            ErrorId::ProjectPathUnexpectedType,
+            ErrorId::ProjectPathUnreadable,
+            ErrorId::ProjectFilePermissionTooOpen,
             ErrorId::AtomicWriteFailed,
             ErrorId::TempFileLeftBehind,
             ErrorId::TargetAppearedConcurrently,
+            ErrorId::TargetChangedConcurrently,
             ErrorId::LockTimeout,
             ErrorId::LockUnavailable,
             ErrorId::ExternalCommandNotFound,

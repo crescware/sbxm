@@ -74,9 +74,13 @@ error-file-declaration-invalid-source = 宣言file { $index } のsource { $sourc
 error-file-declaration-invalid-destination = 宣言file { $index } のdestination { $destination } が不正です: { $detail }
 warning-config-unknown-key = { $path } の未知のkey { $key } を無視しました。
 
+error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
+error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
+
 error-atomic-write-failed = { $path } への書き込みに失敗しました: { $detail }
 error-temp-file-left-behind = 中断した実行の一時file { $path } が残っています。
 error-target-appeared-concurrently = 作成中に { $path } が出現したため、何も上書きしませんでした。
+error-target-changed-concurrently = 書き換え中に { $path } が別のfileへ差し替わったため、何も上書きしませんでした。
 error-lock-timeout = ほかのsbxmの実行が { $path } のlockを保持しています。{ $seconds } 秒待機しました。
 error-lock-unavailable = { $path } のlockを取得できません: { $detail }
 
@@ -116,6 +120,12 @@ security-config-dir-permission-remediation = chmod { $expected } { $path } を�
 
 security-config-dir-symlink-description = { $path } はsymbolic linkです。lockと設定が意図しないdirectoryへ作られます。
 security-config-dir-symlink-remediation = { $path } を自分が所有するdirectoryへ置き換えてください。
+
+security-project-path-symlink-description = { $path } はsymbolic linkです。追跡すると案件directoryの外へfileを作成または置き換えるため、sbxmは追跡しません。
+security-project-path-symlink-remediation = { $path } を自分が所有する通常fileまたはdirectoryへ置き換えてから、もう一度実行してください。
+
+security-project-file-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。この機械上のほかのaccountが読み書きできるfileをsbxmは書き換えません。
+security-project-file-permission-remediation = chmod { $expected } { $path } を実行し、fileの所有者が自分であることを確認してください。
 
 security-base-path-escape-description = { $path } はsymbolic linkの解決後に { $resolved } となります。案件が指定したdirectoryの外に作られます。
 security-base-path-escape-remediation = 解決後も意図したdirectory配下に収まるbase pathを指定してください。

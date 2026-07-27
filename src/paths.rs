@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::msg;
+use crate::project::CanonicalProjectId;
 
 /// `~/.sbxm`のpermission。
 pub const CONFIG_DIR_MODE: u32 = 0o700;
@@ -162,6 +163,8 @@ pub fn ensure_private_dir(path: &Path, mode: u32, symlink_error: SymlinkError) -
 pub enum SymlinkError {
     ConfigFile,
     ConfigDir,
+    /// 案件directory配下のfileとdirectory。
+    ProjectPath,
 }
 
 impl SymlinkError {
@@ -177,11 +180,77 @@ impl SymlinkError {
                 "security-config-dir-symlink-description",
                 "security-config-dir-symlink-remediation",
             ),
+            SymlinkError::ProjectPath => (
+                ErrorId::ProjectPathSymlink,
+                "security-project-path-symlink-description",
+                "security-project-path-symlink-remediation",
+            ),
         };
         Error::single(
             Diagnostic::new(id, msg!(description, path = display(path)))
                 .remediation(msg!(remediation, path = display(path))),
         )
+    }
+}
+
+/// 既存pathのfile type。診断で観測値として示す。翻訳しない技術表記。
+fn file_type_of(metadata: &fs::Metadata) -> &'static str {
+    let file_type = metadata.file_type();
+    if file_type.is_dir() {
+        "directory"
+    } else if file_type.is_file() {
+        "regular file"
+    } else if file_type.is_symlink() {
+        "symbolic link"
+    } else {
+        "special file"
+    }
+}
+
+/// 期待するfile typeと異なるpathを、内容を変更せず拒否する。
+fn unexpected_type(path: &Path, expected: &'static str, metadata: &fs::Metadata) -> Error {
+    Error::new(
+        ErrorId::ProjectPathUnexpectedType,
+        msg!(
+            "error-project-path-unexpected-type",
+            path = display(path),
+            expected = expected,
+            observed = file_type_of(metadata)
+        ),
+    )
+}
+
+/// 案件が使うdirectoryを検証または作成する。
+///
+/// 新規directoryのpermissionは利用者のumaskに従う。symlinkと既存の非directoryは
+/// 内容を変更せず拒否する。
+pub fn ensure_directory(path: &Path) -> Result<()> {
+    if is_symlink(path) {
+        return Err(SymlinkError::ProjectPath.into_error(path));
+    }
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(metadata) => Err(unexpected_type(path, "directory", &metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(path).map_err(|error| {
+                Error::new(
+                    ErrorId::AtomicWriteFailed,
+                    msg!(
+                        "error-atomic-write-failed",
+                        path = display(path),
+                        detail = error
+                    ),
+                )
+            })
+        }
+        Err(error) => fail(
+            ErrorId::ProjectPathUnreadable,
+            msg!(
+                "error-project-path-unreadable",
+                path = display(path),
+                detail = error
+            ),
+        ),
     }
 }
 
@@ -295,6 +364,67 @@ pub fn atomic_create(target: &Path, contents: &str, mode: u32) -> Result<()> {
             );
         }
         Ok(())
+    })
+}
+
+/// 既存fileをatomicに置き換える。
+///
+/// 置き換えて良い相手であることを、file type、permission、identityで確認してから書く。
+/// rename直前に同じ検査をやり直し、書いている間に別の実体へ差し替えられていた場合は
+/// 何も上書きしない。
+pub fn atomic_replace(target: &Path, contents: &str, mode: u32) -> Result<()> {
+    let expected = replaceable_identity(target, mode)?;
+    atomic_write_with_precondition(target, contents, mode, move |target| {
+        let observed = replaceable_identity(target, mode)?;
+        if observed != expected {
+            return fail(
+                ErrorId::TargetChangedConcurrently,
+                msg!("error-target-changed-concurrently", path = display(target)),
+            );
+        }
+        Ok(())
+    })
+}
+
+/// 置き換え対象として妥当なfileのidentity。
+fn replaceable_identity(target: &Path, mode: u32) -> Result<FileIdentity> {
+    if is_symlink(target) {
+        return Err(SymlinkError::ProjectPath.into_error(target));
+    }
+    let metadata = fs::symlink_metadata(target).map_err(|error| {
+        Error::new(
+            ErrorId::AtomicWriteFailed,
+            msg!(
+                "error-atomic-write-failed",
+                path = display(target),
+                detail = error
+            ),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(unexpected_type(target, "regular file", &metadata));
+    }
+    let observed = metadata.permissions().mode();
+    if permission_too_open(observed) {
+        return Err(Error::single(
+            Diagnostic::new(
+                ErrorId::ProjectFilePermissionTooOpen,
+                msg!(
+                    "security-project-file-permission-description",
+                    path = display(target),
+                    observed = format_mode(observed)
+                ),
+            )
+            .remediation(msg!(
+                "security-project-file-permission-remediation",
+                path = display(target),
+                expected = format_mode(mode)
+            )),
+        ));
+    }
+    Ok(FileIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
     })
 }
 
@@ -498,6 +628,84 @@ impl std::fmt::Display for AbsoluteBasePath {
     }
 }
 
+/// project rootのdirectory名に付ける接尾辞。
+///
+/// metadata探索が`<base-path>/*/*.project`だけを対象とするための目印でもある。
+pub const PROJECT_DIR_SUFFIX: &str = ".project";
+
+/// 案件が使うhost path。canonical project IDから決定的に導出する。
+///
+/// ownerとrepositoryのlowercase化により、case-insensitive filesystem上の重複を防ぐ。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectPaths {
+    owner_dir: PathBuf,
+    root: PathBuf,
+    repository: String,
+}
+
+impl ProjectPaths {
+    pub fn derive(base: &AbsoluteBasePath, id: &CanonicalProjectId) -> ProjectPaths {
+        let owner_dir = base.as_path().join(id.owner());
+        let root = owner_dir.join(format!("{}{PROJECT_DIR_SUFFIX}", id.repository()));
+        ProjectPaths {
+            owner_dir,
+            root,
+            repository: id.repository().to_string(),
+        }
+    }
+
+    /// `<base-path>/<owner-lower>`
+    pub fn owner_dir(&self) -> &Path {
+        &self.owner_dir
+    }
+
+    /// `<base-path>/<owner-lower>/<repository-lower>.project`
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// `<project-root>/<repository-lower>`
+    pub fn host_clone(&self) -> PathBuf {
+        self.root.join(&self.repository)
+    }
+
+    /// `<project-root>/.sbxm`
+    pub fn sbxm_dir(&self) -> PathBuf {
+        self.root.join(".sbxm")
+    }
+
+    /// `<project-root>/.sbxm/project.toml`
+    pub fn metadata_file(&self) -> PathBuf {
+        self.sbxm_dir().join("project.toml")
+    }
+
+    /// `<project-root>/.sbxm/project.lock`
+    pub fn lock_file(&self) -> PathBuf {
+        self.sbxm_dir().join("project.lock")
+    }
+
+    /// `<project-root>/.sbxm/Dockerfile`
+    pub fn dockerfile(&self) -> PathBuf {
+        self.sbxm_dir().join("Dockerfile")
+    }
+
+    /// `<project-root>/.sbxm/.cache`
+    pub fn cache_dir(&self) -> PathBuf {
+        self.sbxm_dir().join(".cache")
+    }
+
+    /// 世代別のTemplate archive。
+    pub fn template_archive(&self, short_hash: &str) -> PathBuf {
+        self.cache_dir().join(format!("template-{short_hash}.tar"))
+    }
+
+    /// 検証が終わるまで正式なarchiveへ触れないための一時path。
+    pub fn template_archive_temp(&self, short_hash: &str) -> PathBuf {
+        self.cache_dir()
+            .join(format!("template-{short_hash}.tar.tmp"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -649,6 +857,172 @@ mod tests {
         let error = ensure_private_dir(&link, CONFIG_DIR_MODE, SymlinkError::ConfigDir)
             .expect_err("symlinked directories are refused");
         assert_eq!(error.first_id(), Some(ErrorId::ConfigDirSymlink));
+    }
+
+    fn base(path: &Path) -> AbsoluteBasePath {
+        AbsoluteBasePath::new(path).expect("valid base path")
+    }
+
+    fn project_id(value: &str) -> CanonicalProjectId {
+        crate::project::ProjectId::parse(value)
+            .expect("valid project id")
+            .canonical()
+    }
+
+    #[test]
+    fn project_paths_follow_the_documented_layout() {
+        let base = base(Path::new("/Users/example/Projects"));
+        let paths = ProjectPaths::derive(&base, &project_id("Example-Org/Example-Repo"));
+
+        assert_eq!(
+            paths.owner_dir(),
+            Path::new("/Users/example/Projects/example-org")
+        );
+        assert_eq!(
+            paths.root(),
+            Path::new("/Users/example/Projects/example-org/example-repo.project")
+        );
+        let root = paths.root();
+        assert_eq!(paths.host_clone(), root.join("example-repo"));
+        assert_eq!(paths.metadata_file(), root.join(".sbxm/project.toml"));
+        assert_eq!(paths.lock_file(), root.join(".sbxm/project.lock"));
+        assert_eq!(paths.dockerfile(), root.join(".sbxm/Dockerfile"));
+        assert_eq!(paths.cache_dir(), root.join(".sbxm/.cache"));
+        assert_eq!(
+            paths.template_archive("0123456789ab"),
+            root.join(".sbxm/.cache/template-0123456789ab.tar")
+        );
+        assert_eq!(
+            paths.template_archive_temp("0123456789ab"),
+            root.join(".sbxm/.cache/template-0123456789ab.tar.tmp")
+        );
+    }
+
+    #[test]
+    fn project_paths_are_lowercase_so_one_project_cannot_take_two_directories() {
+        let base = base(Path::new("/Users/example/Projects"));
+        assert_eq!(
+            ProjectPaths::derive(&base, &project_id("Example-Org/Example-Repo")),
+            ProjectPaths::derive(&base, &project_id("example-org/example-repo"))
+        );
+    }
+
+    #[test]
+    fn a_directory_is_created_once_and_reused_afterwards() {
+        let dir = temp_dir();
+        let target = dir.path().join("owner").join("repo.project");
+        ensure_directory(&target).expect("create");
+        assert!(target.is_dir());
+        std::fs::write(target.join("marker"), b"kept").expect("write marker");
+
+        ensure_directory(&target).expect("an existing directory is reused");
+        assert_eq!(
+            fs::read_to_string(target.join("marker")).unwrap(),
+            "kept",
+            "an existing directory must not be recreated"
+        );
+    }
+
+    #[test]
+    fn a_directory_is_never_created_through_a_symlink_or_over_another_file() {
+        let dir = temp_dir();
+        let real = dir.path().join("real");
+        fs::create_dir(&real).expect("create");
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).expect("symlink");
+        let error = ensure_directory(&link).expect_err("symlinks are refused");
+        assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+
+        let file = dir.path().join("file");
+        fs::write(&file, b"x").expect("write");
+        let error = ensure_directory(&file).expect_err("an existing file is refused");
+        assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+        assert_eq!(fs::read_to_string(&file).unwrap(), "x");
+    }
+
+    #[test]
+    fn atomic_replace_swaps_the_content_and_keeps_the_requested_mode() {
+        let dir = temp_dir();
+        let target = dir.path().join("project.toml");
+        atomic_create(&target, "version = 1\n", PRIVATE_FILE_MODE).expect("create");
+
+        atomic_replace(&target, "version = 1\nstart_ref = \"main\"\n", PRIVATE_FILE_MODE)
+            .expect("replace");
+
+        assert_eq!(
+            fs::read_to_string(&target).unwrap(),
+            "version = 1\nstart_ref = \"main\"\n"
+        );
+        let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, PRIVATE_FILE_MODE);
+        assert!(!dir.path().join(".project.toml.tmp").exists());
+    }
+
+    #[test]
+    fn atomic_replace_refuses_a_symlink_a_directory_and_an_open_file() {
+        let dir = temp_dir();
+
+        let real = dir.path().join("real.toml");
+        fs::write(&real, "version = 1\n").unwrap();
+        let link = dir.path().join("link.toml");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let error = atomic_replace(&link, "replaced", PRIVATE_FILE_MODE)
+            .expect_err("symlinked targets are refused");
+        assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+        assert_eq!(fs::read_to_string(&real).unwrap(), "version = 1\n");
+
+        let directory = dir.path().join("a-directory");
+        fs::create_dir(&directory).unwrap();
+        let error = atomic_replace(&directory, "replaced", PRIVATE_FILE_MODE)
+            .expect_err("directories are refused");
+        assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+
+        let shared = dir.path().join("shared.toml");
+        fs::write(&shared, "version = 1\n").unwrap();
+        fs::set_permissions(&shared, fs::Permissions::from_mode(0o666)).unwrap();
+        let error = atomic_replace(&shared, "replaced", PRIVATE_FILE_MODE)
+            .expect_err("a world-writable target is refused");
+        assert_eq!(error.first_id(), Some(ErrorId::ProjectFilePermissionTooOpen));
+        assert_eq!(fs::read_to_string(&shared).unwrap(), "version = 1\n");
+    }
+
+    #[test]
+    fn atomic_replace_leaves_a_target_that_became_a_different_file_alone() {
+        let dir = temp_dir();
+        let target = dir.path().join("project.toml");
+        atomic_create(&target, "first\n", PRIVATE_FILE_MODE).expect("create");
+        let original = FileIdentity::of_path_without_following(&target).unwrap();
+
+        // 書いている間に別のprocessがfileを作り直した状況を作る。
+        let replacement = dir.path().join("other.toml");
+        atomic_create(&replacement, "second\n", PRIVATE_FILE_MODE).expect("create");
+        fs::rename(&replacement, &target).expect("swap the target");
+        assert_ne!(
+            FileIdentity::of_path_without_following(&target).unwrap(),
+            original
+        );
+
+        // 置き換えの直前に再取得したidentityが一致することは、この時点では検査済みである。
+        // 検査後に差し替わる状況をprecondition側で確認する。
+        let error = atomic_write_with_precondition(
+            &target,
+            "third\n",
+            PRIVATE_FILE_MODE,
+            |target: &Path| {
+                let observed = replaceable_identity(target, PRIVATE_FILE_MODE)?;
+                if observed != original {
+                    return fail(
+                        ErrorId::TargetChangedConcurrently,
+                        msg!("error-target-changed-concurrently", path = display(target)),
+                    );
+                }
+                Ok(())
+            },
+        )
+        .expect_err("a target that changed identity is not overwritten");
+        assert_eq!(error.first_id(), Some(ErrorId::TargetChangedConcurrently));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "second\n");
+        assert!(!dir.path().join(".project.toml.tmp").exists());
     }
 
     #[test]

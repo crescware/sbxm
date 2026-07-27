@@ -74,9 +74,13 @@ error-file-declaration-invalid-source = Declared file { $index } has an invalid 
 error-file-declaration-invalid-destination = Declared file { $index } has an invalid destination { $destination }: { $detail }
 warning-config-unknown-key = Unknown key { $key } in { $path } was ignored.
 
+error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
+error-project-path-unreadable = The project path { $path } could not be read: { $detail }
+
 error-atomic-write-failed = Writing { $path } failed: { $detail }
 error-temp-file-left-behind = An interrupted run left the temporary file { $path } behind.
 error-target-appeared-concurrently = { $path } appeared while it was being created, so nothing was overwritten.
+error-target-changed-concurrently = { $path } was replaced by another file while it was being rewritten, so nothing was overwritten.
 error-lock-timeout = Another sbxm run is holding the lock at { $path }. Waited { $seconds } seconds.
 error-lock-unavailable = The lock at { $path } could not be acquired: { $detail }
 
@@ -116,6 +120,12 @@ security-config-dir-permission-remediation = Run chmod { $expected } { $path } a
 
 security-config-dir-symlink-description = { $path } is a symbolic link. sbxm would create locks and configuration outside the intended directory.
 security-config-dir-symlink-remediation = Replace { $path } with a directory that you own.
+
+security-project-path-symlink-description = { $path } is a symbolic link. sbxm does not follow it, because creating or replacing files through it would act on a location outside the project directory.
+security-project-path-symlink-remediation = Replace { $path } with a regular file or directory that you own, then run the command again.
+
+security-project-file-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to rewrite a file that other accounts on this machine can read or change.
+security-project-file-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the file.
 
 security-base-path-escape-description = { $path } resolves to { $resolved } after symbolic links are followed. Projects would be created outside the directory you chose.
 security-base-path-escape-remediation = Choose a base path whose resolved location stays inside the directory you intend to use.
