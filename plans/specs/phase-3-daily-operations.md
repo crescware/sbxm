@@ -1,0 +1,263 @@
+# Phase 3 実装仕様: `open`、`stop`、`ls`、`status`
+
+## 1. 目的
+
+Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧、read-only診断を実装する。Docker Sandboxesのruntime状態は複製せず、各command実行時にstructured outputから取得する。
+
+## 2. 共通規則
+
+- project指定とTTY規則は方向性文書に従う
+- mutation commandはproject lockを取得する
+- daemon操作はproject lock後にglobal daemon lockを取得する
+- 対象解決と全validationをmutation前に完了する
+- `sbx` stateはPhase 1 fixtureのJSON parserで扱う
+- nameは完全一致とし、substring、prefix、表示textの`grep`を使わない
+- 未対応stateまたは重複nameはraw valueを示してexit code `5`
+
+## 3. Sandbox stateの正規化
+
+対応versionのfixtureで得たraw stateを次へ写像する。
+
+| sbxm state | 意味 |
+|---|---|
+| `not-created` | metadataはあるが対応Sandboxがない |
+| `running` | Sandboxが存在し起動中 |
+| `stopped` | Sandboxが存在し停止中 |
+
+raw stateを3値へ安全に写像できない場合は、対象nameとraw stateを示してerrorにする。`unknown`へ丸めない。
+
+metadataやworkspaceとの対応が矛盾する場合、projectの管理状態は`inconsistent`となり、上記stateを正常結果として返さない。
+
+## 4. `sbxm open [project]`
+
+### 4.1 状態別動作
+
+| 状態 | 動作 |
+|---|---|
+| `unmanaged` | exit `4`、`add`を案内 |
+| `registered` / `not-created` | exit `4`、保存済み引数を含む`add`を案内 |
+| `stopped` | safe daemon確認、非対話で起動、SSH接続 |
+| `running` | safe daemon確認、SSH接続 |
+| `inconsistent` | exit `4`、`status`を案内 |
+
+`open`はSandboxを新規作成しない。
+
+### 4.2 処理順
+
+1. 対象を引数または単一選択promptで解決
+2. project lockを取得
+3. Docker Engineへ接続確認
+4. `sbx ls --json`相当を1回実行
+5. Sandbox identity、workspace、stateを検証
+6. safe daemonを検証
+7. stoppedならfixtureで固定した非対話commandで起動
+8. runningになるまで2秒間隔、最大60秒poll
+9. managed worktree一覧をmetadataとGitから検証
+10. 接続先とworktree一覧をstderrへ表示
+11. `ssh <sandbox-name>.sbx`へterminalを引き渡す
+
+手動手順で使用していた起動commandの候補は次であり、exact formはfixtureで固定する。
+
+```text
+sbx exec <sandbox-name> /bin/true
+```
+
+SSH childにはstdin、stdout、stderrを継承する。SSHのexit statusが0なら`sbxm`も0、利用者による通常切断以外の非ゼロは外部command失敗としてexit code `5`に写像し、原値を表示する。
+
+通常開始directoryはDockerfileにより`/home/agent/work`とする。MVPではSSH commandへ自動`cd`を組み込まない。
+
+### 4.3 Safe daemon
+
+- safe markerが現在instanceと一致: 続行
+- daemon停止中: `SSH_AUTH_SOCK`なしで起動しsafe markerを作る
+- daemon起動中だが安全性を証明不能: active sessionがなければ確認後に安全に再起動、非TTYまたはactive sessionありならexit code `6`
+- marker parse失敗:安全と見なさない
+
+別案件切り替えのたびに安全なdaemonを再起動しない。
+
+## 5. `sbxm stop [project...]`
+
+### 5.1 対象
+
+- 引数あり: 重複を除いた全projectをcanonical ID昇順に処理
+- 引数なし: 全管理案件から0件以上を複数選択
+- 0件確定: exit `0`
+
+### 5.2 Validationとatomicity
+
+1. 全対象metadataを解決
+2. 1回のSandbox一覧取得で全stateを解決
+3. `inconsistent`または未対応stateが1件でもあれば、何も停止せずerror
+4. 全project lockをcanonical ID昇順に取得
+5. stateを再取得してpreconditionを再確認
+6. runningだけを停止
+
+完全なtransaction rollbackは行わない。途中で外部commandが失敗した場合は後続対象を停止せず、対象ごとの`stopped`、`unchanged`、`failed`を表示してexit code `5`。
+
+### 5.3 状態別動作
+
+- `running`: `sbx stop <sandbox-name>`
+- `stopped`: no-op成功
+- `not-created`: no-op成功
+- `inconsistent`: mutation前error
+
+停止後は最大60秒pollし、stoppedを確認する。内部filesystem、Git、package、Docker imageを削除しない。
+
+## 6. `sbxm ls`
+
+### 6.1 処理
+
+1. configからbase pathを読む
+2. 全metadataを探索・検証する
+3. `sbx ls --json`相当を1回実行する
+4. metadataとSandboxをname完全一致で突き合わせる
+5. 管理案件と未管理Sandboxを別tableで表示する
+
+0件でもheaderを表示してexit `0`とする。
+
+### 6.2 出力
+
+```text
+PROJECT          SANDBOX                         STATE
+owner/foo        sbxm-owner-foo-0123456789ab     running
+owner/bar        sbxm-owner-bar-abcdef012345     stopped
+owner/baz        sbxm-owner-baz-fedcba987654     not-created
+```
+
+並び順:
+
+- managed projects: canonical ID byte昇順
+- unmanaged Sandboxes: Sandbox name byte昇順
+
+未管理Sandboxは`UNMANAGED SANDBOXES`へname、raw state、workspaceを表示する。取り込みや削除は行わない。
+
+### 6.3 Failure
+
+- `sbx ls`失敗: 一覧を一切出さずexit `5`
+- metadataが1件でも不正: 一覧を一切出さずexit `4`
+- 未対応raw state: 一覧を一切出さずexit `5`
+- 同名Sandbox複数、workspace不一致: 一覧を一切出さずexit `4`
+
+部分的に正しそうな一覧を出さない。
+
+## 7. `sbxm status [project]`
+
+### 7.1 性質
+
+1案件の構築状態、作業可能性、credential隔離をread-onlyで診断する。repair、起動、停止、file更新を行わない。daemonを起動する必要がある検査は行わず、`not-observed`ではなくcommand失敗として扱う。
+
+### 7.2 検査順と項目
+
+取得できた項目は、後続検査失敗時にも表示する。
+
+1. metadataと目標構成
+2. project rootとhost clone
+3. Dockerfile hash
+4. image labelとTemplate archive
+5. Sandbox name、workspace、state
+6. GitHub secretの存在
+7. Sandbox内bare repository
+8. managed worktree
+9. unmanaged worktree
+10. SSH Agent露出
+
+表示値:
+
+```text
+ready
+missing
+mismatch
+running
+stopped
+not-created
+clean
+dirty
+detached
+not-exposed
+exposed
+not-applicable
+not-observed-stopped
+```
+
+`unknown`は使用しない。
+
+### 7.3 `not-applicable`
+
+Sandboxが存在しない場合だけ、Sandbox内部でしか検査できない次を`not-applicable`とする。
+
+- secret injectionのSandbox対応
+- bare repository
+- managed/unmanaged worktree
+- SSH Agent露出
+
+Docker image、archive、host cloneは引き続き検査する。
+
+Sandboxがstoppedの場合、read-only `sbx exec`が暗黙に起動する可能性があるため実行しない。内部項目は`not-observed-stopped`とし、「停止状態を変えないため検査していない」という説明を付ける。これは観測失敗ではなく意図的な非観測なので、ほかに問題がなければexit code `0`とする。状態値を`unknown`へ丸めない。
+
+### 7.4 Worktree検査
+
+running時にSandbox内で次のporcelain出力を取得する。
+
+```text
+git --git-dir <bare-git-dir> worktree list --porcelain -z
+git -C <worktree> status --porcelain=v2 -z --untracked-files=all
+git -C <worktree> rev-parse HEAD
+git -C <worktree> symbolic-ref --quiet --short HEAD
+```
+
+- `worktree list`のbare entryはworktree数へ含めない
+- metadataのrelative pathと完全一致するものをmanagedとする
+- その他をunmanagedとする
+- managed entryがGitに存在しなければ`mismatch`
+- pathはbare root配下へstandardizeできること。逸脱pathはsecurity error
+- submodule状態も`git status`がdirtyと返す場合はdirty
+
+### 7.5 SSH Agent検査
+
+running時:
+
+```text
+env lookup for SSH_AUTH_SOCK
+ssh-add -L
+```
+
+- `SSH_AUTH_SOCK`未設定かつ`ssh-add -L`がagent接続不能: `not-exposed`
+- socket設定または公開鍵が1件以上: `exposed`、security exit `6`
+- command不在、timeout、判定不能: exit `5`
+
+公開鍵本文は出力しない。
+
+### 7.6 Exit
+
+- 全検査成功かつsecurity issueなし: `0`
+- 構成mismatch: `4`
+- external observation失敗: `5`
+- SSH Agent exposed: `6`
+
+複数分類がある場合は最大の安全重要度として`6 > 5 > 4`を返す。
+
+## 8. 自動test
+
+- 各commandの引数あり・なし・非TTY・cancel
+- state mappingの全fixtureと未知state
+- `open`のnot-created拒否、stopped起動、running再利用
+- unsafe daemon、marker不一致、active session
+- `stop`の事前全件validation、部分失敗report
+- `ls`のmanaged/unmanaged、0件、failure時一覧非出力
+- `status`の検査順、部分結果、not-applicable
+- porcelain `-z` parser
+- managed/unmanaged、missing managed、path逸脱
+- dirty/untracked/submodule
+- SSH Agent not-exposed、exposed、判定不能
+- localeによらないenumと並び順
+
+## 9. 実機受入条件
+
+- その日の最初の`open`でdaemonをSSH Agentなしにできる
+- 2案件目の`open`で安全なdaemonを不要に再起動しない
+- stopped/runningから同じ操作でSSH接続できる
+- not-createdへの`open`が`add`を正確に案内する
+- 複数Sandboxを対象限定で停止できる
+- `ls`がrunning、stopped、not-created、unmanagedを正しく分離する
+- `status`がbare、managed、unmanaged、dirty、SSH Agentを診断する
+- 外部状態取得失敗時に推測した値を出さない
