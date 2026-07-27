@@ -1,13 +1,13 @@
-# Phase 4 実装仕様: `rm`とE2E検証
+# Phase 4 実装仕様: `destroy`とE2E検証
 
 ## 1. 目的
 
-`sbxm rm`は、対象Sandboxを一意に特定したうえで、通常modeでは保存されていない作業を失わないことを確認して、force modeではデータ保護検査を省略して、Sandbox内部の状態だけを破棄する。host projectと再構築に必要な宣言・成果物は保持し、案件を`registered`状態へ戻す。
+`sbxm destroy`は、対象Sandboxを一意に特定したうえで、通常modeでは保存されていない作業を失わないことを確認して、force modeではデータ保護検査を省略して、Sandbox内部の状態だけを破棄する。host projectと再構築に必要な宣言・成果物は保持し、案件を`registered`状態へ戻す。
 
 ```text
-sbxm rm [<owner>/<repository>]
-sbxm rm --force <owner>/<repository>
-sbxm rm -f <owner>/<repository>
+sbxm destroy [<owner>/<repository>]
+sbxm destroy --force <owner>/<repository>
+sbxm destroy -f <owner>/<repository>
 ```
 
 通常modeではdirty、untracked、検査不能なworktreeが1つでもあれば削除しない。`-f`は`--force`の短縮形とする。
@@ -43,11 +43,11 @@ sbxm rm -f <owner>/<repository>
 |---|---|
 | `unmanaged` | exit `4` |
 | `registered` / `not-created` | `already removed`を表示し、promptなしでexit `0` |
-| `stopped` | 通常modeでは内部状態を観測できないため削除を拒否し、完全指定した`rm --force`を案内 |
+| `stopped` | 通常modeでは内部状態を観測できないため削除を拒否し、完全指定した`destroy --force`を案内 |
 | `running` | 通常modeではsession終了を要求し、worktree検査後に削除 |
 | `inconsistent` | exit `4`、自動削除しない |
 
-`rm`はmetadataを削除しないため、成功後は常に`registered`となる。
+`destroy`はmetadataを削除しないため、成功後は常に`registered`となる。
 
 force modeでは、`stopped`と`running`のどちらもデータ保護検査なしで削除する。`unmanaged`、`inconsistent`、対象を一意に特定できない状態はforce modeの対象にならない。
 
@@ -62,7 +62,7 @@ force modeでは、`stopped`と`running`のどちらもデータ保護検査な�
 7. Sandboxを削除
 8. 不在を検証
 
-削除開始前にproject lockを保持し、他の`add`、`open`、`stop`、`rm`を排除する。
+削除開始前にproject lockを保持し、他の`add`、`open`、`stop`、`destroy`を排除する。
 
 対象特定ではmetadata、canonical project ID、導出したSandbox名、workspace、ownershipを検証する。対象を一意に特定できない場合は通常・forceのどちらでも削除しない。
 
@@ -72,7 +72,7 @@ force modeでは、`stopped`と`running`のどちらもデータ保護検査な�
 
 structuredなsession検査を対象versionが提供しない場合:
 
-- running Sandboxの`rm`は利用者へsession終了を案内して一度exit `10`
+- running Sandboxの`destroy`は利用者へsession終了を案内して一度exit `10`
 - 再実行時の確認promptで「すべてのsessionを終了した」と明示確認させる
 - 非TTYの通常modeではactive sessionなしを証明できないためexit `6`
 
@@ -131,7 +131,7 @@ force modeでは本sectionのworktree列挙と保存状態検査を行わない�
 通常modeでは停止中Sandboxを起動せず、内部のworktreeと保存状態を観測不能としてexit code `6`で削除を拒否する。完全指定した次のcommandを案内する。
 
 ```text
-sbxm rm --force <owner>/<repository>
+sbxm destroy --force <owner>/<repository>
 ```
 
 ## 9. 削除確認
@@ -231,13 +231,13 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 13. `stop`の複数対象とno-op
 14. `ls`の3 stateとunmanaged Sandbox
 15. `status`のmanaged/unmanaged、dirty、security診断
-16. dirty managedによる`rm`拒否
-17. dirty unmanagedによる`rm`拒否
-18. unpushed commitによる`rm`拒否
-19. cleanかつremote到達済みでtyped confirmation後の`rm`
-20. dirty、unpushed、active sessionを持つrunning Sandboxの`rm --force`
-21. stopped Sandboxの`rm --force`
-22. 非TTYかつ完全指定した通常`rm`と`rm --force`
+16. dirty managedによる`destroy`拒否
+17. dirty unmanagedによる`destroy`拒否
+18. unpushed commitによる`destroy`拒否
+19. cleanかつremote到達済みでtyped confirmation後の`destroy`
+20. dirty、unpushed、active sessionを持つrunning Sandboxの`destroy --force`
+21. stopped Sandboxの`destroy --force`
+22. 非TTYかつ完全指定した通常`destroy`と`destroy --force`
 23. host clone、metadata、Dockerfile、exports、archive、image、secretの保持
 24. `open`がnot-createdを拒否
 25. 同じ`add`による再構築

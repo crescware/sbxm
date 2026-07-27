@@ -80,7 +80,7 @@ lock fileの存在自体は処理中を意味しない。OS file lockの取得�
 
 引数なしで作成されたattached projectは、保存済みのresolved default branchを再実行時に使用する。GitHub側default branchが変わっても自動変更しない。
 
-`rm`後の`registered`状態では、保存済み目標構成と正規化後に同じ意味となる引数だけを受け付け、Sandbox以降の工程を再実行する。例えばoptionなしと`--worktrees 1`は同じattached目標構成として扱う。
+`destroy`後の`registered`状態では、保存済み目標構成と正規化後に同じ意味となる引数だけを受け付け、Sandbox以降の工程を再実行する。例えばoptionなしと`--worktrees 1`は同じattached目標構成として扱う。
 
 ## 6. 導出名
 
@@ -395,4 +395,4 @@ FILE  DESTINATION  RESULT
 - detached 3 treesが同じ明示branchの同じcommitから作られる
 - secret未登録で安全に中断し、登録後に同じcommandで再開できる
 - 各工程でprocessを中断しても、同じ目標構成で再開または明確な不整合停止となる
-- `rm`後の`registered`案件を同じ`add`で再構築できる
+- `destroy`後の`registered`案件を同じ`add`で再構築できる

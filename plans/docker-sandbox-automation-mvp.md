@@ -7,7 +7,7 @@
 - [Phase 1: 共通基盤、`init`、global `status`](specs/phase-1-foundation-init.md)
 - [Phase 2: `add`](specs/phase-2-add.md)
 - [Phase 3: `open`、`stop`、`ls`、`status`](specs/phase-3-daily-operations.md)
-- [Phase 4: `rm`とE2E検証](specs/phase-4-remove-validation.md)
+- [Phase 4: `destroy`とE2E検証](specs/phase-4-destroy-validation.md)
 
 本文とPhase別仕様が矛盾する場合は、本文の安全原則を優先し、実装前に文書を修正する。実装で矛盾を吸収しない。
 
@@ -85,10 +85,10 @@ sbxm [--lang <ja|en>] stop [<owner>/<repository>...]
 sbxm [--lang <ja|en>] ls
 sbxm [--lang <ja|en>] status --global
 sbxm [--lang <ja|en>] status <owner>/<repository>
-sbxm [--lang <ja|en>] rm [-f|--force] [<owner>/<repository>]
+sbxm [--lang <ja|en>] destroy [-f|--force] [<owner>/<repository>]
 ```
 
-`create`、`setup`、`start`、`shell`、`destroy`など、内部工程や下位toolの語彙は公開commandにしない。
+公開commandは利用者が達成したい目的に基づいて命名し、下位toolのcommand構成をそのまま公開APIへ転写しない。内部工程や下位toolと同じ語彙になること自体は制約としない。
 
 ### 5.1 対象指定
 
@@ -96,9 +96,9 @@ sbxm [--lang <ja|en>] rm [-f|--force] [<owner>/<repository>]
 - TTYで引数なし: metadataから候補を作り、必ずpromptを表示する
 - 非TTYで引数なし: 対象を探索せずusage errorとする
 - promptはstdinから読み、stderrへ表示する。両方がTTYでなければusage errorとする
-- `open`と`rm`は単一選択、`stop`は0件以上の複数選択とする
+- `open`と`destroy`は単一選択、`stop`は0件以上の複数選択とする
 - `status`は`--global`（短縮形`-g`）または`<owner>/<repository>`のどちらか一方を必須とし、案件選択promptを出さない
-- `rm --force`はTTYかどうかにかかわらずproject引数の完全指定を必須とする
+- `destroy --force`はTTYかどうかにかかわらずproject引数の完全指定を必須とする
 - promptに既定選択を設けない
 - EscまたはCtrl-Cは何も変更せず、exit code `130`で終了する
 - `stop`で0件を確定した場合だけ、何も変更せずexit code `0`とする
@@ -208,7 +208,7 @@ created_from = "refs/remotes/origin/develop"
 - `provisioning`は最初の外部mutation前にatomic writeする
 - 再実行時の引数が保存済み構成と異なる場合はusage conflictとしてmutation前に拒否する
 - `worktrees.managed`はmanaged用pathの永続的な宣言であり、各worktree作成成功直後にatomic writeで追記する
-- `rm`後も宣言を保持し、再構築時には実体がまだ存在しない目標pathとして扱う
+- `destroy`後も宣言を保持し、再構築時には実体がまだ存在しない目標pathとして扱う
 - runtime state、HEAD、dirty状態は保存せずGitと`sbx`から取得する
 
 ## 8. 状態モデル
@@ -225,15 +225,15 @@ created_from = "refs/remotes/origin/develop"
 
 ### 8.2 Command別状態遷移
 
-| 現在状態 | `add` | `open` | `stop` | `rm` |
+| 現在状態 | `add` | `open` | `stop` | `destroy` |
 |---|---|---|---|---|
 | `unmanaged` | 新規登録して構築 | 対象未登録error | 対象未登録error | 対象未登録error |
 | `registered` | 保存済み目標構成で構築・再構築 | `add`を案内してerror | no-op成功 | no-op成功 |
-| `stopped` | 成果物を検証してno-op成功 | 起動して接続 | no-op成功 | clean検証後に削除 |
-| `running` | 成果物を検証してno-op成功 | そのまま接続 | 停止 | session停止・clean検証後に削除 |
+| `stopped` | 成果物を検証してno-op成功 | 起動して接続 | no-op成功 | 通常modeは拒否、force modeは削除 |
+| `running` | 成果物を検証してno-op成功 | そのまま接続 | 停止 | 通常modeはsession・保存状態検証後、force modeは検証なしで削除 |
 | `inconsistent` | 診断付きerror | error | error | error |
 
-`rm`後は`registered`になる。再構築は保存済みの目標構成を使って`add`を実行する。
+`destroy`後は`registered`になる。再構築は保存済みの目標構成を使って`add`を実行する。
 
 ## 9. 表示言語と出力
 
