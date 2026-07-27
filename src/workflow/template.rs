@@ -74,6 +74,30 @@ pub fn ensure(
     })
 }
 
+/// 期待するimageを保持しているTemplateが既にあるか。
+///
+/// 同名で別imageのTemplate、対応を観測できないruntimeは、`ensure`と同じ規則で拒否する。
+pub fn existing(host: &dyn HostEnvironment, image: &BuiltImage) -> Result<Option<LoadedTemplate>> {
+    let Some(entry) = find(host, &image.name)? else {
+        return Ok(None);
+    };
+    match &entry.image_id {
+        Some(id) if *id == image.id => Ok(Some(LoadedTemplate {
+            name: image.name.clone(),
+            loaded: false,
+        })),
+        Some(id) => Err(unusable(
+            &image.name,
+            format!("the template holds image {id}, not {}", image.id),
+        )),
+        None => Err(unusable(
+            &image.name,
+            "this Docker Sandboxes version does not report which image a template holds"
+                .to_string(),
+        )),
+    }
+}
+
 /// 名前が完全一致するTemplateを探す。
 fn find(host: &dyn HostEnvironment, name: &str) -> Result<Option<TemplateEntry>> {
     let spec = CommandSpec::capture("sbx", &["template", "ls", "--json"])

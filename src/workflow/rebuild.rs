@@ -1,0 +1,621 @@
+//! `sbxm rebuild`。
+//!
+//! 利用者が編集したDockerfileを新しい世代としてbuildし、保存されていない作業がない
+//! ことを確かめてから、同じ目標構成でSandboxを作り直す。安全検査を省略するoptionは
+//! 設けない。
+
+use std::path::Path;
+use std::time::Instant;
+
+use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::config::{ConfigLocation, GlobalConfig};
+use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
+use crate::hash::sha256_hex;
+use crate::metadata::{self, ProjectMetadata, RebuildIntent};
+use crate::msg;
+use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::project::{ProjectId, SandboxLayout, SandboxName};
+
+use super::files::{self, Conflict};
+use super::image::{self, image_name};
+use super::inventory::{self, ProjectState};
+use super::open::Poll;
+use super::protection::{self, Unmanaged};
+use super::{daemon, identity, repository, sandbox, template};
+
+/// `rebuild`の結果。
+#[derive(Debug, Clone)]
+pub struct RebuildOutput {
+    pub project: String,
+    pub sandbox: String,
+    /// 適用済みになったDockerfile hash。
+    pub applied: String,
+    /// 何も変更しなかったか。
+    pub unchanged: bool,
+    pub warnings: Vec<Msg>,
+}
+
+/// Dockerfileの変更をSandboxへ適用する。
+pub fn run(
+    config: &GlobalConfig,
+    location: &ConfigLocation,
+    project: &ProjectId,
+    host: &dyn HostEnvironment,
+    workspace_root: &Path,
+    poll: Poll,
+) -> Result<RebuildOutput> {
+    let canonical = project.canonical();
+    let paths = ProjectPaths::derive(&config.base_path, &canonical);
+    let name = SandboxName::derive(&canonical);
+
+    let Some(_) = metadata::load(&paths)? else {
+        return Err(not_managed(project));
+    };
+    let _lock = paths::acquire_exclusive_lock(
+        &paths.lock_file(),
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )?;
+
+    // lock取得後の状態を正本とする。
+    let mut project_metadata = metadata::load(&paths)?.ok_or_else(|| not_managed(project))?;
+    let current = current_dockerfile_hash(&paths)?;
+    let inventory = inventory::take(config, host, workspace_root)?;
+    let state = inventory
+        .find(&canonical)
+        .map(|managed| managed.state)
+        .unwrap_or(ProjectState::NotCreated);
+
+    let target = match &project_metadata.rebuild {
+        // intentがある場合は、intentに固定した世代だけを完成させる。
+        Some(intent) => intent.target_dockerfile_sha256.clone(),
+        None => {
+            if current == project_metadata.provisioning.dockerfile_sha256 {
+                return Ok(RebuildOutput {
+                    project: project_metadata.display_id(),
+                    sandbox: name.as_str().to_string(),
+                    applied: current,
+                    unchanged: true,
+                    warnings: Vec::new(),
+                });
+            }
+            require_running(&project_metadata, state, &name)?;
+            let layout = SandboxLayout::new(&canonical);
+            protection::inspect(
+                host,
+                name.as_str(),
+                &layout,
+                &project_metadata,
+                Unmanaged::Refused,
+            )?;
+            current.clone()
+        }
+    };
+
+    // 新世代の成果物が揃うまで、既存Sandboxを停止も削除もしない。
+    let built = prepare_generation(host, &paths, &name, &project_metadata, &target, &current)?;
+    if project_metadata.rebuild.is_none() {
+        project_metadata.rebuild = Some(RebuildIntent {
+            target_dockerfile_sha256: target.clone(),
+            previous_dockerfile_sha256: project_metadata.provisioning.dockerfile_sha256.clone(),
+        });
+        metadata::update(&paths, &project_metadata)?;
+    }
+
+    let mut warnings = built.warnings;
+    if current != target {
+        // intent記録後の編集は上書きせず、次の`rebuild`対象として案内する。
+        warnings.push(msg!(
+            "warning-dockerfile-changed-during-rebuild",
+            project = project_metadata.display_id(),
+            command = format!("sbxm rebuild {}", project_metadata.display_id())
+        ));
+    }
+
+    switch(
+        config,
+        location,
+        host,
+        &paths,
+        &name,
+        &mut project_metadata,
+        &built.template,
+        &inventory,
+        project,
+        workspace_root,
+        poll,
+    )?;
+
+    // 全検証が終わってから、適用済みhashを更新してintentを削除する。
+    project_metadata.provisioning.dockerfile_sha256 = target.clone();
+    project_metadata.rebuild = None;
+    metadata::update(&paths, &project_metadata)?;
+
+    Ok(RebuildOutput {
+        project: project_metadata.display_id(),
+        sandbox: name.as_str().to_string(),
+        applied: target,
+        unchanged: false,
+        warnings,
+    })
+}
+
+/// 新世代のimage、archive、Template。
+struct Generation {
+    template: super::template::LoadedTemplate,
+    warnings: Vec<Msg>,
+}
+
+/// target世代の成果物を用意する。
+///
+/// 現在のDockerfileがtarget世代である場合だけ生成でき、異なる場合は既存の成果物が
+/// 揃っていることを条件とする。世代を混在させない。
+fn prepare_generation(
+    host: &dyn HostEnvironment,
+    paths: &ProjectPaths,
+    name: &SandboxName,
+    metadata: &ProjectMetadata,
+    target: &str,
+    current: &str,
+) -> Result<Generation> {
+    if current != target && !image::generation_is_built(host, name, &metadata.canonical_id, target)?
+    {
+        // 固定済みtargetの成果物がなく、Dockerfileも別世代であるため再生成できない。
+        return Err(Error::single(
+            Diagnostic::new(
+                ErrorId::RebuildGenerationMissing,
+                msg!(
+                    "error-rebuild-generation-missing",
+                    project = metadata.display_id(),
+                    target = target,
+                    observed = current
+                ),
+            )
+            .remediation(msg!(
+                "remediation-rebuild-generation-missing",
+                command = format!("sbxm destroy --force {}", metadata.display_id())
+            )),
+        ));
+    }
+
+    let built = image::ensure(
+        host,
+        name,
+        &metadata.canonical_id,
+        &paths.dockerfile(),
+        target,
+    )?;
+    // 中断した再構築を続ける場合、成功済みの工程はinspectしてskipする。
+    let template = match template::existing(host, &built)? {
+        Some(template) => template,
+        None => {
+            let archive = image::ensure_archive(host, paths, &built, target)?;
+            template::ensure(host, &archive, &built)?
+        }
+    };
+    Ok(Generation {
+        template,
+        warnings: built.warnings,
+    })
+}
+
+/// Sandboxを新世代へ切り替える。
+#[allow(clippy::too_many_arguments)]
+fn switch(
+    config: &GlobalConfig,
+    location: &ConfigLocation,
+    host: &dyn HostEnvironment,
+    paths: &ProjectPaths,
+    name: &SandboxName,
+    metadata: &mut ProjectMetadata,
+    template: &super::template::LoadedTemplate,
+    inventory: &inventory::Inventory,
+    project: &ProjectId,
+    workspace_root: &Path,
+    poll: Poll,
+) -> Result<()> {
+    let layout = SandboxLayout::new(&metadata.canonical_id);
+    let target_template = template.name.clone();
+    let previous_template = metadata
+        .rebuild
+        .as_ref()
+        .map(|intent| image_name(name, &intent.previous_dockerfile_sha256));
+
+    // Sandboxが不在の中断点からは、作成工程から続ける。
+    if let Some(managed) = inventory
+        .find(&metadata.canonical_id)
+        .filter(|managed| managed.state != ProjectState::NotCreated)
+    {
+        let observed = managed
+            .entry_template()
+            .unwrap_or_else(|| "<unreported>".to_string());
+        if observed == target_template {
+            // 既にtarget世代のSandboxがある。作成工程はskipして続きから進める。
+        } else if Some(&observed) == previous_template.as_ref() {
+            protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
+            remove(host, name, poll)?;
+        } else {
+            // targetでもpreviousでもない世代は、この案件の成果物として扱えない。
+            return Err(Error::new(
+                ErrorId::SandboxUnusable,
+                msg!(
+                    "error-sandbox-unusable",
+                    sandbox = name,
+                    detail = format!(
+                        "the sandbox was made from {observed}, and this rebuild switches from {} to {target_template}",
+                        previous_template.unwrap_or_else(|| "<unknown>".to_string())
+                    )
+                ),
+            ));
+        }
+    }
+
+    let daemon_guard = daemon::restart_without_ssh_agent(host, location)?;
+    let ready = sandbox::ensure(host, name, template, workspace_root)?;
+    drop(daemon_guard);
+
+    identity::ensure(host, &ready.name, &config.git)?;
+    files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
+    repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
+    let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
+    repository::ensure_worktrees(host, &ready.name, &layout, paths, metadata, &branch)?;
+    Ok(())
+}
+
+/// 旧世代のSandboxを削除し、不在を確認する。
+fn remove(host: &dyn HostEnvironment, name: &SandboxName, poll: Poll) -> Result<()> {
+    let spec = CommandSpec::passthrough("sbx", &["rm", name.as_str()])
+        .env(EnvPolicy::InheritWithoutSshAgent)
+        .timeout(TimeoutClass::SandboxLifecycle);
+    host.run(&spec)?.require_success()?;
+
+    let deadline = Instant::now() + poll.limit;
+    loop {
+        let entries = daemon::list(host)?;
+        if !entries.iter().any(|entry| entry.name == name.as_str()) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::new(
+                ErrorId::SandboxStillPresent,
+                msg!("error-sandbox-still-present", sandbox = name),
+            ));
+        }
+        std::thread::sleep(poll.interval);
+    }
+}
+
+/// 現在のDockerfileのSHA-256。
+fn current_dockerfile_hash(paths: &ProjectPaths) -> Result<String> {
+    let path = paths.dockerfile();
+    if !paths::regular_file_exists(&path, PathScope::ProjectPath)? {
+        return Err(Error::new(
+            ErrorId::ProjectPathUnreadable,
+            msg!(
+                "error-project-path-unreadable",
+                path = paths::display(&path),
+                detail = "the Dockerfile of this project is absent"
+            ),
+        ));
+    }
+    let contents = std::fs::read(&path)
+        .map_err(|error| PathScope::ProjectPath.unreadable_error(&path, &error.to_string()))?;
+    Ok(sha256_hex(&contents))
+}
+
+/// 新規`rebuild`は、内部状態を観測できるrunningのSandboxだけを対象とする。
+fn require_running(
+    metadata: &ProjectMetadata,
+    state: ProjectState,
+    name: &SandboxName,
+) -> Result<()> {
+    match state {
+        ProjectState::Running => Ok(()),
+        ProjectState::NotCreated => Err(Error::single(
+            Diagnostic::new(
+                ErrorId::SandboxNotCreated,
+                msg!(
+                    "error-sandbox-not-created",
+                    project = metadata.display_id(),
+                    sandbox = name
+                ),
+            )
+            .remediation(msg!(
+                "remediation-sandbox-not-created",
+                command = format!("sbxm add {}", metadata.display_id())
+            )),
+        )),
+        ProjectState::Stopped => Err(Error::single(
+            Diagnostic::new(
+                ErrorId::SandboxNotRunning,
+                msg!(
+                    "error-sandbox-not-running",
+                    sandbox = name,
+                    observed = "stopped"
+                ),
+            )
+            .remediation(msg!(
+                "remediation-sandbox-not-running",
+                command = format!("sbxm open {}", metadata.display_id())
+            )),
+        )),
+    }
+}
+
+fn not_managed(project: &ProjectId) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::ProjectNotManaged,
+            msg!("error-project-not-managed", project = project),
+        )
+        .remediation(msg!(
+            "remediation-project-not-managed",
+            command = format!("sbxm add {project}")
+        )),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workflow::inventory::tests::{FakeSbx, Fixture, fixture};
+    use crate::workflow::protection::tests::clean_host;
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::Duration;
+
+    fn poll() -> Poll {
+        Poll {
+            interval: Duration::from_millis(1),
+            limit: Duration::from_millis(20),
+        }
+    }
+
+    fn location(fixture: &Fixture) -> ConfigLocation {
+        ConfigLocation::from_home(
+            fixture
+                .workspace_root
+                .parent()
+                .expect("a home directory")
+                .to_path_buf(),
+        )
+    }
+
+    fn project_id(value: &str) -> ProjectId {
+        ProjectId::parse(value).expect("valid project id")
+    }
+
+    #[test]
+    fn a_dockerfile_that_did_not_change_is_a_no_op() {
+        let fixture = fixture();
+        let mut project = fixture.register("example-org/example-repo");
+        // 適用済みhashと同じ内容のDockerfileを置く。
+        std::fs::write(project.paths.dockerfile(), "unchanged\n").unwrap();
+        project.metadata.provisioning.dockerfile_sha256 = sha256_hex(b"unchanged\n");
+        metadata::update(&project.paths, &project.metadata).unwrap();
+
+        let host = FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "running")));
+        let output = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect("nothing to apply");
+
+        assert!(output.unchanged);
+        assert_eq!(output.applied, sha256_hex(b"unchanged\n"));
+        assert!(
+            !host.ran("build") && !host.ran("rm "),
+            "a no-op touches nothing: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
+    fn a_project_that_is_not_managed_cannot_be_rebuilt() {
+        let fixture = fixture();
+        let host = FakeSbx::listing("[]");
+        let error = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("there is nothing to rebuild");
+        assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+    }
+
+    #[test]
+    fn a_stopped_or_missing_sandbox_is_refused_with_the_command_that_helps() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+
+        let stopped = FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "stopped")));
+        let error = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &stopped,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("a stopped sandbox cannot be inspected");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
+        assert!(!stopped.ran("build"), "nothing is built");
+
+        let absent = FakeSbx::listing("[]");
+        let error = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &absent,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("a project without a sandbox has nothing to switch");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
+    }
+
+    #[test]
+    fn unsaved_work_stops_the_rebuild_before_anything_is_built() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        let name = project.sandbox.as_str();
+        let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+        let host = clean_host(&fixture, &project).answering(
+            &format!(
+                "exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"
+            ),
+            0,
+            "? scratch.txt\0",
+        );
+
+        let error = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("a dirty worktree is not recreated");
+        assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
+        assert!(
+            !host.ran("build"),
+            "the existing sandbox is untouched: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
+    fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+        let target = sha256_hex(b"FROM scratch\n");
+
+        // Sandbox削除の直後で中断した状態を作る。
+        let mut metadata = project.metadata.clone();
+        metadata.rebuild = Some(RebuildIntent {
+            target_dockerfile_sha256: target.clone(),
+            previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+        });
+        metadata::update(&project.paths, &metadata).unwrap();
+
+        let image = image_name(&project.sandbox, &target);
+        let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let created = format!(
+            r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
+            project.sandbox,
+            workspace.display()
+        );
+
+        let host = FakeSbx::listings(&["[]", &created])
+            .answering(
+                &format!("image inspect {image}"),
+                0,
+                &format!(
+                    r#"[{{"Id":"sha256:new","Config":{{"Labels":{{"io.crescware.sbxm.canonical-id":"example-org/example-repo","io.crescware.sbxm.dockerfile-sha256":"{target}","io.crescware.sbxm.metadata-version":"1"}}}}}}]"#
+                ),
+            )
+            .answering(
+                "template ls --json",
+                0,
+                &format!(r#"[{{"name":"{image}","image_id":"sha256:new"}}]"#),
+            )
+            .answering(
+                &format!("secret ls {} --json", project.sandbox),
+                0,
+                r#"[{"name":"github"}]"#,
+            );
+        // 再作成後のSandbox内で、共有repositoryとworktreeが期待どおりに揃う。
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        let git_dir = layout.bare_git_dir();
+        let worktree = layout.worktree(0);
+        let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
+        let host = host
+            .answering(
+                &format!(
+                    "exec {} -- git --git-dir {git_dir} rev-parse --is-bare-repository",
+                    project.sandbox
+                ),
+                0,
+                "true\n",
+            )
+            .answering(
+                &format!(
+                    "exec {} -- git --git-dir {git_dir} config --get-all remote.origin.url",
+                    project.sandbox
+                ),
+                0,
+                "https://github.com/example-org/example-repo.git\n",
+            )
+            .answering(
+                &format!(
+                    "exec {} -- git --git-dir {git_dir} config --get-all remote.origin.fetch",
+                    project.sandbox
+                ),
+                0,
+                "+refs/heads/*:refs/remotes/origin/*\n",
+            )
+            .answering(
+                &format!(
+                    "exec {} -- git --git-dir {git_dir} rev-parse refs/remotes/origin/main",
+                    project.sandbox
+                ),
+                0,
+                &format!("{commit}\n"),
+            )
+            .answering(
+                &format!(
+                    "exec {} -- git -C {worktree} rev-parse HEAD",
+                    project.sandbox
+                ),
+                0,
+                &format!("{commit}\n"),
+            )
+            .answering(
+                &format!(
+                    "exec {} -- git -C {worktree} symbolic-ref -q HEAD",
+                    project.sandbox
+                ),
+                0,
+                "refs/heads/main\n",
+            );
+
+        let output = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect("the fixed generation is completed");
+
+        assert_eq!(output.applied, target);
+        assert!(!output.unchanged);
+        let stored = metadata::load(&project.paths).unwrap().expect("present");
+        assert_eq!(stored.provisioning.dockerfile_sha256, target);
+        assert!(
+            stored.rebuild.is_none(),
+            "the intent is cleared once everything verified"
+        );
+        assert!(
+            !host.ran("image save"),
+            "an image that is already built is not rebuilt: {:?}",
+            host.calls()
+        );
+    }
+}

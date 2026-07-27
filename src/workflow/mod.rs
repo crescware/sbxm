@@ -14,6 +14,7 @@ pub mod inventory;
 pub mod ls;
 pub mod open;
 pub mod protection;
+pub mod rebuild;
 pub mod repository;
 pub mod sandbox;
 pub mod secret;

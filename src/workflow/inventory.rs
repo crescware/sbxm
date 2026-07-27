@@ -61,12 +61,19 @@ pub struct ManagedProject {
     pub metadata: ProjectMetadata,
     pub sandbox: SandboxName,
     pub state: ProjectState,
+    /// 対応するSandboxが元にしたTemplate。runtimeが示さない場合は`None`。
+    pub template: Option<String>,
 }
 
 impl ManagedProject {
     /// 表示に使う`<owner>/<repository>`。
     pub fn display_id(&self) -> String {
         self.metadata.display_id()
+    }
+
+    /// Sandboxが元にしたTemplate。世代の判定に使う。
+    pub fn entry_template(&self) -> Option<String> {
+        self.template.clone()
     }
 }
 
@@ -124,6 +131,7 @@ pub fn take(
             metadata: project.metadata,
             sandbox: name,
             state,
+            template: entry.and_then(|entry| entry.template.clone()),
         });
     }
 
@@ -331,6 +339,7 @@ pub mod tests {
                 metadata,
                 sandbox: name,
                 state: ProjectState::NotCreated,
+                template: None,
             }
         }
 
