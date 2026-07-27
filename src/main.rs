@@ -8,5 +8,6 @@
 #![allow(dead_code)]
 
 mod error;
+mod i18n;
 
 fn main() {}
