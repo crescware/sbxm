@@ -8,5 +8,5 @@ Arguments:
 Options:
       --worktrees <N>    Number of managed worktrees to create (1-32)
       --detach <BRANCH>  Remote branch every managed worktree starts from, in detached mode
-      --lang <ja|en>     Display language for this run (ja, en)
+      --lang <en|ja>     Display language for this run (en, ja)
   -h, --help             Print help

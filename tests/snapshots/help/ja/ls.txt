@@ -3,5 +3,5 @@
 使い方 (Usage): sbxm ls [OPTIONS]
 
 option (Options):
-      --lang <ja|en>  この実行の表示言語 (ja, en)
+      --lang <en|ja>  この実行の表示言語 (en, ja)
   -h, --help          helpを表示する

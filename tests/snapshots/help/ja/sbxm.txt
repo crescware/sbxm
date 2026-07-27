@@ -14,6 +14,6 @@ command (Commands):
   destroy     対象案件のSandboxとsbxmの管理情報を破棄します
 
 option (Options):
-      --lang <ja|en>  この実行の表示言語 (ja, en)
+      --lang <en|ja>  この実行の表示言語 (en, ja)
   -h, --help          helpを表示する
   -V, --version       versionを表示する

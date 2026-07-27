@@ -6,5 +6,5 @@ option (Options):
       --base-path <PATH>        案件directoryを置くdirectoryのabsolute path
       --git-user-name <NAME>    Sandbox内へ設定するGitのuser.name
       --git-user-email <EMAIL>  Sandbox内へ設定するGitのuser.email
-      --lang <ja|en>            この実行の表示言語 (ja, en)
+      --lang <en|ja>            この実行の表示言語 (en, ja)
   -h, --help                    helpを表示する

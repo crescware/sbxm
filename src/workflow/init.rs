@@ -203,7 +203,7 @@ fn ensure_base_path_exists(
 /// 1. 有効な`--lang`
 /// 2. macOS優先言語
 /// 3. shell locale
-/// 4. `en`
+/// 4. 正本locale
 fn resolve_locale(
     request: &InitRequest,
     host: &dyn HostEnvironment,
@@ -215,14 +215,14 @@ fn resolve_locale(
 
     let preferred = macos_preferred_language(host);
     match (&request.mode, preferred) {
-        // 対話modeで先頭がjaなら、Japanese / Englishを選択させる。
-        (InitMode::Interactive, Some(Locale::Ja)) => {
-            let bootstrap = Catalog::new(Locale::Ja);
+        // 対話modeで正本locale以外が推測された場合だけ、その推測を確認させる。
+        (InitMode::Interactive, Some(locale)) if !locale.is_source() => {
+            let bootstrap = Catalog::new(locale);
             prompt.select_language(&bootstrap)
         }
         // option modeではpromptを表示しない。
         (_, Some(locale)) => Ok(locale),
-        (_, None) => Ok(shell_locale().unwrap_or(Locale::En)),
+        (_, None) => Ok(shell_locale().unwrap_or(Locale::SOURCE)),
     }
 }
 
@@ -280,16 +280,25 @@ impl TerminalPrompt {
 
 impl Prompt for TerminalPrompt {
     fn select_language(&mut self, catalog: &Catalog) -> Result<Locale> {
-        let items = [
-            TerminalPrompt::text(catalog, "init-prompt-language-ja"),
-            TerminalPrompt::text(catalog, "init-prompt-language-en"),
-        ];
+        // 推測されたlocaleを先頭に、残りを定義順で並べる。
+        let guessed = catalog.locale();
+        let mut choices = vec![guessed];
+        choices.extend(Locale::ALL.into_iter().filter(|locale| *locale != guessed));
+
+        // 言語の名称は、その言語自身のresourceが持つ自称表記を使う。
+        let items: Vec<String> = choices
+            .iter()
+            .map(|locale| TerminalPrompt::text(&Catalog::new(*locale), "locale-name"))
+            .collect();
+
         let index = dialoguer::Select::new()
             .with_prompt(TerminalPrompt::text(catalog, "init-prompt-language"))
             .items(&items)
             .interact()
             .map_err(TerminalPrompt::map_error)?;
-        Ok(if index == 0 { Locale::Ja } else { Locale::En })
+        Ok(*choices
+            .get(index)
+            .expect("the selection index stays within the offered items"))
     }
 
     fn base_path(&mut self, catalog: &Catalog) -> Result<String> {

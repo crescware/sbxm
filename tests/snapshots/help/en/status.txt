@@ -7,5 +7,5 @@ Arguments:
 
 Options:
   -g, --global        Diagnose the host and global environment instead of a project
-      --lang <ja|en>  Display language for this run (ja, en)
+      --lang <en|ja>  Display language for this run (en, ja)
   -h, --help          Print help

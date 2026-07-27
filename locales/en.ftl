@@ -6,6 +6,13 @@
 # Enum values, paths, commands, exit statuses and external stdout/stderr are
 # never translated and therefore never appear as literal text in this file.
 
+## Locale
+
+# The name of this language, written as "endonym / source-locale term" so that a
+# reader who cannot read the script can still identify it. The two coincide here.
+# Every resource names only itself, so adding a language never edits the others.
+locale-name = English
+
 ## Top-level CLI
 
 cli-about = Manage Docker Sandboxes per project: set up, connect, inspect and tear down.
@@ -13,7 +20,7 @@ cli-heading-usage = Usage:
 cli-heading-commands = Commands:
 cli-heading-options = Options:
 cli-heading-arguments = Arguments:
-cli-lang-help = Display language for this run (ja, en)
+cli-lang-help = Display language for this run ({ $supported })
 cli-help-help = Print help
 cli-version-help = Print version
 
@@ -188,8 +195,6 @@ init-already-initialized = sbxm is already initialized. The configuration is at 
 init-created = The global configuration was created at { $path }.
 init-next-step = Run sbxm status --global to diagnose the host environment.
 init-prompt-language = Display language
-init-prompt-language-en = English
-init-prompt-language-ja = Japanese
 init-prompt-base-path = Absolute path of the directory that will hold project directories
 init-prompt-git-user-name = Git user.name to use inside sandboxes
 init-prompt-git-user-email = Git user.email to use inside sandboxes

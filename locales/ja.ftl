@@ -6,6 +6,13 @@
 # enum、path、command、exit status、外部stdout/stderrは翻訳しない。
 # 診断labelは「日本語 (English)」の形式とする。
 
+## locale
+
+# この言語の名称を「自称表記 / 正本localeの語」で書く。読めない言語が選択肢に並んでも
+# 識別できるようにする。各resourceは自分の名称だけを持つため、言語を増やしても
+# 既存のresourceを編集しない。
+locale-name = 日本語 / Japanese
+
 ## CLI全体
 
 cli-about = 案件ごとのDocker Sandboxを構築、接続、診断、破棄します。
@@ -13,7 +20,7 @@ cli-heading-usage = 使い方 (Usage):
 cli-heading-commands = command (Commands):
 cli-heading-options = option (Options):
 cli-heading-arguments = 引数 (Arguments):
-cli-lang-help = この実行の表示言語 (ja, en)
+cli-lang-help = この実行の表示言語 ({ $supported })
 cli-help-help = helpを表示する
 cli-version-help = versionを表示する
 
@@ -188,8 +195,6 @@ init-already-initialized = sbxmは初期化済みです。設定fileは { $path 
 init-created = global設定を { $path } に作成しました。
 init-next-step = sbxm status --global を実行するとhost環境を診断できます。
 init-prompt-language = 表示言語
-init-prompt-language-en = English
-init-prompt-language-ja = 日本語
 init-prompt-base-path = 案件directoryを置くdirectoryのabsolute path
 init-prompt-git-user-name = Sandbox内で使うGitのuser.name
 init-prompt-git-user-email = Sandbox内で使うGitのuser.email

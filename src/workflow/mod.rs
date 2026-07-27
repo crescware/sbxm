@@ -1,7 +1,7 @@
 //! Workflowと、利用者向け出力の共通部分。
 //!
-//! stdoutは正常結果に使用する。英語modeでは機械的に利用可能なtableを提供し、
-//! 日本語modeではtableに日本語のenum凡例を加える。stderrはprompt、warning、errorに使用する。
+//! stdoutは正常結果に使用する。状態値は翻訳しないため、正本locale以外ではtableへ
+//! 状態値の凡例を加える。stderrはprompt、warning、errorに使用する。
 
 pub mod init;
 pub mod status_global;
@@ -9,7 +9,7 @@ pub mod status_global;
 use std::io::Write;
 
 use crate::error::{Diagnostic, Error, ExitCode, Msg};
-use crate::i18n::{Catalog, Locale};
+use crate::i18n::Catalog;
 
 /// 表示に使う状態値。翻訳しない安定したenum。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -158,9 +158,11 @@ impl<'a> Reporter<'a> {
         out
     }
 
-    /// 実際に出現したenumだけの凡例。日本語modeの正常出力の一部として出す。
+    /// 実際に出現したenumだけの凡例。
+    ///
+    /// 状態値は翻訳しないため、正本locale以外の正常出力へ注釈として付ける。
     pub fn render_legend(&self, rows: &[Row]) -> Option<String> {
-        if self.catalog.locale() != Locale::Ja {
+        if self.catalog.locale().is_source() {
             return None;
         }
         let mut seen: Vec<StatusValue> = rows.iter().map(|row| row.status).collect();
@@ -246,6 +248,7 @@ pub struct WorkflowOutput {
 mod tests {
     use super::*;
     use crate::error::{ErrorId, ExternalFailure};
+    use crate::i18n::Locale;
     use crate::msg;
 
     fn rows() -> Vec<Row> {
@@ -337,22 +340,25 @@ mod tests {
 
     #[test]
     fn the_legend_lists_only_the_values_that_actually_appeared() {
-        let catalog = Catalog::new(Locale::Ja);
-        let reporter = Reporter::new(&catalog);
-        let legend = reporter
-            .render_legend(&rows())
-            .expect("the Japanese mode adds a legend");
-        assert!(legend.contains("ready:"), "{legend}");
-        assert!(legend.contains("error:"), "{legend}");
-        assert!(
-            !legend.contains("stopped:"),
-            "values that did not appear must be left out: {legend}"
-        );
+        for locale in Locale::ALL.into_iter().filter(|locale| !locale.is_source()) {
+            let catalog = Catalog::new(locale);
+            let reporter = Reporter::new(&catalog);
+            let legend = reporter.render_legend(&rows()).unwrap_or_else(|| {
+                panic!("{locale} is not the source locale, so it adds a legend")
+            });
+            assert!(legend.contains("ready:"), "{locale}: {legend}");
+            assert!(legend.contains("error:"), "{locale}: {legend}");
+            assert!(
+                !legend.contains("stopped:"),
+                "{locale}: values that did not appear must be left out: {legend}"
+            );
+        }
     }
 
     #[test]
-    fn the_english_mode_has_no_legend() {
-        let catalog = Catalog::new(Locale::En);
+    fn the_source_locale_has_no_legend() {
+        // 状態値は正本localeの語であるため、正本localeでは注釈を出さない。
+        let catalog = Catalog::new(Locale::SOURCE);
         let reporter = Reporter::new(&catalog);
         assert!(reporter.render_legend(&rows()).is_none());
     }

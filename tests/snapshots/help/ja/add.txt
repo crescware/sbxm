@@ -8,5 +8,5 @@ GitHub repositoryを管理対象へ登録してSandboxを構築します
 option (Options):
       --worktrees <N>    作成するmanaged worktreeの数 (1〜32)
       --detach <BRANCH>  detached modeで全managed worktreeの起点にするremote branch
-      --lang <ja|en>     この実行の表示言語 (ja, en)
+      --lang <en|ja>     この実行の表示言語 (en, ja)
   -h, --help             helpを表示する

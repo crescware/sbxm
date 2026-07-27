@@ -13,11 +13,14 @@
 //!
 //! 本moduleは1から3までを担当し、config、filesystem、外部状態には触れない。
 
+use std::sync::OnceLock;
+
+use clap::builder::PossibleValuesParser;
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 
 use crate::compatibility;
-use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
+use crate::error::{Diagnostic, Error, ErrorId, Msg, Result, fail};
 use crate::i18n::{Catalog, Locale};
 use crate::msg;
 use crate::project::ProjectId;
@@ -160,16 +163,36 @@ pub fn peek_lang(argv: &[String]) -> PeekedLang {
     PeekedLang::Absent
 }
 
-/// `--lang`の不正値に対するerror。configを読まずに表示する。
-pub fn invalid_lang_error(value: &str) -> Error {
-    let supported = Locale::ALL
+/// 組み込みlocaleのtag。`--lang`が受け付ける値と一致する。
+fn supported_tags() -> Vec<&'static str> {
+    Locale::ALL
         .iter()
         .map(|locale| locale.as_str())
         .collect::<Vec<_>>()
-        .join(", ");
+}
+
+/// helpと診断へ並べる、受け付けるlocale tagの一覧。
+fn supported_tag_list() -> String {
+    supported_tags().join(", ")
+}
+
+/// `--lang`のvalue name。CLI parser libraryが`&'static str`を要求するため一度だけ組む。
+fn supported_value_name() -> &'static str {
+    static VALUE_NAME: OnceLock<String> = OnceLock::new();
+    VALUE_NAME
+        .get_or_init(|| supported_tags().join("|"))
+        .as_str()
+}
+
+/// `--lang`の不正値に対するerror。configを読まずに表示する。
+pub fn invalid_lang_error(value: &str) -> Error {
     Error::new(
         ErrorId::InvalidLang,
-        msg!("error-invalid-lang", value = value, supported = supported),
+        msg!(
+            "error-invalid-lang",
+            value = value,
+            supported = supported_tag_list()
+        ),
     )
 }
 
@@ -285,14 +308,15 @@ fn map_parse_error(error: &clap::Error, _catalog: &Catalog) -> Error {
 
 /// FTLからhelp textを組み立てたparserを作る。
 fn build_command(catalog: &Catalog) -> Result<ClapCommand> {
-    let text = |id: &str| -> Result<String> {
-        catalog.text(id).map_err(|failure| {
+    let message = |message: &Msg| -> Result<String> {
+        catalog.format(message).map_err(|failure| {
             Error::new(
                 ErrorId::MessageFormatFailed,
                 msg!("error-invalid-arguments").with("detail", failure),
             )
         })
     };
+    let text = |id: &'static str| -> Result<String> { message(&msg!(id)) };
 
     let usage_heading = text("cli-heading-usage")?;
     let commands_heading = text("cli-heading-commands")?;
@@ -312,15 +336,19 @@ fn build_command(catalog: &Catalog) -> Result<ClapCommand> {
     // 読めるよう、value name自体には囲み記号を含めない。
     let project_value_name = "owner/repository";
 
+    // 受け付ける値も表示も組み込みlocaleの定義から導出する。言語を増やしても触らない。
     let lang = Arg::new("lang")
         .long("lang")
-        .value_name("ja|en")
+        .value_name(supported_value_name())
         .global(true)
-        .value_parser(["ja", "en"])
+        .value_parser(PossibleValuesParser::new(supported_tags()))
         // 値の一覧はFTLのhelp textに含めるため、libraryの英語固定表記は出さない。
         .hide_possible_values(true)
         .display_order(900)
-        .help(text("cli-lang-help")?);
+        .help(message(&msg!(
+            "cli-lang-help",
+            supported = supported_tag_list()
+        ))?);
 
     // helpとversionは、commandごとのoptionより後に並べる。
     let help_flag = |catalog_help: String| {

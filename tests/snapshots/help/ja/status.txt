@@ -7,5 +7,5 @@ host環境または1案件をread-onlyで診断します
 
 option (Options):
   -g, --global        案件ではなくhostとglobal環境を診断します
-      --lang <ja|en>  この実行の表示言語 (ja, en)
+      --lang <en|ja>  この実行の表示言語 (en, ja)
   -h, --help          helpを表示する

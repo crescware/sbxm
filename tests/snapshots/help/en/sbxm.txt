@@ -14,6 +14,6 @@ Commands:
   destroy     Delete the sandbox and drop sbxm management data for a project
 
 Options:
-      --lang <ja|en>  Display language for this run (ja, en)
+      --lang <en|ja>  Display language for this run (en, ja)
   -h, --help          Print help
   -V, --version       Print version

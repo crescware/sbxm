@@ -6,5 +6,5 @@ Arguments:
   [owner/repository]...  Target projects as owner/repository
 
 Options:
-      --lang <ja|en>  Display language for this run (ja, en)
+      --lang <en|ja>  Display language for this run (en, ja)
   -h, --help          Print help

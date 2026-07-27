@@ -6,5 +6,5 @@
   [owner/repository]  対象案件をowner/repository形式で指定します
 
 option (Options):
-      --lang <ja|en>  この実行の表示言語 (ja, en)
+      --lang <en|ja>  この実行の表示言語 (en, ja)
   -h, --help          helpを表示する

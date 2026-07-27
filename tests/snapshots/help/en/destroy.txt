@@ -7,5 +7,5 @@ Arguments:
 
 Options:
   -f, --force         Skip data-protection and active-session checks, then delete
-      --lang <ja|en>  Display language for this run (ja, en)
+      --lang <en|ja>  Display language for this run (en, ja)
   -h, --help          Print help

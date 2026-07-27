@@ -7,5 +7,5 @@
 
 option (Options):
   -f, --force         データ保護検査とactive session検査を省略して削除します
-      --lang <ja|en>  この実行の表示言語 (ja, en)
+      --lang <en|ja>  この実行の表示言語 (en, ja)
   -h, --help          helpを表示する

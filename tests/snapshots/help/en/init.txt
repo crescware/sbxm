@@ -6,5 +6,5 @@ Options:
       --base-path <PATH>        Absolute path of the directory that holds project directories
       --git-user-name <NAME>    Git user.name applied inside sandboxes
       --git-user-email <EMAIL>  Git user.email applied inside sandboxes
-      --lang <ja|en>            Display language for this run (ja, en)
+      --lang <en|ja>            Display language for this run (en, ja)
   -h, --help                    Print help
