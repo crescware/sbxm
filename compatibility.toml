@@ -1,0 +1,15 @@
+# Docker Sandboxes CLI compatibility manifest.
+#
+# Docker Sandboxes CLIはEarly Accessであり、「0.37.0以上なら無条件に動く」とは扱わない。
+# `validated_cli_versions`には、対象Mac上で実際に出力を採取し、
+# `tests/fixtures/sbx/<version>/`へcommitしたexact versionだけを記載する。
+#
+# このlistが空である間、sbxmはDocker Sandboxes CLIの出力を解釈できないものとして扱い、
+# 状態を変更する操作を行わない。安全性に必要な出力を解釈できないversionでは
+# mutationを行わないという原則を、未採取の状態にもそのまま適用する。
+#
+# 新version対応はfixture、parser test、このmanifestを更新するPRで行う。
+
+schema_version = 1
+validated_cli_versions = []
+ls_json_fixture_version = 1

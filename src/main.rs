@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 mod command;
+mod compatibility;
 mod config;
 mod error;
 mod i18n;

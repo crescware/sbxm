@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Balanced",
+    "active": false
+  },
+  {
+    "name": "Open",
+    "active": true
+  }
+]
