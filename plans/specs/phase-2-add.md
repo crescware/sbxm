@@ -82,8 +82,11 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 | secret存在確認 | `sbx secret ls <name> --json` | 名前だけ。値は取得しない |
 | login状態 | `sbx login status --json` | login済みかどうかを示す真偽値 |
 | daemon操作 | `sbx daemon stop` / `sbx daemon start --detach` | exit statusのみ |
+| image存在確認 | `docker image ls --quiet <image>` | 出力が空かどうか |
 | image検証 | `docker image inspect <image>` | `Id`と`Config.Labels` |
 | archive生成 | `docker image save <image> --output <path>` | exit statusのみ |
+
+`docker image inspect`はimageが存在しない場合もEngineへ問い合わせられない場合も非ゼロで終わるため、exit statusだけで不在と判定しない。存在の判定には`docker image ls --quiet <image>`を使い、この一覧が失敗した場合はimageを不在へ丸めずexit code `1`とする。
 
 archiveの検証は、tarの`manifest.json`だけを読み、保存されたtagとimage configのdigestが、直前に`docker image inspect`で確認したimage IDと一致することを条件とする。archive本体は読まない。
 
