@@ -81,6 +81,7 @@ Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで
 - CPU、memory設定
 - port、exportの独自wrapper
 - Dockerfileの直接編集と`rebuild`を抽象化するpackage選択設定・profile・plugin機構
+- hostとDocker storageの容量見積り、使用量表示、旧image・archive・Template・build cacheの自動cleanup
 
 ## 5. 公開CLI
 
@@ -323,6 +324,7 @@ Phase 1〜4はそれぞれ独立した1 PRとし、合計4 PRで実装する。�
 - Dockerfile再build
 - 案件別Git identity
 - host側project全体の削除
+- hostとDocker storageの可視化およびcleanup orchestration
 
 このreviewまでは、公開command、設定項目、対応環境を増やさない。
 

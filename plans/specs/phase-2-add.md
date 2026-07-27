@@ -219,6 +219,8 @@ docker image save
 - 正式なarchiveが既にあっても、新しい一時archiveの生成と検証が完了するまでは変更しない
 - `docker image save`成功後に一時archiveのmanifest、full SHA-256 label、image IDを検証し、同じ`.cache` directory内で正式pathへatomic renameして置き換える
 
+MVPではbuild、save、loadに必要なhostまたはDocker storage容量を事前に見積もらず、容量不足を避けるための旧世代削除や自動再試行も行わない。必要容量はDockerfile、Docker内部storage、build cache、image、archiveの状態に依存し、根拠のある安全な削除規則をMVPでは定義できないためである。失敗時はPhase 1 runnerのpassthroughと共通error規則に従い、外部toolの出力、失敗工程、対象、同じcommandによる再実行方法を表示する。
+
 ### 7.5 Template load
 
 Phase 1 fixtureで確定した次の操作を使用する。

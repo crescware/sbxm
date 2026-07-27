@@ -98,6 +98,8 @@ rebuild intentの記録後は次を行う。
 
 利用者が編集したDockerfile、host clone、exports、global config、GitHub secretは保持する。旧image、旧archive、旧Templateの自動cleanupはMVP対象外とする。
 
+storageの可視化やcleanupはオーケストレーターの利便機能として将来扱い得るが、MVPでは世代間の参照とrebuild intentから安全な削除対象を判定する機能を実装しない。通常運用中は容量を理由に成果物を推測で削除せず、`destroy`時だけ4章で定義したproject cacheを削除する。
+
 Sandbox削除後に失敗した場合は、metadataとrebuild intentを保持し、exit code `1`で終了する。利用者は同じ`sbxm rebuild <owner>/<repository>`を再実行する。rebuild intentがある状態では`add`、`sync-files`、`open`、`stop`、通常の新規`rebuild`を開始せず、同じtarget hashの`rebuild`継続だけを許可する。
 
 intent記録後に現在のDockerfileが変わっていても、検証済みのtarget image、archive、Templateが揃っている場合は、それらを用いてintentの世代を完成させる。現在のDockerfileを上書きせず、成功後の適用済みhashはintentのtarget hashとし、現在のDockerfileに未適用の変更が残っていることと、もう一度`rebuild`を実行する案内を表示する。
