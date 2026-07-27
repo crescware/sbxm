@@ -4,22 +4,38 @@
 
 Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧、project scopeのread-only診断を実装する。Docker Sandboxesのruntime状態は複製せず、各command実行時にstructured outputから取得する。
 
-## 2. 共通規則
+## 2. 本Phaseで追加する共通基盤
+
+次はPhase 3が最初の呼び出し側となるため、本Phaseで実装する。実装は利用するworkflowと同じPRへ入れる。
+
+- 外部command runnerの`inherit`
+  - `open`がterminalをSSHへ引き渡す
+  - 既存のterminal動作をそのまま保つ
+- timeout classのinteractive
+  - 対話中の接続へtimeoutを課さない
+- `sbx ls`のstructured output parser
+  - `ls`が全案件のstateを読む
+  - stateの3値正規化は本Phaseの規則に従う
+- `status --global`への行の追加
+  - Remote SSH対応状況
+  - 必要なsetup commandは実機で確認したものだけを表示する
+
+## 3. 共通規則
 
 - project指定とTTY規則は方向性文書に従う
 - mutation commandはproject lockを取得する
 - daemon操作はproject lock後にglobal daemon lockを取得する
 - 対象解決と全validationをmutation前に完了する
-- `sbx` stateはPhase 1 fixtureのJSON parserで扱う
+- `sbx` stateはstructured outputのparserで扱う
 - nameは完全一致とし、substring、prefix、表示textの`grep`を使わない
 - 未対応stateまたは重複nameはraw valueを示してexit code `1`
 - rebuild intentが存在する案件では`open`と`stop`を実行せず、同じtargetの`sbxm rebuild <owner>/<repository>`再実行を案内してexit code `1`
 
-Sandboxのstart・stopなど人間向け進捗を出すmutationはPhase 1 runnerの`passthrough`を使用する。state判定に使うstructured outputは`capture`し、`open`がterminalを引き渡すSSHは`inherit`する。sbxm独自のprogress表示は追加しない。
+Sandboxのstart・stopなど人間向け進捗を出すmutationはPhase 2で追加した`passthrough`を使用する。state判定に使うstructured outputは`capture`する。sbxm独自のprogress表示は追加しない。
 
-## 3. Sandbox stateの正規化
+## 4. Sandbox stateの正規化
 
-対応versionのfixtureで得たraw stateを次へ写像する。
+`sbx`が返すraw stateを次へ写像する。
 
 | sbxm state | 意味 |
 |---|---|
@@ -31,9 +47,9 @@ raw stateを3値へ安全に写像できない場合は、対象nameとraw state
 
 metadataやworkspaceとの対応が矛盾する場合、projectの管理状態は`inconsistent`となり、上記stateを正常結果として返さない。
 
-## 4. `sbxm open [project]`
+## 5. `sbxm open [project]`
 
-### 4.1 状態別動作
+### 5.1 状態別動作
 
 | 状態 | 動作 |
 |---|---|
@@ -45,7 +61,7 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 
 `open`はSandboxを新規作成しない。
 
-### 4.2 処理順
+### 5.2 処理順
 
 1. 対象を引数または単一選択promptで解決
 2. project lockを取得
@@ -53,7 +69,7 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 4. `sbx ls --json`相当を1回実行
 5. Sandbox identity、workspace、stateを検証
 6. 全Sandboxのactive session不在を確認し、daemonを安全に再起動
-7. stoppedならfixtureで固定した非対話commandで起動
+7. stoppedなら実機で確認した非対話commandで起動
 8. runningになるまで2秒間隔、最大60秒poll
 9. managed worktree一覧をmetadataとGitから検証
 10. 接続先とworktree一覧をstderrへ表示
@@ -61,7 +77,7 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 
 引数なしのTTY実行で管理案件が0件の場合は、方向性文書の共通規則に従い、promptを表示せず`no-managed-projects`でexit code `1`とする。
 
-手動手順で使用していた起動commandの候補は次であり、exact formはfixtureで固定する。
+手動手順で使用していた起動commandの候補は次であり、exact formは実装PRで実機に対して確定する。
 
 ```text
 sbx exec <sandbox-name> /bin/true
@@ -71,9 +87,9 @@ SSH childにはstdin、stdout、stderrを継承する。SSHのexit statusが0な
 
 通常開始directoryはDockerfileにより`/home/agent/work`とする。MVPではSSH commandへ自動`cd`を組み込まない。
 
-### 4.3 Safe daemon
+### 5.3 Safe daemon
 
-Phase 1の共通手順を使用し、`open`のたびにglobal daemon lockを取得してdaemonを安全に再起動する。
+Phase 2で実装したdaemon安全再起動手順を使用し、`open`のたびにglobal daemon lockを取得する。
 
 - 全Sandboxのactive session不在をstructured outputから確認する
 - active sessionを検出した場合、またはsession不在を証明できない場合はdaemonを変更せずexit code `1`
@@ -82,16 +98,16 @@ Phase 1の共通手順を使用し、`open`のたびにglobal daemon lockを取�
 
 毎回の再起動による所要時間はMVPで受け入れ、再起動省略はMVP利用後の非機能要件として検討する。
 
-## 5. `sbxm stop [project...]`
+## 6. `sbxm stop [project...]`
 
-### 5.1 対象
+### 6.1 対象
 
 - 引数あり: 重複を除いた全projectをcanonical ID昇順に処理
 - 引数なし: 全管理案件から1件以上を複数選択
 - 未選択のまま確定する操作は受け付けず、EscまたはCtrl-Cでexit `130`
 - 管理案件が0件の場合はpromptを表示せず、方向性文書の`no-managed-projects`でexit `1`
 
-### 5.2 Validationとatomicity
+### 6.2 Validationとatomicity
 
 1. 全対象metadataを解決
 2. 1回のSandbox一覧取得で全stateを解決
@@ -102,7 +118,7 @@ Phase 1の共通手順を使用し、`open`のたびにglobal daemon lockを取�
 
 完全なtransaction rollbackは行わない。途中で外部commandが失敗した場合は後続対象を停止せず、対象ごとの`stopped`、`unchanged`、`failed`を表示してexit code `1`。
 
-### 5.3 状態別動作
+### 6.3 状態別動作
 
 - `running`: `sbx stop <sandbox-name>`
 - `stopped`: no-op成功
@@ -111,9 +127,9 @@ Phase 1の共通手順を使用し、`open`のたびにglobal daemon lockを取�
 
 停止後は最大60秒pollし、stoppedを確認する。内部filesystem、Git、package、Docker imageを削除しない。
 
-## 6. `sbxm ls`
+## 7. `sbxm ls`
 
-### 6.1 処理
+### 7.1 処理
 
 1. configからbase pathを読む
 2. 全metadataを探索・検証する
@@ -123,7 +139,7 @@ Phase 1の共通手順を使用し、`open`のたびにglobal daemon lockを取�
 
 0件でもheaderを表示してexit `0`とする。
 
-### 6.2 出力
+### 7.2 出力
 
 ```text
 PROJECT          SANDBOX                         STATE
@@ -139,7 +155,7 @@ owner/baz        sbxm-owner-baz-fedcba987654     not-created
 
 未管理Sandboxは`UNMANAGED SANDBOXES`へname、raw state、workspaceを表示する。取り込みや削除は行わない。
 
-### 6.3 Failure
+### 7.3 Failure
 
 - `sbx ls`失敗: 一覧を一切出さずexit `1`
 - metadataが1件でも不正: 一覧を一切出さずexit `1`
@@ -148,11 +164,11 @@ owner/baz        sbxm-owner-baz-fedcba987654     not-created
 
 部分的に正しそうな一覧を出さない。
 
-## 7. `sbxm status <project>`
+## 8. `sbxm status <project>`
 
-### 7.1 性質
+### 8.1 性質
 
-`status`は指定scopeをread-onlyで診断するcommandである。global scopeの`sbxm status --global`はPhase 1仕様を正本とし、本文書ではproject scopeを実装する。
+`status`は指定scopeをread-onlyで診断するcommandである。global scopeの`sbxm status --global`は各Phaseが自身の検査を追加し、本文書ではproject scopeとRemote SSHの行を実装する。
 
 `sbxm status <project>`は1案件の構築状態、作業可能性、credential隔離をread-onlyで診断する。repair、起動、停止、file更新を行わない。Sandboxがstoppedで、検査が暗黙に起動する場合は実行せず`not-observed-stopped`とする。runningなど本来観測可能な状態でread-only検査commandが失敗した場合は、値を推測せずcommand失敗として扱う。
 
@@ -160,7 +176,7 @@ owner/baz        sbxm-owner-baz-fedcba987654     not-created
 
 projectを省略した案件選択promptは設けない。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `1`とする。global環境の問題でproject検査を継続できない場合は、観測不能な項目と原因を表示し、`sbxm status --global`を案内する。
 
-### 7.2 検査順と項目
+### 8.2 検査順と項目
 
 取得できた項目は、後続検査失敗時にも表示する。
 
@@ -197,9 +213,9 @@ not-observed-stopped
 
 `unknown`は使用しない。
 
-### 7.3 出力
+### 8.3 出力
 
-project scopeは指定案件だけを診断し、正常結果を`PROJECT`と`WORKTREES`の2 sectionとしてstdoutへ表示する。global環境の検査結果を`GLOBAL` sectionとして混在させない。global環境の問題で観測できない項目がある場合は、7.1のとおり原因を診断し、別commandの`sbxm status --global`を案内する。
+project scopeは指定案件だけを診断し、正常結果を`PROJECT`と`WORKTREES`の2 sectionとしてstdoutへ表示する。global環境の検査結果を`GLOBAL` sectionとして混在させない。global環境の問題で観測できない項目がある場合は、8.1のとおり原因を診断し、別commandの`sbxm status --global`を案内する。
 
 `PROJECT`は1案件の固定項目を縦に並べ、英語modeの列を`ITEM`と`VALUE`で固定する。`WORKTREES`は複数件を比較できるtableとし、英語modeの列を`PATH`、`KIND`、`MODE`、`STATE`で固定する。`KIND`はmetadataとの対応による`managed`または`unmanaged`、`MODE`はGit worktreeの形態を示す`attached`または`detached`、`STATE`は`clean`または`dirty`とする。
 
@@ -231,7 +247,7 @@ repository.tree-1       unmanaged   detached   dirty
 
 日本語modeではsection名、列名、項目名を翻訳し、状態値と`KIND`は翻訳しない。正常出力末尾のenum凡例は方向性文書の言語契約に従う。列間の空白幅は実装時のsnapshotで固定し、公開する英語modeの列構成と並び順は変更しない。
 
-### 7.4 `not-applicable`
+### 8.4 `not-applicable`
 
 Sandboxが存在しない場合だけ、Sandbox内部でしか検査できない次を`not-applicable`とする。
 
@@ -244,7 +260,7 @@ Docker image、archive、host cloneは引き続き検査する。
 
 Sandboxがstoppedの場合、read-only `sbx exec`が暗黙に起動する可能性があるため実行しない。内部項目は`not-observed-stopped`とし、「停止状態を変えないため検査していない」という説明を付ける。これは観測失敗ではなく意図的な非観測なので、ほかに問題がなければexit code `0`とする。状態値を`unknown`へ丸めない。
 
-### 7.5 Worktree検査
+### 8.5 Worktree検査
 
 running時にSandbox内で次のporcelain出力を取得する。
 
@@ -262,7 +278,7 @@ git -C <worktree> symbolic-ref --quiet --short HEAD
 - pathはbare root配下へstandardizeできること。逸脱pathはsecurity error
 - submodule状態も`git status`がdirtyと返す場合はdirty
 
-### 7.6 SSH Agent検査
+### 8.6 SSH Agent検査
 
 running時:
 
@@ -277,18 +293,18 @@ ssh-add -L
 
 公開鍵本文は出力しない。
 
-### 7.7 Exit
+### 8.7 Exit
 
 - 全検査成功かつsecurity issueなし: `0`
 - 1件以上のerror: `1`
 
 複数種類のerrorがあってもexit codeは`1`とし、構成不一致、外部観測失敗、SSH Agent露出をそれぞれのerror IDと診断で表示する。
 
-## 8. 自動test
+## 9. 自動test
 
 - 各commandの引数あり・なし・非TTY・cancel
 - `open`と`stop`の管理案件0件、`stop`の未選択確定拒否
-- state mappingの全fixtureと未知state
+- state mappingの全既知値と未知state
 - `open`のnot-created拒否、stopped起動、running再利用
 - rebuild intent中の`open`と`stop`拒否
 - daemon再起動、active session、session不在を証明不能
@@ -302,7 +318,7 @@ ssh-add -L
 - SSH Agent not-exposed、exposed、判定不能
 - localeによらないenumと並び順
 
-## 9. 実機受入条件
+## 10. 実機受入条件
 
 - 各`open`でactive session不在を確認し、daemonをSSH Agentなしで安全に再起動できる
 - active sessionがある場合、またはsession不在を証明できない場合にdaemonを変更しない
@@ -312,3 +328,4 @@ ssh-add -L
 - `ls`がrunning、stopped、not-created、unmanagedを正しく分離する
 - `status`がbare、managed、unmanaged、dirty、SSH Agentを診断する
 - 外部状態取得失敗時に推測した値を出さない
+- 呼び出し側のない型、policy、error ID、messageを追加していない

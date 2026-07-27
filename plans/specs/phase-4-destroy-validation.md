@@ -19,11 +19,23 @@ sbxm destroy -f <owner>/<repository>
 
 `rebuild`はproject引数の完全指定を必須とし、対象選択promptと対話確認を行わない。安全性を証明できない場合は再構築せず、問題の解消方法を表示する。
 
-`rebuild`が再利用するbuild、save、clone、fetch、Template、Sandbox操作と、`destroy`のSandbox削除はPhase 1 runnerの`passthrough`を使用し、外部toolの進捗を隠さない。安全検査と事後検証のstructured outputは`capture`する。sbxm独自のprogress表示は追加しない。
+`rebuild`が再利用するbuild、save、clone、fetch、Template、Sandbox操作と、`destroy`のSandbox削除はPhase 2で追加した`passthrough`を使用し、外部toolの進捗を隠さない。安全検査と事後検証のstructured outputは`capture`する。sbxm独自のprogress表示は追加しない。
 
 Phase 4ではE2E結果を記録する手動検証sectionをproject `README.md`へ追加し、実行command、期待結果、redaction規則を利用者が再実行できる形で残す。
 
-## 2. 共通のデータ保護検査
+## 2. 本Phaseで追加する共通基盤
+
+次はPhase 4が最初の呼び出し側となるため、本Phaseで実装する。実装は利用するworkflowと同じPRへ入れる。
+
+- Project metadataのrebuild intent
+  - 適用予定のDockerfile hashをdurableに記録する
+  - rebuild intent中はtarget hashとprevious hashを世代判定の正本とする
+  - Sandbox再作成と検証の成功後にintentを削除する
+- 利用者向けREADMEの手動検証section
+  - Phase 4まで完了して初めて、利用者が通しで実行できる手順になる
+  - 実行command、期待結果、redaction規則を記録する
+
+## 3. 共通のデータ保護検査
 
 running Sandboxを削除する通常modeの`rebuild`と`destroy`は、同じactive session、worktree、保存状態parserと判定規則を使用する。
 
@@ -36,9 +48,9 @@ running Sandboxを削除する通常modeの`rebuild`と`destroy`は、同じacti
 
 `destroy`は上記を満たすunmanaged worktreeも削除可能とする。`rebuild`はunmanaged worktreeの配置を再現できないため、保存状態にかかわらず1件でも存在すれば拒否する。`rebuild`に`--force`は設けない。
 
-## 3. `rebuild`
+## 4. `rebuild`
 
-### 3.1 状態別動作
+### 4.1 状態別動作
 
 | 状態 | 動作 |
 |---|---|
@@ -60,11 +72,11 @@ rebuild intentがある場合は通常の状態表よりintentの継続規則を
 | `target_dockerfile_sha256`世代 | identityと構築済み工程を検証し、最初の未完了工程から継続 |
 | target、previousのどちらでもない | 帰属不能として自動変更せずexit code `1` |
 
-previous世代のSandboxがstoppedの場合に限り、intentからの復旧に必要な共通データ保護検査を行うため、Phase 1の共通手順でdaemonを安全に再起動し、対象Sandboxを非対話で起動してから検査する。これは新規`rebuild`がstopped Sandboxを拒否する規則の唯一の例外とする。active session、保存状態不合格、検査不能、identity不一致では削除しない。
+previous世代のSandboxがstoppedの場合に限り、intentからの復旧に必要な共通データ保護検査を行うため、Phase 2のdaemon安全再起動手順でdaemonを再起動し、対象Sandboxを非対話で起動してから検査する。これは新規`rebuild`がstopped Sandboxを拒否する規則の唯一の例外とする。active session、保存状態不合格、検査不能、identity不一致では削除しない。
 
 target世代のSandboxは、各工程の事後条件をinspectして成功済み工程をskipする。metadataの適用済みhash更新とintent削除は、Sandbox identity、managed worktree、宣言file、Git identity、credential隔離の全検証が成功した後だけ行う。
 
-### 3.2 新世代成果物
+### 4.2 新世代成果物
 
 imageとarchiveはDockerfile SHA-256 prefixを含む世代別の名前を使用する。
 
@@ -85,14 +97,14 @@ archive = .sbxm/.cache/template-<dockerfile-sha256-first-12-hex>.tar
 
 新世代のbuild、archive、Template検証が完了するまで既存Sandboxを停止・削除しない。これらの工程が失敗した場合、rebuild intentを作らず、既存Sandboxと適用済みhashを変更しない。
 
-### 3.3 Sandbox切替
+### 4.3 Sandbox切替
 
 rebuild intentの記録後は次を行う。
 
 1. active sessionがないことと共通データ保護条件を直前に再確認する
 2. 対象Sandboxを通常modeの削除commandで削除する
 3. `sbx ls --json`で不在を確認する
-4. Phase 1の共通手順でdaemonを安全に再起動し、Phase 2と同じ中立Workspaceと新Templateで同名Sandboxを作成する
+4. Phase 2のdaemon安全再起動手順でdaemonを再起動し、Phase 2と同じ中立Workspaceと新Templateで同名Sandboxを作成する
 5. Git identity、protocol、宣言fileを配置する
 6. bare repositoryをcloneし、metadataにあるmanaged worktreeだけを同じmode、start ref、indexで再作成する
 7. Sandbox identity、worktree、credential隔離を検証する
@@ -100,7 +112,7 @@ rebuild intentの記録後は次を行う。
 
 利用者が編集したDockerfile、host clone、global config、GitHub secretは保持する。旧image、旧archive、旧Templateの自動cleanupはMVP対象外とする。
 
-storageの可視化やcleanupはオーケストレーターの利便機能として将来扱い得るが、MVPでは世代間の参照とrebuild intentから安全な削除対象を判定する機能を実装しない。通常運用中は容量を理由に成果物を推測で削除せず、`destroy`時だけ4章で定義したproject cacheを削除する。
+storageの可視化やcleanupはオーケストレーターの利便機能として将来扱い得るが、MVPでは世代間の参照とrebuild intentから安全な削除対象を判定する機能を実装しない。通常運用中は容量を理由に成果物を推測で削除せず、`destroy`時だけ5章で定義したproject cacheを削除する。
 
 Sandbox削除後に失敗した場合は、metadataとrebuild intentを保持し、exit code `1`で終了する。利用者は同じ`sbxm rebuild <owner>/<repository>`を再実行する。rebuild intentがある状態では`add`、`sync-files`、`open`、`stop`、通常の新規`rebuild`を開始せず、同じtarget hashの`rebuild`継続だけを許可する。
 
@@ -108,7 +120,7 @@ intent記録後に現在のDockerfileが変わっていても、検証済みのt
 
 target成果物が欠落または不正な場合は、現在のDockerfile hashがtarget hashと一致するときだけ成果物を再生成できる。hashが異なる場合は世代を混在させずexit code `1`とし、期待するtarget hash、欠落または不正な成果物、Dockerfileを期待内容へ復元して再実行する方法を表示する。復元できない場合は、保持対象と失われる対象を示したうえで、明示的な最終手段として`sbxm destroy --force <owner>/<repository>`を案内する。metadataのintentを手動編集または削除する案内は行わない。
 
-### 3.4 Confirmationとforce
+### 4.4 Confirmationとforce
 
 `rebuild`というcommandとproject完全指定を再構築意思の表明とし、追加のtyped confirmationは要求しない。TTY、非TTYのどちらでも同じ安全検査を実行する。
 
@@ -117,7 +129,7 @@ target成果物が欠落または不正な場合は、現在のDockerfile hash�
 - 新規`rebuild`ではstopped Sandboxを暗黙に起動しない。intent中のprevious世代を復旧する場合だけ安全検査のため起動する
 - 新世代成果物の準備前に既存Sandboxを変更しない
 
-## 4. `destroy`の削除対象と保持対象
+## 5. `destroy`の削除対象と保持対象
 
 削除対象:
 
@@ -140,7 +152,7 @@ target成果物が欠落または不正な場合は、現在のDockerfile hash�
 
 host Docker image、loaded Template、中立Workspace、secretのcleanupはMVP対象外。Dockerfileは利用者が手修正するfileであり、管理解除後も保持する。
 
-## 5. `destroy`の状態別動作
+## 6. `destroy`の状態別動作
 
 | 状態 | 動作 |
 |---|---|
@@ -154,7 +166,7 @@ host Docker image、loaded Template、中立Workspace、secretのcleanupはMVP�
 
 force modeでは、`registered`は管理情報を破棄し、`stopped`と`running`はデータ保護検査なしでSandboxと管理情報を削除する。`unmanaged`、`inconsistent`、対象を一意に特定できない状態はforce modeの対象にならない。
 
-## 6. `destroy`の排他と事前確認
+## 7. `destroy`の排他と事前確認
 
 1. 対象を引数またはTTY上の単一選択promptで解決
 2. project lockを取得
@@ -174,7 +186,7 @@ force modeでは、`registered`は管理情報を破棄し、`stopped`と`runnin
 
 引数なしのTTY実行で管理案件が0件の場合は、方向性文書の共通規則に従い、promptを表示せず`no-managed-projects`でexit code `1`とする。
 
-## 7. Active session
+## 8. Active session
 
 通常modeでは、Codex、Claude Code、SSH、editor、development serverなどのsession状態を`sbx` structured outputから判定する。
 
@@ -187,7 +199,7 @@ force modeでは、`registered`は管理情報を破棄し、`stopped`と`runnin
 
 force modeではactive sessionを検査せず、session終了を要求しない。
 
-## 8. Worktree列挙
+## 9. Worktree列挙
 
 Phase 3と同じporcelain parserを再利用する。
 
@@ -201,7 +213,7 @@ git --git-dir <bare-git-dir> worktree list --porcelain -z
 - bare root外のworktree pathはsecurity errorとして削除を拒否
 - worktreeが0件、Git command失敗、parse不能も削除を拒否
 
-## 9. 保存状態
+## 10. 保存状態
 
 各worktreeで次を取得する。
 
@@ -235,7 +247,7 @@ unmanaged worktreeにも同じ規則を適用する。通常modeで削除する�
 
 force modeでは本sectionのworktree列挙と保存状態検査を行わない。
 
-## 10. 停止中Sandbox
+## 11. 停止中Sandbox
 
 通常modeでは停止中Sandboxを起動せず、内部のworktreeと保存状態を観測不能としてexit code `1`で削除を拒否する。完全指定した次のcommandを案内する。
 
@@ -243,7 +255,7 @@ force modeでは本sectionのworktree列挙と保存状態検査を行わない�
 sbxm destroy --force <owner>/<repository>
 ```
 
-## 11. 削除確認
+## 12. 削除確認
 
 通常modeでは全データ保護検査に合格した後、次を表示する。
 
@@ -277,9 +289,9 @@ sbxm-owner-repository-0123456789ab
 
 projectを完全指定した非TTYの通常modeとforce modeでは対話確認を行わない。force modeでは、データ保護検査を省略して削除することをstderrへ明示する。
 
-## 12. Sandbox削除
+## 13. Sandbox削除
 
-Sandboxが存在する通常modeではactive sessionがないことを直前に再確認する。force modeでは再確認しない。Sandboxが存在する場合だけ、対象versionのfixtureで固定した各modeのcommandを実行する。
+Sandboxが存在する通常modeではactive sessionがないことを直前に再確認する。force modeでは再確認しない。Sandboxが存在する場合だけ、実機で確認した各modeのcommandを実行する。
 
 ```text
 sbx rm <sandbox-name>
@@ -298,7 +310,7 @@ cleanupに失敗した場合は残ったpathを表示してexit code `1`とす�
 
 削除前から古いlock fileを開いて待機していたprocessは、lock取得後に現在のpathとのidentity不一致を検出し、Phase 2の共通取得手順に従って新しいlock fileで取得をやり直す。これにより、`destroy`後の`add`が新規作成したlock fileと、削除済みinodeを待っていたprocessが同時に保護区間へ入ることを防ぐ。lock fileはprojectの管理状態そのものではないが、`destroy`ではsbxm管理物を残さないため削除する。
 
-## 13. 再登録command
+## 14. 再登録command
 
 実行前にmetadataから元の目標構成を表示用に保持し、成功後に次のcommandを案内する。
 
@@ -316,7 +328,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 
 このcommandはmetadataを再利用せず、新規案件として登録する。保持されたDockerfileがあれば、その内容を新しいbuildへ採用する。
 
-## 14. 自動test
+## 15. 自動test
 
 - `rebuild`のproject完全指定と`--force`拒否
 - Dockerfile変更なしのno-op
@@ -351,7 +363,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - lock file削除前からの待機者がidentity不一致を検出し、新しいlock fileへretryすること
 - 成功後の`unmanaged` stateと再登録command
 
-## 15. E2E実機検証
+## 16. E2E実機検証
 
 専用のprivate test repositoryだけを使用する。実案件を最初の検証対象にしない。
 
@@ -394,7 +406,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 
 各caseは実行command、期待exit code、期待stdout/stderr、事後状態をREADMEの手動検証sectionへ記録する。token、path内のMac user名、公開鍵は記録前にredactする。
 
-## 16. Phase 4受入条件
+## 17. Phase 4受入条件
 
 - `rebuild`はproject完全指定を必須とし、force optionを持たない
 - 新世代image、archive、Templateの検証前に既存Sandboxを変更しない
@@ -411,6 +423,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - force modeはproject完全指定を必須とし、データ保護検査と対話確認を省略してrunning/stoppedを削除できる
 - force modeでも対象を一意に特定できない場合は削除できない
 - Sandbox削除失敗時にhost成果物とmetadataを変更しない
+- 呼び出し側のない型、policy、error ID、messageを追加していない
 - 成功後はmetadata、project lock、cacheを削除してunmanagedとなり、Dockerfileとhost cloneを保持する
 - 新しい目標構成を指定した`add`で再登録できる
 - E2E 36項目が対象exact versionで完了している

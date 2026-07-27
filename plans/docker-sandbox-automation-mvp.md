@@ -67,7 +67,7 @@ MVPのDocker Sandboxes network policyは`Balanced`へ固定する。これは単
 
 MVPのhost環境とbundled Dockerfileに最初から含めるtoolは、オーナーが実務で使用する具体的な初期環境として選択する。`gh`、Homebrew、miseなどを利用することは、それらすべてをsbxm自身の直接依存とする意味ではない。利用者が案件のDockerfileを直接編集し、`sbxm rebuild`でSandboxへ反映することはMVPの正式なcustomize経路である。一方、この編集を抽象化して、利用者ごとのtool選択を設定、profile、plugin、optionなどで組み替える別の仕組みは設けない。
 
-Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで変更され得るため、「0.37.0以上なら無条件に動く」とは扱わない。各commandの実装時に、使用する外部command、structured output、代表的失敗を対象versionで確認し、parser fixtureとtestを同じ変更へ追加する。安全性に必要な出力を解釈できないversionではmutationを行わない。
+Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで変更され得るため、「0.37.0以上なら無条件に動く」とは扱わない。各commandの実装時に、使用する外部command、structured output、代表的失敗を対象versionで確認し、parser testを同じ変更へ追加する。安全性に必要な出力を解釈できないversionではmutationを行わない。
 
 ### 4.2 対象外
 
@@ -299,22 +299,22 @@ CLI parserを含む内部libraryの既定exit codeを公開契約へ透過しな
 
 ## 11. 実装順と品質gate
 
-1. PR 1 / Phase 1で共通型、設定、metadata、i18n、command runner、互換性probe、`init`、`status --global`を実装する
+1. PR 1 / Phase 1で`init`と`status --global`、およびこの2 commandが必要とする共通型、設定、i18n、command runnerを実装する
 2. PR 2 / Phase 2で`add`と`sync-files`を実装する
 3. PR 3 / Phase 3で日常操作を実装する
 4. PR 4 / Phase 4で共通データ保護検査、`rebuild`、`destroy`とE2Eを実装する
 
-Phase 1〜4はそれぞれ独立した1 PRとし、合計4 PRで実装する。各PRは、そのPhaseのRust実装、fixture、自動test、文書更新を含み、単独でreview可能な状態にする。Rustの型、module境界、error設計、外部command abstraction、CLIの操作感をPhaseごとにreviewし、その結果によって後続Phaseの設計と実装を調整できるようにする。
+Phase 1〜4はそれぞれ独立した1 PRとし、合計4 PRで実装する。各PRは、そのPhaseのRust実装、自動test、文書更新を含み、単独でreview可能な状態にする。Rustの型、module境界、error設計、外部command abstraction、CLIの操作感をPhaseごとにreviewし、その結果によって後続Phaseの設計と実装を調整できるようにする。
 
-後続Phaseの調査やlocal実装は、必要な共通interfaceが利用可能になり、関連する既存testが成功していれば並行して進めてよい。ただし後続PRは前Phase PRのreview結果を取り込み、前Phase PRより先にmergeしない。fixtureとparser testは、それを使用するcommandのPRへ同時に追加・更新する。
+後続Phaseの調査やlocal実装は、必要な共通interfaceが利用可能になり、関連する既存testが成功していれば並行して進めてよい。ただし後続PRは前Phase PRのreview結果を取り込み、前Phase PRより先にmergeしない。parser testは、それを使用するcommandのPRへ同時に追加・更新する。
 
 品質gateは次とする。
 
 - 各変更は、変更対象の自動testと既存testを成功させてから次へ進む
 - 各Phase PRは、そのPhaseの受入条件と自動testを満たしてからreview依頼する
-- 外部commandを新たに使用する変更は、対象versionのfixture、正常系、代表的失敗、parse不能testを含める
+- 外部commandを新たに使用する変更は、対象versionでの実出力確認、正常系、代表的失敗、parse不能testを含める
 - mutation commandは、対象を一意に特定できない場合と安全性を証明できない場合の拒否testを含める
-- Phase境界を越えた調査やlocal実装を許可するが、失敗test、未確認fixture、未解決のsecurity条件をPR完成扱いにしない
+- Phase境界を越えた調査やlocal実装を許可するが、失敗test、未確認の外部出力、未解決のsecurity条件をPR完成扱いにしない
 - MVP完成には全Phaseの自動test、専用test repositoryでのE2E、SSH Agent・Docker socket非露出の実機確認を必須とする
 - 実案件での利用は、対象操作に対応する自動testと実機E2Eが成功した後に行う
 
@@ -347,7 +347,7 @@ Phase 1〜4はそれぞれ独立した1 PRとし、合計4 PRで実装する。�
 - [Docker Sandboxes release notes](https://docs.docker.com/ai/sandboxes/release-notes/)
 - [Docker Sandboxes templates](https://docs.docker.com/ai/sandboxes/customize/templates/)
 
-外部CLIの仕様は変更され得るため、参照資料の現在内容よりPhase 1でcommitするexact-version fixtureを実装上の契約とする。
+外部CLIの仕様は変更され得るため、参照資料の現在内容より、各commandの実装PRで対象version上の実出力を確認した結果を実装上の契約とする。
 
 ## 14. 今回のreviewで明確化したMVP対象外
 

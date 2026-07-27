@@ -1,0 +1,243 @@
+//! sbxm。案件ごとのDocker Sandboxを構築、接続、診断、破棄するCLI。
+//!
+//! 現在のbuildは共通基盤、`init`、`status --global`を実装する。ほかのcommandはparserへ
+//! 登録済みであり、command固有の引数validationまで行ったうえで未実装として終了する。
+
+mod cli;
+mod command;
+mod compatibility;
+mod config;
+mod error;
+mod i18n;
+mod paths;
+mod project;
+mod workflow;
+
+use std::io::Write;
+use std::process::ExitCode as ProcessExitCode;
+
+use cli::{Command, Interactivity, Outcome, PeekedLang, StatusScope};
+use config::{ConfigLocation, ConfigState};
+use error::{Diagnostic, Error, ErrorId, ExitCode, Result};
+use i18n::{Catalog, Locale, shell_locale};
+use workflow::Reporter;
+use workflow::init::{InitRequest, TerminalPrompt};
+use workflow::status_global::{self, RealHost};
+
+fn main() -> ProcessExitCode {
+    let argv: Vec<String> = std::env::args().collect();
+    let code = run(&argv);
+    ProcessExitCode::from(code.as_i32() as u8)
+}
+
+fn run(argv: &[String]) -> ExitCode {
+    // helpとusageを構築する前に、argvから`--lang`だけを副作用なく先読みする。
+    let peeked = cli::peek_lang(argv);
+
+    let location = match ConfigLocation::discover() {
+        Ok(location) => location,
+        Err(error) => {
+            report(&Catalog::new(Locale::En), &error);
+            return error.exit_code();
+        }
+    };
+
+    let display_locale = resolve_display_locale(&peeked, &location);
+    let catalog = Catalog::new(display_locale);
+
+    // `--lang`が不正な場合はconfigを読まず、shell localeまたは`en`でparse errorを表示する。
+    if let PeekedLang::Invalid(value) = &peeked {
+        let error = cli::invalid_lang_error(value);
+        report(&catalog, &error);
+        return error.exit_code();
+    }
+
+    let interactivity = Interactivity::detect();
+    match cli::parse(argv, &catalog, interactivity) {
+        Ok(Outcome::Help(text)) => {
+            print!("{text}");
+            ExitCode::Success
+        }
+        Ok(Outcome::Version(text)) => {
+            println!("{text}");
+            ExitCode::Success
+        }
+        Ok(Outcome::Run(command)) => {
+            dispatch(&command, &location, &peeked, display_locale, interactivity)
+        }
+        Err(error) => {
+            report(&catalog, &error);
+            error.exit_code()
+        }
+    }
+}
+
+/// helpとusageのlocaleを決める。
+///
+/// 1. argvから先読みした有効な`--lang`
+/// 2. read-onlyかつbest-effortで読み込めた有効なglobal configの`language`
+/// 3. shell locale
+/// 4. `en`
+fn resolve_display_locale(peeked: &PeekedLang, location: &ConfigLocation) -> Locale {
+    if let PeekedLang::Valid(locale) = peeked {
+        return *locale;
+    }
+    // configが不在、構文不正、未知version、permission不正、symlink、read失敗のいずれでも
+    // help表示自体は妨げず、shell localeへfallbackする。
+    if let Ok(ConfigState::Valid { config, .. }) = config::load(location) {
+        return config.language;
+    }
+    shell_locale().unwrap_or(Locale::En)
+}
+
+/// commandを実行し、結果を表示してexit codeを返す。
+///
+/// 表示localeはconfigのvalidationを経て確定するため、診断の表示までここで行う。
+fn dispatch(
+    command: &Command,
+    location: &ConfigLocation,
+    peeked: &PeekedLang,
+    display_locale: Locale,
+    interactivity: Interactivity,
+) -> ExitCode {
+    let lang_option = match peeked {
+        PeekedLang::Valid(locale) => Some(*locale),
+        _ => None,
+    };
+
+    match command {
+        Command::Init(mode) => {
+            let request = InitRequest {
+                mode: mode.clone(),
+                lang: lang_option,
+                interactivity,
+            };
+            let mut prompt = TerminalPrompt;
+            match workflow::init::run(location, &request, &RealHost, &mut prompt) {
+                Ok(output) => {
+                    let catalog = Catalog::new(output.locale);
+                    let reporter = Reporter::new(&catalog);
+                    let mut stderr = std::io::stderr();
+                    for warning in &output.warnings {
+                        reporter.print_warning(warning, &mut stderr);
+                    }
+                    let path = paths::display(&output.config_path);
+                    let message = if output.already_initialized {
+                        msg!("init-already-initialized", path = path)
+                    } else {
+                        msg!("init-created", path = path)
+                    };
+                    println!("{}", format_or_report(&catalog, &message));
+                    println!("{}", text_or_report(&catalog, "init-next-step"));
+                    ExitCode::Success
+                }
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    error.exit_code()
+                }
+            }
+        }
+
+        Command::Status(StatusScope::Global) => {
+            let catalog = match effective_catalog(location, lang_option, true) {
+                Ok(catalog) => catalog,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            let status = status_global::diagnose(location, &RealHost);
+            let reporter = Reporter::new(&catalog);
+
+            let table = reporter.render_status_table(
+                "status-global-section",
+                "status-column-item",
+                "status-column-status",
+                &status.rows,
+            );
+            print!("{table}");
+            if let Some(legend) = reporter.render_legend(&status.rows) {
+                print!("\n{legend}");
+            }
+            let _ = std::io::stdout().flush();
+
+            let mut stderr = std::io::stderr();
+            for warning in &status.warnings {
+                reporter.print_warning(warning, &mut stderr);
+            }
+            for diagnostic in &status.diagnostics {
+                reporter.print_error(&Error::single(diagnostic.clone()), &mut stderr);
+            }
+
+            if status.is_healthy() {
+                ExitCode::Success
+            } else {
+                ExitCode::Failure
+            }
+        }
+
+        other => {
+            // `init`と`status --global`以外は、configがなければ先に`sbxm init`を案内する。
+            match effective_catalog(location, lang_option, false) {
+                Ok(catalog) => {
+                    let error = cli::not_implemented(other);
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    error.exit_code()
+                }
+            }
+        }
+    }
+}
+
+/// commandが使うcatalogを、configのvalidationを経て決める。
+///
+/// `status --global`はconfigがなくても診断を続けるため、不在を許容する。
+fn effective_catalog(
+    location: &ConfigLocation,
+    lang_option: Option<Locale>,
+    allow_missing_config: bool,
+) -> Result<Catalog> {
+    match config::load(location)? {
+        ConfigState::Valid { config, .. } => {
+            Ok(Catalog::new(lang_option.unwrap_or(config.language)))
+        }
+        ConfigState::Missing if allow_missing_config => Ok(Catalog::new(
+            lang_option.or_else(shell_locale).unwrap_or(Locale::En),
+        )),
+        ConfigState::Missing => Err(Error::single(
+            Diagnostic::new(
+                ErrorId::ConfigMissing,
+                msg!(
+                    "error-config-missing",
+                    path = paths::display(&location.config_file())
+                ),
+            )
+            .remediation(msg!("remediation-run-init")),
+        )),
+    }
+}
+
+fn report(catalog: &Catalog, error: &Error) {
+    // Ctrl-CとEscは何も変更していないため、追加の説明を出さない。
+    if matches!(error, Error::Canceled) {
+        return;
+    }
+    let reporter = Reporter::new(catalog);
+    reporter.print_error(error, &mut std::io::stderr());
+}
+
+fn format_or_report(catalog: &Catalog, message: &error::Msg) -> String {
+    catalog
+        .format(message)
+        .unwrap_or_else(|failure| failure.to_string())
+}
+
+fn text_or_report(catalog: &Catalog, id: &str) -> String {
+    catalog
+        .text(id)
+        .unwrap_or_else(|failure| failure.to_string())
+}
