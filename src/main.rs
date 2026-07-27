@@ -15,5 +15,6 @@ mod error;
 mod i18n;
 mod paths;
 mod project;
+mod workflow;
 
 fn main() {}
