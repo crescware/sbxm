@@ -4,7 +4,7 @@
 
 この文書は、`sbxm` MVPの目的、境界、共通の安全原則、公開CLI、全体状態モデルを定める。個々の処理手順、外部commandとの契約、再実行規則、test caseはPhase別仕様を正本とする。
 
-- [Phase 1: 共通基盤と`init`](specs/phase-1-foundation-init.md)
+- [Phase 1: 共通基盤、`init`、global `status`](specs/phase-1-foundation-init.md)
 - [Phase 2: `add`](specs/phase-2-add.md)
 - [Phase 3: `open`、`stop`、`ls`、`status`](specs/phase-3-daily-operations.md)
 - [Phase 4: `rm`とE2E検証](specs/phase-4-remove-validation.md)
@@ -73,7 +73,8 @@ sbxm [--lang <ja|en>] add <owner>/<repository> [--worktrees <N>] [--detach <BRAN
 sbxm [--lang <ja|en>] open [<owner>/<repository>]
 sbxm [--lang <ja|en>] stop [<owner>/<repository>...]
 sbxm [--lang <ja|en>] ls
-sbxm [--lang <ja|en>] status [<owner>/<repository>]
+sbxm [--lang <ja|en>] status --global
+sbxm [--lang <ja|en>] status <owner>/<repository>
 sbxm [--lang <ja|en>] rm [<owner>/<repository>]
 ```
 
@@ -84,7 +85,8 @@ sbxm [--lang <ja|en>] rm [<owner>/<repository>]
 - 引数あり: `<owner>/<repository>`を完全指定し、案件選択promptを出さない
 - 引数なし: metadataから候補を作り、TTY上で必ずpromptを表示する
 - promptはstdinから読み、stderrへ表示する。両方がTTYでなければusage errorとする
-- `open`、`status`、`rm`は単一選択、`stop`は0件以上の複数選択とする
+- `open`と`rm`は単一選択、`stop`は0件以上の複数選択とする
+- `status`は`--global`（短縮形`-g`）または`<owner>/<repository>`のどちらか一方を必須とし、案件選択promptを出さない
 - promptに既定選択を設けない
 - EscまたはCtrl-Cは何も変更せず、exit code `130`で終了する
 - `stop`で0件を確定した場合だけ、何も変更せずexit code `0`とする
@@ -156,12 +158,19 @@ base_path = "/Users/example/Projects"
 [git]
 user_name = "Example User"
 user_email = "user@example.com"
+
+[[files]]
+source = "/Users/example/.config/example/config.toml"
+destination = ".config/example/config.toml"
 ```
 
 - `~/.sbxm`は`0700`
 - configは`0600`
 - token、secret、runtime状態を保存しない
 - 未知のtop-level keyはversion 1ではwarning、未知の必須構造や未知versionはerror
+- `files`はhost上の通常fileをSandbox内の`agent` homeからの相対pathへ配置する宣言
+- `source`はabsolute path、`destination`はabsolute pathと`..`を含まないrelative pathとする
+- credential、token、秘密鍵の転送には`files`を使わず、Docker Sandboxesのsecret機能を使用する
 
 ### 7.2 Project metadata
 
@@ -243,7 +252,7 @@ created_from = "refs/remotes/origin/develop"
 
 ## 11. 実装順とreview gate
 
-1. Phase 1で共通型、設定、metadata、i18n、command runner、互換性probe、`init`を実装する
+1. Phase 1で共通型、設定、metadata、i18n、command runner、互換性probe、`init`、`status --global`を実装する
 2. Phase 1のDocker Sandboxes互換性fixtureとdaemon安全性probeをreviewし、Phase 2着手を承認する
 3. Phase 2で`add`を実装する
 4. Phase 3で日常操作を実装する

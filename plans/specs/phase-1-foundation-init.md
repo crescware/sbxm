@@ -1,8 +1,8 @@
-# Phase 1 実装仕様: 共通基盤と`init`
+# Phase 1 実装仕様: 共通基盤、`init`、global `status`
 
 ## 1. 目的と完了境界
 
-Phase 1は、後続Phaseが判断を追加せず利用できる共通型、永続化、外部command実行、翻訳、対象解決、Docker Sandboxes互換性probeを実装し、`sbxm init`を完成させる。
+Phase 1は、後続Phaseが判断を追加せず利用できる共通型、永続化、外部command実行、翻訳、対象解決、Docker Sandboxes互換性probeを実装し、`sbxm init`と`sbxm status --global`を完成させる。
 
 Phase 1完了時点ではprojectやSandboxを作成しない。Phase 2の外部mutationは、本文書の互換性gateが承認されるまで開始しない。
 
@@ -22,7 +22,8 @@ src/
 ├── compatibility.rs
 └── workflow/
     ├── mod.rs
-    └── init.rs
+    ├── init.rs
+    └── status_global.rs
 locales/
 ├── en.ftl
 └── ja.ftl
@@ -48,13 +49,15 @@ SandboxName(String)
 AbsoluteBasePath(PathBuf)
 Locale { En, Ja }
 ManagedWorktreePath(PathBuf)
+HostFileSource(PathBuf)
+SandboxHomeRelativePath(PathBuf)
 ```
 
 `ProjectId::parse`、Sandbox名導出、host path導出は方向性文書の規則を唯一の実装とする。
 
 ## 4. CLI parse
 
-Phase 1で7 commandと全optionをparserへ登録する。未実装commandはparse後にlocalizedな`not implemented in this build`を返してexit code `3`とする。これによりhelpとusageの翻訳・snapshotをPhase 1で固定する。
+Phase 1で7 commandと全optionをparserへ登録する。Phase 1では`init`と`status --global`を実装し、`status <project>`を含む未実装処理はparse後にlocalizedな`not implemented in this build`を返してexit code `3`とする。これによりhelpとusageの翻訳・snapshotをPhase 1で固定する。
 
 validation順:
 
@@ -78,7 +81,7 @@ validation順:
 4. shell locale
 5. `en`
 
-通常commandでconfigが存在しない場合は、`sbxm init`を案内してexit code `4`とする。error表示は3〜5で選んだbootstrap localeを使う。
+`init`と`status --global`以外のcommandでconfigが存在しない場合は、`sbxm init`を案内してexit code `4`とする。error表示は3〜5で選んだbootstrap localeを使う。
 
 macOS優先言語は`defaults read -g AppleLanguages`の出力をparseする。先頭が`ja`または`ja-*`なら、TTY上でJapanese / Englishを選択させる。その他はpromptなしで`en`とする。command失敗またはparse失敗時だけ`LC_ALL`、`LC_MESSAGES`、`LANG`の順にfallbackする。
 
@@ -115,11 +118,12 @@ processが中断した一時fileは次回起動時に自動削除せず、path�
 ### 8.1 不在
 
 - `init`: 新規作成へ進む
+- `status --global`: configを`missing`として診断し、`sbxm init`を案内する
 - その他: `sbxm init`を案内してexit code `4`
 
 ### 8.2 有効
 
-`init`は初期化済みであることとconfig pathを表示し、再検査を続行するかTTY上で一度確認する。承認された場合だけ、保存済み値を再入力させず、configを変更せずにhost prerequisiteとSSH setupを再検査する。
+`init`は初期化済みであることとconfig pathを表示し、何も変更せずexit code `0`で終了する。host環境の診断は`status --global`で行う。
 
 ### 8.3 無効
 
@@ -246,53 +250,77 @@ configの確認前に`~/.sbxm/init.lock`を開き、exclusiveなOS file lockを�
 1. bootstrap localeを決定する
 2. `~/.sbxm`を検証または作成し、`init.lock`を取得する
 3. configの有無と妥当性を確認する
-4. 有効なconfigがあれば、再検査を続行するか確認する
-5. `sw_vers`と`uname -m`でmacOS 14以上、arm64を確認する
-6. `brew`、`docker`、`gh`、`sbx`の存在を確認する
-7. Docker Client/Server疎通を確認する
-8. Docker Sandboxes exact versionとcompatibility manifestを照合する
-9. loginが必要なら`sbx login`をTTY接続で起動する
-10. network policy状態をread-onlyで表示する。自動変更しない
-11. Remote SSH機能の対応状況をfixtureに基づき確認し、必要な公式setup commandを実行する
-12. configがなければlanguage、base path、Git name、Git emailを取得・検証する
-13. configをatomic writeする
-14. prerequisite結果を表示する
-
-Homebrew installやnetwork policy変更は自動実行しない。正確な公式commandを表示してexit code `3`とし、再実行を案内する。
+4. 有効なconfigがあれば、初期化済みとして何も変更せず終了する
+5. configがなければlanguage、base path、Git name、Git emailを取得・検証する
+6. configをatomic writeする
+7. 初期化結果と、host環境を診断する`sbxm status --global`を表示する
 
 Git identityの既定候補はhostの`git config --global user.name`と`user.email`。候補を表示して明示確定させ、空文字と改行を拒否する。
 
 ### 13.4 再実行
 
 - config作成前の失敗: hostに作った`~/.sbxm`と`init.lock`以外を変更しない
-- config作成後の再実行: 初期化済みであることとconfig pathを表示し、保存済みconfigを変更せずhost prerequisiteとSSH setupを再検査することを説明して、続行を一度確認する
-- 再実行の確認はstdinから読み、stderrへ表示する。stdinとstderrの両方がTTYでなければ何も変更せずexit code `2`
-- 再実行を承認した場合だけ、値を変更せずprerequisiteとSSH setupを再検査
-- 再実行を拒否した場合は何も変更せずexit code `10`
-- 再実行確認でのEscまたはCtrl-Cは何も変更せずexit code `130`
-- loginやsetupの利用者キャンセル: exit code `10`
+- config作成後の再実行: 初期化済みであることとconfig pathを表示し、何も変更せずexit code `0`
 - config変更: MVPでは直接編集し、次回load時にvalidationする
 
-## 14. 自動test
+## 14. `sbxm status --global`
+
+### 14.1 性質
+
+hostとglobal環境をread-onlyで診断する。login、setup、file更新、daemon起動・停止を行わない。問題がある場合は、利用者が直接実行する外部commandを表示する。
+
+`-g`を`--global`の短縮形とする。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `2`とする。
+
+### 14.2 検査順と項目
+
+取得できた項目は、後続検査失敗時にも表示する。
+
+1. global configとbase path
+2. `sw_vers`と`uname -m`によるmacOS 14以上、arm64
+3. `brew`、`docker`、`gh`、`sbx`の存在
+4. Docker Client/Server疎通
+5. Docker Sandboxes CLI versionとcompatibility manifest
+6. Docker Sandboxes login状態
+7. network policy状態
+8. Remote SSH対応状況
+9. daemon状態と、観測可能な場合はsafe markerとの対応
+
+未loginの場合は`sbx login`を、Remote SSH setupが必要な場合はfixtureで固定した公式commandを表示する。commandを自動実行しない。
+
+### 14.3 Exit
+
+- 全検査成功: `0`
+- configまたはbase path不正: `4`
+- 前提command、version、host環境の非対応: `3`
+- external observation失敗: `5`
+- daemonの安全性を証明できない: `6`
+
+複数分類がある場合は最大の安全重要度として`6 > 5 > 4 > 3`を返す。
+
+## 15. 自動test
 
 - Project ID validation、case正規化、Sandbox名の衝突耐性
 - path導出、symlink拒否、metadata重複
 - configのround trip、unknown version、permission
+- 宣言fileのsourceとdestination validation
 - atomic writeの各中断点
 - `init` lockの同時実行、待機、timeout、lock取得後のconfig再確認
-- 初期化済み`init`の承認、拒否、非TTY、Esc、Ctrl-C
+- 初期化済み`init`のTTY、非TTYと副作用なしのno-op
 - locale優先順位、bootstrap fallback
 - FTL完全性とsnapshot
 - CLI argument関係とmutation前validation
 - TTY/non-TTY、Esc、Ctrl-C
 - command runnerのenvironment、timeout、stream
 - compatibility fixtureの全parser
+- global `status`の全検査、partial result、remediation、exit優先順位
 - external command失敗時のexit code mapping
 
-## 15. 受入条件
+## 16. 受入条件
 
 - 方向性文書の識別子、path、exit codeを共通型で表現できる
 - `init`を新規・再実行・失敗後再実行できる
+- `init`がconfig作成以外のhost検査、login、setupを行わない
+- `status --global`がhostとglobal環境を変更せず診断し、必要な外部commandを案内する
 - configとmetadataの不正を自動修復しない
 - 全利用者向け出力が日英で生成される
 - 外部commandをshellなしで実行し、secretと`SSH_AUTH_SOCK`を規則どおり扱う

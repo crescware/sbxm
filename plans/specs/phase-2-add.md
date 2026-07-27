@@ -23,7 +23,7 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - `SSH_AUTH_SOCK`を外した個別`sbx create`だけで安全とは見なさず、daemon instanceを検証する
 - 中断時の目標構成をproject metadataへ保存する
 
-中立Workspace、host path非露出、案件限定GitHub secret、Claude settingsの限定copy、Docker socket非共有という要件は維持する。
+中立Workspace、host path非露出、案件限定GitHub secret、利用者がglobal configへ明示したfileの限定copy、Docker socket非共有という要件は維持する。
 
 ## 3. Optionと目標構成
 
@@ -220,25 +220,29 @@ sbx create
 
 1項目でも確認不能または不一致ならexit code `4`。
 
-### 7.8 Claude settings
+### 7.8 宣言fileの配置
 
-hostの`~/.claude/settings.json`が通常fileとして存在する場合だけcopyする。symlink、socket、directoryは拒否する。
+global configの`[[files]]`に宣言されたhost fileを、Sandbox内の`agent` homeからの相対pathへ配置する。特定のAgentやtoolの設定形式を解釈しない。
 
 ```text
 sbx cp --follow-link
-  <host-settings>
-  <sandbox-name>:/tmp/sbxm-claude-settings.json
+  <source>
+  <sandbox-name>:/tmp/sbxm-file-<index>
 
 sbx exec --user root <sandbox-name> --
-  install ... /home/agent/.claude/settings.json
+  install ... /home/agent/<destination>
 ```
 
-- host fileは1 MiB以下
-- Sandbox側directoryは`0700`、fileは`0600`、owner/groupは`agent`
-- 一時fileは成功・失敗のどちらでも削除
-- 既存Sandbox側fileと内容が異なる場合は上書きせずwarningし、`add`自体は継続
-- host file不在はwarningだけ
-- 認証cacheや`~/.claude`全体をcopyしない
+- sourceはabsolute pathの通常fileに限り、symlink、socket、directoryを拒否する
+- source fileは1件につき1 MiB以下
+- destinationは`/home/agent`を基準とするrelative pathとし、absolute path、`..`、symlink経由の逸脱を拒否する
+- Sandbox側の親directoryは`0700`、fileは`0600`、owner/groupは`agent`
+- 一時fileは成功・失敗のどちらでも削除する
+- 既存destinationが同一内容ならskipする
+- 既存destinationが異なる場合は上書きせず、対象pathを示してexit code `4`
+- sourceが存在しない、または安全性を検証できない場合はcopyせずexit code `4`
+- file内容をstdout、stderr、log、metadataへ出力しない
+- credential、token、秘密鍵には使用せず、Docker Sandboxesのsecret機能を案内する
 
 ### 7.9 Git identityとprotocol
 
@@ -347,6 +351,9 @@ Sandbox state
 
 WORKTREE  CREATED FROM  HEAD  MODE
 ...
+
+FILE  DESTINATION  RESULT
+...
 ```
 
 各managed worktreeについて`mise.toml`、`.mise.toml`、`.tool-versions`の有無をread-onlyで確認し、`mise trust`と`mise install`を自動実行せず案内する。
@@ -369,7 +376,7 @@ WORKTREE  CREATED FROM  HEAD  MODE
 - Dockerfile、image label、archiveの一致・不一致
 - Sandbox名完全一致とworkspace検証
 - safe daemon成功・不明・active session
-- Claude settings不在、symlink、同一、競合
+- 宣言fileのsource、destination、path逸脱、同一、競合、一時file cleanup
 - secret不在による中断と登録後再開
 - bare clone、refspec、default branch
 - attached 1 tree、detached 1/3 trees

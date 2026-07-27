@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧、read-only診断を実装する。Docker Sandboxesのruntime状態は複製せず、各command実行時にstructured outputから取得する。
+Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧、project scopeのread-only診断を実装する。Docker Sandboxesのruntime状態は複製せず、各command実行時にstructured outputから取得する。
 
 ## 2. 共通規則
 
@@ -140,11 +140,15 @@ owner/baz        sbxm-owner-baz-fedcba987654     not-created
 
 部分的に正しそうな一覧を出さない。
 
-## 7. `sbxm status [project]`
+## 7. `sbxm status <project>`
 
 ### 7.1 性質
 
-1案件の構築状態、作業可能性、credential隔離をread-onlyで診断する。repair、起動、停止、file更新を行わない。daemonを起動する必要がある検査は行わず、`not-observed`ではなくcommand失敗として扱う。
+`status`は指定scopeをread-onlyで診断するcommandである。global scopeの`sbxm status --global`はPhase 1仕様を正本とし、本文書ではproject scopeを実装する。
+
+`sbxm status <project>`は1案件の構築状態、作業可能性、credential隔離をread-onlyで診断する。repair、起動、停止、file更新を行わない。daemonを起動する必要がある検査は行わず、`not-observed`ではなくcommand失敗として扱う。
+
+projectを省略した案件選択promptは設けない。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `2`とする。global環境の問題でproject検査を継続できない場合は、観測不能な項目と原因を表示し、`sbxm status --global`を案内する。
 
 ### 7.2 検査順と項目
 
@@ -244,7 +248,7 @@ ssh-add -L
 - unsafe daemon、marker不一致、active session
 - `stop`の事前全件validation、部分失敗report
 - `ls`のmanaged/unmanaged、0件、failure時一覧非出力
-- `status`の検査順、部分結果、not-applicable
+- project `status`の必須対象、検査順、部分結果、not-applicable、global診断の案内
 - porcelain `-z` parser
 - managed/unmanaged、missing managed、path逸脱
 - dirty/untracked/submodule
