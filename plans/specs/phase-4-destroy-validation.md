@@ -47,7 +47,18 @@ running Sandboxを削除する通常modeの`rebuild`と`destroy`は、同じacti
 
 Dockerfile hashがmetadataの適用済みhashと同一で、rebuild intentがない場合は、変更がないことを表示して何も変更せずexit code `0`とする。
 
-rebuild intentがある場合は通常の状態表よりintentの継続規則を優先する。Sandboxが不在なら作成工程から、同じtarget TemplateのSandboxが存在するなら構築済み工程をinspectして未完了箇所から継続する。旧TemplateのSandbox、identity不一致、対象を一意に証明できない状態では自動削除せずexit code `4`とする。
+rebuild intentがある場合は通常の状態表よりintentの継続規則を優先し、intentに固定したtarget世代だけを完成させる。現在のDockerfileを新しいtargetとして解釈せず、観測したSandboxを次のように扱う。
+
+| Sandbox | 継続位置 |
+|---|---|
+| 不在 | target世代の成果物を検証し、Sandbox作成から継続 |
+| `previous_dockerfile_sha256`世代 | identityを検証し、共通データ保護検査を再実行して旧Sandbox削除から継続 |
+| `target_dockerfile_sha256`世代 | identityと構築済み工程を検証し、最初の未完了工程から継続 |
+| target、previousのどちらでもない | 帰属不能として自動変更せずexit code `4` |
+
+previous世代のSandboxがstoppedの場合に限り、intentからの復旧に必要な共通データ保護検査を行うため、Phase 1の共通手順でdaemonを安全に再起動し、対象Sandboxを非対話で起動してから検査する。これは新規`rebuild`がstopped Sandboxを拒否する規則の唯一の例外とする。active session、保存状態不合格、検査不能、identity不一致では削除しない。
+
+target世代のSandboxは、各工程の事後条件をinspectして成功済み工程をskipする。metadataの適用済みhash更新とintent削除は、Sandbox identity、managed worktree、宣言file、Git identity、credential隔離の全検証が成功した後だけ行う。
 
 ### 3.2 新世代成果物
 
@@ -85,7 +96,11 @@ rebuild intentの記録後は次を行う。
 
 利用者が編集したDockerfile、host clone、exports、global config、GitHub secretは保持する。旧image、旧archive、旧Templateの自動cleanupはMVP対象外とする。
 
-Sandbox削除後に失敗した場合は、metadataとrebuild intentを保持し、exit code `5`で終了する。利用者は同じ`sbxm rebuild <owner>/<repository>`を再実行する。rebuild intentがある状態では`add`、`sync-files`、`open`、`stop`、通常の新規`rebuild`を開始せず、同じtarget hashの`rebuild`継続だけを許可する。Dockerfileがintent記録時から変わっていた場合は、内容を混在させずexit code `4`とする。
+Sandbox削除後に失敗した場合は、metadataとrebuild intentを保持し、exit code `5`で終了する。利用者は同じ`sbxm rebuild <owner>/<repository>`を再実行する。rebuild intentがある状態では`add`、`sync-files`、`open`、`stop`、通常の新規`rebuild`を開始せず、同じtarget hashの`rebuild`継続だけを許可する。
+
+intent記録後に現在のDockerfileが変わっていても、検証済みのtarget image、archive、Templateが揃っている場合は、それらを用いてintentの世代を完成させる。現在のDockerfileを上書きせず、成功後の適用済みhashはintentのtarget hashとし、現在のDockerfileに未適用の変更が残っていることと、もう一度`rebuild`を実行する案内を表示する。
+
+target成果物が欠落または不正な場合は、現在のDockerfile hashがtarget hashと一致するときだけ成果物を再生成できる。hashが異なる場合は世代を混在させずexit code `4`とし、期待するtarget hash、欠落または不正な成果物、Dockerfileを期待内容へ復元して再実行する方法を表示する。復元できない場合は、保持対象と失われる対象を示したうえで、明示的な最終手段として`sbxm destroy --force <owner>/<repository>`を案内する。metadataのintentを手動編集または削除する案内は行わない。
 
 ### 3.4 Confirmationとforce
 
@@ -93,7 +108,7 @@ Sandbox削除後に失敗した場合は、metadataとrebuild intentを保持し
 
 - `--force`、`-f`はparserで受け付けない
 - active session、unmanaged worktree、保存状態不合格、検査不能では常に拒否する
-- stopped Sandboxを暗黙に起動しない
+- 新規`rebuild`ではstopped Sandboxを暗黙に起動しない。intent中のprevious世代を復旧する場合だけ安全検査のため起動する
 - 新世代成果物の準備前に既存Sandboxを変更しない
 
 ## 4. `destroy`の削除対象と保持対象
@@ -302,7 +317,8 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - unmanaged worktreeによる`rebuild`拒否
 - stoppedでの`rebuild`拒否と`open`案内
 - rebuild intentのatomic write、Sandbox削除前後の各中断点、同じ`rebuild`による継続
-- rebuild中のDockerfile再変更、旧Template Sandbox、identity不一致の拒否
+- intent中のprevious世代からの削除再開、target世代からの構築継続、その他世代とidentity不一致の拒否
+- intent中のDockerfile再変更を保持した継続、target成果物欠落時の再生成条件と復旧案内
 - managed worktree、宣言file、Git identityの再構築
 - 適用済みhash更新とrebuild intent削除
 - not-createdからの管理情報破棄
@@ -371,9 +387,10 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - `rebuild`はproject完全指定を必須とし、force optionを持たない
 - 新世代image、archive、Templateの検証前に既存Sandboxを変更しない
 - active session、保存状態不合格、検査不能、unmanaged worktreeがあれば`rebuild`できない
-- `rebuild`は停止中Sandboxを暗黙に起動しない
+- 新規`rebuild`は停止中Sandboxを暗黙に起動せず、intent中のprevious世代を復旧する場合だけ安全検査のため起動する
 - `rebuild`成功後にmanaged worktreeと宣言設定を復元し、適用済みDockerfile hashを更新する
-- Sandbox切替中に失敗してもrebuild intentを保持し、同じ`rebuild`で継続できる
+- Sandbox切替中に失敗してもrebuild intentを保持し、Sandbox不在、previous世代、target世代の各中断状態から同じ`rebuild`で継続できる
+- intent記録後のDockerfile編集を上書きせず、固定済みtarget成果物が健全ならintent世代を完成させて未適用変更を案内できる
 - 通常modeではdirty、untracked、進行中Git操作、unpushed commit、到達不能detached HEADを持つSandboxを削除できない
 - managedとunmanagedを同じ安全基準で検査する
 - 通常modeは停止中Sandboxを起動せず削除を拒否する

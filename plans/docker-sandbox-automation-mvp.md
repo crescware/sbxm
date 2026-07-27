@@ -223,6 +223,8 @@ previous_dockerfile_sha256 = "<sha256>"
 - metadataが存在し、構築が完了した案件への`add`はno-op成功とする
 - 再実行した`add`のoptionが保存済み目標構成と異なる場合は、mutationせず目標構成不一致とする
 - `rebuild`で新世代成果物を検証しSandbox切替へ進む直前に、適用予定のDockerfile hashをdurableなrebuild intentとしてmetadataへatomic writeする。Sandbox再作成と検証の成功後に適用済みhashを更新し、intentを削除する
+- rebuild intent中はtarget hashとprevious hashを世代判定の正本とする。previous世代のSandboxからは安全検査後の削除、target世代からは未完了工程、不在からは作成工程を継続し、どちらでもない世代は変更しない
+- intent記録後にDockerfileが変わっても利用者の編集を上書きしない。固定済みtarget成果物が健全ならintent世代を完成させ、現在のDockerfileとの差分は次の`rebuild`対象として残す
 - runtime state、HEAD、dirty状態は保存せずGitと`sbx`から取得する
 
 ## 8. 状態モデル
