@@ -119,7 +119,7 @@ processが中断した一時fileは次回起動時に自動削除せず、path�
 
 ### 8.2 有効
 
-`init`は保存済み値を再入力させない。host prerequisiteとSSH setupだけ再検査し、configを変更せず成功する。
+`init`は初期化済みであることとconfig pathを表示し、再検査を続行するかTTY上で一度確認する。承認された場合だけ、保存済み値を再入力させず、configを変更せずにhost prerequisiteとSSH setupを再検査する。
 
 ### 8.3 無効
 
@@ -228,29 +228,48 @@ markerを採用できる場合:
 
 configがない場合だけ新規作成する。既存の有効configは再利用し、無効configは停止する。
 
-### 13.2 処理順
+### 13.2 排他
+
+configの確認前に`~/.sbxm/init.lock`を開き、exclusiveなOS file lockを取得する。
+
+- lock待機は10秒
+- timeoutはlock pathを表示してexit code `5`
+- lockはworkflow終了まで保持する
+- `init.lock`はworkflow終了後も削除しない
+- lock取得後にconfigの有無と妥当性を確認する
+- lock fileの存在自体は処理中を意味しない。OS file lockの取得結果を使う
+
+同時に実行された`init`はlockにより直列化される。後からlockを取得したprocessはconfigを改めて確認し、先行processが初期化を完了していれば初期化済みとして扱う。
+
+### 13.3 処理順
 
 1. bootstrap localeを決定する
-2. configの有無と妥当性を確認する
-3. `sw_vers`と`uname -m`でmacOS 14以上、arm64を確認する
-4. `brew`、`docker`、`gh`、`sbx`の存在を確認する
-5. Docker Client/Server疎通を確認する
-6. Docker Sandboxes exact versionとcompatibility manifestを照合する
-7. loginが必要なら`sbx login`をTTY接続で起動する
-8. network policy状態をread-onlyで表示する。自動変更しない
-9. Remote SSH機能の対応状況をfixtureに基づき確認し、必要な公式setup commandを実行する
-10. configがなければlanguage、base path、Git name、Git emailを取得・検証する
-11. configをatomic writeする
-12. prerequisite結果を表示する
+2. `~/.sbxm`を検証または作成し、`init.lock`を取得する
+3. configの有無と妥当性を確認する
+4. 有効なconfigがあれば、再検査を続行するか確認する
+5. `sw_vers`と`uname -m`でmacOS 14以上、arm64を確認する
+6. `brew`、`docker`、`gh`、`sbx`の存在を確認する
+7. Docker Client/Server疎通を確認する
+8. Docker Sandboxes exact versionとcompatibility manifestを照合する
+9. loginが必要なら`sbx login`をTTY接続で起動する
+10. network policy状態をread-onlyで表示する。自動変更しない
+11. Remote SSH機能の対応状況をfixtureに基づき確認し、必要な公式setup commandを実行する
+12. configがなければlanguage、base path、Git name、Git emailを取得・検証する
+13. configをatomic writeする
+14. prerequisite結果を表示する
 
 Homebrew installやnetwork policy変更は自動実行しない。正確な公式commandを表示してexit code `3`とし、再実行を案内する。
 
 Git identityの既定候補はhostの`git config --global user.name`と`user.email`。候補を表示して明示確定させ、空文字と改行を拒否する。
 
-### 13.3 再実行
+### 13.4 再実行
 
-- config作成前の失敗: hostに作った空の`~/.sbxm`以外を変更しない
-- config作成後の再実行: 値を変更せずprerequisiteだけ再検査
+- config作成前の失敗: hostに作った`~/.sbxm`と`init.lock`以外を変更しない
+- config作成後の再実行: 初期化済みであることとconfig pathを表示し、保存済みconfigを変更せずhost prerequisiteとSSH setupを再検査することを説明して、続行を一度確認する
+- 再実行の確認はstdinから読み、stderrへ表示する。stdinとstderrの両方がTTYでなければ何も変更せずexit code `2`
+- 再実行を承認した場合だけ、値を変更せずprerequisiteとSSH setupを再検査
+- 再実行を拒否した場合は何も変更せずexit code `10`
+- 再実行確認でのEscまたはCtrl-Cは何も変更せずexit code `130`
 - loginやsetupの利用者キャンセル: exit code `10`
 - config変更: MVPでは直接編集し、次回load時にvalidationする
 
@@ -260,6 +279,8 @@ Git identityの既定候補はhostの`git config --global user.name`と`user.ema
 - path導出、symlink拒否、metadata重複
 - configのround trip、unknown version、permission
 - atomic writeの各中断点
+- `init` lockの同時実行、待機、timeout、lock取得後のconfig再確認
+- 初期化済み`init`の承認、拒否、非TTY、Esc、Ctrl-C
 - locale優先順位、bootstrap fallback
 - FTL完全性とsnapshot
 - CLI argument関係とmutation前validation
