@@ -18,16 +18,18 @@
 - 新しい案件を追加する
 - 案件で作業を始める
 - 案件の利用を一時停止する
-- 管理案件の状態を確認する
+- 全管理案件とSandboxの稼働状態を一覧する
+- 1案件の構築状態と隔離を診断する
 - 案件のSandboxを破棄する
 
-MVPの公開コマンドは次の6つに限定する。
+MVPの公開コマンドは次の7つに限定する。
 
 ```text
 sbxm init
 sbxm add <owner>/<repository>
 sbxm open [project]
 sbxm stop [project...]
+sbxm ls
 sbxm status [project]
 sbxm rm [project]
 ```
@@ -221,26 +223,70 @@ sbxm stop owner/foo owner/bar
 
 停止済みのSandboxは成功として扱う。MVPでは全Sandboxを暗黙に停止するoptionを設けない。
 
-### 5.5 `sbxm status [project]`
+### 5.5 `sbxm ls`
 
-案件の構成と状態を読み取り専用で表示する。
+`sbxm`の案件メタデータを正本として、全管理案件とSandboxの稼働状態を一覧する。`sbx ls`の透過的な別名にはしない。
 
-引数またはcurrent directoryから案件を特定できた場合は、次の詳細を表示する。
+実行内容:
+
+1. global configから`base_path`を読む
+2. `<base-path>/*/*.project/.sbx/sbxm.toml`を探索する
+3. 各メタデータから案件名と期待するSandbox名を導出する
+4. `sbx ls`を一度だけ実行する
+5. メタデータと実際のSandbox一覧を突き合わせる
+6. 案件名、Sandbox名、状態を簡潔なtableで表示する
+
+```text
+PROJECT          SANDBOX          STATE
+owner/foo        owner-foo        running
+owner/bar        owner-bar        stopped
+owner/baz        owner-baz        not-created
+```
+
+状態は次の3つに限定する。
+
+- `not-created`: メタデータは存在するが、対応するSandboxは存在しない
+- `running`: 対応するSandboxが存在し、起動中
+- `stopped`: 対応するSandboxが存在し、停止中
+
+`sbx ls`が失敗した場合は一覧を出力せず、実行したcommand、exit status、安全なstderrを示して非ゼロ終了する。メタデータだけからSandbox状態を推測せず、`unknown`や`not-observed`へ丸めない。
+
+`sbx ls`が対応外のstateを返した場合も、対象Sandboxと生のstate値を示して非ゼロ終了する。壊れた案件メタデータを発見した場合は、そのpathとparse errorを示して非ゼロ終了する。
+
+対応する案件メタデータがないSandboxは、管理案件と混ぜず`UNMANAGED SANDBOXES`として別tableに表示する。`ls`は読み取り専用とし、取り込みや削除は行わない。
+
+### 5.6 `sbxm status [project]`
+
+1案件について、構築工程、作業可能性、credential隔離を詳細に診断する。全案件の一覧は表示しない。
+
+引数またはcurrent directoryから対象を一意に特定できない場合は、`sbxm ls`を案内して非ゼロ終了する。
+
+表示項目:
 
 - project root
 - Sandbox名と稼働状態
 - 中立Workspace
-- ホスト側cloneの有無
-- Sandbox内cloneの有無
-- Dockerfileと案件メタデータの有無
-- GitHub secretの登録有無
-- SSH Agent露出チェックの結果
+- ホスト側clone
+- Dockerfile
+- Template archive
+- GitHub secret
+- Sandbox内clone
+- SSH Agent露出
 
-案件を指定せず、current directoryからも特定できない場合は、`base_path`以下の案件メタデータを探索し、管理案件と稼働状態の一覧を表示する。
+Sandboxが存在しない場合、Sandbox内部でのみ検査可能な項目は`not-applicable`とする。これは不明状態ではなく、検査対象が存在しないという確定結果である。
+
+診断に必要な外部commandが失敗した場合は、取得済みの診断結果を表示した後、失敗したcommand、exit status、安全なstderrを示して非ゼロ終了する。確認不能な項目を`unknown`へ丸めない。
 
 機密値は表示しない。修復や状態変更は行わない。
 
-### 5.6 `sbxm rm [project]`
+`ls`と`status`の責務は次に固定する。
+
+```text
+ls      メタデータを起点に全管理案件とSandboxの稼働状態を一覧する
+status  1案件の構築状態、作業可能性、credential隔離を診断する
+```
+
+### 5.7 `sbxm rm [project]`
 
 対象Sandboxの内部状態を破棄する。
 
@@ -301,13 +347,13 @@ sbxm stop owner/foo
 
 ### 6.3 状態を確認する
 
-任意のdirectoryで引数なしに実行すると、全管理案件の一覧を表示する。
+任意のdirectoryで全管理案件の一覧を表示する。
 
 ```text
-sbxm status
+sbxm ls
 ```
 
-案件を指定するか案件directory内で実行すると、詳細を表示する。
+問題のある案件を詳細に診断する。
 
 ```text
 sbxm status owner/foo
@@ -319,7 +365,7 @@ sbxm status owner/foo
 
 ```text
 sbxm stop owner/foo owner/bar owner/baz
-sbxm status
+sbxm ls
 ```
 
 `stop`は内部状態を保持する。日常利用では`rm`を使用しない。
@@ -335,7 +381,7 @@ sbxm status
 - `switch`: `open`と必要に応じた`stop`を使用する
 - `rebuild`: Dockerfile変更後の再構築はMVP利用後に設計する
 - `export`: 既存の`sbx cp`コマンドを案内する
-- `doctor`: `status`へ最低限の前提確認を含める
+- `doctor`: 1案件の診断は`status`へ含める
 - `ports`: 既存の`sbx ports`コマンドを案内する
 - host側project全体の削除
 - 複数host、GitLab、Linux、Intel Macへの対応
@@ -366,10 +412,12 @@ src/
     ├── init.rs
     ├── add.rs
     ├── open.rs
+    ├── list.rs
+    ├── status.rs
     └── rm.rs
 ```
 
-- `cli`: 6つの公開コマンドとargumentの定義
+- `cli`: 7つの公開コマンドとargumentの定義
 - `config`: TOMLの読み書き、version検証
 - `project`: 案件探索、対象解決、案件メタデータ
 - `paths`: 全導出pathの一元管理
@@ -414,6 +462,7 @@ src/
 - 既存ファイルを既定で上書きしない
 - `SSH_AUTH_SOCK`を除外すべきprocessを一箇所に集約してtestする
 - Sandboxの存在判定は部分一致を使わず、可能なら`sbx`の機械可読出力を利用する
+- 外部状態を取得できない場合は、曖昧な代替状態を生成せず具体的なerrorで終了する
 - 複数案件操作では、全対象を解決・検証してから状態変更を始める
 
 ## 9. 実装順
@@ -456,13 +505,16 @@ src/
 - daemonをSSH Agentなしで起動する
 - tokenやホストcredentialを成果物へ残さない
 
-### Phase 3: `open`、`stop`、`status`
+### Phase 3: `open`、`stop`、`ls`、`status`
 
 - 安全なdaemon起動判定とruntime markerを実機検証する
 - Sandboxの冪等な起動を実装する
 - SSH接続を実装する
 - 単一・複数案件の停止を実装する
-- 全管理案件の探索と状態一覧を実装する
+- メタデータを起点とする全管理案件の探索を実装する
+- 1回の`sbx ls`との突き合わせと3状態の一覧を実装する
+- `sbx ls`失敗と未対応stateの具体的なerrorを実装する
+- 未管理Sandboxの分離表示を実装する
 - 案件詳細と隔離状態の診断を実装する
 
 完了条件:
@@ -471,7 +523,9 @@ src/
 - 同じ日の案件切り替えでdaemonを不要に再起動しない
 - 停止中、起動中のどちらからでも`open`できる
 - 複数Sandboxを明示的にまとめて停止できる
-- `status`を任意のdirectoryから利用できる
+- `ls`が未作成Sandboxを`not-created`として表示できる
+- `ls`が外部状態を取得できないときに一覧を推測しない
+- `status`が1案件だけを詳細に診断できる
 - 状態表示で機密値を出力しない
 
 ### Phase 4: `rm`と手動検証
@@ -502,6 +556,14 @@ src/
 - 各外部command失敗時の後続処理停止
 - `open`と`stop`の冪等性
 - 複数Sandbox停止時の対象限定
+- メタデータに存在し、Sandboxに存在しない案件の`not-created`判定
+- `sbx ls`失敗時の非ゼロ終了と一覧非出力
+- 未対応Sandbox stateを生の値とともにerror表示すること
+- 案件メタデータのparse errorをpathとともに表示すること
+- 未管理Sandboxの分離
+- `ls`が詳細診断を実行しないこと
+- `status`の単一案件診断と`not-applicable`判定
+- `status`の外部command失敗時の部分結果と非ゼロ終了
 - `rm`の確認と保持対象
 
 実機でのみ確認できる内容は、専用のtest repositoryを使って手動検証する。
@@ -517,14 +579,18 @@ src/
 9. 2案件目の`open`でdaemonを不要に再起動しないこと
 10. 複数案件の起動、切り替え、一括停止
 11. stop後の状態保持と翌日の再起動
-12. 任意のdirectoryからの全案件`status`
-13. `rm`前の保存確認と削除後の保持対象
+12. `ls`による`running`、`stopped`、`not-created`の一覧
+13. `sbx ls`失敗時に推測した一覧を出さないこと
+14. 未管理Sandboxの分離表示
+15. `status`による単一案件の構築・隔離診断
+16. `rm`前の保存確認と削除後の保持対象
 
 ## 11. 最初の利用後にレビューする論点
 
 MVPを実案件またはtest repositoryで一巡した後、次をレビューする。
 
-- `init`、`add`、`open`、`stop`、`status`、`rm`の語彙と粒度は自然か
+- `init`、`add`、`open`、`stop`、`ls`、`status`、`rm`の語彙と粒度は自然か
+- `ls`と`status`の責務分担は日常利用で自然か
 - `add`の中断理由と再開方法が利用者に明確か
 - daemon再起動確認が日常利用の妨げにならないか
 - runtime markerによる安全なdaemonの判定は十分に堅牢か
