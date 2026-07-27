@@ -1,48 +1,90 @@
 //! 表示言語とFTL resource。
 //!
-//! すべての利用者向け文字列をFTL resourceから生成する。英語FTLをmessage IDの正本とし、
-//! enum、path、command、exit status、外部stdout/stderrは翻訳しない。
+//! すべての利用者向け文字列をFTL resourceから生成する。正本localeのFTLをmessage IDの
+//! 正本とし、enum、path、command、exit status、外部stdout/stderrは翻訳しない。
+//!
+//! 言語ごとの内容は`locales/<tag>.ftl`だけが持ち、言語ごとの同一性は本moduleの
+//! [`DEFINITIONS`]だけが持つ。ほかの場所へ言語別の分岐を置かない。
+
+use std::str::FromStr;
 
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource, FluentValue};
-use unic_langid::{LanguageIdentifier, langid};
+use unic_langid::LanguageIdentifier;
 
 use crate::error::Msg;
 
-/// 組み込みlocale。
+/// 組み込みlocale。variantが言語のidentityであり、内容はFTLと[`DEFINITIONS`]が持つ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Locale {
     En,
     Ja,
 }
 
-/// 英語FTLをmessage IDの正本とする。
-pub const SOURCE_FTL: &str = include_str!("../locales/en.ftl");
-const JA_FTL: &str = include_str!("../locales/ja.ftl");
+/// 1 localeの定義。
+struct LocaleDefinition {
+    locale: Locale,
+    /// `--lang`とconfigで使う安定した表記。翻訳しない。
+    tag: &'static str,
+    /// 組み込みFTL resource。
+    ftl: &'static str,
+}
+
+/// 組み込みlocaleの定義。
+///
+/// 言語を増やすときは、[`Locale`]のvariantとこの表の行、そして`locales/<tag>.ftl`だけを
+/// 足す。ほかのmoduleとtestは、この表からの導出だけを見る。
+const DEFINITIONS: [LocaleDefinition; 2] = [
+    LocaleDefinition {
+        locale: Locale::En,
+        tag: "en",
+        ftl: include_str!("../locales/en.ftl"),
+    },
+    LocaleDefinition {
+        locale: Locale::Ja,
+        tag: "ja",
+        ftl: include_str!("../locales/ja.ftl"),
+    },
+];
 
 impl Locale {
-    /// 組み込みlocaleの全体。
-    pub const ALL: [Locale; 2] = [Locale::En, Locale::Ja];
+    /// message IDの正本であり、fallbackであり、翻訳しない状態値が書かれている言語。
+    pub const SOURCE: Locale = Locale::En;
+
+    /// 組み込みlocaleの全体。[`DEFINITIONS`]の並び順をそのまま公開する。
+    pub const ALL: [Locale; DEFINITIONS.len()] = {
+        let mut all = [Locale::SOURCE; DEFINITIONS.len()];
+        let mut index = 0;
+        while index < DEFINITIONS.len() {
+            all[index] = DEFINITIONS[index].locale;
+            index += 1;
+        }
+        all
+    };
+
+    /// 正本localeか。
+    ///
+    /// 状態値を翻訳しない契約により、正本locale以外は状態値へ注釈を必要とする。
+    pub fn is_source(self) -> bool {
+        self == Locale::SOURCE
+    }
 
     /// `--lang`とconfigで使う安定した表記。翻訳しない。
     pub fn as_str(self) -> &'static str {
-        match self {
-            Locale::En => "en",
-            Locale::Ja => "ja",
-        }
+        self.definition().tag
     }
 
     /// `--lang`とconfigの`language`が受け付ける厳密な値。
     pub fn parse_exact(value: &str) -> Option<Locale> {
-        match value {
-            "en" => Some(Locale::En),
-            "ja" => Some(Locale::Ja),
-            _ => None,
-        }
+        DEFINITIONS
+            .iter()
+            .find(|definition| definition.tag == value)
+            .map(|definition| definition.locale)
     }
 
     /// macOS優先言語やshell localeのようなtagからの推測。
     ///
-    /// `ja`または`ja-*`を日本語とし、その他は英語へ寄せない（呼び出し側でfallbackを決める）。
+    /// 組み込みlocaleのtagと一致した場合だけ確定させ、その他は寄せない（呼び出し側で
+    /// fallbackを決める）。
     pub fn from_language_tag(tag: &str) -> Option<Locale> {
         let normalized = tag.trim();
         if normalized.is_empty() {
@@ -54,26 +96,30 @@ impl Locale {
             .next()
             .unwrap_or("")
             .to_ascii_lowercase();
-        match primary.as_str() {
-            "ja" => Some(Locale::Ja),
-            "en" => Some(Locale::En),
-            "c" | "posix" => Some(Locale::En),
-            _ => None,
+        // localeを持たないshell環境は正本localeとして扱う。
+        if primary == "c" || primary == "posix" {
+            return Some(Locale::SOURCE);
         }
+        Locale::parse_exact(&primary)
     }
 
+    fn definition(self) -> &'static LocaleDefinition {
+        DEFINITIONS
+            .iter()
+            .find(|definition| definition.locale == self)
+            .expect("every locale has a definition")
+    }
+
+    /// FTLのbundleへ渡すlanguage identifier。tagから導出する。
     fn langid(self) -> LanguageIdentifier {
-        match self {
-            Locale::En => langid!("en"),
-            Locale::Ja => langid!("ja"),
-        }
+        let tag = self.as_str();
+        LanguageIdentifier::from_str(tag).unwrap_or_else(|error| {
+            panic!("locale tag {tag} is not a language identifier: {error}")
+        })
     }
 
     fn source(self) -> &'static str {
-        match self {
-            Locale::En => SOURCE_FTL,
-            Locale::Ja => JA_FTL,
-        }
+        self.definition().ftl
     }
 }
 
@@ -236,6 +282,55 @@ mod tests {
             let catalog = Catalog::new(locale);
             assert_eq!(catalog.locale(), locale);
         }
+    }
+
+    #[test]
+    fn every_locale_is_defined_exactly_once_and_round_trips_through_its_tag() {
+        assert_eq!(
+            Locale::ALL.len(),
+            DEFINITIONS.len(),
+            "ALL must expose every definition"
+        );
+        for locale in Locale::ALL {
+            let tag = locale.as_str();
+            assert_eq!(
+                Locale::parse_exact(tag),
+                Some(locale),
+                "{tag} must round-trip through the definition table"
+            );
+            assert_eq!(
+                DEFINITIONS
+                    .iter()
+                    .filter(|definition| definition.locale == locale)
+                    .count(),
+                1,
+                "{tag} must have exactly one definition"
+            );
+            assert_eq!(
+                DEFINITIONS
+                    .iter()
+                    .filter(|definition| definition.tag == tag)
+                    .count(),
+                1,
+                "{tag} must be claimed by exactly one locale"
+            );
+        }
+    }
+
+    #[test]
+    fn every_locale_tag_is_a_language_identifier() {
+        for locale in Locale::ALL {
+            assert_eq!(locale.langid().to_string(), locale.as_str());
+        }
+    }
+
+    #[test]
+    fn exactly_one_locale_is_the_source() {
+        let sources: Vec<Locale> = Locale::ALL
+            .into_iter()
+            .filter(|locale| locale.is_source())
+            .collect();
+        assert_eq!(sources, vec![Locale::SOURCE]);
     }
 
     #[test]
