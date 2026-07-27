@@ -69,6 +69,8 @@ validation順:
 6. 外部command
 7. mutation
 
+helpとusageを構築する前に、argvから`--lang`だけを副作用なく先読みする。CLI parser libraryの自動help・自動終了へlocale決定を委ねず、選択したlocaleでhelp、usage、parse errorを生成する。
+
 `add --worktrees 0`、`add --worktrees >= 2`かつ`--detach`なしはconfigやfilesystemを読む前にexit code `1`とする。
 
 `init`は次の2 modeとする。
@@ -89,6 +91,20 @@ validation順:
 5. `en`
 
 `init`と`status --global`以外のcommandでconfigが存在しない場合は、`sbxm init`を案内してexit code `1`とする。error表示はbootstrap localeを使う。
+
+helpとusageのlocaleは次の順で決定する。
+
+1. argvから先読みした有効な`--lang ja|en`
+2. read-onlyかつbest-effortで読み込めた有効なglobal configの`language`
+3. shell locale
+4. `en`
+
+- `--lang`が不正な場合はconfigを読まず、shell localeまたは`en`でparse errorを表示してexit `1`
+- configが不在の場合はshell localeへfallbackする
+- configが構文不正、未知version、permission不正、symlink、またはread失敗の場合もshell localeへfallbackし、help表示自体は妨げない
+- `--help`とcommand別helpは、config不正だけを理由に失敗させずexit `0`
+- help以外の通常commandは、parse成功後のconfig loadで同じconfig不正を診断してexit `1`
+- argv先読みはlocale選択だけに使用し、ほかのargument validationやcommand実行を行わない
 
 macOS優先言語は`defaults read -g AppleLanguages`の出力をparseする。先頭が`ja`または`ja-*`なら、TTY上でJapanese / Englishを選択させる。その他はpromptなしで`en`とする。command失敗またはparse失敗時だけ`LC_ALL`、`LC_MESSAGES`、`LANG`の順にfallbackする。
 
@@ -330,6 +346,7 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 - `init`の対話mode、完全指定option mode、不完全optionのmutation前拒否
 - 初期化済み`init`のTTY、非TTYと副作用なしのno-op
 - locale優先順位、bootstrap fallback
+- help・usageの`--lang`先読み、config language、config不在・不正時fallback、helpのexit `0`
 - FTL完全性とsnapshot
 - CLI argument関係とmutation前validation
 - TTY/non-TTY、Esc、Ctrl-C
