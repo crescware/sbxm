@@ -7,6 +7,7 @@
 // まで、それらはbinary本体からは参照されない。
 #![allow(dead_code)]
 
+mod cli;
 mod command;
 mod compatibility;
 mod config;
