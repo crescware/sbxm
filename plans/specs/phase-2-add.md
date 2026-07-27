@@ -207,9 +207,11 @@ docker image save
 ```
 
 - `docker build`成功後にinspectし、image IDとlabelを検証
-- archiveはSHA-256先頭12桁を含む世代別pathへ保存し、一時pathから成功後にatomic renameする。再利用時はprefixだけでなくfull SHA-256 labelとimage IDを検証する
-- 既存archiveはtarとして読め、期待image manifestと一致する場合だけ再利用
-- `.tmp`が残っている場合は自動上書きせずexit code `4`
+- archive工程へ到達するたびに既存archiveを再利用せず、`docker image save`で新しく生成する。再利用による性能最適化はMVP対象外とする
+- archiveはSHA-256先頭12桁を含む世代別pathへ保存する
+- project lock保持下で同世代の`.tmp`が残っている場合は、中断した未完成cacheとして削除してから生成する
+- 正式なarchiveが既にあっても、新しい一時archiveの生成と検証が完了するまでは変更しない
+- `docker image save`成功後に一時archiveのmanifest、full SHA-256 label、image IDを検証し、同じ`.cache` directory内で正式pathへatomic renameして置き換える
 
 ### 7.5 Template load
 
@@ -413,6 +415,7 @@ FILE  DESTINATION  RESULT
 - host clone remote検証
 - 新規・既存Dockerfileの採用、初回build前のhash更新、構築済みDockerfile変更時の`rebuild`案内
 - 一時build contextのpermission、通常directory、空状態、`.cache`・`exports`非包含、成功・失敗時cleanup
+- archive工程ごとの一律再生成、中断後の`.tmp`削除と再開、検証完了前の既存正式archive維持、atomic置換
 - Sandbox名完全一致とworkspace検証
 - 手作業で作成したvalidなmetadata、workspace、image、Sandbox、Git repository、worktreeの受け入れ
 - 作成元にかかわらず同じ不整合を同じ診断とexit codeで拒否すること
