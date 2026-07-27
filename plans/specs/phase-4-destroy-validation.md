@@ -68,13 +68,14 @@ force modeでは、`stopped`と`running`のどちらもデータ保護検査な�
 
 ## 5. Active session
 
-通常modeでは、Codex、Claude Code、SSH、editor、development serverなどのsessionがactiveであると`sbx` structured outputから判定できる場合、対象sessionを表示してexit code `6`とする。
+通常modeでは、Codex、Claude Code、SSH、editor、development serverなどのsession状態を`sbx` structured outputから判定する。
 
-structuredなsession検査を対象versionが提供しない場合:
+- active sessionを検出: 対象sessionを表示し、終了方法と`destroy --force`を案内してexit code `6`
+- 対象versionがstructuredなsession検査を提供しない: session不在を証明できないことと`destroy --force`を案内してexit code `6`
+- 対象versionが提供するsession検査commandの実行失敗、timeout、parse失敗: 外部状態を観測できないためexit code `5`
+- inactiveを確認: worktreeと保存状態の検査へ進む
 
-- running Sandboxの`destroy`は利用者へsession終了を案内して一度exit `10`
-- 再実行時の確認promptで「すべてのsessionを終了した」と明示確認させる
-- 非TTYの通常modeではactive sessionなしを証明できないためexit `6`
+通常modeは実行回数を記録せず、「初回」と「再実行」を区別しない。session検査を提供しないversionでは、通常modeを再実行しても毎回exit code `6`とする。
 
 force modeではactive sessionを検査せず、session終了を要求しない。
 
@@ -204,7 +205,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - detached HEADのremote到達・未到達
 - path逸脱、metadata missing、Git parse failure
 - stoppedの通常mode拒否とforce mode削除
-- active session拒否
+- active session、session検査APIなし、検査command失敗
 - typed confirmation一致、不一致、cancel、非TTYでの省略
 - `-f`と`--force`、project完全指定、データ保護検査の全省略
 - force modeでも対象を一意に特定できなければ拒否
