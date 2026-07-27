@@ -102,6 +102,8 @@ error-external-command-failed = command { $program } が { $exit_status } で失
 error-external-command-timeout = command { $program } が { $seconds } 秒以内に終了しなかったため停止しました。
 error-external-output-unparseable = { $program } の出力を解釈できません: { $detail }
 warning-external-output-lossy = { $program } の { $stream } 出力がUTF-8として不正なため、置換文字を含む形へ変換しました。
+external-invocation = 実行したcommand: { $program } { $args }
+external-working-directory = 作業directory: { $path }
 external-output-heading = { $program } の出力:
 
 error-sbx-version-unparseable = { $observed } からDocker Sandboxes CLIのversionを判定できません。

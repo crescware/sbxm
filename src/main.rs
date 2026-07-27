@@ -20,12 +20,13 @@ use std::io::Write;
 use std::process::ExitCode as ProcessExitCode;
 
 use cli::{Command, Interactivity, Outcome, PeekedLang, StatusScope};
+use command::RealHost;
 use config::{ConfigLocation, ConfigState};
 use error::{Diagnostic, Error, ErrorId, ExitCode, Result};
 use i18n::{Catalog, Locale, shell_locale};
 use workflow::Reporter;
 use workflow::init::{InitRequest, TerminalPrompt};
-use workflow::status_global::{self, RealHost};
+use workflow::status_global;
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();

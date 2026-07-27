@@ -268,6 +268,8 @@ pub struct ExternalFailure {
     pub program: String,
     /// secret値を含まないことが保証されたargumentだけを保持する。
     pub safe_args: Vec<String>,
+    /// 実行時の作業directory。指定していない場合は`None`。
+    pub working_dir: Option<std::path::PathBuf>,
     /// 外部commandのexit statusを原値のまま示す文字列。
     pub exit_status: String,
     pub stderr: Vec<u8>,
@@ -431,6 +433,7 @@ mod tests {
         let failure = ExternalFailure {
             program: "sbx".into(),
             safe_args: vec!["ls".into()],
+            working_dir: None,
             exit_status: "exit status: 2".into(),
             stderr: b"boom\n".to_vec(),
             stderr_lossy: false,

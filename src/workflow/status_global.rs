@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, TimeoutClass};
+use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{
     CliVersion, EXPECTED_NETWORK_POLICY, parse_daemon_status, parse_network_policy,
     require_minimum_version,
@@ -26,25 +26,6 @@ const EXPECTED_ARCHITECTURE: &str = "arm64";
 
 /// hostが直接使用するcommand。
 const REQUIRED_COMMANDS: [&str; 4] = ["git", "ssh", "docker", "sbx"];
-
-/// hostへの読み取りaccess。testでは差し替える。
-pub trait HostEnvironment {
-    fn command_exists(&self, program: &str) -> bool;
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome>;
-}
-
-/// 実際のhost。
-pub struct RealHost;
-
-impl HostEnvironment for RealHost {
-    fn command_exists(&self, program: &str) -> bool {
-        crate::command::exists_on_path(program)
-    }
-
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
-        crate::command::run(spec)
-    }
-}
 
 /// 診断結果。
 pub struct GlobalStatus {
@@ -552,6 +533,7 @@ mod tests {
                 Some(Ok((stdout, stderr, code))) => Ok(CommandOutcome {
                     program: spec.program.clone(),
                     args: spec.args.clone(),
+                    working_dir: spec.working_dir.clone(),
                     status: std::process::ExitStatus::from_raw(code << 8),
                     stdout: stdout.clone().into_bytes(),
                     stderr: stderr.clone().into_bytes(),

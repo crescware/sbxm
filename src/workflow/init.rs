@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::cli::{InitMode, Interactivity};
-use crate::command::{CommandSpec, TimeoutClass};
+use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::config::{
     self, ConfigLocation, ConfigState, GitIdentity, GlobalConfig, validate_git_identity_value,
 };
@@ -14,8 +14,6 @@ use crate::error::{Error, ErrorId, Msg, Result, fail};
 use crate::i18n::{Catalog, Locale, shell_locale};
 use crate::msg;
 use crate::paths::{self, AbsoluteBasePath, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
-
-use super::status_global::HostEnvironment;
 
 /// 対話modeの入力。
 ///
@@ -383,6 +381,7 @@ mod tests {
                 Some(stdout) => Ok(CommandOutcome {
                     program: spec.program.clone(),
                     args: spec.args.clone(),
+                    working_dir: spec.working_dir.clone(),
                     status: std::process::ExitStatus::from_raw(0),
                     stdout: stdout.clone().into_bytes(),
                     stderr: Vec::new(),

@@ -199,6 +199,26 @@ impl<'a> Reporter<'a> {
             let _ = writeln!(stderr, "{}", self.format(remediation));
         }
         if let Some(external) = &diagnostic.external {
+            // 失敗した工程を同じ形で再実行できるよう、起動そのものを示す。
+            let _ = writeln!(
+                stderr,
+                "{}",
+                self.format(&crate::msg!(
+                    "external-invocation",
+                    program = external.program,
+                    args = external.safe_args.join(" ")
+                ))
+            );
+            if let Some(directory) = &external.working_dir {
+                let _ = writeln!(
+                    stderr,
+                    "{}",
+                    self.format(&crate::msg!(
+                        "external-working-directory",
+                        path = crate::paths::display(directory)
+                    ))
+                );
+            }
             if external.stderr_lossy {
                 let _ = writeln!(
                     stderr,
@@ -388,6 +408,7 @@ mod tests {
             .external(ExternalFailure {
                 program: "sbx".into(),
                 safe_args: vec!["ls".into()],
+                working_dir: None,
                 exit_status: "exit status: 2".into(),
                 stderr: b"Error: daemon is not running".to_vec(),
                 stderr_lossy: false,
@@ -407,6 +428,37 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_command_is_shown_with_the_invocation_that_produced_it() {
+        let catalog = Catalog::new(Locale::En);
+        let reporter = Reporter::new(&catalog);
+        let error = Error::single(
+            Diagnostic::new(
+                ErrorId::ExternalCommandFailed,
+                msg!(
+                    "error-external-command-failed",
+                    program = "git",
+                    exit_status = "exit status: 128"
+                ),
+            )
+            .external(ExternalFailure {
+                program: "git".into(),
+                safe_args: vec!["clone".into(), "--bare".into()],
+                working_dir: Some(std::path::PathBuf::from("/Users/example/Projects")),
+                exit_status: "exit status: 128".into(),
+                stderr: Vec::new(),
+                stderr_lossy: false,
+            }),
+        );
+
+        let mut buffer = Vec::new();
+        reporter.print_error(&error, &mut buffer);
+        let text = String::from_utf8(buffer).unwrap();
+
+        assert!(text.contains("git clone --bare"), "{text}");
+        assert!(text.contains("/Users/example/Projects"), "{text}");
+    }
+
+    #[test]
     fn a_lossy_external_stream_is_reported_as_such() {
         let catalog = Catalog::new(Locale::En);
         let reporter = Reporter::new(&catalog);
@@ -422,6 +474,7 @@ mod tests {
             .external(ExternalFailure {
                 program: "sbx".into(),
                 safe_args: Vec::new(),
+                working_dir: None,
                 exit_status: "exit status: 1".into(),
                 stderr: vec![0xff, b'a'],
                 stderr_lossy: true,

@@ -102,6 +102,8 @@ error-external-command-failed = The command { $program } failed with { $exit_sta
 error-external-command-timeout = The command { $program } did not finish within { $seconds } seconds and was terminated.
 error-external-output-unparseable = The output of { $program } could not be interpreted: { $detail }
 warning-external-output-lossy = The { $stream } output of { $program } was not valid UTF-8 and was converted with replacement characters.
+external-invocation = Command: { $program } { $args }
+external-working-directory = Working directory: { $path }
 external-output-heading = Output of { $program }:
 
 error-sbx-version-unparseable = The Docker Sandboxes CLI version could not be determined from { $observed }.

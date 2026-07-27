@@ -4,7 +4,7 @@
 //! それぞれ独立にcaptureし、structured outputのparseと診断表示に使う。
 
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
@@ -25,6 +25,10 @@ pub enum EnvPolicy {
 pub enum TimeoutClass {
     Probe,
     LocalFilesystem,
+    /// `docker build`と`docker image save`。base imageのpullとpackage導入を含む。
+    ImageBuild,
+    /// Template load、Sandboxの作成・起動・停止、Sandbox内commandの実行。
+    SandboxLifecycle,
 }
 
 impl TimeoutClass {
@@ -32,8 +36,24 @@ impl TimeoutClass {
         match self {
             TimeoutClass::Probe => Duration::from_secs(10),
             TimeoutClass::LocalFilesystem => Duration::from_secs(60),
+            TimeoutClass::ImageBuild => Duration::from_secs(1800),
+            TimeoutClass::SandboxLifecycle => Duration::from_secs(600),
         }
     }
+}
+
+/// 子processの出力の扱い。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputPolicy {
+    /// stdoutとstderrを別々にbyte列としてcaptureする。
+    ///
+    /// 結果をparseする、または内容を秘匿するcommandへ使う。
+    Capture,
+    /// 人間向けの進捗を、外部toolが出したまま端末へ転送する。
+    ///
+    /// 長時間かかる工程の進捗を実行中に見せるために使う。sbxmは独自のprogress表示を
+    /// 重ねない。captureしないため、失敗の診断にstderrの原文は含まれない。
+    Passthrough,
 }
 
 const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
@@ -45,16 +65,34 @@ pub struct CommandSpec {
     pub args: Vec<String>,
     pub env: EnvPolicy,
     pub timeout: TimeoutClass,
+    pub output: OutputPolicy,
+    /// 作業directory。指定しない場合は現在processのcurrent directoryを継承する。
+    pub working_dir: Option<PathBuf>,
 }
 
 impl CommandSpec {
     /// structured outputを読むread-only probe。
     pub fn probe(program: &str, args: &[&str]) -> CommandSpec {
+        CommandSpec::capture(program, args).timeout(TimeoutClass::Probe)
+    }
+
+    /// 出力をparseする、または秘匿するcommand。
+    pub fn capture(program: &str, args: &[&str]) -> CommandSpec {
         CommandSpec {
             program: program.to_string(),
             args: args.iter().map(|arg| arg.to_string()).collect(),
             env: EnvPolicy::Inherit,
             timeout: TimeoutClass::Probe,
+            output: OutputPolicy::Capture,
+            working_dir: None,
+        }
+    }
+
+    /// 進捗をそのまま見せるcommand。
+    pub fn passthrough(program: &str, args: &[&str]) -> CommandSpec {
+        CommandSpec {
+            output: OutputPolicy::Passthrough,
+            ..CommandSpec::capture(program, args)
         }
     }
 
@@ -67,13 +105,21 @@ impl CommandSpec {
         self.timeout = class;
         self
     }
+
+    pub fn working_dir(mut self, directory: &Path) -> CommandSpec {
+        self.working_dir = Some(directory.to_path_buf());
+        self
+    }
 }
 
 /// 外部commandの実行結果。
+///
+/// `passthrough`で実行した場合、出力は既に端末へ渡っているため両streamは空になる。
 #[derive(Debug, Clone)]
 pub struct CommandOutcome {
     pub program: String,
     pub args: Vec<String>,
+    pub working_dir: Option<PathBuf>,
     pub status: ExitStatus,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
@@ -95,6 +141,7 @@ impl CommandOutcome {
         ExternalFailure {
             program: self.program.clone(),
             safe_args: self.args.clone(),
+            working_dir: self.working_dir.clone(),
             exit_status: self.status.to_string(),
             stderr: self.stderr.clone(),
             stderr_lossy: self.stderr_lossy,
@@ -129,9 +176,20 @@ pub fn run(spec: &CommandSpec) -> Result<CommandOutcome> {
     if spec.env == EnvPolicy::InheritWithoutSshAgent {
         command.env_remove("SSH_AUTH_SOCK");
     }
+    if let Some(directory) = &spec.working_dir {
+        command.current_dir(directory);
+    }
     command.stdin(Stdio::null());
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
+    match spec.output {
+        OutputPolicy::Capture => {
+            command.stdout(Stdio::piped());
+            command.stderr(Stdio::piped());
+        }
+        OutputPolicy::Passthrough => {
+            command.stdout(Stdio::inherit());
+            command.stderr(Stdio::inherit());
+        }
+    }
 
     let mut child = command.spawn().map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -168,11 +226,31 @@ pub fn run(spec: &CommandSpec) -> Result<CommandOutcome> {
     Ok(CommandOutcome {
         program: spec.program.clone(),
         args: spec.args.clone(),
+        working_dir: spec.working_dir.clone(),
         status,
         stdout,
         stderr,
         stderr_lossy,
     })
+}
+
+/// hostに対する外部commandの実行。testでは差し替える。
+pub trait HostEnvironment {
+    fn command_exists(&self, program: &str) -> bool;
+    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome>;
+}
+
+/// 実際のhost。
+pub struct RealHost;
+
+impl HostEnvironment for RealHost {
+    fn command_exists(&self, program: &str) -> bool {
+        exists_on_path(program)
+    }
+
+    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+        run(spec)
+    }
 }
 
 /// 子processの1 streamを読み切る。
@@ -290,6 +368,77 @@ mod tests {
             TimeoutClass::LocalFilesystem.duration(),
             Duration::from_secs(60)
         );
+        // 長い工程ほど、途中で切ると成果物が中途半端に残る。
+        assert!(
+            TimeoutClass::SandboxLifecycle.duration() > TimeoutClass::LocalFilesystem.duration()
+        );
+        assert!(TimeoutClass::ImageBuild.duration() > TimeoutClass::SandboxLifecycle.duration());
+    }
+
+    #[test]
+    fn a_command_runs_in_the_working_directory_it_was_given() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let record = dir.path().join("record");
+        let fake = fake_executable(
+            dir.path(),
+            "fake-tool",
+            &format!(r#"pwd > "{}""#, record.display()),
+        );
+
+        let spec = CommandSpec::capture(fake.to_str().unwrap(), &[]).working_dir(&workspace);
+        run_fake(&spec).expect("the fake tool runs");
+
+        let observed = fs::read_to_string(&record).unwrap();
+        assert_eq!(
+            std::fs::canonicalize(observed.trim()).unwrap(),
+            std::fs::canonicalize(&workspace).unwrap()
+        );
+    }
+
+    #[test]
+    fn passthrough_hands_the_streams_to_the_terminal_instead_of_capturing_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let record = dir.path().join("record");
+        let fake = fake_executable(
+            dir.path(),
+            "fake-tool",
+            &format!(
+                r#"printf 'progress'; printf 'warning' >&2; printf 'ran' > "{}""#,
+                record.display()
+            ),
+        );
+
+        let spec = CommandSpec::passthrough(fake.to_str().unwrap(), &[]);
+        let outcome = run_fake(&spec).expect("the fake tool runs");
+
+        assert_eq!(
+            fs::read_to_string(&record).unwrap(),
+            "ran",
+            "the command still runs"
+        );
+        assert!(
+            outcome.stdout.is_empty() && outcome.stderr.is_empty(),
+            "passthrough output belongs to the terminal, not to a buffer"
+        );
+        assert!(!outcome.stderr_lossy);
+    }
+
+    #[test]
+    fn a_failure_keeps_the_invocation_that_produced_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let fake = fake_executable(dir.path(), "fake-tool", "exit 2");
+
+        let spec = CommandSpec::capture(fake.to_str().unwrap(), &["clone", "--bare"])
+            .working_dir(&workspace);
+        let failure = run_fake(&spec).expect("runs").failure();
+
+        assert_eq!(failure.safe_args, vec!["clone", "--bare"]);
+        assert_eq!(failure.working_dir.as_deref(), Some(workspace.as_path()));
+        assert!(failure.exit_status.contains('2'));
     }
 
     #[test]
@@ -429,6 +578,7 @@ mod tests {
                     return Ok(CommandOutcome {
                         program: spec.program.clone(),
                         args: spec.args.clone(),
+                        working_dir: spec.working_dir.clone(),
                         status,
                         stdout: Vec::new(),
                         stderr: Vec::new(),
