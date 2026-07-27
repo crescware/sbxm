@@ -13,6 +13,7 @@ Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧�
 - `sbx` stateはPhase 1 fixtureのJSON parserで扱う
 - nameは完全一致とし、substring、prefix、表示textの`grep`を使わない
 - 未対応stateまたは重複nameはraw valueを示してexit code `1`
+- rebuild intentが存在する案件では`open`と`stop`を実行せず、同じtargetの`sbxm rebuild <owner>/<repository>`再実行を案内してexit code `1`
 
 Sandboxのstart・stopなど人間向け進捗を出すmutationはPhase 1 runnerの`passthrough`を使用する。state判定に使うstructured outputは`capture`し、`open`がterminalを引き渡すSSHは`inherit`する。sbxm独自のprogress表示は追加しない。
 
@@ -66,7 +67,7 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 sbx exec <sandbox-name> /bin/true
 ```
 
-SSH childにはstdin、stdout、stderrを継承する。SSHのexit statusが0なら`sbxm`も0、利用者による通常切断以外の非ゼロは外部command失敗としてexit code `1`に写像し、原値を表示する。
+SSH childにはstdin、stdout、stderrを継承する。SSHのexit statusが0なら`sbxm`も0、非ゼロは理由を推測せず外部command失敗としてexit code `1`に写像し、原値を表示する。sbxm自身がCtrl-Cを受けた場合は共通契約どおりexit code `130`とする。
 
 通常開始directoryはDockerfileにより`/home/agent/work`とする。MVPではSSH commandへ自動`cd`を組み込まない。
 
@@ -289,6 +290,7 @@ ssh-add -L
 - `open`と`stop`の管理案件0件、`stop`の未選択確定拒否
 - state mappingの全fixtureと未知state
 - `open`のnot-created拒否、stopped起動、running再利用
+- rebuild intent中の`open`と`stop`拒否
 - daemon再起動、active session、session不在を証明不能
 - Sandbox start・stopのpassthrough、structured出力のcapture、SSHのinherit
 - `stop`の事前全件validation、部分失敗report

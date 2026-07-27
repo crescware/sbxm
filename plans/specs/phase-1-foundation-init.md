@@ -71,14 +71,14 @@ validation順:
 
 helpとusageを構築する前に、argvから`--lang`だけを副作用なく先読みする。CLI parser libraryの自動help・自動終了へlocale決定を委ねず、選択したlocaleでhelp、usage、parse errorを生成する。
 
-`add --worktrees 0`、`add --worktrees >= 2`かつ`--detach`なしはconfigやfilesystemを読む前にexit code `1`とする。
+`add --worktrees`が1以上32以下でない場合、または`add --worktrees >= 2`かつ`--detach`なしはconfigやfilesystemを読む前にexit code `1`とする。
 
 `init`は次の2 modeとする。
 
-- 対話mode: `--lang`、`--base-path`、`--git-user-name`、`--git-user-email`を1つも指定しない
-- option mode: 4 optionをすべて指定する
+- 対話mode: `--base-path`、`--git-user-name`、`--git-user-email`を1つも指定しない
+- option mode: 上記3 optionをすべて指定する
 
-4 optionの一部だけを指定した場合は、TTYかどうかやconfigの有無にかかわらず、不足optionを表示してconfigやfilesystemを読む前にexit code `1`とする。option modeではpromptを表示しない。
+3 optionの一部だけを指定した場合は、TTYかどうかやconfigの有無にかかわらず、不足optionを表示してconfigやfilesystemを読む前にexit code `1`とする。option modeではpromptを表示しない。global optionの`--lang`はmode判定へ含めず、対話modeとoption modeのどちらでも独立して表示言語を指定できる。
 
 ## 5. Locale決定
 
@@ -106,7 +106,7 @@ helpとusageのlocaleは次の順で決定する。
 - help以外の通常commandは、parse成功後のconfig loadで同じconfig不正を診断してexit `1`
 - argv先読みはlocale選択だけに使用し、ほかのargument validationやcommand実行を行わない
 
-macOS優先言語は`defaults read -g AppleLanguages`の出力をparseする。先頭が`ja`または`ja-*`なら、TTY上でJapanese / Englishを選択させる。その他はpromptなしで`en`とする。command失敗またはparse失敗時だけ`LC_ALL`、`LC_MESSAGES`、`LANG`の順にfallbackする。
+macOS優先言語は`defaults read -g AppleLanguages`の出力をparseする。新規作成へ進む対話modeで先頭が`ja`または`ja-*`なら、TTY上でJapanese / Englishを選択させる。option modeではpromptを表示せず、先頭が`ja`または`ja-*`なら`ja`、その他は`en`とする。command失敗またはparse失敗時だけ`LC_ALL`、`LC_MESSAGES`、`LANG`の順にfallbackする。
 
 新規作成へ進む対話modeの`init`はstdinとstderrの両方がTTYであることを必須とする。どちらかがTTYでなければ何も作成せずexit code `1`とする。既に有効なconfigがある場合はTTYかどうかに関係なくno-op成功とする。option modeはTTYかどうかに関係なく実行できる。
 
@@ -299,7 +299,7 @@ configをread-onlyで事前確認し、新規作成へ進む場合だけ`~/.sbxm
 7. `~/.sbxm`を検証または作成し、`init.lock`を取得する
 8. lock取得後にconfigの有無と妥当性を再確認する
 9. 先行processが有効なconfigを作成済みなら、初期化済みとして何も変更せず終了する
-10. 対話modeではlanguage、base path、Git name、Git emailをpromptで取得・検証する
+10. 対話modeでは、`--lang`がなければlanguageをpromptで取得し、base path、Git name、Git emailをpromptで取得・検証する
 11. option modeでは完全指定された値をpromptなしで検証する
 12. configをatomic writeする
 13. 初期化結果と、host環境を診断する`sbxm status --global`を表示する
@@ -380,7 +380,7 @@ Session inspection   ready
 - 宣言fileのsourceとdestination validation
 - atomic writeの各中断点
 - `init` lockの同時実行、待機、timeout、事前確認とlock取得後のconfig再確認
-- `init`の対話mode、完全指定option mode、不完全optionのmutation前拒否
+- `init`の対話mode、3入力の完全指定option mode、不完全optionのmutation前拒否、mode判定と独立した`--lang`
 - 初期化済み`init`のTTY、非TTYと副作用なしのno-op
 - locale優先順位、bootstrap fallback
 - help・usageの`--lang`先読み、config language、config不在・不正時fallback、helpのexit `0`

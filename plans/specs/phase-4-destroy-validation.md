@@ -21,6 +21,8 @@ sbxm destroy -f <owner>/<repository>
 
 `rebuild`が再利用するbuild、save、clone、fetch、Template、Sandbox操作と、`destroy`のSandbox削除はPhase 1 runnerの`passthrough`を使用し、外部toolの進捗を隠さない。安全検査と事後検証のstructured outputは`capture`する。sbxm独自のprogress表示は追加しない。
 
+Phase 4ではE2E結果を記録する手動検証sectionをproject `README.md`へ追加し、実行command、期待結果、redaction規則を利用者が再実行できる形で残す。
+
 ## 2. 共通のデータ保護検査
 
 running Sandboxを削除する通常modeの`rebuild`と`destroy`は、同じactive session、worktree、保存状態parserと判定規則を使用する。
@@ -96,7 +98,7 @@ rebuild intentの記録後は次を行う。
 7. Sandbox identity、worktree、credential隔離を検証する
 8. metadataの適用済みDockerfile hashを新hashへ更新し、rebuild intentを削除する
 
-利用者が編集したDockerfile、host clone、exports、global config、GitHub secretは保持する。旧image、旧archive、旧Templateの自動cleanupはMVP対象外とする。
+利用者が編集したDockerfile、host clone、global config、GitHub secretは保持する。旧image、旧archive、旧Templateの自動cleanupはMVP対象外とする。
 
 storageの可視化やcleanupはオーケストレーターの利便機能として将来扱い得るが、MVPでは世代間の参照とrebuild intentから安全な削除対象を判定する機能を実装しない。通常運用中は容量を理由に成果物を推測で削除せず、`destroy`時だけ4章で定義したproject cacheを削除する。
 
@@ -131,13 +133,12 @@ target成果物が欠落または不正な場合は、現在のDockerfile hash�
 
 - host cloneとその全内容
 - `.sbxm/Dockerfile`
-- `.sbxm/exports`とその内容
 - host Docker image
 - loaded Template
 - 中立Workspace
 - Docker Sandboxes secret
 
-host Docker image、loaded Template、中立Workspace、secretのcleanupはMVP対象外。Dockerfileは利用者が手修正するfile、`exports`は利用者が退避したfileの置き場であり、管理解除後も保持する。
+host Docker image、loaded Template、中立Workspace、secretのcleanupはMVP対象外。Dockerfileは利用者が手修正するfileであり、管理解除後も保持する。
 
 ## 5. `destroy`の状態別動作
 
@@ -230,7 +231,7 @@ detached HEAD:
 - HEADが`refs/remotes/origin/*`のいずれかから到達可能なら`reachable`
 - 到達不能なら削除拒否
 
-unmanaged worktreeにも同じ規則を適用する。通常modeで削除するには、必要なcommitをpushするか、fileを`.sbxm/exports`へ取り出してworktreeをcleanにしてから再実行する。
+unmanaged worktreeにも同じ規則を適用する。通常modeで削除するには、必要な変更をGit管理へ追加してcommit・pushし、不要なuntracked fileを削除してから再実行する。Git管理外fileのhostへの搬出はMVP対象外とする。
 
 force modeでは本sectionのworktree列挙と保存状態検査を行わない。
 
@@ -385,7 +386,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 29. dirty、unpushed、active sessionを持つrunning Sandboxの`destroy --force`
 30. stopped Sandboxの`destroy --force`
 31. 非TTYかつ完全指定した通常`destroy`と`destroy --force`
-32. host clone、Dockerfile、exports、image、Template、workspace、secretの保持
+32. host clone、Dockerfile、image、Template、workspace、secretの保持
 33. metadata、project lock、cacheの削除
 34. `open`がunmanagedを拒否
 35. 新しい`add`による再登録
@@ -410,6 +411,6 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - force modeはproject完全指定を必須とし、データ保護検査と対話確認を省略してrunning/stoppedを削除できる
 - force modeでも対象を一意に特定できない場合は削除できない
 - Sandbox削除失敗時にhost成果物とmetadataを変更しない
-- 成功後はmetadata、project lock、cacheを削除してunmanagedとなり、Dockerfile、exports、host cloneを保持する
+- 成功後はmetadata、project lock、cacheを削除してunmanagedとなり、Dockerfileとhost cloneを保持する
 - 新しい目標構成を指定した`add`で再登録できる
 - E2E 36項目が対象exact versionで完了している

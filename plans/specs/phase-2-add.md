@@ -138,11 +138,10 @@ io.crescware.sbxm.metadata-version=1
 <project-root>/
 ├── <repository-lower>/
 └── .sbxm/
-    ├── exports/
     └── .cache/
 ```
 
-- owner directory、project root、`.sbxm`、`exports`、`.cache`はsymlinkを拒否
+- owner directory、project root、`.sbxm`、`.cache`はsymlinkを拒否
 - 新規directoryのpermissionは利用者のumaskに従う。ただし`.sbxm`と`.cache`は`0700`
 - 既存の非directoryはexit code `1`
 
@@ -288,7 +287,7 @@ sbx exec --user root <sandbox-name> --
 - file内容をstdout、stderr、log、metadataへ出力しない
 - credential、token、秘密鍵には使用せず、Docker Sandboxesのsecret機能を案内する
 
-`sync-files`はproject metadata、Sandbox identity、running stateをread-onlyで検証してから、本sectionのfile配置だけを実行する。stopped Sandboxを暗黙に起動せず、`sbxm open <owner>/<repository>`後の再実行を案内してexit code `1`とする。registered、unmanaged、inconsistentでは何も配置しない。
+`sync-files`はproject metadata、Sandbox identity、running stateをread-onlyで検証してから、本sectionのfile配置だけを実行する。rebuild intentが存在する場合はfileを配置せず、同じtargetの`sbxm rebuild <owner>/<repository>`再実行を案内してexit code `1`とする。stopped Sandboxを暗黙に起動せず、`sbxm open <owner>/<repository>`後の再実行を案内してexit code `1`とする。registered、unmanaged、inconsistentでは何も配置しない。
 
 ### 7.9 Git identityとprotocol
 
@@ -422,7 +421,7 @@ FILE  DESTINATION  RESULT
 - 再実行optionの省略、一致、不一致
 - host clone remote検証
 - 新規・既存Dockerfileの採用、初回build前のhash更新、構築済みDockerfile変更時の`rebuild`案内
-- 一時build contextのpermission、通常directory、空状態、`.cache`・`exports`非包含、成功・失敗時cleanup
+- 一時build contextのpermission、通常directory、空状態、project file非包含、成功・失敗時cleanup
 - archive工程ごとの一律再生成、中断後の`.tmp`削除と再開、検証完了前の既存正式archive維持、atomic置換
 - Sandbox名完全一致とworkspace検証
 - 手作業で作成したvalidなmetadata、workspace、image、Sandbox、Git repository、worktreeの受け入れ
@@ -431,6 +430,7 @@ FILE  DESTINATION  RESULT
 - build、save、clone、fetch、Template load、Sandbox createのpassthroughと、structured出力のcapture
 - 宣言fileのsource、destination、path逸脱、同一、`add`時の競合、`sync-files`時の上書き、宣言削除時の保持、一時file cleanup
 - `sync-files`のrunning限定、stopped非起動、他工程への副作用なし
+- rebuild intent中の`sync-files`拒否と同じ`rebuild`の案内
 - secret不在による中断と登録後の`add`再実行
 - bare clone、refspec、default branch
 - attached 1 tree、detached 1/3 trees

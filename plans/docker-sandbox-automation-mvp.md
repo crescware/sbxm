@@ -81,7 +81,7 @@ Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで
 - Codex・Claude Codeの対話login自動化
 - repository由来の`mise trust`、`mise install`の自動実行
 - CPU、memory設定
-- port、exportの独自wrapper
+- port公開の独自wrapper
 - Dockerfileの直接編集と`rebuild`を抽象化するpackage選択設定・profile・plugin機構
 - hostとDocker storageの容量見積り、使用量表示、旧image・archive・Template・build cacheの自動cleanup
 - `Balanced`以外のDocker Sandboxes network policy
@@ -89,8 +89,8 @@ Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで
 ## 5. 公開CLI
 
 ```text
-sbxm init
-sbxm --lang <ja|en> init --base-path <PATH> --git-user-name <NAME> --git-user-email <EMAIL>
+sbxm [--lang <ja|en>] init
+sbxm [--lang <ja|en>] init --base-path <PATH> --git-user-name <NAME> --git-user-email <EMAIL>
 sbxm [--lang <ja|en>] add <owner>/<repository> [--worktrees <N>] [--detach <BRANCH>]
 sbxm [--lang <ja|en>] sync-files <owner>/<repository>
 sbxm [--lang <ja|en>] rebuild <owner>/<repository>
@@ -99,10 +99,14 @@ sbxm [--lang <ja|en>] stop [<owner>/<repository>...]
 sbxm [--lang <ja|en>] ls
 sbxm [--lang <ja|en>] status --global
 sbxm [--lang <ja|en>] status <owner>/<repository>
-sbxm [--lang <ja|en>] destroy [-f|--force] [<owner>/<repository>]
+sbxm [--lang <ja|en>] destroy [<owner>/<repository>]
+sbxm [--lang <ja|en>] destroy (-f|--force) <owner>/<repository>
+sbxm --version
 ```
 
 公開commandは利用者が達成したい目的に基づいて命名し、下位toolのcommand構成をそのまま公開APIへ転写しない。内部工程や下位toolと同じ語彙になること自体は制約としない。
+
+`--lang`はglobal optionとし、subcommandの前後のどちらでも受け付ける。`--version`はversion文字列をstdoutへ表示してexit code `0`で終了する。
 
 ### 5.1 対象指定
 
@@ -131,6 +135,7 @@ sbxm [--lang <ja|en>] destroy [-f|--force] [<owner>/<repository>]
 - owner: `[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?`
 - repository: `[A-Za-z0-9._-]{1,100}`
 - `.`、`..`はrepository名として拒否する
+- `.sbxm`はproject metadata directoryと衝突するため、大文字小文字を区別せずrepository名として拒否する
 - 比較用canonical project IDはASCII lowercaseの`owner/repository`とする
 - 表示にはmetadataへ保存したGitHub上のowner、repository表記を使用する
 - canonical project IDが一致するmetadataを複数検出した場合はconflict errorとし、mutationしない
@@ -155,7 +160,6 @@ Sandbox名はcanonical project IDから決定的に導出する。
     ├── project.toml
     ├── project.lock
     ├── Dockerfile
-    ├── exports/
     └── .cache/
         └── template-<dockerfile-sha256-first-12-hex>.tar
 ```
@@ -254,6 +258,8 @@ previous_dockerfile_sha256 = "<sha256>"
 
 `inconsistent`では、読み取り専用診断以外のmutationを禁止する。
 
+`registered`は内部の管理状態名とする。利用者向けtableでは、対応Sandboxがまだ存在しない同じ状態を`not-created`と表示する。
+
 ### 8.2 Command別状態遷移
 
 | 現在状態 | `add` | `sync-files` | `rebuild` | `open` | `stop` | `destroy` |
@@ -342,3 +348,18 @@ Phase 1〜4はそれぞれ独立した1 PRとし、合計4 PRで実装する。�
 - [Docker Sandboxes templates](https://docs.docker.com/ai/sandboxes/customize/templates/)
 
 外部CLIの仕様は変更され得るため、参照資料の現在内容よりPhase 1でcommitするexact-version fixtureを実装上の契約とする。
+
+## 14. 今回のreviewで明確化したMVP対象外
+
+4.2の対象外一覧を正本とする。今回のreviewで追加または判断理由を明確化した次の機能も意図的に対象外とし、必要性を実利用で確認してから再検討する。
+
+- Git管理外fileをSandboxからhostへ搬出するworkflow、`.sbxm/exports`、`sbx cp`の案内、sbxm独自のexport command。MVPの成果物保存経路はGitのcommitとpushとする
+- unmanaged worktreeを`rebuild`で保存、移行、再作成、自動削除する機能と、そのための復旧支援。unmanaged worktreeを検出した`rebuild`は安全のため拒否する
+- Dockerfileの直接編集と`sbxm rebuild`を抽象化するpackage選択設定、profile、plugin機構
+- hostとDocker storageの容量見積り、使用量表示、旧image・archive・Template・build cacheの自動cleanup
+- `Balanced`以外のDocker Sandboxes network policy
+- port公開の独自wrapper
+- CPU、memory設定
+- worktree追加・削除専用command
+
+対象外の機能が将来もsbxmの責務にならないという意味ではない。オーケストレーターとして面倒を見る利便性は認めつつ、MVPの安全な一巡に必要な範囲を先に実装する。
