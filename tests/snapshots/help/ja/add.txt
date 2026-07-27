@@ -1,0 +1,12 @@
+GitHub repositoryを管理対象へ登録してSandboxを構築します
+
+使い方 (Usage): sbxm add [OPTIONS] <owner/repository>
+
+引数 (Arguments):
+  <owner/repository>  対象案件をowner/repository形式で指定します
+
+option (Options):
+      --worktrees <N>    作成するmanaged worktreeの数 (1〜32)
+      --detach <BRANCH>  detached modeで全managed worktreeの起点にするremote branch
+      --lang <ja|en>     この実行の表示言語 (ja, en)
+  -h, --help             helpを表示する

@@ -1,0 +1,10 @@
+Stop running sandboxes
+
+Usage: sbxm stop [OPTIONS] [owner/repository]...
+
+Arguments:
+  [owner/repository]...  Target projects as owner/repository
+
+Options:
+      --lang <ja|en>  Display language for this run (ja, en)
+  -h, --help          Print help

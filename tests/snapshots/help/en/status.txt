@@ -1,0 +1,11 @@
+Diagnose the host environment or a single project, read-only
+
+Usage: sbxm status [OPTIONS] [owner/repository]
+
+Arguments:
+  [owner/repository]  Target project as owner/repository
+
+Options:
+  -g, --global        Diagnose the host and global environment instead of a project
+      --lang <ja|en>  Display language for this run (ja, en)
+  -h, --help          Print help

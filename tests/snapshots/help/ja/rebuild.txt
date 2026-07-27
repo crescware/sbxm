@@ -1,0 +1,10 @@
+編集したDockerfileをSandbox再作成によって適用します
+
+使い方 (Usage): sbxm rebuild [OPTIONS] <owner/repository>
+
+引数 (Arguments):
+  <owner/repository>  対象案件をowner/repository形式で指定します
+
+option (Options):
+      --lang <ja|en>  この実行の表示言語 (ja, en)
+  -h, --help          helpを表示する

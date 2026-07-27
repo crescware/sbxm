@@ -1,0 +1,11 @@
+Delete the sandbox and drop sbxm management data for a project
+
+Usage: sbxm destroy [OPTIONS] [owner/repository]
+
+Arguments:
+  [owner/repository]  Target project as owner/repository
+
+Options:
+  -f, --force         Skip data-protection and active-session checks, then delete
+      --lang <ja|en>  Display language for this run (ja, en)
+  -h, --help          Print help

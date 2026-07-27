@@ -1,0 +1,10 @@
+Create the global configuration for sbxm
+
+Usage: sbxm init [OPTIONS]
+
+Options:
+      --base-path <PATH>        Absolute path of the directory that holds project directories
+      --git-user-name <NAME>    Git user.name applied inside sandboxes
+      --git-user-email <EMAIL>  Git user.email applied inside sandboxes
+      --lang <ja|en>            Display language for this run (ja, en)
+  -h, --help                    Print help

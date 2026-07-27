@@ -1,0 +1,12 @@
+Register a GitHub repository and build its sandbox
+
+Usage: sbxm add [OPTIONS] <owner/repository>
+
+Arguments:
+  <owner/repository>  Target project as owner/repository
+
+Options:
+      --worktrees <N>    Number of managed worktrees to create (1-32)
+      --detach <BRANCH>  Remote branch every managed worktree starts from, in detached mode
+      --lang <ja|en>     Display language for this run (ja, en)
+  -h, --help             Print help

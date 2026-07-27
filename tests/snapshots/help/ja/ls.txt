@@ -1,0 +1,7 @@
+管理案件とSandboxの状態を一覧します
+
+使い方 (Usage): sbxm ls [OPTIONS]
+
+option (Options):
+      --lang <ja|en>  この実行の表示言語 (ja, en)
+  -h, --help          helpを表示する

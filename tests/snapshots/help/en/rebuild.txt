@@ -1,0 +1,10 @@
+Apply the edited Dockerfile by recreating the sandbox
+
+Usage: sbxm rebuild [OPTIONS] <owner/repository>
+
+Arguments:
+  <owner/repository>  Target project as owner/repository
+
+Options:
+      --lang <ja|en>  Display language for this run (ja, en)
+  -h, --help          Print help

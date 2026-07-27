@@ -1,0 +1,19 @@
+案件ごとのDocker Sandboxを構築、接続、診断、破棄します。
+
+使い方 (Usage): sbxm [OPTIONS] <COMMAND>
+
+command (Commands):
+  init        sbxmのglobal設定を作成します
+  add         GitHub repositoryを管理対象へ登録してSandboxを構築します
+  sync-files  global設定で宣言したfileをrunning Sandboxへ再配置します
+  rebuild     編集したDockerfileをSandbox再作成によって適用します
+  open        必要ならSandboxを起動し、SSHで接続します
+  stop        起動中のSandboxを停止します
+  ls          管理案件とSandboxの状態を一覧します
+  status      host環境または1案件をread-onlyで診断します
+  destroy     対象案件のSandboxとsbxmの管理情報を破棄します
+
+option (Options):
+      --lang <ja|en>  この実行の表示言語 (ja, en)
+  -h, --help          helpを表示する
+  -V, --version       versionを表示する

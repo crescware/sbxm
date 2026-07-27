@@ -1,0 +1,11 @@
+対象案件のSandboxとsbxmの管理情報を破棄します
+
+使い方 (Usage): sbxm destroy [OPTIONS] [owner/repository]
+
+引数 (Arguments):
+  [owner/repository]  対象案件をowner/repository形式で指定します
+
+option (Options):
+  -f, --force         データ保護検査とactive session検査を省略して削除します
+      --lang <ja|en>  この実行の表示言語 (ja, en)
+  -h, --help          helpを表示する
