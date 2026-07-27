@@ -175,11 +175,13 @@ projectを省略した案件選択promptは設けない。`--global`とproject�
 ready
 missing
 mismatch
+changed
 running
 stopped
 not-created
 clean
 dirty
+attached
 detached
 not-exposed
 exposed
@@ -189,7 +191,41 @@ not-observed-stopped
 
 `unknown`は使用しない。
 
-### 7.3 `not-applicable`
+### 7.3 出力
+
+project scopeは指定案件だけを診断し、正常結果を`PROJECT`と`WORKTREES`の2 sectionとしてstdoutへ表示する。global環境の検査結果を`GLOBAL` sectionとして混在させない。global環境の問題で観測できない項目がある場合は、7.1のとおり原因を診断し、別commandの`sbxm status --global`を案内する。
+
+`PROJECT`は1案件の固定項目を縦に並べ、英語modeの列を`ITEM`と`VALUE`で固定する。`WORKTREES`は複数件を比較できるtableとし、英語modeの列を`PATH`、`KIND`、`MODE`、`STATE`で固定する。`KIND`はmetadataとの対応による`managed`または`unmanaged`、`MODE`はGit worktreeの形態を示す`attached`または`detached`、`STATE`は`clean`または`dirty`とする。
+
+```text
+PROJECT
+ITEM                 VALUE
+Project              owner/repository
+Metadata             ready
+Project root         ready
+Host clone           ready
+Dockerfile           changed
+Image                ready
+Template archive     ready
+Sandbox              running
+Workspace            ready
+GitHub secret        ready
+Bare repository      ready
+SSH Agent            not-exposed
+
+WORKTREES
+PATH                    KIND        MODE        STATE
+repository.tree-0       managed     attached   clean
+repository.tree-1       unmanaged   detached   dirty
+```
+
+`changed`は現在のDockerfile hashがmetadataの適用済みhashと異なり、次の`rebuild`対象であることを示す。破損や観測失敗を示す`mismatch`とは区別する。
+
+取得できた行は後続検査が失敗しても省略しない。Sandbox名、workspace、hash、観測値、外部commandの失敗、対処方法などの詳細は表の列を増やさず、安定したerror IDを持つ診断としてstderrへ出す。これにより一覧性のある正常出力と、原因を特定できる詳細なerror情報を分離する。
+
+日本語modeではsection名、列名、項目名を翻訳し、状態値と`KIND`は翻訳しない。正常出力末尾のenum凡例は方向性文書の言語契約に従う。列間の空白幅は実装時のsnapshotで固定し、公開する英語modeの列構成と並び順は変更しない。
+
+### 7.4 `not-applicable`
 
 Sandboxが存在しない場合だけ、Sandbox内部でしか検査できない次を`not-applicable`とする。
 
@@ -202,7 +238,7 @@ Docker image、archive、host cloneは引き続き検査する。
 
 Sandboxがstoppedの場合、read-only `sbx exec`が暗黙に起動する可能性があるため実行しない。内部項目は`not-observed-stopped`とし、「停止状態を変えないため検査していない」という説明を付ける。これは観測失敗ではなく意図的な非観測なので、ほかに問題がなければexit code `0`とする。状態値を`unknown`へ丸めない。
 
-### 7.4 Worktree検査
+### 7.5 Worktree検査
 
 running時にSandbox内で次のporcelain出力を取得する。
 
@@ -220,7 +256,7 @@ git -C <worktree> symbolic-ref --quiet --short HEAD
 - pathはbare root配下へstandardizeできること。逸脱pathはsecurity error
 - submodule状態も`git status`がdirtyと返す場合はdirty
 
-### 7.5 SSH Agent検査
+### 7.6 SSH Agent検査
 
 running時:
 
@@ -235,7 +271,7 @@ ssh-add -L
 
 公開鍵本文は出力しない。
 
-### 7.6 Exit
+### 7.7 Exit
 
 - 全検査成功かつsecurity issueなし: `0`
 - 1件以上のerror: `1`
@@ -250,7 +286,7 @@ ssh-add -L
 - daemon再起動、active session、session不在を証明不能
 - `stop`の事前全件validation、部分失敗report
 - `ls`のmanaged/unmanaged、0件、failure時一覧非出力
-- project `status`の必須対象、検査順、部分結果、not-applicable、global診断の案内
+- project `status`の必須対象、検査順、出力snapshot、部分結果、not-applicable、global診断の案内
 - porcelain `-z` parser
 - managed/unmanaged、missing managed、path逸脱
 - dirty/untracked/submodule

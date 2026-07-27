@@ -328,7 +328,32 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 
 未loginの場合は`sbx login`を、Remote SSH setupが必要な場合はfixtureで固定した公式commandを表示する。commandを自動実行しない。
 
-### 14.3 Exit
+### 14.3 出力
+
+global scopeはhostとglobal環境だけを診断するため、正常結果は`GLOBAL` sectionだけをstdoutへ表示する。projectの情報を混在させない。英語modeの列は`ITEM`と`STATUS`で固定し、14.2の検査順に並べる。
+
+```text
+GLOBAL
+ITEM                 STATUS
+Config               ready
+Base path            ready
+Platform             ready
+Homebrew             ready
+Docker               ready
+GitHub CLI           ready
+Docker Sandboxes     ready
+Login                ready
+Network policy       ready
+Remote SSH           ready
+Daemon               running
+Session inspection   ready
+```
+
+取得できた行は後続検査が失敗しても省略しない。path、version、観測値、外部commandの失敗、対処方法などの詳細は表の列を増やさず、安定したerror IDを持つ診断としてstderrへ出す。これにより一覧性のある正常出力と、原因を特定できる詳細なerror情報を分離する。
+
+日本語modeではsection名、列名、項目名を翻訳し、状態値は翻訳しない。正常出力末尾のenum凡例は方向性文書の言語契約に従う。列間の空白幅は実装時のsnapshotで固定し、公開する英語modeの列構成と並び順は変更しない。
+
+### 14.4 Exit
 
 - 全検査成功: `0`
 - 1件以上のerror: `1`
@@ -352,7 +377,7 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 - TTY/non-TTY、Esc、Ctrl-C
 - command runnerのenvironment、timeout、stream
 - compatibility fixtureの全parser
-- global `status`の全検査、partial result、remediation、複数error時の診断
+- global `status`の全検査、出力snapshot、partial result、remediation、複数error時の診断
 - CLI parserと外部commandの非ゼロstatusを`1`へ写像し、原値を診断へ保持すること
 
 ## 16. 受入条件
