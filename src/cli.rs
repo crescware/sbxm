@@ -25,9 +25,7 @@ use crate::i18n::{Catalog, Locale};
 use crate::msg;
 use crate::project::ProjectId;
 
-/// managed worktreeの下限と上限。
-pub const MIN_WORKTREES: u32 = 1;
-pub const MAX_WORKTREES: u32 = 32;
+use crate::metadata::{MAX_WORKTREES, MIN_WORKTREES};
 
 /// 対話可能性。project省略時の規則へ使う。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

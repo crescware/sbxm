@@ -7,10 +7,10 @@
 
 use std::path::Path;
 
-use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, TimeoutClass};
+use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{
-    CliVersion, EXPECTED_NETWORK_POLICY, parse_daemon_status, parse_network_policy,
-    require_minimum_version,
+    CliVersion, EXPECTED_NETWORK_POLICY, parse_daemon_status, parse_login_status,
+    parse_network_policy, require_minimum_version,
 };
 use crate::config::{self, ConfigLocation, ConfigState};
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
@@ -26,25 +26,6 @@ const EXPECTED_ARCHITECTURE: &str = "arm64";
 
 /// hostが直接使用するcommand。
 const REQUIRED_COMMANDS: [&str; 4] = ["git", "ssh", "docker", "sbx"];
-
-/// hostへの読み取りaccess。testでは差し替える。
-pub trait HostEnvironment {
-    fn command_exists(&self, program: &str) -> bool;
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome>;
-}
-
-/// 実際のhost。
-pub struct RealHost;
-
-impl HostEnvironment for RealHost {
-    fn command_exists(&self, program: &str) -> bool {
-        crate::command::exists_on_path(program)
-    }
-
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
-        crate::command::run(spec)
-    }
-}
 
 /// 診断結果。
 pub struct GlobalStatus {
@@ -309,7 +290,12 @@ fn check_docker_sandboxes(
     sbx_present: bool,
     status: &mut GlobalStatus,
 ) {
-    let dependent_items = ["status-item-network-policy", "status-item-daemon"];
+    let dependent_items = [
+        "status-item-network-policy",
+        "status-item-daemon",
+        "status-item-login",
+        "status-item-session-inspection",
+    ];
 
     if !sbx_present {
         push(status, "status-item-docker-sandboxes", StatusValue::Missing);
@@ -371,6 +357,97 @@ fn check_docker_sandboxes(
     push(status, "status-item-docker-sandboxes", StatusValue::Ready);
     check_network_policy(host, status);
     check_daemon(host, status);
+    check_login(host, status);
+    check_session_inspection(host, status);
+}
+
+/// Docker Sandboxesへのlogin状態。
+///
+/// loginを前提とするのはTemplateとSandboxを扱う工程であり、observeできない場合に
+/// login済みと推測しない。
+fn check_login(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
+    match read_stdout(host, "sbx", &["login", "status", "--json"]) {
+        Ok(output) => match parse_login_status(&output) {
+            Ok(true) => push(status, "status-item-login", StatusValue::Ready),
+            Ok(false) => {
+                push(status, "status-item-login", StatusValue::Missing);
+                status.diagnostics.push(
+                    Diagnostic::new(ErrorId::SbxLoginMissing, msg!("error-sbx-login-missing"))
+                        .remediation(msg!("remediation-sbx-login", command = "sbx login")),
+                );
+            }
+            Err(error) => {
+                push(status, "status-item-login", StatusValue::Error);
+                status
+                    .diagnostics
+                    .extend(error.diagnostics().iter().cloned());
+            }
+        },
+        Err(error) => {
+            push(status, "status-item-login", StatusValue::Error);
+            let mut diagnostic = Diagnostic::new(
+                ErrorId::SbxLoginUnobservable,
+                msg!("error-sbx-login-unobservable", detail = describe(&error)),
+            );
+            if let Some(external) = external_of(&error) {
+                diagnostic = diagnostic.external(external);
+            }
+            status.diagnostics.push(diagnostic);
+        }
+    }
+}
+
+/// active session検査の対応状況。
+///
+/// daemonを安全に再起動できるかどうかは、この検査ができるかどうかで決まる。
+/// Sandboxが1件もない場合は、sessionを持ち得る対象がないため対応済みとして扱う。
+fn check_session_inspection(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
+    match read_stdout(host, "sbx", &["ls", "--json"]) {
+        Ok(output) => match crate::compatibility::parse_sandbox_list(&output) {
+            Ok(sandboxes) => {
+                let hidden: Vec<String> = sandboxes
+                    .iter()
+                    .filter(|entry| entry.active_sessions.is_none())
+                    .map(|entry| entry.name.clone())
+                    .collect();
+                if hidden.is_empty() {
+                    push(status, "status-item-session-inspection", StatusValue::Ready);
+                } else {
+                    push(status, "status-item-session-inspection", StatusValue::Error);
+                    status.diagnostics.push(
+                        Diagnostic::new(
+                            ErrorId::DaemonSessionUnobservable,
+                            msg!(
+                                "error-daemon-session-unobservable",
+                                sandbox = hidden.join(", ")
+                            ),
+                        )
+                        .remediation(msg!("remediation-daemon-session-unobservable")),
+                    );
+                }
+            }
+            Err(error) => {
+                push(status, "status-item-session-inspection", StatusValue::Error);
+                status
+                    .diagnostics
+                    .extend(error.diagnostics().iter().cloned());
+            }
+        },
+        Err(error) => {
+            push(status, "status-item-session-inspection", StatusValue::Error);
+            let mut diagnostic = Diagnostic::new(
+                ErrorId::DaemonSessionUnobservable,
+                msg!(
+                    "error-daemon-session-unobservable",
+                    sandbox = describe(&error)
+                ),
+            );
+            if let Some(external) = external_of(&error) {
+                diagnostic = diagnostic.external(external);
+            }
+            status.diagnostics.push(diagnostic);
+        }
+    }
 }
 
 fn check_network_policy(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
@@ -484,6 +561,7 @@ fn external_of(error: &Error) -> Option<crate::error::ExternalFailure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::CommandOutcome;
     use crate::i18n::{Catalog, Locale};
     use crate::workflow::Reporter;
     use std::collections::HashMap;
@@ -552,6 +630,7 @@ mod tests {
                 Some(Ok((stdout, stderr, code))) => Ok(CommandOutcome {
                     program: spec.program.clone(),
                     args: spec.args.clone(),
+                    working_dir: spec.working_dir.clone(),
                     status: std::process::ExitStatus::from_raw(code << 8),
                     stdout: stdout.clone().into_bytes(),
                     stderr: stderr.clone().into_bytes(),
@@ -632,6 +711,8 @@ mod tests {
                 "status-item-docker-sandboxes",
                 "status-item-network-policy",
                 "status-item-daemon",
+                "status-item-login",
+                "status-item-session-inspection",
             ]
         );
     }

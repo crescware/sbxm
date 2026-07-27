@@ -163,6 +163,278 @@ pub fn parse_network_policy(output: &str) -> Result<String> {
     }
 }
 
+/// `docker image inspect`から読むimageの同一性。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageIdentity {
+    /// `sha256:<hex>`。archiveのconfig blobと同じ値になる。
+    pub id: String,
+    pub labels: std::collections::BTreeMap<String, String>,
+}
+
+/// `docker image inspect <image>`のstructured outputをparseする。
+///
+/// 1件のimageを指すため、要素が1個の配列だけを受け付ける。labelを持たないimageは
+/// 空のlabel集合として扱い、labelの不足は呼び出し側が判定する。
+pub fn parse_image_inspect(output: &str) -> Result<ImageIdentity> {
+    let document: serde_json::Value = serde_json::from_str(output)
+        .map_err(|error| unparseable("docker image inspect", &error.to_string()))?;
+    let items = document
+        .as_array()
+        .ok_or_else(|| unparseable("docker image inspect", "the document is not an array"))?;
+    let [item] = items.as_slice() else {
+        return Err(unparseable(
+            "docker image inspect",
+            &format!(
+                "the document describes {} images instead of one",
+                items.len()
+            ),
+        ));
+    };
+    let object = item
+        .as_object()
+        .ok_or_else(|| unparseable("docker image inspect", "the entry is not an object"))?;
+
+    let id = string_field(object, "Id")
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| unparseable("docker image inspect", "the image has no Id"))?;
+
+    let mut labels = std::collections::BTreeMap::new();
+    match object.get("Config").and_then(|config| config.as_object()) {
+        Some(config) => match config.get("Labels") {
+            Some(serde_json::Value::Object(declared)) => {
+                for (key, value) in declared {
+                    let value = value.as_str().ok_or_else(|| {
+                        unparseable(
+                            "docker image inspect",
+                            &format!("label {key} does not hold a string"),
+                        )
+                    })?;
+                    labels.insert(key.clone(), value.to_string());
+                }
+            }
+            // labelを1つも持たないimageでは`null`になる。
+            Some(serde_json::Value::Null) | None => {}
+            Some(_) => {
+                return Err(unparseable(
+                    "docker image inspect",
+                    "Labels is neither an object nor null",
+                ));
+            }
+        },
+        None => {
+            return Err(unparseable(
+                "docker image inspect",
+                "the image has no Config section",
+            ));
+        }
+    }
+
+    Ok(ImageIdentity { id, labels })
+}
+
+/// `sbx login status`からlogin済みかどうかを読む。
+///
+/// 真偽を示すfieldがない出力から、login済みだと推測しない。
+pub fn parse_login_status(output: &str) -> Result<bool> {
+    let document: serde_json::Value = serde_json::from_str(output.trim())
+        .map_err(|error| unparseable("sbx login status", &error.to_string()))?;
+    let object = document
+        .as_object()
+        .ok_or_else(|| unparseable("sbx login status", "the document is not an object"))?;
+
+    for key in ["logged_in", "loggedIn", "authenticated", "signed_in"] {
+        if let Some(value) = object.get(key) {
+            return value.as_bool().ok_or_else(|| {
+                unparseable("sbx login status", &format!("{key} is not a boolean"))
+            });
+        }
+    }
+    Err(unparseable(
+        "sbx login status",
+        "no field states whether this host is signed in",
+    ))
+}
+
+/// Sandboxのruntime状態。未知の値を既知の値へ丸めない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxState {
+    Running,
+    Stopped,
+}
+
+/// `sbx ls`が示すSandbox 1件。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxEntry {
+    pub name: String,
+    pub state: SandboxState,
+    /// Sandboxへ渡したworkspace。示されない場合は`None`。
+    pub workspace: Option<String>,
+    /// 元にしたTemplate。示されない場合は`None`。
+    pub template: Option<String>,
+    /// 接続中のsession数。runtimeが示さない場合は`None`。
+    pub active_sessions: Option<u64>,
+}
+
+/// `sbx ls --json`のstructured outputをparseする。
+pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
+    let documents = json_documents("sbx ls", output)?;
+
+    let mut entries = Vec::with_capacity(documents.len());
+    for document in documents {
+        let object = document
+            .as_object()
+            .ok_or_else(|| unparseable("sbx ls", "an entry is not an object"))?;
+
+        let name = string_field(object, "name")
+            .or_else(|| string_field(object, "Name"))
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| unparseable("sbx ls", "an entry has no name"))?;
+
+        let observed = string_field(object, "state")
+            .or_else(|| string_field(object, "status"))
+            .or_else(|| string_field(object, "State"))
+            .or_else(|| string_field(object, "Status"))
+            .ok_or_else(|| unparseable("sbx ls", &format!("sandbox {name} has no state")))?;
+        let state = match observed.to_ascii_lowercase().as_str() {
+            "running" => SandboxState::Running,
+            "stopped" => SandboxState::Stopped,
+            other => {
+                return Err(unparseable(
+                    "sbx ls",
+                    &format!("state {other} has no defined meaning in this build"),
+                ));
+            }
+        };
+
+        let workspace = string_field(object, "workspace")
+            .or_else(|| string_field(object, "Workspace"))
+            .filter(|value| !value.is_empty());
+        let template = string_field(object, "template")
+            .or_else(|| string_field(object, "Template"))
+            .filter(|value| !value.is_empty());
+        let active_sessions = active_sessions(object)?;
+
+        entries.push(SandboxEntry {
+            name,
+            state,
+            workspace,
+            template,
+            active_sessions,
+        });
+    }
+    Ok(entries)
+}
+
+/// 接続中のsession数。数でも一覧でも読めるが、示されない場合は推測しない。
+fn active_sessions(object: &serde_json::Map<String, serde_json::Value>) -> Result<Option<u64>> {
+    for key in [
+        "active_sessions",
+        "activeSessions",
+        "ActiveSessions",
+        "sessions",
+        "Sessions",
+    ] {
+        match object.get(key) {
+            Some(serde_json::Value::Number(number)) => {
+                return number.as_u64().map(Some).ok_or_else(|| {
+                    unparseable("sbx ls", &format!("{key} is not a count of sessions"))
+                });
+            }
+            Some(serde_json::Value::Array(items)) => return Ok(Some(items.len() as u64)),
+            Some(serde_json::Value::Null) | None => {}
+            Some(_) => {
+                return Err(unparseable(
+                    "sbx ls",
+                    &format!("{key} is neither a count nor a list"),
+                ));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// `sbx secret ls`が示すsecretの名前。
+///
+/// 値は取得も表示もしない。存在の有無だけを読む。
+pub fn parse_secret_names(output: &str) -> Result<Vec<String>> {
+    let documents = json_documents("sbx secret ls", output)?;
+
+    let mut names = Vec::with_capacity(documents.len());
+    for document in documents {
+        let name = match &document {
+            // 名前だけを並べるversionがある。
+            serde_json::Value::String(name) => name.clone(),
+            serde_json::Value::Object(object) => string_field(object, "name")
+                .or_else(|| string_field(object, "Name"))
+                .ok_or_else(|| unparseable("sbx secret ls", "an entry has no name"))?,
+            _ => return Err(unparseable("sbx secret ls", "an entry has no name")),
+        };
+        if name.is_empty() {
+            return Err(unparseable("sbx secret ls", "an entry has an empty name"));
+        }
+        names.push(name);
+    }
+    Ok(names)
+}
+
+/// 一覧形式と1行1件のJSON形式のどちらでも読む。
+fn json_documents(program: &str, output: &str) -> Result<Vec<serde_json::Value>> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        // 1件もないことは観測できた状態であり、推測ではない。
+        return Ok(Vec::new());
+    }
+    match serde_json::from_str(trimmed) {
+        Ok(serde_json::Value::Array(items)) => Ok(items),
+        Ok(serde_json::Value::Object(object)) => Ok(vec![serde_json::Value::Object(object)]),
+        Ok(_) => Err(unparseable(
+            program,
+            "the document is neither an array nor an object",
+        )),
+        Err(_) => trimmed
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                serde_json::from_str(line).map_err(|error| unparseable(program, &error.to_string()))
+            })
+            .collect(),
+    }
+}
+
+/// `sbx template ls`が示すTemplate 1件。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateEntry {
+    pub name: String,
+    /// 対応するimage ID。runtimeが対応関係を示さない場合は`None`。
+    pub image_id: Option<String>,
+}
+
+/// `sbx template ls`のstructured outputをparseする。
+///
+/// 一覧形式と、1行1件のJSON形式のどちらでも読む。名前を持たないentryがある出力は、
+/// 一覧として信用できないためparse不能として扱う。
+pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
+    let documents = json_documents("sbx template ls", output)?;
+
+    let mut entries = Vec::with_capacity(documents.len());
+    for document in documents {
+        let object = document
+            .as_object()
+            .ok_or_else(|| unparseable("sbx template ls", "an entry is not an object"))?;
+        let name = string_field(object, "name")
+            .or_else(|| string_field(object, "Name"))
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| unparseable("sbx template ls", "an entry has no name"))?;
+        let image_id = string_field(object, "image_id")
+            .or_else(|| string_field(object, "imageId"))
+            .or_else(|| string_field(object, "ImageId"))
+            .or_else(|| string_field(object, "image"))
+            .filter(|id| !id.is_empty());
+        entries.push(TemplateEntry { name, image_id });
+    }
+    Ok(entries)
+}
+
 fn string_field(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
     object
         .get(key)
@@ -261,6 +533,138 @@ mod tests {
         for output in ["{}", r#"{"state":"degraded"}"#, "[]", "oops"] {
             let error = parse_daemon_status(output).expect_err("unknown states are not guessed");
             assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+        }
+    }
+
+    #[test]
+    fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() {
+        let output = r#"[{"name":"sbxm-a","state":"running","workspace":"/tmp/docker-sandboxes/sbxm-a","template":"sbxm-a-template:0123456789ab","active_sessions":2}]"#;
+        let entries = parse_sandbox_list(output).expect("a listing parses");
+        assert_eq!(
+            entries,
+            vec![SandboxEntry {
+                name: "sbxm-a".to_string(),
+                state: SandboxState::Running,
+                workspace: Some("/tmp/docker-sandboxes/sbxm-a".to_string()),
+                template: Some("sbxm-a-template:0123456789ab".to_string()),
+                active_sessions: Some(2),
+            }]
+        );
+
+        // 1行1件のJSONと、空の出力も同じ意味で読む。
+        let lines = "{\"name\":\"sbxm-a\",\"state\":\"stopped\",\"sessions\":[]}\n{\"name\":\"sbxm-b\",\"status\":\"running\",\"sessions\":[{\"id\":\"1\"}]}\n";
+        let entries = parse_sandbox_list(lines).expect("line-delimited output parses");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].state, SandboxState::Stopped);
+        assert_eq!(entries[0].active_sessions, Some(0));
+        assert_eq!(entries[1].active_sessions, Some(1));
+        assert!(
+            parse_sandbox_list("  \n")
+                .expect("an empty listing")
+                .is_empty()
+        );
+
+        // session数を示さないversionでは、不在を推測しない。
+        let entries = parse_sandbox_list(r#"[{"name":"sbxm-a","state":"running"}]"#).unwrap();
+        assert_eq!(entries[0].active_sessions, None);
+    }
+
+    #[test]
+    fn a_sandbox_listing_that_cannot_be_read_is_refused() {
+        for output in [
+            r#"[{"state":"running"}]"#,
+            r#"[{"name":"sbxm-a"}]"#,
+            r#"[{"name":"sbxm-a","state":"pausing"}]"#,
+            r#"[{"name":"sbxm-a","state":"running","sessions":"two"}]"#,
+            r#"["sbxm-a"]"#,
+            "true",
+        ] {
+            let error = parse_sandbox_list(output).expect_err("{output} must be refused");
+            assert_eq!(
+                error.first_id(),
+                Some(ErrorId::ExternalOutputUnparseable),
+                "output {output} produced the wrong error"
+            );
+        }
+    }
+
+    #[test]
+    fn the_template_list_parser_reads_the_name_and_the_image_it_holds() {
+        let entries = parse_template_list(r#"[{"name":"t:1","image_id":"sha256:abc"}]"#)
+            .expect("a listing parses");
+        assert_eq!(
+            entries,
+            vec![TemplateEntry {
+                name: "t:1".to_string(),
+                image_id: Some("sha256:abc".to_string()),
+            }]
+        );
+        // imageを示さないversionでは、対応を推測しない。
+        let entries = parse_template_list(r#"[{"name":"t:1"}]"#).unwrap();
+        assert_eq!(entries[0].image_id, None);
+        assert!(parse_template_list("").unwrap().is_empty());
+
+        for output in [r#"[{"image_id":"sha256:abc"}]"#, r#"[{"name":""}]"#, "12"] {
+            let error = parse_template_list(output).expect_err("{output} must be refused");
+            assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+        }
+    }
+
+    #[test]
+    fn the_secret_parser_reads_names_only() {
+        assert_eq!(
+            parse_secret_names(r#"[{"name":"github"},{"name":"other"}]"#).unwrap(),
+            vec!["github".to_string(), "other".to_string()]
+        );
+        assert_eq!(
+            parse_secret_names(r#"["github"]"#).unwrap(),
+            vec!["github".to_string()]
+        );
+        assert!(parse_secret_names("").unwrap().is_empty());
+
+        for output in [r#"[{"value":"secret"}]"#, r#"[""]"#, "3"] {
+            let error = parse_secret_names(output).expect_err("{output} must be refused");
+            assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+        }
+    }
+
+    #[test]
+    fn the_image_inspect_parser_reads_the_identity_and_the_labels() {
+        let output = r#"[{"Id":"sha256:abc","Config":{"Labels":{"io.crescware.sbxm.canonical-id":"example-org/example-repo"}}}]"#;
+        let identity = parse_image_inspect(output).expect("a single image parses");
+        assert_eq!(identity.id, "sha256:abc");
+        assert_eq!(
+            identity
+                .labels
+                .get("io.crescware.sbxm.canonical-id")
+                .map(String::as_str),
+            Some("example-org/example-repo")
+        );
+
+        // labelを持たないimageは、labelが空のimageとして読む。
+        let identity = parse_image_inspect(r#"[{"Id":"sha256:abc","Config":{"Labels":null}}]"#)
+            .expect("an image without labels parses");
+        assert!(identity.labels.is_empty());
+    }
+
+    #[test]
+    fn an_image_inspect_output_that_is_not_one_image_is_refused() {
+        for output in [
+            "[]",
+            r#"[{"Id":"sha256:a","Config":{}},{"Id":"sha256:b","Config":{}}]"#,
+            r#"[{"Config":{}}]"#,
+            r#"[{"Id":"","Config":{}}]"#,
+            r#"[{"Id":"sha256:a"}]"#,
+            r#"{"Id":"sha256:a"}"#,
+            r#"[{"Id":"sha256:a","Config":{"Labels":{"key":1}}}]"#,
+            "not json",
+        ] {
+            let error = parse_image_inspect(output).expect_err("{output} must be refused");
+            assert_eq!(
+                error.first_id(),
+                Some(ErrorId::ExternalOutputUnparseable),
+                "output {output} produced the wrong error"
+            );
         }
     }
 

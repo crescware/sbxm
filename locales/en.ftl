@@ -74,9 +74,42 @@ error-file-declaration-invalid-source = Declared file { $index } has an invalid 
 error-file-declaration-invalid-destination = Declared file { $index } has an invalid destination { $destination }: { $detail }
 warning-config-unknown-key = Unknown key { $key } in { $path } was ignored.
 
+error-metadata-unreadable = The project metadata at { $path } could not be read: { $detail }
+error-metadata-invalid-syntax = The project metadata at { $path } is not valid TOML: { $detail }
+error-metadata-unknown-version = The project metadata at { $path } declares version { $version }, but this build supports { $supported }.
+error-metadata-missing-field = The project metadata at { $path } is missing the required field { $field }.
+error-metadata-invalid-value = Field { $field } in { $path } is not valid: { $detail }
+error-metadata-path-mismatch = The metadata at { $path } declares { $canonical_id }, which belongs at { $expected }.
+error-metadata-duplicate-project = { $canonical_id } is declared by more than one project directory: { $paths }
+error-sandbox-name-collision = Sandbox name { $sandbox } is derived from more than one project: { $projects }
+error-invalid-branch-name = { $value } is not a usable branch name: { $detail }
+error-target-configuration-mismatch = { $project } was registered to be built as { $stored }, but this run asks for { $requested }.
+error-rebuild-intent-pending = { $project } is in the middle of a rebuild, so its first build cannot be continued.
+
+error-host-clone-unusable = The clone at { $path } cannot be used for this project: { $detail }
+error-image-unusable = The image { $image } cannot be used for this project: { $detail }
+error-build-context-not-empty = The build context { $path } holds { $observed } entries, but sbxm builds only from an empty one.
+warning-build-context-left-behind = The temporary build context { $path } could not be removed: { $detail }
+error-archive-unusable = The template archive { $path } cannot be used: { $detail }
+error-template-unusable = The template { $template } cannot be used: { $detail }
+error-sandbox-unusable = The sandbox { $sandbox } cannot be used for this project: { $detail }
+error-declared-file-unusable = The declared file { $source } cannot be placed: { $detail }
+error-declared-file-conflict = { $destination } already holds different content, so { $source } was not placed.
+error-sandbox-identity-mismatch = { $sandbox } already sets { $key } to { $observed }, and this project expects { $expected }.
+error-github-secret-missing = The sandbox { $sandbox } has no { $secret } secret, so it cannot reach the repository.
+error-sandbox-repository-unusable = { $path } in the sandbox cannot be used for this project: { $detail }
+error-start-ref-unresolved = { $reference } does not exist on the remote of { $project }.
+error-project-not-managed = { $project } is not a managed project.
+error-sandbox-not-created = { $project } is registered, but its sandbox { $sandbox } does not exist yet.
+error-sandbox-not-running = The sandbox { $sandbox } is { $observed }, and this command only acts on a running sandbox.
+warning-dockerfile-changed-during-build = The Dockerfile of { $project } changed while its first build was still running, so the build finished with the generation it started from. Run { $command } to apply the current one.
+error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
+error-project-path-unreadable = The project path { $path } could not be read: { $detail }
+
 error-atomic-write-failed = Writing { $path } failed: { $detail }
 error-temp-file-left-behind = An interrupted run left the temporary file { $path } behind.
 error-target-appeared-concurrently = { $path } appeared while it was being created, so nothing was overwritten.
+error-target-changed-concurrently = { $path } was replaced by another file while it was being rewritten, so nothing was overwritten.
 error-lock-timeout = Another sbxm run is holding the lock at { $path }. Waited { $seconds } seconds.
 error-lock-unavailable = The lock at { $path } could not be acquired: { $detail }
 
@@ -86,6 +119,8 @@ error-external-command-failed = The command { $program } failed with { $exit_sta
 error-external-command-timeout = The command { $program } did not finish within { $seconds } seconds and was terminated.
 error-external-output-unparseable = The output of { $program } could not be interpreted: { $detail }
 warning-external-output-lossy = The { $stream } output of { $program } was not valid UTF-8 and was converted with replacement characters.
+external-invocation = Command: { $program } { $args }
+external-working-directory = Working directory: { $path }
 external-output-heading = Output of { $program }:
 
 error-sbx-version-unparseable = The Docker Sandboxes CLI version could not be determined from { $observed }.
@@ -97,8 +132,26 @@ error-docker-unreachable = The Docker daemon did not answer: { $detail }
 error-network-policy-mismatch = The network policy is { $observed }, but this build is validated only for { $expected }.
 error-network-policy-unobservable = The network policy could not be read: { $detail }
 error-daemon-unobservable = The Docker Sandboxes daemon state could not be read: { $detail }
+error-sbx-login-missing = This host is not signed in to Docker Sandboxes.
+error-sbx-login-unobservable = Whether this host is signed in to Docker Sandboxes could not be read: { $detail }
+error-daemon-session-active = A session is connected to { $sandboxes }, so the Docker Sandboxes daemon was left as it is.
+error-daemon-session-unobservable = This Docker Sandboxes version does not report whether a session is connected to { $sandbox }, so the daemon was left as it is.
 remediation-run-help = Run { $command } to see the accepted arguments.
 remediation-run-init = Run sbxm init to create the global configuration.
+remediation-host-clone-unusable = Inspect { $path } yourself, then move it aside or fix its origin before running the command again.
+remediation-daemon-session-active = Close the shells and editors connected to those sandboxes, then run the command again.
+remediation-daemon-session-unobservable = Update the Docker Sandboxes CLI to a version that reports connected sessions, then run the command again.
+remediation-declared-file-conflict = Compare the two yourself, then run sbxm sync-files to replace the file in the sandbox with the declared one.
+remediation-sandbox-identity-mismatch = Check whose sandbox this is. sbxm does not overwrite a value that is already set.
+remediation-github-secret-missing = Issue a fine-grained personal access token limited to this repository, with Contents read and write and Metadata read, plus Pull requests, Issues or Actions only if you need them. Register it with { $command }, then run the same command again.
+remediation-sandbox-repository-unusable = Inspect { $path } inside the sandbox yourself. sbxm never deletes a repository or a worktree to make room.
+remediation-start-ref-unresolved = Check the branch name on GitHub, then run the command again once the branch exists.
+remediation-project-not-managed = Run { $command } to register and build it.
+remediation-sandbox-not-created = Run { $command } to build the sandbox.
+remediation-sandbox-not-running = Run { $command } to start the sandbox, then run this command again.
+remediation-sbx-login = Run { $command } and finish signing in, then run this command again.
+remediation-run-rebuild = Run { $command } to finish the rebuild.
+remediation-target-configuration-mismatch = Run { $command } without those options to continue with the stored target, or destroy the project first to build it differently.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.
 remediation-fix-config = Edit { $path } and run the command again.
 remediation-install-command = Install { $command } and make sure it is on PATH.
@@ -111,11 +164,26 @@ security-config-permission-remediation = Run chmod { $expected } { $path } and c
 security-config-symlink-description = { $path } is a symbolic link. Following it could read or overwrite a file outside the sbxm configuration directory.
 security-config-symlink-remediation = Replace { $path } with a regular file that you own, or move the real configuration back to that path.
 
+security-config-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. A configuration another account owns can be replaced under sbxm at any moment.
+security-config-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a file you own at that path.
+
 security-config-dir-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. Locks and configuration stored there could be observed or replaced.
 security-config-dir-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the directory.
 
 security-config-dir-symlink-description = { $path } is a symbolic link. sbxm would create locks and configuration outside the intended directory.
 security-config-dir-symlink-remediation = Replace { $path } with a directory that you own.
+
+security-config-dir-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. Locks and configuration placed there would sit in a directory another account controls.
+security-config-dir-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a directory you own at that path.
+
+security-project-path-symlink-description = { $path } is a symbolic link. sbxm does not follow it, because creating or replacing files through it would act on a location outside the project directory.
+security-project-path-symlink-remediation = Replace { $path } with a regular file or directory that you own, then run the command again.
+
+security-project-file-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a file that other accounts on this machine can read or change.
+security-project-file-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the file.
+
+security-project-path-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. sbxm does not build a project on a path another account owns, whatever its mode says.
+security-project-path-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a path you own there.
 
 security-base-path-escape-description = { $path } resolves to { $resolved } after symbolic links are followed. Projects would be created outside the directory you chose.
 security-base-path-escape-remediation = Choose a base path whose resolved location stays inside the directory you intend to use.
@@ -145,6 +213,32 @@ status-item-docker = Docker
 status-item-docker-sandboxes = Docker Sandboxes
 status-item-network-policy = Network policy
 status-item-daemon = Daemon
+add-field-project = Project
+add-field-sandbox = Sandbox
+add-field-creation-mode = Creation mode
+add-field-start-branch = Start branch
+add-field-managed-worktrees = Managed worktree count
+add-field-host-clone = Host clone
+add-field-sandbox-state = Sandbox state
+column-worktree = WORKTREE
+column-created-from = CREATED FROM
+column-head = HEAD
+column-mode = MODE
+column-file = FILE
+column-destination = DESTINATION
+column-result = RESULT
+add-already-built = { $project } is already built, so nothing was changed.
+add-mise-heading = These managed worktrees carry a mise configuration. sbxm does not run mise for you:
+add-mise-hint = Run mise trust and mise install inside the sandbox when you want to use them.
+files-secret-hint = Declared files carry configuration, not credentials. Keep tokens, secrets and private keys out of them and hand those to the sandbox with the secret feature of Docker Sandboxes instead.
+sync-files-done = { $count } declared files of { $project } were placed into { $sandbox }.
+legend-attached = the worktree follows a branch that tracks the remote
+legend-detached = the worktree sits on a commit without a branch
+legend-placed = the file was written into the sandbox
+legend-unchanged = the sandbox already held the same content
+
+status-item-login = Docker Sandboxes login
+status-item-session-inspection = Active session inspection
 legend-heading = Legend
 legend-ready = available and matching the expected state
 legend-missing = not present
