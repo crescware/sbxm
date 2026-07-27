@@ -2,13 +2,17 @@
 
 ## 1. 目的
 
-`sbxm rm`は、保存されていない作業を失わないことを確認したうえで、対象Sandbox内部の状態だけを破棄する。host projectと再構築に必要な宣言・成果物は保持し、案件を`registered`状態へ戻す。
+`sbxm rm`は、対象Sandboxを一意に特定したうえで、通常modeでは保存されていない作業を失わないことを確認して、force modeではデータ保護検査を省略して、Sandbox内部の状態だけを破棄する。host projectと再構築に必要な宣言・成果物は保持し、案件を`registered`状態へ戻す。
 
 ```text
 sbxm rm [<owner>/<repository>]
+sbxm rm --force <owner>/<repository>
+sbxm rm -f <owner>/<repository>
 ```
 
-MVPには`--force`を設けない。dirty、untracked、検査不能なworktreeが1つでもあれば削除しない。
+通常modeではdirty、untracked、検査不能なworktreeが1つでもあれば削除しない。`-f`は`--force`の短縮形とする。
+
+`--force`は、対象特定後のactive session、worktree、保存状態の検査と対話確認を省略する。TTYかどうかにかかわらずproject引数の完全指定を必須とする。
 
 ## 2. 削除対象と保持対象
 
@@ -39,37 +43,40 @@ MVPには`--force`を設けない。dirty、untracked、検査不能なworktree�
 |---|---|
 | `unmanaged` | exit `4` |
 | `registered` / `not-created` | `already removed`を表示し、promptなしでexit `0` |
-| `stopped` | 安全なread-only検査方法がfixtureにあれば検査、なければ利用者確認後に一時起動して検査 |
-| `running` | session終了を要求し、worktree検査後に削除 |
+| `stopped` | 通常modeでは内部状態を観測できないため削除を拒否し、完全指定した`rm --force`を案内 |
+| `running` | 通常modeではsession終了を要求し、worktree検査後に削除 |
 | `inconsistent` | exit `4`、自動削除しない |
 
 `rm`はmetadataを削除しないため、成功後は常に`registered`となる。
 
+force modeでは、`stopped`と`running`のどちらもデータ保護検査なしで削除する。`unmanaged`、`inconsistent`、対象を一意に特定できない状態はforce modeの対象にならない。
+
 ## 4. 排他と事前確認
 
-1. 対象を引数または単一選択promptで解決
+1. 対象を引数またはTTY上の単一選択promptで解決
 2. project lockを取得
 3. stateとSandbox identityを取得
-4. active sessionをfixtureで検査
-5. 必要なら検査目的でSandboxを起動
-6. 全worktreeを列挙・検査
-7. 削除対象と保持対象を表示
-8. 明示確認
-9. Sandboxを削除
-10. 不在を検証
+4. 通常modeではactive sessionと全worktreeの保存状態を検査
+5. 削除対象と保持対象を表示
+6. 通常modeかつTTYでは明示確認
+7. Sandboxを削除
+8. 不在を検証
 
 削除開始前にproject lockを保持し、他の`add`、`open`、`stop`、`rm`を排除する。
 
+対象特定ではmetadata、canonical project ID、導出したSandbox名、workspace、ownershipを検証する。対象を一意に特定できない場合は通常・forceのどちらでも削除しない。
+
 ## 5. Active session
 
-Codex、Claude Code、SSH、editor、development serverなどのsessionがactiveであると`sbx` structured outputから判定できる場合、対象sessionを表示してexit code `6`とする。MVPはsessionを強制終了しない。
+通常modeでは、Codex、Claude Code、SSH、editor、development serverなどのsessionがactiveであると`sbx` structured outputから判定できる場合、対象sessionを表示してexit code `6`とする。
 
 structuredなsession検査を対象versionが提供しない場合:
 
 - running Sandboxの`rm`は利用者へsession終了を案内して一度exit `10`
 - 再実行時の確認promptで「すべてのsessionを終了した」と明示確認させる
-- 非TTYではexit `6`
-- `sbx rm --force`は使用しない
+- 非TTYの通常modeではactive sessionなしを証明できないためexit `6`
+
+force modeではactive sessionを検査せず、session終了を要求しない。
 
 ## 6. Worktree列挙
 
@@ -115,27 +122,21 @@ detached HEAD:
 - HEADが`refs/remotes/origin/*`のいずれかから到達可能なら`reachable`
 - 到達不能なら削除拒否
 
-unmanaged worktreeにも同じ規則を適用する。利用者が「不要」と判断していてもMVPではoverrideできない。必要なcommitをpushするか、fileを`.sbx/exports`へ取り出してworktreeをcleanにしてから再実行する。
+unmanaged worktreeにも同じ規則を適用する。通常modeで削除するには、必要なcommitをpushするか、fileを`.sbx/exports`へ取り出してworktreeをcleanにしてから再実行する。
 
-## 8. 停止中Sandboxの検査
+force modeでは本sectionのworktree列挙と保存状態検査を行わない。
 
-対象`sbx` versionで、停止状態を変えずにfilesystemを検査できるstructured APIがあれば使用する。
+## 8. 停止中Sandbox
 
-存在しない場合:
+通常modeでは停止中Sandboxを起動せず、内部のworktreeと保存状態を観測不能としてexit code `6`で削除を拒否する。完全指定した次のcommandを案内する。
 
-1. safe daemonを確認
-2. 「保存確認のため一時起動する。削除をcancelした場合は元のstoppedへ戻す」と表示
-3. TTYで確認。非TTYはexit `6`
-4. fixtureで固定した非対話commandにより起動
-5. worktreeを検査
-6. dirty、error、削除確認cancelならSandboxを再停止
-7. 再停止失敗時はexit `5`で明示
-
-一時起動によるfilesystem変更が起こり得るため、起動前後の全worktree statusを比較する。差があれば削除せず停止してexit `6`。
+```text
+sbxm rm --force <owner>/<repository>
+```
 
 ## 9. 削除確認
 
-全安全検査に合格した後だけ、次を表示する。
+通常modeでは全データ保護検査に合格した後、force modeでは対象特定後に、次を表示する。
 
 - canonical project ID
 - Sandbox名とstate
@@ -145,7 +146,7 @@ unmanaged worktreeにも同じ規則を適用する。利用者が「不要」�
 - 保持対象
 - 再構築command
 
-確認promptは、Sandbox名の完全入力を要求する。yes/noだけでは削除しない。
+通常modeをTTYで実行した場合だけ、Sandbox名の完全入力を要求する。yes/noだけでは削除しない。
 
 ```text
 削除を確認するため、Sandbox名を入力してください:
@@ -155,14 +156,16 @@ sbxm-owner-repository-0123456789ab
 - 完全一致: 続行
 - 空または不一致: 削除せずexit `10`
 - Ctrl-C/Esc: exit `130`
-- 非TTY: exit `2`
+
+projectを完全指定した非TTYの通常modeとforce modeでは対話確認を行わない。force modeでは、データ保護検査を省略して削除することをstderrへ明示する。
 
 ## 10. Sandbox削除
 
-active sessionがないことを直前に再確認する。対象versionの契約に従い、forceを付けず実行する。
+通常modeではactive sessionがないことを直前に再確認する。force modeでは再確認しない。対象versionのfixtureで固定した各modeのcommandを実行する。
 
 ```text
 sbx rm <sandbox-name>
+sbx rm --force <sandbox-name>
 ```
 
 削除後、`sbx ls --json`を最大60秒pollし、nameが存在しないことを確認する。
@@ -194,14 +197,17 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 ## 12. 自動test
 
 - not-createdのno-op
+- TTY/非TTYの対象指定共通規則
 - managed/unmanaged全件列挙
 - dirty、untracked、operation in progress
 - attachedのunpushed、upstreamなし、pushed
 - detached HEADのremote到達・未到達
 - path逸脱、metadata missing、Git parse failure
-- stoppedの一時起動、cancel時再停止、再停止失敗
+- stoppedの通常mode拒否とforce mode削除
 - active session拒否
-- typed confirmation一致、不一致、非TTY、cancel
+- typed confirmation一致、不一致、cancel、非TTYでの省略
+- `-f`と`--force`、project完全指定、データ保護検査の全省略
+- force modeでも対象を一意に特定できなければ拒否
 - delete command失敗、poll timeout、成功
 - host成果物とmetadataが変更されないこと
 - 成功後のstateと再構築command
@@ -229,20 +235,25 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 17. dirty unmanagedによる`rm`拒否
 18. unpushed commitによる`rm`拒否
 19. cleanかつremote到達済みでtyped confirmation後の`rm`
-20. host clone、metadata、Dockerfile、exports、archive、image、secretの保持
-21. `open`がnot-createdを拒否
-22. 同じ`add`による再構築
-23. 再構築後のworktree目標構成一致
+20. dirty、unpushed、active sessionを持つrunning Sandboxの`rm --force`
+21. stopped Sandboxの`rm --force`
+22. 非TTYかつ完全指定した通常`rm`と`rm --force`
+23. host clone、metadata、Dockerfile、exports、archive、image、secretの保持
+24. `open`がnot-createdを拒否
+25. 同じ`add`による再構築
+26. 再構築後のworktree目標構成一致
 
 各caseは実行command、期待exit code、期待stdout/stderr、事後状態をREADMEの手動検証sectionへ記録する。token、path内のMac user名、公開鍵は記録前にredactする。
 
 ## 14. Phase 4受入条件
 
-- dirty、untracked、進行中Git操作、unpushed commit、到達不能detached HEADを持つSandboxを削除できない
+- 通常modeではdirty、untracked、進行中Git操作、unpushed commit、到達不能detached HEADを持つSandboxを削除できない
 - managedとunmanagedを同じ安全基準で検査する
-- 停止中Sandboxの検査が状態を暗黙に変えたまま残さない
-- typed confirmationなしに削除できない
-- `sbx rm --force`を使用しない
+- 通常modeは停止中Sandboxを起動せず削除を拒否する
+- TTYの通常modeはtyped confirmationなしに削除できない
+- projectを完全指定した非TTYの通常modeはデータ保護検査後に対話なしで削除できる
+- force modeはproject完全指定を必須とし、データ保護検査と対話確認を省略してrunning/stoppedを削除できる
+- force modeでも対象を一意に特定できない場合は削除できない
 - 削除失敗時にhost成果物とmetadataを変更しない
 - 成功後はregisteredとなり、同じ目標構成で`add`再構築できる
-- E2E 23項目が対象exact versionで完了している
+- E2E 26項目が対象exact versionで完了している

@@ -34,6 +34,16 @@
 - SandboxへホストのSSH Agent、SSH秘密鍵、Docker socketを渡さない
 - secret値をargument、log、設定ファイルへ保存しない
 
+### 3.1 TTYと非TTY
+
+- projectを対象とするcommandは、非TTYではproject引数の完全指定を必須とする
+- 非TTYで対象を省略した場合は、config、metadata、filesystem、外部状態を読む前にexit code `2`で終了する
+- 非TTYではcurrent directory、候補数、過去の選択から対象を推測または自動選択しない
+- TTYでは、仕様で許可されたcommandに限り対象省略時の選択promptを表示する
+- 引数が完全指定された非TTY操作は対話確認を要求せず、指定対象だけを処理する
+- `ls`、`status --global`などprojectを対象としないcommandにはproject引数を要求しない
+- `init`の非TTY規則はPhase 1仕様に従う
+
 ## 4. MVPの範囲
 
 ### 4.1 対象
@@ -75,7 +85,7 @@ sbxm [--lang <ja|en>] stop [<owner>/<repository>...]
 sbxm [--lang <ja|en>] ls
 sbxm [--lang <ja|en>] status --global
 sbxm [--lang <ja|en>] status <owner>/<repository>
-sbxm [--lang <ja|en>] rm [<owner>/<repository>]
+sbxm [--lang <ja|en>] rm [-f|--force] [<owner>/<repository>]
 ```
 
 `create`、`setup`、`start`、`shell`、`destroy`など、内部工程や下位toolの語彙は公開commandにしない。
@@ -83,10 +93,12 @@ sbxm [--lang <ja|en>] rm [<owner>/<repository>]
 ### 5.1 対象指定
 
 - 引数あり: `<owner>/<repository>`を完全指定し、案件選択promptを出さない
-- 引数なし: metadataから候補を作り、TTY上で必ずpromptを表示する
+- TTYで引数なし: metadataから候補を作り、必ずpromptを表示する
+- 非TTYで引数なし: 対象を探索せずusage errorとする
 - promptはstdinから読み、stderrへ表示する。両方がTTYでなければusage errorとする
 - `open`と`rm`は単一選択、`stop`は0件以上の複数選択とする
 - `status`は`--global`（短縮形`-g`）または`<owner>/<repository>`のどちらか一方を必須とし、案件選択promptを出さない
+- `rm --force`はTTYかどうかにかかわらずproject引数の完全指定を必須とする
 - promptに既定選択を設けない
 - EscまたはCtrl-Cは何も変更せず、exit code `130`で終了する
 - `stop`で0件を確定した場合だけ、何も変更せずexit code `0`とする
