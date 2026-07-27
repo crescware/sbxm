@@ -83,6 +83,8 @@ fn place(
     let digest = read_source(source)?;
     let destination = destination_path(declaration.destination.as_path())?;
     let full = format!("{AGENT_HOME}/{destination}");
+    // 宣言されたpath自体が`agent` home配下でも、Sandbox内のsymlinkが外を指し得る。
+    require_no_symlink_in_sandbox(host, sandbox, source, &destination)?;
 
     if let Some(observed) = digest_in_sandbox(host, sandbox, &full)? {
         if observed == digest {
@@ -186,6 +188,34 @@ fn destination_path(destination: &Path) -> Result<String> {
         return invalid("the destination is empty");
     }
     Ok(parts.join("/"))
+}
+
+/// destinationが`agent` homeからsymlinkを経ずに届くことを確かめる。
+///
+/// 配置はroot権限で行うため、途中のcomponentがsymlinkであれば、read、chown、
+/// 置き換えのいずれもhomeの外へ及ぶ。homeに近い側から1階層ずつ確認する。
+fn require_no_symlink_in_sandbox(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    source: &Path,
+    destination: &str,
+) -> Result<()> {
+    let mut current = AGENT_HOME.to_string();
+    for part in destination.split('/') {
+        current.push('/');
+        current.push_str(part);
+        if sandbox::exec(host, sandbox, &["test", "-h", &current])?.success() {
+            return Err(Error::new(
+                ErrorId::DeclaredFileUnusable,
+                msg!(
+                    "error-declared-file-unusable",
+                    source = paths::display(source),
+                    detail = format!("{current} is a symbolic link inside the sandbox")
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Sandbox内のdestinationのdigest。存在しない場合は`None`。
@@ -292,6 +322,8 @@ mod tests {
     struct FakeSbx {
         /// Sandbox内のfileと、そのdigest。
         files: HashMap<String, String>,
+        /// Sandbox内でsymlinkであるpath。
+        symlinks: Vec<String>,
         calls: RefCell<Vec<Vec<String>>>,
     }
 
@@ -299,6 +331,7 @@ mod tests {
         fn empty() -> FakeSbx {
             FakeSbx {
                 files: HashMap::new(),
+                symlinks: Vec::new(),
                 calls: RefCell::new(Vec::new()),
             }
         }
@@ -308,8 +341,15 @@ mod tests {
             files.insert(destination.to_string(), sha256_hex(contents));
             FakeSbx {
                 files,
+                symlinks: Vec::new(),
                 calls: RefCell::new(Vec::new()),
             }
+        }
+
+        /// 指定したpathをsymlinkとして扱う。
+        fn linking(mut self, path: &str) -> FakeSbx {
+            self.symlinks.push(path.to_string());
+            self
         }
 
         fn calls(&self) -> Vec<Vec<String>> {
@@ -338,7 +378,11 @@ mod tests {
                 match inner.first().map(String::as_str) {
                     Some("test") => {
                         let target = inner.last().cloned().unwrap_or_default();
-                        code = i32::from(!self.files.contains_key(&target));
+                        let present = match inner.get(1).map(String::as_str) {
+                            Some("-h") => self.symlinks.contains(&target),
+                            _ => self.files.contains_key(&target),
+                        };
+                        code = i32::from(!present);
                     }
                     Some("sha256sum") => {
                         let target = inner.last().cloned().unwrap_or_default();
@@ -506,6 +550,70 @@ mod tests {
                 "source {source:?} produced the wrong error"
             );
             assert!(host.calls().is_empty(), "nothing is asked of the sandbox");
+        }
+    }
+
+    #[test]
+    fn a_destination_reached_through_a_symbolic_link_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = source_file(dir.path(), b"declared = true\n");
+        let declarations = [declaration(&source, ".config/example/config.toml")];
+
+        // 途中のdirectoryも、destination自身も、homeの外を指し得る。
+        for link in [
+            "/home/agent/.config",
+            "/home/agent/.config/example",
+            "/home/agent/.config/example/config.toml",
+        ] {
+            for conflict in [Conflict::Refuse, Conflict::Overwrite] {
+                let host = FakeSbx::empty().linking(link);
+                let error = place_all(&host, "sbxm-example", &declarations, conflict)
+                    .expect_err("a path that leaves the agent home is not written to");
+                assert_eq!(
+                    error.first_id(),
+                    Some(ErrorId::DeclaredFileUnusable),
+                    "{link} produced the wrong error"
+                );
+                assert!(
+                    !host.ran("cp") && !host.ran("install") && !host.ran("mv"),
+                    "nothing is copied or installed through {link}: {:?}",
+                    host.calls()
+                );
+                assert!(
+                    !host.ran("sha256sum"),
+                    "the destination is not even read through {link}: {:?}",
+                    host.calls()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_step_of_the_destination_is_checked_for_a_symbolic_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = source_file(dir.path(), b"declared = true\n");
+        let host = FakeSbx::empty();
+
+        place_all(
+            &host,
+            "sbxm-example",
+            &[declaration(&source, ".config/example/config.toml")],
+            Conflict::Refuse,
+        )
+        .expect("place");
+
+        for step in [
+            "/home/agent/.config",
+            "/home/agent/.config/example",
+            "/home/agent/.config/example/config.toml",
+        ] {
+            assert!(
+                host.calls().iter().any(
+                    |args| args.contains(&"-h".to_string()) && args.contains(&step.to_string())
+                ),
+                "{step} is checked: {:?}",
+                host.calls()
+            );
         }
     }
 
