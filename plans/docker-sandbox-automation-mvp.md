@@ -5,7 +5,7 @@
 この文書は、`sbxm` MVPの目的、境界、共通の安全原則、公開CLI、全体状態モデルを定める。個々の処理手順、外部commandとの契約、再実行規則、test caseはPhase別仕様を正本とする。
 
 - [Phase 1: 共通基盤、`init`、global `status`](specs/phase-1-foundation-init.md)
-- [Phase 2: `add`](specs/phase-2-add.md)
+- [Phase 2: `add`と`update`](specs/phase-2-add.md)
 - [Phase 3: `open`、`stop`、`ls`、`status`](specs/phase-3-daily-operations.md)
 - [Phase 4: `destroy`とE2E検証](specs/phase-4-destroy-validation.md)
 
@@ -78,8 +78,10 @@ Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで
 ## 5. 公開CLI
 
 ```text
-sbxm [--lang <ja|en>] init
+sbxm init
+sbxm --lang <ja|en> init --base-path <PATH> --git-user-name <NAME> --git-user-email <EMAIL>
 sbxm [--lang <ja|en>] add <owner>/<repository> [--worktrees <N>] [--detach <BRANCH>]
+sbxm [--lang <ja|en>] update <owner>/<repository>
 sbxm [--lang <ja|en>] open [<owner>/<repository>]
 sbxm [--lang <ja|en>] stop [<owner>/<repository>...]
 sbxm [--lang <ja|en>] ls
@@ -132,8 +134,9 @@ Sandbox名はcanonical project IDから決定的に導出する。
 ```text
 <base-path>/<owner-lower>/<repository-lower>.project/
 ├── <repository-lower>/
-└── .sbx/
-    ├── sbxm.toml
+└── .sbxm/
+    ├── project.toml
+    ├── project.lock
     ├── Dockerfile
     ├── exports/
     └── .cache/
@@ -143,7 +146,7 @@ Sandbox名はcanonical project IDから決定的に導出する。
 - `base_path`はabsolute、既存または作成可能、symlink解決後も利用者が指定したroot配下であること
 - path構築には`PathBuf`を使う
 - ownerとrepositoryのlowercase化により、case-insensitive filesystem上の重複を防ぐ
-- metadata探索は`<base-path>/*/*.project/.sbx/sbxm.toml`だけを対象とし、symlinkを追跡しない
+- metadata探索は`<base-path>/*/*.project/.sbxm/project.toml`だけを対象とし、symlinkを追跡しない
 
 ### 6.4 Sandbox内path
 
@@ -186,7 +189,7 @@ destination = ".config/example/config.toml"
 
 ### 7.2 Project metadata
 
-`<project-root>/.sbx/sbxm.toml`:
+`<project-root>/.sbxm/project.toml`:
 
 ```toml
 version = 1
@@ -198,6 +201,7 @@ canonical_id = "example-org/example-repo"
 mode = "detached"
 start_ref = "develop"
 requested_worktrees = 3
+dockerfile_sha256 = "<sha256>"
 
 [[worktrees.managed]]
 path = "example-repo.tree-0"
@@ -206,9 +210,8 @@ created_from = "refs/remotes/origin/develop"
 
 - `provisioning`は進捗cacheではなく、利用者が要求した目標構成である
 - `provisioning`は最初の外部mutation前にatomic writeする
-- 再実行時の引数が保存済み構成と異なる場合はusage conflictとしてmutation前に拒否する
 - `worktrees.managed`はmanaged用pathの永続的な宣言であり、各worktree作成成功直後にatomic writeで追記する
-- `destroy`後も宣言を保持し、再構築時には実体がまだ存在しない目標pathとして扱う
+- metadataが存在する案件へ`add`は実行できない。中断した構築の継続には`update`を使用する
 - runtime state、HEAD、dirty状態は保存せずGitと`sbx`から取得する
 
 ## 8. 状態モデル
@@ -225,15 +228,15 @@ created_from = "refs/remotes/origin/develop"
 
 ### 8.2 Command別状態遷移
 
-| 現在状態 | `add` | `open` | `stop` | `destroy` |
-|---|---|---|---|---|
-| `unmanaged` | 新規登録して構築 | 対象未登録error | 対象未登録error | 対象未登録error |
-| `registered` | 保存済み目標構成で構築・再構築 | `add`を案内してerror | no-op成功 | no-op成功 |
-| `stopped` | 成果物を検証してno-op成功 | 起動して接続 | no-op成功 | 通常modeは拒否、force modeは削除 |
-| `running` | 成果物を検証してno-op成功 | そのまま接続 | 停止 | 通常modeはsession・保存状態検証後、force modeは検証なしで削除 |
-| `inconsistent` | 診断付きerror | error | error | error |
+| 現在状態 | `add` | `update` | `open` | `stop` | `destroy` |
+|---|---|---|---|---|---|
+| `unmanaged` | 新規登録して構築 | 対象未登録error | 対象未登録error | 対象未登録error | 対象未登録error |
+| `registered` | `update`を案内してerror | 構築を継続 | `update`を案内してerror | no-op成功 | 管理情報を破棄して`unmanaged` |
+| `stopped` | `update`を案内してerror | 宣言fileを更新 | 起動して接続 | no-op成功 | 通常modeは拒否、force modeは削除 |
+| `running` | `update`を案内してerror | 宣言fileを更新 | そのまま接続 | 停止 | 通常modeはsession・保存状態検証後、force modeは検証なしで削除 |
+| `inconsistent` | 診断付きerror | 診断付きerror | error | error | error |
 
-`destroy`後は`registered`になる。再構築は保存済みの目標構成を使って`add`を実行する。
+`update`は`registered`、`stopped`、`running`の案件だけを対象とし、中断した構築の継続と、現在のglobal configにある`[[files]]`の再配置を行う。`add`時に指定したworktree構成は変更しない。`destroy`後はproject metadataを削除して`unmanaged`になるため、再構築には新しい目標構成を指定して`add`を実行する。
 
 ## 9. 表示言語と出力
 
@@ -253,7 +256,7 @@ created_from = "refs/remotes/origin/develop"
 |---:|---|
 | `0` | 成功、または仕様で成功と定めたno-op |
 | `2` | CLI usage、入力値、保存済み目標構成との不一致 |
-| `3` | 前提command、version、host環境の非対応 |
+| `3` | 前提command、version、host環境、credentialなどの前提条件不足 |
 | `4` | configまたはmetadata不正、成果物の不整合 |
 | `5` | 外部command失敗、外部状態を観測不能 |
 | `6` | security条件を証明できない、または破壊操作を安全に実行不能 |
@@ -266,7 +269,7 @@ created_from = "refs/remotes/origin/develop"
 
 1. Phase 1で共通型、設定、metadata、i18n、command runner、互換性probe、`init`、`status --global`を実装する
 2. Phase 1のDocker Sandboxes互換性fixtureとdaemon安全性probeをreviewし、Phase 2着手を承認する
-3. Phase 2で`add`を実装する
+3. Phase 2で`add`と`update`を実装する
 4. Phase 3で日常操作を実装する
 5. Phase 4で破棄操作とE2Eを実装する
 
@@ -278,7 +281,7 @@ created_from = "refs/remotes/origin/develop"
 - `ls`と`status`の責務分担
 - 対話選択の操作速度
 - 日本語labelとenum凡例の冗長さ
-- `add`の中断理由と再開導線
+- `add`、`update`の中断理由と再開導線
 - `open`後のworktree移動支援
 - worktree追加・削除command
 - repository単位の共有境界

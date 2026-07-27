@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-`sbxm destroy`は、対象Sandboxを一意に特定したうえで、通常modeでは保存されていない作業を失わないことを確認して、force modeではデータ保護検査を省略して、Sandbox内部の状態だけを破棄する。host projectと再構築に必要な宣言・成果物は保持し、案件を`registered`状態へ戻す。
+`sbxm destroy`は、対象Sandboxを一意に特定したうえで、通常modeでは保存されていない作業を失わないことを確認して、force modeではデータ保護検査を省略して、Sandboxとsbxmの管理情報を破棄する。host cloneと利用者管理の成果物は保持し、案件を`unmanaged`状態へ戻す。
 
 ```text
 sbxm destroy [<owner>/<repository>]
@@ -22,47 +22,51 @@ sbxm destroy -f <owner>/<repository>
 - Sandbox内filesystem
 - Sandbox内bare repositoryと全worktree
 - Sandbox内package、設定、inner Docker Engine状態
+- `.sbxm/project.toml`
+- `.sbxm/project.lock`
+- `.sbxm/.cache`とその内容
 
 保持対象:
 
 - host cloneとその全内容
-- `.sbx/sbxm.toml`
-- `.sbx/Dockerfile`
-- `.sbx/exports`
-- `.sbx/.cache/template.tar`
+- `.sbxm/Dockerfile`
+- `.sbxm/exports`とその内容
 - host Docker image
 - loaded Template
 - 中立Workspaceとownership marker
 - Docker Sandboxes secret
 
-保持対象の自動cleanupはMVP対象外。
+host Docker image、loaded Template、中立Workspace、secretのcleanupはMVP対象外。Dockerfileは利用者が手修正するfile、`exports`は利用者が退避したfileの置き場であり、管理解除後も保持する。
 
 ## 3. 状態別動作
 
 | 状態 | 動作 |
 |---|---|
 | `unmanaged` | exit `4` |
-| `registered` / `not-created` | `already removed`を表示し、promptなしでexit `0` |
+| `registered` / `not-created` | Sandboxは削除済みとして、管理情報を破棄して`unmanaged` |
 | `stopped` | 通常modeでは内部状態を観測できないため削除を拒否し、完全指定した`destroy --force`を案内 |
 | `running` | 通常modeではsession終了を要求し、worktree検査後に削除 |
 | `inconsistent` | exit `4`、自動削除しない |
 
-`destroy`はmetadataを削除しないため、成功後は常に`registered`となる。
+`destroy`成功後はmetadataを削除するため、常に`unmanaged`となる。以後の再構築は`add`で新規登録する。
 
-force modeでは、`stopped`と`running`のどちらもデータ保護検査なしで削除する。`unmanaged`、`inconsistent`、対象を一意に特定できない状態はforce modeの対象にならない。
+force modeでは、`registered`は管理情報を破棄し、`stopped`と`running`はデータ保護検査なしでSandboxと管理情報を削除する。`unmanaged`、`inconsistent`、対象を一意に特定できない状態はforce modeの対象にならない。
 
 ## 4. 排他と事前確認
 
 1. 対象を引数またはTTY上の単一選択promptで解決
 2. project lockを取得
 3. stateとSandbox identityを取得
-4. 通常modeではactive sessionと全worktreeの保存状態を検査
+4. Sandboxが存在する通常modeではactive sessionと全worktreeの保存状態を検査
 5. 削除対象と保持対象を表示
 6. 通常modeかつTTYでは明示確認
-7. Sandboxを削除
-8. 不在を検証
+7. Sandboxが存在すれば削除
+8. Sandboxの不在を検証
+9. `.sbxm/.cache`を削除
+10. metadataを削除して管理解除を確定
+11. project lockを解放してlock fileを削除
 
-削除開始前にproject lockを保持し、他の`add`、`open`、`stop`、`destroy`を排除する。
+削除開始前にproject lockを保持し、他の`add`、`update`、`open`、`stop`、`destroy`を排除する。
 
 対象特定ではmetadata、canonical project ID、導出したSandbox名、workspace、ownershipを検証する。対象を一意に特定できない場合は通常・forceのどちらでも削除しない。
 
@@ -123,7 +127,7 @@ detached HEAD:
 - HEADが`refs/remotes/origin/*`のいずれかから到達可能なら`reachable`
 - 到達不能なら削除拒否
 
-unmanaged worktreeにも同じ規則を適用する。通常modeで削除するには、必要なcommitをpushするか、fileを`.sbx/exports`へ取り出してworktreeをcleanにしてから再実行する。
+unmanaged worktreeにも同じ規則を適用する。通常modeで削除するには、必要なcommitをpushするか、fileを`.sbxm/exports`へ取り出してworktreeをcleanにしてから再実行する。
 
 force modeでは本sectionのworktree列挙と保存状態検査を行わない。
 
@@ -137,7 +141,7 @@ sbxm destroy --force <owner>/<repository>
 
 ## 9. 削除確認
 
-通常modeでは全データ保護検査に合格した後、force modeでは対象特定後に、次を表示する。
+通常modeでは全データ保護検査に合格した後、次を表示する。
 
 - canonical project ID
 - Sandbox名とstate
@@ -145,7 +149,16 @@ sbxm destroy --force <owner>/<repository>
 - 各path、branch/detached、HEAD、remote到達状態
 - 削除対象
 - 保持対象
-- 再構築command
+- 再登録command
+
+force modeではworktreeと保存状態を検査しないため、managed/unmanagedの実体分類、各path、branch、HEAD、remote到達状態を表示しない。次を表示する。
+
+- canonical project ID
+- Sandbox名とstate
+- データ保護検査とactive session検査を省略すること
+- 削除対象
+- 保持対象
+- 再登録command
 
 通常modeをTTYで実行した場合だけ、Sandbox名の完全入力を要求する。yes/noだけでは削除しない。
 
@@ -162,24 +175,26 @@ projectを完全指定した非TTYの通常modeとforce modeでは対話確認�
 
 ## 10. Sandbox削除
 
-通常modeではactive sessionがないことを直前に再確認する。force modeでは再確認しない。対象versionのfixtureで固定した各modeのcommandを実行する。
+Sandboxが存在する通常modeではactive sessionがないことを直前に再確認する。force modeでは再確認しない。Sandboxが存在する場合だけ、対象versionのfixtureで固定した各modeのcommandを実行する。
 
 ```text
 sbx rm <sandbox-name>
 sbx rm --force <sandbox-name>
 ```
 
-削除後、`sbx ls --json`を最大60秒pollし、nameが存在しないことを確認する。
+削除後、`sbx ls --json`を最大60秒pollし、nameが存在しないことを確認する。`registered`では削除commandを実行せず、一覧で不在を1回確認して管理情報のcleanupへ進む。
 
 - command失敗: metadataやhost成果物を変更せずexit `5`
 - timeout: exit `5`
-- 不在確認成功: `registered`と再構築commandを表示してexit `0`
+- 不在確認成功: 管理情報のcleanupへ進む
 
-metadataのmanaged worktree宣言は、再構築時の目標構成として保持する。ただしruntime上の作成済み一覧と混同しないよう、Phase 2の`add`はSandbox不在時に一覧を目標として扱い、再作成後に実状態を再検証する。
+Sandbox不在を確認した後、`.sbxm/.cache`を削除し、`project.toml`を削除する。metadata削除を管理解除のcommit pointとする。最後にproject lockを解放して`project.lock`を削除する。
 
-## 11. 再構築command
+cleanupに失敗した場合は残ったpathを表示してexit code `5`とする。metadata削除前の失敗では案件は引き続き管理対象であり、`destroy`を再実行できる。metadata削除後にlock fileだけが残った場合、案件は`unmanaged`として扱い、残存lock fileのcleanup失敗をwarningとして表示してexit code `0`とする。
 
-metadataから決定的に表示する。
+## 11. 再登録command
+
+実行前にmetadataから元の目標構成を表示用に保持し、成功後に次のcommandを案内する。
 
 attached:
 
@@ -193,11 +208,11 @@ detached:
 sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 ```
 
-`open`はnot-createdから自動再構築しない。
+このcommandはmetadataを再利用せず、新規案件として登録する。保持されたDockerfileがあれば、その内容を新しいbuildへ採用する。
 
 ## 12. 自動test
 
-- not-createdのno-op
+- not-createdからの管理情報破棄
 - TTY/非TTYの対象指定共通規則
 - managed/unmanaged全件列挙
 - dirty、untracked、operation in progress
@@ -209,9 +224,11 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - typed confirmation一致、不一致、cancel、非TTYでの省略
 - `-f`と`--force`、project完全指定、データ保護検査の全省略
 - force modeでも対象を一意に特定できなければ拒否
+- 通常modeとforce modeの表示項目
 - delete command失敗、poll timeout、成功
-- host成果物とmetadataが変更されないこと
-- 成功後のstateと再構築command
+- Sandbox削除失敗時にhost成果物とmetadataが変更されないこと
+- cleanupの各失敗点、metadata削除のcommit point、lock file残存
+- 成功後の`unmanaged` stateと再登録command
 
 ## 13. E2E実機検証
 
@@ -239,10 +256,11 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 20. dirty、unpushed、active sessionを持つrunning Sandboxの`destroy --force`
 21. stopped Sandboxの`destroy --force`
 22. 非TTYかつ完全指定した通常`destroy`と`destroy --force`
-23. host clone、metadata、Dockerfile、exports、archive、image、secretの保持
-24. `open`がnot-createdを拒否
-25. 同じ`add`による再構築
-26. 再構築後のworktree目標構成一致
+23. host clone、Dockerfile、exports、image、Template、workspace、secretの保持
+24. metadata、project lock、cacheの削除
+25. `open`がunmanagedを拒否
+26. 新しい`add`による再登録
+27. 保持したDockerfileを使う再構築
 
 各caseは実行command、期待exit code、期待stdout/stderr、事後状態をREADMEの手動検証sectionへ記録する。token、path内のMac user名、公開鍵は記録前にredactする。
 
@@ -255,6 +273,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - projectを完全指定した非TTYの通常modeはデータ保護検査後に対話なしで削除できる
 - force modeはproject完全指定を必須とし、データ保護検査と対話確認を省略してrunning/stoppedを削除できる
 - force modeでも対象を一意に特定できない場合は削除できない
-- 削除失敗時にhost成果物とmetadataを変更しない
-- 成功後はregisteredとなり、同じ目標構成で`add`再構築できる
-- E2E 26項目が対象exact versionで完了している
+- Sandbox削除失敗時にhost成果物とmetadataを変更しない
+- 成功後はmetadata、project lock、cacheを削除してunmanagedとなり、Dockerfile、exports、host cloneを保持する
+- 新しい目標構成を指定した`add`で再登録できる
+- E2E 27項目が対象exact versionで完了している

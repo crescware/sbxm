@@ -57,7 +57,7 @@ SandboxHomeRelativePath(PathBuf)
 
 ## 4. CLI parse
 
-Phase 1で7 commandと全optionをparserへ登録する。Phase 1では`init`と`status --global`を実装し、`status <project>`を含む未実装処理はparse後にlocalizedな`not implemented in this build`を返してexit code `3`とする。これによりhelpとusageの翻訳・snapshotをPhase 1で固定する。
+Phase 1で8 commandと全optionをparserへ登録する。Phase 1では`init`と`status --global`を実装し、`status <project>`を含む未実装処理はparse後にlocalizedな`not implemented in this build`を返してexit code `3`とする。これによりhelpとusageの翻訳・snapshotをPhase 1で固定する。
 
 validation順:
 
@@ -70,6 +70,13 @@ validation順:
 7. mutation
 
 `add --worktrees 0`、`add --worktrees >= 2`かつ`--detach`なしはconfigやfilesystemを読む前にexit code `2`とする。
+
+`init`は次の2 modeとする。
+
+- 対話mode: `--lang`、`--base-path`、`--git-user-name`、`--git-user-email`を1つも指定しない
+- option mode: 4 optionをすべて指定する
+
+4 optionの一部だけを指定した場合は、TTYかどうかやconfigの有無にかかわらず、不足optionを表示してconfigやfilesystemを読む前にexit code `2`とする。option modeではpromptを表示しない。
 
 ## 5. Locale決定
 
@@ -85,7 +92,7 @@ validation順:
 
 macOS優先言語は`defaults read -g AppleLanguages`の出力をparseする。先頭が`ja`または`ja-*`なら、TTY上でJapanese / Englishを選択させる。その他はpromptなしで`en`とする。command失敗またはparse失敗時だけ`LC_ALL`、`LC_MESSAGES`、`LANG`の順にfallbackする。
 
-`init`が非TTYで、言語、base path、Git identityのいずれかに対話入力が必要なら、何も作成せずexit code `2`とする。MVPには非対話`init` optionを設けない。
+新規作成へ進む対話modeの`init`はstdinとstderrの両方がTTYであることを必須とする。どちらかがTTYでなければ何も作成せずexit code `2`とする。既に有効なconfigがある場合はTTYかどうかに関係なくno-op成功とする。option modeはTTYかどうかに関係なく実行できる。
 
 ## 6. FTL契約
 
@@ -133,7 +140,7 @@ processが中断した一時fileは次回起動時に自動削除せず、path�
 
 ## 9. Project metadata探索
 
-- `base_path`直下のowner directoryと、その直下の`*.project/.sbx/sbxm.toml`だけを読む
+- `base_path`直下のowner directoryと、その直下の`*.project/.sbxm/project.toml`だけを読む
 - directory entryとmetadata fileのsymlinkは追跡しない
 - すべてのmetadataをparseしてから結果を返す
 - canonical ID重複、導出path不一致、Sandbox名衝突は一覧化してexit code `4`
@@ -187,6 +194,7 @@ Docker Sandboxes CLIはEarly Accessである。Phase 1実装PRは、対象Macで
 - `sbx daemon status`のrunning、stopped fixture
 - secret存在確認に使うread-only出力
 - create、exec、stop、rm、Template操作の正常・代表的失敗exit status
+- `sbx rm`の通常・force modeについて、running、stopped、active sessionありのcommand形とexit status
 
 互換性manifest:
 
@@ -234,13 +242,13 @@ configがない場合だけ新規作成する。既存の有効configは再利�
 
 ### 13.2 排他
 
-configの確認前に`~/.sbxm/init.lock`を開き、exclusiveなOS file lockを取得する。
+configをread-onlyで事前確認し、新規作成へ進む場合だけ`~/.sbxm/init.lock`を開いてexclusiveなOS file lockを取得する。
 
 - lock待機は10秒
 - timeoutはlock pathを表示してexit code `5`
 - lockはworkflow終了まで保持する
 - `init.lock`はworkflow終了後も削除しない
-- lock取得後にconfigの有無と妥当性を確認する
+- lock取得後にconfigの有無と妥当性を再確認する
 - lock fileの存在自体は処理中を意味しない。OS file lockの取得結果を使う
 
 同時に実行された`init`はlockにより直列化される。後からlockを取得したprocessはconfigを改めて確認し、先行processが初期化を完了していれば初期化済みとして扱う。
@@ -248,12 +256,18 @@ configの確認前に`~/.sbxm/init.lock`を開き、exclusiveなOS file lockを�
 ### 13.3 処理順
 
 1. bootstrap localeを決定する
-2. `~/.sbxm`を検証または作成し、`init.lock`を取得する
-3. configの有無と妥当性を確認する
+2. `init` optionの組み合わせを検証する
+3. configをread-onlyで事前確認する
 4. 有効なconfigがあれば、初期化済みとして何も変更せず終了する
-5. configがなければlanguage、base path、Git name、Git emailを取得・検証する
-6. configをatomic writeする
-7. 初期化結果と、host環境を診断する`sbxm status --global`を表示する
+5. configが無効なら自動修復せず終了する
+6. 対話modeならstdinとstderrがTTYであることを確認する
+7. `~/.sbxm`を検証または作成し、`init.lock`を取得する
+8. lock取得後にconfigの有無と妥当性を再確認する
+9. 先行processが有効なconfigを作成済みなら、初期化済みとして何も変更せず終了する
+10. 対話modeではlanguage、base path、Git name、Git emailをpromptで取得・検証する
+11. option modeでは完全指定された値をpromptなしで検証する
+12. configをatomic writeする
+13. 初期化結果と、host環境を診断する`sbxm status --global`を表示する
 
 Git identityの既定候補はhostの`git config --global user.name`と`user.email`。候補を表示して明示確定させ、空文字と改行を拒否する。
 
@@ -304,7 +318,8 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 - configのround trip、unknown version、permission
 - 宣言fileのsourceとdestination validation
 - atomic writeの各中断点
-- `init` lockの同時実行、待機、timeout、lock取得後のconfig再確認
+- `init` lockの同時実行、待機、timeout、事前確認とlock取得後のconfig再確認
+- `init`の対話mode、完全指定option mode、不完全optionのmutation前拒否
 - 初期化済み`init`のTTY、非TTYと副作用なしのno-op
 - locale優先順位、bootstrap fallback
 - FTL完全性とsnapshot

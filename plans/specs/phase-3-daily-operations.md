@@ -35,7 +35,7 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 | 状態 | 動作 |
 |---|---|
 | `unmanaged` | exit `4`、`add`を案内 |
-| `registered` / `not-created` | exit `4`、保存済み引数を含む`add`を案内 |
+| `registered` / `not-created` | exit `4`、`update`を案内 |
 | `stopped` | safe daemon確認、非対話で起動、SSH接続 |
 | `running` | safe daemon確認、SSH接続 |
 | `inconsistent` | exit `4`、`status`を案内 |
@@ -146,7 +146,7 @@ owner/baz        sbxm-owner-baz-fedcba987654     not-created
 
 `status`は指定scopeをread-onlyで診断するcommandである。global scopeの`sbxm status --global`はPhase 1仕様を正本とし、本文書ではproject scopeを実装する。
 
-`sbxm status <project>`は1案件の構築状態、作業可能性、credential隔離をread-onlyで診断する。repair、起動、停止、file更新を行わない。daemonを起動する必要がある検査は行わず、`not-observed`ではなくcommand失敗として扱う。
+`sbxm status <project>`は1案件の構築状態、作業可能性、credential隔離をread-onlyで診断する。repair、起動、停止、file更新を行わない。Sandboxがstoppedで、検査が暗黙に起動する場合は実行せず`not-observed-stopped`とする。runningなど本来観測可能な状態でread-only検査commandが失敗した場合は、値を推測せずcommand失敗として扱う。
 
 projectを省略した案件選択promptは設けない。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `2`とする。global環境の問題でproject検査を継続できない場合は、観測不能な項目と原因を表示し、`sbxm status --global`を案内する。
 
@@ -156,7 +156,7 @@ projectを省略した案件選択promptは設けない。`--global`とproject�
 
 1. metadataと目標構成
 2. project rootとhost clone
-3. Dockerfile hash
+3. 現在のDockerfile hashとmetadataに記録した適用済みhash、および一致・変更済み
 4. image labelとTemplate archive
 5. Sandbox name、workspace、state
 6. GitHub secretの存在
@@ -260,7 +260,7 @@ ssh-add -L
 - その日の最初の`open`でdaemonをSSH Agentなしにできる
 - 2案件目の`open`で安全なdaemonを不要に再起動しない
 - stopped/runningから同じ操作でSSH接続できる
-- not-createdへの`open`が`add`を正確に案内する
+- not-createdへの`open`が`update`を正確に案内する
 - 複数Sandboxを対象限定で停止できる
 - `ls`がrunning、stopped、not-created、unmanagedを正しく分離する
 - `status`がbare、managed、unmanaged、dirty、SSH Agentを診断する
