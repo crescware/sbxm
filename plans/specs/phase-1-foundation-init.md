@@ -147,6 +147,8 @@ processが中断した一時fileは次回起動時に自動削除せず、path�
 - 1件の破損を無視して部分的な案件一覧を返さない
 - 並び順はcanonical IDのbyte昇順
 
+metadataと外部状態のvalidationは、作成元や作成履歴を条件にしない共通処理として実装する。`status`などのread-only commandとmutation commandは同じvalidation規則を使用する。手作業または別toolで作成されたmetadataと成果物も、全規則を満たす場合はsbxmが作成したものと区別せず受け入れる。
+
 ## 10. 外部command runner
 
 runner input:

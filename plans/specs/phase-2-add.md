@@ -229,7 +229,7 @@ active sessionを検出した場合、またはsession不在を証明できな�
 
 ### 7.7 Sandbox create
 
-中立Workspaceを`0700`で作り、symlinkを拒否する。空directoryでなくてもよいが、sbxmが作ったownership marker以外のentryがあればexit code `4`。
+中立Workspaceを`0700`で作り、symlinkを拒否する。sbxm独自のownership markerや作成履歴fileは置かない。既存workspaceはowner、permission、file type、real pathと内容がvalidation規則を満たす場合に、作成元を問わず再利用する。満たさない場合は内容を変更せずexit code `4`とする。
 
 期待する外部command:
 
@@ -250,7 +250,7 @@ sbx create
 - Template/image identityがinspect可能で一致
 - metadataのcanonical IDと対応
 
-1項目でも確認不能または不一致ならexit code `4`。
+1項目でも確認不能または不一致ならexit code `4`。誰が作成したか、またはsbxm独自のmarkerがあるかは条件にしない。
 
 ### 7.8 宣言fileの配置と`sync-files`
 
@@ -414,6 +414,8 @@ FILE  DESTINATION  RESULT
 - 新規・既存Dockerfileの採用、初回build前のhash更新、構築済みDockerfile変更時の`rebuild`案内
 - 一時build contextのpermission、通常directory、空状態、`.cache`・`exports`非包含、成功・失敗時cleanup
 - Sandbox名完全一致とworkspace検証
+- 手作業で作成したvalidなmetadata、workspace、image、Sandbox、Git repository、worktreeの受け入れ
+- 作成元にかかわらず同じ不整合を同じ診断とexit codeで拒否すること
 - safe daemon成功・不明・active session
 - 宣言fileのsource、destination、path逸脱、同一、`add`時の競合、`sync-files`時の上書き、宣言削除時の保持、一時file cleanup
 - `sync-files`のrunning限定、stopped非起動、他工程への副作用なし

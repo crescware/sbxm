@@ -130,7 +130,7 @@ target成果物が欠落または不正な場合は、現在のDockerfile hash�
 - `.sbxm/exports`とその内容
 - host Docker image
 - loaded Template
-- 中立Workspaceとownership marker
+- 中立Workspace
 - Docker Sandboxes secret
 
 host Docker image、loaded Template、中立Workspace、secretのcleanupはMVP対象外。Dockerfileは利用者が手修正するfile、`exports`は利用者が退避したfileの置き場であり、管理解除後も保持する。
@@ -165,7 +165,7 @@ force modeでは、`registered`は管理情報を破棄し、`stopped`と`runnin
 
 削除開始前にproject lockを保持し、他の`add`、`sync-files`、`rebuild`、`open`、`stop`、`destroy`を排除する。
 
-対象特定ではmetadata、canonical project ID、導出したSandbox名、workspace、ownershipを検証する。対象を一意に特定できない場合は通常・forceのどちらでも削除しない。
+対象特定ではmetadata、canonical project ID、導出したSandbox名、workspace、Template/image identityを共通validation規則で検証する。作成元やsbxm独自のmarkerは条件にしない。対象を一意に特定できない場合は通常・forceのどちらでも削除しない。
 
 ## 7. Active session
 

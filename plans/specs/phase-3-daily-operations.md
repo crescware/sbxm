@@ -150,6 +150,8 @@ owner/baz        sbxm-owner-baz-fedcba987654     not-created
 
 `sbxm status <project>`は1案件の構築状態、作業可能性、credential隔離をread-onlyで診断する。repair、起動、停止、file更新を行わない。Sandboxがstoppedで、検査が暗黙に起動する場合は実行せず`not-observed-stopped`とする。runningなど本来観測可能な状態でread-only検査commandが失敗した場合は、値を推測せずcommand失敗として扱う。
 
+診断は現在のmetadata、filesystem、Git、`sbx`の状態だけに基づき、作成元やsbxm独自のmarkerを検査しない。同じvalidation規則をmutation commandも使用し、手作業または別toolで作成されたvalidな状態を同じ結果として扱う。
+
 projectを省略した案件選択promptは設けない。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `2`とする。global環境の問題でproject検査を継続できない場合は、観測不能な項目と原因を表示し、`sbxm status --global`を案内する。
 
 ### 7.2 検査順と項目

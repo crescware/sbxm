@@ -34,6 +34,10 @@
 - SandboxへホストのSSH Agent、SSH秘密鍵、Docker socketを渡さない
 - secret値をargument、log、設定ファイルへ保存しない
 
+`sbxm`はDocker Sandboxesの便利なラッパー兼オーケストレーターであり、成果物の作成元を所有・追跡するsystemではない。metadata、Sandbox、workspace、image、Git repository、worktreeが誰によって作成されたかを利用可否の条件にしない。手作業または別toolで作成された状態も、`sbxm`のvalidation規則を満たす場合は同じ状態として受け入れる。
+
+`status`は作成元ではなく現在の状態を診断する。mutation commandも`status`と同じvalidation規則に基づいて実行または拒否し、「sbxmが作った印」や作成履歴を追加の条件にしない。有効なmetadataを手作業で配置した場合、そのmetadataが示す対象を利用者がsbxmの管理対象として明示したものと扱う。
+
 ### 3.1 TTYと非TTY
 
 - projectを対象とするcommandは、非TTYではproject引数の完全指定を必須とする
@@ -129,7 +133,7 @@ Sandbox名はcanonical project IDから決定的に導出する。
 3. UTF-8のcanonical project IDに対するSHA-256先頭12桁のlowercase hexを求める
 4. `sbxm-<slug>-<hash>`が63 byte以内になるようslugの末尾を切る
 
-同じcanonical project IDは常に同じ名前となり、異なるIDは通常hashで区別する。hash prefixの理論上の衝突も考慮し、導出した名前が別canonical IDを持つ既存metadataと一致する場合、または帰属を証明できない既存Sandboxと一致する場合はname collision errorとし、mutationしない。
+同じcanonical project IDは常に同じ名前となり、異なるIDは通常hashで区別する。hash prefixの理論上の衝突も考慮し、導出した名前が別canonical IDを持つ既存metadataと一致する場合、または既存Sandboxの実状態が対象metadataから導出した期待状態と一致しない場合はname collision errorとし、mutationしない。
 
 ### 6.3 Host path
 
