@@ -6,9 +6,6 @@
 use crate::error::{ErrorId, Result, fail};
 use crate::msg;
 
-/// 唯一扱うremoteの名前。
-pub const ORIGIN: &str = "origin";
-
 /// remote-tracking refの接頭辞。
 const ORIGIN_REF_PREFIX: &str = "refs/remotes/origin/";
 
@@ -82,21 +79,19 @@ pub fn canonical_id_of_remote(url: &str) -> Option<String> {
         let (host, path) = rest.split_once(':')?;
         require_github(host)?;
         path
-    } else if let Some(rest) = url
-        .strip_prefix("ssh://git@")
-        .or_else(|| url.strip_prefix("ssh://"))
-        .or_else(|| url.strip_prefix("https://"))
-        .or_else(|| url.strip_prefix("http://"))
-        .or_else(|| url.strip_prefix("git://"))
-    {
+    } else {
+        let rest = url
+            .strip_prefix("ssh://git@")
+            .or_else(|| url.strip_prefix("ssh://"))
+            .or_else(|| url.strip_prefix("https://"))
+            .or_else(|| url.strip_prefix("http://"))
+            .or_else(|| url.strip_prefix("git://"))?;
         let (authority, path) = rest.split_once('/')?;
         // ssh://git@github.com:22/owner/repository.git
         let host = authority.rsplit('@').next()?;
         let host = host.split(':').next()?;
         require_github(host)?;
         path
-    } else {
-        return None;
     };
 
     let path = rest.trim_end_matches('/');

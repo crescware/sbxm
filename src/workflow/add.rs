@@ -5,9 +5,12 @@
 //! 成功済みの成果物をrollback目的で削除しない。
 
 use std::fs;
+use std::path::{Path, PathBuf};
 
-use crate::config::GlobalConfig;
-use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
+use crate::command::HostEnvironment;
+use crate::compatibility::SandboxState;
+use crate::config::{ConfigLocation, GlobalConfig};
+use crate::error::{Diagnostic, Error, ErrorId, Msg, Result, fail};
 use crate::git;
 use crate::hash::sha256_hex;
 use crate::metadata::{
@@ -17,7 +20,10 @@ use crate::msg;
 use crate::paths::{
     self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths,
 };
-use crate::project::{ProjectId, SandboxName};
+use crate::project::{ProjectId, SandboxLayout, SandboxName};
+
+use super::files::PlacedFile;
+use super::{daemon, files, host_clone, identity, image, repository, sandbox, secret, template};
 
 /// 案件のDockerfileを新規作成するときの初期template。
 ///
@@ -98,8 +104,6 @@ pub struct Registration {
     pub paths: ProjectPaths,
     pub sandbox: SandboxName,
     pub metadata: ProjectMetadata,
-    /// この実行で新しく登録したか。
-    pub registered: bool,
     /// 採用したDockerfileの現在のhash。metadataの適用済みhashとは別に持つ。
     pub dockerfile_sha256: String,
     _lock: ExclusiveLock,
@@ -160,8 +164,8 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
 
     let dockerfile_sha256 = adopt_dockerfile(&paths)?;
 
-    let (metadata, registered) = match stored {
-        Some(stored) => (stored, false),
+    let metadata = match stored {
+        Some(stored) => stored,
         None => {
             let metadata = ProjectMetadata {
                 owner: request.project.owner().to_string(),
@@ -177,7 +181,7 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
                 rebuild: None,
             };
             metadata::create(&paths, &metadata)?;
-            (metadata, true)
+            metadata
         }
     };
 
@@ -185,10 +189,238 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
         paths,
         sandbox,
         metadata,
-        registered,
         dockerfile_sha256,
         _lock: lock,
     })
+}
+
+/// `add`の結果。成功出力の材料をそのまま持つ。
+#[derive(Debug, Clone)]
+pub struct AddOutput {
+    pub project: String,
+    pub sandbox: String,
+    pub mode: CreationMode,
+    pub start_ref: String,
+    pub host_clone: PathBuf,
+    pub sandbox_state: SandboxState,
+    pub worktrees: Vec<WorktreeRow>,
+    pub files: Vec<PlacedFile>,
+    /// `mise`の設定を持つmanaged worktree。sbxmは自動実行せず案内だけを行う。
+    pub mise_candidates: Vec<String>,
+    /// 既に構築済みで、この実行が何も変更しなかったか。
+    pub already_built: bool,
+    pub warnings: Vec<Msg>,
+}
+
+/// 成功出力のworktree 1行。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorktreeRow {
+    pub path: String,
+    pub created_from: String,
+    /// 観測できたHEAD。停止中のSandboxでは読めないため`None`になる。
+    pub head: Option<String>,
+    pub mode: CreationMode,
+}
+
+/// `mise`の設定として確認するfile。
+const MISE_FILES: [&str; 3] = ["mise.toml", ".mise.toml", ".tool-versions"];
+
+/// 案件を登録し、構築を最後まで進める。
+///
+/// 各工程は`inspect -> decide -> mutate -> verify -> record`で実行し、verifyに
+/// 失敗したら後続工程へ進まない。成功済みの成果物はrollback目的で削除しない。
+pub fn run(
+    config: &GlobalConfig,
+    location: &ConfigLocation,
+    request: &AddRequest,
+    host: &dyn HostEnvironment,
+    workspace_root: &Path,
+) -> Result<AddOutput> {
+    let mut registration = register(config, request)?;
+    let sandbox_name = registration.sandbox.clone();
+    let layout = SandboxLayout::new(&registration.metadata.canonical_id);
+    let mut warnings = Vec::new();
+
+    if let Some(output) = already_built(host, &registration, &layout)? {
+        return Ok(output);
+    }
+
+    let clone = host_clone::ensure(host, &registration.paths, &request.project)?;
+
+    let generation = adopt_generation(host, &mut registration, &mut warnings)?;
+    let image = image::ensure(
+        host,
+        &sandbox_name,
+        &registration.metadata.canonical_id,
+        &registration.paths.dockerfile(),
+        &generation,
+    )?;
+    warnings.extend(image.warnings.clone());
+    let archive = image::ensure_archive(host, &registration.paths, &image, &generation)?;
+    let template = template::ensure(host, &archive, &image)?;
+
+    // daemonを操作する区間は、project lockの後にglobal daemon lockを取得する。
+    let daemon_guard = daemon::restart_without_ssh_agent(host, location)?;
+    let ready = sandbox::ensure(host, &sandbox_name, &template, workspace_root)?;
+    drop(daemon_guard);
+
+    let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
+    identity::ensure(host, &ready.name, &config.git)?;
+    secret::require_github(host, &ready.name)?;
+
+    repository::ensure_bare_clone(host, &ready.name, &request.project, &layout)?;
+    let branch = repository::resolve_start_ref(
+        host,
+        &ready.name,
+        &layout,
+        &registration.paths,
+        &mut registration.metadata,
+    )?;
+    let managed = repository::ensure_worktrees(
+        host,
+        &ready.name,
+        &layout,
+        &registration.paths,
+        &mut registration.metadata,
+        &branch,
+    )?;
+
+    let worktrees = observed_worktrees(host, &ready.name, &layout, &registration.metadata)?;
+    let mise_candidates = mise_candidates(host, &ready.name, &layout, managed.len())?;
+
+    Ok(AddOutput {
+        project: registration.metadata.display_id(),
+        sandbox: ready.name,
+        mode: registration.metadata.provisioning.mode,
+        start_ref: branch,
+        host_clone: clone.path,
+        sandbox_state: ready.state,
+        worktrees,
+        files,
+        mise_candidates,
+        already_built: false,
+        warnings,
+    })
+}
+
+/// 構築が完了している案件を、何も変更せずに報告する。
+fn already_built(
+    host: &dyn HostEnvironment,
+    registration: &Registration,
+    layout: &SandboxLayout,
+) -> Result<Option<AddOutput>> {
+    let metadata = &registration.metadata;
+    let provisioning = &metadata.provisioning;
+    if provisioning.start_ref.is_none()
+        || metadata.managed_worktrees.len() != provisioning.requested_worktrees as usize
+    {
+        return Ok(None);
+    }
+
+    let sandboxes = daemon::list(host)?;
+    let Some(entry) = sandboxes
+        .into_iter()
+        .find(|entry| entry.name == registration.sandbox.as_str())
+    else {
+        return Ok(None);
+    };
+
+    let worktrees = observed_worktrees(host, &entry.name, layout, metadata)?;
+    Ok(Some(AddOutput {
+        project: metadata.display_id(),
+        sandbox: entry.name,
+        mode: provisioning.mode,
+        start_ref: provisioning.start_ref.clone().unwrap_or_default(),
+        host_clone: registration.paths.host_clone(),
+        sandbox_state: entry.state,
+        worktrees,
+        files: Vec::new(),
+        mise_candidates: Vec::new(),
+        already_built: true,
+        warnings: Vec::new(),
+    }))
+}
+
+/// 初回構築を完成させる世代を決める。
+///
+/// 対応imageのbuck前にDockerfileが変わった場合は、現在のDockerfileを目標とする。
+/// 既にimageがある場合は保存済み世代で完成させ、現在の内容は`rebuild`へ案内する。
+fn adopt_generation(
+    host: &dyn HostEnvironment,
+    registration: &mut Registration,
+    warnings: &mut Vec<Msg>,
+) -> Result<String> {
+    let stored = registration.metadata.provisioning.dockerfile_sha256.clone();
+    let current = registration.dockerfile_sha256.clone();
+    if current == stored {
+        return Ok(stored);
+    }
+
+    if image::generation_is_built(
+        host,
+        &registration.sandbox,
+        &registration.metadata.canonical_id,
+        &stored,
+    )? {
+        // 初回構築の途中へ別世代を混在させない。
+        warnings.push(msg!(
+            "warning-dockerfile-changed-during-build",
+            project = registration.metadata.display_id(),
+            command = format!("sbxm rebuild {}", registration.metadata.display_id())
+        ));
+        return Ok(stored);
+    }
+
+    registration.metadata.provisioning.dockerfile_sha256 = current.clone();
+    metadata::update(&registration.paths, &registration.metadata)?;
+    Ok(current)
+}
+
+/// metadataが宣言するmanaged worktreeの現在の状態。
+fn observed_worktrees(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    layout: &SandboxLayout,
+    metadata: &ProjectMetadata,
+) -> Result<Vec<WorktreeRow>> {
+    let mode = metadata.provisioning.mode;
+    let mut rows = Vec::with_capacity(metadata.managed_worktrees.len());
+    for worktree in &metadata.managed_worktrees {
+        let path = format!("{}/{}", layout.bare_root(), worktree.path);
+        // 停止中のSandboxではHEADを読めない。観測できない値を推測で埋めない。
+        let outcome = sandbox::exec(host, sandbox, &["git", "-C", &path, "rev-parse", "HEAD"])?;
+        let head = outcome
+            .success()
+            .then(|| outcome.stdout_text().trim().to_string())
+            .filter(|head| !head.is_empty());
+        rows.push(WorktreeRow {
+            path: worktree.path.clone(),
+            created_from: worktree.created_from.clone(),
+            head,
+            mode,
+        });
+    }
+    Ok(rows)
+}
+
+/// `mise`の設定を持つmanaged worktree。
+fn mise_candidates(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    layout: &SandboxLayout,
+    count: usize,
+) -> Result<Vec<String>> {
+    let mut candidates = Vec::new();
+    for index in 0..count as u32 {
+        let path = layout.worktree(index);
+        for name in MISE_FILES {
+            let target = format!("{path}/{name}");
+            if sandbox::exec(host, sandbox, &["test", "-f", &target])?.success() {
+                candidates.push(target);
+            }
+        }
+    }
+    Ok(candidates)
 }
 
 /// 保存済みmetadataを持つ案件で、この`add`が構築を続けてよいかを判定する。
@@ -312,7 +544,6 @@ mod tests {
             register(&config, &request("Example-Org/Example-Repo", None, None)).expect("register");
 
         let paths = &registration.paths;
-        assert!(registration.registered);
         assert!(paths.root().is_dir());
         assert_eq!(mode_of(&paths.sbxm_dir()), PRIVATE_DIR_MODE);
         assert_eq!(mode_of(&paths.cache_dir()), PRIVATE_DIR_MODE);
@@ -490,7 +721,6 @@ mod tests {
 
         let again =
             register(&config, &request("example-org/example-repo", None, None)).expect("re-run");
-        assert!(!again.registered);
         assert_eq!(again.metadata.provisioning.requested_worktrees, 3);
         assert_eq!(
             again.metadata.provisioning.start_ref.as_deref(),

@@ -1,7 +1,8 @@
 //! sbxm。案件ごとのDocker Sandboxを構築、接続、診断、破棄するCLI。
 //!
-//! 現在のbuildは共通基盤、`init`、`status --global`を実装する。ほかのcommandはparserへ
-//! 登録済みであり、command固有の引数validationまで行ったうえで未実装として終了する。
+//! 現在のbuildは共通基盤、`init`、`status --global`、`add`、`sync-files`を実装する。
+//! ほかのcommandはparserへ登録済みであり、command固有の引数validationまで行った
+//! うえで未実装として終了する。
 
 mod archive;
 mod cli;
@@ -22,12 +23,15 @@ use std::process::ExitCode as ProcessExitCode;
 
 use cli::{Command, Interactivity, Outcome, PeekedLang, StatusScope};
 use command::RealHost;
+use compatibility::SandboxState;
 use config::{ConfigLocation, ConfigState};
 use error::{Diagnostic, Error, ErrorId, ExitCode, Result};
 use i18n::{Catalog, Locale, shell_locale};
+use metadata::CreationMode;
 use workflow::Reporter;
+use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
-use workflow::status_global;
+use workflow::{add, sandbox, status_global, sync_files};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();
@@ -181,8 +185,64 @@ fn dispatch(
             }
         }
 
+        Command::Add(arguments) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            let request = add::AddRequest {
+                project: arguments.project.clone(),
+                worktrees: arguments.worktrees,
+                detach: arguments.detach.clone(),
+            };
+            match add::run(
+                &config,
+                location,
+                &request,
+                &RealHost,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+            ) {
+                Ok(output) => {
+                    print_add_output(&catalog, &output);
+                    ExitCode::Success
+                }
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
+        Command::SyncFiles(project) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            match sync_files::run(
+                &config,
+                project,
+                &RealHost,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+            ) {
+                Ok(output) => {
+                    print_sync_output(&catalog, &output);
+                    ExitCode::Success
+                }
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
         other => {
-            // `init`と`status --global`以外は、configがなければ先に`sbxm init`を案内する。
+            // 未実装のcommandも、configがなければ先に`sbxm init`を案内する。
             match effective_catalog(location, lang_option, false) {
                 Ok(catalog) => {
                     let error = cli::not_implemented(other);
@@ -195,6 +255,214 @@ fn dispatch(
                 }
             }
         }
+    }
+}
+
+/// `add`の成功出力。
+fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
+    let reporter = Reporter::new(catalog);
+    let mut stderr = std::io::stderr();
+    for warning in &output.warnings {
+        reporter.print_warning(warning, &mut stderr);
+    }
+
+    if output.already_built {
+        println!(
+            "{}",
+            format_or_report(
+                catalog,
+                &msg!("add-already-built", project = output.project)
+            )
+        );
+    }
+
+    print!(
+        "{}",
+        reporter.render_fields(&[
+            ("add-field-project", output.project.clone()),
+            ("add-field-sandbox", output.sandbox.clone()),
+            ("add-field-creation-mode", output.mode.to_string()),
+            ("add-field-start-branch", output.start_ref.clone()),
+            (
+                "add-field-managed-worktrees",
+                output.worktrees.len().to_string()
+            ),
+            ("add-field-host-clone", paths::display(&output.host_clone)),
+            (
+                "add-field-sandbox-state",
+                sandbox_state(output.sandbox_state).to_string()
+            ),
+        ])
+    );
+
+    let worktrees: Vec<Vec<String>> = output
+        .worktrees
+        .iter()
+        .map(|worktree| {
+            vec![
+                worktree.path.clone(),
+                worktree.created_from.clone(),
+                worktree.head.clone().unwrap_or_else(|| "-".to_string()),
+                worktree.mode.to_string(),
+            ]
+        })
+        .collect();
+    if !worktrees.is_empty() {
+        print!(
+            "\n{}",
+            reporter.render_value_table(
+                &[
+                    "column-worktree",
+                    "column-created-from",
+                    "column-head",
+                    "column-mode"
+                ],
+                &worktrees,
+            )
+        );
+    }
+
+    let files: Vec<Vec<String>> = output
+        .files
+        .iter()
+        .map(|file| {
+            vec![
+                paths::display(&file.source),
+                file.destination.clone(),
+                file.placement.as_str().to_string(),
+            ]
+        })
+        .collect();
+    if !files.is_empty() {
+        print!(
+            "\n{}",
+            reporter.render_value_table(
+                &["column-file", "column-destination", "column-result"],
+                &files,
+            )
+        );
+    }
+
+    if !output.mise_candidates.is_empty() {
+        println!("\n{}", text_or_report(catalog, "add-mise-heading"));
+        for candidate in &output.mise_candidates {
+            println!("  {candidate}");
+        }
+        println!("{}", text_or_report(catalog, "add-mise-hint"));
+    }
+
+    let mut values: Vec<(&str, &str)> = vec![(
+        sandbox_state(output.sandbox_state),
+        sandbox_state_legend(output.sandbox_state),
+    )];
+    for worktree in &output.worktrees {
+        values.push(mode_legend(worktree.mode));
+    }
+    for file in &output.files {
+        values.push(placement_legend(file.placement));
+    }
+    if let Some(legend) = reporter.render_value_legend(&values) {
+        print!("\n{legend}");
+    }
+    let _ = std::io::stdout().flush();
+}
+
+/// `sync-files`の成功出力。
+fn print_sync_output(catalog: &Catalog, output: &workflow::sync_files::SyncOutput) {
+    let reporter = Reporter::new(catalog);
+    println!(
+        "{}",
+        format_or_report(
+            catalog,
+            &msg!(
+                "sync-files-done",
+                count = output.files.len(),
+                project = output.project,
+                sandbox = output.sandbox
+            )
+        )
+    );
+
+    let files: Vec<Vec<String>> = output
+        .files
+        .iter()
+        .map(|file| {
+            vec![
+                paths::display(&file.source),
+                file.destination.clone(),
+                file.placement.as_str().to_string(),
+            ]
+        })
+        .collect();
+    if !files.is_empty() {
+        print!(
+            "\n{}",
+            reporter.render_value_table(
+                &["column-file", "column-destination", "column-result"],
+                &files,
+            )
+        );
+        let values: Vec<(&str, &str)> = output
+            .files
+            .iter()
+            .map(|file| placement_legend(file.placement))
+            .collect();
+        if let Some(legend) = reporter.render_value_legend(&values) {
+            print!("\n{legend}");
+        }
+    }
+    let _ = std::io::stdout().flush();
+}
+
+/// 翻訳しない状態値と、その凡例。
+fn sandbox_state(state: SandboxState) -> &'static str {
+    match state {
+        SandboxState::Running => "running",
+        SandboxState::Stopped => "stopped",
+    }
+}
+
+fn sandbox_state_legend(state: SandboxState) -> &'static str {
+    match state {
+        SandboxState::Running => "legend-running",
+        SandboxState::Stopped => "legend-stopped",
+    }
+}
+
+fn mode_legend(mode: CreationMode) -> (&'static str, &'static str) {
+    match mode {
+        CreationMode::Attached => ("attached", "legend-attached"),
+        CreationMode::Detached => ("detached", "legend-detached"),
+    }
+}
+
+fn placement_legend(placement: Placement) -> (&'static str, &'static str) {
+    match placement {
+        Placement::Placed => ("placed", "legend-placed"),
+        Placement::Unchanged => ("unchanged", "legend-unchanged"),
+    }
+}
+
+/// 案件を対象とするcommandが必要とするconfigとcatalog。
+fn require_config(
+    location: &ConfigLocation,
+    lang_option: Option<Locale>,
+) -> Result<(Box<config::GlobalConfig>, Catalog)> {
+    match config::load(location)? {
+        ConfigState::Valid { config, .. } => {
+            let catalog = Catalog::new(lang_option.unwrap_or(config.language));
+            Ok((config, catalog))
+        }
+        ConfigState::Missing => Err(Error::single(
+            Diagnostic::new(
+                ErrorId::ConfigMissing,
+                msg!(
+                    "error-config-missing",
+                    path = paths::display(&location.config_file())
+                ),
+            )
+            .remediation(msg!("remediation-run-init")),
+        )),
     }
 }
 

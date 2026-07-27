@@ -14,6 +14,7 @@ pub mod repository;
 pub mod sandbox;
 pub mod secret;
 pub mod status_global;
+pub mod sync_files;
 pub mod template;
 
 use std::io::Write;
@@ -93,6 +94,20 @@ fn is_wide(character: char) -> bool {
             | 0x20000..=0x3FFFD)
 }
 
+/// 1行分を、列幅にそろえて描画する。末尾の余白は残さない。
+fn render_row(values: &[String], widths: &[usize]) -> String {
+    let mut line = String::new();
+    for (index, value) in values.iter().enumerate() {
+        if index + 1 == values.len() {
+            line.push_str(value);
+        } else {
+            line.push_str(&pad_to(value, widths[index]));
+        }
+    }
+    line.push('\n');
+    line
+}
+
 fn pad_to(text: &str, width: usize) -> String {
     let mut out = text.to_string();
     for _ in display_width(text)..width {
@@ -159,29 +174,78 @@ impl<'a> Reporter<'a> {
         out
     }
 
+    /// 項目名を翻訳し、値は翻訳しない一覧。
+    ///
+    /// path、識別子、状態値のような、翻訳すると別のものになる値を並べるために使う。
+    pub fn render_fields(&self, fields: &[(&str, String)]) -> String {
+        let labels: Vec<String> = fields.iter().map(|(item, _)| self.text(item)).collect();
+        let width = labels
+            .iter()
+            .map(|label| display_width(label))
+            .max()
+            .unwrap_or(0)
+            + 2;
+
+        let mut out = String::new();
+        for (label, (_, value)) in labels.iter().zip(fields) {
+            out.push_str(&pad_to(label, width));
+            out.push_str(value);
+            out.push('\n');
+        }
+        out
+    }
+
+    /// 列名を翻訳し、値は翻訳しないtable。
+    pub fn render_value_table(&self, headers: &[&str], rows: &[Vec<String>]) -> String {
+        let headers: Vec<String> = headers.iter().map(|header| self.text(header)).collect();
+        let widths: Vec<usize> = (0..headers.len())
+            .map(|column| {
+                rows.iter()
+                    .filter_map(|row| row.get(column))
+                    .map(|value| display_width(value))
+                    .chain(std::iter::once(display_width(&headers[column])))
+                    .max()
+                    .unwrap_or(0)
+                    + 2
+            })
+            .collect();
+
+        let mut out = String::new();
+        out.push_str(&render_row(&headers, &widths));
+        for row in rows {
+            out.push_str(&render_row(row, &widths));
+        }
+        out
+    }
+
     /// 実際に出現したenumだけの凡例。
     ///
     /// 状態値は翻訳しないため、正本locale以外の正常出力へ注釈として付ける。
     pub fn render_legend(&self, rows: &[Row]) -> Option<String> {
-        if self.catalog.locale().is_source() {
-            return None;
-        }
         let mut seen: Vec<StatusValue> = rows.iter().map(|row| row.status).collect();
         seen.sort();
         seen.dedup();
-        if seen.is_empty() {
+        let values: Vec<(&str, &str)> = seen
+            .iter()
+            .map(|status| (status.as_str(), status.legend_id()))
+            .collect();
+        self.render_value_legend(&values)
+    }
+
+    /// 出現した値とその説明を並べる凡例。
+    pub fn render_value_legend(&self, values: &[(&str, &str)]) -> Option<String> {
+        if self.catalog.locale().is_source() || values.is_empty() {
             return None;
         }
+        let mut seen: Vec<(&str, &str)> = values.to_vec();
+        seen.sort();
+        seen.dedup();
 
         let mut out = String::new();
         out.push_str(&self.text("legend-heading"));
         out.push('\n');
-        for status in seen {
-            out.push_str(&format!(
-                "  {}: {}\n",
-                status.as_str(),
-                self.text(status.legend_id())
-            ));
+        for (value, legend) in seen {
+            out.push_str(&format!("  {value}: {}\n", self.text(legend)));
         }
         Some(out)
     }

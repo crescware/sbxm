@@ -161,6 +161,25 @@ fn find(host: &dyn HostEnvironment, sandbox: &SandboxName) -> Result<Option<Sand
         .find(|entry| entry.name == sandbox.as_str()))
 }
 
+/// 既存Sandboxが、この案件のものであることをread-onlyで確認する。
+pub fn verify_identity(
+    entry: &SandboxEntry,
+    sandbox: &SandboxName,
+    template_name: &str,
+    workspace_root: &Path,
+) -> Result<()> {
+    let template = LoadedTemplate {
+        name: template_name.to_string(),
+        loaded: false,
+    };
+    verify(
+        entry,
+        sandbox,
+        &template,
+        &workspace_path(workspace_root, sandbox),
+    )
+}
+
 /// 既存Sandboxが期待する構成であることを確認する。
 ///
 /// 誰が作成したかは条件にしない。1項目でも確認できない場合は再利用しない。

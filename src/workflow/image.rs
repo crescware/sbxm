@@ -238,6 +238,20 @@ pub fn ensure_archive(
     Ok(target)
 }
 
+/// 世代に対応するimageが既にあるか。
+///
+/// 初回構築の途中でDockerfileが変わった場合に、どちらの世代で完成させるかを決める。
+pub fn generation_is_built(
+    host: &dyn HostEnvironment,
+    sandbox: &SandboxName,
+    canonical: &CanonicalProjectId,
+    dockerfile_sha256: &str,
+) -> Result<bool> {
+    let name = image_name(sandbox, dockerfile_sha256);
+    let labels = expected_labels(canonical, dockerfile_sha256);
+    Ok(inspect(host, &name)?.is_some_and(|identity| labels_match(&identity, &labels)))
+}
+
 /// imageの現在の同一性。存在しない場合は`None`。
 fn inspect(host: &dyn HostEnvironment, name: &str) -> Result<Option<ImageIdentity>> {
     let spec = CommandSpec::capture("docker", &["image", "inspect", name])

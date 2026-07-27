@@ -301,8 +301,6 @@ fn commands_that_are_not_implemented_yet_say_so_after_validating_their_arguments
     write_config(home.path(), &base, "en");
 
     for arguments in [
-        vec!["add", "owner/repo"],
-        vec!["sync-files", "owner/repo"],
         vec!["rebuild", "owner/repo"],
         vec!["open", "owner/repo"],
         vec!["stop", "owner/repo"],
@@ -318,6 +316,63 @@ fn commands_that_are_not_implemented_yet_say_so_after_validating_their_arguments
             run.stderr
         );
     }
+}
+
+/// PATHを空にしているため、外部toolを必要とする工程まで進んだところで止まる。
+#[test]
+fn add_registers_the_project_before_it_reaches_the_host_tools() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = temp_home();
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).unwrap();
+    write_config(home.path(), &base, "en");
+
+    let run = sbxm(
+        home.path(),
+        &["--lang", "en", "add", "Example-Org/Example-Repo"],
+    );
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    assert!(
+        run.stderr.contains("external-command-not-found"),
+        "the run stops at the first host tool it needs: {}",
+        run.stderr
+    );
+
+    // 登録そのものは終わっているため、案件directoryが残る。
+    let root = base.join("example-org").join("example-repo.project");
+    let metadata = root.join(".sbxm").join("project.toml");
+    assert!(metadata.is_file(), "the project is registered");
+    assert!(root.join(".sbxm").join("Dockerfile").is_file());
+    assert!(root.join(".sbxm").join(".cache").is_dir());
+    assert_eq!(
+        std::fs::metadata(root.join(".sbxm"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
+
+    let written = std::fs::read_to_string(&metadata).unwrap();
+    assert!(
+        written.contains("canonical_id = \"example-org/example-repo\""),
+        "{written}"
+    );
+    assert!(written.contains("owner = \"Example-Org\""), "{written}");
+    assert!(written.contains("mode = \"attached\""), "{written}");
+}
+
+#[test]
+fn sync_files_refuses_a_project_that_was_never_added() {
+    let home = temp_home();
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).unwrap();
+    write_config(home.path(), &base, "en");
+
+    let run = sbxm(home.path(), &["--lang", "en", "sync-files", "owner/repo"]);
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("project-not-managed"), "{}", run.stderr);
+    assert!(run.stderr.contains("sbxm add owner/repo"), "{}", run.stderr);
 }
 
 #[test]
@@ -430,6 +485,8 @@ fn global_status_prints_only_the_global_section_and_the_published_columns() {
             "Docker Sandboxes",
             "Network policy",
             "Daemon",
+            "Docker Sandboxes login",
+            "Active session inspection",
         ]
     );
     assert!(!run.stdout.contains("PROJECT"), "{}", run.stdout);
@@ -443,7 +500,7 @@ fn global_status_reports_every_problem_and_exits_with_one() {
 
     assert_eq!(run.code, 1, "an incomplete host is not healthy");
     // 取得できた行は後続検査が失敗しても省略しない。
-    assert_eq!(run.stdout.lines().count(), 11);
+    assert_eq!(run.stdout.lines().count(), 13);
     for id in ["config-missing", "host-command-missing"] {
         assert!(
             run.stderr.contains(id),
