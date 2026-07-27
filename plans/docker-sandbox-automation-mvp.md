@@ -38,14 +38,22 @@ sbxm rm [project]
 
 ### 2.2 案件の指定方法
 
-案件を指定するコマンドは、次の順で対象を解決する。
+案件を対象とする`open`、`stop`、`status`、`rm`は、引数の有無だけで動作を分ける。
 
-1. command argumentで指定された案件
-2. current directoryを親方向へ辿って見つけた`.sbx/sbxm.toml`
+- 引数あり: 指定された`<owner>/<repository>`を対象とし、案件選択promptを出さずに実行する
+- 引数なし: 案件メタデータから選択肢を作り、必ず対話promptを表示する
+- 引数なし、かつstdinまたはstderrがTTYでない: 対象を推測せずusage errorで終了する
 
-argumentとcurrent directoryの両方から案件を特定できない場合は、管理案件の候補を表示して終了する。MVPでは対話的な案件選択UIや`switch`コマンドを作らない。
+カレントディレクトリから案件を推測しない。同じcommand文字列が実行directoryによって別案件へ作用することを防ぎ、shell履歴から復元したcommandの対象を予測可能にする。
 
-`add`ではGitHubの`<owner>/<repository>`を指定する。それ以外のコマンドでは、案件メタデータから導出した一意な`<owner>/<repository>`またはSandbox名を受け付ける。曖昧なrepository名だけの指定は受け付けない。
+明示指定する案件識別子は常に`<owner>/<repository>`とする。Sandbox名やrepository名だけの別表記は受け付けない。
+
+対話promptには既定選択を設けない。Enterだけでは確定せず、EscまたはCtrl-Cでは何も変更せずに終了する。
+
+- `open`、`status`、`rm`: 単一案件を選択する
+- `stop`: 0件から複数案件を選択する
+
+`rm`の削除確認は案件選択promptとは別の安全確認であるため、引数指定時にも省略しない。それ以外のコマンドは、引数指定時にpromptを表示しない。
 
 ## 3. MVPの前提
 
@@ -197,7 +205,7 @@ GitHub fine-grained personal access tokenの発行とsecret入力は利用者の
 
 実行内容:
 
-1. 対象案件を解決する
+1. 引数があれば案件選択promptなしで対象を解決し、なければ単一選択promptを表示する
 2. Docker Engineへ接続できることを確認する
 3. Docker Sandboxes daemonがSSH Agentを引き継がない状態を保証する
 4. Sandboxが`stopped`の場合は端末を占有せずに起動する
@@ -215,11 +223,13 @@ Docker Sandboxesがdaemonの起動環境を判定できる機械可読な手段�
 
 当面使用しないSandboxを停止する。内部Git repository、設定、package、Docker imageは保持される。
 
-引数なしで案件directory内から実行した場合は、その案件だけを停止する。複数案件をまとめて停止する場合は対象を明示する。
+引数がある場合は指定された全案件をpromptなしで停止する。複数案件をまとめて指定できる。
 
 ```text
 sbxm stop owner/foo owner/bar
 ```
+
+引数がない場合は全管理案件を選択肢とする複数選択promptを表示する。既定選択は空とし、何も選択せずに確定した場合は状態を変更せず正常終了する。
 
 停止済みのSandboxは成功として扱う。MVPでは全Sandboxを暗黙に停止するoptionを設けない。
 
@@ -259,7 +269,7 @@ owner/baz        owner-baz        not-created
 
 1案件について、構築工程、作業可能性、credential隔離を詳細に診断する。全案件の一覧は表示しない。
 
-引数またはcurrent directoryから対象を一意に特定できない場合は、`sbxm ls`を案内して非ゼロ終了する。
+引数がある場合は案件選択promptなしで対象を診断する。引数がない場合は全管理案件から単一選択するpromptを表示する。
 
 表示項目:
 
@@ -289,6 +299,8 @@ status  1案件の構築状態、作業可能性、credential隔離を診断す�
 ### 5.7 `sbxm rm [project]`
 
 対象Sandboxの内部状態を破棄する。
+
+引数がある場合は案件選択promptなしで対象を解決する。引数がない場合は全管理案件から単一選択するpromptを表示する。
 
 削除前に次を表示し、明示確認を必須とする。
 
@@ -321,13 +333,13 @@ Docker Desktopを起動し、作業する案件を指定して接続する。
 sbxm open owner/foo
 ```
 
-案件のhost側repository内にいる場合は引数を省略できる。
+案件を明示せず人間が一覧から選ぶ場合は、引数なしで起動する。
 
 ```text
 sbxm open
 ```
 
-`open`がDocker Engine、daemon、Sandboxの状態を確認し、必要なものだけを起動してSSH接続する。
+`open`は案件選択promptを表示した後、Docker Engine、daemon、Sandboxの状態を確認し、必要なものだけを起動してSSH接続する。実行directoryから対象を推測しない。
 
 ### 6.2 案件を切り替える
 
@@ -430,6 +442,7 @@ src/
 ### 8.2 主なdependency
 
 - `clap`: CLI parser
+- `dialoguer`: 既定選択のない案件選択promptと削除確認
 - `serde`と`toml`: 設定形式
 - `thiserror`: 利用者向けに文脈を付けたerror
 - `dirs`: home directoryの解決
@@ -458,6 +471,9 @@ src/
 - pathを文字列連結せず`PathBuf`で構築する
 - secret値をcommand argument、log、configへ書かない
 - 外部commandの失敗時はstatusと安全なstderrを示す
+- current directoryから操作対象を推測しない
+- 引数指定時は案件選択promptを出さず、引数省略時だけTTY上でpromptを出す
+- 非TTYで対象引数を省略した場合はusage errorで終了する
 - 破壊的操作は対象を完全な名前で表示し、明示確認を要求する
 - 既存ファイルを既定で上書きしない
 - `SSH_AUTH_SOCK`を除外すべきprocessを一箇所に集約してtestする
@@ -473,7 +489,8 @@ src/
 - command parserと共通error表示を実装する
 - 前提commandとversionの検出を実装する
 - global configのschema、permission、読み書きを実装する
-- 案件metadata、案件探索、導出pathを実装する
+- 案件metadata、全案件探索、明示的な案件識別子、導出pathを実装する
+- TTY判定と単一・複数選択promptを実装する
 - `sbxm init`を実装する
 - config、入力値、path導出のunit testを追加する
 
@@ -484,6 +501,8 @@ src/
 - 一時HOMEを用いたtestで`~/.sbxm/config.toml`を安全に作成できる
 - `init`を再実行して既存設定を上書きしない
 - 不正なowner、repository、base pathを拒否できる
+- current directoryに依存せず同じ引数から同じ案件を解決できる
+- 引数なしの非TTY実行を拒否できる
 
 ### Phase 2: `add`
 
@@ -510,6 +529,7 @@ src/
 - 安全なdaemon起動判定とruntime markerを実機検証する
 - Sandboxの冪等な起動を実装する
 - SSH接続を実装する
+- 引数ありの非対話操作と引数なしの案件選択promptを実装する
 - 単一・複数案件の停止を実装する
 - メタデータを起点とする全管理案件の探索を実装する
 - 1回の`sbx ls`との突き合わせと3状態の一覧を実装する
@@ -526,6 +546,9 @@ src/
 - `ls`が未作成Sandboxを`not-created`として表示できる
 - `ls`が外部状態を取得できないときに一覧を推測しない
 - `status`が1案件だけを詳細に診断できる
+- 引数指定時に案件選択promptを出さない
+- 引数省略時に既定選択なしのpromptを表示する
+- promptのキャンセル時に状態を変更しない
 - 状態表示で機密値を出力しない
 
 ### Phase 4: `rm`と手動検証
@@ -546,8 +569,14 @@ src/
 自動testでは外部環境を変更せず、次を確認する。
 
 - TOMLのround tripとschema version拒否
-- path導出とcurrent directoryからの案件探索
-- 案件argumentの一意な解決
+- path導出と全案件metadataの探索
+- `<owner>/<repository>`による案件argumentの一意な解決
+- current directoryを変えても明示引数の解決結果が変わらないこと
+- 引数指定時に案件選択promptを表示しないこと
+- 引数省略時の単一選択・複数選択prompt
+- promptに既定選択がなく、Enterだけで対象を確定しないこと
+- promptのEsc・Ctrl-Cによる副作用なしの終了
+- 引数省略かつ非TTYでのusage error
 - 入力値検証
 - 外部commandへ渡すprogram、arguments、cwd、environment
 - `SSH_AUTH_SOCK`の除外
@@ -582,8 +611,11 @@ src/
 12. `ls`による`running`、`stopped`、`not-created`の一覧
 13. `sbx ls`失敗時に推測した一覧を出さないこと
 14. 未管理Sandboxの分離表示
-15. `status`による単一案件の構築・隔離診断
-16. `rm`前の保存確認と削除後の保持対象
+15. 引数指定時のpromptなし実行
+16. 引数省略時の案件選択、キャンセル、非TTY拒否
+17. `status`による単一案件の構築・隔離診断
+18. `rm`の案件選択とは独立した保存・削除確認
+19. `rm`後の保持対象
 
 ## 11. 最初の利用後にレビューする論点
 
@@ -591,10 +623,11 @@ MVPを実案件またはtest repositoryで一巡した後、次をレビュー�
 
 - `init`、`add`、`open`、`stop`、`ls`、`status`、`rm`の語彙と粒度は自然か
 - `ls`と`status`の責務分担は日常利用で自然か
+- 明示引数と対話選択の使い分けは業務利用で安全か
 - `add`の中断理由と再開方法が利用者に明確か
 - daemon再起動確認が日常利用の妨げにならないか
 - runtime markerによる安全なdaemonの判定は十分に堅牢か
-- 案件argumentを毎回`owner/repository`で指定する負担は許容できるか
+- 引数省略時の選択promptは十分に素早く操作できるか
 - `open`接続後にrepository rootへ自動移動する必要があるか
 - Dockerfileを利用者が編集できる生成物にした判断は適切か
 - 次に`rebuild`、`export`、`ports`、`doctor`のどれを追加すべきか
