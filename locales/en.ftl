@@ -179,6 +179,9 @@ security-project-path-symlink-remediation = Replace { $path } with a regular fil
 security-project-file-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a file that other accounts on this machine can read or change.
 security-project-file-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the file.
 
+security-ssh-agent-exposed-description = The host SSH agent can be reached from { $sandbox }. An agent inside the sandbox can sign with your keys.
+security-ssh-agent-exposed-remediation = Stop the sandbox, then open it again with sbxm so that the daemon is restarted without the agent.
+
 security-base-path-escape-description = { $path } resolves to { $resolved } after symbolic links are followed. Projects would be created outside the directory you chose.
 security-base-path-escape-remediation = Choose a base path whose resolved location stays inside the directory you intend to use.
 
@@ -246,6 +249,31 @@ select-stop-heading = Which projects do you want to stop?
 
 legend-stopped-now = the sandbox was stopped by this run
 legend-failed = the sandbox could not be stopped
+status-project-section = PROJECT
+status-worktrees-section = WORKTREES
+status-column-value = VALUE
+status-item-metadata = Metadata
+status-item-project-root = Project root
+status-item-host-clone = Host clone
+status-item-dockerfile = Dockerfile
+status-item-image = Image
+status-item-template-archive = Template archive
+status-item-sandbox = Sandbox
+status-item-workspace = Workspace
+status-item-secret = GitHub secret
+status-item-bare-repository = Bare repository
+status-item-ssh-agent = SSH Agent
+status-item-project = Project
+column-path = PATH
+column-kind = KIND
+legend-mismatch = the observed state does not match what the project declares
+legend-changed = the file changed since it was applied, so the next rebuild will pick it up
+legend-clean = the working tree has no change to commit
+legend-dirty = the working tree has changes
+legend-not-exposed = the host SSH agent cannot be reached from the sandbox
+legend-exposed = the host SSH agent can be reached from the sandbox
+legend-not-applicable = there is no sandbox to look into
+legend-not-observed-stopped = the sandbox is stopped, and sbxm did not start it to look
 legend-heading = Legend
 legend-ready = available and matching the expected state
 legend-missing = not present

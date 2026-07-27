@@ -103,6 +103,7 @@ pub enum ErrorId {
     SandboxNotCreated,
     SandboxNotRunning,
     SandboxStillRunning,
+    SshAgentExposed,
     SbxLoginMissing,
     SbxLoginUnobservable,
 
@@ -219,6 +220,7 @@ impl ErrorId {
             ErrorId::SandboxNotCreated => "sandbox-not-created",
             ErrorId::SandboxNotRunning => "sandbox-not-running",
             ErrorId::SandboxStillRunning => "sandbox-still-running",
+            ErrorId::SshAgentExposed => "ssh-agent-exposed",
             ErrorId::SbxLoginMissing => "sbx-login-missing",
             ErrorId::SbxLoginUnobservable => "sbx-login-unobservable",
 
@@ -401,6 +403,13 @@ impl Error {
         }
     }
 
+    /// 指定したerror IDを含むか。呼び出し側の分岐に使う。
+    pub fn contains_id(&self, id: ErrorId) -> bool {
+        self.diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.id == id)
+    }
+
     /// 最初の診断のerror ID。testと呼び出し側の分岐に使う。
     #[cfg(test)]
     pub fn first_id(&self) -> Option<ErrorId> {
@@ -552,6 +561,7 @@ mod tests {
             ErrorId::SandboxNotCreated,
             ErrorId::SandboxNotRunning,
             ErrorId::SandboxStillRunning,
+            ErrorId::SshAgentExposed,
             ErrorId::SbxLoginMissing,
             ErrorId::SbxLoginUnobservable,
             ErrorId::ProjectPathSymlink,

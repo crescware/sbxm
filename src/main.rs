@@ -32,7 +32,7 @@ use workflow::Reporter;
 use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
 use workflow::select::TerminalProjectPrompt;
-use workflow::{add, ls, open, sandbox, status_global, stop, sync_files};
+use workflow::{add, ls, open, sandbox, status_global, status_project, stop, sync_files};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();
@@ -183,6 +183,28 @@ fn dispatch(
                 ExitCode::Success
             } else {
                 ExitCode::Failure
+            }
+        }
+
+        Command::Status(StatusScope::Project(project)) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            match status_project::diagnose(
+                &config,
+                project,
+                &RealHost,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+            ) {
+                Ok(status) => print_project_status(&catalog, &status),
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
             }
         }
 
@@ -474,6 +496,79 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
         print!("\n{legend}");
     }
     let _ = std::io::stdout().flush();
+}
+
+/// project scopeの`status`の出力。
+///
+/// 指定案件だけを診断し、global環境の検査結果を混ぜない。
+fn print_project_status(catalog: &Catalog, status: &status_project::ProjectStatus) -> ExitCode {
+    let reporter = Reporter::new(catalog);
+
+    let mut fields: Vec<(&str, String)> = vec![("status-item-project", status.project.clone())];
+    fields.extend(
+        status
+            .items
+            .iter()
+            .map(|item| (item.item, item.value.as_str().to_string())),
+    );
+    println!("{}", text_or_report(catalog, "status-project-section"));
+    print!(
+        "{}",
+        reporter.render_value_table(
+            &["status-column-item", "status-column-value"],
+            &fields
+                .iter()
+                .map(|(item, value)| vec![text_or_report(catalog, item), value.clone()])
+                .collect::<Vec<_>>(),
+        )
+    );
+
+    if !status.worktrees.is_empty() {
+        let rows: Vec<Vec<String>> = status
+            .worktrees
+            .iter()
+            .map(|worktree| {
+                vec![
+                    worktree.path.clone(),
+                    worktree.kind.to_string(),
+                    worktree.mode.as_str().to_string(),
+                    worktree.state.as_str().to_string(),
+                ]
+            })
+            .collect();
+        println!("\n{}", text_or_report(catalog, "status-worktrees-section"));
+        print!(
+            "{}",
+            reporter.render_value_table(
+                &["column-path", "column-kind", "column-mode", "column-state"],
+                &rows,
+            )
+        );
+    }
+
+    let mut values: Vec<(&str, &str)> = status
+        .items
+        .iter()
+        .map(|item| (item.value.as_str(), item.value.legend_id()))
+        .collect();
+    for worktree in &status.worktrees {
+        values.push((worktree.mode.as_str(), worktree.mode.legend_id()));
+        values.push((worktree.state.as_str(), worktree.state.legend_id()));
+    }
+    if let Some(legend) = reporter.render_value_legend(&values) {
+        print!("\n{legend}");
+    }
+    let _ = std::io::stdout().flush();
+
+    let mut stderr = std::io::stderr();
+    for diagnostic in &status.diagnostics {
+        reporter.print_error(&Error::single(diagnostic.clone()), &mut stderr);
+    }
+    if status.is_healthy() {
+        ExitCode::Success
+    } else {
+        ExitCode::Failure
+    }
 }
 
 /// `stop`の出力。

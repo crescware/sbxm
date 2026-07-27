@@ -179,6 +179,9 @@ security-project-path-symlink-remediation = { $path } を自分が所有する�
 security-project-file-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。この機械上のほかのaccountが読み書きできるfileをsbxmは使用しません。
 security-project-file-permission-remediation = chmod { $expected } { $path } を実行し、fileの所有者が自分であることを確認してください。
 
+security-ssh-agent-exposed-description = { $sandbox } からhostのSSH Agentへ到達できます。Sandbox内のagentが利用者の鍵で署名できる状態です。
+security-ssh-agent-exposed-remediation = Sandboxを停止し、sbxm で開き直すと、SSH Agentを渡さないdaemonで起動します。
+
 security-base-path-escape-description = { $path } はsymbolic linkの解決後に { $resolved } となります。案件が指定したdirectoryの外に作られます。
 security-base-path-escape-remediation = 解決後も意図したdirectory配下に収まるbase pathを指定してください。
 
@@ -246,6 +249,31 @@ select-stop-heading = どの案件を停止しますか?
 
 legend-stopped-now = この実行で停止しました
 legend-failed = 停止できませんでした
+status-project-section = 案件 (PROJECT)
+status-worktrees-section = worktree (WORKTREES)
+status-column-value = 値 (VALUE)
+status-item-metadata = metadata (Metadata)
+status-item-project-root = 案件root (Project root)
+status-item-host-clone = host clone (Host clone)
+status-item-dockerfile = Dockerfile
+status-item-image = image (Image)
+status-item-template-archive = Template archive
+status-item-sandbox = Sandbox
+status-item-workspace = workspace (Workspace)
+status-item-secret = GitHub secret
+status-item-bare-repository = bare repository (Bare repository)
+status-item-ssh-agent = SSH Agent
+status-item-project = 案件 (Project)
+column-path = path (PATH)
+column-kind = 種別 (KIND)
+legend-mismatch = 観測した状態が案件の宣言と一致しません
+legend-changed = 適用後に変更されており、次の rebuild で反映されます
+legend-clean = commitしていない変更はありません
+legend-dirty = 変更があります
+legend-not-exposed = hostのSSH AgentへSandboxから到達できません
+legend-exposed = hostのSSH AgentへSandboxから到達できます
+legend-not-applicable = 対象のSandboxがありません
+legend-not-observed-stopped = Sandboxが停止中のため、起動せずに検査を省きました
 legend-heading = 状態値の凡例
 legend-ready = 期待どおり利用できます
 legend-missing = 存在しません

@@ -302,7 +302,6 @@ fn commands_that_are_not_implemented_yet_say_so_after_validating_their_arguments
 
     for arguments in [
         vec!["rebuild", "owner/repo"],
-        vec!["status", "owner/repo"],
         vec!["destroy", "--force", "owner/repo"],
     ] {
         let run = sbxm(home.path(), &arguments);

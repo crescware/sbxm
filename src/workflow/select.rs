@@ -32,7 +32,7 @@ pub fn one<'a>(
     }
 
     let index = prompt.select_one(&labels(inventory))?;
-    inventory.projects.get(index).ok_or_else(|| Error::Canceled)
+    inventory.projects.get(index).ok_or(Error::Canceled)
 }
 
 /// 引数、またはpromptで1件以上の案件を決める。
