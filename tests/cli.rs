@@ -3,7 +3,7 @@
 //! exit codeは`0`、`1`、`130`だけを使う。CLI parserを含む内部libraryの既定exit codeを
 //! 公開契約へ透過しない。helpとusageは選択したlocaleで生成する。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
 
 const COMMANDS: [&str; 9] = [
@@ -57,35 +57,22 @@ fn temp_home() -> tempfile::TempDir {
     tempfile::tempdir().expect("temporary home")
 }
 
-fn snapshot_path(locale: &str, name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("snapshots")
-        .join("help")
-        .join(locale)
-        .join(format!("{name}.txt"))
-}
-
-/// snapshotと比較する。`SBXM_UPDATE_SNAPSHOTS=1`で更新する。
-fn assert_snapshot(locale: &str, name: &str, actual: &str) {
-    let path = snapshot_path(locale, name);
-    if std::env::var_os("SBXM_UPDATE_SNAPSHOTS").is_some() {
-        std::fs::create_dir_all(path.parent().unwrap()).expect("create snapshot directory");
-        std::fs::write(&path, actual).expect("write snapshot");
-        return;
-    }
-    let expected = std::fs::read_to_string(&path).unwrap_or_else(|error| {
-        panic!(
-            "{} could not be read: {error}. Run with SBXM_UPDATE_SNAPSHOTS=1 to create it.",
-            path.display()
-        )
-    });
-    assert_eq!(
-        actual,
-        expected,
-        "{} is out of date. Run with SBXM_UPDATE_SNAPSHOTS=1 after reviewing the change.",
-        path.display()
-    );
+/// 同梱するresourceのtag。言語を増やしてもtestを編集しない。
+fn locale_tags() -> Vec<String> {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+    let mut tags: Vec<String> = std::fs::read_dir(&directory)
+        .expect("the locales directory is readable")
+        .map(|entry| entry.expect("directory entry").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "ftl"))
+        .filter_map(|path| {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(|stem| stem.to_string())
+        })
+        .collect();
+    tags.sort();
+    assert!(!tags.is_empty(), "no FTL resource was found");
+    tags
 }
 
 fn write_config(home: &Path, base_path: &Path, language: &str) {
@@ -105,20 +92,51 @@ fn write_config(home: &Path, base_path: &Path, language: &str) {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("mode");
 }
 
+/// helpは全localeで、全commandについて成功する。
+///
+/// 出力の中身はresourceが正本であり、ここでは複製しない。構造の契約は
+/// `tests/snapshots/cli-surface.txt`が、slotがresourceで埋まることは`src/cli.rs`のtestが持つ。
 #[test]
-fn help_exits_with_zero_and_matches_the_snapshot_in_both_locales() {
+fn help_exits_with_zero_in_every_locale_for_every_command() {
     let home = temp_home();
-    for locale in ["en", "ja"] {
-        let run = sbxm(home.path(), &["--lang", locale, "--help"]);
-        assert_eq!(run.code, 0, "--help must succeed: {}", run.stderr);
-        assert!(run.stderr.is_empty(), "{}", run.stderr);
-        assert_snapshot(locale, "sbxm", &run.stdout);
+    for tag in locale_tags() {
+        let run = sbxm(home.path(), &["--lang", &tag, "--help"]);
+        assert_eq!(run.code, 0, "{tag}: --help must succeed: {}", run.stderr);
+        assert!(run.stderr.is_empty(), "{tag}: {}", run.stderr);
+        assert!(
+            !run.stdout.trim().is_empty(),
+            "{tag}: help must not be empty"
+        );
 
         for command in COMMANDS {
-            let run = sbxm(home.path(), &["--lang", locale, command, "--help"]);
-            assert_eq!(run.code, 0, "{command} --help must succeed: {}", run.stderr);
-            assert_snapshot(locale, command, &run.stdout);
+            let run = sbxm(home.path(), &["--lang", &tag, command, "--help"]);
+            assert_eq!(
+                run.code, 0,
+                "{tag}: {command} --help must succeed: {}",
+                run.stderr
+            );
+            assert!(run.stderr.is_empty(), "{tag}: {command}: {}", run.stderr);
+            assert!(
+                !run.stdout.trim().is_empty(),
+                "{tag}: {command} help must not be empty"
+            );
         }
+    }
+}
+
+/// 同梱したresourceは、そのまま`--lang`が受け付ける値になる。
+///
+/// 逆向き（登録済みlocaleのresourceが存在すること）は`include_str!`がbuild時に保証する。
+#[test]
+fn every_shipped_resource_is_an_accepted_language() {
+    let home = temp_home();
+    for tag in locale_tags() {
+        let run = sbxm(home.path(), &["--lang", &tag, "--help"]);
+        assert_eq!(
+            run.code, 0,
+            "{tag} ships as a resource but is not accepted: {}",
+            run.stderr
+        );
     }
 }
 
@@ -187,7 +205,8 @@ fn a_broken_configuration_does_not_stop_help_from_being_shown() {
 #[test]
 fn an_unsupported_language_fails_without_reading_the_configuration() {
     let home = temp_home();
-    let run = sbxm(home.path(), &["--lang", "fr", "ls"]);
+    // 実在しないtagを使う。将来どの言語を足してもこのtestは意味を保つ。
+    let run = sbxm(home.path(), &["--lang", "zz", "ls"]);
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("invalid-lang"), "{}", run.stderr);
     assert!(run.stdout.is_empty(), "{}", run.stdout);

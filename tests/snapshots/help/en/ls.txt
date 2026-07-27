@@ -1,7 +1,0 @@
-List managed projects and their sandbox state
-
-Usage: sbxm ls [OPTIONS]
-
-Options:
-      --lang <en|ja>  Display language for this run (en, ja)
-  -h, --help          Print help

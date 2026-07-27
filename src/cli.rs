@@ -845,28 +845,140 @@ mod tests {
         );
     }
 
+    /// 公開契約をlocaleに依存しない形で書き出す。
+    ///
+    /// 翻訳文はlocaleごとに変わるため含めない。ここへ現れるのはcommand名、option名、
+    /// value name、arity、必須性、並び順といったCLIの契約だけとする。
+    fn render_surface() -> String {
+        let catalog = Catalog::new(Locale::SOURCE);
+        let mut command = build_command(&catalog).expect("the parser builds");
+        // 上位から伝播するglobal optionを含めた実効の姿を記録する。
+        command.build();
+        let mut out = String::new();
+        render_command(&command, 0, &mut out);
+        out
+    }
+
+    fn render_command(command: &ClapCommand, depth: usize, out: &mut String) {
+        let indent = "  ".repeat(depth);
+        out.push_str(&format!("{indent}{}\n", command.get_name()));
+        for argument in command.get_arguments() {
+            out.push_str(&format!("{indent}  {}\n", render_argument(argument)));
+        }
+        for subcommand in command.get_subcommands() {
+            render_command(subcommand, depth + 1, out);
+        }
+    }
+
+    fn render_argument(argument: &Arg) -> String {
+        let mut parts = vec![format!("id={}", argument.get_id())];
+        if argument.is_positional() {
+            parts.push("positional".to_string());
+        }
+        if let Some(long) = argument.get_long() {
+            parts.push(format!("--{long}"));
+        }
+        if let Some(short) = argument.get_short() {
+            parts.push(format!("-{short}"));
+        }
+        // `--lang`が受け付ける値とその表示は組み込みlocaleの定義から導出される。
+        // 契約記録へ言語の数を持ち込まないため、導出であることだけを書く。
+        if argument.get_id() == "lang" {
+            parts.push("value=<derived from the locale definitions>".to_string());
+        } else if let Some(names) = argument.get_value_names() {
+            let names: Vec<&str> = names.iter().map(|name| name.as_str()).collect();
+            parts.push(format!("value={}", names.join(",")));
+        }
+        if let Some(range) = argument.get_num_args() {
+            parts.push(format!("args={range}"));
+        }
+        if argument.is_required_set() {
+            parts.push("required".to_string());
+        }
+        if argument.is_global_set() {
+            parts.push("global".to_string());
+        }
+        parts.push(format!("action={:?}", argument.get_action()));
+        parts.push(format!("order={}", argument.get_display_order()));
+        parts.join(" ")
+    }
+
+    /// CLIの公開契約。localeに依存しないため、言語を増やしても変わらない。
+    ///
+    /// 実装から導出した期待値と突き合わせても契約の変化は捕まらないため、記録をcommitし、
+    /// 契約を変えるときはこのfileの差分をreviewさせる。`SBXM_UPDATE_SNAPSHOTS=1`で更新する。
     #[test]
-    fn every_command_and_option_is_registered() {
-        let catalog = Catalog::new(Locale::En);
-        let command = build_command(&catalog).expect("the parser builds");
-        let names: Vec<&str> = command
-            .get_subcommands()
-            .map(|sub| sub.get_name())
-            .collect();
+    fn the_published_contract_matches_the_recorded_surface() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("snapshots")
+            .join("cli-surface.txt");
+        let actual = render_surface();
+
+        if std::env::var_os("SBXM_UPDATE_SNAPSHOTS").is_some() {
+            std::fs::create_dir_all(path.parent().expect("the snapshot has a directory"))
+                .expect("create the snapshot directory");
+            std::fs::write(&path, &actual).expect("write the contract record");
+            return;
+        }
+
+        let expected = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+            panic!(
+                "{} could not be read: {error}. Run with SBXM_UPDATE_SNAPSHOTS=1 to create it.",
+                path.display()
+            )
+        });
         assert_eq!(
-            names,
-            vec![
-                "init",
-                "add",
-                "sync-files",
-                "rebuild",
-                "open",
-                "stop",
-                "ls",
-                "status",
-                "destroy"
-            ]
+            actual,
+            expected,
+            "the published CLI contract changed. Review {} before accepting it, then run with SBXM_UPDATE_SNAPSHOTS=1.",
+            path.display()
         );
+    }
+
+    /// 利用者へ見える全slotが、選んだlocaleのresourceで埋まっている。
+    ///
+    /// `.help()`と`.about()`の付け忘れを、helpを描画せずに検出する。message IDの欠落は
+    /// parserの構築自体が失敗するため、ここで併せて落ちる。
+    #[test]
+    fn every_visible_slot_is_filled_from_the_resource() {
+        for locale in Locale::ALL {
+            let catalog = Catalog::new(locale);
+            let mut command = build_command(&catalog).expect("the parser builds");
+            command.build();
+
+            let mut slots = Vec::new();
+            collect_strings(&command, "sbxm", &mut slots);
+            assert!(!slots.is_empty(), "{locale}: nothing was collected");
+
+            for (slot, text) in slots {
+                let text = text.unwrap_or_else(|| {
+                    panic!("{locale}: {slot} has no text; every slot comes from the resource")
+                });
+                assert!(!text.trim().is_empty(), "{locale}: {slot} is empty");
+            }
+        }
+    }
+
+    /// 利用者へ見える文字列slotを、対象と現在値の組で集める。
+    fn collect_strings(command: &ClapCommand, path: &str, out: &mut Vec<(String, Option<String>)>) {
+        out.push((
+            format!("{path} (about)"),
+            command.get_about().map(|about| about.to_string()),
+        ));
+        for argument in command.get_arguments() {
+            out.push((
+                format!("{path} {} (help)", argument.get_id()),
+                argument.get_help().map(|help| help.to_string()),
+            ));
+        }
+        for subcommand in command.get_subcommands() {
+            collect_strings(
+                subcommand,
+                &format!("{path} {}", subcommand.get_name()),
+                out,
+            );
+        }
     }
 
     #[test]
