@@ -7,6 +7,7 @@
 // まで、それらはbinary本体からは参照されない。
 #![allow(dead_code)]
 
+mod config;
 mod error;
 mod i18n;
 mod paths;
