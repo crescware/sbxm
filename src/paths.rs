@@ -88,7 +88,7 @@ pub fn permission_too_open(mode: u32) -> bool {
 ///
 /// permissionだけでは、ほかのaccountが所有する`0700`のdirectoryを自分のものと
 /// 区別できない。所有関係は観測した値で判定する。
-pub fn current_user() -> u32 {
+fn current_user() -> u32 {
     // SAFETY: geteuid(2)は引数を取らず、失敗しない。
     unsafe { libc::geteuid() }
 }
