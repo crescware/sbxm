@@ -8,6 +8,7 @@ mod command;
 mod compatibility;
 mod config;
 mod error;
+mod hash;
 mod i18n;
 mod paths;
 mod project;
