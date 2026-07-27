@@ -63,6 +63,8 @@
 - 1 GitHub repositoryにつき1 project directory、1 Sandbox
 - 1 Sandbox内で1 bare Git repositoryと複数worktreeを共有
 
+MVPのhost環境とbundled Dockerfileに最初から含めるtoolは、オーナーが実務で使用する具体的な初期環境として選択する。`gh`、Homebrew、miseなどを利用することは、それらすべてをsbxm自身の直接依存とする意味ではない。利用者が案件のDockerfileを直接編集し、`sbxm rebuild`でSandboxへ反映することはMVPの正式なcustomize経路である。一方、この編集を抽象化して、利用者ごとのtool選択を設定、profile、plugin、optionなどで組み替える別の仕組みは設けない。
+
 Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで変更され得るため、「0.37.0以上なら無条件に動く」とは扱わない。各commandの実装時に、使用する外部command、structured output、代表的失敗を対象versionで確認し、parser fixtureとtestを同じ変更へ追加する。安全性に必要な出力を解釈できないversionではmutationを行わない。
 
 ### 4.2 対象外
@@ -78,6 +80,7 @@ Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで
 - repository由来の`mise trust`、`mise install`の自動実行
 - CPU、memory設定
 - port、exportの独自wrapper
+- Dockerfileの直接編集と`rebuild`を抽象化するpackage選択設定・profile・plugin機構
 
 ## 5. 公開CLI
 

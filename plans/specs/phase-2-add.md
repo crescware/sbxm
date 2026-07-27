@@ -163,14 +163,16 @@ git clone
 
 dirty状態は`add`の構築継続を妨げない。remote不一致、複数origin、壊れたrepositoryはexit code `1`。
 
+GitHubへのSSH認証とrepository accessは、owner、repository、利用者のSSH設定によって結果が変わるため、projectを持たない`status --global`ではgenericな疎通検査を行わない。本工程の対象remoteに対するcloneを正本の検査とし、失敗時は外部commandの診断規則に従ってGit/SSHのexit statusとredact済みstderrを表示する。
+
 ### 7.3 Dockerfile
 
 `<project-root>/.sbxm/Dockerfile`がない場合だけbundled templateから`0600`で作る。既存Dockerfileは利用者が管理・編集するfileとして内容を変更せず採用する。内容は元の手動手順を初期templateの正本とし、少なくとも次を満たす。
 
 - base imageはApple siliconを含む公式multi-platform image `docker.io/docker/sandbox-templates:shell-docker@sha256:39cf20eca861ec92747487af6197f6d916f774bdb98245d267dbd8dfd3debb05`へpinする。mutable tagだけを使用しない
 - base imageが提供するUID `1000`の非root `agent`、`/home/agent`、passwordless sudo、inner Docker Engineを使用する
-- sbxmが直接依存する`git`、`openssh-client`、`coreutils`、`ca-certificates`、`curl`、`wget`、`gh`、`jq`をDockerfileで導入する。base imageに含まれることだけを暗黙の依存根拠にしない
-- package installationを含む`docker build`の成功を依存導入の判定とし、Sandbox操作のたびに全commandの存在をprobeしない
+- MVPの固定tool setとして`git`、`openssh-client`、`coreutils`、`ca-certificates`、`curl`、`wget`、`gh`、`jq`をDockerfileで導入する。base imageに含まれることだけを導入済みの根拠にしない
+- package installationを含む`docker build`の成功を固定tool set導入の判定とし、Sandbox操作のたびに全commandの存在をprobeしない
 - `/home/agent/work`を`agent:agent`所有で作成
 - secretの実値を書かない
 - `GH_TOKEN`などへ実tokenを書かない。proxy-managed方式が対象`sbx` versionで必要な場合だけfixtureに基づくsentinelを設定
@@ -178,6 +180,8 @@ dirty状態は`add`の構築継続を妨げない。remote不一致、複数orig
 - interactive shellの開始位置を`/home/agent/work`にする
 - `WORKDIR /home/agent/work`
 - MVPではbuild context由来のfileを必要としないため、`COPY`と`ADD`を使用しない
+
+このtool setはオーナーの実務環境として選択したMVPの初期templateであり、列挙した全toolがsbxm自身の直接依存であることを意味しない。利用者が生成後のDockerfileを直接編集し、`sbxm rebuild`でpackage、installer、versionの変更をSandboxへ適用することはMVP要件に含む。別途、これらを設定やoptionで選択・合成する機構はMVP対象外とし、Dockerfileと`rebuild`を唯一のcustomize経路とする。
 
 `add`は採用したDockerfileのSHA-256をmetadataとimage labelへ適用済みhashとして保存する。利用者による手修正を許可し、構築完了後の保存済みhashとの不一致だけを理由にmetadataやDockerfileを不正とは扱わない。変更の適用は`rebuild`が担当する。
 
@@ -433,7 +437,7 @@ FILE  DESTINATION  RESULT
 
 - 新規案件をoptionなしで最後まで構築できる
 - host cloneはSSH、Sandbox cloneはHTTPS proxy credentialを使用する
-- bundled Dockerfileが固定済み`docker/sandbox-templates:shell-docker`をbaseとし、宣言した直接依存を導入できる
+- bundled Dockerfileが固定済み`docker/sandbox-templates:shell-docker`をbaseとし、MVPで固定したtool setを導入できる
 - workspaceは中立pathだけで、実案件pathとMac user homeをSandboxへ公開しない
 - Sandbox内に`SSH_AUTH_SOCK`がなく、`ssh-add -L`がhost keyを返さない
 - Docker socketを渡していない

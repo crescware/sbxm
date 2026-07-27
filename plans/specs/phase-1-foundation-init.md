@@ -312,13 +312,15 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 
 `-g`を`--global`の短縮形とする。`--global`とprojectの同時指定、またはどちらも指定しない場合はexit code `1`とする。
 
+検査対象は、sbxm自身がhost上で直接使用する設定、platform、command、serviceに限定する。利用者が実務で使用する可能性があっても、sbxmが直接使用しないpackage managerやtoolの有無は環境の正常性へ含めない。
+
 ### 14.2 検査順と項目
 
 取得できた項目は、後続検査失敗時にも表示する。
 
 1. global configとbase path
 2. `sw_vers`と`uname -m`によるmacOS 14以上、arm64
-3. `brew`、`docker`、`gh`、`sbx`の存在
+3. host上でsbxmが直接実行する`git`、`ssh`、`docker`、`sbx`の存在
 4. Docker Client/Server疎通
 5. Docker Sandboxes CLI versionとcompatibility manifest
 6. Docker Sandboxes login状態
@@ -338,9 +340,9 @@ ITEM                 STATUS
 Config               ready
 Base path            ready
 Platform             ready
-Homebrew             ready
+Git                  ready
+SSH                  ready
 Docker               ready
-GitHub CLI           ready
 Docker Sandboxes     ready
 Login                ready
 Network policy       ready
@@ -377,7 +379,7 @@ Session inspection   ready
 - TTY/non-TTY、Esc、Ctrl-C
 - command runnerのenvironment、timeout、stream
 - compatibility fixtureの全parser
-- global `status`の全検査、出力snapshot、partial result、remediation、複数error時の診断
+- global `status`の直接依存だけを対象とする全検査、出力snapshot、partial result、remediation、複数error時の診断
 - CLI parserと外部commandの非ゼロstatusを`1`へ写像し、原値を診断へ保持すること
 
 ## 16. 受入条件
