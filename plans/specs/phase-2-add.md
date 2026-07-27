@@ -45,7 +45,7 @@ MVPは既存の手動手順を次のように自動化・変更する。
 
 ## 4. Project単位の排他
 
-mutationの前に`<project-root>/.sbx/sbxm.lock`をexclusive lockする。
+既存projectではmutationの前に`<project-root>/.sbx/sbxm.lock`をexclusive lockする。新規projectではowner directory、project root、`.sbx`を作成または検証した直後にproject lockを取得し、以後のmutationへ進む。
 
 - lock待機は10秒
 - timeoutは対象projectを表示してexit code `5`
@@ -62,9 +62,10 @@ lock fileの存在自体は処理中を意味しない。OS file lockの取得�
 入力を検証し、衝突検査を完了した後、次を行う。
 
 1. owner directoryとproject root、`.sbx`を作る
-2. bundled DockerfileのSHA-256を求める
-3. 目標構成を含むmetadataをatomic writeする
-4. 以後の外部mutationへ進む
+2. project lockを取得する
+3. bundled DockerfileのSHA-256を求める
+4. 目標構成を含むmetadataをatomic writeする
+5. 以後の外部mutationへ進む
 
 `provisioning`には`mode`、`start_ref`、`requested_worktrees`、`dockerfile_sha256`を保存する。attached modeの`start_ref`は、remote default branchを解決するまで空を許可し、解決直後にatomic updateする。
 
