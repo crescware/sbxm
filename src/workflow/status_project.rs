@@ -104,7 +104,6 @@ pub struct WorktreeRow {
 #[derive(Debug, Clone)]
 pub struct ProjectStatus {
     pub project: String,
-    pub sandbox: String,
     pub items: Vec<Item>,
     pub worktrees: Vec<WorktreeRow>,
     pub diagnostics: Vec<Diagnostic>,
@@ -145,7 +144,6 @@ pub fn diagnose(
 
     let mut status = ProjectStatus {
         project: metadata.display_id(),
-        sandbox: name.as_str().to_string(),
         items: Vec::new(),
         worktrees: Vec::new(),
         diagnostics: Vec::new(),

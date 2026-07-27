@@ -61,19 +61,12 @@ pub struct ManagedProject {
     pub metadata: ProjectMetadata,
     pub sandbox: SandboxName,
     pub state: ProjectState,
-    /// 対応するSandbox。`not-created`では`None`。
-    pub entry: Option<SandboxEntry>,
 }
 
 impl ManagedProject {
     /// 表示に使う`<owner>/<repository>`。
     pub fn display_id(&self) -> String {
         self.metadata.display_id()
-    }
-
-    /// この案件が期待するTemplate。metadataの適用済み世代から導出する。
-    pub fn expected_template(&self) -> String {
-        image_name(&self.sandbox, &self.metadata.provisioning.dockerfile_sha256)
     }
 }
 
@@ -131,7 +124,6 @@ pub fn take(
             metadata: project.metadata,
             sandbox: name,
             state,
-            entry: entry.cloned(),
         });
     }
 
@@ -339,7 +331,6 @@ pub mod tests {
                 metadata,
                 sandbox: name,
                 state: ProjectState::NotCreated,
-                entry: None,
             }
         }
 
@@ -351,7 +342,10 @@ pub mod tests {
                 r#"{{"name":"{}","state":"{state}","workspace":"{}","template":"{}","active_sessions":0}}"#,
                 project.sandbox,
                 workspace.display(),
-                project.expected_template()
+                image_name(
+                    &project.sandbox,
+                    &project.metadata.provisioning.dockerfile_sha256
+                )
             )
         }
     }
@@ -395,7 +389,6 @@ pub mod tests {
         let inventory = take(&fixture.config, &host, &fixture.workspace_root).expect("inventory");
         assert_eq!(inventory.projects[0].state, ProjectState::NotCreated);
         assert_eq!(inventory.projects[0].state.as_str(), "not-created");
-        assert!(inventory.projects[0].entry.is_none());
     }
 
     #[test]
@@ -427,7 +420,10 @@ pub mod tests {
         let host = FakeSbx::listing(&format!(
             r#"[{{"name":"{}","state":"running","workspace":"/tmp/elsewhere","template":"{}"}}]"#,
             project.sandbox,
-            project.expected_template()
+            image_name(
+                &project.sandbox,
+                &project.metadata.provisioning.dockerfile_sha256
+            )
         ));
 
         let error = take(&fixture.config, &host, &fixture.workspace_root)

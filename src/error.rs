@@ -106,6 +106,8 @@ pub enum ErrorId {
     SshAgentExposed,
     SbxLoginMissing,
     SbxLoginUnobservable,
+    RemoteSshUnconfigured,
+    RemoteSshUnobservable,
 
     // --- 案件のhost path ---
     ProjectPathSymlink,
@@ -223,6 +225,8 @@ impl ErrorId {
             ErrorId::SshAgentExposed => "ssh-agent-exposed",
             ErrorId::SbxLoginMissing => "sbx-login-missing",
             ErrorId::SbxLoginUnobservable => "sbx-login-unobservable",
+            ErrorId::RemoteSshUnconfigured => "remote-ssh-unconfigured",
+            ErrorId::RemoteSshUnobservable => "remote-ssh-unobservable",
 
             ErrorId::ProjectPathSymlink => "project-path-symlink",
             ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
@@ -564,6 +568,8 @@ mod tests {
             ErrorId::SshAgentExposed,
             ErrorId::SbxLoginMissing,
             ErrorId::SbxLoginUnobservable,
+            ErrorId::RemoteSshUnconfigured,
+            ErrorId::RemoteSshUnobservable,
             ErrorId::ProjectPathSymlink,
             ErrorId::ProjectPathUnexpectedType,
             ErrorId::ProjectPathUnreadable,
