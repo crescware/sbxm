@@ -231,8 +231,8 @@ pub fn ensure_directory(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() => Ok(()),
         Ok(metadata) => Err(unexpected_type(path, "directory", &metadata)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::create_dir_all(path).map_err(|error| {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir_all(path)
+            .map_err(|error| {
                 Error::new(
                     ErrorId::AtomicWriteFailed,
                     msg!(
@@ -241,8 +241,7 @@ pub fn ensure_directory(path: &Path) -> Result<()> {
                         detail = error
                     ),
                 )
-            })
-        }
+            }),
         Err(error) => fail(
             ErrorId::ProjectPathUnreadable,
             msg!(
@@ -946,8 +945,12 @@ mod tests {
         let target = dir.path().join("project.toml");
         atomic_create(&target, "version = 1\n", PRIVATE_FILE_MODE).expect("create");
 
-        atomic_replace(&target, "version = 1\nstart_ref = \"main\"\n", PRIVATE_FILE_MODE)
-            .expect("replace");
+        atomic_replace(
+            &target,
+            "version = 1\nstart_ref = \"main\"\n",
+            PRIVATE_FILE_MODE,
+        )
+        .expect("replace");
 
         assert_eq!(
             fs::read_to_string(&target).unwrap(),
@@ -982,7 +985,10 @@ mod tests {
         fs::set_permissions(&shared, fs::Permissions::from_mode(0o666)).unwrap();
         let error = atomic_replace(&shared, "replaced", PRIVATE_FILE_MODE)
             .expect_err("a world-writable target is refused");
-        assert_eq!(error.first_id(), Some(ErrorId::ProjectFilePermissionTooOpen));
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ProjectFilePermissionTooOpen)
+        );
         assert_eq!(fs::read_to_string(&shared).unwrap(), "version = 1\n");
     }
 

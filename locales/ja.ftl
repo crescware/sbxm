@@ -74,6 +74,16 @@ error-file-declaration-invalid-source = 宣言file { $index } のsource { $sourc
 error-file-declaration-invalid-destination = 宣言file { $index } のdestination { $destination } が不正です: { $detail }
 warning-config-unknown-key = { $path } の未知のkey { $key } を無視しました。
 
+error-metadata-unreadable = { $path } の案件metadataを読み取れません: { $detail }
+error-metadata-invalid-syntax = { $path } の案件metadataがTOMLとして不正です: { $detail }
+error-metadata-unknown-version = { $path } の案件metadataはversion { $version } ですが、このbuildが対応するのは { $supported } です。
+error-metadata-missing-field = { $path } の案件metadataに必須項目 { $field } がありません。
+error-metadata-invalid-value = { $path } の項目 { $field } の値が不正です: { $detail }
+error-metadata-path-mismatch = { $path } のmetadataは { $canonical_id } を宣言しており、本来の場所は { $expected } です。
+error-metadata-duplicate-project = { $canonical_id } を複数の案件directoryが宣言しています: { $paths }
+error-sandbox-name-collision = Sandbox名 { $sandbox } が複数の案件から導出されています: { $projects }
+error-invalid-branch-name = { $value } はbranch名として使用できません: { $detail }
+
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
 

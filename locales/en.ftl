@@ -74,6 +74,16 @@ error-file-declaration-invalid-source = Declared file { $index } has an invalid 
 error-file-declaration-invalid-destination = Declared file { $index } has an invalid destination { $destination }: { $detail }
 warning-config-unknown-key = Unknown key { $key } in { $path } was ignored.
 
+error-metadata-unreadable = The project metadata at { $path } could not be read: { $detail }
+error-metadata-invalid-syntax = The project metadata at { $path } is not valid TOML: { $detail }
+error-metadata-unknown-version = The project metadata at { $path } declares version { $version }, but this build supports { $supported }.
+error-metadata-missing-field = The project metadata at { $path } is missing the required field { $field }.
+error-metadata-invalid-value = Field { $field } in { $path } is not valid: { $detail }
+error-metadata-path-mismatch = The metadata at { $path } declares { $canonical_id }, which belongs at { $expected }.
+error-metadata-duplicate-project = { $canonical_id } is declared by more than one project directory: { $paths }
+error-sandbox-name-collision = Sandbox name { $sandbox } is derived from more than one project: { $projects }
+error-invalid-branch-name = { $value } is not a usable branch name: { $detail }
+
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 

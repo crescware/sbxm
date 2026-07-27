@@ -364,9 +364,11 @@ mod tests {
             "truncation must not leave a dangling separator: {name}"
         );
         // 切り詰めても案件ごとのhashは失われない。
-        assert!(name.ends_with(&crate::hash::sha256_hex(
-            format!("{owner}/{repository}").as_bytes()
-        )[..12]));
+        assert!(
+            name.ends_with(
+                &crate::hash::sha256_hex(format!("{owner}/{repository}").as_bytes())[..12]
+            )
+        );
     }
 
     #[test]
