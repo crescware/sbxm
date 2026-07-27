@@ -1,19 +1,4 @@
-# 日本語FTL resource。
-#
-# message IDとplaceholder集合の正本はen.ftlであり、この file は同じID集合を
-# 同じplaceholderで持つ。testで完全一致を検証する。
-#
-# enum、path、command、exit status、外部stdout/stderrは翻訳しない。
-# 診断labelは「日本語 (English)」の形式とする。
-
-## locale
-
-# この言語の名称を「自称表記 / 正本localeの語」で書く。読めない言語が選択肢に並んでも
-# 識別できるようにする。各resourceは自分の名称だけを持つため、言語を増やしても
-# 既存のresourceを編集しない。
 locale-name = 日本語 / Japanese
-
-## CLI全体
 
 cli-about = 案件ごとのDocker Sandboxを構築、接続、診断、破棄します。
 cli-heading-usage = 使い方 (Usage):
@@ -23,8 +8,6 @@ cli-heading-arguments = 引数 (Arguments):
 cli-lang-help = この実行の表示言語 ({ $supported })
 cli-help-help = helpを表示する
 cli-version-help = versionを表示する
-
-## Subcommand
 
 cli-init-about = sbxmのglobal設定を作成します
 cli-init-base-path-help = 案件directoryを置くdirectoryのabsolute path
@@ -58,8 +41,6 @@ cli-destroy-about = 対象案件のSandboxとsbxmの管理情報を破棄しま�
 cli-destroy-project-help = 対象案件をowner/repository形式で指定します
 cli-destroy-force-help = データ保護検査とactive session検査を省略して削除します
 
-## 引数と使い方のerror
-
 error-invalid-arguments = 引数を解釈できませんでした。
 error-unknown-argument = 未知の引数です: { $argument }
 error-invalid-value = { $argument } に値 { $value } は指定できません。
@@ -77,12 +58,8 @@ error-not-implemented = { $command } はこのbuildでは未実装です。
 
 usage-hint = { $usage }
 
-## 案件の識別子
-
 error-invalid-project-id = { $value } はowner/repository形式として正しくありません。
 error-reserved-repository-name = { $value } は予約語のためrepository名に使用できません。
-
-## Global設定
 
 error-config-missing = global設定が { $path } に見つかりません。
 error-config-unreadable = { $path } のglobal設定を読み取れません: { $detail }
@@ -97,15 +74,11 @@ error-file-declaration-invalid-source = 宣言file { $index } のsource { $sourc
 error-file-declaration-invalid-destination = 宣言file { $index } のdestination { $destination } が不正です: { $detail }
 warning-config-unknown-key = { $path } の未知のkey { $key } を無視しました。
 
-## 永続化とlock
-
 error-atomic-write-failed = { $path } への書き込みに失敗しました: { $detail }
 error-temp-file-left-behind = 中断した実行の一時file { $path } が残っています。
 error-target-appeared-concurrently = 作成中に { $path } が出現したため、何も上書きしませんでした。
 error-lock-timeout = ほかのsbxmの実行が { $path } のlockを保持しています。{ $seconds } 秒待機しました。
 error-lock-unavailable = { $path } のlockを取得できません: { $detail }
-
-## 案件metadata
 
 error-metadata-unreadable = { $path } の案件metadataを読み取れません: { $detail }
 error-metadata-invalid-syntax = { $path } の案件metadataがTOMLとして不正です: { $detail }
@@ -116,8 +89,6 @@ error-metadata-duplicate-canonical-id = 複数の案件が { $canonical_id } を
 error-metadata-path-mismatch = { $path } の案件metadataは { $expected } に置かれるべきものです。
 error-sandbox-name-collision = Sandbox名 { $sandbox_name } が { $canonical_id } と { $other } の両方から導出されます。
 
-## 外部command
-
 error-external-command-not-found = command { $program } がPATH上に見つかりません。
 error-external-command-spawn-failed = command { $program } を起動できません: { $detail }
 error-external-command-failed = command { $program } が { $exit_status } で失敗しました。
@@ -126,16 +97,12 @@ error-external-output-unparseable = { $program } の出力を解釈できませ�
 warning-external-output-lossy = { $program } の { $stream } 出力がUTF-8として不正なため、置換文字を含む形へ変換しました。
 external-output-heading = { $program } の出力:
 
-## Docker Sandboxes互換性
-
 error-sbx-version-unparseable = { $observed } からDocker Sandboxes CLIのversionを判定できません。
 error-sbx-version-below-minimum = Docker Sandboxes CLI { $observed } は要件の { $minimum } より古いversionです。
 error-sbx-version-unsupported = Docker Sandboxes CLI { $observed } は検証済みversion { $validated } とpatch以外の部分が異なります。
 error-sbx-version-patch-drift = Docker Sandboxes CLI { $observed } は検証済みversion { $validated } とpatchが異なるため、状態を変更する操作を拒否しました。
 warning-sbx-version-patch-drift = Docker Sandboxes CLI { $observed } は検証済みversion { $validated } とpatchが異なります。read-onlyの検査は続行します。
 error-sbx-fixtures-not-collected = このbuildにはDocker Sandboxes CLIの出力記録がないため、version { $observed } の出力を解釈できません。
-
-## host環境の診断
 
 error-platform-unsupported = このbuildが対応するのは { $expected } です。観測値: { $observed }
 error-platform-unobservable = platformを判定できません: { $detail }
@@ -147,8 +114,6 @@ error-network-policy-unobservable = network policyを読み取れません: { $d
 error-remote-ssh-unavailable = Remote SSHの対応状況を確認できません: { $detail }
 error-daemon-unobservable = Docker Sandboxes daemonの状態を読み取れません: { $detail }
 error-session-inspection-unsupported = Docker Sandboxes CLI { $version } には、active sessionの不在を証明できるstructured outputがありません。
-
-## 対処方法
 
 remediation-run-help = { $command } を実行すると指定できる引数を確認できます。
 remediation-run-init = sbxm init を実行してglobal設定を作成してください。
@@ -162,8 +127,6 @@ remediation-network-policy = 続行する前にDocker Sandboxesのnetwork policy
 remediation-collect-fixtures = このversionのDocker Sandboxes CLI出力を { $path } へ記録し、対応するparser testを追加してください。
 remediation-wait-for-lock = ほかのsbxmの実行が終わるのを待ってから、もう一度実行してください。
 remediation-end-sessions = 表示したsessionを終了してから、もう一度実行してください。
-
-## Security
 
 security-config-permission-title = global設定をほかのaccountが読める状態です
 security-config-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。この機械上のほかのaccountが読み書きできる設定fileをsbxmは使用しません。
@@ -189,8 +152,6 @@ security-metadata-symlink-title = 案件metadataのpathがsymbolic linkです
 security-metadata-symlink-description = { $path } はsymbolic linkです。link先がbase pathの外にある可能性があるため、sbxmは案件探索でlinkを追跡しません。
 security-metadata-symlink-remediation = { $path } をbase path配下の通常fileまたはdirectoryへ置き換えてください。
 
-## init
-
 init-already-initialized = sbxmは初期化済みです。設定fileは { $path } です。
 init-created = global設定を { $path } に作成しました。
 init-next-step = sbxm status --global を実行するとhost環境を診断できます。
@@ -203,8 +164,6 @@ error-init-requires-tty = 対話modeの初期化には、標準入力と標準�
 error-git-identity-invalid = Gitの { $field } の値は使用できません: { $detail }
 detail-value-empty = 値が空です
 detail-value-has-newline = 値に改行が含まれています
-
-## status --global
 
 status-global-section = GLOBAL
 status-column-item = 項目 (ITEM)

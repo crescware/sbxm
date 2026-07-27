@@ -1,19 +1,4 @@
-# English FTL resource.
-#
-# This file is the source of truth for message IDs and placeholder sets.
-# Every ID defined here must also exist in ja.ftl with the same placeholders.
-#
-# Enum values, paths, commands, exit statuses and external stdout/stderr are
-# never translated and therefore never appear as literal text in this file.
-
-## Locale
-
-# The name of this language, written as "endonym / source-locale term" so that a
-# reader who cannot read the script can still identify it. The two coincide here.
-# Every resource names only itself, so adding a language never edits the others.
 locale-name = English
-
-## Top-level CLI
 
 cli-about = Manage Docker Sandboxes per project: set up, connect, inspect and tear down.
 cli-heading-usage = Usage:
@@ -23,8 +8,6 @@ cli-heading-arguments = Arguments:
 cli-lang-help = Display language for this run ({ $supported })
 cli-help-help = Print help
 cli-version-help = Print version
-
-## Subcommands
 
 cli-init-about = Create the global configuration for sbxm
 cli-init-base-path-help = Absolute path of the directory that holds project directories
@@ -58,8 +41,6 @@ cli-destroy-about = Delete the sandbox and drop sbxm management data for a proje
 cli-destroy-project-help = Target project as owner/repository
 cli-destroy-force-help = Skip data-protection and active-session checks, then delete
 
-## Argument and usage errors
-
 error-invalid-arguments = The arguments could not be interpreted.
 error-unknown-argument = Unknown argument: { $argument }
 error-invalid-value = Value { $value } is not valid for { $argument }.
@@ -77,12 +58,8 @@ error-not-implemented = { $command } is not implemented in this build.
 
 usage-hint = { $usage }
 
-## Project identifiers
-
 error-invalid-project-id = { $value } is not a valid owner/repository identifier.
 error-reserved-repository-name = { $value } is reserved and cannot be used as a repository name.
-
-## Global configuration
 
 error-config-missing = No global configuration was found at { $path }.
 error-config-unreadable = The global configuration at { $path } could not be read: { $detail }
@@ -97,15 +74,11 @@ error-file-declaration-invalid-source = Declared file { $index } has an invalid 
 error-file-declaration-invalid-destination = Declared file { $index } has an invalid destination { $destination }: { $detail }
 warning-config-unknown-key = Unknown key { $key } in { $path } was ignored.
 
-## Durable writes and locks
-
 error-atomic-write-failed = Writing { $path } failed: { $detail }
 error-temp-file-left-behind = An interrupted run left the temporary file { $path } behind.
 error-target-appeared-concurrently = { $path } appeared while it was being created, so nothing was overwritten.
 error-lock-timeout = Another sbxm run is holding the lock at { $path }. Waited { $seconds } seconds.
 error-lock-unavailable = The lock at { $path } could not be acquired: { $detail }
-
-## Project metadata
 
 error-metadata-unreadable = Project metadata at { $path } could not be read: { $detail }
 error-metadata-invalid-syntax = Project metadata at { $path } is not valid TOML: { $detail }
@@ -116,8 +89,6 @@ error-metadata-duplicate-canonical-id = More than one project declares { $canoni
 error-metadata-path-mismatch = Project metadata at { $path } belongs at { $expected }.
 error-sandbox-name-collision = Sandbox name { $sandbox_name } is derived from { $canonical_id } and from { $other }.
 
-## External commands
-
 error-external-command-not-found = The command { $program } was not found on PATH.
 error-external-command-spawn-failed = The command { $program } could not be started: { $detail }
 error-external-command-failed = The command { $program } failed with { $exit_status }.
@@ -126,16 +97,12 @@ error-external-output-unparseable = The output of { $program } could not be inte
 warning-external-output-lossy = The { $stream } output of { $program } was not valid UTF-8 and was converted with replacement characters.
 external-output-heading = Output of { $program }:
 
-## Docker Sandboxes compatibility
-
 error-sbx-version-unparseable = The Docker Sandboxes CLI version could not be determined from { $observed }.
 error-sbx-version-below-minimum = Docker Sandboxes CLI { $observed } is older than the required { $minimum }.
 error-sbx-version-unsupported = Docker Sandboxes CLI { $observed } differs from the validated versions { $validated } in more than the patch component.
 error-sbx-version-patch-drift = Docker Sandboxes CLI { $observed } differs in its patch component from the validated versions { $validated }, so changing state is refused.
 warning-sbx-version-patch-drift = Docker Sandboxes CLI { $observed } differs in its patch component from the validated versions { $validated }. Read-only checks continue.
 error-sbx-fixtures-not-collected = No Docker Sandboxes CLI output has been recorded for this build, so version { $observed } cannot be interpreted.
-
-## Host environment diagnosis
 
 error-platform-unsupported = This build supports { $expected }. Observed: { $observed }
 error-platform-unobservable = The platform could not be determined: { $detail }
@@ -147,8 +114,6 @@ error-network-policy-unobservable = The network policy could not be read: { $det
 error-remote-ssh-unavailable = Remote SSH support could not be confirmed: { $detail }
 error-daemon-unobservable = The Docker Sandboxes daemon state could not be read: { $detail }
 error-session-inspection-unsupported = Docker Sandboxes CLI { $version } does not expose a structured way to prove that no session is active.
-
-## Remediation
 
 remediation-run-help = Run { $command } to see the accepted arguments.
 remediation-run-init = Run sbxm init to create the global configuration.
@@ -162,8 +127,6 @@ remediation-network-policy = Set the Docker Sandboxes network policy to { $expec
 remediation-collect-fixtures = Record the Docker Sandboxes CLI output for this version under { $path } and add the matching parser tests.
 remediation-wait-for-lock = Wait for the other sbxm run to finish, then run the command again.
 remediation-end-sessions = End the listed sessions, then run the command again.
-
-## Security
 
 security-config-permission-title = The global configuration is readable by other accounts
 security-config-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a configuration that other accounts on this machine can read or change.
@@ -189,8 +152,6 @@ security-metadata-symlink-title = A project metadata path is a symbolic link
 security-metadata-symlink-description = { $path } is a symbolic link. sbxm does not follow links while discovering projects, because the target could be outside the base path.
 security-metadata-symlink-remediation = Replace { $path } with a regular file or directory inside the base path.
 
-## init
-
 init-already-initialized = sbxm is already initialized. The configuration is at { $path }.
 init-created = The global configuration was created at { $path }.
 init-next-step = Run sbxm status --global to diagnose the host environment.
@@ -203,8 +164,6 @@ error-init-requires-tty = Interactive initialization needs both standard input a
 error-git-identity-invalid = The Git { $field } value is not usable: { $detail }
 detail-value-empty = the value is empty
 detail-value-has-newline = the value contains a line break
-
-## status --global
 
 status-global-section = GLOBAL
 status-column-item = ITEM

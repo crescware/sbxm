@@ -174,6 +174,21 @@ fn security_messages_provide_a_title_a_description_and_a_remediation() {
 }
 
 #[test]
+fn resources_carry_content_only() {
+    // 規約は`locales/README.md`が1箇所で持つ。resourceへコメントや見出しを書くと、
+    // 言語の数だけ同じ規約を維持することになる。
+    for locale in LOCALES {
+        for (index, line) in source(locale).lines().enumerate() {
+            assert!(
+                !line.starts_with('#'),
+                "{locale}.ftl:{} is a comment; conventions belong in locales/README.md: {line}",
+                index + 1
+            );
+        }
+    }
+}
+
+#[test]
 fn message_ids_are_kebab_case() {
     for locale in LOCALES {
         for id in placeholders(locale).keys() {
