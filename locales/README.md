@@ -96,11 +96,10 @@ resourceは次の順で並べる。見出しを書かない代わりに、この
 5. 案件の識別子
 6. Global設定
 7. 永続化とlock
-8. 案件metadata
-9. 外部command
-10. Docker Sandboxes互換性
-11. host環境の診断
-12. 対処方法
-13. security
-14. `init`
-15. `status --global`
+8. 外部command
+9. Docker Sandboxes
+10. host環境の診断
+11. 対処方法
+12. security
+13. `init`
+14. `status --global`

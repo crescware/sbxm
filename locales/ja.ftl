@@ -80,15 +80,6 @@ error-target-appeared-concurrently = 作成中に { $path } が出現したた�
 error-lock-timeout = ほかのsbxmの実行が { $path } のlockを保持しています。{ $seconds } 秒待機しました。
 error-lock-unavailable = { $path } のlockを取得できません: { $detail }
 
-error-metadata-unreadable = { $path } の案件metadataを読み取れません: { $detail }
-error-metadata-invalid-syntax = { $path } の案件metadataがTOMLとして不正です: { $detail }
-error-metadata-unknown-version = { $path } の案件metadataはversion { $version } ですが、このbuildが対応するのは { $supported } です。
-error-metadata-missing-field = { $path } の案件metadataに必須項目 { $field } がありません。
-error-metadata-canonical-id-mismatch = { $path } の案件metadataは { $observed } と宣言していますが、各項目からは { $expected } が導出されます。
-error-metadata-duplicate-canonical-id = 複数の案件が { $canonical_id } を宣言しています: { $paths }
-error-metadata-path-mismatch = { $path } の案件metadataは { $expected } に置かれるべきものです。
-error-sandbox-name-collision = Sandbox名 { $sandbox_name } が { $canonical_id } と { $other } の両方から導出されます。
-
 error-external-command-not-found = command { $program } がPATH上に見つかりません。
 error-external-command-spawn-failed = command { $program } を起動できません: { $detail }
 error-external-command-failed = command { $program } が { $exit_status } で失敗しました。
@@ -99,58 +90,35 @@ external-output-heading = { $program } の出力:
 
 error-sbx-version-unparseable = { $observed } からDocker Sandboxes CLIのversionを判定できません。
 error-sbx-version-below-minimum = Docker Sandboxes CLI { $observed } は要件の { $minimum } より古いversionです。
-error-sbx-version-unsupported = Docker Sandboxes CLI { $observed } は検証済みversion { $validated } とpatch以外の部分が異なります。
-error-sbx-version-patch-drift = Docker Sandboxes CLI { $observed } は検証済みversion { $validated } とpatchが異なるため、状態を変更する操作を拒否しました。
-warning-sbx-version-patch-drift = Docker Sandboxes CLI { $observed } は検証済みversion { $validated } とpatchが異なります。read-onlyの検査は続行します。
-error-sbx-fixtures-not-collected = このbuildにはDocker Sandboxes CLIの出力記録がないため、version { $observed } の出力を解釈できません。
-
 error-platform-unsupported = このbuildが対応するのは { $expected } です。観測値: { $observed }
 error-platform-unobservable = platformを判定できません: { $detail }
 error-host-command-missing = command { $command } がPATH上に見つかりません。
 error-docker-unreachable = Docker daemonが応答しません: { $detail }
-error-sbx-not-logged-in = Docker Sandboxesにloginしていません。
 error-network-policy-mismatch = network policyは { $observed } ですが、このbuildが検証済みなのは { $expected } だけです。
 error-network-policy-unobservable = network policyを読み取れません: { $detail }
-error-remote-ssh-unavailable = Remote SSHの対応状況を確認できません: { $detail }
 error-daemon-unobservable = Docker Sandboxes daemonの状態を読み取れません: { $detail }
-error-session-inspection-unsupported = Docker Sandboxes CLI { $version } には、active sessionの不在を証明できるstructured outputがありません。
-
 remediation-run-help = { $command } を実行すると指定できる引数を確認できます。
 remediation-run-init = sbxm init を実行してglobal設定を作成してください。
-remediation-run-status-global = sbxm status --global を実行してhost環境を診断してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。
 remediation-fix-config = { $path } を編集してからもう一度実行してください。
 remediation-install-command = { $command } を導入し、PATH上に置いてください。
 remediation-start-docker = Docker Desktopを起動し、engineがrunningになるまで待ってください。
-remediation-sbx-login = sbx login を実行してsign-inを完了してください。
 remediation-network-policy = 続行する前にDocker Sandboxesのnetwork policyを { $expected } に設定してください。
-remediation-collect-fixtures = このversionのDocker Sandboxes CLI出力を { $path } へ記録し、対応するparser testを追加してください。
 remediation-wait-for-lock = ほかのsbxmの実行が終わるのを待ってから、もう一度実行してください。
-remediation-end-sessions = 表示したsessionを終了してから、もう一度実行してください。
-
-security-config-permission-title = global設定をほかのaccountが読める状態です
 security-config-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。この機械上のほかのaccountが読み書きできる設定fileをsbxmは使用しません。
 security-config-permission-remediation = chmod { $expected } { $path } を実行し、fileの所有者が自分であることを確認してください。
 
-security-config-symlink-title = global設定のpathがsymbolic linkです
 security-config-symlink-description = { $path } はsymbolic linkです。追跡するとsbxmの設定directory外のfileを読み書きする可能性があります。
 security-config-symlink-remediation = { $path } を自分が所有する通常fileへ置き換えるか、実体の設定fileをこのpathへ戻してください。
 
-security-config-dir-permission-title = sbxmの設定directoryをほかのaccountが操作できる状態です
 security-config-dir-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。そこへ置くlockと設定を観測または置換される可能性があります。
 security-config-dir-permission-remediation = chmod { $expected } { $path } を実行し、directoryの所有者が自分であることを確認してください。
 
-security-config-dir-symlink-title = sbxmの設定directoryがsymbolic linkです
 security-config-dir-symlink-description = { $path } はsymbolic linkです。lockと設定が意図しないdirectoryへ作られます。
 security-config-dir-symlink-remediation = { $path } を自分が所有するdirectoryへ置き換えてください。
 
-security-base-path-escape-title = base pathが指定したdirectoryの外を指しています
 security-base-path-escape-description = { $path } はsymbolic linkの解決後に { $resolved } となります。案件が指定したdirectoryの外に作られます。
 security-base-path-escape-remediation = 解決後も意図したdirectory配下に収まるbase pathを指定してください。
-
-security-metadata-symlink-title = 案件metadataのpathがsymbolic linkです
-security-metadata-symlink-description = { $path } はsymbolic linkです。link先がbase pathの外にある可能性があるため、sbxmは案件探索でlinkを追跡しません。
-security-metadata-symlink-remediation = { $path } をbase path配下の通常fileまたはdirectoryへ置き換えてください。
 
 init-already-initialized = sbxmは初期化済みです。設定fileは { $path } です。
 init-created = global設定を { $path } に作成しました。
@@ -175,12 +143,8 @@ status-item-git = Git
 status-item-ssh = SSH
 status-item-docker = Docker
 status-item-docker-sandboxes = Docker Sandboxes
-status-item-login = login (Login)
 status-item-network-policy = network policy (Network policy)
-status-item-remote-ssh = Remote SSH
 status-item-daemon = daemon (Daemon)
-status-item-session-inspection = session検査 (Session inspection)
-
 legend-heading = 状態値の凡例
 legend-ready = 期待どおり利用できます
 legend-missing = 存在しません

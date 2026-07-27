@@ -3,8 +3,6 @@
 //! 失敗理由はexit codeで分類せず、翻訳しない安定した英語error ID、選択言語による説明、
 //! 対象、観測値、対処方法、必要な場合はredact済みの外部stderrで示す。
 
-use std::path::PathBuf;
-
 /// 公開契約となるexit code。
 ///
 /// CLI parserを含む内部libraryの既定exit codeを公開契約へ透過しない。
@@ -79,16 +77,6 @@ pub enum ErrorId {
     LockTimeout,
     LockUnavailable,
 
-    // --- Project metadata ---
-    MetadataUnreadable,
-    MetadataInvalidSyntax,
-    MetadataUnknownVersion,
-    MetadataMissingField,
-    MetadataCanonicalIdMismatch,
-    MetadataDuplicateCanonicalId,
-    MetadataPathMismatch,
-    SandboxNameCollision,
-
     // --- 外部command ---
     ExternalCommandNotFound,
     ExternalCommandSpawnFailed,
@@ -99,21 +87,15 @@ pub enum ErrorId {
     // --- Docker Sandboxes互換性 ---
     SbxVersionUnparseable,
     SbxVersionBelowMinimum,
-    SbxVersionUnsupported,
-    SbxVersionPatchDrift,
-    SbxFixturesNotCollected,
 
     // --- Host環境診断 ---
     PlatformUnsupported,
     PlatformUnobservable,
     HostCommandMissing,
     DockerUnreachable,
-    SbxNotLoggedIn,
     NetworkPolicyMismatch,
     NetworkPolicyUnobservable,
-    RemoteSshUnavailable,
     DaemonUnobservable,
-    SessionInspectionUnsupported,
 
     // --- init ---
     InitRequiresTty,
@@ -168,15 +150,6 @@ impl ErrorId {
             ErrorId::LockTimeout => "lock-timeout",
             ErrorId::LockUnavailable => "lock-unavailable",
 
-            ErrorId::MetadataUnreadable => "metadata-unreadable",
-            ErrorId::MetadataInvalidSyntax => "metadata-invalid-syntax",
-            ErrorId::MetadataUnknownVersion => "metadata-unknown-version",
-            ErrorId::MetadataMissingField => "metadata-missing-field",
-            ErrorId::MetadataCanonicalIdMismatch => "metadata-canonical-id-mismatch",
-            ErrorId::MetadataDuplicateCanonicalId => "metadata-duplicate-canonical-id",
-            ErrorId::MetadataPathMismatch => "metadata-path-mismatch",
-            ErrorId::SandboxNameCollision => "sandbox-name-collision",
-
             ErrorId::ExternalCommandNotFound => "external-command-not-found",
             ErrorId::ExternalCommandSpawnFailed => "external-command-spawn-failed",
             ErrorId::ExternalCommandFailed => "external-command-failed",
@@ -185,20 +158,14 @@ impl ErrorId {
 
             ErrorId::SbxVersionUnparseable => "sbx-version-unparseable",
             ErrorId::SbxVersionBelowMinimum => "sbx-version-below-minimum",
-            ErrorId::SbxVersionUnsupported => "sbx-version-unsupported",
-            ErrorId::SbxVersionPatchDrift => "sbx-version-patch-drift",
-            ErrorId::SbxFixturesNotCollected => "sbx-fixtures-not-collected",
 
             ErrorId::PlatformUnsupported => "platform-unsupported",
             ErrorId::PlatformUnobservable => "platform-unobservable",
             ErrorId::HostCommandMissing => "host-command-missing",
             ErrorId::DockerUnreachable => "docker-unreachable",
-            ErrorId::SbxNotLoggedIn => "sbx-not-logged-in",
             ErrorId::NetworkPolicyMismatch => "network-policy-mismatch",
             ErrorId::NetworkPolicyUnobservable => "network-policy-unobservable",
-            ErrorId::RemoteSshUnavailable => "remote-ssh-unavailable",
             ErrorId::DaemonUnobservable => "daemon-unobservable",
-            ErrorId::SessionInspectionUnsupported => "session-inspection-unsupported",
 
             ErrorId::InitRequiresTty => "init-requires-tty",
             ErrorId::GitIdentityInvalid => "git-identity-invalid",
@@ -263,7 +230,6 @@ pub struct ExternalFailure {
     pub program: String,
     /// secret値を含まないことが保証されたargumentだけを保持する。
     pub safe_args: Vec<String>,
-    pub cwd: Option<PathBuf>,
     /// 外部commandのexit statusを原値のまま示す文字列。
     pub exit_status: String,
     pub stderr: Vec<u8>,
@@ -273,6 +239,7 @@ pub struct ExternalFailure {
 
 impl ExternalFailure {
     /// 表示用のstderr。原文のbyte列をlossyに変換するが、変換の有無は別途診断する。
+    #[cfg(test)]
     pub fn stderr_text(&self) -> String {
         String::from_utf8_lossy(&self.stderr).into_owned()
     }
@@ -327,6 +294,7 @@ impl Error {
         Error::Diagnostics(vec![diagnostic])
     }
 
+    #[cfg(test)]
     pub fn many(diagnostics: Vec<Diagnostic>) -> Self {
         Error::Diagnostics(diagnostics)
     }
@@ -346,10 +314,12 @@ impl Error {
     }
 
     /// 最初の診断のerror ID。testと呼び出し側の分岐に使う。
+    #[cfg(test)]
     pub fn first_id(&self) -> Option<ErrorId> {
         self.diagnostics().first().map(|d| d.id)
     }
 
+    #[cfg(test)]
     pub fn contains(&self, id: ErrorId) -> bool {
         self.diagnostics().iter().any(|d| d.id == id)
     }
@@ -423,7 +393,6 @@ mod tests {
         let failure = ExternalFailure {
             program: "sbx".into(),
             safe_args: vec!["ls".into()],
-            cwd: None,
             exit_status: "exit status: 2".into(),
             stderr: b"boom\n".to_vec(),
             stderr_lossy: false,
@@ -471,14 +440,6 @@ mod tests {
             ErrorId::TargetAppearedConcurrently,
             ErrorId::LockTimeout,
             ErrorId::LockUnavailable,
-            ErrorId::MetadataUnreadable,
-            ErrorId::MetadataInvalidSyntax,
-            ErrorId::MetadataUnknownVersion,
-            ErrorId::MetadataMissingField,
-            ErrorId::MetadataCanonicalIdMismatch,
-            ErrorId::MetadataDuplicateCanonicalId,
-            ErrorId::MetadataPathMismatch,
-            ErrorId::SandboxNameCollision,
             ErrorId::ExternalCommandNotFound,
             ErrorId::ExternalCommandSpawnFailed,
             ErrorId::ExternalCommandFailed,
@@ -486,19 +447,13 @@ mod tests {
             ErrorId::ExternalOutputUnparseable,
             ErrorId::SbxVersionUnparseable,
             ErrorId::SbxVersionBelowMinimum,
-            ErrorId::SbxVersionUnsupported,
-            ErrorId::SbxVersionPatchDrift,
-            ErrorId::SbxFixturesNotCollected,
             ErrorId::PlatformUnsupported,
             ErrorId::PlatformUnobservable,
             ErrorId::HostCommandMissing,
             ErrorId::DockerUnreachable,
-            ErrorId::SbxNotLoggedIn,
             ErrorId::NetworkPolicyMismatch,
             ErrorId::NetworkPolicyUnobservable,
-            ErrorId::RemoteSshUnavailable,
             ErrorId::DaemonUnobservable,
-            ErrorId::SessionInspectionUnsupported,
             ErrorId::InitRequiresTty,
             ErrorId::GitIdentityInvalid,
             ErrorId::MessageFormatFailed,

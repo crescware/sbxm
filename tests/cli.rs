@@ -428,11 +428,8 @@ fn global_status_prints_only_the_global_section_and_the_published_columns() {
             "SSH",
             "Docker",
             "Docker Sandboxes",
-            "Login",
             "Network policy",
-            "Remote SSH",
             "Daemon",
-            "Session inspection",
         ]
     );
     assert!(!run.stdout.contains("PROJECT"), "{}", run.stdout);
@@ -446,7 +443,7 @@ fn global_status_reports_every_problem_and_exits_with_one() {
 
     assert_eq!(run.code, 1, "an incomplete host is not healthy");
     // 取得できた行は後続検査が失敗しても省略しない。
-    assert_eq!(run.stdout.lines().count(), 14);
+    assert_eq!(run.stdout.lines().count(), 11);
     for id in ["config-missing", "host-command-missing"] {
         assert!(
             run.stderr.contains(id),

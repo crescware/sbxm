@@ -1,35 +1,15 @@
 //! 外部commandの実行。
 //!
-//! shellを介さず、secret値をargumentやdebug表示へ渡さない。人間向け進捗を出す操作は
-//! `passthrough`で即時転送し、structured outputをparseする操作は`capture`する。
+//! shellを介さず、secret値をargumentやdebug表示へ渡さない。stdoutとstderrは
+//! それぞれ独立にcaptureし、structured outputのparseと診断表示に使う。
 
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::Read;
+use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::error::{Error, ErrorId, ExternalFailure, Result, fail};
 use crate::msg;
-
-/// 子processのstdinの扱い。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StdinPolicy {
-    /// 対話しないcommand。標準入力を閉じる。
-    Null,
-    /// 対話commandへ現在のterminalを引き渡す。
-    Inherit,
-}
-
-/// stdoutとstderrの扱い。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StreamPolicy {
-    /// 結果をparseする、または内容を秘匿する必要がある場合。byte列として保持する。
-    Capture,
-    /// 外部toolの進捗をそのまま見せる場合。到着順に即時転送し、内容は保持しない。
-    Passthrough,
-    /// interactive SSHのように、既存のterminal動作をそのまま保つ場合。
-    Inherit,
-}
 
 /// environmentの扱い。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,19 +25,13 @@ pub enum EnvPolicy {
 pub enum TimeoutClass {
     Probe,
     LocalFilesystem,
-    ImageBuild,
-    SandboxLifecycle,
-    Interactive,
 }
 
 impl TimeoutClass {
-    pub fn duration(self) -> Option<Duration> {
+    pub fn duration(self) -> Duration {
         match self {
-            TimeoutClass::Probe => Some(Duration::from_secs(10)),
-            TimeoutClass::LocalFilesystem => Some(Duration::from_secs(60)),
-            TimeoutClass::ImageBuild => Some(Duration::from_secs(30 * 60)),
-            TimeoutClass::SandboxLifecycle => Some(Duration::from_secs(10 * 60)),
-            TimeoutClass::Interactive => None,
+            TimeoutClass::Probe => Duration::from_secs(10),
+            TimeoutClass::LocalFilesystem => Duration::from_secs(60),
         }
     }
 }
@@ -69,11 +43,7 @@ const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
 pub struct CommandSpec {
     pub program: String,
     pub args: Vec<String>,
-    pub cwd: Option<PathBuf>,
     pub env: EnvPolicy,
-    pub stdin: StdinPolicy,
-    pub stdout: StreamPolicy,
-    pub stderr: StreamPolicy,
     pub timeout: TimeoutClass,
 }
 
@@ -83,18 +53,9 @@ impl CommandSpec {
         CommandSpec {
             program: program.to_string(),
             args: args.iter().map(|arg| arg.to_string()).collect(),
-            cwd: None,
             env: EnvPolicy::Inherit,
-            stdin: StdinPolicy::Null,
-            stdout: StreamPolicy::Capture,
-            stderr: StreamPolicy::Capture,
             timeout: TimeoutClass::Probe,
         }
-    }
-
-    pub fn cwd(mut self, cwd: impl Into<PathBuf>) -> CommandSpec {
-        self.cwd = Some(cwd.into());
-        self
     }
 
     pub fn env(mut self, policy: EnvPolicy) -> CommandSpec {
@@ -106,22 +67,6 @@ impl CommandSpec {
         self.timeout = class;
         self
     }
-
-    /// 外部toolの進捗を隠さずに見せる。
-    pub fn passthrough(mut self) -> CommandSpec {
-        self.stdout = StreamPolicy::Passthrough;
-        self.stderr = StreamPolicy::Passthrough;
-        self
-    }
-
-    /// 現在のterminalをそのまま引き渡す。
-    pub fn interactive(mut self) -> CommandSpec {
-        self.stdin = StdinPolicy::Inherit;
-        self.stdout = StreamPolicy::Inherit;
-        self.stderr = StreamPolicy::Inherit;
-        self.timeout = TimeoutClass::Interactive;
-        self
-    }
 }
 
 /// 外部commandの実行結果。
@@ -129,13 +74,10 @@ impl CommandSpec {
 pub struct CommandOutcome {
     pub program: String,
     pub args: Vec<String>,
-    pub cwd: Option<PathBuf>,
     pub status: ExitStatus,
-    /// `capture`のときだけ内容を持つ。
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
-    /// UTF-8として解釈する際にlossy変換が必要だったか。
-    pub stdout_lossy: bool,
+    /// stderrをUTF-8として解釈する際にlossy変換が必要だったか。
     pub stderr_lossy: bool,
 }
 
@@ -148,16 +90,11 @@ impl CommandOutcome {
         String::from_utf8_lossy(&self.stdout).into_owned()
     }
 
-    pub fn stderr_text(&self) -> String {
-        String::from_utf8_lossy(&self.stderr).into_owned()
-    }
-
     /// 外部commandのexit statusを直接透過せず、原値を診断へ含める。
     pub fn failure(&self) -> ExternalFailure {
         ExternalFailure {
             program: self.program.clone(),
             safe_args: self.args.clone(),
-            cwd: self.cwd.clone(),
             exit_status: self.status.to_string(),
             stderr: self.stderr.clone(),
             stderr_lossy: self.stderr_lossy,
@@ -188,19 +125,13 @@ impl CommandOutcome {
 pub fn run(spec: &CommandSpec) -> Result<CommandOutcome> {
     let mut command = Command::new(&spec.program);
     command.args(&spec.args);
-    if let Some(cwd) = &spec.cwd {
-        command.current_dir(cwd);
-    }
     // defaultで現在processのenvironmentを継承する。
     if spec.env == EnvPolicy::InheritWithoutSshAgent {
         command.env_remove("SSH_AUTH_SOCK");
     }
-    command.stdin(match spec.stdin {
-        StdinPolicy::Null => Stdio::null(),
-        StdinPolicy::Inherit => Stdio::inherit(),
-    });
-    command.stdout(stdio_for(spec.stdout));
-    command.stderr(stdio_for(spec.stderr));
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
 
     let mut child = command.spawn().map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -221,89 +152,38 @@ pub fn run(spec: &CommandSpec) -> Result<CommandOutcome> {
     })?;
 
     // pipeが埋まって子processが止まらないよう、両streamを並行に読む。
-    let stdout_reader = child
-        .stdout
-        .take()
-        .map(|pipe| spawn_reader(pipe, spec.stdout, Sink::Stdout));
-    let stderr_reader = child
-        .stderr
-        .take()
-        .map(|pipe| spawn_reader(pipe, spec.stderr, Sink::Stderr));
+    let stdout_reader = child.stdout.take().map(spawn_reader);
+    let stderr_reader = child.stderr.take().map(spawn_reader);
 
     let status = wait_with_timeout(&mut child, spec)?;
 
-    let stdout = stdout_reader.map(|handle| handle.join().unwrap_or_default());
-    let stderr = stderr_reader.map(|handle| handle.join().unwrap_or_default());
-    let (stdout, stdout_lossy) = finish(stdout);
-    let (stderr, stderr_lossy) = finish(stderr);
+    let stdout = stdout_reader
+        .map(|handle| handle.join().unwrap_or_default())
+        .unwrap_or_default();
+    let stderr = stderr_reader
+        .map(|handle| handle.join().unwrap_or_default())
+        .unwrap_or_default();
+    let stderr_lossy = matches!(String::from_utf8_lossy(&stderr), std::borrow::Cow::Owned(_));
 
     Ok(CommandOutcome {
         program: spec.program.clone(),
         args: spec.args.clone(),
-        cwd: spec.cwd.clone(),
         status,
         stdout,
         stderr,
-        stdout_lossy,
         stderr_lossy,
     })
 }
 
-fn stdio_for(policy: StreamPolicy) -> Stdio {
-    match policy {
-        StreamPolicy::Capture | StreamPolicy::Passthrough => Stdio::piped(),
-        StreamPolicy::Inherit => Stdio::inherit(),
-    }
-}
-
-fn finish(collected: Option<Vec<u8>>) -> (Vec<u8>, bool) {
-    let bytes = collected.unwrap_or_default();
-    let lossy = matches!(String::from_utf8_lossy(&bytes), std::borrow::Cow::Owned(_));
-    (bytes, lossy)
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Sink {
-    Stdout,
-    Stderr,
-}
-
 /// 子processの1 streamを読み切る。
-///
-/// `passthrough`では完了までbufferせず、到着順に対応するparent streamへ即時転送する。
-fn spawn_reader<R: Read + Send + 'static>(
-    mut pipe: R,
-    policy: StreamPolicy,
-    sink: Sink,
-) -> std::thread::JoinHandle<Vec<u8>> {
+fn spawn_reader<R: Read + Send + 'static>(mut pipe: R) -> std::thread::JoinHandle<Vec<u8>> {
     std::thread::spawn(move || {
         let mut collected = Vec::new();
         let mut buffer = [0_u8; 8 * 1024];
         loop {
             match pipe.read(&mut buffer) {
                 Ok(0) => break,
-                Ok(read) => {
-                    let chunk = &buffer[..read];
-                    match policy {
-                        StreamPolicy::Capture => collected.extend_from_slice(chunk),
-                        StreamPolicy::Passthrough => {
-                            // 翻訳、要約、再構成をせずそのまま転送する。
-                            match sink {
-                                Sink::Stdout => {
-                                    let mut out = std::io::stdout().lock();
-                                    let _ = out.write_all(chunk);
-                                    let _ = out.flush();
-                                }
-                                Sink::Stderr => {
-                                    let mut out = std::io::stderr().lock();
-                                    let _ = out.write_all(chunk);
-                                    let _ = out.flush();
-                                }
-                            }
-                        }
-                        StreamPolicy::Inherit => {}
-                    }
-                }
+                Ok(read) => collected.extend_from_slice(&buffer[..read]),
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => break,
             }
@@ -313,19 +193,7 @@ fn spawn_reader<R: Read + Send + 'static>(
 }
 
 fn wait_with_timeout(child: &mut Child, spec: &CommandSpec) -> Result<ExitStatus> {
-    let Some(limit) = spec.timeout.duration() else {
-        return child.wait().map_err(|error| {
-            Error::new(
-                ErrorId::ExternalCommandSpawnFailed,
-                msg!(
-                    "error-external-command-spawn-failed",
-                    program = spec.program,
-                    detail = error
-                ),
-            )
-        });
-    };
-
+    let limit = spec.timeout.duration();
     let deadline = Instant::now() + limit;
     loop {
         match child.try_wait() {
@@ -382,7 +250,9 @@ fn is_executable(path: &Path) -> bool {
 mod tests {
     use super::*;
     use std::fs;
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
 
     /// 実行内容を記録するfake executableを作る。
     fn fake_executable(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -415,57 +285,31 @@ mod tests {
 
     #[test]
     fn timeout_classes_match_the_documented_defaults() {
-        assert_eq!(
-            TimeoutClass::Probe.duration(),
-            Some(Duration::from_secs(10))
-        );
+        assert_eq!(TimeoutClass::Probe.duration(), Duration::from_secs(10));
         assert_eq!(
             TimeoutClass::LocalFilesystem.duration(),
-            Some(Duration::from_secs(60))
+            Duration::from_secs(60)
         );
-        assert_eq!(
-            TimeoutClass::ImageBuild.duration(),
-            Some(Duration::from_secs(1800))
-        );
-        assert_eq!(
-            TimeoutClass::SandboxLifecycle.duration(),
-            Some(Duration::from_secs(600))
-        );
-        assert_eq!(TimeoutClass::Interactive.duration(), None);
     }
 
     #[test]
-    fn the_runner_records_program_arguments_and_working_directory() {
+    fn every_argument_reaches_the_program_in_order() {
         let dir = tempfile::tempdir().unwrap();
         let record = dir.path().join("record");
         let fake = fake_executable(
             dir.path(),
             "fake-tool",
             &format!(
-                r#"{{
-  echo "cwd=$(pwd)"
-  for a in "$@"; do echo "arg=$a"; done
-}} > "{}""#,
+                r#"for a in "$@"; do echo "arg=$a"; done > "{}""#,
                 record.display()
             ),
         );
-        let workdir = dir.path().join("work");
-        fs::create_dir(&workdir).unwrap();
 
-        let spec = CommandSpec::probe(fake.to_str().unwrap(), &["ls", "--json"]).cwd(&workdir);
+        let spec = CommandSpec::probe(fake.to_str().unwrap(), &["ls", "--json"]);
         let outcome = run_fake(&spec).expect("the fake tool runs");
         assert!(outcome.success());
 
-        let recorded = fs::read_to_string(&record).unwrap();
-        assert!(recorded.contains("arg=ls"), "{recorded}");
-        assert!(recorded.contains("arg=--json"), "{recorded}");
-        assert!(
-            recorded.contains(&format!(
-                "cwd={}",
-                fs::canonicalize(&workdir).unwrap().display()
-            )),
-            "{recorded}"
-        );
+        assert_eq!(fs::read_to_string(&record).unwrap(), "arg=ls\narg=--json\n");
     }
 
     #[test]
@@ -525,7 +369,7 @@ mod tests {
 
         let outcome = run_fake(&CommandSpec::probe(fake.to_str().unwrap(), &[])).expect("runs");
         assert_eq!(outcome.stdout_text(), "to stdout");
-        assert_eq!(outcome.stderr_text(), "to stderr");
+        assert_eq!(outcome.failure().stderr_text(), "to stderr");
         assert!(!outcome.success());
         assert_eq!(outcome.status.code(), Some(3));
     }
@@ -533,29 +377,14 @@ mod tests {
     #[test]
     fn invalid_utf8_output_is_kept_as_bytes_and_reported_as_lossy() {
         let dir = tempfile::tempdir().unwrap();
-        let fake = fake_executable(dir.path(), "fake-tool", r#"printf '\377\376'"#);
+        let fake = fake_executable(dir.path(), "fake-tool", r#"printf '\377\376' >&2"#);
 
         let outcome = run_fake(&CommandSpec::probe(fake.to_str().unwrap(), &[])).expect("runs");
-        assert_eq!(outcome.stdout, vec![0xff, 0xfe]);
+        assert_eq!(outcome.stderr, vec![0xff, 0xfe]);
         assert!(
-            outcome.stdout_lossy,
+            outcome.stderr_lossy,
             "a lossy conversion must be reported as such"
         );
-        assert!(!outcome.stderr_lossy);
-    }
-
-    #[test]
-    fn passthrough_does_not_retain_the_external_output() {
-        let dir = tempfile::tempdir().unwrap();
-        let fake = fake_executable(dir.path(), "fake-tool", "printf 'progress'");
-
-        let spec = CommandSpec::probe(fake.to_str().unwrap(), &[]).passthrough();
-        let outcome = run_fake(&spec).expect("runs");
-        assert!(
-            outcome.stdout.is_empty(),
-            "passthrough output is shown as it arrives, not buffered for redisplay"
-        );
-        assert!(outcome.success());
     }
 
     #[test]
@@ -563,8 +392,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let fake = fake_executable(dir.path(), "fake-tool", "sleep 30");
 
-        let mut spec = CommandSpec::probe(fake.to_str().unwrap(), &[]);
-        spec.timeout = TimeoutClass::Probe;
+        let spec = CommandSpec::probe(fake.to_str().unwrap(), &[]);
         // probeの10秒を待たずに判定するため、直接短いdeadlineを使う。
         let started = Instant::now();
         let error = run_with_limit(&spec, Duration::from_millis(200))
@@ -601,11 +429,9 @@ mod tests {
                     return Ok(CommandOutcome {
                         program: spec.program.clone(),
                         args: spec.args.clone(),
-                        cwd: None,
                         status,
                         stdout: Vec::new(),
                         stderr: Vec::new(),
-                        stdout_lossy: false,
                         stderr_lossy: false,
                     });
                 }

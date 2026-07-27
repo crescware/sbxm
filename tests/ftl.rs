@@ -187,12 +187,12 @@ fn every_message_uses_the_same_placeholders_in_every_locale() {
 }
 
 #[test]
-fn security_messages_provide_a_title_a_description_and_a_remediation() {
+fn security_messages_provide_a_description_and_a_remediation() {
     for locale in locales() {
         let ids: BTreeSet<String> = placeholders(&locale).keys().cloned().collect();
         let mut families: BTreeSet<String> = BTreeSet::new();
         for id in &ids {
-            for suffix in ["-title", "-description", "-remediation"] {
+            for suffix in ["-description", "-remediation"] {
                 if let Some(family) = id
                     .strip_prefix("security-")
                     .and_then(|rest| rest.strip_suffix(suffix).map(|family| family.to_string()))
@@ -206,11 +206,11 @@ fn security_messages_provide_a_title_a_description_and_a_remediation() {
             "{locale}.ftl defines no security messages"
         );
         for family in families {
-            for suffix in ["title", "description", "remediation"] {
+            for suffix in ["description", "remediation"] {
                 let id = format!("security-{family}-{suffix}");
                 assert!(
                     ids.contains(&id),
-                    "{locale}.ftl is missing {id}; security messages need all three"
+                    "{locale}.ftl is missing {id}; security messages need both"
                 );
             }
         }
@@ -267,7 +267,7 @@ fn translated_diagnostic_labels_keep_the_source_term() {
         "status-item-config",
         "status-item-base-path",
         "status-item-network-policy",
-        "status-item-session-inspection",
+        "status-item-daemon",
         "status-column-item",
         "status-column-status",
     ];

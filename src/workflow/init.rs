@@ -378,11 +378,9 @@ mod tests {
                 Some(stdout) => Ok(CommandOutcome {
                     program: spec.program.clone(),
                     args: spec.args.clone(),
-                    cwd: None,
                     status: std::process::ExitStatus::from_raw(0),
                     stdout: stdout.clone().into_bytes(),
                     stderr: Vec::new(),
-                    stdout_lossy: false,
                     stderr_lossy: false,
                 }),
                 None => Err(Error::new(

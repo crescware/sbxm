@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 
 use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::msg;
-use crate::project::ProjectId;
 
 /// `~/.sbxm`のpermission。
 pub const CONFIG_DIR_MODE: u32 = 0o700;
@@ -163,7 +162,6 @@ pub fn ensure_private_dir(path: &Path, mode: u32, symlink_error: SymlinkError) -
 pub enum SymlinkError {
     ConfigFile,
     ConfigDir,
-    Metadata,
 }
 
 impl SymlinkError {
@@ -178,11 +176,6 @@ impl SymlinkError {
                 ErrorId::ConfigDirSymlink,
                 "security-config-dir-symlink-description",
                 "security-config-dir-symlink-remediation",
-            ),
-            SymlinkError::Metadata => (
-                ErrorId::MetadataUnreadable,
-                "security-metadata-symlink-description",
-                "security-metadata-symlink-remediation",
             ),
         };
         Error::single(
@@ -305,55 +298,6 @@ pub fn atomic_create(target: &Path, contents: &str, mode: u32) -> Result<()> {
     })
 }
 
-/// 既存fileをatomicに置き換える。
-///
-/// 置き換え前に、対象がsymlinkでない通常fileであり、permissionが過剰でないことを検証する。
-pub fn atomic_replace(target: &Path, contents: &str, mode: u32) -> Result<()> {
-    atomic_write_with_precondition(target, contents, mode, |target| {
-        let metadata = fs::symlink_metadata(target).map_err(|error| {
-            Error::new(
-                ErrorId::AtomicWriteFailed,
-                msg!(
-                    "error-atomic-write-failed",
-                    path = display(target),
-                    detail = error
-                ),
-            )
-        })?;
-        if metadata.file_type().is_symlink() {
-            return Err(SymlinkError::ConfigFile.into_error(target));
-        }
-        if !metadata.is_file() {
-            return fail(
-                ErrorId::AtomicWriteFailed,
-                msg!(
-                    "error-atomic-write-failed",
-                    path = display(target),
-                    detail = "the target is not a regular file"
-                ),
-            );
-        }
-        if permission_too_open(metadata.permissions().mode()) {
-            return Err(Error::single(
-                Diagnostic::new(
-                    ErrorId::ConfigPermissionTooOpen,
-                    msg!(
-                        "security-config-permission-description",
-                        path = display(target),
-                        observed = format_mode(metadata.permissions().mode())
-                    ),
-                )
-                .remediation(msg!(
-                    "security-config-permission-remediation",
-                    path = display(target),
-                    expected = format_mode(mode)
-                )),
-            ));
-        }
-        Ok(())
-    })
-}
-
 /// 保持している間だけ保護区間を占有するOS file lock。
 ///
 /// lock fileはworkflow終了後も削除しない。fileの存在自体は処理中を意味せず、
@@ -361,18 +305,6 @@ pub fn atomic_replace(target: &Path, contents: &str, mode: u32) -> Result<()> {
 #[derive(Debug)]
 pub struct ExclusiveLock {
     file: File,
-    path: PathBuf,
-}
-
-impl ExclusiveLock {
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    /// lock対象fileのidentity。削除・再作成の検出に使う。
-    pub fn identity(&self) -> std::io::Result<FileIdentity> {
-        FileIdentity::of_open_file(&self.file)
-    }
 }
 
 impl Drop for ExclusiveLock {
@@ -457,10 +389,7 @@ pub fn acquire_exclusive_lock(path: &Path, timeout: Duration, mode: u32) -> Resu
         })?;
         match FileIdentity::of_path_without_following(path) {
             Ok(path_identity) if path_identity == open_identity => {
-                return Ok(ExclusiveLock {
-                    file,
-                    path: path.to_path_buf(),
-                });
+                return Ok(ExclusiveLock { file });
             }
             // 待機中にlock fileが削除・再作成された。古いinodeのlockは保護にならない。
             _ => {
@@ -558,77 +487,14 @@ impl AbsoluteBasePath {
         Ok(AbsoluteBasePath(standardized))
     }
 
-    /// validationを行わずに構築する。既に検証済みのpathを復元する場合だけ使う。
-    pub fn from_standardized(path: PathBuf) -> AbsoluteBasePath {
-        AbsoluteBasePath(path)
-    }
-
     pub fn as_path(&self) -> &Path {
         &self.0
-    }
-
-    /// owner directory。
-    pub fn owner_dir(&self, id: &ProjectId) -> PathBuf {
-        self.0.join(id.owner_lower())
-    }
-
-    /// `<base-path>/<owner-lower>/<repository-lower>.project/`
-    pub fn project_root(&self, id: &ProjectId) -> PathBuf {
-        self.owner_dir(id)
-            .join(format!("{}.project", id.repository_lower()))
     }
 }
 
 impl std::fmt::Display for AbsoluteBasePath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0.display().to_string())
-    }
-}
-
-/// project rootを起点にした固定path群。
-pub struct ProjectPaths {
-    root: PathBuf,
-}
-
-impl ProjectPaths {
-    pub fn new(root: PathBuf) -> ProjectPaths {
-        ProjectPaths { root }
-    }
-
-    pub fn root(&self) -> &Path {
-        &self.root
-    }
-
-    /// host clone。
-    pub fn host_clone(&self, id: &ProjectId) -> PathBuf {
-        self.root.join(id.repository_lower())
-    }
-
-    /// `.sbxm/`
-    pub fn sbxm_dir(&self) -> PathBuf {
-        self.root.join(".sbxm")
-    }
-
-    pub fn metadata_file(&self) -> PathBuf {
-        self.sbxm_dir().join("project.toml")
-    }
-
-    pub fn lock_file(&self) -> PathBuf {
-        self.sbxm_dir().join("project.lock")
-    }
-
-    pub fn dockerfile(&self) -> PathBuf {
-        self.sbxm_dir().join("Dockerfile")
-    }
-
-    pub fn cache_dir(&self) -> PathBuf {
-        self.sbxm_dir().join(".cache")
-    }
-
-    /// `template-<dockerfile-sha256-first-12-hex>.tar`
-    pub fn template_archive(&self, dockerfile_sha256_prefix: &str) -> PathBuf {
-        self.cache_dir()
-            .join(format!("template-{dockerfile_sha256_prefix}.tar"))
     }
 }
 
@@ -750,47 +616,6 @@ mod tests {
     }
 
     #[test]
-    fn atomic_replace_swaps_content_in_place() {
-        let dir = temp_dir();
-        let target = dir.path().join("config.toml");
-        atomic_create(&target, "old\n", PRIVATE_FILE_MODE).expect("seed");
-        let before = FileIdentity::of_path_without_following(&target).unwrap();
-
-        atomic_replace(&target, "new\n", PRIVATE_FILE_MODE).expect("replace");
-
-        assert_eq!(fs::read_to_string(&target).unwrap(), "new\n");
-        let after = FileIdentity::of_path_without_following(&target).unwrap();
-        assert_ne!(before, after, "replacement must be a rename, not a rewrite");
-    }
-
-    #[test]
-    fn atomic_replace_rejects_a_symlink_target() {
-        let dir = temp_dir();
-        let real = dir.path().join("real.toml");
-        fs::write(&real, "real").expect("seed");
-        let link = dir.path().join("link.toml");
-        std::os::unix::fs::symlink(&real, &link).expect("symlink");
-
-        let error = atomic_replace(&link, "new", PRIVATE_FILE_MODE)
-            .expect_err("symlinked targets are refused");
-        assert_eq!(error.first_id(), Some(ErrorId::ConfigSymlink));
-        assert_eq!(fs::read_to_string(&real).unwrap(), "real");
-    }
-
-    #[test]
-    fn atomic_replace_rejects_a_target_other_accounts_can_read() {
-        let dir = temp_dir();
-        let target = dir.path().join("config.toml");
-        fs::write(&target, "old").expect("seed");
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).expect("widen");
-
-        let error = atomic_replace(&target, "new", PRIVATE_FILE_MODE)
-            .expect_err("over-permissive targets are refused");
-        assert_eq!(error.first_id(), Some(ErrorId::ConfigPermissionTooOpen));
-        assert_eq!(fs::read_to_string(&target).unwrap(), "old");
-    }
-
-    #[test]
     fn private_dir_is_created_with_the_requested_mode() {
         let dir = temp_dir();
         let target = dir.path().join("sbxm");
@@ -848,9 +673,8 @@ mod tests {
 
         drop(held);
 
-        let reacquired =
-            acquire_exclusive_lock(&path, LOCK_TIMEOUT, PRIVATE_FILE_MODE).expect("reacquire");
-        assert_eq!(reacquired.path(), path);
+        acquire_exclusive_lock(&path, LOCK_TIMEOUT, PRIVATE_FILE_MODE)
+            .expect("the lock can be taken again once the first holder releases it");
     }
 
     #[test]
@@ -864,28 +688,6 @@ mod tests {
         assert!(
             path.exists(),
             "the lock file is not deleted when the workflow ends"
-        );
-    }
-
-    #[test]
-    fn project_paths_follow_the_documented_layout() {
-        let base = AbsoluteBasePath::from_standardized(PathBuf::from("/Users/example/Projects"));
-        let id = ProjectId::parse("Example-Org/Example-Repo").expect("valid project id");
-
-        let root = base.project_root(&id);
-        assert_eq!(
-            root,
-            PathBuf::from("/Users/example/Projects/example-org/example-repo.project")
-        );
-
-        let paths = ProjectPaths::new(root.clone());
-        assert_eq!(paths.host_clone(&id), root.join("example-repo"));
-        assert_eq!(paths.metadata_file(), root.join(".sbxm/project.toml"));
-        assert_eq!(paths.lock_file(), root.join(".sbxm/project.lock"));
-        assert_eq!(paths.dockerfile(), root.join(".sbxm/Dockerfile"));
-        assert_eq!(
-            paths.template_archive("0123456789ab"),
-            root.join(".sbxm/.cache/template-0123456789ab.tar")
         );
     }
 }

@@ -80,15 +80,6 @@ error-target-appeared-concurrently = { $path } appeared while it was being creat
 error-lock-timeout = Another sbxm run is holding the lock at { $path }. Waited { $seconds } seconds.
 error-lock-unavailable = The lock at { $path } could not be acquired: { $detail }
 
-error-metadata-unreadable = Project metadata at { $path } could not be read: { $detail }
-error-metadata-invalid-syntax = Project metadata at { $path } is not valid TOML: { $detail }
-error-metadata-unknown-version = Project metadata at { $path } declares version { $version }, but this build supports { $supported }.
-error-metadata-missing-field = Project metadata at { $path } is missing the required field { $field }.
-error-metadata-canonical-id-mismatch = Project metadata at { $path } declares { $observed } but the fields resolve to { $expected }.
-error-metadata-duplicate-canonical-id = More than one project declares { $canonical_id }: { $paths }
-error-metadata-path-mismatch = Project metadata at { $path } belongs at { $expected }.
-error-sandbox-name-collision = Sandbox name { $sandbox_name } is derived from { $canonical_id } and from { $other }.
-
 error-external-command-not-found = The command { $program } was not found on PATH.
 error-external-command-spawn-failed = The command { $program } could not be started: { $detail }
 error-external-command-failed = The command { $program } failed with { $exit_status }.
@@ -99,58 +90,35 @@ external-output-heading = Output of { $program }:
 
 error-sbx-version-unparseable = The Docker Sandboxes CLI version could not be determined from { $observed }.
 error-sbx-version-below-minimum = Docker Sandboxes CLI { $observed } is older than the required { $minimum }.
-error-sbx-version-unsupported = Docker Sandboxes CLI { $observed } differs from the validated versions { $validated } in more than the patch component.
-error-sbx-version-patch-drift = Docker Sandboxes CLI { $observed } differs in its patch component from the validated versions { $validated }, so changing state is refused.
-warning-sbx-version-patch-drift = Docker Sandboxes CLI { $observed } differs in its patch component from the validated versions { $validated }. Read-only checks continue.
-error-sbx-fixtures-not-collected = No Docker Sandboxes CLI output has been recorded for this build, so version { $observed } cannot be interpreted.
-
 error-platform-unsupported = This build supports { $expected }. Observed: { $observed }
 error-platform-unobservable = The platform could not be determined: { $detail }
 error-host-command-missing = The command { $command } was not found on PATH.
 error-docker-unreachable = The Docker daemon did not answer: { $detail }
-error-sbx-not-logged-in = Docker Sandboxes reports that no account is signed in.
 error-network-policy-mismatch = The network policy is { $observed }, but this build is validated only for { $expected }.
 error-network-policy-unobservable = The network policy could not be read: { $detail }
-error-remote-ssh-unavailable = Remote SSH support could not be confirmed: { $detail }
 error-daemon-unobservable = The Docker Sandboxes daemon state could not be read: { $detail }
-error-session-inspection-unsupported = Docker Sandboxes CLI { $version } does not expose a structured way to prove that no session is active.
-
 remediation-run-help = Run { $command } to see the accepted arguments.
 remediation-run-init = Run sbxm init to create the global configuration.
-remediation-run-status-global = Run sbxm status --global to diagnose the host environment.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.
 remediation-fix-config = Edit { $path } and run the command again.
 remediation-install-command = Install { $command } and make sure it is on PATH.
 remediation-start-docker = Start Docker Desktop and wait until the engine reports it is running.
-remediation-sbx-login = Run sbx login and complete the sign-in.
 remediation-network-policy = Set the Docker Sandboxes network policy to { $expected } before continuing.
-remediation-collect-fixtures = Record the Docker Sandboxes CLI output for this version under { $path } and add the matching parser tests.
 remediation-wait-for-lock = Wait for the other sbxm run to finish, then run the command again.
-remediation-end-sessions = End the listed sessions, then run the command again.
-
-security-config-permission-title = The global configuration is readable by other accounts
 security-config-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a configuration that other accounts on this machine can read or change.
 security-config-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the file.
 
-security-config-symlink-title = The global configuration path is a symbolic link
 security-config-symlink-description = { $path } is a symbolic link. Following it could read or overwrite a file outside the sbxm configuration directory.
 security-config-symlink-remediation = Replace { $path } with a regular file that you own, or move the real configuration back to that path.
 
-security-config-dir-permission-title = The sbxm configuration directory is open to other accounts
 security-config-dir-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. Locks and configuration stored there could be observed or replaced.
 security-config-dir-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the directory.
 
-security-config-dir-symlink-title = The sbxm configuration directory is a symbolic link
 security-config-dir-symlink-description = { $path } is a symbolic link. sbxm would create locks and configuration outside the intended directory.
 security-config-dir-symlink-remediation = Replace { $path } with a directory that you own.
 
-security-base-path-escape-title = The base path resolves outside the directory you specified
 security-base-path-escape-description = { $path } resolves to { $resolved } after symbolic links are followed. Projects would be created outside the directory you chose.
 security-base-path-escape-remediation = Choose a base path whose resolved location stays inside the directory you intend to use.
-
-security-metadata-symlink-title = A project metadata path is a symbolic link
-security-metadata-symlink-description = { $path } is a symbolic link. sbxm does not follow links while discovering projects, because the target could be outside the base path.
-security-metadata-symlink-remediation = Replace { $path } with a regular file or directory inside the base path.
 
 init-already-initialized = sbxm is already initialized. The configuration is at { $path }.
 init-created = The global configuration was created at { $path }.
@@ -175,12 +143,8 @@ status-item-git = Git
 status-item-ssh = SSH
 status-item-docker = Docker
 status-item-docker-sandboxes = Docker Sandboxes
-status-item-login = Login
 status-item-network-policy = Network policy
-status-item-remote-ssh = Remote SSH
 status-item-daemon = Daemon
-status-item-session-inspection = Session inspection
-
 legend-heading = Legend
 legend-ready = available and matching the expected state
 legend-missing = not present

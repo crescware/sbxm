@@ -9,8 +9,8 @@ use std::path::Path;
 
 use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, TimeoutClass};
 use crate::compatibility::{
-    CliVersion, Compatibility, CompatibilityManifest, EXPECTED_NETWORK_POLICY, FIXTURE_ROOT_HINT,
-    parse_daemon_status, parse_network_policy,
+    CliVersion, EXPECTED_NETWORK_POLICY, parse_daemon_status, parse_network_policy,
+    require_minimum_version,
 };
 use crate::config::{self, ConfigLocation, ConfigState};
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
@@ -303,19 +303,13 @@ fn check_host_commands(host: &dyn HostEnvironment, status: &mut GlobalStatus) ->
     present
 }
 
-/// Docker Sandboxes CLIのversion、login、network policy、Remote SSH、daemonの状態。
+/// Docker Sandboxes CLIのversion、network policy、daemonの状態。
 fn check_docker_sandboxes(
     host: &dyn HostEnvironment,
     sbx_present: bool,
     status: &mut GlobalStatus,
 ) {
-    let dependent_items = [
-        "status-item-login",
-        "status-item-network-policy",
-        "status-item-remote-ssh",
-        "status-item-daemon",
-        "status-item-session-inspection",
-    ];
+    let dependent_items = ["status-item-network-policy", "status-item-daemon"];
 
     if !sbx_present {
         push(status, "status-item-docker-sandboxes", StatusValue::Missing);
@@ -363,19 +357,11 @@ fn check_docker_sandboxes(
         return;
     };
 
-    let compatibility = CompatibilityManifest::embedded().classify(observed);
-    if let Some(warning) = compatibility.warning() {
-        status.warnings.push(warning);
-    }
-
-    if !compatibility.allows_read_only() {
-        // 解釈できない出力から状態を推測しない。以降の項目は観測しない。
+    if let Err(error) = require_minimum_version(observed) {
         push(status, "status-item-docker-sandboxes", StatusValue::Error);
-        if let Some(error) = compatibility.read_only_error() {
-            status
-                .diagnostics
-                .extend(error.diagnostics().iter().cloned());
-        }
+        status
+            .diagnostics
+            .extend(error.diagnostics().iter().cloned());
         for item in dependent_items {
             push(status, item, StatusValue::Error);
         }
@@ -383,31 +369,8 @@ fn check_docker_sandboxes(
     }
 
     push(status, "status-item-docker-sandboxes", StatusValue::Ready);
-    check_login(status);
     check_network_policy(host, status);
-    check_remote_ssh(status);
     check_daemon(host, status);
-    check_session_inspection(&compatibility, status);
-}
-
-/// login状態。
-///
-/// 判定に使うread-only commandとstructured outputは、実機fixtureの採取と同じPRで確定する。
-fn check_login(status: &mut GlobalStatus) {
-    push(status, "status-item-login", StatusValue::Error);
-    status.diagnostics.push(
-        Diagnostic::new(
-            ErrorId::SbxNotLoggedIn,
-            msg!(
-                "error-sbx-fixtures-not-collected",
-                observed = "sbx login state"
-            ),
-        )
-        .remediation(msg!(
-            "remediation-collect-fixtures",
-            path = FIXTURE_ROOT_HINT
-        )),
-    );
 }
 
 fn check_network_policy(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
@@ -462,26 +425,6 @@ fn check_network_policy(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
     }
 }
 
-/// Remote SSH対応状況。
-///
-/// 必要なsetup commandは、対象versionのfixtureで固定してから表示する。
-fn check_remote_ssh(status: &mut GlobalStatus) {
-    push(status, "status-item-remote-ssh", StatusValue::Error);
-    status.diagnostics.push(
-        Diagnostic::new(
-            ErrorId::RemoteSshUnavailable,
-            msg!(
-                "error-remote-ssh-unavailable",
-                detail = "no validated command has been recorded for this build"
-            ),
-        )
-        .remediation(msg!(
-            "remediation-collect-fixtures",
-            path = FIXTURE_ROOT_HINT
-        )),
-    );
-}
-
 fn check_daemon(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
     match read_stdout(host, "sbx", &["daemon", "status"]) {
         Ok(output) => match parse_daemon_status(&output) {
@@ -512,27 +455,6 @@ fn check_daemon(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
             status.diagnostics.push(diagnostic);
         }
     }
-}
-
-/// active session検査機能の対応状況。
-///
-/// session不在を証明できるstructured outputが対象versionにあるかは、daemon安全性probeの
-/// 結果とともにfixtureへ固定する。
-fn check_session_inspection(compatibility: &Compatibility, status: &mut GlobalStatus) {
-    push(status, "status-item-session-inspection", StatusValue::Error);
-    status.diagnostics.push(
-        Diagnostic::new(
-            ErrorId::SessionInspectionUnsupported,
-            msg!(
-                "error-session-inspection-unsupported",
-                version = compatibility.observed()
-            ),
-        )
-        .remediation(msg!(
-            "remediation-collect-fixtures",
-            path = FIXTURE_ROOT_HINT
-        )),
-    );
 }
 
 fn read_stdout(host: &dyn HostEnvironment, program: &str, args: &[&str]) -> Result<String> {
@@ -630,11 +552,9 @@ mod tests {
                 Some(Ok((stdout, stderr, code))) => Ok(CommandOutcome {
                     program: spec.program.clone(),
                     args: spec.args.clone(),
-                    cwd: None,
                     status: std::process::ExitStatus::from_raw(code << 8),
                     stdout: stdout.clone().into_bytes(),
                     stderr: stderr.clone().into_bytes(),
-                    stdout_lossy: false,
                     stderr_lossy: false,
                 }),
                 Some(Err(ErrorId::ExternalCommandTimeout)) => Err(Error::new(
@@ -710,11 +630,8 @@ mod tests {
                 "status-item-ssh",
                 "status-item-docker",
                 "status-item-docker-sandboxes",
-                "status-item-login",
                 "status-item-network-policy",
-                "status-item-remote-ssh",
                 "status-item-daemon",
-                "status-item-session-inspection",
             ]
         );
     }
@@ -897,32 +814,50 @@ mod tests {
     }
 
     #[test]
-    fn without_collected_fixtures_no_sandbox_state_is_reported_as_ready() {
+    fn a_version_below_the_minimum_stops_the_dependent_checks() {
         let (_dir, location) = location_with_config(None);
-        let status = diagnose(&location, &FakeHost::macos());
+        let host = FakeHost::macos().responding("sbx version", "sbx version 0.36.9\n");
+        let status = diagnose(&location, &host);
 
         for item in [
             "status-item-docker-sandboxes",
-            "status-item-login",
             "status-item-network-policy",
-            "status-item-remote-ssh",
             "status-item-daemon",
-            "status-item-session-inspection",
         ] {
             assert_eq!(
                 status_of(&status, item),
                 StatusValue::Error,
-                "{item} must not be reported as ready before fixtures exist"
+                "{item} must not be observed through an unsupported CLI"
             );
         }
-        let diagnostic = status
-            .diagnostics
-            .iter()
-            .find(|diagnostic| diagnostic.id == ErrorId::SbxFixturesNotCollected)
-            .expect("the missing fixtures are diagnosed");
+        assert!(
+            status
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.id == ErrorId::SbxVersionBelowMinimum),
+            "the refused version must be diagnosed"
+        );
+    }
+
+    #[test]
+    fn sandbox_state_is_reported_from_the_structured_output() {
+        let (_dir, location) = location_with_config(None);
+        let host = FakeHost::macos()
+            .responding("sbx policy ls", r#"[{"name":"Balanced","active":true}]"#)
+            .responding("sbx daemon status", r#"{"running": true}"#);
+        let status = diagnose(&location, &host);
+
         assert_eq!(
-            diagnostic.remediation.as_ref().map(|message| message.id),
-            Some("remediation-collect-fixtures")
+            status_of(&status, "status-item-docker-sandboxes"),
+            StatusValue::Ready
+        );
+        assert_eq!(
+            status_of(&status, "status-item-network-policy"),
+            StatusValue::Ready
+        );
+        assert_eq!(
+            status_of(&status, "status-item-daemon"),
+            StatusValue::Running
         );
     }
 

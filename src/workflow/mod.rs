@@ -8,7 +8,7 @@ pub mod status_global;
 
 use std::io::Write;
 
-use crate::error::{Diagnostic, Error, ExitCode, Msg};
+use crate::error::{Diagnostic, Error, Msg};
 use crate::i18n::Catalog;
 
 /// 表示に使う状態値。翻訳しない安定したenum。
@@ -41,11 +41,6 @@ impl StatusValue {
             StatusValue::Running => "legend-running",
             StatusValue::Stopped => "legend-stopped",
         }
-    }
-
-    /// 正常結果として扱えるか。
-    pub fn is_healthy(self) -> bool {
-        matches!(self, StatusValue::Ready | StatusValue::Running)
     }
 }
 
@@ -104,10 +99,6 @@ pub struct Reporter<'a> {
 impl<'a> Reporter<'a> {
     pub fn new(catalog: &'a Catalog) -> Reporter<'a> {
         Reporter { catalog }
-    }
-
-    pub fn catalog(&self) -> &Catalog {
-        self.catalog
     }
 
     /// FTLのformatに失敗した場合でも、失敗したmessage IDとlocaleが分かる形で返す。
@@ -237,13 +228,6 @@ impl<'a> Reporter<'a> {
     }
 }
 
-/// workflowの実行結果。
-pub struct WorkflowOutput {
-    pub stdout: String,
-    pub warnings: Vec<Msg>,
-    pub exit_code: ExitCode,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,7 +242,7 @@ mod tests {
                 status: StatusValue::Ready,
             },
             Row {
-                item: "status-item-session-inspection",
+                item: "status-item-daemon",
                 status: StatusValue::Error,
             },
         ]
@@ -403,7 +387,6 @@ mod tests {
             .external(ExternalFailure {
                 program: "sbx".into(),
                 safe_args: vec!["ls".into()],
-                cwd: None,
                 exit_status: "exit status: 2".into(),
                 stderr: b"Error: daemon is not running".to_vec(),
                 stderr_lossy: false,
@@ -438,7 +421,6 @@ mod tests {
             .external(ExternalFailure {
                 program: "sbx".into(),
                 safe_args: Vec::new(),
-                cwd: None,
                 exit_status: "exit status: 1".into(),
                 stderr: vec![0xff, b'a'],
                 stderr_lossy: true,

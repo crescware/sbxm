@@ -729,7 +729,7 @@ fn require_prompt_capability(interactivity: Interactivity, command: &str) -> Res
     )
 }
 
-/// Phase 1で未実装のcommandを拒否する。
+/// このbuildで未実装のcommandを拒否する。
 pub fn not_implemented(command: &Command) -> Error {
     compatibility::not_implemented(command.name())
 }

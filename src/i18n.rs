@@ -222,16 +222,6 @@ impl Catalog {
         self.format_pattern(id, None, None)
     }
 
-    /// messageのattributeを取り出す。
-    pub fn attribute(&self, id: &str, attribute: &str) -> FormatResult<String> {
-        self.format_pattern(id, Some(attribute), None)
-    }
-
-    /// message IDが定義されているか。
-    pub fn has(&self, id: &str) -> bool {
-        self.bundle.get_message(id).is_some()
-    }
-
     fn format_pattern(
         &self,
         id: &str,

@@ -32,6 +32,7 @@ pub struct ConfigLocation {
 }
 
 impl ConfigLocation {
+    #[cfg(test)]
     pub fn from_home(home: PathBuf) -> ConfigLocation {
         ConfigLocation { home }
     }
@@ -64,16 +65,6 @@ impl ConfigLocation {
     /// `~/.sbxm/init.lock`
     pub fn init_lock(&self) -> PathBuf {
         self.dir().join("init.lock")
-    }
-
-    /// `~/.sbxm/runtime`
-    pub fn runtime_dir(&self) -> PathBuf {
-        self.dir().join("runtime")
-    }
-
-    /// `~/.sbxm/runtime/daemon.lock`
-    pub fn daemon_lock(&self) -> PathBuf {
-        self.runtime_dir().join("daemon.lock")
     }
 }
 
@@ -548,10 +539,6 @@ user_email = "user@example.com"
             location.init_lock(),
             PathBuf::from("/Users/example/.sbxm/init.lock")
         );
-        assert_eq!(
-            location.daemon_lock(),
-            PathBuf::from("/Users/example/.sbxm/runtime/daemon.lock")
-        );
     }
 
     #[test]
@@ -780,7 +767,7 @@ user_email = "user@example.com"
     fn rendering_quotes_values_that_need_escaping() {
         let config = GlobalConfig {
             language: Locale::En,
-            base_path: AbsoluteBasePath::from_standardized(PathBuf::from("/Users/ex ample")),
+            base_path: AbsoluteBasePath::new(Path::new("/Users/ex ample")).unwrap(),
             git: GitIdentity {
                 user_name: "Quote \" User".into(),
                 user_email: "user@example.com".into(),
