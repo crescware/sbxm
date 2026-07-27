@@ -161,7 +161,7 @@ force modeでは、`registered`は管理情報を破棄し、`stopped`と`runnin
 8. Sandboxの不在を検証
 9. `.sbxm/.cache`を削除
 10. metadataを削除して管理解除を確定
-11. project lockを解放してlock fileを削除
+11. 最後の保護対象mutationとしてproject lock fileを削除し、lockを解放
 
 削除開始前にproject lockを保持し、他の`add`、`sync-files`、`rebuild`、`open`、`stop`、`destroy`を排除する。
 
@@ -285,9 +285,11 @@ sbx rm --force <sandbox-name>
 - timeout: exit `5`
 - 不在確認成功: 管理情報のcleanupへ進む
 
-Sandbox不在を確認した後、`.sbxm/.cache`を削除し、`project.toml`を削除する。metadata削除を管理解除のcommit pointとする。最後にproject lockを解放して`project.lock`を削除する。
+Sandbox不在を確認した後、`.sbxm/.cache`を削除し、`project.toml`を削除する。metadata削除を管理解除のcommit pointとする。最後の保護対象mutationとして、project lockを保持したまま`project.lock`を削除し、その後lockを解放する。lock file削除後は、表示を除いてproject状態を変更しない。
 
 cleanupに失敗した場合は残ったpathを表示してexit code `5`とする。metadata削除前の失敗では案件は引き続き管理対象であり、`destroy`を再実行できる。metadata削除後にlock fileだけが残った場合、案件は`unmanaged`として扱い、残存lock fileのcleanup失敗をwarningとして表示してexit code `0`とする。
+
+削除前から古いlock fileを開いて待機していたprocessは、lock取得後に現在のpathとのidentity不一致を検出し、Phase 2の共通取得手順に従って新しいlock fileで取得をやり直す。これにより、`destroy`後の`add`が新規作成したlock fileと、削除済みinodeを待っていたprocessが同時に保護区間へ入ることを防ぐ。lock fileはprojectの管理状態そのものではないが、`destroy`ではsbxm管理物を残さないため削除する。
 
 ## 13. 再登録command
 
@@ -337,6 +339,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - delete command失敗、poll timeout、成功
 - Sandbox削除失敗時にhost成果物とmetadataが変更されないこと
 - cleanupの各失敗点、metadata削除のcommit point、lock file残存
+- lock file削除前からの待機者がidentity不一致を検出し、新しいlock fileへretryすること
 - 成功後の`unmanaged` stateと再登録command
 
 ## 15. E2E実機検証

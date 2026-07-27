@@ -60,6 +60,16 @@ MVPは既存の手動手順を次のように自動化・変更する。
 
 lock fileの存在自体は処理中を意味しない。OS file lockの取得結果を使う。
 
+`destroy`は管理解除の一部としてlock fileを削除するため、全commandは削除・再作成によるfile identityの変更を考慮してproject lockを取得する。
+
+1. lock pathをsymlinkを追跡せずopenまたはcreateする
+2. 開いたfileへexclusive lockを取得する
+3. lock取得後、file descriptorと現在のlock pathをそれぞれ`fstat`相当と`lstat`相当で取得し、device IDとinodeが一致することを確認する
+4. pathが存在しない、symlinkである、またはidentityが一致しない場合は、削除済みの古いlock fileを取得したものとして解放し、現在のpathで取得をやり直す
+5. identityが一致した後にmetadata、filesystem、外部状態を再取得し、preconditionを判定する
+
+retryを含む全体へ10秒のlock timeoutを適用する。permission、owner、file typeが不正な場合は安全に置換せずexit code `4`とする。
+
 ## 5. Project metadataの作成と構築継続
 
 ### 5.1 新規
@@ -397,6 +407,7 @@ FILE  DESTINATION  RESULT
 
 - option matrixとmutation前validation
 - metadata新規作成、構築途中と構築済みでの`add`再実行
+- project lock取得後のidentity一致、削除・再作成による不一致時retry、symlink・owner・permission拒否、retry timeout
 - 各工程直後に失敗させた同じ`add`による継続
 - 再実行optionの省略、一致、不一致
 - host clone remote検証
