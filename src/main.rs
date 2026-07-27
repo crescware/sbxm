@@ -1,8 +1,7 @@
 //! sbxm。案件ごとのDocker Sandboxを構築、接続、診断、破棄するCLI。
 //!
-//! 現在のbuildは共通基盤、`init`、`status --global`、`add`、`sync-files`を実装する。
-//! ほかのcommandはparserへ登録済みであり、command固有の引数validationまで行った
-//! うえで未実装として終了する。
+//! 現在のbuildは`rebuild`と`destroy`以外のcommandを実装する。この2つはparserへ
+//! 登録済みであり、command固有の引数validationまで行ったうえで未実装として終了する。
 
 mod archive;
 mod cli;

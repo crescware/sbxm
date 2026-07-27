@@ -33,6 +33,19 @@ Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧�
 
 Sandboxのstart・stopなど人間向け進捗を出すmutationはPhase 2で追加した`passthrough`を使用する。state判定に使うstructured outputは`capture`する。sbxm独自のprogress表示は追加しない。
 
+### 3.1 本実装が前提としている外部commandと出力
+
+Phase 2仕様の同名の節に加えて、本Phaseは次を前提とする。この一覧は対象Mac上での確認対象であり、実出力が異なる場合は実装とこの節を同時に直す。
+
+| 用途 | command | 読む値 |
+|---|---|---|
+| Sandboxの起動 | `sbx exec <name> -- /bin/true` | exit statusのみ |
+| Sandboxの停止 | `sbx stop <name>` | exit statusのみ |
+| SSH接続 | `ssh <name>.sbx` | exit statusのみ。stdin、stdout、stderrを継承する |
+| Remote SSH設定の確認 | `ssh -G <name>.sbx` | `proxycommand`行の有無 |
+
+起動と停止の完了は、いずれも`sbx ls --json`のstateを読み直して判定する。commandの戻り値だけでは判定しない。
+
 ## 4. Sandbox stateの正規化
 
 `sbx`が返すraw stateを次へ写像する。
