@@ -4,7 +4,7 @@
 
 Phase 1は、後続Phaseが判断を追加せず利用できる共通型、永続化、外部command実行、翻訳、対象解決、Docker Sandboxes互換性probeを実装し、`sbxm init`と`sbxm status --global`を完成させる。
 
-Phase 1完了時点ではprojectやSandboxを作成しない。Phase 2の外部mutationは、本文書の互換性gateが承認されるまで開始しない。
+Phase 1のcommand自体はprojectやSandboxを作成しない。後続Phaseの調査やlocal実装はPhase 1 PRのreviewと並行できるが、後続PRはreview結果を取り込む。各mutation commandを実機で成功扱いする前に、そのcommandが依存する互換性fixtureとsecurity probeをtestへ固定する。
 
 ## 2. 成果物
 
@@ -57,7 +57,7 @@ SandboxHomeRelativePath(PathBuf)
 
 ## 4. CLI parse
 
-Phase 1で8 commandと全optionをparserへ登録する。Phase 1では`init`と`status --global`を実装し、`status <project>`を含む未実装処理はparse後にlocalizedな`not implemented in this build`を返してexit code `3`とする。これによりhelpとusageの翻訳・snapshotをPhase 1で固定する。
+Phase 1で9 commandと全optionをparserへ登録する。Phase 1では`init`と`status --global`を実装し、`status <project>`を含む未実装処理はparse後にlocalizedな`not implemented in this build`を返してexit code `3`とする。これによりhelpとusageの翻訳・snapshotをPhase 1で固定する。
 
 validation順:
 
@@ -182,19 +182,28 @@ timeout既定値:
 | Sandbox create/start/stop/rm | 10分 |
 | interactive | timeoutなし |
 
-## 11. Docker Sandboxes互換性gate
+## 11. Docker Sandboxes互換性契約
 
-Docker Sandboxes CLIはEarly Accessである。Phase 1実装PRは、対象Macで次を採取しfixtureとしてcommitする。
+Docker Sandboxes CLIはEarly Accessである。Phase 1ではversion検出、互換性manifest、fixture loader、structured output parserの基盤を実装する。各外部commandのfixtureは、そのcommandを最初に使用するworkflowと同時に対象Macで採取してcommitする。
+
+Phase 1で採取するもの:
 
 - `sbx version`または同等command
 - `sbx --help`
-- 使用する各subcommandの`--help`
 - `sbx ls --json`の0件、running、stopped fixture
-- `sbx inspect`のfixture
 - `sbx daemon status`のrunning、stopped fixture
+
+各workflowの実装時に採取するもの:
+
+- 使用するsubcommandの`--help`
+- そのworkflowが読む`sbx inspect`などのstructured output
 - secret存在確認に使うread-only出力
 - create、exec、stop、rm、Template操作の正常・代表的失敗exit status
 - `sbx rm`の通常・force modeについて、running、stopped、active sessionありのcommand形とexit status
+- image、archive、Templateを新世代としてbuild・loadした後も既存Sandboxを維持できること
+- Sandbox削除後に、検証済みの新Templateから同名Sandboxを再作成できること
+
+後続workflowのfixtureがPhase 1完了時に揃っていることは要求しない。ただしfixtureなしの外部出力parser、代表的失敗を検証していないmutation、parse不能出力を成功扱いする実装は完了としない。
 
 互換性manifest:
 
@@ -215,7 +224,7 @@ runtimeではexact versionを検出する。
 
 ## 12. Daemon安全性probe
 
-Phase 2開始前に、次を実機で証明して結果を`tests/fixtures/sbx/<version>/daemon-security.md`へ記録する。
+`add`または`open`でdaemonを初めて起動・再利用する実機E2Eまでに、次を証明して結果を`tests/fixtures/sbx/<version>/daemon-security.md`へ記録する。probe未完了でも後続codeの実装は進めてよいが、Sandbox mutationを安全と判定する受入testは未完了のままにする。
 
 1. `SSH_AUTH_SOCK`ありで起動したdaemonがSandboxへagentを転送すること
 2. `SSH_AUTH_SOCK`をunsetして`sbx daemon start --detach`したdaemonでは転送されないこと
@@ -339,5 +348,5 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 - configとmetadataの不正を自動修復しない
 - 全利用者向け出力が日英で生成される
 - 外部commandをshellなしで実行し、secretと`SSH_AUTH_SOCK`を規則どおり扱う
-- 対応するDocker Sandboxes exact versionとJSON fixtureがreview済みである
-- daemon安全性probeの結論が記録され、Phase 2が利用する方式が一意に決まっている
+- version検出、compatibility manifest、fixture loader、Phase 1が読むJSON parserのtestが成功する
+- 後続workflowが必要なfixtureを、各workflowの実装と同時に追加できる構造になっている

@@ -1,19 +1,19 @@
-# Phase 2 実装仕様: `add`と`update`
+# Phase 2 実装仕様: `add`と`sync-files`
 
 ## 1. 目的
 
-`sbxm add`は、新しいGitHub repositoryを管理対象へ登録し、ホストclone、案件専用Template、Sandbox内bare repository、managed worktreeを作業可能な状態まで構築する。既にmetadataがある案件は`add`せず、`update`を案内する。
+`sbxm add`は、新しいGitHub repositoryを管理対象へ登録し、ホストclone、案件専用Template、Sandbox内bare repository、managed worktreeを作業可能な状態まで構築する。構築が中断した案件へ同じcommandを再実行すると、metadataに保存した目標構成から継続する。
 
-`sbxm update`は、登録済み案件について中断した構築を継続し、現在のglobal configに宣言されたfileをSandboxへ再配置する。projectの新規登録、worktree構成変更、Dockerfileのbuildは行わない。
+`sbxm sync-files`は、構築済みでrunningの案件について、現在のglobal configに宣言されたfileをSandboxへ再配置する。projectの登録、構築継続、worktree構成変更、Dockerfileのbuild、image・Template操作は行わない。
 
 ```text
 sbxm add <owner>/<repository>
          [--worktrees <N>]
          [--detach <BRANCH>]
-sbxm update <owner>/<repository>
+sbxm sync-files <owner>/<repository>
 ```
 
-Phase 1のDocker Sandboxes互換性fixtureとdaemon安全性probeが承認済みであることを実装開始条件とする。
+Phase 1の共通型、command runner、compatibility fixture基盤を利用する。調査やlocal実装はPhase 1 PRのreviewと並行できるが、Phase 2 PRはreview結果を取り込む。`add`の実機受入までに、Template、daemon、create、secret、execについて本Phaseが使用するexact-version fixtureとdaemon安全性probeを完成させる。
 
 ## 2. 手動手順からの変更
 
@@ -24,7 +24,7 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - Sandbox名へcanonical project IDのhashを付け、owner/repository間の衝突を防ぐ
 - `sbx ls`のtextへ`grep`せず、Phase 1で固定したJSONを完全一致でparseする
 - `SSH_AUTH_SOCK`を外した個別`sbx create`だけで安全とは見なさず、daemon instanceを検証する
-- 中断時の目標構成をproject metadataへ保存し、以降は`update`で継続する
+- 中断時の目標構成をproject metadataへ保存し、以降は同じ`add`で継続する
 
 中立Workspace、host path非露出、案件限定GitHub secret、利用者がglobal configへ明示したfileの限定copy、Docker socket非共有という要件は維持する。
 
@@ -46,7 +46,7 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - detached modeでは全managed worktreeを同じ`origin/<BRANCH>` commitから作る
 - attached modeではremote default branchをtrackingするlocal branchを1つ作る
 
-`update`はworktree構成を変更するoptionを持たない。metadataに保存された目標構成を使用する。
+再実行した`add`でoptionを省略した場合はmetadataに保存された目標構成を使用する。optionを指定した場合は保存値と完全一致することを要求し、不一致ならmutation前にexit code `2`とする。
 
 ## 4. Project単位の排他
 
@@ -75,26 +75,29 @@ lock fileの存在自体は処理中を意味しない。OS file lockの取得�
 
 `provisioning`には`mode`、`start_ref`、`requested_worktrees`、`dockerfile_sha256`を保存する。attached modeの`start_ref`は、remote default branchを解決するまで空を許可し、解決直後にatomic updateする。
 
-### 5.2 `add`済み案件
+### 5.2 `add`の再実行
 
-有効なmetadataが存在する場合、Sandboxや成果物の有無にかかわらず`add`はmutationせずexit code `2`とし、`sbxm update <owner>/<repository>`を案内する。`add`は既存案件の更新や構築継続を兼ねない。
+有効なmetadataが存在する場合、保存済み目標構成とoptionの一致を検証してから、成果物を順にinspectする。
 
-### 5.3 `update`
+- 構築未完了: 保存済み目標構成から構築を継続する
+- rebuild intentが存在する: `sbxm rebuild <owner>/<repository>`を案内し、`add`では継続しない
+- 構築完了: 構築済みであることを表示し、何も変更せずexit code `0`
+- 保存済み目標構成とoptionが不一致: exit code `2`
+- canonical ID、成果物、所有関係が不一致: exit code `4`
 
-- canonical IDが違う: exit code `4`
+各工程では次の共通規則を使用する。
+
 - 成果物が期待状態と一致する: skip
 - 成果物がない: 実行
 - 所有関係または内容を証明できない: exit code `4`
 
-`update`は保存済みのmode、resolved start ref、requested countを使用する。GitHub側default branchが変わっても自動変更しない。
-
-現在のDockerfile hashがmetadataの適用済みhashと異なる場合は、利用者による変更として診断へ表示するが、`update`ではimage、archive、Template、Sandboxを再構築しない。変更を適用するには`destroy`後に`add`する。
+再実行では保存済みのmode、resolved start ref、requested countを使用する。GitHub側default branchが変わっても自動変更しない。現在のDockerfile hashがmetadataの適用済みhashと異なり、対応imageのbuild前なら、現在のDockerfileを初回構築の目標としてhashを更新して続行する。対応imageが既に完成している場合は、保存済みhashの世代を使って初回構築を完了し、現在のDockerfileを反映する`sbxm rebuild <owner>/<repository>`を成功出力で案内する。初回構築の途中へ別世代を混在させない。
 
 ## 6. 導出名
 
 ```text
 sandbox_name   = 方向性文書のSandbox名
-image_name     = "<sandbox-name>-template:v1"
+image_name     = "<sandbox-name>-template:<dockerfile-sha256-first-12-hex>"
 workspace      = "/tmp/docker-sandboxes/<sandbox-name>"
 bare_root      = "/home/agent/work/<repository-lower>"
 bare_git_dir   = "<bare-root>/.git"
@@ -148,7 +151,7 @@ git clone
 - `origin`の正規化済みremoteがcanonical IDと一致
 - `.git`がproject root外を指すworktree fileではない
 
-dirty状態は`update`による構築継続を妨げない。remote不一致、複数origin、壊れたrepositoryはexit code `4`。
+dirty状態は`add`の構築継続を妨げない。remote不一致、複数origin、壊れたrepositoryはexit code `4`。
 
 ### 7.3 Dockerfile
 
@@ -163,7 +166,7 @@ dirty状態は`update`による構築継続を妨げない。remote不一致、�
 - interactive shellの開始位置を`/home/agent/work`にする
 - `WORKDIR /home/agent/work`
 
-`add`は採用したDockerfileのSHA-256をmetadataとimage labelへ適用済みhashとして保存する。利用者による手修正を許可し、保存済みhashとの不一致だけを理由にmetadataやDockerfileを不正とは扱わない。ただし既存管理案件のDockerfileを`update`でbuildし直すことはしない。
+`add`は採用したDockerfileのSHA-256をmetadataとimage labelへ適用済みhashとして保存する。利用者による手修正を許可し、構築完了後の保存済みhashとの不一致だけを理由にmetadataやDockerfileを不正とは扱わない。変更の適用は`rebuild`が担当する。
 
 ### 7.4 Image buildとarchive
 
@@ -176,11 +179,11 @@ docker build
 
 docker image save
   <image-name>
-  --output <project-root>/.sbxm/.cache/template.tar.tmp
+  --output <project-root>/.sbxm/.cache/template-<dockerfile-sha256-first-12-hex>.tar.tmp
 ```
 
 - `docker build`成功後にinspectし、image IDとlabelを検証
-- archiveは一時pathへ保存し、成功後にatomic rename
+- archiveはSHA-256先頭12桁を含む世代別pathへ保存し、一時pathから成功後にatomic renameする。再利用時はprefixだけでなくfull SHA-256 labelとimage IDを検証する
 - 既存archiveはtarとして読め、期待image manifestと一致する場合だけ再利用
 - `.tmp`が残っている場合は自動上書きせずexit code `4`
 
@@ -228,7 +231,7 @@ sbx create
 
 1項目でも確認不能または不一致ならexit code `4`。
 
-### 7.8 宣言fileの配置
+### 7.8 宣言fileの配置と`sync-files`
 
 global configの`[[files]]`に宣言されたhost fileを、Sandbox内の`agent` homeからの相対pathへ配置する。特定のAgentやtoolの設定形式を解釈しない。
 
@@ -248,11 +251,13 @@ sbx exec --user root <sandbox-name> --
 - 一時fileは成功・失敗のどちらでも削除する
 - 既存destinationが同一内容ならskipする
 - `add`では既存destinationが異なる場合は上書きせず、対象pathを示してexit code `4`
-- `update`では現在のglobal configにある宣言を明示的な更新要求として扱い、既存destinationが異なる場合も安全な一時fileとrenameを使って上書きする
-- global configから削除された宣言のdestinationは、`update`でもSandboxから削除しない
+- `sync-files`では現在のglobal configにある宣言を明示的な再配置要求として扱い、既存destinationが異なる場合も安全な一時fileとrenameを使って上書きする
+- global configから削除された宣言のdestinationは、`sync-files`でもSandboxから削除しない
 - sourceが存在しない、または安全性を検証できない場合はcopyせずexit code `4`
 - file内容をstdout、stderr、log、metadataへ出力しない
 - credential、token、秘密鍵には使用せず、Docker Sandboxesのsecret機能を案内する
+
+`sync-files`はproject metadata、Sandbox identity、running stateをread-onlyで検証してから、本sectionのfile配置だけを実行する。stopped Sandboxを暗黙に起動せず、`sbxm open <owner>/<repository>`後の再実行を案内してexit code `3`とする。registered、unmanaged、inconsistentでは何も配置しない。
 
 ### 7.9 Git identityとprotocol
 
@@ -278,7 +283,7 @@ sbx secret set <sandbox-name> github
 
 存在確認はPhase 1 fixtureで固定したread-only commandとstructured outputだけを使用する。secret値を取得・表示しない。
 
-未登録なら、発行条件と上記commandを表示して前提条件不足のexit code `3`で停止する。登録後は`update`でSandboxを再利用して次工程へ進む。
+未登録なら、発行条件と上記commandを表示して前提条件不足のexit code `3`で停止する。登録後は同じ`add`を再実行し、Sandboxを再利用して次工程へ進む。
 
 ### 7.11 Bare clone
 
@@ -316,7 +321,7 @@ detached modeでは`refs/remotes/origin/<start_ref>`の存在を確認する。a
 
 ### 7.13 Managed worktree
 
-indexは0から`requested_worktrees - 1`まで固定する。`update`時に別の空きindexへずらさない。
+indexは0から`requested_worktrees - 1`まで固定する。`add`再実行時に別の空きindexへずらさない。
 
 attached:
 
@@ -372,7 +377,7 @@ FILE  DESTINATION  RESULT
 
 - 各工程失敗後は後続工程を実行しない
 - 成功済み成果物をrollback目的で削除しない
-- 失敗時は、完了工程、失敗工程、対象、metadata作成前なら`add`、作成後なら`update`を次のcommandとして表示する
+- 失敗時は、完了工程、失敗工程、対象、同じ引数の`add`を次のcommandとして表示する
 - 外部command失敗はprogram、safe args、cwd、exit status、stderr原文を表示する
 - token、secret、host SSH情報は表示しない
 - parse不能な外部出力を推測で成功扱いしない
@@ -380,14 +385,16 @@ FILE  DESTINATION  RESULT
 ## 10. 自動test
 
 - option matrixとmutation前validation
-- metadata新規作成、登録済み`add`の拒否と`update`案内
-- 各工程直後に失敗させた`update`による継続
+- metadata新規作成、構築途中と構築済みでの`add`再実行
+- 各工程直後に失敗させた同じ`add`による継続
+- 再実行optionの省略、一致、不一致
 - host clone remote検証
-- 新規・既存Dockerfileの採用、適用済みhash、利用者編集後の`update`非build
+- 新規・既存Dockerfileの採用、初回build前のhash更新、構築済みDockerfile変更時の`rebuild`案内
 - Sandbox名完全一致とworkspace検証
 - safe daemon成功・不明・active session
-- 宣言fileのsource、destination、path逸脱、同一、`add`時の競合、`update`時の上書き、宣言削除時の保持、一時file cleanup
-- secret不在による中断と登録後の`update`
+- 宣言fileのsource、destination、path逸脱、同一、`add`時の競合、`sync-files`時の上書き、宣言削除時の保持、一時file cleanup
+- `sync-files`のrunning限定、stopped非起動、他工程への副作用なし
+- secret不在による中断と登録後の`add`再実行
 - bare clone、refspec、default branch
 - attached 1 tree、detached 1/3 trees
 - worktree作成途中のmetadata復元
@@ -403,8 +410,9 @@ FILE  DESTINATION  RESULT
 - Docker socketを渡していない
 - 1 treeでもbare repositoryとworktreeを分離する
 - detached 3 treesが同じ明示branchの同じcommitから作られる
-- secret未登録で安全に中断し、登録後に`update`で継続できる
-- 各工程でprocessを中断しても、`update`で同じ目標構成を継続または明確な不整合停止となる
-- 登録済み案件への`add`は副作用なく拒否され、`update`を案内する
+- secret未登録で安全に中断し、登録後に同じ`add`で継続できる
+- 各工程でprocessを中断しても、同じ`add`で同じ目標構成を継続または明確な不整合停止となる
+- 構築済み案件への`add`再実行は副作用のないno-op成功となる
+- `sync-files`が宣言fileだけを再配置し、Git、worktree、Dockerfile、image、Templateを変更しない
 - Dockerfileを手修正でき、`status`で適用済みhashとの差を確認できる
 - `destroy`後はmetadataがなくなり、新しい`add`で再構築できる

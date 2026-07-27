@@ -35,7 +35,7 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 | 状態 | 動作 |
 |---|---|
 | `unmanaged` | exit `4`、`add`を案内 |
-| `registered` / `not-created` | exit `4`、`update`を案内 |
+| `registered` / `not-created` | exit `4`、同じ目標構成の`add`再実行を案内 |
 | `stopped` | safe daemon確認、非対話で起動、SSH接続 |
 | `running` | safe daemon確認、SSH接続 |
 | `inconsistent` | exit `4`、`status`を案内 |
@@ -260,7 +260,7 @@ ssh-add -L
 - その日の最初の`open`でdaemonをSSH Agentなしにできる
 - 2案件目の`open`で安全なdaemonを不要に再起動しない
 - stopped/runningから同じ操作でSSH接続できる
-- not-createdへの`open`が`update`を正確に案内する
+- not-createdへの`open`が`add`再実行を正確に案内する
 - 複数Sandboxを対象限定で停止できる
 - `ls`がrunning、stopped、not-created、unmanagedを正しく分離する
 - `status`がbare、managed、unmanaged、dirty、SSH Agentを診断する

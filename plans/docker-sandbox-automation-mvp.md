@@ -5,9 +5,9 @@
 この文書は、`sbxm` MVPの目的、境界、共通の安全原則、公開CLI、全体状態モデルを定める。個々の処理手順、外部commandとの契約、再実行規則、test caseはPhase別仕様を正本とする。
 
 - [Phase 1: 共通基盤、`init`、global `status`](specs/phase-1-foundation-init.md)
-- [Phase 2: `add`と`update`](specs/phase-2-add.md)
+- [Phase 2: `add`と`sync-files`](specs/phase-2-add.md)
 - [Phase 3: `open`、`stop`、`ls`、`status`](specs/phase-3-daily-operations.md)
-- [Phase 4: `destroy`とE2E検証](specs/phase-4-destroy-validation.md)
+- [Phase 4: `rebuild`、`destroy`とE2E検証](specs/phase-4-destroy-validation.md)
 
 本文とPhase別仕様が矛盾する場合は、本文の安全原則を優先し、実装前に文書を修正する。実装で矛盾を吸収しない。
 
@@ -59,7 +59,7 @@
 - 1 GitHub repositoryにつき1 project directory、1 Sandbox
 - 1 Sandbox内で1 bare Git repositoryと複数worktreeを共有
 
-Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで変更され得るため、「0.37.0以上なら無条件に動く」とは扱わない。Phase 1で互換性probeを実装し、Phase 2着手前に、検証済みexact version、使用command、JSON fixtureをrepositoryへ固定する。未検証versionではmutationを行わない。
+Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで変更され得るため、「0.37.0以上なら無条件に動く」とは扱わない。各commandの実装時に、使用する外部command、structured output、代表的失敗を対象versionで確認し、parser fixtureとtestを同じ変更へ追加する。安全性に必要な出力を解釈できないversionではmutationを行わない。
 
 ### 4.2 対象外
 
@@ -81,7 +81,8 @@ Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで
 sbxm init
 sbxm --lang <ja|en> init --base-path <PATH> --git-user-name <NAME> --git-user-email <EMAIL>
 sbxm [--lang <ja|en>] add <owner>/<repository> [--worktrees <N>] [--detach <BRANCH>]
-sbxm [--lang <ja|en>] update <owner>/<repository>
+sbxm [--lang <ja|en>] sync-files <owner>/<repository>
+sbxm [--lang <ja|en>] rebuild <owner>/<repository>
 sbxm [--lang <ja|en>] open [<owner>/<repository>]
 sbxm [--lang <ja|en>] stop [<owner>/<repository>...]
 sbxm [--lang <ja|en>] ls
@@ -99,6 +100,7 @@ sbxm [--lang <ja|en>] destroy [-f|--force] [<owner>/<repository>]
 - 非TTYで引数なし: 対象を探索せずusage errorとする
 - promptはstdinから読み、stderrへ表示する。両方がTTYでなければusage errorとする
 - `open`と`destroy`は単一選択、`stop`は0件以上の複数選択とする
+- `add`、`sync-files`、`rebuild`はproject引数の完全指定を必須とし、案件選択promptを出さない
 - `status`は`--global`（短縮形`-g`）または`<owner>/<repository>`のどちらか一方を必須とし、案件選択promptを出さない
 - `destroy --force`はTTYかどうかにかかわらずproject引数の完全指定を必須とする
 - promptに既定選択を設けない
@@ -140,7 +142,7 @@ Sandbox名はcanonical project IDから決定的に導出する。
     ├── Dockerfile
     ├── exports/
     └── .cache/
-        └── template.tar
+        └── template-<dockerfile-sha256-first-12-hex>.tar
 ```
 
 - `base_path`はabsolute、既存または作成可能、symlink解決後も利用者が指定したroot配下であること
@@ -206,12 +208,21 @@ dockerfile_sha256 = "<sha256>"
 [[worktrees.managed]]
 path = "example-repo.tree-0"
 created_from = "refs/remotes/origin/develop"
+
+# `rebuild`のSandbox切替中だけ存在する
+[rebuild]
+target_dockerfile_sha256 = "<sha256>"
+previous_dockerfile_sha256 = "<sha256>"
 ```
 
 - `provisioning`は進捗cacheではなく、利用者が要求した目標構成である
+- `provisioning.dockerfile_sha256`は初回構築中の採用世代、構築完了後は現在のSandboxへ適用済みのDockerfile hashである
 - `provisioning`は最初の外部mutation前にatomic writeする
 - `worktrees.managed`はmanaged用pathの永続的な宣言であり、各worktree作成成功直後にatomic writeで追記する
-- metadataが存在する案件へ`add`は実行できない。中断した構築の継続には`update`を使用する
+- metadataが存在し、構築が未完了の案件へ同じ目標構成で`add`を再実行すると構築を継続する
+- metadataが存在し、構築が完了した案件への`add`はno-op成功とする
+- 再実行した`add`のoptionが保存済み目標構成と異なる場合は、mutationせず目標構成不一致とする
+- `rebuild`で新世代成果物を検証しSandbox切替へ進む直前に、適用予定のDockerfile hashをdurableなrebuild intentとしてmetadataへatomic writeする。Sandbox再作成と検証の成功後に適用済みhashを更新し、intentを削除する
 - runtime state、HEAD、dirty状態は保存せずGitと`sbx`から取得する
 
 ## 8. 状態モデル
@@ -228,15 +239,15 @@ created_from = "refs/remotes/origin/develop"
 
 ### 8.2 Command別状態遷移
 
-| 現在状態 | `add` | `update` | `open` | `stop` | `destroy` |
-|---|---|---|---|---|---|
-| `unmanaged` | 新規登録して構築 | 対象未登録error | 対象未登録error | 対象未登録error | 対象未登録error |
-| `registered` | `update`を案内してerror | 構築を継続 | `update`を案内してerror | no-op成功 | 管理情報を破棄して`unmanaged` |
-| `stopped` | `update`を案内してerror | 宣言fileを更新 | 起動して接続 | no-op成功 | 通常modeは拒否、force modeは削除 |
-| `running` | `update`を案内してerror | 宣言fileを更新 | そのまま接続 | 停止 | 通常modeはsession・保存状態検証後、force modeは検証なしで削除 |
-| `inconsistent` | 診断付きerror | 診断付きerror | error | error | error |
+| 現在状態 | `add` | `sync-files` | `rebuild` | `open` | `stop` | `destroy` |
+|---|---|---|---|---|---|---|
+| `unmanaged` | 新規登録して構築 | 対象未登録error | 対象未登録error | 対象未登録error | 対象未登録error | 対象未登録error |
+| `registered` | 保存済み目標構成で構築を継続 | Sandbox未作成error | rebuild intentがあれば再構築を継続、なければ`add`を案内 | `add`を案内してerror | no-op成功 | 管理情報を破棄して`unmanaged` |
+| `stopped` | 構築済みとしてno-op成功 | 起動せず拒否し`open`を案内 | 内部状態を観測できないため拒否 | 起動して接続 | no-op成功 | 通常modeは拒否、force modeは削除 |
+| `running` | 構築済みとしてno-op成功 | 宣言fileを再配置 | 安全検査後に再構築 | そのまま接続 | 停止 | 通常modeはsession・保存状態検証後、force modeは検証なしで削除 |
+| `inconsistent` | 診断付きerror | 診断付きerror | 診断付きerror | error | error | error |
 
-`update`は`registered`、`stopped`、`running`の案件だけを対象とし、中断した構築の継続と、現在のglobal configにある`[[files]]`の再配置を行う。`add`時に指定したworktree構成は変更しない。`destroy`後はproject metadataを削除して`unmanaged`になるため、再構築には新しい目標構成を指定して`add`を実行する。
+`add`は新規登録と中断した初回構築の継続を担当する。`sync-files`は現在のglobal configにある`[[files]]`だけをrunning Sandboxへ再配置し、Git、Dockerfile、image、Template、worktreeを変更しない。`rebuild`はDockerfile変更を既存案件へ適用するため、安全検査後にSandboxを再作成する。`destroy`後はproject metadataを削除して`unmanaged`になるため、再構築には新しい目標構成を指定して`add`を実行する。
 
 ## 9. 表示言語と出力
 
@@ -265,15 +276,26 @@ created_from = "refs/remotes/origin/develop"
 
 外部commandのexit codeは`sbxm`のexit codeへ直接透過しない。原値は診断へ含める。
 
-## 11. 実装順とreview gate
+## 11. 実装順と品質gate
 
-1. Phase 1で共通型、設定、metadata、i18n、command runner、互換性probe、`init`、`status --global`を実装する
-2. Phase 1のDocker Sandboxes互換性fixtureとdaemon安全性probeをreviewし、Phase 2着手を承認する
-3. Phase 2で`add`と`update`を実装する
-4. Phase 3で日常操作を実装する
-5. Phase 4で破棄操作とE2Eを実装する
+1. PR 1 / Phase 1で共通型、設定、metadata、i18n、command runner、互換性probe、`init`、`status --global`を実装する
+2. PR 2 / Phase 2で`add`と`sync-files`を実装する
+3. PR 3 / Phase 3で日常操作を実装する
+4. PR 4 / Phase 4で共通データ保護検査、`rebuild`、`destroy`とE2Eを実装する
 
-各Phaseは、仕様内の自動testと受入条件を満たし、前Phaseのschemaと外部command fixtureが固定されるまで開始しない。
+Phase 1〜4はそれぞれ独立した1 PRとし、合計4 PRで実装する。各PRは、そのPhaseのRust実装、fixture、自動test、文書更新を含み、単独でreview可能な状態にする。Rustの型、module境界、error設計、外部command abstraction、CLIの操作感をPhaseごとにreviewし、その結果によって後続Phaseの設計と実装を調整できるようにする。
+
+後続Phaseの調査やlocal実装は、必要な共通interfaceが利用可能になり、関連する既存testが成功していれば並行して進めてよい。ただし後続PRは前Phase PRのreview結果を取り込み、前Phase PRより先にmergeしない。fixtureとparser testは、それを使用するcommandのPRへ同時に追加・更新する。
+
+品質gateは次とする。
+
+- 各変更は、変更対象の自動testと既存testを成功させてから次へ進む
+- 各Phase PRは、そのPhaseの受入条件と自動testを満たしてからreview依頼する
+- 外部commandを新たに使用する変更は、対象versionのfixture、正常系、代表的失敗、parse不能testを含める
+- mutation commandは、対象を一意に特定できない場合と安全性を証明できない場合の拒否testを含める
+- Phase境界を越えた調査やlocal実装を許可するが、失敗test、未確認fixture、未解決のsecurity条件をPR完成扱いにしない
+- MVP完成には全Phaseの自動test、専用test repositoryでのE2E、SSH Agent・Docker socket非露出の実機確認を必須とする
+- 実案件での利用は、対象操作に対応する自動testと実機E2Eが成功した後に行う
 
 ## 12. MVP利用後にreviewする論点
 
@@ -281,7 +303,9 @@ created_from = "refs/remotes/origin/develop"
 - `ls`と`status`の責務分担
 - 対話選択の操作速度
 - 日本語labelとenum凡例の冗長さ
-- `add`、`update`の中断理由と再開導線
+- `add`の中断理由と同じcommandによる再開導線
+- `sync-files`の利用頻度と命名
+- `rebuild`の所要時間と失敗後の再開導線
 - `open`後のworktree移動支援
 - worktree追加・削除command
 - repository単位の共有境界
