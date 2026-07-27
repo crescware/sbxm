@@ -3,6 +3,8 @@
 //! stdoutは正常結果に使用する。英語modeでは機械的に利用可能なtableを提供し、
 //! 日本語modeではtableに日本語のenum凡例を加える。stderrはprompt、warning、errorに使用する。
 
+pub mod status_global;
+
 use std::io::Write;
 
 use crate::error::{Diagnostic, Error, ExitCode, Msg};
