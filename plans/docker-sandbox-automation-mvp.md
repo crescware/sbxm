@@ -263,9 +263,10 @@ previous_dockerfile_sha256 = "<sha256>"
 - 組み込みlocaleの欠落、placeholder不一致、format失敗はtest failure
 - enum、path、command、exit status、外部stdout/stderrは翻訳しない
 - 日本語の診断labelは`日本語 (English)`とする
-- 日本語出力の末尾には、実際に出現したenumだけの凡例を出す
+- 日本語modeは人が読むための出力とし、正常出力の末尾には、実際に出現したenumだけの凡例を正常出力の一部としてstdoutへ出す
+- scriptやpipeから機械的に利用する場合は`--lang en`を指定する。日本語modeのstdoutは機械可読な出力契約としない
 - `--lang`、config、初回locale判定の優先順位はPhase 1仕様に従う
-- stdoutは正常結果と機械的に利用可能なtable、stderrはprompt、warning、errorに使用する
+- stdoutは正常結果に使用する。英語modeでは機械的に利用可能なtableを提供し、日本語modeではtableに日本語のenum凡例を加える。stderrはprompt、warning、errorに使用する
 
 ## 10. Exit code
 
