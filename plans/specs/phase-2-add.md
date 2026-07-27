@@ -45,11 +45,12 @@ Phase 1は`init`と`status --global`が必要とする範囲だけを実装し�
 - 外部command runnerの追加policy
   - 人間向け進捗を転送する`passthrough`
   - 作業directoryの指定
-  - timeout classのimage build/saveとSandbox lifecycle
+  - timeout classのimage build/save、Sandbox lifecycle、repository転送（cloneとfetch）
 - Global daemon lockとdaemon安全再起動手順
 - `status --global`への行の追加
   - Docker Sandboxes login状態
   - active session検査機能の対応状況
+  - 既存行の並び順を変えないため、追加行は表の末尾へ足す
 
 metadataと外部状態のvalidationは、作成元や作成履歴を条件にしない共通処理として実装する。read-only commandとmutation commandは同じvalidation規則を使用する。手作業または別toolで作成されたmetadataと成果物も、全規則を満たす場合はsbxmが作成したものと区別せず受け入れる。
 
@@ -65,6 +66,28 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 - Sandbox削除後に新Templateから同名Sandboxを再作成できることを確認する
 
 採取済み出力をversionごとに束ねるmanifestは持たない。安全性は、mutation直前に読むstructured outputをparseできるかで判定する。
+
+### 3.1 本実装が前提としている外部commandと出力
+
+実装は次のcommandと出力を前提とする。この一覧は対象Mac上での確認対象であり、実出力が異なる場合は実装とこの節を同時に直す。
+
+| 用途 | command | 読む値 |
+|---|---|---|
+| Sandbox一覧 | `sbx ls --json` | `name`、`state`（`running`と`stopped`だけ）、`workspace`、`template`、active session数 |
+| Template一覧 | `sbx template ls --json` | `name`と、対応するimage ID |
+| Template load | `sbx template load <archive>` | exit statusのみ |
+| Sandbox作成 | `sbx create --name <name> --template <image> shell <workspace>` | exit statusのみ |
+| Sandbox内実行 | `sbx exec [--user root] <name> -- <argv>` | stdoutとexit status |
+| file転送 | `sbx cp --follow-link <source> <name>:<path>` | exit statusのみ |
+| secret存在確認 | `sbx secret ls <name> --json` | 名前だけ。値は取得しない |
+| login状態 | `sbx login status --json` | login済みかどうかを示す真偽値 |
+| daemon操作 | `sbx daemon stop` / `sbx daemon start --detach` | exit statusのみ |
+| image検証 | `docker image inspect <image>` | `Id`と`Config.Labels` |
+| archive生成 | `docker image save <image> --output <path>` | exit statusのみ |
+
+archiveの検証は、tarの`manifest.json`だけを読み、保存されたtagとimage configのdigestが、直前に`docker image inspect`で確認したimage IDと一致することを条件とする。archive本体は読まない。
+
+Sandboxが1件も存在しない場合、active sessionを持ち得る対象がないため、session不在を確認できたものとして扱う。
 
 - parse不能な出力はmutationを行わずexit code `1`
 - 未知のstate値を既知の値へ丸めない
