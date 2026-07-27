@@ -18,6 +18,8 @@
 - scriptや反復作業で対象を明示した場合は、案件選択promptを出さず決定的に実行する
 - 調査時には、選択言語による説明とともに外部commandのstderr原文を保持する
 - 日常利用には、全管理案件を短く確認できる`ls`を提供する
+- 同じrepositoryのagentとworktreeは隔離せず、未commitの実装も相互参照できる共同作業単位として扱う
+- オーナーが用意したmanaged worktreeとAgentが作る一時worktreeを区別し、管理上の数へ混在させない
 
 便利さのために暗黙の文脈へ依存せず、画面に表示された情報だけで安全な判断、再現、他者への共有ができるCLIを目指す。新しい機能や省略記法を検討するときも、この原則に照らして初心者とプロのどちらか一方へ不要な危険や摩擦を押し付けないかを判断する。
 
@@ -134,6 +136,8 @@ MVPでは次を固定する。
 - Docker Desktop、Docker Sandboxes 0.37.0以降、GitHub CLI、Remote SSH対応エディタを前提とする
 - Git hostingはGitHubのみ
 - 1 GitHub repositoryにつき、1 project directory、1 Docker Sandbox、1 Templateを使用する
+- 1 Sandbox内では、1 bare Git repositoryを複数worktreeと全agentで共有する
+- securityの隔離境界はworktreeやagentではなくrepositoryとする
 - ホスト側とSandbox側のrepositoryは独立してcloneする
 - Sandbox名は`<github-owner>-<repository-name>`とする
 - ホスト側project directoryは`<base-path>/<github-owner>/<repository-name>.project`とする
@@ -196,13 +200,25 @@ repository_name = "example-repo"
 
 Git identityを案件ごとに変更する必要が生じるまでは、案件側の上書き項目を設けない。
 
-Sandbox名、Template image名、project root、Dockerfile path、cache path、中立Workspace、Sandbox内clone先は、案件メタデータとglobal configから毎回導出する。導出可能な値を保存して不整合を作らない。
+Sandbox名、Template image名、project root、Dockerfile path、cache path、中立Workspace、Sandbox内bare repository path、worktree rootは、案件メタデータとglobal configから毎回導出する。導出可能な値を保存して不整合を作らない。
 
 案件追加の途中状態を独自のstatus値として保存しない。各工程の成果物と外部状態を検査し、安全に完了済みか、再実行可能か、利用者の判断が必要かを判定する。
 
+Sandbox内の現在branch、HEAD、dirty状態はGitから取得し、案件メタデータへ複製しない。一方、オーナーが`sbxm add`で明示的に用意したworktreeと、Agentがsub-agent用に一時作成したworktreeを区別するため、managed worktreeのrelative pathは案件メタデータへ記録する。
+
+```toml
+[[worktrees.managed]]
+path = "example-repo.tree-0"
+
+[[worktrees.managed]]
+path = "example-repo.tree-1"
+```
+
+この一覧は動的なGit状態のcacheではなく、オーナーが永続的な作業場所として管理対象にしたworktreeの宣言である。
+
 ### 4.3 案件ディレクトリ
 
-`sbxm`が管理する構成:
+ホスト側で`sbxm`が管理する構成:
 
 ```text
 <base-path>/
@@ -222,7 +238,88 @@ Sandbox名、Template image名、project root、Dockerfile path、cache path、�
 
 Dockerfileは利用者が確認・編集できる案件別ファイルとして生成する。MVPでは組み込みtemplateから初回だけ作り、既存ファイルを暗黙に上書きしない。
 
-### 4.4 翻訳辞書
+Sandbox内のGit repositoryは、worktreeが1つの場合も必ずbare repositoryとworktreeに分ける。
+
+```text
+/home/agent/work/
+└── <repository-name>/
+    ├── .git/                              # bare repository
+    ├── <repository-name>.tree-0/
+    ├── <repository-name>.tree-1/
+    └── <repository-name>.tree-2/
+```
+
+`/home/agent/work/<repository-name>`自体は作業treeではない。開発、commit、agentの起動は必ず`<repository-name>.tree-<index>`内で行う。同じSandboxのagentはbare repository、Git object、worktree、inner Docker Engineを共有し、隣のworktreeの未commitファイルも参照できる。
+
+この共有は同一repository内の生産性を優先する意図的な設計である。異なるrepositoryは従来どおり別Sandboxへ隔離する。未信頼コードを同一repository内でも別Sandboxへ隔離するinstance機能はMVPに含めない。
+
+### 4.4 Worktree作成規則
+
+Sandbox内のcloneは次の順序で行う。
+
+1. `/home/agent/work/<repository-name>`を作成する
+2. HTTPS remoteから`.git`へbare cloneする
+3. `remote.origin.fetch`へ`+refs/heads/*:refs/remotes/origin/*`を設定する
+4. `origin`をfetchする
+5. remote default branchまたは`--detach`で指定したbranchを検証する
+6. fetch完了後にworktreeを作成する
+
+worktree pathは`<repository-name>.tree-<index>`に固定し、未使用の0以上の最小indexから割り当てる。
+
+`add`のoption規則:
+
+```text
+sbxm add <owner>/<repository>
+         [--worktrees <N>]
+         [--detach <BRANCH>]
+```
+
+| 指定 | 作成結果 |
+|---|---|
+| 指定なし | remote default branchをcheckoutしたattached worktreeを1つ |
+| `--worktrees 1` | remote default branchをcheckoutしたattached worktreeを1つ |
+| `--detach develop` | `origin/develop`起点のdetached worktreeを1つ |
+| `--worktrees 1 --detach develop` | `origin/develop`起点のdetached worktreeを1つ |
+| `--worktrees 3 --detach develop` | `origin/develop`起点のdetached worktreeを3つ |
+| `--worktrees 2`以上、`--detach`なし | mutation前にusage error |
+
+`--worktrees`の既定値は`1`とし、1以上の整数だけを受け付ける。1 treeで`--detach`がない場合はremote default branchをattachedでcheckoutし、branch名を常に確認できる状態にする。
+
+`--worktrees <N>`の`N`は、オーナーが最初から用意するmanaged worktree数を意味する。Gitが現在認識しているworktree総数や、Agentが実行中に作成する一時worktree数を意味しない。
+
+2 tree以上では同一branchを複数worktreeへcheckoutできないためdetachedを使用する。ただし、起点branchを暗黙にdefault branchへ決めると、利用者が意図と異なるbranchから複数agentの作業を始める危険がある。そのため`--worktrees 2`以上では`--detach <BRANCH>`を必須とする。
+
+`--worktrees 2`以上かつ`--detach`なしの組み合わせは、directory作成、clone、secret確認などを始める前に拒否する。`--detach`のbranchが`origin/<branch>`として存在しない場合もworktreeを作成せずerror終了する。
+
+作成結果ではcommit hashだけでなく、mode、起点branch、managed worktree数を明示する。
+
+```text
+作成モード (Creation mode):    detached
+起点branch (Start branch):      origin/develop
+Managed worktree数 (Managed worktree count): 3
+
+WORKTREE               CREATED FROM    HEAD
+repository.tree-0      origin/develop  a1b2c3d
+repository.tree-1      origin/develop  a1b2c3d
+repository.tree-2      origin/develop  a1b2c3d
+```
+
+### 4.5 Managed worktreeと一時worktree
+
+`sbxm`はworktreeを次の2種類に分類する。
+
+- managed worktree: オーナーが`sbxm add`の`--worktrees`で作成を指示し、案件メタデータに記録された永続的な作業場所
+- unmanaged worktree: Agentやsub-agentが実行中に独自作成し、案件メタデータに記録されていないworktree
+
+`unmanaged`はsecurity上の異常を意味しない。Agentが並列作業のために作成する一時worktreeを含む分類名である。通常のworktree数、接続後の作業場所案内、オーナー向けの主要表示にはmanaged worktreeだけを使用する。
+
+`<repository-name>.tree-<index>`の名前空間はmanaged worktree用に予約する。Agentが一時worktreeを作る場合は別名または別directoryを使用するよう案内する。MVPではAgentによる一時worktreeの作成・削除自体を管理しない。
+
+`status`ではmanaged worktreeとunmanaged worktreeを別sectionに表示する。Gitが返す全worktree pathを案件メタデータのmanaged pathと照合し、managed数へunmanaged worktreeを加算しない。
+
+`rm`は例外として、Sandbox削除による作業消失を防ぐためにmanagedとunmanagedの両方を検査する。unmanaged worktreeにdirtyまたはuntrackedな変更がある場合も、pathを明示して警告する。
+
+### 4.6 翻訳辞書
 
 翻訳辞書はFluent Translation List形式のresource fileとしてrepository内に置き、binaryへ組み込む。
 
@@ -285,13 +382,13 @@ Homebrew packageのinstallはマシングローバルな変更となるため自
 
 `init`は再実行可能とする。完了済みの項目は成功として扱い、既存global configは上書きしない。設定変更用コマンドはMVPに含めず、設定ファイルを直接編集してもらう。
 
-### 5.2 `sbxm add <owner>/<repository>`
+### 5.2 `sbxm add <owner>/<repository> [--worktrees <N>] [--detach <BRANCH>]`
 
 新しい案件を管理対象へ追加し、ホスト側とSandbox側の両方で作業可能な状態まで構築する。
 
 利用者から見た操作は一つだが、内部では次の小さな工程を順番に実行する。
 
-1. global configを読み、ownerとrepository名を検証する
+1. global configを読み、owner、repository名、`--worktrees`、`--detach`の組み合わせを検証する
 2. project directory、`.sbx/exports`、`.sbx/.cache`を作成する
 3. ホスト側repositoryをSSH URLでcloneする
 4. `sbxm.toml`と標準Dockerfileを作成する
@@ -305,14 +402,19 @@ Homebrew packageのinstallはマシングローバルな変更となるため自
 12. Sandbox内のGit user nameとemailを設定する
 13. GitHub CLIのGit protocolをHTTPSへ設定する
 14. 案件専用GitHub secretを確認する
-15. repositoryを`/home/agent/work/<repository-name>`へcloneする
-16. `mise.toml`、`.mise.toml`、`.tool-versions`の有無と次の操作を報告する
+15. repositoryを`/home/agent/work/<repository-name>/.git`へbare cloneする
+16. remote-tracking設定を追加してfetchする
+17. remote default branchまたは明示されたdetach branchを検証する
+18. 規則に従ってattachedまたはdetached worktreeを作成する
+19. 作成したworktree pathをmanaged worktreeとして案件メタデータへ記録する
+20. 作成mode、起点branch、managed worktree path、HEADを表示する
+21. 各managed worktreeの`mise.toml`、`.mise.toml`、`.tool-versions`の有無と次の操作を報告する
 
 GitHub fine-grained personal access tokenの発行とsecret入力は利用者の操作を必要とする。secretが未登録の場合、`add`は正確な`sbx secret set`コマンドを表示して安全に中断する。登録後に同じ`sbxm add`を再実行すると、完了済みの工程を検証して続きから再開する。
 
 `mise trust`と`mise install`はrepository由来コードの実行につながるため自動実行しない。必要なコマンドだけを案内する。
 
-既存directory、clone、Dockerfile、Sandboxを発見した場合は、その状態が期待する案件に属することを検証する。安全に完了済みと判断できる工程は再利用し、不一致や上書きが必要な状態では対象と理由を示して停止する。
+既存directory、bare repository、worktree、Dockerfile、Sandboxを発見した場合は、その状態が期待する案件に属することを検証する。安全に完了済みと判断できる工程は再利用し、不一致や上書きが必要な状態では対象と理由を示して停止する。
 
 ### 5.3 `sbxm open [project]`
 
@@ -328,7 +430,7 @@ GitHub fine-grained personal access tokenの発行とsecret入力は利用者の
 6. `ssh <sandbox-name>.sbx`で接続する
 7. 接続後に開くrepository pathを表示する
 
-通常の開始位置はDockerfileのshell設定により`/home/agent/work`とする。repository clone済みでも、MVPではSSH commandを複雑化せず、`/home/agent/work/<repository-name>`を接続時に表示する。
+通常の開始位置はDockerfileのshell設定により`/home/agent/work`とする。MVPではSSH commandを複雑化せず、対象repositoryのmanaged worktree path一覧を接続時に表示する。bare repositoryのcontainer rootやAgentが作成した一時worktreeを通常の作業directoryとして案内しない。
 
 daemonがホストの再起動後などに新しく起動する最初の`open`では、`sbx daemon stop`後に`SSH_AUTH_SOCK`を除外した`sbx ls`でdaemonを起動する。すでに安全なdaemonで別案件を利用中の場合は、案件切り替えのたびに再起動しない。
 
@@ -395,7 +497,10 @@ owner/baz        owner-baz        not-created
 - Dockerfile
 - Template archive
 - GitHub secret
-- Sandbox内clone
+- Sandbox内bare repository
+- managed worktree数とpath
+- 各managed worktreeのHEAD、branchまたはdetached、dirty状態
+- unmanaged worktreeのpath、HEAD、branchまたはdetached、dirty状態
 - SSH Agent露出
 
 Sandboxが存在しない場合、Sandbox内部でのみ検査可能な項目は`not-applicable`とする。これは不明状態ではなく、検査対象が存在しないという確定結果である。
@@ -420,10 +525,10 @@ status  1案件の構築状態、作業可能性、credential隔離を診断す�
 削除前に次を表示し、明示確認を必須とする。
 
 - 削除対象の案件とSandbox名
-- Sandbox内のGit status
-- 現在のbranch
-- 直近のcommit
-- Git管理外ファイルが残っている可能性
+- managedとunmanagedを含む全worktreeのGit status
+- 各worktreeの分類、現在branchまたはdetached状態
+- 各worktreeの直近commit
+- 各worktreeにGit管理外ファイルが残っている可能性
 - 削除するものと残すもの
 
 確認後に`sbx rm`を実行する。MVPでは次を残す。
@@ -510,6 +615,8 @@ sbxm ls
 - `export`: 既存の`sbx cp`コマンドを案内する
 - `doctor`: 1案件の診断は`status`へ含める
 - `ports`: 既存の`sbx ports`コマンドを案内する
+- worktreeの追加・削除専用command: MVPではSandbox内の`git worktree`を使用する
+- 同一repositoryを複数Sandboxへ分離するinstance機能
 - host側project全体の削除
 - 複数host、GitLab、Linux、Intel Macへの対応
 - Dockerfile templateの選択機能
@@ -552,7 +659,7 @@ src/
 - `paths`: 全導出pathの一元管理
 - `command`: 外部process実行、環境変数制御、error整形
 - `sandbox`: `sbx`、`docker`を使う再利用可能な内部操作
-- `git`: host cloneとSandbox内Git初期化
+- `git`: host clone、Sandbox内bare clone、remote-tracking、worktree検査と作成
 - `templates`: 組み込みDockerfile
 - `workflow`: 利用者目的ごとの内部工程と再開判定
 
@@ -596,7 +703,7 @@ src/
 
 途中で利用者操作や外部command失敗が発生しても、同じ`add`を再実行できるようにする。
 
-独自の進捗flagだけを根拠に工程をskipしない。ファイル、Git remote、Docker image、Template、Sandbox、secret、Sandbox内cloneなど、実際の成果物を確認する。
+独自の進捗flagだけを根拠に工程をskipしない。ファイル、Git remote、Docker image、Template、Sandbox、secret、bare repository、worktreeなど、実際の成果物を確認する。
 
 不完全な成果物を自動削除してやり直さない。安全に再利用できない状態では、対象と手動復旧方法を表示して停止する。
 
@@ -613,6 +720,8 @@ src/
 - 非TTYで対象引数を省略した場合はusage errorで終了する
 - 破壊的操作は対象を完全な名前で表示し、明示確認を要求する
 - 既存ファイルを既定で上書きしない
+- 同じrepositoryのworktree間は相互アクセス可能であり、security境界ではないことを表示と文書で明示する
+- `rm`前は一部ではなく全worktreeの保存状態を検査する
 - `SSH_AUTH_SOCK`を除外すべきprocessを一箇所に集約してtestする
 - Sandboxの存在判定は部分一致を使わず、可能なら`sbx`の機械可読出力を利用する
 - 外部状態を取得できない場合は、曖昧な代替状態を生成せず具体的なerrorで終了する
@@ -653,16 +762,26 @@ src/
 
 - Dockerfileを組み込みtemplateとして追加する
 - host側directory作成、SSH clone、案件metadata作成を実装する
+- `--worktrees`と`--detach`の入力関係をmutation前に検証する
 - image build、save、Template load、Sandbox createを実装する
 - Claude settingsの条件付きコピーを実装する
 - GitHub secret確認と再開導線を実装する
-- Sandbox内Git identity、HTTPS cloneを実装する
+- Sandbox内Git identity、HTTPS bare cloneを実装する
+- remote-tracking設定、fetch、remote default branch解決を実装する
+- attached worktreeと明示branch起点のdetached worktree作成を実装する
+- worktree作成結果のmode、起点branch、path、HEAD表示を実装する
+- managed worktree pathの案件メタデータ記録を実装する
 - 工程ごとの状態検査と再開判定を実装する
 - 外部commandをfake化したintegration testを追加する
 
 完了条件:
 
 - `sbxm add owner/repository`だけで新規案件を作業可能な状態まで構築できる
+- optionなしではremote default branchのattached worktreeを1つ作成する
+- 1 treeでもbare repositoryとworktreeを分離する
+- 2 tree以上では`--detach <BRANCH>`なしにmutationを開始できない
+- detached worktreeの作成結果に起点branchを表示する
+- `--worktrees`の数がmanaged worktreeだけを表す
 - secret登録で中断した後、同じcommandで再開できる
 - 完了済み工程を安全に再利用できる
 - 不一致や不完全な成果物を暗黙に上書き・削除しない
@@ -680,7 +799,7 @@ src/
 - 1回の`sbx ls`との突き合わせと3状態の一覧を実装する
 - `sbx ls`失敗と未対応stateの具体的なerrorを実装する
 - 未管理Sandboxの分離表示を実装する
-- 案件詳細と隔離状態の診断を実装する
+- 案件詳細、隔離状態、bare repository、managed・unmanaged worktreeの分離診断を実装する
 
 完了条件:
 
@@ -698,7 +817,7 @@ src/
 
 ### Phase 4: `rm`と手動検証
 
-- Sandbox内の保存状態確認を実装する
+- managed・unmanagedを含む全worktreeの保存状態確認を実装する
 - 削除対象と保持対象の表示を実装する
 - 明示確認後のSandbox削除を実装する
 - end-to-end手動検証手順をREADMEへ追加する
@@ -706,6 +825,7 @@ src/
 完了条件:
 
 - 未保存作業を確認せずSandboxを削除できない
+- 1つでもdirtyまたはuntrackedなworktreeがあれば、そのtreeを明示して警告できる
 - `rm`がホスト側projectや成果物を削除しない
 - `init`、`add`、日常利用、`rm`まで一巡できる
 
@@ -743,6 +863,20 @@ src/
 - `SSH_AUTH_SOCK`の除外
 - 既存fileの非上書き
 - `add`の各工程のskip、実行、中断、再開
+- `--worktrees`の既定値が`1`であり、0を拒否すること
+- optionなしと`--worktrees 1`でremote default branchのattached worktreeを作ること
+- `--detach develop`で`origin/develop`起点のdetached worktreeを1つ作ること
+- `--worktrees 1 --detach develop`を許可すること
+- `--worktrees 2`以上では`--detach`を必須とし、違反時はmutation前にusage errorとなること
+- `--worktrees 3 --detach develop`で同じcommit起点のdetached worktreeを3つ作ること
+- 存在しないdetach branchをworktree作成前に拒否すること
+- bare clone後にremote-trackingを設定し、fetch完了後だけworktreeを作ること
+- worktreeが1つでも通常cloneを作らないこと
+- worktree pathのindexが重複しないこと
+- 作成したmanaged worktree pathだけが案件メタデータへ記録されること
+- Agentが追加したworktreeをmanaged数へ加算しないこと
+- managed metadataにないGit worktreeをunmanagedとして分離すること
+- 作成結果がmode、起点branch、worktree path、HEADを含むこと
 - 各外部command失敗時の後続処理停止
 - `open`と`stop`の冪等性
 - 複数Sandbox停止時の対象限定
@@ -753,7 +887,10 @@ src/
 - 未管理Sandboxの分離
 - `ls`が詳細診断を実行しないこと
 - `status`の単一案件診断と`not-applicable`判定
+- `status`がbare repositoryとmanaged・unmanaged worktreeを分離して表示すること
+- `status`が各worktreeのHEAD、branch、dirty状態を表示すること
 - `status`の外部command失敗時の部分結果と非ゼロ終了
+- `rm`が全worktreeを検査すること
 - `rm`の確認と保持対象
 
 実機でのみ確認できる内容は、専用のtest repositoryを使って手動検証する。
@@ -767,22 +904,28 @@ src/
 7. `sbxm init`による前提確認、global config、SSH連携
 8. `sbxm add`によるhost側clone、image build、Template load
 9. secret未登録による安全な中断
-10. secret登録後の`add`再開とSandbox内clone
-11. 中立Workspaceとホストpathの非露出
-12. その日の最初の`open`と安全なdaemon起動
-13. Sandbox内の`SSH_AUTH_SOCK`と`ssh-add -L`
-14. Remote SSH接続と開始directory
-15. 2案件目の`open`でdaemonを不要に再起動しないこと
-16. 複数案件の起動、切り替え、一括停止
-17. stop後の状態保持と翌日の再起動
-18. `ls`による`running`、`stopped`、`not-created`の一覧
-19. `sbx ls`失敗時に推測した一覧を出さないこと
-20. 未管理Sandboxの分離表示
-21. 引数指定時のpromptなし実行
-22. 引数省略時の案件選択、キャンセル、非TTY拒否
-23. `status`による単一案件の構築・隔離診断
-24. `rm`の案件選択とは独立した保存・削除確認
-25. `rm`後の保持対象
+10. secret登録後の`add`再開とSandbox内bare clone
+11. optionなしでdefault branchのattached worktreeが1つ作られること
+12. 複数worktreeで`--detach`を必須とし、明示branchから作られること
+13. 同じSandbox内のworktree間で未commitファイルを相互参照できること
+14. Agentが一時worktreeを追加してもmanaged worktree数が変化しないこと
+15. `status`でmanaged worktreeとAgentの一時worktreeが分離されること
+16. 中立Workspaceとホストpathの非露出
+17. その日の最初の`open`と安全なdaemon起動
+18. Sandbox内の`SSH_AUTH_SOCK`と`ssh-add -L`
+19. Remote SSH接続とmanaged worktree pathの案内
+20. 2案件目の`open`でdaemonを不要に再起動しないこと
+21. 複数案件の起動、切り替え、一括停止
+22. stop後の状態保持と翌日の再起動
+23. `ls`による`running`、`stopped`、`not-created`の一覧
+24. `sbx ls`失敗時に推測した一覧を出さないこと
+25. 未管理Sandboxの分離表示
+26. 引数指定時のpromptなし実行
+27. 引数省略時の案件選択、キャンセル、非TTY拒否
+28. `status`によるbare repository、managed・unmanaged worktree、隔離状態の診断
+29. `rm`によるmanaged・unmanagedを含む全worktreeの保存確認
+30. `rm`の案件選択とは独立した削除確認
+31. `rm`後の保持対象
 
 ## 11. 最初の利用後にレビューする論点
 
@@ -799,7 +942,10 @@ MVPを実案件またはtest repositoryで一巡した後、次をレビュー�
 - daemon再起動確認が日常利用の妨げにならないか
 - runtime markerによる安全なdaemonの判定は十分に堅牢か
 - 引数省略時の選択promptは十分に素早く操作できるか
-- `open`接続後にrepository rootへ自動移動する必要があるか
+- `open`接続後にworktreeを選択・移動する支援が必要か
+- worktreeの追加・削除専用commandを次に追加すべきか
+- repository単位の共有境界はagent間の生産性とsecurityのバランスに合っているか
+- managed worktreeとAgentの一時worktreeの区別は実際の並列agent運用に合っているか
 - Dockerfileを利用者が編集できる生成物にした判断は適切か
 - 次に`rebuild`、`export`、`ports`、`doctor`のどれを追加すべきか
 - 案件単位のGit identity上書きが必要か
