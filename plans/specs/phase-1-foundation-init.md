@@ -2,9 +2,20 @@
 
 ## 1. 目的と完了境界
 
-Phase 1は、後続Phaseが判断を追加せず利用できる共通型、永続化、外部command実行、翻訳、対象解決、Docker Sandboxes互換性probeを実装し、`sbxm init`と`sbxm status --global`を完成させる。
+Phase 1は`sbxm init`と`sbxm status --global`を完成させ、この2 commandが必要とする共通型、永続化、外部command実行、翻訳、CLI契約を実装する。
 
-Phase 1のcommand自体はprojectやSandboxを作成しない。後続Phaseの調査やlocal実装はPhase 1 PRのreviewと並行できるが、後続PRはreview結果を取り込む。各mutation commandを実機で成功扱いする前に、そのcommandが依存する互換性fixtureとsecurity probeをtestへ固定する。
+Phase 1のcommand自体はprojectやSandboxを作成しない。
+
+共通基盤は呼び出し側が現れたPhaseで作る。
+
+- 最初に呼び出し側が現れるPhaseが実装する
+- 定義できる最も早いPhaseではない
+- 複数Phaseで使うものは、最初の呼び出し側のPhaseが実装する
+- 後続Phaseは実装済みのものを利用する
+
+この規則は、呼び出し側のない実装がreview対象から検証基準を奪うため置く。実際の必要から形が決まる前に型やpolicyを確定させない。
+
+後続Phaseの調査やlocal実装はPhase 1 PRのreviewと並行できるが、後続PRはreview結果を取り込む。
 
 ## 2. 成果物
 
@@ -29,34 +40,29 @@ locales/
 ├── en.ftl
 └── ja.ftl
 tests/
-├── snapshots/
-│   └── cli-surface.txt
-└── fixtures/
-    └── sbx/<validated-version>/
+└── snapshots/
+    └── cli-surface.txt
 ```
 
-主なdependencyは`clap`、`serde`、`toml`、`thiserror`、`dirs`、`fluent-bundle`、`unic-langid`、`dialoguer`、`sha2`、`serde_json`、`tempfile`とする。dependency versionは実装PRでlock fileとともに固定する。
+主なdependencyは`clap`、`serde`、`toml`、`dirs`、`fluent-bundle`、`unic-langid`、`dialoguer`、`serde_json`、`tempfile`とする。dependency versionは実装PRでlock fileとともに固定する。
 
 ## 3. 共通domain型
 
 stringを直接workflowへ渡さず、validation済みの型を使う。
 
 ```text
-ProjectId {
-  owner_display,
-  repository_display,
-  canonical_id
-}
-
-SandboxName(String)
+ProjectId(String)
 AbsoluteBasePath(PathBuf)
 Locale { En, Ja }
-ManagedWorktreePath(PathBuf)
 HostFileSource(PathBuf)
 SandboxHomeRelativePath(PathBuf)
 ```
 
-`ProjectId::parse`、Sandbox名導出、host path導出は方向性文書の規則を唯一の実装とする。
+`ProjectId::parse`と`AbsoluteBasePath`の導出は方向性文書の規則を唯一の実装とする。
+
+`ProjectId`は表記をそのまま保持する。case非依存の比較とcanonical形式は、案件を突き合わせる`add`が必要とするため、Phase 2で追加する。
+
+Sandbox名の導出とmanaged worktree pathは、それぞれ最初の呼び出し側があるPhase 2で定義する。
 
 ## 4. CLI parse
 
@@ -122,7 +128,7 @@ macOS優先言語は`defaults read -g AppleLanguages`の出力をparseする。�
 - help、usage、prompt、正常出力、warning、errorをFTLから生成する
 - format失敗は対象message IDとlocaleを示してexit code `1`
 - 外部stderrをFTL placeholderへ埋め込まず、localized説明とは別blockで出す
-- security messageは`title`、`description`、`remediation`の3 IDを必須とする
+- security messageは`description`と`remediation`の2 IDを必須とする
 
 言語ごとの内容は`locales/<tag>.ftl`だけが、言語ごとの同一性は`src/i18n.rs`の定義表だけが
 持つ。実装は特定の言語を名指しで分岐しない。凡例の要否のような言語別の振る舞いは、正本
@@ -139,7 +145,7 @@ error snapshotを検証する。検査対象のlocaleは`locales/`から決め�
 
 ## 7. Atomic file write
 
-configとmetadataは次の手順で書く。
+configは次の手順で新規作成する。
 
 1. 同一directoryに`create_new`で一時fileを作る
 2. 必要permissionを設定する
@@ -148,9 +154,11 @@ configとmetadataは次の手順で書く。
 5. renameする
 6. 親directoryを`sync_all`する
 
-更新時は既存fileのpermissionとidentityを検証し、同一directoryの一時fileからatomic renameする。symlinkは拒否する。秘密情報を一時fileへ書かない。
+symlinkは拒否する。秘密情報を一時fileへ書かない。
 
 processが中断した一時fileは次回起動時に自動削除せず、pathと安全な削除方法を表示してexit code `1`とする。
+
+既存fileの置き換えはPhase 1に呼び出し側がない。configの変更は利用者が直接編集し、次回load時にvalidationする。置き換え手順は、metadataを更新するPhase 2で定義する。
 
 ## 8. Config loadとvalidation
 
@@ -170,33 +178,16 @@ processが中断した一時fileは次回起動時に自動削除せず、path�
 
 `base_path`はstandardizeしたabsolute pathとして保存する。存在しなければ`init`が確認後に作成する。既存ならdirectoryであり、利用者がwrite可能であることを確認する。
 
-## 9. Project metadata探索
-
-- `base_path`直下のowner directoryと、その直下の`*.project/.sbxm/project.toml`だけを読む
-- directory entryとmetadata fileのsymlinkは追跡しない
-- すべてのmetadataをparseしてから結果を返す
-- canonical ID重複、導出path不一致、Sandbox名衝突は一覧化してexit code `1`
-- 1件の破損を無視して部分的な案件一覧を返さない
-- 並び順はcanonical IDのbyte昇順
-
-metadataと外部状態のvalidationは、作成元や作成履歴を条件にしない共通処理として実装する。`status`などのread-only commandとmutation commandは同じvalidation規則を使用する。手作業または別toolで作成されたmetadataと成果物も、全規則を満たす場合はsbxmが作成したものと区別せず受け入れる。
-
-## 10. 外部command runner
+## 9. 外部command runner
 
 runner input:
 
 ```text
 program
 args[]
-cwd
 environment policy
-stdin policy
-stdout policy
-stderr policy
 timeout class
 ```
-
-stdout policyとstderr policyは、少なくとも`capture`、`passthrough`、interactiveな`inherit`を区別する。
 
 規則:
 
@@ -204,14 +195,11 @@ stdout policyとstderr policyは、少なくとも`capture`、`passthrough`、in
 - defaultで現在processのenvironmentを継承する
 - security-sensitiveな`sbx`起動では`SSH_AUTH_SOCK`を必ず除外する
 - secret値をargumentやdebug表示へ渡さない
-- `capture`ではstdoutとstderrを別々にbyte列として保持し、lossy変換した場合はその事実を診断する
+- stdoutとstderrを別々にbyte列としてcaptureする
+- stderrをlossy変換した場合はその事実を診断する
+- 未検証の外部出力を利用者へそのままstreamしない
 - timeout時はchildを終了し、command名とtimeoutを表示してexit code `1`
-- testではfake executableをPATH先頭へ置き、program、args、cwd、environment、streamを記録する
-- 外部toolが人間向け進捗を出す操作は`passthrough`とし、childのstdoutとstderrを対応するparent streamへ到着順に即時転送する。完了までbufferして進捗を隠さない
-- `passthrough`出力は翻訳、要約、再構成せず、sbxm独自のprogress UIへ置き換えない
-- structured outputをparseするcommand、secretやfile内容を扱うcommandは`capture`とし、利用者へ未検証の内容をstreamしない
-- `passthrough`したcommandが失敗した場合、表示済みの外部出力を全量再表示せず、sbxmのerror ID、対象、exit status、対処方法を追加する
-- interactive SSHは既存のterminal動作を保つため`inherit`とする
+- testではfake executableをPATH先頭へ置き、program、args、environment、streamを記録する
 
 timeout既定値:
 
@@ -219,79 +207,38 @@ timeout既定値:
 |---|---:|
 | probe | 10秒 |
 | local filesystem/Git | 60秒 |
-| image build/save | 30分 |
-| Sandbox create/start/stop/rm | 10分 |
-| interactive | timeoutなし |
 
-## 11. Docker Sandboxes互換性契約
+Phase 1が実行する外部commandは、すべてstructured outputまたは短いtextを読むread-only probeである。
 
-Docker Sandboxes CLIはEarly Accessである。Phase 1ではversion検出、互換性manifest、fixture loader、structured output parserの基盤を実装する。各外部commandのfixtureは、そのcommandを最初に使用するworkflowと同時に対象Macで採取してcommitする。
+- 人間向け進捗をそのまま転送する`passthrough`は、`docker build`を実行するPhase 2で定義する
+- terminalを引き渡す`inherit`と対話用のtimeout classは、SSHを起動するPhase 3で定義する
+- 作業directoryの指定は、host cloneを操作するPhase 2で定義する
 
-Phase 1で採取するもの:
+## 10. Docker Sandboxes CLIの出力解釈
 
-- `sbx version`または同等command
-- `sbx --help`
-- `sbx ls --json`の0件、running、stopped fixture
-- `sbx daemon status`のrunning、stopped fixture
-- `sbx policy ls`の`Balanced`と代表的な非対応policyのfixture
+Docker Sandboxes CLIはEarly Accessである。Phase 1は`status --global`が読む範囲だけを実装する。
 
-各workflowの実装時に採取するもの:
+- `sbx version`からexact versionを検出する
+- `0.37.0`未満はexit code `1`
+- versionをparseできない場合もexit code `1`
+- `sbx daemon status`と`sbx policy ls`のstructured outputをparseする
 
-- 使用するsubcommandの`--help`
-- そのworkflowが読む`sbx inspect`などのstructured output
-- secret存在確認に使うread-only出力
-- create、exec、stop、rm、Template操作の正常・代表的失敗exit status
-- `sbx rm`の通常・force modeについて、running、stopped、active sessionありのcommand形とexit status
-- image、archive、Templateを新世代としてbuild・loadした後も既存Sandboxを維持できること
-- Sandbox削除後に、検証済みの新Templateから同名Sandboxを再作成できること
+parserは推測で補完しない。
 
-後続workflowのfixtureがPhase 1完了時に揃っていることは要求しない。ただしfixtureなしの外部出力parser、代表的失敗を検証していないmutation、parse不能出力を成功扱いする実装は完了としない。
+- 必須fieldを欠く出力はparse不能として扱う
+- 未知のstate値を既知の値へ丸めない
+- 現在のnetwork policyを一意に特定できない出力を拒否する
+- parse不能はerrorとし、観測できなかった項目を成功扱いしない
 
-互換性manifest:
+採取済みfixtureをversionごとに束ねる仕組みは持たない。実機出力に対する検証は、その出力を最初に読むPhaseが自身のPRで行う。mutationを行うPhase 2以降の規則は、Phase 2仕様が定める。
 
-```toml
-schema_version = 1
-validated_cli_versions = ["<exact-version>"]
-ls_json_fixture_version = 1
-```
+## 11. `sbxm init`
 
-runtimeではexact versionを検出する。
-
-- 0.37.0未満: exit code `1`
-- fixtureと一致するversion: 続行
-- patch versionだけ異なる: read-only commandはwarning付きで許可、mutationはexit code `1`
-- minor/majorまたはparse不能: exit code `1`
-
-新version対応はfixture、parser test、manifestを更新するPRで行う。
-
-## 12. Daemon安全性probe
-
-MVPではdaemonの安全性を永続markerやinstance IDから推測しない。`add`、`open`、およびSandboxを再作成する`rebuild`の各操作前に、全Sandboxのactive sessionがないことをstructured outputから確認し、daemonを停止してから`SSH_AUTH_SOCK`をunsetした環境で起動し直す。
-
-これらのcommandを実機で成功扱いする前に、次を証明して結果を`tests/fixtures/sbx/<version>/daemon-security.md`へ記録する。probe未完了でもdaemonに依存しないcodeの実装は進めてよいが、Sandbox mutationを安全と判定する受入testは未完了のままにする。
-
-1. `SSH_AUTH_SOCK`ありで起動したdaemonがSandboxへagentを転送すること
-2. `SSH_AUTH_SOCK`をunsetして`sbx daemon start --detach`したdaemonでは転送されないこと
-3. 対象exact versionのstructured outputから、全Sandboxのactive session不在を判定できること
-4. active sessionあり、0件、command失敗、timeout、parse不能を区別できること
-5. daemon停止・起動後にSandboxを再利用または作成できること
-
-daemon操作全体では`~/.sbxm/runtime/daemon.lock`をexclusive取得する。directoryは`0700`、lock fileは`0600`とし、lock fileはworkflow終了後も削除しない。
-
-- active sessionを1件でも検出した場合はdaemonを変更せず、対象sessionと終了方法を表示してexit code `1`
-- structuredなsession検査が存在しない、またはsession不在を証明できない場合はdaemonを変更せずexit code `1`
-- session検査commandの失敗、timeout、parse不能は外部状態を観測できないためexit code `1`
-- session不在を確認できた場合だけ、`sbx daemon stop`と、`SSH_AUTH_SOCK`をunsetした`sbx daemon start --detach`を実行する
-
-毎回のdaemon再起動による所要時間はMVPで受け入れる。安全性を保ったまま再起動を省略する最適化は、MVP利用後の非機能要件として検討する。
-
-## 13. `sbxm init`
-
-### 13.1 事前状態
+### 11.1 事前状態
 
 configがない場合だけ新規作成する。既存の有効configは再利用し、無効configは停止する。
 
-### 13.2 排他
+### 11.2 排他
 
 configをread-onlyで事前確認し、新規作成へ進む場合だけ`~/.sbxm/init.lock`を開いてexclusiveなOS file lockを取得する。
 
@@ -304,7 +251,7 @@ configをread-onlyで事前確認し、新規作成へ進む場合だけ`~/.sbxm
 
 同時に実行された`init`はlockにより直列化される。後からlockを取得したprocessはconfigを改めて確認し、先行processが初期化を完了していれば初期化済みとして扱う。
 
-### 13.3 処理順
+### 11.3 処理順
 
 1. bootstrap localeを決定する
 2. `init` optionの組み合わせを検証する
@@ -322,15 +269,15 @@ configをread-onlyで事前確認し、新規作成へ進む場合だけ`~/.sbxm
 
 Git identityの既定候補はhostの`git config --global user.name`と`user.email`。候補を表示して明示確定させ、空文字と改行を拒否する。
 
-### 13.4 再実行
+### 11.4 再実行
 
 - config作成前の失敗: hostに作った`~/.sbxm`と`init.lock`以外を変更しない
 - config作成後の再実行: 初期化済みであることとconfig pathを表示し、何も変更せずexit code `0`
 - config変更: MVPでは直接編集し、次回load時にvalidationする
 
-## 14. `sbxm status --global`
+## 12. `sbxm status --global`
 
-### 14.1 性質
+### 12.1 性質
 
 hostとglobal環境をread-onlyで診断する。login、setup、file更新、daemon起動・停止を行わない。問題がある場合は、利用者が直接実行する外部commandを表示する。
 
@@ -338,7 +285,7 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 
 検査対象は、sbxm自身がhost上で直接使用する設定、platform、command、serviceに限定する。利用者が実務で使用する可能性があっても、sbxmが直接使用しないpackage managerやtoolの有無は環境の正常性へ含めない。
 
-### 14.2 検査順と項目
+### 12.2 検査順と項目
 
 取得できた項目は、後続検査失敗時にも表示する。
 
@@ -346,19 +293,21 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 2. `sw_vers`と`uname -m`によるmacOS 14以上、arm64
 3. host上でsbxmが直接実行する`git`、`ssh`、`docker`、`sbx`の存在
 4. Docker Client/Server疎通
-5. Docker Sandboxes CLI versionとcompatibility manifest
-6. Docker Sandboxes login状態
-7. network policy状態
-8. Remote SSH対応状況
-9. daemon状態と、active session検査機能の対応状況
+5. Docker Sandboxes CLIの最小version
+6. network policy状態
+7. daemon状態
 
-未loginの場合は`sbx login`を、Remote SSH setupが必要な場合はfixtureで固定した公式commandを表示する。commandを自動実行しない。
+検査を実装していない項目は行に出さない。常にerrorとなる行を予約として置かない。
 
-network policyはfixtureで固定した`sbx policy ls`のread-only出力から現在値を取得し、`Balanced`との完全一致だけを`ready`とする。`Balanced`以外、command失敗、timeout、parse不能は、検証済みbaselineを確認できないためerrorとしてexit code `1`とする。より制限が強いpolicyも動作と安全性を推測して受け入れない。観測した値、期待値`Balanced`、対象versionで検証した公式の設定手順を表示し、policyを自動変更しない。
+- login状態は、loginを前提とするPhase 2で追加する
+- active session検査の対応状況は、daemon安全性probeと同じPhase 2で追加する
+- Remote SSH対応状況は、SSHで接続するPhase 3で追加する
 
-### 14.3 出力
+network policyは`sbx policy ls`のread-only出力から現在値を取得し、`Balanced`との完全一致だけを`ready`とする。`Balanced`以外、command失敗、timeout、parse不能は、検証済みbaselineを確認できないためerrorとしてexit code `1`とする。より制限が強いpolicyも動作と安全性を推測して受け入れない。観測した値と期待値`Balanced`を表示し、policyを自動変更しない。
 
-global scopeはhostとglobal環境だけを診断するため、正常結果は`GLOBAL` sectionだけをstdoutへ表示する。projectの情報を混在させない。正本localeの列は`ITEM`と`STATUS`で固定し、14.2の検査順に並べる。
+### 12.3 出力
+
+global scopeはhostとglobal環境だけを診断するため、正常結果は`GLOBAL` sectionだけをstdoutへ表示する。projectの情報を混在させない。正本localeの列は`ITEM`と`STATUS`で固定し、12.2の検査順に並べる。
 
 ```text
 GLOBAL
@@ -370,28 +319,27 @@ Git                  ready
 SSH                  ready
 Docker               ready
 Docker Sandboxes     ready
-Login                ready
 Network policy       ready
-Remote SSH           ready
 Daemon               running
-Session inspection   ready
 ```
+
+後続Phaseが検査を実装した時点で、この表へ行が増える。列構成と既存行の並び順は変えない。
 
 取得できた行は後続検査が失敗しても省略しない。path、version、観測値、外部commandの失敗、対処方法などの詳細は表の列を増やさず、安定したerror IDを持つ診断としてstderrへ出す。これにより一覧性のある正常出力と、原因を特定できる詳細なerror情報を分離する。
 
 正本locale以外ではsection名、列名、項目名を翻訳し、状態値はどのlocaleでも翻訳しない。状態値が正本localeの語であるため、正本locale以外は正常出力末尾へenum凡例を付ける。凡例の要否を言語ごとの設定として持たず、正本localeか否かから導出する。公開する正本localeの列構成と並び順は変更しない。列は項目名の表示幅から算出し、幅そのものを出力契約としない。
 
-### 14.4 Exit
+### 12.4 Exit
 
 - 全検査成功: `0`
 - 1件以上のerror: `1`
 
 複数種類のerrorがあってもexit codeは`1`とし、個々のerror IDと診断をすべて表示する。
 
-## 15. 自動test
+## 13. 自動test
 
-- Project ID validation、case正規化、Sandbox名の衝突耐性
-- path導出、symlink拒否、metadata重複
+- Project ID validationと予約repository名の拒否
+- host path導出とsymlink拒否
 - configのround trip、unknown version、permission
 - 宣言fileのsourceとdestination validation
 - atomic writeの各中断点
@@ -403,19 +351,21 @@ Session inspection   ready
 - FTL完全性、locale定義表の一貫性、CLI公開契約の記録
 - CLI argument関係とmutation前validation
 - TTY/non-TTY、Esc、Ctrl-C
-- command runnerのenvironment、timeout、capture・passthrough・inheritの各stream policy
-- compatibility fixtureの全parser
+- command runnerのenvironment、`SSH_AUTH_SOCK`除外、timeout、stream capture
+- `sbx`出力parserの拒否条件
 - global `status`の直接依存だけを対象とする全検査、`Balanced` network policy、出力の section・列構成・項目順、partial result、remediation、複数error時の診断
 - CLI parserと外部commandの非ゼロstatusを`1`へ写像し、原値を診断へ保持すること
 
-## 16. 受入条件
+## 14. 受入条件
 
 - 方向性文書の識別子、path、exit codeを共通型で表現できる
 - `init`を新規・再実行・失敗後再実行できる
 - `init`がconfig作成以外のhost検査、login、setupを行わない
 - `status --global`がhostとglobal環境を変更せず診断し、必要な外部commandを案内する
-- configとmetadataの不正を自動修復しない
+- configの不正を自動修復しない
 - 全利用者向け出力が日英で生成される
 - 外部commandをshellなしで実行し、secretと`SSH_AUTH_SOCK`を規則どおり扱う
-- version検出、compatibility manifest、fixture loader、Phase 1が読むJSON parserのtestが成功する
-- 後続workflowが必要なfixtureを、各workflowの実装と同時に追加できる構造になっている
+- version検出と、Phase 1が読むJSON parserのtestが成功する
+- 呼び出し側のない型、policy、error ID、messageを持たない
+  - `allow(dead_code)`を置かない
+  - `cargo build`と`cargo clippy --all-targets`が警告なし

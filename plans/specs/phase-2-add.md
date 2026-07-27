@@ -13,22 +13,78 @@ sbxm add <owner>/<repository>
 sbxm sync-files <owner>/<repository>
 ```
 
-Phase 1の共通型、command runner、compatibility fixture基盤を利用する。調査やlocal実装はPhase 1 PRのreviewと並行できるが、Phase 2 PRはreview結果を取り込む。`add`の実機受入までに、Template、daemon、create、secret、execについて本Phaseが使用するexact-version fixtureとdaemon安全性probeを完成させる。
+Phase 1が実装した共通型、config、command runner、`sbx`出力parserを利用する。調査やlocal実装はPhase 1 PRのreviewと並行できるが、Phase 2 PRはreview結果を取り込む。
 
-## 2. 手動手順からの変更
+## 2. 本Phaseで追加する共通基盤
+
+Phase 1は`init`と`status --global`が必要とする範囲だけを実装した。次はPhase 2が最初の呼び出し側となるため、本Phaseで実装する。実装は利用するworkflowと同じPRへ入れ、呼び出し側のないまま追加しない。
+
+- `ProjectId`のcanonical形式
+  - ASCII lowercaseの`owner/repository`を比較の正本とする
+  - 表示にはGitHub上の表記を使う
+- Sandbox名の導出
+  - 導出規則は方向性文書を正本とする
+  - 同じcanonical project IDが常に同じ名前になること
+  - `sbxm-<slug>-<hash>`が63 byte以内に収まること
+  - hash prefixの衝突をname collision errorとして扱うこと
+- Project metadataのschemaと永続化
+  - schemaは方向性文書を正本とする
+  - 本Phaseが書くのは`provisioning`とmanaged worktreeの記録まで
+  - `rebuild`のintentはPhase 4で追加する
+- Project metadata探索
+  - `base_path`直下のowner directoryと、その直下の`*.project/.sbxm/project.toml`だけを読む
+  - directory entryとmetadata fileのsymlinkを追跡しない
+  - すべてのmetadataをparseしてから結果を返す
+  - canonical ID重複、導出path不一致、Sandbox名衝突は一覧化してexit code `1`
+  - 1件の破損を無視して部分的な案件一覧を返さない
+  - 並び順はcanonical IDのbyte昇順
+- 既存fileのatomic置き換え
+  - 既存fileのpermissionとidentityを検証する
+  - 同一directoryの一時fileからatomic renameする
+  - symlinkは拒否する
+- 外部command runnerの追加policy
+  - 人間向け進捗を転送する`passthrough`
+  - 作業directoryの指定
+  - timeout classのimage build/saveとSandbox lifecycle
+- Global daemon lockとdaemon安全再起動手順
+- `status --global`への行の追加
+  - Docker Sandboxes login状態
+  - active session検査機能の対応状況
+
+metadataと外部状態のvalidationは、作成元や作成履歴を条件にしない共通処理として実装する。read-only commandとmutation commandは同じvalidation規則を使用する。手作業または別toolで作成されたmetadataと成果物も、全規則を満たす場合はsbxmが作成したものと区別せず受け入れる。
+
+## 3. 外部commandの契約
+
+Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。本Phaseが読む出力は、実装PRの中で対象Mac上の実出力に対して検証する。
+
+- 使用するsubcommandの`--help`と、読むstructured outputを実機で確認する
+- 確認した出力に対してparser testを書く
+- 代表的失敗のexit statusをtestで固定する
+- `sbx rm`の通常modeとforce modeについて、running、stopped、active sessionありの挙動を確認する
+- 新世代のimage、archive、Templateをloadした後も既存Sandboxを維持できることを確認する
+- Sandbox削除後に新Templateから同名Sandboxを再作成できることを確認する
+
+採取済み出力をversionごとに束ねるmanifestは持たない。安全性は、mutation直前に読むstructured outputをparseできるかで判定する。
+
+- parse不能な出力はmutationを行わずexit code `1`
+- 未知のstate値を既知の値へ丸めない
+- 最小versionの確認はPhase 1の実装を使う
+- 対象CLIのversionが変わった場合は、daemon安全性probeを再実施する
+
+## 4. 手動手順からの変更
 
 MVPは既存の手動手順を次のように自動化・変更する。
 
 - `.sbxm/create` shell scriptを生成せず、Rust workflowが同じ工程を実行する
 - 単一の通常cloneではなく、Sandbox内にbare repositoryとmanaged worktreeを作る
 - Sandbox名へcanonical project IDのhashを付け、owner/repository間の衝突を防ぐ
-- `sbx ls`のtextへ`grep`せず、Phase 1で固定したJSONを完全一致でparseする
+- `sbx ls`のtextへ`grep`せず、structured outputを完全一致でparseする
 - `SSH_AUTH_SOCK`を外した個別`sbx create`だけで安全とは見なさず、全Sandboxのactive session不在を確認してdaemonを安全に再起動する
 - 中断時の目標構成をproject metadataへ保存し、以降は同じ`add`で継続する
 
 中立Workspace、host path非露出、案件限定GitHub secret、利用者がglobal configへ明示したfileの限定copy、Docker socket非共有という要件は維持する。
 
-## 3. Optionと目標構成
+## 5. Optionと目標構成
 
 | 指定 | `mode` | `start_ref` | managed数 |
 |---|---|---|---:|
@@ -48,14 +104,14 @@ MVPは既存の手動手順を次のように自動化・変更する。
 
 再実行した`add`でoptionを省略した場合はmetadataに保存された目標構成を使用する。optionを指定した場合は保存値と完全一致することを要求し、不一致ならmutation前にexit code `1`とする。
 
-## 4. Project単位の排他
+## 6. Project単位の排他
 
 既存projectではmutationの前に`<project-root>/.sbxm/project.lock`をexclusive lockする。新規projectではowner directory、project root、`.sbxm`を作成または検証した直後にproject lockを取得し、以後のmutationへ進む。
 
 - lock待機は10秒
 - timeoutは対象projectを表示してexit code `1`
 - lockはworkflow終了まで保持する
-- daemonを操作する区間はPhase 1のglobal daemon lockをproject lockの後に取得する
+- daemonを操作する区間はglobal daemon lockをproject lockの後に取得する
 - 複数lockが必要な将来機能ではcanonical ID昇順に取得する
 
 lock fileの存在自体は処理中を意味しない。OS file lockの取得結果を使う。
@@ -70,9 +126,9 @@ lock fileの存在自体は処理中を意味しない。OS file lockの取得�
 
 retryを含む全体へ10秒のlock timeoutを適用する。permission、owner、file typeが不正な場合は安全に置換せずexit code `1`とする。
 
-## 5. Project metadataの作成と構築継続
+## 7. Project metadataの作成と構築継続
 
-### 5.1 新規
+### 7.1 新規
 
 入力を検証し、衝突検査を完了した後、次を行う。
 
@@ -85,7 +141,7 @@ retryを含む全体へ10秒のlock timeoutを適用する。permission、owner�
 
 `provisioning`には`mode`、`start_ref`、`requested_worktrees`、`dockerfile_sha256`を保存する。attached modeの`start_ref`は、remote default branchを解決するまで空を許可し、解決直後にatomic updateする。
 
-### 5.2 `add`の再実行
+### 7.2 `add`の再実行
 
 有効なmetadataが存在する場合、保存済み目標構成とoptionの一致を検証してから、成果物を順にinspectする。
 
@@ -103,7 +159,7 @@ retryを含む全体へ10秒のlock timeoutを適用する。permission、owner�
 
 再実行では保存済みのmode、resolved start ref、requested countを使用する。GitHub側default branchが変わっても自動変更しない。現在のDockerfile hashがmetadataの適用済みhashと異なり、対応imageのbuild前なら、現在のDockerfileを初回構築の目標としてhashを更新して続行する。対応imageが既に完成している場合は、保存済みhashの世代を使って初回構築を完了し、現在のDockerfileを反映する`sbxm rebuild <owner>/<repository>`を成功出力で案内する。初回構築の途中へ別世代を混在させない。
 
-## 6. 導出名
+## 8. 導出名
 
 ```text
 sandbox_name   = 方向性文書のSandbox名
@@ -124,13 +180,13 @@ io.crescware.sbxm.metadata-version=1
 
 既存imageは`docker image inspect`で全labelが一致した場合だけ再利用する。
 
-## 7. Workflow
+## 9. Workflow
 
 全工程は`inspect -> decide -> mutate -> verify -> record`で実行する。verifyに失敗したら後続工程へ進まない。
 
-`docker build`、`docker image save`、hostとSandbox内のGit clone・fetch、Template load、Sandbox createはPhase 1 runnerの`passthrough`を使用し、各外部toolが出す進捗を実行中にそのまま表示する。sbxmは独自のprogress表示を重ねない。inspect、labelやarchiveの検証、secret存在確認など、結果をparseまたは秘匿するcommandは`capture`する。
+`docker build`、`docker image save`、hostとSandbox内のGit clone・fetch、Template load、Sandbox createは本Phaseで追加する`passthrough`を使用し、各外部toolが出す進捗を実行中にそのまま表示する。sbxmは独自のprogress表示を重ねない。inspect、labelやarchiveの検証、secret存在確認など、結果をparseまたは秘匿するcommandは`capture`する。
 
-### 7.1 Host directory
+### 9.1 Host directory
 
 作成するdirectory:
 
@@ -145,7 +201,7 @@ io.crescware.sbxm.metadata-version=1
 - 新規directoryのpermissionは利用者のumaskに従う。ただし`.sbxm`と`.cache`は`0700`
 - 既存の非directoryはexit code `1`
 
-### 7.2 Host clone
+### 9.2 Host clone
 
 programとarguments:
 
@@ -166,7 +222,7 @@ dirty状態は`add`の構築継続を妨げない。remote不一致、複数orig
 
 GitHubへのSSH認証とrepository accessは、owner、repository、利用者のSSH設定によって結果が変わるため、projectを持たない`status --global`ではgenericな疎通検査を行わない。本工程の対象remoteに対するcloneを正本の検査とし、失敗時は外部commandの診断規則に従ってGit/SSHのexit statusとredact済みstderrを表示する。
 
-### 7.3 Dockerfile
+### 9.3 Dockerfile
 
 `<project-root>/.sbxm/Dockerfile`がない場合だけbundled templateから`0600`で作る。既存Dockerfileは利用者が管理・編集するfileとして内容を変更せず採用する。内容は元の手動手順を初期templateの正本とし、少なくとも次を満たす。
 
@@ -176,7 +232,7 @@ GitHubへのSSH認証とrepository accessは、owner、repository、利用者の
 - package installationを含む`docker build`の成功を固定tool set導入の判定とし、Sandbox操作のたびに全commandの存在をprobeしない
 - `/home/agent/work`を`agent:agent`所有で作成
 - secretの実値を書かない
-- `GH_TOKEN`などへ実tokenを書かない。proxy-managed方式が対象`sbx` versionで必要な場合だけfixtureに基づくsentinelを設定
+- `GH_TOKEN`などへ実tokenを書かない。proxy-managed方式が対象`sbx` versionで必要な場合だけ、実機で確認した形式のsentinelを設定
 - mise、Codex、Claude Codeのinstallerはversionまたはdigestをpinする
 - interactive shellの開始位置を`/home/agent/work`にする
 - `WORKDIR /home/agent/work`
@@ -186,7 +242,7 @@ GitHubへのSSH認証とrepository accessは、owner、repository、利用者の
 
 `add`は採用したDockerfileのSHA-256をmetadataとimage labelへ適用済みhashとして保存する。利用者による手修正を許可し、構築完了後の保存済みhashとの不一致だけを理由にmetadataやDockerfileを不正とは扱わない。変更の適用は`rebuild`が担当する。
 
-### 7.4 Image buildとarchive
+### 9.4 Image buildとarchive
 
 各buildでは、Rustの`tempfile::TempDir`を使い、OSの一時領域へprefix `sbxm-build-context-`を持つ一時directoryを作成する。
 
@@ -218,25 +274,53 @@ docker image save
 - 正式なarchiveが既にあっても、新しい一時archiveの生成と検証が完了するまでは変更しない
 - `docker image save`成功後に一時archiveのmanifest、full SHA-256 label、image IDを検証し、同じ`.cache` directory内で正式pathへatomic renameして置き換える
 
-MVPではbuild、save、loadに必要なhostまたはDocker storage容量を事前に見積もらず、容量不足を避けるための旧世代削除や自動再試行も行わない。必要容量はDockerfile、Docker内部storage、build cache、image、archiveの状態に依存し、根拠のある安全な削除規則をMVPでは定義できないためである。失敗時はPhase 1 runnerのpassthroughと共通error規則に従い、外部toolの出力、失敗工程、対象、同じcommandによる再実行方法を表示する。
+MVPではbuild、save、loadに必要なhostまたはDocker storage容量を事前に見積もらず、容量不足を避けるための旧世代削除や自動再試行も行わない。必要容量はDockerfile、Docker内部storage、build cache、image、archiveの状態に依存し、根拠のある安全な削除規則をMVPでは定義できないためである。失敗時は`passthrough`と共通error規則に従い、外部toolの出力、失敗工程、対象、同じcommandによる再実行方法を表示する。
 
-### 7.5 Template load
+### 9.5 Template load
 
-Phase 1 fixtureで確定した次の操作を使用する。
+実機で確認した次の操作を使用する。
 
 ```text
 sbx template load <template-archive>
 ```
 
-load後、fixtureで定義したread-only commandにより、Templateが期待image IDと対応することを検証する。runtimeが対応関係を観測できない場合、既存Templateは再利用せず、同名存在時にexit code `1`とする。
+load後、実機で確認したread-only commandにより、Templateが期待image IDと対応することを検証する。runtimeが対応関係を観測できない場合、既存Templateは再利用せず、同名存在時にexit code `1`とする。
 
-### 7.6 Safe daemon
+### 9.6 Safe daemon
 
-Phase 1の共通手順を使用する。global daemon lockを取得し、全Sandboxのactive session不在をstructured outputから確認した後、`sbx daemon stop`を実行し、`SSH_AUTH_SOCK`をunsetした環境で`sbx daemon start --detach`を実行する。
+daemonの安全性を永続markerやinstance IDから推測しない。Sandboxを作成または再作成する操作の前に、全Sandboxのactive session不在をstructured outputから確認し、daemonを停止してから`SSH_AUTH_SOCK`をunsetした環境で起動し直す。
 
-active sessionを検出した場合、またはsession不在を証明できない場合は、daemonを変更せずSandboxも作成せずexit code `1`とする。session検査commandの失敗、timeout、parse不能はexit code `1`とする。
+この手順は本Phaseで実装し、Phase 3の`open`とPhase 4の`rebuild`が同じ手順を使用する。
 
-### 7.7 Sandbox create
+daemon操作の全体で`~/.sbxm/runtime/daemon.lock`をexclusive取得する。
+
+- directoryは`0700`、lock fileは`0600`とする
+- lock fileはworkflow終了後も削除しない
+- project lockを取得した後にglobal daemon lockを取得する
+
+判定規則:
+
+- active sessionを1件でも検出した場合はdaemonを変更しない
+  - 対象sessionと終了方法を表示してexit code `1`
+- structuredなsession検査が存在しない場合はdaemonを変更せずexit code `1`
+- session不在を証明できない場合もdaemonを変更せずexit code `1`
+- session検査commandの失敗、timeout、parse不能はexit code `1`
+- session不在を確認できた場合だけ`sbx daemon stop`を実行する
+- 起動は`SSH_AUTH_SOCK`をunsetした`sbx daemon start --detach`とする
+
+毎回のdaemon再起動による所要時間はMVPで受け入れる。安全性を保ったまま再起動を省略する最適化は、MVP利用後の非機能要件として検討する。
+
+#### Daemon安全性probe
+
+Sandbox mutationを実機で成功扱いする前に、次を証明して結果をPRへ記録する。probe未完了でもdaemonに依存しないcodeの実装は進めてよいが、mutationを安全と判定する受入testは未完了のままにする。
+
+1. `SSH_AUTH_SOCK`ありで起動したdaemonがSandboxへagentを転送すること
+2. `SSH_AUTH_SOCK`をunsetして`sbx daemon start --detach`したdaemonでは転送されないこと
+3. 対象versionのstructured outputから、全Sandboxのactive session不在を判定できること
+4. active sessionあり、0件、command失敗、timeout、parse不能を区別できること
+5. daemon停止・起動後にSandboxを再利用または作成できること
+
+### 9.7 Sandbox create
 
 中立Workspaceを`0700`で作り、symlinkを拒否する。sbxm独自のownership markerや作成履歴fileは置かない。既存workspaceはowner、permission、file type、real pathと内容がvalidation規則を満たす場合に、作成元を問わず再利用する。満たさない場合は内容を変更せずexit code `1`とする。
 
@@ -250,7 +334,7 @@ sbx create
   <workspace>
 ```
 
-実際のargumentsはPhase 1 fixtureのexact versionに従う。runnerは`SSH_AUTH_SOCK`をunsetする。
+実際のargumentsは対象CLI versionの実出力に従う。runnerは`SSH_AUTH_SOCK`をunsetする。
 
 既存Sandboxを再利用する条件:
 
@@ -261,7 +345,7 @@ sbx create
 
 1項目でも確認不能または不一致ならexit code `1`。誰が作成したか、またはsbxm独自のmarkerがあるかは条件にしない。
 
-### 7.8 宣言fileの配置と`sync-files`
+### 9.8 宣言fileの配置と`sync-files`
 
 global configの`[[files]]`に宣言されたhost fileを、Sandbox内の`agent` homeからの相対pathへ配置する。特定のAgentやtoolの設定形式を解釈しない。
 
@@ -289,7 +373,7 @@ sbx exec --user root <sandbox-name> --
 
 `sync-files`はproject metadata、Sandbox identity、running stateをread-onlyで検証してから、本sectionのfile配置だけを実行する。rebuild intentが存在する場合はfileを配置せず、同じtargetの`sbxm rebuild <owner>/<repository>`再実行を案内してexit code `1`とする。stopped Sandboxを暗黙に起動せず、`sbxm open <owner>/<repository>`後の再実行を案内してexit code `1`とする。registered、unmanaged、inconsistentでは何も配置しない。
 
-### 7.9 Git identityとprotocol
+### 9.9 Git identityとprotocol
 
 Sandbox内で次を引数配列として実行する。
 
@@ -301,7 +385,7 @@ gh config set git_protocol https --host github.com
 
 既存値が同一ならskip。異なる場合は、別利用者のSandboxである可能性があるため自動上書きせずexit code `1`。
 
-### 7.10 GitHub secret
+### 9.10 GitHub secret
 
 案件限定fine-grained personal access tokenの発行と入力は自動化しない。必要permissionは`Contents: read/write`、`Metadata: read`、必要な場合だけPull requests、Issues、Actionsとする。
 
@@ -311,11 +395,11 @@ gh config set git_protocol https --host github.com
 sbx secret set <sandbox-name> github
 ```
 
-存在確認はPhase 1 fixtureで固定したread-only commandとstructured outputだけを使用する。secret値を取得・表示しない。
+存在確認は実機で確認したread-only commandとstructured outputだけを使用する。secret値を取得・表示しない。
 
 未登録なら、発行条件と上記commandを表示して前提条件不足のexit code `1`で停止する。登録後は同じ`add`を再実行し、Sandboxを再利用して次工程へ進む。
 
-### 7.11 Bare clone
+### 9.11 Bare clone
 
 Sandbox内:
 
@@ -338,7 +422,7 @@ git --git-dir <bare-git-dir> fetch --prune origin
 
 directoryは存在するが条件不一致なら自動削除せずexit code `1`。
 
-### 7.12 Start ref解決
+### 9.12 Start ref解決
 
 attached mode:
 
@@ -349,7 +433,7 @@ attached mode:
 
 detached modeでは`refs/remotes/origin/<start_ref>`の存在を確認する。ambiguous ref、tag、commit直接指定は拒否する。
 
-### 7.13 Managed worktree
+### 9.13 Managed worktree
 
 indexは0から`requested_worktrees - 1`まで固定する。`add`再実行時に別の空きindexへずらさない。
 
@@ -381,7 +465,7 @@ git --git-dir <bare-git-dir> worktree add
 - 内容、HEAD、modeのいずれかが不一致: exit code `1`
 - managed用名前空間外のGit worktree: unmanagedとして変更しない
 
-## 8. 成功出力
+## 10. 成功出力
 
 少なくとも次を表示する。
 
@@ -403,7 +487,7 @@ FILE  DESTINATION  RESULT
 
 各managed worktreeについて`mise.toml`、`.mise.toml`、`.tool-versions`の有無をread-onlyで確認し、`mise trust`と`mise install`を自動実行せず案内する。
 
-## 9. Errorと副作用
+## 11. Errorと副作用
 
 - 各工程失敗後は後続工程を実行しない
 - 成功済み成果物をrollback目的で削除しない
@@ -412,8 +496,14 @@ FILE  DESTINATION  RESULT
 - token、secret、host SSH情報は表示しない
 - parse不能な外部出力を推測で成功扱いしない
 
-## 10. 自動test
+## 12. 自動test
 
+本Phaseで追加する共通基盤のtestは、それを使うworkflowのtestと同じPRへ入れる。
+
+- canonical project IDによる比較とcase正規化
+- Sandbox名の決定性、63 byte上限、slug衝突、name collision
+- metadata探索のsymlink拒否、canonical ID重複、導出path不一致
+- 既存fileのatomic置き換えのidentity検証とsymlink拒否
 - option matrixとmutation前validation
 - metadata新規作成、構築途中と構築済みでの`add`再実行
 - project lock取得後のidentity一致、削除・再作成による不一致時retry、symlink・owner・permission拒否、retry timeout
@@ -438,8 +528,10 @@ FILE  DESTINATION  RESULT
 - managed/unmanaged分離
 - stderr、exit code、secret redaction
 
-## 11. 実機受入条件
+## 13. 実機受入条件
 
+- daemon安全性probeの5項目を証明し、結果をPRへ記録している
+- 呼び出し側のない型、policy、error ID、messageを追加していない
 - 新規案件をoptionなしで最後まで構築できる
 - host cloneはSSH、Sandbox cloneはHTTPS proxy credentialを使用する
 - bundled Dockerfileが固定済み`docker/sandbox-templates:shell-docker`をbaseとし、MVPで固定したtool setを導入できる
