@@ -32,7 +32,7 @@ use workflow::Reporter;
 use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
 use workflow::select::TerminalProjectPrompt;
-use workflow::{add, ls, open, sandbox, status_global, sync_files};
+use workflow::{add, ls, open, sandbox, status_global, stop, sync_files};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();
@@ -299,6 +299,33 @@ fn dispatch(
             }
         }
 
+        Command::Stop(projects) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            let mut prompt = TerminalProjectPrompt {
+                heading: "select-stop-heading",
+            };
+            match stop::run(
+                &config,
+                projects,
+                &RealHost,
+                &mut prompt,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+                open::Poll::default(),
+            ) {
+                Ok(report) => print_stop_report(&catalog, &report),
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
         Command::Ls => {
             let (config, catalog) = match require_config(location, lang_option) {
                 Ok(pair) => pair,
@@ -447,6 +474,51 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
         print!("\n{legend}");
     }
     let _ = std::io::stdout().flush();
+}
+
+/// `stop`の出力。
+///
+/// 対象ごとの結果を表示し、1件でも失敗していればexit code `1`とする。
+fn print_stop_report(catalog: &Catalog, report: &stop::StopReport) -> ExitCode {
+    let reporter = Reporter::new(catalog);
+    let rows: Vec<Vec<String>> = report
+        .outcomes
+        .iter()
+        .map(|outcome| {
+            vec![
+                outcome.project.clone(),
+                outcome.sandbox.clone(),
+                outcome.result.as_str().to_string(),
+            ]
+        })
+        .collect();
+    print!(
+        "{}",
+        reporter.render_value_table(
+            &["column-project", "column-sandbox", "column-result"],
+            &rows,
+        )
+    );
+
+    let values: Vec<(&str, &str)> = report
+        .outcomes
+        .iter()
+        .map(|outcome| (outcome.result.as_str(), outcome.result.legend_id()))
+        .collect();
+    if let Some(legend) = reporter.render_value_legend(&values) {
+        print!("\n{legend}");
+    }
+    let _ = std::io::stdout().flush();
+
+    let mut stderr = std::io::stderr();
+    for diagnostic in &report.failures {
+        reporter.print_error(&Error::single(diagnostic.clone()), &mut stderr);
+    }
+    if report.failures.is_empty() {
+        ExitCode::Success
+    } else {
+        ExitCode::Failure
+    }
 }
 
 /// `ls`の出力。

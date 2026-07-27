@@ -100,6 +100,7 @@ error-github-secret-missing = Sandbox { $sandbox } に { $secret } secretがな�
 error-sandbox-repository-unusable = Sandbox内の { $path } はこの案件には使用できません: { $detail }
 error-start-ref-unresolved = { $project } のremoteに { $reference } がありません。
 error-no-managed-projects = 選択できる管理案件がありません。
+error-sandbox-still-running = Sandbox { $sandbox } は停止を要求したあとも起動したままです。
 error-project-not-managed = { $project } は管理対象の案件ではありません。
 error-sandbox-not-created = { $project } は登録済みですが、Sandbox { $sandbox } はまだ存在しません。
 error-sandbox-not-running = Sandbox { $sandbox } は { $observed } です。このcommandはrunningのSandboxだけを対象とします。
@@ -243,6 +244,8 @@ open-worktrees = このSandboxのmanaged worktree:
 select-open-heading = どの案件を開きますか?
 select-stop-heading = どの案件を停止しますか?
 
+legend-stopped-now = この実行で停止しました
+legend-failed = 停止できませんでした
 legend-heading = 状態値の凡例
 legend-ready = 期待どおり利用できます
 legend-missing = 存在しません

@@ -100,6 +100,7 @@ error-github-secret-missing = The sandbox { $sandbox } has no { $secret } secret
 error-sandbox-repository-unusable = { $path } in the sandbox cannot be used for this project: { $detail }
 error-start-ref-unresolved = { $reference } does not exist on the remote of { $project }.
 error-no-managed-projects = There is no managed project to choose from.
+error-sandbox-still-running = The sandbox { $sandbox } was still running after it was asked to stop.
 error-project-not-managed = { $project } is not a managed project.
 error-sandbox-not-created = { $project } is registered, but its sandbox { $sandbox } does not exist yet.
 error-sandbox-not-running = The sandbox { $sandbox } is { $observed }, and this command only acts on a running sandbox.
@@ -243,6 +244,8 @@ open-worktrees = Managed worktrees in this sandbox:
 select-open-heading = Which project do you want to open?
 select-stop-heading = Which projects do you want to stop?
 
+legend-stopped-now = the sandbox was stopped by this run
+legend-failed = the sandbox could not be stopped
 legend-heading = Legend
 legend-ready = available and matching the expected state
 legend-missing = not present

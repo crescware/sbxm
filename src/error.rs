@@ -102,6 +102,7 @@ pub enum ErrorId {
     NoManagedProjects,
     SandboxNotCreated,
     SandboxNotRunning,
+    SandboxStillRunning,
     SbxLoginMissing,
     SbxLoginUnobservable,
 
@@ -217,6 +218,7 @@ impl ErrorId {
             ErrorId::NoManagedProjects => "no-managed-projects",
             ErrorId::SandboxNotCreated => "sandbox-not-created",
             ErrorId::SandboxNotRunning => "sandbox-not-running",
+            ErrorId::SandboxStillRunning => "sandbox-still-running",
             ErrorId::SbxLoginMissing => "sbx-login-missing",
             ErrorId::SbxLoginUnobservable => "sbx-login-unobservable",
 
@@ -549,6 +551,7 @@ mod tests {
             ErrorId::NoManagedProjects,
             ErrorId::SandboxNotCreated,
             ErrorId::SandboxNotRunning,
+            ErrorId::SandboxStillRunning,
             ErrorId::SbxLoginMissing,
             ErrorId::SbxLoginUnobservable,
             ErrorId::ProjectPathSymlink,

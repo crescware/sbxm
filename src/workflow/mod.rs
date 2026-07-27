@@ -18,6 +18,7 @@ pub mod sandbox;
 pub mod secret;
 pub mod select;
 pub mod status_global;
+pub mod stop;
 pub mod sync_files;
 pub mod template;
 
