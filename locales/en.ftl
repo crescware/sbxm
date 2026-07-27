@@ -97,6 +97,8 @@ error-declared-file-unusable = The declared file { $source } cannot be placed: {
 error-declared-file-conflict = { $destination } already holds different content, so { $source } was not placed.
 error-sandbox-identity-mismatch = { $sandbox } already sets { $key } to { $observed }, and this project expects { $expected }.
 error-github-secret-missing = The sandbox { $sandbox } has no { $secret } secret, so it cannot reach the repository.
+error-sandbox-repository-unusable = { $path } in the sandbox cannot be used for this project: { $detail }
+error-start-ref-unresolved = { $reference } does not exist on the remote of { $project }.
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 
@@ -136,6 +138,8 @@ remediation-daemon-session-unobservable = Update the Docker Sandboxes CLI to a v
 remediation-declared-file-conflict = Compare the two yourself, then run sbxm sync-files to replace the file in the sandbox with the declared one.
 remediation-sandbox-identity-mismatch = Check whose sandbox this is. sbxm does not overwrite a value that is already set.
 remediation-github-secret-missing = Issue a fine-grained personal access token limited to this repository, with Contents read and write and Metadata read, plus Pull requests, Issues or Actions only if you need them. Register it with { $command }, then run the same command again.
+remediation-sandbox-repository-unusable = Inspect { $path } inside the sandbox yourself. sbxm never deletes a repository or a worktree to make room.
+remediation-start-ref-unresolved = Check the branch name on GitHub, then run the command again once the branch exists.
 remediation-run-rebuild = Run { $command } to finish the rebuild.
 remediation-target-configuration-mismatch = Run { $command } without those options to continue with the stored target, or destroy the project first to build it differently.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.

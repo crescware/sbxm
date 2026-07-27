@@ -108,25 +108,46 @@ pub fn exec_as_root(
     run_exec(host, sandbox, Some("root"), args)
 }
 
+/// Sandbox内で、進捗をそのまま見せるcommandを実行する。
+///
+/// cloneやfetchのように、時間のかかる工程の進捗を実行中に見せるために使う。
+pub fn exec_with_progress(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    args: &[&str],
+) -> Result<CommandOutcome> {
+    let full = exec_arguments(sandbox, None, args);
+    let borrowed: Vec<&str> = full.iter().map(String::as_str).collect();
+    let spec = CommandSpec::passthrough("sbx", &borrowed)
+        .env(EnvPolicy::InheritWithoutSshAgent)
+        .timeout(TimeoutClass::RepositoryTransfer);
+    host.run(&spec)
+}
+
 fn run_exec(
     host: &dyn HostEnvironment,
     sandbox: &str,
     user: Option<&str>,
     args: &[&str],
 ) -> Result<CommandOutcome> {
-    let mut full: Vec<&str> = vec!["exec"];
-    if let Some(user) = user {
-        full.push("--user");
-        full.push(user);
-    }
-    full.push(sandbox);
-    full.push("--");
-    full.extend_from_slice(args);
-
-    let spec = CommandSpec::capture("sbx", &full)
+    let full = exec_arguments(sandbox, user, args);
+    let borrowed: Vec<&str> = full.iter().map(String::as_str).collect();
+    let spec = CommandSpec::capture("sbx", &borrowed)
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);
     host.run(&spec)
+}
+
+fn exec_arguments(sandbox: &str, user: Option<&str>, args: &[&str]) -> Vec<String> {
+    let mut full: Vec<String> = vec!["exec".to_string()];
+    if let Some(user) = user {
+        full.push("--user".to_string());
+        full.push(user.to_string());
+    }
+    full.push(sandbox.to_string());
+    full.push("--".to_string());
+    full.extend(args.iter().map(|arg| arg.to_string()));
+    full
 }
 
 /// 名前が完全一致するSandboxを探す。
