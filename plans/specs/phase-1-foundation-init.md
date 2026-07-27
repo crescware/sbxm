@@ -217,6 +217,7 @@ Phase 1で採取するもの:
 - `sbx --help`
 - `sbx ls --json`の0件、running、stopped fixture
 - `sbx daemon status`のrunning、stopped fixture
+- `sbx policy ls`の`Balanced`と代表的な非対応policyのfixture
 
 各workflowの実装時に採取するもの:
 
@@ -337,6 +338,8 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 
 未loginの場合は`sbx login`を、Remote SSH setupが必要な場合はfixtureで固定した公式commandを表示する。commandを自動実行しない。
 
+network policyはfixtureで固定した`sbx policy ls`のread-only出力から現在値を取得し、`Balanced`との完全一致だけを`ready`とする。`Balanced`以外、command失敗、timeout、parse不能は、検証済みbaselineを確認できないためerrorとしてexit code `1`とする。より制限が強いpolicyも動作と安全性を推測して受け入れない。観測した値、期待値`Balanced`、対象versionで検証した公式の設定手順を表示し、policyを自動変更しない。
+
 ### 14.3 出力
 
 global scopeはhostとglobal環境だけを診断するため、正常結果は`GLOBAL` sectionだけをstdoutへ表示する。projectの情報を混在させない。英語modeの列は`ITEM`と`STATUS`で固定し、14.2の検査順に並べる。
@@ -386,7 +389,7 @@ Session inspection   ready
 - TTY/non-TTY、Esc、Ctrl-C
 - command runnerのenvironment、timeout、capture・passthrough・inheritの各stream policy
 - compatibility fixtureの全parser
-- global `status`の直接依存だけを対象とする全検査、出力snapshot、partial result、remediation、複数error時の診断
+- global `status`の直接依存だけを対象とする全検査、`Balanced` network policy、出力snapshot、partial result、remediation、複数error時の診断
 - CLI parserと外部commandの非ゼロstatusを`1`へ写像し、原値を診断へ保持すること
 
 ## 16. 受入条件

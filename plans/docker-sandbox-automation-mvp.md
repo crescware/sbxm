@@ -38,6 +38,8 @@
 
 `status`は作成元ではなく現在の状態を診断する。mutation commandも`status`と同じvalidation規則に基づいて実行または拒否し、「sbxmが作った印」や作成履歴を追加の条件にしない。有効なmetadataを手作業で配置した場合、そのmetadataが示す対象を利用者がsbxmの管理対象として明示したものと扱う。
 
+MVPのDocker Sandboxes network policyは`Balanced`へ固定する。これは単なる既定値ではなく、AI coding agentをhostの信頼境界外へ置きつつ、GitHub、Codex、Claude Codeと通常の開発操作を成立させた実機検証済みbaselineである。ほかのpolicyは、より制限が強い場合も含めて同じ安全性と動作を推測せず、MVPでは対応しない。
+
 ### 3.1 TTYと非TTY
 
 - projectを対象とするcommandは、非TTYではproject引数の完全指定を必須とする
@@ -82,6 +84,7 @@ Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで
 - port、exportの独自wrapper
 - Dockerfileの直接編集と`rebuild`を抽象化するpackage選択設定・profile・plugin機構
 - hostとDocker storageの容量見積り、使用量表示、旧image・archive・Template・build cacheの自動cleanup
+- `Balanced`以外のDocker Sandboxes network policy
 
 ## 5. 公開CLI
 
@@ -325,6 +328,7 @@ Phase 1〜4はそれぞれ独立した1 PRとし、合計4 PRで実装する。�
 - 案件別Git identity
 - host側project全体の削除
 - hostとDocker storageの可視化およびcleanup orchestration
+- 追加のDocker Sandboxes network policy
 
 このreviewまでは、公開command、設定項目、対応環境を増やさない。
 
