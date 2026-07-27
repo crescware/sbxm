@@ -157,9 +157,11 @@ dirty状態は`add`の構築継続を妨げない。remote不一致、複数orig
 
 `<project-root>/.sbxm/Dockerfile`がない場合だけbundled templateから`0600`で作る。既存Dockerfileは利用者が管理・編集するfileとして内容を変更せず採用する。内容は元の手動手順を初期templateの正本とし、少なくとも次を満たす。
 
-- base imageはreview済みdigestでpinする。mutable tagだけを使用しない
-- `ca-certificates`、`curl`、`wget`、`gh`、`jq`を導入
-- `/home/agent/work`を`agent`所有で作成
+- base imageはApple siliconを含む公式multi-platform image `docker.io/docker/sandbox-templates:shell-docker@sha256:39cf20eca861ec92747487af6197f6d916f774bdb98245d267dbd8dfd3debb05`へpinする。mutable tagだけを使用しない
+- base imageが提供するUID `1000`の非root `agent`、`/home/agent`、passwordless sudo、inner Docker Engineを使用する
+- sbxmが直接依存する`git`、`openssh-client`、`coreutils`、`ca-certificates`、`curl`、`wget`、`gh`、`jq`をDockerfileで導入する。base imageに含まれることだけを暗黙の依存根拠にしない
+- package installationを含む`docker build`の成功を依存導入の判定とし、Sandbox操作のたびに全commandの存在をprobeしない
+- `/home/agent/work`を`agent:agent`所有で作成
 - secretの実値を書かない
 - `GH_TOKEN`などへ実tokenを書かない。proxy-managed方式が対象`sbx` versionで必要な場合だけfixtureに基づくsentinelを設定
 - mise、Codex、Claude Codeのinstallerはversionまたはdigestをpinする
@@ -415,6 +417,7 @@ FILE  DESTINATION  RESULT
 
 - 新規案件をoptionなしで最後まで構築できる
 - host cloneはSSH、Sandbox cloneはHTTPS proxy credentialを使用する
+- bundled Dockerfileが固定済み`docker/sandbox-templates:shell-docker`をbaseとし、宣言した直接依存を導入できる
 - workspaceは中立pathだけで、実案件pathとMac user homeをSandboxへ公開しない
 - Sandbox内に`SSH_AUTH_SOCK`がなく、`ssh-add -L`がhost keyを返さない
 - Docker socketを渡していない
