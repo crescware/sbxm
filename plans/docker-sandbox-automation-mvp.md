@@ -100,16 +100,20 @@ sbxm [--lang <ja|en>] destroy [-f|--force] [<owner>/<repository>]
 ### 5.1 対象指定
 
 - 引数あり: `<owner>/<repository>`を完全指定し、案件選択promptを出さない
-- TTYで引数なし: metadataから候補を作り、必ずpromptを表示する
+- TTYで引数なし: metadataから候補を作り、候補が1件以上なら必ずpromptを表示する
 - 非TTYで引数なし: 対象を探索せずusage errorとする
 - promptはstdinから読み、stderrへ表示する。両方がTTYでなければusage errorとする
-- `open`と`destroy`は単一選択、`stop`は0件以上の複数選択とする
+- `open`と`destroy`は単一選択、`stop`は1件以上の複数選択とする
 - `add`、`sync-files`、`rebuild`はproject引数の完全指定を必須とし、案件選択promptを出さない
 - `status`は`--global`（短縮形`-g`）または`<owner>/<repository>`のどちらか一方を必須とし、案件選択promptを出さない
 - `destroy --force`はTTYかどうかにかかわらずproject引数の完全指定を必須とする
 - promptに既定選択を設けない
+- `stop`の複数選択promptは未選択の確定を受け付けない。操作せずに終了する場合はEscまたはCtrl-Cを使用する
+- 有効なmetadataをすべて検証した結果、選択候補となる管理案件が0件の場合は空のpromptを表示しない。`no-managed-projects` errorとして、管理案件がないことと`sbxm add <owner>/<repository>`をstderrへ表示し、exit code `1`で終了する
+- metadataの不正、重複、読取失敗は候補0件へ丸めず、それぞれのerror IDと診断を表示する
 - EscまたはCtrl-Cは何も変更せず、exit code `130`で終了する
-- `stop`で0件を確定した場合だけ、何も変更せずexit code `0`とする
+
+候補0件は利用者が選択を取り消した状態ではなく、対象選択を開始できないerrorとして`open`、`stop`、`destroy`で同じ扱いにする。`stop`だけに未選択確定という別の終了操作を設けず、対話操作の中断方法とexit codeをEscまたはCtrl-Cへ統一する。
 
 ## 6. 識別子とpath
 

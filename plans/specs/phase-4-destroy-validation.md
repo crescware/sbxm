@@ -167,6 +167,8 @@ force modeでは、`registered`は管理情報を破棄し、`stopped`と`runnin
 
 対象特定ではmetadata、canonical project ID、導出したSandbox名、workspace、Template/image identityを共通validation規則で検証する。作成元やsbxm独自のmarkerは条件にしない。対象を一意に特定できない場合は通常・forceのどちらでも削除しない。
 
+引数なしのTTY実行で管理案件が0件の場合は、方向性文書の共通規則に従い、promptを表示せず`no-managed-projects`でexit code `1`とする。
+
 ## 7. Active session
 
 通常modeでは、Codex、Claude Code、SSH、editor、development serverなどのsession状態を`sbx` structured outputから判定する。
@@ -325,6 +327,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - 適用済みhash更新とrebuild intent削除
 - not-createdからの管理情報破棄
 - TTY/非TTYの対象指定共通規則
+- 通常modeの管理案件0件でpromptを表示せず`no-managed-projects`
 - managed/unmanaged全件列挙
 - dirty、untracked、operation in progress
 - attachedのunpushed、upstreamなし、pushed

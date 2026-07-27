@@ -56,6 +56,8 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 10. 接続先とworktree一覧をstderrへ表示
 11. `ssh <sandbox-name>.sbx`へterminalを引き渡す
 
+引数なしのTTY実行で管理案件が0件の場合は、方向性文書の共通規則に従い、promptを表示せず`no-managed-projects`でexit code `1`とする。
+
 手動手順で使用していた起動commandの候補は次であり、exact formはfixtureで固定する。
 
 ```text
@@ -82,8 +84,9 @@ Phase 1の共通手順を使用し、`open`のたびにglobal daemon lockを取�
 ### 5.1 対象
 
 - 引数あり: 重複を除いた全projectをcanonical ID昇順に処理
-- 引数なし: 全管理案件から0件以上を複数選択
-- 0件確定: exit `0`
+- 引数なし: 全管理案件から1件以上を複数選択
+- 未選択のまま確定する操作は受け付けず、EscまたはCtrl-Cでexit `130`
+- 管理案件が0件の場合はpromptを表示せず、方向性文書の`no-managed-projects`でexit `1`
 
 ### 5.2 Validationとatomicity
 
@@ -281,6 +284,7 @@ ssh-add -L
 ## 8. 自動test
 
 - 各commandの引数あり・なし・非TTY・cancel
+- `open`と`stop`の管理案件0件、`stop`の未選択確定拒否
 - state mappingの全fixtureと未知state
 - `open`のnot-created拒否、stopped起動、running再利用
 - daemon再起動、active session、session不在を証明不能
