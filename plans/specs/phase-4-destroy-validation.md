@@ -19,6 +19,8 @@ sbxm destroy -f <owner>/<repository>
 
 `rebuild`はproject引数の完全指定を必須とし、対象選択promptと対話確認を行わない。安全性を証明できない場合は再構築せず、問題の解消方法を表示する。
 
+`rebuild`が再利用するbuild、save、clone、fetch、Template、Sandbox操作と、`destroy`のSandbox削除はPhase 1 runnerの`passthrough`を使用し、外部toolの進捗を隠さない。安全検査と事後検証のstructured outputは`capture`する。sbxm独自のprogress表示は追加しない。
+
 ## 2. 共通のデータ保護検査
 
 running Sandboxを削除する通常modeの`rebuild`と`destroy`は、同じactive session、worktree、保存状態parserと判定規則を使用する。
@@ -317,6 +319,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - Dockerfile変更なしのno-op
 - 新image build、世代別archive、Template検証
 - build、archive、Template失敗時に既存Sandboxを維持すること
+- rebuildとdestroyの外部進捗passthrough、structured出力のcapture
 - active session、dirty、untracked、unpushed、検査不能による`rebuild`拒否
 - unmanaged worktreeによる`rebuild`拒否
 - stoppedでの`rebuild`拒否と`open`案内

@@ -128,6 +128,8 @@ io.crescware.sbxm.metadata-version=1
 
 全工程は`inspect -> decide -> mutate -> verify -> record`で実行する。verifyに失敗したら後続工程へ進まない。
 
+`docker build`、`docker image save`、hostとSandbox内のGit clone・fetch、Template load、Sandbox createはPhase 1 runnerの`passthrough`を使用し、各外部toolが出す進捗を実行中にそのまま表示する。sbxmは独自のprogress表示を重ねない。inspect、labelやarchiveの検証、secret存在確認など、結果をparseまたは秘匿するcommandは`capture`する。
+
 ### 7.1 Host directory
 
 作成するdirectory:
@@ -424,6 +426,7 @@ FILE  DESTINATION  RESULT
 - 手作業で作成したvalidなmetadata、workspace、image、Sandbox、Git repository、worktreeの受け入れ
 - 作成元にかかわらず同じ不整合を同じ診断とexit codeで拒否すること
 - safe daemon成功・不明・active session
+- build、save、clone、fetch、Template load、Sandbox createのpassthroughと、structured出力のcapture
 - 宣言fileのsource、destination、path逸脱、同一、`add`時の競合、`sync-files`時の上書き、宣言削除時の保持、一時file cleanup
 - `sync-files`のrunning限定、stopped非起動、他工程への副作用なし
 - secret不在による中断と登録後の`add`再実行

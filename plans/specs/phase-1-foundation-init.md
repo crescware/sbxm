@@ -180,15 +180,22 @@ stderr policy
 timeout class
 ```
 
+stdout policyとstderr policyは、少なくとも`capture`、`passthrough`、interactiveな`inherit`を区別する。
+
 規則:
 
 - shellを介さない
 - defaultで現在processのenvironmentを継承する
 - security-sensitiveな`sbx`起動では`SSH_AUTH_SOCK`を必ず除外する
 - secret値をargumentやdebug表示へ渡さない
-- stdoutとstderrを別々にbyte列として保持し、lossy変換した場合はその事実を診断する
+- `capture`ではstdoutとstderrを別々にbyte列として保持し、lossy変換した場合はその事実を診断する
 - timeout時はchildを終了し、command名とtimeoutを表示してexit code `1`
 - testではfake executableをPATH先頭へ置き、program、args、cwd、environment、streamを記録する
+- 外部toolが人間向け進捗を出す操作は`passthrough`とし、childのstdoutとstderrを対応するparent streamへ到着順に即時転送する。完了までbufferして進捗を隠さない
+- `passthrough`出力は翻訳、要約、再構成せず、sbxm独自のprogress UIへ置き換えない
+- structured outputをparseするcommand、secretやfile内容を扱うcommandは`capture`とし、利用者へ未検証の内容をstreamしない
+- `passthrough`したcommandが失敗した場合、表示済みの外部出力を全量再表示せず、sbxmのerror ID、対象、exit status、対処方法を追加する
+- interactive SSHは既存のterminal動作を保つため`inherit`とする
 
 timeout既定値:
 
@@ -377,7 +384,7 @@ Session inspection   ready
 - FTL完全性とsnapshot
 - CLI argument関係とmutation前validation
 - TTY/non-TTY、Esc、Ctrl-C
-- command runnerのenvironment、timeout、stream
+- command runnerのenvironment、timeout、capture・passthrough・inheritの各stream policy
 - compatibility fixtureの全parser
 - global `status`の直接依存だけを対象とする全検査、出力snapshot、partial result、remediation、複数error時の診断
 - CLI parserと外部commandの非ゼロstatusを`1`へ写像し、原値を診断へ保持すること

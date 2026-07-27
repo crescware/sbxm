@@ -14,6 +14,8 @@ Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧�
 - nameは完全一致とし、substring、prefix、表示textの`grep`を使わない
 - 未対応stateまたは重複nameはraw valueを示してexit code `1`
 
+Sandboxのstart・stopなど人間向け進捗を出すmutationはPhase 1 runnerの`passthrough`を使用する。state判定に使うstructured outputは`capture`し、`open`がterminalを引き渡すSSHは`inherit`する。sbxm独自のprogress表示は追加しない。
+
 ## 3. Sandbox stateの正規化
 
 対応versionのfixtureで得たraw stateを次へ写像する。
@@ -288,6 +290,7 @@ ssh-add -L
 - state mappingの全fixtureと未知state
 - `open`のnot-created拒否、stopped起動、running再利用
 - daemon再起動、active session、session不在を証明不能
+- Sandbox start・stopのpassthrough、structured出力のcapture、SSHのinherit
 - `stop`の事前全件validation、部分失敗report
 - `ls`のmanaged/unmanaged、0件、failure時一覧非出力
 - project `status`の必須対象、検査順、出力snapshot、部分結果、not-applicable、global診断の案内
