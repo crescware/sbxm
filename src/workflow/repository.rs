@@ -4,7 +4,7 @@
 //! 1 treeの場合もbare repositoryとworktreeを分離する。
 
 use crate::command::HostEnvironment;
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::git;
 use crate::metadata::{self, CreationMode, ManagedWorktree, ProjectMetadata};
 use crate::msg;
@@ -166,6 +166,8 @@ fn verify_bare_clone(
 
 /// 起点となるbranchを確定させる。
 ///
+/// hostのvalidationは、外部commandへ渡す前に確実に拒否できる条件だけを見る。
+/// 起点として使う名前は、Sandbox内のgit自身にもう一度判定させてから採用する。
 /// attached modeでremote default branchを解決した場合は、その場でmetadataへ記録する。
 pub fn resolve_start_ref(
     host: &dyn HostEnvironment,
@@ -176,15 +178,16 @@ pub fn resolve_start_ref(
 ) -> Result<String> {
     let git_dir = layout.bare_git_dir();
 
-    let branch = match project.provisioning.start_ref.clone() {
-        Some(branch) => branch,
-        None => {
-            let resolved = remote_default_branch(host, sandbox, &git_dir)?;
-            project.provisioning.start_ref = Some(resolved.clone());
-            metadata::update(paths, project)?;
-            resolved
-        }
+    let stored = project.provisioning.start_ref.clone();
+    let branch = match &stored {
+        Some(branch) => branch.clone(),
+        None => remote_default_branch(host, sandbox, &git_dir)?,
     };
+    require_branch_name(host, sandbox, &branch)?;
+    if stored.is_none() {
+        project.provisioning.start_ref = Some(branch.clone());
+        metadata::update(paths, project)?;
+    }
 
     // tagやambiguous refを起点にしないよう、完全なremote-tracking refだけを確認する。
     let reference = git::origin_ref(&branch);
@@ -215,6 +218,29 @@ pub fn resolve_start_ref(
         ));
     }
     Ok(branch)
+}
+
+/// 起点branch名を、Sandbox内の`git check-ref-format --branch`で再検証する。
+///
+/// repositoryを指定せずに実行するため、`@{-1}`のような文脈依存の短縮形は展開されず、
+/// branch名としてそのまま判定される。
+fn require_branch_name(host: &dyn HostEnvironment, sandbox: &str, branch: &str) -> Result<()> {
+    let outcome = sandbox::exec(
+        host,
+        sandbox,
+        &["git", "check-ref-format", "--branch", branch],
+    )?;
+    if outcome.success() {
+        return Ok(());
+    }
+    fail(
+        ErrorId::InvalidBranchName,
+        msg!(
+            "error-invalid-branch-name",
+            value = branch,
+            detail = "git in the sandbox does not accept this as a branch name"
+        ),
+    )
 }
 
 /// `git ls-remote --symref origin HEAD`が示すdefault branch。
@@ -659,7 +685,54 @@ mod tests {
             Some("main"),
             "the resolved branch is written before any worktree is made"
         );
+        assert!(host.ran("git check-ref-format --branch main"));
         assert!(host.ran("show-ref --verify --quiet refs/remotes/origin/main"));
+    }
+
+    #[test]
+    fn the_start_branch_is_judged_again_by_git_inside_the_sandbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = project_paths(dir.path());
+        // hostのvalidationは通るが、gitがbranch名として受け付けない値。
+        let host = FakeSandbox::new().failing("git check-ref-format --branch feature..login");
+
+        let mut project = metadata(CreationMode::Detached, Some("feature..login"), 1);
+        metadata::create(&paths, &project).expect("write the metadata");
+
+        let error = resolve_start_ref(&host, "sbxm-example", &layout(), &paths, &mut project)
+            .expect_err("git has the final say on what is a branch name");
+        assert_eq!(error.first_id(), Some(ErrorId::InvalidBranchName));
+        assert!(
+            !host.ran("show-ref"),
+            "a name git refuses is never looked up: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
+    fn a_resolved_branch_that_git_refuses_is_not_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = project_paths(dir.path());
+        let git_dir = layout().bare_git_dir();
+        let host = FakeSandbox::new()
+            .answering(
+                &format!("git --git-dir {git_dir} ls-remote --symref origin HEAD"),
+                "ref: refs/heads/main\tHEAD\n",
+            )
+            .failing("git check-ref-format --branch main");
+
+        let mut project = metadata(CreationMode::Attached, None, 1);
+        metadata::create(&paths, &project).expect("write the metadata");
+
+        let error = resolve_start_ref(&host, "sbxm-example", &layout(), &paths, &mut project)
+            .expect_err("an unusable name is not adopted");
+        assert_eq!(error.first_id(), Some(ErrorId::InvalidBranchName));
+
+        let stored = metadata::load(&paths).unwrap().expect("present");
+        assert_eq!(
+            stored.provisioning.start_ref, None,
+            "the target configuration keeps waiting for a branch it can use"
+        );
     }
 
     #[test]
