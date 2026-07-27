@@ -5,7 +5,9 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::archive;
 
 use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::compatibility::{ImageIdentity, parse_image_inspect};
@@ -13,7 +15,7 @@ use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::hash::short_hex;
 use crate::metadata::METADATA_VERSION;
 use crate::msg;
-use crate::paths::{self, PRIVATE_DIR_MODE, PathScope};
+use crate::paths::{self, PRIVATE_DIR_MODE, PathScope, ProjectPaths};
 use crate::project::{CanonicalProjectId, SandboxName};
 
 /// imageが宣言するlabel。案件と世代の対応を、image自身が持つ。
@@ -189,6 +191,53 @@ fn ephemeral_context() -> Result<tempfile::TempDir> {
     Ok(context)
 }
 
+/// 世代別のTemplate archiveを作り直す。
+///
+/// archive工程へ到達するたびに新しく生成する。既存archiveの再利用による性能最適化は
+/// MVPの対象外であり、いま検証したimageと同じものであることを毎回確かめる。
+/// 正式なarchiveは、一時archiveの生成と検証が終わるまで変更しない。
+pub fn ensure_archive(
+    host: &dyn HostEnvironment,
+    paths: &ProjectPaths,
+    image: &BuiltImage,
+    dockerfile_sha256: &str,
+) -> Result<PathBuf> {
+    let generation = short_hex(dockerfile_sha256);
+    let temporary = paths.template_archive_temp(generation);
+    let target = paths.template_archive(generation);
+
+    // project lockを保持しているため、残っている一時fileは中断した実行の跡である。
+    if paths::regular_file_exists(&temporary, PathScope::ProjectPath)? {
+        fs::remove_file(&temporary).map_err(|error| {
+            Error::new(
+                ErrorId::AtomicWriteFailed,
+                msg!(
+                    "error-atomic-write-failed",
+                    path = paths::display(&temporary),
+                    detail = error
+                ),
+            )
+        })?;
+    }
+
+    let spec = CommandSpec::passthrough(
+        "docker",
+        &[
+            "image",
+            "save",
+            &image.name,
+            "--output",
+            &paths::display(&temporary),
+        ],
+    )
+    .timeout(TimeoutClass::ImageBuild);
+    host.run(&spec)?.require_success()?;
+
+    archive::verify_holds_image(&temporary, &image.name, &image.id)?;
+    paths::atomic_rename_into_place(&temporary, &target)?;
+    Ok(target)
+}
+
 /// imageの現在の同一性。存在しない場合は`None`。
 fn inspect(host: &dyn HostEnvironment, name: &str) -> Result<Option<ImageIdentity>> {
     let spec = CommandSpec::capture("docker", &["image", "inspect", name])
@@ -278,8 +327,12 @@ mod tests {
         fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
             self.calls.borrow_mut().push(spec.clone());
             let building = spec.args.first().is_some_and(|arg| arg == "build");
+            let saving = spec.args.first().is_some_and(|arg| arg == "image")
+                && spec.args.get(1).is_some_and(|arg| arg == "save");
             let (code, stdout) = if building {
                 (i32::from(self.build_fails), String::new())
+            } else if saving {
+                (0, String::new())
             } else {
                 match self.inspect.borrow_mut().pop() {
                     Some(Some(output)) => (0, output),
@@ -469,6 +522,147 @@ mod tests {
             };
             assert_eq!((spec.output, spec.timeout), expected, "{:?}", spec.args);
         }
+    }
+
+    /// `docker image save`が書いたarchiveを模して置く。
+    fn save_archive(host: &FakeDocker, image_name: &str, image_id: &str) {
+        let calls = host.calls.borrow();
+        let save = calls
+            .iter()
+            .find(|spec| {
+                spec.args.first().is_some_and(|arg| arg == "image")
+                    && spec.args.get(1).is_some_and(|arg| arg == "save")
+            })
+            .expect("the image was saved");
+        let output = save
+            .args
+            .iter()
+            .skip_while(|arg| *arg != "--output")
+            .nth(1)
+            .expect("the save names an output path");
+        fs::write(
+            output,
+            crate::archive::tar_bytes(&[(
+                "manifest.json",
+                crate::archive::manifest_json(image_name, image_id).as_bytes(),
+            )]),
+        )
+        .expect("write the archive");
+    }
+
+    /// `image save`の呼び出しでarchiveを書くhost。
+    struct SavingDocker {
+        image_name: String,
+        image_id: String,
+        inner: FakeDocker,
+    }
+
+    impl HostEnvironment for SavingDocker {
+        fn command_exists(&self, program: &str) -> bool {
+            self.inner.command_exists(program)
+        }
+
+        fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+            let outcome = self.inner.run(spec)?;
+            if spec.args.first().is_some_and(|arg| arg == "image")
+                && spec.args.get(1).is_some_and(|arg| arg == "save")
+            {
+                save_archive(&self.inner, &self.image_name, &self.image_id);
+            }
+            Ok(outcome)
+        }
+    }
+
+    fn project_paths(dir: &Path) -> ProjectPaths {
+        let base = crate::paths::AbsoluteBasePath::new(dir).expect("valid base path");
+        let paths = ProjectPaths::derive(&base, &canonical());
+        fs::create_dir_all(paths.cache_dir()).expect("create the cache directory");
+        paths
+    }
+
+    fn built_image() -> BuiltImage {
+        BuiltImage {
+            name: image_name(&sandbox(), DIGEST),
+            id: "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                .to_string(),
+            built: true,
+            warnings: Vec::new(),
+        }
+    }
+
+    fn saving_host(image: &BuiltImage) -> SavingDocker {
+        SavingDocker {
+            image_name: image.name.clone(),
+            image_id: image.id.clone(),
+            inner: FakeDocker::new(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn the_archive_is_written_to_a_temporary_path_and_then_moved_into_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = project_paths(dir.path());
+        let image = built_image();
+        let host = saving_host(&image);
+
+        let archive = ensure_archive(&host, &paths, &image, DIGEST).expect("save");
+        assert_eq!(archive, paths.template_archive(short_hex(DIGEST)));
+        assert!(archive.is_file());
+        assert!(
+            !paths.template_archive_temp(short_hex(DIGEST)).exists(),
+            "the temporary archive does not survive a successful save"
+        );
+
+        let calls = host.inner.calls();
+        let save = calls.last().expect("the save is the last call");
+        assert_eq!(save[0], "image");
+        assert_eq!(save[1], "save");
+        assert!(save.contains(&image.name));
+        assert!(save.contains(&paths::display(
+            &paths.template_archive_temp(short_hex(DIGEST))
+        )));
+    }
+
+    #[test]
+    fn an_interrupted_temporary_archive_is_replaced_rather_than_reused() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = project_paths(dir.path());
+        let image = built_image();
+        let temporary = paths.template_archive_temp(short_hex(DIGEST));
+        fs::write(&temporary, b"a partial archive from an interrupted run").unwrap();
+
+        ensure_archive(&saving_host(&image), &paths, &image, DIGEST).expect("save");
+
+        let archive = paths.template_archive(short_hex(DIGEST));
+        assert!(archive.is_file());
+        assert_ne!(
+            fs::read(&archive).unwrap(),
+            b"a partial archive from an interrupted run".to_vec(),
+            "the interrupted cache is never promoted"
+        );
+    }
+
+    #[test]
+    fn an_archive_that_holds_another_image_leaves_the_official_one_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = project_paths(dir.path());
+        let image = built_image();
+        let archive = paths.template_archive(short_hex(DIGEST));
+        fs::write(&archive, b"the archive from an earlier run").unwrap();
+
+        let host = SavingDocker {
+            image_name: "sbxm-other-template:222222222222".to_string(),
+            image_id: image.id.clone(),
+            inner: FakeDocker::new(Vec::new()),
+        };
+        let error = ensure_archive(&host, &paths, &image, DIGEST)
+            .expect_err("an archive of another image is not promoted");
+        assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+        assert_eq!(
+            fs::read(&archive).unwrap(),
+            b"the archive from an earlier run".to_vec(),
+            "the verified archive of an earlier generation stays as it is"
+        );
     }
 
     #[test]

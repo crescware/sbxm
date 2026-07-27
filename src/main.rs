@@ -3,6 +3,7 @@
 //! 現在のbuildは共通基盤、`init`、`status --global`を実装する。ほかのcommandはparserへ
 //! 登録済みであり、command固有の引数validationまで行ったうえで未実装として終了する。
 
+mod archive;
 mod cli;
 mod command;
 mod compatibility;

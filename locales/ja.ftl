@@ -90,6 +90,7 @@ error-host-clone-unusable = { $path } のcloneはこの案件には使用でき�
 error-image-unusable = image { $image } はこの案件には使用できません: { $detail }
 error-build-context-not-empty = build context { $path } に { $observed } 件のentryがあります。sbxmは空のcontextからだけbuildします。
 warning-build-context-left-behind = 一時build context { $path } を削除できませんでした: { $detail }
+error-archive-unusable = Template archive { $path } は使用できません: { $detail }
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
 
