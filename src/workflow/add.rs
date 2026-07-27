@@ -508,10 +508,14 @@ fn adopt_dockerfile(paths: &ProjectPaths) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::{CommandOutcome, OutputPolicy, TimeoutClass};
     use crate::config::{GitIdentity, GlobalConfig};
     use crate::i18n::Locale;
     use crate::metadata::RebuildIntent;
     use crate::paths::AbsoluteBasePath;
+    use crate::workflow::files::Placement;
+    use std::cell::RefCell;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::time::Duration;
@@ -1045,6 +1049,779 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dir.path().join("example-org")).unwrap(),
             "not a directory"
+        );
+    }
+
+    /// docker、`sbx`、gitの応答を状態として持ち、`add`の全工程を通せるhost。
+    ///
+    /// 各工程の副作用は、その工程が成功したときにだけ起こす。中断した実行の続きを
+    /// 同じ`add`が進められるかどうかは、この性質の上で判定できる。
+    struct World {
+        /// tag -> buildが宣言したlabel。
+        images: RefCell<BTreeMap<String, Vec<(String, String)>>>,
+        /// Template名 -> 対応するimage ID。
+        templates: RefCell<BTreeMap<String, String>>,
+        sandboxes: RefCell<Vec<SandboxRow>>,
+        secrets: RefCell<Vec<String>>,
+        /// Sandbox内に存在するpath。
+        present: RefCell<BTreeSet<String>>,
+        /// Sandbox内のfileのdigest。
+        digests: RefCell<BTreeMap<String, String>>,
+        /// Sandbox内のgitとghの設定。
+        settings: RefCell<BTreeMap<String, String>>,
+        /// bare repositoryの設定値。
+        repository: RefCell<BTreeMap<String, String>>,
+        /// managed worktreeのpath -> branch。detachedは`None`。
+        worktrees: RefCell<BTreeMap<String, Option<String>>>,
+        default_branch: String,
+        /// 一致した起動を失敗させる。副作用は起こさない。
+        fail: RefCell<Option<String>>,
+        calls: RefCell<Vec<crate::command::CommandSpec>>,
+    }
+
+    #[derive(Clone)]
+    struct SandboxRow {
+        name: String,
+        workspace: String,
+        template: String,
+    }
+
+    const IMAGE_ID: &str =
+        "sha256:3333333333333333333333333333333333333333333333333333333333333333";
+
+    impl World {
+        fn new() -> World {
+            World {
+                images: RefCell::new(BTreeMap::new()),
+                templates: RefCell::new(BTreeMap::new()),
+                sandboxes: RefCell::new(Vec::new()),
+                secrets: RefCell::new(vec!["github".to_string()]),
+                present: RefCell::new(BTreeSet::new()),
+                digests: RefCell::new(BTreeMap::new()),
+                settings: RefCell::new(BTreeMap::new()),
+                repository: RefCell::new(BTreeMap::new()),
+                worktrees: RefCell::new(BTreeMap::new()),
+                default_branch: "main".to_string(),
+                fail: RefCell::new(None),
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+
+        /// 次の実行で、指定した起動だけを失敗させる。
+        fn failing(&self, needle: &str) {
+            *self.fail.borrow_mut() = Some(needle.to_string());
+        }
+
+        fn nothing_fails(&self) {
+            *self.fail.borrow_mut() = None;
+        }
+
+        fn invocations(&self) -> Vec<String> {
+            self.calls
+                .borrow()
+                .iter()
+                .map(|spec| format!("{} {}", spec.program, spec.args.join(" ")))
+                .collect()
+        }
+
+        fn ran(&self, needle: &str) -> bool {
+            self.invocations().iter().any(|call| call.contains(needle))
+        }
+
+        /// ここまでの起動数。以降の起動だけを見るために使う。
+        fn mark(&self) -> usize {
+            self.calls.borrow().len()
+        }
+
+        fn since(&self, mark: usize) -> Vec<String> {
+            self.invocations().split_off(mark)
+        }
+
+        fn policy_of(&self, needle: &str) -> Option<(crate::command::OutputPolicy, TimeoutClass)> {
+            self.calls
+                .borrow()
+                .iter()
+                .find(|spec| format!("{} {}", spec.program, spec.args.join(" ")).contains(needle))
+                .map(|spec| (spec.output, spec.timeout))
+        }
+
+        fn outcome(
+            &self,
+            spec: &crate::command::CommandSpec,
+            code: i32,
+            stdout: &str,
+        ) -> CommandOutcome {
+            use std::os::unix::process::ExitStatusExt;
+            CommandOutcome {
+                program: spec.program.clone(),
+                args: spec.args.clone(),
+                working_dir: spec.working_dir.clone(),
+                status: std::process::ExitStatus::from_raw(code << 8),
+                stdout: stdout.as_bytes().to_vec(),
+                stderr: Vec::new(),
+                stderr_lossy: false,
+            }
+        }
+
+        fn host_git(&self, spec: &crate::command::CommandSpec) -> (i32, String) {
+            let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+            match args.as_slice() {
+                ["clone", _, target] => {
+                    // cloneが成功したときだけ、working treeができる。
+                    fs::create_dir_all(Path::new(target).join(".git")).expect("create the clone");
+                    (0, String::new())
+                }
+                ["rev-parse", "--is-bare-repository"] => (0, "false\n".to_string()),
+                ["rev-parse", "--show-toplevel"] => (
+                    0,
+                    format!("{}\n", paths::display(spec.working_dir.as_ref().unwrap())),
+                ),
+                ["config", "--get-all", "remote.origin.url"] => (
+                    0,
+                    "git@github.com:Example-Org/Example-Repo.git\n".to_string(),
+                ),
+                _ => (0, String::new()),
+            }
+        }
+
+        fn docker(&self, spec: &crate::command::CommandSpec) -> (i32, String) {
+            let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+            match args.as_slice() {
+                ["build", rest @ ..] => {
+                    let mut labels = Vec::new();
+                    let mut tag = String::new();
+                    let mut index = 0;
+                    while index < rest.len() {
+                        match rest[index] {
+                            "--label" => {
+                                if let Some((key, value)) = rest[index + 1].split_once('=') {
+                                    labels.push((key.to_string(), value.to_string()));
+                                }
+                                index += 2;
+                            }
+                            "--tag" => {
+                                tag = rest[index + 1].to_string();
+                                index += 2;
+                            }
+                            _ => index += 1,
+                        }
+                    }
+                    self.images.borrow_mut().insert(tag, labels);
+                    (0, String::new())
+                }
+                ["image", "ls", "--quiet", name] => (
+                    0,
+                    if self.images.borrow().contains_key(*name) {
+                        "0123456789ab\n".to_string()
+                    } else {
+                        String::new()
+                    },
+                ),
+                ["image", "inspect", name] => match self.images.borrow().get(*name) {
+                    Some(labels) => {
+                        let rendered = labels
+                            .iter()
+                            .map(|(key, value)| format!("\"{key}\":\"{value}\""))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        (
+                            0,
+                            format!(
+                                r#"[{{"Id":"{IMAGE_ID}","Config":{{"Labels":{{{rendered}}}}}}}]"#
+                            ),
+                        )
+                    }
+                    None => (1, String::new()),
+                },
+                ["image", "save", name, "--output", output] => {
+                    fs::write(
+                        output,
+                        crate::archive::tar_bytes(&[(
+                            "manifest.json",
+                            crate::archive::manifest_json(name, IMAGE_ID).as_bytes(),
+                        )]),
+                    )
+                    .expect("write the archive");
+                    (0, String::new())
+                }
+                _ => (0, String::new()),
+            }
+        }
+
+        fn sbx(&self, spec: &crate::command::CommandSpec) -> (i32, String) {
+            let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+            match args.as_slice() {
+                ["ls", "--json"] => {
+                    let rendered = self
+                    .sandboxes
+                    .borrow()
+                    .iter()
+                    .map(|row| {
+                        format!(
+                            r#"{{"name":"{}","state":"running","workspace":"{}","template":"{}","active_sessions":0}}"#,
+                            row.name, row.workspace, row.template
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                    (0, format!("[{rendered}]"))
+                }
+                ["template", "ls", "--json"] => {
+                    let rendered = self
+                        .templates
+                        .borrow()
+                        .iter()
+                        .map(|(name, id)| format!(r#"{{"name":"{name}","image_id":"{id}"}}"#))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    (0, format!("[{rendered}]"))
+                }
+                ["template", "load", archive] => {
+                    let manifest = crate::archive::read_manifest(Path::new(archive))
+                        .expect("the archive names the image it holds");
+                    self.templates.borrow_mut().insert(
+                        manifest.repo_tags[0].clone(),
+                        manifest.config_digest.clone(),
+                    );
+                    (0, String::new())
+                }
+                [
+                    "create",
+                    "--name",
+                    name,
+                    "--template",
+                    template,
+                    _kit,
+                    workspace,
+                ] => {
+                    self.sandboxes.borrow_mut().push(SandboxRow {
+                        name: name.to_string(),
+                        workspace: workspace.to_string(),
+                        template: template.to_string(),
+                    });
+                    (0, String::new())
+                }
+                ["secret", "ls", _name, "--json"] => {
+                    let rendered = self
+                        .secrets
+                        .borrow()
+                        .iter()
+                        .map(|name| format!(r#"{{"name":"{name}"}}"#))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    (0, format!("[{rendered}]"))
+                }
+                ["cp", "--follow-link", source, target] => {
+                    let digest = sha256_hex(&fs::read(source).expect("read the declared file"));
+                    let path = target
+                        .split_once(':')
+                        .expect("a sandbox path")
+                        .1
+                        .to_string();
+                    self.present.borrow_mut().insert(path.clone());
+                    self.digests.borrow_mut().insert(path, digest);
+                    (0, String::new())
+                }
+                ["daemon", ..] => (0, String::new()),
+                _ => self.sandbox_exec(&args),
+            }
+        }
+
+        /// `sbx exec [--user root] <name> -- <argv>`のargvを実行する。
+        fn sandbox_exec(&self, args: &[&str]) -> (i32, String) {
+            let Some(position) = args.iter().position(|arg| *arg == "--") else {
+                return (0, String::new());
+            };
+            let inner = &args[position + 1..];
+            let missing = (1, String::new());
+            let ok = (0, String::new());
+
+            match inner {
+                ["test", flag, path] => {
+                    let known = match *flag {
+                        // 模したSandboxにsymlinkは存在しない。
+                        "-h" => false,
+                        _ => self.present.borrow().contains(*path),
+                    };
+                    if known { ok } else { missing }
+                }
+                ["mkdir", "-p", path] => {
+                    self.present.borrow_mut().insert(path.to_string());
+                    ok
+                }
+                ["sha256sum", path] => match self.digests.borrow().get(*path) {
+                    Some(digest) => (0, format!("{digest}  {path}\n")),
+                    None => missing,
+                },
+                ["install", "-d", .., path] => {
+                    self.present.borrow_mut().insert(path.to_string());
+                    ok
+                }
+                ["install", .., source, target] => {
+                    let digest = self.digests.borrow().get(*source).cloned();
+                    if let Some(digest) = digest {
+                        self.present.borrow_mut().insert(target.to_string());
+                        self.digests.borrow_mut().insert(target.to_string(), digest);
+                    }
+                    ok
+                }
+                ["mv", "-f", source, target] => {
+                    let digest = self.digests.borrow_mut().remove(*source);
+                    self.present.borrow_mut().remove(*source);
+                    if let Some(digest) = digest {
+                        self.present.borrow_mut().insert(target.to_string());
+                        self.digests.borrow_mut().insert(target.to_string(), digest);
+                    }
+                    ok
+                }
+                ["rm", "-f", rest @ ..] => {
+                    for path in rest {
+                        self.present.borrow_mut().remove(*path);
+                        self.digests.borrow_mut().remove(*path);
+                    }
+                    ok
+                }
+                ["git", "config", "--global", "--get", key] => {
+                    match self.settings.borrow().get(*key) {
+                        Some(value) => (0, format!("{value}\n")),
+                        None => missing,
+                    }
+                }
+                ["git", "config", "--global", key, value] => {
+                    self.settings
+                        .borrow_mut()
+                        .insert(key.to_string(), value.to_string());
+                    ok
+                }
+                ["gh", "config", "get", key, ..] => match self.settings.borrow().get(*key) {
+                    Some(value) => (0, format!("{value}\n")),
+                    None => missing,
+                },
+                ["gh", "config", "set", key, value, ..] => {
+                    self.settings
+                        .borrow_mut()
+                        .insert(key.to_string(), value.to_string());
+                    ok
+                }
+                ["git", "clone", "--bare", url, git_dir] => {
+                    self.present.borrow_mut().insert(git_dir.to_string());
+                    self.repository
+                        .borrow_mut()
+                        .insert("remote.origin.url".to_string(), url.to_string());
+                    ok
+                }
+                ["git", "--git-dir", _, "config", "--get-all", key] => {
+                    match self.repository.borrow().get(*key) {
+                        Some(value) => (0, format!("{value}\n")),
+                        None => missing,
+                    }
+                }
+                ["git", "--git-dir", _, "config", key, value] => {
+                    self.repository
+                        .borrow_mut()
+                        .insert(key.to_string(), value.to_string());
+                    ok
+                }
+                ["git", "--git-dir", _, "rev-parse", "--is-bare-repository"] => {
+                    (0, "true\n".to_string())
+                }
+                ["git", "--git-dir", _, "fsck", "--connectivity-only"] => ok,
+                ["git", "--git-dir", _, "fetch", "--prune", "origin"] => ok,
+                [
+                    "git",
+                    "--git-dir",
+                    _,
+                    "ls-remote",
+                    "--symref",
+                    "origin",
+                    "HEAD",
+                ] => (
+                    0,
+                    format!("ref: refs/heads/{}\tHEAD\n", self.default_branch),
+                ),
+                ["git", "check-ref-format", "--branch", _] => ok,
+                [
+                    "git",
+                    "--git-dir",
+                    _,
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    reference,
+                ] => {
+                    // 解決できないrefの扱いは、repository moduleのtestが固定する。
+                    if reference.starts_with("refs/remotes/origin/") {
+                        ok
+                    } else {
+                        missing
+                    }
+                }
+                ["git", "--git-dir", _, "rev-parse", _] => (0, format!("{COMMIT}\n")),
+                ["git", "--git-dir", _, "worktree", "add", rest @ ..] => {
+                    let branch = rest
+                        .iter()
+                        .position(|arg| *arg == "-b")
+                        .map(|index| rest[index + 1].to_string());
+                    let path = rest
+                        .iter()
+                        .find(|arg| arg.contains(".tree-"))
+                        .expect("a worktree path")
+                        .to_string();
+                    self.present.borrow_mut().insert(path.clone());
+                    self.worktrees.borrow_mut().insert(path, branch);
+                    ok
+                }
+                ["git", "-C", _, "rev-parse", "HEAD"] => (0, format!("{COMMIT}\n")),
+                ["git", "-C", path, "symbolic-ref", "-q", "HEAD"] => {
+                    match self.worktrees.borrow().get(*path) {
+                        Some(Some(branch)) => (0, format!("refs/heads/{branch}\n")),
+                        // detachedのworktreeはsymbolic refを持たない。
+                        _ => missing,
+                    }
+                }
+                _ => ok,
+            }
+        }
+    }
+
+    impl crate::command::HostEnvironment for World {
+        fn command_exists(&self, _program: &str) -> bool {
+            true
+        }
+
+        fn run(&self, spec: &crate::command::CommandSpec) -> Result<CommandOutcome> {
+            self.calls.borrow_mut().push(spec.clone());
+            let invocation = format!("{} {}", spec.program, spec.args.join(" "));
+            if let Some(needle) = self.fail.borrow().as_deref()
+                && invocation.contains(needle)
+            {
+                // 失敗した工程は、その工程の副作用を残さない。
+                return Ok(self.outcome(spec, 1, ""));
+            }
+
+            let (code, stdout) = match spec.program.as_str() {
+                "git" => self.host_git(spec),
+                "docker" => self.docker(spec),
+                "sbx" => self.sbx(spec),
+                _ => (0, String::new()),
+            };
+            Ok(self.outcome(spec, code, &stdout))
+        }
+    }
+
+    /// 宣言file 1件を持つ、実行時と同じ形の入力一式。
+    struct Bench {
+        _base: tempfile::TempDir,
+        _home: tempfile::TempDir,
+        workspace_root: tempfile::TempDir,
+        config: GlobalConfig,
+        location: ConfigLocation,
+    }
+
+    fn bench() -> Bench {
+        let base = tempfile::tempdir().expect("temporary base path");
+        let home = tempfile::tempdir().expect("temporary home");
+        let workspace_root = tempfile::tempdir().expect("temporary workspace root");
+        fs::set_permissions(
+            workspace_root.path(),
+            fs::Permissions::from_mode(PRIVATE_DIR_MODE),
+        )
+        .expect("the workspace root belongs to the current user only");
+
+        let source = home.path().join("declared.toml");
+        fs::write(&source, b"declared = true\n").expect("write the declared file");
+
+        let config = GlobalConfig {
+            language: Locale::En,
+            base_path: AbsoluteBasePath::new(base.path()).expect("valid base path"),
+            git: GitIdentity {
+                user_name: "Example User".into(),
+                user_email: "user@example.com".into(),
+            },
+            files: vec![crate::config::FileDeclaration {
+                source: crate::config::HostFileSource::new(&paths::display(&source))
+                    .expect("valid source"),
+                destination: crate::config::SandboxHomeRelativePath::new(
+                    ".config/example/config.toml",
+                )
+                .expect("valid destination"),
+            }],
+        };
+        let location = ConfigLocation::from_home(home.path().to_path_buf());
+        Bench {
+            _base: base,
+            _home: home,
+            workspace_root,
+            config,
+            location,
+        }
+    }
+
+    impl Bench {
+        fn add(&self, world: &World, request: &AddRequest) -> Result<AddOutput> {
+            run(
+                &self.config,
+                &self.location,
+                request,
+                world,
+                self.workspace_root.path(),
+            )
+        }
+
+        fn stored(&self, project: &str) -> ProjectMetadata {
+            let canonical = ProjectId::parse(project).unwrap().canonical();
+            let paths = ProjectPaths::derive(&self.config.base_path, &canonical);
+            metadata::load(&paths)
+                .expect("read the metadata")
+                .expect("present")
+        }
+    }
+
+    /// `add`が外部工程を呼ぶ順に並べた、失敗させる工程とその診断。
+    const STEPS: [(&str, ErrorId); 12] = [
+        ("git clone git@github.com", ErrorId::ExternalCommandFailed),
+        ("docker build", ErrorId::ExternalCommandFailed),
+        ("docker image save", ErrorId::ExternalCommandFailed),
+        ("sbx template load", ErrorId::ExternalCommandFailed),
+        ("sbx daemon stop", ErrorId::ExternalCommandFailed),
+        ("sbx create", ErrorId::ExternalCommandFailed),
+        ("sbx cp --follow-link", ErrorId::ExternalCommandFailed),
+        ("config --global user.name", ErrorId::ExternalCommandFailed),
+        ("sbx secret ls", ErrorId::ExternalCommandFailed),
+        ("git clone --bare", ErrorId::ExternalCommandFailed),
+        ("check-ref-format", ErrorId::InvalidBranchName),
+        ("worktree add", ErrorId::ExternalCommandFailed),
+    ];
+
+    #[test]
+    fn an_interruption_at_any_step_is_continued_by_the_same_add() {
+        let bench = bench();
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", None, None);
+
+        // 1工程ずつ後ろへずらして失敗させる。次の実行がそこまで進めることが継続の証拠になる。
+        for (step, expected) in STEPS {
+            world.failing(step);
+            let error = bench
+                .add(&world, &request)
+                .expect_err("the run stops at the step that failed");
+            assert_eq!(error.first_id(), Some(expected), "{step}");
+            world.nothing_fails();
+        }
+
+        // 最後に失敗したのはworktree作成であり、続きの実行はそこから進む。
+        let mark = world.mark();
+        let output = bench.add(&world, &request).expect("the same add finishes");
+        let tail = world.since(mark);
+
+        assert!(!output.already_built);
+        assert_eq!(output.mode, CreationMode::Attached);
+        assert_eq!(output.start_ref, "main");
+        assert_eq!(output.sandbox_state, SandboxState::Running);
+        assert_eq!(output.worktrees.len(), 1);
+        assert_eq!(output.worktrees[0].path, "example-repo.tree-0");
+        assert_eq!(output.worktrees[0].head.as_deref(), Some(COMMIT));
+        assert_eq!(output.files.len(), 1);
+        assert_eq!(
+            output.files[0].placement,
+            Placement::Unchanged,
+            "an earlier run placed the file, and an identical destination is left alone"
+        );
+
+        let stored = bench.stored("Example-Org/Example-Repo");
+        assert_eq!(stored.provisioning.start_ref.as_deref(), Some("main"));
+        assert_eq!(stored.managed_worktrees.len(), 1);
+
+        // 成功済みの成果物は作り直さない。
+        for done in [
+            "git clone git@github.com",
+            "docker build",
+            "sbx template load",
+            "sbx create",
+            "git clone --bare",
+        ] {
+            assert!(
+                !tail.iter().any(|call| call.contains(done)),
+                "{done} was already done: {tail:?}"
+            );
+        }
+        assert_eq!(
+            tail.iter()
+                .filter(|call| call.contains("worktree add"))
+                .count(),
+            1,
+            "the run continues with the step that had failed: {tail:?}"
+        );
+        // archiveは工程へ到達するたびに作り直す。
+        assert!(tail.iter().any(|call| call.contains("docker image save")));
+    }
+
+    #[test]
+    fn a_finished_build_is_a_no_op_for_the_same_add() {
+        let bench = bench();
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", None, None);
+        bench.add(&world, &request).expect("the first run builds");
+
+        let mark = world.mark();
+        let output = bench
+            .add(&world, &request)
+            .expect("the second run changes nothing");
+
+        assert!(output.already_built);
+        for forbidden in [
+            "docker build",
+            "docker image save",
+            "sbx template load",
+            "sbx create",
+            "sbx daemon stop",
+            "sbx cp",
+            "worktree add",
+            "git clone",
+        ] {
+            assert!(
+                !world
+                    .since(mark)
+                    .iter()
+                    .any(|call| call.contains(forbidden)),
+                "a finished project must not run {forbidden}: {:?}",
+                world.since(mark)
+            );
+        }
+    }
+
+    #[test]
+    fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there() {
+        let bench = bench();
+        let world = World::new();
+        world.secrets.borrow_mut().clear();
+        let request = request("Example-Org/Example-Repo", None, None);
+
+        let error = bench
+            .add(&world, &request)
+            .expect_err("a build without repository access cannot continue");
+        assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+        assert!(
+            !world.ran("git clone --bare"),
+            "the sandbox repository is not cloned without the secret"
+        );
+
+        world.secrets.borrow_mut().push("github".to_string());
+        let output = bench
+            .add(&world, &request)
+            .expect("the same add continues once the secret is registered");
+        assert_eq!(output.worktrees.len(), 1);
+        assert_eq!(
+            world
+                .invocations()
+                .iter()
+                .filter(|call| call.contains("sbx create"))
+                .count(),
+            1,
+            "the sandbox that was already there is reused"
+        );
+    }
+
+    #[test]
+    fn three_detached_worktrees_start_from_one_commit_of_the_named_branch() {
+        let bench = bench();
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", Some(3), Some("develop"));
+
+        let output = bench.add(&world, &request).expect("build");
+        assert_eq!(output.mode, CreationMode::Detached);
+        assert_eq!(output.start_ref, "develop");
+        assert_eq!(output.worktrees.len(), 3);
+        for (index, worktree) in output.worktrees.iter().enumerate() {
+            assert_eq!(worktree.path, format!("example-repo.tree-{index}"));
+            assert_eq!(worktree.created_from, "refs/remotes/origin/develop");
+            assert_eq!(worktree.head.as_deref(), Some(COMMIT));
+            assert!(
+                world.ran(&format!(
+                    "worktree add --detach /home/agent/work/example-repo/example-repo.tree-{index} refs/remotes/origin/develop"
+                )),
+                "{:?}",
+                world.invocations()
+            );
+        }
+        // bare repositoryとworktreeは、1 treeでも3 treesでも分かれている。
+        assert!(world.ran("git clone --bare https://github.com/Example-Org/Example-Repo.git /home/agent/work/example-repo/.git"));
+    }
+
+    #[test]
+    fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() {
+        let bench = bench();
+        let world = World::new();
+        bench
+            .add(&world, &request("Example-Org/Example-Repo", None, None))
+            .expect("build");
+
+        for (needle, timeout) in [
+            ("docker build", TimeoutClass::ImageBuild),
+            ("docker image save", TimeoutClass::ImageBuild),
+            ("git clone git@github.com", TimeoutClass::RepositoryTransfer),
+            ("sbx template load", TimeoutClass::SandboxLifecycle),
+            ("sbx create", TimeoutClass::SandboxLifecycle),
+            ("git clone --bare", TimeoutClass::RepositoryTransfer),
+            ("fetch --prune origin", TimeoutClass::RepositoryTransfer),
+        ] {
+            assert_eq!(
+                world.policy_of(needle),
+                Some((OutputPolicy::Passthrough, timeout)),
+                "{needle} shows its progress while it runs"
+            );
+        }
+
+        for needle in [
+            "sbx ls --json",
+            "docker image inspect",
+            "sbx secret ls",
+            "sbx template ls --json",
+        ] {
+            assert_eq!(
+                world.policy_of(needle).map(|(output, _)| output),
+                Some(OutputPolicy::Capture),
+                "{needle} is read rather than shown"
+            );
+        }
+    }
+
+    #[test]
+    fn the_declared_file_is_placed_once_and_left_alone_afterwards() {
+        let bench = bench();
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", None, None);
+        bench.add(&world, &request).expect("build");
+
+        assert_eq!(
+            world
+                .digests
+                .borrow()
+                .get("/home/agent/.config/example/config.toml")
+                .map(String::as_str),
+            Some(sha256_hex(b"declared = true\n").as_str()),
+            "the declared file reaches the destination it was declared for"
+        );
+        assert!(
+            !world.present.borrow().contains("/tmp/sbxm-file-0"),
+            "the staged copy does not survive the placement"
+        );
+
+        // 同じ内容の再配置は、Sandboxへ書き込まない。
+        let world = World::new();
+        world.digests.borrow_mut().insert(
+            "/home/agent/.config/example/config.toml".to_string(),
+            sha256_hex(b"declared = true\n"),
+        );
+        world
+            .present
+            .borrow_mut()
+            .insert("/home/agent/.config/example/config.toml".to_string());
+        let output = bench.add(&world, &request).expect("build");
+        assert_eq!(output.files[0].placement, Placement::Unchanged);
+        assert!(
+            !world.ran("sbx cp"),
+            "an identical destination is left alone"
         );
     }
 }
