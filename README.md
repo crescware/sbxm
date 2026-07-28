@@ -32,14 +32,37 @@ registered between `add` and `prepare`.
 The token is registered as a custom secret, not as the `github` service secret:
 
 ```
-sbx secret set-custom <sandbox> --host github.com --env GH_TOKEN --value <token>
+sbx secret set-custom <sandbox> \
+  --host github.com \
+  --host api.github.com \
+  --host codeload.github.com \
+  --host raw.githubusercontent.com \
+  --host uploads.github.com \
+  --host npm.pkg.github.com \
+  --host maven.pkg.github.com \
+  --host nuget.pkg.github.com \
+  --host rubygems.pkg.github.com \
+  --host ghcr.io \
+  --env GH_TOKEN --value <token>
 ```
 
 A custom secret shows the sandbox a placeholder and leaves the real token with
-the proxy, which substitutes it into the request headers that go to github.com.
-The token never enters the sandbox, and the token type does not matter. The
-`github` service secret was not usable here: on real hardware it authenticated a
-fine-grained token and left a classic one unauthenticated.
+the proxy, which swaps the placeholder for the real token in requests that go to
+a registered host. The token never enters the sandbox, and the token type does
+not matter. The `github` service secret was not usable here: on real hardware it
+authenticated a fine-grained token and left a classic one unauthenticated.
+
+Every host development presents the token to has to be on the list, and on one
+secret. A host that is not registered receives the placeholder unchanged and
+answers `401` however good the token is: `git` reaches `github.com`, `gh` reaches
+`api.github.com`, and registering only the first is enough to make push work
+while every `gh` command fails. Splitting the hosts across several secrets does
+not work either, because each secret has its own placeholder and `GH_TOKEN` holds
+one value.
+
+`objects.githubusercontent.com`, where release assets and LFS objects live, is
+deliberately absent. Those are presigned URLs that never carry the placeholder,
+so there is nothing there to substitute.
 
 A custom secret binds to a sandbox when the sandbox is created, so registering
 it afterwards does not reach a sandbox that already exists. `prepare` asks for

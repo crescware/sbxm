@@ -26,10 +26,25 @@ Docker Sandboxes CLI 0.37.0以降。
 tokenは`github` service secretではなく、custom secretとして登録する。
 
 ```
-sbx secret set-custom <sandbox> --host github.com --env GH_TOKEN --value <token>
+sbx secret set-custom <sandbox> \
+  --host github.com \
+  --host api.github.com \
+  --host codeload.github.com \
+  --host raw.githubusercontent.com \
+  --host uploads.github.com \
+  --host npm.pkg.github.com \
+  --host maven.pkg.github.com \
+  --host nuget.pkg.github.com \
+  --host rubygems.pkg.github.com \
+  --host ghcr.io \
+  --env GH_TOKEN --value <token>
 ```
 
-custom secretはSandboxへplaceholderだけを見せ、本物のtokenはproxyに留める。proxyがgithub.com宛のrequest headerでplaceholderを本物へ差し替える。tokenはSandboxへ入らず、tokenの種類も問わない。`github` service secretを使わないのは、実機でfine-grained tokenは認証できたのにclassic tokenは認証されないままだったためである。
+custom secretはSandboxへplaceholderだけを見せ、本物のtokenはproxyに留める。proxyは、登録済みhost宛のrequestに現れたplaceholderを本物へ差し替える。tokenはSandboxへ入らず、tokenの種類も問わない。`github` service secretを使わないのは、実機でfine-grained tokenは認証できたのにclassic tokenは認証されないままだったためである。
+
+開発中にtokenを提示する先は、すべて登録し、しかも1件のsecretにまとめる必要がある。登録のないhostにはplaceholderがそのまま届き、tokenがどれだけ正しくても`401`になる。`git`は`github.com`へ、`gh`は`api.github.com`へ話すため、前者だけを登録するとpushは通るのに`gh`が全滅する。hostを複数のsecretへ分けるのも駄目で、secretごとにplaceholderが分かれる一方、`GH_TOKEN`は1つの値しか持てない。
+
+release assetとLFSの実体が載る`objects.githubusercontent.com`は意図的に外している。あれはpresigned URLでplaceholderを含まないため、差し替える対象がない。
 
 custom secretはSandboxの作成時に結び付くため、あとから登録しても既存のSandboxには届かない。`prepare`は何かを作る前にsecretを確認し、作成後にSandboxの中を見てplaceholderが届いたことを確かめる。
 
