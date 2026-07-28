@@ -78,10 +78,17 @@ pub fn inspect(
             continue;
         }
         let Some(relative) = entry.relative_to(&bare_root) else {
-            // bare root外のworktreeは、案件の成果物として扱えない。
-            return Err(refuse(
-                &entry.path,
-                "the worktree is outside the shared repository",
+            // bare root外のworktreeは、案件の成果物として扱えない。保存状態の問題ではない。
+            return Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::WorktreeOutsideRepository,
+                    msg!(
+                        "error-worktree-outside-repository",
+                        path = entry.path,
+                        root = bare_root
+                    ),
+                )
+                .remediation(msg!("remediation-worktree-outside-repository")),
             ));
         };
         let managed = metadata
@@ -89,9 +96,13 @@ pub fn inspect(
             .iter()
             .any(|worktree| worktree.path == relative);
         if !managed && unmanaged == Unmanaged::Refused {
-            return Err(refuse(
-                &relative,
-                "this worktree is not part of the target configuration, and its layout cannot be recreated",
+            // 保存状態にかかわらず拒否する。commitしても解消しないため案内も分ける。
+            return Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::UnmanagedWorktreePresent,
+                    msg!("error-unmanaged-worktree-present", path = relative),
+                )
+                .remediation(msg!("remediation-unmanaged-worktree-present")),
             ));
         }
 
@@ -99,18 +110,32 @@ pub fn inspect(
         worktrees.push(examine(host, sandbox_name, &entry, &relative, managed)?);
     }
 
+    let diagnose = msg!(
+        "remediation-managed-worktree-missing",
+        command = format!("sbxm status {}", metadata.display_id())
+    );
     for declared in &metadata.managed_worktrees {
         if !seen.contains(&declared.path) {
-            return Err(refuse(
-                &declared.path,
-                "the metadata declares this managed worktree, but Git does not have it",
+            // metadataとGitの食い違いであり、保存されていない作業とは別の事象である。
+            return Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::ManagedWorktreeMissing,
+                    msg!("error-managed-worktree-missing", path = declared.path),
+                )
+                .remediation(diagnose),
             ));
         }
     }
     if worktrees.is_empty() {
-        return Err(refuse(
-            &bare_root,
-            "no worktree was found, so the saved state cannot be judged",
+        return Err(Error::single(
+            Diagnostic::new(
+                ErrorId::WorktreesNotObserved,
+                msg!("error-worktrees-not-observed", root = bare_root),
+            )
+            .remediation(msg!(
+                "remediation-worktrees-not-observed",
+                command = format!("sbxm status {}", metadata.display_id())
+            )),
         ));
     }
 
@@ -573,13 +598,55 @@ pub mod tests {
 
         let error = inspect_with(&host, &project, Unmanaged::Refused)
             .expect_err("rebuild cannot recreate a worktree it does not know about");
-        assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
+        assert_eq!(error.first_id(), Some(ErrorId::UnmanagedWorktreePresent));
 
         let protection = inspect_with(&host, &project, Unmanaged::Allowed)
             .expect("destroy examines it under the same rules");
         assert_eq!(protection.worktrees.len(), 2);
         assert_eq!(protection.worktrees[1].kind, "unmanaged");
         assert_eq!(protection.worktrees[1].remote, "reachable");
+    }
+
+    #[test]
+    fn a_worktree_that_is_not_an_artifact_of_this_project_is_not_reported_as_unsaved_work() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        let name = project.sandbox.as_str();
+        let listing = format!(
+            "exec {name} -- git --git-dir {} worktree list --porcelain -z",
+            layout.bare_git_dir()
+        );
+
+        // bare rootの外を指すworktree。
+        let outside = clean_host(&fixture, &project).answering(
+            &listing,
+            0,
+            &format!(
+                "worktree {}\0bare\0\0worktree /home/agent/elsewhere\0branch refs/heads/main\0\0",
+                layout.bare_root()
+            ),
+        );
+        let error = inspect_with(&outside, &project, Unmanaged::Allowed)
+            .expect_err("a path outside the repository is a security refusal");
+        assert_eq!(error.first_id(), Some(ErrorId::WorktreeOutsideRepository));
+
+        // metadataが宣言するworktreeをGitが持っていない。
+        let missing = clean_host(&fixture, &project).answering(
+            &listing,
+            0,
+            &format!("worktree {}\0bare\0\0", layout.bare_root()),
+        );
+        let error = inspect_with(&missing, &project, Unmanaged::Allowed)
+            .expect_err("the declaration and Git disagree");
+        assert_eq!(error.first_id(), Some(ErrorId::ManagedWorktreeMissing));
+
+        // 宣言が空で、Gitにもworktreeがない。
+        let mut without_declaration = project.clone();
+        without_declaration.metadata.managed_worktrees.clear();
+        let error = inspect_with(&missing, &without_declaration, Unmanaged::Allowed)
+            .expect_err("nothing was observed, so nothing is judged safe");
+        assert_eq!(error.first_id(), Some(ErrorId::WorktreesNotObserved));
     }
 
     #[test]
