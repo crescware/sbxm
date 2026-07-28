@@ -161,7 +161,7 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
     let dockerfile_sha256 = adopt_dockerfile(&paths)?;
 
     let metadata = match stored {
-        Some(stored) => stored,
+        Some(stored) => raise_worktrees(&paths, stored, &target)?,
         None => {
             let metadata = ProjectMetadata {
                 owner: request.project.owner().to_string(),
@@ -189,6 +189,26 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
     })
 }
 
+/// 登録済み案件の目標worktree数を引き上げる。
+///
+/// 1本で始めた案件が並行作業を必要とすることは普通に起きる。作り直さずに増やせる手段が
+/// ないと、`destroy`してから`add`し直すことになり、Sandbox内のrepositoryごと失われる。
+///
+/// 引き上げるのはmetadataの目標値だけである。worktreeそのものは`prepare`が作る。
+/// 減らす指定はここへ来ない。`check_continuable`が先に拒否している。
+fn raise_worktrees(
+    paths: &ProjectPaths,
+    mut stored: ProjectMetadata,
+    target: &TargetConfiguration,
+) -> Result<ProjectMetadata> {
+    if target.requested_worktrees <= stored.provisioning.requested_worktrees {
+        return Ok(stored);
+    }
+    stored.provisioning.requested_worktrees = target.requested_worktrees;
+    metadata::update(paths, &stored)?;
+    Ok(stored)
+}
+
 /// `add`の結果。
 ///
 /// 案件を管理下へ置き、host cloneを用意したところまでを示す。Sandboxはまだ存在せず、
@@ -203,8 +223,13 @@ pub struct AddOutput {
     pub start_ref: Option<String>,
     pub requested_worktrees: u32,
     pub host_clone: PathBuf,
-    /// 既に登録済みで、この実行が目標構成を変えなかったか。
+    /// 既に登録済みだったか。
     pub already_registered: bool,
+    /// この実行が目標worktree数を引き上げた場合の、引き上げ前の値。
+    ///
+    /// 引き上げが起きたことは`already_registered`からは読めない。増えた分のworktreeは
+    /// まだ存在せず、`prepare`が作る。
+    pub raised_worktrees_from: Option<u32>,
     pub warnings: Vec<Msg>,
 }
 
@@ -218,7 +243,9 @@ pub fn run(
     host: &dyn HostEnvironment,
 ) -> Result<AddOutput> {
     let paths = ProjectPaths::derive(&config.base_path, &request.project.canonical());
-    let already_registered = metadata::load(&paths)?.is_some();
+    let before = metadata::load(&paths)?;
+    let already_registered = before.is_some();
+    let worktrees_before = before.map(|stored| stored.provisioning.requested_worktrees);
 
     let registration = register(config, request)?;
     // host cloneは利用者のSSH鍵でhost上から取る。Sandboxのsecretは要らない。
@@ -233,6 +260,8 @@ pub fn run(
         requested_worktrees: provisioning.requested_worktrees,
         host_clone: clone.path,
         already_registered,
+        raised_worktrees_from: worktrees_before
+            .filter(|before| *before < provisioning.requested_worktrees),
         warnings: Vec::new(),
     })
 }
@@ -305,8 +334,11 @@ fn check_continuable(stored: &ProjectMetadata, request: &AddRequest) -> Result<(
             );
         }
     }
+    // 増設は目標構成の引き上げとして受け付ける。減らす指定だけを不一致として扱う。
+    // worktreeを減らすことはcheckoutされた作業を消すことであり、`destroy`と同じ重さの
+    // 確認が要る。継続の副作用として起こしてよい変更ではない。
     if let Some(worktrees) = request.worktrees
-        && provisioning.requested_worktrees != worktrees
+        && worktrees < provisioning.requested_worktrees
     {
         return mismatch(
             format!("{worktrees} worktrees"),
@@ -566,6 +598,40 @@ pub mod tests {
         assert_eq!(
             fs::read_to_string(again.paths.metadata_file()).unwrap(),
             before,
+            "a re-run must not rewrite the stored target"
+        );
+    }
+
+    #[test]
+    fn a_registered_project_can_ask_for_more_worktrees_than_it_started_with() {
+        let (_dir, config) = setup();
+        let first = register(
+            &config,
+            &request("example-org/example-repo", Some(1), Some("develop")),
+        )
+        .expect("register");
+        drop(first);
+
+        // 1本で始めた案件が並行作業を必要とすることは普通に起きる。作り直さずに増やせる。
+        let grown = register(
+            &config,
+            &request("example-org/example-repo", Some(3), Some("develop")),
+        )
+        .expect("asking for more is a continuation, not a disagreement");
+        assert_eq!(grown.metadata.provisioning.requested_worktrees, 3);
+        let stored_after_growth = fs::read_to_string(grown.paths.metadata_file()).unwrap();
+        drop(grown);
+
+        // 増えた分はまだ作られていない。作るのは`prepare`である。
+        let again = register(&config, &request("example-org/example-repo", None, None))
+            .expect("a re-run without options continues from the raised target");
+        assert_eq!(
+            again.metadata.provisioning.requested_worktrees, 3,
+            "omitting the option must not read as a request for one worktree"
+        );
+        assert_eq!(
+            fs::read_to_string(again.paths.metadata_file()).unwrap(),
+            stored_after_growth,
             "a re-run must not rewrite the stored target"
         );
     }

@@ -277,6 +277,7 @@ column-destination = DESTINATION
 column-result = RESULT
 add-registered = { $project } is now managed.
 add-already-registered = { $project } is already managed, and the target configuration did not change.
+add-worktrees-raised = { $project } now asks for { $after } managed worktrees instead of { $before }. The ones that are missing are created by the next build; the ones that exist are left as they are.
 add-next-heading = Next:
 add-next-token = { github-token-scopes }
 add-next-secret = Register it: { $command }

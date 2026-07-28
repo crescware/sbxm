@@ -277,6 +277,7 @@ column-destination = 配置先 (DESTINATION)
 column-result = 結果 (RESULT)
 add-registered = { $project } を管理対象にしました。
 add-already-registered = { $project } は既に管理対象で、目標構成は変わっていません。
+add-worktrees-raised = { $project } のmanaged worktreeを { $before } から { $after } へ引き上げました。足りない分は次のbuildが作り、既にあるものはそのまま残ります。
 add-next-heading = 次にやること:
 add-next-token = { github-token-scopes }
 add-next-secret = 登録します: { $command }

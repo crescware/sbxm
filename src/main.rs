@@ -519,10 +519,16 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
         reporter.print_warning(warning, &mut stderr);
     }
 
-    let message = if output.already_registered {
-        msg!("add-already-registered", project = output.project)
-    } else {
-        msg!("add-registered", project = output.project)
+    let message = match (output.already_registered, output.raised_worktrees_from) {
+        // 引き上げは登録済み案件に起きるため、登録の有無だけでは何も変わらなかったように読める。
+        (_, Some(before)) => msg!(
+            "add-worktrees-raised",
+            project = output.project,
+            before = before,
+            after = output.requested_worktrees
+        ),
+        (true, None) => msg!("add-already-registered", project = output.project),
+        (false, None) => msg!("add-registered", project = output.project),
     };
     println!("{}", format_or_report(catalog, &message));
 

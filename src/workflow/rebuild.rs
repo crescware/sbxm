@@ -596,6 +596,13 @@ mod tests {
                 &format!("{commit}\n"),
             )
             .answering(
+                &format!(
+                    "exec {name} -- git -C {worktree} rev-parse --path-format=absolute --git-common-dir"
+                ),
+                0,
+                &format!("{git_dir}\n"),
+            )
+            .answering(
                 &format!("exec {name} -- git -C {worktree} symbolic-ref -q HEAD"),
                 0,
                 "refs/heads/main\n",
@@ -781,6 +788,13 @@ mod tests {
                 &format!("{commit}\n"),
             )
             .answering(
+                &format!(
+                    "exec {name} -- git -C {worktree} rev-parse --path-format=absolute --git-common-dir"
+                ),
+                0,
+                &format!("{git_dir}\n"),
+            )
+            .answering(
                 &format!("exec {name} -- git -C {worktree} symbolic-ref -q HEAD"),
                 0,
                 "refs/heads/main\n",
@@ -914,6 +928,14 @@ mod tests {
                 ),
                 0,
                 &format!("{commit}\n"),
+            )
+            .answering(
+                &format!(
+                    "exec {} -- git -C {worktree} rev-parse --path-format=absolute --git-common-dir",
+                    project.sandbox
+                ),
+                0,
+                &format!("{git_dir}\n"),
             )
             .answering(
                 &format!(
