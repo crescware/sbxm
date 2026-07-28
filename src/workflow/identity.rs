@@ -5,7 +5,7 @@
 //!
 //! `gh`はsbxm自身のworkflowが使わない。Sandbox内のcloneもfetchも素のgitがHTTPSで
 //! 行い、認証はcredential helperが担う。`gh`を入れていないSandboxを構築の失敗に
-//! しないため、`gh`向けの設定は`gh`があるときにだけ行う。
+//! しないため、`gh`向けの検査は`gh`があるときにだけ行う。
 
 use crate::command::HostEnvironment;
 use crate::config::GitIdentity;
@@ -67,11 +67,14 @@ fn ensure_git_config(
     Ok(())
 }
 
-/// Sandbox内の`gh`が使うprotocolをHTTPSにする。
+/// Sandbox内の`gh`が使うprotocolがHTTPSであることを確かめる。
 ///
-/// sbxmが読む値ではない。sbxmはremote URLを自分でHTTPSとして書く。SandboxにSSH鍵は
-/// 無いため、`gh`の既定のままでは中で実行した`gh repo clone`がsshを引いて失敗する。
-/// `gh`を入れた利用者のために、それを先回りで避ける。
+/// sbxmはこの値を読まない。remote URLは自分でHTTPSとして書く。`gh`自身の既定も
+/// `https`であり、設定fileを持たないSandboxでは一致を観測して終わる。書き込みへ
+/// 進むのは`gh`が答えなかった場合だけである。
+///
+/// 実際に効くのは、中で`ssh`へ変えられていた場合である。SandboxにSSH鍵は無いため、
+/// その`gh`はGitHubへ到達できない。
 fn ensure_git_protocol(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     let outcome = sandbox::exec(
         host,
