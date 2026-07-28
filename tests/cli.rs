@@ -6,10 +6,11 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-const COMMANDS: [&str; 9] = [
+const COMMANDS: [&str; 10] = [
     "init",
     "add",
     "sync-files",
+    "prepare",
     "rebuild",
     "open",
     "stop",

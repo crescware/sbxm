@@ -33,8 +33,8 @@ use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
 use workflow::select::TerminalProjectPrompt;
 use workflow::{
-    add, destroy, inventory, ls, open, rebuild, sandbox, status_global, status_project, stop,
-    sync_files,
+    add, destroy, inventory, ls, open, prepare, rebuild, sandbox, status_global, status_project,
+    stop, sync_files,
 };
 
 fn main() -> ProcessExitCode {
@@ -224,14 +224,34 @@ fn dispatch(
                 worktrees: arguments.worktrees,
                 detach: arguments.detach.clone(),
             };
-            match add::run(
+            match add::run(&config, &request, &RealHost) {
+                Ok(output) => {
+                    print_add_output(&catalog, &output);
+                    ExitCode::Success
+                }
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
+        Command::Prepare(project) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            match prepare::run(
                 &config,
-                &request,
+                project,
                 &RealHost,
                 std::path::Path::new(sandbox::WORKSPACE_ROOT),
             ) {
                 Ok(output) => {
-                    print_add_output(&catalog, &output);
+                    print_prepare_output(&catalog, &output);
                     ExitCode::Success
                 }
                 Err(error) => {
@@ -487,7 +507,67 @@ fn dispatch(
 }
 
 /// `add`の成功出力。
+///
+/// 登録とhost cloneまでを示し、次にやることを続けて出す。GitHub tokenの登録先は
+/// Sandbox名であり、その名前はここで確定する。
 fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
+    let reporter = Reporter::new(catalog);
+    let mut stderr = std::io::stderr();
+    for warning in &output.warnings {
+        reporter.print_warning(warning, &mut stderr);
+    }
+
+    let message = if output.already_registered {
+        msg!("add-already-registered", project = output.project)
+    } else {
+        msg!("add-registered", project = output.project)
+    };
+    println!("{}", format_or_report(catalog, &message));
+
+    print!(
+        "{}",
+        reporter.render_fields(&[
+            ("add-field-project", output.project.clone()),
+            ("add-field-sandbox", output.sandbox.clone()),
+            ("add-field-creation-mode", output.mode.to_string()),
+            (
+                "add-field-start-branch",
+                output.start_ref.clone().unwrap_or_else(|| "-".to_string())
+            ),
+            (
+                "add-field-managed-worktrees",
+                output.requested_worktrees.to_string()
+            ),
+            ("add-field-host-clone", paths::display(&output.host_clone)),
+        ])
+    );
+
+    println!("\n{}", text_or_report(catalog, "add-next-heading"));
+    println!(
+        "  {}",
+        format_or_report(
+            catalog,
+            &msg!(
+                "add-next-secret",
+                command = format!("sbx secret set {} github", output.sandbox)
+            )
+        )
+    );
+    println!(
+        "  {}",
+        format_or_report(
+            catalog,
+            &msg!(
+                "add-next-prepare",
+                command = format!("sbxm prepare {}", output.project)
+            )
+        )
+    );
+    let _ = std::io::stdout().flush();
+}
+
+/// `prepare`の成功出力。
+fn print_prepare_output(catalog: &Catalog, output: &prepare::PrepareOutput) {
     let reporter = Reporter::new(catalog);
     let mut stderr = std::io::stderr();
     for warning in &output.warnings {
@@ -499,7 +579,7 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
             "{}",
             format_or_report(
                 catalog,
-                &msg!("add-already-built", project = output.project)
+                &msg!("prepare-already-built", project = output.project)
             )
         );
     }
@@ -515,7 +595,6 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
                 "add-field-managed-worktrees",
                 output.worktrees.len().to_string()
             ),
-            ("add-field-host-clone", paths::display(&output.host_clone)),
             (
                 "add-field-sandbox-state",
                 sandbox_state(output.sandbox_state).to_string()

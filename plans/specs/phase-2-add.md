@@ -1,8 +1,12 @@
-# Phase 2 実装仕様: `add`と`sync-files`
+# Phase 2 実装仕様: `add`、`prepare`と`sync-files`
 
 ## 1. 目的
 
-`sbxm add`は、新しいGitHub repositoryを管理対象へ登録し、ホストclone、案件専用Template、Sandbox内bare repository、managed worktreeを作業可能な状態まで構築する。構築が中断した案件へ同じcommandを再実行すると、metadataに保存した目標構成から継続する。
+`sbxm add`は、新しいGitHub repositoryを管理対象へ登録し、host cloneを用意する。Sandboxは作らない。
+
+`sbxm prepare`は、登録済み案件について、案件専用Template、Sandbox、Sandbox内bare repository、managed worktreeを作業可能な状態まで構築する。構築が中断した案件へ同じcommandを再実行すると、metadataに保存した目標構成から継続する。
+
+工程を2つに分けるのは、GitHub tokenの登録先がSandbox名であり、その名前が登録時にはじめて確定するためである。`add`が名前を示し、利用者がtokenを登録し、`prepare`が構築する。人間の手続きはcommandとcommandの間に置き、commandの途中に置かない。
 
 `sbxm sync-files`は、構築済みでrunningの案件について、現在のglobal configに宣言されたfileをSandboxへ再配置する。projectの登録、構築継続、worktree構成変更、Dockerfileのbuild、image・Template操作は行わない。
 
@@ -10,8 +14,11 @@
 sbxm add <owner>/<repository>
          [--worktrees <N>]
          [--detach <BRANCH>]
+sbxm prepare <owner>/<repository>
 sbxm sync-files <owner>/<repository>
 ```
+
+`add`のhost cloneは利用者のSSH鍵でhost上から取るため、Sandboxのsecretを必要としない。tokenが要るのはSandbox内のbare cloneであり、これは`prepare`の工程である。
 
 Phase 1が実装した共通型、config、command runner、`sbx`出力parserを利用する。調査やlocal実装はPhase 1 PRのreviewと並行できるが、Phase 2 PRはreview結果を取り込む。
 

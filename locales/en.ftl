@@ -14,13 +14,16 @@ cli-init-base-path-help = Absolute path of the directory that holds project dire
 cli-init-git-user-name-help = Git user.name applied inside sandboxes
 cli-init-git-user-email-help = Git user.email applied inside sandboxes
 
-cli-add-about = Register a GitHub repository and build its sandbox
+cli-add-about = Register a GitHub repository and clone it onto this host
 cli-add-project-help = Target project as owner/repository
 cli-add-worktrees-help = Number of managed worktrees to create (1-32)
 cli-add-detach-help = Remote branch every managed worktree starts from, in detached mode
 
 cli-sync-files-about = Re-place the files declared in the global configuration into a running sandbox
 cli-sync-files-project-help = Target project as owner/repository
+
+cli-prepare-about = Build the sandbox of a registered project and make it ready to work in
+cli-prepare-project-help = Target project as owner/repository
 
 cli-rebuild-about = Apply the edited Dockerfile by recreating the sandbox
 cli-rebuild-project-help = Target project as owner/repository
@@ -274,7 +277,12 @@ column-mode = MODE
 column-file = FILE
 column-destination = DESTINATION
 column-result = RESULT
-add-already-built = { $project } is already built, so nothing was changed.
+add-registered = { $project } is now managed.
+add-already-registered = { $project } is already managed, and the target configuration did not change.
+add-next-heading = Next:
+add-next-secret = Register a GitHub token for this project: { $command }
+add-next-prepare = Then build its sandbox: { $command }
+prepare-already-built = { $project } is already built, so nothing was changed.
 add-mise-heading = These managed worktrees carry a mise configuration. sbxm does not run mise for you:
 add-mise-hint = Run mise trust and mise install inside the sandbox when you want to use them.
 files-secret-hint = Declared files carry configuration, not credentials. Keep tokens, secrets and private keys out of them and hand those to the sandbox with the secret feature of Docker Sandboxes instead.
