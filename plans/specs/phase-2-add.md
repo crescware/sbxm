@@ -132,7 +132,7 @@ MVPは既存の手動手順を次のように自動化・変更する。
 | `--detach develop` | `detached` | `develop` | 1 |
 | `--worktrees 1 --detach develop` | `detached` | `develop` | 1 |
 | `--worktrees N --detach develop` | `detached` | `develop` | N |
-| `--worktrees N`、N >= 2 | usage error | - | - |
+| `--worktrees N`、N >= 2、新規登録 | usage error | - | - |
 
 - `N`は1以上32以下
 - `BRANCH`は1〜255 byte、NUL、改行、先頭`-`を拒否する
@@ -141,7 +141,25 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - detached modeでは全managed worktreeを同じ`origin/<BRANCH>` commitから作る
 - attached modeではremote default branchをtrackingするlocal branchを1つ作る
 
-再実行した`add`でoptionを省略した場合はmetadataに保存された目標構成を使用する。optionを指定した場合は保存値と完全一致することを要求し、不一致ならmutation前にexit code `1`とする。
+新規登録で`--worktrees N`（N >= 2）が起点branchを要求するのは、その案件がまだ起点をどこにも持たないためである。登録済み案件は`start_ref`を保存しているため、本数だけを指定できる。
+
+## 5.1 modeは最初のworktreeの作り方である
+
+`provisioning.mode`は案件全体の宣言ではなく、**最初のworktreeをどう作るか**である。2本目以降はdetachedとして作る。Gitは同じbranchを2つのworktreeへcheckoutさせないため、attachedなworktreeは案件に1つしか持てない。
+
+1本のattached案件に2本目を足すと、既にあるworktreeはbranchを持ったまま残り、足したものがdetachedになる。案件をdetachedへ移す必要はない。
+
+**worktreeごとのmodeはmetadataへ保存しない。** modeは`git symbolic-ref`で観測できるうえ、既にあるworktreeへ特定のmodeを要求する理由がない。そこは利用者が作業する場所であり、branchを切ればmodeは変わる。modeの検査はsbxmが作るときの事後条件であって、既にあるものへの要件ではない。
+
+既にあるworktreeへ求めるのは、この共有repositoryのworktreeであり続けていることだけとする。`protection`は保存状態を見るためにworktreeごとのmodeを観測しており、attachedにはupstreamとaheadを、detachedにはoriginからの到達性を求める。混在はこの検査の前提を変えない。
+
+## 5.2 目標構成の再指定
+
+再実行した`add`でoptionを省略した場合はmetadataに保存された目標構成を使用する。
+
+optionを指定した場合、`--detach`は保存値との完全一致を要求する。`--worktrees`は保存値以上であることを要求し、**多い場合は目標を引き上げる**。少ない場合はmutation前にexit code `1`とする。
+
+worktreeを減らすことはcheckoutされた作業を消すことであり、`destroy`と同じ重さの確認が要る。`add`の再実行の副作用として起こしてよい変更ではない。引き上げた分のworktreeは`prepare`が作る。
 
 ## 6. Project単位の排他
 

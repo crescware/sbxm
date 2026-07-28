@@ -74,21 +74,12 @@ impl TargetConfiguration {
                     requested_worktrees,
                 })
             }
-            None => {
-                // 2個以上のmanaged worktreeは、起点branchの明示を必須とする。
-                if requested_worktrees > 1 {
-                    return fail(
-                        ErrorId::WorktreesRequireDetach,
-                        msg!("error-worktrees-require-detach"),
-                    );
-                }
-                Ok(TargetConfiguration {
-                    // attached modeのstart refはremote default branchを解決してから確定する。
-                    mode: CreationMode::Attached,
-                    start_ref: None,
-                    requested_worktrees,
-                })
-            }
+            None => Ok(TargetConfiguration {
+                // attached modeのstart refはremote default branchを解決してから確定する。
+                mode: CreationMode::Attached,
+                start_ref: None,
+                requested_worktrees,
+            }),
         }
     }
 }
@@ -163,6 +154,14 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
     let metadata = match stored {
         Some(stored) => raise_worktrees(&paths, stored, &target)?,
         None => {
+            // 起点branchを持たない新規案件は、2本目以降をどこから作るかを決められない。
+            // 登録済み案件はそれをmetadataに持っているため、この要求は新規登録にだけ課す。
+            if target.requested_worktrees > 1 && target.start_ref.is_none() {
+                return fail(
+                    ErrorId::WorktreesRequireDetach,
+                    msg!("error-worktrees-require-detach"),
+                );
+            }
             let metadata = ProjectMetadata {
                 owner: request.project.owner().to_string(),
                 repository: request.project.repository().to_string(),
@@ -672,10 +671,10 @@ pub mod tests {
             );
         }
 
-        // 組み合わせとして成立しないoptionは、保存値と比べる前に拒否する。
-        let error = register(&config, &request("example-org/example-repo", Some(3), None))
-            .expect_err("two worktrees still need an explicit branch");
-        assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
+        // 起点branchは保存済みである。登録済み案件へ本数だけを言うのは、保存値と
+        // 食い違う指定ではない。
+        register(&config, &request("example-org/example-repo", Some(3), None))
+            .expect("a registered project already knows where its worktrees start");
         assert_eq!(
             fs::read_to_string(
                 ProjectPaths::derive(
@@ -687,8 +686,18 @@ pub mod tests {
                 .metadata_file()
             )
             .unwrap(),
-            before
+            before,
+            "asking for the number it already has changes nothing"
         );
+    }
+
+    #[test]
+    fn a_new_project_still_has_to_say_where_more_than_one_worktree_starts() {
+        let (_dir, config) = setup();
+        // 登録済み案件と違い、新規案件は起点branchをどこからも読めない。
+        let error = register(&config, &request("example-org/example-repo", Some(3), None))
+            .expect_err("a project that does not exist yet has no stored start branch");
+        assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
     }
 
     #[test]

@@ -329,8 +329,6 @@ pub fn ensure_worktrees(
         sandbox,
         &["git", "--git-dir", &git_dir, "rev-parse", &reference],
     )?;
-    let mode = project.provisioning.mode;
-
     crate::progress::step(&msg!("progress-creating-worktrees"));
     let mut managed = Vec::new();
     for index in 0..project.provisioning.requested_worktrees {
@@ -339,32 +337,38 @@ pub fn ensure_worktrees(
         let recorded = project
             .managed_worktrees
             .iter()
-            .any(|worktree| worktree.path == name);
+            .find(|worktree| worktree.path == name)
+            .cloned();
 
-        let carried = recorded && sandbox::path_exists(host, sandbox, &path)?;
-        if carried {
-            adopt_worktree(host, sandbox, &git_dir, &path, branch, mode)?;
-        } else {
-            provision_worktree(
-                host,
-                sandbox,
-                &git_dir,
-                &path,
-                branch,
-                mode,
-                &expected_commit,
-            )?;
-        }
-
-        let entry = ManagedWorktree {
-            path: name,
-            created_from: reference.clone(),
+        let entry = match recorded {
+            // 記録済みのworktreeは、記録された姿のまま引き継ぐ。
+            Some(entry) if sandbox::path_exists(host, sandbox, &path)? => {
+                adopt_worktree(host, sandbox, &git_dir, &path)?;
+                entry
+            }
+            recorded => {
+                let mode = mode_for(index, project.provisioning.mode);
+                provision_worktree(
+                    host,
+                    sandbox,
+                    &git_dir,
+                    &path,
+                    branch,
+                    mode,
+                    &expected_commit,
+                )?;
+                let entry = ManagedWorktree {
+                    path: name,
+                    created_from: reference.clone(),
+                };
+                if recorded.is_none() {
+                    // 作成直後の1件だけをmetadataへ足す。
+                    project.managed_worktrees.push(entry.clone());
+                    metadata::update(paths, project)?;
+                }
+                entry
+            }
         };
-        if !recorded {
-            // 作成直後の1件だけをmetadataへ足す。
-            project.managed_worktrees.push(entry.clone());
-            metadata::update(paths, project)?;
-        }
         managed.push(entry);
     }
     Ok(managed)
@@ -407,6 +411,20 @@ fn create_worktree(
     Ok(())
 }
 
+/// これから作るworktreeのmode。
+///
+/// Gitは同じbranchを2つのworktreeへcheckoutさせない。attachedなworktreeは案件に1つしか
+/// 持てないため、案件のmodeが効くのは最初の1本だけである。2本目以降はdetachedとする。
+///
+/// 案件のmodeがdetachedであれば全部detachedになる。attachedな案件が2本目を持てなかった
+/// のは、案件全体で揃える必然があったからではなく、揃えていたからである。
+fn mode_for(index: u32, project: CreationMode) -> CreationMode {
+    match index {
+        0 => project,
+        _ => CreationMode::Detached,
+    }
+}
+
 /// この実行で用意するworktreeを、起点commitの上に立たせる。
 ///
 /// 中断した作成が残した成果物は作り直さず引き継ぐ。作ったばかりのworktreeは起点commit
@@ -435,19 +453,17 @@ fn provision_worktree(
 
 /// 既に案件の成果物として記録済みのworktreeを、そのまま引き継ぐ。
 ///
-/// 起点commitとの一致は求めない。そこで作業するためのworktreeであり、commitすれば
-/// HEADは動く。動いたことを異常として扱うと、作業した案件はworktreeを増やせなくなる。
+/// 求めるのは、この共有repositoryのworktreeであり続けていることだけとする。
 ///
-/// 代わりに、この共有repositoryのworktreeであり続けていることを確かめる。modeの検査は
-/// detached HEADを`symbolic-ref`の失敗で判定するため、repositoryですらないdirectoryを
-/// detachedとして通してしまう。
+/// 起点commitもmodeも条件にしない。そこで作業するためのworktreeであり、commitすれば
+/// HEADは動き、branchを切ればmodeも変わる。そこで起きたことを異常として扱うと、
+/// 作業した案件はworktreeを増やせなくなる。どちらもsbxmが作るときの事後条件であって、
+/// 既にあるものへの要件ではない。
 fn adopt_worktree(
     host: &dyn HostEnvironment,
     sandbox: &str,
     git_dir: &str,
     path: &str,
-    branch: &str,
-    mode: CreationMode,
 ) -> Result<()> {
     // `--path-format=absolute`を付けないと、gitは条件によって相対pathを返す。bare git
     // dirとの一致を見る比較では、返る形が決まっていないと判定にならない。
@@ -469,7 +485,7 @@ fn adopt_worktree(
             format!("the worktree belongs to {common}, not to {git_dir}"),
         ));
     }
-    verify_mode(host, sandbox, path, branch, mode)
+    Ok(())
 }
 
 /// worktreeが宣言どおりのmodeであることを確認する。
@@ -918,6 +934,61 @@ mod tests {
 
         let stored = metadata::load(&paths).unwrap().expect("present");
         assert_eq!(stored.managed_worktrees.len(), 3);
+    }
+
+    #[test]
+    fn an_attached_project_keeps_its_branch_and_gets_detached_worktrees_beside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = project_paths(dir.path());
+        let existing = layout().worktree(0);
+        // tree-0はbranchを持ったまま。Gitは同じbranchを2つのworktreeへcheckoutさせない
+        // ため、足す側はdetachedになる。案件全体を移す必要はない。
+        let host = worktree_host(CreationMode::Detached, 3)
+            .holding(&[&existing])
+            .answering(&format!("git -C {existing} rev-parse HEAD"), MOVED)
+            .answering(
+                &format!("git -C {existing} symbolic-ref -q HEAD"),
+                "refs/heads/develop\n",
+            );
+
+        let mut project = metadata(CreationMode::Attached, Some("develop"), 3);
+        project.managed_worktrees.push(ManagedWorktree {
+            path: layout().worktree_name(0),
+            created_from: "refs/remotes/origin/develop".to_string(),
+        });
+        metadata::create(&paths, &project).expect("write the metadata");
+
+        let managed = ensure_worktrees(
+            &host,
+            "sbxm-example",
+            &layout(),
+            &paths,
+            &mut project,
+            "develop",
+        )
+        .expect("an attached worktree does not stop the others from being made");
+
+        assert_eq!(managed.len(), 3);
+        for index in 1..3 {
+            assert!(
+                host.ran(&format!(
+                    "worktree add --detach {} refs/remotes/origin/develop",
+                    layout().worktree(index)
+                )),
+                "{:?}",
+                host.calls()
+            );
+        }
+        assert!(
+            !host.ran("worktree add --track"),
+            "the branch is already checked out, so no second worktree takes it: {:?}",
+            host.calls()
+        );
+        assert!(
+            !host.ran(&format!("worktree add --detach {existing}")),
+            "the attached worktree keeps its branch instead of being remade: {:?}",
+            host.calls()
+        );
     }
 
     #[test]
