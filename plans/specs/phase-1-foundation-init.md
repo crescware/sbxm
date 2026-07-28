@@ -221,7 +221,7 @@ Docker Sandboxes CLIはEarly Accessである。Phase 1は`status --global`が読
 - `sbx version`からexact versionを検出する
 - `0.37.0`未満はexit code `1`
 - versionをparseできない場合もexit code `1`
-- `sbx daemon status`と`sbx policy ls`のstructured outputをparseする
+- `sbx daemon status`の`Status:`行と、`sbx policy ls`の出力から現在値を読む
 
 parserは推測で補完しない。
 
