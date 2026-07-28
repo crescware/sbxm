@@ -480,6 +480,43 @@ pub mod tests {
         }
     }
 
+    /// 同梱するtoolのversionを決めるARG。
+    ///
+    /// templateが取りに行く先はこの値だけで決まる。値を消して常に最新を取る形へ
+    /// 書き換えられていないことを、この並びで確かめる。
+    const PINNED_TOOLS: [&str; 4] = [
+        "GH_VERSION",
+        "CLAUDE_CODE_VERSION",
+        "CODEX_VERSION",
+        "MISE_VERSION",
+    ];
+
+    #[test]
+    fn the_bundled_dockerfile_pins_every_tool_it_installs() {
+        for name in PINNED_TOOLS {
+            let declared = BUNDLED_DOCKERFILE
+                .lines()
+                .map(str::trim_start)
+                .find_map(|line| line.strip_prefix(&format!("ARG {name}=")))
+                .unwrap_or_else(|| panic!("{name} names the version this template installs"));
+            assert!(
+                !declared.trim().is_empty(),
+                "{name} has to name a version rather than leave it open"
+            );
+            // 宣言した値を実際に取りに行っていなければ、宣言はpinとして働かない。
+            assert!(
+                BUNDLED_DOCKERFILE.contains(&format!("${{{name}}}")),
+                "the version {name} names has to be the one that is fetched"
+            );
+        }
+
+        // 取得先が動く参照であれば、versionを書いていてもpinにならない。
+        assert!(
+            !BUNDLED_DOCKERFILE.contains("latest"),
+            "a moving reference is not a pin"
+        );
+    }
+
     #[test]
     fn the_options_decide_the_target_configuration() {
         let (_dir, config) = setup();
