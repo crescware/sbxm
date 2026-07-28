@@ -277,6 +277,7 @@ fn dispatch(
             };
             let mut prompt = TerminalProjectPrompt {
                 heading: "select-open-heading",
+                locale: catalog.locale(),
             };
             let prepared = match open::prepare(
                 &config,
@@ -334,6 +335,7 @@ fn dispatch(
             };
             let mut prompt = TerminalProjectPrompt {
                 heading: "select-stop-heading",
+                locale: catalog.locale(),
             };
             match stop::run(
                 &config,
@@ -403,6 +405,7 @@ fn dispatch(
             };
             let mut prompt = TerminalProjectPrompt {
                 heading: "select-destroy-heading",
+                locale: catalog.locale(),
             };
             let prepared = match destroy::prepare(
                 &config,
@@ -422,7 +425,9 @@ fn dispatch(
             print_destroy_plan(&catalog, &prepared.plan);
             // 通常modeをTTYで実行した場合だけ、Sandbox名の完全入力を要求する。
             if !arguments.force && interactivity.can_prompt() {
-                let mut confirm = TerminalConfirmPrompt;
+                let mut confirm = TerminalConfirmPrompt {
+                    locale: catalog.locale(),
+                };
                 match confirm.confirm_sandbox_name(&prepared.plan.sandbox) {
                     Ok(true) => {}
                     Ok(false) => {

@@ -280,13 +280,16 @@ pub trait ConfirmPrompt {
 ///
 /// EscとCtrl-Cはどちらも何も変更せず終える。text入力を`dialoguer::Input`ではなく
 /// 自前で読むのは、Escを打鍵として受け取ってしまわないためである。
-pub struct TerminalConfirmPrompt;
+pub struct TerminalConfirmPrompt {
+    /// この実行の表示言語。
+    pub locale: crate::i18n::Locale,
+}
 
 impl ConfirmPrompt for TerminalConfirmPrompt {
     fn confirm_sandbox_name(&mut self, expected: &str) -> Result<bool> {
         use dialoguer::console::{Key, Term};
 
-        let catalog = crate::i18n::Catalog::new(crate::i18n::Locale::SOURCE);
+        let catalog = crate::i18n::Catalog::new(self.locale);
         let heading = catalog
             .text("destroy-confirm-prompt")
             .unwrap_or_else(|failure| failure.to_string());
