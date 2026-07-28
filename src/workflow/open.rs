@@ -3,35 +3,19 @@
 //! 登録済み案件のSandboxを起動し、SSHでterminalを引き渡す。Sandboxを新規作成しない。
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
-use crate::paths::{self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
+use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::project::{ProjectId, SandboxLayout};
 
-use super::inventory::{self, ProjectState};
+use super::inventory::{self, Poll, ProjectState};
 use super::select::{self, ProjectPrompt};
-use super::{daemon, sandbox};
-
-/// 起動待ちのpolling設定。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Poll {
-    pub interval: Duration,
-    pub limit: Duration,
-}
-
-impl Default for Poll {
-    fn default() -> Poll {
-        Poll {
-            interval: Duration::from_secs(2),
-            limit: Duration::from_secs(60),
-        }
-    }
-}
+use super::{daemon, worktree};
 
 /// 接続先と、接続前に見せる情報。
 #[derive(Debug)]
@@ -41,7 +25,6 @@ pub struct Prepared {
     /// 接続先のSSH host名。
     pub ssh_host: String,
     pub worktrees: Vec<String>,
-    _lock: ExclusiveLock,
 }
 
 /// SSHへ引き渡せる状態までSandboxを整える。
@@ -49,10 +32,13 @@ pub struct Prepared {
 /// 1. 対象を引数またはpromptで解決する
 /// 2. project lockを取得する
 /// 3. Docker Engineへの疎通を確認する
-/// 4. Sandbox identityとstateを検証する
+/// 4. 1回の一覧取得からSandbox identityとstateを検証する
 /// 5. daemonを安全に再起動する
-/// 6. stoppedなら起動し、runningになるまで待つ
+/// 6. 再起動後の状態を読み直し、runningでなければ起動して待つ
 /// 7. managed worktreeをmetadataとGitから検証する
+///
+/// lockはこの関数のあいだだけ保持する。SSH sessionそのものはsbxmのmutationではなく、
+/// 接続中に別terminalの`stop`が待たされる状態を作らない。
 pub fn prepare(
     config: &GlobalConfig,
     location: &ConfigLocation,
@@ -62,46 +48,39 @@ pub fn prepare(
     workspace_root: &Path,
     poll: Poll,
 ) -> Result<Prepared> {
-    require_docker(host)?;
+    // 対象が決まる前にhostの状態へ触れない。
+    let candidate = select::one(config, requested, prompt)?;
 
-    let inventory = inventory::take(config, host, workspace_root)?;
-    let project = select::one(&inventory, requested, prompt)?;
-    let metadata = project.metadata.clone();
-    let name = project.sandbox.clone();
-    let state = project.state;
-
-    let lock = paths::acquire_exclusive_lock(
-        &project.paths.lock_file(),
+    let _lock = paths::acquire_exclusive_lock(
+        &candidate.paths.lock_file(),
         LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )?;
 
+    // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
+    let metadata = candidate.reload()?;
+    let name = metadata.sandbox_name();
     require_no_rebuild(&metadata)?;
-    if state == ProjectState::NotCreated {
+
+    require_docker(host)?;
+
+    let entries = daemon::list(host)?;
+    if inventory::state_of(&entries, &metadata, workspace_root)? == ProjectState::NotCreated {
         // `open`はSandboxを新規作成しない。
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::SandboxNotCreated,
-                msg!(
-                    "error-sandbox-not-created",
-                    project = metadata.display_id(),
-                    sandbox = name
-                ),
-            )
-            .remediation(msg!(
-                "remediation-sandbox-not-created",
-                command = format!("sbxm add {}", metadata.display_id())
-            )),
-        ));
+        return Err(not_created(&metadata, name.as_str()));
     }
 
     // 接続のたびに、SSH Agentを渡さないdaemonへ入れ替える。
     let daemon_guard = daemon::restart_without_ssh_agent(host, location)?;
-    if state == ProjectState::Stopped {
-        start(host, name.as_str())?;
+    // 再起動でSandboxの状態は変わり得るため、起動要否は再起動後の観測から決める。
+    let entries = daemon::list(host)?;
+    match inventory::state_of(&entries, &metadata, workspace_root)? {
+        ProjectState::Running => {}
+        ProjectState::Stopped => start(host, name.as_str())?,
+        ProjectState::NotCreated => return Err(not_created(&metadata, name.as_str())),
     }
-    wait_until_running(host, name.as_str(), poll)?;
+    wait_until_running(host, &metadata, workspace_root, poll)?;
     drop(daemon_guard);
 
     let layout = SandboxLayout::new(&metadata.canonical_id);
@@ -112,7 +91,6 @@ pub fn prepare(
         sandbox: name.as_str().to_string(),
         ssh_host: format!("{name}.sbx"),
         worktrees,
-        _lock: lock,
     })
 }
 
@@ -163,6 +141,23 @@ fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
     ))
 }
 
+fn not_created(metadata: &ProjectMetadata, sandbox: &str) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::SandboxNotCreated,
+            msg!(
+                "error-sandbox-not-created",
+                project = metadata.display_id(),
+                sandbox = sandbox
+            ),
+        )
+        .remediation(msg!(
+            "remediation-sandbox-not-created",
+            command = format!("sbxm add {}", metadata.display_id())
+        )),
+    )
+}
+
 /// 非対話でSandboxを起動する。
 fn start(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     let spec = CommandSpec::passthrough("sbx", &["exec", sandbox, "--", "/bin/true"])
@@ -173,63 +168,71 @@ fn start(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
 }
 
 /// runningになるまで待つ。状態は毎回structured outputから読む。
-fn wait_until_running(host: &dyn HostEnvironment, name: &str, poll: Poll) -> Result<()> {
+fn wait_until_running(
+    host: &dyn HostEnvironment,
+    metadata: &ProjectMetadata,
+    workspace_root: &Path,
+    poll: Poll,
+) -> Result<()> {
+    let name = metadata.sandbox_name();
     let deadline = Instant::now() + poll.limit;
     loop {
         let entries = daemon::list(host)?;
-        let entry = entries.iter().find(|entry| entry.name == name);
-        match entry.map(|entry| entry.state) {
-            Some(crate::compatibility::SandboxState::Running) => return Ok(()),
-            _ if Instant::now() >= deadline => {
-                return Err(Error::single(
-                    Diagnostic::new(
-                        ErrorId::SandboxNotRunning,
-                        msg!(
-                            "error-sandbox-not-running",
-                            sandbox = name,
-                            observed = entry
-                                .map(|entry| match entry.state {
-                                    crate::compatibility::SandboxState::Running => "running",
-                                    crate::compatibility::SandboxState::Stopped => "stopped",
-                                })
-                                .unwrap_or("not-created")
-                        ),
-                    )
-                    .remediation(msg!(
-                        "remediation-sandbox-not-running",
-                        command = format!("sbxm status {name}")
-                    )),
-                ));
-            }
-            _ => std::thread::sleep(poll.interval),
+        let observed = inventory::state_of(&entries, metadata, workspace_root)?;
+        if observed == ProjectState::Running {
+            return Ok(());
         }
+        if Instant::now() >= deadline {
+            return Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::SandboxNotRunning,
+                    msg!(
+                        "error-sandbox-not-running",
+                        sandbox = name,
+                        observed = observed
+                    ),
+                )
+                .remediation(msg!(
+                    "remediation-diagnose-project",
+                    command = format!("sbxm status {}", metadata.display_id())
+                )),
+            ));
+        }
+        std::thread::sleep(poll.interval);
     }
 }
 
-/// metadataが宣言するmanaged worktreeが、Sandbox内に揃っていることを確認する。
+/// metadataが宣言するmanaged worktreeが、Sandbox内のGitに揃っていることを確認する。
 fn verify_worktrees(
     host: &dyn HostEnvironment,
     name: &str,
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
 ) -> Result<Vec<String>> {
+    let bare_root = layout.bare_root();
+    let listed: Vec<String> = worktree::list(host, name, layout)?
+        .iter()
+        .filter_map(|entry| entry.relative_to(&bare_root))
+        .collect();
+
     let mut present = Vec::with_capacity(metadata.managed_worktrees.len());
     for worktree in &metadata.managed_worktrees {
-        let path = format!("{}/{}", layout.bare_root(), worktree.path);
-        if !sandbox::exec(host, name, &["test", "-d", &path])?.success() {
+        if !listed.contains(&worktree.path) {
+            let path = format!("{bare_root}/{}", worktree.path);
             return Err(Error::single(
                 Diagnostic::new(
                     ErrorId::SandboxRepositoryUnusable,
                     msg!(
                         "error-sandbox-repository-unusable",
                         path = path,
-                        detail = "the metadata declares this managed worktree, but it is absent"
+                        detail =
+                            "the metadata declares this managed worktree, but Git does not have it"
                     ),
                 )
                 .remediation(msg!("remediation-sandbox-repository-unusable", path = path)),
             ));
         }
-        present.push(path);
+        present.push(format!("{bare_root}/{}", worktree.path));
     }
     Ok(present)
 }
@@ -237,10 +240,12 @@ fn verify_worktrees(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::{EnvPolicy, OutputPolicy};
     use crate::config::ConfigLocation;
     use crate::metadata::{self, RebuildIntent};
-    use crate::workflow::inventory::tests::{FakeSbx, Fixture, fixture};
+    use crate::workflow::inventory::tests::{FakeSbx, Fixture, Registered, fixture};
     use crate::workflow::select::tests::ScriptedPrompt;
+    use std::time::Duration;
 
     fn poll() -> Poll {
         Poll {
@@ -254,9 +259,37 @@ mod tests {
         ConfigLocation::from_home(home.to_path_buf())
     }
 
-    /// Docker疎通に応答するhost。
-    fn docker_ready(host: FakeSbx) -> FakeSbx {
+    /// Docker疎通とworktree一覧に応答するhost。
+    fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        let listing = format!(
+            "worktree {}\0bare\0\0worktree {}/{}\0branch refs/heads/main\0\0",
+            layout.bare_root(),
+            layout.bare_root(),
+            project.metadata.managed_worktrees[0].path
+        );
         host.answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
+            .answering(
+                &format!(
+                    "exec {} -- git --git-dir {} worktree list --porcelain -z",
+                    project.sandbox,
+                    layout.bare_git_dir()
+                ),
+                0,
+                &listing,
+            )
+    }
+
+    fn prepare_for(fixture: &Fixture, host: &FakeSbx) -> Result<Prepared> {
+        prepare(
+            &fixture.config,
+            &location(fixture),
+            None,
+            host,
+            &mut ScriptedPrompt::choosing(0),
+            &fixture.workspace_root,
+            poll(),
+        )
     }
 
     #[test]
@@ -264,18 +297,9 @@ mod tests {
         let fixture = fixture();
         let project = fixture.register("Example-Org/Example-Repo");
         let running = format!("[{}]", fixture.entry(&project, "running"));
-        let host = docker_ready(FakeSbx::listing(&running));
+        let host = ready(FakeSbx::listing(&running), &project);
 
-        let prepared = prepare(
-            &fixture.config,
-            &location(&fixture),
-            None,
-            &host,
-            &mut ScriptedPrompt::choosing(0),
-            &fixture.workspace_root,
-            poll(),
-        )
-        .expect("prepare");
+        let prepared = prepare_for(&fixture, &host).expect("prepare");
 
         assert_eq!(prepared.ssh_host, format!("{}.sbx", project.sandbox));
         assert!(host.ran("daemon stop"));
@@ -293,38 +317,50 @@ mod tests {
         let project = fixture.register("example-org/example-repo");
         let stopped = format!("[{}]", fixture.entry(&project, "stopped"));
         let running = format!("[{}]", fixture.entry(&project, "running"));
-        let host = docker_ready(FakeSbx::listings(&[&stopped, &stopped, &running]));
+        let host = ready(
+            FakeSbx::listings(&[&stopped, &stopped, &stopped, &running]),
+            &project,
+        );
 
-        prepare(
-            &fixture.config,
-            &location(&fixture),
-            None,
-            &host,
-            &mut ScriptedPrompt::choosing(0),
-            &fixture.workspace_root,
-            poll(),
-        )
-        .expect("prepare");
+        prepare_for(&fixture, &host).expect("prepare");
 
         assert!(host.ran("/bin/true"), "{:?}", host.calls());
+        let start = host.spec("/bin/true");
+        assert_eq!(
+            start.output,
+            OutputPolicy::Passthrough,
+            "the runtime's own progress is shown as it is"
+        );
+        assert_eq!(start.env, EnvPolicy::InheritWithoutSshAgent);
+    }
+
+    #[test]
+    fn a_sandbox_that_the_restart_stopped_is_started_again() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let running = format!("[{}]", fixture.entry(&project, "running"));
+        let stopped = format!("[{}]", fixture.entry(&project, "stopped"));
+        // 再起動前はrunning、再起動後はstopped、起動後にrunningへ戻る。
+        let host = ready(
+            FakeSbx::listings(&[&running, &running, &stopped, &running]),
+            &project,
+        );
+
+        prepare_for(&fixture, &host).expect("prepare");
+        assert!(
+            host.ran("/bin/true"),
+            "the state before the restart does not decide this: {:?}",
+            host.calls()
+        );
     }
 
     #[test]
     fn a_project_without_a_sandbox_is_sent_back_to_add() {
         let fixture = fixture();
-        fixture.register("example-org/example-repo");
-        let host = docker_ready(FakeSbx::listing("[]"));
+        let project = fixture.register("example-org/example-repo");
+        let host = ready(FakeSbx::listing("[]"), &project);
 
-        let error = prepare(
-            &fixture.config,
-            &location(&fixture),
-            None,
-            &host,
-            &mut ScriptedPrompt::choosing(0),
-            &fixture.workspace_root,
-            poll(),
-        )
-        .expect_err("open never creates a sandbox");
+        let error = prepare_for(&fixture, &host).expect_err("open never creates a sandbox");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
         assert!(!host.ran("daemon stop"), "the daemon is left alone");
     }
@@ -341,20 +377,40 @@ mod tests {
         metadata::update(&project.paths, &metadata).expect("record the intent");
 
         let running = format!("[{}]", fixture.entry(&project, "running"));
-        let host = docker_ready(FakeSbx::listing(&running));
+        let host = ready(FakeSbx::listing(&running), &project);
+
+        let error =
+            prepare_for(&fixture, &host).expect_err("a half-switched sandbox is not opened");
+        assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
+        assert!(!host.ran("ls --json"), "nothing is asked of the runtime");
+    }
+
+    #[test]
+    fn an_intent_recorded_after_the_selection_is_still_seen() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let running = format!("[{}]", fixture.entry(&project, "running"));
+        let host = ready(FakeSbx::listing(&running), &project);
+
+        // 選択したあとにrebuildが始まった状態を、lock取得後のmetadataから読み直す。
+        let mut metadata = project.metadata.clone();
+        metadata.rebuild = Some(RebuildIntent {
+            target_dockerfile_sha256: "2".repeat(64),
+            previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+        });
+        metadata::update(&project.paths, &metadata).expect("record the intent");
 
         let error = prepare(
             &fixture.config,
             &location(&fixture),
-            None,
+            Some(&ProjectId::parse("example-org/example-repo").unwrap()),
             &host,
             &mut ScriptedPrompt::choosing(0),
             &fixture.workspace_root,
             poll(),
         )
-        .expect_err("a half-switched sandbox is not opened");
+        .expect_err("the intent on disk decides, not the copy from the selection");
         assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
-        assert!(!host.ran("daemon stop"));
     }
 
     #[test]
@@ -362,19 +418,43 @@ mod tests {
         let fixture = fixture();
         let project = fixture.register("example-org/example-repo");
         let stopped = format!("[{}]", fixture.entry(&project, "stopped"));
-        let host = docker_ready(FakeSbx::listing(&stopped));
+        let host = ready(FakeSbx::listing(&stopped), &project);
 
-        let error = prepare(
-            &fixture.config,
-            &location(&fixture),
-            None,
-            &host,
-            &mut ScriptedPrompt::choosing(0),
-            &fixture.workspace_root,
-            poll(),
-        )
-        .expect_err("a sandbox that stays stopped is not connected to");
+        let error = prepare_for(&fixture, &host)
+            .expect_err("a sandbox that stays stopped is not connected");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
+        let remediation = error.diagnostics()[0]
+            .remediation
+            .as_ref()
+            .expect("the user is told how to look at it");
+        assert!(
+            remediation
+                .args
+                .iter()
+                .any(|(_, value)| value == "sbxm status example-org/example-repo"),
+            "the remediation names a command that can be run: {remediation:?}"
+        );
+    }
+
+    #[test]
+    fn a_missing_managed_worktree_stops_before_the_terminal_is_handed_over() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let running = format!("[{}]", fixture.entry(&project, "running"));
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        // directoryはあってもGitのworktreeでなければ、宣言を満たしていない。
+        let host = ready(FakeSbx::listing(&running), &project).answering(
+            &format!(
+                "exec {} -- git --git-dir {} worktree list --porcelain -z",
+                project.sandbox,
+                layout.bare_git_dir()
+            ),
+            0,
+            &format!("worktree {}\0bare\0\0", layout.bare_root()),
+        );
+
+        let error = prepare_for(&fixture, &host).expect_err("a declared worktree has to exist");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     }
 
     #[test]
@@ -383,16 +463,8 @@ mod tests {
         fixture.register("example-org/example-repo");
         let host = FakeSbx::listing("[]").answering("version --format {{.Server.Version}}", 1, "");
 
-        let error = prepare(
-            &fixture.config,
-            &location(&fixture),
-            None,
-            &host,
-            &mut ScriptedPrompt::choosing(0),
-            &fixture.workspace_root,
-            poll(),
-        )
-        .expect_err("without the engine there is nothing to open");
+        let error =
+            prepare_for(&fixture, &host).expect_err("without the engine there is nothing to open");
         assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
         assert!(!host.ran("ls --json"));
     }
@@ -402,21 +474,40 @@ mod tests {
         let fixture = fixture();
         let project = fixture.register("example-org/example-repo");
         let running = format!("[{}]", fixture.entry(&project, "running"));
-        let host = docker_ready(FakeSbx::listing(&running));
-        let prepared = prepare(
-            &fixture.config,
-            &location(&fixture),
-            None,
-            &host,
-            &mut ScriptedPrompt::choosing(0),
-            &fixture.workspace_root,
-            poll(),
-        )
-        .expect("prepare");
+        let host = ready(FakeSbx::listing(&running), &project);
+        let prepared = prepare_for(&fixture, &host).expect("prepare");
 
         connect(&host, &prepared).expect("connect");
-        let calls = host.calls();
-        let ssh = calls.last().expect("ssh runs last");
-        assert_eq!(ssh, &vec![format!("{}.sbx", project.sandbox)]);
+        let ssh = host.spec(&format!("{}.sbx", project.sandbox));
+        assert_eq!(ssh.program, "ssh");
+        assert_eq!(ssh.args, vec![format!("{}.sbx", project.sandbox)]);
+        assert_eq!(
+            ssh.output,
+            OutputPolicy::Inherit,
+            "the terminal itself is handed over"
+        );
+        assert_eq!(
+            ssh.timeout,
+            TimeoutClass::Interactive,
+            "the user decides when an interactive session ends"
+        );
+    }
+
+    #[test]
+    fn the_project_lock_is_released_before_the_terminal_is_handed_over() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let running = format!("[{}]", fixture.entry(&project, "running"));
+        let host = ready(FakeSbx::listing(&running), &project);
+
+        prepare_for(&fixture, &host).expect("prepare");
+        // 接続中に、別terminalの`stop`がこの案件を待たされない。
+        paths::acquire_exclusive_lock(
+            &project.paths.lock_file(),
+            Duration::from_millis(50),
+            PRIVATE_FILE_MODE,
+            PathScope::ProjectPath,
+        )
+        .expect("the lock covers the mutation, not the session");
     }
 }

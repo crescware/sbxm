@@ -6,7 +6,6 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
-use crate::compatibility::SandboxState;
 use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
@@ -15,8 +14,7 @@ use crate::paths::{self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathSco
 use crate::project::{ProjectId, SandboxName};
 
 use super::daemon;
-use super::inventory::{self, ProjectState};
-use super::open::Poll;
+use super::inventory::{self, Poll, ProjectState};
 use super::select::{self, ProjectPrompt};
 
 /// 1案件の停止結果。
@@ -24,7 +22,7 @@ use super::select::{self, ProjectPrompt};
 pub enum StopResult {
     /// この実行で停止した。
     Stopped,
-    /// 既に停止していた、またはSandboxがない。
+    /// この実行では停止していない。
     Unchanged,
     /// 停止に失敗した。
     Failed,
@@ -43,7 +41,7 @@ impl StopResult {
     pub fn legend_id(self) -> &'static str {
         match self {
             StopResult::Stopped => "legend-stopped-now",
-            StopResult::Unchanged => "legend-unchanged",
+            StopResult::Unchanged => "legend-not-stopped",
             StopResult::Failed => "legend-failed",
         }
     }
@@ -77,48 +75,49 @@ pub fn run(
     workspace_root: &Path,
     poll: Poll,
 ) -> Result<StopReport> {
-    let inventory = inventory::take(config, host, workspace_root)?;
-    let selected = select::many(&inventory, requested, prompt)?;
+    // 1. 全対象のmetadataを解決する。canonical ID昇順で返る。
+    let selected = select::many(config, requested, prompt)?;
 
-    // mutation前に、全対象が停止して良い状態であることを確認する。
-    for project in &selected {
-        require_no_rebuild(&project.metadata)?;
+    // 2-3. 1回の一覧取得で全stateを解決し、進められない状態が1件でもあれば止める。
+    let entries = daemon::list(host)?;
+    for candidate in &selected {
+        validate(&candidate.metadata, &entries, workspace_root)?;
     }
 
-    let targets: Vec<Target> = selected
+    // 4. 複数lockはcanonical ID昇順に取得する。
+    let lock_paths: Vec<std::path::PathBuf> = selected
         .iter()
-        .map(|project| Target {
-            display_id: project.display_id(),
-            sandbox: project.sandbox.clone(),
-            metadata: project.metadata.clone(),
-            lock_path: project.paths.lock_file(),
-        })
+        .map(|candidate| candidate.paths.lock_file())
         .collect();
-
-    // 複数lockはcanonical ID昇順に取得する。
-    let mut locks: Vec<ExclusiveLock> = Vec::with_capacity(targets.len());
-    for target in &targets {
+    let mut locks: Vec<ExclusiveLock> = Vec::with_capacity(lock_paths.len());
+    for path in &lock_paths {
         locks.push(paths::acquire_exclusive_lock(
-            &target.lock_path,
+            path,
             LOCK_TIMEOUT,
             PRIVATE_FILE_MODE,
             PathScope::ProjectPath,
         )?);
     }
 
-    // lock取得後にstateを取り直し、preconditionを判定し直す。
-    let inventory = inventory::take(config, host, workspace_root)?;
+    // 5. lock取得後のmetadataとstateでpreconditionを判定し直す。
+    let entries = daemon::list(host)?;
+    let mut targets: Vec<Target> = Vec::with_capacity(selected.len());
+    for candidate in &selected {
+        let metadata = candidate.reload()?;
+        let state = validate(&metadata, &entries, workspace_root)?;
+        targets.push(Target {
+            display_id: metadata.display_id(),
+            sandbox: metadata.sandbox_name(),
+            state,
+        });
+    }
+
+    // 6. runningだけを停止する。
     let mut outcomes = Vec::with_capacity(targets.len());
     let mut failures = Vec::new();
-
     for target in &targets {
-        let state = inventory
-            .find(&target.metadata.canonical_id)
-            .map(|project| project.state)
-            .unwrap_or(ProjectState::NotCreated);
-
         // 失敗した時点で、後続の対象は停止せずそのままにする。
-        if failures.is_empty() && state == ProjectState::Running {
+        if failures.is_empty() && target.state == ProjectState::Running {
             match stop_one(host, &target.sandbox, poll) {
                 Ok(()) => outcomes.push(target.outcome(StopResult::Stopped)),
                 Err(error) => {
@@ -139,8 +138,7 @@ pub fn run(
 struct Target {
     display_id: String,
     sandbox: SandboxName,
-    metadata: ProjectMetadata,
-    lock_path: std::path::PathBuf,
+    state: ProjectState,
 }
 
 impl Target {
@@ -151,6 +149,16 @@ impl Target {
             result,
         }
     }
+}
+
+/// 停止して良い状態であることを確かめ、現在のstateを返す。
+fn validate(
+    metadata: &ProjectMetadata,
+    entries: &[crate::compatibility::SandboxEntry],
+    workspace_root: &Path,
+) -> Result<ProjectState> {
+    require_no_rebuild(metadata)?;
+    inventory::state_of(entries, metadata, workspace_root)
 }
 
 fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
@@ -188,14 +196,14 @@ fn stop_one(host: &dyn HostEnvironment, sandbox: &SandboxName, poll: Poll) -> Re
             .map(|entry| entry.state);
         match state {
             // 削除されている場合も、起動していないことは確認できている。
-            None | Some(SandboxState::Stopped) => return Ok(()),
-            Some(SandboxState::Running) if Instant::now() >= deadline => {
+            None | Some(crate::compatibility::SandboxState::Stopped) => return Ok(()),
+            Some(crate::compatibility::SandboxState::Running) if Instant::now() >= deadline => {
                 return Err(Error::new(
                     ErrorId::SandboxStillRunning,
                     msg!("error-sandbox-still-running", sandbox = sandbox),
                 ));
             }
-            Some(SandboxState::Running) => std::thread::sleep(poll.interval),
+            Some(crate::compatibility::SandboxState::Running) => std::thread::sleep(poll.interval),
         }
     }
 }
@@ -203,6 +211,7 @@ fn stop_one(host: &dyn HostEnvironment, sandbox: &SandboxName, poll: Poll) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::OutputPolicy;
     use crate::metadata::{self, RebuildIntent};
     use crate::workflow::inventory::tests::{FakeSbx, fixture};
     use crate::workflow::select::tests::ScriptedPrompt;
@@ -264,6 +273,15 @@ mod tests {
             !host.ran(&format!("stop {}", second.sandbox)),
             "a sandbox that is already stopped is left alone"
         );
+
+        let stop = host.spec(&format!("stop {}", first.sandbox));
+        assert_eq!(stop.output, OutputPolicy::Passthrough);
+        assert_eq!(stop.env, EnvPolicy::InheritWithoutSshAgent);
+        assert_eq!(
+            host.spec("ls --json").output,
+            OutputPolicy::Capture,
+            "the state is read from structured output"
+        );
     }
 
     #[test]
@@ -315,6 +333,34 @@ mod tests {
         .expect_err("one target that cannot be stopped stops the whole run");
         assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
         assert!(!host.ran("stop "), "nothing is stopped: {:?}", host.calls());
+    }
+
+    #[test]
+    fn an_intent_recorded_after_the_first_check_is_still_seen() {
+        let fixture = fixture();
+        let project = fixture.register("alpha/repo");
+        let listing = format!("[{}]", fixture.entry(&project, "running"));
+        let host = FakeSbx::listing(&listing);
+
+        // 選択と最初の検査のあとにrebuildが始まった状態を、lock取得後に読み直す。
+        let mut metadata = project.metadata.clone();
+        metadata.rebuild = Some(RebuildIntent {
+            target_dockerfile_sha256: "2".repeat(64),
+            previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+        });
+        metadata::update(&project.paths, &metadata).expect("record the intent");
+
+        let error = run(
+            &fixture.config,
+            &[project_id("alpha/repo")],
+            &host,
+            &mut ScriptedPrompt::choosing(0),
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("the metadata on disk decides after the lock is held");
+        assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
+        assert!(!host.ran("stop "));
     }
 
     #[test]

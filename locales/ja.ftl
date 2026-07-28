@@ -81,6 +81,7 @@ error-metadata-invalid-value = { $path } の項目 { $field } の値が不正で
 error-metadata-path-mismatch = { $path } のmetadataは { $canonical_id } を宣言しており、本来の場所は { $expected } です。
 error-metadata-duplicate-project = { $canonical_id } を複数の案件directoryが宣言しています: { $paths }
 error-sandbox-name-collision = Sandbox名 { $sandbox } が複数の案件から導出されています: { $projects }
+error-sandbox-name-duplicated = Sandbox一覧に { $sandbox } という名前のSandboxが複数あるため、案件と対応付けられません。
 error-invalid-branch-name = { $value } はbranch名として使用できません: { $detail }
 error-target-configuration-mismatch = { $project } は { $stored } として構築するよう登録されていますが、この実行は { $requested } を指定しています。
 error-rebuild-intent-pending = { $project } は再構築の途中であるため、初回構築を継続できません。
@@ -99,11 +100,14 @@ error-github-secret-missing = Sandbox { $sandbox } に { $secret } secretがな�
 error-sandbox-repository-unusable = Sandbox内の { $path } はこの案件には使用できません: { $detail }
 error-start-ref-unresolved = { $project } のremoteに { $reference } がありません。
 error-no-managed-projects = 選択できる管理案件がありません。
+error-selection-unresolved = 選択された { $index } は、候補 { $count } 件のいずれでもありません。
 error-sandbox-still-running = Sandbox { $sandbox } は停止を要求したあとも起動したままです。
 error-unsaved-work = { $target } には失われる作業があります: { $detail }
 error-sandbox-still-present = Sandbox { $sandbox } は削除後も一覧に残っています。
 error-rebuild-generation-missing = { $project } の再構築は世代 { $target } に固定されていますが、その成果物も一致するDockerfileもありません。現在のDockerfileは { $observed } です。
 error-destroy-not-confirmed = Sandbox名が { $sandbox } と完全一致しなかったため、何も削除しませんでした。
+error-sandbox-check-unobservable = Sandbox内の { $subject } に対する検査が、結果を示さないまま { $exit_status } で終了したため、判定できません。
+error-global-scope-unobservable = host環境を読み取れないため、この案件の一部を検査できませんでした。
 error-project-not-managed = { $project } は管理対象の案件ではありません。
 error-sandbox-not-created = { $project } は登録済みですが、Sandbox { $sandbox } はまだ存在しません。
 error-sandbox-not-running = Sandbox { $sandbox } は { $observed } です。このcommandはrunningのSandboxだけを対象とします。
@@ -160,6 +164,8 @@ remediation-sandbox-not-created = { $command } を実行するとSandboxを構�
 remediation-sandbox-not-running = { $command } でSandboxを起動してから、もう一度実行してください。
 remediation-sbx-login = { $command } を実行してloginを完了してから、もう一度実行してください。
 remediation-no-managed-projects = { $command } を実行すると最初の案件を登録できます。
+remediation-diagnose-project = { $command } を実行すると現在の状態を確認できます。
+remediation-run-global-status = { $command } を実行するとhost環境を診断できます。
 remediation-remote-ssh-unconfigured = このhostでDocker SandboxesのRemote SSH連携を設定してから、もう一度実行してください。
 remediation-unsaved-work = 残す変更はcommitしてpushし、不要なfileは削除してから、もう一度実行してください。
 remediation-rebuild-generation-missing = その世代のDockerfileを復元してから、もう一度 rebuild を実行してください。復元できない場合、{ $command } はhost cloneとDockerfileを残したままSandboxと管理情報を削除します。
@@ -178,17 +184,26 @@ security-config-permission-remediation = chmod { $expected } { $path } を実行
 security-config-symlink-description = { $path } はsymbolic linkです。追跡するとsbxmの設定directory外のfileを読み書きする可能性があります。
 security-config-symlink-remediation = { $path } を自分が所有する通常fileへ置き換えるか、実体の設定fileをこのpathへ戻してください。
 
+security-config-owner-description = { $path } の所有者はuser ID { $observed } で、現在の利用者は { $expected } です。ほかのaccountが所有する設定fileは、いつでも置き換えられる可能性があります。
+security-config-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するfileをこのpathへ戻してください。
+
 security-config-dir-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。そこへ置くlockと設定を観測または置換される可能性があります。
 security-config-dir-permission-remediation = chmod { $expected } { $path } を実行し、directoryの所有者が自分であることを確認してください。
 
 security-config-dir-symlink-description = { $path } はsymbolic linkです。lockと設定が意図しないdirectoryへ作られます。
 security-config-dir-symlink-remediation = { $path } を自分が所有するdirectoryへ置き換えてください。
 
+security-config-dir-owner-description = { $path } の所有者はuser ID { $observed } で、現在の利用者は { $expected } です。lockと設定が、ほかのaccountの管理下にあるdirectoryへ置かれます。
+security-config-dir-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するdirectoryをこのpathへ戻してください。
+
 security-project-path-symlink-description = { $path } はsymbolic linkです。追跡すると案件directoryの外へfileを作成または置き換えるため、sbxmは追跡しません。
 security-project-path-symlink-remediation = { $path } を自分が所有する通常fileまたはdirectoryへ置き換えてから、もう一度実行してください。
 
 security-project-file-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。この機械上のほかのaccountが読み書きできるfileをsbxmは使用しません。
 security-project-file-permission-remediation = chmod { $expected } { $path } を実行し、fileの所有者が自分であることを確認してください。
+
+security-project-path-owner-description = { $path } の所有者はuser ID { $observed } で、現在の利用者は { $expected } です。modeにかかわらず、ほかのaccountが所有するpathの上に案件を構築しません。
+security-project-path-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するpathをこのpathへ戻してください。
 
 security-ssh-agent-exposed-description = { $sandbox } からhostのSSH Agentへ到達できます。Sandbox内のagentが利用者の鍵で署名できる状態です。
 security-ssh-agent-exposed-remediation = Sandboxを停止し、sbxm で開き直すと、SSH Agentを渡さないdaemonで起動します。
@@ -244,6 +259,7 @@ column-result = 結果 (RESULT)
 add-already-built = { $project } は構築済みのため、何も変更しませんでした。
 add-mise-heading = 次のmanaged worktreeはmiseの設定を持ちます。sbxmはmiseを自動実行しません:
 add-mise-hint = 使用する場合は、Sandbox内で mise trust と mise install を実行してください。
+files-secret-hint = 宣言fileは設定を運ぶためのもので、credentialのためのものではありません。token、secret、秘密鍵は宣言fileへ入れず、Docker Sandboxesのsecret機能でSandboxへ渡してください。
 sync-files-done = { $project } の宣言file { $count } 件を { $sandbox } へ配置しました。
 legend-attached = remoteをtrackingするbranch上のworktreeです
 legend-detached = branchを持たないcommit上のworktreeです
@@ -272,6 +288,7 @@ select-open-heading = どの案件を開きますか?
 select-stop-heading = どの案件を停止しますか?
 
 legend-stopped-now = この実行で停止しました
+legend-not-stopped = この実行では停止していません。既に停止しているか、Sandboxがないか、先行する失敗のあとそのままにしました
 legend-failed = 停止できませんでした
 status-project-section = 案件 (PROJECT)
 status-worktrees-section = worktree (WORKTREES)
@@ -287,6 +304,7 @@ status-item-workspace = workspace (Workspace)
 status-item-secret = GitHub secret
 status-item-bare-repository = bare repository (Bare repository)
 status-item-ssh-agent = SSH Agent
+status-item-worktrees = worktree (Worktrees)
 status-item-project = 案件 (Project)
 column-path = path (PATH)
 column-kind = 種別 (KIND)
@@ -304,5 +322,7 @@ legend-ready = 期待どおり利用できます
 legend-missing = 存在しません
 legend-error = 検証できないか、要件を満たしていません
 legend-not-created = 案件は登録済みですが、Sandboxはまだ存在しません
+legend-sandbox-running = Sandboxが起動しています
+legend-sandbox-stopped = Sandboxはありますが起動していません
 legend-running = serviceが起動しています
 legend-stopped = serviceは導入済みですが起動していません

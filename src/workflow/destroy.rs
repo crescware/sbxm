@@ -15,8 +15,7 @@ use crate::paths::{self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathSco
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::daemon;
-use super::inventory::{self, ProjectState};
-use super::open::Poll;
+use super::inventory::{self, Poll, ProjectState};
 use super::protection::{self, Unmanaged, WorktreeReport};
 use super::select::{self, ProjectPrompt};
 
@@ -66,12 +65,9 @@ pub fn prepare(
     prompt: &mut dyn ProjectPrompt,
     workspace_root: &Path,
 ) -> Result<Prepared> {
-    let inventory = inventory::take(config, host, workspace_root)?;
-    let project = select::one(&inventory, requested, prompt)?;
-    let paths = project.paths.clone();
-    let name = project.sandbox.clone();
-    let state = project.state;
-    let metadata = project.metadata.clone();
+    // 対象が決まる前にhostの状態へ触れない。
+    let candidate = select::one(config, requested, prompt)?;
+    let paths = candidate.paths.clone();
 
     let lock = paths::acquire_exclusive_lock(
         &paths.lock_file(),
@@ -79,6 +75,12 @@ pub fn prepare(
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )?;
+
+    // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
+    let metadata = candidate.reload()?;
+    let name = metadata.sandbox_name();
+    let entries = daemon::list(host)?;
+    let state = inventory::state_of(&entries, &metadata, workspace_root)?;
 
     let worktrees = if force || state == ProjectState::NotCreated {
         Vec::new()

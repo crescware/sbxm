@@ -18,10 +18,35 @@ use super::daemon;
 use super::template::LoadedTemplate;
 
 /// 中立Workspaceのroot。
+///
+/// 共有されるdirectoryの下にあるため、rootとその下のworkspaceの両方を、現在の
+/// 利用者だけが使えるdirectoryとして検証または作成する。
 pub const WORKSPACE_ROOT: &str = "/tmp/docker-sandboxes";
 
 /// Sandboxへ渡すagent kit。対話shellを持つ最小構成を使う。
 const AGENT_KIT: &str = "shell";
+
+/// `git`が対象をrepositoryとして扱えなかったときの終了status。
+pub const GIT_FATAL: i32 = 128;
+
+/// `ssh-add`がagentへ接続できなかったときの終了status。
+///
+/// 鍵が1件もない場合は`1`で終わるため、接続できたかどうかとは区別できる。
+pub const SSH_ADD_NO_AGENT: i32 = 2;
+
+/// exec自体の失敗を示す終了status。POSIX shellとcontainer runtimeの慣例に従う。
+const EXEC_FAILURE: std::ops::RangeInclusive<i32> = 125..=127;
+
+/// Sandbox内で動いたcommand自身の終了status。
+///
+/// `sbx exec`が内側のcommandを起動できなかった場合、およびsignalで終わった場合は
+/// `None`とする。実行できなかったことを、内側のcommandが返した結果として読まない。
+pub fn inner_exit_code(outcome: &CommandOutcome) -> Option<i32> {
+    match outcome.status.code() {
+        Some(code) if !EXEC_FAILURE.contains(&code) => Some(code),
+        _ => None,
+    }
+}
 
 /// 使用できる状態のSandbox。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,11 +72,14 @@ pub fn ensure(
     template: &LoadedTemplate,
     workspace_root: &Path,
 ) -> Result<ReadySandbox> {
+    // rootを別accountが所有していると、その下のworkspaceを入れ替えられる。
+    paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
     let workspace = workspace_path(workspace_root, sandbox);
     paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
 
+    let templates = [template.name.clone()];
     if let Some(entry) = find(host, sandbox)? {
-        verify(&entry, sandbox, template, &workspace)?;
+        verify(&entry, sandbox, &templates, &workspace)?;
         return Ok(ReadySandbox {
             name: entry.name,
             workspace,
@@ -82,7 +110,7 @@ pub fn ensure(
             "the sandbox is absent right after it was created".to_string(),
         ));
     };
-    verify(&entry, sandbox, template, &workspace)?;
+    verify(&entry, sandbox, &templates, &workspace)?;
 
     Ok(ReadySandbox {
         name: entry.name,
@@ -162,20 +190,19 @@ fn find(host: &dyn HostEnvironment, sandbox: &SandboxName) -> Result<Option<Sand
 }
 
 /// 既存Sandboxが、この案件のものであることをread-onlyで確認する。
+///
+/// `templates`はmetadataが正本とする世代のTemplate名であり、rebuild intent中は
+/// 2世代を受け入れる。
 pub fn verify_identity(
     entry: &SandboxEntry,
     sandbox: &SandboxName,
-    template_name: &str,
+    templates: &[String],
     workspace_root: &Path,
 ) -> Result<()> {
-    let template = LoadedTemplate {
-        name: template_name.to_string(),
-        loaded: false,
-    };
     verify(
         entry,
         sandbox,
-        &template,
+        templates,
         &workspace_path(workspace_root, sandbox),
     )
 }
@@ -186,7 +213,7 @@ pub fn verify_identity(
 fn verify(
     entry: &SandboxEntry,
     sandbox: &SandboxName,
-    template: &LoadedTemplate,
+    templates: &[String],
     workspace: &Path,
 ) -> Result<()> {
     match &entry.workspace {
@@ -214,12 +241,12 @@ fn verify(
     }
 
     match &entry.template {
-        Some(observed) if *observed == template.name => Ok(()),
+        Some(observed) if templates.iter().any(|expected| expected == observed) => Ok(()),
         Some(observed) => Err(unusable(
             sandbox.as_str(),
             format!(
                 "the sandbox was made from {observed}, not from {}",
-                template.name
+                templates.join(" or ")
             ),
         )),
         None => Err(unusable(
@@ -302,6 +329,14 @@ mod tests {
         }
     }
 
+    /// 中立Workspaceのrootを、実行時と同じ条件で用意する。
+    fn workspace_root() -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("temporary workspace root");
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(PRIVATE_DIR_MODE))
+            .expect("the root belongs to the current user only");
+        root
+    }
+
     fn sandbox() -> SandboxName {
         SandboxName::derive(
             &ProjectId::parse("example-org/example-repo")
@@ -327,7 +362,7 @@ mod tests {
 
     #[test]
     fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         let workspace = workspace_path(root.path(), &sandbox());
         let host = FakeSbx::listing(&["[]", &listing(&workspace, &template().name, "running")]);
 
@@ -366,7 +401,7 @@ mod tests {
 
     #[test]
     fn a_sandbox_that_matches_the_expected_state_is_reused_whoever_made_it() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         let workspace = workspace_path(root.path(), &sandbox());
         let host = FakeSbx::listing(&[&listing(&workspace, &template().name, "stopped")]);
 
@@ -384,7 +419,7 @@ mod tests {
 
     #[test]
     fn a_sandbox_with_another_workspace_or_template_stops_the_run() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         let workspace = workspace_path(root.path(), &sandbox());
 
         let elsewhere = root.path().join("elsewhere");
@@ -402,7 +437,7 @@ mod tests {
 
     #[test]
     fn a_runtime_that_hides_the_workspace_or_the_template_is_not_guessed_at() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         for listing in [
             format!(
                 r#"[{{"name":"{}","state":"running","template":"{}"}}]"#,
@@ -424,7 +459,7 @@ mod tests {
 
     #[test]
     fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() {
-        let root = tempfile::tempdir().unwrap();
+        let root = workspace_root();
         let real = root.path().join("real");
         fs::create_dir_all(&real).unwrap();
         std::os::unix::fs::symlink(&real, workspace_path(root.path(), &sandbox())).unwrap();

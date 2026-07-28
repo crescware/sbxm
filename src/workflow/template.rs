@@ -24,28 +24,19 @@ pub struct LoadedTemplate {
 /// imageに対応するTemplateを用意する。
 ///
 /// 同名のTemplateは、期待するimageに対応していることを観測できた場合だけ再利用する。
-/// 対応関係を観測できないruntimeでは、既存Templateを推測で再利用しない。
+/// loadした直後も同じ判定を行い、対応関係を観測できないruntimeでは、既存Templateも
+/// loadの結果も推測で受け入れない。
 pub fn ensure(
     host: &dyn HostEnvironment,
     archive: &Path,
     image: &BuiltImage,
 ) -> Result<LoadedTemplate> {
     if let Some(entry) = find(host, &image.name)? {
-        return match &entry.image_id {
-            Some(id) if *id == image.id => Ok(LoadedTemplate {
-                name: image.name.clone(),
-                loaded: false,
-            }),
-            Some(id) => Err(unusable(
-                &image.name,
-                format!("the template holds image {id}, not {}", image.id),
-            )),
-            None => Err(unusable(
-                &image.name,
-                "this Docker Sandboxes version does not report which image a template holds"
-                    .to_string(),
-            )),
-        };
+        holds_image(&entry, image)?;
+        return Ok(LoadedTemplate {
+            name: image.name.clone(),
+            loaded: false,
+        });
     }
 
     let spec = CommandSpec::passthrough("sbx", &["template", "load", &paths::display(archive)])
@@ -59,14 +50,7 @@ pub fn ensure(
             "the template is absent right after it was loaded".to_string(),
         ));
     };
-    if let Some(id) = &entry.image_id
-        && *id != image.id
-    {
-        return Err(unusable(
-            &image.name,
-            format!("the loaded template holds image {id}, not {}", image.id),
-        ));
-    }
+    holds_image(&entry, image)?;
 
     Ok(LoadedTemplate {
         name: image.name.clone(),
@@ -81,11 +65,17 @@ pub fn existing(host: &dyn HostEnvironment, image: &BuiltImage) -> Result<Option
     let Some(entry) = find(host, &image.name)? else {
         return Ok(None);
     };
+    holds_image(&entry, image)?;
+    Ok(Some(LoadedTemplate {
+        name: image.name.clone(),
+        loaded: false,
+    }))
+}
+
+/// Templateが期待するimageを持つことを、runtimeの出力から確かめる。
+fn holds_image(entry: &TemplateEntry, image: &BuiltImage) -> Result<()> {
     match &entry.image_id {
-        Some(id) if *id == image.id => Ok(Some(LoadedTemplate {
-            name: image.name.clone(),
-            loaded: false,
-        })),
+        Some(id) if *id == image.id => Ok(()),
         Some(id) => Err(unusable(
             &image.name,
             format!("the template holds image {id}, not {}", image.id),
@@ -270,6 +260,17 @@ mod tests {
                 .any(|args| args.get(1).is_some_and(|arg| arg == "load")),
             "nothing is loaded over a template that cannot be identified"
         );
+    }
+
+    #[test]
+    fn a_load_whose_result_cannot_be_identified_is_not_accepted() {
+        let image = image();
+        // loadは成功するが、runtimeはどのimageを持つTemplateなのかを示さない。
+        let host = FakeSbx::listing(&["[]", &listing(&image.name, None)]);
+
+        let error = ensure(&host, Path::new("/tmp/template.tar"), &image)
+            .expect_err("a load is only done when the result proves it");
+        assert_eq!(error.first_id(), Some(ErrorId::TemplateUnusable));
     }
 
     #[test]

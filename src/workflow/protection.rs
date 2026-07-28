@@ -7,11 +7,11 @@ use crate::command::HostEnvironment;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
-use crate::paths;
 use crate::project::SandboxLayout;
 
 use super::daemon;
 use super::sandbox;
+use super::worktree;
 
 /// 進行中のGit操作を示すfile。1つでもあれば削除しない。
 const IN_PROGRESS_MARKERS: [&str; 6] = [
@@ -68,24 +68,8 @@ pub fn inspect(
 ) -> Result<Protection> {
     require_no_active_session(host, sandbox_name)?;
 
-    let git_dir = layout.bare_git_dir();
     let bare_root = layout.bare_root();
-    let listing = sandbox::exec(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "--git-dir",
-            &git_dir,
-            "worktree",
-            "list",
-            "--porcelain",
-            "-z",
-        ],
-    )?
-    .require_success()?;
-
-    let entries = super::status_project::parse_worktree_list(&listing.stdout_text())?;
+    let entries = worktree::list(host, sandbox_name, layout)?;
     let mut worktrees = Vec::new();
     let mut seen: Vec<String> = Vec::new();
 
@@ -93,15 +77,13 @@ pub fn inspect(
         if entry.bare {
             continue;
         }
-        let standardized = paths::lexically_standardize(std::path::Path::new(&entry.path));
-        let Ok(relative) = standardized.strip_prefix(&bare_root) else {
+        let Some(relative) = entry.relative_to(&bare_root) else {
             // bare root外のworktreeは、案件の成果物として扱えない。
             return Err(refuse(
                 &entry.path,
                 "the worktree is outside the shared repository",
             ));
         };
-        let relative = paths::display(relative);
         let managed = metadata
             .managed_worktrees
             .iter()
@@ -139,7 +121,7 @@ pub fn inspect(
 fn examine(
     host: &dyn HostEnvironment,
     sandbox_name: &str,
-    entry: &super::status_project::WorktreeEntry,
+    entry: &worktree::Entry,
     relative: &str,
     managed: bool,
 ) -> Result<WorktreeReport> {
@@ -328,13 +310,10 @@ fn refuse(target: &str, detail: &str) -> Error {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::workflow::inventory::tests::{FakeSbx, Fixture, fixture};
+    use crate::workflow::inventory::tests::{FakeSbx, Fixture, Registered, fixture};
 
     /// 検査を通るworktreeを持つhost。
-    pub fn clean_host(
-        fixture: &Fixture,
-        project: &crate::workflow::inventory::ManagedProject,
-    ) -> FakeSbx {
+    pub fn clean_host(fixture: &Fixture, project: &Registered) -> FakeSbx {
         let layout = SandboxLayout::new(&project.metadata.canonical_id);
         let name = project.sandbox.as_str();
         let managed = format!("{}/example-repo.tree-0", layout.bare_root());
@@ -393,7 +372,7 @@ pub mod tests {
 
     fn inspect_with(
         host: &FakeSbx,
-        project: &crate::workflow::inventory::ManagedProject,
+        project: &Registered,
         unmanaged: Unmanaged,
     ) -> Result<Protection> {
         let layout = SandboxLayout::new(&project.metadata.canonical_id);

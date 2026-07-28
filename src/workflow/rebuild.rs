@@ -8,6 +8,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::compatibility::SandboxEntry;
 use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::hash::sha256_hex;
@@ -18,8 +19,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::files::{self, Conflict};
 use super::image::{self, image_name};
-use super::inventory::{self, ProjectState};
-use super::open::Poll;
+use super::inventory::{self, Poll, ProjectState};
 use super::protection::{self, Unmanaged};
 use super::{daemon, identity, repository, sandbox, template};
 
@@ -61,11 +61,9 @@ pub fn run(
     // lock取得後の状態を正本とする。
     let mut project_metadata = metadata::load(&paths)?.ok_or_else(|| not_managed(project))?;
     let current = current_dockerfile_hash(&paths)?;
-    let inventory = inventory::take(config, host, workspace_root)?;
-    let state = inventory
-        .find(&canonical)
-        .map(|managed| managed.state)
-        .unwrap_or(ProjectState::NotCreated);
+    // この案件のstateだけを、1回の一覧取得から決める。
+    let entries = daemon::list(host)?;
+    let state = inventory::state_of(&entries, &project_metadata, workspace_root)?;
 
     let target = match &project_metadata.rebuild {
         // intentがある場合は、intentに固定した世代だけを完成させる。
@@ -121,7 +119,7 @@ pub fn run(
         &name,
         &mut project_metadata,
         &built.template,
-        &inventory,
+        &entries,
         project,
         workspace_root,
         poll,
@@ -210,7 +208,7 @@ fn switch(
     name: &SandboxName,
     metadata: &mut ProjectMetadata,
     template: &super::template::LoadedTemplate,
-    inventory: &inventory::Inventory,
+    entries: &[SandboxEntry],
     project: &ProjectId,
     workspace_root: &Path,
     poll: Poll,
@@ -223,12 +221,10 @@ fn switch(
         .map(|intent| image_name(name, &intent.previous_dockerfile_sha256));
 
     // Sandboxが不在の中断点からは、作成工程から続ける。
-    if let Some(managed) = inventory
-        .find(&metadata.canonical_id)
-        .filter(|managed| managed.state != ProjectState::NotCreated)
-    {
-        let observed = managed
-            .entry_template()
+    if let Some(entry) = entries.iter().find(|entry| entry.name == name.as_str()) {
+        let observed = entry
+            .template
+            .clone()
             .unwrap_or_else(|| "<unreported>".to_string());
         if observed == target_template {
             // 既にtarget世代のSandboxがある。作成工程はskipして続きから進める。
@@ -522,6 +518,8 @@ mod tests {
         );
 
         let host = FakeSbx::listings(&["[]", &created])
+            // 固定した世代のimageは既にbuild済みである。
+            .answering(&format!("image ls --quiet {image}"), 0, "sha256:new\n")
             .answering(
                 &format!("image inspect {image}"),
                 0,

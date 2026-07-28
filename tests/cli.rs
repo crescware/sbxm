@@ -354,6 +354,99 @@ fn ls_needs_the_sandbox_runtime_before_it_can_answer() {
     );
 }
 
+/// 案件を登録した状態のHOMEを作る。
+///
+/// `add`はhost toolに到達した時点で止まるが、登録そのものは終わっている。
+fn home_with_project(project: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let home = temp_home();
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).unwrap();
+    write_config(home.path(), &base, "en");
+    let run = sbxm(home.path(), &["--lang", "en", "add", project]);
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    (home, base)
+}
+
+/// 表の1列目を、header行を除いて取り出す。
+fn first_column(table: &str) -> Vec<String> {
+    table
+        .lines()
+        .skip(1)
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            line.split("  ")
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() {
+    let (home, _base) = home_with_project("owner/repo");
+
+    // host toolが無い環境でも、取得できた項目は後続検査の失敗にかかわらず表示する。
+    let run = sbxm(home.path(), &["--lang", "en", "status", "owner/repo"]);
+    assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
+
+    let (project, worktrees) = run
+        .stdout
+        .split_once("\nWORKTREES\n")
+        .expect("both sections are shown, even with nothing to list");
+    assert!(project.starts_with("PROJECT\n"), "{}", run.stdout);
+    assert_eq!(
+        first_column(project.trim_start_matches("PROJECT\n")),
+        vec![
+            "Project",
+            "Metadata",
+            "Project root",
+            "Host clone",
+            "Dockerfile",
+            "Image",
+            "Template archive",
+            "Sandbox",
+            "Workspace",
+            "GitHub secret",
+            "Bare repository",
+            "Worktrees",
+            "SSH Agent",
+        ],
+        "{}",
+        run.stdout
+    );
+    assert_eq!(
+        worktrees.lines().next(),
+        Some("PATH  KIND  MODE  STATE"),
+        "{}",
+        run.stdout
+    );
+
+    // 観測できなかった項目を、Sandboxが無いことへ丸めない。
+    assert!(
+        !run.stdout.contains("not-applicable"),
+        "an unread state is not the same as an absent sandbox: {}",
+        run.stdout
+    );
+    for id in ["global-scope-unobservable", "sbxm status --global"] {
+        assert!(run.stderr.contains(id), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn the_japanese_project_status_translates_the_labels_and_keeps_the_values() {
+    let (home, _base) = home_with_project("owner/repo");
+
+    let run = sbxm(home.path(), &["--lang", "ja", "status", "owner/repo"]);
+    assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
+    // section名と項目名は訳し、状態値は訳さない。
+    assert!(run.stdout.contains("案件 (PROJECT)"), "{}", run.stdout);
+    assert!(run.stdout.contains("mismatch"), "{}", run.stdout);
+    // 凡例はSandboxの状態を説明し、host serviceの説明を流用しない。
+    assert!(!run.stdout.contains("service"), "{}", run.stdout);
+}
+
 #[test]
 fn sync_files_refuses_a_project_that_was_never_added() {
     let home = temp_home();

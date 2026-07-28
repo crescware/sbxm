@@ -82,8 +82,11 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 | secret存在確認 | `sbx secret ls <name> --json` | 名前だけ。値は取得しない |
 | login状態 | `sbx login status --json` | login済みかどうかを示す真偽値 |
 | daemon操作 | `sbx daemon stop` / `sbx daemon start --detach` | exit statusのみ |
+| image存在確認 | `docker image ls --quiet <image>` | 出力が空かどうか |
 | image検証 | `docker image inspect <image>` | `Id`と`Config.Labels` |
 | archive生成 | `docker image save <image> --output <path>` | exit statusのみ |
+
+`docker image inspect`はimageが存在しない場合もEngineへ問い合わせられない場合も非ゼロで終わるため、exit statusだけで不在と判定しない。存在の判定には`docker image ls --quiet <image>`を使い、この一覧が失敗した場合はimageを不在へ丸めずexit code `1`とする。
 
 archiveの検証は、tarの`manifest.json`だけを読み、保存されたtagとimage configのdigestが、直前に`docker image inspect`で確認したimage IDと一致することを条件とする。archive本体は読まない。
 
@@ -346,6 +349,8 @@ Sandbox mutationを実機で成功扱いする前に、次を証明して結果�
 ### 9.7 Sandbox create
 
 中立Workspaceを`0700`で作り、symlinkを拒否する。sbxm独自のownership markerや作成履歴fileは置かない。既存workspaceはowner、permission、file type、real pathと内容がvalidation規則を満たす場合に、作成元を問わず再利用する。満たさない場合は内容を変更せずexit code `1`とする。
+
+workspaceのrootは共有される一時領域の下にあり、rootを別accountが所有していると、その下のworkspaceを差し替えられる。rootにも同じ規則を適用し、`0700`、symlink拒否、所有者一致を満たす場合だけ検証または作成する。所有者の判定は、permissionではなく観測したowner IDと現在の実効user IDの一致で行う。
 
 期待する外部command:
 
