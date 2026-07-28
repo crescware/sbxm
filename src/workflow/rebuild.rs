@@ -16,7 +16,7 @@ use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPath
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::files::{self, Conflict};
-use super::image::{self, image_name};
+use super::image;
 use super::inventory::{self, Poll, ProjectState};
 use super::protection::{self, Unmanaged};
 use super::{daemon, identity, repository, sandbox, secret, template};
@@ -219,46 +219,23 @@ impl Switch<'_> {
             poll,
         } = *self;
         let layout = SandboxLayout::new(&metadata.canonical_id);
-        let target_template = template.name.clone();
-        let previous_template = metadata
-            .rebuild
-            .as_ref()
-            .map(|intent| image_name(name, &intent.previous_dockerfile_sha256));
 
         // 新世代の準備には時間がかかる。切り替える対象は、その後の観測から決める。
         let entries = daemon::list(host)?;
         // Sandboxが不在の中断点からは、作成工程から続ける。
+        //
+        // 既にあるSandboxがどちらの世代のものかは問わない。一覧はTemplateを示さず、
+        // 世代を観測する手段がないためである。既存のSandboxは、保存されていない作業が
+        // ないことを確かめてから必ず作り直す。
         if let Some(entry) = inventory::single(&entries, name.as_str())? {
-            let observed = entry
-                .template
-                .clone()
-                .unwrap_or_else(|| "<unreported>".to_string());
-            if observed == target_template {
-                // 既にtarget世代のSandboxがある。作成工程はskipして続きから進める。
-            } else if Some(&observed) == previous_template.as_ref() {
-                if entry.state == SandboxState::Stopped {
-                    // 固定済みの世代から復旧する場合に限り、保存状態を観測するために起動する。
-                    // 新規`rebuild`は停止中Sandboxを拒否したうえで、ここまで来ない。
-                    inventory::start(host, name.as_str())?;
-                    inventory::wait_until_running(host, metadata, workspace_root, poll)?;
-                }
-                protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
-                // 通常modeの削除command。データ保護検査は上で済ませている。
-                inventory::remove(host, name, false, poll)?;
-            } else {
-                // targetでもpreviousでもない世代は、この案件の成果物として扱えない。
-                return Err(Error::new(
-                    ErrorId::SandboxUnusable,
-                    msg!(
-                        "error-sandbox-unusable",
-                        sandbox = name,
-                        detail = format!(
-                            "the sandbox was made from {observed}, and this rebuild switches from {} to {target_template}",
-                            previous_template.unwrap_or_else(|| "<unknown>".to_string())
-                        )
-                    ),
-                ));
+            if entry.state == SandboxState::Stopped {
+                // 保存状態はSandboxの中からしか読めない。読むために起動する。
+                inventory::start(host, name.as_str())?;
+                inventory::wait_until_running(host, metadata, workspace_root, poll)?;
             }
+            protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
+            // 通常modeの削除command。データ保護検査は上で済ませている。
+            inventory::remove(host, name, false, poll)?;
         }
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは
@@ -511,7 +488,7 @@ mod tests {
         let project = fixture.register("example-org/example-repo");
         std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
         let target = sha256_hex(b"FROM scratch\n");
-        let image = image_name(&project.sandbox, &target);
+        let image = image::image_name(&project.sandbox, &target);
         let workspace = fixture.workspace_root.join(project.sandbox.as_str());
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -539,13 +516,9 @@ mod tests {
             project.sandbox,
             workspace.display()
         );
-        *host.listing.borrow_mut() = vec![
-            created,
-            "[]".to_string(),
-            "[]".to_string(),
-            running.clone(),
-            running,
-        ];
+        // 一覧は末尾から取り出される。世代の準備が終わったあとの観測で、対象Sandboxが
+        // 手作業で消えている状況になる。
+        *host.listing.borrow_mut() = vec![created, "[]".to_string(), "[]".to_string(), running];
 
         let layout = SandboxLayout::new(&project.metadata.canonical_id);
         let git_dir = layout.bare_git_dir();
@@ -651,39 +624,6 @@ mod tests {
     }
 
     #[test]
-    fn a_sandbox_from_neither_generation_is_not_treated_as_this_project() {
-        let fixture = fixture();
-        let project = fixture.register("example-org/example-repo");
-        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
-
-        let mut metadata = project.metadata.clone();
-        metadata.rebuild = Some(RebuildIntent {
-            target_dockerfile_sha256: sha256_hex(b"FROM scratch\n"),
-            previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
-        });
-        metadata::update(&project.paths, &metadata).unwrap();
-
-        // target世代でもprevious世代でもないTemplateから作られたSandbox。
-        let stranger = fixture.entry_from(&project, "running", &"7".repeat(64));
-        let host = FakeSbx::listing(&format!("[{stranger}]"));
-
-        let error = run(
-            &fixture.config,
-            &project_id("example-org/example-repo"),
-            &host,
-            &fixture.workspace_root,
-            poll(),
-        )
-        .expect_err("a sandbox from an unknown generation is not ours to replace");
-        assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
-        assert!(
-            !host.ran("rm ") && !host.ran("build"),
-            "nothing is removed and nothing is built: {:?}",
-            host.calls()
-        );
-    }
-
-    #[test]
     fn a_fixed_generation_with_neither_artifacts_nor_its_dockerfile_says_how_to_recover() {
         let fixture = fixture();
         let project = fixture.register("example-org/example-repo");
@@ -736,13 +676,13 @@ mod tests {
         });
         metadata::update(&project.paths, &metadata).unwrap();
 
-        let image = image_name(&project.sandbox, &target);
+        let image = image::image_name(&project.sandbox, &target);
         let workspace = fixture.workspace_root.join(project.sandbox.as_str());
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
 
-        let stopped = format!("[{}]", fixture.entry_from(&project, "stopped", &previous));
-        let running = format!("[{}]", fixture.entry_from(&project, "running", &previous));
+        let stopped = format!("[{}]", fixture.entry(&project, "stopped"));
+        let running = format!("[{}]", fixture.entry(&project, "running"));
         let created = format!(
             r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
             project.sandbox,
@@ -857,7 +797,7 @@ mod tests {
         });
         metadata::update(&project.paths, &metadata).unwrap();
 
-        let image = image_name(&project.sandbox, &target);
+        let image = image::image_name(&project.sandbox, &target);
         let workspace = fixture.workspace_root.join(project.sandbox.as_str());
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -867,7 +807,8 @@ mod tests {
             workspace.display()
         );
 
-        let host = FakeSbx::listings(&["[]", &created])
+        // 一覧は、run、Switch、作成前の確認、作成後の確認の順に読まれる。
+        let host = FakeSbx::listings(&["[]", "[]", "[]", &created])
             // 固定した世代のimageは既にbuild済みである。
             .answering(&format!("image ls --quiet {image}"), 0, "sha256:new\n")
             .answering(

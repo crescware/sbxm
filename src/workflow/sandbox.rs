@@ -77,9 +77,8 @@ pub fn ensure(
     let workspace = workspace_path(workspace_root, sandbox);
     paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
 
-    let templates = [template.name.clone()];
     if let Some(entry) = find(host, sandbox)? {
-        verify(&entry, sandbox, &templates, &workspace)?;
+        verify(&entry, sandbox, &workspace)?;
         return Ok(ReadySandbox {
             name: entry.name,
             workspace,
@@ -110,7 +109,7 @@ pub fn ensure(
             "the sandbox is absent right after it was created".to_string(),
         ));
     };
-    verify(&entry, sandbox, &templates, &workspace)?;
+    verify(&entry, sandbox, &workspace)?;
 
     Ok(ReadySandbox {
         name: entry.name,
@@ -190,38 +189,20 @@ fn find(host: &dyn HostEnvironment, sandbox: &SandboxName) -> Result<Option<Sand
 }
 
 /// 既存Sandboxが、この案件のものであることをread-onlyで確認する。
-///
-/// `templates`はmetadataが正本とする世代のTemplate名であり、rebuild intent中は
-/// 2世代を受け入れる。
 pub fn verify_identity(
     entry: &SandboxEntry,
     sandbox: &SandboxName,
-    templates: &[String],
     workspace_root: &Path,
 ) -> Result<()> {
-    verify(
-        entry,
-        sandbox,
-        templates,
-        &workspace_path(workspace_root, sandbox),
-    )
+    verify(entry, sandbox, &workspace_path(workspace_root, sandbox))
 }
 
 /// 既存Sandboxが期待する構成であることを確認する。
 ///
 /// 誰が作成したかは条件にしない。案件との対応は、canonical project IDから導出した
-/// 名前と、その案件だけが使う中立Workspaceの実pathで判定する。
-///
-/// 由来Templateは、runtimeが示す場合だけ照合する。対象versionは一覧にTemplateを
-/// 含めないため、示さない一覧からは世代を確かめられない。ここで拒否すると、名前と
-/// workspaceが一致しているSandboxを一度も使えなくなる。世代の一致は`rebuild`が
-/// 必要とする条件であり、この検査が保証するものではない。
-fn verify(
-    entry: &SandboxEntry,
-    sandbox: &SandboxName,
-    templates: &[String],
-    workspace: &Path,
-) -> Result<()> {
+/// 名前と、その案件だけが使う中立Workspaceの実pathで判定する。由来Templateは一覧に
+/// 現れないため、同一性の根拠にしない。
+fn verify(entry: &SandboxEntry, sandbox: &SandboxName, workspace: &Path) -> Result<()> {
     match &entry.workspace {
         Some(observed) => {
             let observed = real_path(Path::new(observed));
@@ -246,18 +227,12 @@ fn verify(
         }
     }
 
-    match &entry.template {
-        Some(observed) if templates.iter().any(|expected| expected == observed) => Ok(()),
-        Some(observed) => Err(unusable(
-            sandbox.as_str(),
-            format!(
-                "the sandbox was made from {observed}, not from {}",
-                templates.join(" or ")
-            ),
-        )),
-        // 一覧がTemplateを持たないversionでは、名前とworkspaceだけを根拠にする。
-        None => Ok(()),
-    }
+    Ok(())
+}
+
+/// Sandbox内にpathが存在するか。
+pub fn path_exists(host: &dyn HostEnvironment, sandbox: &str, path: &str) -> Result<bool> {
+    Ok(exec(host, sandbox, &["test", "-e", path])?.success())
 }
 
 /// symlinkを解決できない場合は宣言されたpathのまま比較する。
@@ -498,9 +473,9 @@ mod tests {
         }
     }
 
-    fn listing(workspace: &Path, template: &str, state: &str) -> String {
+    fn listing(workspace: &Path, state: &str) -> String {
         format!(
-            r#"[{{"name":"{}","state":"{state}","workspace":"{}","template":"{template}","active_sessions":0}}]"#,
+            r#"[{{"name":"{}","state":"{state}","workspace":"{}"}}]"#,
             sandbox(),
             workspace.display()
         )
@@ -510,7 +485,7 @@ mod tests {
     fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() {
         let root = workspace_root();
         let workspace = workspace_path(root.path(), &sandbox());
-        let host = FakeSbx::listing(&["[]", &listing(&workspace, &template().name, "running")]);
+        let host = FakeSbx::listing(&["[]", &listing(&workspace, "running")]);
 
         let ready = ensure(&host, &sandbox(), &template(), root.path()).expect("create");
         assert!(ready.created);
@@ -549,7 +524,7 @@ mod tests {
     fn a_sandbox_that_matches_the_expected_state_is_reused_whoever_made_it() {
         let root = workspace_root();
         let workspace = workspace_path(root.path(), &sandbox());
-        let host = FakeSbx::listing(&[&listing(&workspace, &template().name, "stopped")]);
+        let host = FakeSbx::listing(&[&listing(&workspace, "stopped")]);
 
         let ready = ensure(&host, &sandbox(), &template(), root.path()).expect("reuse");
         assert!(!ready.created);
@@ -564,20 +539,13 @@ mod tests {
     }
 
     #[test]
-    fn a_sandbox_with_another_workspace_or_template_stops_the_run() {
+    fn a_sandbox_with_another_workspace_stops_the_run() {
         let root = workspace_root();
-        let workspace = workspace_path(root.path(), &sandbox());
-
         let elsewhere = root.path().join("elsewhere");
         fs::create_dir_all(&elsewhere).unwrap();
-        let host = FakeSbx::listing(&[&listing(&elsewhere, &template().name, "running")]);
+        let host = FakeSbx::listing(&[&listing(&elsewhere, "running")]);
         let error = ensure(&host, &sandbox(), &template(), root.path())
             .expect_err("a sandbox that works elsewhere is not this project's");
-        assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
-
-        let host = FakeSbx::listing(&[&listing(&workspace, "sbxm-other-template:2", "running")]);
-        let error = ensure(&host, &sandbox(), &template(), root.path())
-            .expect_err("a sandbox from another template is not reused");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
     }
 
@@ -597,9 +565,9 @@ mod tests {
     }
 
     #[test]
-    fn a_runtime_that_does_not_report_templates_still_identifies_the_sandbox() {
+    fn the_listing_of_the_target_version_identifies_the_sandbox() {
         let root = workspace_root();
-        // 対象versionの一覧はTemplateを持たない。名前とworkspaceで対応を判定する。
+        // 対象versionの一覧はTemplateを持たない。名前とworkspaceの実pathで対応を判定する。
         let listing = format!(
             r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
             sandbox(),
@@ -618,20 +586,6 @@ mod tests {
             "nothing is created over it: {:?}",
             host.calls()
         );
-    }
-
-    #[test]
-    fn a_sandbox_made_from_another_template_is_still_refused_when_it_is_reported() {
-        let root = workspace_root();
-        let listing = format!(
-            r#"[{{"name":"{}","status":"running","workspaces":["{}"],"template":"other-template:1"}}]"#,
-            sandbox(),
-            workspace_path(root.path(), &sandbox()).display()
-        );
-        let host = FakeSbx::listing(&[&listing]);
-        let error = ensure(&host, &sandbox(), &template(), root.path())
-            .expect_err("a template the runtime does report is still checked");
-        assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
     }
 
     #[test]

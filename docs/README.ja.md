@@ -69,14 +69,13 @@ custom secretはSandboxの作成時に結び付くため、あとから登録し
 | 9 | Sandbox内で`ssh-add -L`と`docker info` | 非ゼロ | agentの鍵もhostのDocker socketもない |
 | 10 | Sandbox内でCodex、Claude Code、`gh auth status` | 0 | 必要なnetworkへ到達する |
 | 11 | stoppedとrunningから`sbxm open <owner>/<repo>` | 0 | どちらも接続でき、stoppedは起動してから接続する |
-| 12 | session接続中に別案件を`sbxm open` | 1 | `daemon-session-active`となり、daemonを変更しない |
 | 13 | `sbxm stop <a> <b>`を2回 | 0 | 1回目は両方停止、2回目はno-op |
 | 14 | `sbxm ls` | 0 | running、stopped、not-createdと、管理外Sandboxが分かれて出る |
 | 15 | `sbxm status <owner>/<repo>` | 0または1 | managed/unmanaged、dirty、SSH Agentが診断される |
 | 16 | `sbxm sync-files <owner>/<repo>` | 0 | 宣言fileだけが変わる |
 | 17 | Dockerfile変更なしで`sbxm rebuild` | 0 | 適用対象がないことを表示する |
 | 18 | Dockerfileを壊してから`sbxm rebuild` | 1 | buildが失敗し、既存Sandboxはそのまま動く |
-| 19 | session、dirty、unpushedのある状態で`sbxm rebuild` | 1 | `daemon-session-active`または`unsaved-work` |
+| 19 | dirty、unpushedのある状態で`sbxm rebuild` | 1 | 失われる対象を示す`unsaved-work` |
 | 20 | case 7のunmanaged worktreeがある状態で`sbxm rebuild` | 1 | 対象worktreeと削除方法を示す`unmanaged-worktree-present` |
 | 21 | stopped Sandboxへ`sbxm rebuild` | 1 | `sbxm open`を案内する |
 | 22 | cleanでmanagedだけのSandboxへ`sbxm rebuild` | 0 | 新世代が適用される |
@@ -108,12 +107,10 @@ custom secretはSandboxの作成時に結び付くため、あとから登録し
 
 ### daemon安全性probe
 
-Phase 2仕様の5項目もここへ記録する。記録の仕方はcaseと同じである。
+Phase 2仕様の項目もここへ記録する。記録の仕方はcaseと同じである。
 
 | # | 確認する内容 |
 |---:|---|
 | 1 | `SSH_AUTH_SOCK`ありで起動したdaemonがSandboxへagentを転送すること |
 | 2 | `SSH_AUTH_SOCK`をunsetして起動したdaemonでは転送されないこと |
-| 3 | 対象versionのstructured outputから、全Sandboxのactive session不在を判定できること |
-| 4 | active sessionあり、0件、command失敗、timeout、parse不能を区別できること |
-| 5 | daemon停止・起動後にSandboxを再利用または作成できること |
+| 3 | daemon停止・起動後にSandboxを再利用または作成できること |

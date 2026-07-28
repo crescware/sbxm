@@ -162,13 +162,9 @@ error-sbx-login-missing = このhostはDocker Sandboxesへloginしていませ�
 error-sbx-login-unobservable = このhostがDocker Sandboxesへloginしているかを読み取れません: { $detail }
 error-remote-ssh-unconfigured = sshに { $host } 向けのproxy設定がないため、SandboxへSSHで接続できません。
 error-remote-ssh-unobservable = Sandbox向けのSSH設定を読み取れません: { $detail }
-error-daemon-session-active = { $sandboxes } にsessionが接続しているため、Docker Sandboxes daemonを変更しませんでした。
-error-daemon-session-unobservable = このDocker Sandboxes versionは { $sandbox } へのsession接続を示さないため、daemonを変更しませんでした。
 remediation-run-help = { $command } を実行すると指定できる引数を確認できます。
 remediation-run-init = sbxm init を実行してglobal設定を作成してください。
 remediation-host-clone-unusable = { $path } を確認し、退避するかoriginを直してから、もう一度実行してください。
-remediation-daemon-session-active = 対象Sandboxへ接続しているshellとeditorを終了してから、もう一度実行してください。
-remediation-daemon-session-unobservable = 接続中のsessionを示すversionのDocker Sandboxes CLIへ更新してから、もう一度実行してください。
 remediation-declared-file-conflict = 両者を確認したうえで、sbxm sync-files を実行すると宣言fileでSandbox側を置き換えられます。
 remediation-sandbox-identity-mismatch = 誰のSandboxかを確認してください。sbxmは設定済みの値を上書きしません。
 github-token-scopes = 対象repositoryをread/writeできるpersonal access tokenを発行します。fine-grainedならContents read/writeとMetadata read、classicならrepo scopeです。tokenはproxyに留まり、Sandboxへは入りません。
@@ -301,7 +297,6 @@ legend-placed = Sandboxへ書き込みました
 legend-unchanged = Sandboxに同じ内容が既にありました
 
 status-item-login = Docker Sandboxesへのlogin (Docker Sandboxes login)
-status-item-session-inspection = active session検査 (Active session inspection)
 open-connecting = { $project } のSandbox { $sandbox } へ接続します。
 open-worktrees = このSandboxのmanaged worktree:
 

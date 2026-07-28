@@ -11,7 +11,6 @@ use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::SandboxLayout;
 
-use super::daemon;
 use super::sandbox;
 use super::worktree;
 
@@ -143,9 +142,15 @@ pub fn inspect(
     metadata: &ProjectMetadata,
     unmanaged: Unmanaged,
 ) -> Result<Protection> {
-    require_no_active_session(host, sandbox_name)?;
-
     let bare_root = layout.bare_root();
+    // 共有repositoryのないSandboxは、この案件の作業を1つも持たない。worktreeが観測
+    // できないことを、失うものがある徴候として読まない。構築が途中で終わったSandboxが
+    // これにあたる。
+    if !sandbox::path_exists(host, sandbox_name, &layout.bare_git_dir())? {
+        return Ok(Protection {
+            worktrees: Vec::new(),
+        });
+    }
     let entries = worktree::list(host, sandbox_name, layout)?;
     let declared: BTreeSet<&str> = metadata
         .managed_worktrees
@@ -387,36 +392,6 @@ fn examine(
     })
 }
 
-/// 対象Sandboxにsessionが接続していないこと。
-///
-/// 削除の直前に確かめ直す場合も、この規則を使う。
-pub fn require_no_active_session(host: &dyn HostEnvironment, sandbox_name: &str) -> Result<()> {
-    let entries = daemon::list(host)?;
-    let Some(entry) = super::inventory::single(&entries, sandbox_name)? else {
-        return Ok(());
-    };
-    match entry.active_sessions {
-        Some(0) => Ok(()),
-        Some(count) => Err(Error::single(
-            Diagnostic::new(
-                ErrorId::DaemonSessionActive,
-                msg!(
-                    "error-daemon-session-active",
-                    sandboxes = format!("{sandbox_name} ({count})")
-                ),
-            )
-            .remediation(msg!("remediation-daemon-session-active")),
-        )),
-        None => Err(Error::single(
-            Diagnostic::new(
-                ErrorId::DaemonSessionUnobservable,
-                msg!("error-daemon-session-unobservable", sandbox = sandbox_name),
-            )
-            .remediation(msg!("remediation-daemon-session-unobservable")),
-        )),
-    }
-}
-
 /// Sandbox内の検査commandが答えた終了status。
 ///
 /// `sbx exec`がcommandを起動できなかった場合を、内側のcommandが返した結果として
@@ -594,21 +569,6 @@ pub mod tests {
     }
 
     #[test]
-    fn two_sandboxes_with_the_same_name_are_not_resolved_by_taking_the_first() {
-        let fixture = fixture();
-        let project = fixture.register("example-org/example-repo");
-        let entry = fixture.entry(&project, "running");
-        // 片方はsessionを持つ。先頭だけを見ると不在と読める一覧。
-        let busy = entry.replace(r#""active_sessions":0"#, r#""active_sessions":2"#);
-        let host = clean_host(&fixture, &project);
-        *host.listing.borrow_mut() = vec![format!("[{entry},{busy}]")];
-
-        let error = inspect_with(&host, &project, Unmanaged::Allowed)
-            .expect_err("the target sandbox cannot be identified");
-        assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
-    }
-
-    #[test]
     fn a_check_that_could_not_run_is_never_read_as_a_pass() {
         let fixture = fixture();
         let project = fixture.register("example-org/example-repo");
@@ -776,31 +736,21 @@ pub mod tests {
     }
 
     #[test]
-    fn a_connected_session_or_a_version_that_hides_them_stops_the_run() {
+    fn a_sandbox_without_the_shared_repository_has_nothing_to_lose() {
+        // 構築が途中で終わったSandboxには、この案件の作業が1件もない。worktreeが
+        // 観測できないことを、失うものがある徴候として読まない。
         let fixture = fixture();
         let project = fixture.register("example-org/example-repo");
         let name = project.sandbox.as_str();
-        let workspace = fixture.workspace_root.join(name);
-        std::fs::create_dir_all(&workspace).unwrap();
-        let template = crate::workflow::image::image_name(
-            &project.sandbox,
-            &project.metadata.provisioning.dockerfile_sha256,
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        let host = clean_host(&fixture, &project).answering(
+            &format!("exec {name} -- test -e {}", layout.bare_git_dir()),
+            1,
+            "",
         );
 
-        let busy = FakeSbx::listing(&format!(
-            r#"[{{"name":"{name}","state":"running","workspace":"{}","template":"{template}","active_sessions":1}}]"#,
-            workspace.display()
-        ));
-        let error = inspect_with(&busy, &project, Unmanaged::Allowed)
-            .expect_err("a connected session is never dropped");
-        assert_eq!(error.first_id(), Some(ErrorId::DaemonSessionActive));
-
-        let hidden = FakeSbx::listing(&format!(
-            r#"[{{"name":"{name}","state":"running","workspace":"{}","template":"{template}"}}]"#,
-            workspace.display()
-        ));
-        let error = inspect_with(&hidden, &project, Unmanaged::Allowed)
-            .expect_err("absence of sessions has to be observed");
-        assert_eq!(error.first_id(), Some(ErrorId::DaemonSessionUnobservable));
+        let protection = inspect_with(&host, &project, Unmanaged::Refused)
+            .expect("a sandbox that holds no repository can be replaced");
+        assert!(protection.worktrees.is_empty());
     }
 }

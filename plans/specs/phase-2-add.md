@@ -53,10 +53,9 @@ Phase 1は`init`と`status --global`が必要とする範囲だけを実装し�
   - 人間向け進捗を転送する`passthrough`
   - 作業directoryの指定
   - timeout classのimage build/save、Sandbox lifecycle、repository転送（cloneとfetch）
-- Global daemon lockとdaemon安全再起動手順
+- Sandbox作成後にcredentialの隔離をSandboxの中から確認する手順
 - `status --global`への行の追加
   - Docker Sandboxes login状態
-  - active session検査機能の対応状況
   - 既存行の並び順を変えないため、追加行は表の末尾へ足す
 
 metadataと外部状態のvalidationは、作成元や作成履歴を条件にしない共通処理として実装する。read-only commandとmutation commandは同じvalidation規則を使用する。手作業または別toolで作成されたmetadataと成果物も、全規則を満たす場合はsbxmが作成したものと区別せず受け入れる。
@@ -68,7 +67,7 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 - 使用するsubcommandの`--help`と、読むstructured outputを実機で確認する
 - 確認した出力に対してparser testを書く
 - 代表的失敗のexit statusをtestで固定する
-- `sbx rm`の通常modeとforce modeについて、running、stopped、active sessionありの挙動を確認する
+- `sbx rm`の通常modeとforce modeについて、runningとstoppedの挙動を確認する
 - 新世代のimage、archive、Templateをloadした後も既存Sandboxを維持できることを確認する
 - Sandbox削除後に新Templateから同名Sandboxを再作成できることを確認する
 
@@ -95,7 +94,7 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 
 `docker image inspect`はimageが存在しない場合もEngineへ問い合わせられない場合も非ゼロで終わるため、exit statusだけで不在と判定しない。存在の判定には`docker image ls --quiet <image>`を使い、この一覧が失敗した場合はimageを不在へ丸めずexit code `1`とする。
 
-`sbx ls --json`はSandboxの由来Templateを示さない。案件との対応は、canonical project IDから導出したSandbox名と、その案件だけが使う中立Workspaceの実pathで判定する。世代の一致はこの検査の保証範囲ではない。runtimeがTemplateを示すversionでは、示された値も照合する。
+`sbx ls --json`はSandboxの由来Templateも接続中のsession数も示さない。示されない値を`Option`として持ち回ると、その不在をどう読むかを利用側がそれぞれ決めることになるため、`SandboxEntry`はこの2つを持たない。案件との対応は、canonical project IDから導出したSandbox名と、その案件だけが使う中立Workspaceの実pathで判定する。世代の一致はこの検査の保証範囲ではなく、どの検査でも観測しない。
 
 runtimeのimage storeは、Templateの由来となったhost imageを示さない。一覧が持つ`id`はruntime内部の短縮idであり、`docker image inspect`の`Id`とは別のstoreの値である。Templateと世代の対応は、loadしたarchiveがlabelで宣言していた案件と世代と、`<image名>:<世代>`という名前で登録されたことの2つを根拠とする。
 
@@ -103,7 +102,6 @@ archiveの検証は、tarの`manifest.json`と、それが名前で指すimage c
 
 digestを対応の根拠にしない。`docker image inspect`の`Id`は、image storeとattestationの有無によって、image config、manifest、image indexのどれを指すかが変わる。対象Macでは、buildがprovenance attestationを伴うOCI image indexを作るため、`Id`はindexのdigestとなり、archiveが指すimage configのdigestとは一致しない。両者の一致を条件にすると、正常な成果物を毎回拒否する。
 
-Sandboxが1件も存在しない場合、active sessionを持ち得る対象がないため、session不在を確認できたものとして扱う。
 
 - parse不能な出力はmutationを行わずexit code `1`
 - 未知のstate値を既知の値へ丸めない
@@ -152,7 +150,6 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - lock待機は10秒
 - timeoutは対象projectを表示してexit code `1`
 - lockはworkflow終了まで保持する
-- daemonを操作する区間はglobal daemon lockをproject lockの後に取得する
 - 複数lockが必要な将来機能ではcanonical ID昇順に取得する
 
 lock fileの存在自体は処理中を意味しない。OS file lockの取得結果を使う。
@@ -327,39 +324,26 @@ sbx template load <template-archive>
 
 load後、実機で確認したread-only commandにより、Templateが期待image IDと対応することを検証する。runtimeが対応関係を観測できない場合、既存Templateは再利用せず、同名存在時にexit code `1`とする。
 
-### 9.6 Safe daemon
+### 9.6 Credential isolation
 
-daemonの安全性を永続markerやinstance IDから推測しない。Sandboxを作成または再作成する操作の前に、全Sandboxのactive session不在をstructured outputから確認し、daemonを停止してから`SSH_AUTH_SOCK`をunsetした環境で起動し直す。
+sbxmはdaemonを停止も起動もしない。daemonの再起動には、動作中の全Sandboxを止めることが必要であり、無関係な作業を巻き込む。
 
-この手順は本Phaseで実装し、Phase 3の`open`とPhase 4の`rebuild`が同じ手順を使用する。
+hostのSSH AgentがSandboxへ転送されるかどうかは、daemonの起動条件ではなくSandboxの作成時に決まる。したがって、daemonをどう起動したかからは推定せず、Sandboxを作成したあとにSandboxの中から確認する。
 
-daemon操作の全体で`~/.sbxm/runtime/daemon.lock`をexclusive取得する。
+- `printenv SSH_AUTH_SOCK`が値を返さないこと
+- `ssh-add -L`がagentへ到達しないこと
 
-- directoryは`0700`、lock fileは`0600`とする
-- lock fileはworkflow終了後も削除しない
-- project lockを取得した後にglobal daemon lockを取得する
+どちらかが到達を示した場合はexit code `1`とし、どのprobeが反応したかを示す。検査commandが答えを返せなかった場合は、露出していない側へ丸めずexit code `1`とする。
 
-判定規則:
-
-- active sessionを1件でも検出した場合はdaemonを変更しない
-  - 対象sessionと終了方法を表示してexit code `1`
-- structuredなsession検査が存在しない場合はdaemonを変更せずexit code `1`
-- session不在を証明できない場合もdaemonを変更せずexit code `1`
-- session検査commandの失敗、timeout、parse不能はexit code `1`
-- session不在を確認できた場合だけ`sbx daemon stop`を実行する
-- 起動は`SSH_AUTH_SOCK`をunsetした`sbx daemon start --detach`とする
-
-毎回のdaemon再起動による所要時間はMVPで受け入れる。安全性を保ったまま再起動を省略する最適化は、MVP利用後の非機能要件として検討する。
+active sessionの検査は行わない。対象versionの`sbx ls --json`はsession数を示さず、示されない値から不在を推定しないためである。接続中の端末を保護する検査は存在せず、`rebuild`と`destroy`が守るのは保存されていない作業である。
 
 #### Daemon安全性probe
 
-Sandbox mutationを実機で成功扱いする前に、次を証明して結果をPRへ記録する。probe未完了でもdaemonに依存しないcodeの実装は進めてよいが、mutationを安全と判定する受入testは未完了のままにする。
+Sandbox mutationを実機で成功扱いする前に、次を証明して結果をPRへ記録する。
 
 1. `SSH_AUTH_SOCK`ありで起動したdaemonがSandboxへagentを転送すること
 2. `SSH_AUTH_SOCK`をunsetして`sbx daemon start --detach`したdaemonでは転送されないこと
-3. 対象versionのstructured outputから、全Sandboxのactive session不在を判定できること
-4. active sessionあり、0件、command失敗、timeout、parse不能を区別できること
-5. daemon停止・起動後にSandboxを再利用または作成できること
+3. daemon停止・起動後にSandboxを再利用または作成できること
 
 ### 9.7 Sandbox create
 
@@ -567,7 +551,7 @@ FILE  DESTINATION  RESULT
 - Sandbox名完全一致とworkspace検証
 - 手作業で作成したvalidなmetadata、workspace、image、Sandbox、Git repository、worktreeの受け入れ
 - 作成元にかかわらず同じ不整合を同じ診断とexit codeで拒否すること
-- safe daemon成功・不明・active session
+- credential隔離の確認成功・確認不能・露出
 - build、save、clone、fetch、Template load、Sandbox createのpassthroughと、structured出力のcapture
 - 宣言fileのsource、destination、path逸脱、同一、`add`時の競合、`sync-files`時の上書き、宣言削除時の保持、一時file cleanup
 - `sync-files`のrunning限定、stopped非起動、他工程への副作用なし

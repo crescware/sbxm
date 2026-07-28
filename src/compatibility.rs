@@ -255,6 +255,10 @@ pub enum SandboxState {
 }
 
 /// `sbx ls`が示すSandbox 1件。
+///
+/// 対応versionの`sbx ls --json`は、元にしたTemplateも接続中のsession数も示さない。
+/// 示されない値をOptionで持つと、その`None`をどう読むかを利用側がそれぞれ決めることに
+/// なる。読めないものは持たない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxEntry {
     pub name: String,
@@ -263,10 +267,6 @@ pub struct SandboxEntry {
     pub raw_state: String,
     /// Sandboxへ渡したworkspace。示されない場合は`None`。
     pub workspace: Option<String>,
-    /// 元にしたTemplate。示されない場合は`None`。
-    pub template: Option<String>,
-    /// 接続中のsession数。runtimeが示さない場合は`None`。
-    pub active_sessions: Option<u64>,
 }
 
 /// `sbx ls --json`のstructured outputをparseする。
@@ -301,24 +301,17 @@ pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
         };
 
         let workspace = workspace_of(object)?;
-        let template = string_field(object, "template")
-            .or_else(|| string_field(object, "Template"))
-            .filter(|value| !value.is_empty());
-        let active_sessions = active_sessions(object)?;
 
         entries.push(SandboxEntry {
             name,
             state,
             raw_state: observed,
             workspace,
-            template,
-            active_sessions,
         });
     }
     Ok(entries)
 }
 
-/// 接続中のsession数。数でも一覧でも読めるが、示されない場合は推測しない。
 /// `sbx ls --json`が並べるSandbox。
 ///
 /// 対象versionは`{"sandboxes": [...]}`で包む。包みのない形も、行区切りの形も
@@ -376,33 +369,6 @@ fn workspace_of(object: &serde_json::Map<String, serde_json::Value>) -> Result<O
         serde_json::Value::Null => Ok(None),
         _ => Err(unparseable("sbx ls", "workspaces is not a list")),
     }
-}
-
-fn active_sessions(object: &serde_json::Map<String, serde_json::Value>) -> Result<Option<u64>> {
-    for key in [
-        "active_sessions",
-        "activeSessions",
-        "ActiveSessions",
-        "sessions",
-        "Sessions",
-    ] {
-        match object.get(key) {
-            Some(serde_json::Value::Number(number)) => {
-                return number.as_u64().map(Some).ok_or_else(|| {
-                    unparseable("sbx ls", &format!("{key} is not a count of sessions"))
-                });
-            }
-            Some(serde_json::Value::Array(items)) => return Ok(Some(items.len() as u64)),
-            Some(serde_json::Value::Null) | None => {}
-            Some(_) => {
-                return Err(unparseable(
-                    "sbx ls",
-                    &format!("{key} is neither a count nor a list"),
-                ));
-            }
-        }
-    }
-    Ok(None)
 }
 
 /// `sbx secret ls`が示すcustom secretの登録。
@@ -705,7 +671,8 @@ mod tests {
 
     #[test]
     fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() {
-        let output = r#"[{"name":"sbxm-a","state":"running","workspace":"/tmp/docker-sandboxes/sbxm-a","template":"sbxm-a-template:0123456789ab","active_sessions":2}]"#;
+        let output =
+            r#"[{"name":"sbxm-a","state":"running","workspace":"/tmp/docker-sandboxes/sbxm-a"}]"#;
         let entries = parse_sandbox_list(output).expect("a listing parses");
         assert_eq!(
             entries,
@@ -714,27 +681,20 @@ mod tests {
                 state: SandboxState::Running,
                 raw_state: "running".to_string(),
                 workspace: Some("/tmp/docker-sandboxes/sbxm-a".to_string()),
-                template: Some("sbxm-a-template:0123456789ab".to_string()),
-                active_sessions: Some(2),
             }]
         );
 
         // 1行1件のJSONと、空の出力も同じ意味で読む。
-        let lines = "{\"name\":\"sbxm-a\",\"state\":\"stopped\",\"sessions\":[]}\n{\"name\":\"sbxm-b\",\"status\":\"running\",\"sessions\":[{\"id\":\"1\"}]}\n";
+        let lines = "{\"name\":\"sbxm-a\",\"state\":\"stopped\"}\n{\"name\":\"sbxm-b\",\"status\":\"running\"}\n";
         let entries = parse_sandbox_list(lines).expect("line-delimited output parses");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].state, SandboxState::Stopped);
-        assert_eq!(entries[0].active_sessions, Some(0));
-        assert_eq!(entries[1].active_sessions, Some(1));
+        assert_eq!(entries[1].state, SandboxState::Running);
         assert!(
             parse_sandbox_list("  \n")
                 .expect("an empty listing")
                 .is_empty()
         );
-
-        // session数を示さないversionでは、不在を推測しない。
-        let entries = parse_sandbox_list(r#"[{"name":"sbxm-a","state":"running"}]"#).unwrap();
-        assert_eq!(entries[0].active_sessions, None);
 
         // 3値へ写像しても、runtimeが示したままの値は表示のために残す。
         let entries = parse_sandbox_list(r#"[{"name":"sbxm-a","state":"Running"}]"#).unwrap();
@@ -778,11 +738,6 @@ mod tests {
         );
         assert_eq!(entries[1].state, SandboxState::Stopped);
 
-        // この一覧はTemplateもsession数も示さない。示されないことを、
-        // 「Templateが無い」「sessionが0件」へ丸めない。
-        assert_eq!(entries[0].template, None);
-        assert_eq!(entries[0].active_sessions, None);
-
         // Sandboxが1件もない場合。
         assert!(
             parse_sandbox_list(r#"{"sandboxes": []}"#)
@@ -808,7 +763,6 @@ mod tests {
             r#"[{"state":"running"}]"#,
             r#"[{"name":"sbxm-a"}]"#,
             r#"[{"name":"sbxm-a","state":"pausing"}]"#,
-            r#"[{"name":"sbxm-a","state":"running","sessions":"two"}]"#,
             r#"["sbxm-a"]"#,
             "true",
         ] {

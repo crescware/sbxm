@@ -82,14 +82,13 @@ Before recording anything, remove:
 | 9 | `ssh-add -L` and `docker info` inside the sandbox | non-zero | no agent keys, no host Docker socket |
 | 10 | run Codex, Claude Code and `gh auth status` inside | 0 | each reaches the network it needs |
 | 11 | `sbxm open <owner>/<repo>` from stopped and from running | 0 | both connect; the stopped one is started first |
-| 12 | `sbxm open` a second project while a session is connected | 1 | `daemon-session-active`, the daemon is left alone |
 | 13 | `sbxm stop <a> <b>` and then again | 0 | first stops both, second is a no-op |
 | 14 | `sbxm ls` | 0 | running, stopped and not-created appear, unmanaged sandboxes separately |
 | 15 | `sbxm status <owner>/<repo>` | 0 or 1 | managed and unmanaged worktrees, dirty state and SSH agent are reported |
 | 16 | `sbxm sync-files <owner>/<repo>` | 0 | only the declared files change |
 | 17 | `sbxm rebuild <owner>/<repo>` with no Dockerfile change | 0 | reports that nothing was applied |
 | 18 | break the Dockerfile, then `sbxm rebuild` | 1 | the build fails and the existing sandbox still runs |
-| 19 | `sbxm rebuild` with a session, a dirty tree, or unpushed commits | 1 | `daemon-session-active` or `unsaved-work` |
+| 19 | `sbxm rebuild` with a dirty tree or unpushed commits | 1 | `unsaved-work`, naming what would be lost |
 | 20 | `sbxm rebuild` with the unmanaged worktree from case 7 | 1 | `unmanaged-worktree-present`, naming the worktree and how to remove it |
 | 21 | `sbxm rebuild` on a stopped sandbox | 1 | points at `sbxm open` |
 | 22 | `sbxm rebuild` on a clean, managed-only sandbox | 0 | the new generation is applied |
@@ -121,12 +120,10 @@ Before recording anything, remove:
 
 ### Daemon safety probe
 
-The five items of the Phase 2 spec belong here too. Record them the same way.
+The items of the Phase 2 spec belong here too. Record them the same way.
 
 | # | Question |
 |---:|---|
 | 1 | A daemon started with `SSH_AUTH_SOCK` forwards the agent into the sandbox |
 | 2 | A daemon started with `SSH_AUTH_SOCK` unset does not |
-| 3 | The structured output of the target version can show that no sandbox has a session |
-| 4 | It tells apart a session present, none present, a failed command, a timeout, and output that cannot be parsed |
-| 5 | A sandbox can be reused or created after the daemon is stopped and started |
+| 3 | A sandbox can be reused or created after the daemon is stopped and started |

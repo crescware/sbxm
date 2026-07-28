@@ -294,7 +294,6 @@ fn check_docker_sandboxes(
         "status-item-network-policy",
         "status-item-daemon",
         "status-item-login",
-        "status-item-session-inspection",
         "status-item-remote-ssh",
     ];
 
@@ -359,7 +358,6 @@ fn check_docker_sandboxes(
     check_network_policy(host, status);
     check_daemon(host, status);
     check_login(host, status);
-    check_session_inspection(host, status);
     check_remote_ssh(host, status);
 }
 
@@ -442,55 +440,6 @@ fn check_login(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
 ///
 /// daemonを安全に再起動できるかどうかは、この検査ができるかどうかで決まる。
 /// Sandboxが1件もない場合は、sessionを持ち得る対象がないため対応済みとして扱う。
-fn check_session_inspection(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
-    match read_stdout(host, "sbx", &["ls", "--json"]) {
-        Ok(output) => match crate::compatibility::parse_sandbox_list(&output) {
-            Ok(sandboxes) => {
-                let hidden: Vec<String> = sandboxes
-                    .iter()
-                    .filter(|entry| entry.active_sessions.is_none())
-                    .map(|entry| entry.name.clone())
-                    .collect();
-                if hidden.is_empty() {
-                    push(status, "status-item-session-inspection", StatusValue::Ready);
-                } else {
-                    push(status, "status-item-session-inspection", StatusValue::Error);
-                    status.diagnostics.push(
-                        Diagnostic::new(
-                            ErrorId::DaemonSessionUnobservable,
-                            msg!(
-                                "error-daemon-session-unobservable",
-                                sandbox = hidden.join(", ")
-                            ),
-                        )
-                        .remediation(msg!("remediation-daemon-session-unobservable")),
-                    );
-                }
-            }
-            Err(error) => {
-                push(status, "status-item-session-inspection", StatusValue::Error);
-                status
-                    .diagnostics
-                    .extend(error.diagnostics().iter().cloned());
-            }
-        },
-        Err(error) => {
-            push(status, "status-item-session-inspection", StatusValue::Error);
-            let mut diagnostic = Diagnostic::new(
-                ErrorId::DaemonSessionUnobservable,
-                msg!(
-                    "error-daemon-session-unobservable",
-                    sandbox = describe(&error)
-                ),
-            );
-            if let Some(external) = external_of(&error) {
-                diagnostic = diagnostic.external(external);
-            }
-            status.diagnostics.push(diagnostic);
-        }
-    }
-}
-
 fn check_network_policy(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
     match read_stdout(host, "sbx", &["policy", "ls"]) {
         Ok(output) => match parse_network_policy(&output) {
@@ -753,7 +702,6 @@ mod tests {
                 "status-item-network-policy",
                 "status-item-daemon",
                 "status-item-login",
-                "status-item-session-inspection",
                 "status-item-remote-ssh",
             ]
         );

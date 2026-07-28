@@ -15,7 +15,7 @@ sbxm destroy -f <owner>/<repository>
 
 通常modeではdirty、untracked、検査不能なworktreeが1つでもあれば削除しない。`-f`は`--force`の短縮形とする。
 
-`--force`は、対象特定後のactive session、worktree、保存状態の検査と対話確認を省略する。TTYかどうかにかかわらずproject引数の完全指定を必須とする。
+`--force`は、対象特定後のworktreeと保存状態の検査、そして対話確認を省略する。TTYかどうかにかかわらずproject引数の完全指定を必須とする。
 
 `rebuild`はproject引数の完全指定を必須とし、対象選択promptと対話確認を行わない。安全性を証明できない場合は再構築せず、問題の解消方法を表示する。
 
@@ -37,9 +37,8 @@ Phase 4ではE2E結果を記録する手動検証sectionをproject `README.md`�
 
 ## 3. 共通のデータ保護検査
 
-running Sandboxを削除する通常modeの`rebuild`と`destroy`は、同じactive session、worktree、保存状態parserと判定規則を使用する。
+running Sandboxを削除する通常modeの`rebuild`と`destroy`は、同じworktreeと保存状態のparserと判定規則を使用する。接続中のsessionは、対象versionが示さないため検査しない。
 
-- active sessionがないこと
 - managed worktreeがmetadataと一致すること
 - dirty、untracked、進行中Git操作がないこと
 - attached HEADにupstreamがあり、unpushed commitがないこと
@@ -72,7 +71,7 @@ rebuild intentがある場合は通常の状態表よりintentの継続規則を
 | `target_dockerfile_sha256`世代 | identityと構築済み工程を検証し、最初の未完了工程から継続 |
 | target、previousのどちらでもない | 帰属不能として自動変更せずexit code `1` |
 
-previous世代のSandboxがstoppedの場合に限り、intentからの復旧に必要な共通データ保護検査を行うため、Phase 2のdaemon安全再起動手順でdaemonを再起動し、対象Sandboxを非対話で起動してから検査する。これは新規`rebuild`がstopped Sandboxを拒否する規則の唯一の例外とする。active session、保存状態不合格、検査不能、identity不一致では削除しない。
+既存Sandboxがstoppedの場合に限り、保存状態はSandboxの中からしか読めないため、対象Sandboxを非対話で起動してから検査する。これは新規`rebuild`がstopped Sandboxを拒否する規則の唯一の例外とする。保存状態不合格、検査不能、identity不一致では削除しない。
 
 target世代のSandboxは、各工程の事後条件をinspectして成功済み工程をskipする。metadataの適用済みhash更新とintent削除は、Sandbox identity、managed worktree、宣言file、Git identity、credential隔離の全検証が成功した後だけ行う。
 
@@ -101,7 +100,7 @@ archive = .sbxm/.cache/template-<dockerfile-sha256-first-12-hex>.tar
 
 rebuild intentの記録後は次を行う。
 
-1. active sessionがないことと共通データ保護条件を直前に再確認する
+1. 共通データ保護条件を直前に再確認する
 2. 対象Sandboxを通常modeの削除commandで削除する
 3. `sbx ls --json`で不在を確認する
 4. Phase 2のdaemon安全再起動手順でdaemonを再起動し、Phase 2と同じ中立Workspaceと新Templateで同名Sandboxを作成する
@@ -125,7 +124,7 @@ target成果物が欠落または不正な場合は、現在のDockerfile hash�
 `rebuild`というcommandとproject完全指定を再構築意思の表明とし、追加のtyped confirmationは要求しない。TTY、非TTYのどちらでも同じ安全検査を実行する。
 
 - `--force`、`-f`はparserで受け付けない
-- active session、unmanaged worktree、保存状態不合格、検査不能では常に拒否する
+- unmanaged worktree、保存状態不合格、検査不能では常に拒否する
 - 新規`rebuild`ではstopped Sandboxを暗黙に起動しない。intent中のprevious世代を復旧する場合だけ安全検査のため起動する
 - 新世代成果物の準備前に既存Sandboxを変更しない
 
@@ -171,7 +170,7 @@ force modeでは、`registered`は管理情報を破棄し、`stopped`と`runnin
 1. 対象を引数またはTTY上の単一選択promptで解決
 2. project lockを取得
 3. stateとSandbox identityを取得
-4. Sandboxが存在する通常modeではactive sessionと全worktreeの保存状態を検査
+4. Sandboxが存在する通常modeでは全worktreeの保存状態を検査
 5. 削除対象と保持対象を表示
 6. 通常modeかつTTYでは明示確認
 7. Sandboxが存在すれば削除
@@ -190,14 +189,12 @@ force modeでは、`registered`は管理情報を破棄し、`stopped`と`runnin
 
 通常modeでは、Codex、Claude Code、SSH、editor、development serverなどのsession状態を`sbx` structured outputから判定する。
 
-- active sessionを検出: 対象sessionを表示し、終了方法と`destroy --force`を案内してexit code `1`
-- 対象versionがstructuredなsession検査を提供しない: session不在を証明できないことと`destroy --force`を案内してexit code `1`
 - 対象versionが提供するsession検査commandの実行失敗、timeout、parse失敗: 外部状態を観測できないためexit code `1`
 - inactiveを確認: worktreeと保存状態の検査へ進む
 
 通常modeは実行回数を記録せず、「初回」と「再実行」を区別しない。session検査を提供しないversionでは、通常modeを再実行しても毎回exit code `1`とする。
 
-force modeではactive sessionを検査せず、session終了を要求しない。
+接続中のsessionは、通常modeでもforce modeでも検査しない。対象versionの`sbx ls --json`がsession数を示さないためである。`rebuild`と`destroy`が守るのは保存されていない作業であり、接続している端末ではない。
 
 ## 9. Worktree列挙
 
@@ -271,7 +268,7 @@ force modeではworktreeと保存状態を検査しないため、managed/unmana
 
 - canonical project ID
 - Sandbox名とstate
-- データ保護検査とactive session検査を省略すること
+- データ保護検査を省略すること
 - 削除対象
 - 保持対象
 - 再登録command
@@ -291,7 +288,7 @@ projectを完全指定した非TTYの通常modeとforce modeでは対話確認�
 
 ## 13. Sandbox削除
 
-Sandboxが存在する通常modeではactive sessionがないことを直前に再確認する。force modeでは再確認しない。Sandboxが存在する場合だけ、実機で確認した各modeのcommandを実行する。
+Sandboxが存在する場合だけ、実機で確認した各modeのcommandを実行する。
 
 ```text
 sbx rm <sandbox-name>
@@ -335,7 +332,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - 新image build、世代別archive、Template検証
 - build、archive、Template失敗時に既存Sandboxを維持すること
 - rebuildとdestroyの外部進捗passthrough、structured出力のcapture
-- active session、dirty、untracked、unpushed、検査不能による`rebuild`拒否
+- dirty、untracked、unpushed、検査不能による`rebuild`拒否
 - unmanaged worktreeによる`rebuild`拒否
 - stoppedでの`rebuild`拒否と`open`案内
 - rebuild intentのatomic write、Sandbox削除前後の各中断点、同じ`rebuild`による継続
@@ -352,7 +349,6 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 - detached HEADのremote到達・未到達
 - path逸脱、metadata missing、Git parse failure
 - stoppedの通常mode拒否とforce mode削除
-- active session、session検査APIなし、検査command失敗
 - typed confirmation一致、不一致、cancel、非TTYでの省略
 - `-f`と`--force`、project完全指定、データ保護検査の全省略
 - force modeでも対象を一意に特定できなければ拒否
@@ -378,14 +374,13 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 9. SSH AgentとDocker socketの非露出
 10. Codex、Claude Code、GitHub疎通
 11. `open`のstopped/running
-12. 案件切替時のactive session拒否とdaemon安全再起動
 13. `stop`の複数対象とno-op
 14. `ls`の3 stateとunmanaged Sandbox
 15. `status`のmanaged/unmanaged、dirty、security診断
 16. `sync-files`による宣言file再配置と他成果物の不変
 17. Dockerfile変更なしの`rebuild` no-op
 18. 新世代build失敗時の既存Sandbox維持
-19. active session、dirty、unpushedによる`rebuild`拒否
+19. dirty、unpushedによる`rebuild`拒否
 20. unmanaged worktreeによる`rebuild`拒否
 21. stopped Sandboxの`rebuild`拒否
 22. cleanなmanaged worktreeだけを持つSandboxの`rebuild`
@@ -395,7 +390,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 26. dirty unmanagedによる`destroy`拒否
 27. unpushed commitによる`destroy`拒否
 28. cleanかつremote到達済みでtyped confirmation後の`destroy`
-29. dirty、unpushed、active sessionを持つrunning Sandboxの`destroy --force`
+29. dirty、unpushedを持つrunning Sandboxの`destroy --force`
 30. stopped Sandboxの`destroy --force`
 31. 非TTYかつ完全指定した通常`destroy`と`destroy --force`
 32. host clone、Dockerfile、image、Template、workspace、secretの保持
@@ -410,7 +405,7 @@ sbxm add <owner>/<repository> --worktrees <N> --detach <branch>
 
 - `rebuild`はproject完全指定を必須とし、force optionを持たない
 - 新世代image、archive、Templateの検証前に既存Sandboxを変更しない
-- active session、保存状態不合格、検査不能、unmanaged worktreeがあれば`rebuild`できない
+- 保存状態不合格、検査不能、unmanaged worktreeがあれば`rebuild`できない
 - 新規`rebuild`は停止中Sandboxを暗黙に起動せず、intent中のprevious世代を復旧する場合だけ安全検査のため起動する
 - `rebuild`成功後にmanaged worktreeと宣言設定を復元し、適用済みDockerfile hashを更新する
 - Sandbox切替中に失敗してもrebuild intentを保持し、Sandbox不在、previous世代、target世代の各中断状態から同じ`rebuild`で継続できる

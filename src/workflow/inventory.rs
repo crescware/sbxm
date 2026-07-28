@@ -15,7 +15,6 @@ use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
 use crate::project::SandboxName;
 
-use super::image::template_names;
 use super::{daemon, sandbox};
 
 /// 状態が変わるのを待つ間隔と上限。
@@ -110,12 +109,7 @@ pub fn state_of(
     let Some(entry) = single(entries, name.as_str())? else {
         return Ok(ProjectState::NotCreated);
     };
-    sandbox::verify_identity(
-        entry,
-        &name,
-        &template_names(&name, metadata),
-        workspace_root,
-    )?;
+    sandbox::verify_identity(entry, &name, workspace_root)?;
     Ok(match entry.state {
         SandboxState::Running => ProjectState::Running,
         SandboxState::Stopped => ProjectState::Stopped,
@@ -473,22 +467,12 @@ pub mod tests {
 
         /// 案件に対応するSandboxの一覧行。
         pub fn entry(&self, project: &Registered, state: &str) -> String {
-            self.entry_from(
-                project,
-                state,
-                &project.metadata.provisioning.dockerfile_sha256.clone(),
-            )
-        }
-
-        /// 指定した世代のTemplateから作られたSandboxの一覧行。
-        pub fn entry_from(&self, project: &Registered, state: &str, generation: &str) -> String {
             let workspace = self.workspace_root.join(project.sandbox.as_str());
             std::fs::create_dir_all(&workspace).expect("create the workspace");
             format!(
-                r#"{{"name":"{}","state":"{state}","workspace":"{}","template":"{}","active_sessions":0}}"#,
+                r#"{{"name":"{}","state":"{state}","workspace":"{}"}}"#,
                 project.sandbox,
-                workspace.display(),
-                image_name(&project.sandbox, generation)
+                workspace.display()
             )
         }
     }
@@ -571,39 +555,6 @@ pub mod tests {
 
         let error = take(&fixture.config, &host, &fixture.workspace_root)
             .expect_err("a sandbox that works elsewhere is not this project's");
-        assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
-    }
-
-    #[test]
-    fn a_sandbox_of_either_rebuild_generation_still_belongs_to_the_project() {
-        let fixture = fixture();
-        let project = fixture.register("example-org/example-repo");
-        let target = "2".repeat(64);
-        let mut metadata = project.metadata.clone();
-        metadata.rebuild = Some(crate::metadata::RebuildIntent {
-            target_dockerfile_sha256: target.clone(),
-            previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
-        });
-
-        // 切替の途中では、Sandboxがtarget世代から作り直されていることがある。
-        for generation in [
-            target.as_str(),
-            project.metadata.provisioning.dockerfile_sha256.as_str(),
-        ] {
-            let listing = format!("[{}]", fixture.entry_from(&project, "running", generation));
-            let entries = crate::compatibility::parse_sandbox_list(&listing).expect("listing");
-            assert_eq!(
-                state_of(&entries, &metadata, &fixture.workspace_root).expect("state"),
-                ProjectState::Running,
-                "generation {generation} belongs to the project"
-            );
-        }
-
-        // intentが無い案件では、適用済み世代だけが正本である。
-        let listing = format!("[{}]", fixture.entry_from(&project, "running", &target));
-        let entries = crate::compatibility::parse_sandbox_list(&listing).expect("listing");
-        let error = state_of(&entries, &project.metadata, &fixture.workspace_root)
-            .expect_err("another generation is not this project's sandbox");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
     }
 

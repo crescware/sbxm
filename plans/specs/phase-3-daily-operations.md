@@ -24,7 +24,6 @@ Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧�
 
 - project指定とTTY規則は方向性文書に従う
 - mutation commandはproject lockを取得する
-- daemon操作はproject lock後にglobal daemon lockを取得する
 - 対象解決と全validationをmutation前に完了する
 - `sbx` stateはstructured outputのparserで扱う
 - 1案件を対象とするcommandは、その案件のSandbox名との完全一致だけで状態を決める。無関係な案件の破損で、対象案件の状態が読めなくならないようにする
@@ -89,7 +88,6 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 3. Docker Engineへ接続確認
 4. `sbx ls --json`相当を1回実行
 5. Sandbox identity、workspace、stateを検証
-6. 全Sandboxのactive session不在を確認し、daemonを安全に再起動
 7. stoppedなら実機で確認した非対話commandで起動
 8. runningになるまで2秒間隔、最大60秒poll
 9. managed worktree一覧をmetadataとGitから検証
@@ -114,16 +112,11 @@ SSH childにはstdin、stdout、stderrを継承する。SSHのexit statusが0な
 
 通常開始directoryはDockerfileにより`/home/agent/work`とする。MVPではSSH commandへ自動`cd`を組み込まない。
 
-### 5.3 Safe daemon
+### 5.3 Credential isolation
 
-Phase 2で実装したdaemon安全再起動手順を使用し、`open`のたびにglobal daemon lockを取得する。
+`open`はdaemonを操作しない。Phase 2と同じく、hostのSSH AgentがSandboxへ届かないことを、daemonの起動条件からではなくSandboxの中から確認する。
 
-- 全Sandboxのactive session不在をstructured outputから確認する
-- active sessionを検出した場合、またはsession不在を証明できない場合はdaemonを変更せずexit code `1`
-- session検査commandの失敗、timeout、parse不能はexit code `1`
-- session不在を確認できた場合だけdaemonを停止し、`SSH_AUTH_SOCK`をunsetした環境で起動する
-
-毎回の再起動による所要時間はMVPで受け入れ、再起動省略はMVP利用後の非機能要件として検討する。
+active sessionの検査は行わない。対象versionの`sbx ls --json`はsession数を示さないためである。
 
 ## 6. `sbxm stop [project...]`
 
@@ -345,7 +338,7 @@ ssh-add -L
 - state mappingの全既知値と未知state
 - `open`のnot-created拒否、stopped起動、running再利用
 - rebuild intent中の`open`と`stop`拒否
-- daemon再起動、active session、session不在を証明不能
+- credential隔離の確認成功・確認不能・露出
 - Sandbox start・stopのpassthrough、structured出力のcapture、SSHのinherit
 - `stop`の事前全件validation、部分失敗report
 - `ls`のmanaged/unmanaged、0件、failure時一覧非出力
@@ -358,8 +351,7 @@ ssh-add -L
 
 ## 10. 実機受入条件
 
-- 各`open`でactive session不在を確認し、daemonをSSH Agentなしで安全に再起動できる
-- active sessionがある場合、またはsession不在を証明できない場合にdaemonを変更しない
+- 各`open`で、hostのSSH AgentがSandboxへ届かないことをSandboxの中から確認できる
 - stopped/runningから同じ操作でSSH接続できる
 - not-createdへの`open`が`add`再実行を正確に案内する
 - 複数Sandboxを対象限定で停止できる
