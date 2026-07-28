@@ -120,7 +120,7 @@ pub fn prepare(
         worktrees,
         removes: removes(&paths, &name, state),
         keeps: keeps(&paths),
-        re_register: re_register(&metadata),
+        re_register: re_register(&paths, &metadata)?,
     };
 
     Ok(Prepared {
@@ -226,20 +226,30 @@ fn keeps(paths: &ProjectPaths) -> Vec<Target> {
 }
 
 /// 元の目標構成を、新規登録として再現するcommand。
-fn re_register(metadata: &ProjectMetadata) -> String {
+///
+/// 起点branchのないdetached modeは再現できない。案内できない構成を、実行すると
+/// 別の結果になるcommandとして見せない。
+fn re_register(paths: &ProjectPaths, metadata: &ProjectMetadata) -> Result<String> {
     let provisioning = &metadata.provisioning;
+    let command = format!(
+        "sbxm add {} --worktrees {}",
+        metadata.display_id(),
+        provisioning.requested_worktrees
+    );
     match provisioning.mode {
-        CreationMode::Attached => format!(
-            "sbxm add {} --worktrees {}",
-            metadata.display_id(),
-            provisioning.requested_worktrees
-        ),
-        CreationMode::Detached => format!(
-            "sbxm add {} --worktrees {} --detach {}",
-            metadata.display_id(),
-            provisioning.requested_worktrees,
-            provisioning.start_ref.clone().unwrap_or_default()
-        ),
+        CreationMode::Attached => Ok(command),
+        CreationMode::Detached => match provisioning.start_ref.as_deref() {
+            Some(branch) => Ok(format!("{command} --detach {branch}")),
+            None => Err(Error::new(
+                ErrorId::MetadataInvalidValue,
+                msg!(
+                    "error-metadata-invalid-value",
+                    path = paths::display(&paths.metadata_file()),
+                    field = "provisioning.start_ref",
+                    detail = "detached mode requires an explicit start branch"
+                ),
+            )),
+        },
     }
 }
 
@@ -483,9 +493,15 @@ mod tests {
         metadata::update(&project.paths, &metadata).unwrap();
 
         assert_eq!(
-            re_register(&metadata),
+            re_register(&project.paths, &metadata).expect("the target configuration is complete"),
             "sbxm add example-org/example-repo --worktrees 3 --detach develop"
         );
+
+        // 起点branchのないdetachedは再現できない。誤ったcommandを見せない。
+        metadata.provisioning.start_ref = None;
+        let error = re_register(&project.paths, &metadata)
+            .expect_err("a configuration that cannot be repeated is not printed");
+        assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidValue));
     }
 
     #[test]
