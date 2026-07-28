@@ -675,6 +675,14 @@ fn print_project_status(catalog: &Catalog, status: &status_project::ProjectStatu
     }
 }
 
+/// 削除対象・保持対象の1行。pathはそのまま、それ以外は説明を訳す。
+fn destroy_target(catalog: &Catalog, target: &destroy::Target) -> String {
+    match target {
+        destroy::Target::Path(path) => path.clone(),
+        destroy::Target::Described(message) => format_or_report(catalog, message),
+    }
+}
+
 /// `destroy`が何を消し、何を残すかを削除前に見せる。
 fn print_destroy_plan(catalog: &Catalog, plan: &destroy::DestroyPlan) {
     let reporter = Reporter::new(catalog);
@@ -738,11 +746,11 @@ fn print_destroy_plan(catalog: &Catalog, plan: &destroy::DestroyPlan) {
 
     println!("\n{}", text_or_report(catalog, "destroy-removes"));
     for target in &plan.removes {
-        println!("  {target}");
+        println!("  {}", destroy_target(catalog, target));
     }
     println!("{}", text_or_report(catalog, "destroy-keeps"));
     for target in &plan.keeps {
-        println!("  {target}");
+        println!("  {}", destroy_target(catalog, target));
     }
     // 消す前に、消したあと元へ戻す方法まで見せる。
     println!(

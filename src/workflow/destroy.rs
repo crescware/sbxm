@@ -19,6 +19,15 @@ use super::inventory::{self, Poll, ProjectState};
 use super::protection::{self, Unmanaged, WorktreeReport};
 use super::select::{self, ProjectPrompt};
 
+/// 削除対象・保持対象の1件。
+#[derive(Debug, Clone)]
+pub enum Target {
+    /// hostのpath。翻訳しない。
+    Path(String),
+    /// pathで示せない対象。選択した言語で説明する。
+    Described(Msg),
+}
+
 /// 削除前に見せる内容。
 #[derive(Debug, Clone)]
 pub struct DestroyPlan {
@@ -29,10 +38,8 @@ pub struct DestroyPlan {
     pub force: bool,
     /// 通常modeで観測したworktree。force modeでは空。
     pub worktrees: Vec<WorktreeReport>,
-    /// 削除対象。翻訳しない技術表記。
-    pub removes: Vec<String>,
-    /// 保持対象。翻訳しない技術表記。
-    pub keeps: Vec<String>,
+    pub removes: Vec<Target>,
+    pub keeps: Vec<Target>,
     /// 再登録に使うcommand。
     pub re_register: String,
 }
@@ -251,25 +258,28 @@ fn require_no_active_session(host: &dyn HostEnvironment, name: &str) -> Result<(
     }
 }
 
-/// 削除対象。翻訳しない技術表記で並べる。
-fn removes(paths: &ProjectPaths, name: &SandboxName, state: ProjectState) -> Vec<String> {
+/// 削除対象。
+fn removes(paths: &ProjectPaths, name: &SandboxName, state: ProjectState) -> Vec<Target> {
     let mut removes = Vec::new();
     if state != ProjectState::NotCreated {
-        removes.push(format!("sandbox {name}"));
+        removes.push(Target::Described(msg!(
+            "destroy-target-sandbox",
+            sandbox = name
+        )));
     }
-    removes.push(paths::display(&paths.metadata_file()));
-    removes.push(paths::display(&paths.lock_file()));
-    removes.push(paths::display(&paths.cache_dir()));
+    removes.push(Target::Path(paths::display(&paths.metadata_file())));
+    removes.push(Target::Path(paths::display(&paths.lock_file())));
+    removes.push(Target::Path(paths::display(&paths.cache_dir())));
     removes
 }
 
 /// 保持対象。
-fn keeps(paths: &ProjectPaths) -> Vec<String> {
+fn keeps(paths: &ProjectPaths) -> Vec<Target> {
     vec![
-        paths::display(&paths.host_clone()),
-        paths::display(&paths.dockerfile()),
-        "host docker images and loaded templates".to_string(),
-        "docker sandboxes secrets".to_string(),
+        Target::Path(paths::display(&paths.host_clone())),
+        Target::Path(paths::display(&paths.dockerfile())),
+        Target::Described(msg!("destroy-target-host-images")),
+        Target::Described(msg!("destroy-target-secrets")),
     ]
 }
 
@@ -362,6 +372,13 @@ mod tests {
         ProjectId::parse(value).expect("valid project id")
     }
 
+    fn path_of(target: &Target) -> Option<&str> {
+        match target {
+            Target::Path(path) => Some(path.as_str()),
+            Target::Described(_) => None,
+        }
+    }
+
     #[test]
     fn a_clean_running_project_is_planned_then_removed() {
         let fixture = fixture();
@@ -389,14 +406,14 @@ mod tests {
                 .plan
                 .removes
                 .iter()
-                .any(|target| target.contains("project.toml"))
+                .any(|target| path_of(target).is_some_and(|path| path.contains("project.toml")))
         );
         assert!(
             prepared
                 .plan
                 .keeps
                 .iter()
-                .any(|target| target.contains("Dockerfile"))
+                .any(|target| path_of(target).is_some_and(|path| path.contains("Dockerfile")))
         );
         assert_eq!(
             prepared.plan.re_register,
