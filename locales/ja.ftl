@@ -365,5 +365,6 @@ progress-creating-sandbox = Sandboxを作成します。
 progress-starting-sandbox = Sandboxを起動します。
 progress-removing-sandbox = 既存のSandboxを削除します。
 progress-preparing-repository = Sandboxの中にrepositoryを用意します。
+progress-checking-repository = Sandboxの中にある既存のrepositoryを検査します。大きなrepositoryでは数分かかることがあります。
 progress-fetching-repository = Sandboxの中でrepositoryをfetchします。大きなrepositoryでは数分かかることがあります。
 progress-creating-worktrees = managed worktreeを作成します。大きなrepositoryでは数分かかることがあります。

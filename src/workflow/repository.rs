@@ -29,7 +29,7 @@ pub fn ensure_bare_clone(
     let git_dir = layout.bare_git_dir();
 
     if sandbox::path_exists(host, sandbox, &git_dir)? {
-        verify_bare_clone(host, sandbox, project, &git_dir)?;
+        crate::progress::step(&msg!("progress-checking-repository"));
     } else {
         crate::progress::step(&msg!("progress-preparing-repository"));
         sandbox::exec(host, sandbox, &["mkdir", "-p", &layout.bare_root()])?.require_success()?;
@@ -65,8 +65,8 @@ pub fn ensure_bare_clone(
             ],
         )?
         .require_success()?;
-        verify_bare_clone(host, sandbox, project, &git_dir)?;
     }
+    verify_bare_clone(host, sandbox, project, &git_dir)?;
 
     // remote-tracking refを現在の状態にしてから、起点refを解決する。
     crate::progress::step(&msg!("progress-fetching-repository"));
