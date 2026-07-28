@@ -223,7 +223,7 @@ security-project-file-permission-remediation = chmod { $expected } { $path } を
 security-project-path-owner-description = { $path } の所有者はuser ID { $observed } で、現在の利用者は { $expected } です。modeにかかわらず、ほかのaccountが所有するpathの上に案件を構築しません。
 security-project-path-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するpathをこのpathへ戻してください。
 
-security-ssh-agent-exposed-description = { $sandbox } からhostのSSH Agentへ到達できます。Sandbox内のagentが利用者の鍵で署名できる状態です。
+security-ssh-agent-exposed-description = { $sandbox } からhostのSSH Agentへ到達できます ({ $observed })。Sandbox内のagentがあなたの鍵で署名できる状態です。
 security-ssh-agent-exposed-remediation = このSandboxを作ったdaemonは、hostのSSH Agentへ届く状態で起動しています。動作中のSandboxをすべて停止し、SSH_AUTH_SOCKを外したshellからdaemonを起動し直してから、もう一度実行してください。
 
 security-base-path-escape-description = { $path } はsymbolic linkの解決後に { $resolved } となります。案件が指定したdirectoryの外に作られます。

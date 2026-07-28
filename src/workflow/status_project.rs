@@ -591,17 +591,21 @@ fn worktree_state(
 /// 場合を`not-exposed`へ丸めない。
 fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &mut ProjectStatus) {
     let value = match sandbox::ssh_agent_is_exposed(host, name.as_str()) {
-        Ok(true) => {
+        Ok(observed) if !observed.is_empty() => {
             status.diagnostics.push(
                 Diagnostic::new(
                     ErrorId::SshAgentExposed,
-                    msg!("security-ssh-agent-exposed-description", sandbox = name),
+                    msg!(
+                        "security-ssh-agent-exposed-description",
+                        sandbox = name,
+                        observed = observed.join(", ")
+                    ),
                 )
                 .remediation(msg!("security-ssh-agent-exposed-remediation")),
             );
             Value::Exposed
         }
-        Ok(false) => Value::NotExposed,
+        Ok(_) => Value::NotExposed,
         Err(error) => {
             status
                 .diagnostics

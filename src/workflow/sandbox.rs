@@ -269,36 +269,47 @@ fn real_path(path: &Path) -> PathBuf {
 ///
 /// 露出していないことは、検査commandが答えた場合にだけ言える。検査が成立しなかった
 /// 場合を「露出していない」へ丸めず、判定できないerrorとして返す。
-pub fn ssh_agent_is_exposed(host: &dyn HostEnvironment, sandbox: &str) -> Result<bool> {
+pub fn ssh_agent_is_exposed(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+) -> Result<Vec<&'static str>> {
+    let mut observed = Vec::new();
+
     let socket = exec(host, sandbox, &["printenv", "SSH_AUTH_SOCK"])?;
-    let socket_set = match inner_exit_code(&socket) {
-        Some(0) => !socket.stdout_text().trim().is_empty(),
+    match inner_exit_code(&socket) {
+        Some(0) if !socket.stdout_text().trim().is_empty() => observed.push("SSH_AUTH_SOCK is set"),
+        Some(0) => {}
         // `printenv`は未設定のとき`1`で終わる。
-        Some(1) => false,
+        Some(1) => {}
         _ => return Err(unobservable(&socket, "SSH_AUTH_SOCK")),
-    };
+    }
 
     let keys = exec(host, sandbox, &["ssh-add", "-L"])?;
     // 公開鍵本文は読まず、agentへ接続できたかどうかだけを見る。
-    let agent_reachable = match inner_exit_code(&keys) {
+    match inner_exit_code(&keys) {
         // 鍵の有無にかかわらず、agentへ接続できた時点で露出している。
-        Some(0) | Some(1) => true,
-        Some(SSH_ADD_NO_AGENT) => false,
+        Some(0) | Some(1) => observed.push("ssh-add reached an agent"),
+        Some(SSH_ADD_NO_AGENT) => {}
         _ => return Err(unobservable(&keys, "ssh-add")),
-    };
+    }
 
-    Ok(socket_set || agent_reachable)
+    Ok(observed)
 }
 
 /// 作成または再作成したSandboxが、hostのcredentialから隔離されていること。
 pub fn require_credentials_isolated(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
-    if !ssh_agent_is_exposed(host, sandbox)? {
+    let observed = ssh_agent_is_exposed(host, sandbox)?;
+    if observed.is_empty() {
         return Ok(());
     }
     Err(Error::single(
         crate::error::Diagnostic::new(
             ErrorId::SshAgentExposed,
-            msg!("security-ssh-agent-exposed-description", sandbox = sandbox),
+            msg!(
+                "security-ssh-agent-exposed-description",
+                sandbox = sandbox,
+                observed = observed.join(", ")
+            ),
         )
         .remediation(msg!("security-ssh-agent-exposed-remediation")),
     ))
@@ -423,7 +434,11 @@ mod tests {
             socket: (1, ""),
             keys: (SSH_ADD_NO_AGENT, ""),
         };
-        assert!(!ssh_agent_is_exposed(&host, "sandbox").expect("the check answered"));
+        assert!(
+            ssh_agent_is_exposed(&host, "sandbox")
+                .expect("the check answered")
+                .is_empty()
+        );
         require_credentials_isolated(&host, "sandbox").expect("nothing is exposed");
     }
 

@@ -223,7 +223,7 @@ security-project-file-permission-remediation = Run chmod { $expected } { $path }
 security-project-path-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. sbxm does not build a project on a path another account owns, whatever its mode says.
 security-project-path-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a path you own there.
 
-security-ssh-agent-exposed-description = The host SSH agent can be reached from { $sandbox }. An agent inside the sandbox can sign with your keys.
+security-ssh-agent-exposed-description = The host SSH agent can be reached from { $sandbox } ({ $observed }). An agent inside the sandbox can sign with your keys.
 security-ssh-agent-exposed-remediation = The daemon that created this sandbox was started with access to your SSH agent. Stop every running sandbox, restart the daemon from a shell where SSH_AUTH_SOCK is unset, then run the command again.
 
 security-base-path-escape-description = { $path } resolves to { $resolved } after symbolic links are followed. Projects would be created outside the directory you chose.
