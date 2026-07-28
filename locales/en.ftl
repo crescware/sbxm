@@ -168,6 +168,7 @@ remediation-declared-file-conflict = Compare the two yourself, then run sbxm syn
 remediation-sandbox-identity-mismatch = Check whose sandbox this is. sbxm does not overwrite a value that is already set.
 github-token-scopes = Issue a personal access token that can read and write this repository. A fine-grained token needs Contents read and write plus Metadata read; a classic token needs the repo scope. The token stays with the proxy and never enters the sandbox.
 remediation-github-secret-missing = { github-token-scopes } Register it with { $command }, then run the same command again.
+remediation-github-secret-incomplete = { github-token-scopes } A secret for this environment variable is already there, and registering it again without naming its placeholder is refused as a duplicate. Register it with { $command }, which keeps the placeholder the sandbox already holds, then run the same command again.
 remediation-sandbox-secret-not-applied = A custom secret only reaches a sandbox that is created after the secret is registered. Remove the sandbox with { $command }, then run the same command again to build it anew.
 remediation-sandbox-repository-unusable = Inspect { $path } inside the sandbox yourself. sbxm never deletes a repository or a worktree to make room.
 remediation-start-ref-unresolved = Check the branch name on GitHub, then run the command again once the branch exists.

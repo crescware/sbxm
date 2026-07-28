@@ -168,6 +168,7 @@ remediation-declared-file-conflict = 両者を確認したうえで、sbxm sync-
 remediation-sandbox-identity-mismatch = 誰のSandboxかを確認してください。sbxmは設定済みの値を上書きしません。
 github-token-scopes = 対象repositoryをread/writeできるpersonal access tokenを発行します。fine-grainedならContents read/writeとMetadata read、classicならrepo scopeです。tokenはproxyに留まり、Sandboxへは入りません。
 remediation-github-secret-missing = { github-token-scopes } { $command } で登録してから、同じcommandをもう一度実行してください。
+remediation-github-secret-incomplete = { github-token-scopes } この環境変数のsecretは既にあり、placeholderを指定しない登録は重複として拒否されます。{ $command } で登録すると、Sandboxが持っているplaceholderを保ったまま更新されます。そのあと同じcommandをもう一度実行してください。
 remediation-sandbox-secret-not-applied = custom secretは、登録より後に作成したSandboxにだけ届きます。{ $command } でSandboxを削除してから、同じcommandをもう一度実行して作り直してください。
 remediation-sandbox-repository-unusable = Sandbox内の { $path } を確認してください。sbxmは場所を空けるためにrepositoryやworktreeを削除しません。
 remediation-start-ref-unresolved = GitHub上のbranch名を確認し、branchが存在する状態でもう一度実行してください。
