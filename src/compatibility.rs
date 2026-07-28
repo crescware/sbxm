@@ -407,9 +407,15 @@ fn json_documents(program: &str, output: &str) -> Result<Vec<serde_json::Value>>
 /// `sbx template ls`が示すTemplate 1件。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplateEntry {
-    pub name: String,
-    /// 対応するimage ID。runtimeが対応関係を示さない場合は`None`。
-    pub image_id: Option<String>,
+    /// このentryを指す名前。registry prefixを補う前後の両方を持つ。
+    pub names: Vec<String>,
+}
+
+impl TemplateEntry {
+    /// 与えられた参照がこのentryを指すか。
+    pub fn is_named(&self, reference: &str) -> bool {
+        self.names.iter().any(|name| name == reference)
+    }
 }
 
 /// `sbx template ls`のstructured outputをparseする。
@@ -417,25 +423,70 @@ pub struct TemplateEntry {
 /// 一覧形式と、1行1件のJSON形式のどちらでも読む。名前を持たないentryがある出力は、
 /// 一覧として信用できないためparse不能として扱う。
 pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
-    let documents = json_documents("sbx template ls", output)?;
+    let documents = template_documents(output)?;
 
     let mut entries = Vec::with_capacity(documents.len());
     for document in documents {
         let object = document
             .as_object()
             .ok_or_else(|| unparseable("sbx template ls", "an entry is not an object"))?;
-        let name = string_field(object, "name")
-            .or_else(|| string_field(object, "Name"))
-            .filter(|name| !name.is_empty())
-            .ok_or_else(|| unparseable("sbx template ls", "an entry has no name"))?;
-        let image_id = string_field(object, "image_id")
-            .or_else(|| string_field(object, "imageId"))
-            .or_else(|| string_field(object, "ImageId"))
-            .or_else(|| string_field(object, "image"))
-            .filter(|id| !id.is_empty());
-        entries.push(TemplateEntry { name, image_id });
+
+        // runtimeのimage storeはrepositoryとtagで1件を示す。
+        let repository = string_field(object, "repository")
+            .or_else(|| string_field(object, "Repository"))
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| unparseable("sbx template ls", "an entry has no repository"))?;
+        let tag = string_field(object, "tag")
+            .or_else(|| string_field(object, "Tag"))
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                unparseable(
+                    "sbx template ls",
+                    &format!("the entry for {repository} has no tag"),
+                )
+            })?;
+
+        entries.push(TemplateEntry {
+            names: reference_names(&repository, &tag),
+        });
     }
     Ok(entries)
+}
+
+/// `sbx template ls --json`が並べるimage。
+///
+/// 対象versionは`{"images": [...]}`で包む。包みのない形も受け付ける。
+fn template_documents(output: &str) -> Result<Vec<serde_json::Value>> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    if let Ok(serde_json::Value::Object(object)) =
+        serde_json::from_str::<serde_json::Value>(trimmed)
+        && let Some(listed) = object.get("images")
+    {
+        return match listed {
+            serde_json::Value::Array(items) => Ok(items.clone()),
+            serde_json::Value::Null => Ok(Vec::new()),
+            _ => Err(unparseable("sbx template ls", "images is not a list")),
+        };
+    }
+    json_documents("sbx template ls", output)
+}
+
+/// 同じimageを指す参照の書き方。
+///
+/// runtimeは`docker.io/library/`を補って表示する。sbxmが渡す名前は補われる前の
+/// 表記であるため、両方を同じimageの名前として扱う。
+fn reference_names(repository: &str, tag: &str) -> Vec<String> {
+    let mut names = vec![format!("{repository}:{tag}")];
+    for prefix in ["docker.io/library/", "docker.io/"] {
+        if let Some(short) = repository.strip_prefix(prefix) {
+            names.push(format!("{short}:{tag}"));
+            break;
+        }
+    }
+    names
 }
 
 fn string_field(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
@@ -587,22 +638,43 @@ mod tests {
     }
 
     #[test]
-    fn the_template_list_parser_reads_the_name_and_the_image_it_holds() {
-        let entries = parse_template_list(r#"[{"name":"t:1","image_id":"sha256:abc"}]"#)
-            .expect("a listing parses");
-        assert_eq!(
-            entries,
-            vec![TemplateEntry {
-                name: "t:1".to_string(),
-                image_id: Some("sha256:abc".to_string()),
-            }]
+    fn the_template_listing_of_the_target_version_is_read_as_it_is() {
+        // 対象versionが実際に出力する形。`images`で包み、1件をrepositoryとtagで示す。
+        let observed = r#"{
+  "images": [
+    {
+      "id": "a3d0f4449170",
+      "repository": "docker.io/library/sbxm-example-org-example-repo-0123456789ab-template",
+      "tag": "548a91cfab02",
+      "flavor": "shell-docker",
+      "created_at": "2026-07-27T03:12:26Z",
+      "size": 841254707
+    }
+  ]
+}"#;
+
+        let entries = parse_template_list(observed).expect("the real listing parses");
+        assert_eq!(entries.len(), 1);
+
+        // sbxmが渡す名前はregistry prefixを持たない。runtimeは補って表示する。
+        assert!(
+            entries[0].is_named("sbxm-example-org-example-repo-0123456789ab-template:548a91cfab02")
         );
-        // imageを示さないversionでは、対応を推測しない。
-        let entries = parse_template_list(r#"[{"name":"t:1"}]"#).unwrap();
-        assert_eq!(entries[0].image_id, None);
+        assert!(entries[0].is_named(
+            "docker.io/library/sbxm-example-org-example-repo-0123456789ab-template:548a91cfab02"
+        ));
+        assert!(!entries[0].is_named("sbxm-example-org-example-repo-0123456789ab-template:other"));
+
+        assert!(parse_template_list(r#"{"images": []}"#).unwrap().is_empty());
         assert!(parse_template_list("").unwrap().is_empty());
 
-        for output in [r#"[{"image_id":"sha256:abc"}]"#, r#"[{"name":""}]"#, "12"] {
+        // repositoryとtagのどちらかを欠く一覧からは、対応を決められない。
+        for output in [
+            r#"{"images":[{"id":"a3d0f4449170","tag":"v1"}]}"#,
+            r#"{"images":[{"id":"a3d0f4449170","repository":"docker.io/library/x"}]}"#,
+            r#"{"images":[{"repository":"","tag":"v1"}]}"#,
+            "12",
+        ] {
             let error = parse_template_list(output).expect_err("{output} must be refused");
             assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
         }

@@ -388,6 +388,13 @@ mod tests {
         ProjectId::parse(value).expect("valid project id")
     }
 
+    /// runtimeのimage storeが示す一覧。registry prefixを補って表示する。
+    fn template_listing(image: &str) -> String {
+        let (repository, tag) = image.rsplit_once(':').expect("an image reference");
+        format!(
+            r#"{{"images":[{{"id":"a3d0f4449170","repository":"docker.io/library/{repository}","tag":"{tag}"}}]}}"#
+        )
+    }
     /// 再作成後の検証を通るSandbox。secretがあり、SSH Agentへ到達できない。
     fn verified(host: FakeSbx, name: &str) -> FakeSbx {
         host.answering(
@@ -556,7 +563,7 @@ mod tests {
             .answering(
                 "template ls --json",
                 0,
-                &format!(r#"[{{"name":"{image}","image_id":"sha256:new"}}]"#),
+                &template_listing(&image),
             );
 
         // 一覧は末尾から取り出される。世代の準備が終わるまでのあいだに、
@@ -778,7 +785,7 @@ mod tests {
             .answering(
                 "template ls --json",
                 0,
-                &format!(r#"[{{"name":"{image}","image_id":"sha256:new"}}]"#),
+                &template_listing(&image),
             );
         *host.listing.borrow_mut() =
             vec![format!("[{},{busy}]", fixture.entry(&project, "running"))];
@@ -842,7 +849,7 @@ mod tests {
             .answering(
                 "template ls --json",
                 0,
-                &format!(r#"[{{"name":"{image}","image_id":"sha256:new"}}]"#),
+                &template_listing(&image),
             );
 
         let layout = SandboxLayout::new(&project.metadata.canonical_id);
@@ -963,7 +970,7 @@ mod tests {
             .answering(
                 "template ls --json",
                 0,
-                &format!(r#"[{{"name":"{image}","image_id":"sha256:new"}}]"#),
+                &template_listing(&image),
             )
             .answering(
                 &format!("secret ls {} --json", project.sandbox),

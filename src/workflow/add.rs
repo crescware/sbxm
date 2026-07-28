@@ -1279,14 +1279,21 @@ mod tests {
                     (0, format!("[{rendered}]"))
                 }
                 ["template", "ls", "--json"] => {
+                    // runtimeのimage storeはrepositoryとtagで示し、prefixを補う。
                     let rendered = self
                         .templates
                         .borrow()
                         .iter()
-                        .map(|(name, id)| format!(r#"{{"name":"{name}","image_id":"{id}"}}"#))
+                        .map(|(name, id)| {
+                            let (repository, tag) =
+                                name.rsplit_once(':').expect("an image reference");
+                            format!(
+                                r#"{{"id":"{id}","repository":"docker.io/library/{repository}","tag":"{tag}"}}"#
+                            )
+                        })
                         .collect::<Vec<_>>()
                         .join(",");
-                    (0, format!("[{rendered}]"))
+                    (0, format!(r#"{{"images":[{rendered}]}}"#))
                 }
                 ["template", "load", archive] => {
                     let manifest = crate::archive::read_manifest(Path::new(archive))
