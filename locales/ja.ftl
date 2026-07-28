@@ -87,6 +87,7 @@ error-target-configuration-mismatch = { $project } は { $stored } として構�
 error-rebuild-intent-pending = { $project } は再構築の途中であるため、初回構築を継続できません。
 
 error-host-clone-unusable = { $path } のcloneはこの案件には使用できません: { $detail }
+error-image-collision = image { $image } は既に存在し、別の内容を宣言しているため、この世代はその名前を使えません。{ $detail }
 error-image-unusable = image { $image } はこの案件には使用できません: { $detail }
 error-build-context-not-empty = build context { $path } に { $observed } 件のentryがあります。sbxmは空のcontextからだけbuildします。
 warning-build-context-left-behind = 一時build context { $path } を削除できませんでした: { $detail }
@@ -184,6 +185,7 @@ remediation-rebuild-generation-missing = その世代のDockerfileを復元し�
 remediation-destroy-force = 内部を確認せずに削除するには { $command } を実行してください。データ保護検査とactive session検査は省略されます。
 remediation-run-rebuild = { $command } を実行して再構築を完了してください。
 remediation-target-configuration-mismatch = 保存済みの目標構成で続けるには { $command } をoptionなしで実行し、別の構成で作り直すには先に案件を破棄してください。
+remediation-image-collision = { $image } の内容をご自身で確認し、不要であることを確かめてから削除または改名してください。sbxmは自分がbuildしていないimageを上書きしません。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。
 remediation-fix-config = { $path } を編集してからもう一度実行してください。
 remediation-install-command = { $command } を導入し、PATH上に置いてください。

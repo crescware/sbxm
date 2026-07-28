@@ -87,6 +87,7 @@ error-target-configuration-mismatch = { $project } was registered to be built as
 error-rebuild-intent-pending = { $project } is in the middle of a rebuild, so its first build cannot be continued.
 
 error-host-clone-unusable = The clone at { $path } cannot be used for this project: { $detail }
+error-image-collision = An image named { $image } already exists and declares something else, so this generation cannot take that name. { $detail }
 error-image-unusable = The image { $image } cannot be used for this project: { $detail }
 error-build-context-not-empty = The build context { $path } holds { $observed } entries, but sbxm builds only from an empty one.
 warning-build-context-left-behind = The temporary build context { $path } could not be removed: { $detail }
@@ -184,6 +185,7 @@ remediation-rebuild-generation-missing = Restore the Dockerfile of that generati
 remediation-destroy-force = Run { $command } to delete it without looking inside. Data protection and active session checks are skipped.
 remediation-run-rebuild = Run { $command } to finish the rebuild.
 remediation-target-configuration-mismatch = Run { $command } without those options to continue with the stored target, or destroy the project first to build it differently.
+remediation-image-collision = Inspect { $image } yourself, then remove or rename it once you are sure it is not needed. sbxm does not overwrite an image it did not build.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.
 remediation-fix-config = Edit { $path } and run the command again.
 remediation-install-command = Install { $command } and make sure it is on PATH.
