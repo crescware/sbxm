@@ -647,6 +647,113 @@ mod tests {
     }
 
     #[test]
+    fn a_new_generation_that_cannot_be_produced_leaves_the_existing_sandbox_alone() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+        // buildは走るが、そのあともimageは一覧に現れない。
+        let host = clean_host(&fixture, &project);
+
+        let error = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("the new generation never became usable");
+        assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
+        assert!(
+            !host.ran("rm ") && !host.ran("create --name"),
+            "the sandbox that is still running is untouched: {:?}",
+            host.calls()
+        );
+
+        let stored = metadata::load(&project.paths).unwrap().expect("present");
+        assert!(
+            stored.rebuild.is_none(),
+            "no generation was fixed, so there is nothing to continue"
+        );
+        assert_eq!(
+            stored.provisioning.dockerfile_sha256, project.metadata.provisioning.dockerfile_sha256,
+            "the applied generation did not move"
+        );
+    }
+
+    #[test]
+    fn a_sandbox_from_neither_generation_is_not_treated_as_this_project() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+
+        let mut metadata = project.metadata.clone();
+        metadata.rebuild = Some(RebuildIntent {
+            target_dockerfile_sha256: sha256_hex(b"FROM scratch\n"),
+            previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+        });
+        metadata::update(&project.paths, &metadata).unwrap();
+
+        // target世代でもprevious世代でもないTemplateから作られたSandbox。
+        let stranger = fixture.entry_from(&project, "running", &"7".repeat(64));
+        let host = FakeSbx::listing(&format!("[{stranger}]"));
+
+        let error = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("a sandbox from an unknown generation is not ours to replace");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+        assert!(
+            !host.ran("rm ") && !host.ran("build"),
+            "nothing is removed and nothing is built: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
+    fn a_fixed_generation_with_neither_artifacts_nor_its_dockerfile_says_how_to_recover() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        // Dockerfileは、固定した世代とは別の内容へ変わっている。
+        std::fs::write(project.paths.dockerfile(), "FROM alpine\n").unwrap();
+
+        let mut metadata = project.metadata.clone();
+        metadata.rebuild = Some(RebuildIntent {
+            target_dockerfile_sha256: sha256_hex(b"FROM scratch\n"),
+            previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+        });
+        metadata::update(&project.paths, &metadata).unwrap();
+
+        let host = clean_host(&fixture, &project);
+        let error = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("generations are never mixed");
+        assert_eq!(error.first_id(), Some(ErrorId::RebuildGenerationMissing));
+
+        let diagnostic = &error.diagnostics()[0];
+        assert_eq!(
+            diagnostic.remediation.as_ref().map(|message| message.id),
+            Some("remediation-rebuild-generation-missing")
+        );
+        assert!(
+            !host.ran("build"),
+            "the current Dockerfile is not built under the fixed generation's name: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
     fn a_session_on_another_project_stops_the_rebuild_before_the_sandbox_is_removed() {
         let fixture = fixture();
         let project = fixture.register("example-org/example-repo");
