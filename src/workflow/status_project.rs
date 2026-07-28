@@ -16,7 +16,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::image::{self, LABEL_CANONICAL_ID, LABEL_DOCKERFILE_SHA256};
 use super::inventory::{self, ProjectState};
-use super::sandbox;
+use super::{daemon, sandbox, worktree};
 
 /// project scopeの状態値。翻訳しない安定したenum。
 ///
@@ -67,8 +67,8 @@ impl Value {
             Value::Missing => "legend-missing",
             Value::Mismatch => "legend-mismatch",
             Value::Changed => "legend-changed",
-            Value::Running => "legend-running",
-            Value::Stopped => "legend-stopped",
+            Value::Running => "legend-sandbox-running",
+            Value::Stopped => "legend-sandbox-stopped",
             Value::NotCreated => "legend-not-created",
             Value::Clean => "legend-clean",
             Value::Dirty => "legend-dirty",
@@ -117,6 +117,21 @@ impl ProjectStatus {
     fn push(&mut self, item: &'static str, value: Value) {
         self.items.push(Item { item, value });
     }
+
+    /// global環境を読めなかったため観測できなかったことを、別commandの案内とともに残す。
+    fn global_scope_failure(&mut self, error: &Error) {
+        self.diagnostics.extend(error.diagnostics().iter().cloned());
+        self.diagnostics.push(
+            Diagnostic::new(
+                ErrorId::GlobalScopeUnobservable,
+                msg!("error-global-scope-unobservable"),
+            )
+            .remediation(msg!(
+                "remediation-run-global-status",
+                command = "sbxm status --global"
+            )),
+        );
+    }
 }
 
 /// 1案件を診断する。何も変更しない。
@@ -161,7 +176,7 @@ pub fn diagnose(
     // 4-5. image、archive、Sandbox
     check_image(host, &name, &metadata, &mut status);
     check_archive(&paths, &metadata, &mut status);
-    let state = check_sandbox(config, host, &canonical, workspace_root, &mut status);
+    let state = check_sandbox(host, &metadata, workspace_root, &mut status);
 
     // 6-10. Sandbox内部の検査
     check_inside(host, &name, &metadata, state, &mut status);
@@ -271,9 +286,7 @@ fn check_image(
         // imageがないことと、observeできないことを同じ値へ丸めない。
         Ok(_) => Value::Missing,
         Err(error) => {
-            status
-                .diagnostics
-                .extend(error.diagnostics().iter().cloned());
+            status.global_scope_failure(&error);
             Value::Mismatch
         }
     };
@@ -297,19 +310,28 @@ fn check_archive(paths: &ProjectPaths, metadata: &ProjectMetadata, status: &mut 
 }
 
 /// Sandboxとworkspaceの状態。
+///
+/// 対象案件だけを名前の完全一致で突き合わせる。ほかの案件の破損で、この案件の状態が
+/// 読めなくなることはない。
 fn check_sandbox(
-    config: &GlobalConfig,
     host: &dyn HostEnvironment,
-    canonical: &crate::project::CanonicalProjectId,
+    metadata: &ProjectMetadata,
     workspace_root: &Path,
     status: &mut ProjectStatus,
 ) -> Option<ProjectState> {
-    match inventory::take(config, host, workspace_root) {
-        Ok(inventory) => {
-            let state = inventory
-                .find(canonical)
-                .map(|project| project.state)
-                .unwrap_or(ProjectState::NotCreated);
+    let observed = match daemon::list(host) {
+        Ok(entries) => inventory::state_of(&entries, metadata, workspace_root),
+        Err(error) => {
+            // 一覧そのものを読めないのはglobal環境の問題である。
+            status.push("status-item-sandbox", Value::Mismatch);
+            status.push("status-item-workspace", Value::Mismatch);
+            status.global_scope_failure(&error);
+            return None;
+        }
+    };
+
+    match observed {
+        Ok(state) => {
             let (sandbox, workspace) = match state {
                 ProjectState::Running => (Value::Running, Value::Ready),
                 ProjectState::Stopped => (Value::Stopped, Value::Ready),
@@ -333,7 +355,8 @@ fn check_sandbox(
 /// Sandbox内部の検査。
 ///
 /// Sandboxがない場合は`not-applicable`、停止中は状態を変えないため検査せず
-/// `not-observed-stopped`とする。
+/// `not-observed-stopped`とする。状態そのものを観測できなかった場合は、Sandboxが
+/// 無いことにせず`mismatch`とする。
 fn check_inside(
     host: &dyn HostEnvironment,
     name: &SandboxName,
@@ -341,24 +364,25 @@ fn check_inside(
     state: Option<ProjectState>,
     status: &mut ProjectStatus,
 ) {
-    let inner = ["status-item-secret", "status-item-bare-repository"];
-    match state {
-        Some(ProjectState::NotCreated) | None => {
-            for item in inner {
-                status.push(item, Value::NotApplicable);
-            }
-            status.push("status-item-ssh-agent", Value::NotApplicable);
-            return;
+    let inner = [
+        "status-item-secret",
+        "status-item-bare-repository",
+        "status-item-worktrees",
+        "status-item-ssh-agent",
+    ];
+    let uniform = match state {
+        Some(ProjectState::NotCreated) => Some(Value::NotApplicable),
+        // read-onlyの検査でもSandboxを起動し得るため実行しない。
+        Some(ProjectState::Stopped) => Some(Value::NotObservedStopped),
+        // 観測できなかった状態を、Sandboxが無いことへ丸めない。
+        None => Some(Value::Mismatch),
+        Some(ProjectState::Running) => None,
+    };
+    if let Some(value) = uniform {
+        for item in inner {
+            status.push(item, value);
         }
-        Some(ProjectState::Stopped) => {
-            // read-onlyの検査でもSandboxを起動し得るため実行しない。
-            for item in inner {
-                status.push(item, Value::NotObservedStopped);
-            }
-            status.push("status-item-ssh-agent", Value::NotObservedStopped);
-            return;
-        }
-        Some(ProjectState::Running) => {}
+        return;
     }
 
     check_secret(host, name, status);
@@ -394,7 +418,7 @@ fn check_bare_repository(
     status: &mut ProjectStatus,
 ) {
     let git_dir = layout.bare_git_dir();
-    let value = match sandbox::exec(
+    let outcome = sandbox::exec(
         host,
         name.as_str(),
         &[
@@ -404,20 +428,33 @@ fn check_bare_repository(
             "rev-parse",
             "--is-bare-repository",
         ],
-    ) {
-        Ok(outcome) if outcome.success() && outcome.stdout_text().trim() == "true" => Value::Ready,
-        Ok(outcome) if outcome.success() => {
-            status.diagnostics.push(Diagnostic::new(
-                ErrorId::SandboxRepositoryUnusable,
-                msg!(
-                    "error-sandbox-repository-unusable",
-                    path = git_dir,
-                    detail = "the shared repository is not bare"
-                ),
-            ));
-            Value::Mismatch
-        }
-        Ok(_) => Value::Missing,
+    );
+    let value = match outcome {
+        Ok(outcome) => match sandbox::inner_exit_code(&outcome) {
+            Some(0) if outcome.stdout_text().trim() == "true" => Value::Ready,
+            Some(0) => {
+                status.diagnostics.push(Diagnostic::new(
+                    ErrorId::SandboxRepositoryUnusable,
+                    msg!(
+                        "error-sandbox-repository-unusable",
+                        path = git_dir,
+                        detail = "the shared repository is not bare"
+                    ),
+                ));
+                Value::Mismatch
+            }
+            // `git`がrepositoryとして扱えない場合の終了statusだけを不在とする。
+            Some(sandbox::GIT_FATAL) => Value::Missing,
+            _ => {
+                status.diagnostics.extend(
+                    unobservable(&outcome, &git_dir)
+                        .diagnostics()
+                        .iter()
+                        .cloned(),
+                );
+                Value::Mismatch
+            }
+        },
         Err(error) => {
             status
                 .diagnostics
@@ -436,53 +473,26 @@ fn check_worktrees(
     metadata: &ProjectMetadata,
     status: &mut ProjectStatus,
 ) {
-    let git_dir = layout.bare_git_dir();
-    let listing = match sandbox::exec(
-        host,
-        name.as_str(),
-        &[
-            "git",
-            "--git-dir",
-            &git_dir,
-            "worktree",
-            "list",
-            "--porcelain",
-            "-z",
-        ],
-    ) {
-        Ok(outcome) if outcome.success() => outcome.stdout_text(),
-        Ok(_) | Err(_) => {
-            status.diagnostics.push(Diagnostic::new(
-                ErrorId::SandboxRepositoryUnusable,
-                msg!(
-                    "error-sandbox-repository-unusable",
-                    path = git_dir,
-                    detail = "the worktree list could not be read"
-                ),
-            ));
-            return;
-        }
-    };
-
-    let entries = match parse_worktree_list(&listing) {
+    let entries = match worktree::list(host, name.as_str(), layout) {
         Ok(entries) => entries,
         Err(error) => {
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
+            status.push("status-item-worktrees", Value::Mismatch);
             return;
         }
     };
 
     let bare_root = layout.bare_root();
     let mut seen: Vec<String> = Vec::new();
+    let mut value = Value::Ready;
     for entry in entries {
-        // bare entryはworktree数へ含めない。
         if entry.bare {
+            // bare entryはworktree数へ含めない。
             continue;
         }
-        let standardized = paths::lexically_standardize(Path::new(&entry.path));
-        let Ok(relative) = standardized.strip_prefix(&bare_root) else {
+        let Some(relative) = entry.relative_to(&bare_root) else {
             // bare root配下へstandardizeできないpathは、案件の成果物として扱わない。
             status.diagnostics.push(Diagnostic::new(
                 ErrorId::SandboxRepositoryUnusable,
@@ -492,9 +502,9 @@ fn check_worktrees(
                     detail = "the worktree is outside the shared repository"
                 ),
             ));
+            value = Value::Mismatch;
             continue;
         };
-        let relative = paths::display(relative);
         let managed = metadata
             .managed_worktrees
             .iter()
@@ -507,6 +517,9 @@ fn check_worktrees(
             Value::Attached
         };
         let state = worktree_state(host, name, &entry.path, status);
+        if state == Value::Mismatch {
+            value = Value::Mismatch;
+        }
         status.worktrees.push(WorktreeRow {
             path: relative,
             kind: if managed { "managed" } else { "unmanaged" },
@@ -532,8 +545,10 @@ fn check_worktrees(
                 mode: Value::Mismatch,
                 state: Value::Mismatch,
             });
+            value = Value::Mismatch;
         }
     }
+    status.push("status-item-worktrees", value);
 }
 
 /// 作業中の変更があるか。submoduleの変更も`git status`が示すとおりに扱う。
@@ -567,41 +582,69 @@ fn worktree_state(
                 Value::Dirty
             }
         }
-        Ok(_) | Err(_) => {
-            status.diagnostics.push(Diagnostic::new(
-                ErrorId::SandboxRepositoryUnusable,
-                msg!(
-                    "error-sandbox-repository-unusable",
-                    path = path,
-                    detail = "the working tree state could not be read"
-                ),
-            ));
+        Ok(outcome) => {
+            status
+                .diagnostics
+                .extend(unobservable(&outcome, path).diagnostics().iter().cloned());
+            Value::Mismatch
+        }
+        Err(error) => {
+            status
+                .diagnostics
+                .extend(error.diagnostics().iter().cloned());
             Value::Mismatch
         }
     }
 }
 
 /// SSH Agentが露出していないこと。
+///
+/// 露出していないことは、検査commandが答えた場合にだけ言える。検査自体が成立しない
+/// 場合を`not-exposed`へ丸めない。
 fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &mut ProjectStatus) {
     let socket = sandbox::exec(host, name.as_str(), &["printenv", "SSH_AUTH_SOCK"]);
     let keys = sandbox::exec(host, name.as_str(), &["ssh-add", "-L"]);
 
     let value = match (socket, keys) {
         (Ok(socket), Ok(keys)) => {
-            let has_socket = socket.success() && !socket.stdout_text().trim().is_empty();
+            let socket_set = match sandbox::inner_exit_code(&socket) {
+                Some(0) => Some(!socket.stdout_text().trim().is_empty()),
+                // `printenv`は未設定のとき`1`で終わる。
+                Some(1) => Some(false),
+                _ => None,
+            };
             // 公開鍵本文は読まず、agentへ接続できたかどうかだけを見る。
-            let has_keys = keys.success();
-            if has_socket || has_keys {
-                status.diagnostics.push(
-                    Diagnostic::new(
-                        ErrorId::SshAgentExposed,
-                        msg!("security-ssh-agent-exposed-description", sandbox = name),
-                    )
-                    .remediation(msg!("security-ssh-agent-exposed-remediation")),
-                );
-                Value::Exposed
-            } else {
-                Value::NotExposed
+            let agent_reachable = match sandbox::inner_exit_code(&keys) {
+                // 鍵の有無にかかわらず、agentへ接続できた時点で露出している。
+                Some(0) | Some(1) => Some(true),
+                Some(sandbox::SSH_ADD_NO_AGENT) => Some(false),
+                _ => None,
+            };
+            match (socket_set, agent_reachable) {
+                (Some(socket_set), Some(agent_reachable)) => {
+                    if socket_set || agent_reachable {
+                        status.diagnostics.push(
+                            Diagnostic::new(
+                                ErrorId::SshAgentExposed,
+                                msg!("security-ssh-agent-exposed-description", sandbox = name),
+                            )
+                            .remediation(msg!("security-ssh-agent-exposed-remediation")),
+                        );
+                        Value::Exposed
+                    } else {
+                        Value::NotExposed
+                    }
+                }
+                _ => {
+                    let unreadable = if socket_set.is_none() { &socket } else { &keys };
+                    status.diagnostics.extend(
+                        unobservable(unreadable, name.as_str())
+                            .diagnostics()
+                            .iter()
+                            .cloned(),
+                    );
+                    Value::Mismatch
+                }
             }
         }
         (Err(error), _) | (_, Err(error)) => {
@@ -614,75 +657,25 @@ fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &mut 
     status.push("status-item-ssh-agent", value);
 }
 
-/// `git worktree list --porcelain -z`の1件。
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WorktreeEntry {
-    path: String,
-    bare: bool,
-    detached: bool,
-}
-
-/// NUL区切りのporcelain出力をparseする。
-///
-/// 空のfieldがrecordの区切りとなる。pathを持たないrecordは受け付けない。
-fn parse_worktree_list(output: &str) -> Result<Vec<WorktreeEntry>> {
-    let mut entries = Vec::new();
-    let mut current: Option<WorktreeEntry> = None;
-
-    for field in output.split('\0') {
-        if field.is_empty() {
-            if let Some(entry) = current.take() {
-                entries.push(entry);
-            }
-            continue;
-        }
-        let (key, value) = match field.split_once(' ') {
-            Some((key, value)) => (key, value),
-            None => (field, ""),
-        };
-        match key {
-            "worktree" => {
-                if let Some(entry) = current.take() {
-                    entries.push(entry);
-                }
-                current = Some(WorktreeEntry {
-                    path: value.to_string(),
-                    bare: false,
-                    detached: false,
-                });
-            }
-            "bare" | "detached" => match current.as_mut() {
-                Some(entry) => {
-                    if key == "bare" {
-                        entry.bare = true;
-                    } else {
-                        entry.detached = true;
-                    }
-                }
-                None => {
-                    return Err(Error::new(
-                        ErrorId::ExternalOutputUnparseable,
-                        msg!(
-                            "error-external-output-unparseable",
-                            program = "git worktree list",
-                            detail = format!("{key} appears before any worktree")
-                        ),
-                    ));
-                }
-            },
-            _ => {}
-        }
-    }
-    if let Some(entry) = current {
-        entries.push(entry);
-    }
-    Ok(entries)
+/// 内側のcommandが答えなかった場合の診断。原値をそのまま残す。
+fn unobservable(outcome: &crate::command::CommandOutcome, subject: &str) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::SandboxCheckUnobservable,
+            msg!(
+                "error-sandbox-check-unobservable",
+                subject = subject,
+                exit_status = outcome.status
+            ),
+        )
+        .external(outcome.failure()),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::inventory::tests::{FakeSbx, fixture};
+    use crate::workflow::inventory::tests::{FakeSbx, Registered, fixture};
 
     fn value_of(status: &ProjectStatus, item: &str) -> Value {
         status
@@ -698,47 +691,12 @@ mod tests {
     }
 
     /// imageがまだ存在しないhost。
-    fn without_image(
-        host: FakeSbx,
-        project: &crate::workflow::inventory::ManagedProject,
-    ) -> FakeSbx {
+    fn without_image(host: FakeSbx, project: &Registered) -> FakeSbx {
         let image = image::image_name(
             &project.sandbox,
             &project.metadata.provisioning.dockerfile_sha256,
         );
         host.answering(&format!("image inspect {image}"), 1, "")
-    }
-
-    #[test]
-    fn the_porcelain_listing_is_read_field_by_field() {
-        let output = "worktree /home/agent/work/repo\0bare\0\0worktree /home/agent/work/repo/repo.tree-0\0HEAD abc\0branch refs/heads/main\0\0worktree /home/agent/work/repo/repo.tree-1\0HEAD abc\0detached\0\0";
-        let entries = parse_worktree_list(output).expect("the listing parses");
-        assert_eq!(
-            entries,
-            vec![
-                WorktreeEntry {
-                    path: "/home/agent/work/repo".to_string(),
-                    bare: true,
-                    detached: false,
-                },
-                WorktreeEntry {
-                    path: "/home/agent/work/repo/repo.tree-0".to_string(),
-                    bare: false,
-                    detached: false,
-                },
-                WorktreeEntry {
-                    path: "/home/agent/work/repo/repo.tree-1".to_string(),
-                    bare: false,
-                    detached: true,
-                },
-            ]
-        );
-        assert!(
-            parse_worktree_list("")
-                .expect("an empty listing")
-                .is_empty()
-        );
-        assert!(parse_worktree_list("detached\0\0").is_err());
     }
 
     #[test]
@@ -753,6 +711,43 @@ mod tests {
         )
         .expect_err("there is nothing to diagnose");
         assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+    }
+
+    #[test]
+    fn the_items_are_reported_in_the_documented_order() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let host = without_image(FakeSbx::listing("[]"), &project);
+
+        let status = diagnose(
+            &fixture.config,
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+        )
+        .expect("diagnose");
+
+        assert_eq!(
+            status
+                .items
+                .iter()
+                .map(|item| item.item)
+                .collect::<Vec<_>>(),
+            vec![
+                "status-item-metadata",
+                "status-item-project-root",
+                "status-item-host-clone",
+                "status-item-dockerfile",
+                "status-item-image",
+                "status-item-template-archive",
+                "status-item-sandbox",
+                "status-item-workspace",
+                "status-item-secret",
+                "status-item-bare-repository",
+                "status-item-worktrees",
+                "status-item-ssh-agent",
+            ]
+        );
     }
 
     #[test]
@@ -775,6 +770,7 @@ mod tests {
         for item in [
             "status-item-secret",
             "status-item-bare-repository",
+            "status-item-worktrees",
             "status-item-ssh-agent",
         ] {
             assert_eq!(value_of(&status, item), Value::NotApplicable, "{item}");
@@ -804,6 +800,10 @@ mod tests {
             value_of(&status, "status-item-ssh-agent"),
             Value::NotObservedStopped
         );
+        assert_eq!(
+            value_of(&status, "status-item-worktrees"),
+            Value::NotObservedStopped
+        );
         assert!(
             !host.ran("exec"),
             "nothing runs inside a stopped sandbox: {:?}",
@@ -813,6 +813,73 @@ mod tests {
             status.is_healthy(),
             "not observing on purpose is not a failure"
         );
+    }
+
+    #[test]
+    fn a_sandbox_state_that_cannot_be_read_is_not_reported_as_a_missing_sandbox() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        // 一覧を読めない状態でも、取得できた項目は表示する。
+        let host = without_image(FakeSbx::listing("not json"), &project);
+
+        let status = diagnose(
+            &fixture.config,
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+        )
+        .expect("diagnose");
+
+        assert_eq!(value_of(&status, "status-item-metadata"), Value::Ready);
+        assert_eq!(value_of(&status, "status-item-sandbox"), Value::Mismatch);
+        for item in [
+            "status-item-secret",
+            "status-item-bare-repository",
+            "status-item-worktrees",
+            "status-item-ssh-agent",
+        ] {
+            assert_eq!(
+                value_of(&status, item),
+                Value::Mismatch,
+                "{item} is not observed, which is not the same as absent"
+            );
+        }
+        assert!(
+            status
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.id == ErrorId::GlobalScopeUnobservable),
+            "the global command that can diagnose this is named: {:?}",
+            status.diagnostics
+        );
+        assert!(!host.ran("exec"), "nothing runs inside an unknown sandbox");
+    }
+
+    #[test]
+    fn an_unrelated_project_does_not_decide_this_one() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        // 別案件のmetadataが壊れていても、この案件の状態は読める。
+        let broken = fixture
+            .config
+            .base_path
+            .as_path()
+            .join("broken/broken.project/.sbxm");
+        std::fs::create_dir_all(&broken).unwrap();
+        std::fs::write(broken.join("project.toml"), "version = 2\n").unwrap();
+
+        let host = without_image(
+            FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "stopped"))),
+            &project,
+        );
+        let status = diagnose(
+            &fixture.config,
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+        )
+        .expect("diagnose");
+        assert_eq!(value_of(&status, "status-item-sandbox"), Value::Stopped);
     }
 
     #[test]
@@ -873,11 +940,6 @@ mod tests {
                 "1 .M N... 100644 100644 100644 abc abc file.txt\0",
             )
             .answering(
-                &format!("exec {} -- secret", project.sandbox),
-                0,
-                "",
-            )
-            .answering(
                 &format!("secret ls {} --json", project.sandbox),
                 0,
                 r#"[{"name":"github"}]"#,
@@ -887,7 +949,7 @@ mod tests {
                 1,
                 "",
             )
-            .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 1, "");
+            .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 2, "");
 
         let status = diagnose(
             &fixture.config,
@@ -937,7 +999,7 @@ mod tests {
                 0,
                 "/tmp/ssh-agent.sock\n",
             )
-            .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 1, "");
+            .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 2, "");
 
         let status = diagnose(
             &fixture.config,
@@ -955,5 +1017,111 @@ mod tests {
                 .any(|diagnostic| diagnostic.id == ErrorId::SshAgentExposed)
         );
         assert!(!status.is_healthy());
+    }
+
+    #[test]
+    fn an_agent_that_answers_without_keys_is_still_reachable() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let listing = format!("[{}]", fixture.entry(&project, "running"));
+        // socketは未設定でも、agentへ接続できる時点で露出している。
+        let host = FakeSbx::listing(&listing)
+            .answering(
+                &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),
+                1,
+                "",
+            )
+            .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 1, "");
+
+        let status = diagnose(
+            &fixture.config,
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+        )
+        .expect("diagnose");
+        assert_eq!(value_of(&status, "status-item-ssh-agent"), Value::Exposed);
+    }
+
+    #[test]
+    fn a_check_that_could_not_run_is_not_read_as_not_exposed() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let listing = format!("[{}]", fixture.entry(&project, "running"));
+        // command不在は、露出していないことの証明にならない。
+        let host = FakeSbx::listing(&listing)
+            .answering(
+                &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),
+                127,
+                "",
+            )
+            .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 127, "");
+
+        let status = diagnose(
+            &fixture.config,
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+        )
+        .expect("diagnose");
+        assert_eq!(value_of(&status, "status-item-ssh-agent"), Value::Mismatch);
+        assert!(
+            status
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.id == ErrorId::SandboxCheckUnobservable)
+        );
+        assert!(!status.is_healthy(), "an unprovable check is not a pass");
+    }
+
+    #[test]
+    fn a_repository_check_that_could_not_run_is_not_read_as_missing() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let listing = format!("[{}]", fixture.entry(&project, "running"));
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        let host = FakeSbx::listing(&listing).answering(
+            &format!(
+                "exec {} -- git --git-dir {} rev-parse --is-bare-repository",
+                project.sandbox,
+                layout.bare_git_dir()
+            ),
+            127,
+            "",
+        );
+
+        let status = diagnose(
+            &fixture.config,
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+        )
+        .expect("diagnose");
+        assert_eq!(
+            value_of(&status, "status-item-bare-repository"),
+            Value::Mismatch
+        );
+
+        // repositoryとして扱えないことは、gitが答えた結果なので不在とする。
+        let host = FakeSbx::listing(&listing).answering(
+            &format!(
+                "exec {} -- git --git-dir {} rev-parse --is-bare-repository",
+                project.sandbox,
+                layout.bare_git_dir()
+            ),
+            128,
+            "",
+        );
+        let status = diagnose(
+            &fixture.config,
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+        )
+        .expect("diagnose");
+        assert_eq!(
+            value_of(&status, "status-item-bare-repository"),
+            Value::Missing
+        );
     }
 }

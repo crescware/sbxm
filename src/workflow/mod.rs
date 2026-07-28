@@ -22,6 +22,7 @@ pub mod status_project;
 pub mod stop;
 pub mod sync_files;
 pub mod template;
+pub mod worktree;
 
 use std::io::Write;
 

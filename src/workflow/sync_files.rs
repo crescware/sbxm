@@ -15,7 +15,7 @@ use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
-use super::image::image_name;
+use super::image::template_names;
 use super::{daemon, sandbox};
 
 /// `sync-files`の結果。
@@ -70,9 +70,9 @@ pub fn run(
             )
         })?;
 
-    // Templateはmetadataが持つ適用済み世代から導出する。
-    let template = image_name(&name, &metadata.provisioning.dockerfile_sha256);
-    sandbox::verify_identity(&entry, &name, &template, workspace_root)?;
+    // Templateはmetadataが正本とする世代から導出する。
+    let templates = template_names(&name, &metadata);
+    sandbox::verify_identity(&entry, &name, &templates, workspace_root)?;
 
     if entry.state != SandboxState::Running {
         // 停止中のSandboxを暗黙に起動しない。
@@ -138,6 +138,7 @@ mod tests {
     use crate::metadata::{CreationMode, ManagedWorktree, Provisioning, RebuildIntent};
     use crate::paths::AbsoluteBasePath;
     use crate::project::CanonicalProjectId;
+    use crate::workflow::image::image_name;
     use std::cell::RefCell;
     use std::os::unix::process::ExitStatusExt;
     use std::path::PathBuf;

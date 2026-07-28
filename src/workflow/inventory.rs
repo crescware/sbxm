@@ -3,19 +3,37 @@
 //! runtime状態を複製せず、command実行のたびに1回のSandbox一覧取得から組み立てる。
 //! 名前は完全一致で突き合わせ、substringや表示textの検索は使わない。
 
+use std::collections::BTreeSet;
 use std::path::Path;
+use std::time::Duration;
 
 use crate::command::HostEnvironment;
 use crate::compatibility::{SandboxEntry, SandboxState};
 use crate::config::GlobalConfig;
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::error::{Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
-use crate::paths::ProjectPaths;
-use crate::project::SandboxName;
 
-use super::image::image_name;
+use super::image::template_names;
 use super::{daemon, sandbox};
+
+/// 状態が変わるのを待つ間隔と上限。
+///
+/// 起動と停止の完了は、commandの戻り値ではなく一覧のstateを読み直して判定する。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Poll {
+    pub interval: Duration,
+    pub limit: Duration,
+}
+
+impl Default for Poll {
+    fn default() -> Poll {
+        Poll {
+            interval: Duration::from_secs(2),
+            limit: Duration::from_secs(60),
+        }
+    }
+}
 
 /// 利用者へ見せるSandboxの状態。
 ///
@@ -38,12 +56,12 @@ impl ProjectState {
         }
     }
 
-    /// 凡例に使うFTL message ID。
+    /// 凡例に使うFTL message ID。host serviceではなくSandboxの状態を説明する。
     pub fn legend_id(self) -> &'static str {
         match self {
             ProjectState::NotCreated => "legend-not-created",
-            ProjectState::Running => "legend-running",
-            ProjectState::Stopped => "legend-stopped",
+            ProjectState::Running => "legend-sandbox-running",
+            ProjectState::Stopped => "legend-sandbox-stopped",
         }
     }
 }
@@ -57,9 +75,8 @@ impl std::fmt::Display for ProjectState {
 /// 1件の管理案件と、その現在の状態。
 #[derive(Debug, Clone)]
 pub struct ManagedProject {
-    pub paths: ProjectPaths,
     pub metadata: ProjectMetadata,
-    pub sandbox: SandboxName,
+    pub sandbox: String,
     pub state: ProjectState,
 }
 
@@ -79,12 +96,36 @@ pub struct Inventory {
     pub unmanaged: Vec<SandboxEntry>,
 }
 
-impl Inventory {
-    /// canonical IDが一致する案件。
-    pub fn find(&self, canonical: &crate::project::CanonicalProjectId) -> Option<&ManagedProject> {
-        self.projects
-            .iter()
-            .find(|project| project.metadata.canonical_id == *canonical)
+/// 1案件の現在の状態を、取得済みの一覧から決める。
+///
+/// 一覧全体が成立している必要はない。対象と無関係な案件の破損によって、この案件の
+/// 状態が読めなくなることを避ける。対応が矛盾する場合は、正常な状態として返さない。
+pub fn state_of(
+    entries: &[SandboxEntry],
+    metadata: &ProjectMetadata,
+    workspace_root: &Path,
+) -> Result<ProjectState> {
+    let name = metadata.sandbox_name();
+    let matched: Vec<&SandboxEntry> = entries
+        .iter()
+        .filter(|entry| entry.name == name.as_str())
+        .collect();
+
+    match matched.as_slice() {
+        [] => Ok(ProjectState::NotCreated),
+        [entry] => {
+            sandbox::verify_identity(
+                entry,
+                &name,
+                &template_names(&name, metadata),
+                workspace_root,
+            )?;
+            Ok(match entry.state {
+                SandboxState::Running => ProjectState::Running,
+                SandboxState::Stopped => ProjectState::Stopped,
+            })
+        }
+        _ => Err(duplicated(&[name.as_str()])),
     }
 }
 
@@ -102,27 +143,16 @@ pub fn take(
     require_unique_names(&entries)?;
 
     let mut projects = Vec::with_capacity(discovered.len());
-    let mut claimed: Vec<String> = Vec::new();
+    let mut claimed: BTreeSet<String> = BTreeSet::new();
     for project in discovered {
         let name = project.metadata.sandbox_name();
-        let entry = entries.iter().find(|entry| entry.name == name.as_str());
-        let state = match entry {
-            Some(entry) => {
-                let template = image_name(&name, &project.metadata.provisioning.dockerfile_sha256);
-                // 対応が矛盾する案件は、正常な状態として返さない。
-                sandbox::verify_identity(entry, &name, &template, workspace_root)?;
-                claimed.push(entry.name.clone());
-                match entry.state {
-                    SandboxState::Running => ProjectState::Running,
-                    SandboxState::Stopped => ProjectState::Stopped,
-                }
-            }
-            None => ProjectState::NotCreated,
-        };
+        let state = state_of(&entries, &project.metadata, workspace_root)?;
+        if state != ProjectState::NotCreated {
+            claimed.insert(name.as_str().to_string());
+        }
         projects.push(ManagedProject {
-            paths: project.paths,
             metadata: project.metadata,
-            sandbox: name,
+            sandbox: name.as_str().to_string(),
             state,
         });
     }
@@ -141,37 +171,24 @@ pub fn take(
 
 /// 同名のSandboxが複数ある一覧からは、対応を決められない。
 fn require_unique_names(entries: &[SandboxEntry]) -> Result<()> {
-    let mut names: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
-    names.sort_unstable();
-    let duplicates: Vec<&str> = names
-        .windows(2)
-        .filter(|pair| pair[0] == pair[1])
-        .map(|pair| pair[0])
-        .collect();
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut duplicates: BTreeSet<&str> = BTreeSet::new();
+    for entry in entries {
+        if !seen.insert(entry.name.as_str()) {
+            duplicates.insert(entry.name.as_str());
+        }
+    }
     if duplicates.is_empty() {
         return Ok(());
     }
-    Err(Error::new(
-        ErrorId::SandboxNameCollision,
-        msg!(
-            "error-sandbox-name-collision",
-            sandbox = duplicates.join(", "),
-            projects = "the sandbox listing"
-        ),
-    ))
+    Err(duplicated(&duplicates.into_iter().collect::<Vec<&str>>()))
 }
 
-/// 選択候補となる管理案件が0件であることを、対象選択を開始できないerrorとして返す。
-pub fn no_managed_projects() -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::NoManagedProjects,
-            msg!("error-no-managed-projects"),
-        )
-        .remediation(msg!(
-            "remediation-no-managed-projects",
-            command = "sbxm add <owner>/<repository>"
-        )),
+/// 一覧に同じ名前のSandboxが複数あることを、そのまま伝える。
+fn duplicated(names: &[&str]) -> Error {
+    Error::new(
+        ErrorId::SandboxNameCollision,
+        msg!("error-sandbox-name-duplicated", sandbox = names.join(", ")),
     )
 }
 
@@ -182,19 +199,20 @@ pub mod tests {
     use crate::config::{GitIdentity, GlobalConfig};
     use crate::i18n::Locale;
     use crate::metadata::{CreationMode, ManagedWorktree, Provisioning};
-    use crate::paths::AbsoluteBasePath;
-    use crate::project::ProjectId;
+    use crate::paths::{AbsoluteBasePath, ProjectPaths};
+    use crate::project::{ProjectId, SandboxName};
+    use crate::workflow::image::image_name;
     use std::cell::RefCell;
     use std::os::unix::process::ExitStatusExt;
     use std::path::PathBuf;
 
     pub const DIGEST: &str = "1111111111111111111111111111111111111111111111111111111111111111";
 
-    /// Sandbox一覧を返し、実行された引数を記録するhost。
+    /// Sandbox一覧を返し、実行された指定を記録するhost。
     pub struct FakeSbx {
         pub listing: RefCell<Vec<String>>,
         pub answers: std::collections::HashMap<String, (i32, String)>,
-        pub calls: RefCell<Vec<Vec<String>>>,
+        pub specs: RefCell<Vec<CommandSpec>>,
     }
 
     impl FakeSbx {
@@ -202,7 +220,7 @@ pub mod tests {
             FakeSbx {
                 listing: RefCell::new(vec![output.to_string()]),
                 answers: std::collections::HashMap::new(),
-                calls: RefCell::new(Vec::new()),
+                specs: RefCell::new(Vec::new()),
             }
         }
 
@@ -217,7 +235,7 @@ pub mod tests {
                         .collect(),
                 ),
                 answers: std::collections::HashMap::new(),
-                calls: RefCell::new(Vec::new()),
+                specs: RefCell::new(Vec::new()),
             }
         }
 
@@ -228,13 +246,28 @@ pub mod tests {
         }
 
         pub fn calls(&self) -> Vec<Vec<String>> {
-            self.calls.borrow().clone()
+            self.specs
+                .borrow()
+                .iter()
+                .map(|spec| spec.args.clone())
+                .collect()
         }
 
         pub fn ran(&self, needle: &str) -> bool {
             self.calls()
                 .iter()
                 .any(|args| args.join(" ").contains(needle))
+        }
+
+        /// 引数が一致した最後の1件の指定。envとoutput policyの検証に使う。
+        pub fn spec(&self, needle: &str) -> CommandSpec {
+            self.specs
+                .borrow()
+                .iter()
+                .rev()
+                .find(|spec| spec.args.join(" ").contains(needle))
+                .unwrap_or_else(|| panic!("no command matched {needle}"))
+                .clone()
         }
     }
 
@@ -244,7 +277,7 @@ pub mod tests {
         }
 
         fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
-            self.calls.borrow_mut().push(spec.args.clone());
+            self.specs.borrow_mut().push(spec.clone());
             let key = spec.args.join(" ");
             let (code, stdout) = if spec.args.first().is_some_and(|arg| arg == "ls") {
                 let mut listings = self.listing.borrow_mut();
@@ -270,6 +303,14 @@ pub mod tests {
                 stderr_lossy: false,
             })
         }
+    }
+
+    /// 登録済みの1案件。
+    #[derive(Debug, Clone)]
+    pub struct Registered {
+        pub paths: ProjectPaths,
+        pub metadata: ProjectMetadata,
+        pub sandbox: SandboxName,
     }
 
     /// base pathとworkspace rootを持つtest環境。
@@ -303,7 +344,7 @@ pub mod tests {
 
     impl Fixture {
         /// 案件を登録済みの状態にする。
-        pub fn register(&self, project: &str) -> ManagedProject {
+        pub fn register(&self, project: &str) -> Registered {
             let id = ProjectId::parse(project).expect("valid project id");
             let canonical = id.canonical();
             let paths = ProjectPaths::derive(&self.config.base_path, &canonical);
@@ -325,27 +366,32 @@ pub mod tests {
                 rebuild: None,
             };
             metadata::create(&paths, &metadata).expect("write the metadata");
-            let name = SandboxName::derive(&canonical);
-            ManagedProject {
+            let sandbox = SandboxName::derive(&canonical);
+            Registered {
                 paths,
                 metadata,
-                sandbox: name,
-                state: ProjectState::NotCreated,
+                sandbox,
             }
         }
 
         /// 案件に対応するSandboxの一覧行。
-        pub fn entry(&self, project: &ManagedProject, state: &str) -> String {
+        pub fn entry(&self, project: &Registered, state: &str) -> String {
+            self.entry_from(
+                project,
+                state,
+                &project.metadata.provisioning.dockerfile_sha256.clone(),
+            )
+        }
+
+        /// 指定した世代のTemplateから作られたSandboxの一覧行。
+        pub fn entry_from(&self, project: &Registered, state: &str, generation: &str) -> String {
             let workspace = self.workspace_root.join(project.sandbox.as_str());
             std::fs::create_dir_all(&workspace).expect("create the workspace");
             format!(
                 r#"{{"name":"{}","state":"{state}","workspace":"{}","template":"{}","active_sessions":0}}"#,
                 project.sandbox,
                 workspace.display(),
-                image_name(
-                    &project.sandbox,
-                    &project.metadata.provisioning.dockerfile_sha256
-                )
+                image_name(&project.sandbox, generation)
             )
         }
     }
@@ -432,6 +478,39 @@ pub mod tests {
     }
 
     #[test]
+    fn a_sandbox_of_either_rebuild_generation_still_belongs_to_the_project() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let target = "2".repeat(64);
+        let mut metadata = project.metadata.clone();
+        metadata.rebuild = Some(crate::metadata::RebuildIntent {
+            target_dockerfile_sha256: target.clone(),
+            previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+        });
+
+        // 切替の途中では、Sandboxがtarget世代から作り直されていることがある。
+        for generation in [
+            target.as_str(),
+            project.metadata.provisioning.dockerfile_sha256.as_str(),
+        ] {
+            let listing = format!("[{}]", fixture.entry_from(&project, "running", generation));
+            let entries = crate::compatibility::parse_sandbox_list(&listing).expect("listing");
+            assert_eq!(
+                state_of(&entries, &metadata, &fixture.workspace_root).expect("state"),
+                ProjectState::Running,
+                "generation {generation} belongs to the project"
+            );
+        }
+
+        // intentが無い案件では、適用済み世代だけが正本である。
+        let listing = format!("[{}]", fixture.entry_from(&project, "running", &target));
+        let entries = crate::compatibility::parse_sandbox_list(&listing).expect("listing");
+        let error = state_of(&entries, &project.metadata, &fixture.workspace_root)
+            .expect_err("another generation is not this project's sandbox");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+    }
+
+    #[test]
     fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() {
         let fixture = fixture();
         let project = fixture.register("example-org/example-repo");
@@ -478,5 +557,22 @@ pub mod tests {
         )
         .expect_err("a broken project stops the listing");
         assert!(error.contains(ErrorId::MetadataUnknownVersion));
+    }
+
+    #[test]
+    fn one_project_is_resolved_without_the_rest_of_the_listing_being_sound() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        // 別のSandboxが2件同名でも、この案件の対応は名前の完全一致で決まる。
+        let listing = format!(
+            r#"[{},{{"name":"sbxm-other","state":"running"}},{{"name":"sbxm-other","state":"stopped"}}]"#,
+            fixture.entry(&project, "running")
+        );
+        let entries = crate::compatibility::parse_sandbox_list(&listing).expect("listing");
+
+        assert_eq!(
+            state_of(&entries, &project.metadata, &fixture.workspace_root).expect("state"),
+            ProjectState::Running
+        );
     }
 }

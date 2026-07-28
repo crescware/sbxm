@@ -31,7 +31,9 @@ use workflow::Reporter;
 use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
 use workflow::select::TerminalProjectPrompt;
-use workflow::{add, ls, open, sandbox, status_global, status_project, stop, sync_files};
+use workflow::{
+    add, inventory, ls, open, sandbox, status_global, status_project, stop, sync_files,
+};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();
@@ -281,7 +283,7 @@ fn dispatch(
                 &RealHost,
                 &mut prompt,
                 std::path::Path::new(sandbox::WORKSPACE_ROOT),
-                open::Poll::default(),
+                inventory::Poll::default(),
             ) {
                 Ok(prepared) => prepared,
                 Err(error) => {
@@ -337,7 +339,7 @@ fn dispatch(
                 &RealHost,
                 &mut prompt,
                 std::path::Path::new(sandbox::WORKSPACE_ROOT),
-                open::Poll::default(),
+                inventory::Poll::default(),
             ) {
                 Ok(report) => print_stop_report(&catalog, &report),
                 Err(error) => {
@@ -522,28 +524,27 @@ fn print_project_status(catalog: &Catalog, status: &status_project::ProjectStatu
         )
     );
 
-    if !status.worktrees.is_empty() {
-        let rows: Vec<Vec<String>> = status
-            .worktrees
-            .iter()
-            .map(|worktree| {
-                vec![
-                    worktree.path.clone(),
-                    worktree.kind.to_string(),
-                    worktree.mode.as_str().to_string(),
-                    worktree.state.as_str().to_string(),
-                ]
-            })
-            .collect();
-        println!("\n{}", text_or_report(catalog, "status-worktrees-section"));
-        print!(
-            "{}",
-            reporter.render_value_table(
-                &["column-path", "column-kind", "column-mode", "column-state"],
-                &rows,
-            )
-        );
-    }
+    // 0件でもsectionとheaderを出す。表がないことと、観測できなかったことは別である。
+    let rows: Vec<Vec<String>> = status
+        .worktrees
+        .iter()
+        .map(|worktree| {
+            vec![
+                worktree.path.clone(),
+                worktree.kind.to_string(),
+                worktree.mode.as_str().to_string(),
+                worktree.state.as_str().to_string(),
+            ]
+        })
+        .collect();
+    println!("\n{}", text_or_report(catalog, "status-worktrees-section"));
+    print!(
+        "{}",
+        reporter.render_value_table(
+            &["column-path", "column-kind", "column-mode", "column-state"],
+            &rows,
+        )
+    );
 
     let mut values: Vec<(&str, &str)> = status
         .items
@@ -730,8 +731,8 @@ fn sandbox_state(state: SandboxState) -> &'static str {
 
 fn sandbox_state_legend(state: SandboxState) -> &'static str {
     match state {
-        SandboxState::Running => "legend-running",
-        SandboxState::Stopped => "legend-stopped",
+        SandboxState::Running => "legend-sandbox-running",
+        SandboxState::Stopped => "legend-sandbox-stopped",
     }
 }
 
