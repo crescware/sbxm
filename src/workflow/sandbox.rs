@@ -236,6 +236,23 @@ pub fn path_exists(host: &dyn HostEnvironment, sandbox: &str, path: &str) -> Res
     Ok(exec(host, sandbox, &["test", "-e", path])?.success())
 }
 
+/// Sandbox内にcommandがあるかを、中から確かめるscript。
+///
+/// 見つからない場合も成功で終え、標準出力の有無で答える。exit statusで分けると、
+/// 「commandが無い」と「検査自体が実行できなかった」を区別できない。
+pub fn command_probe(program: &str) -> String {
+    format!("if command -v {program} > /dev/null 2>&1; then printf yes; fi")
+}
+
+/// Sandbox内にcommandがあるか。
+///
+/// Dockerfileは利用者の持ち物であり、何が入っているかは記録から推定せずSandboxを
+/// 観測して答える。
+pub fn has_command(host: &dyn HostEnvironment, sandbox: &str, program: &str) -> Result<bool> {
+    let outcome = exec(host, sandbox, &["sh", "-c", &command_probe(program)])?.require_success()?;
+    Ok(!outcome.stdout_text().trim().is_empty())
+}
+
 /// symlinkを解決できない場合は宣言されたpathのまま比較する。
 fn real_path(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| paths::lexically_standardize(path))

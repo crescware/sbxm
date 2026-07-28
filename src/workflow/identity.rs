@@ -18,31 +18,18 @@ use super::sandbox;
 const GIT_PROTOCOL: &str = "https";
 const GITHUB_HOST: &str = "github.com";
 
+/// Sandbox内でprotocolの設定先になるcommand。sbxm自身は使わない。
+const GH: &str = "gh";
+
 /// Git identityとGitHub protocolを設定する。
 pub fn ensure(host: &dyn HostEnvironment, sandbox: &str, git: &GitIdentity) -> Result<()> {
     ensure_git_config(host, sandbox, "user.name", &git.user_name)?;
     ensure_git_config(host, sandbox, "user.email", &git.user_email)?;
     // `gh`はこの先の工程が一度も呼ばない。入れていないSandboxはそのまま先へ進める。
-    if has_gh(host, sandbox)? {
+    if sandbox::has_command(host, sandbox, GH)? {
         ensure_git_protocol(host, sandbox)?;
     }
     Ok(())
-}
-
-/// Sandbox内に`gh`があるかを、中から確かめるscript。
-///
-/// 見つからない場合も成功で終え、標準出力の有無で答える。exit statusで分けると、
-/// 「`gh`が無い」と「検査自体が実行できなかった」を区別できない。
-pub(super) fn gh_probe() -> &'static str {
-    "if command -v gh > /dev/null 2>&1; then printf yes; fi"
-}
-
-/// Sandbox内に`gh`があるか。
-///
-/// Dockerfileは利用者の持ち物であり、記録から推定せずSandboxを観測して答える。
-fn has_gh(host: &dyn HostEnvironment, sandbox: &str) -> Result<bool> {
-    let outcome = sandbox::exec(host, sandbox, &["sh", "-c", gh_probe()])?.require_success()?;
-    Ok(!outcome.stdout_text().trim().is_empty())
 }
 
 fn ensure_git_config(
@@ -200,7 +187,7 @@ mod tests {
                 .collect();
 
             let (code, stdout) = match inner.as_slice() {
-                ["sh", "-c", script] if *script == gh_probe() => {
+                ["sh", "-c", script] if *script == sandbox::command_probe(GH) => {
                     (0, if self.gh { "yes" } else { "" }.to_string())
                 }
                 // `gh`の無いSandboxで`gh`を起動しようとしたら、testとして失敗させる。
