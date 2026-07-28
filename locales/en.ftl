@@ -162,13 +162,9 @@ error-sbx-login-missing = This host is not signed in to Docker Sandboxes.
 error-sbx-login-unobservable = Whether this host is signed in to Docker Sandboxes could not be read: { $detail }
 error-remote-ssh-unconfigured = ssh has no proxy configuration for { $host }, so sbxm cannot reach a sandbox over SSH.
 error-remote-ssh-unobservable = The SSH configuration for sandboxes could not be read: { $detail }
-error-daemon-session-active = A session is connected to { $sandboxes }, so the Docker Sandboxes daemon was left as it is.
-error-daemon-session-unobservable = This Docker Sandboxes version does not report whether a session is connected to { $sandbox }, so the daemon was left as it is.
 remediation-run-help = Run { $command } to see the accepted arguments.
 remediation-run-init = Run sbxm init to create the global configuration.
 remediation-host-clone-unusable = Inspect { $path } yourself, then move it aside or fix its origin before running the command again.
-remediation-daemon-session-active = Close the shells and editors connected to those sandboxes, then run the command again.
-remediation-daemon-session-unobservable = Update the Docker Sandboxes CLI to a version that reports connected sessions, then run the command again.
 remediation-declared-file-conflict = Compare the two yourself, then run sbxm sync-files to replace the file in the sandbox with the declared one.
 remediation-sandbox-identity-mismatch = Check whose sandbox this is. sbxm does not overwrite a value that is already set.
 github-token-scopes = Issue a personal access token that can read and write this repository. A fine-grained token needs Contents read and write plus Metadata read; a classic token needs the repo scope. The token stays with the proxy and never enters the sandbox.
@@ -301,7 +297,6 @@ legend-placed = the file was written into the sandbox
 legend-unchanged = the sandbox already held the same content
 
 status-item-login = Docker Sandboxes login
-status-item-session-inspection = Active session inspection
 open-connecting = Connecting to { $sandbox } for { $project }.
 open-worktrees = Managed worktrees in this sandbox:
 

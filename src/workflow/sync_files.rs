@@ -15,7 +15,6 @@ use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPath
 use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
-use super::image::template_names;
 use super::{daemon, sandbox};
 
 /// `sync-files`の結果。
@@ -89,9 +88,7 @@ pub fn run(
             )
         })?;
 
-    // Templateはmetadataが正本とする世代から導出する。
-    let templates = template_names(&name, &metadata);
-    sandbox::verify_identity(&entry, &name, &templates, workspace_root)?;
+    sandbox::verify_identity(&entry, &name, workspace_root)?;
 
     if entry.state != SandboxState::Running {
         // 停止中のSandboxを暗黙に起動しない。

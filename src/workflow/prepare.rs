@@ -180,9 +180,7 @@ fn already_built(
         return Ok(None);
     };
 
-    // Templateは、metadataが正本とする世代から導出する。
-    let templates = image::template_names(name, metadata);
-    sandbox::verify_identity(&entry, name, &templates, workspace_root)?;
+    sandbox::verify_identity(&entry, name, workspace_root)?;
 
     let worktrees = observed_worktrees(host, &entry.name, layout, metadata)?;
     Ok(Some(PrepareOutput {

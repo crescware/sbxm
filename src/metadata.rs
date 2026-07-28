@@ -107,21 +107,6 @@ impl ProjectMetadata {
         format!("{}/{}", self.owner, self.repository)
     }
 
-    /// 世代判定の正本となるDockerfile hash。
-    ///
-    /// rebuild intentがあるあいだは、適用予定のtarget世代と切り替え前のprevious世代の
-    /// 両方が正本となる。切替の途中で中断した案件のSandboxは、そのどちらの世代でも
-    /// あり得るため、片方だけを期待すると健全な状態を不一致として扱ってしまう。
-    pub fn generations(&self) -> Vec<&str> {
-        match &self.rebuild {
-            Some(intent) => vec![
-                intent.target_dockerfile_sha256.as_str(),
-                intent.previous_dockerfile_sha256.as_str(),
-            ],
-            None => vec![self.provisioning.dockerfile_sha256.as_str()],
-        }
-    }
-
     /// canonical project IDから決定的に導出したSandbox名。
     pub fn sandbox_name(&self) -> SandboxName {
         SandboxName::derive(&self.canonical_id)

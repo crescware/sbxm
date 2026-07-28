@@ -300,7 +300,6 @@ hostとglobal環境をread-onlyで診断する。login、setup、file更新、da
 検査を実装していない項目は行に出さない。常にerrorとなる行を予約として置かない。
 
 - login状態は、loginを前提とするPhase 2で追加する
-- active session検査の対応状況は、daemon安全性probeと同じPhase 2で追加する
 - Remote SSH対応状況は、SSHで接続するPhase 3で追加する
 
 network policyは`sbx policy ls`のread-only出力から現在値を取得し、`Balanced`との完全一致だけを`ready`とする。`Balanced`以外、command失敗、timeout、parse不能は、検証済みbaselineを確認できないためerrorとしてexit code `1`とする。より制限が強いpolicyも動作と安全性を推測して受け入れない。観測した値と期待値`Balanced`を表示し、policyを自動変更しない。

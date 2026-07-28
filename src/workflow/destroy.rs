@@ -142,10 +142,6 @@ pub fn execute(
     poll: Poll,
 ) -> Result<DestroyOutcome> {
     if prepared.state != ProjectState::NotCreated {
-        if !prepared.force {
-            // 削除の直前に、sessionが接続していないことを確かめ直す。
-            protection::require_no_active_session(host, prepared.name.as_str())?;
-        }
         // 削除は、一覧から消えたことを確かめるまで完了しない。
         inventory::remove(host, &prepared.name, prepared.force, poll)?;
     } else {

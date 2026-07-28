@@ -28,7 +28,7 @@ pub fn ensure_bare_clone(
 ) -> Result<()> {
     let git_dir = layout.bare_git_dir();
 
-    if exists(host, sandbox, &git_dir)? {
+    if sandbox::path_exists(host, sandbox, &git_dir)? {
         verify_bare_clone(host, sandbox, project, &git_dir)?;
     } else {
         sandbox::exec(host, sandbox, &["mkdir", "-p", &layout.bare_root()])?.require_success()?;
@@ -333,7 +333,7 @@ pub fn ensure_worktrees(
             .iter()
             .any(|worktree| worktree.path == name);
 
-        if !exists(host, sandbox, &path)? {
+        if !sandbox::path_exists(host, sandbox, &path)? {
             create_worktree(host, sandbox, &git_dir, &path, branch, mode)?;
         }
         verify_worktree(host, sandbox, &path, &expected_commit, branch, mode)?;
@@ -429,11 +429,6 @@ fn verify_worktree(
         }
     }
     Ok(())
-}
-
-/// Sandbox内にpathが存在するか。
-fn exists(host: &dyn HostEnvironment, sandbox: &str, path: &str) -> Result<bool> {
-    Ok(sandbox::exec(host, sandbox, &["test", "-e", path])?.success())
 }
 
 /// Sandbox内のcommandの標準出力。

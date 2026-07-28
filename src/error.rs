@@ -157,8 +157,6 @@ pub enum ErrorId {
     NetworkPolicyMismatch,
     NetworkPolicyUnobservable,
     DaemonUnobservable,
-    DaemonSessionActive,
-    DaemonSessionUnobservable,
 
     // --- init ---
     InitRequiresTty,
@@ -287,8 +285,6 @@ impl ErrorId {
             ErrorId::NetworkPolicyMismatch => "network-policy-mismatch",
             ErrorId::NetworkPolicyUnobservable => "network-policy-unobservable",
             ErrorId::DaemonUnobservable => "daemon-unobservable",
-            ErrorId::DaemonSessionActive => "daemon-session-active",
-            ErrorId::DaemonSessionUnobservable => "daemon-session-unobservable",
 
             ErrorId::InitRequiresTty => "init-requires-tty",
             ErrorId::PromptUnreadable => "prompt-unreadable",
@@ -641,8 +637,6 @@ mod tests {
             ErrorId::NetworkPolicyMismatch,
             ErrorId::NetworkPolicyUnobservable,
             ErrorId::DaemonUnobservable,
-            ErrorId::DaemonSessionActive,
-            ErrorId::DaemonSessionUnobservable,
             ErrorId::InitRequiresTty,
             ErrorId::PromptUnreadable,
             ErrorId::GitIdentityInvalid,
