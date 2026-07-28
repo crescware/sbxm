@@ -331,4 +331,4 @@ fn adopt_dockerfile(paths: &ProjectPaths) -> Result<String> {
 
 #[cfg(test)]
 #[path = "add_test.rs"]
-pub mod add_test;
+mod add_test;

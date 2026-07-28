@@ -3,6 +3,7 @@ use crate::config::{GitIdentity, GlobalConfig};
 use crate::i18n::Locale;
 use crate::metadata::RebuildIntent;
 use crate::paths::AbsoluteBasePath;
+use crate::testing::request;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::Duration;
@@ -21,14 +22,6 @@ fn setup() -> (tempfile::TempDir, GlobalConfig) {
     (dir, config)
 }
 
-pub fn request(project: &str, worktrees: Option<u32>, detach: Option<&str>) -> AddRequest {
-    AddRequest {
-        project: ProjectId::parse(project).expect("valid project id"),
-        worktrees,
-        detach: detach.map(|value| value.to_string()),
-    }
-}
-
 fn mode_of(path: &Path) -> u32 {
     fs::metadata(path)
         .expect("the path exists")
@@ -36,9 +29,6 @@ fn mode_of(path: &Path) -> u32 {
         .mode()
         & 0o777
 }
-
-pub const COMMIT: &str = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
-
 /// `sbx ls`だけを答え、Sandbox内のcommandは成功として扱うhost。
 #[test]
 fn registering_a_project_creates_the_documented_layout() {

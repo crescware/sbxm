@@ -1,6 +1,7 @@
 use super::*;
 use crate::command::{CommandOutcome, OutputPolicy};
 use crate::project::ProjectId;
+use crate::testing::DIGEST;
 use std::cell::RefCell;
 use std::os::unix::process::ExitStatusExt;
 
@@ -107,8 +108,6 @@ fn canonical() -> CanonicalProjectId {
 fn sandbox() -> SandboxName {
     SandboxName::derive(&canonical())
 }
-
-const DIGEST: &str = "1111111111111111111111111111111111111111111111111111111111111111";
 
 fn inspect_output(labels: &[(&str, &str)]) -> String {
     let labels = labels

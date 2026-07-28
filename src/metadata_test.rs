@@ -1,4 +1,5 @@
 use super::*;
+use crate::testing::DIGEST;
 use std::os::unix::fs::PermissionsExt;
 
 fn canonical(value: &str) -> CanonicalProjectId {
@@ -7,7 +8,6 @@ fn canonical(value: &str) -> CanonicalProjectId {
         .canonical()
 }
 
-const DIGEST: &str = "1111111111111111111111111111111111111111111111111111111111111111";
 const OTHER_DIGEST: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 
 fn attached(owner: &str, repository: &str) -> ProjectMetadata {

@@ -275,4 +275,4 @@ fn duplicated(names: &[&str]) -> Error {
 
 #[cfg(test)]
 #[path = "inventory_test.rs"]
-pub mod inventory_test;
+mod inventory_test;
