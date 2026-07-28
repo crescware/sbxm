@@ -288,12 +288,13 @@ projectを完全指定した非TTYの通常modeとforce modeでは対話確認�
 
 ## 13. Sandbox削除
 
-Sandboxが存在する場合だけ、実機で確認した各modeのcommandを実行する。
+Sandboxが存在する場合だけ、実機で確認したcommandを実行する。
 
 ```text
-sbx rm <sandbox-name>
 sbx rm --force <sandbox-name>
 ```
+
+`--force`は常に付ける。これが省くのは`sbx`の確認promptだけであり、削除してよいかはsbxmが先に判定している。`destroy`は自前の確認も済ませている。非対話で走る実行ではpromptに答える手段がなく、`sbx`は`stdin is not a terminal`で失敗する。sbxmの`--force`はsbxm自身のデータ保護検査を省くことを指し、別物である。
 
 削除後、`sbx ls --json`を最大60秒pollし、nameが存在しないことを確認する。`registered`では削除commandを実行せず、一覧で不在を1回確認して管理情報のcleanupへ進む。
 
