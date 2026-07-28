@@ -117,6 +117,7 @@ pub fn run(
     let ready = sandbox::ensure(host, &name, &loaded, workspace_root)?;
     // hostのSSH Agentが届かないことを、daemonの起動条件から推定せず中から確かめる。
     sandbox::require_credentials_isolated(host, &ready.name)?;
+    secret::require_placeholder_present(host, &ready.name)?;
 
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
     identity::ensure(host, &ready.name, &config.git)?;
@@ -387,6 +388,9 @@ mod tests {
         name: String,
         workspace: String,
         template: String,
+        /// 作成時にcustom secretが登録済みだったか。実物と同じく、あとから登録しても
+        /// 既に存在するSandboxへはplaceholderが届かない。
+        placeholder: bool,
     }
 
     const IMAGE_ID: &str =
@@ -616,10 +620,16 @@ mod tests {
                     _kit,
                     workspace,
                 ] => {
+                    let registered = self
+                        .secrets
+                        .borrow()
+                        .iter()
+                        .any(|target| target == crate::workflow::secret::GITHUB_HOST);
                     self.sandboxes.borrow_mut().push(SandboxRow {
                         name: name.to_string(),
                         workspace: workspace.to_string(),
                         template: template.to_string(),
+                        placeholder: registered,
                     });
                     (0, String::new())
                 }
@@ -660,10 +670,23 @@ mod tests {
                 return (0, String::new());
             };
             let inner = &args[position + 1..];
+            let sandbox = args[position - 1];
             let missing = (1, String::new());
             let ok = (0, String::new());
 
             match inner {
+                ["sh", "-c", script] if *script == super::super::secret::placeholder_probe() => {
+                    let carried = self
+                        .sandboxes
+                        .borrow()
+                        .iter()
+                        .any(|row| row.name == sandbox && row.placeholder);
+                    if carried {
+                        (0, "sbx-cs-example".to_string())
+                    } else {
+                        ok
+                    }
+                }
                 // 実物と同じく、SSH Agentは届かない。`printenv`は未設定を`1`で示す。
                 ["printenv", "SSH_AUTH_SOCK"] => missing,
                 ["ssh-add", "-L"] => (crate::workflow::sandbox::SSH_ADD_NO_AGENT, String::new()),

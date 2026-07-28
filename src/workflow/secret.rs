@@ -65,6 +65,42 @@ pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     ))
 }
 
+/// Sandboxの中でplaceholderを読むscript。
+///
+/// 未設定でも失敗させず空文字を返させる。`printenv`のexit statusで分けると、
+/// 「設定されていない」と「読めなかった」を区別できない。
+pub(super) fn placeholder_probe() -> String {
+    format!("printf %s \"${{{GITHUB_TOKEN_ENV}:-}}\"")
+}
+
+/// placeholderがSandboxへ届いていることを、中から確かめる。
+///
+/// custom secretはSandboxの作成時に結び付く。登録済みという事実から届いたと推定せず、
+/// 環境変数を観測する。値は判定にも表示にも使わず、空かどうかだけを見る。
+pub fn require_placeholder_present(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
+    let outcome = super::sandbox::exec(host, sandbox, &["sh", "-c", &placeholder_probe()])?
+        .require_success()?;
+    if !outcome.stdout_text().trim().is_empty() {
+        return Ok(());
+    }
+
+    Err(Error::single(
+        Diagnostic::new(
+            ErrorId::SandboxSecretNotApplied,
+            msg!(
+                "error-sandbox-secret-not-applied",
+                sandbox = sandbox,
+                env = GITHUB_TOKEN_ENV,
+                host = GITHUB_HOST
+            ),
+        )
+        .remediation(msg!(
+            "remediation-sandbox-secret-not-applied",
+            command = format!("sbx rm {sandbox}")
+        )),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +208,33 @@ mod tests {
                 .args
                 .iter()
                 .any(|(_, value)| value == &register_command("sbxm-example"))
+        );
+    }
+
+    #[test]
+    fn a_sandbox_that_carries_the_placeholder_passes_the_check() {
+        let host = FakeSbx::listing("sbx-cs-example");
+        require_placeholder_present(&host, "sbxm-example").expect("the placeholder is there");
+    }
+
+    #[test]
+    fn a_sandbox_without_the_placeholder_is_refused_instead_of_assumed_ready() {
+        // 登録済みという事実からSandboxへ届いたと推定しない。作成より後に登録した場合、
+        // secretは一覧に並んでいてもSandboxの中には現れない。
+        let host = FakeSbx::listing("");
+        let error = require_placeholder_present(&host, "sbxm-example")
+            .expect_err("git inside cannot authenticate without the placeholder");
+
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxSecretNotApplied));
+        let remediation = error.diagnostics()[0]
+            .remediation
+            .as_ref()
+            .expect("the user is told how to get out of it");
+        assert!(
+            remediation
+                .args
+                .iter()
+                .any(|(_, value)| value == "sbx rm sbxm-example")
         );
     }
 

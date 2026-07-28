@@ -267,6 +267,8 @@ impl Switch<'_> {
 
         let ready = sandbox::ensure(host, name, template, workspace_root)?;
 
+        secret::require_placeholder_present(host, &ready.name)?;
+
         identity::ensure(host, &ready.name, &config.git)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
@@ -367,6 +369,11 @@ mod tests {
         )
         .answering(&format!("exec {name} -- printenv SSH_AUTH_SOCK"), 1, "")
         .answering(&format!("exec {name} -- ssh-add -L"), 2, "")
+        .answering(
+            &format!("exec {name} -- sh -c {}", secret::placeholder_probe()),
+            0,
+            "sbx-cs-example",
+        )
     }
 
     #[test]
