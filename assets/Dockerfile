@@ -49,7 +49,7 @@ ENV PATH=/home/agent/.local/bin:/home/agent/.local/share/mise/shims:${PATH}
 ARG NODE_VERSION=22.14.0
 RUN mise use --global "node@${NODE_VERSION}" && mise install
 
-ARG CLAUDE_CODE_VERSION=1.0.44
+ARG CLAUDE_CODE_VERSION=2.1.220
 ARG CODEX_VERSION=0.20.0
 RUN npm install -g \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
