@@ -37,6 +37,36 @@ RUN set -eux; \
     rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_${architecture}"; \
     gh --version
 
+ARG CLAUDE_CODE_VERSION=2.1.220
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) slice="linux-x64" ;; \
+      arm64) slice="linux-arm64" ;; \
+      *) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/claude.tar.gz \
+      "https://github.com/anthropics/claude-code/releases/download/v${CLAUDE_CODE_VERSION}/claude-${slice}.tar.gz"; \
+    tar -xzf /tmp/claude.tar.gz -C /tmp; \
+    install -m 0755 /tmp/claude /usr/local/bin/claude; \
+    rm -f /tmp/claude.tar.gz /tmp/claude; \
+    claude --version
+
+# The release tag carries a `rust-` prefix that the version itself does not, and
+# the tarball holds the binary under its target triple rather than under `codex`.
+ARG CODEX_VERSION=0.145.0
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) target="x86_64-unknown-linux-musl" ;; \
+      arm64) target="aarch64-unknown-linux-musl" ;; \
+      *) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/codex.tar.gz \
+      "https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-${target}.tar.gz"; \
+    tar -xzf /tmp/codex.tar.gz -C /tmp; \
+    install -m 0755 "/tmp/codex-${target}" /usr/local/bin/codex; \
+    rm -f /tmp/codex.tar.gz "/tmp/codex-${target}"; \
+    codex --version
+
 # The workspace root every managed worktree lives under.
 RUN install -d -o agent -g agent -m 0755 /home/agent/work
 
@@ -45,14 +75,5 @@ USER agent
 ARG MISE_VERSION=v2026.7.15
 RUN curl -fsSL https://mise.run | MISE_VERSION="${MISE_VERSION}" sh
 ENV PATH=/home/agent/.local/bin:/home/agent/.local/share/mise/shims:${PATH}
-
-ARG NODE_VERSION=24.18.0
-RUN mise use --global "node@${NODE_VERSION}" && mise install
-
-ARG CLAUDE_CODE_VERSION=2.1.220
-ARG CODEX_VERSION=0.145.0
-RUN npm install -g \
-      "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-      "@openai/codex@${CODEX_VERSION}"
 
 WORKDIR /home/agent/work
