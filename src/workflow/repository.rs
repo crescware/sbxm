@@ -33,8 +33,24 @@ pub fn ensure_bare_clone(
     } else {
         sandbox::exec(host, sandbox, &["mkdir", "-p", &layout.bare_root()])?.require_success()?;
         let url = git::https_remote_url(project.owner(), project.repository());
-        sandbox::exec_with_progress(host, sandbox, &["git", "clone", "--bare", &url, &git_dir])?
-            .require_success()?;
+        // `git clone --bare`はremoteのbranchを`refs/heads/*`へ複製する。そのbranchは
+        // worktreeを作るときに同じ名前で作ろうとするものと衝突する。bare repositoryは
+        // remote-tracking refだけを持つ入れ物として始める。
+        sandbox::exec(host, sandbox, &["git", "init", "--bare", &git_dir])?.require_success()?;
+        sandbox::exec(
+            host,
+            sandbox,
+            &[
+                "git",
+                "--git-dir",
+                &git_dir,
+                "remote",
+                "add",
+                "origin",
+                &url,
+            ],
+        )?
+        .require_success()?;
         sandbox::exec(
             host,
             sandbox,
@@ -607,10 +623,11 @@ mod tests {
         ensure_bare_clone(&host, "sbxm-example", &project(), &layout()).expect("clone");
 
         assert!(
-            host.ran("git clone --bare https://github.com/Example-Org/Example-Repo.git"),
+            host.ran("git init --bare /home/agent/work/example-repo/.git"),
             "{:?}",
             host.calls()
         );
+        assert!(host.ran("remote add origin https://github.com/Example-Org/Example-Repo.git"));
         assert!(host.ran(&format!("config remote.origin.fetch {FETCH_REFSPEC}")));
         assert!(host.ran("fetch --prune origin"));
         assert!(

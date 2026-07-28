@@ -757,8 +757,11 @@ mod tests {
                         .insert(key.to_string(), value.to_string());
                     ok
                 }
-                ["git", "clone", "--bare", url, git_dir] => {
+                ["git", "init", "--bare", git_dir] => {
                     self.present.borrow_mut().insert(git_dir.to_string());
+                    ok
+                }
+                ["git", "--git-dir", _, "remote", "add", "origin", url] => {
                     self.repository
                         .borrow_mut()
                         .insert("remote.origin.url".to_string(), url.to_string());
@@ -939,7 +942,7 @@ mod tests {
         ("sbx cp --follow-link", ErrorId::ExternalCommandFailed),
         ("config --global user.name", ErrorId::ExternalCommandFailed),
         ("sbx secret ls", ErrorId::ExternalCommandFailed),
-        ("git clone --bare", ErrorId::ExternalCommandFailed),
+        ("git init --bare", ErrorId::ExternalCommandFailed),
         ("check-ref-format", ErrorId::InvalidBranchName),
         ("worktree add", ErrorId::ExternalCommandFailed),
     ];
@@ -991,7 +994,7 @@ mod tests {
             "docker build",
             "sbx template load",
             "sbx create",
-            "git clone --bare",
+            "git init --bare",
         ] {
             assert!(
                 !tail.iter().any(|call| call.contains(done)),
@@ -1058,8 +1061,8 @@ mod tests {
                 .unwrap_or_else(|| panic!("no command matched {needle}: {calls:?}"))
         };
         assert!(
-            position("credential.https://github.com.helper") < position("git clone --bare"),
-            "a clone without the credential asks for a username and never finishes"
+            position("credential.https://github.com.helper") < position("fetch --prune origin"),
+            "a fetch without the credential asks for a username and never finishes"
         );
     }
 
@@ -1075,8 +1078,8 @@ mod tests {
             .expect_err("a build without repository access cannot continue");
         assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
         assert!(
-            !world.ran("git clone --bare"),
-            "the sandbox repository is not cloned without the secret"
+            !world.ran("git init --bare"),
+            "the sandbox repository is not made without the secret"
         );
         // custom secretはSandboxの作成時に結び付く。先に作ってしまうと、登録しても
         // placeholderの届かないSandboxが残り、作り直しを強いることになる。
@@ -1128,7 +1131,8 @@ mod tests {
             );
         }
         // bare repositoryとworktreeは、1 treeでも3 treesでも分かれている。
-        assert!(world.ran("git clone --bare https://github.com/Example-Org/Example-Repo.git /home/agent/work/example-repo/.git"));
+        assert!(world.ran("git init --bare /home/agent/work/example-repo/.git"));
+        assert!(world.ran("remote add origin https://github.com/Example-Org/Example-Repo.git"));
     }
 
     #[test]
@@ -1145,7 +1149,6 @@ mod tests {
             ("git clone git@github.com", TimeoutClass::RepositoryTransfer),
             ("sbx template load", TimeoutClass::SandboxLifecycle),
             ("sbx create", TimeoutClass::SandboxLifecycle),
-            ("git clone --bare", TimeoutClass::RepositoryTransfer),
             ("fetch --prune origin", TimeoutClass::RepositoryTransfer),
         ] {
             assert_eq!(

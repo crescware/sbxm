@@ -454,13 +454,15 @@ Sandbox内:
 
 ```text
 mkdir -p <bare-root>
-git clone --bare
+git init --bare <bare-git-dir>
+git --git-dir <bare-git-dir> remote add origin
   https://github.com/<owner-display>/<repository-display>.git
-  <bare-git-dir>
 git --git-dir <bare-git-dir> config
   remote.origin.fetch +refs/heads/*:refs/remotes/origin/*
 git --git-dir <bare-git-dir> fetch --prune origin
 ```
+
+`git clone --bare`は使わない。remoteのbranchをすべて`refs/heads/*`へ複製するため、attached modeが同じ名前でlocal branchを作ろうとした時点で`a branch named <branch> already exists`となる。空のbare repositoryへfetchすれば`refs/heads/*`は空のまま始まり、local branchはworktreeを作るときにだけ生まれる。bare repositoryの中のlocal branchがsbxmの作ったものだけになるため、managed worktreeの判定も素直になる。
 
 再利用条件:
 
