@@ -621,6 +621,31 @@ mod tests {
     }
 
     #[test]
+    fn metadata_written_before_worktrees_stopped_being_recorded_still_parses() {
+        // 記録していた時期のfile。managed worktreeは本数から導けるため読む必要がなく、
+        // 残っていても案件の目標構成は変わらない。
+        let text = "\
+version = 1
+owner = \"Example-Org\"
+repository = \"Example-Repo\"
+canonical_id = \"example-org/example-repo\"
+
+[provisioning]
+mode = \"detached\"
+start_ref = \"develop\"
+requested_worktrees = 2
+dockerfile_sha256 = \"1111111111111111111111111111111111111111111111111111111111111111\"
+
+[[worktrees.managed]]
+path = \"example-repo.tree-0\"
+created_from = \"refs/remotes/origin/develop\"
+";
+        let parsed = parse(text, Path::new("/tmp/project.toml")).expect("the older form parses");
+        assert_eq!(parsed.provisioning.requested_worktrees, 2);
+        assert_eq!(parsed.provisioning.start_ref.as_deref(), Some("develop"));
+    }
+
+    #[test]
     fn metadata_round_trips_through_the_rendered_form() {
         let metadata = attached("Example-Org", "Example-Repo");
         assert_eq!(round_trip(&metadata), metadata);
