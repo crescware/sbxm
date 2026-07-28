@@ -21,7 +21,7 @@ use super::files::{self, Conflict};
 use super::image::{self, image_name};
 use super::inventory::{self, Poll, ProjectState};
 use super::protection::{self, Unmanaged};
-use super::{daemon, identity, repository, sandbox, template};
+use super::{daemon, identity, repository, sandbox, secret, template};
 
 /// `rebuild`の結果。
 #[derive(Debug, Clone)]
@@ -265,9 +265,13 @@ fn switch(
 
     identity::ensure(host, &ready.name, &config.git)?;
     files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
+    // 再作成したSandboxは、`add`と同じ条件でGitHubへ届く必要がある。
+    secret::require_github(host, &ready.name)?;
     repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
     let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
     repository::ensure_worktrees(host, &ready.name, &layout, paths, metadata, &branch)?;
+    // 適用済みhashを更新する前に、credentialの隔離まで確かめる。
+    sandbox::require_credentials_isolated(host, &ready.name)?;
     Ok(())
 }
 
@@ -391,6 +395,17 @@ mod tests {
 
     fn project_id(value: &str) -> ProjectId {
         ProjectId::parse(value).expect("valid project id")
+    }
+
+    /// 再作成後の検証を通るSandbox。secretがあり、SSH Agentへ到達できない。
+    fn verified(host: FakeSbx, name: &str) -> FakeSbx {
+        host.answering(
+            &format!("secret ls {name} --json"),
+            0,
+            r#"[{"name":"github"}]"#,
+        )
+        .answering(&format!("exec {name} -- printenv SSH_AUTH_SOCK"), 1, "")
+        .answering(&format!("exec {name} -- ssh-add -L"), 2, "")
     }
 
     #[test]
@@ -575,7 +590,7 @@ mod tests {
         let worktree = layout.worktree(0);
         let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
         let name = project.sandbox.as_str();
-        let host = host
+        let host = verified(host, name)
             .answering(
                 &format!("exec {name} -- git --git-dir {git_dir} rev-parse --is-bare-repository"),
                 0,
@@ -732,7 +747,7 @@ mod tests {
         let worktree = layout.worktree(0);
         let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
         let name = project.sandbox.as_str();
-        let host = host
+        let host = verified(host, name)
             .answering(
                 &format!("exec {name} -- git --git-dir {git_dir} rev-parse --is-bare-repository"),
                 0,
@@ -857,7 +872,7 @@ mod tests {
         let git_dir = layout.bare_git_dir();
         let worktree = layout.worktree(0);
         let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
-        let host = host
+        let host = verified(host, project.sandbox.as_str())
             .answering(
                 &format!(
                     "exec {} -- git --git-dir {git_dir} rev-parse --is-bare-repository",
@@ -928,6 +943,11 @@ mod tests {
         assert!(
             !host.ran("image save"),
             "an image that is already built is not rebuilt: {:?}",
+            host.calls()
+        );
+        assert!(
+            host.ran("secret ls") && host.ran("ssh-add -L"),
+            "the recreated sandbox reaches GitHub and not the host agent: {:?}",
             host.calls()
         );
     }

@@ -261,6 +261,60 @@ fn real_path(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| paths::lexically_standardize(path))
 }
 
+/// hostのSSH AgentへSandboxの中から到達できるか。
+///
+/// 露出していないことは、検査commandが答えた場合にだけ言える。検査が成立しなかった
+/// 場合を「露出していない」へ丸めず、判定できないerrorとして返す。
+pub fn ssh_agent_is_exposed(host: &dyn HostEnvironment, sandbox: &str) -> Result<bool> {
+    let socket = exec(host, sandbox, &["printenv", "SSH_AUTH_SOCK"])?;
+    let socket_set = match inner_exit_code(&socket) {
+        Some(0) => !socket.stdout_text().trim().is_empty(),
+        // `printenv`は未設定のとき`1`で終わる。
+        Some(1) => false,
+        _ => return Err(unobservable(&socket, "SSH_AUTH_SOCK")),
+    };
+
+    let keys = exec(host, sandbox, &["ssh-add", "-L"])?;
+    // 公開鍵本文は読まず、agentへ接続できたかどうかだけを見る。
+    let agent_reachable = match inner_exit_code(&keys) {
+        // 鍵の有無にかかわらず、agentへ接続できた時点で露出している。
+        Some(0) | Some(1) => true,
+        Some(SSH_ADD_NO_AGENT) => false,
+        _ => return Err(unobservable(&keys, "ssh-add")),
+    };
+
+    Ok(socket_set || agent_reachable)
+}
+
+/// 作成または再作成したSandboxが、hostのcredentialから隔離されていること。
+pub fn require_credentials_isolated(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
+    if !ssh_agent_is_exposed(host, sandbox)? {
+        return Ok(());
+    }
+    Err(Error::single(
+        crate::error::Diagnostic::new(
+            ErrorId::SshAgentExposed,
+            msg!("security-ssh-agent-exposed-description", sandbox = sandbox),
+        )
+        .remediation(msg!("security-ssh-agent-exposed-remediation")),
+    ))
+}
+
+/// 内側のcommandが答えなかった場合の診断。原値をそのまま残す。
+pub fn unobservable(outcome: &CommandOutcome, subject: &str) -> Error {
+    Error::single(
+        crate::error::Diagnostic::new(
+            ErrorId::SandboxCheckUnobservable,
+            msg!(
+                "error-sandbox-check-unobservable",
+                subject = subject,
+                exit_status = outcome.status
+            ),
+        )
+        .external(outcome.failure()),
+    )
+}
+
 fn unusable(name: &str, detail: String) -> Error {
     Error::new(
         ErrorId::SandboxUnusable,
@@ -327,6 +381,76 @@ mod tests {
                 stderr_lossy: false,
             })
         }
+    }
+
+    /// SSH Agent検査の2つのcommandに、決め打ちの結果を返すhost。
+    struct FakeProbe {
+        socket: (i32, &'static str),
+        keys: (i32, &'static str),
+    }
+
+    impl HostEnvironment for FakeProbe {
+        fn command_exists(&self, _program: &str) -> bool {
+            true
+        }
+
+        fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+            let (code, stdout) = if spec.args.iter().any(|arg| arg == "printenv") {
+                self.socket
+            } else {
+                self.keys
+            };
+            Ok(CommandOutcome {
+                program: spec.program.clone(),
+                args: spec.args.clone(),
+                working_dir: spec.working_dir.clone(),
+                status: std::process::ExitStatus::from_raw(code << 8),
+                stdout: stdout.as_bytes().to_vec(),
+                stderr: Vec::new(),
+                stderr_lossy: false,
+            })
+        }
+    }
+
+    #[test]
+    fn a_sandbox_that_cannot_reach_the_host_agent_passes_the_isolation_check() {
+        // `printenv`は未設定を`1`で、`ssh-add`はagent不在を`2`で示す。
+        let host = FakeProbe {
+            socket: (1, ""),
+            keys: (SSH_ADD_NO_AGENT, ""),
+        };
+        assert!(!ssh_agent_is_exposed(&host, "sandbox").expect("the check answered"));
+        require_credentials_isolated(&host, "sandbox").expect("nothing is exposed");
+    }
+
+    #[test]
+    fn either_a_socket_or_a_reachable_agent_counts_as_exposed() {
+        let by_socket = FakeProbe {
+            socket: (0, "/tmp/agent.sock\n"),
+            keys: (SSH_ADD_NO_AGENT, ""),
+        };
+        let by_agent = FakeProbe {
+            socket: (1, ""),
+            // 鍵が1件もない`1`でも、agentへ接続できている。
+            keys: (1, ""),
+        };
+
+        for host in [by_socket, by_agent] {
+            let error = require_credentials_isolated(&host, "sandbox")
+                .expect_err("the host agent is reachable from inside");
+            assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
+        }
+    }
+
+    #[test]
+    fn a_probe_that_could_not_run_is_not_read_as_isolation() {
+        let host = FakeProbe {
+            socket: (126, ""),
+            keys: (SSH_ADD_NO_AGENT, ""),
+        };
+        let error = require_credentials_isolated(&host, "sandbox")
+            .expect_err("a check that did not answer never means isolated");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
     }
 
     /// 中立Workspaceのrootを、実行時と同じ条件で用意する。
