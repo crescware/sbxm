@@ -3,6 +3,8 @@
 //! runningなSandboxを削除する通常modeの`rebuild`と`destroy`は、同じ列挙と判定規則で
 //! 保存されていない作業がないことを確かめる。判定できない場合は削除しない。
 
+use std::collections::BTreeSet;
+
 use crate::command::{CommandOutcome, HostEnvironment};
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::ProjectMetadata;
@@ -145,8 +147,13 @@ pub fn inspect(
 
     let bare_root = layout.bare_root();
     let entries = worktree::list(host, sandbox_name, layout)?;
+    let declared: BTreeSet<&str> = metadata
+        .managed_worktrees
+        .iter()
+        .map(|worktree| worktree.path.as_str())
+        .collect();
     let mut worktrees = Vec::new();
-    let mut seen: Vec<String> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
 
     for entry in entries {
         if entry.bare {
@@ -166,10 +173,7 @@ pub fn inspect(
                 .remediation(msg!("remediation-worktree-outside-repository")),
             ));
         };
-        let managed = metadata
-            .managed_worktrees
-            .iter()
-            .any(|worktree| worktree.path == relative);
+        let managed = declared.contains(relative.as_str());
         if !managed && unmanaged == Unmanaged::Refused {
             // 保存状態にかかわらず拒否する。commitしても解消しないため案内も分ける。
             return Err(Error::single(
@@ -181,7 +185,7 @@ pub fn inspect(
             ));
         }
 
-        seen.push(relative.clone());
+        seen.insert(relative.clone());
         worktrees.push(examine(host, sandbox_name, &entry, &relative, managed)?);
     }
 
@@ -190,7 +194,7 @@ pub fn inspect(
         command = format!("sbxm status {}", metadata.display_id())
     );
     for declared in &metadata.managed_worktrees {
-        if !seen.contains(&declared.path) {
+        if !seen.contains(declared.path.as_str()) {
             // metadataとGitの食い違いであり、保存されていない作業とは別の事象である。
             return Err(Error::single(
                 Diagnostic::new(
