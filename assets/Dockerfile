@@ -6,6 +6,7 @@
 #
 # Rules this file has to keep:
 #   - the base image stays pinned by digest
+#   - every tool it installs names its version in an ARG and fetches that
 #   - no secret value is written into the image
 #   - no COPY or ADD: sbxm builds with an empty build context
 
