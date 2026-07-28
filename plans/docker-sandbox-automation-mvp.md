@@ -5,7 +5,7 @@
 この文書は、`sbxm` MVPの目的、境界、共通の安全原則、公開CLI、全体状態モデルを定める。個々の処理手順、外部commandとの契約、再実行規則、test caseはPhase別仕様を正本とする。
 
 - [Phase 1: 共通基盤、`init`、global `status`](specs/phase-1-foundation-init.md)
-- [Phase 2: `add`と`sync-files`](specs/phase-2-add.md)
+- [Phase 2: `add`と`apply`](specs/phase-2-add.md)
 - [Phase 3: `open`、`stop`、`ls`、`status`](specs/phase-3-daily-operations.md)
 - [Phase 4: `rebuild`、`destroy`とE2E検証](specs/phase-4-destroy-validation.md)
 
@@ -92,7 +92,7 @@ Docker Sandboxes CLIは0.37.0以上を要件とする。ただしEarly Accessで
 sbxm [--lang <ja|en>] init
 sbxm [--lang <ja|en>] init --base-path <PATH> --git-user-name <NAME> --git-user-email <EMAIL>
 sbxm [--lang <ja|en>] add <owner>/<repository> [--worktrees <N>] [--detach <BRANCH>]
-sbxm [--lang <ja|en>] sync-files <owner>/<repository>
+sbxm [--lang <ja|en>] apply <owner>/<repository> [--files] [--worktrees <N>]
 sbxm [--lang <ja|en>] rebuild <owner>/<repository>
 sbxm [--lang <ja|en>] open [<owner>/<repository>]
 sbxm [--lang <ja|en>] stop [<owner>/<repository>...]
@@ -115,7 +115,7 @@ sbxm --version
 - 非TTYで引数なし: 対象を探索せずusage errorとする
 - promptはstdinから読み、stderrへ表示する。両方がTTYでなければusage errorとする
 - `open`と`destroy`は単一選択、`stop`は1件以上の複数選択とする
-- `add`、`sync-files`、`rebuild`はproject引数の完全指定を必須とし、案件選択promptを出さない
+- `add`、`apply`、`rebuild`はproject引数の完全指定を必須とし、案件選択promptを出さない
 - `status`は`--global`（短縮形`-g`）または`<owner>/<repository>`のどちらか一方を必須とし、案件選択promptを出さない
 - `destroy --force`はTTYかどうかにかかわらずproject引数の完全指定を必須とする
 - promptに既定選択を設けない
@@ -262,7 +262,7 @@ previous_dockerfile_sha256 = "<sha256>"
 
 ### 8.2 Command別状態遷移
 
-| 現在状態 | `add` | `sync-files` | `rebuild` | `open` | `stop` | `destroy` |
+| 現在状態 | `add` | `apply` | `rebuild` | `open` | `stop` | `destroy` |
 |---|---|---|---|---|---|---|
 | `unmanaged` | 新規登録して構築 | 対象未登録error | 対象未登録error | 対象未登録error | 対象未登録error | 対象未登録error |
 | `registered` | 保存済み目標構成で構築を継続 | Sandbox未作成error | rebuild intentがあれば再構築を継続、なければ`add`を案内 | `add`を案内してerror | no-op成功 | 管理情報を破棄して`unmanaged` |
@@ -270,7 +270,7 @@ previous_dockerfile_sha256 = "<sha256>"
 | `running` | 構築済みとしてno-op成功 | 宣言fileを再配置 | 安全検査後に再構築 | そのまま接続 | 停止 | 通常modeはsession・保存状態検証後、force modeは検証なしで削除 |
 | `inconsistent` | 診断付きerror | 診断付きerror | 診断付きerror | error | error | error |
 
-`add`は新規登録と中断した初回構築の継続を担当する。`sync-files`は現在のglobal configにある`[[files]]`だけをrunning Sandboxへ再配置し、Git、Dockerfile、image、Template、worktreeを変更しない。`rebuild`はDockerfile変更を既存案件へ適用するため、安全検査後にSandboxを再作成する。`destroy`後はproject metadataを削除して`unmanaged`になるため、再構築には新しい目標構成を指定して`add`を実行する。
+`add`は新規登録と中断した初回構築の継続を担当する。`apply`は構築済み案件へ、Sandboxを作り直さずに反映できる変更を適用する。適用する対象はoptionで明示させ、`--files`はglobal configの`[[files]]`を再配置し、`--worktrees N`はmanaged worktreeを`N`本にする。Dockerfile、image、Templateは変更しない。`rebuild`はDockerfile変更を既存案件へ適用するため、安全検査後にSandboxを再作成する。`destroy`後はproject metadataを削除して`unmanaged`になるため、再構築には新しい目標構成を指定して`add`を実行する。
 
 ## 9. 表示言語と出力
 
@@ -300,7 +300,7 @@ CLI parserを含む内部libraryの既定exit codeを公開契約へ透過しな
 ## 11. 実装順と品質gate
 
 1. PR 1 / Phase 1で`init`と`status --global`、およびこの2 commandが必要とする共通型、設定、i18n、command runnerを実装する
-2. PR 2 / Phase 2で`add`と`sync-files`を実装する
+2. PR 2 / Phase 2で`add`と`apply`を実装する
 3. PR 3 / Phase 3で日常操作を実装する
 4. PR 4 / Phase 4で共通データ保護検査、`rebuild`、`destroy`とE2Eを実装する
 
@@ -325,7 +325,7 @@ Phase 1〜4はそれぞれ独立した1 PRとし、合計4 PRで実装する。�
 - 対話選択の操作速度
 - 日本語labelとenum凡例の冗長さ
 - `add`の中断理由と同じcommandによる再開導線
-- `sync-files`の利用頻度と命名
+- `apply`が受け取る対象の増やし方
 - `rebuild`の所要時間と失敗後の再開導線
 - `open`後のworktree移動支援
 - worktree追加・削除command

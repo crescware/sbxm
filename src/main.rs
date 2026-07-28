@@ -34,8 +34,8 @@ use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
 use workflow::select::TerminalProjectPrompt;
 use workflow::{
-    add, destroy, inventory, ls, open, prepare, rebuild, sandbox, secret, status_global,
-    status_project, stop, sync_files,
+    add, apply, destroy, inventory, ls, open, prepare, rebuild, sandbox, secret, status_global,
+    status_project, stop,
 };
 
 fn main() -> ProcessExitCode {
@@ -263,7 +263,7 @@ fn dispatch(
             }
         }
 
-        Command::SyncFiles(project) => {
+        Command::Apply(arguments) => {
             let (config, catalog) = match require_config(location, lang_option) {
                 Ok(pair) => pair,
                 Err(error) => {
@@ -271,14 +271,19 @@ fn dispatch(
                     return error.exit_code();
                 }
             };
-            match sync_files::run(
+            let scope = apply::Scope {
+                files: arguments.files,
+                worktrees: arguments.worktrees,
+            };
+            match apply::run(
                 &config,
-                project,
+                &arguments.project,
+                scope,
                 &RealHost,
                 std::path::Path::new(sandbox::WORKSPACE_ROOT),
             ) {
                 Ok(output) => {
-                    print_sync_output(&catalog, &output);
+                    print_apply_output(&catalog, &output);
                     ExitCode::Success
                 }
                 Err(error) => {
@@ -519,16 +524,10 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
         reporter.print_warning(warning, &mut stderr);
     }
 
-    let message = match (output.already_registered, output.raised_worktrees_from) {
-        // 引き上げは登録済み案件に起きるため、登録の有無だけでは何も変わらなかったように読める。
-        (_, Some(before)) => msg!(
-            "add-worktrees-raised",
-            project = output.project,
-            before = before,
-            after = output.requested_worktrees
-        ),
-        (true, None) => msg!("add-already-registered", project = output.project),
-        (false, None) => msg!("add-registered", project = output.project),
+    let message = if output.already_registered {
+        msg!("add-already-registered", project = output.project)
+    } else {
+        msg!("add-registered", project = output.project)
     };
     println!("{}", format_or_report(catalog, &message));
 
@@ -948,15 +947,32 @@ fn print_listing(catalog: &Catalog, listing: &ls::Listing) {
     let _ = std::io::stdout().flush();
 }
 
-/// `sync-files`の成功出力。
-fn print_sync_output(catalog: &Catalog, output: &workflow::sync_files::SyncOutput) {
+/// `apply`の成功出力。
+fn print_apply_output(catalog: &Catalog, output: &workflow::apply::ApplyOutput) {
     let reporter = Reporter::new(catalog);
+    if let Some(count) = output.worktrees {
+        println!(
+            "{}",
+            format_or_report(
+                catalog,
+                &msg!(
+                    "apply-worktrees-done",
+                    count = count,
+                    project = output.project,
+                    sandbox = output.sandbox
+                )
+            )
+        );
+    }
+    if output.files.is_empty() && output.worktrees.is_some() {
+        return;
+    }
     println!(
         "{}",
         format_or_report(
             catalog,
             &msg!(
-                "sync-files-done",
+                "apply-files-done",
                 count = output.files.len(),
                 project = output.project,
                 sandbox = output.sandbox

@@ -7,16 +7,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 const COMMANDS: [&str; 10] = [
-    "init",
-    "add",
-    "sync-files",
-    "prepare",
-    "rebuild",
-    "open",
-    "stop",
-    "ls",
-    "status",
-    "destroy",
+    "init", "add", "apply", "prepare", "rebuild", "open", "stop", "ls", "status", "destroy",
 ];
 
 /// 実行結果。
@@ -449,13 +440,16 @@ fn the_japanese_project_status_translates_the_labels_and_keeps_the_values() {
 }
 
 #[test]
-fn sync_files_refuses_a_project_that_was_never_added() {
+fn apply_refuses_a_project_that_was_never_added() {
     let home = temp_home();
     let base = home.path().join("Projects");
     std::fs::create_dir_all(&base).unwrap();
     write_config(home.path(), &base, "en");
 
-    let run = sbxm(home.path(), &["--lang", "en", "sync-files", "owner/repo"]);
+    let run = sbxm(
+        home.path(),
+        &["--lang", "en", "apply", "--files", "owner/repo"],
+    );
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("project-not-managed"), "{}", run.stderr);
     assert!(run.stderr.contains("sbxm add owner/repo"), "{}", run.stderr);

@@ -44,6 +44,8 @@ pub enum ErrorId {
     InitIncompleteOptions,
     WorktreesOutOfRange,
     WorktreesRequireDetach,
+    WorktreesNotReducible,
+    ApplyScopeRequired,
     ProjectArgumentRequired,
     StatusScopeRequired,
 
@@ -180,6 +182,8 @@ impl ErrorId {
             ErrorId::InitIncompleteOptions => "init-incomplete-options",
             ErrorId::WorktreesOutOfRange => "worktrees-out-of-range",
             ErrorId::WorktreesRequireDetach => "worktrees-require-detach",
+            ErrorId::WorktreesNotReducible => "worktrees-not-reducible",
+            ErrorId::ApplyScopeRequired => "apply-scope-required",
             ErrorId::ProjectArgumentRequired => "project-argument-required",
             ErrorId::StatusScopeRequired => "status-scope-required",
 

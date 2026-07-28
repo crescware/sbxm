@@ -1,4 +1,4 @@
-# Phase 2 実装仕様: `add`、`prepare`と`sync-files`
+# Phase 2 実装仕様: `add`、`prepare`と`apply`
 
 ## 1. 目的
 
@@ -8,14 +8,25 @@
 
 工程を2つに分けるのは、GitHub tokenの登録先がSandbox名であり、その名前が登録時にはじめて確定するためである。`add`が名前を示し、利用者がtokenを登録し、`prepare`が構築する。人間の手続きはcommandとcommandの間に置き、commandの途中に置かない。
 
-`sbxm sync-files`は、構築済みでrunningの案件について、現在のglobal configに宣言されたfileをSandboxへ再配置する。projectの登録、構築継続、worktree構成変更、Dockerfileのbuild、image・Template操作は行わない。
+`sbxm apply`は、構築済みでrunningの案件へ、Sandboxを作り直さずに反映できる変更を適用する。適用する対象はoptionで明示させ、省略した対象には触れない。projectの登録、構築継続、Dockerfileのbuild、image・Template操作は行わない。
+
+| option | 適用するもの |
+|---|---|
+| `--files` | 現在のglobal configに宣言されたfileをSandboxへ再配置する。既存のfileを上書きする |
+| `--worktrees N` | managed worktreeの目標本数を`N`にし、足りない分を作る |
+
+どちらも指定しない実行はusage errorとする。省略した対象へ触れない以上、何も指定しない実行は何をするか決まらない。`--files`が既存のfileを上書きすることも、明示を必須とする理由になる。
+
+作り直しを要する変更は`rebuild`が担当する。`apply`と`rebuild`の違いは、Sandboxを作り直すかどうかである。
 
 ```text
 sbxm add <owner>/<repository>
          [--worktrees <N>]
          [--detach <BRANCH>]
 sbxm prepare <owner>/<repository>
-sbxm sync-files <owner>/<repository>
+sbxm apply <owner>/<repository>
+           [--files]
+           [--worktrees <N>]
 ```
 
 `add`のhost cloneは利用者のSSH鍵でhost上から取るため、Sandboxのsecretを必要としない。tokenが要るのはSandbox内のbare cloneであり、これは`prepare`の工程である。
@@ -36,7 +47,7 @@ Phase 1は`init`と`status --global`が必要とする範囲だけを実装し�
   - hash prefixの衝突をname collision errorとして扱うこと
 - Project metadataのschemaと永続化
   - schemaは方向性文書を正本とする
-  - 本Phaseが書くのは`provisioning`とmanaged worktreeの記録まで
+  - 本Phaseが書くのは`provisioning`まで
   - `rebuild`のintentはPhase 4で追加する
 - Project metadata探索
   - `base_path`直下のowner directoryと、その直下の`*.project/.sbxm/project.toml`だけを読む
@@ -132,7 +143,7 @@ MVPは既存の手動手順を次のように自動化・変更する。
 | `--detach develop` | `detached` | `develop` | 1 |
 | `--worktrees 1 --detach develop` | `detached` | `develop` | 1 |
 | `--worktrees N --detach develop` | `detached` | `develop` | N |
-| `--worktrees N`、N >= 2、新規登録 | usage error | - | - |
+| `--worktrees N`、N >= 2 | usage error | - | - |
 
 - `N`は1以上32以下
 - `BRANCH`は1〜255 byte、NUL、改行、先頭`-`を拒否する
@@ -141,7 +152,7 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - detached modeでは全managed worktreeを同じ`origin/<BRANCH>` commitから作る
 - attached modeではremote default branchをtrackingするlocal branchを1つ作る
 
-新規登録で`--worktrees N`（N >= 2）が起点branchを要求するのは、その案件がまだ起点をどこにも持たないためである。登録済み案件は`start_ref`を保存しているため、本数だけを指定できる。
+構築後に本数を増やすのは`apply --worktrees N`である。そちらは`start_ref`を保存済みの案件だけを対象とするため、起点branchを訊かない。
 
 ## 5.1 modeは最初のworktreeの作り方である
 
@@ -157,11 +168,9 @@ MVPは既存の手動手順を次のように自動化・変更する。
 
 ## 5.2 目標構成の再指定
 
-再実行した`add`でoptionを省略した場合はmetadataに保存された目標構成を使用する。
+再実行した`add`でoptionを省略した場合はmetadataに保存された目標構成を使用する。optionを指定した場合は保存値と完全一致することを要求し、不一致ならmutation前にexit code `1`とする。`add`は登録のcommandであり、登録済み案件の構成を変える手段ではない。
 
-optionを指定した場合、`--detach`は保存値との完全一致を要求する。`--worktrees`は保存値以上であることを要求し、**多い場合は目標を引き上げる**。少ない場合はmutation前にexit code `1`とする。
-
-worktreeを減らすことはcheckoutされた作業を消すことであり、`destroy`と同じ重さの確認が要る。`add`の再実行の副作用として起こしてよい変更ではない。引き上げた分のworktreeは`prepare`が作る。
+構築後にworktreeを増やすのは`apply --worktrees N`である。`N`が現在より多い場合は目標を引き上げて足りない分を作り、少ない場合はmutation前にexit code `1`とする。worktreeを減らすことはcheckoutされた作業を消すことであり、`destroy`と同じ重さの確認が要る。
 
 ## 6. Project単位の排他
 

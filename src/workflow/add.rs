@@ -74,12 +74,21 @@ impl TargetConfiguration {
                     requested_worktrees,
                 })
             }
-            None => Ok(TargetConfiguration {
-                // attached modeのstart refはremote default branchを解決してから確定する。
-                mode: CreationMode::Attached,
-                start_ref: None,
-                requested_worktrees,
-            }),
+            None => {
+                // 2個以上のmanaged worktreeは、起点branchの明示を必須とする。
+                if requested_worktrees > 1 {
+                    return fail(
+                        ErrorId::WorktreesRequireDetach,
+                        msg!("error-worktrees-require-detach"),
+                    );
+                }
+                Ok(TargetConfiguration {
+                    // attached modeのstart refはremote default branchを解決してから確定する。
+                    mode: CreationMode::Attached,
+                    start_ref: None,
+                    requested_worktrees,
+                })
+            }
         }
     }
 }
@@ -152,16 +161,8 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
     let dockerfile_sha256 = adopt_dockerfile(&paths)?;
 
     let metadata = match stored {
-        Some(stored) => raise_worktrees(&paths, stored, &target)?,
+        Some(stored) => stored,
         None => {
-            // 起点branchを持たない新規案件は、2本目以降をどこから作るかを決められない。
-            // 登録済み案件はそれをmetadataに持っているため、この要求は新規登録にだけ課す。
-            if target.requested_worktrees > 1 && target.start_ref.is_none() {
-                return fail(
-                    ErrorId::WorktreesRequireDetach,
-                    msg!("error-worktrees-require-detach"),
-                );
-            }
             let metadata = ProjectMetadata {
                 owner: request.project.owner().to_string(),
                 repository: request.project.repository().to_string(),
@@ -187,26 +188,6 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
     })
 }
 
-/// 登録済み案件の目標worktree数を引き上げる。
-///
-/// 1本で始めた案件が並行作業を必要とすることは普通に起きる。作り直さずに増やせる手段が
-/// ないと、`destroy`してから`add`し直すことになり、Sandbox内のrepositoryごと失われる。
-///
-/// 引き上げるのはmetadataの目標値だけである。worktreeそのものは`prepare`が作る。
-/// 減らす指定はここへ来ない。`check_continuable`が先に拒否している。
-fn raise_worktrees(
-    paths: &ProjectPaths,
-    mut stored: ProjectMetadata,
-    target: &TargetConfiguration,
-) -> Result<ProjectMetadata> {
-    if target.requested_worktrees <= stored.provisioning.requested_worktrees {
-        return Ok(stored);
-    }
-    stored.provisioning.requested_worktrees = target.requested_worktrees;
-    metadata::update(paths, &stored)?;
-    Ok(stored)
-}
-
 /// `add`の結果。
 ///
 /// 案件を管理下へ置き、host cloneを用意したところまでを示す。Sandboxはまだ存在せず、
@@ -221,13 +202,8 @@ pub struct AddOutput {
     pub start_ref: Option<String>,
     pub requested_worktrees: u32,
     pub host_clone: PathBuf,
-    /// 既に登録済みだったか。
+    /// 既に登録済みで、この実行が目標構成を変えなかったか。
     pub already_registered: bool,
-    /// この実行が目標worktree数を引き上げた場合の、引き上げ前の値。
-    ///
-    /// 引き上げが起きたことは`already_registered`からは読めない。増えた分のworktreeは
-    /// まだ存在せず、`prepare`が作る。
-    pub raised_worktrees_from: Option<u32>,
     pub warnings: Vec<Msg>,
 }
 
@@ -241,9 +217,7 @@ pub fn run(
     host: &dyn HostEnvironment,
 ) -> Result<AddOutput> {
     let paths = ProjectPaths::derive(&config.base_path, &request.project.canonical());
-    let before = metadata::load(&paths)?;
-    let already_registered = before.is_some();
-    let worktrees_before = before.map(|stored| stored.provisioning.requested_worktrees);
+    let already_registered = metadata::load(&paths)?.is_some();
 
     let registration = register(config, request)?;
     // host cloneは利用者のSSH鍵でhost上から取る。Sandboxのsecretは要らない。
@@ -258,8 +232,6 @@ pub fn run(
         requested_worktrees: provisioning.requested_worktrees,
         host_clone: clone.path,
         already_registered,
-        raised_worktrees_from: worktrees_before
-            .filter(|before| *before < provisioning.requested_worktrees),
         warnings: Vec::new(),
     })
 }
@@ -332,11 +304,8 @@ fn check_continuable(stored: &ProjectMetadata, request: &AddRequest) -> Result<(
             );
         }
     }
-    // 増設は目標構成の引き上げとして受け付ける。減らす指定だけを不一致として扱う。
-    // worktreeを減らすことはcheckoutされた作業を消すことであり、`destroy`と同じ重さの
-    // 確認が要る。継続の副作用として起こしてよい変更ではない。
     if let Some(worktrees) = request.worktrees
-        && worktrees < provisioning.requested_worktrees
+        && provisioning.requested_worktrees != worktrees
     {
         return mismatch(
             format!("{worktrees} worktrees"),
@@ -600,40 +569,6 @@ pub mod tests {
     }
 
     #[test]
-    fn a_registered_project_can_ask_for_more_worktrees_than_it_started_with() {
-        let (_dir, config) = setup();
-        let first = register(
-            &config,
-            &request("example-org/example-repo", Some(1), Some("develop")),
-        )
-        .expect("register");
-        drop(first);
-
-        // 1本で始めた案件が並行作業を必要とすることは普通に起きる。作り直さずに増やせる。
-        let grown = register(
-            &config,
-            &request("example-org/example-repo", Some(3), Some("develop")),
-        )
-        .expect("asking for more is a continuation, not a disagreement");
-        assert_eq!(grown.metadata.provisioning.requested_worktrees, 3);
-        let stored_after_growth = fs::read_to_string(grown.paths.metadata_file()).unwrap();
-        drop(grown);
-
-        // 増えた分はまだ作られていない。作るのは`prepare`である。
-        let again = register(&config, &request("example-org/example-repo", None, None))
-            .expect("a re-run without options continues from the raised target");
-        assert_eq!(
-            again.metadata.provisioning.requested_worktrees, 3,
-            "omitting the option must not read as a request for one worktree"
-        );
-        assert_eq!(
-            fs::read_to_string(again.paths.metadata_file()).unwrap(),
-            stored_after_growth,
-            "a re-run must not rewrite the stored target"
-        );
-    }
-
-    #[test]
     fn options_that_disagree_with_the_stored_target_stop_the_run() {
         let (_dir, config) = setup();
         let first = register(
@@ -669,10 +604,10 @@ pub mod tests {
             );
         }
 
-        // 起点branchは保存済みである。登録済み案件へ本数だけを言うのは、保存値と
-        // 食い違う指定ではない。
-        register(&config, &request("example-org/example-repo", Some(3), None))
-            .expect("a registered project already knows where its worktrees start");
+        // 組み合わせとして成立しないoptionは、保存値と比べる前に拒否する。
+        let error = register(&config, &request("example-org/example-repo", Some(3), None))
+            .expect_err("two worktrees still need an explicit branch");
+        assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
         assert_eq!(
             fs::read_to_string(
                 ProjectPaths::derive(
@@ -684,18 +619,8 @@ pub mod tests {
                 .metadata_file()
             )
             .unwrap(),
-            before,
-            "asking for the number it already has changes nothing"
+            before
         );
-    }
-
-    #[test]
-    fn a_new_project_still_has_to_say_where_more_than_one_worktree_starts() {
-        let (_dir, config) = setup();
-        // 登録済み案件と違い、新規案件は起点branchをどこからも読めない。
-        let error = register(&config, &request("example-org/example-repo", Some(3), None))
-            .expect_err("a project that does not exist yet has no stored start branch");
-        assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
     }
 
     #[test]
