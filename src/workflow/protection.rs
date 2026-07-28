@@ -3,7 +3,7 @@
 //! runningなSandboxを削除する通常modeの`rebuild`と`destroy`は、同じ列挙と判定規則で
 //! 保存されていない作業がないことを確かめる。判定できない場合は削除しない。
 
-use crate::command::HostEnvironment;
+use crate::command::{CommandOutcome, HostEnvironment};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -159,11 +159,17 @@ fn examine(
     )?;
     for marker in IN_PROGRESS_MARKERS {
         let candidate = format!("{git_dir}/{marker}");
-        if sandbox::exec(host, sandbox_name, &["test", "-e", &candidate])?.success() {
-            return Err(refuse(
-                relative,
-                &format!("a Git operation is in progress ({marker})"),
-            ));
+        let probe = sandbox::exec(host, sandbox_name, &["test", "-e", &candidate])?;
+        // `test`はfileの不在を`1`で示す。commandを起動できなかったことを不在として読まない。
+        match answered(&probe, &candidate)? {
+            0 => {
+                return Err(refuse(
+                    relative,
+                    &format!("a Git operation is in progress ({marker})"),
+                ));
+            }
+            1 => {}
+            _ => return Err(unobservable(&probe, &candidate)),
         }
     }
 
@@ -186,7 +192,14 @@ fn examine(
         ],
     )?;
 
-    let (mode, branch, remote) = if branch.success() {
+    // `symbolic-ref --quiet`はdetached HEADを`1`で示す。それ以外の終了statusは判定しない。
+    let attached = match answered(&branch, "HEAD")? {
+        0 => true,
+        1 => false,
+        _ => return Err(unobservable(&branch, "HEAD")),
+    };
+
+    let (mode, branch, remote) = if attached {
         let branch = branch.stdout_text().trim().to_string();
         let upstream = sandbox::exec(
             host,
@@ -201,7 +214,8 @@ fn examine(
                 "@{upstream}",
             ],
         )?;
-        if !upstream.success() {
+        // upstream未設定はgitが非ゼロで示す。起動できなかった場合と区別する。
+        if answered(&upstream, "@{upstream}")? != 0 {
             return Err(refuse(
                 relative,
                 "the branch has no upstream, so its commits exist only in the sandbox",
@@ -289,6 +303,29 @@ fn require_no_active_session(host: &dyn HostEnvironment, sandbox_name: &str) -> 
             .remediation(msg!("remediation-daemon-session-unobservable")),
         )),
     }
+}
+
+/// Sandbox内の検査commandが答えた終了status。
+///
+/// `sbx exec`がcommandを起動できなかった場合を、内側のcommandが返した結果として
+/// 読まない。判定できない場合は、削除して良いことを示す値へ丸めずerrorとする。
+fn answered(outcome: &CommandOutcome, subject: &str) -> Result<i32> {
+    sandbox::inner_exit_code(outcome).ok_or_else(|| unobservable(outcome, subject))
+}
+
+/// 内側のcommandが答えなかった場合の診断。原値をそのまま残す。
+fn unobservable(outcome: &CommandOutcome, subject: &str) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::SandboxCheckUnobservable,
+            msg!(
+                "error-sandbox-check-unobservable",
+                subject = subject,
+                exit_status = outcome.status
+            ),
+        )
+        .external(outcome.failure()),
+    )
 }
 
 fn read(host: &dyn HostEnvironment, sandbox_name: &str, args: &[&str]) -> Result<String> {
@@ -444,6 +481,40 @@ pub mod tests {
             let error = inspect_with(&host, &project, Unmanaged::Refused)
                 .expect_err("unsaved work is never destroyed");
             assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
+        }
+    }
+
+    #[test]
+    fn a_check_that_could_not_run_is_never_read_as_a_pass() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        let name = project.sandbox.as_str();
+        let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+        // `sbx exec`が内側のcommandを起動できなかったことを示す終了status。
+        let marker = clean_host(&fixture, &project).answering(
+            &format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"),
+            126,
+            "",
+        );
+        let head = clean_host(&fixture, &project).answering(
+            &format!("exec {name} -- git -C {managed} symbolic-ref --quiet --short HEAD"),
+            127,
+            "",
+        );
+        let upstream = clean_host(&fixture, &project).answering(
+            &format!(
+                "exec {name} -- git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
+            ),
+            125,
+            "",
+        );
+
+        for host in [marker, head, upstream] {
+            let error = inspect_with(&host, &project, Unmanaged::Allowed)
+                .expect_err("a check that did not answer never means the worktree is safe");
+            assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
         }
     }
 
