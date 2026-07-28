@@ -5,6 +5,7 @@
 
 pub mod add;
 pub mod daemon;
+pub mod destroy;
 pub mod files;
 pub mod host_clone;
 pub mod identity;
@@ -13,6 +14,8 @@ pub mod init;
 pub mod inventory;
 pub mod ls;
 pub mod open;
+pub mod protection;
+pub mod rebuild;
 pub mod repository;
 pub mod sandbox;
 pub mod secret;

@@ -56,7 +56,10 @@ pub fn restart_without_ssh_agent(
 /// 全Sandboxにactive sessionがないことを、structured outputから確認する。
 ///
 /// Sandboxが1件もない場合、接続中のsessionも存在しないため不在を確認できたものとする。
-fn require_no_active_session(host: &dyn HostEnvironment) -> Result<()> {
+///
+/// daemon lockの外から呼ぶ場合、結果は再起動を保証しない。破壊的な工程へ進む前に、
+/// 確実に失敗する構成を先に見つけるために使う。
+pub fn require_no_active_session(host: &dyn HostEnvironment) -> Result<()> {
     let sandboxes = list(host)?;
 
     let mut active: Vec<String> = Vec::new();

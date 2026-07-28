@@ -58,6 +58,20 @@ pub fn ensure(
     })
 }
 
+/// 期待するimageを保持しているTemplateが既にあるか。
+///
+/// 同名で別imageのTemplate、対応を観測できないruntimeは、`ensure`と同じ規則で拒否する。
+pub fn existing(host: &dyn HostEnvironment, image: &BuiltImage) -> Result<Option<LoadedTemplate>> {
+    let Some(entry) = find(host, &image.name)? else {
+        return Ok(None);
+    };
+    holds_image(&entry, image)?;
+    Ok(Some(LoadedTemplate {
+        name: image.name.clone(),
+        loaded: false,
+    }))
+}
+
 /// Templateが期待するimageを持つことを、runtimeの出力から確かめる。
 fn holds_image(entry: &TemplateEntry, image: &BuiltImage) -> Result<()> {
     match &entry.image_id {

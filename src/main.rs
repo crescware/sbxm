@@ -1,7 +1,7 @@
 //! sbxm。案件ごとのDocker Sandboxを構築、接続、診断、破棄するCLI。
 //!
-//! 現在のbuildは`rebuild`と`destroy`以外のcommandを実装する。この2つはparserへ
-//! 登録済みであり、command固有の引数validationまで行ったうえで未実装として終了する。
+//! 公開CLIの全commandを実装する。実行順は、引数validation、config load、
+//! project解決、外部command、mutationとする。
 
 mod archive;
 mod cli;
@@ -28,11 +28,13 @@ use error::{Diagnostic, Error, ErrorId, ExitCode, Result};
 use i18n::{Catalog, Locale, shell_locale};
 use metadata::CreationMode;
 use workflow::Reporter;
+use workflow::destroy::TerminalConfirmPrompt;
 use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
 use workflow::select::TerminalProjectPrompt;
 use workflow::{
-    add, inventory, ls, open, sandbox, status_global, status_project, stop, sync_files,
+    add, destroy, inventory, ls, open, rebuild, sandbox, status_global, status_project, stop,
+    sync_files,
 };
 
 fn main() -> ProcessExitCode {
@@ -275,6 +277,7 @@ fn dispatch(
             };
             let mut prompt = TerminalProjectPrompt {
                 heading: "select-open-heading",
+                locale: catalog.locale(),
             };
             let prepared = match open::prepare(
                 &config,
@@ -332,6 +335,7 @@ fn dispatch(
             };
             let mut prompt = TerminalProjectPrompt {
                 heading: "select-stop-heading",
+                locale: catalog.locale(),
             };
             match stop::run(
                 &config,
@@ -342,6 +346,116 @@ fn dispatch(
                 inventory::Poll::default(),
             ) {
                 Ok(report) => print_stop_report(&catalog, &report),
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
+        Command::Rebuild(project) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            match rebuild::run(
+                &config,
+                location,
+                project,
+                &RealHost,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+                inventory::Poll::default(),
+            ) {
+                Ok(output) => {
+                    let reporter = Reporter::new(&catalog);
+                    let mut stderr = std::io::stderr();
+                    for warning in &output.warnings {
+                        reporter.print_warning(warning, &mut stderr);
+                    }
+                    let message = if output.unchanged {
+                        msg!("rebuild-unchanged", project = output.project)
+                    } else {
+                        msg!(
+                            "rebuild-applied",
+                            project = output.project,
+                            sandbox = output.sandbox,
+                            generation = crate::hash::short_hex(&output.applied)
+                        )
+                    };
+                    println!("{}", format_or_report(&catalog, &message));
+                    ExitCode::Success
+                }
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
+        Command::Destroy(arguments) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            let mut prompt = TerminalProjectPrompt {
+                heading: "select-destroy-heading",
+                locale: catalog.locale(),
+            };
+            let prepared = match destroy::prepare(
+                &config,
+                arguments.project.as_ref(),
+                arguments.force,
+                &RealHost,
+                &mut prompt,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    report(&catalog, &error);
+                    return error.exit_code();
+                }
+            };
+
+            print_destroy_plan(&catalog, &prepared.plan);
+            let mut confirm = TerminalConfirmPrompt {
+                locale: catalog.locale(),
+            };
+            if let Err(error) =
+                destroy::confirm(&prepared, interactivity.can_prompt(), &mut confirm)
+            {
+                report(&catalog, &error);
+                return error.exit_code();
+            }
+
+            match destroy::execute(&RealHost, &prepared, inventory::Poll::default()) {
+                Ok(outcome) => {
+                    let reporter = Reporter::new(&catalog);
+                    let mut stderr = std::io::stderr();
+                    for warning in &outcome.warnings {
+                        reporter.print_warning(warning, &mut stderr);
+                    }
+                    println!(
+                        "{}",
+                        format_or_report(
+                            &catalog,
+                            &msg!("destroy-done", project = outcome.project)
+                        )
+                    );
+                    println!(
+                        "{}",
+                        format_or_report(
+                            &catalog,
+                            &msg!("destroy-re-register", command = outcome.re_register)
+                        )
+                    );
+                    ExitCode::Success
+                }
                 Err(error) => {
                     report(&catalog, &error);
                     error.exit_code()
@@ -368,21 +482,6 @@ fn dispatch(
                 }
                 Err(error) => {
                     report(&catalog, &error);
-                    error.exit_code()
-                }
-            }
-        }
-
-        other => {
-            // 未実装のcommandも、configがなければ先に`sbxm init`を案内する。
-            match effective_catalog(location, lang_option, false) {
-                Ok(catalog) => {
-                    let error = cli::not_implemented(other);
-                    report(&catalog, &error);
-                    error.exit_code()
-                }
-                Err(error) => {
-                    report(&Catalog::new(display_locale), &error);
                     error.exit_code()
                 }
             }
@@ -570,6 +669,94 @@ fn print_project_status(catalog: &Catalog, status: &status_project::ProjectStatu
     } else {
         ExitCode::Failure
     }
+}
+
+/// 削除対象・保持対象の1行。pathはそのまま、それ以外は説明を訳す。
+fn destroy_target(catalog: &Catalog, target: &destroy::Target) -> String {
+    match target {
+        destroy::Target::Path(path) => path.clone(),
+        destroy::Target::Described(message) => format_or_report(catalog, message),
+    }
+}
+
+/// `destroy`が何を消し、何を残すかを削除前に見せる。
+fn print_destroy_plan(catalog: &Catalog, plan: &destroy::DestroyPlan) {
+    let reporter = Reporter::new(catalog);
+    let mut stderr = std::io::stderr();
+
+    print!(
+        "{}",
+        reporter.render_fields(&[
+            ("add-field-project", plan.project.clone()),
+            ("add-field-sandbox", plan.sandbox.clone()),
+            ("add-field-sandbox-state", plan.state.as_str().to_string()),
+        ])
+    );
+
+    if plan.force {
+        let _ = writeln!(
+            stderr,
+            "{}",
+            text_or_report(catalog, "destroy-force-notice")
+        );
+    } else if !plan.worktrees.is_empty() {
+        let rows: Vec<Vec<String>> = plan
+            .worktrees
+            .iter()
+            .map(|worktree| {
+                vec![
+                    worktree.relative.clone(),
+                    worktree.kind.as_str().to_string(),
+                    worktree.mode.as_str().to_string(),
+                    worktree.branch.clone().unwrap_or_else(|| "-".to_string()),
+                    worktree.head.clone(),
+                    worktree.remote.as_str().to_string(),
+                ]
+            })
+            .collect();
+        println!("\n{}", text_or_report(catalog, "status-worktrees-section"));
+        print!(
+            "{}",
+            reporter.render_value_table(
+                &[
+                    "column-path",
+                    "column-kind",
+                    "column-mode",
+                    "column-branch",
+                    "column-head",
+                    "column-remote"
+                ],
+                &rows,
+            )
+        );
+        // 状態値は翻訳しないため、正本locale以外では説明を添える。
+        let values: Vec<(&str, &str)> = plan
+            .worktrees
+            .iter()
+            .flat_map(|worktree| worktree.legends())
+            .collect();
+        if let Some(legend) = reporter.render_value_legend(&values) {
+            print!("\n{legend}");
+        }
+    }
+
+    println!("\n{}", text_or_report(catalog, "destroy-removes"));
+    for target in &plan.removes {
+        println!("  {}", destroy_target(catalog, target));
+    }
+    println!("{}", text_or_report(catalog, "destroy-keeps"));
+    for target in &plan.keeps {
+        println!("  {}", destroy_target(catalog, target));
+    }
+    // 消す前に、消したあと元へ戻す方法まで見せる。
+    println!(
+        "\n{}",
+        format_or_report(
+            catalog,
+            &msg!("destroy-re-register", command = plan.re_register.clone())
+        )
+    );
+    let _ = std::io::stdout().flush();
 }
 
 /// `stop`の出力。

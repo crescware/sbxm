@@ -86,9 +86,11 @@ pub fn ensure(
     let name = image_name(sandbox, dockerfile_sha256);
     let labels = expected_labels(canonical, dockerfile_sha256);
 
-    if let Some(identity) = inspect(host, &name)?
-        && labels_match(&identity, &labels)
-    {
+    if let Some(identity) = inspect(host, &name)? {
+        if !labels_match(&identity, &labels) {
+            // 世代名が同じでも中身は別物である。この名前の既存成果物を作り直さない。
+            return Err(collision(&name, &identity, &labels));
+        }
         return Ok(BuiltImage {
             name,
             id: identity.id,
@@ -295,7 +297,36 @@ fn labels_match(identity: &ImageIdentity, expected: &[(String, String)]) -> bool
 }
 
 fn mismatched_labels(name: &str, identity: &ImageIdentity, expected: &[(String, String)]) -> Error {
-    let observed = expected
+    Error::single(Diagnostic::new(
+        ErrorId::ImageUnusable,
+        msg!(
+            "error-image-unusable",
+            image = name,
+            detail = compare_labels(identity, expected)
+        ),
+    ))
+}
+
+/// 同じ世代名を持つ、別の案件または別の世代のimage。
+///
+/// 名前だけで同一とみなして上書きすると、利用者の成果物を失う。
+fn collision(name: &str, identity: &ImageIdentity, expected: &[(String, String)]) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::ImageUnusable,
+            msg!(
+                "error-image-collision",
+                image = name,
+                detail = compare_labels(identity, expected)
+            ),
+        )
+        .remediation(msg!("remediation-image-collision", image = name)),
+    )
+}
+
+/// 期待するlabelと観測したlabelの並び。翻訳しない技術表記。
+fn compare_labels(identity: &ImageIdentity, expected: &[(String, String)]) -> String {
+    expected
         .iter()
         .map(|(key, value)| {
             let observed = identity
@@ -306,11 +337,7 @@ fn mismatched_labels(name: &str, identity: &ImageIdentity, expected: &[(String, 
             format!("{key}: expected {value}, observed {observed}")
         })
         .collect::<Vec<_>>()
-        .join("; ");
-    Error::single(Diagnostic::new(
-        ErrorId::ImageUnusable,
-        msg!("error-image-unusable", image = name, detail = observed),
-    ))
+        .join("; ")
 }
 
 #[cfg(test)]
@@ -523,15 +550,23 @@ mod tests {
     }
 
     #[test]
-    fn an_image_that_declares_something_else_is_rebuilt_rather_than_trusted() {
+    fn an_image_that_declares_something_else_is_a_collision_and_is_left_alone() {
         let dir = tempfile::tempdir().unwrap();
         let dockerfile = dir.path().join("Dockerfile");
         fs::write(&dockerfile, "FROM scratch\n").unwrap();
         let foreign = inspect_output(&[(LABEL_CANONICAL_ID, "other-org/other-repo")]);
         let host = FakeDocker::new(vec![Some(&matching_inspect()), Some(&foreign)]);
 
-        let image = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST).expect("rebuild");
-        assert!(image.built, "an image with foreign labels is not reused");
+        let error = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
+            .expect_err("the generation name is taken by something else");
+        assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
+        assert!(
+            !host
+                .calls()
+                .iter()
+                .any(|args| args.first().is_some_and(|arg| arg == "build")),
+            "an image sbxm did not build is never overwritten"
+        );
     }
 
     #[test]

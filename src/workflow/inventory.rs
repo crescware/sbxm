@@ -5,14 +5,15 @@
 
 use std::collections::BTreeSet;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::command::HostEnvironment;
+use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{SandboxEntry, SandboxState};
 use crate::config::GlobalConfig;
-use crate::error::{Error, ErrorId, Result};
+use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
+use crate::project::SandboxName;
 
 use super::image::template_names;
 use super::{daemon, sandbox};
@@ -106,27 +107,117 @@ pub fn state_of(
     workspace_root: &Path,
 ) -> Result<ProjectState> {
     let name = metadata.sandbox_name();
-    let matched: Vec<&SandboxEntry> = entries
-        .iter()
-        .filter(|entry| entry.name == name.as_str())
-        .collect();
+    let Some(entry) = single(entries, name.as_str())? else {
+        return Ok(ProjectState::NotCreated);
+    };
+    sandbox::verify_identity(
+        entry,
+        &name,
+        &template_names(&name, metadata),
+        workspace_root,
+    )?;
+    Ok(match entry.state {
+        SandboxState::Running => ProjectState::Running,
+        SandboxState::Stopped => ProjectState::Stopped,
+    })
+}
 
+/// 名前が一致するentryを1件だけ取り出す。
+///
+/// 同名が複数ある一覧からは、どれがこの案件のSandboxかを決められない。先頭を選んで
+/// 続けると、別のSandboxのsessionやstateを読んだまま削除へ進み得る。
+pub fn single<'a>(entries: &'a [SandboxEntry], name: &str) -> Result<Option<&'a SandboxEntry>> {
+    let matched: Vec<&SandboxEntry> = entries.iter().filter(|entry| entry.name == name).collect();
     match matched.as_slice() {
-        [] => Ok(ProjectState::NotCreated),
-        [entry] => {
-            sandbox::verify_identity(
-                entry,
-                &name,
-                &template_names(&name, metadata),
-                workspace_root,
-            )?;
-            Ok(match entry.state {
-                SandboxState::Running => ProjectState::Running,
-                SandboxState::Stopped => ProjectState::Stopped,
-            })
-        }
-        _ => Err(duplicated(&[name.as_str()])),
+        [] => Ok(None),
+        [entry] => Ok(Some(entry)),
+        _ => Err(duplicated(&[name])),
     }
+}
+
+/// 非対話でSandboxを起動する。
+pub fn start(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
+    let spec = CommandSpec::passthrough("sbx", &["exec", sandbox, "--", "/bin/true"])
+        .env(EnvPolicy::InheritWithoutSshAgent)
+        .timeout(TimeoutClass::SandboxLifecycle);
+    host.run(&spec)?.require_success()?;
+    Ok(())
+}
+
+/// runningになるまで待つ。状態は毎回structured outputから読む。
+pub fn wait_until_running(
+    host: &dyn HostEnvironment,
+    metadata: &ProjectMetadata,
+    workspace_root: &Path,
+    poll: Poll,
+) -> Result<()> {
+    let name = metadata.sandbox_name();
+    let deadline = Instant::now() + poll.limit;
+    loop {
+        let entries = daemon::list(host)?;
+        let observed = state_of(&entries, metadata, workspace_root)?;
+        if observed == ProjectState::Running {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::SandboxNotRunning,
+                    msg!(
+                        "error-sandbox-not-running",
+                        sandbox = name,
+                        observed = observed
+                    ),
+                )
+                .remediation(msg!(
+                    "remediation-diagnose-project",
+                    command = format!("sbxm status {}", metadata.display_id())
+                )),
+            ));
+        }
+        std::thread::sleep(poll.interval);
+    }
+}
+
+/// Sandboxを削除し、一覧から消えるまで待つ。
+///
+/// commandの戻り値だけを不在の根拠にしない。`force`はデータ保護検査を省略した
+/// 削除であり、runtimeへ渡す引数だけが変わる。
+pub fn remove(
+    host: &dyn HostEnvironment,
+    name: &SandboxName,
+    force: bool,
+    poll: Poll,
+) -> Result<()> {
+    let mut args = vec!["rm"];
+    if force {
+        args.push("--force");
+    }
+    args.push(name.as_str());
+    // 削除の進捗は外部toolが出したまま転送する。
+    let spec = CommandSpec::passthrough("sbx", &args)
+        .env(EnvPolicy::InheritWithoutSshAgent)
+        .timeout(TimeoutClass::SandboxLifecycle);
+    host.run(&spec)?.require_success()?;
+
+    let deadline = Instant::now() + poll.limit;
+    loop {
+        if single(&daemon::list(host)?, name.as_str())?.is_none() {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(still_present(name));
+        }
+        std::thread::sleep(poll.interval);
+    }
+}
+
+/// 削除したはずのSandboxが一覧に残っている。
+pub fn still_present(name: &SandboxName) -> Error {
+    Error::new(
+        ErrorId::SandboxStillPresent,
+        msg!("error-sandbox-still-present", sandbox = name),
+    )
 }
 
 /// 現在のinventoryを1回の一覧取得から組み立てる。
@@ -325,7 +416,13 @@ pub mod tests {
         let base = dir.path().join("Projects");
         std::fs::create_dir_all(&base).expect("create the base path");
         let workspace_root = dir.path().join("workspaces");
-        std::fs::create_dir_all(&workspace_root).expect("create the workspace root");
+        // 実環境と同じく、workspace rootは自分だけが辿れるdirectoryとして作る。
+        crate::paths::ensure_private_dir(
+            &workspace_root,
+            crate::paths::PRIVATE_DIR_MODE,
+            crate::paths::PathScope::ProjectPath,
+        )
+        .expect("the workspace root belongs to the current user only");
         let config = GlobalConfig {
             language: Locale::En,
             base_path: AbsoluteBasePath::new(&base).expect("valid base path"),

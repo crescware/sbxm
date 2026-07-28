@@ -590,52 +590,19 @@ fn worktree_state(
 /// 露出していないことは、検査commandが答えた場合にだけ言える。検査自体が成立しない
 /// 場合を`not-exposed`へ丸めない。
 fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &mut ProjectStatus) {
-    let socket = sandbox::exec(host, name.as_str(), &["printenv", "SSH_AUTH_SOCK"]);
-    let keys = sandbox::exec(host, name.as_str(), &["ssh-add", "-L"]);
-
-    let value = match (socket, keys) {
-        (Ok(socket), Ok(keys)) => {
-            let socket_set = match sandbox::inner_exit_code(&socket) {
-                Some(0) => Some(!socket.stdout_text().trim().is_empty()),
-                // `printenv`は未設定のとき`1`で終わる。
-                Some(1) => Some(false),
-                _ => None,
-            };
-            // 公開鍵本文は読まず、agentへ接続できたかどうかだけを見る。
-            let agent_reachable = match sandbox::inner_exit_code(&keys) {
-                // 鍵の有無にかかわらず、agentへ接続できた時点で露出している。
-                Some(0) | Some(1) => Some(true),
-                Some(sandbox::SSH_ADD_NO_AGENT) => Some(false),
-                _ => None,
-            };
-            match (socket_set, agent_reachable) {
-                (Some(socket_set), Some(agent_reachable)) => {
-                    if socket_set || agent_reachable {
-                        status.diagnostics.push(
-                            Diagnostic::new(
-                                ErrorId::SshAgentExposed,
-                                msg!("security-ssh-agent-exposed-description", sandbox = name),
-                            )
-                            .remediation(msg!("security-ssh-agent-exposed-remediation")),
-                        );
-                        Value::Exposed
-                    } else {
-                        Value::NotExposed
-                    }
-                }
-                _ => {
-                    let unreadable = if socket_set.is_none() { &socket } else { &keys };
-                    status.diagnostics.extend(
-                        unobservable(unreadable, name.as_str())
-                            .diagnostics()
-                            .iter()
-                            .cloned(),
-                    );
-                    Value::Mismatch
-                }
-            }
+    let value = match sandbox::ssh_agent_is_exposed(host, name.as_str()) {
+        Ok(true) => {
+            status.diagnostics.push(
+                Diagnostic::new(
+                    ErrorId::SshAgentExposed,
+                    msg!("security-ssh-agent-exposed-description", sandbox = name),
+                )
+                .remediation(msg!("security-ssh-agent-exposed-remediation")),
+            );
+            Value::Exposed
         }
-        (Err(error), _) | (_, Err(error)) => {
+        Ok(false) => Value::NotExposed,
+        Err(error) => {
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());

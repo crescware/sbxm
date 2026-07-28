@@ -183,11 +183,13 @@ fn unresolved(index: usize, count: usize) -> Error {
 pub struct TerminalProjectPrompt {
     /// promptの見出しに使うFTL message ID。
     pub heading: &'static str,
+    /// この実行の表示言語。promptもほかの出力と同じ言語で読める必要がある。
+    pub locale: crate::i18n::Locale,
 }
 
 impl TerminalProjectPrompt {
-    fn text(&self, catalog: &crate::i18n::Catalog) -> String {
-        catalog
+    fn text(&self) -> String {
+        crate::i18n::Catalog::new(self.locale)
             .text(self.heading)
             .unwrap_or_else(|failure| failure.to_string())
     }
@@ -198,9 +200,13 @@ impl TerminalProjectPrompt {
             dialoguer::Error::IO(io) if io.kind() == std::io::ErrorKind::Interrupted => {
                 Error::Canceled
             }
-            _ => Error::new(
-                ErrorId::ProjectArgumentRequired,
-                msg!("error-project-argument-required", command = "sbxm"),
+            // 端末を読み取れなかったことを、引数の不足として報告しない。
+            other => Error::single(
+                Diagnostic::new(
+                    ErrorId::PromptUnreadable,
+                    msg!("error-prompt-unreadable", detail = other),
+                )
+                .remediation(msg!("remediation-prompt-unreadable")),
             ),
         }
     }
@@ -208,19 +214,17 @@ impl TerminalProjectPrompt {
 
 impl ProjectPrompt for TerminalProjectPrompt {
     fn select_one(&mut self, candidates: &[String]) -> Result<usize> {
-        let catalog = crate::i18n::Catalog::new(crate::i18n::Locale::SOURCE);
         dialoguer::Select::new()
-            .with_prompt(self.text(&catalog))
+            .with_prompt(self.text())
             .items(candidates)
             .interact()
             .map_err(TerminalProjectPrompt::map_error)
     }
 
     fn select_many(&mut self, candidates: &[String]) -> Result<Vec<usize>> {
-        let catalog = crate::i18n::Catalog::new(crate::i18n::Locale::SOURCE);
         loop {
             let selected = dialoguer::MultiSelect::new()
-                .with_prompt(self.text(&catalog))
+                .with_prompt(self.text())
                 .items(candidates)
                 .interact()
                 .map_err(TerminalProjectPrompt::map_error)?;

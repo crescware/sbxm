@@ -3,9 +3,8 @@
 //! 登録済み案件のSandboxを起動し、SSHでterminalを引き渡す。Sandboxを新規作成しない。
 
 use std::path::Path;
-use std::time::Instant;
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::{CommandSpec, HostEnvironment};
 use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
@@ -77,10 +76,10 @@ pub fn prepare(
     let entries = daemon::list(host)?;
     match inventory::state_of(&entries, &metadata, workspace_root)? {
         ProjectState::Running => {}
-        ProjectState::Stopped => start(host, name.as_str())?,
+        ProjectState::Stopped => inventory::start(host, name.as_str())?,
         ProjectState::NotCreated => return Err(not_created(&metadata, name.as_str())),
     }
-    wait_until_running(host, &metadata, workspace_root, poll)?;
+    inventory::wait_until_running(host, &metadata, workspace_root, poll)?;
     drop(daemon_guard);
 
     let layout = SandboxLayout::new(&metadata.canonical_id);
@@ -158,50 +157,6 @@ fn not_created(metadata: &ProjectMetadata, sandbox: &str) -> Error {
     )
 }
 
-/// 非対話でSandboxを起動する。
-fn start(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
-    let spec = CommandSpec::passthrough("sbx", &["exec", sandbox, "--", "/bin/true"])
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&spec)?.require_success()?;
-    Ok(())
-}
-
-/// runningになるまで待つ。状態は毎回structured outputから読む。
-fn wait_until_running(
-    host: &dyn HostEnvironment,
-    metadata: &ProjectMetadata,
-    workspace_root: &Path,
-    poll: Poll,
-) -> Result<()> {
-    let name = metadata.sandbox_name();
-    let deadline = Instant::now() + poll.limit;
-    loop {
-        let entries = daemon::list(host)?;
-        let observed = inventory::state_of(&entries, metadata, workspace_root)?;
-        if observed == ProjectState::Running {
-            return Ok(());
-        }
-        if Instant::now() >= deadline {
-            return Err(Error::single(
-                Diagnostic::new(
-                    ErrorId::SandboxNotRunning,
-                    msg!(
-                        "error-sandbox-not-running",
-                        sandbox = name,
-                        observed = observed
-                    ),
-                )
-                .remediation(msg!(
-                    "remediation-diagnose-project",
-                    command = format!("sbxm status {}", metadata.display_id())
-                )),
-            ));
-        }
-        std::thread::sleep(poll.interval);
-    }
-}
-
 /// metadataが宣言するmanaged worktreeが、Sandbox内のGitに揃っていることを確認する。
 fn verify_worktrees(
     host: &dyn HostEnvironment,
@@ -240,7 +195,7 @@ fn verify_worktrees(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::{EnvPolicy, OutputPolicy};
+    use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
     use crate::config::ConfigLocation;
     use crate::metadata::{self, RebuildIntent};
     use crate::workflow::inventory::tests::{FakeSbx, Fixture, Registered, fixture};
