@@ -265,16 +265,27 @@ pub fn generation_is_built(
 }
 
 /// imageの現在の同一性。存在しない場合は`None`。
-fn inspect(host: &dyn HostEnvironment, name: &str) -> Result<Option<ImageIdentity>> {
-    let spec = CommandSpec::capture("docker", &["image", "inspect", name])
-        .timeout(TimeoutClass::LocalFilesystem);
-    let outcome = host.run(&spec)?;
-    if !outcome.success() {
-        // 未作成のimageと、observeできない状態を区別しない形で扱わないよう、
-        // 出力を読めるかどうかだけで判定する。
+///
+/// `docker image inspect`は不在でも他の失敗でも非ゼロで終わるため、それだけで
+/// 不在と判定しない。まず一覧で存在を確かめ、observeできない状態はerrorとして返す。
+pub fn inspect(host: &dyn HostEnvironment, name: &str) -> Result<Option<ImageIdentity>> {
+    if !exists(host, name)? {
         return Ok(None);
     }
+    let spec = CommandSpec::capture("docker", &["image", "inspect", name])
+        .timeout(TimeoutClass::LocalFilesystem);
+    let outcome = host.run(&spec)?.require_success()?;
     parse_image_inspect(&outcome.stdout_text()).map(Some)
+}
+
+/// 名前が一致するimageが存在するか。
+///
+/// 一覧の失敗は不在へ丸めず、そのまま呼び出し側の失敗にする。
+fn exists(host: &dyn HostEnvironment, name: &str) -> Result<bool> {
+    let spec = CommandSpec::capture("docker", &["image", "ls", "--quiet", name])
+        .timeout(TimeoutClass::LocalFilesystem);
+    let outcome = host.run(&spec)?.require_success()?;
+    Ok(!outcome.stdout_text().trim().is_empty())
 }
 
 fn labels_match(identity: &ImageIdentity, expected: &[(String, String)]) -> bool {
@@ -315,6 +326,8 @@ mod tests {
         inspect: RefCell<Vec<Option<String>>>,
         calls: RefCell<Vec<CommandSpec>>,
         build_fails: bool,
+        /// Docker Engineへ問い合わせられない状態。
+        listing_fails: bool,
     }
 
     impl FakeDocker {
@@ -328,12 +341,20 @@ mod tests {
                 ),
                 calls: RefCell::new(Vec::new()),
                 build_fails: false,
+                listing_fails: false,
             }
         }
 
         fn failing_build(mut self) -> FakeDocker {
             self.build_fails = true;
             self
+        }
+
+        fn unreachable_engine() -> FakeDocker {
+            FakeDocker {
+                listing_fails: true,
+                ..FakeDocker::new(Vec::new())
+            }
         }
 
         fn calls(&self) -> Vec<Vec<String>> {
@@ -352,13 +373,31 @@ mod tests {
 
         fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
             self.calls.borrow_mut().push(spec.clone());
-            let building = spec.args.first().is_some_and(|arg| arg == "build");
-            let saving = spec.args.first().is_some_and(|arg| arg == "image")
-                && spec.args.get(1).is_some_and(|arg| arg == "save");
+            let sub =
+                |index: usize, name: &str| spec.args.get(index).is_some_and(|arg| arg == name);
+            let building = sub(0, "build");
+            let saving = sub(0, "image") && sub(1, "save");
+            let listing = sub(0, "image") && sub(1, "ls");
             let (code, stdout) = if building {
                 (i32::from(self.build_fails), String::new())
             } else if saving {
                 (0, String::new())
+            } else if listing {
+                // 一覧は、次にinspectされるimageが存在するかだけを示す。
+                if self.listing_fails {
+                    (1, String::new())
+                } else {
+                    let present = self
+                        .inspect
+                        .borrow()
+                        .last()
+                        .is_some_and(|value| value.is_some());
+                    if !present {
+                        // 不在の回はinspectまで進まないため、ここで1件を消費する。
+                        self.inspect.borrow_mut().pop();
+                    }
+                    (0, if present { "0123456789ab\n" } else { "" }.to_string())
+                }
             } else {
                 match self.inspect.borrow_mut().pop() {
                     Some(Some(output)) => (0, output),
@@ -493,6 +532,45 @@ mod tests {
 
         let image = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST).expect("rebuild");
         assert!(image.built, "an image with foreign labels is not reused");
+    }
+
+    #[test]
+    fn an_engine_that_cannot_be_asked_is_not_read_as_an_absent_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let dockerfile = dir.path().join("Dockerfile");
+        fs::write(&dockerfile, "FROM scratch\n").unwrap();
+        let host = FakeDocker::unreachable_engine();
+
+        let error = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
+            .expect_err("an unobservable engine is not an image that is merely missing");
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+        assert!(
+            !host
+                .calls()
+                .iter()
+                .any(|args| args.first().is_some_and(|arg| arg == "build")),
+            "nothing is built while the engine cannot be asked: {:?}",
+            host.calls()
+        );
+
+        // 世代の判定も同じで、答えられないengineから世代を決めない。
+        let host = FakeDocker::unreachable_engine();
+        let error = generation_is_built(&host, &sandbox(), &canonical(), DIGEST)
+            .expect_err("the generation of a build is never guessed");
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    }
+
+    #[test]
+    fn an_image_that_exists_but_cannot_be_inspected_stops_the_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let dockerfile = dir.path().join("Dockerfile");
+        fs::write(&dockerfile, "FROM scratch\n").unwrap();
+        // 一覧には現れるが、inspectが答えない。
+        let host = FakeDocker::new(vec![Some("not json")]);
+
+        let error = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
+            .expect_err("an image that cannot be read is not rebuilt over");
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
     }
 
     #[test]

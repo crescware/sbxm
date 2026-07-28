@@ -250,41 +250,29 @@ fn check_image(
 ) {
     let generation = &metadata.provisioning.dockerfile_sha256;
     let image = image::image_name(name, generation);
-    let spec = crate::command::CommandSpec::capture("docker", &["image", "inspect", &image])
-        .timeout(crate::command::TimeoutClass::LocalFilesystem);
 
-    let value = match host.run(&spec) {
-        Ok(outcome) if outcome.success() => {
-            match crate::compatibility::parse_image_inspect(&outcome.stdout_text()) {
-                Ok(identity) => {
-                    let declares_project = identity.labels.get(LABEL_CANONICAL_ID)
-                        == Some(&metadata.canonical_id.to_string());
-                    let declares_generation =
-                        identity.labels.get(LABEL_DOCKERFILE_SHA256) == Some(generation);
-                    if declares_project && declares_generation {
-                        Value::Ready
-                    } else {
-                        status.diagnostics.push(Diagnostic::new(
-                            ErrorId::ImageUnusable,
-                            msg!(
-                                "error-image-unusable",
-                                image = image,
-                                detail = "the labels do not declare this project and generation"
-                            ),
-                        ));
-                        Value::Mismatch
-                    }
-                }
-                Err(error) => {
-                    status
-                        .diagnostics
-                        .extend(error.diagnostics().iter().cloned());
-                    Value::Mismatch
-                }
+    // imageがないことと、Docker Engineへ問い合わせられないことを同じ値へ丸めない。
+    let value = match image::inspect(host, &image) {
+        Ok(Some(identity)) => {
+            let declares_project =
+                identity.labels.get(LABEL_CANONICAL_ID) == Some(&metadata.canonical_id.to_string());
+            let declares_generation =
+                identity.labels.get(LABEL_DOCKERFILE_SHA256) == Some(generation);
+            if declares_project && declares_generation {
+                Value::Ready
+            } else {
+                status.diagnostics.push(Diagnostic::new(
+                    ErrorId::ImageUnusable,
+                    msg!(
+                        "error-image-unusable",
+                        image = image,
+                        detail = "the labels do not declare this project and generation"
+                    ),
+                ));
+                Value::Mismatch
             }
         }
-        // imageがないことと、observeできないことを同じ値へ丸めない。
-        Ok(_) => Value::Missing,
+        Ok(None) => Value::Missing,
         Err(error) => {
             status.global_scope_failure(&error);
             Value::Mismatch
@@ -690,13 +678,13 @@ mod tests {
         ProjectId::parse(value).expect("valid project id")
     }
 
-    /// imageがまだ存在しないhost。
+    /// imageがまだ存在しないhost。一覧は答えるが、1件も返さない。
     fn without_image(host: FakeSbx, project: &Registered) -> FakeSbx {
         let image = image::image_name(
             &project.sandbox,
             &project.metadata.provisioning.dockerfile_sha256,
         );
-        host.answering(&format!("image inspect {image}"), 1, "")
+        host.answering(&format!("image ls --quiet {image}"), 0, "")
     }
 
     #[test]
@@ -880,6 +868,34 @@ mod tests {
         )
         .expect("diagnose");
         assert_eq!(value_of(&status, "status-item-sandbox"), Value::Stopped);
+    }
+
+    #[test]
+    fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let image = image::image_name(
+            &project.sandbox,
+            &project.metadata.provisioning.dockerfile_sha256,
+        );
+        let host = FakeSbx::listing("[]").answering(&format!("image ls --quiet {image}"), 1, "");
+
+        let status = diagnose(
+            &fixture.config,
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+        )
+        .expect("diagnose");
+        assert_eq!(value_of(&status, "status-item-image"), Value::Mismatch);
+        assert!(
+            status
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.id == ErrorId::GlobalScopeUnobservable),
+            "the engine that could not answer is named: {:?}",
+            status.diagnostics
+        );
     }
 
     #[test]

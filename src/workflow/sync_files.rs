@@ -11,7 +11,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
-use crate::paths::ProjectPaths;
+use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
 use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
@@ -27,6 +27,9 @@ pub struct SyncOutput {
 }
 
 /// 宣言fileを再配置する。
+///
+/// Sandbox内のfileを置き換えるmutationであるため、対象を確かめた後にproject lockを
+/// 取得し、lock取得後のmetadataでpreconditionを判定し直してから配置する。
 pub fn run(
     config: &GlobalConfig,
     project: &ProjectId,
@@ -35,8 +38,8 @@ pub fn run(
 ) -> Result<SyncOutput> {
     let canonical = project.canonical();
     let paths = ProjectPaths::derive(&config.base_path, &canonical);
-    let Some(metadata) = metadata::load(&paths)? else {
-        return Err(Error::single(
+    let not_managed = || {
+        Error::single(
             Diagnostic::new(
                 ErrorId::ProjectNotManaged,
                 msg!("error-project-not-managed", project = project),
@@ -45,7 +48,23 @@ pub fn run(
                 "remediation-project-not-managed",
                 command = format!("sbxm add {project}")
             )),
-        ));
+        )
+    };
+
+    if metadata::load(&paths)?.is_none() {
+        // 管理対象でない案件にはlock fileも作らない。
+        return Err(not_managed());
+    }
+    let _lock = paths::acquire_exclusive_lock(
+        &paths.lock_file(),
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )?;
+
+    // lock取得後のmetadataを、以降の判定の正本とする。
+    let Some(metadata) = metadata::load(&paths)? else {
+        return Err(not_managed());
     };
     require_no_rebuild(&metadata)?;
 
@@ -140,6 +159,7 @@ mod tests {
     use crate::project::CanonicalProjectId;
     use crate::workflow::image::image_name;
     use std::cell::RefCell;
+    use std::os::unix::fs::PermissionsExt;
     use std::os::unix::process::ExitStatusExt;
     use std::path::PathBuf;
 
@@ -148,6 +168,9 @@ mod tests {
     struct FakeSbx {
         listing: String,
         calls: RefCell<Vec<Vec<String>>>,
+        /// 外部commandを呼ぶ時点でproject lockを取れてしまうか。
+        lock_path: Option<PathBuf>,
+        lock_was_free: RefCell<Option<bool>>,
     }
 
     impl FakeSbx {
@@ -155,7 +178,15 @@ mod tests {
             FakeSbx {
                 listing: output.to_string(),
                 calls: RefCell::new(Vec::new()),
+                lock_path: None,
+                lock_was_free: RefCell::new(None),
             }
+        }
+
+        /// workflowの実行中にlockが保持されているかを観測する。
+        fn watching_lock(mut self, path: PathBuf) -> FakeSbx {
+            self.lock_path = Some(path);
+            self
         }
 
         fn ran(&self, needle: &str) -> bool {
@@ -173,6 +204,17 @@ mod tests {
 
         fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
             self.calls.borrow_mut().push(spec.args.clone());
+            if let Some(path) = &self.lock_path
+                && self.lock_was_free.borrow().is_none()
+            {
+                let taken = crate::paths::acquire_exclusive_lock(
+                    path,
+                    std::time::Duration::from_millis(50),
+                    PRIVATE_FILE_MODE,
+                    PathScope::ProjectPath,
+                );
+                *self.lock_was_free.borrow_mut() = Some(taken.is_ok());
+            }
             let (code, stdout) = if spec.args.first().is_some_and(|arg| arg == "ls") {
                 (0, self.listing.clone())
             } else if spec.args.iter().any(|arg| arg == "test") {
@@ -274,6 +316,57 @@ mod tests {
         assert_eq!(output.project, "Example-Org/Example-Repo");
         assert_eq!(output.files.len(), 1);
         assert!(host.ran("cp --follow-link"));
+    }
+
+    #[test]
+    fn the_project_lock_is_held_while_the_files_are_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("declared.toml");
+        std::fs::write(&source, b"declared = true\n").unwrap();
+
+        let (_home, config, workspace_root) = setup(vec![declaration(&source)]);
+        let paths = write_metadata(&config, None);
+        let host =
+            FakeSbx::listing(&listing(&workspace_root, "running")).watching_lock(paths.lock_file());
+
+        run(&config, &project(), &host, &workspace_root).expect("sync");
+
+        assert_eq!(
+            *host.lock_was_free.borrow(),
+            Some(false),
+            "another run must not reach the same sandbox while files are being replaced"
+        );
+        assert_eq!(
+            std::fs::metadata(paths.lock_file())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            PRIVATE_FILE_MODE
+        );
+
+        // lockはworkflow終了後に解放され、lock file自体は残る。
+        crate::paths::acquire_exclusive_lock(
+            &paths.lock_file(),
+            LOCK_TIMEOUT,
+            PRIVATE_FILE_MODE,
+            PathScope::ProjectPath,
+        )
+        .expect("the lock is released when the workflow ends");
+    }
+
+    #[test]
+    fn a_project_that_is_not_managed_gets_no_lock_file() {
+        let (_home, config, workspace_root) = setup(Vec::new());
+        let host = FakeSbx::listing("[]");
+
+        run(&config, &project(), &host, &workspace_root).expect_err("nothing to place");
+
+        let paths = ProjectPaths::derive(&config.base_path, &canonical());
+        assert!(
+            !paths.lock_file().exists(),
+            "an unmanaged project is not given a lock file"
+        );
     }
 
     #[test]

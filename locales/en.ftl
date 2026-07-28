@@ -176,17 +176,26 @@ security-config-permission-remediation = Run chmod { $expected } { $path } and c
 security-config-symlink-description = { $path } is a symbolic link. Following it could read or overwrite a file outside the sbxm configuration directory.
 security-config-symlink-remediation = Replace { $path } with a regular file that you own, or move the real configuration back to that path.
 
+security-config-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. A configuration another account owns can be replaced under sbxm at any moment.
+security-config-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a file you own at that path.
+
 security-config-dir-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. Locks and configuration stored there could be observed or replaced.
 security-config-dir-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the directory.
 
 security-config-dir-symlink-description = { $path } is a symbolic link. sbxm would create locks and configuration outside the intended directory.
 security-config-dir-symlink-remediation = Replace { $path } with a directory that you own.
 
+security-config-dir-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. Locks and configuration placed there would sit in a directory another account controls.
+security-config-dir-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a directory you own at that path.
+
 security-project-path-symlink-description = { $path } is a symbolic link. sbxm does not follow it, because creating or replacing files through it would act on a location outside the project directory.
 security-project-path-symlink-remediation = Replace { $path } with a regular file or directory that you own, then run the command again.
 
 security-project-file-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a file that other accounts on this machine can read or change.
 security-project-file-permission-remediation = Run chmod { $expected } { $path } and confirm that you own the file.
+
+security-project-path-owner-description = { $path } belongs to user ID { $observed }, and you are user ID { $expected }. sbxm does not build a project on a path another account owns, whatever its mode says.
+security-project-path-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a path you own there.
 
 security-ssh-agent-exposed-description = The host SSH agent can be reached from { $sandbox }. An agent inside the sandbox can sign with your keys.
 security-ssh-agent-exposed-remediation = Stop the sandbox, then open it again with sbxm so that the daemon is restarted without the agent.
@@ -242,6 +251,7 @@ column-result = RESULT
 add-already-built = { $project } is already built, so nothing was changed.
 add-mise-heading = These managed worktrees carry a mise configuration. sbxm does not run mise for you:
 add-mise-hint = Run mise trust and mise install inside the sandbox when you want to use them.
+files-secret-hint = Declared files carry configuration, not credentials. Keep tokens, secrets and private keys out of them and hand those to the sandbox with the secret feature of Docker Sandboxes instead.
 sync-files-done = { $count } declared files of { $project } were placed into { $sandbox }.
 legend-attached = the worktree follows a branch that tracks the remote
 legend-detached = the worktree sits on a commit without a branch
