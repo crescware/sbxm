@@ -381,7 +381,11 @@ fn check_inside(
 }
 
 fn check_secret(host: &dyn HostEnvironment, name: &SandboxName, status: &mut ProjectStatus) {
-    let value = match super::secret::require_github(host, name.as_str()) {
+    // 登録されていることと、そのSandboxが受け取っていることは別である。片方だけを見て
+    // 使える状態とは言えない。
+    let value = match super::secret::require_github(host, name.as_str())
+        .and_then(|()| super::secret::require_placeholder_present(host, name.as_str()))
+    {
         Ok(()) => Value::Ready,
         Err(error) if error.contains_id(ErrorId::GithubSecretMissing) => {
             status
@@ -933,6 +937,15 @@ mod tests {
                 &format!("secret ls {}", project.sandbox),
                 0,
                 "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
+            )
+            .answering(
+                &format!(
+                    "exec {} -- sh -c {}",
+                    project.sandbox,
+                    super::super::secret::placeholder_probe()
+                ),
+                0,
+                "sbx-cs-example",
             )
             .answering(
                 &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),
