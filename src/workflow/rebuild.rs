@@ -8,7 +8,6 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
-use crate::compatibility::SandboxEntry;
 use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::hash::sha256_hex;
@@ -120,7 +119,6 @@ pub fn run(
         &name,
         &mut project_metadata,
         &built.template,
-        &entries,
         project,
         workspace_root,
         poll,
@@ -209,7 +207,6 @@ fn switch(
     name: &SandboxName,
     metadata: &mut ProjectMetadata,
     template: &super::template::LoadedTemplate,
-    entries: &[SandboxEntry],
     project: &ProjectId,
     workspace_root: &Path,
     poll: Poll,
@@ -221,6 +218,8 @@ fn switch(
         .as_ref()
         .map(|intent| image_name(name, &intent.previous_dockerfile_sha256));
 
+    // 新世代の準備には時間がかかる。切り替える対象は、その後の観測から決める。
+    let entries = daemon::list(host)?;
     // Sandboxが不在の中断点からは、作成工程から続ける。
     if let Some(entry) = entries.iter().find(|entry| entry.name == name.as_str()) {
         let observed = entry
@@ -512,6 +511,114 @@ mod tests {
         assert!(
             !host.ran("build"),
             "the existing sandbox is untouched: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
+    fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+        let target = sha256_hex(b"FROM scratch\n");
+        let image = image_name(&project.sandbox, &target);
+        let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        let host = clean_host(&fixture, &project)
+            .answering(&format!("image ls --quiet {image}"), 0, "sha256:new\n")
+            .answering(
+                &format!("image inspect {image}"),
+                0,
+                &format!(
+                    r#"[{{"Id":"sha256:new","Config":{{"Labels":{{"io.crescware.sbxm.canonical-id":"example-org/example-repo","io.crescware.sbxm.dockerfile-sha256":"{target}","io.crescware.sbxm.metadata-version":"1"}}}}}}]"#
+                ),
+            )
+            .answering(
+                "template ls --json",
+                0,
+                &format!(r#"[{{"name":"{image}","image_id":"sha256:new"}}]"#),
+            );
+
+        // 一覧は末尾から取り出される。世代の準備が終わるまでのあいだに、
+        // 対象Sandboxが手作業で消された状況を作る。
+        let running = format!("[{}]", fixture.entry(&project, "running"));
+        let created = format!(
+            r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
+            project.sandbox,
+            workspace.display()
+        );
+        *host.listing.borrow_mut() = vec![
+            created,
+            "[]".to_string(),
+            "[]".to_string(),
+            "[]".to_string(),
+            running.clone(),
+            running,
+        ];
+
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        let git_dir = layout.bare_git_dir();
+        let worktree = layout.worktree(0);
+        let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
+        let name = project.sandbox.as_str();
+        let host = host
+            .answering(
+                &format!("exec {name} -- git --git-dir {git_dir} rev-parse --is-bare-repository"),
+                0,
+                "true\n",
+            )
+            .answering(
+                &format!(
+                    "exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.url"
+                ),
+                0,
+                "https://github.com/example-org/example-repo.git\n",
+            )
+            .answering(
+                &format!(
+                    "exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.fetch"
+                ),
+                0,
+                "+refs/heads/*:refs/remotes/origin/*\n",
+            )
+            .answering(
+                &format!(
+                    "exec {name} -- git --git-dir {git_dir} rev-parse refs/remotes/origin/main"
+                ),
+                0,
+                &format!("{commit}\n"),
+            )
+            .answering(
+                &format!("exec {name} -- git -C {worktree} rev-parse HEAD"),
+                0,
+                &format!("{commit}\n"),
+            )
+            .answering(
+                &format!("exec {name} -- git -C {worktree} symbolic-ref -q HEAD"),
+                0,
+                "refs/heads/main\n",
+            );
+
+        run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect("the sandbox that is gone is created instead of removed");
+
+        assert!(
+            !host.ran("rm "),
+            "a sandbox that no longer exists is not removed again: {:?}",
+            host.calls()
+        );
+        assert!(
+            host.ran("create --name"),
+            "the run continued from the creation step: {:?}",
             host.calls()
         );
     }
