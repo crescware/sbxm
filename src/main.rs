@@ -744,6 +744,14 @@ fn print_destroy_plan(catalog: &Catalog, plan: &destroy::DestroyPlan) {
     for target in &plan.keeps {
         println!("  {target}");
     }
+    // 消す前に、消したあと元へ戻す方法まで見せる。
+    println!(
+        "\n{}",
+        format_or_report(
+            catalog,
+            &msg!("destroy-re-register", command = plan.re_register.clone())
+        )
+    );
     let _ = std::io::stdout().flush();
 }
 
