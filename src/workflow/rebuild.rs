@@ -230,6 +230,9 @@ fn switch(
         if observed == target_template {
             // 既にtarget世代のSandboxがある。作成工程はskipして続きから進める。
         } else if Some(&observed) == previous_template.as_ref() {
+            // 削除したSandboxを作り直すには、daemonを安全に再起動できる必要がある。
+            // 別案件へ接続中のsessionがあるなら、消す前に止まる。
+            daemon::require_no_active_session(host)?;
             if entry.state == SandboxState::Stopped {
                 // 固定済みの世代から復旧する場合に限り、保存状態を観測するために起動する。
                 // 新規`rebuild`は停止中Sandboxを拒否したうえで、ここまで来ない。
@@ -628,6 +631,53 @@ mod tests {
         assert!(
             host.ran("create --name"),
             "the run continued from the creation step: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
+    fn a_session_on_another_project_stops_the_rebuild_before_the_sandbox_is_removed() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+        let target = sha256_hex(b"FROM scratch\n");
+        let image = image_name(&project.sandbox, &target);
+
+        // 別案件のSandboxにsessionが接続している。daemonは再起動できない。
+        let busy = format!(
+            r#"{{"name":"other-sandbox","state":"running","workspace":"{}","template":"other-template","active_sessions":1}}"#,
+            fixture.workspace_root.join("other-sandbox").display()
+        );
+        let host = clean_host(&fixture, &project)
+            .answering(&format!("image ls --quiet {image}"), 0, "sha256:new\n")
+            .answering(
+                &format!("image inspect {image}"),
+                0,
+                &format!(
+                    r#"[{{"Id":"sha256:new","Config":{{"Labels":{{"io.crescware.sbxm.canonical-id":"example-org/example-repo","io.crescware.sbxm.dockerfile-sha256":"{target}","io.crescware.sbxm.metadata-version":"1"}}}}}}]"#
+                ),
+            )
+            .answering(
+                "template ls --json",
+                0,
+                &format!(r#"[{{"name":"{image}","image_id":"sha256:new"}}]"#),
+            );
+        *host.listing.borrow_mut() =
+            vec![format!("[{},{busy}]", fixture.entry(&project, "running"))];
+
+        let error = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("the sandbox cannot be recreated while another session is connected");
+        assert_eq!(error.first_id(), Some(ErrorId::DaemonSessionActive));
+        assert!(
+            !host.ran("rm "),
+            "nothing is removed that cannot be put back: {:?}",
             host.calls()
         );
     }
