@@ -6,7 +6,7 @@
 use crate::command::HostEnvironment;
 use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::git;
-use crate::metadata::{self, CreationMode, ManagedWorktree, ProjectMetadata};
+use crate::metadata::{self, CreationMode, ProjectMetadata};
 use crate::msg;
 use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout};
@@ -308,20 +308,16 @@ fn remote_default_branch(
 
 /// managed worktreeを、indexを固定したまま用意する。
 ///
-/// 作成のたびにmetadataへ1件ずつ追記するため、途中で中断しても次の実行が続きから進む。
-///
-/// 既にmetadataへ記録済みのworktreeは、起点commitとの一致を求めない。そこで作業する
-/// ためのworktreeであり、commitすればHEADは動く。求めるのは宣言どおりのmodeであること
-/// だけとする。記録のないworktreeは、この実行で作ったものか、案件の成果物ではない何かの
-/// どちらかであるため、起点commitまで確かめる。
+/// 既にあるworktreeは、起点commitともmodeとも照らさずに引き継ぐ。そこで作業するための
+/// worktreeであり、commitすればHEADは動き、branchを切ればmodeも変わる。どちらもsbxmが
+/// 作るときの事後条件であって、既にあるものへの要件ではない。
 pub fn ensure_worktrees(
     host: &dyn HostEnvironment,
     sandbox: &str,
     layout: &SandboxLayout,
-    paths: &ProjectPaths,
-    project: &mut ProjectMetadata,
+    project: &ProjectMetadata,
     branch: &str,
-) -> Result<Vec<ManagedWorktree>> {
+) -> Result<Vec<String>> {
     let git_dir = layout.bare_git_dir();
     let reference = git::origin_ref(branch);
     let expected_commit = read(
@@ -330,48 +326,23 @@ pub fn ensure_worktrees(
         &["git", "--git-dir", &git_dir, "rev-parse", &reference],
     )?;
     crate::progress::step(&msg!("progress-creating-worktrees"));
-    let mut managed = Vec::new();
     for index in 0..project.provisioning.requested_worktrees {
-        let name = layout.worktree_name(index);
         let path = layout.worktree(index);
-        let recorded = project
-            .managed_worktrees
-            .iter()
-            .find(|worktree| worktree.path == name)
-            .cloned();
-
-        let entry = match recorded {
-            // 記録済みのworktreeは、記録された姿のまま引き継ぐ。
-            Some(entry) if sandbox::path_exists(host, sandbox, &path)? => {
-                adopt_worktree(host, sandbox, &git_dir, &path)?;
-                entry
-            }
-            recorded => {
-                let mode = mode_for(index, project.provisioning.mode);
-                provision_worktree(
-                    host,
-                    sandbox,
-                    &git_dir,
-                    &path,
-                    branch,
-                    mode,
-                    &expected_commit,
-                )?;
-                let entry = ManagedWorktree {
-                    path: name,
-                    created_from: reference.clone(),
-                };
-                if recorded.is_none() {
-                    // 作成直後の1件だけをmetadataへ足す。
-                    project.managed_worktrees.push(entry.clone());
-                    metadata::update(paths, project)?;
-                }
-                entry
-            }
-        };
-        managed.push(entry);
+        if sandbox::path_exists(host, sandbox, &path)? {
+            adopt_worktree(host, sandbox, &git_dir, &path)?;
+            continue;
+        }
+        provision_worktree(
+            host,
+            sandbox,
+            &git_dir,
+            &path,
+            branch,
+            mode_for(index, project.provisioning.mode),
+            &expected_commit,
+        )?;
     }
-    Ok(managed)
+    Ok(layout.worktree_names(project.provisioning.requested_worktrees))
 }
 
 fn create_worktree(
@@ -415,9 +386,6 @@ fn create_worktree(
 ///
 /// Gitは同じbranchを2つのworktreeへcheckoutさせない。attachedなworktreeは案件に1つしか
 /// 持てないため、案件のmodeが効くのは最初の1本だけである。2本目以降はdetachedとする。
-///
-/// 案件のmodeがdetachedであれば全部detachedになる。attachedな案件が2本目を持てなかった
-/// のは、案件全体で揃える必然があったからではなく、揃えていたからである。
 fn mode_for(index: u32, project: CreationMode) -> CreationMode {
     match index {
         0 => project,
@@ -690,7 +658,6 @@ mod tests {
                 requested_worktrees: count,
                 dockerfile_sha256: "1".repeat(64),
             },
-            managed_worktrees: Vec::new(),
             rebuild: None,
         }
     }
@@ -898,22 +865,11 @@ mod tests {
             .holding(&[&existing])
             .answering(&format!("git -C {existing} rev-parse HEAD"), MOVED);
 
-        let mut project = metadata(CreationMode::Detached, Some("develop"), 3);
-        project.managed_worktrees.push(ManagedWorktree {
-            path: layout().worktree_name(0),
-            created_from: "refs/remotes/origin/develop".to_string(),
-        });
+        let project = metadata(CreationMode::Detached, Some("develop"), 3);
         metadata::create(&paths, &project).expect("write the metadata");
 
-        let managed = ensure_worktrees(
-            &host,
-            "sbxm-example",
-            &layout(),
-            &paths,
-            &mut project,
-            "develop",
-        )
-        .expect("the worktrees that are missing are the ones that get made");
+        let managed = ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop")
+            .expect("the worktrees that are missing are the ones that get made");
 
         assert_eq!(managed.len(), 3);
         assert!(
@@ -931,9 +887,6 @@ mod tests {
                 host.calls()
             );
         }
-
-        let stored = metadata::load(&paths).unwrap().expect("present");
-        assert_eq!(stored.managed_worktrees.len(), 3);
     }
 
     #[test]
@@ -951,22 +904,11 @@ mod tests {
                 "refs/heads/develop\n",
             );
 
-        let mut project = metadata(CreationMode::Attached, Some("develop"), 3);
-        project.managed_worktrees.push(ManagedWorktree {
-            path: layout().worktree_name(0),
-            created_from: "refs/remotes/origin/develop".to_string(),
-        });
+        let project = metadata(CreationMode::Attached, Some("develop"), 3);
         metadata::create(&paths, &project).expect("write the metadata");
 
-        let managed = ensure_worktrees(
-            &host,
-            "sbxm-example",
-            &layout(),
-            &paths,
-            &mut project,
-            "develop",
-        )
-        .expect("an attached worktree does not stop the others from being made");
+        let managed = ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop")
+            .expect("an attached worktree does not stop the others from being made");
 
         assert_eq!(managed.len(), 3);
         for index in 1..3 {
@@ -1005,22 +947,11 @@ mod tests {
                 "/home/agent/work/elsewhere/.git\n",
             );
 
-        let mut project = metadata(CreationMode::Detached, Some("develop"), 1);
-        project.managed_worktrees.push(ManagedWorktree {
-            path: layout().worktree_name(0),
-            created_from: "refs/remotes/origin/develop".to_string(),
-        });
+        let project = metadata(CreationMode::Detached, Some("develop"), 1);
         metadata::create(&paths, &project).expect("write the metadata");
 
-        let error = ensure_worktrees(
-            &host,
-            "sbxm-example",
-            &layout(),
-            &paths,
-            &mut project,
-            "develop",
-        )
-        .expect_err("a worktree of another repository is not this project's");
+        let error = ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop")
+            .expect_err("a worktree of another repository is not this project's");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     }
 
@@ -1029,34 +960,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = project_paths(dir.path());
         let host = worktree_host(CreationMode::Detached, 3);
-        let mut project = metadata(CreationMode::Detached, Some("develop"), 3);
+        let project = metadata(CreationMode::Detached, Some("develop"), 3);
         metadata::create(&paths, &project).expect("write the metadata");
 
-        let managed = ensure_worktrees(
-            &host,
-            "sbxm-example",
-            &layout(),
-            &paths,
-            &mut project,
-            "develop",
-        )
-        .expect("create");
+        let managed = ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop")
+            .expect("create");
 
         assert_eq!(
-            managed
-                .iter()
-                .map(|worktree| worktree.path.as_str())
-                .collect::<Vec<_>>(),
+            managed,
             vec![
                 "example-repo.tree-0",
                 "example-repo.tree-1",
                 "example-repo.tree-2"
             ]
-        );
-        assert!(
-            managed
-                .iter()
-                .all(|worktree| worktree.created_from == "refs/remotes/origin/develop")
         );
         for index in 0..3 {
             assert!(
@@ -1068,9 +984,6 @@ mod tests {
                 host.calls()
             );
         }
-
-        let stored = metadata::load(&paths).unwrap().expect("present");
-        assert_eq!(stored.managed_worktrees, managed);
     }
 
     #[test]
@@ -1078,18 +991,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = project_paths(dir.path());
         let host = worktree_host(CreationMode::Attached, 1);
-        let mut project = metadata(CreationMode::Attached, Some("develop"), 1);
+        let project = metadata(CreationMode::Attached, Some("develop"), 1);
         metadata::create(&paths, &project).expect("write the metadata");
 
-        ensure_worktrees(
-            &host,
-            "sbxm-example",
-            &layout(),
-            &paths,
-            &mut project,
-            "develop",
-        )
-        .expect("create");
+        ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop").expect("create");
 
         assert!(
             host.ran(&format!(
@@ -1106,57 +1011,37 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = project_paths(dir.path());
         let host = worktree_host(CreationMode::Detached, 1).holding(&[&layout().worktree(0)]);
-        let mut project = metadata(CreationMode::Detached, Some("develop"), 1);
+        let project = metadata(CreationMode::Detached, Some("develop"), 1);
         metadata::create(&paths, &project).expect("write the metadata");
 
-        let managed = ensure_worktrees(
-            &host,
-            "sbxm-example",
-            &layout(),
-            &paths,
-            &mut project,
-            "develop",
-        )
-        .expect("adopt");
+        let managed =
+            ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop").expect("adopt");
 
         assert_eq!(managed.len(), 1);
         assert!(
             !host.ran("worktree add"),
             "an interrupted creation is adopted rather than repeated"
         );
-        let stored = metadata::load(&paths).unwrap().expect("present");
-        assert_eq!(stored.managed_worktrees.len(), 1);
     }
 
     #[test]
-    fn a_worktree_on_another_commit_or_in_the_wrong_mode_stops_the_run() {
+    fn a_worktree_of_another_repository_is_not_taken_for_this_project() {
+        // modeの検査はdetached HEADを`symbolic-ref`の失敗で判定するため、共有repository
+        // から離れたdirectoryもそれだけでは通ってしまう。
         let dir = tempfile::tempdir().unwrap();
         let paths = project_paths(dir.path());
         let path = layout().worktree(0);
-
-        let elsewhere = worktree_host(CreationMode::Detached, 1)
-            .holding(&[&path])
-            .answering(&format!("git -C {path} rev-parse HEAD"), "0123456789\n");
-        let attached_by_mistake = worktree_host(CreationMode::Detached, 1)
+        let host = worktree_host(CreationMode::Detached, 1)
             .holding(&[&path])
             .answering(
-                &format!("git -C {path} symbolic-ref -q HEAD"),
-                "refs/heads/develop\n",
+                &format!("git -C {path} rev-parse --path-format=absolute --git-common-dir"),
+                "/home/agent/work/elsewhere/.git\n",
             );
 
-        for host in [elsewhere, attached_by_mistake] {
-            let mut project = metadata(CreationMode::Detached, Some("develop"), 1);
-            metadata::create(&paths, &project).ok();
-            let error = ensure_worktrees(
-                &host,
-                "sbxm-example",
-                &layout(),
-                &paths,
-                &mut project,
-                "develop",
-            )
-            .expect_err("a worktree that does not match is not adopted");
-            assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
-        }
+        let project = metadata(CreationMode::Detached, Some("develop"), 1);
+        metadata::create(&paths, &project).ok();
+        let error = ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop")
+            .expect_err("a worktree of another repository is not this project's");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     }
 }

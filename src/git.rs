@@ -48,13 +48,6 @@ pub fn origin_ref(branch: &str) -> String {
     format!("{ORIGIN_REF_PREFIX}{branch}")
 }
 
-/// `refs/remotes/origin/<branch>`からbranch名を取り出す。
-pub fn branch_of_origin_ref(value: &str) -> Option<&str> {
-    let branch = value.strip_prefix(ORIGIN_REF_PREFIX)?;
-    validate_branch_name(branch).ok()?;
-    Some(branch)
-}
-
 /// 対応するhosting service。MVPはGitHubだけを対象とする。
 const GITHUB_HOST: &str = "github.com";
 
@@ -199,28 +192,11 @@ mod tests {
     }
 
     #[test]
-    fn remote_tracking_refs_round_trip_through_the_branch_name() {
+    fn a_branch_name_becomes_the_remote_tracking_ref_of_origin() {
         assert_eq!(origin_ref("develop"), "refs/remotes/origin/develop");
         assert_eq!(
-            branch_of_origin_ref("refs/remotes/origin/develop"),
-            Some("develop")
+            origin_ref("feature/login"),
+            "refs/remotes/origin/feature/login"
         );
-        assert_eq!(
-            branch_of_origin_ref("refs/remotes/origin/feature/login"),
-            Some("feature/login")
-        );
-        for value in [
-            "develop",
-            "refs/heads/develop",
-            "refs/remotes/upstream/develop",
-            "refs/remotes/origin/",
-            "refs/remotes/origin/-delete",
-        ] {
-            assert_eq!(
-                branch_of_origin_ref(value),
-                None,
-                "{value} is not a remote-tracking ref of origin"
-            );
-        }
     }
 }

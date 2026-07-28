@@ -149,9 +149,11 @@ MVPは既存の手動手順を次のように自動化・変更する。
 
 1本のattached案件に2本目を足すと、既にあるworktreeはbranchを持ったまま残り、足したものがdetachedになる。案件をdetachedへ移す必要はない。
 
-**worktreeごとのmodeはmetadataへ保存しない。** modeは`git symbolic-ref`で観測できるうえ、既にあるworktreeへ特定のmodeを要求する理由がない。そこは利用者が作業する場所であり、branchを切ればmodeは変わる。modeの検査はsbxmが作るときの事後条件であって、既にあるものへの要件ではない。
+**worktreeはmetadataへ記録しない。** 名前は`<repository>.tree-<index>`とindexから決まるため、どれが案件のworktreeかは`requested_worktrees`だけで分かる。modeとHEADは`git`が答える。metadataは利用者が要求した目標構成を持つ場所であり、観測できるものを控える場所ではない。
 
-既にあるworktreeへ求めるのは、この共有repositoryのworktreeであり続けていることだけとする。`protection`は保存状態を見るためにworktreeごとのmodeを観測しており、attachedにはupstreamとaheadを、detachedにはoriginからの到達性を求める。混在はこの検査の前提を変えない。
+既にあるworktreeへ求めるのは、この共有repositoryのworktreeであり続けていることだけとする。起点commitもmodeも条件にしない。そこは利用者が作業する場所であり、commitすればHEADは動き、branchを切ればmodeも変わる。どちらもsbxmが作るときの事後条件であって、既にあるものへの要件ではない。
+
+`protection`は保存状態を見るためにworktreeごとのmodeを観測しており、attachedにはupstreamとaheadを、detachedにはoriginからの到達性を求める。混在はこの検査の前提を変えない。
 
 ## 5.2 目標構成の再指定
 

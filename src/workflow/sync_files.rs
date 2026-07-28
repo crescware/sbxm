@@ -151,7 +151,7 @@ mod tests {
     use crate::config::{FileDeclaration, GitIdentity, HostFileSource, SandboxHomeRelativePath};
     use crate::hash::sha256_hex;
     use crate::i18n::Locale;
-    use crate::metadata::{CreationMode, ManagedWorktree, Provisioning, RebuildIntent};
+    use crate::metadata::{CreationMode, Provisioning, RebuildIntent};
     use crate::paths::AbsoluteBasePath;
     use crate::project::CanonicalProjectId;
     use crate::workflow::image::image_name;
@@ -272,10 +272,6 @@ mod tests {
                 requested_worktrees: 1,
                 dockerfile_sha256: DIGEST.into(),
             },
-            managed_worktrees: vec![ManagedWorktree {
-                path: "example-repo.tree-0".into(),
-                created_from: "refs/remotes/origin/main".into(),
-            }],
             rebuild,
         };
         metadata::create(&paths, &metadata).unwrap();

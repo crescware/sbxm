@@ -172,7 +172,6 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
                     requested_worktrees: target.requested_worktrees,
                     dockerfile_sha256: dockerfile_sha256.clone(),
                 },
-                managed_worktrees: Vec::new(),
                 rebuild: None,
             };
             metadata::create(&paths, &metadata)?;
@@ -439,7 +438,6 @@ pub mod tests {
             stored.provisioning.dockerfile_sha256,
             current_dockerfile_hash(&registration.paths).expect("the adopted Dockerfile")
         );
-        assert!(stored.managed_worktrees.is_empty());
     }
 
     #[test]

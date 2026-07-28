@@ -167,10 +167,11 @@ fn verify_worktrees(
         .filter_map(|entry| entry.relative_to(&bare_root))
         .collect();
 
-    let mut present = Vec::with_capacity(metadata.managed_worktrees.len());
-    for worktree in &metadata.managed_worktrees {
-        if !listed.contains(&worktree.path) {
-            let path = format!("{bare_root}/{}", worktree.path);
+    let names = layout.worktree_names(metadata.provisioning.requested_worktrees);
+    let mut present = Vec::with_capacity(names.len());
+    for name in names {
+        if !listed.contains(&name) {
+            let path = format!("{bare_root}/{name}");
             return Err(Error::single(
                 Diagnostic::new(
                     ErrorId::SandboxRepositoryUnusable,
@@ -178,13 +179,13 @@ fn verify_worktrees(
                         "error-sandbox-repository-unusable",
                         path = path,
                         detail =
-                            "the metadata declares this managed worktree, but Git does not have it"
+                            "the project asks for this managed worktree, but Git does not have it"
                     ),
                 )
                 .remediation(msg!("remediation-sandbox-repository-unusable", path = path)),
             ));
         }
-        present.push(format!("{bare_root}/{}", worktree.path));
+        present.push(format!("{bare_root}/{name}"));
     }
     Ok(present)
 }
@@ -212,7 +213,7 @@ mod tests {
             "worktree {}\0bare\0\0worktree {}/{}\0branch refs/heads/main\0\0",
             layout.bare_root(),
             layout.bare_root(),
-            project.metadata.managed_worktrees[0].path
+            layout.worktree_name(0)
         );
         host.answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
             .answering(

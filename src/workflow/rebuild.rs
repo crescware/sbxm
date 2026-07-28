@@ -262,7 +262,7 @@ impl Switch<'_> {
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
-        repository::ensure_worktrees(host, &ready.name, &layout, paths, metadata, &branch)?;
+        repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch)?;
         // 適用済みhashを更新する前に、credentialの隔離まで確かめる。
         sandbox::require_credentials_isolated(host, &ready.name)?;
         Ok(())

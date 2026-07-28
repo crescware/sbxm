@@ -126,14 +126,8 @@ pub fn run(
     repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
     let branch =
         repository::resolve_start_ref(host, &ready.name, &layout, &paths, &mut project_metadata)?;
-    let managed = repository::ensure_worktrees(
-        host,
-        &ready.name,
-        &layout,
-        &paths,
-        &mut project_metadata,
-        &branch,
-    )?;
+    let managed =
+        repository::ensure_worktrees(host, &ready.name, &layout, &project_metadata, &branch)?;
 
     let worktrees = observed_worktrees(host, &ready.name, &layout, &project_metadata)?;
     let mise_candidates = mise_candidates(host, &ready.name, &layout, managed.len())?;
@@ -166,9 +160,7 @@ fn already_built(
 ) -> Result<Option<PrepareOutput>> {
     let _ = paths;
     let provisioning = &metadata.provisioning;
-    if provisioning.start_ref.is_none()
-        || metadata.managed_worktrees.len() != provisioning.requested_worktrees as usize
-    {
+    if provisioning.start_ref.is_none() {
         return Ok(None);
     }
 
@@ -181,6 +173,15 @@ fn already_built(
     };
 
     sandbox::verify_identity(&entry, name, workspace_root)?;
+
+    // 要求した本数が揃っているかは、Sandboxの中を見て決める。中を見られない場合は
+    // 揃っているとは言えないため、通常の構築経路を通す。
+    for name in layout.worktree_names(provisioning.requested_worktrees) {
+        let path = format!("{}/{name}", layout.bare_root());
+        if !sandbox::path_exists(host, &entry.name, &path)? {
+            return Ok(None);
+        }
+    }
 
     let worktrees = observed_worktrees(host, &entry.name, layout, metadata)?;
     Ok(Some(PrepareOutput {
@@ -236,10 +237,16 @@ fn observed_worktrees(
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
 ) -> Result<Vec<WorktreeRow>> {
-    let mode = metadata.provisioning.mode;
-    let mut rows = Vec::with_capacity(metadata.managed_worktrees.len());
-    for worktree in &metadata.managed_worktrees {
-        let path = format!("{}/{}", layout.bare_root(), worktree.path);
+    let provisioning = &metadata.provisioning;
+    let names = layout.worktree_names(provisioning.requested_worktrees);
+    let created_from = provisioning
+        .start_ref
+        .as_deref()
+        .map(crate::git::origin_ref)
+        .unwrap_or_default();
+    let mut rows = Vec::with_capacity(names.len());
+    for name in names {
+        let path = format!("{}/{}", layout.bare_root(), name);
         // 停止中のSandboxではHEADを読めない。観測できない値を推測で埋めない。
         let outcome = sandbox::exec(host, sandbox, &["git", "-C", &path, "rev-parse", "HEAD"])?;
         let head = outcome
@@ -247,10 +254,10 @@ fn observed_worktrees(
             .then(|| outcome.stdout_text().trim().to_string())
             .filter(|head| !head.is_empty());
         rows.push(WorktreeRow {
-            path: worktree.path.clone(),
-            created_from: worktree.created_from.clone(),
+            path: name,
+            created_from: created_from.clone(),
             head,
-            mode,
+            mode: provisioning.mode,
         });
     }
     Ok(rows)
@@ -989,7 +996,6 @@ mod tests {
 
         let stored = bench.stored("Example-Org/Example-Repo");
         assert_eq!(stored.provisioning.start_ref.as_deref(), Some("main"));
-        assert_eq!(stored.managed_worktrees.len(), 1);
 
         // 成功済みの成果物は作り直さない。
         for done in [
