@@ -17,10 +17,8 @@ use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPath
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::files::PlacedFile;
-use super::{daemon, files, identity, image, repository, sandbox, secret, template};
-
-/// `mise`の設定を持つと判断するfile。
-const MISE_FILES: [&str; 3] = ["mise.toml", ".mise.toml", ".tool-versions"];
+use super::tools::Note;
+use super::{daemon, files, identity, image, repository, sandbox, secret, template, tools};
 
 /// 出力のworktree 1行。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,8 +40,8 @@ pub struct PrepareOutput {
     pub sandbox_state: crate::compatibility::SandboxState,
     pub worktrees: Vec<WorktreeRow>,
     pub files: Vec<PlacedFile>,
-    /// `mise`の設定を持つmanaged worktree。sbxmは自動実行せず案内だけを行う。
-    pub mise_candidates: Vec<String>,
+    /// Sandboxに入っているtoolが返した案内。sbxmが代わりに実行しないことを示す。
+    pub notes: Vec<Note>,
     /// 既に構築済みで、この実行が何も変更しなかったか。
     pub already_built: bool,
     pub warnings: Vec<Msg>,
@@ -121,6 +119,7 @@ pub fn run(
 
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
     identity::ensure(host, &ready.name, &config.git)?;
+    tools::sandbox_ready(host, &ready.name)?;
     secret::configure_git_credential(host, &ready.name)?;
 
     repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
@@ -130,7 +129,7 @@ pub fn run(
         repository::ensure_worktrees(host, &ready.name, &layout, &project_metadata, &branch)?;
 
     let worktrees = observed_worktrees(host, &ready.name, &layout, &project_metadata)?;
-    let mise_candidates = mise_candidates(host, &ready.name, &layout, managed.len())?;
+    let notes = tools::worktrees_ready(host, &ready.name, &layout, managed.len())?;
 
     Ok(PrepareOutput {
         project: project_metadata.display_id(),
@@ -140,7 +139,7 @@ pub fn run(
         sandbox_state: ready.state,
         worktrees,
         files,
-        mise_candidates,
+        notes,
         already_built: false,
         warnings,
     })
@@ -192,7 +191,7 @@ fn already_built(
         sandbox_state: entry.state,
         worktrees,
         files: Vec::new(),
-        mise_candidates: Vec::new(),
+        notes: Vec::new(),
         already_built: true,
         warnings: Vec::new(),
     }))
@@ -261,26 +260,6 @@ fn observed_worktrees(
         });
     }
     Ok(rows)
-}
-
-/// `mise`の設定を持つmanaged worktree。
-fn mise_candidates(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
-    layout: &SandboxLayout,
-    count: usize,
-) -> Result<Vec<String>> {
-    let mut candidates = Vec::new();
-    for index in 0..count as u32 {
-        let path = layout.worktree(index);
-        for name in MISE_FILES {
-            let target = format!("{path}/{name}");
-            if sandbox::exec(host, sandbox, &["test", "-f", &target])?.success() {
-                candidates.push(target);
-            }
-        }
-    }
-    Ok(candidates)
 }
 
 /// 登録されていない案件は構築できない。
@@ -383,6 +362,8 @@ mod tests {
         repository: RefCell<BTreeMap<String, String>>,
         /// managed worktreeのpath -> branch。detachedは`None`。
         worktrees: RefCell<BTreeMap<String, Option<String>>>,
+        /// Sandbox内にあるcommand。既定のtemplateが入れるものを持つ。
+        commands: RefCell<BTreeSet<String>>,
         default_branch: String,
         /// 一致した起動を失敗させる。副作用は起こさない。
         fail: RefCell<Option<String>>,
@@ -419,10 +400,26 @@ mod tests {
                 settings: RefCell::new(BTreeMap::new()),
                 repository: RefCell::new(BTreeMap::new()),
                 worktrees: RefCell::new(BTreeMap::new()),
+                commands: RefCell::new(
+                    tools::TOOLS
+                        .iter()
+                        .map(|tool| tool.name().to_string())
+                        .collect(),
+                ),
                 default_branch: "main".to_string(),
                 fail: RefCell::new(None),
                 calls: RefCell::new(Vec::new()),
             }
+        }
+
+        /// 利用者がDockerfileから外したtoolを持たないSandbox。
+        fn without(&self, program: &str) {
+            self.commands.borrow_mut().remove(program);
+        }
+
+        /// Sandbox内に既にあるfile。cloneした案件が持ち込むものを表す。
+        fn carrying(&self, path: &str) {
+            self.present.borrow_mut().insert(path.to_string());
         }
 
         /// 次の実行で、指定した起動だけを失敗させる。
@@ -698,6 +695,17 @@ mod tests {
                         ok
                     }
                 }
+                // Sandboxが持っているtoolを一度に答える。
+                ["sh", "-c", script] if *script == tools::probe() => {
+                    let carried = self.commands.borrow();
+                    (
+                        0,
+                        carried
+                            .iter()
+                            .map(|name| format!("{name}\n"))
+                            .collect::<String>(),
+                    )
+                }
                 // 実物と同じく、SSH Agentは届かない。`printenv`は未設定を`1`で示す。
                 ["printenv", "SSH_AUTH_SOCK"] => missing,
                 ["ssh-add", "-L"] => (crate::workflow::sandbox::SSH_ADD_NO_AGENT, String::new()),
@@ -756,10 +764,6 @@ mod tests {
                         .borrow_mut()
                         .insert(key.to_string(), value.to_string());
                     ok
-                }
-                // 既定のtemplateはghを入れる。入れないSandboxはidentity moduleのtestが持つ。
-                ["sh", "-c", script] if *script == super::super::identity::gh_probe() => {
-                    (0, "yes".to_string())
                 }
                 ["gh", "config", "get", key, ..] => match self.settings.borrow().get(*key) {
                     Some(value) => (0, format!("{value}\n")),
@@ -1148,6 +1152,52 @@ mod tests {
         // bare repositoryとworktreeは、1 treeでも3 treesでも分かれている。
         assert!(world.ran("git init --bare /home/agent/work/example-repo/.git"));
         assert!(world.ran("remote add origin https://github.com/Example-Org/Example-Repo.git"));
+    }
+
+    /// managed worktreeが持ち込んだ`mise.toml`のpath。
+    const DECLARED_MISE: &str = "/home/agent/work/example-repo/example-repo.tree-0/mise.toml";
+
+    #[test]
+    fn what_the_tools_answer_reaches_the_output() {
+        let bench = bench();
+        let world = World::new();
+        world.carrying(DECLARED_MISE);
+
+        let output = bench
+            .build(&world, &request("Example-Org/Example-Repo", None, None))
+            .expect("build");
+        assert_eq!(output.notes.len(), 1, "{:?}", output.notes);
+        assert_eq!(output.notes[0].items, vec![DECLARED_MISE.to_string()]);
+    }
+
+    #[test]
+    fn a_tool_the_sandbox_lacks_never_reaches_the_output() {
+        let bench = bench();
+        let world = World::new();
+        world.without("mise");
+        world.carrying(DECLARED_MISE);
+
+        let output = bench
+            .build(&world, &request("Example-Org/Example-Repo", None, None))
+            .expect("build");
+        assert!(output.notes.is_empty(), "{:?}", output.notes);
+        assert!(
+            !world.ran("mise.toml"),
+            "the declared files are not even looked for: {:?}",
+            world.invocations()
+        );
+    }
+
+    #[test]
+    fn a_sandbox_without_gh_is_never_asked_to_configure_it() {
+        let bench = bench();
+        let world = World::new();
+        world.without("gh");
+
+        bench
+            .build(&world, &request("Example-Org/Example-Repo", None, None))
+            .expect("build");
+        assert!(!world.ran("git_protocol"), "{:?}", world.invocations());
     }
 
     #[test]

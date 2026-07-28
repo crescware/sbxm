@@ -18,7 +18,8 @@ use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPath
 use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
-use super::{daemon, repository, sandbox};
+use super::tools::Note;
+use super::{daemon, repository, sandbox, tools};
 use crate::project::SandboxLayout;
 
 /// 何を適用するか。
@@ -41,6 +42,8 @@ pub struct ApplyOutput {
     pub files: Vec<PlacedFile>,
     /// worktreeを適用した場合の、適用後の本数。
     pub worktrees: Option<u32>,
+    /// Sandboxに入っているtoolが返した案内。
+    pub notes: Vec<Note>,
 }
 
 /// 構築済みの案件へ変更を適用する。
@@ -133,14 +136,16 @@ pub fn run(
     }
 
     let mut worktrees = None;
+    let mut notes = Vec::new();
     if let Some(count) = scope.worktrees {
         raise_worktrees(&paths, &mut metadata, count)?;
         let layout = SandboxLayout::new(&canonical);
         repository::ensure_bare_clone(host, &entry.name, project, &layout)?;
         let branch =
             repository::resolve_start_ref(host, &entry.name, &layout, &paths, &mut metadata)?;
-        repository::ensure_worktrees(host, &entry.name, &layout, &metadata, &branch)?;
+        let managed = repository::ensure_worktrees(host, &entry.name, &layout, &metadata, &branch)?;
         worktrees = Some(metadata.provisioning.requested_worktrees);
+        notes = tools::worktrees_ready(host, &entry.name, &layout, managed.len())?;
     }
 
     Ok(ApplyOutput {
@@ -148,6 +153,7 @@ pub fn run(
         sandbox: entry.name,
         files,
         worktrees,
+        notes,
     })
 }
 

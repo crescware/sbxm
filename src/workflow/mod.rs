@@ -26,6 +26,7 @@ pub mod status_global;
 pub mod status_project;
 pub mod stop;
 pub mod template;
+pub mod tools;
 pub mod worktree;
 
 use std::io::Write;
