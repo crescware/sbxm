@@ -348,6 +348,7 @@ pub fn confirmation_mismatch(expected: &str) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
     use crate::metadata;
     use crate::workflow::inventory::tests::{FakeSbx, fixture};
     use crate::workflow::protection::tests::clean_host;
@@ -426,6 +427,38 @@ mod tests {
             project.paths.dockerfile().exists(),
             "the Dockerfile the user edits is kept"
         );
+    }
+
+    #[test]
+    fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let host = clean_host(&fixture, &project);
+        host.listing.borrow_mut().insert(0, "[]".to_string());
+
+        let prepared = prepare(
+            &fixture.config,
+            Some(&project_id("example-org/example-repo")),
+            false,
+            &host,
+            &mut ScriptedPrompt::choosing(0),
+            &fixture.workspace_root,
+        )
+        .expect("prepare");
+        execute(&host, &prepared, poll()).expect("destroy");
+
+        // 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
+        let removal = host.spec(&format!("rm {}", project.sandbox));
+        assert_eq!(removal.output, OutputPolicy::Passthrough);
+        assert_eq!(removal.env, EnvPolicy::InheritWithoutSshAgent);
+        assert_eq!(removal.timeout, TimeoutClass::SandboxLifecycle);
+
+        // 判定に使う出力はsbxmが読む。
+        let listing = host.spec("ls --json");
+        assert_eq!(listing.output, OutputPolicy::Capture);
+        let inspection = host.spec("worktree list --porcelain -z");
+        assert_eq!(inspection.output, OutputPolicy::Capture);
+        assert_eq!(inspection.env, EnvPolicy::InheritWithoutSshAgent);
     }
 
     #[test]

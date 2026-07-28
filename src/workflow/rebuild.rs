@@ -361,6 +361,7 @@ fn not_managed(project: &ProjectId) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
     use crate::workflow::inventory::tests::{FakeSbx, Fixture, fixture};
     use crate::workflow::protection::tests::clean_host;
     use std::os::unix::fs::PermissionsExt;
@@ -638,6 +639,11 @@ mod tests {
             "the run continued from the creation step: {:?}",
             host.calls()
         );
+        // 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
+        let creation = host.spec("create --name");
+        assert_eq!(creation.output, OutputPolicy::Passthrough);
+        assert_eq!(creation.env, EnvPolicy::InheritWithoutSshAgent);
+        assert_eq!(creation.timeout, TimeoutClass::SandboxLifecycle);
     }
 
     #[test]
@@ -939,6 +945,13 @@ mod tests {
             host.ran("secret ls") && host.ran("ssh-add -L"),
             "the recreated sandbox reaches GitHub and not the host agent: {:?}",
             host.calls()
+        );
+
+        // 判定に使う出力はsbxmが読む。
+        assert_eq!(host.spec("ls --json").output, OutputPolicy::Capture);
+        assert_eq!(
+            host.spec("template ls --json").output,
+            OutputPolicy::Capture
         );
     }
 }
