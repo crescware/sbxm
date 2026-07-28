@@ -71,7 +71,7 @@ rebuild intentがある場合は通常の状態表よりintentの継続規則を
 | `target_dockerfile_sha256`世代 | identityと構築済み工程を検証し、最初の未完了工程から継続 |
 | target、previousのどちらでもない | 帰属不能として自動変更せずexit code `1` |
 
-既存Sandboxがstoppedの場合に限り、保存状態はSandboxの中からしか読めないため、対象Sandboxを非対話で起動してから検査する。これは新規`rebuild`がstopped Sandboxを拒否する規則の唯一の例外とする。保存状態不合格、検査不能、identity不一致では削除しない。
+保存状態はSandboxの中からしか読めないため、対象Sandboxがstoppedの場合は非対話で起動してから検査する。`rebuild`はそのSandboxをこれから作り直すのであり、状態を読むためだけの起動を利用者へ求めない。保存状態不合格、検査不能、identity不一致では削除しない。
 
 target世代のSandboxは、各工程の事後条件をinspectして成功済み工程をskipする。metadataの適用済みhash更新とintent削除は、Sandbox identity、managed worktree、宣言file、Git identity、credential隔離の全検証が成功した後だけ行う。
 

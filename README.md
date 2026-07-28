@@ -90,7 +90,7 @@ Before recording anything, remove:
 | 18 | break the Dockerfile, then `sbxm rebuild` | 1 | the build fails and the existing sandbox still runs |
 | 19 | `sbxm rebuild` with a dirty tree or unpushed commits | 1 | `unsaved-work`, naming what would be lost |
 | 20 | `sbxm rebuild` with the unmanaged worktree from case 7 | 1 | `unmanaged-worktree-present`, naming the worktree and how to remove it |
-| 21 | `sbxm rebuild` on a stopped sandbox | 1 | points at `sbxm open` |
+| 21 | `sbxm rebuild` on a stopped sandbox | 0 | starts it to read its saved state, then rebuilds |
 | 22 | `sbxm rebuild` on a clean, managed-only sandbox | 0 | the new generation is applied |
 | 23 | interrupt case 22 right after the sandbox is removed, then rerun | 0 | continues from the recorded generation |
 | 24 | `sbxm status <owner>/<repo>` after case 22 | 0 | the new Dockerfile hash, worktrees, files and Git identity are in place |

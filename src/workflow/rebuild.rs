@@ -66,8 +66,8 @@ pub fn run(
         // intentがある場合は、intentに固定した世代だけを完成させる。
         Some(intent) => intent.target_dockerfile_sha256.clone(),
         None => {
-            // 状態表が先にある。Sandboxを観測できない案件には、変更の有無を答えない。
-            require_running(&project_metadata, state, &name)?;
+            // 状態表が先にある。Sandboxを持たない案件には、変更の有無を答えない。
+            require_created(&project_metadata, state, &name)?;
             if current == project_metadata.provisioning.dockerfile_sha256 {
                 return Ok(RebuildOutput {
                     project: project_metadata.display_id(),
@@ -77,6 +77,14 @@ pub fn run(
                     warnings: Vec::new(),
                 });
             }
+            start_to_read_saved_state(
+                host,
+                &project_metadata,
+                &name,
+                state == ProjectState::Stopped,
+                workspace_root,
+                poll,
+            )?;
             let layout = SandboxLayout::new(&canonical);
             protection::inspect(
                 host,
@@ -228,11 +236,14 @@ impl Switch<'_> {
         // 世代を観測する手段がないためである。既存のSandboxは、保存されていない作業が
         // ないことを確かめてから必ず作り直す。
         if let Some(entry) = inventory::single(&entries, name.as_str())? {
-            if entry.state == SandboxState::Stopped {
-                // 保存状態はSandboxの中からしか読めない。読むために起動する。
-                inventory::start(host, name.as_str())?;
-                inventory::wait_until_running(host, metadata, workspace_root, poll)?;
-            }
+            start_to_read_saved_state(
+                host,
+                metadata,
+                name,
+                entry.state == SandboxState::Stopped,
+                workspace_root,
+                poll,
+            )?;
             protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
             // 通常modeの削除command。データ保護検査は上で済ませている。
             inventory::remove(host, name, false, poll)?;
@@ -258,14 +269,34 @@ impl Switch<'_> {
     }
 }
 
-/// 新規`rebuild`は、内部状態を観測できるrunningのSandboxだけを対象とする。
-fn require_running(
+/// 保存されていない作業を読むために、停止しているSandboxを起動する。
+///
+/// `rebuild`はこのSandboxをこれから作り直す。状態を読むためだけの起動を利用者へ
+/// 求めない。
+fn start_to_read_saved_state(
+    host: &dyn HostEnvironment,
+    metadata: &ProjectMetadata,
+    name: &SandboxName,
+    stopped: bool,
+    workspace_root: &Path,
+    poll: Poll,
+) -> Result<()> {
+    if !stopped {
+        return Ok(());
+    }
+    inventory::start(host, name.as_str())?;
+    inventory::wait_until_running(host, metadata, workspace_root, poll)?;
+    Ok(())
+}
+
+/// `rebuild`は、Sandboxを持つ案件だけを対象とする。
+fn require_created(
     metadata: &ProjectMetadata,
     state: ProjectState,
     name: &SandboxName,
 ) -> Result<()> {
     match state {
-        ProjectState::Running => Ok(()),
+        ProjectState::Running | ProjectState::Stopped => Ok(()),
         ProjectState::NotCreated => Err(Error::single(
             Diagnostic::new(
                 ErrorId::SandboxNotCreated,
@@ -278,20 +309,6 @@ fn require_running(
             .remediation(msg!(
                 "remediation-sandbox-not-created",
                 command = format!("sbxm add {}", metadata.display_id())
-            )),
-        )),
-        ProjectState::Stopped => Err(Error::single(
-            Diagnostic::new(
-                ErrorId::SandboxNotRunning,
-                msg!(
-                    "error-sandbox-not-running",
-                    sandbox = name,
-                    observed = "stopped"
-                ),
-            )
-            .remediation(msg!(
-                "remediation-sandbox-not-running",
-                command = format!("sbxm open {}", metadata.display_id())
             )),
         )),
     }
@@ -420,22 +437,39 @@ mod tests {
     }
 
     #[test]
-    fn a_stopped_or_missing_sandbox_is_refused_with_the_command_that_helps() {
+    fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() {
+        // `rebuild`はこのSandboxをこれから作り直す。保存状態を読むためだけの起動を
+        // 利用者へ求めない。
         let fixture = fixture();
         let project = fixture.register("example-org/example-repo");
         std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+        let name = project.sandbox.as_str();
 
-        let stopped = FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "stopped")));
-        let error = run(
+        let stopped = format!("[{}]", fixture.entry(&project, "stopped"));
+        let running = format!("[{}]", fixture.entry(&project, "running"));
+        let host = FakeSbx::listings(&[&stopped, &running]);
+
+        // 起動の先で止まってよい。ここで見たいのは、停止を理由に拒否しないことである。
+        let _ = run(
             &fixture.config,
             &project_id("example-org/example-repo"),
-            &stopped,
+            &host,
             &fixture.workspace_root,
             poll(),
-        )
-        .expect_err("a stopped sandbox cannot be inspected");
-        assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
-        assert!(!stopped.ran("build"), "nothing is built");
+        );
+
+        assert!(
+            host.ran(&format!("exec {name} -- /bin/true")),
+            "the sandbox is started: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
+    fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
 
         let absent = FakeSbx::listing("[]");
         let error = run(
@@ -447,6 +481,7 @@ mod tests {
         )
         .expect_err("a project without a sandbox has nothing to switch");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
+        assert!(!absent.ran("build"), "nothing is built");
     }
 
     #[test]

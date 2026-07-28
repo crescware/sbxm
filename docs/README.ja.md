@@ -77,7 +77,7 @@ custom secretはSandboxの作成時に結び付くため、あとから登録し
 | 18 | Dockerfileを壊してから`sbxm rebuild` | 1 | buildが失敗し、既存Sandboxはそのまま動く |
 | 19 | dirty、unpushedのある状態で`sbxm rebuild` | 1 | 失われる対象を示す`unsaved-work` |
 | 20 | case 7のunmanaged worktreeがある状態で`sbxm rebuild` | 1 | 対象worktreeと削除方法を示す`unmanaged-worktree-present` |
-| 21 | stopped Sandboxへ`sbxm rebuild` | 1 | `sbxm open`を案内する |
+| 21 | stopped Sandboxへ`sbxm rebuild` | 0 | 保存状態を読むために起動してから再構築する |
 | 22 | cleanでmanagedだけのSandboxへ`sbxm rebuild` | 0 | 新世代が適用される |
 | 23 | case 22をSandbox削除直後に中断して再実行 | 0 | 記録済みの世代から継続する |
 | 24 | case 22の後に`sbxm status <owner>/<repo>` | 0 | 新しいDockerfile hash、worktree、file、Git identityが揃う |
