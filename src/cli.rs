@@ -84,12 +84,22 @@ pub struct DestroyArgs {
     pub force: bool,
 }
 
+/// `apply`の引数。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplyArgs {
+    pub project: ProjectId,
+    /// global configが宣言するfileを再配置する。
+    pub files: bool,
+    /// managed worktreeの目標本数。
+    pub worktrees: Option<u32>,
+}
+
 /// 実行するcommand。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Init(InitMode),
     Add(AddArgs),
-    SyncFiles(ProjectId),
+    Apply(ApplyArgs),
     Prepare(ProjectId),
     Rebuild(ProjectId),
     Open(Option<ProjectId>),
@@ -389,16 +399,28 @@ fn build_command(catalog: &Catalog) -> Result<ClapCommand> {
                 .help(text("cli-add-detach-help")?),
         );
 
-    let sync_files = ClapCommand::new("sync-files")
-        .about(text("cli-sync-files-about")?)
-        .help_template(positional_template.clone())
+    let apply = ClapCommand::new("apply")
+        .about(text("cli-apply-about")?)
         .disable_help_flag(true)
         .arg(help_flag(text("cli-help-help")?))
         .arg(
             Arg::new("project")
                 .required(true)
                 .value_name(project_value_name)
-                .help(text("cli-sync-files-project-help")?),
+                .help(text("cli-apply-project-help")?),
+        )
+        .arg(
+            Arg::new("files")
+                .long("files")
+                .action(ArgAction::SetTrue)
+                .help(text("cli-apply-files-help")?),
+        )
+        .arg(
+            Arg::new("worktrees")
+                .long("worktrees")
+                .value_name("N")
+                .value_parser(clap::value_parser!(u32))
+                .help(text("cli-apply-worktrees-help")?),
         );
 
     let prepare = ClapCommand::new("prepare")
@@ -511,7 +533,7 @@ fn build_command(catalog: &Catalog) -> Result<ClapCommand> {
         )
         .subcommand(init)
         .subcommand(add)
-        .subcommand(sync_files)
+        .subcommand(apply)
         .subcommand(prepare)
         .subcommand(rebuild)
         .subcommand(open)
@@ -529,7 +551,7 @@ fn build_invocation(
     match name {
         "init" => Ok(Command::Init(init_mode(matches)?)),
         "add" => Ok(Command::Add(add_args(matches)?)),
-        "sync-files" => Ok(Command::SyncFiles(required_project(matches)?)),
+        "apply" => Ok(Command::Apply(apply_args(matches)?)),
         "prepare" => Ok(Command::Prepare(required_project(matches)?)),
         "rebuild" => Ok(Command::Rebuild(required_project(matches)?)),
         "open" => Ok(Command::Open(optional_project(
@@ -625,6 +647,24 @@ fn add_args(matches: &ArgMatches) -> Result<AddArgs> {
         project,
         worktrees,
         detach,
+    })
+}
+
+/// `apply`は適用する対象の明示を必須とする。省略した対象へは触れないため、何も
+/// 指定しない実行は何をするか決まらない。
+fn apply_args(matches: &ArgMatches) -> Result<ApplyArgs> {
+    let files = matches.get_flag("files");
+    let worktrees = matches.get_one::<u32>("worktrees").copied();
+    if !files && worktrees.is_none() {
+        return fail(
+            ErrorId::ApplyScopeRequired,
+            msg!("error-apply-scope-required"),
+        );
+    }
+    Ok(ApplyArgs {
+        project: required_project(matches)?,
+        files,
+        worktrees,
     })
 }
 
@@ -973,15 +1013,7 @@ mod tests {
     #[test]
     fn each_subcommand_renders_its_own_help() {
         for name in [
-            "init",
-            "add",
-            "sync-files",
-            "rebuild",
-            "open",
-            "stop",
-            "ls",
-            "status",
-            "destroy",
+            "init", "add", "apply", "rebuild", "open", "stop", "ls", "status", "destroy",
         ] {
             let outcome = run(&[name, "--help"], tty()).expect("subcommand help renders");
             let Outcome::Help(text) = outcome else {
@@ -1125,7 +1157,7 @@ mod tests {
 
     #[test]
     fn commands_that_always_need_a_project_refuse_to_prompt() {
-        for name in ["add", "sync-files", "rebuild"] {
+        for name in ["add", "apply", "rebuild"] {
             let error = run(&[name], tty()).expect_err("{name} requires a project");
             assert_eq!(
                 error.first_id(),
@@ -1238,7 +1270,7 @@ mod tests {
     fn an_invalid_project_identifier_is_refused_by_every_command_that_takes_one() {
         for arguments in [
             vec!["add", "not-a-project"],
-            vec!["sync-files", "owner/repo/extra"],
+            vec!["apply", "--files", "owner/repo/extra"],
             vec!["rebuild", "/repo"],
             vec!["open", "owner/"],
             vec!["stop", "owner"],

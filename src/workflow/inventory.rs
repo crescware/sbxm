@@ -279,7 +279,7 @@ pub mod tests {
     use crate::command::{CommandOutcome, CommandSpec};
     use crate::config::{GitIdentity, GlobalConfig};
     use crate::i18n::Locale;
-    use crate::metadata::{CreationMode, ManagedWorktree, Provisioning};
+    use crate::metadata::{CreationMode, Provisioning};
     use crate::paths::{AbsoluteBasePath, ProjectPaths};
     use crate::project::{ProjectId, SandboxName};
     use crate::workflow::image::image_name;
@@ -446,10 +446,6 @@ pub mod tests {
                     requested_worktrees: 1,
                     dockerfile_sha256: DIGEST.into(),
                 },
-                managed_worktrees: vec![ManagedWorktree {
-                    path: format!("{}.tree-0", canonical.repository()),
-                    created_from: "refs/remotes/origin/main".into(),
-                }],
                 rebuild: None,
             };
             metadata::create(&paths, &metadata).expect("write the metadata");

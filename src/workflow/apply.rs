@@ -1,7 +1,10 @@
-//! `sbxm sync-files`。
+//! `sbxm apply`。
 //!
-//! 現在のglobal configが宣言するfileだけを、running Sandboxへ再配置する。
-//! projectの登録、構築の継続、worktree構成の変更、image・Template操作は行わない。
+//! 構築済みの案件へ、作り直さずに反映できる変更を適用する。適用するものはoptionで
+//! 明示させる。省略した対象には触れない。
+//!
+//! 作り直しを要する変更は`rebuild`が担当する。projectの登録、構築の継続、
+//! image・Template操作は行わない。
 
 use std::path::Path;
 
@@ -15,26 +18,42 @@ use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPath
 use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
-use super::{daemon, sandbox};
+use super::{daemon, repository, sandbox};
+use crate::project::SandboxLayout;
 
-/// `sync-files`の結果。
+/// 何を適用するか。
+///
+/// 省略した対象は変更しない。宣言fileの配置は既存のfileを上書きするため、暗黙には
+/// 走らせない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Scope {
+    /// global configが宣言するfileを再配置する。
+    pub files: bool,
+    /// managed worktreeの目標本数。現在より多い値だけを受け付ける。
+    pub worktrees: Option<u32>,
+}
+
+/// `apply`の結果。
 #[derive(Debug, Clone)]
-pub struct SyncOutput {
+pub struct ApplyOutput {
     pub project: String,
     pub sandbox: String,
     pub files: Vec<PlacedFile>,
+    /// worktreeを適用した場合の、適用後の本数。
+    pub worktrees: Option<u32>,
 }
 
-/// 宣言fileを再配置する。
+/// 構築済みの案件へ変更を適用する。
 ///
-/// Sandbox内のfileを置き換えるmutationであるため、対象を確かめた後にproject lockを
-/// 取得し、lock取得後のmetadataでpreconditionを判定し直してから配置する。
+/// Sandboxの中身を変えるmutationであるため、対象を確かめた後にproject lockを取得し、
+/// lock取得後のmetadataでpreconditionを判定し直してから適用する。
 pub fn run(
     config: &GlobalConfig,
     project: &ProjectId,
+    scope: Scope,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
-) -> Result<SyncOutput> {
+) -> Result<ApplyOutput> {
     let canonical = project.canonical();
     let paths = ProjectPaths::derive(&config.base_path, &canonical);
     let not_managed = || {
@@ -62,7 +81,7 @@ pub fn run(
     )?;
 
     // lock取得後のmetadataを、以降の判定の正本とする。
-    let Some(metadata) = metadata::load(&paths)? else {
+    let Some(mut metadata) = metadata::load(&paths)? else {
         return Err(not_managed());
     };
     require_no_rebuild(&metadata)?;
@@ -108,12 +127,55 @@ pub fn run(
         ));
     }
 
-    let files = files::place_all(host, &entry.name, &config.files, files::Conflict::Overwrite)?;
-    Ok(SyncOutput {
+    let mut files = Vec::new();
+    if scope.files {
+        files = files::place_all(host, &entry.name, &config.files, files::Conflict::Overwrite)?;
+    }
+
+    let mut worktrees = None;
+    if let Some(count) = scope.worktrees {
+        raise_worktrees(&paths, &mut metadata, count)?;
+        let layout = SandboxLayout::new(&canonical);
+        repository::ensure_bare_clone(host, &entry.name, project, &layout)?;
+        let branch =
+            repository::resolve_start_ref(host, &entry.name, &layout, &paths, &mut metadata)?;
+        repository::ensure_worktrees(host, &entry.name, &layout, &metadata, &branch)?;
+        worktrees = Some(metadata.provisioning.requested_worktrees);
+    }
+
+    Ok(ApplyOutput {
         project: metadata.display_id(),
         sandbox: entry.name,
         files,
+        worktrees,
     })
+}
+
+/// 目標worktree数を引き上げる。
+///
+/// 減らす指定は受け付けない。worktreeを減らすことはcheckoutされた作業を消すことであり、
+/// `destroy`と同じ重さの確認が要る。
+fn raise_worktrees(paths: &ProjectPaths, metadata: &mut ProjectMetadata, count: u32) -> Result<()> {
+    let current = metadata.provisioning.requested_worktrees;
+    if count < current {
+        return Err(Error::single(
+            Diagnostic::new(
+                ErrorId::WorktreesNotReducible,
+                msg!(
+                    "error-worktrees-not-reducible",
+                    project = metadata.display_id(),
+                    requested = count,
+                    current = current
+                ),
+            )
+            .remediation(msg!("remediation-worktrees-not-reducible")),
+        ));
+    }
+    if count == current {
+        return Ok(());
+    }
+    metadata.provisioning.requested_worktrees = count;
+    metadata::update(paths, metadata)
 }
 
 /// 世代の切替中は、fileを配置せず`rebuild`の再実行を案内する。
@@ -146,12 +208,18 @@ fn state_of(state: SandboxState) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    /// 既存testは宣言fileの配置を確かめる。
+    const FILES_ONLY: Scope = Scope {
+        files: true,
+        worktrees: None,
+    };
+
     use super::*;
     use crate::command::{CommandOutcome, CommandSpec};
     use crate::config::{FileDeclaration, GitIdentity, HostFileSource, SandboxHomeRelativePath};
     use crate::hash::sha256_hex;
     use crate::i18n::Locale;
-    use crate::metadata::{CreationMode, ManagedWorktree, Provisioning, RebuildIntent};
+    use crate::metadata::{CreationMode, Provisioning, RebuildIntent};
     use crate::paths::AbsoluteBasePath;
     use crate::project::CanonicalProjectId;
     use crate::workflow::image::image_name;
@@ -165,6 +233,10 @@ mod tests {
     struct FakeSbx {
         listing: String,
         calls: RefCell<Vec<Vec<String>>>,
+        /// Sandbox内commandへの応答。keyは`--`より後ろを空白で連結したもの。
+        answers: std::collections::HashMap<String, (i32, String)>,
+        /// Sandbox内に存在するpath。
+        present: RefCell<Vec<String>>,
         /// 外部commandを呼ぶ時点でproject lockを取れてしまうか。
         lock_path: Option<PathBuf>,
         lock_was_free: RefCell<Option<bool>>,
@@ -175,9 +247,67 @@ mod tests {
             FakeSbx {
                 listing: output.to_string(),
                 calls: RefCell::new(Vec::new()),
+                answers: std::collections::HashMap::new(),
+                present: RefCell::new(Vec::new()),
                 lock_path: None,
                 lock_was_free: RefCell::new(None),
             }
+        }
+
+        fn answering(mut self, command: &str, stdout: &str) -> FakeSbx {
+            self.answers
+                .insert(command.to_string(), (0, stdout.to_string()));
+            self
+        }
+
+        fn failing(mut self, command: &str) -> FakeSbx {
+            self.answers.insert(command.to_string(), (1, String::new()));
+            self
+        }
+
+        /// 共有repositoryとworktreeが揃ったSandboxとして答える。
+        fn holding_repository(self) -> FakeSbx {
+            let layout = SandboxLayout::new(&canonical());
+            let git_dir = layout.bare_git_dir();
+            let host = self
+                .answering(
+                    &format!("git --git-dir {git_dir} rev-parse --is-bare-repository"),
+                    "true\n",
+                )
+                .answering(
+                    &format!("git --git-dir {git_dir} config --get-all remote.origin.url"),
+                    "https://github.com/Example-Org/Example-Repo.git\n",
+                )
+                .answering(
+                    &format!("git --git-dir {git_dir} config --get-all remote.origin.fetch"),
+                    "+refs/heads/*:refs/remotes/origin/*\n",
+                )
+                .answering(
+                    &format!("git --git-dir {git_dir} rev-parse refs/remotes/origin/main"),
+                    "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5\n",
+                );
+            let mut host = host;
+            for index in 0..32 {
+                let path = layout.worktree(index);
+                host = host.answering(
+                    &format!("git -C {path} rev-parse HEAD"),
+                    "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5\n",
+                );
+                host = host.answering(
+                    &format!("git -C {path} rev-parse --path-format=absolute --git-common-dir"),
+                    &format!("{}\n", layout.bare_git_dir()),
+                );
+                // 案件はattached modeであり、branchを持てるのは最初の1本だけである。
+                host = match index {
+                    0 => host.answering(
+                        &format!("git -C {path} symbolic-ref -q HEAD"),
+                        "refs/heads/main\n",
+                    ),
+                    _ => host.failing(&format!("git -C {path} symbolic-ref -q HEAD")),
+                };
+            }
+            host.present.borrow_mut().push(git_dir);
+            host
         }
 
         /// workflowの実行中にlockが保持されているかを観測する。
@@ -214,11 +344,34 @@ mod tests {
             }
             let (code, stdout) = if spec.args.first().is_some_and(|arg| arg == "ls") {
                 (0, self.listing.clone())
-            } else if spec.args.iter().any(|arg| arg == "test") {
-                // Sandbox内のdestinationは存在しないものとして扱う。
-                (1, String::new())
             } else {
-                (0, String::new())
+                let inner: Vec<String> = spec
+                    .args
+                    .iter()
+                    .skip_while(|arg| *arg != "--")
+                    .skip(1)
+                    .cloned()
+                    .collect();
+                if inner.first().is_some_and(|arg| arg == "test") {
+                    let target = inner.last().cloned().unwrap_or_default();
+                    (
+                        i32::from(!self.present.borrow().contains(&target)),
+                        String::new(),
+                    )
+                } else if inner.join(" ").contains("worktree add") {
+                    let path = inner
+                        .iter()
+                        .find(|arg| arg.contains(".tree-"))
+                        .cloned()
+                        .unwrap_or_default();
+                    self.present.borrow_mut().push(path);
+                    (0, String::new())
+                } else {
+                    match self.answers.get(&inner.join(" ")) {
+                        Some((code, stdout)) => (*code, stdout.clone()),
+                        None => (0, String::new()),
+                    }
+                }
             };
             Ok(CommandOutcome {
                 program: spec.program.clone(),
@@ -272,10 +425,6 @@ mod tests {
                 requested_worktrees: 1,
                 dockerfile_sha256: DIGEST.into(),
             },
-            managed_worktrees: vec![ManagedWorktree {
-                path: "example-repo.tree-0".into(),
-                created_from: "refs/remotes/origin/main".into(),
-            }],
             rebuild,
         };
         metadata::create(&paths, &metadata).unwrap();
@@ -298,6 +447,61 @@ mod tests {
         }
     }
 
+    /// worktreeだけを適用するscope。
+    const WORKTREES_ONLY: Scope = Scope {
+        files: false,
+        worktrees: Some(3),
+    };
+
+    #[test]
+    fn asking_for_worktrees_leaves_the_declared_files_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("declared.toml");
+        std::fs::write(&source, b"declared = true\n").unwrap();
+
+        let (_home, config, workspace_root) = setup(vec![declaration(&source)]);
+        let paths = write_metadata(&config, None);
+        let host = FakeSbx::listing(&listing(&workspace_root, "running")).holding_repository();
+
+        let output = run(&config, &project(), WORKTREES_ONLY, &host, &workspace_root)
+            .expect("worktrees are applied on their own");
+
+        assert_eq!(output.worktrees, Some(3));
+        assert!(output.files.is_empty());
+        // 宣言fileの配置は既存のfileを上書きする。名指していない対象へは触れない。
+        assert!(
+            !host.ran("cp --follow-link"),
+            "the declared files were not asked for"
+        );
+
+        let stored = metadata::load(&paths).unwrap().expect("present");
+        assert_eq!(stored.provisioning.requested_worktrees, 3);
+    }
+
+    #[test]
+    fn a_number_below_what_the_project_has_is_refused() {
+        let (_home, config, workspace_root) = setup(Vec::new());
+        let paths = write_metadata(&config, None);
+        let mut metadata = metadata::load(&paths).unwrap().expect("present");
+        metadata.provisioning.requested_worktrees = 3;
+        metadata::update(&paths, &metadata).unwrap();
+        let host = FakeSbx::listing(&listing(&workspace_root, "running"));
+
+        let scope = Scope {
+            files: false,
+            worktrees: Some(2),
+        };
+        let error = run(&config, &project(), scope, &host, &workspace_root)
+            .expect_err("removing a worktree deletes what is checked out in it");
+        assert_eq!(error.first_id(), Some(ErrorId::WorktreesNotReducible));
+
+        let stored = metadata::load(&paths).unwrap().expect("present");
+        assert_eq!(
+            stored.provisioning.requested_worktrees, 3,
+            "a refused run leaves the target where it was"
+        );
+    }
+
     #[test]
     fn a_running_project_gets_the_declared_files_replaced() {
         let dir = tempfile::tempdir().unwrap();
@@ -309,7 +513,7 @@ mod tests {
         write_metadata(&config, None);
         let host = FakeSbx::listing(&listing(&workspace_root, "running"));
 
-        let output = run(&config, &project(), &host, &workspace_root).expect("sync");
+        let output = run(&config, &project(), FILES_ONLY, &host, &workspace_root).expect("sync");
         assert_eq!(output.project, "Example-Org/Example-Repo");
         assert_eq!(output.files.len(), 1);
         assert!(host.ran("cp --follow-link"));
@@ -326,7 +530,7 @@ mod tests {
         let host =
             FakeSbx::listing(&listing(&workspace_root, "running")).watching_lock(paths.lock_file());
 
-        run(&config, &project(), &host, &workspace_root).expect("sync");
+        run(&config, &project(), FILES_ONLY, &host, &workspace_root).expect("sync");
 
         assert_eq!(
             *host.lock_was_free.borrow(),
@@ -357,7 +561,7 @@ mod tests {
         let (_home, config, workspace_root) = setup(Vec::new());
         let host = FakeSbx::listing("[]");
 
-        run(&config, &project(), &host, &workspace_root).expect_err("nothing to place");
+        run(&config, &project(), FILES_ONLY, &host, &workspace_root).expect_err("nothing to place");
 
         let paths = ProjectPaths::derive(&config.base_path, &canonical());
         assert!(
@@ -376,7 +580,7 @@ mod tests {
         let before = std::fs::read_to_string(paths.metadata_file()).unwrap();
         let host = FakeSbx::listing(&listing(&workspace_root, "running"));
 
-        run(&config, &project(), &host, &workspace_root).expect("sync");
+        run(&config, &project(), FILES_ONLY, &host, &workspace_root).expect("sync");
 
         for forbidden in [
             "build",
@@ -404,7 +608,7 @@ mod tests {
         write_metadata(&config, None);
         let host = FakeSbx::listing(&listing(&workspace_root, "stopped"));
 
-        let error = run(&config, &project(), &host, &workspace_root)
+        let error = run(&config, &project(), FILES_ONLY, &host, &workspace_root)
             .expect_err("a stopped sandbox is not started implicitly");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
         assert_eq!(
@@ -420,12 +624,12 @@ mod tests {
     fn a_project_that_is_not_managed_or_not_built_is_refused() {
         let (_home, config, workspace_root) = setup(Vec::new());
         let host = FakeSbx::listing("[]");
-        let error = run(&config, &project(), &host, &workspace_root)
+        let error = run(&config, &project(), FILES_ONLY, &host, &workspace_root)
             .expect_err("an unregistered project has nowhere to place files");
         assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
 
         write_metadata(&config, None);
-        let error = run(&config, &project(), &host, &workspace_root)
+        let error = run(&config, &project(), FILES_ONLY, &host, &workspace_root)
             .expect_err("a registered project without a sandbox has nowhere to place files");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
     }
@@ -442,7 +646,7 @@ mod tests {
         );
         let host = FakeSbx::listing(&listing(&workspace_root, "running"));
 
-        let error = run(&config, &project(), &host, &workspace_root)
+        let error = run(&config, &project(), FILES_ONLY, &host, &workspace_root)
             .expect_err("a half-switched sandbox is not the target of a placement");
         assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
         assert!(
@@ -460,7 +664,7 @@ mod tests {
             r#"[{{"name":"{name}","state":"running","workspace":"/tmp/elsewhere","template":"other:1"}}]"#
         ));
 
-        let error = run(&config, &project(), &host, &workspace_root)
+        let error = run(&config, &project(), FILES_ONLY, &host, &workspace_root)
             .expect_err("a sandbox that cannot be identified is not written to");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
     }

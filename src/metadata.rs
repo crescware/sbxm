@@ -70,15 +70,6 @@ pub struct Provisioning {
     pub dockerfile_sha256: String,
 }
 
-/// 作成済みのmanaged worktree。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ManagedWorktree {
-    /// bare rootからの相対path。
-    pub path: String,
-    /// `refs/remotes/origin/<branch>`
-    pub created_from: String,
-}
-
 /// `rebuild`のSandbox切替中だけ存在する適用予定世代。
 ///
 /// 記録するのは`rebuild`を実装するPhaseであり、本buildは読むだけである。
@@ -97,7 +88,6 @@ pub struct ProjectMetadata {
     pub repository: String,
     pub canonical_id: CanonicalProjectId,
     pub provisioning: Provisioning,
-    pub managed_worktrees: Vec<ManagedWorktree>,
     pub rebuild: Option<RebuildIntent>,
 }
 
@@ -128,7 +118,6 @@ struct RawMetadata {
     repository: Option<String>,
     canonical_id: Option<String>,
     provisioning: Option<RawProvisioning>,
-    worktrees: Option<RawWorktrees>,
     rebuild: Option<RawRebuild>,
 }
 
@@ -138,18 +127,6 @@ struct RawProvisioning {
     start_ref: Option<String>,
     requested_worktrees: Option<i64>,
     dockerfile_sha256: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawWorktrees {
-    #[serde(default)]
-    managed: Vec<RawManagedWorktree>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawManagedWorktree {
-    path: Option<String>,
-    created_from: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -334,35 +311,6 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
     require_sha256(&dockerfile_sha256)
         .map_err(|detail| invalid("provisioning.dockerfile_sha256", detail))?;
 
-    let mut managed_worktrees = Vec::new();
-    for (index, entry) in raw
-        .worktrees
-        .map(|worktrees| worktrees.managed)
-        .unwrap_or_default()
-        .into_iter()
-        .enumerate()
-    {
-        let worktree_path = entry
-            .path
-            .ok_or_else(|| missing("worktrees.managed.path"))?;
-        require_worktree_name(&worktree_path).map_err(|detail| {
-            invalid("worktrees.managed.path", format!("entry {index}: {detail}"))
-        })?;
-        let created_from = entry
-            .created_from
-            .ok_or_else(|| missing("worktrees.managed.created_from"))?;
-        if git::branch_of_origin_ref(&created_from).is_none() {
-            return Err(invalid(
-                "worktrees.managed.created_from",
-                format!("entry {index}: {created_from} is not a remote-tracking ref of origin"),
-            ));
-        }
-        managed_worktrees.push(ManagedWorktree {
-            path: worktree_path,
-            created_from,
-        });
-    }
-
     let rebuild = match raw.rebuild {
         Some(rebuild) => {
             let target = rebuild
@@ -393,7 +341,6 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
             requested_worktrees,
             dockerfile_sha256,
         },
-        managed_worktrees,
         rebuild,
     })
 }
@@ -406,22 +353,6 @@ fn require_sha256(value: &str) -> std::result::Result<(), String> {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     {
         return Err(format!("{value} is not a lowercase SHA-256 hex digest"));
-    }
-    Ok(())
-}
-
-/// managed worktreeのpathは、bare root直下の1階層の名前に限る。
-fn require_worktree_name(value: &str) -> std::result::Result<(), String> {
-    if value.is_empty() {
-        return Err("the path is empty".to_string());
-    }
-    if Path::new(value).components().count() != 1 || value.contains('/') {
-        return Err(format!(
-            "{value} is not a single directory name below the bare repository"
-        ));
-    }
-    if value == "." || value == ".." || value == ".git" {
-        return Err(format!("{value} cannot be a managed worktree"));
     }
     Ok(())
 }
@@ -458,15 +389,6 @@ pub fn render(metadata: &ProjectMetadata) -> String {
         "dockerfile_sha256 = {}\n",
         toml_string(&provisioning.dockerfile_sha256)
     ));
-
-    for worktree in &metadata.managed_worktrees {
-        out.push_str("\n[[worktrees.managed]]\n");
-        out.push_str(&format!("path = {}\n", toml_string(&worktree.path)));
-        out.push_str(&format!(
-            "created_from = {}\n",
-            toml_string(&worktree.created_from)
-        ));
-    }
 
     if let Some(rebuild) = &metadata.rebuild {
         out.push_str("\n[rebuild]\n");
@@ -677,10 +599,6 @@ mod tests {
                 requested_worktrees: 1,
                 dockerfile_sha256: DIGEST.to_string(),
             },
-            managed_worktrees: vec![ManagedWorktree {
-                path: format!("{}.tree-0", repository.to_ascii_lowercase()),
-                created_from: git::origin_ref("main"),
-            }],
             rebuild: None,
         }
     }
@@ -703,6 +621,31 @@ mod tests {
     }
 
     #[test]
+    fn metadata_written_before_worktrees_stopped_being_recorded_still_parses() {
+        // 記録していた時期のfile。managed worktreeは本数から導けるため読む必要がなく、
+        // 残っていても案件の目標構成は変わらない。
+        let text = "\
+version = 1
+owner = \"Example-Org\"
+repository = \"Example-Repo\"
+canonical_id = \"example-org/example-repo\"
+
+[provisioning]
+mode = \"detached\"
+start_ref = \"develop\"
+requested_worktrees = 2
+dockerfile_sha256 = \"1111111111111111111111111111111111111111111111111111111111111111\"
+
+[[worktrees.managed]]
+path = \"example-repo.tree-0\"
+created_from = \"refs/remotes/origin/develop\"
+";
+        let parsed = parse(text, Path::new("/tmp/project.toml")).expect("the older form parses");
+        assert_eq!(parsed.provisioning.requested_worktrees, 2);
+        assert_eq!(parsed.provisioning.start_ref.as_deref(), Some("develop"));
+    }
+
+    #[test]
     fn metadata_round_trips_through_the_rendered_form() {
         let metadata = attached("Example-Org", "Example-Repo");
         assert_eq!(round_trip(&metadata), metadata);
@@ -714,12 +657,6 @@ mod tests {
                 requested_worktrees: 3,
                 dockerfile_sha256: DIGEST.to_string(),
             },
-            managed_worktrees: (0..3)
-                .map(|index| ManagedWorktree {
-                    path: format!("example-repo.tree-{index}"),
-                    created_from: git::origin_ref("develop"),
-                })
-                .collect(),
             rebuild: Some(RebuildIntent {
                 target_dockerfile_sha256: OTHER_DIGEST.to_string(),
                 previous_dockerfile_sha256: DIGEST.to_string(),
@@ -733,7 +670,6 @@ mod tests {
     fn an_attached_project_may_wait_for_the_remote_default_branch() {
         let mut metadata = attached("example-org", "example-repo");
         metadata.provisioning.start_ref = None;
-        metadata.managed_worktrees.clear();
         assert_eq!(round_trip(&metadata), metadata);
 
         // detached modeは起点branchの明示を必須とする。
@@ -802,11 +738,6 @@ mod tests {
             ("requested_worktrees = 1", "requested_worktrees = 33"),
             ("mode = \"attached\"", "mode = \"half-attached\""),
             ("dockerfile_sha256 = \"1111", "dockerfile_sha256 = \"NOTHEX"),
-            (
-                "created_from = \"refs/remotes/origin/main\"",
-                "created_from = \"refs/heads/main\"",
-            ),
-            ("path = \"example-repo.tree-0\"", "path = \"../escape\""),
         ] {
             let text = base.replace(from, to);
             assert_ne!(text, base, "the replacement {from} did not apply");

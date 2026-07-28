@@ -574,7 +574,6 @@ mod tests {
         metadata.provisioning.mode = CreationMode::Detached;
         metadata.provisioning.start_ref = Some("develop".into());
         metadata.provisioning.requested_worktrees = 3;
-        metadata.managed_worktrees.clear();
         metadata::update(&project.paths, &metadata).unwrap();
 
         assert_eq!(

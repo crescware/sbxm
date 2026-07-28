@@ -218,6 +218,11 @@ impl SandboxLayout {
     pub fn worktree(&self, index: u32) -> String {
         format!("{}/{}", self.bare_root(), self.worktree_name(index))
     }
+
+    /// 案件が持つmanaged worktreeの名前。
+    pub fn worktree_names(&self, count: u32) -> Vec<String> {
+        (0..count).map(|index| self.worktree_name(index)).collect()
+    }
 }
 
 /// `[a-z0-9-]`だけの文字列へ落とし、連続する`-`を1個へ畳む。

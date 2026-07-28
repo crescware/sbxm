@@ -477,6 +477,7 @@ fn check_worktrees(
     };
 
     let bare_root = layout.bare_root();
+    let declared = layout.worktree_names(metadata.provisioning.requested_worktrees);
     let mut seen: Vec<String> = Vec::new();
     let mut value = Value::Ready;
     for entry in entries {
@@ -497,10 +498,7 @@ fn check_worktrees(
             value = Value::Mismatch;
             continue;
         };
-        let managed = metadata
-            .managed_worktrees
-            .iter()
-            .any(|worktree| worktree.path == relative);
+        let managed = declared.contains(&relative);
         seen.push(relative.clone());
 
         let mode = if entry.detached {
@@ -520,19 +518,18 @@ fn check_worktrees(
         });
     }
 
-    for declared in &metadata.managed_worktrees {
-        if !seen.contains(&declared.path) {
+    for name in &declared {
+        if !seen.contains(name) {
             status.diagnostics.push(Diagnostic::new(
                 ErrorId::SandboxRepositoryUnusable,
                 msg!(
                     "error-sandbox-repository-unusable",
-                    path = declared.path,
-                    detail =
-                        "the metadata declares this managed worktree, but Git does not have it"
+                    path = name,
+                    detail = "the project asks for this managed worktree, but Git does not have it"
                 ),
             ));
             status.worktrees.push(WorktreeRow {
-                path: declared.path.clone(),
+                path: name.clone(),
                 kind: "managed",
                 mode: Value::Mismatch,
                 state: Value::Mismatch,

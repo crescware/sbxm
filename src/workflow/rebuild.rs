@@ -262,7 +262,7 @@ impl Switch<'_> {
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
-        repository::ensure_worktrees(host, &ready.name, &layout, paths, metadata, &branch)?;
+        repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch)?;
         // 適用済みhashを更新する前に、credentialの隔離まで確かめる。
         sandbox::require_credentials_isolated(host, &ready.name)?;
         Ok(())
@@ -596,6 +596,13 @@ mod tests {
                 &format!("{commit}\n"),
             )
             .answering(
+                &format!(
+                    "exec {name} -- git -C {worktree} rev-parse --path-format=absolute --git-common-dir"
+                ),
+                0,
+                &format!("{git_dir}\n"),
+            )
+            .answering(
                 &format!("exec {name} -- git -C {worktree} symbolic-ref -q HEAD"),
                 0,
                 "refs/heads/main\n",
@@ -781,6 +788,13 @@ mod tests {
                 &format!("{commit}\n"),
             )
             .answering(
+                &format!(
+                    "exec {name} -- git -C {worktree} rev-parse --path-format=absolute --git-common-dir"
+                ),
+                0,
+                &format!("{git_dir}\n"),
+            )
+            .answering(
                 &format!("exec {name} -- git -C {worktree} symbolic-ref -q HEAD"),
                 0,
                 "refs/heads/main\n",
@@ -914,6 +928,14 @@ mod tests {
                 ),
                 0,
                 &format!("{commit}\n"),
+            )
+            .answering(
+                &format!(
+                    "exec {} -- git -C {worktree} rev-parse --path-format=absolute --git-common-dir",
+                    project.sandbox
+                ),
+                0,
+                &format!("{git_dir}\n"),
             )
             .answering(
                 &format!(

@@ -109,7 +109,9 @@ Before recording anything, remove:
 | 13 | `sbxm stop <a> <b>` and then again | 0 | first stops both, second is a no-op |
 | 14 | `sbxm ls` | 0 | running, stopped and not-created appear, unmanaged sandboxes separately |
 | 15 | `sbxm status <owner>/<repo>` | 0 or 1 | managed and unmanaged worktrees, dirty state and SSH agent are reported |
-| 16 | `sbxm sync-files <owner>/<repo>` | 0 | only the declared files change |
+| 16 | `sbxm apply <owner>/<repo> --files` | 0 | only the declared files change |
+| 16a | `sbxm apply <owner>/<repo> --worktrees 3` on a project built with one | 0 | two more worktrees appear beside the first, which keeps its branch and its commits |
+| 16b | `sbxm apply <owner>/<repo>` with no option | 1 | `apply-scope-required`, and nothing is touched |
 | 17 | `sbxm rebuild <owner>/<repo>` with no Dockerfile change | 0 | reports that nothing was applied |
 | 18 | break the Dockerfile, then `sbxm rebuild` | 1 | the build fails and the existing sandbox still runs |
 | 19 | `sbxm rebuild` with a dirty tree or unpushed commits | 1 | `unsaved-work`, naming what would be lost |

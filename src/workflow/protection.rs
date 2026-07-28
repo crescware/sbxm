@@ -152,10 +152,9 @@ pub fn inspect(
         });
     }
     let entries = worktree::list(host, sandbox_name, layout)?;
-    let declared: BTreeSet<&str> = metadata
-        .managed_worktrees
-        .iter()
-        .map(|worktree| worktree.path.as_str())
+    let declared: BTreeSet<String> = layout
+        .worktree_names(metadata.provisioning.requested_worktrees)
+        .into_iter()
         .collect();
     let mut worktrees = Vec::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -178,7 +177,7 @@ pub fn inspect(
                 .remediation(msg!("remediation-worktree-outside-repository")),
             ));
         };
-        let managed = declared.contains(relative.as_str());
+        let managed = declared.contains(&relative);
         if !managed && unmanaged == Unmanaged::Refused {
             // 保存状態にかかわらず拒否する。commitしても解消しないため案内も分ける。
             return Err(Error::single(
@@ -192,30 +191,6 @@ pub fn inspect(
 
         seen.insert(relative.clone());
         worktrees.push(examine(host, sandbox_name, &entry, &relative, managed)?);
-    }
-
-    // Gitがworktreeを1つも持たないSandboxには、checkoutされた作業が存在しない。
-    // 宣言との食い違いはstatusが示す問題であり、ここで止めても守るものがない。構築や
-    // 再構築が途中で終わったSandboxがこれにあたり、止めると作り直す手段がなくなる。
-    if worktrees.is_empty() {
-        return Ok(Protection { worktrees });
-    }
-
-    let diagnose = msg!(
-        "remediation-managed-worktree-missing",
-        command = format!("sbxm status {}", metadata.display_id())
-    );
-    for declared in &metadata.managed_worktrees {
-        if !seen.contains(declared.path.as_str()) {
-            // metadataとGitの食い違いであり、保存されていない作業とは別の事象である。
-            return Err(Error::single(
-                Diagnostic::new(
-                    ErrorId::ManagedWorktreeMissing,
-                    msg!("error-managed-worktree-missing", path = declared.path),
-                )
-                .remediation(diagnose),
-            ));
-        }
     }
 
     Ok(Protection { worktrees })
@@ -684,24 +659,6 @@ pub mod tests {
         let error = inspect_with(&outside, &project, Unmanaged::Allowed)
             .expect_err("a path outside the repository is a security refusal");
         assert_eq!(error.first_id(), Some(ErrorId::WorktreeOutsideRepository));
-
-        // 宣言したworktreeのうち1つだけをGitが持っていない。作業のあるSandboxで
-        // metadataとGitが食い違っている状態であり、削除の前に解消させる。
-        let mut two_declared = project.clone();
-        two_declared
-            .metadata
-            .managed_worktrees
-            .push(crate::metadata::ManagedWorktree {
-                path: "example-repo.tree-1".to_string(),
-                created_from: "refs/remotes/origin/main".to_string(),
-            });
-        let error = inspect_with(
-            &clean_host(&fixture, &project),
-            &two_declared,
-            Unmanaged::Allowed,
-        )
-        .expect_err("the declaration and Git disagree");
-        assert_eq!(error.first_id(), Some(ErrorId::ManagedWorktreeMissing));
     }
 
     #[test]

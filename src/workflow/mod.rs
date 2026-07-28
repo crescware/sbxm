@@ -4,6 +4,7 @@
 //! 状態値の凡例を加える。stderrはprompt、warning、errorに使用する。
 
 pub mod add;
+pub mod apply;
 pub mod daemon;
 pub mod destroy;
 pub mod files;
@@ -24,7 +25,6 @@ pub mod select;
 pub mod status_global;
 pub mod status_project;
 pub mod stop;
-pub mod sync_files;
 pub mod template;
 pub mod worktree;
 
