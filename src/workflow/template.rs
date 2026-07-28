@@ -1,7 +1,13 @@
 //! Docker Sandboxes Template。
 //!
-//! 検証済みのarchiveをloadし、期待するimageに対応していることを確認してから、
+//! label検証を通したarchiveをloadし、期待する名前で登録されたことを確認してから、
 //! Sandboxの作成に使う。
+//!
+//! runtimeのimage storeは、Templateがどのhost imageから来たかを示さない。
+//! `sbx template ls --json`が持つのはrepository、tag、runtime内部のidだけであり、
+//! host側の`docker image inspect`とは別のstoreの値である。対応の根拠は、
+//! loadしたarchiveがlabelで宣言していた案件と世代、およびその名前で登録された
+//! ことの2つになる。
 
 use std::path::Path;
 
@@ -23,16 +29,15 @@ pub struct LoadedTemplate {
 
 /// imageに対応するTemplateを用意する。
 ///
-/// 同名のTemplateは、期待するimageに対応していることを観測できた場合だけ再利用する。
-/// loadした直後も同じ判定を行い、対応関係を観測できないruntimeでは、既存Templateも
-/// loadの結果も推測で受け入れない。
+/// 期待する名前のTemplateが既にあれば再利用する。名前には世代のDockerfile hashが
+/// 入るため、別世代のTemplateを取り違えることはない。load直後は、その名前が一覧に
+/// 現れたことを確かめる。現れない場合はloadの成功を推測しない。
 pub fn ensure(
     host: &dyn HostEnvironment,
     archive: &Path,
     image: &BuiltImage,
 ) -> Result<LoadedTemplate> {
-    if let Some(entry) = find(host, &image.name)? {
-        holds_image(&entry, image)?;
+    if find(host, &image.name)?.is_some() {
         return Ok(LoadedTemplate {
             name: image.name.clone(),
             loaded: false,
@@ -44,13 +49,12 @@ pub fn ensure(
         .timeout(TimeoutClass::SandboxLifecycle);
     host.run(&spec)?.require_success()?;
 
-    let Some(entry) = find(host, &image.name)? else {
+    if find(host, &image.name)?.is_none() {
         return Err(unusable(
             &image.name,
             "the template is absent right after it was loaded".to_string(),
         ));
-    };
-    holds_image(&entry, image)?;
+    }
 
     Ok(LoadedTemplate {
         name: image.name.clone(),
@@ -58,34 +62,15 @@ pub fn ensure(
     })
 }
 
-/// 期待するimageを保持しているTemplateが既にあるか。
-///
-/// 同名で別imageのTemplate、対応を観測できないruntimeは、`ensure`と同じ規則で拒否する。
+/// 期待する名前のTemplateが既にあるか。
 pub fn existing(host: &dyn HostEnvironment, image: &BuiltImage) -> Result<Option<LoadedTemplate>> {
-    let Some(entry) = find(host, &image.name)? else {
+    if find(host, &image.name)?.is_none() {
         return Ok(None);
-    };
-    holds_image(&entry, image)?;
+    }
     Ok(Some(LoadedTemplate {
         name: image.name.clone(),
         loaded: false,
     }))
-}
-
-/// Templateが期待するimageを持つことを、runtimeの出力から確かめる。
-fn holds_image(entry: &TemplateEntry, image: &BuiltImage) -> Result<()> {
-    match &entry.image_id {
-        Some(id) if *id == image.id => Ok(()),
-        Some(id) => Err(unusable(
-            &image.name,
-            format!("the template holds image {id}, not {}", image.id),
-        )),
-        None => Err(unusable(
-            &image.name,
-            "this Docker Sandboxes version does not report which image a template holds"
-                .to_string(),
-        )),
-    }
 }
 
 /// 名前が完全一致するTemplateを探す。
@@ -95,7 +80,7 @@ fn find(host: &dyn HostEnvironment, name: &str) -> Result<Option<TemplateEntry>>
         .timeout(TimeoutClass::SandboxLifecycle);
     let outcome = host.run(&spec)?.require_success()?;
     let entries = parse_template_list(&outcome.stdout_text())?;
-    Ok(entries.into_iter().find(|entry| entry.name == name))
+    Ok(entries.into_iter().find(|entry| entry.is_named(name)))
 }
 
 fn unusable(name: &str, detail: String) -> Error {
@@ -169,22 +154,24 @@ mod tests {
         BuiltImage {
             name: "sbxm-example-template:111111111111".to_string(),
             id: "sha256:abc".to_string(),
+            labels: Vec::new(),
             built: true,
             warnings: Vec::new(),
         }
     }
 
-    fn listing(name: &str, image_id: Option<&str>) -> String {
-        match image_id {
-            Some(id) => format!(r#"[{{"name":"{name}","image_id":"{id}"}}]"#),
-            None => format!(r#"[{{"name":"{name}"}}]"#),
-        }
+    /// runtimeのimage storeが示す一覧。registry prefixを補って表示する。
+    fn listing(name: &str) -> String {
+        let (repository, tag) = name.rsplit_once(':').expect("an image reference");
+        format!(
+            r#"{{"images":[{{"id":"a3d0f4449170","repository":"docker.io/library/{repository}","tag":"{tag}"}}]}}"#
+        )
     }
 
     #[test]
     fn an_archive_is_loaded_and_the_result_is_verified() {
         let image = image();
-        let host = FakeSbx::listing(&["[]", &listing(&image.name, Some(&image.id))]);
+        let host = FakeSbx::listing(&[r#"{"images":[]}"#, &listing(&image.name)]);
         let archive = Path::new("/tmp/template-111111111111.tar");
 
         let template = ensure(&host, archive, &image).expect("load");
@@ -206,7 +193,7 @@ mod tests {
     #[test]
     fn every_sandbox_command_runs_without_the_ssh_agent() {
         let image = image();
-        let host = FakeSbx::listing(&["[]", &listing(&image.name, Some(&image.id))]);
+        let host = FakeSbx::listing(&[r#"{"images":[]}"#, &listing(&image.name)]);
         ensure(&host, Path::new("/tmp/template.tar"), &image).expect("load");
 
         for spec in host.calls.borrow().iter() {
@@ -222,7 +209,7 @@ mod tests {
     #[test]
     fn a_template_that_already_holds_the_image_is_reused() {
         let image = image();
-        let host = FakeSbx::listing(&[&listing(&image.name, Some(&image.id))]);
+        let host = FakeSbx::listing(&[&listing(&image.name)]);
 
         let template = ensure(&host, Path::new("/tmp/template.tar"), &image).expect("reuse");
         assert!(!template.loaded);
@@ -236,47 +223,20 @@ mod tests {
     }
 
     #[test]
-    fn a_template_of_the_same_name_that_holds_another_image_stops_the_run() {
+    fn the_registry_prefix_the_runtime_adds_still_names_the_same_template() {
         let image = image();
-        let host = FakeSbx::listing(&[&listing(&image.name, Some("sha256:other"))]);
+        // runtimeは`docker.io/library/`を補って表示する。sbxmが渡すのは補う前の表記。
+        let host = FakeSbx::listing(&[&listing(&image.name)]);
 
-        let error = ensure(&host, Path::new("/tmp/template.tar"), &image)
-            .expect_err("the name is taken by another image");
-        assert_eq!(error.first_id(), Some(ErrorId::TemplateUnusable));
-    }
-
-    #[test]
-    fn a_runtime_that_hides_the_image_of_a_template_is_not_guessed_at() {
-        let image = image();
-        let host = FakeSbx::listing(&[&listing(&image.name, None)]);
-
-        let error = ensure(&host, Path::new("/tmp/template.tar"), &image)
-            .expect_err("an unobservable correspondence is not assumed to match");
-        assert_eq!(error.first_id(), Some(ErrorId::TemplateUnusable));
-        assert!(
-            !host
-                .calls()
-                .iter()
-                .any(|args| args.get(1).is_some_and(|arg| arg == "load")),
-            "nothing is loaded over a template that cannot be identified"
-        );
-    }
-
-    #[test]
-    fn a_load_whose_result_cannot_be_identified_is_not_accepted() {
-        let image = image();
-        // loadは成功するが、runtimeはどのimageを持つTemplateなのかを示さない。
-        let host = FakeSbx::listing(&["[]", &listing(&image.name, None)]);
-
-        let error = ensure(&host, Path::new("/tmp/template.tar"), &image)
-            .expect_err("a load is only done when the result proves it");
-        assert_eq!(error.first_id(), Some(ErrorId::TemplateUnusable));
+        let template = ensure(&host, Path::new("/tmp/template.tar"), &image)
+            .expect("the prefixed listing names the same template");
+        assert!(!template.loaded);
     }
 
     #[test]
     fn a_load_that_leaves_no_template_behind_is_a_failure() {
         let image = image();
-        let host = FakeSbx::listing(&["[]", "[]"]);
+        let host = FakeSbx::listing(&[r#"{"images":[]}"#, r#"{"images":[]}"#]);
 
         let error = ensure(&host, Path::new("/tmp/template.tar"), &image)
             .expect_err("the load has to produce the template");

@@ -1,96 +1,14 @@
-//! Docker Sandboxes daemonの安全な再起動。
+//! Docker Sandboxes daemonの観測。
 //!
-//! Sandboxを作成または再作成する前に、hostのSSH Agentがdaemon経由でSandboxへ
-//! 転送されない状態を作る。daemonの安全性を永続markerやinstance IDから推測せず、
-//! 毎回、全Sandboxのactive session不在を確認してから停止・起動する。
+//! sbxmはdaemonを停止も起動もしない。daemonを止めるには動作中のSandboxを止める
+//! 必要があり、作業中のSandboxを巻き込むためである。
+//!
+//! hostのSSH AgentがSandboxへ渡っていないことは、daemonの起動条件から推定せず、
+//! 作成したSandboxの中から観測する（`sandbox::require_credentials_isolated`）。
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{SandboxEntry, parse_sandbox_list};
-use crate::config::ConfigLocation;
-use crate::error::{Diagnostic, Error, ErrorId, Result};
-use crate::msg;
-use crate::paths::{
-    self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope,
-};
-
-/// daemonを操作している区間。
-///
-/// この値が生きているあいだ、ほかのsbxmの実行はdaemonを操作しない。
-#[derive(Debug)]
-pub struct DaemonGuard {
-    _lock: ExclusiveLock,
-}
-
-/// SSH Agentを渡さないdaemonへ入れ替える。
-///
-/// project lockを取得した後に呼ぶ。session不在を証明できない限りdaemonを変更しない。
-pub fn restart_without_ssh_agent(
-    host: &dyn HostEnvironment,
-    location: &ConfigLocation,
-) -> Result<DaemonGuard> {
-    let runtime = location.runtime_dir();
-    paths::ensure_private_dir(&runtime, PRIVATE_DIR_MODE, PathScope::ConfigDir)?;
-    let lock = paths::acquire_exclusive_lock(
-        &location.daemon_lock(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ConfigFile,
-    )?;
-
-    require_no_active_session(host)?;
-
-    // 停止と起動のあいだにSandboxを触らないよう、lockを保持したまま続ける。
-    let stop = CommandSpec::capture("sbx", &["daemon", "stop"])
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&stop)?.require_success()?;
-
-    let start = CommandSpec::capture("sbx", &["daemon", "start", "--detach"])
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&start)?.require_success()?;
-
-    Ok(DaemonGuard { _lock: lock })
-}
-
-/// 全Sandboxにactive sessionがないことを、structured outputから確認する。
-///
-/// Sandboxが1件もない場合、接続中のsessionも存在しないため不在を確認できたものとする。
-///
-/// daemon lockの外から呼ぶ場合、結果は再起動を保証しない。破壊的な工程へ進む前に、
-/// 確実に失敗する構成を先に見つけるために使う。
-pub fn require_no_active_session(host: &dyn HostEnvironment) -> Result<()> {
-    let sandboxes = list(host)?;
-
-    let mut active: Vec<String> = Vec::new();
-    for sandbox in &sandboxes {
-        match sandbox.active_sessions {
-            Some(0) => {}
-            Some(count) => active.push(format!("{} ({count})", sandbox.name)),
-            None => {
-                // 検査機能がないruntimeでは、不在を証明できない。
-                return Err(Error::single(
-                    Diagnostic::new(
-                        ErrorId::DaemonSessionUnobservable,
-                        msg!("error-daemon-session-unobservable", sandbox = sandbox.name),
-                    )
-                    .remediation(msg!("remediation-daemon-session-unobservable")),
-                ));
-            }
-        }
-    }
-
-    if !active.is_empty() {
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::DaemonSessionActive,
-                msg!("error-daemon-session-active", sandboxes = active.join(", ")),
-            )
-            .remediation(msg!("remediation-daemon-session-active")),
-        ));
-    }
-    Ok(())
-}
+use crate::error::Result;
 
 /// 現在のSandbox一覧。
 pub fn list(host: &dyn HostEnvironment) -> Result<Vec<SandboxEntry>> {
@@ -106,7 +24,6 @@ mod tests {
     use super::*;
     use crate::command::CommandOutcome;
     use std::cell::RefCell;
-    use std::os::unix::fs::PermissionsExt;
     use std::os::unix::process::ExitStatusExt;
 
     struct FakeSbx {
@@ -130,14 +47,6 @@ mod tests {
                 listing_fails: true,
                 calls: RefCell::new(Vec::new()),
             }
-        }
-
-        fn calls(&self) -> Vec<Vec<String>> {
-            self.calls
-                .borrow()
-                .iter()
-                .map(|spec| spec.args.clone())
-                .collect()
         }
     }
 
@@ -167,135 +76,27 @@ mod tests {
         }
     }
 
-    fn location() -> (tempfile::TempDir, ConfigLocation) {
-        let dir = tempfile::tempdir().expect("temporary home");
-        let location = ConfigLocation::from_home(dir.path().to_path_buf());
-        (dir, location)
-    }
+    #[test]
+    fn the_listing_is_read_without_the_host_ssh_agent() {
+        let host =
+            FakeSbx::listing(r#"{"sandboxes":[{"name":"sbxm-example","status":"running"}]}"#);
 
-    fn idle(name: &str) -> String {
-        format!(r#"[{{"name":"{name}","state":"running","active_sessions":0}}]"#)
+        let entries = list(&host).expect("the listing parses");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "sbxm-example");
+
+        let calls = host.calls.borrow();
+        assert_eq!(calls[0].args, vec!["ls".to_string(), "--json".to_string()]);
+        assert_eq!(calls[0].env, EnvPolicy::InheritWithoutSshAgent);
     }
 
     #[test]
-    fn a_daemon_with_no_session_is_stopped_and_started_without_the_agent() {
-        let (_dir, location) = location();
-        let host = FakeSbx::listing(&idle("sbxm-example"));
-
-        let guard = restart_without_ssh_agent(&host, &location).expect("restart");
-
-        assert_eq!(
-            host.calls(),
-            vec![
-                vec!["ls".to_string(), "--json".to_string()],
-                vec!["daemon".to_string(), "stop".to_string()],
-                vec![
-                    "daemon".to_string(),
-                    "start".to_string(),
-                    "--detach".to_string()
-                ],
-            ]
-        );
-        for spec in host.calls.borrow().iter() {
-            assert_eq!(
-                spec.env,
-                EnvPolicy::InheritWithoutSshAgent,
-                "{:?} must not carry the host SSH agent",
-                spec.args
-            );
-        }
-        drop(guard);
-    }
-
-    #[test]
-    fn the_daemon_lock_is_private_survives_the_run_and_serializes_it() {
-        let (_dir, location) = location();
-        let host = FakeSbx::listing("[]");
-        let guard = restart_without_ssh_agent(&host, &location).expect("restart");
-
-        let lock_path = location.daemon_lock();
-        assert_eq!(
-            std::fs::metadata(location.runtime_dir())
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
-            PRIVATE_DIR_MODE
-        );
-        assert_eq!(
-            std::fs::metadata(&lock_path).unwrap().permissions().mode() & 0o777,
-            PRIVATE_FILE_MODE
-        );
-
-        let error = paths::acquire_exclusive_lock(
-            &lock_path,
-            std::time::Duration::from_millis(100),
-            PRIVATE_FILE_MODE,
-            PathScope::ConfigFile,
-        )
-        .expect_err("a second run waits for the first");
-        assert_eq!(error.first_id(), Some(ErrorId::LockTimeout));
-
-        drop(guard);
-        assert!(lock_path.exists(), "the lock file outlives the workflow");
-        paths::acquire_exclusive_lock(
-            &lock_path,
-            LOCK_TIMEOUT,
-            PRIVATE_FILE_MODE,
-            PathScope::ConfigFile,
-        )
-        .expect("the lock is released when the guard is dropped");
-    }
-
-    #[test]
-    fn an_active_session_leaves_the_daemon_alone() {
-        let (_dir, location) = location();
-        let host = FakeSbx::listing(
-            r#"[{"name":"sbxm-busy","state":"running","active_sessions":2},{"name":"sbxm-idle","state":"stopped","active_sessions":0}]"#,
-        );
-
-        let error = restart_without_ssh_agent(&host, &location)
-            .expect_err("a connected session is never dropped by sbxm");
-        assert_eq!(error.first_id(), Some(ErrorId::DaemonSessionActive));
-        assert_eq!(
-            host.calls(),
-            vec![vec!["ls".to_string(), "--json".to_string()]],
-            "the daemon is not touched"
-        );
-    }
-
-    #[test]
-    fn a_runtime_without_session_inspection_leaves_the_daemon_alone() {
-        let (_dir, location) = location();
-        let host = FakeSbx::listing(r#"[{"name":"sbxm-example","state":"running"}]"#);
-
-        let error = restart_without_ssh_agent(&host, &location)
-            .expect_err("absence of sessions has to be observed, not assumed");
-        assert_eq!(error.first_id(), Some(ErrorId::DaemonSessionUnobservable));
-        assert_eq!(host.calls().len(), 1, "the daemon is not touched");
-    }
-
-    #[test]
-    fn a_listing_that_fails_or_cannot_be_read_leaves_the_daemon_alone() {
-        let (_dir, location) = location();
-
+    fn a_listing_that_fails_is_not_read_as_an_empty_one() {
         let host = FakeSbx::failing_listing();
-        let error = restart_without_ssh_agent(&host, &location).expect_err("a failed check");
-        assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
-        assert_eq!(host.calls().len(), 1);
-
-        let host = FakeSbx::listing(r#"[{"name":"sbxm-example","state":"pausing"}]"#);
-        let error = restart_without_ssh_agent(&host, &location).expect_err("an unknown state");
-        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
-        assert_eq!(host.calls().len(), 1);
-    }
-
-    #[test]
-    fn a_host_without_any_sandbox_has_no_session_to_protect() {
-        let (_dir, location) = location();
-        let host = FakeSbx::listing("[]");
-        restart_without_ssh_agent(&host, &location)
-            .expect("no sandbox means no session, which is an observation rather than a guess");
-        assert_eq!(host.calls().len(), 3);
+        let error = list(&host).expect_err("a failed listing is not no sandboxes");
+        assert_eq!(
+            error.first_id(),
+            Some(crate::error::ErrorId::ExternalCommandFailed)
+        );
     }
 }

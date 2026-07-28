@@ -16,7 +16,8 @@ pub const GITHUB_SECRET: &str = "github";
 /// 未登録なら、発行条件と登録commandを示して前提条件不足として停止する。登録後は
 /// 同じ`add`を再実行すると、Sandboxを再利用して次の工程へ進む。
 pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
-    let spec = CommandSpec::capture("sbx", &["secret", "ls", sandbox, "--json"])
+    // `--service`で絞ると出力へ値の一部が現れる。名前だけを読む形で呼ぶ。
+    let spec = CommandSpec::capture("sbx", &["secret", "ls", sandbox])
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);
     let outcome = host.run(&spec)?.require_success()?;
@@ -84,7 +85,9 @@ mod tests {
 
     #[test]
     fn a_registered_secret_lets_the_build_continue() {
-        let host = FakeSbx::listing(r#"[{"name":"github"},{"name":"other"}]"#);
+        let host = FakeSbx::listing(
+            "SCOPE   TYPE      NAME     SECRET\nsbxm-example   service   github   (stored)\nsbxm-example   service   other    (stored)\n",
+        );
         require_github(&host, "sbxm-example").expect("the secret is there");
 
         let calls = host.calls.borrow();
@@ -93,16 +96,15 @@ mod tests {
             vec![
                 "secret".to_string(),
                 "ls".to_string(),
-                "sbxm-example".to_string(),
-                "--json".to_string()
+                "sbxm-example".to_string()
             ],
-            "the check is read-only"
+            "the check is read-only and never asks for the value"
         );
     }
 
     #[test]
     fn a_missing_secret_stops_with_the_command_that_registers_it() {
-        let host = FakeSbx::listing("[]");
+        let host = FakeSbx::listing("No secrets found for scope \"sbxm-example\".\n");
         let error = require_github(&host, "sbxm-example")
             .expect_err("a build without repository access cannot continue");
 
@@ -122,7 +124,9 @@ mod tests {
 
     #[test]
     fn the_value_of_a_secret_is_never_requested() {
-        let host = FakeSbx::listing(r#"[{"name":"github"}]"#);
+        let host = FakeSbx::listing(
+            "SCOPE   TYPE      NAME     SECRET\nsbxm-example   service   github   (stored)\n",
+        );
         require_github(&host, "sbxm-example").expect("the secret is there");
 
         for args in host.calls.borrow().iter() {

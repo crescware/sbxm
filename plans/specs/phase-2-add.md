@@ -73,22 +73,27 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 
 | 用途 | command | 読む値 |
 |---|---|---|
-| Sandbox一覧 | `sbx ls --json` | `name`、`state`（`running`と`stopped`だけ）、`workspace`、`template`、active session数 |
-| Template一覧 | `sbx template ls --json` | `name`と、対応するimage ID |
+| Sandbox一覧 | `sbx ls --json` | `{"sandboxes": [...]}`で包まれた各entryの`name`、`status`（`running`と`stopped`だけ）、`workspaces`（配列。sbxmのSandboxは1件だけ持つ） |
+| Template一覧 | `sbx template ls --json` | `{"images": [...]}`で包まれた各entryの`repository`と`tag`。runtimeは`docker.io/library/`を補って表示する |
 | Template load | `sbx template load <archive>` | exit statusのみ |
 | Sandbox作成 | `sbx create --name <name> --template <image> shell <workspace>` | exit statusのみ |
-| Sandbox内実行 | `sbx exec [--user root] <name> -- <argv>` | stdoutとexit status |
+| Sandbox内実行 | `sbx exec [--user root] <name> -- <argv>` | stdoutとexit status。`--`の有無はどちらも受け付ける |
 | file転送 | `sbx cp --follow-link <source> <name>:<path>` | exit statusのみ |
-| secret存在確認 | `sbx secret ls <name> --json` | 名前だけ。値は取得しない |
+| secret存在確認 | `sbx secret ls <name>` | `SCOPE TYPE NAME SECRET`の表。`TYPE`が`service`の行の`NAME`だけを読む。1件もない場合は`No secrets found`で始まる文になる。`--service`は`SECRET`列へ値の一部を出すため使わない |
 | login状態 | `sbx login status --json` | login済みかどうかを示す真偽値 |
-| daemon操作 | `sbx daemon stop` / `sbx daemon start --detach` | exit statusのみ |
 | image存在確認 | `docker image ls --quiet <image>` | 出力が空かどうか |
 | image検証 | `docker image inspect <image>` | `Id`と`Config.Labels` |
 | archive生成 | `docker image save <image> --output <path>` | exit statusのみ |
 
 `docker image inspect`はimageが存在しない場合もEngineへ問い合わせられない場合も非ゼロで終わるため、exit statusだけで不在と判定しない。存在の判定には`docker image ls --quiet <image>`を使い、この一覧が失敗した場合はimageを不在へ丸めずexit code `1`とする。
 
-archiveの検証は、tarの`manifest.json`だけを読み、保存されたtagとimage configのdigestが、直前に`docker image inspect`で確認したimage IDと一致することを条件とする。archive本体は読まない。
+`sbx ls --json`はSandboxの由来Templateを示さない。案件との対応は、canonical project IDから導出したSandbox名と、その案件だけが使う中立Workspaceの実pathで判定する。世代の一致はこの検査の保証範囲ではない。runtimeがTemplateを示すversionでは、示された値も照合する。
+
+runtimeのimage storeは、Templateの由来となったhost imageを示さない。一覧が持つ`id`はruntime内部の短縮idであり、`docker image inspect`の`Id`とは別のstoreの値である。Templateと世代の対応は、loadしたarchiveがlabelで宣言していた案件と世代と、`<image名>:<世代>`という名前で登録されたことの2つを根拠とする。
+
+archiveの検証は、tarの`manifest.json`と、それが名前で指すimage configだけを読む。保存されたtagが期待するimage名と一致し、image configが期待するlabelをすべて宣言していることを条件とする。archive本体のlayerは読まない。
+
+digestを対応の根拠にしない。`docker image inspect`の`Id`は、image storeとattestationの有無によって、image config、manifest、image indexのどれを指すかが変わる。対象Macでは、buildがprovenance attestationを伴うOCI image indexを作るため、`Id`はindexのdigestとなり、archiveが指すimage configのdigestとは一致しない。両者の一致を条件にすると、正常な成果物を毎回拒否する。
 
 Sandboxが1件も存在しない場合、active sessionを持ち得る対象がないため、session不在を確認できたものとして扱う。
 
@@ -105,7 +110,9 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - 単一の通常cloneではなく、Sandbox内にbare repositoryとmanaged worktreeを作る
 - Sandbox名へcanonical project IDのhashを付け、owner/repository間の衝突を防ぐ
 - `sbx ls`のtextへ`grep`せず、structured outputを完全一致でparseする
-- `SSH_AUTH_SOCK`を外した個別`sbx create`だけで安全とは見なさず、全Sandboxのactive session不在を確認してdaemonを安全に再起動する
+- sbxmはdaemonを停止も起動もしない。daemonを止めるには動作中のSandboxを止める必要があり、作業中のSandboxを巻き込むためである
+- SSH Agentが渡っていないことは、daemonの起動条件から推定せず、作成したSandboxの中から`printenv SSH_AUTH_SOCK`と`ssh-add -L`で確認する
+- 届いていた場合は工程を止め、動作中のSandboxを停止して`SSH_AUTH_SOCK`を外したshellからdaemonを起動し直す方法を案内する
 - 中断時の目標構成をproject metadataへ保存し、以降は同じ`add`で継続する
 
 中立Workspace、host path非露出、案件限定GitHub secret、利用者がglobal configへ明示したfileの限定copy、Docker socket非共有という要件は維持する。

@@ -967,7 +967,7 @@ mod tests {
         let (_dir, location) = location_with_config(None);
         let host = FakeHost::macos()
             .responding("sbx policy ls", r#"[{"name":"Balanced","active":true}]"#)
-            .responding("sbx daemon status", r#"{"running": true}"#);
+            .responding("sbx daemon status", "Status: running\n");
         let status = diagnose(&location, &host);
 
         assert_eq!(

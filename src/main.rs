@@ -226,7 +226,6 @@ fn dispatch(
             };
             match add::run(
                 &config,
-                location,
                 &request,
                 &RealHost,
                 std::path::Path::new(sandbox::WORKSPACE_ROOT),
@@ -281,7 +280,6 @@ fn dispatch(
             };
             let prepared = match open::prepare(
                 &config,
-                location,
                 project.as_ref(),
                 &RealHost,
                 &mut prompt,
@@ -363,7 +361,6 @@ fn dispatch(
             };
             match rebuild::run(
                 &config,
-                location,
                 project,
                 &RealHost,
                 std::path::Path::new(sandbox::WORKSPACE_ROOT),

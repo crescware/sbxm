@@ -65,8 +65,13 @@ pub fn expected_labels(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuiltImage {
     pub name: String,
-    /// `sha256:<hex>`。archiveとTemplateの対応を判定する正本。
+    /// `docker image inspect`が示した`Id`。
+    ///
+    /// image storeとattestationの有無で、config、manifest、image indexの
+    /// どれを指すかが変わる。archiveとの対応の判定には使わない。
     pub id: String,
+    /// このimageが宣言しているlabel。archiveとの対応はこれで判定する。
+    pub labels: Vec<(String, String)>,
     /// この実行でbuildしたか。
     pub built: bool,
     /// 成果物としては成立したが、利用者へ伝える必要がある事実。
@@ -94,6 +99,7 @@ pub fn ensure(
         return Ok(BuiltImage {
             name,
             id: identity.id,
+            labels,
             built: false,
             warnings: Vec::new(),
         });
@@ -118,6 +124,7 @@ pub fn ensure(
     Ok(BuiltImage {
         name,
         id: identity.id,
+        labels,
         built: true,
         warnings,
     })
@@ -247,7 +254,7 @@ pub fn ensure_archive(
     .timeout(TimeoutClass::ImageBuild);
     host.run(&spec)?.require_success()?;
 
-    archive::verify_holds_image(&temporary, &image.name, &image.id)?;
+    archive::verify_holds_image(&temporary, &image.name, &image.labels)?;
     paths::atomic_rename_into_place(&temporary, &target)?;
     Ok(target)
 }
@@ -679,12 +686,23 @@ mod tests {
             .skip_while(|arg| *arg != "--output")
             .nth(1)
             .expect("the save names an output path");
+        // 実物と同じく、archiveはimage configをlabelごと持つ。
+        let rendered = declared_labels()
+            .iter()
+            .map(|(key, value)| format!("\"{key}\":\"{value}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        let config = format!(r#"{{"config":{{"Labels":{{{rendered}}}}}}}"#);
+        let hex = image_id.strip_prefix("sha256:").unwrap_or(image_id);
         fs::write(
             output,
-            crate::archive::tar_bytes(&[(
-                "manifest.json",
-                crate::archive::manifest_json(image_name, image_id).as_bytes(),
-            )]),
+            crate::archive::tar_bytes(&[
+                (&format!("blobs/sha256/{hex}"), config.as_bytes()),
+                (
+                    "manifest.json",
+                    crate::archive::manifest_json(image_name, image_id).as_bytes(),
+                ),
+            ]),
         )
         .expect("write the archive");
     }
@@ -724,6 +742,7 @@ mod tests {
             name: image_name(&sandbox(), DIGEST),
             id: "sha256:1111111111111111111111111111111111111111111111111111111111111111"
                 .to_string(),
+            labels: expected_labels(&canonical(), DIGEST),
             built: true,
             warnings: Vec::new(),
         }
