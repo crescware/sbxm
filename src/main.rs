@@ -28,7 +28,7 @@ use error::{Diagnostic, Error, ErrorId, ExitCode, Result};
 use i18n::{Catalog, Locale, shell_locale};
 use metadata::CreationMode;
 use workflow::Reporter;
-use workflow::destroy::{ConfirmPrompt, TerminalConfirmPrompt};
+use workflow::destroy::TerminalConfirmPrompt;
 use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
 use workflow::select::TerminalProjectPrompt;
@@ -423,23 +423,14 @@ fn dispatch(
             };
 
             print_destroy_plan(&catalog, &prepared.plan);
-            // 通常modeをTTYで実行した場合だけ、Sandbox名の完全入力を要求する。
-            if !arguments.force && interactivity.can_prompt() {
-                let mut confirm = TerminalConfirmPrompt {
-                    locale: catalog.locale(),
-                };
-                match confirm.confirm_sandbox_name(&prepared.plan.sandbox) {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        let error = destroy::confirmation_mismatch(&prepared.plan.sandbox);
-                        report(&catalog, &error);
-                        return error.exit_code();
-                    }
-                    Err(error) => {
-                        report(&catalog, &error);
-                        return error.exit_code();
-                    }
-                }
+            let mut confirm = TerminalConfirmPrompt {
+                locale: catalog.locale(),
+            };
+            if let Err(error) =
+                destroy::confirm(&prepared, interactivity.can_prompt(), &mut confirm)
+            {
+                report(&catalog, &error);
+                return error.exit_code();
             }
 
             match destroy::execute(&RealHost, &prepared, inventory::Poll::default()) {

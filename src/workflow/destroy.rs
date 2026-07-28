@@ -337,8 +337,26 @@ fn unreadable_prompt(error: std::io::Error) -> Error {
     )
 }
 
+/// 削除して良いことを利用者に確かめる。
+///
+/// force modeと非対話では対話確認を行わない。TTYの通常modeだけがSandbox名の完全
+/// 入力を求め、一致しなければ何も削除しない。
+pub fn confirm(
+    prepared: &Prepared,
+    interactive: bool,
+    prompt: &mut dyn ConfirmPrompt,
+) -> Result<()> {
+    if prepared.force || !interactive {
+        return Ok(());
+    }
+    if prompt.confirm_sandbox_name(&prepared.plan.sandbox)? {
+        return Ok(());
+    }
+    Err(confirmation_mismatch(&prepared.plan.sandbox))
+}
+
 /// 入力が一致しない場合のerror。
-pub fn confirmation_mismatch(expected: &str) -> Error {
+fn confirmation_mismatch(expected: &str) -> Error {
     Error::new(
         ErrorId::DestroyNotConfirmed,
         msg!("error-destroy-not-confirmed", sandbox = expected),
@@ -349,8 +367,9 @@ pub fn confirmation_mismatch(expected: &str) -> Error {
 mod tests {
     use super::*;
     use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+    use crate::error::ExitCode;
     use crate::metadata;
-    use crate::workflow::inventory::tests::{FakeSbx, fixture};
+    use crate::workflow::inventory::tests::{FakeSbx, Fixture, fixture};
     use crate::workflow::protection::tests::clean_host;
     use crate::workflow::select::tests::ScriptedPrompt;
     use std::time::Duration;
@@ -602,6 +621,101 @@ mod tests {
             project.paths.metadata_file().exists(),
             "the project stays managed so the state can be settled"
         );
+    }
+
+    /// 入力を決め打ちする確認prompt。`None`はEscまたはCtrl-C。
+    struct ScriptedConfirm {
+        typed: Option<String>,
+        asked: usize,
+    }
+
+    impl ScriptedConfirm {
+        fn typing(value: &str) -> ScriptedConfirm {
+            ScriptedConfirm {
+                typed: Some(value.to_string()),
+                asked: 0,
+            }
+        }
+
+        fn canceling() -> ScriptedConfirm {
+            ScriptedConfirm {
+                typed: None,
+                asked: 0,
+            }
+        }
+    }
+
+    impl ConfirmPrompt for ScriptedConfirm {
+        fn confirm_sandbox_name(&mut self, expected: &str) -> Result<bool> {
+            self.asked += 1;
+            match &self.typed {
+                Some(typed) => Ok(typed == expected),
+                None => Err(Error::Canceled),
+            }
+        }
+    }
+
+    /// 削除して良い状態の案件を1件用意する。
+    fn prepared_project(fixture: &Fixture, force: bool) -> (FakeSbx, Prepared) {
+        let project = fixture.register("example-org/example-repo");
+        let host = clean_host(fixture, &project);
+        host.listing.borrow_mut().insert(0, "[]".to_string());
+        let prepared = prepare(
+            &fixture.config,
+            Some(&project_id("example-org/example-repo")),
+            force,
+            &host,
+            &mut ScriptedPrompt::choosing(0),
+            &fixture.workspace_root,
+        )
+        .expect("prepare");
+        (host, prepared)
+    }
+
+    #[test]
+    fn only_the_exact_sandbox_name_confirms_an_interactive_deletion() {
+        let fixture = fixture();
+        let (_host, prepared) = prepared_project(&fixture, false);
+        let sandbox = prepared.plan.sandbox.clone();
+
+        let mut exact = ScriptedConfirm::typing(&sandbox);
+        confirm(&prepared, true, &mut exact).expect("the name matched");
+        assert_eq!(exact.asked, 1);
+
+        // yesでは削除しない。名前以外の入力はすべて不一致とする。
+        for answer in ["yes", "", &sandbox[..sandbox.len() - 1]] {
+            let mut typed = ScriptedConfirm::typing(answer);
+            let error = confirm(&prepared, true, &mut typed)
+                .expect_err("only the sandbox name confirms a deletion");
+            assert_eq!(error.first_id(), Some(ErrorId::DestroyNotConfirmed));
+        }
+    }
+
+    #[test]
+    fn canceling_the_confirmation_changes_nothing_and_exits_130() {
+        let fixture = fixture();
+        let (host, prepared) = prepared_project(&fixture, false);
+
+        let mut canceled = ScriptedConfirm::canceling();
+        let error = confirm(&prepared, true, &mut canceled).expect_err("Esc and Ctrl-C leave");
+        assert_eq!(error.exit_code(), ExitCode::Canceled);
+        assert!(!host.ran("rm "), "nothing is removed");
+    }
+
+    #[test]
+    fn force_mode_and_a_non_interactive_run_are_not_asked_to_confirm() {
+        let fixture = fixture();
+        let (_host, normal) = prepared_project(&fixture, false);
+        let mut without_terminal = ScriptedConfirm::canceling();
+        confirm(&normal, false, &mut without_terminal)
+            .expect("a fully specified project needs no prompt");
+        assert_eq!(without_terminal.asked, 0);
+
+        let forced_fixture = crate::workflow::inventory::tests::fixture();
+        let (_host, forced) = prepared_project(&forced_fixture, true);
+        let mut with_terminal = ScriptedConfirm::canceling();
+        confirm(&forced, true, &mut with_terminal).expect("force mode skips the confirmation");
+        assert_eq!(with_terminal.asked, 0);
     }
 
     #[test]
