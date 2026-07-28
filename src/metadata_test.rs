@@ -1,5 +1,5 @@
 use super::*;
-use crate::testing::DIGEST;
+use crate::testing::value::DIGEST;
 use std::os::unix::fs::PermissionsExt;
 
 fn canonical(value: &str) -> CanonicalProjectId {

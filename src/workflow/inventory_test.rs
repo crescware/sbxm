@@ -1,5 +1,6 @@
 use super::*;
-use crate::testing::{FakeSbx, fixture};
+use crate::testing::host::FakeSbx;
+use crate::testing::project::fixture;
 use crate::workflow::image::image_name;
 
 #[test]

@@ -1,7 +1,9 @@
 use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::metadata::{self, RebuildIntent};
-use crate::testing::{FakeSbx, Fixture, Registered, ScriptedPrompt, fixture};
+use crate::testing::host::FakeSbx;
+use crate::testing::project::{Fixture, Registered, fixture};
+use crate::testing::prompt::ScriptedPrompt;
 use std::time::Duration;
 
 fn poll() -> Poll {

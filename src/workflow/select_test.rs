@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::ExitCode;
-use crate::testing::{ScriptedPrompt, fixture};
+use crate::testing::project::fixture;
+use crate::testing::prompt::ScriptedPrompt;
 
 fn project_id(value: &str) -> ProjectId {
     ProjectId::parse(value).expect("valid project id")

@@ -1,5 +1,7 @@
 use super::*;
-use crate::testing::{FakeSbx, Registered, clean_host, fixture};
+use crate::testing::host::FakeSbx;
+use crate::testing::project::{Registered, fixture};
+use crate::testing::protection::clean_host;
 
 fn inspect_with(host: &FakeSbx, project: &Registered, unmanaged: Unmanaged) -> Result<Protection> {
     let layout = SandboxLayout::new(&project.metadata.canonical_id);

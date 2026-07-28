@@ -3,7 +3,7 @@ use crate::config::{GitIdentity, GlobalConfig};
 use crate::i18n::Locale;
 use crate::metadata::RebuildIntent;
 use crate::paths::AbsoluteBasePath;
-use crate::testing::request;
+use crate::testing::add_request::request;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::Duration;

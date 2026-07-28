@@ -1,7 +1,7 @@
 use super::*;
 use crate::command::{CommandOutcome, OutputPolicy};
 use crate::project::ProjectId;
-use crate::testing::DIGEST;
+use crate::testing::value::DIGEST;
 use std::cell::RefCell;
 use std::os::unix::process::ExitStatusExt;
 
