@@ -293,9 +293,13 @@ impl ConfirmPrompt for TerminalConfirmPrompt {
                 dialoguer::Error::IO(io) if io.kind() == std::io::ErrorKind::Interrupted => {
                     Error::Canceled
                 }
-                _ => Error::new(
-                    ErrorId::ProjectArgumentRequired,
-                    msg!("error-project-argument-required", command = "sbxm destroy"),
+                // 端末を読み取れなかったことを、引数の不足として報告しない。
+                other => Error::single(
+                    Diagnostic::new(
+                        ErrorId::PromptUnreadable,
+                        msg!("error-prompt-unreadable", detail = other),
+                    )
+                    .remediation(msg!("remediation-prompt-unreadable")),
                 ),
             })?;
         // yes/noでは削除しない。完全一致だけを続行の合図とする。

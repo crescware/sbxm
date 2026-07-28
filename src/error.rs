@@ -161,6 +161,7 @@ pub enum ErrorId {
 
     // --- init ---
     InitRequiresTty,
+    PromptUnreadable,
     GitIdentityInvalid,
 
     // --- 内部 ---
@@ -288,6 +289,7 @@ impl ErrorId {
             ErrorId::DaemonSessionUnobservable => "daemon-session-unobservable",
 
             ErrorId::InitRequiresTty => "init-requires-tty",
+            ErrorId::PromptUnreadable => "prompt-unreadable",
             ErrorId::GitIdentityInvalid => "git-identity-invalid",
 
             ErrorId::MessageFormatFailed => "message-format-failed",
@@ -639,6 +641,7 @@ mod tests {
             ErrorId::DaemonSessionActive,
             ErrorId::DaemonSessionUnobservable,
             ErrorId::InitRequiresTty,
+            ErrorId::PromptUnreadable,
             ErrorId::GitIdentityInvalid,
             ErrorId::MessageFormatFailed,
         ]
