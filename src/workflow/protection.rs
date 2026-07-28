@@ -388,7 +388,7 @@ fn examine(
 /// 削除の直前に確かめ直す場合も、この規則を使う。
 pub fn require_no_active_session(host: &dyn HostEnvironment, sandbox_name: &str) -> Result<()> {
     let entries = daemon::list(host)?;
-    let Some(entry) = entries.iter().find(|entry| entry.name == sandbox_name) else {
+    let Some(entry) = super::inventory::single(&entries, sandbox_name)? else {
         return Ok(());
     };
     match entry.active_sessions {
@@ -587,6 +587,21 @@ pub mod tests {
                 .expect_err("unsaved work is never destroyed");
             assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
         }
+    }
+
+    #[test]
+    fn two_sandboxes_with_the_same_name_are_not_resolved_by_taking_the_first() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let entry = fixture.entry(&project, "running");
+        // 片方はsessionを持つ。先頭だけを見ると不在と読める一覧。
+        let busy = entry.replace(r#""active_sessions":0"#, r#""active_sessions":2"#);
+        let host = clean_host(&fixture, &project);
+        *host.listing.borrow_mut() = vec![format!("[{entry},{busy}]")];
+
+        let error = inspect_with(&host, &project, Unmanaged::Allowed)
+            .expect_err("the target sandbox cannot be identified");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
     }
 
     #[test]

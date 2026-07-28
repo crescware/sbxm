@@ -107,26 +107,31 @@ pub fn state_of(
     workspace_root: &Path,
 ) -> Result<ProjectState> {
     let name = metadata.sandbox_name();
-    let matched: Vec<&SandboxEntry> = entries
-        .iter()
-        .filter(|entry| entry.name == name.as_str())
-        .collect();
+    let Some(entry) = single(entries, name.as_str())? else {
+        return Ok(ProjectState::NotCreated);
+    };
+    sandbox::verify_identity(
+        entry,
+        &name,
+        &template_names(&name, metadata),
+        workspace_root,
+    )?;
+    Ok(match entry.state {
+        SandboxState::Running => ProjectState::Running,
+        SandboxState::Stopped => ProjectState::Stopped,
+    })
+}
 
+/// 名前が一致するentryを1件だけ取り出す。
+///
+/// 同名が複数ある一覧からは、どれがこの案件のSandboxかを決められない。先頭を選んで
+/// 続けると、別のSandboxのsessionやstateを読んだまま削除へ進み得る。
+pub fn single<'a>(entries: &'a [SandboxEntry], name: &str) -> Result<Option<&'a SandboxEntry>> {
+    let matched: Vec<&SandboxEntry> = entries.iter().filter(|entry| entry.name == name).collect();
     match matched.as_slice() {
-        [] => Ok(ProjectState::NotCreated),
-        [entry] => {
-            sandbox::verify_identity(
-                entry,
-                &name,
-                &template_names(&name, metadata),
-                workspace_root,
-            )?;
-            Ok(match entry.state {
-                SandboxState::Running => ProjectState::Running,
-                SandboxState::Stopped => ProjectState::Stopped,
-            })
-        }
-        _ => Err(duplicated(&[name.as_str()])),
+        [] => Ok(None),
+        [entry] => Ok(Some(entry)),
+        _ => Err(duplicated(&[name])),
     }
 }
 
@@ -197,10 +202,7 @@ pub fn remove(
 
     let deadline = Instant::now() + poll.limit;
     loop {
-        if !daemon::list(host)?
-            .iter()
-            .any(|entry| entry.name == name.as_str())
-        {
+        if single(&daemon::list(host)?, name.as_str())?.is_none() {
             return Ok(());
         }
         if Instant::now() >= deadline {

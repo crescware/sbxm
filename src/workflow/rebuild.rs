@@ -221,7 +221,7 @@ fn switch(
     // 新世代の準備には時間がかかる。切り替える対象は、その後の観測から決める。
     let entries = daemon::list(host)?;
     // Sandboxが不在の中断点からは、作成工程から続ける。
-    if let Some(entry) = entries.iter().find(|entry| entry.name == name.as_str()) {
+    if let Some(entry) = inventory::single(&entries, name.as_str())? {
         let observed = entry
             .template
             .clone()

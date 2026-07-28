@@ -191,10 +191,7 @@ pub fn execute(
 
 /// Sandboxが存在しないことを1回確認する。
 fn require_absent(host: &dyn HostEnvironment, name: &SandboxName) -> Result<()> {
-    if daemon::list(host)?
-        .iter()
-        .any(|entry| entry.name == name.as_str())
-    {
+    if inventory::single(&daemon::list(host)?, name.as_str())?.is_some() {
         return Err(inventory::still_present(name));
     }
     Ok(())
