@@ -398,9 +398,9 @@ mod tests {
     /// 再作成後の検証を通るSandbox。secretがあり、SSH Agentへ到達できない。
     fn verified(host: FakeSbx, name: &str) -> FakeSbx {
         host.answering(
-            &format!("secret ls {name} --json"),
+            &format!("secret ls {name}"),
             0,
-            r#"[{"name":"github"}]"#,
+            "SCOPE   TYPE      NAME     SECRET\nx   service   github   (stored)\n",
         )
         .answering(&format!("exec {name} -- printenv SSH_AUTH_SOCK"), 1, "")
         .answering(&format!("exec {name} -- ssh-add -L"), 2, "")
@@ -973,9 +973,9 @@ mod tests {
                 &template_listing(&image),
             )
             .answering(
-                &format!("secret ls {} --json", project.sandbox),
+                &format!("secret ls {}", project.sandbox),
                 0,
-                r#"[{"name":"github"}]"#,
+                "SCOPE   TYPE      NAME     SECRET\nx   service   github   (stored)\n",
             );
         // 再作成後のSandbox内で、共有repositoryとworktreeが期待どおりに揃う。
         let layout = SandboxLayout::new(&project.metadata.canonical_id);

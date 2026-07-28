@@ -79,7 +79,7 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 | Sandbox作成 | `sbx create --name <name> --template <image> shell <workspace>` | exit statusのみ |
 | Sandbox内実行 | `sbx exec [--user root] <name> -- <argv>` | stdoutとexit status |
 | file転送 | `sbx cp --follow-link <source> <name>:<path>` | exit statusのみ |
-| secret存在確認 | `sbx secret ls <name> --json` | 名前だけ。値は取得しない |
+| secret存在確認 | `sbx secret ls <name>` | `SCOPE TYPE NAME SECRET`の表。`TYPE`が`service`の行の`NAME`だけを読む。1件もない場合は`No secrets found`で始まる文になる。`--service`は`SECRET`列へ値の一部を出すため使わない |
 | login状態 | `sbx login status --json` | login済みかどうかを示す真偽値 |
 | daemon操作 | `sbx daemon stop` / `sbx daemon start --detach` | exit statusのみ |
 | image存在確認 | `docker image ls --quiet <image>` | 出力が空かどうか |

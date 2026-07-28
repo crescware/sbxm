@@ -409,22 +409,52 @@ fn active_sessions(object: &serde_json::Map<String, serde_json::Value>) -> Resul
 ///
 /// 値は取得も表示もしない。存在の有無だけを読む。
 pub fn parse_secret_names(output: &str) -> Result<Vec<String>> {
-    let documents = json_documents("sbx secret ls", output)?;
+    let trimmed = output.trim();
+    // 1件もない場合は表ではなく文で示す。
+    if trimmed.starts_with("No secrets found") {
+        return Ok(Vec::new());
+    }
 
-    let mut names = Vec::with_capacity(documents.len());
-    for document in documents {
-        let name = match &document {
-            // 名前だけを並べるversionがある。
-            serde_json::Value::String(name) => name.clone(),
-            serde_json::Value::Object(object) => string_field(object, "name")
-                .or_else(|| string_field(object, "Name"))
-                .ok_or_else(|| unparseable("sbx secret ls", "an entry has no name"))?,
-            _ => return Err(unparseable("sbx secret ls", "an entry has no name")),
-        };
-        if name.is_empty() {
-            return Err(unparseable("sbx secret ls", "an entry has an empty name"));
+    let mut lines = trimmed.lines();
+    let header = lines
+        .next()
+        .ok_or_else(|| unparseable("sbx secret ls", "the output is empty"))?;
+    let columns: Vec<&str> = header.split_whitespace().collect();
+    let column_of = |wanted: &str| -> Result<usize> {
+        columns
+            .iter()
+            .position(|column| *column == wanted)
+            .ok_or_else(|| {
+                unparseable(
+                    "sbx secret ls",
+                    &format!("the listing has no {wanted} column"),
+                )
+            })
+    };
+    let kind_at = column_of("TYPE")?;
+    let name_at = column_of("NAME")?;
+
+    let mut names = Vec::new();
+    for line in lines {
+        if line.trim().is_empty() {
+            continue;
         }
-        names.push(name);
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        // 列数の合わない行からは、どの値がどの列かを決められない。
+        if fields.len() != columns.len() {
+            return Err(unparseable(
+                "sbx secret ls",
+                &format!(
+                    "a row holds {} values for {} columns",
+                    fields.len(),
+                    columns.len()
+                ),
+            ));
+        }
+        // serviceに紐づくsecretだけを対象とする。registry secretは別種である。
+        if fields[kind_at] == "service" {
+            names.push(fields[name_at].to_string());
+        }
     }
     Ok(names)
 }
@@ -795,18 +825,27 @@ mod tests {
     }
 
     #[test]
-    fn the_secret_parser_reads_names_only() {
-        assert_eq!(
-            parse_secret_names(r#"[{"name":"github"},{"name":"other"}]"#).unwrap(),
-            vec!["github".to_string(), "other".to_string()]
-        );
-        assert_eq!(
-            parse_secret_names(r#"["github"]"#).unwrap(),
-            vec!["github".to_string()]
-        );
-        assert!(parse_secret_names("").unwrap().is_empty());
+    fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
+        // 対象versionが実際に出力する表。SECRET列は`(stored)`で、値は現れない。
+        let observed = "SCOPE            TYPE      NAME     SECRET\n\
+                        crescware-sbxm   service   github   (stored)\n";
+        assert_eq!(parse_secret_names(observed).unwrap(), vec!["github"]);
 
-        for output in [r#"[{"value":"secret"}]"#, r#"[""]"#, "3"] {
+        // 1件もない場合は表ではなく文で示す。
+        let absent = "No secrets found for scope \"crescware-sbxm\" and service \"github\".\n";
+        assert!(parse_secret_names(absent).unwrap().is_empty());
+
+        // registry secretはserviceではない。GitHubのservice secretと混ぜない。
+        let mixed = "SCOPE            TYPE       NAME        SECRET\n\
+                     crescware-sbxm   registry   ghcr.io     (stored)\n\
+                     crescware-sbxm   service    github      (stored)\n";
+        assert_eq!(parse_secret_names(mixed).unwrap(), vec!["github"]);
+
+        for output in [
+            "",
+            "SCOPE   NAME\ncrescware-sbxm   github\n",
+            "SCOPE            TYPE      NAME     SECRET\ncrescware-sbxm   service\n",
+        ] {
             let error = parse_secret_names(output).expect_err("{output} must be refused");
             assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
         }

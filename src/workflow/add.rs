@@ -1320,15 +1320,16 @@ mod tests {
                     });
                     (0, String::new())
                 }
-                ["secret", "ls", _name, "--json"] => {
-                    let rendered = self
-                        .secrets
-                        .borrow()
-                        .iter()
-                        .map(|name| format!(r#"{{"name":"{name}"}}"#))
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    (0, format!("[{rendered}]"))
+                ["secret", "ls", name] => {
+                    let secrets = self.secrets.borrow();
+                    if secrets.is_empty() {
+                        return (0, format!("No secrets found for scope \"{name}\".\n"));
+                    }
+                    let mut table = String::from("SCOPE   TYPE      NAME     SECRET\n");
+                    for secret in secrets.iter() {
+                        table.push_str(&format!("{name}   service   {secret}   (stored)\n"));
+                    }
+                    (0, table)
                 }
                 ["cp", "--follow-link", source, target] => {
                     let digest = sha256_hex(&fs::read(source).expect("read the declared file"));

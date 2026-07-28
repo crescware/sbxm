@@ -923,9 +923,9 @@ mod tests {
                 "1 .M N... 100644 100644 100644 abc abc file.txt\0",
             )
             .answering(
-                &format!("secret ls {} --json", project.sandbox),
+                &format!("secret ls {}", project.sandbox),
                 0,
-                r#"[{"name":"github"}]"#,
+                "SCOPE   TYPE      NAME     SECRET\nx   service   github   (stored)\n",
             )
             .answering(
                 &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),
