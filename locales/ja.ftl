@@ -275,6 +275,10 @@ files-secret-hint = 宣言fileは設定を運ぶためのもので、credential�
 sync-files-done = { $project } の宣言file { $count } 件を { $sandbox } へ配置しました。
 legend-attached = remoteをtrackingするbranch上のworktreeです
 legend-detached = branchを持たないcommit上のworktreeです
+legend-managed = 案件が宣言しているworktreeで、再構築で作り直されます
+legend-unmanaged = Sandboxの中で作られたworktreeで、作り直す仕組みはありません
+legend-pushed = upstream branchがここのcommitをすべて持っています
+legend-reachable = remoteのいずれかのbranchからこのcommitへ到達できます
 legend-placed = Sandboxへ書き込みました
 legend-unchanged = Sandboxに同じ内容が既にありました
 

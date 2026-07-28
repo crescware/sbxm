@@ -275,6 +275,10 @@ files-secret-hint = Declared files carry configuration, not credentials. Keep to
 sync-files-done = { $count } declared files of { $project } were placed into { $sandbox }.
 legend-attached = the worktree follows a branch that tracks the remote
 legend-detached = the worktree sits on a commit without a branch
+legend-managed = the project declares this worktree, and a rebuild recreates it
+legend-unmanaged = the worktree was made inside the sandbox, and nothing recreates it
+legend-pushed = the upstream branch already holds every commit here
+legend-reachable = a branch on the remote reaches this commit
 legend-placed = the file was written into the sandbox
 legend-unchanged = the sandbox already held the same content
 

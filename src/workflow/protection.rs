@@ -32,20 +32,97 @@ pub enum Unmanaged {
     Refused,
 }
 
+/// metadataとの対応。翻訳しない安定したenum。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Managed,
+    Unmanaged,
+}
+
+impl Kind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Kind::Managed => "managed",
+            Kind::Unmanaged => "unmanaged",
+        }
+    }
+
+    pub fn legend_id(self) -> &'static str {
+        match self {
+            Kind::Managed => "legend-managed",
+            Kind::Unmanaged => "legend-unmanaged",
+        }
+    }
+}
+
+/// HEADの持ち方。翻訳しない安定したenum。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Attached,
+    Detached,
+}
+
+impl Mode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Mode::Attached => "attached",
+            Mode::Detached => "detached",
+        }
+    }
+
+    pub fn legend_id(self) -> &'static str {
+        match self {
+            Mode::Attached => "legend-attached",
+            Mode::Detached => "legend-detached",
+        }
+    }
+}
+
+/// commitがremoteへ渡っている根拠。翻訳しない安定したenum。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Remote {
+    Pushed,
+    Reachable,
+}
+
+impl Remote {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Remote::Pushed => "pushed",
+            Remote::Reachable => "reachable",
+        }
+    }
+
+    pub fn legend_id(self) -> &'static str {
+        match self {
+            Remote::Pushed => "legend-pushed",
+            Remote::Reachable => "legend-reachable",
+        }
+    }
+}
+
 /// worktree 1件の観測結果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorktreeReport {
     /// bare rootからの相対path。
     pub relative: String,
-    /// 翻訳しない`managed`または`unmanaged`。
-    pub kind: &'static str,
-    /// 翻訳しない`attached`または`detached`。
-    pub mode: &'static str,
+    pub kind: Kind,
+    pub mode: Mode,
     pub head: String,
     /// attached modeのbranch名。
     pub branch: Option<String>,
-    /// remoteへ渡っているか。翻訳しない`pushed`、`reachable`、`unpushed`。
-    pub remote: &'static str,
+    pub remote: Remote,
+}
+
+impl WorktreeReport {
+    /// この行が使った状態値と、その説明のmessage ID。
+    pub fn legends(&self) -> [(&'static str, &'static str); 3] {
+        [
+            (self.kind.as_str(), self.kind.legend_id()),
+            (self.mode.as_str(), self.mode.legend_id()),
+            (self.remote.as_str(), self.remote.legend_id()),
+        ]
+    }
 }
 
 /// 検査結果。
@@ -266,7 +343,7 @@ fn examine(
                 upstream = upstream
             )));
         }
-        ("attached", Some(branch), "pushed")
+        (Mode::Attached, Some(branch), Remote::Pushed)
     } else {
         // detached HEADは、originのいずれかのrefから到達できることを条件とする。
         let unreachable = read(
@@ -289,12 +366,16 @@ fn examine(
                 target = relative
             )));
         }
-        ("detached", None, "reachable")
+        (Mode::Detached, None, Remote::Reachable)
     };
 
     Ok(WorktreeReport {
         relative: relative.to_string(),
-        kind: if managed { "managed" } else { "unmanaged" },
+        kind: if managed {
+            Kind::Managed
+        } else {
+            Kind::Unmanaged
+        },
         mode,
         head,
         branch,
@@ -457,11 +538,11 @@ pub mod tests {
             protection.worktrees,
             vec![WorktreeReport {
                 relative: "example-repo.tree-0".to_string(),
-                kind: "managed",
-                mode: "attached",
+                kind: Kind::Managed,
+                mode: Mode::Attached,
                 head: "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5".to_string(),
                 branch: Some("main".to_string()),
-                remote: "pushed",
+                remote: Remote::Pushed,
             }]
         );
     }
@@ -600,8 +681,8 @@ pub mod tests {
         let protection = inspect_with(&host, &project, Unmanaged::Allowed)
             .expect("destroy examines it under the same rules");
         assert_eq!(protection.worktrees.len(), 2);
-        assert_eq!(protection.worktrees[1].kind, "unmanaged");
-        assert_eq!(protection.worktrees[1].remote, "reachable");
+        assert_eq!(protection.worktrees[1].kind, Kind::Unmanaged);
+        assert_eq!(protection.worktrees[1].remote, Remote::Reachable);
     }
 
     #[test]

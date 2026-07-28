@@ -702,11 +702,11 @@ fn print_destroy_plan(catalog: &Catalog, plan: &destroy::DestroyPlan) {
             .map(|worktree| {
                 vec![
                     worktree.relative.clone(),
-                    worktree.kind.to_string(),
-                    worktree.mode.to_string(),
+                    worktree.kind.as_str().to_string(),
+                    worktree.mode.as_str().to_string(),
                     worktree.branch.clone().unwrap_or_else(|| "-".to_string()),
                     worktree.head.clone(),
-                    worktree.remote.to_string(),
+                    worktree.remote.as_str().to_string(),
                 ]
             })
             .collect();
@@ -725,6 +725,15 @@ fn print_destroy_plan(catalog: &Catalog, plan: &destroy::DestroyPlan) {
                 &rows,
             )
         );
+        // 状態値は翻訳しないため、正本locale以外では説明を添える。
+        let values: Vec<(&str, &str)> = plan
+            .worktrees
+            .iter()
+            .flat_map(|worktree| worktree.legends())
+            .collect();
+        if let Some(legend) = reporter.render_value_legend(&values) {
+            print!("\n{legend}");
+        }
     }
 
     println!("\n{}", text_or_report(catalog, "destroy-removes"));
