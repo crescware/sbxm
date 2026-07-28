@@ -372,6 +372,7 @@ mod tests {
     use crate::workflow::inventory::tests::{FakeSbx, Fixture, fixture};
     use crate::workflow::protection::tests::clean_host;
     use crate::workflow::select::tests::ScriptedPrompt;
+    use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
 
     fn poll() -> Poll {
@@ -716,6 +717,80 @@ mod tests {
         let mut with_terminal = ScriptedConfirm::canceling();
         confirm(&forced, true, &mut with_terminal).expect("force mode skips the confirmation");
         assert_eq!(with_terminal.asked, 0);
+    }
+
+    /// `.sbxm`から書き込みを取り上げ、cleanupを失敗させる。
+    fn seal(paths: &ProjectPaths) -> std::path::PathBuf {
+        let directory = paths
+            .metadata_file()
+            .parent()
+            .expect("the metadata lives in a directory")
+            .to_path_buf();
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o500))
+            .expect("take away the write permission");
+        directory
+    }
+
+    fn unseal(directory: &std::path::Path) {
+        std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))
+            .expect("give it back so the temporary directory can be removed");
+    }
+
+    #[test]
+    fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let host = clean_host(&fixture, &project);
+        host.listing.borrow_mut().insert(0, "[]".to_string());
+
+        let prepared = prepare(
+            &fixture.config,
+            Some(&project_id("example-org/example-repo")),
+            false,
+            &host,
+            &mut ScriptedPrompt::choosing(0),
+            &fixture.workspace_root,
+        )
+        .expect("prepare");
+
+        let sealed = seal(&project.paths);
+        let error = execute(&host, &prepared, poll()).expect_err("the metadata cannot be removed");
+        assert_eq!(error.first_id(), Some(ErrorId::CleanupFailed));
+        assert!(
+            project.paths.metadata_file().exists(),
+            "the project is still managed, so destroy can be run again"
+        );
+        unseal(&sealed);
+    }
+
+    #[test]
+    fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let host = clean_host(&fixture, &project);
+        host.listing.borrow_mut().insert(0, "[]".to_string());
+
+        let prepared = prepare(
+            &fixture.config,
+            Some(&project_id("example-org/example-repo")),
+            false,
+            &host,
+            &mut ScriptedPrompt::choosing(0),
+            &fixture.workspace_root,
+        )
+        .expect("prepare");
+
+        // metadataは消えており、lock fileだけが残せない状態を作る。
+        std::fs::remove_file(project.paths.metadata_file()).unwrap();
+        let sealed = seal(&project.paths);
+
+        let outcome = execute(&host, &prepared, poll()).expect("the project is unmanaged already");
+        assert_eq!(outcome.warnings.len(), 1, "the leftover is reported once");
+        assert!(
+            project.paths.lock_file().exists(),
+            "the lock file is the thing that was left"
+        );
+        unseal(&sealed);
     }
 
     #[test]
