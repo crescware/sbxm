@@ -89,6 +89,10 @@ pub fn run(
         return Ok(output);
     }
 
+    // custom secretはSandboxの作成時に結び付く。あとから登録しても既存のSandboxには
+    // 届かないため、作成より前に、そしてimageを組む前に確認する。
+    secret::require_github(host, name.as_str())?;
+
     let current = super::add::current_dockerfile_hash(&paths)?;
     let generation = adopt_generation(
         host,
@@ -116,7 +120,6 @@ pub fn run(
 
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
     identity::ensure(host, &ready.name, &config.git)?;
-    secret::require_github(host, &ready.name)?;
 
     repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
     let branch =
@@ -1030,6 +1033,16 @@ mod tests {
         assert!(
             !world.ran("git clone --bare"),
             "the sandbox repository is not cloned without the secret"
+        );
+        // custom secretはSandboxの作成時に結び付く。先に作ってしまうと、登録しても
+        // placeholderの届かないSandboxが残り、作り直しを強いることになる。
+        assert!(
+            !world.ran("sbx create"),
+            "the sandbox is not created before the secret it has to be built with"
+        );
+        assert!(
+            !world.ran("docker build"),
+            "the image is not built before the missing secret is reported"
         );
 
         world.secrets.borrow_mut().push("github.com".to_string());
