@@ -146,9 +146,12 @@ pub fn execute(
             // 削除の直前に、sessionが接続していないことを確かめ直す。
             protection::require_no_active_session(host, prepared.name.as_str())?;
         }
+        // 削除は、一覧から消えたことを確かめるまで完了しない。
         inventory::remove(host, &prepared.name, prepared.force, poll)?;
+    } else {
+        // 削除commandを実行しない場合だけ、一覧で不在を1回確かめる。
+        require_absent(host, &prepared.name)?;
     }
-    require_absent(host, &prepared.name)?;
 
     // 削除もほかのmutationと同じ規則で行う。symlinkの先を消さない。
     let cache = prepared.paths.cache_dir();
