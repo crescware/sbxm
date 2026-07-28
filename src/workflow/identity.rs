@@ -1,11 +1,10 @@
-//! Sandbox内のGit identityとGitHub protocol。
+//! Sandbox内のGit identity。
 //!
 //! 既存の設定値が同じならそのままにし、異なる場合は別の利用者のSandboxである
 //! 可能性があるため自動で上書きしない。
 //!
-//! `gh`はsbxm自身のworkflowが使わない。Sandbox内のcloneもfetchも素のgitがHTTPSで
-//! 行い、認証はcredential helperが担う。`gh`を入れていないSandboxを構築の失敗に
-//! しないため、`gh`向けの検査は`gh`があるときにだけ行う。
+//! `gh`のprotocol設定もここに置く。値の性質が同じで、一致しない値の扱いを同じ形で
+//! 決めるためである。呼ぶかどうかは`tools`が`gh`の有無で決める。
 
 use crate::command::HostEnvironment;
 use crate::config::GitIdentity;
@@ -18,18 +17,13 @@ use super::sandbox;
 const GIT_PROTOCOL: &str = "https";
 const GITHUB_HOST: &str = "github.com";
 
-/// Sandbox内でprotocolの設定先になるcommand。sbxm自身は使わない。
-const GH: &str = "gh";
-
-/// Git identityとGitHub protocolを設定する。
+/// Git identityを設定する。
+///
+/// `gh`はsbxm自身のworkflowが一度も呼ばない。Sandbox内のcloneもfetchも素のgitがHTTPSで
+/// 行い、認証はcredential helperが担う。そのため`gh`の設定はここには含めない。
 pub fn ensure(host: &dyn HostEnvironment, sandbox: &str, git: &GitIdentity) -> Result<()> {
     ensure_git_config(host, sandbox, "user.name", &git.user_name)?;
-    ensure_git_config(host, sandbox, "user.email", &git.user_email)?;
-    // `gh`はこの先の工程が一度も呼ばない。入れていないSandboxはそのまま先へ進める。
-    if sandbox::has_command(host, sandbox, GH)? {
-        ensure_git_protocol(host, sandbox)?;
-    }
-    Ok(())
+    ensure_git_config(host, sandbox, "user.email", &git.user_email)
 }
 
 fn ensure_git_config(
@@ -62,7 +56,7 @@ fn ensure_git_config(
 ///
 /// 実際に効くのは、中で`ssh`へ変えられていた場合である。SandboxにSSH鍵は無いため、
 /// その`gh`はGitHubへ到達できない。
-fn ensure_git_protocol(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
+pub(super) fn ensure_git_protocol(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     let outcome = sandbox::exec(
         host,
         sandbox,
@@ -127,8 +121,6 @@ mod tests {
     struct FakeSbx {
         /// Sandbox内で既に設定されている値。
         settings: HashMap<String, String>,
-        /// Sandbox内に`gh`があるか。
-        gh: bool,
         calls: RefCell<Vec<Vec<String>>>,
     }
 
@@ -139,16 +131,6 @@ mod tests {
                     .iter()
                     .map(|(key, value)| (key.to_string(), value.to_string()))
                     .collect(),
-                gh: true,
-                calls: RefCell::new(Vec::new()),
-            }
-        }
-
-        /// `gh`を入れずに組んだDockerfileから作られたSandbox。
-        fn without_gh() -> FakeSbx {
-            FakeSbx {
-                settings: HashMap::new(),
-                gh: false,
                 calls: RefCell::new(Vec::new()),
             }
         }
@@ -187,13 +169,6 @@ mod tests {
                 .collect();
 
             let (code, stdout) = match inner.as_slice() {
-                ["sh", "-c", script] if *script == sandbox::command_probe(GH) => {
-                    (0, if self.gh { "yes" } else { "" }.to_string())
-                }
-                // `gh`の無いSandboxで`gh`を起動しようとしたら、testとして失敗させる。
-                ["gh", ..] if !self.gh => {
-                    panic!("a sandbox without gh must not be asked to run it: {inner:?}")
-                }
                 ["git", "config", "--global", "--get", key] => self.stored(key),
                 ["gh", "config", "get", "git_protocol", ..] => self.stored("git_protocol"),
                 _ => (0, String::new()),
@@ -225,30 +200,46 @@ mod tests {
 
         assert!(host.wrote("Example User"));
         assert!(host.wrote("user@example.com"));
-        assert!(host.wrote("git_protocol"));
+        assert!(
+            !host
+                .calls()
+                .iter()
+                .any(|args| args.iter().any(|arg| arg == "gh")),
+            "gh belongs to the tool listing, not to the git identity: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
+    fn the_protocol_is_written_only_when_it_is_not_already_https() {
+        let host = FakeSbx::holding(&[]);
+        ensure_git_protocol(&host, "sbxm-example").expect("configure");
         assert!(
             host.calls()
                 .iter()
                 .any(|args| args.contains(&"set".to_string())
                     && args.contains(&GIT_PROTOCOL.to_string()))
         );
-    }
 
-    #[test]
-    fn a_sandbox_without_gh_is_configured_all_the_same() {
-        let host = FakeSbx::without_gh();
-        ensure(&host, "sbxm-example", &identity()).expect("gh is not part of the workflow");
-
-        assert!(host.wrote("Example User"));
-        assert!(host.wrote("user@example.com"));
+        // ghの既定は`https`である。一致を観測したSandboxへは書き込まない。
+        let host = FakeSbx::holding(&[("git_protocol", GIT_PROTOCOL)]);
+        ensure_git_protocol(&host, "sbxm-example").expect("nothing to do");
         assert!(
             !host
                 .calls()
                 .iter()
-                .any(|args| args.iter().any(|arg| arg == "gh")),
-            "a sandbox that does not carry gh is never asked to run it: {:?}",
+                .any(|args| args.contains(&"set".to_string())),
+            "{:?}",
             host.calls()
         );
+    }
+
+    #[test]
+    fn a_protocol_that_was_changed_by_hand_stops_the_run() {
+        let host = FakeSbx::holding(&[("git_protocol", "ssh")]);
+        let error =
+            ensure_git_protocol(&host, "sbxm-example").expect_err("a different value is refused");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
     }
 
     #[test]
@@ -256,7 +247,6 @@ mod tests {
         let host = FakeSbx::holding(&[
             ("user.name", "Example User"),
             ("user.email", "user@example.com"),
-            ("git_protocol", "https"),
         ]);
         ensure(&host, "sbxm-example", &identity()).expect("nothing to do");
 
@@ -277,11 +267,6 @@ mod tests {
             vec![
                 ("user.name", "Example User"),
                 ("user.email", "another@example.com"),
-            ],
-            vec![
-                ("user.name", "Example User"),
-                ("user.email", "user@example.com"),
-                ("git_protocol", "ssh"),
             ],
         ] {
             let host = FakeSbx::holding(&settings);

@@ -19,7 +19,7 @@ use super::files::{self, Conflict};
 use super::image;
 use super::inventory::{self, Poll, ProjectState};
 use super::protection::{self, Unmanaged};
-use super::{daemon, identity, repository, sandbox, secret, template};
+use super::{daemon, identity, repository, sandbox, secret, template, tools};
 
 /// `rebuild`の結果。
 #[derive(Debug, Clone)]
@@ -258,6 +258,7 @@ impl Switch<'_> {
         secret::require_placeholder_present(host, &ready.name)?;
 
         identity::ensure(host, &ready.name, &config.git)?;
+        tools::sandbox_ready(host, &ready.name)?;
         secret::configure_git_credential(host, &ready.name)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout)?;

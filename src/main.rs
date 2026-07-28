@@ -660,13 +660,7 @@ fn print_prepare_output(catalog: &Catalog, output: &prepare::PrepareOutput) {
         println!("{}", text_or_report(catalog, "files-secret-hint"));
     }
 
-    if !output.mise_candidates.is_empty() {
-        println!("\n{}", text_or_report(catalog, "add-mise-heading"));
-        for candidate in &output.mise_candidates {
-            println!("  {candidate}");
-        }
-        println!("{}", text_or_report(catalog, "add-mise-hint"));
-    }
+    print_notes(catalog, &output.notes);
 
     let mut values: Vec<(&str, &str)> = vec![(
         sandbox_state(output.sandbox_state),
@@ -964,6 +958,7 @@ fn print_apply_output(catalog: &Catalog, output: &workflow::apply::ApplyOutput) 
             )
         );
     }
+    print_notes(catalog, &output.notes);
     if output.files.is_empty() && output.worktrees.is_some() {
         return;
     }
@@ -1105,6 +1100,20 @@ fn format_or_report(catalog: &Catalog, message: &error::Msg) -> String {
     catalog
         .format(message)
         .unwrap_or_else(|failure| failure.to_string())
+}
+
+/// Sandboxに入っているtoolが返した案内。
+///
+/// どのtoolが返したかは印字しない。sbxmが代わりに実行しないことを示す文面そのものが
+/// toolを名乗る。
+fn print_notes(catalog: &Catalog, notes: &[workflow::tools::Note]) {
+    for note in notes {
+        println!("\n{}", format_or_report(catalog, &note.heading));
+        for item in &note.items {
+            println!("  {item}");
+        }
+        println!("{}", format_or_report(catalog, &note.hint));
+    }
 }
 
 fn text_or_report(catalog: &Catalog, id: &str) -> String {
