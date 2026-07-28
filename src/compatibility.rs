@@ -381,6 +381,12 @@ pub struct CustomSecret {
     pub targets: Vec<String>,
     /// placeholderを受け取るSandbox内の環境変数名。
     pub env: String,
+    /// Sandboxが実際に見る値。
+    ///
+    /// tokenそのものではなく、tokenの居場所を指す公開の目印である。同じenvへ登録を
+    /// やり直すとき、この値を`--placeholder`へ渡せばSandboxが持つ値と一致したまま
+    /// 更新できる。読むのはそのためだけであり、隣の`SECRET`列は読まない。
+    pub placeholder: String,
 }
 
 /// custom secretの表が始まる見出し。
@@ -423,6 +429,7 @@ pub fn parse_custom_secrets(output: &str) -> Result<Vec<CustomSecret>> {
     };
     let targets_at = column_of("TARGETS")?;
     let env_at = column_of("ENV")?;
+    let placeholder_at = column_of("PLACEHOLDER")?;
 
     let mut customs = Vec::new();
     for line in lines {
@@ -449,6 +456,7 @@ pub fn parse_custom_secrets(output: &str) -> Result<Vec<CustomSecret>> {
                 .map(str::to_string)
                 .collect(),
             env: fields[env_at].to_string(),
+            placeholder: fields[placeholder_at].to_string(),
         });
     }
     Ok(customs)
@@ -831,6 +839,7 @@ mod tests {
         assert_eq!(
             parse_custom_secrets(observed).unwrap(),
             vec![CustomSecret {
+                placeholder: "sbx-cs-example".to_string(),
                 targets: vec!["github.com".to_string()],
                 env: "GH_TOKEN".to_string(),
             }]
@@ -853,6 +862,27 @@ mod tests {
         assert_eq!(
             parse_custom_secrets(several).unwrap()[0].targets,
             vec!["github.com".to_string(), "gitlab.com".to_string()]
+        );
+
+        // 実機がwildcardを登録したscopeで出す形。`TARGETS`はcommaと空白1つで区切り、
+        // wildcardは展開せず書いたまま並べる。scope名とsecretは記録から伏せてある。
+        let wildcards = "CUSTOM SECRETS\n\
+                         SCOPE          TARGETS                                                        ENV        PLACEHOLDER               SECRET\n\
+                         sbxm-example   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO   ghp_redacted\n";
+        let parsed = parse_custom_secrets(wildcards).unwrap();
+        assert_eq!(
+            parsed,
+            vec![CustomSecret {
+                targets: vec![
+                    "github.com".to_string(),
+                    "**.github.com".to_string(),
+                    "**.githubusercontent.com".to_string(),
+                    "ghcr.io".to_string(),
+                ],
+                env: "GH_TOKEN".to_string(),
+                placeholder: "sbx-cs-Y1k0SfTWbkN6HzCO".to_string(),
+            }],
+            "the pattern is compared as written, so it has to survive the listing unexpanded"
         );
 
         for output in [

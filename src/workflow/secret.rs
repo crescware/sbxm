@@ -4,8 +4,8 @@
 //! 表示もしない。
 //!
 //! Sandboxの中へはtokenを渡さない。`sbx secret set-custom`で登録したcustom secretは、
-//! Sandboxにplaceholderだけを見せ、github.com宛のrequest headerでproxyが本物へ
-//! 差し替える。service secretを使わないのは、proxyのgithub presetがtokenの形で
+//! Sandboxにplaceholderだけを見せ、登録済みhost宛のrequestに現れたplaceholderをproxyが
+//! 本物へ差し替える。service secretを使わないのは、proxyのgithub presetがtokenの形で
 //! 扱いを変え、classic personal access tokenを注入しないためである。
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
@@ -13,8 +13,36 @@ use crate::compatibility::parse_custom_secrets;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-/// proxyが認証を差し替える対象host。
+/// gitがcredentialを提示する先。
 pub const GITHUB_HOST: &str = "github.com";
+
+/// proxyが認証を差し替える対象host。
+///
+/// 開発中にtokenを提示する先をすべて覆う。登録のないhostへはplaceholderがそのまま
+/// 送られ、tokenが正しくても認証されない。gitがgithub.comで通る一方、`gh`が
+/// api.github.comで401になっていたのがこれである。
+///
+/// `sbx secret set-custom --host`はwildcardを受け取る。`*`が1 label、`**`が任意個の
+/// labelに一致する。個別のhostを並べるより、subdomainが増えても追随する形を選ぶ。
+/// この4件が覆う範囲:
+///
+/// - `**.github.com`: api（gh、REST、GraphQL）、codeload（tarball、`go get`）、
+///   uploads（release asset、添付）、`*.pkg.github.com`（GitHub Packages）、gist
+/// - `**.githubusercontent.com`: raw（private repositoryのfile）ほか
+///
+/// 全hostが1件のcustom secretに載っている必要がある。secretを分けるとplaceholderも
+/// 分かれるが、Sandboxの`GH_TOKEN`は1つの値しか持てない。
+///
+/// ここに並べる文字列は、利用者が実行するcommandへそのまま入り、`sbx secret ls`の
+/// `TARGETS`と文字列として突き合わせる。展開した結果ではなく、書いたとおりを比べる。
+pub const GITHUB_HOSTS: [&str; 4] = [
+    // git clone / fetch / push
+    GITHUB_HOST,
+    "**.github.com",
+    "**.githubusercontent.com",
+    // GitHub Container Registry
+    "ghcr.io",
+];
 
 /// placeholderを受け取るSandbox内の環境変数名。
 ///
@@ -24,9 +52,25 @@ pub const GITHUB_TOKEN_ENV: &str = "GH_TOKEN";
 /// tokenを登録するcommand。
 ///
 /// `add`の案内と、未登録で停止したときの是正指示で同じ文字列を使う。
-pub fn register_command(sandbox: &str) -> String {
+///
+/// `--host`は`stringArray`であり、繰り返して渡す。区切り文字1つで並べた値は1件のhost
+/// 名として読まれる。wildcardはshellに食われるため引用符で囲む。
+///
+/// 同じenvのcustom secretが既にある場合、`set-custom`はそれを重複として拒否する。
+/// 既存のplaceholderを`--placeholder`で明示すると更新として通り、しかもSandboxが
+/// 持つ値が変わらないため、作り直さずに済む。
+pub fn register_command(sandbox: &str, placeholder: Option<&str>) -> String {
+    let hosts = GITHUB_HOSTS
+        .iter()
+        .map(|host| format!("--host '{host}'"))
+        .collect::<Vec<String>>()
+        .join(" ");
+    let keep = match placeholder {
+        Some(placeholder) => format!(" --placeholder {placeholder}"),
+        None => String::new(),
+    };
     format!(
-        "sbx secret set-custom {sandbox} --host {GITHUB_HOST} --env {GITHUB_TOKEN_ENV} --value <token>"
+        "sbx secret set-custom {sandbox} {hosts}{keep} --env {GITHUB_TOKEN_ENV} --value <token>"
     )
 }
 
@@ -42,12 +86,44 @@ pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     let outcome = host.run(&spec)?.require_success()?;
     let customs = parse_custom_secrets(&outcome.stdout_text())?;
 
-    let registered = customs.iter().any(|custom| {
-        custom.env == GITHUB_TOKEN_ENV && custom.targets.iter().any(|target| target == GITHUB_HOST)
-    });
-    if registered {
+    // 1件のsecretが全hostを覆っていることを求める。複数のsecretへ分けて登録すると
+    // placeholderが分かれ、Sandboxはそのうち1つしか受け取れない。
+    let covered = |custom: &crate::compatibility::CustomSecret| {
+        custom.env == GITHUB_TOKEN_ENV
+            && GITHUB_HOSTS
+                .iter()
+                .all(|host| custom.targets.iter().any(|target| target == host))
+    };
+    if customs.iter().any(covered) {
         return Ok(());
     }
+
+    // 覆われていないhostだけを示す。github.comだけ登録済みの状態から来た場合に、
+    // 何が足りないのかがそのまま読める。どのhostも登録はされていて、1件にまとまって
+    // いないだけの場合は、まとめる対象として全hostを示す。
+    let missing: Vec<&str> = GITHUB_HOSTS
+        .iter()
+        .filter(|host| {
+            !customs.iter().any(|custom| {
+                custom.env == GITHUB_TOKEN_ENV
+                    && custom.targets.iter().any(|target| target == *host)
+            })
+        })
+        .copied()
+        .collect();
+    let missing = if missing.is_empty() {
+        GITHUB_HOSTS.to_vec()
+    } else {
+        missing
+    };
+
+    // 同じenvのsecretが既にあると、placeholderを指定しない登録は重複として拒否される。
+    // 案内どおりに実行しても失敗する状態を作らないため、既存のplaceholderを引き継ぐ形で
+    // 示す。同じ値のまま更新されるので、既存Sandboxを作り直さずに済む。
+    let existing = customs
+        .iter()
+        .find(|custom| custom.env == GITHUB_TOKEN_ENV)
+        .map(|custom| custom.placeholder.as_str());
 
     Err(Error::single(
         Diagnostic::new(
@@ -55,13 +131,19 @@ pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
             msg!(
                 "error-github-secret-missing",
                 sandbox = sandbox,
-                host = GITHUB_HOST
+                hosts = missing.join(", ")
             ),
         )
-        .remediation(msg!(
-            "remediation-github-secret-missing",
-            command = register_command(sandbox)
-        )),
+        .remediation(match existing {
+            Some(placeholder) => msg!(
+                "remediation-github-secret-incomplete",
+                command = register_command(sandbox, Some(placeholder))
+            ),
+            None => msg!(
+                "remediation-github-secret-missing",
+                command = register_command(sandbox, None)
+            ),
+        }),
     ))
 }
 
@@ -166,10 +248,12 @@ mod tests {
     }
 
     fn registered() -> String {
-        "CUSTOM SECRETS\n\
-         SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
-         sbxm-example   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n"
-            .to_string()
+        format!(
+            "CUSTOM SECRETS\n\
+             SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
+             sbxm-example   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
+            GITHUB_HOSTS.join(" ")
+        )
     }
 
     #[test]
@@ -190,6 +274,19 @@ mod tests {
     }
 
     #[test]
+    fn the_listing_a_real_registration_produces_is_accepted() {
+        // 実機で`sbx secret set-custom`を実行したあとの`sbx secret ls`の形。scope名と
+        // secretは記録から伏せてある。`TARGETS`はcommaと空白1つで区切られ、wildcardは
+        // 展開されずに並ぶため、sbxmが書いた文字列とそのまま突き合わせられる。
+        let host = FakeSbx::listing(
+            "CUSTOM SECRETS\n\
+             SCOPE          TARGETS                                                        ENV        PLACEHOLDER               SECRET\n\
+             sbxm-example   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO   ghp_redacted\n",
+        );
+        require_github(&host, "sbxm-example").expect("the registration this build asks for passes");
+    }
+
+    #[test]
     fn a_service_secret_is_not_accepted_in_place_of_a_custom_one() {
         // service secretはproxyのgithub presetを通り、classic tokenを注入しない。
         // 登録されていても、Sandboxがrepositoryへ届くとは限らない。
@@ -198,6 +295,55 @@ mod tests {
         );
         let error = require_github(&host, "sbxm-example")
             .expect_err("a service secret does not carry every token type");
+
+        assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+    }
+
+    #[test]
+    fn covering_only_the_git_host_leaves_gh_unauthenticated_and_is_refused() {
+        // gitはgithub.comへ、ghはapi.github.comへ話す。この登録ではgit push/fetchだけが
+        // 通り、`gh`はplaceholderをそのまま送って401になる。実機で起きたのがこの状態。
+        let host = FakeSbx::listing(
+            "CUSTOM SECRETS\n\
+             SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
+             sbxm-example   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
+        );
+        let error = require_github(&host, "sbxm-example")
+            .expect_err("the proxy substitutes only for the hosts it was told about");
+
+        assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+        let missing = error.diagnostics()[0]
+            .description
+            .args
+            .iter()
+            .find(|(name, _)| *name == "hosts")
+            .map(|(_, value)| value.clone())
+            .expect("the message names what is not covered");
+        let missing: Vec<&str> = missing.split(", ").collect();
+        assert!(
+            missing.contains(&"**.github.com"),
+            "the pattern that covers api.github.com is named: {missing:?}"
+        );
+        assert!(
+            !missing.contains(&GITHUB_HOST),
+            "a host that is already covered is not reported as missing: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn the_hosts_have_to_share_one_secret_so_that_they_share_one_placeholder() {
+        // 両hostが登録されていても、別々のsecretならplaceholderが2つになる。Sandboxの
+        // GH_TOKENは1つしか持てないので、片方は必ず素通しになる。
+        let host = FakeSbx::listing(&format!(
+            "CUSTOM SECRETS\n\
+             SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
+             sbxm-example   {}   GH_TOKEN   sbx-cs-one       ghp_example\n\
+             sbxm-example   {}   GH_TOKEN   sbx-cs-two       ghp_example\n",
+            GITHUB_HOST,
+            GITHUB_HOSTS[1..].join(" ")
+        ));
+        let error = require_github(&host, "sbxm-example")
+            .expect_err("two placeholders cannot both reach one environment variable");
 
         assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
     }
@@ -231,7 +377,7 @@ mod tests {
             remediation
                 .args
                 .iter()
-                .any(|(_, value)| value == &register_command("sbxm-example"))
+                .any(|(_, value)| value == &register_command("sbxm-example", None))
         );
     }
 
@@ -271,6 +417,80 @@ mod tests {
         assert!(call.contains("credential.https://github.com.helper"));
         // helperはSandboxの環境変数を読むだけで、値そのものは持たない。
         assert!(call.contains("password=$GH_TOKEN"));
+    }
+
+    #[test]
+    fn an_incomplete_secret_is_told_to_keep_the_placeholder_the_sandbox_already_holds() {
+        // placeholderを指定しない登録は、同じenvが既にあると重複として拒否される。
+        // 既存の値を引き継ぐ形で示さないと、案内どおりに実行しても必ず失敗する。
+        let host = FakeSbx::listing(
+            "CUSTOM SECRETS\n\
+             SCOPE          TARGETS      ENV        PLACEHOLDER              SECRET\n\
+             sbxm-example   github.com   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO  ghp_example\n",
+        );
+        let error = require_github(&host, "sbxm-example").expect_err("the coverage is incomplete");
+
+        let remediation = error.diagnostics()[0]
+            .remediation
+            .as_ref()
+            .expect("the user is told how to get out of it");
+        assert_eq!(remediation.id, "remediation-github-secret-incomplete");
+        let command = remediation
+            .args
+            .iter()
+            .find(|(name, _)| *name == "command")
+            .map(|(_, value)| value.clone())
+            .expect("the remediation carries the command to run");
+        assert!(
+            command.contains("--placeholder sbx-cs-Y1k0SfTWbkN6HzCO"),
+            "the existing placeholder is carried over: {command}"
+        );
+        // 同じplaceholderのまま更新されるため、Sandboxが持つ値は変わらない。
+        assert!(
+            !command.contains("sbx rm"),
+            "keeping the placeholder means the sandbox does not have to be rebuilt: {command}"
+        );
+    }
+
+    #[test]
+    fn a_sandbox_with_no_secret_at_all_is_told_to_register_one_without_a_placeholder() {
+        let host = FakeSbx::listing("No secrets found for scope \"sbxm-example\".\n");
+        let error = require_github(&host, "sbxm-example").expect_err("nothing is registered");
+
+        let remediation = error.diagnostics()[0]
+            .remediation
+            .as_ref()
+            .expect("present");
+        assert_eq!(remediation.id, "remediation-github-secret-missing");
+        assert!(
+            remediation
+                .args
+                .iter()
+                .all(|(_, value)| !value.contains("--placeholder")),
+            "there is no placeholder to keep, so none is invented"
+        );
+    }
+
+    #[test]
+    fn the_command_sbxm_prints_registers_exactly_what_sbxm_checks_for() {
+        // 案内と検査がずれると、案内どおりに実行しても止まり続ける状態になる。
+        let command = register_command("sbxm-example", None);
+        for host in GITHUB_HOSTS {
+            assert!(
+                command.contains(&format!("--host '{host}'")),
+                "{host} is checked for, so it has to be registered: {command}"
+            );
+        }
+        assert_eq!(
+            command.matches("--host ").count(),
+            GITHUB_HOSTS.len(),
+            "no host is registered that is never checked for: {command}"
+        );
+        assert_eq!(
+            command.matches("--env ").count(),
+            1,
+            "one secret carries every host, so one placeholder reaches GH_TOKEN: {command}"
+        );
     }
 
     #[test]

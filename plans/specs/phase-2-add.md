@@ -86,7 +86,7 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 | Sandbox内実行 | `sbx exec [--user root] <name> -- <argv>` | stdoutとexit status。`--`の有無はどちらも受け付ける |
 | file転送 | `sbx cp --follow-link <source> <name>:<path>` | exit statusのみ |
 | secret存在確認 | `sbx secret ls <name>` | 2つの表を出す。前半は`SCOPE TYPE NAME SECRET`のservice secret、後半は`CUSTOM SECRETS`の見出しに続く`SCOPE TARGETS ENV PLACEHOLDER SECRET`のcustom secret。読むのは後半の`TARGETS`と`ENV`だけとする。`TARGETS`は1列に複数hostを並べうるため、列の区切りは空白2つ以上とする。`PLACEHOLDER`と`SECRET`は読まない。1件もない場合は`No secrets found`で始まる文になる。`--service`は`SECRET`列へ値の一部を出すため使わない |
-| secret登録（利用者が実行） | `sbx secret set-custom <name> --host github.com --env GH_TOKEN --value <token>` | Sandboxへplaceholderを渡し、proxyがgithub.com宛のrequest headerで本物のtokenへ差し替える。結び付きはSandboxの作成時に決まる |
+| secret登録（利用者が実行） | `sbx secret set-custom <name> --host <host> ... --env GH_TOKEN --value <token>` | Sandboxへplaceholderを渡し、proxyが登録済みhost宛のrequestで本物のtokenへ差し替える。開発中にtokenを提示する先はすべて`--host`を繰り返して1件のsecretへ載せる。結び付きはSandboxの作成時に決まる |
 | login状態 | `sbx login status --json` | login済みかどうかを示す真偽値 |
 | image存在確認 | `docker image ls --quiet <image>` | 出力が空かどうか |
 | image検証 | `docker image inspect <image>` | `Id`と`Config.Labels` |
@@ -419,8 +419,15 @@ gh config set git_protocol https --host github.com
 期待する利用者向けcommand:
 
 ```text
-sbx secret set-custom <sandbox-name> --host github.com --env GH_TOKEN --value <token>
+sbx secret set-custom <sandbox-name> \
+  --host github.com \
+  --host '**.github.com' \
+  --host '**.githubusercontent.com' \
+  --host ghcr.io \
+  --env GH_TOKEN --value <token>
 ```
+
+登録のないhostにはplaceholderがそのまま届き、tokenが正しくても`401`になる。`git`は`github.com`へ、`gh`は`api.github.com`へ話すため、前者だけの登録ではpushが通る一方で`gh`が全滅する。hostを複数のsecretへ分けることもできない。secretごとにplaceholderが分かれる一方、Sandboxの`GH_TOKEN`は1つの値しか持てないためである。
 
 `github` service secretは使わない。proxyのgithub presetはtokenの形で扱いを変え、classic tokenを注入しない。実機では、同一のclassic tokenがSandboxの外から`200`、中から`401`を返した。custom secretはtokenの形を問わず、Sandboxにはplaceholderだけを見せる。
 

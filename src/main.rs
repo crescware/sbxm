@@ -553,7 +553,7 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
             catalog,
             &msg!(
                 "add-next-secret",
-                command = secret::register_command(&output.sandbox)
+                command = secret::register_command(&output.sandbox, None)
             )
         )
     );

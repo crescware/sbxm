@@ -32,14 +32,38 @@ registered between `add` and `prepare`.
 The token is registered as a custom secret, not as the `github` service secret:
 
 ```
-sbx secret set-custom <sandbox> --host github.com --env GH_TOKEN --value <token>
+sbx secret set-custom <sandbox> \
+  --host github.com \
+  --host '**.github.com' \
+  --host '**.githubusercontent.com' \
+  --host ghcr.io \
+  --env GH_TOKEN --value <token>
 ```
 
 A custom secret shows the sandbox a placeholder and leaves the real token with
-the proxy, which substitutes it into the request headers that go to github.com.
-The token never enters the sandbox, and the token type does not matter. The
-`github` service secret was not usable here: on real hardware it authenticated a
-fine-grained token and left a classic one unauthenticated.
+the proxy, which swaps the placeholder for the real token in requests that go to
+a registered host. The token never enters the sandbox, and the token type does
+not matter. The `github` service secret was not usable here: on real hardware it
+authenticated a fine-grained token and left a classic one unauthenticated.
+
+Every host development presents the token to has to be on the list, and on one
+secret. A host that is not registered receives the placeholder unchanged and
+answers `401` however good the token is: `git` reaches `github.com`, `gh` reaches
+`api.github.com`, and registering only the first is enough to make push work
+while every `gh` command fails. Splitting the hosts across several secrets does
+not work either, because each secret has its own placeholder and `GH_TOKEN` holds
+one value.
+
+`--host` takes wildcards, where `*` matches one label and `**` matches any
+number, so four patterns cover the whole surface: `**.github.com` takes in the
+API, `codeload`, `uploads` and the package registries, and
+`**.githubusercontent.com` takes in `raw` and its siblings. Naming the patterns
+rather than today's hosts means a host GitHub adds later is already covered.
+
+Covering more than is needed costs nothing here. The proxy only swaps a
+placeholder it finds, so a request that never carries one — a presigned release
+asset or LFS object on `objects.githubusercontent.com` — passes through
+untouched whether or not the pattern covers it.
 
 A custom secret binds to a sandbox when the sandbox is created, so registering
 it afterwards does not reach a sandbox that already exists. `prepare` asks for

@@ -936,7 +936,10 @@ mod tests {
             .answering(
                 &format!("secret ls {}", project.sandbox),
                 0,
-                "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
+                &format!(
+                    "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
+                    crate::workflow::secret::GITHUB_HOSTS.join(" ")
+                ),
             )
             .answering(
                 &format!(

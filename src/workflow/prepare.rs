@@ -401,7 +401,12 @@ mod tests {
                 images: RefCell::new(BTreeMap::new()),
                 templates: RefCell::new(BTreeMap::new()),
                 sandboxes: RefCell::new(Vec::new()),
-                secrets: RefCell::new(vec!["github.com".to_string()]),
+                secrets: RefCell::new(
+                    crate::workflow::secret::GITHUB_HOSTS
+                        .iter()
+                        .map(|host| host.to_string())
+                        .collect(),
+                ),
                 present: RefCell::new(BTreeSet::new()),
                 digests: RefCell::new(BTreeMap::new()),
                 settings: RefCell::new(BTreeMap::new()),
@@ -637,14 +642,14 @@ mod tests {
                     if secrets.is_empty() {
                         return (0, format!("No secrets found for scope \"{name}\".\n"));
                     }
+                    // 1件のcustom secretが複数hostを覆う。TARGETS列は空白1つで並ぶ。
                     let mut table = String::from(
                         "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n",
                     );
-                    for target in secrets.iter() {
-                        table.push_str(&format!(
-                            "{name}   {target}   GH_TOKEN   sbx-cs-example   ghp_example\n"
-                        ));
-                    }
+                    table.push_str(&format!(
+                        "{name}   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
+                        secrets.join(" ")
+                    ));
                     (0, table)
                 }
                 ["cp", "--follow-link", source, target] => {
@@ -1090,7 +1095,9 @@ mod tests {
             "the image is not built before the missing secret is reported"
         );
 
-        world.secrets.borrow_mut().push("github.com".to_string());
+        for host in crate::workflow::secret::GITHUB_HOSTS {
+            world.secrets.borrow_mut().push(host.to_string());
+        }
         let output = bench
             .build(&world, &request)
             .expect("the same add continues once the secret is registered");
