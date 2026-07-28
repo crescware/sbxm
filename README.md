@@ -83,7 +83,14 @@ Before recording anything, remove:
 | Cases passed | |
 | Cases failed | |
 
-The daemon safety probe of the Phase 2 spec belongs here too: with and without
-`SSH_AUTH_SOCK`, whether the agent reaches the sandbox, whether the session
-listing distinguishes an active session from none, and whether a sandbox can be
-reused after the daemon is restarted.
+### Daemon safety probe
+
+The five items of the Phase 2 spec belong here too. Record them the same way.
+
+| # | Question |
+|---:|---|
+| 1 | A daemon started with `SSH_AUTH_SOCK` forwards the agent into the sandbox |
+| 2 | A daemon started with `SSH_AUTH_SOCK` unset does not |
+| 3 | The structured output of the target version can show that no sandbox has a session |
+| 4 | It tells apart a session present, none present, a failed command, a timeout, and output that cannot be parsed |
+| 5 | A sandbox can be reused or created after the daemon is stopped and started |

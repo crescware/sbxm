@@ -80,6 +80,14 @@ Docker Sandboxes CLI 0.37.0以降。
 | 合格case数 | |
 | 不合格case数 | |
 
-Phase 2仕様のdaemon安全性probeもここへ記録する。`SSH_AUTH_SOCK`の有無でagentが
-Sandboxへ転送されるか、session検査がactiveと不在を区別できるか、daemon再起動後に
-Sandboxを再利用できるかの4点である。
+### daemon安全性probe
+
+Phase 2仕様の5項目もここへ記録する。記録の仕方はcaseと同じである。
+
+| # | 確認する内容 |
+|---:|---|
+| 1 | `SSH_AUTH_SOCK`ありで起動したdaemonがSandboxへagentを転送すること |
+| 2 | `SSH_AUTH_SOCK`をunsetして起動したdaemonでは転送されないこと |
+| 3 | 対象versionのstructured outputから、全Sandboxのactive session不在を判定できること |
+| 4 | active sessionあり、0件、command失敗、timeout、parse不能を区別できること |
+| 5 | daemon停止・起動後にSandboxを再利用または作成できること |
