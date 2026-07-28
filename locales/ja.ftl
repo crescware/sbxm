@@ -224,7 +224,7 @@ security-project-path-owner-description = { $path } の所有者はuser ID { $ob
 security-project-path-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するpathをこのpathへ戻してください。
 
 security-ssh-agent-exposed-description = { $sandbox } からhostのSSH Agentへ到達できます ({ $observed })。Sandbox内のagentがあなたの鍵で署名できる状態です。
-security-ssh-agent-exposed-remediation = このSandboxを作ったdaemonは、hostのSSH Agentへ届く状態で起動しています。動作中のSandboxをすべて停止し、SSH_AUTH_SOCKを外したshellからdaemonを起動し直してから、もう一度実行してください。
+security-ssh-agent-exposed-remediation = Sandboxは作成時にdaemonから受け取った状態を保持するため、daemonを起動し直すだけでは変わりません。動作中のSandboxをすべて停止し、SSH_AUTH_SOCKを外したshellからdaemonを起動し直し、{ $command } でこのSandboxを削除してから、もう一度実行して作り直してください。
 
 security-base-path-escape-description = { $path } はsymbolic linkの解決後に { $resolved } となります。案件が指定したdirectoryの外に作られます。
 security-base-path-escape-remediation = 解決後も意図したdirectory配下に収まるbase pathを指定してください。

@@ -311,7 +311,10 @@ pub fn require_credentials_isolated(host: &dyn HostEnvironment, sandbox: &str) -
                 observed = observed.join(", ")
             ),
         )
-        .remediation(msg!("security-ssh-agent-exposed-remediation")),
+        .remediation(msg!(
+            "security-ssh-agent-exposed-remediation",
+            command = format!("sbx rm {sandbox}")
+        )),
     ))
 }
 

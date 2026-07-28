@@ -601,7 +601,10 @@ fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &mut 
                         observed = observed.join(", ")
                     ),
                 )
-                .remediation(msg!("security-ssh-agent-exposed-remediation")),
+                .remediation(msg!(
+                    "security-ssh-agent-exposed-remediation",
+                    command = format!("sbx rm {name}")
+                )),
             );
             Value::Exposed
         }
