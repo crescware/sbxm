@@ -267,6 +267,8 @@ pub enum SandboxState {
 pub struct SandboxEntry {
     pub name: String,
     pub state: SandboxState,
+    /// runtimeが示したままのstate。管理外Sandboxの表示に使う。
+    pub raw_state: String,
     /// Sandboxへ渡したworkspace。示されない場合は`None`。
     pub workspace: Option<String>,
     /// 元にしたTemplate。示されない場合は`None`。
@@ -317,6 +319,7 @@ pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
         entries.push(SandboxEntry {
             name,
             state,
+            raw_state: observed,
             workspace,
             template,
             active_sessions,
@@ -545,6 +548,7 @@ mod tests {
             vec![SandboxEntry {
                 name: "sbxm-a".to_string(),
                 state: SandboxState::Running,
+                raw_state: "running".to_string(),
                 workspace: Some("/tmp/docker-sandboxes/sbxm-a".to_string()),
                 template: Some("sbxm-a-template:0123456789ab".to_string()),
                 active_sessions: Some(2),
@@ -567,6 +571,11 @@ mod tests {
         // session数を示さないversionでは、不在を推測しない。
         let entries = parse_sandbox_list(r#"[{"name":"sbxm-a","state":"running"}]"#).unwrap();
         assert_eq!(entries[0].active_sessions, None);
+
+        // 3値へ写像しても、runtimeが示したままの値は表示のために残す。
+        let entries = parse_sandbox_list(r#"[{"name":"sbxm-a","state":"Running"}]"#).unwrap();
+        assert_eq!(entries[0].state, SandboxState::Running);
+        assert_eq!(entries[0].raw_state, "Running");
     }
 
     #[test]

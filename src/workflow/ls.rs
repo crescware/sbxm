@@ -22,6 +22,7 @@ pub struct ProjectRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnmanagedRow {
     pub sandbox: String,
+    /// runtimeが示したままのstate。sbxmのenumへ写像しない。
     pub state: String,
     pub workspace: String,
 }
@@ -56,10 +57,8 @@ pub fn run(
             .iter()
             .map(|entry| UnmanagedRow {
                 sandbox: entry.name.clone(),
-                state: match entry.state {
-                    crate::compatibility::SandboxState::Running => "running".to_string(),
-                    crate::compatibility::SandboxState::Stopped => "stopped".to_string(),
-                },
+                // 管理外Sandboxはsbxmの管理状態を持たないため、原値のまま示す。
+                state: entry.raw_state.clone(),
                 // 観測できない項目を推測で埋めない。
                 workspace: entry.workspace.clone().unwrap_or_else(|| "-".to_string()),
             })
@@ -79,7 +78,7 @@ mod tests {
         let first = fixture.register("Example-Org/Example-Repo");
         let second = fixture.register("other/repo");
         let host = FakeSbx::listing(&format!(
-            r#"[{},{},{{"name":"sbxm-foreign","state":"running","workspace":"/tmp/elsewhere","template":"other:1"}}]"#,
+            r#"[{},{},{{"name":"sbxm-foreign","state":"Running","workspace":"/tmp/elsewhere","template":"other:1"}}]"#,
             fixture.entry(&first, "running"),
             fixture.entry(&second, "stopped"),
         ));
@@ -104,7 +103,8 @@ mod tests {
             listing.unmanaged,
             vec![UnmanagedRow {
                 sandbox: "sbxm-foreign".to_string(),
-                state: "running".to_string(),
+                // 管理外Sandboxのstateは、runtimeが示したまま表示する。
+                state: "Running".to_string(),
                 workspace: "/tmp/elsewhere".to_string(),
             }]
         );
