@@ -54,7 +54,7 @@ Before recording anything, remove:
 | 17 | `sbxm rebuild <owner>/<repo>` with no Dockerfile change | 0 | reports that nothing was applied |
 | 18 | break the Dockerfile, then `sbxm rebuild` | 1 | the build fails and the existing sandbox still runs |
 | 19 | `sbxm rebuild` with a session, a dirty tree, or unpushed commits | 1 | `daemon-session-active` or `unsaved-work` |
-| 20 | `sbxm rebuild` with the unmanaged worktree from case 7 | 1 | `unsaved-work` naming the worktree it cannot recreate |
+| 20 | `sbxm rebuild` with the unmanaged worktree from case 7 | 1 | `unmanaged-worktree-present`, naming the worktree and how to remove it |
 | 21 | `sbxm rebuild` on a stopped sandbox | 1 | points at `sbxm open` |
 | 22 | `sbxm rebuild` on a clean, managed-only sandbox | 0 | the new generation is applied |
 | 23 | interrupt case 22 right after the sandbox is removed, then rerun | 0 | continues from the recorded generation |
