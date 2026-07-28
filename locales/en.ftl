@@ -356,3 +356,14 @@ legend-sandbox-running = the sandbox is running
 legend-sandbox-stopped = the sandbox exists but is not running
 legend-running = the service is running
 legend-stopped = the service is installed but not running
+
+progress-cloning-host = Cloning the repository onto this host. For a large repository this can take several minutes.
+progress-building-image = Building the sandbox image. The first build downloads packages and can take several minutes.
+progress-saving-archive = Saving the image as a template archive. This can take a few minutes.
+progress-loading-template = Loading the template into the sandbox runtime.
+progress-creating-sandbox = Creating the sandbox.
+progress-starting-sandbox = Starting the sandbox.
+progress-removing-sandbox = Removing the existing sandbox.
+progress-cloning-repository = Cloning the repository inside the sandbox. For a large repository this can take several minutes, and git prints nothing while it transfers.
+progress-fetching-repository = Fetching the repository inside the sandbox. For a large repository this can take several minutes, and git prints nothing while it transfers.
+progress-creating-worktrees = Creating the managed worktrees. For a large repository this can take a few minutes.

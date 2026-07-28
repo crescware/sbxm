@@ -356,3 +356,14 @@ legend-sandbox-running = Sandboxが起動しています
 legend-sandbox-stopped = Sandboxはありますが起動していません
 legend-running = serviceが起動しています
 legend-stopped = serviceは導入済みですが起動していません
+
+progress-cloning-host = repositoryをhostへcloneします。大きなrepositoryでは数分かかることがあります。
+progress-building-image = Sandbox imageをbuildします。初回はpackage取得を含むため数分かかることがあります。
+progress-saving-archive = imageをTemplate archiveへ保存します。数分かかることがあります。
+progress-loading-template = TemplateをSandbox runtimeへloadします。
+progress-creating-sandbox = Sandboxを作成します。
+progress-starting-sandbox = Sandboxを起動します。
+progress-removing-sandbox = 既存のSandboxを削除します。
+progress-cloning-repository = Sandboxの中でrepositoryをcloneします。大きなrepositoryでは数分かかることがあり、転送中はgitが何も表示しません。
+progress-fetching-repository = Sandboxの中でrepositoryをfetchします。大きなrepositoryでは数分かかることがあり、転送中はgitが何も表示しません。
+progress-creating-worktrees = managed worktreeを作成します。大きなrepositoryでは数分かかることがあります。

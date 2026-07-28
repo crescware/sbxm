@@ -14,6 +14,7 @@ mod hash;
 mod i18n;
 mod metadata;
 mod paths;
+mod progress;
 mod project;
 mod workflow;
 
@@ -56,6 +57,7 @@ fn run(argv: &[String]) -> ExitCode {
     };
 
     let display_locale = resolve_display_locale(&peeked, &location);
+    progress::install(display_locale);
     let catalog = Catalog::new(display_locale);
 
     // `--lang`が不正な場合はconfigを読まず、shell localeまたは`en`でparse errorを表示する。

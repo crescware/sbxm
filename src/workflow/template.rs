@@ -44,6 +44,7 @@ pub fn ensure(
         });
     }
 
+    crate::progress::step(&msg!("progress-loading-template"));
     let spec = CommandSpec::passthrough("sbx", &["template", "load", &paths::display(archive)])
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);

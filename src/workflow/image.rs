@@ -140,6 +140,7 @@ fn build(
 
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     // buildの進捗はdockerが出したまま転送する。
+    crate::progress::step(&msg!("progress-building-image"));
     let spec = CommandSpec::passthrough("docker", &[&["build"], borrowed.as_slice()].concat())
         .timeout(TimeoutClass::ImageBuild);
     let result = host
@@ -229,6 +230,7 @@ pub fn ensure_archive(
         })?;
     }
 
+    crate::progress::step(&msg!("progress-saving-archive"));
     let spec = CommandSpec::passthrough(
         "docker",
         &[

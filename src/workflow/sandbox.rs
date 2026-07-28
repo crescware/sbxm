@@ -87,6 +87,7 @@ pub fn ensure(
         });
     }
 
+    crate::progress::step(&msg!("progress-creating-sandbox"));
     let spec = CommandSpec::passthrough(
         "sbx",
         &[

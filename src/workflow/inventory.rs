@@ -131,6 +131,7 @@ pub fn single<'a>(entries: &'a [SandboxEntry], name: &str) -> Result<Option<&'a 
 
 /// 非対話でSandboxを起動する。
 pub fn start(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
+    crate::progress::step(&msg!("progress-starting-sandbox"));
     let spec = CommandSpec::passthrough("sbx", &["exec", sandbox, "--", "/bin/true"])
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);
@@ -181,6 +182,7 @@ pub fn remove(host: &dyn HostEnvironment, name: &SandboxName, poll: Poll) -> Res
     // `--force`が省くのは`sbx`の確認promptだけである。削除してよいかはsbxmが先に
     // 判定しており、`destroy`は自前の確認も済ませている。非対話で走る実行では
     // promptに答える手段がなく、対話実行でも二度訊くことになる。
+    crate::progress::step(&msg!("progress-removing-sandbox"));
     let args = ["rm", "--force", name.as_str()];
     // 削除の進捗は外部toolが出したまま転送する。
     let spec = CommandSpec::passthrough("sbx", &args)
