@@ -73,7 +73,7 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 
 | 用途 | command | 読む値 |
 |---|---|---|
-| Sandbox一覧 | `sbx ls --json` | `name`、`state`（`running`と`stopped`だけ）、`workspace`、`template`、active session数 |
+| Sandbox一覧 | `sbx ls --json` | `{"sandboxes": [...]}`で包まれた各entryの`name`、`status`（`running`と`stopped`だけ）、`workspaces`（配列。sbxmのSandboxは1件だけ持つ） |
 | Template一覧 | `sbx template ls --json` | `{"images": [...]}`で包まれた各entryの`repository`と`tag`。runtimeは`docker.io/library/`を補って表示する |
 | Template load | `sbx template load <archive>` | exit statusのみ |
 | Sandbox作成 | `sbx create --name <name> --template <image> shell <workspace>` | exit statusのみ |

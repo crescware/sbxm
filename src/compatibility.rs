@@ -83,32 +83,24 @@ pub enum DaemonState {
 
 /// `sbx daemon status`をparseする。
 pub fn parse_daemon_status(output: &str) -> Result<DaemonState> {
-    let document: serde_json::Value = serde_json::from_str(output)
-        .map_err(|error| unparseable("sbx daemon status", &error.to_string()))?;
-    let object = document
-        .as_object()
-        .ok_or_else(|| unparseable("sbx daemon status", "the document is not an object"))?;
+    // `sbx daemon status`はJSONを持たず、`<label>: <value>`の行を並べる。
+    // socketとlogのpathはhostのuser名を含むため読まない。
+    let state = output.lines().find_map(|line| {
+        line.split_once(':')
+            .filter(|(label, _)| label.trim().eq_ignore_ascii_case("status"))
+            .map(|(_, value)| value.trim().to_ascii_lowercase())
+    });
 
-    if let Some(running) = object.get("running").and_then(|value| value.as_bool()) {
-        return Ok(if running {
-            DaemonState::Running
-        } else {
-            DaemonState::Stopped
-        });
-    }
-    match string_field(object, "state")
-        .or_else(|| string_field(object, "status"))
-        .as_deref()
-    {
+    match state.as_deref() {
         Some("running") => Ok(DaemonState::Running),
-        Some("stopped") | Some("not-running") => Ok(DaemonState::Stopped),
+        Some("stopped") | Some("not running") | Some("not-running") => Ok(DaemonState::Stopped),
         Some(other) => Err(unparseable(
             "sbx daemon status",
-            &format!("state {other} has no defined meaning in this build"),
+            &format!("status {other} has no defined meaning in this build"),
         )),
         None => Err(unparseable(
             "sbx daemon status",
-            "the state field is absent",
+            "no line states the daemon status",
         )),
     }
 }
@@ -279,7 +271,7 @@ pub struct SandboxEntry {
 
 /// `sbx ls --json`のstructured outputをparseする。
 pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
-    let documents = json_documents("sbx ls", output)?;
+    let documents = sandbox_documents(output)?;
 
     let mut entries = Vec::with_capacity(documents.len());
     for document in documents {
@@ -308,9 +300,7 @@ pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
             }
         };
 
-        let workspace = string_field(object, "workspace")
-            .or_else(|| string_field(object, "Workspace"))
-            .filter(|value| !value.is_empty());
+        let workspace = workspace_of(object)?;
         let template = string_field(object, "template")
             .or_else(|| string_field(object, "Template"))
             .filter(|value| !value.is_empty());
@@ -329,6 +319,65 @@ pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
 }
 
 /// 接続中のsession数。数でも一覧でも読めるが、示されない場合は推測しない。
+/// `sbx ls --json`が並べるSandbox。
+///
+/// 対象versionは`{"sandboxes": [...]}`で包む。包みのない形も、行区切りの形も
+/// 受け付けるが、Sandbox以外のkeyを持つ包みは推測せずerrorにする。
+fn sandbox_documents(output: &str) -> Result<Vec<serde_json::Value>> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    if let Ok(serde_json::Value::Object(object)) =
+        serde_json::from_str::<serde_json::Value>(trimmed)
+        && let Some(listed) = object.get("sandboxes")
+    {
+        return match listed {
+            serde_json::Value::Array(items) => Ok(items.clone()),
+            // Sandboxが1件もない場合の表現として受け付ける。
+            serde_json::Value::Null => Ok(Vec::new()),
+            _ => Err(unparseable("sbx ls", "sandboxes is not a list")),
+        };
+    }
+    json_documents("sbx ls", output)
+}
+
+/// Sandboxが使っているWorkspace。
+///
+/// 対象versionは`workspaces`を配列で示す。sbxmが作るSandboxは中立Workspaceを
+/// 1つだけ持つため、2つ以上ある一覧からはこの案件の成果物と判定しない。
+fn workspace_of(object: &serde_json::Map<String, serde_json::Value>) -> Result<Option<String>> {
+    let listed = object
+        .get("workspaces")
+        .or_else(|| object.get("Workspaces"));
+    let Some(listed) = listed else {
+        return Ok(string_field(object, "workspace")
+            .or_else(|| string_field(object, "Workspace"))
+            .filter(|value| !value.is_empty()));
+    };
+
+    match listed {
+        serde_json::Value::Array(items) => match items.as_slice() {
+            [] => Ok(None),
+            [only] => {
+                let value = only
+                    .as_str()
+                    .ok_or_else(|| unparseable("sbx ls", "a workspace is not a string"))?;
+                Ok(Some(value.to_string()).filter(|value| !value.is_empty()))
+            }
+            _ => Err(unparseable(
+                "sbx ls",
+                &format!(
+                    "the sandbox works in {} workspaces instead of one",
+                    items.len()
+                ),
+            )),
+        },
+        serde_json::Value::Null => Ok(None),
+        _ => Err(unparseable("sbx ls", "workspaces is not a list")),
+    }
+}
+
 fn active_sessions(object: &serde_json::Map<String, serde_json::Value>) -> Result<Option<u64>> {
     for key in [
         "active_sessions",
@@ -559,21 +608,26 @@ mod tests {
     }
 
     #[test]
-    fn the_daemon_status_parser_maps_only_known_states() {
+    fn the_daemon_status_parser_reads_the_status_line_of_the_real_output() {
+        // 対象versionが実際に出力する形。socketとlogのpathは読まない。
+        let observed = "Status: running\nSocket: /Users/<user>/Library/Application Support/com.docker.sandboxes/sandboxes/sandboxd/sandboxd.sock\nLogs: /Users/<user>/Library/Application Support/com.docker.sandboxes/sandboxes/sandboxd/daemon.log\n";
+        assert_eq!(parse_daemon_status(observed).unwrap(), DaemonState::Running);
+
         assert_eq!(
-            parse_daemon_status(r#"{"running": true}"#).unwrap(),
-            DaemonState::Running
-        );
-        assert_eq!(
-            parse_daemon_status(r#"{"running": false}"#).unwrap(),
+            parse_daemon_status("Status: stopped\n").unwrap(),
             DaemonState::Stopped
         );
         assert_eq!(
-            parse_daemon_status(r#"{"state": "running"}"#).unwrap(),
+            parse_daemon_status("Status: Running\n").unwrap(),
             DaemonState::Running
         );
 
-        for output in ["{}", r#"{"state":"degraded"}"#, "[]", "oops"] {
+        for output in [
+            "",
+            "Socket: /tmp/sandboxd.sock\n",
+            "Status: degraded\n",
+            r#"{"running": true}"#,
+        ] {
             let error = parse_daemon_status(output).expect_err("unknown states are not guessed");
             assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
         }
@@ -616,6 +670,66 @@ mod tests {
         let entries = parse_sandbox_list(r#"[{"name":"sbxm-a","state":"Running"}]"#).unwrap();
         assert_eq!(entries[0].state, SandboxState::Running);
         assert_eq!(entries[0].raw_state, "Running");
+    }
+
+    #[test]
+    fn the_listing_of_the_target_version_is_read_as_it_is() {
+        // 対象versionが実際に出力する形。`sandboxes`で包み、workspaceは配列で示す。
+        let observed = r#"{
+  "sandboxes": [
+    {
+      "name": "crescware-sbxm",
+      "id": "ec55cefe-9919-4c0e-952c-db88e5466db2",
+      "agent": "shell",
+      "status": "running",
+      "workspaces": [
+        "/tmp/docker-sandboxes/crescware-sbxm"
+      ]
+    },
+    {
+      "name": "okunokentaro-inventory",
+      "id": "ebd3a9e1-ac6a-40fd-9ebc-6531fd824f7c",
+      "agent": "shell",
+      "status": "stopped",
+      "workspaces": [
+        "/tmp/docker-sandboxes/okunokentaro-inventory"
+      ]
+    }
+  ]
+}"#;
+
+        let entries = parse_sandbox_list(observed).expect("the real listing parses");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].name, "crescware-sbxm");
+        assert_eq!(entries[0].state, SandboxState::Running);
+        assert_eq!(
+            entries[0].workspace.as_deref(),
+            Some("/tmp/docker-sandboxes/crescware-sbxm")
+        );
+        assert_eq!(entries[1].state, SandboxState::Stopped);
+
+        // この一覧はTemplateもsession数も示さない。示されないことを、
+        // 「Templateが無い」「sessionが0件」へ丸めない。
+        assert_eq!(entries[0].template, None);
+        assert_eq!(entries[0].active_sessions, None);
+
+        // Sandboxが1件もない場合。
+        assert!(
+            parse_sandbox_list(r#"{"sandboxes": []}"#)
+                .expect("an empty listing")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_sandbox_with_more_than_one_workspace_is_not_guessed_at() {
+        let two = r#"{"sandboxes":[{"name":"sbxm-a","status":"running","workspaces":["/tmp/a","/tmp/b"]}]}"#;
+        let error = parse_sandbox_list(two).expect_err("one of two workspaces is not chosen");
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+
+        let none = r#"{"sandboxes":[{"name":"sbxm-a","status":"running","workspaces":[]}]}"#;
+        let entries = parse_sandbox_list(none).expect("an empty list is observable");
+        assert_eq!(entries[0].workspace, None);
     }
 
     #[test]
