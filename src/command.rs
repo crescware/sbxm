@@ -58,8 +58,9 @@ pub enum OutputPolicy {
     Capture,
     /// 人間向けの進捗を、外部toolが出したまま端末へ転送する。
     ///
-    /// 長時間かかる工程の進捗を実行中に見せるために使う。sbxmは独自のprogress表示を
-    /// 重ねない。captureしないため、失敗の診断にstderrの原文は含まれない。
+    /// 長時間かかる工程の進捗を実行中に見せるために使う。sbxmは進捗の実況を重ねない。
+    /// 何も出さない外部commandについては、工程の開始を`progress`が1行で予告する。
+    /// captureしないため、失敗の診断にstderrの原文は含まれない。
     Passthrough,
     /// terminalそのものを引き渡す。
     ///

@@ -245,8 +245,8 @@ impl Switch<'_> {
                 poll,
             )?;
             protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
-            // 通常modeの削除command。データ保護検査は上で済ませている。
-            inventory::remove(host, name, false, poll)?;
+            // データ保護検査は上で済ませている。
+            inventory::remove(host, name, poll)?;
         }
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは

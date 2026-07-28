@@ -52,7 +52,8 @@ pub fn ensure(
 
 fn clone(host: &dyn HostEnvironment, target: &Path, project: &ProjectId) -> Result<()> {
     let url = git::ssh_remote_url(project.owner(), project.repository());
-    // 進捗はgitが出したまま転送する。sbxmは独自のprogress表示を重ねない。
+    crate::progress::step(&msg!("progress-cloning-host"));
+    // 進捗はgitが出したまま転送する。sbxmは実況を重ねない。
     let spec = CommandSpec::passthrough("git", &["clone", &url, &paths::display(target)])
         .timeout(TimeoutClass::RepositoryTransfer);
     host.run(&spec)?.require_success()?;

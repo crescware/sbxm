@@ -67,7 +67,7 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 - 使用するsubcommandの`--help`と、読むstructured outputを実機で確認する
 - 確認した出力に対してparser testを書く
 - 代表的失敗のexit statusをtestで固定する
-- `sbx rm`の通常modeとforce modeについて、runningとstoppedの挙動を確認する
+- `sbx rm --force`について、runningとstoppedの挙動を確認する
 - 新世代のimage、archive、Templateをloadした後も既存Sandboxを維持できることを確認する
 - Sandbox削除後に新Templateから同名Sandboxを再作成できることを確認する
 

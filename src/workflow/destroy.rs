@@ -143,7 +143,7 @@ pub fn execute(
 ) -> Result<DestroyOutcome> {
     if prepared.state != ProjectState::NotCreated {
         // 削除は、一覧から消えたことを確かめるまで完了しない。
-        inventory::remove(host, &prepared.name, prepared.force, poll)?;
+        inventory::remove(host, &prepared.name, poll)?;
     } else {
         // 削除commandを実行しない場合だけ、一覧で不在を1回確かめる。
         require_absent(host, &prepared.name)?;
@@ -432,7 +432,7 @@ mod tests {
 
         let outcome = execute(&host, &prepared, poll()).expect("destroy");
         assert!(outcome.warnings.is_empty());
-        assert!(host.ran(&format!("rm {}", project.sandbox)));
+        assert!(host.ran(&format!("rm --force {}", project.sandbox)));
         assert!(
             !project.paths.metadata_file().exists(),
             "the project is unmanaged now"
@@ -464,7 +464,7 @@ mod tests {
         execute(&host, &prepared, poll()).expect("destroy");
 
         // 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
-        let removal = host.spec(&format!("rm {}", project.sandbox));
+        let removal = host.spec(&format!("rm --force {}", project.sandbox));
         assert_eq!(removal.output, OutputPolicy::Passthrough);
         assert_eq!(removal.env, EnvPolicy::InheritWithoutSshAgent);
         assert_eq!(removal.timeout, TimeoutClass::SandboxLifecycle);
@@ -509,7 +509,9 @@ mod tests {
         assert!(prepared.plan.worktrees.is_empty());
 
         execute(&host, &prepared, poll()).expect("destroy");
-        assert!(host.ran("rm --force"));
+        // `--force`は`sbx`の確認promptを省くためのもので、常に付ける。sbxm側の
+        // `--force`はsbxm自身のデータ保護検査を省くことを指す。
+        assert!(host.ran(&format!("rm --force {}", project.sandbox)));
         assert!(!project.paths.metadata_file().exists());
     }
 
