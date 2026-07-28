@@ -8,6 +8,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::compatibility::SandboxState;
 use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::hash::sha256_hex;
@@ -229,6 +230,14 @@ fn switch(
         if observed == target_template {
             // 既にtarget世代のSandboxがある。作成工程はskipして続きから進める。
         } else if Some(&observed) == previous_template.as_ref() {
+            if entry.state == SandboxState::Stopped {
+                // 固定済みの世代から復旧する場合に限り、保存状態を観測するために起動する。
+                // 新規`rebuild`は停止中Sandboxを拒否したうえで、ここまで来ない。
+                let guard = daemon::restart_without_ssh_agent(host, location)?;
+                inventory::start(host, name.as_str())?;
+                inventory::wait_until_running(host, metadata, workspace_root, poll)?;
+                drop(guard);
+            }
             protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
             remove(host, name, poll)?;
         } else {
@@ -620,6 +629,131 @@ mod tests {
             host.ran("create --name"),
             "the run continued from the creation step: {:?}",
             host.calls()
+        );
+    }
+
+    #[test]
+    fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+        let target = sha256_hex(b"FROM scratch\n");
+        let previous = project.metadata.provisioning.dockerfile_sha256.clone();
+
+        // Sandboxを削除する前に中断した状態。
+        let mut metadata = project.metadata.clone();
+        metadata.rebuild = Some(RebuildIntent {
+            target_dockerfile_sha256: target.clone(),
+            previous_dockerfile_sha256: previous.clone(),
+        });
+        metadata::update(&project.paths, &metadata).unwrap();
+
+        let image = image_name(&project.sandbox, &target);
+        let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        let stopped = format!("[{}]", fixture.entry_from(&project, "stopped", &previous));
+        let running = format!("[{}]", fixture.entry_from(&project, "running", &previous));
+        let created = format!(
+            r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
+            project.sandbox,
+            workspace.display()
+        );
+        std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        let host = clean_host(&fixture, &project)
+            .answering(&format!("image ls --quiet {image}"), 0, "sha256:new\n")
+            .answering(
+                &format!("image inspect {image}"),
+                0,
+                &format!(
+                    r#"[{{"Id":"sha256:new","Config":{{"Labels":{{"io.crescware.sbxm.canonical-id":"example-org/example-repo","io.crescware.sbxm.dockerfile-sha256":"{target}","io.crescware.sbxm.metadata-version":"1"}}}}}}]"#
+                ),
+            )
+            .answering(
+                "template ls --json",
+                0,
+                &format!(r#"[{{"name":"{image}","image_id":"sha256:new"}}]"#),
+            );
+
+        let layout = SandboxLayout::new(&project.metadata.canonical_id);
+        let git_dir = layout.bare_git_dir();
+        let worktree = layout.worktree(0);
+        let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
+        let name = project.sandbox.as_str();
+        let host = host
+            .answering(
+                &format!("exec {name} -- git --git-dir {git_dir} rev-parse --is-bare-repository"),
+                0,
+                "true\n",
+            )
+            .answering(
+                &format!(
+                    "exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.url"
+                ),
+                0,
+                "https://github.com/example-org/example-repo.git\n",
+            )
+            .answering(
+                &format!(
+                    "exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.fetch"
+                ),
+                0,
+                "+refs/heads/*:refs/remotes/origin/*\n",
+            )
+            .answering(
+                &format!(
+                    "exec {name} -- git --git-dir {git_dir} rev-parse refs/remotes/origin/main"
+                ),
+                0,
+                &format!("{commit}\n"),
+            )
+            .answering(
+                &format!("exec {name} -- git -C {worktree} rev-parse HEAD"),
+                0,
+                &format!("{commit}\n"),
+            )
+            .answering(
+                &format!("exec {name} -- git -C {worktree} symbolic-ref -q HEAD"),
+                0,
+                "refs/heads/main\n",
+            );
+        // 一覧は末尾から取り出される。停止中のprevious世代を起動し、検査してから消す。
+        *host.listing.borrow_mut() = vec![
+            created,
+            "[]".to_string(),
+            "[]".to_string(),
+            "[]".to_string(),
+            running.clone(),
+            running,
+            stopped.clone(),
+            stopped.clone(),
+            stopped,
+        ];
+
+        run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect("the fixed generation is completed from a stopped previous one");
+
+        let calls = host.calls();
+        let started = calls
+            .iter()
+            .position(|args| args.join(" ").contains("/bin/true"))
+            .expect("the stopped sandbox is started before it is inspected");
+        let removed = calls
+            .iter()
+            .position(|args| args.first().is_some_and(|arg| arg == "rm"))
+            .expect("the previous generation is removed");
+        assert!(
+            started < removed,
+            "the saved state is read from a running sandbox: {calls:?}"
         );
     }
 
