@@ -7,7 +7,7 @@
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{SandboxEntry, parse_sandbox_list};
 use crate::config::ConfigLocation;
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::paths::{
     self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope,
@@ -19,6 +19,8 @@ use crate::paths::{
 #[derive(Debug)]
 pub struct DaemonGuard {
     _lock: ExclusiveLock,
+    /// 再起動にあたって利用者へ伝える必要がある事実。
+    pub warnings: Vec<Msg>,
 }
 
 /// SSH Agentを渡さないdaemonへ入れ替える。
@@ -37,7 +39,7 @@ pub fn restart_without_ssh_agent(
         PathScope::ConfigFile,
     )?;
 
-    require_no_active_session(host)?;
+    let warnings = require_no_active_session(host)?;
 
     // 停止と起動のあいだにSandboxを触らないよう、lockを保持したまま続ける。
     let stop = CommandSpec::capture("sbx", &["daemon", "stop"])
@@ -50,33 +52,35 @@ pub fn restart_without_ssh_agent(
         .timeout(TimeoutClass::SandboxLifecycle);
     host.run(&start)?.require_success()?;
 
-    Ok(DaemonGuard { _lock: lock })
+    Ok(DaemonGuard {
+        _lock: lock,
+        warnings,
+    })
 }
 
 /// 全Sandboxにactive sessionがないことを、structured outputから確認する。
 ///
 /// Sandboxが1件もない場合、接続中のsessionも存在しないため不在を確認できたものとする。
 ///
+/// daemonの再起動そのものが、SSH Agentを渡さないdaemonへ入れ替えるsecurity対策である。
+/// この検査はそれとは別に、再起動で接続中のsessionを切らないための配慮であり、
+/// 対象versionがsession数を示さない場合は不在を証明できない。証明できないことを
+/// 理由に再起動をやめると、SSH Agentを渡すdaemonのまま進むことになるため、
+/// 警告として伝えたうえで再起動する。渡っていないことは、作成したSandboxの中から
+/// 実際に確認する。
+///
 /// daemon lockの外から呼ぶ場合、結果は再起動を保証しない。破壊的な工程へ進む前に、
 /// 確実に失敗する構成を先に見つけるために使う。
-pub fn require_no_active_session(host: &dyn HostEnvironment) -> Result<()> {
+pub fn require_no_active_session(host: &dyn HostEnvironment) -> Result<Vec<Msg>> {
     let sandboxes = list(host)?;
 
     let mut active: Vec<String> = Vec::new();
+    let mut unreported: Vec<String> = Vec::new();
     for sandbox in &sandboxes {
         match sandbox.active_sessions {
             Some(0) => {}
             Some(count) => active.push(format!("{} ({count})", sandbox.name)),
-            None => {
-                // 検査機能がないruntimeでは、不在を証明できない。
-                return Err(Error::single(
-                    Diagnostic::new(
-                        ErrorId::DaemonSessionUnobservable,
-                        msg!("error-daemon-session-unobservable", sandbox = sandbox.name),
-                    )
-                    .remediation(msg!("remediation-daemon-session-unobservable")),
-                ));
-            }
+            None => unreported.push(sandbox.name.clone()),
         }
     }
 
@@ -89,7 +93,14 @@ pub fn require_no_active_session(host: &dyn HostEnvironment) -> Result<()> {
             .remediation(msg!("remediation-daemon-session-active")),
         ));
     }
-    Ok(())
+
+    if unreported.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(vec![msg!(
+        "warning-daemon-sessions-unreported",
+        sandboxes = unreported.join(", ")
+    )])
 }
 
 /// 現在のSandbox一覧。
@@ -265,13 +276,35 @@ mod tests {
     }
 
     #[test]
-    fn a_runtime_without_session_inspection_leaves_the_daemon_alone() {
+    fn a_runtime_without_session_inspection_restarts_and_says_what_it_could_not_check() {
         let (_dir, location) = location();
         let host = FakeSbx::listing(r#"[{"name":"sbxm-example","state":"running"}]"#);
 
+        // 再起動そのものがSSH Agentを渡さないdaemonへ入れ替える対策である。
+        // session不在を証明できないことを理由にやめると、渡すdaemonのまま進む。
+        let guard = restart_without_ssh_agent(&host, &location)
+            .expect("the restart is the protection, so it is not skipped");
+        assert_eq!(
+            guard
+                .warnings
+                .iter()
+                .map(|message| message.id)
+                .collect::<Vec<_>>(),
+            vec!["warning-daemon-sessions-unreported"],
+            "what could not be checked is said, not assumed away"
+        );
+        assert_eq!(host.calls().len(), 3, "the daemon is stopped and started");
+    }
+
+    #[test]
+    fn a_session_that_is_reported_as_connected_still_leaves_the_daemon_alone() {
+        let (_dir, location) = location();
+        let host =
+            FakeSbx::listing(r#"[{"name":"sbxm-example","state":"running","active_sessions":1}]"#);
+
         let error = restart_without_ssh_agent(&host, &location)
-            .expect_err("absence of sessions has to be observed, not assumed");
-        assert_eq!(error.first_id(), Some(ErrorId::DaemonSessionUnobservable));
+            .expect_err("a session that is known to exist is not ended");
+        assert_eq!(error.first_id(), Some(ErrorId::DaemonSessionActive));
         assert_eq!(host.calls().len(), 1, "the daemon is not touched");
     }
 

@@ -6,7 +6,7 @@ use std::path::Path;
 
 use crate::command::{CommandSpec, HostEnvironment};
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
@@ -24,6 +24,8 @@ pub struct Prepared {
     /// 接続先のSSH host名。
     pub ssh_host: String,
     pub worktrees: Vec<String>,
+    /// 接続前に利用者へ伝える必要がある事実。
+    pub warnings: Vec<Msg>,
 }
 
 /// SSHへ引き渡せる状態までSandboxを整える。
@@ -72,6 +74,7 @@ pub fn prepare(
 
     // 接続のたびに、SSH Agentを渡さないdaemonへ入れ替える。
     let daemon_guard = daemon::restart_without_ssh_agent(host, location)?;
+    let warnings = daemon_guard.warnings.clone();
     // 再起動でSandboxの状態は変わり得るため、起動要否は再起動後の観測から決める。
     let entries = daemon::list(host)?;
     match inventory::state_of(&entries, &metadata, workspace_root)? {
@@ -90,6 +93,7 @@ pub fn prepare(
         sandbox: name.as_str().to_string(),
         ssh_host: format!("{name}.sbx"),
         worktrees,
+        warnings,
     })
 }
 

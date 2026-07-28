@@ -261,8 +261,12 @@ pub fn run(
 
     // daemonを操作する区間は、project lockの後にglobal daemon lockを取得する。
     let daemon_guard = daemon::restart_without_ssh_agent(host, location)?;
+    warnings.extend(daemon_guard.warnings.clone());
     let ready = sandbox::ensure(host, &sandbox_name, &template, workspace_root)?;
     drop(daemon_guard);
+
+    // 再起動でSSH Agentが渡らなくなったことを、推定せずSandboxの中から確かめる。
+    sandbox::require_credentials_isolated(host, &ready.name)?;
 
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
     identity::ensure(host, &ready.name, &config.git)?;
@@ -1357,6 +1361,9 @@ mod tests {
             let ok = (0, String::new());
 
             match inner {
+                // 実物と同じく、SSH Agentは届かない。`printenv`は未設定を`1`で示す。
+                ["printenv", "SSH_AUTH_SOCK"] => missing,
+                ["ssh-add", "-L"] => (crate::workflow::sandbox::SSH_ADD_NO_AGENT, String::new()),
                 ["test", flag, path] => {
                     let known = match *flag {
                         // 模したSandboxにsymlinkは存在しない。

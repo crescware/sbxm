@@ -122,6 +122,7 @@ error-project-not-managed = { $project } は管理対象の案件ではありま
 error-sandbox-not-created = { $project } は登録済みですが、Sandbox { $sandbox } はまだ存在しません。
 error-sandbox-not-running = Sandbox { $sandbox } は { $observed } です。このcommandはrunningのSandboxだけを対象とします。
 warning-dockerfile-changed-during-rebuild = { $project } のDockerfileは、再構築が世代を固定したあとに変更されました。この実行は固定済みの世代を適用しています。現在のDockerfileを適用するには { $command } をもう一度実行してください。
+warning-daemon-sessions-unreported = このDocker Sandboxes versionは { $sandboxes } にsessionが接続しているかを示しません。daemonの再起動で接続中のsessionが切れた可能性があります。daemonはhostのSSH Agentを渡さない状態で起動しており、渡っていないことはSandboxの中から確認します。
 warning-lock-file-left-behind = 案件の管理は解除しましたが、lock file { $path } を削除できませんでした: { $detail }
 warning-dockerfile-changed-during-build = { $project } のDockerfileが初回構築の途中で変わったため、開始時の世代のまま構築を完了しました。現在の内容を反映するには { $command } を実行してください。
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。

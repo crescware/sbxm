@@ -122,6 +122,7 @@ error-project-not-managed = { $project } is not a managed project.
 error-sandbox-not-created = { $project } is registered, but its sandbox { $sandbox } does not exist yet.
 error-sandbox-not-running = The sandbox { $sandbox } is { $observed }, and this command only acts on a running sandbox.
 warning-dockerfile-changed-during-rebuild = The Dockerfile of { $project } changed while the rebuild was already fixed on a generation, so this run applied the fixed one. Run { $command } again to apply the current Dockerfile.
+warning-daemon-sessions-unreported = This Docker Sandboxes version does not report whether a session is connected to { $sandboxes }, so restarting the daemon may have ended one. The daemon now runs without the host SSH agent, and that is checked from inside the sandbox.
 warning-lock-file-left-behind = The project is no longer managed, but its lock file { $path } could not be removed: { $detail }
 warning-dockerfile-changed-during-build = The Dockerfile of { $project } changed while its first build was still running, so the build finished with the generation it started from. Run { $command } to apply the current one.
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.

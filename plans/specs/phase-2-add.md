@@ -109,7 +109,10 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - 単一の通常cloneではなく、Sandbox内にbare repositoryとmanaged worktreeを作る
 - Sandbox名へcanonical project IDのhashを付け、owner/repository間の衝突を防ぐ
 - `sbx ls`のtextへ`grep`せず、structured outputを完全一致でparseする
-- `SSH_AUTH_SOCK`を外した個別`sbx create`だけで安全とは見なさず、全Sandboxのactive session不在を確認してdaemonを安全に再起動する
+- `SSH_AUTH_SOCK`を外した個別`sbx create`だけで安全とは見なさず、daemonを再起動して入れ替える
+- 再起動そのものがsecurity対策である。active session不在の確認は、再起動で接続中のsessionを切らないための配慮であり、security条件ではない
+- 対象versionはsession数を示さない。示さない場合は不在を証明できないが、それを理由に再起動をやめるとSSH Agentを渡すdaemonのまま進むことになるため、警告を出して再起動する
+- SSH Agentが渡っていないことは推定せず、作成したSandboxの中から`printenv SSH_AUTH_SOCK`と`ssh-add -L`で確認する
 - 中断時の目標構成をproject metadataへ保存し、以降は同じ`add`で継続する
 
 中立Workspace、host path非露出、案件限定GitHub secret、利用者がglobal configへ明示したfileの限定copy、Docker socket非共有という要件は維持する。

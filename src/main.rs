@@ -297,6 +297,10 @@ fn dispatch(
 
             // 接続先はterminalを引き渡す前に見せる。
             let mut stderr = std::io::stderr();
+            let reporter = Reporter::new(&catalog);
+            for warning in &prepared.warnings {
+                reporter.print_warning(warning, &mut stderr);
+            }
             let _ = writeln!(
                 stderr,
                 "{}",
