@@ -16,36 +16,30 @@ use crate::msg;
 /// gitがcredentialを提示する先。
 pub const GITHUB_HOST: &str = "github.com";
 
-/// `gh`がGitHub APIを呼ぶ先。
-pub const GITHUB_API_HOST: &str = "api.github.com";
-
 /// proxyが認証を差し替える対象host。
 ///
-/// 開発中にtokenを正当に提示する先を並べる。登録のないhostへはplaceholderがそのまま
-/// 送られ、tokenが正しくても認証されない。gitがgithub.comだけで通っていた一方で
-/// `gh`がapi.github.comで401になっていたのがこれである。
+/// 開発中にtokenを提示する先をすべて覆う。登録のないhostへはplaceholderがそのまま
+/// 送られ、tokenが正しくても認証されない。gitがgithub.comで通る一方、`gh`が
+/// api.github.comで401になっていたのがこれである。
+///
+/// `sbx secret set-custom --host`はwildcardを受け取る。`*`が1 label、`**`が任意個の
+/// labelに一致する。個別のhostを並べるより、subdomainが増えても追随する形を選ぶ。
+/// この4件が覆う範囲:
+///
+/// - `**.github.com`: api（gh、REST、GraphQL）、codeload（tarball、`go get`）、
+///   uploads（release asset、添付）、`*.pkg.github.com`（GitHub Packages）、gist
+/// - `**.githubusercontent.com`: raw（private repositoryのfile）ほか
 ///
 /// 全hostが1件のcustom secretに載っている必要がある。secretを分けるとplaceholderも
 /// 分かれるが、Sandboxの`GH_TOKEN`は1つの値しか持てない。
 ///
-/// release assetやLFSの実体が載るobjects.githubusercontent.comは入れない。あれは
-/// presigned URLで、placeholderを含まないrequestが行くため差し替える対象がない。
-pub const GITHUB_HOSTS: [&str; 10] = [
+/// ここに並べる文字列は、利用者が実行するcommandへそのまま入り、`sbx secret ls`の
+/// `TARGETS`と文字列として突き合わせる。展開した結果ではなく、書いたとおりを比べる。
+pub const GITHUB_HOSTS: [&str; 4] = [
     // git clone / fetch / push
     GITHUB_HOST,
-    // gh、REST、GraphQL
-    GITHUB_API_HOST,
-    // tarball、zipball、`go get`が取りに行く先
-    "codeload.github.com",
-    // private repositoryのraw file
-    "raw.githubusercontent.com",
-    // `gh release upload`、issueへの添付
-    "uploads.github.com",
-    // GitHub Packages
-    "npm.pkg.github.com",
-    "maven.pkg.github.com",
-    "nuget.pkg.github.com",
-    "rubygems.pkg.github.com",
+    "**.github.com",
+    "**.githubusercontent.com",
     // GitHub Container Registry
     "ghcr.io",
 ];
@@ -270,7 +264,7 @@ mod tests {
     #[test]
     fn covering_only_the_git_host_leaves_gh_unauthenticated_and_is_refused() {
         // gitはgithub.comへ、ghはapi.github.comへ話す。この登録ではgit push/fetchだけが
-        // 通り、`gh`はplaceholderをそのまま送って401になる。
+        // 通り、`gh`はplaceholderをそのまま送って401になる。実機で起きたのがこの状態。
         let host = FakeSbx::listing(
             "CUSTOM SECRETS\n\
              SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
@@ -289,8 +283,8 @@ mod tests {
             .expect("the message names what is not covered");
         let missing: Vec<&str> = missing.split(", ").collect();
         assert!(
-            missing.contains(&GITHUB_API_HOST),
-            "the host gh talks to is named: {missing:?}"
+            missing.contains(&"**.github.com"),
+            "the pattern that covers api.github.com is named: {missing:?}"
         );
         assert!(
             !missing.contains(&GITHUB_HOST),

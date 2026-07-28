@@ -34,14 +34,8 @@ The token is registered as a custom secret, not as the `github` service secret:
 ```
 sbx secret set-custom <sandbox> \
   --host github.com \
-  --host api.github.com \
-  --host codeload.github.com \
-  --host raw.githubusercontent.com \
-  --host uploads.github.com \
-  --host npm.pkg.github.com \
-  --host maven.pkg.github.com \
-  --host nuget.pkg.github.com \
-  --host rubygems.pkg.github.com \
+  --host '**.github.com' \
+  --host '**.githubusercontent.com' \
   --host ghcr.io \
   --env GH_TOKEN --value <token>
 ```
@@ -60,9 +54,16 @@ while every `gh` command fails. Splitting the hosts across several secrets does
 not work either, because each secret has its own placeholder and `GH_TOKEN` holds
 one value.
 
-`objects.githubusercontent.com`, where release assets and LFS objects live, is
-deliberately absent. Those are presigned URLs that never carry the placeholder,
-so there is nothing there to substitute.
+`--host` takes wildcards, where `*` matches one label and `**` matches any
+number, so four patterns cover the whole surface: `**.github.com` takes in the
+API, `codeload`, `uploads` and the package registries, and
+`**.githubusercontent.com` takes in `raw` and its siblings. Naming the patterns
+rather than today's hosts means a host GitHub adds later is already covered.
+
+Covering more than is needed costs nothing here. The proxy only swaps a
+placeholder it finds, so a request that never carries one — a presigned release
+asset or LFS object on `objects.githubusercontent.com` — passes through
+untouched whether or not the pattern covers it.
 
 A custom secret binds to a sandbox when the sandbox is created, so registering
 it afterwards does not reach a sandbox that already exists. `prepare` asks for

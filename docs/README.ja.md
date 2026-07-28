@@ -28,14 +28,8 @@ tokenは`github` service secretではなく、custom secretとして登録する
 ```
 sbx secret set-custom <sandbox> \
   --host github.com \
-  --host api.github.com \
-  --host codeload.github.com \
-  --host raw.githubusercontent.com \
-  --host uploads.github.com \
-  --host npm.pkg.github.com \
-  --host maven.pkg.github.com \
-  --host nuget.pkg.github.com \
-  --host rubygems.pkg.github.com \
+  --host '**.github.com' \
+  --host '**.githubusercontent.com' \
   --host ghcr.io \
   --env GH_TOKEN --value <token>
 ```
@@ -44,7 +38,9 @@ custom secretはSandboxへplaceholderだけを見せ、本物のtokenはproxyに
 
 開発中にtokenを提示する先は、すべて登録し、しかも1件のsecretにまとめる必要がある。登録のないhostにはplaceholderがそのまま届き、tokenがどれだけ正しくても`401`になる。`git`は`github.com`へ、`gh`は`api.github.com`へ話すため、前者だけを登録するとpushは通るのに`gh`が全滅する。hostを複数のsecretへ分けるのも駄目で、secretごとにplaceholderが分かれる一方、`GH_TOKEN`は1つの値しか持てない。
 
-release assetとLFSの実体が載る`objects.githubusercontent.com`は意図的に外している。あれはpresigned URLでplaceholderを含まないため、差し替える対象がない。
+`--host`はwildcardを受け取る。`*`が1 label、`**`が任意個のlabelに一致するため、4つのpatternで全体を覆える。`**.github.com`がAPI、`codeload`、`uploads`、package registryを、`**.githubusercontent.com`が`raw`とその同族を含む。今あるhostではなくpatternを書くことで、GitHubが後から足したhostも最初から覆われる。
+
+過剰に覆うことの代償はない。proxyは見つけたplaceholderを差し替えるだけなので、placeholderを含まないrequest、たとえば`objects.githubusercontent.com`のpresignedなrelease assetやLFSの実体は、patternが覆っていてもそのまま通る。
 
 custom secretはSandboxの作成時に結び付くため、あとから登録しても既存のSandboxには届かない。`prepare`は何かを作る前にsecretを確認し、作成後にSandboxの中を見てplaceholderが届いたことを確かめる。
 

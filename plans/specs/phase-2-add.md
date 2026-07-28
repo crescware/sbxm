@@ -421,14 +421,8 @@ gh config set git_protocol https --host github.com
 ```text
 sbx secret set-custom <sandbox-name> \
   --host github.com \
-  --host api.github.com \
-  --host codeload.github.com \
-  --host raw.githubusercontent.com \
-  --host uploads.github.com \
-  --host npm.pkg.github.com \
-  --host maven.pkg.github.com \
-  --host nuget.pkg.github.com \
-  --host rubygems.pkg.github.com \
+  --host '**.github.com' \
+  --host '**.githubusercontent.com' \
   --host ghcr.io \
   --env GH_TOKEN --value <token>
 ```
