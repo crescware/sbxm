@@ -127,6 +127,7 @@ error-project-path-unexpected-type = { $path } は { $observed } ですが、sbx
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
 
 error-atomic-write-failed = { $path } への書き込みに失敗しました: { $detail }
+error-cleanup-failed = { $path } を削除できませんでした: { $detail }
 error-temp-file-left-behind = 中断した実行の一時file { $path } が残っています。
 error-target-appeared-concurrently = 作成中に { $path } が出現したため、何も上書きしませんでした。
 error-target-changed-concurrently = 書き換え中に { $path } が別のfileへ差し替わったため、何も上書きしませんでした。
@@ -186,6 +187,7 @@ remediation-destroy-force = 内部を確認せずに削除するには { $comman
 remediation-run-rebuild = { $command } を実行して再構築を完了してください。
 remediation-target-configuration-mismatch = 保存済みの目標構成で続けるには { $command } をoptionなしで実行し、別の構成で作り直すには先に案件を破棄してください。
 remediation-image-collision = { $image } の内容をご自身で確認し、不要であることを確かめてから削除または改名してください。sbxmは自分がbuildしていないimageを上書きしません。
+remediation-cleanup-failed = ほかに必要とするものがないことを確かめてから { $path } をご自身で削除し、もう一度実行してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。
 remediation-fix-config = { $path } を編集してからもう一度実行してください。
 remediation-install-command = { $command } を導入し、PATH上に置いてください。

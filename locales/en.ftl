@@ -127,6 +127,7 @@ error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expe
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 
 error-atomic-write-failed = Writing { $path } failed: { $detail }
+error-cleanup-failed = { $path } could not be removed: { $detail }
 error-temp-file-left-behind = An interrupted run left the temporary file { $path } behind.
 error-target-appeared-concurrently = { $path } appeared while it was being created, so nothing was overwritten.
 error-target-changed-concurrently = { $path } was replaced by another file while it was being rewritten, so nothing was overwritten.
@@ -186,6 +187,7 @@ remediation-destroy-force = Run { $command } to delete it without looking inside
 remediation-run-rebuild = Run { $command } to finish the rebuild.
 remediation-target-configuration-mismatch = Run { $command } without those options to continue with the stored target, or destroy the project first to build it differently.
 remediation-image-collision = Inspect { $image } yourself, then remove or rename it once you are sure it is not needed. sbxm does not overwrite an image it did not build.
+remediation-cleanup-failed = Remove { $path } yourself once you are sure nothing else needs it, then run the command again.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.
 remediation-fix-config = Edit { $path } and run the command again.
 remediation-install-command = Install { $command } and make sure it is on PATH.

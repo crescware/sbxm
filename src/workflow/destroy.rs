@@ -151,12 +151,19 @@ pub fn execute(
     }
     require_absent(host, &prepared.name)?;
 
+    // 削除もほかのmutationと同じ規則で行う。symlinkの先を消さない。
     let cache = prepared.paths.cache_dir();
+    if paths::is_symlink(&cache) {
+        return Err(PathScope::ProjectPath.symlink_error(&cache));
+    }
     if cache.exists() {
         std::fs::remove_dir_all(&cache).map_err(|error| cleanup_failed(&cache, &error))?;
     }
 
     let metadata_file = prepared.paths.metadata_file();
+    if paths::is_symlink(&metadata_file) {
+        return Err(PathScope::ProjectPath.symlink_error(&metadata_file));
+    }
     if metadata_file.exists() {
         // ここが管理解除のcommit pointである。
         std::fs::remove_file(&metadata_file)
@@ -301,14 +308,21 @@ fn re_register(metadata: &ProjectMetadata) -> String {
     }
 }
 
+/// 管理情報の削除に失敗した。残ったpathを示す。
 fn cleanup_failed(path: &Path, error: &std::io::Error) -> Error {
-    Error::new(
-        ErrorId::AtomicWriteFailed,
-        msg!(
-            "error-atomic-write-failed",
-            path = paths::display(path),
-            detail = error
-        ),
+    Error::single(
+        Diagnostic::new(
+            ErrorId::CleanupFailed,
+            msg!(
+                "error-cleanup-failed",
+                path = paths::display(path),
+                detail = error
+            ),
+        )
+        .remediation(msg!(
+            "remediation-cleanup-failed",
+            path = paths::display(path)
+        )),
     )
 }
 
@@ -536,6 +550,39 @@ mod tests {
         assert_eq!(
             re_register(&metadata),
             "sbxm add example-org/example-repo --worktrees 3 --detach develop"
+        );
+    }
+
+    #[test]
+    fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() {
+        let fixture = fixture();
+        let project = fixture.register("example-org/example-repo");
+        let elsewhere = fixture.workspace_root.parent().unwrap().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::write(elsewhere.join("keep.txt"), "not ours\n").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, project.paths.cache_dir()).unwrap();
+
+        let host = clean_host(&fixture, &project);
+        host.listing.borrow_mut().insert(0, "[]".to_string());
+        let prepared = prepare(
+            &fixture.config,
+            Some(&project_id("example-org/example-repo")),
+            false,
+            &host,
+            &mut ScriptedPrompt::choosing(0),
+            &fixture.workspace_root,
+        )
+        .expect("prepare");
+
+        let error = execute(&host, &prepared, poll()).expect_err("a symlinked cache is refused");
+        assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+        assert!(
+            elsewhere.join("keep.txt").exists(),
+            "what the link pointed at is untouched"
+        );
+        assert!(
+            project.paths.metadata_file().exists(),
+            "the project stays managed so the state can be settled"
         );
     }
 

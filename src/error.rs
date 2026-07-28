@@ -131,6 +131,7 @@ pub enum ErrorId {
     // --- 永続化 ---
     AtomicWriteFailed,
     TempFileLeftBehind,
+    CleanupFailed,
     TargetAppearedConcurrently,
     TargetChangedConcurrently,
     LockTimeout,
@@ -261,6 +262,7 @@ impl ErrorId {
 
             ErrorId::AtomicWriteFailed => "atomic-write-failed",
             ErrorId::TempFileLeftBehind => "temp-file-left-behind",
+            ErrorId::CleanupFailed => "cleanup-failed",
             ErrorId::TargetAppearedConcurrently => "target-appeared-concurrently",
             ErrorId::TargetChangedConcurrently => "target-changed-concurrently",
             ErrorId::LockTimeout => "lock-timeout",
@@ -615,6 +617,7 @@ mod tests {
             ErrorId::ProjectFilePermissionTooOpen,
             ErrorId::AtomicWriteFailed,
             ErrorId::TempFileLeftBehind,
+            ErrorId::CleanupFailed,
             ErrorId::TargetAppearedConcurrently,
             ErrorId::TargetChangedConcurrently,
             ErrorId::LockTimeout,
