@@ -69,6 +69,8 @@ pub fn run(
         // intentがある場合は、intentに固定した世代だけを完成させる。
         Some(intent) => intent.target_dockerfile_sha256.clone(),
         None => {
+            // 状態表が先にある。Sandboxを観測できない案件には、変更の有無を答えない。
+            require_running(&project_metadata, state, &name)?;
             if current == project_metadata.provisioning.dockerfile_sha256 {
                 return Ok(RebuildOutput {
                     project: project_metadata.display_id(),
@@ -78,7 +80,6 @@ pub fn run(
                     warnings: Vec::new(),
                 });
             }
-            require_running(&project_metadata, state, &name)?;
             let layout = SandboxLayout::new(&canonical);
             protection::inspect(
                 host,
@@ -408,6 +409,29 @@ mod tests {
             "a no-op touches nothing: {:?}",
             host.calls()
         );
+    }
+
+    #[test]
+    fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_dockerfile() {
+        let fixture = fixture();
+        let mut project = fixture.register("example-org/example-repo");
+        // `add`は登録時に適用済みhashを書く。Sandboxを作る前に中断した案件は、
+        // 現在のDockerfileと同じhashを持ったまま`not-created`で残る。
+        std::fs::write(project.paths.dockerfile(), "unchanged\n").unwrap();
+        project.metadata.provisioning.dockerfile_sha256 = sha256_hex(b"unchanged\n");
+        metadata::update(&project.paths, &project.metadata).unwrap();
+
+        let host = FakeSbx::listing("[]");
+        let error = run(
+            &fixture.config,
+            &location(&fixture),
+            &project_id("example-org/example-repo"),
+            &host,
+            &fixture.workspace_root,
+            poll(),
+        )
+        .expect_err("there is no sandbox to report as unchanged");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
     }
 
     #[test]
