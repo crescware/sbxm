@@ -226,7 +226,6 @@ fn dispatch(
             };
             match add::run(
                 &config,
-                location,
                 &request,
                 &RealHost,
                 std::path::Path::new(sandbox::WORKSPACE_ROOT),
@@ -281,7 +280,6 @@ fn dispatch(
             };
             let prepared = match open::prepare(
                 &config,
-                location,
                 project.as_ref(),
                 &RealHost,
                 &mut prompt,
@@ -297,10 +295,6 @@ fn dispatch(
 
             // 接続先はterminalを引き渡す前に見せる。
             let mut stderr = std::io::stderr();
-            let reporter = Reporter::new(&catalog);
-            for warning in &prepared.warnings {
-                reporter.print_warning(warning, &mut stderr);
-            }
             let _ = writeln!(
                 stderr,
                 "{}",
@@ -367,7 +361,6 @@ fn dispatch(
             };
             match rebuild::run(
                 &config,
-                location,
                 project,
                 &RealHost,
                 std::path::Path::new(sandbox::WORKSPACE_ROOT),

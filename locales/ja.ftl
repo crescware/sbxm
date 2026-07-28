@@ -122,7 +122,6 @@ error-project-not-managed = { $project } は管理対象の案件ではありま
 error-sandbox-not-created = { $project } は登録済みですが、Sandbox { $sandbox } はまだ存在しません。
 error-sandbox-not-running = Sandbox { $sandbox } は { $observed } です。このcommandはrunningのSandboxだけを対象とします。
 warning-dockerfile-changed-during-rebuild = { $project } のDockerfileは、再構築が世代を固定したあとに変更されました。この実行は固定済みの世代を適用しています。現在のDockerfileを適用するには { $command } をもう一度実行してください。
-warning-daemon-sessions-unreported = このDocker Sandboxes versionは { $sandboxes } にsessionが接続しているかを示しません。daemonの再起動で接続中のsessionが切れた可能性があります。daemonはhostのSSH Agentを渡さない状態で起動しており、渡っていないことはSandboxの中から確認します。
 warning-lock-file-left-behind = 案件の管理は解除しましたが、lock file { $path } を削除できませんでした: { $detail }
 warning-dockerfile-changed-during-build = { $project } のDockerfileが初回構築の途中で変わったため、開始時の世代のまま構築を完了しました。現在の内容を反映するには { $command } を実行してください。
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
@@ -225,7 +224,7 @@ security-project-path-owner-description = { $path } の所有者はuser ID { $ob
 security-project-path-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するpathをこのpathへ戻してください。
 
 security-ssh-agent-exposed-description = { $sandbox } からhostのSSH Agentへ到達できます。Sandbox内のagentが利用者の鍵で署名できる状態です。
-security-ssh-agent-exposed-remediation = Sandboxを停止し、sbxm で開き直すと、SSH Agentを渡さないdaemonで起動します。
+security-ssh-agent-exposed-remediation = このSandboxを作ったdaemonは、hostのSSH Agentへ届く状態で起動しています。動作中のSandboxをすべて停止し、SSH_AUTH_SOCKを外したshellからdaemonを起動し直してから、もう一度実行してください。
 
 security-base-path-escape-description = { $path } はsymbolic linkの解決後に { $resolved } となります。案件が指定したdirectoryの外に作られます。
 security-base-path-escape-remediation = 解決後も意図したdirectory配下に収まるbase pathを指定してください。

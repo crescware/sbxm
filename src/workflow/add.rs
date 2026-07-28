@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
-use crate::config::{ConfigLocation, GlobalConfig};
+use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result, fail};
 use crate::git;
 use crate::hash::sha256_hex;
@@ -231,7 +231,6 @@ const MISE_FILES: [&str; 3] = ["mise.toml", ".mise.toml", ".tool-versions"];
 /// 失敗したら後続工程へ進まない。成功済みの成果物はrollback目的で削除しない。
 pub fn run(
     config: &GlobalConfig,
-    location: &ConfigLocation,
     request: &AddRequest,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
@@ -259,13 +258,8 @@ pub fn run(
     let archive = image::ensure_archive(host, &registration.paths, &image, &generation)?;
     let template = template::ensure(host, &archive, &image)?;
 
-    // daemonを操作する区間は、project lockの後にglobal daemon lockを取得する。
-    let daemon_guard = daemon::restart_without_ssh_agent(host, location)?;
-    warnings.extend(daemon_guard.warnings.clone());
     let ready = sandbox::ensure(host, &sandbox_name, &template, workspace_root)?;
-    drop(daemon_guard);
-
-    // 再起動でSSH Agentが渡らなくなったことを、推定せずSandboxの中から確かめる。
+    // hostのSSH Agentが届かないことを、daemonの起動条件から推定せず中から確かめる。
     sandbox::require_credentials_isolated(host, &ready.name)?;
 
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
@@ -629,8 +623,6 @@ mod tests {
     #[test]
     fn a_finished_project_is_reported_without_changing_anything() {
         let (_dir, config) = setup();
-        let home = tempfile::tempdir().unwrap();
-        let location = ConfigLocation::from_home(home.path().to_path_buf());
         let workspace_root = tempfile::tempdir().unwrap();
 
         let registration =
@@ -650,7 +642,6 @@ mod tests {
 
         let output = run(
             &config,
-            &location,
             &request("example-org/example-repo", None, None),
             &host,
             workspace_root.path(),
@@ -678,8 +669,6 @@ mod tests {
     #[test]
     fn a_sandbox_that_cannot_be_identified_is_never_reported_as_finished() {
         let (_dir, config) = setup();
-        let home = tempfile::tempdir().unwrap();
-        let location = ConfigLocation::from_home(home.path().to_path_buf());
         let workspace_root = tempfile::tempdir().unwrap();
 
         let registration =
@@ -709,7 +698,6 @@ mod tests {
             let host = FakeSbx::listing(&listing);
             let error = run(
                 &config,
-                &location,
                 &request("example-org/example-repo", None, None),
                 &host,
                 workspace_root.path(),
@@ -1542,7 +1530,6 @@ mod tests {
         _home: tempfile::TempDir,
         workspace_root: tempfile::TempDir,
         config: GlobalConfig,
-        location: ConfigLocation,
     }
 
     fn bench() -> Bench {
@@ -1574,25 +1561,17 @@ mod tests {
                 .expect("valid destination"),
             }],
         };
-        let location = ConfigLocation::from_home(home.path().to_path_buf());
         Bench {
             _base: base,
             _home: home,
             workspace_root,
             config,
-            location,
         }
     }
 
     impl Bench {
         fn add(&self, world: &World, request: &AddRequest) -> Result<AddOutput> {
-            run(
-                &self.config,
-                &self.location,
-                request,
-                world,
-                self.workspace_root.path(),
-            )
+            run(&self.config, request, world, self.workspace_root.path())
         }
 
         fn stored(&self, project: &str) -> ProjectMetadata {
@@ -1605,12 +1584,11 @@ mod tests {
     }
 
     /// `add`が外部工程を呼ぶ順に並べた、失敗させる工程とその診断。
-    const STEPS: [(&str, ErrorId); 12] = [
+    const STEPS: [(&str, ErrorId); 11] = [
         ("git clone git@github.com", ErrorId::ExternalCommandFailed),
         ("docker build", ErrorId::ExternalCommandFailed),
         ("docker image save", ErrorId::ExternalCommandFailed),
         ("sbx template load", ErrorId::ExternalCommandFailed),
-        ("sbx daemon stop", ErrorId::ExternalCommandFailed),
         ("sbx create", ErrorId::ExternalCommandFailed),
         ("sbx cp --follow-link", ErrorId::ExternalCommandFailed),
         ("config --global user.name", ErrorId::ExternalCommandFailed),

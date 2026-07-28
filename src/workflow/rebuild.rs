@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
-use crate::config::{ConfigLocation, GlobalConfig};
+use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::hash::sha256_hex;
 use crate::metadata::{self, ProjectMetadata, RebuildIntent};
@@ -37,7 +37,6 @@ pub struct RebuildOutput {
 /// Dockerfileの変更をSandboxへ適用する。
 pub fn run(
     config: &GlobalConfig,
-    location: &ConfigLocation,
     project: &ProjectId,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
@@ -113,7 +112,6 @@ pub fn run(
 
     let context = Switch {
         config,
-        location,
         paths: &paths,
         project,
         workspace_root,
@@ -199,7 +197,6 @@ fn prepare_generation(
 /// 工程ごとに変わるのはSandbox名、metadata、新Templateだけである。
 struct Switch<'a> {
     config: &'a GlobalConfig,
-    location: &'a ConfigLocation,
     paths: &'a ProjectPaths,
     project: &'a ProjectId,
     workspace_root: &'a Path,
@@ -217,7 +214,6 @@ impl Switch<'_> {
     ) -> Result<()> {
         let Switch {
             config,
-            location,
             paths,
             project,
             workspace_root,
@@ -241,16 +237,11 @@ impl Switch<'_> {
             if observed == target_template {
                 // 既にtarget世代のSandboxがある。作成工程はskipして続きから進める。
             } else if Some(&observed) == previous_template.as_ref() {
-                // 削除したSandboxを作り直すには、daemonを安全に再起動できる必要がある。
-                // 別案件へ接続中のsessionがあるなら、消す前に止まる。
-                daemon::require_no_active_session(host)?;
                 if entry.state == SandboxState::Stopped {
                     // 固定済みの世代から復旧する場合に限り、保存状態を観測するために起動する。
                     // 新規`rebuild`は停止中Sandboxを拒否したうえで、ここまで来ない。
-                    let guard = daemon::restart_without_ssh_agent(host, location)?;
                     inventory::start(host, name.as_str())?;
                     inventory::wait_until_running(host, metadata, workspace_root, poll)?;
-                    drop(guard);
                 }
                 protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
                 // 通常modeの削除command。データ保護検査は上で済ませている。
@@ -271,9 +262,7 @@ impl Switch<'_> {
             }
         }
 
-        let daemon_guard = daemon::restart_without_ssh_agent(host, location)?;
         let ready = sandbox::ensure(host, name, template, workspace_root)?;
-        drop(daemon_guard);
 
         identity::ensure(host, &ready.name, &config.git)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
@@ -362,7 +351,7 @@ fn not_managed(project: &ProjectId) -> Error {
 mod tests {
     use super::*;
     use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
-    use crate::workflow::inventory::tests::{FakeSbx, Fixture, fixture};
+    use crate::workflow::inventory::tests::{FakeSbx, fixture};
     use crate::workflow::protection::tests::clean_host;
     use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
@@ -372,16 +361,6 @@ mod tests {
             interval: Duration::from_millis(1),
             limit: Duration::from_millis(20),
         }
-    }
-
-    fn location(fixture: &Fixture) -> ConfigLocation {
-        ConfigLocation::from_home(
-            fixture
-                .workspace_root
-                .parent()
-                .expect("a home directory")
-                .to_path_buf(),
-        )
     }
 
     fn project_id(value: &str) -> ProjectId {
@@ -418,7 +397,6 @@ mod tests {
         let host = FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "running")));
         let output = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,
@@ -448,7 +426,6 @@ mod tests {
         let host = FakeSbx::listing("[]");
         let error = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,
@@ -464,7 +441,6 @@ mod tests {
         let host = FakeSbx::listing("[]");
         let error = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,
@@ -483,7 +459,6 @@ mod tests {
         let stopped = FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "stopped")));
         let error = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &stopped,
             &fixture.workspace_root,
@@ -496,7 +471,6 @@ mod tests {
         let absent = FakeSbx::listing("[]");
         let error = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &absent,
             &fixture.workspace_root,
@@ -525,7 +499,6 @@ mod tests {
 
         let error = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,
@@ -578,7 +551,6 @@ mod tests {
             created,
             "[]".to_string(),
             "[]".to_string(),
-            "[]".to_string(),
             running.clone(),
             running,
         ];
@@ -628,7 +600,6 @@ mod tests {
 
         run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,
@@ -663,7 +634,6 @@ mod tests {
 
         let error = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,
@@ -707,7 +677,6 @@ mod tests {
 
         let error = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,
@@ -739,7 +708,6 @@ mod tests {
         let host = clean_host(&fixture, &project);
         let error = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,
@@ -756,53 +724,6 @@ mod tests {
         assert!(
             !host.ran("build"),
             "the current Dockerfile is not built under the fixed generation's name: {:?}",
-            host.calls()
-        );
-    }
-
-    #[test]
-    fn a_session_on_another_project_stops_the_rebuild_before_the_sandbox_is_removed() {
-        let fixture = fixture();
-        let project = fixture.register("example-org/example-repo");
-        std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
-        let target = sha256_hex(b"FROM scratch\n");
-        let image = image_name(&project.sandbox, &target);
-
-        // 別案件のSandboxにsessionが接続している。daemonは再起動できない。
-        let busy = format!(
-            r#"{{"name":"other-sandbox","state":"running","workspace":"{}","template":"other-template","active_sessions":1}}"#,
-            fixture.workspace_root.join("other-sandbox").display()
-        );
-        let host = clean_host(&fixture, &project)
-            .answering(&format!("image ls --quiet {image}"), 0, "sha256:new\n")
-            .answering(
-                &format!("image inspect {image}"),
-                0,
-                &format!(
-                    r#"[{{"Id":"sha256:new","Config":{{"Labels":{{"io.crescware.sbxm.canonical-id":"example-org/example-repo","io.crescware.sbxm.dockerfile-sha256":"{target}","io.crescware.sbxm.metadata-version":"1"}}}}}}]"#
-                ),
-            )
-            .answering(
-                "template ls --json",
-                0,
-                &template_listing(&image),
-            );
-        *host.listing.borrow_mut() =
-            vec![format!("[{},{busy}]", fixture.entry(&project, "running"))];
-
-        let error = run(
-            &fixture.config,
-            &location(&fixture),
-            &project_id("example-org/example-repo"),
-            &host,
-            &fixture.workspace_root,
-            poll(),
-        )
-        .expect_err("the sandbox cannot be recreated while another session is connected");
-        assert_eq!(error.first_id(), Some(ErrorId::DaemonSessionActive));
-        assert!(
-            !host.ran("rm "),
-            "nothing is removed that cannot be put back: {:?}",
             host.calls()
         );
     }
@@ -899,17 +820,14 @@ mod tests {
             created,
             "[]".to_string(),
             "[]".to_string(),
-            "[]".to_string(),
             running.clone(),
             running,
-            stopped.clone(),
             stopped.clone(),
             stopped,
         ];
 
         run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,
@@ -1034,7 +952,6 @@ mod tests {
 
         let output = run(
             &fixture.config,
-            &location(&fixture),
             &project_id("example-org/example-repo"),
             &host,
             &fixture.workspace_root,

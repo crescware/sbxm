@@ -77,11 +77,10 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 | Template一覧 | `sbx template ls --json` | `{"images": [...]}`で包まれた各entryの`repository`と`tag`。runtimeは`docker.io/library/`を補って表示する |
 | Template load | `sbx template load <archive>` | exit statusのみ |
 | Sandbox作成 | `sbx create --name <name> --template <image> shell <workspace>` | exit statusのみ |
-| Sandbox内実行 | `sbx exec [--user root] <name> -- <argv>` | stdoutとexit status |
+| Sandbox内実行 | `sbx exec [--user root] <name> -- <argv>` | stdoutとexit status。`--`の有無はどちらも受け付ける |
 | file転送 | `sbx cp --follow-link <source> <name>:<path>` | exit statusのみ |
 | secret存在確認 | `sbx secret ls <name>` | `SCOPE TYPE NAME SECRET`の表。`TYPE`が`service`の行の`NAME`だけを読む。1件もない場合は`No secrets found`で始まる文になる。`--service`は`SECRET`列へ値の一部を出すため使わない |
 | login状態 | `sbx login status --json` | login済みかどうかを示す真偽値 |
-| daemon操作 | `sbx daemon stop` / `sbx daemon start --detach` | exit statusのみ |
 | image存在確認 | `docker image ls --quiet <image>` | 出力が空かどうか |
 | image検証 | `docker image inspect <image>` | `Id`と`Config.Labels` |
 | archive生成 | `docker image save <image> --output <path>` | exit statusのみ |
@@ -109,10 +108,9 @@ MVPは既存の手動手順を次のように自動化・変更する。
 - 単一の通常cloneではなく、Sandbox内にbare repositoryとmanaged worktreeを作る
 - Sandbox名へcanonical project IDのhashを付け、owner/repository間の衝突を防ぐ
 - `sbx ls`のtextへ`grep`せず、structured outputを完全一致でparseする
-- `SSH_AUTH_SOCK`を外した個別`sbx create`だけで安全とは見なさず、daemonを再起動して入れ替える
-- 再起動そのものがsecurity対策である。active session不在の確認は、再起動で接続中のsessionを切らないための配慮であり、security条件ではない
-- 対象versionはsession数を示さない。示さない場合は不在を証明できないが、それを理由に再起動をやめるとSSH Agentを渡すdaemonのまま進むことになるため、警告を出して再起動する
-- SSH Agentが渡っていないことは推定せず、作成したSandboxの中から`printenv SSH_AUTH_SOCK`と`ssh-add -L`で確認する
+- sbxmはdaemonを停止も起動もしない。daemonを止めるには動作中のSandboxを止める必要があり、作業中のSandboxを巻き込むためである
+- SSH Agentが渡っていないことは、daemonの起動条件から推定せず、作成したSandboxの中から`printenv SSH_AUTH_SOCK`と`ssh-add -L`で確認する
+- 届いていた場合は工程を止め、動作中のSandboxを停止して`SSH_AUTH_SOCK`を外したshellからdaemonを起動し直す方法を案内する
 - 中断時の目標構成をproject metadataへ保存し、以降は同じ`add`で継続する
 
 中立Workspace、host path非露出、案件限定GitHub secret、利用者がglobal configへ明示したfileの限定copy、Docker socket非共有という要件は維持する。

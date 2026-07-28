@@ -66,16 +66,6 @@ impl ConfigLocation {
     pub fn init_lock(&self) -> PathBuf {
         self.dir().join("init.lock")
     }
-
-    /// `~/.sbxm/runtime`
-    pub fn runtime_dir(&self) -> PathBuf {
-        self.dir().join("runtime")
-    }
-
-    /// `~/.sbxm/runtime/daemon.lock`
-    pub fn daemon_lock(&self) -> PathBuf {
-        self.runtime_dir().join("daemon.lock")
-    }
 }
 
 /// Sandbox内の`agent` homeへ配置するhost file。
@@ -522,10 +512,6 @@ user_email = "user@example.com"
         assert_eq!(
             location.init_lock(),
             PathBuf::from("/Users/example/.sbxm/init.lock")
-        );
-        assert_eq!(
-            location.daemon_lock(),
-            PathBuf::from("/Users/example/.sbxm/runtime/daemon.lock")
         );
     }
 
