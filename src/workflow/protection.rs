@@ -44,8 +44,6 @@ pub struct WorktreeReport {
     pub head: String,
     /// attached modeのbranch名。
     pub branch: Option<String>,
-    /// 翻訳しない`clean`または`dirty`。
-    pub state: &'static str,
     /// remoteへ渡っているか。翻訳しない`pushed`、`reachable`、`unpushed`。
     pub remote: &'static str,
 }
@@ -300,7 +298,6 @@ fn examine(
         mode,
         head,
         branch,
-        state: "clean",
         remote,
     })
 }
@@ -464,7 +461,6 @@ pub mod tests {
                 mode: "attached",
                 head: "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5".to_string(),
                 branch: Some("main".to_string()),
-                state: "clean",
                 remote: "pushed",
             }]
         );
