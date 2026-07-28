@@ -4,7 +4,7 @@
 //! 保存されていない作業がないことを確かめる。判定できない場合は削除しない。
 
 use crate::command::{CommandOutcome, HostEnvironment};
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::SandboxLayout;
@@ -171,10 +171,10 @@ fn examine(
         .trim_matches(['\0', '\n', ' '])
         .is_empty()
     {
-        return Err(refuse(
-            relative,
-            "the working tree has changes that are not committed",
-        ));
+        return Err(refuse(msg!(
+            "error-unsaved-work-uncommitted",
+            target = relative
+        )));
     }
 
     let git_dir = read(
@@ -188,10 +188,11 @@ fn examine(
         // `test`はfileの不在を`1`で示す。commandを起動できなかったことを不在として読まない。
         match answered(&probe, &candidate)? {
             0 => {
-                return Err(refuse(
-                    relative,
-                    &format!("a Git operation is in progress ({marker})"),
-                ));
+                return Err(refuse(msg!(
+                    "error-unsaved-work-in-progress",
+                    target = relative,
+                    operation = marker
+                )));
             }
             1 => {}
             _ => return Err(unobservable(&probe, &candidate)),
@@ -241,10 +242,10 @@ fn examine(
         )?;
         // upstream未設定はgitが非ゼロで示す。起動できなかった場合と区別する。
         if answered(&upstream, "@{upstream}")? != 0 {
-            return Err(refuse(
-                relative,
-                "the branch has no upstream, so its commits exist only in the sandbox",
-            ));
+            return Err(refuse(msg!(
+                "error-unsaved-work-no-upstream",
+                target = relative
+            )));
         }
         let upstream = upstream.stdout_text().trim().to_string();
         let ahead = read(
@@ -260,10 +261,12 @@ fn examine(
             ],
         )?;
         if ahead != "0" {
-            return Err(refuse(
-                relative,
-                &format!("{ahead} commits are not pushed to {upstream}"),
-            ));
+            return Err(refuse(msg!(
+                "error-unsaved-work-unpushed",
+                target = relative,
+                count = ahead,
+                upstream = upstream
+            )));
         }
         ("attached", Some(branch), "pushed")
     } else {
@@ -283,10 +286,10 @@ fn examine(
             ],
         )?;
         if unreachable != "0" {
-            return Err(refuse(
-                relative,
-                "the detached HEAD holds commits that no remote branch reaches",
-            ));
+            return Err(refuse(msg!(
+                "error-unsaved-work-unreachable",
+                target = relative
+            )));
         }
         ("detached", None, "reachable")
     };
@@ -359,13 +362,11 @@ fn read(host: &dyn HostEnvironment, sandbox_name: &str, args: &[&str]) -> Result
 }
 
 /// 保存されていない作業を失わないため、削除も再作成も行わない。
-fn refuse(target: &str, detail: &str) -> Error {
+///
+/// 拒否理由は利用者向けの本文であり、選択した言語で読めるmessageとして渡す。
+fn refuse(reason: Msg) -> Error {
     Error::single(
-        Diagnostic::new(
-            ErrorId::UnsavedWork,
-            msg!("error-unsaved-work", target = target, detail = detail),
-        )
-        .remediation(msg!("remediation-unsaved-work")),
+        Diagnostic::new(ErrorId::UnsavedWork, reason).remediation(msg!("remediation-unsaved-work")),
     )
 }
 
