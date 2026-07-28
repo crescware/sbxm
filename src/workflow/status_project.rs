@@ -932,7 +932,7 @@ mod tests {
             .answering(
                 &format!("secret ls {}", project.sandbox),
                 0,
-                "SCOPE   TYPE      NAME     SECRET\nx   service   github   (stored)\n",
+                "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
             )
             .answering(
                 &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),

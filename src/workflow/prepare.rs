@@ -361,6 +361,7 @@ mod tests {
         /// Template名 -> 対応するimage ID。
         templates: RefCell<BTreeMap<String, String>>,
         sandboxes: RefCell<Vec<SandboxRow>>,
+        /// 登録済みcustom secretの対象host。
         secrets: RefCell<Vec<String>>,
         /// Sandbox内に存在するpath。
         present: RefCell<BTreeSet<String>>,
@@ -394,7 +395,7 @@ mod tests {
                 images: RefCell::new(BTreeMap::new()),
                 templates: RefCell::new(BTreeMap::new()),
                 sandboxes: RefCell::new(Vec::new()),
-                secrets: RefCell::new(vec!["github".to_string()]),
+                secrets: RefCell::new(vec!["github.com".to_string()]),
                 present: RefCell::new(BTreeSet::new()),
                 digests: RefCell::new(BTreeMap::new()),
                 settings: RefCell::new(BTreeMap::new()),
@@ -624,9 +625,13 @@ mod tests {
                     if secrets.is_empty() {
                         return (0, format!("No secrets found for scope \"{name}\".\n"));
                     }
-                    let mut table = String::from("SCOPE   TYPE      NAME     SECRET\n");
-                    for secret in secrets.iter() {
-                        table.push_str(&format!("{name}   service   {secret}   (stored)\n"));
+                    let mut table = String::from(
+                        "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n",
+                    );
+                    for target in secrets.iter() {
+                        table.push_str(&format!(
+                            "{name}   {target}   GH_TOKEN   sbx-cs-example   ghp_example\n"
+                        ));
                     }
                     (0, table)
                 }
@@ -1027,7 +1032,7 @@ mod tests {
             "the sandbox repository is not cloned without the secret"
         );
 
-        world.secrets.borrow_mut().push("github".to_string());
+        world.secrets.borrow_mut().push("github.com".to_string());
         let output = bench
             .build(&world, &request)
             .expect("the same add continues once the secret is registered");

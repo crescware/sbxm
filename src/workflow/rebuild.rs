@@ -361,7 +361,7 @@ mod tests {
         host.answering(
             &format!("secret ls {name}"),
             0,
-            "SCOPE   TYPE      NAME     SECRET\nx   service   github   (stored)\n",
+            "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
         )
         .answering(&format!("exec {name} -- printenv SSH_AUTH_SOCK"), 1, "")
         .answering(&format!("exec {name} -- ssh-add -L"), 2, "")
@@ -875,7 +875,7 @@ mod tests {
             .answering(
                 &format!("secret ls {}", project.sandbox),
                 0,
-                "SCOPE   TYPE      NAME     SECRET\nx   service   github   (stored)\n",
+                "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
             );
         // 再作成後のSandbox内で、共有repositoryとworktreeが期待どおりに揃う。
         let layout = SandboxLayout::new(&project.metadata.canonical_id);
