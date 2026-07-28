@@ -27,7 +27,7 @@ RUN apt-get update \
       wget \
  && rm -rf /var/lib/apt/lists/*
 
-ARG GH_VERSION=2.65.0
+ARG GH_VERSION=2.96.0
 RUN set -eux; \
     architecture="$(dpkg --print-architecture)"; \
     curl -fsSL -o /tmp/gh.tar.gz \
@@ -42,15 +42,15 @@ RUN install -d -o agent -g agent -m 0755 /home/agent/work
 
 USER agent
 
-ARG MISE_VERSION=v2025.1.6
+ARG MISE_VERSION=v2026.7.15
 RUN curl -fsSL https://mise.run | MISE_VERSION="${MISE_VERSION}" sh
 ENV PATH=/home/agent/.local/bin:/home/agent/.local/share/mise/shims:${PATH}
 
-ARG NODE_VERSION=22.14.0
+ARG NODE_VERSION=24.18.0
 RUN mise use --global "node@${NODE_VERSION}" && mise install
 
 ARG CLAUDE_CODE_VERSION=2.1.220
-ARG CODEX_VERSION=0.20.0
+ARG CODEX_VERSION=0.145.0
 RUN npm install -g \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
       "@openai/codex@${CODEX_VERSION}"
