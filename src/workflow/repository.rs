@@ -31,7 +31,7 @@ pub fn ensure_bare_clone(
     if sandbox::path_exists(host, sandbox, &git_dir)? {
         verify_bare_clone(host, sandbox, project, &git_dir)?;
     } else {
-        crate::progress::step(&msg!("progress-cloning-repository"));
+        crate::progress::step(&msg!("progress-preparing-repository"));
         sandbox::exec(host, sandbox, &["mkdir", "-p", &layout.bare_root()])?.require_success()?;
         let url = git::https_remote_url(project.owner(), project.repository());
         // `git clone --bare`はremoteのbranchを`refs/heads/*`へ複製する。そのbranchは
