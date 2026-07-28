@@ -90,6 +90,7 @@ pub enum Command {
     Init(InitMode),
     Add(AddArgs),
     SyncFiles(ProjectId),
+    Prepare(ProjectId),
     Rebuild(ProjectId),
     Open(Option<ProjectId>),
     Stop(Vec<ProjectId>),
@@ -400,6 +401,17 @@ fn build_command(catalog: &Catalog) -> Result<ClapCommand> {
                 .help(text("cli-sync-files-project-help")?),
         );
 
+    let prepare = ClapCommand::new("prepare")
+        .about(text("cli-prepare-about")?)
+        .disable_help_flag(true)
+        .arg(help_flag(text("cli-help-help")?))
+        .arg(
+            Arg::new("project")
+                .required(true)
+                .value_name("owner/repository")
+                .help(text("cli-prepare-project-help")?),
+        );
+
     let rebuild = ClapCommand::new("rebuild")
         .about(text("cli-rebuild-about")?)
         .help_template(positional_template.clone())
@@ -500,6 +512,7 @@ fn build_command(catalog: &Catalog) -> Result<ClapCommand> {
         .subcommand(init)
         .subcommand(add)
         .subcommand(sync_files)
+        .subcommand(prepare)
         .subcommand(rebuild)
         .subcommand(open)
         .subcommand(stop)
@@ -517,6 +530,7 @@ fn build_invocation(
         "init" => Ok(Command::Init(init_mode(matches)?)),
         "add" => Ok(Command::Add(add_args(matches)?)),
         "sync-files" => Ok(Command::SyncFiles(required_project(matches)?)),
+        "prepare" => Ok(Command::Prepare(required_project(matches)?)),
         "rebuild" => Ok(Command::Rebuild(required_project(matches)?)),
         "open" => Ok(Command::Open(optional_project(
             matches,

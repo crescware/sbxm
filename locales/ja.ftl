@@ -14,13 +14,16 @@ cli-init-base-path-help = 案件directoryを置くdirectoryのabsolute path
 cli-init-git-user-name-help = Sandbox内へ設定するGitのuser.name
 cli-init-git-user-email-help = Sandbox内へ設定するGitのuser.email
 
-cli-add-about = GitHub repositoryを管理対象へ登録してSandboxを構築します
+cli-add-about = GitHub repositoryを管理対象へ登録し、host上へcloneします
 cli-add-project-help = 対象案件をowner/repository形式で指定します
 cli-add-worktrees-help = 作成するmanaged worktreeの数 (1〜32)
 cli-add-detach-help = detached modeで全managed worktreeの起点にするremote branch
 
 cli-sync-files-about = global設定で宣言したfileをrunning Sandboxへ再配置します
 cli-sync-files-project-help = 対象案件をowner/repository形式で指定します
+
+cli-prepare-about = 登録済み案件のSandboxを構築し、作業できる状態にします
+cli-prepare-project-help = 対象案件をowner/repository形式で指定します
 
 cli-rebuild-about = 編集したDockerfileをSandbox再作成によって適用します
 cli-rebuild-project-help = 対象案件をowner/repository形式で指定します
@@ -274,7 +277,12 @@ column-mode = mode (MODE)
 column-file = file (FILE)
 column-destination = 配置先 (DESTINATION)
 column-result = 結果 (RESULT)
-add-already-built = { $project } は構築済みのため、何も変更しませんでした。
+add-registered = { $project } を管理対象にしました。
+add-already-registered = { $project } は既に管理対象で、目標構成は変わっていません。
+add-next-heading = 次にやること:
+add-next-secret = この案件用のGitHub tokenを登録します: { $command }
+add-next-prepare = そのあとSandboxを構築します: { $command }
+prepare-already-built = { $project } は構築済みのため、何も変更しませんでした。
 add-mise-heading = 次のmanaged worktreeはmiseの設定を持ちます。sbxmはmiseを自動実行しません:
 add-mise-hint = 使用する場合は、Sandbox内で mise trust と mise install を実行してください。
 files-secret-hint = 宣言fileは設定を運ぶためのもので、credentialのためのものではありません。token、secret、秘密鍵は宣言fileへ入れず、Docker Sandboxesのsecret機能でSandboxへ渡してください。

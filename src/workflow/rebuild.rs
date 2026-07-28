@@ -10,7 +10,6 @@ use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
 use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
-use crate::hash::sha256_hex;
 use crate::metadata::{self, ProjectMetadata, RebuildIntent};
 use crate::msg;
 use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
@@ -58,7 +57,7 @@ pub fn run(
 
     // lock取得後の状態を正本とする。
     let mut project_metadata = metadata::load(&paths)?.ok_or_else(|| not_managed(project))?;
-    let current = current_dockerfile_hash(&paths)?;
+    let current = super::add::current_dockerfile_hash(&paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, &project_metadata, workspace_root)?;
@@ -277,24 +276,6 @@ impl Switch<'_> {
     }
 }
 
-/// 現在のDockerfileのSHA-256。
-fn current_dockerfile_hash(paths: &ProjectPaths) -> Result<String> {
-    let path = paths.dockerfile();
-    if !paths::regular_file_exists(&path, PathScope::ProjectPath)? {
-        return Err(Error::new(
-            ErrorId::ProjectPathUnreadable,
-            msg!(
-                "error-project-path-unreadable",
-                path = paths::display(&path),
-                detail = "the Dockerfile of this project is absent"
-            ),
-        ));
-    }
-    let contents = std::fs::read(&path)
-        .map_err(|error| PathScope::ProjectPath.unreadable_error(&path, &error.to_string()))?;
-    Ok(sha256_hex(&contents))
-}
-
 /// 新規`rebuild`は、内部状態を観測できるrunningのSandboxだけを対象とする。
 fn require_running(
     metadata: &ProjectMetadata,
@@ -351,6 +332,7 @@ fn not_managed(project: &ProjectId) -> Error {
 mod tests {
     use super::*;
     use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+    use crate::hash::sha256_hex;
     use crate::workflow::inventory::tests::{FakeSbx, fixture};
     use crate::workflow::protection::tests::clean_host;
     use std::os::unix::fs::PermissionsExt;

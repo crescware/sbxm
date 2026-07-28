@@ -18,6 +18,10 @@ sbxm
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=1 required action=Set order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+  prepare
+    id=help --help -h args=0 action=Help order=1000
+    id=project positional value=owner/repository args=1 required action=Set order=999
+    id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
   rebuild
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=1 required action=Set order=999

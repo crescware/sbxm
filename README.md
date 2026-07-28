@@ -37,10 +37,10 @@ Before recording anything, remove:
 |---:|---|---:|---|
 | 1 | `sbxm init` in a fresh HOME | 0 | `~/.sbxm/config.toml` created with mode 0600 |
 | 2 | `sbxm --lang ja init`, `sbxm --lang en init` | 0 | help and output follow the chosen language |
-| 3 | `sbxm add <owner>/<repo>` without the secret | 1 | stops at `github-secret-missing` with the command that registers it |
-| 4 | register the secret, then the same `sbxm add` | 0 | continues from where it stopped, reusing the sandbox |
-| 5 | `sbxm add <owner>/<repo>` | 0 | one attached worktree tracking the remote default branch |
-| 6 | `sbxm add <owner>/<repo2> --worktrees 3 --detach develop` | 0 | three worktrees on the same commit of `origin/develop` |
+| 3 | `sbxm add <owner>/<repo>` | 0 | registers the project, clones it onto the host, and names the sandbox and the token command |
+| 4 | register the secret, then `sbxm prepare <owner>/<repo>` | 0 | builds the sandbox and the repository in one run |
+| 5 | `sbxm prepare <owner>/<repo>` without the secret | 1 | stops at `github-secret-missing` with the command that registers it |
+| 6 | `sbxm add <owner>/<repo2> --worktrees 3 --detach develop` then `sbxm prepare` | 0 | three worktrees on the same commit of `origin/develop` |
 | 7 | create an extra worktree inside the sandbox by hand | - | it is the unmanaged case for the later checks |
 | 8 | inspect the sandbox workspace | - | no project path and no user home is visible inside |
 | 9 | `ssh-add -L` and `docker info` inside the sandbox | non-zero | no agent keys, no host Docker socket |

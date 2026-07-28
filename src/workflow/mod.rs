@@ -14,6 +14,7 @@ pub mod init;
 pub mod inventory;
 pub mod ls;
 pub mod open;
+pub mod prepare;
 pub mod protection;
 pub mod rebuild;
 pub mod repository;

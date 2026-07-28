@@ -34,10 +34,10 @@ Docker Sandboxes CLI 0.37.0以降。
 |---:|---|---:|---|
 | 1 | 新しいHOMEで`sbxm init` | 0 | `~/.sbxm/config.toml`がmode 0600で作られる |
 | 2 | `sbxm --lang ja init`、`sbxm --lang en init` | 0 | helpと出力が選択言語に従う |
-| 3 | secret未登録で`sbxm add <owner>/<repo>` | 1 | `github-secret-missing`で停止し、登録commandを示す |
-| 4 | secret登録後に同じ`sbxm add` | 0 | Sandboxを再利用して続きから進む |
-| 5 | `sbxm add <owner>/<repo>` | 0 | remote default branchをtrackingするattached worktreeが1つ |
-| 6 | `sbxm add <owner>/<repo2> --worktrees 3 --detach develop` | 0 | `origin/develop`の同じcommitから3つ |
+| 3 | `sbxm add <owner>/<repo>` | 0 | 案件を登録し、host cloneを取り、Sandbox名とtoken登録commandを示す |
+| 4 | secretを登録してから`sbxm prepare <owner>/<repo>` | 0 | Sandboxとrepositoryを一度の実行で構築する |
+| 5 | secret未登録で`sbxm prepare <owner>/<repo>` | 1 | `github-secret-missing`で停止し、登録commandを示す |
+| 6 | `sbxm add <owner>/<repo2> --worktrees 3 --detach develop` のあと `sbxm prepare` | 0 | `origin/develop`の同じcommitから3つ |
 | 7 | Sandbox内で手動のworktreeを追加 | - | 以降のunmanaged caseの前提 |
 | 8 | Sandboxのworkspaceを確認 | - | 案件pathもuser homeも見えない |
 | 9 | Sandbox内で`ssh-add -L`と`docker info` | 非ゼロ | agentの鍵もhostのDocker socketもない |
