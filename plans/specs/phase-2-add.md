@@ -88,7 +88,9 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 
 `docker image inspect`はimageが存在しない場合もEngineへ問い合わせられない場合も非ゼロで終わるため、exit statusだけで不在と判定しない。存在の判定には`docker image ls --quiet <image>`を使い、この一覧が失敗した場合はimageを不在へ丸めずexit code `1`とする。
 
-archiveの検証は、tarの`manifest.json`だけを読み、保存されたtagとimage configのdigestが、直前に`docker image inspect`で確認したimage IDと一致することを条件とする。archive本体は読まない。
+archiveの検証は、tarの`manifest.json`と、それが名前で指すimage configだけを読む。保存されたtagが期待するimage名と一致し、image configが期待するlabelをすべて宣言していることを条件とする。archive本体のlayerは読まない。
+
+digestを対応の根拠にしない。`docker image inspect`の`Id`は、image storeとattestationの有無によって、image config、manifest、image indexのどれを指すかが変わる。対象Macでは、buildがprovenance attestationを伴うOCI image indexを作るため、`Id`はindexのdigestとなり、archiveが指すimage configのdigestとは一致しない。両者の一致を条件にすると、正常な成果物を毎回拒否する。
 
 Sandboxが1件も存在しない場合、active sessionを持ち得る対象がないため、session不在を確認できたものとして扱う。
 

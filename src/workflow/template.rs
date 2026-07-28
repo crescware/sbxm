@@ -169,6 +169,7 @@ mod tests {
         BuiltImage {
             name: "sbxm-example-template:111111111111".to_string(),
             id: "sha256:abc".to_string(),
+            labels: Vec::new(),
             built: true,
             warnings: Vec::new(),
         }

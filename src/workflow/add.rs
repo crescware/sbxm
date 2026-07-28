@@ -1234,12 +1234,24 @@ mod tests {
                     None => (1, String::new()),
                 },
                 ["image", "save", name, "--output", output] => {
+                    // 実物と同じく、archiveはimage configをlabelごと持つ。
+                    let labels = self.images.borrow().get(*name).cloned().unwrap_or_default();
+                    let rendered = labels
+                        .iter()
+                        .map(|(key, value)| format!("\"{key}\":\"{value}\""))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let config = format!(r#"{{"config":{{"Labels":{{{rendered}}}}}}}"#);
+                    let hex = IMAGE_ID.strip_prefix("sha256:").expect("a digest");
                     fs::write(
                         output,
-                        crate::archive::tar_bytes(&[(
-                            "manifest.json",
-                            crate::archive::manifest_json(name, IMAGE_ID).as_bytes(),
-                        )]),
+                        crate::archive::tar_bytes(&[
+                            (&format!("blobs/sha256/{hex}"), config.as_bytes()),
+                            (
+                                "manifest.json",
+                                crate::archive::manifest_json(name, IMAGE_ID).as_bytes(),
+                            ),
+                        ]),
                     )
                     .expect("write the archive");
                     (0, String::new())
