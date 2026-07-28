@@ -274,6 +274,19 @@ mod tests {
     }
 
     #[test]
+    fn the_listing_a_real_registration_produces_is_accepted() {
+        // 実機で`sbx secret set-custom`を実行したあとの`sbx secret ls`の形。scope名と
+        // secretは記録から伏せてある。`TARGETS`はcommaと空白1つで区切られ、wildcardは
+        // 展開されずに並ぶため、sbxmが書いた文字列とそのまま突き合わせられる。
+        let host = FakeSbx::listing(
+            "CUSTOM SECRETS\n\
+             SCOPE          TARGETS                                                        ENV        PLACEHOLDER               SECRET\n\
+             sbxm-example   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO   ghp_redacted\n",
+        );
+        require_github(&host, "sbxm-example").expect("the registration this build asks for passes");
+    }
+
+    #[test]
     fn a_service_secret_is_not_accepted_in_place_of_a_custom_one() {
         // service secretはproxyのgithub presetを通り、classic tokenを注入しない。
         // 登録されていても、Sandboxがrepositoryへ届くとは限らない。

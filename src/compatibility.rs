@@ -864,6 +864,27 @@ mod tests {
             vec!["github.com".to_string(), "gitlab.com".to_string()]
         );
 
+        // 実機がwildcardを登録したscopeで出す形。`TARGETS`はcommaと空白1つで区切り、
+        // wildcardは展開せず書いたまま並べる。scope名とsecretは記録から伏せてある。
+        let wildcards = "CUSTOM SECRETS\n\
+                         SCOPE          TARGETS                                                        ENV        PLACEHOLDER               SECRET\n\
+                         sbxm-example   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO   ghp_redacted\n";
+        let parsed = parse_custom_secrets(wildcards).unwrap();
+        assert_eq!(
+            parsed,
+            vec![CustomSecret {
+                targets: vec![
+                    "github.com".to_string(),
+                    "**.github.com".to_string(),
+                    "**.githubusercontent.com".to_string(),
+                    "ghcr.io".to_string(),
+                ],
+                env: "GH_TOKEN".to_string(),
+                placeholder: "sbx-cs-Y1k0SfTWbkN6HzCO".to_string(),
+            }],
+            "the pattern is compared as written, so it has to survive the listing unexpanded"
+        );
+
         for output in [
             "",
             "CUSTOM SECRETS\nSCOPE          ENV\nsbxm-example   GH_TOKEN\n",
