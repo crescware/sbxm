@@ -261,12 +261,14 @@ impl Switch<'_> {
             }
         }
 
+        // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは
+        // 作成時に結び付くため、作り直す前に確認する。
+        secret::require_github(host, name.as_str())?;
+
         let ready = sandbox::ensure(host, name, template, workspace_root)?;
 
         identity::ensure(host, &ready.name, &config.git)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
-        // 再作成したSandboxは、`add`と同じ条件でGitHubへ届く必要がある。
-        secret::require_github(host, &ready.name)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
         repository::ensure_worktrees(host, &ready.name, &layout, paths, metadata, &branch)?;
