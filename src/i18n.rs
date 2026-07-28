@@ -263,6 +263,44 @@ impl Catalog {
 
 #[cfg(test)]
 mod tests {
+    /// 共有した定義が、参照している側で実際に展開されること。
+    ///
+    /// FTLのparseだけでは、message参照が解決されるかは分からない。
+    #[test]
+    fn a_shared_definition_is_expanded_where_it_is_referenced() {
+        for locale in Locale::ALL {
+            let catalog = Catalog::new(locale);
+            let scopes = catalog
+                .text("github-token-scopes")
+                .expect("the shared definition renders");
+            assert!(
+                scopes.contains("Contents"),
+                "{locale:?}: the permissions are named: {scopes}"
+            );
+
+            // `add`の案内と、未登録で止まったときの案内は同じ定義を出す。
+            let guidance = catalog
+                .text("add-next-token")
+                .expect("the guidance renders");
+            assert!(
+                guidance.contains("Contents"),
+                "{locale:?}: add repeats the permissions: {guidance}"
+            );
+
+            let remediation = catalog
+                .format(&msg!(
+                    "remediation-github-secret-missing",
+                    command = "sbx secret set example github"
+                ))
+                .expect("the remediation renders");
+            assert!(
+                remediation.contains("Contents")
+                    && remediation.contains("sbx secret set example github"),
+                "{locale:?}: {remediation}"
+            );
+        }
+    }
+
     use super::*;
     use crate::msg;
 

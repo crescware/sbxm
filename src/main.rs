@@ -33,8 +33,8 @@ use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
 use workflow::select::TerminalProjectPrompt;
 use workflow::{
-    add, destroy, inventory, ls, open, prepare, rebuild, sandbox, status_global, status_project,
-    stop, sync_files,
+    add, destroy, inventory, ls, open, prepare, rebuild, sandbox, secret, status_global,
+    status_project, stop, sync_files,
 };
 
 fn main() -> ProcessExitCode {
@@ -543,13 +543,15 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
     );
 
     println!("\n{}", text_or_report(catalog, "add-next-heading"));
+    // tokenの権限は、失敗したときだけでなくここでも示す。暗記させない。
+    println!("  {}", text_or_report(catalog, "add-next-token"));
     println!(
         "  {}",
         format_or_report(
             catalog,
             &msg!(
                 "add-next-secret",
-                command = format!("sbx secret set {} github", output.sandbox)
+                command = secret::register_command(&output.sandbox)
             )
         )
     );

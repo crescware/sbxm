@@ -86,7 +86,8 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 | Sandbox作成 | `sbx create --name <name> --template <image> shell <workspace>` | exit statusのみ |
 | Sandbox内実行 | `sbx exec [--user root] <name> -- <argv>` | stdoutとexit status。`--`の有無はどちらも受け付ける |
 | file転送 | `sbx cp --follow-link <source> <name>:<path>` | exit statusのみ |
-| secret存在確認 | `sbx secret ls <name>` | `SCOPE TYPE NAME SECRET`の表。`TYPE`が`service`の行の`NAME`だけを読む。1件もない場合は`No secrets found`で始まる文になる。`--service`は`SECRET`列へ値の一部を出すため使わない |
+| secret存在確認 | `sbx secret ls <name>` | 2つの表を出す。前半は`SCOPE TYPE NAME SECRET`のservice secret、後半は`CUSTOM SECRETS`の見出しに続く`SCOPE TARGETS ENV PLACEHOLDER SECRET`のcustom secret。読むのは後半の`TARGETS`と`ENV`だけとする。`TARGETS`は1列に複数hostを並べうるため、列の区切りは空白2つ以上とする。`PLACEHOLDER`と`SECRET`は読まない。1件もない場合は`No secrets found`で始まる文になる。`--service`は`SECRET`列へ値の一部を出すため使わない |
+| secret登録（利用者が実行） | `sbx secret set-custom <name> --host github.com --env GH_TOKEN --value <token>` | Sandboxへplaceholderを渡し、proxyがgithub.com宛のrequest headerで本物のtokenへ差し替える。結び付きはSandboxの作成時に決まる |
 | login状態 | `sbx login status --json` | login済みかどうかを示す真偽値 |
 | image存在確認 | `docker image ls --quiet <image>` | 出力が空かどうか |
 | image検証 | `docker image inspect <image>` | `Id`と`Config.Labels` |
@@ -429,17 +430,23 @@ gh config set git_protocol https --host github.com
 
 ### 9.10 GitHub secret
 
-案件限定fine-grained personal access tokenの発行と入力は自動化しない。必要permissionは`Contents: read/write`、`Metadata: read`、必要な場合だけPull requests、Issues、Actionsとする。
+案件限定personal access tokenの発行と入力は自動化しない。必要権限は対象repositoryのread/writeとし、fine-grainedなら`Contents: read/write`と`Metadata: read`、必要な場合だけPull requests、Issues、Actionsを追加する。classicなら`repo` scopeとする。
 
 期待する利用者向けcommand:
 
 ```text
-sbx secret set <sandbox-name> github
+sbx secret set-custom <sandbox-name> --host github.com --env GH_TOKEN --value <token>
 ```
 
-存在確認は実機で確認したread-only commandとstructured outputだけを使用する。secret値を取得・表示しない。
+`github` service secretは使わない。proxyのgithub presetはtokenの形で扱いを変え、classic tokenを注入しない。実機では、同一のclassic tokenがSandboxの外から`200`、中から`401`を返した。custom secretはtokenの形を問わず、Sandboxにはplaceholderだけを見せる。
 
-未登録なら、発行条件と上記commandを表示して前提条件不足のexit code `1`で停止する。登録後は同じ`add`を再実行し、Sandboxを再利用して次工程へ進む。
+存在確認は実機で確認したread-only commandとstructured outputだけを使用する。secret値もplaceholderも取得・表示しない。
+
+custom secretはSandboxの作成時に結び付く。したがって確認はSandboxを作る前、かつimageを組む前に行う。未登録なら、発行条件と上記commandを表示して前提条件不足のexit code `1`で停止する。登録後は同じ`prepare`を再実行し、次工程へ進む。
+
+登録済みであることからSandboxへ届いたと推定しない。Sandbox作成後に環境変数`GH_TOKEN`を中から読み、空ならexit code `1`で停止し、`sbx rm <sandbox-name>`による作り直しを示す。
+
+Sandbox内のgitには、placeholderをcredentialとして使わせる。`credential.https://github.com.helper`へ、usernameに任意の値、passwordに`$GH_TOKEN`を返すhelperを設定する。helperはtokenを持たず、変数名だけを持つ。
 
 ### 9.11 Bare clone
 
@@ -447,13 +454,15 @@ Sandbox内:
 
 ```text
 mkdir -p <bare-root>
-git clone --bare
+git init --bare <bare-git-dir>
+git --git-dir <bare-git-dir> remote add origin
   https://github.com/<owner-display>/<repository-display>.git
-  <bare-git-dir>
 git --git-dir <bare-git-dir> config
   remote.origin.fetch +refs/heads/*:refs/remotes/origin/*
 git --git-dir <bare-git-dir> fetch --prune origin
 ```
+
+`git clone --bare`は使わない。remoteのbranchをすべて`refs/heads/*`へ複製するため、attached modeが同じ名前でlocal branchを作ろうとした時点で`a branch named <branch> already exists`となる。空のbare repositoryへfetchすれば`refs/heads/*`は空のまま始まり、local branchはworktreeを作るときにだけ生まれる。bare repositoryの中のlocal branchがsbxmの作ったものだけになるため、managed worktreeの判定も素直になる。
 
 再利用条件:
 

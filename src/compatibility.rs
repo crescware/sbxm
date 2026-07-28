@@ -405,21 +405,45 @@ fn active_sessions(object: &serde_json::Map<String, serde_json::Value>) -> Resul
     Ok(None)
 }
 
-/// `sbx secret ls`が示すsecretの名前。
+/// `sbx secret ls`が示すcustom secretの登録。
 ///
-/// 値は取得も表示もしない。存在の有無だけを読む。
-pub fn parse_secret_names(output: &str) -> Result<Vec<String>> {
+/// 対象hostと環境変数名だけを持つ。PLACEHOLDER列とSECRET列は読まない。前者は
+/// sandboxの中から観測できる値であり、後者にはtokenの一部が現れる。
+#[derive(Debug, PartialEq, Eq)]
+pub struct CustomSecret {
+    /// proxyが認証を差し替える対象host。
+    pub targets: Vec<String>,
+    /// placeholderを受け取るSandbox内の環境変数名。
+    pub env: String,
+}
+
+/// custom secretの表が始まる見出し。
+const CUSTOM_SECRETS_HEADING: &str = "CUSTOM SECRETS";
+
+/// `sbx secret ls`が示すcustom secretを読む。
+///
+/// 値は取得も表示もしない。存在と宛先だけを読む。service secretとregistry secretは
+/// 別の表に並び、custom secretとは扱いが異なるため読み飛ばす。
+pub fn parse_custom_secrets(output: &str) -> Result<Vec<CustomSecret>> {
     let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Err(unparseable("sbx secret ls", "the output is empty"));
+    }
     // 1件もない場合は表ではなく文で示す。
     if trimmed.starts_with("No secrets found") {
         return Ok(Vec::new());
     }
 
     let mut lines = trimmed.lines();
+    // 見出しがない出力は、custom secretが1件もないことを示す。`any`は一致した行まで
+    // 読み進めるので、続く`find`が見出し直後の行から始まる。
+    if !lines.any(|line| line.trim() == CUSTOM_SECRETS_HEADING) {
+        return Ok(Vec::new());
+    }
     let header = lines
-        .next()
-        .ok_or_else(|| unparseable("sbx secret ls", "the output is empty"))?;
-    let columns: Vec<&str> = header.split_whitespace().collect();
+        .find(|line| !line.trim().is_empty())
+        .ok_or_else(|| unparseable("sbx secret ls", "the custom secret listing has no header"))?;
+    let columns = table_fields(header);
     let column_of = |wanted: &str| -> Result<usize> {
         columns
             .iter()
@@ -427,36 +451,52 @@ pub fn parse_secret_names(output: &str) -> Result<Vec<String>> {
             .ok_or_else(|| {
                 unparseable(
                     "sbx secret ls",
-                    &format!("the listing has no {wanted} column"),
+                    &format!("the custom secret listing has no {wanted} column"),
                 )
             })
     };
-    let kind_at = column_of("TYPE")?;
-    let name_at = column_of("NAME")?;
+    let targets_at = column_of("TARGETS")?;
+    let env_at = column_of("ENV")?;
 
-    let mut names = Vec::new();
+    let mut customs = Vec::new();
     for line in lines {
+        // 空行が表の終わりを示す。
         if line.trim().is_empty() {
-            continue;
+            break;
         }
-        let fields: Vec<&str> = line.split_whitespace().collect();
+        let fields = table_fields(line);
         // 列数の合わない行からは、どの値がどの列かを決められない。
         if fields.len() != columns.len() {
             return Err(unparseable(
                 "sbx secret ls",
                 &format!(
-                    "a row holds {} values for {} columns",
+                    "a custom secret row holds {} values for {} columns",
                     fields.len(),
                     columns.len()
                 ),
             ));
         }
-        // serviceに紐づくsecretだけを対象とする。registry secretは別種である。
-        if fields[kind_at] == "service" {
-            names.push(fields[name_at].to_string());
-        }
+        customs.push(CustomSecret {
+            targets: fields[targets_at]
+                .split([',', ' '])
+                .filter(|target| !target.is_empty())
+                .map(str::to_string)
+                .collect(),
+            env: fields[env_at].to_string(),
+        });
     }
-    Ok(names)
+    Ok(customs)
+}
+
+/// 桁を揃えた表の1行を列へ分ける。
+///
+/// 区切りは2つ以上の空白とする。1つの列が複数の値を空白で並べることがあり、
+/// 空白1つで切ると列の対応が崩れる。
+fn table_fields(line: &str) -> Vec<&str> {
+    line.split("  ")
+        .map(str::trim)
+        .filter(|field| !field.is_empty())
+        .collect()
 }
 
 /// 一覧形式と1行1件のJSON形式のどちらでも読む。
@@ -826,27 +866,47 @@ mod tests {
 
     #[test]
     fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
-        // 対象versionが実際に出力する表。SECRET列は`(stored)`で、値は現れない。
-        let observed = "SCOPE            TYPE      NAME     SECRET\n\
-                        crescware-sbxm   service   github   (stored)\n";
-        assert_eq!(parse_secret_names(observed).unwrap(), vec!["github"]);
+        // 対象versionが実際に出力する形。service secretの表のあとに、見出しを挟んで
+        // custom secretの表が続く。
+        let observed = "SCOPE           TYPE      NAME     SECRET\n\
+                        sbxm-example    service   github   (stored)\n\
+                        \n\
+                        CUSTOM SECRETS\n\
+                        SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
+                        sbxm-example   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n";
+        assert_eq!(
+            parse_custom_secrets(observed).unwrap(),
+            vec![CustomSecret {
+                targets: vec!["github.com".to_string()],
+                env: "GH_TOKEN".to_string(),
+            }]
+        );
+
+        // custom secretの見出しがない出力は、1件も登録がないことを示す。service secretの
+        // 表だけを読み違えて登録ありとしない。
+        let services_only = "SCOPE           TYPE      NAME     SECRET\n\
+                             sbxm-example    service   github   (stored)\n";
+        assert!(parse_custom_secrets(services_only).unwrap().is_empty());
 
         // 1件もない場合は表ではなく文で示す。
-        let absent = "No secrets found for scope \"crescware-sbxm\" and service \"github\".\n";
-        assert!(parse_secret_names(absent).unwrap().is_empty());
+        let absent = "No secrets found for scope \"sbxm-example\".\n";
+        assert!(parse_custom_secrets(absent).unwrap().is_empty());
 
-        // registry secretはserviceではない。GitHubのservice secretと混ぜない。
-        let mixed = "SCOPE            TYPE       NAME        SECRET\n\
-                     crescware-sbxm   registry   ghcr.io     (stored)\n\
-                     crescware-sbxm   service    github      (stored)\n";
-        assert_eq!(parse_secret_names(mixed).unwrap(), vec!["github"]);
+        // 1つの列が複数のhostを並べることがある。空白1つで切ると列がずれる。
+        let several = "CUSTOM SECRETS\n\
+                       SCOPE          TARGETS                  ENV        PLACEHOLDER      SECRET\n\
+                       sbxm-example   github.com gitlab.com    GH_TOKEN   sbx-cs-example   ghp_example\n";
+        assert_eq!(
+            parse_custom_secrets(several).unwrap()[0].targets,
+            vec!["github.com".to_string(), "gitlab.com".to_string()]
+        );
 
         for output in [
             "",
-            "SCOPE   NAME\ncrescware-sbxm   github\n",
-            "SCOPE            TYPE      NAME     SECRET\ncrescware-sbxm   service\n",
+            "CUSTOM SECRETS\nSCOPE          ENV\nsbxm-example   GH_TOKEN\n",
+            "CUSTOM SECRETS\nSCOPE          TARGETS      ENV\nsbxm-example   github.com\n",
         ] {
-            let error = parse_secret_names(output).expect_err("{output} must be refused");
+            let error = parse_custom_secrets(output).expect_err("{output} must be refused");
             assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
         }
     }

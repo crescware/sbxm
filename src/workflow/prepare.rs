@@ -89,6 +89,10 @@ pub fn run(
         return Ok(output);
     }
 
+    // custom secretはSandboxの作成時に結び付く。あとから登録しても既存のSandboxには
+    // 届かないため、作成より前に、そしてimageを組む前に確認する。
+    secret::require_github(host, name.as_str())?;
+
     let current = super::add::current_dockerfile_hash(&paths)?;
     let generation = adopt_generation(
         host,
@@ -113,10 +117,11 @@ pub fn run(
     let ready = sandbox::ensure(host, &name, &loaded, workspace_root)?;
     // hostのSSH Agentが届かないことを、daemonの起動条件から推定せず中から確かめる。
     sandbox::require_credentials_isolated(host, &ready.name)?;
+    secret::require_placeholder_present(host, &ready.name)?;
 
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
     identity::ensure(host, &ready.name, &config.git)?;
-    secret::require_github(host, &ready.name)?;
+    secret::configure_git_credential(host, &ready.name)?;
 
     repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
     let branch =
@@ -361,6 +366,7 @@ mod tests {
         /// Template名 -> 対応するimage ID。
         templates: RefCell<BTreeMap<String, String>>,
         sandboxes: RefCell<Vec<SandboxRow>>,
+        /// 登録済みcustom secretの対象host。
         secrets: RefCell<Vec<String>>,
         /// Sandbox内に存在するpath。
         present: RefCell<BTreeSet<String>>,
@@ -383,6 +389,9 @@ mod tests {
         name: String,
         workspace: String,
         template: String,
+        /// 作成時にcustom secretが登録済みだったか。実物と同じく、あとから登録しても
+        /// 既に存在するSandboxへはplaceholderが届かない。
+        placeholder: bool,
     }
 
     const IMAGE_ID: &str =
@@ -394,7 +403,7 @@ mod tests {
                 images: RefCell::new(BTreeMap::new()),
                 templates: RefCell::new(BTreeMap::new()),
                 sandboxes: RefCell::new(Vec::new()),
-                secrets: RefCell::new(vec!["github".to_string()]),
+                secrets: RefCell::new(vec!["github.com".to_string()]),
                 present: RefCell::new(BTreeSet::new()),
                 digests: RefCell::new(BTreeMap::new()),
                 settings: RefCell::new(BTreeMap::new()),
@@ -612,10 +621,16 @@ mod tests {
                     _kit,
                     workspace,
                 ] => {
+                    let registered = self
+                        .secrets
+                        .borrow()
+                        .iter()
+                        .any(|target| target == crate::workflow::secret::GITHUB_HOST);
                     self.sandboxes.borrow_mut().push(SandboxRow {
                         name: name.to_string(),
                         workspace: workspace.to_string(),
                         template: template.to_string(),
+                        placeholder: registered,
                     });
                     (0, String::new())
                 }
@@ -624,9 +639,13 @@ mod tests {
                     if secrets.is_empty() {
                         return (0, format!("No secrets found for scope \"{name}\".\n"));
                     }
-                    let mut table = String::from("SCOPE   TYPE      NAME     SECRET\n");
-                    for secret in secrets.iter() {
-                        table.push_str(&format!("{name}   service   {secret}   (stored)\n"));
+                    let mut table = String::from(
+                        "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n",
+                    );
+                    for target in secrets.iter() {
+                        table.push_str(&format!(
+                            "{name}   {target}   GH_TOKEN   sbx-cs-example   ghp_example\n"
+                        ));
                     }
                     (0, table)
                 }
@@ -652,10 +671,23 @@ mod tests {
                 return (0, String::new());
             };
             let inner = &args[position + 1..];
+            let sandbox = args[position - 1];
             let missing = (1, String::new());
             let ok = (0, String::new());
 
             match inner {
+                ["sh", "-c", script] if *script == super::super::secret::placeholder_probe() => {
+                    let carried = self
+                        .sandboxes
+                        .borrow()
+                        .iter()
+                        .any(|row| row.name == sandbox && row.placeholder);
+                    if carried {
+                        (0, "sbx-cs-example".to_string())
+                    } else {
+                        ok
+                    }
+                }
                 // 実物と同じく、SSH Agentは届かない。`printenv`は未設定を`1`で示す。
                 ["printenv", "SSH_AUTH_SOCK"] => missing,
                 ["ssh-add", "-L"] => (crate::workflow::sandbox::SSH_ADD_NO_AGENT, String::new()),
@@ -725,8 +757,11 @@ mod tests {
                         .insert(key.to_string(), value.to_string());
                     ok
                 }
-                ["git", "clone", "--bare", url, git_dir] => {
+                ["git", "init", "--bare", git_dir] => {
                     self.present.borrow_mut().insert(git_dir.to_string());
+                    ok
+                }
+                ["git", "--git-dir", _, "remote", "add", "origin", url] => {
                     self.repository
                         .borrow_mut()
                         .insert("remote.origin.url".to_string(), url.to_string());
@@ -907,7 +942,7 @@ mod tests {
         ("sbx cp --follow-link", ErrorId::ExternalCommandFailed),
         ("config --global user.name", ErrorId::ExternalCommandFailed),
         ("sbx secret ls", ErrorId::ExternalCommandFailed),
-        ("git clone --bare", ErrorId::ExternalCommandFailed),
+        ("git init --bare", ErrorId::ExternalCommandFailed),
         ("check-ref-format", ErrorId::InvalidBranchName),
         ("worktree add", ErrorId::ExternalCommandFailed),
     ];
@@ -959,7 +994,7 @@ mod tests {
             "docker build",
             "sbx template load",
             "sbx create",
-            "git clone --bare",
+            "git init --bare",
         ] {
             assert!(
                 !tail.iter().any(|call| call.contains(done)),
@@ -1012,6 +1047,26 @@ mod tests {
     }
 
     #[test]
+    fn git_is_given_the_placeholder_before_it_reaches_github() {
+        let bench = bench();
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", None, None);
+        bench.build(&world, &request).expect("the build completes");
+
+        let calls = world.invocations();
+        let position = |needle: &str| {
+            calls
+                .iter()
+                .position(|call| call.contains(needle))
+                .unwrap_or_else(|| panic!("no command matched {needle}: {calls:?}"))
+        };
+        assert!(
+            position("credential.https://github.com.helper") < position("fetch --prune origin"),
+            "a fetch without the credential asks for a username and never finishes"
+        );
+    }
+
+    #[test]
     fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there() {
         let bench = bench();
         let world = World::new();
@@ -1023,11 +1078,21 @@ mod tests {
             .expect_err("a build without repository access cannot continue");
         assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
         assert!(
-            !world.ran("git clone --bare"),
-            "the sandbox repository is not cloned without the secret"
+            !world.ran("git init --bare"),
+            "the sandbox repository is not made without the secret"
+        );
+        // custom secretはSandboxの作成時に結び付く。先に作ってしまうと、登録しても
+        // placeholderの届かないSandboxが残り、作り直しを強いることになる。
+        assert!(
+            !world.ran("sbx create"),
+            "the sandbox is not created before the secret it has to be built with"
+        );
+        assert!(
+            !world.ran("docker build"),
+            "the image is not built before the missing secret is reported"
         );
 
-        world.secrets.borrow_mut().push("github".to_string());
+        world.secrets.borrow_mut().push("github.com".to_string());
         let output = bench
             .build(&world, &request)
             .expect("the same add continues once the secret is registered");
@@ -1066,7 +1131,8 @@ mod tests {
             );
         }
         // bare repositoryとworktreeは、1 treeでも3 treesでも分かれている。
-        assert!(world.ran("git clone --bare https://github.com/Example-Org/Example-Repo.git /home/agent/work/example-repo/.git"));
+        assert!(world.ran("git init --bare /home/agent/work/example-repo/.git"));
+        assert!(world.ran("remote add origin https://github.com/Example-Org/Example-Repo.git"));
     }
 
     #[test]
@@ -1083,7 +1149,6 @@ mod tests {
             ("git clone git@github.com", TimeoutClass::RepositoryTransfer),
             ("sbx template load", TimeoutClass::SandboxLifecycle),
             ("sbx create", TimeoutClass::SandboxLifecycle),
-            ("git clone --bare", TimeoutClass::RepositoryTransfer),
             ("fetch --prune origin", TimeoutClass::RepositoryTransfer),
         ] {
             assert_eq!(

@@ -261,12 +261,17 @@ impl Switch<'_> {
             }
         }
 
+        // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは
+        // 作成時に結び付くため、作り直す前に確認する。
+        secret::require_github(host, name.as_str())?;
+
         let ready = sandbox::ensure(host, name, template, workspace_root)?;
 
+        secret::require_placeholder_present(host, &ready.name)?;
+
         identity::ensure(host, &ready.name, &config.git)?;
+        secret::configure_git_credential(host, &ready.name)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
-        // 再作成したSandboxは、`add`と同じ条件でGitHubへ届く必要がある。
-        secret::require_github(host, &ready.name)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
         repository::ensure_worktrees(host, &ready.name, &layout, paths, metadata, &branch)?;
@@ -361,10 +366,15 @@ mod tests {
         host.answering(
             &format!("secret ls {name}"),
             0,
-            "SCOPE   TYPE      NAME     SECRET\nx   service   github   (stored)\n",
+            "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
         )
         .answering(&format!("exec {name} -- printenv SSH_AUTH_SOCK"), 1, "")
         .answering(&format!("exec {name} -- ssh-add -L"), 2, "")
+        .answering(
+            &format!("exec {name} -- sh -c {}", secret::placeholder_probe()),
+            0,
+            "sbx-cs-example",
+        )
     }
 
     #[test]
@@ -875,7 +885,7 @@ mod tests {
             .answering(
                 &format!("secret ls {}", project.sandbox),
                 0,
-                "SCOPE   TYPE      NAME     SECRET\nx   service   github   (stored)\n",
+                "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
             );
         // 再作成後のSandbox内で、共有repositoryとworktreeが期待どおりに揃う。
         let layout = SandboxLayout::new(&project.metadata.canonical_id);

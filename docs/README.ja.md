@@ -19,6 +19,30 @@ Docker Sandboxes CLI 0.37.0以降。
   `env HOME="$(mktemp -d)" sbxm ...`
 - versionを正確に記録する: `sbx version`、`docker version`
 
+### GitHub token
+
+`prepare`はSandboxの中からrepositoryをcloneする。SandboxにはSSH Agentが届かないため、Docker Sandboxesのsecretとして保存したtokenで認証する。`add`がSandbox名と登録commandを表示するので、tokenは`add`と`prepare`の間で登録する。
+
+tokenは`github` service secretではなく、custom secretとして登録する。
+
+```
+sbx secret set-custom <sandbox> --host github.com --env GH_TOKEN --value <token>
+```
+
+custom secretはSandboxへplaceholderだけを見せ、本物のtokenはproxyに留める。proxyがgithub.com宛のrequest headerでplaceholderを本物へ差し替える。tokenはSandboxへ入らず、tokenの種類も問わない。`github` service secretを使わないのは、実機でfine-grained tokenは認証できたのにclassic tokenは認証されないままだったためである。
+
+custom secretはSandboxの作成時に結び付くため、あとから登録しても既存のSandboxには届かない。`prepare`は何かを作る前にsecretを確認し、作成後にSandboxの中を見てplaceholderが届いたことを確かめる。
+
+対象repositoryをread/writeできるtokenを発行する。
+
+| token | 設定 |
+|---|---|
+| fine-grained | Contents read/write、Metadata read |
+| fine-grained、任意 | Pull requests、Issues、Actionsは作業に必要な場合だけ |
+| classic | `repo` scope |
+
+この要件は`add`も表示するので、暗記する必要はない。
+
 ### Redaction
 
 記録する前に次を除く。
@@ -36,7 +60,9 @@ Docker Sandboxes CLI 0.37.0以降。
 | 2 | `sbxm --lang ja init`、`sbxm --lang en init` | 0 | helpと出力が選択言語に従う |
 | 3 | `sbxm add <owner>/<repo>` | 0 | 案件を登録し、host cloneを取り、Sandbox名とtoken登録commandを示す |
 | 4 | secretを登録してから`sbxm prepare <owner>/<repo>` | 0 | Sandboxとrepositoryを一度の実行で構築する |
-| 5 | secret未登録で`sbxm prepare <owner>/<repo>` | 1 | `github-secret-missing`で停止し、登録commandを示す |
+| 5 | secret未登録で`sbxm prepare <owner>/<repo>` | 1 | imageを組む前、Sandboxを作る前に`github-secret-missing`で停止し、登録commandを示す |
+| 5a | Sandbox作成後にsecretを登録して`sbxm prepare` | 1 | `sandbox-secret-not-applied`で停止し、作り直すための`sbx rm`を示す |
+| 5b | Sandboxの中でbare repositoryに対し`git ls-remote origin` | 0 | placeholderで認証され、usernameを尋ねられない |
 | 6 | `sbxm add <owner>/<repo2> --worktrees 3 --detach develop` のあと `sbxm prepare` | 0 | `origin/develop`の同じcommitから3つ |
 | 7 | Sandbox内で手動のworktreeを追加 | - | 以降のunmanaged caseの前提 |
 | 8 | Sandboxのworkspaceを確認 | - | 案件pathもuser homeも見えない |

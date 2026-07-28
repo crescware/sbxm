@@ -22,6 +22,40 @@ Docker Desktop and the Docker Sandboxes CLI 0.37.0 or later.
   `env HOME="$(mktemp -d)" sbxm ...`
 - Record the exact CLI version: `sbx version`, `docker version`.
 
+### The GitHub token
+
+`prepare` clones the repository from inside the sandbox, which has no SSH
+agent, so it authenticates with a token stored as a Docker Sandboxes secret.
+`add` prints the sandbox name and the command that registers it; the token is
+registered between `add` and `prepare`.
+
+The token is registered as a custom secret, not as the `github` service secret:
+
+```
+sbx secret set-custom <sandbox> --host github.com --env GH_TOKEN --value <token>
+```
+
+A custom secret shows the sandbox a placeholder and leaves the real token with
+the proxy, which substitutes it into the request headers that go to github.com.
+The token never enters the sandbox, and the token type does not matter. The
+`github` service secret was not usable here: on real hardware it authenticated a
+fine-grained token and left a classic one unauthenticated.
+
+A custom secret binds to a sandbox when the sandbox is created, so registering
+it afterwards does not reach a sandbox that already exists. `prepare` asks for
+the secret before it creates anything, and looks inside the sandbox afterwards
+to confirm the placeholder arrived.
+
+Issue a token that can read and write that one repository.
+
+| Token | Setting |
+|---|---|
+| Fine-grained | Contents read and write, Metadata read |
+| Fine-grained, optional | Pull requests, Issues, Actions, only if the work needs them |
+| Classic | The `repo` scope |
+
+`add` prints these requirements too, so they do not have to be remembered.
+
 ### Redaction
 
 Before recording anything, remove:
@@ -39,7 +73,9 @@ Before recording anything, remove:
 | 2 | `sbxm --lang ja init`, `sbxm --lang en init` | 0 | help and output follow the chosen language |
 | 3 | `sbxm add <owner>/<repo>` | 0 | registers the project, clones it onto the host, and names the sandbox and the token command |
 | 4 | register the secret, then `sbxm prepare <owner>/<repo>` | 0 | builds the sandbox and the repository in one run |
-| 5 | `sbxm prepare <owner>/<repo>` without the secret | 1 | stops at `github-secret-missing` with the command that registers it |
+| 5 | `sbxm prepare <owner>/<repo>` without the secret | 1 | stops at `github-secret-missing` with the command that registers it, before it builds an image or creates a sandbox |
+| 5a | register the secret after the sandbox exists, then `sbxm prepare` | 1 | stops at `sandbox-secret-not-applied` and names the `sbx rm` that lets it be built anew |
+| 5b | inside the sandbox, `git ls-remote origin` in the bare repository | 0 | git authenticates with the placeholder and never asks for a username |
 | 6 | `sbxm add <owner>/<repo2> --worktrees 3 --detach develop` then `sbxm prepare` | 0 | three worktrees on the same commit of `origin/develop` |
 | 7 | create an extra worktree inside the sandbox by hand | - | it is the unmanaged case for the later checks |
 | 8 | inspect the sandbox workspace | - | no project path and no user home is visible inside |
