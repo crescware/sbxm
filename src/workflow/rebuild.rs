@@ -270,6 +270,7 @@ impl Switch<'_> {
         secret::require_placeholder_present(host, &ready.name)?;
 
         identity::ensure(host, &ready.name, &config.git)?;
+        secret::configure_git_credential(host, &ready.name)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;

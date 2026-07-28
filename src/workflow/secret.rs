@@ -101,6 +101,30 @@ pub fn require_placeholder_present(host: &dyn HostEnvironment, sandbox: &str) ->
     ))
 }
 
+/// Sandbox内のgitがGitHubへ提示するcredentialのconfig key。
+///
+/// github.comだけに絞る。ほかのhostへplaceholderを送っても意味がなく、送る相手を
+/// 広げる理由がない。
+fn credential_key() -> String {
+    format!("credential.https://{GITHUB_HOST}.helper")
+}
+
+/// Sandbox内のgitに、placeholderをcredentialとして使わせる。
+///
+/// helperはplaceholderを読むだけで、tokenは持たない。gitはこれをBasic認証として
+/// 送り、proxyがgithub.com宛のrequest headerで本物のtokenへ差し替える。usernameは
+/// GitHubのgit endpointでは任意の値でよい。
+pub fn configure_git_credential(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
+    let helper = format!("!f() {{ echo username=x; echo password=${GITHUB_TOKEN_ENV}; }}; f");
+    super::sandbox::exec(
+        host,
+        sandbox,
+        &["git", "config", "--global", &credential_key(), &helper],
+    )?
+    .require_success()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +260,17 @@ mod tests {
                 .iter()
                 .any(|(_, value)| value == "sbx rm sbxm-example")
         );
+    }
+
+    #[test]
+    fn the_credential_helper_reads_the_placeholder_and_holds_no_token() {
+        let host = FakeSbx::listing("");
+        configure_git_credential(&host, "sbxm-example").expect("the helper is configured");
+
+        let call = host.calls.borrow()[0].join(" ");
+        assert!(call.contains("credential.https://github.com.helper"));
+        // helperはSandboxの環境変数を読むだけで、値そのものは持たない。
+        assert!(call.contains("password=$GH_TOKEN"));
     }
 
     #[test]

@@ -121,6 +121,7 @@ pub fn run(
 
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
     identity::ensure(host, &ready.name, &config.git)?;
+    secret::configure_git_credential(host, &ready.name)?;
 
     repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
     let branch =
@@ -1040,6 +1041,26 @@ mod tests {
                 world.since(mark)
             );
         }
+    }
+
+    #[test]
+    fn git_is_given_the_placeholder_before_it_reaches_github() {
+        let bench = bench();
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", None, None);
+        bench.build(&world, &request).expect("the build completes");
+
+        let calls = world.invocations();
+        let position = |needle: &str| {
+            calls
+                .iter()
+                .position(|call| call.contains(needle))
+                .unwrap_or_else(|| panic!("no command matched {needle}: {calls:?}"))
+        };
+        assert!(
+            position("credential.https://github.com.helper") < position("git clone --bare"),
+            "a clone without the credential asks for a username and never finishes"
+        );
     }
 
     #[test]
