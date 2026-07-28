@@ -757,6 +757,10 @@ mod tests {
                         .insert(key.to_string(), value.to_string());
                     ok
                 }
+                // 既定のtemplateはghを入れる。入れないSandboxはidentity moduleのtestが持つ。
+                ["sh", "-c", script] if *script == super::super::identity::gh_probe() => {
+                    (0, "yes".to_string())
+                }
                 ["gh", "config", "get", key, ..] => match self.settings.borrow().get(*key) {
                     Some(value) => (0, format!("{value}\n")),
                     None => missing,
