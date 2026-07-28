@@ -543,6 +543,8 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
     );
 
     println!("\n{}", text_or_report(catalog, "add-next-heading"));
+    // tokenの権限は、失敗したときだけでなくここでも示す。暗記させない。
+    println!("  {}", text_or_report(catalog, "add-next-token"));
     println!(
         "  {}",
         format_or_report(

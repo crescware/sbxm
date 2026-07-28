@@ -22,6 +22,23 @@ Docker Desktop and the Docker Sandboxes CLI 0.37.0 or later.
   `env HOME="$(mktemp -d)" sbxm ...`
 - Record the exact CLI version: `sbx version`, `docker version`.
 
+### The GitHub token
+
+`prepare` clones the repository from inside the sandbox, which has no SSH
+agent, so it authenticates with a token stored as a Docker Sandboxes secret.
+`add` prints the sandbox name and the command that registers it; the token is
+registered between `add` and `prepare`.
+
+Issue a fine-grained personal access token limited to that one repository.
+
+| Permission | Setting |
+|---|---|
+| Contents | Read and write |
+| Metadata | Read |
+| Pull requests, Issues, Actions | Only if the work needs them |
+
+`add` prints these requirements too, so they do not have to be remembered.
+
 ### Redaction
 
 Before recording anything, remove:

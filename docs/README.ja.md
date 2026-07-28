@@ -19,6 +19,20 @@ Docker Sandboxes CLI 0.37.0以降。
   `env HOME="$(mktemp -d)" sbxm ...`
 - versionを正確に記録する: `sbx version`、`docker version`
 
+### GitHub token
+
+`prepare`はSandboxの中からrepositoryをcloneする。SandboxにはSSH Agentが届かないため、Docker Sandboxesのsecretとして保存したtokenで認証する。`add`がSandbox名と登録commandを表示するので、tokenは`add`と`prepare`の間で登録する。
+
+対象repositoryに限定したfine-grained personal access tokenを発行する。
+
+| 権限 | 設定 |
+|---|---|
+| Contents | Read and write |
+| Metadata | Read |
+| Pull requests、Issues、Actions | 作業に必要な場合だけ |
+
+この要件は`add`も表示するので、暗記する必要はない。
+
 ### Redaction
 
 記録する前に次を除く。
