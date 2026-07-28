@@ -302,10 +302,6 @@ fn commands_that_are_not_implemented_yet_say_so_after_validating_their_arguments
 
     for arguments in [
         vec!["rebuild", "owner/repo"],
-        vec!["open", "owner/repo"],
-        vec!["stop", "owner/repo"],
-        vec!["ls"],
-        vec!["status", "owner/repo"],
         vec!["destroy", "--force", "owner/repo"],
     ] {
         let run = sbxm(home.path(), &arguments);
@@ -360,6 +356,117 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
     );
     assert!(written.contains("owner = \"Example-Org\""), "{written}");
     assert!(written.contains("mode = \"attached\""), "{written}");
+}
+
+#[test]
+fn ls_needs_the_sandbox_runtime_before_it_can_answer() {
+    let home = temp_home();
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).unwrap();
+    write_config(home.path(), &base, "en");
+
+    // 一覧はSandbox runtimeの状態から作るため、読めなければ何も出さない。
+    let run = sbxm(home.path(), &["--lang", "en", "ls"]);
+    assert_eq!(run.code, 1, "{}", run.stdout);
+    assert!(run.stdout.is_empty(), "no partial listing: {}", run.stdout);
+    assert!(
+        run.stderr.contains("external-command-not-found"),
+        "{}",
+        run.stderr
+    );
+}
+
+/// 案件を登録した状態のHOMEを作る。
+///
+/// `add`はhost toolに到達した時点で止まるが、登録そのものは終わっている。
+fn home_with_project(project: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let home = temp_home();
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).unwrap();
+    write_config(home.path(), &base, "en");
+    let run = sbxm(home.path(), &["--lang", "en", "add", project]);
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    (home, base)
+}
+
+/// 表の1列目を、header行を除いて取り出す。
+fn first_column(table: &str) -> Vec<String> {
+    table
+        .lines()
+        .skip(1)
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            line.split("  ")
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() {
+    let (home, _base) = home_with_project("owner/repo");
+
+    // host toolが無い環境でも、取得できた項目は後続検査の失敗にかかわらず表示する。
+    let run = sbxm(home.path(), &["--lang", "en", "status", "owner/repo"]);
+    assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
+
+    let (project, worktrees) = run
+        .stdout
+        .split_once("\nWORKTREES\n")
+        .expect("both sections are shown, even with nothing to list");
+    assert!(project.starts_with("PROJECT\n"), "{}", run.stdout);
+    assert_eq!(
+        first_column(project.trim_start_matches("PROJECT\n")),
+        vec![
+            "Project",
+            "Metadata",
+            "Project root",
+            "Host clone",
+            "Dockerfile",
+            "Image",
+            "Template archive",
+            "Sandbox",
+            "Workspace",
+            "GitHub secret",
+            "Bare repository",
+            "Worktrees",
+            "SSH Agent",
+        ],
+        "{}",
+        run.stdout
+    );
+    assert_eq!(
+        worktrees.lines().next(),
+        Some("PATH  KIND  MODE  STATE"),
+        "{}",
+        run.stdout
+    );
+
+    // 観測できなかった項目を、Sandboxが無いことへ丸めない。
+    assert!(
+        !run.stdout.contains("not-applicable"),
+        "an unread state is not the same as an absent sandbox: {}",
+        run.stdout
+    );
+    for id in ["global-scope-unobservable", "sbxm status --global"] {
+        assert!(run.stderr.contains(id), "{}", run.stderr);
+    }
+}
+
+#[test]
+fn the_japanese_project_status_translates_the_labels_and_keeps_the_values() {
+    let (home, _base) = home_with_project("owner/repo");
+
+    let run = sbxm(home.path(), &["--lang", "ja", "status", "owner/repo"]);
+    assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
+    // section名と項目名は訳し、状態値は訳さない。
+    assert!(run.stdout.contains("案件 (PROJECT)"), "{}", run.stdout);
+    assert!(run.stdout.contains("mismatch"), "{}", run.stdout);
+    // 凡例はSandboxの状態を説明し、host serviceの説明を流用しない。
+    assert!(!run.stdout.contains("service"), "{}", run.stdout);
 }
 
 #[test]
@@ -487,6 +594,7 @@ fn global_status_prints_only_the_global_section_and_the_published_columns() {
             "Daemon",
             "Docker Sandboxes login",
             "Active session inspection",
+            "Remote SSH",
         ]
     );
     assert!(!run.stdout.contains("PROJECT"), "{}", run.stdout);
@@ -500,7 +608,7 @@ fn global_status_reports_every_problem_and_exits_with_one() {
 
     assert_eq!(run.code, 1, "an incomplete host is not healthy");
     // 取得できた行は後続検査が失敗しても省略しない。
-    assert_eq!(run.stdout.lines().count(), 13);
+    assert_eq!(run.stdout.lines().count(), 14);
     for id in ["config-missing", "host-command-missing"] {
         assert!(
             run.stderr.contains(id),

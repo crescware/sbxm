@@ -101,10 +101,18 @@ pub enum ErrorId {
     SandboxRepositoryUnusable,
     StartRefUnresolved,
     ProjectNotManaged,
+    NoManagedProjects,
+    SelectionUnresolved,
     SandboxNotCreated,
     SandboxNotRunning,
+    SandboxStillRunning,
+    SandboxCheckUnobservable,
+    GlobalScopeUnobservable,
+    SshAgentExposed,
     SbxLoginMissing,
     SbxLoginUnobservable,
+    RemoteSshUnconfigured,
+    RemoteSshUnobservable,
 
     // --- 案件のhost path ---
     ProjectPathSymlink,
@@ -218,10 +226,18 @@ impl ErrorId {
             ErrorId::SandboxRepositoryUnusable => "sandbox-repository-unusable",
             ErrorId::StartRefUnresolved => "start-ref-unresolved",
             ErrorId::ProjectNotManaged => "project-not-managed",
+            ErrorId::NoManagedProjects => "no-managed-projects",
+            ErrorId::SelectionUnresolved => "selection-unresolved",
             ErrorId::SandboxNotCreated => "sandbox-not-created",
             ErrorId::SandboxNotRunning => "sandbox-not-running",
+            ErrorId::SandboxStillRunning => "sandbox-still-running",
+            ErrorId::SandboxCheckUnobservable => "sandbox-check-unobservable",
+            ErrorId::GlobalScopeUnobservable => "global-scope-unobservable",
+            ErrorId::SshAgentExposed => "ssh-agent-exposed",
             ErrorId::SbxLoginMissing => "sbx-login-missing",
             ErrorId::SbxLoginUnobservable => "sbx-login-unobservable",
+            ErrorId::RemoteSshUnconfigured => "remote-ssh-unconfigured",
+            ErrorId::RemoteSshUnobservable => "remote-ssh-unobservable",
 
             ErrorId::ProjectPathSymlink => "project-path-symlink",
             ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
@@ -403,6 +419,13 @@ impl Error {
         }
     }
 
+    /// 指定したerror IDを含むか。呼び出し側の分岐に使う。
+    pub fn contains_id(&self, id: ErrorId) -> bool {
+        self.diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.id == id)
+    }
+
     /// 最初の診断のerror ID。testと呼び出し側の分岐に使う。
     #[cfg(test)]
     pub fn first_id(&self) -> Option<ErrorId> {
@@ -552,10 +575,18 @@ mod tests {
             ErrorId::SandboxRepositoryUnusable,
             ErrorId::StartRefUnresolved,
             ErrorId::ProjectNotManaged,
+            ErrorId::NoManagedProjects,
+            ErrorId::SelectionUnresolved,
             ErrorId::SandboxNotCreated,
             ErrorId::SandboxNotRunning,
+            ErrorId::SandboxStillRunning,
+            ErrorId::SandboxCheckUnobservable,
+            ErrorId::GlobalScopeUnobservable,
+            ErrorId::SshAgentExposed,
             ErrorId::SbxLoginMissing,
             ErrorId::SbxLoginUnobservable,
+            ErrorId::RemoteSshUnconfigured,
+            ErrorId::RemoteSshUnobservable,
             ErrorId::ProjectPathSymlink,
             ErrorId::ProjectPathUnexpectedType,
             ErrorId::ProjectPathUnreadable,

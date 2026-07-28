@@ -261,6 +261,102 @@ fn the_legend_describes_the_value_instead_of_repeating_it() {
 }
 
 #[test]
+fn a_sandbox_state_and_a_host_service_state_are_described_separately() {
+    // 同じ`running`でも、Sandboxの状態とhost serviceの状態は別の説明を持つ。
+    for locale in locales() {
+        for value in ["running", "stopped"] {
+            let service = value_of(&locale, &format!("legend-{value}"));
+            let sandbox = value_of(&locale, &format!("legend-sandbox-{value}"));
+            assert_ne!(
+                service, sandbox,
+                "{locale}.ftl: {value} means something different for a sandbox than for a service"
+            );
+        }
+    }
+}
+
+/// 実装が参照するmessage IDだと分かるprefix。
+///
+/// error IDの安定した表記と紛れないよう、prefixは表示文字列側だけを指すものにする。
+const MESSAGE_PREFIXES: [&str; 10] = [
+    "error-",
+    "remediation-",
+    "security-",
+    "legend-",
+    "status-item-",
+    "status-column-",
+    "status-project-",
+    "status-worktrees-",
+    "column-",
+    "select-",
+];
+
+#[test]
+fn every_message_id_the_implementation_asks_for_exists() {
+    let defined: BTreeSet<String> = placeholders(SOURCE).keys().cloned().collect();
+    let mut missing: BTreeSet<String> = BTreeSet::new();
+
+    for path in rust_sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src")) {
+        let text = std::fs::read_to_string(&path).expect("the source is readable");
+        for literal in string_literals(&text) {
+            let looks_like_id = MESSAGE_PREFIXES
+                .iter()
+                .any(|prefix| literal.starts_with(prefix))
+                && literal
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+            if looks_like_id && !defined.contains(&literal) {
+                missing.insert(format!("{}: {literal}", path.display()));
+            }
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "the implementation asks for message IDs that {SOURCE}.ftl does not define: {missing:?}"
+    );
+}
+
+fn rust_sources(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    let entries = std::fs::read_dir(root).expect("the source directory is readable");
+    for entry in entries {
+        let path = entry.expect("directory entry").path();
+        if path.is_dir() {
+            found.extend(rust_sources(&path));
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            found.push(path);
+        }
+    }
+    found.sort();
+    found
+}
+
+/// sourceに書かれた文字列literalを、escapeを飛ばして取り出す。
+fn string_literals(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character != '"' {
+            continue;
+        }
+        let mut literal = String::new();
+        while let Some(inner) = characters.next() {
+            match inner {
+                '\\' => {
+                    characters.next();
+                    literal.push('?');
+                }
+                '"' => break,
+                other => literal.push(other),
+            }
+        }
+        found.push(literal);
+    }
+    found
+}
+
+#[test]
 fn translated_diagnostic_labels_keep_the_source_term() {
     // 利用者が正本localeの用語で検索できるよう「訳語 (正本localeの語)」の形式とする。
     const LABELS: [&str; 6] = [

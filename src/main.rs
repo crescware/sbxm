@@ -1,8 +1,7 @@
 //! sbxm。案件ごとのDocker Sandboxを構築、接続、診断、破棄するCLI。
 //!
-//! 現在のbuildは共通基盤、`init`、`status --global`、`add`、`sync-files`を実装する。
-//! ほかのcommandはparserへ登録済みであり、command固有の引数validationまで行った
-//! うえで未実装として終了する。
+//! 現在のbuildは`rebuild`と`destroy`以外のcommandを実装する。この2つはparserへ
+//! 登録済みであり、command固有の引数validationまで行ったうえで未実装として終了する。
 
 mod archive;
 mod cli;
@@ -31,7 +30,10 @@ use metadata::CreationMode;
 use workflow::Reporter;
 use workflow::files::Placement;
 use workflow::init::{InitRequest, TerminalPrompt};
-use workflow::{add, sandbox, status_global, sync_files};
+use workflow::select::TerminalProjectPrompt;
+use workflow::{
+    add, inventory, ls, open, sandbox, status_global, status_project, stop, sync_files,
+};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();
@@ -185,6 +187,28 @@ fn dispatch(
             }
         }
 
+        Command::Status(StatusScope::Project(project)) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            match status_project::diagnose(
+                &config,
+                project,
+                &RealHost,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+            ) {
+                Ok(status) => print_project_status(&catalog, &status),
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
         Command::Add(arguments) => {
             let (config, catalog) = match require_config(location, lang_option) {
                 Ok(pair) => pair,
@@ -232,6 +256,114 @@ fn dispatch(
             ) {
                 Ok(output) => {
                     print_sync_output(&catalog, &output);
+                    ExitCode::Success
+                }
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
+        Command::Open(project) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            let mut prompt = TerminalProjectPrompt {
+                heading: "select-open-heading",
+            };
+            let prepared = match open::prepare(
+                &config,
+                location,
+                project.as_ref(),
+                &RealHost,
+                &mut prompt,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+                inventory::Poll::default(),
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    report(&catalog, &error);
+                    return error.exit_code();
+                }
+            };
+
+            // 接続先はterminalを引き渡す前に見せる。
+            let mut stderr = std::io::stderr();
+            let _ = writeln!(
+                stderr,
+                "{}",
+                format_or_report(
+                    &catalog,
+                    &msg!(
+                        "open-connecting",
+                        project = prepared.project,
+                        sandbox = prepared.sandbox
+                    )
+                )
+            );
+            if !prepared.worktrees.is_empty() {
+                let _ = writeln!(stderr, "{}", text_or_report(&catalog, "open-worktrees"));
+                for worktree in &prepared.worktrees {
+                    let _ = writeln!(stderr, "  {worktree}");
+                }
+            }
+
+            match open::connect(&RealHost, &prepared) {
+                Ok(()) => ExitCode::Success,
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
+        Command::Stop(projects) => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            let mut prompt = TerminalProjectPrompt {
+                heading: "select-stop-heading",
+            };
+            match stop::run(
+                &config,
+                projects,
+                &RealHost,
+                &mut prompt,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+                inventory::Poll::default(),
+            ) {
+                Ok(report) => print_stop_report(&catalog, &report),
+                Err(error) => {
+                    report(&catalog, &error);
+                    error.exit_code()
+                }
+            }
+        }
+
+        Command::Ls => {
+            let (config, catalog) = match require_config(location, lang_option) {
+                Ok(pair) => pair,
+                Err(error) => {
+                    report(&Catalog::new(display_locale), &error);
+                    return error.exit_code();
+                }
+            };
+            match ls::run(
+                &config,
+                &RealHost,
+                std::path::Path::new(sandbox::WORKSPACE_ROOT),
+            ) {
+                Ok(listing) => {
+                    print_listing(&catalog, &listing);
                     ExitCode::Success
                 }
                 Err(error) => {
@@ -368,6 +500,181 @@ fn print_add_output(catalog: &Catalog, output: &add::AddOutput) {
     let _ = std::io::stdout().flush();
 }
 
+/// project scopeの`status`の出力。
+///
+/// 指定案件だけを診断し、global環境の検査結果を混ぜない。
+fn print_project_status(catalog: &Catalog, status: &status_project::ProjectStatus) -> ExitCode {
+    let reporter = Reporter::new(catalog);
+
+    let mut fields: Vec<(&str, String)> = vec![("status-item-project", status.project.clone())];
+    fields.extend(
+        status
+            .items
+            .iter()
+            .map(|item| (item.item, item.value.as_str().to_string())),
+    );
+    println!("{}", text_or_report(catalog, "status-project-section"));
+    print!(
+        "{}",
+        reporter.render_value_table(
+            &["status-column-item", "status-column-value"],
+            &fields
+                .iter()
+                .map(|(item, value)| vec![text_or_report(catalog, item), value.clone()])
+                .collect::<Vec<_>>(),
+        )
+    );
+
+    // 0件でもsectionとheaderを出す。表がないことと、観測できなかったことは別である。
+    let rows: Vec<Vec<String>> = status
+        .worktrees
+        .iter()
+        .map(|worktree| {
+            vec![
+                worktree.path.clone(),
+                worktree.kind.to_string(),
+                worktree.mode.as_str().to_string(),
+                worktree.state.as_str().to_string(),
+            ]
+        })
+        .collect();
+    println!("\n{}", text_or_report(catalog, "status-worktrees-section"));
+    print!(
+        "{}",
+        reporter.render_value_table(
+            &["column-path", "column-kind", "column-mode", "column-state"],
+            &rows,
+        )
+    );
+
+    let mut values: Vec<(&str, &str)> = status
+        .items
+        .iter()
+        .map(|item| (item.value.as_str(), item.value.legend_id()))
+        .collect();
+    for worktree in &status.worktrees {
+        values.push((worktree.mode.as_str(), worktree.mode.legend_id()));
+        values.push((worktree.state.as_str(), worktree.state.legend_id()));
+    }
+    if let Some(legend) = reporter.render_value_legend(&values) {
+        print!("\n{legend}");
+    }
+    let _ = std::io::stdout().flush();
+
+    let mut stderr = std::io::stderr();
+    for diagnostic in &status.diagnostics {
+        reporter.print_error(&Error::single(diagnostic.clone()), &mut stderr);
+    }
+    if status.is_healthy() {
+        ExitCode::Success
+    } else {
+        ExitCode::Failure
+    }
+}
+
+/// `stop`の出力。
+///
+/// 対象ごとの結果を表示し、1件でも失敗していればexit code `1`とする。
+fn print_stop_report(catalog: &Catalog, report: &stop::StopReport) -> ExitCode {
+    let reporter = Reporter::new(catalog);
+    let rows: Vec<Vec<String>> = report
+        .outcomes
+        .iter()
+        .map(|outcome| {
+            vec![
+                outcome.project.clone(),
+                outcome.sandbox.clone(),
+                outcome.result.as_str().to_string(),
+            ]
+        })
+        .collect();
+    print!(
+        "{}",
+        reporter.render_value_table(
+            &["column-project", "column-sandbox", "column-result"],
+            &rows,
+        )
+    );
+
+    let values: Vec<(&str, &str)> = report
+        .outcomes
+        .iter()
+        .map(|outcome| (outcome.result.as_str(), outcome.result.legend_id()))
+        .collect();
+    if let Some(legend) = reporter.render_value_legend(&values) {
+        print!("\n{legend}");
+    }
+    let _ = std::io::stdout().flush();
+
+    let mut stderr = std::io::stderr();
+    for diagnostic in &report.failures {
+        reporter.print_error(&Error::single(diagnostic.clone()), &mut stderr);
+    }
+    if report.failures.is_empty() {
+        ExitCode::Success
+    } else {
+        ExitCode::Failure
+    }
+}
+
+/// `ls`の出力。
+///
+/// 0件でもheaderを表示する。
+fn print_listing(catalog: &Catalog, listing: &ls::Listing) {
+    let reporter = Reporter::new(catalog);
+    let projects: Vec<Vec<String>> = listing
+        .projects
+        .iter()
+        .map(|row| {
+            vec![
+                row.project.clone(),
+                row.sandbox.clone(),
+                row.state.as_str().to_string(),
+            ]
+        })
+        .collect();
+    println!("{}", text_or_report(catalog, "ls-projects-section"));
+    print!(
+        "{}",
+        reporter.render_value_table(
+            &["column-project", "column-sandbox", "column-state"],
+            &projects,
+        )
+    );
+
+    if !listing.unmanaged.is_empty() {
+        let unmanaged: Vec<Vec<String>> = listing
+            .unmanaged
+            .iter()
+            .map(|row| {
+                vec![
+                    row.sandbox.clone(),
+                    row.state.clone(),
+                    row.workspace.clone(),
+                ]
+            })
+            .collect();
+        println!("\n{}", text_or_report(catalog, "ls-unmanaged-section"));
+        print!(
+            "{}",
+            reporter.render_value_table(
+                &["column-sandbox", "column-state", "column-workspace"],
+                &unmanaged,
+            )
+        );
+    }
+
+    let values: Vec<(&str, &str)> = listing
+        .projects
+        .iter()
+        .map(|row| (row.state.as_str(), row.state.legend_id()))
+        .collect();
+    if let Some(legend) = reporter.render_value_legend(&values) {
+        print!("\n{legend}");
+    }
+    let _ = std::io::stdout().flush();
+}
+
 /// `sync-files`の成功出力。
 fn print_sync_output(catalog: &Catalog, output: &workflow::sync_files::SyncOutput) {
     let reporter = Reporter::new(catalog);
@@ -426,8 +733,8 @@ fn sandbox_state(state: SandboxState) -> &'static str {
 
 fn sandbox_state_legend(state: SandboxState) -> &'static str {
     match state {
-        SandboxState::Running => "legend-running",
-        SandboxState::Stopped => "legend-stopped",
+        SandboxState::Running => "legend-sandbox-running",
+        SandboxState::Stopped => "legend-sandbox-stopped",
     }
 }
 

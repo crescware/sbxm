@@ -10,12 +10,19 @@ pub mod host_clone;
 pub mod identity;
 pub mod image;
 pub mod init;
+pub mod inventory;
+pub mod ls;
+pub mod open;
 pub mod repository;
 pub mod sandbox;
 pub mod secret;
+pub mod select;
 pub mod status_global;
+pub mod status_project;
+pub mod stop;
 pub mod sync_files;
 pub mod template;
+pub mod worktree;
 
 use std::io::Write;
 

@@ -27,11 +27,30 @@ Phase 3は、登録済み案件の日常的な起動、接続、停止、一覧�
 - daemon操作はproject lock後にglobal daemon lockを取得する
 - 対象解決と全validationをmutation前に完了する
 - `sbx` stateはstructured outputのparserで扱う
+- 1案件を対象とするcommandは、その案件のSandbox名との完全一致だけで状態を決める。無関係な案件の破損で、対象案件の状態が読めなくならないようにする
 - nameは完全一致とし、substring、prefix、表示textの`grep`を使わない
 - 未対応stateまたは重複nameはraw valueを示してexit code `1`
 - rebuild intentが存在する案件では`open`と`stop`を実行せず、同じtargetの`sbxm rebuild <owner>/<repository>`再実行を案内してexit code `1`
 
 Sandboxのstart・stopなど人間向け進捗を出すmutationはPhase 2で追加した`passthrough`を使用する。state判定に使うstructured outputは`capture`する。sbxm独自のprogress表示は追加しない。
+
+### 3.1 本実装が前提としている外部commandと出力
+
+Phase 2仕様の同名の節に加えて、本Phaseは次を前提とする。この一覧は対象Mac上での確認対象であり、実出力が異なる場合は実装とこの節を同時に直す。
+
+| 用途 | command | 読む値 |
+|---|---|---|
+| Sandboxの起動 | `sbx exec <name> -- /bin/true` | exit statusのみ |
+| Sandboxの停止 | `sbx stop <name>` | exit statusのみ |
+| SSH接続 | `ssh <name>.sbx` | exit statusのみ。stdin、stdout、stderrを継承する |
+| Remote SSH設定の確認 | `ssh -G <name>.sbx` | `proxycommand`行の有無 |
+| bare repositoryの確認 | `git --git-dir <dir> rev-parse --is-bare-repository` | `true`、および`128` |
+| SSH Agent socketの確認 | `printenv SSH_AUTH_SOCK` | `0`と出力、および`1` |
+| SSH Agent接続の確認 | `ssh-add -L` | `0`、`1`、`2`の別。公開鍵本文は読まない |
+
+起動と停止の完了は、いずれも`sbx ls --json`のstateを読み直して判定する。commandの戻り値だけでは判定しない。
+
+Sandbox内のread-only検査は、内側のcommandが返したexit statusと、実行そのものが成立しなかったことを区別する。`125`から`127`、およびsignalによる終了はexec側の失敗として扱い、内側のcommandが答えた結果として読まない。上表に挙げた以外のexit statusは判定不能とし、`missing`や`not-exposed`のような肯定的な値へ丸めない。
 
 ## 4. Sandbox stateの正規化
 
@@ -46,6 +65,8 @@ Sandboxのstart・stopなど人間向け進捗を出すmutationはPhase 2で追�
 raw stateを3値へ安全に写像できない場合は、対象nameとraw stateを示してerrorにする。`unknown`へ丸めない。
 
 metadataやworkspaceとの対応が矛盾する場合、projectの管理状態は`inconsistent`となり、上記stateを正常結果として返さない。
+
+対応の判定に使うTemplateの世代は、方向性文書 §7.2に従う。rebuild intentがあるあいだはtarget世代とprevious世代の両方を正本とし、そのどちらから作られたSandboxも同じ案件のものとして扱う。片方だけを期待して、切替の途中で中断した案件を別案件のSandboxとして扱わない。
 
 ## 5. `sbxm open [project]`
 
@@ -74,6 +95,12 @@ metadataやworkspaceとの対応が矛盾する場合、projectの管理状態�
 9. managed worktree一覧をmetadataとGitから検証
 10. 接続先とworktree一覧をstderrへ表示
 11. `ssh <sandbox-name>.sbx`へterminalを引き渡す
+
+対象の解決はSandboxの状態を読む前に終える。引数で完全指定された場合は導出したpathのmetadataだけを読み、案件選択promptを出す場合だけmetadata探索で候補を作る。lock取得前に読んだmetadataは判定に使わず、lock取得後に読み直した内容でrebuild intentとstateを判定する。
+
+7の起動要否は、daemon再起動の前ではなく再起動後に読み直したstateで決める。再起動によってSandboxが停止した場合も、同じ工程で起動する。
+
+project lockは9までのmutationを覆う区間で保持し、terminalを引き渡す前に解放する。SSH session自体はsbxmのmutationではなく、接続しているあいだ同じ案件の`stop`を待たせない。
 
 引数なしのTTY実行で管理案件が0件の場合は、方向性文書の共通規則に従い、promptを表示せず`no-managed-projects`でexit code `1`とする。
 
@@ -116,7 +143,9 @@ Phase 2で実装したdaemon安全再起動手順を使用し、`open`のたび�
 5. stateを再取得してpreconditionを再確認
 6. runningだけを停止
 
-完全なtransaction rollbackは行わない。途中で外部commandが失敗した場合は後続対象を停止せず、対象ごとの`stopped`、`unchanged`、`failed`を表示してexit code `1`。
+完全なtransaction rollbackは行わない。途中で外部commandが失敗した場合は後続対象を停止せず、対象ごとの`stopped`、`unchanged`、`failed`を表示してexit code `1`。`unchanged`は「この実行では停止していない」ことを示し、既に停止していた対象、Sandboxが無い対象、先行する失敗のあとそのままにした対象を含む。
+
+5のpreconditionにはrebuild intentを含む。選択とlock取得のあいだにmetadataが変わり得るため、lock取得後に読み直したmetadataで判定し直す。
 
 ### 6.3 状態別動作
 
@@ -153,7 +182,7 @@ owner/baz        sbxm-owner-baz-fedcba987654     not-created
 - managed projects: canonical ID byte昇順
 - unmanaged Sandboxes: Sandbox name byte昇順
 
-未管理Sandboxは`UNMANAGED SANDBOXES`へname、raw state、workspaceを表示する。取り込みや削除は行わない。
+未管理Sandboxは`UNMANAGED SANDBOXES`へname、raw state、workspaceを表示する。取り込みや削除は行わない。raw stateはsbxmの管理状態ではないため、3値へ写像せずruntimeが示したまま表示し、enum凡例にも含めない。
 
 ### 7.3 Failure
 
@@ -190,6 +219,8 @@ projectを省略した案件選択promptは設けない。`--global`とproject�
 8. managed worktree
 9. unmanaged worktree
 10. SSH Agent露出
+
+8と9はworktree一覧の観測結果を1項目として`PROJECT`へ示し、内訳を`WORKTREES` sectionへ並べる。
 
 表示値:
 
@@ -233,6 +264,7 @@ Sandbox              running
 Workspace            ready
 GitHub secret        ready
 Bare repository      ready
+Worktrees            ready
 SSH Agent            not-exposed
 
 WORKTREES
@@ -259,6 +291,10 @@ Sandboxが存在しない場合だけ、Sandbox内部でしか検査できない
 Docker image、archive、host cloneは引き続き検査する。
 
 Sandboxがstoppedの場合、read-only `sbx exec`が暗黙に起動する可能性があるため実行しない。内部項目は`not-observed-stopped`とし、「停止状態を変えないため検査していない」という説明を付ける。これは観測失敗ではなく意図的な非観測なので、ほかに問題がなければexit code `0`とする。状態値を`unknown`へ丸めない。
+
+Sandboxの状態そのものを観測できなかった場合は、Sandboxが存在しないことにせず、破損や観測失敗を示す`mismatch`とする。`not-applicable`はSandboxが無いことを確かめられた場合だけに使う。
+
+Sandbox一覧やDocker Engineを読めないなど、global環境の問題で観測できない項目がある場合は、その原因とあわせて`sbxm status --global`を案内する。
 
 ### 8.5 Worktree検査
 
@@ -288,8 +324,10 @@ ssh-add -L
 ```
 
 - `SSH_AUTH_SOCK`未設定かつ`ssh-add -L`がagent接続不能: `not-exposed`
-- socket設定または公開鍵が1件以上: `exposed`、exit `1`
-- command不在、timeout、判定不能: exit `1`
+- socket設定、またはagentへ接続できた場合: `exposed`、exit `1`
+- command不在、timeout、判定不能: `mismatch`としexit `1`
+
+`ssh-add -L`は、鍵が1件もない場合の`1`とagentへ接続できない場合の`2`を区別する。鍵の有無にかかわらずagentへ接続できた時点で露出とみなす。判定できないexit statusを`not-exposed`へ丸めない。
 
 公開鍵本文は出力しない。
 

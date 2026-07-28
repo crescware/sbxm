@@ -26,6 +26,28 @@ pub const WORKSPACE_ROOT: &str = "/tmp/docker-sandboxes";
 /// Sandboxへ渡すagent kit。対話shellを持つ最小構成を使う。
 const AGENT_KIT: &str = "shell";
 
+/// `git`が対象をrepositoryとして扱えなかったときの終了status。
+pub const GIT_FATAL: i32 = 128;
+
+/// `ssh-add`がagentへ接続できなかったときの終了status。
+///
+/// 鍵が1件もない場合は`1`で終わるため、接続できたかどうかとは区別できる。
+pub const SSH_ADD_NO_AGENT: i32 = 2;
+
+/// exec自体の失敗を示す終了status。POSIX shellとcontainer runtimeの慣例に従う。
+const EXEC_FAILURE: std::ops::RangeInclusive<i32> = 125..=127;
+
+/// Sandbox内で動いたcommand自身の終了status。
+///
+/// `sbx exec`が内側のcommandを起動できなかった場合、およびsignalで終わった場合は
+/// `None`とする。実行できなかったことを、内側のcommandが返した結果として読まない。
+pub fn inner_exit_code(outcome: &CommandOutcome) -> Option<i32> {
+    match outcome.status.code() {
+        Some(code) if !EXEC_FAILURE.contains(&code) => Some(code),
+        _ => None,
+    }
+}
+
 /// 使用できる状態のSandbox。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadySandbox {
@@ -55,8 +77,9 @@ pub fn ensure(
     let workspace = workspace_path(workspace_root, sandbox);
     paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
 
+    let templates = [template.name.clone()];
     if let Some(entry) = find(host, sandbox)? {
-        verify(&entry, sandbox, template, &workspace)?;
+        verify(&entry, sandbox, &templates, &workspace)?;
         return Ok(ReadySandbox {
             name: entry.name,
             workspace,
@@ -87,7 +110,7 @@ pub fn ensure(
             "the sandbox is absent right after it was created".to_string(),
         ));
     };
-    verify(&entry, sandbox, template, &workspace)?;
+    verify(&entry, sandbox, &templates, &workspace)?;
 
     Ok(ReadySandbox {
         name: entry.name,
@@ -167,20 +190,19 @@ fn find(host: &dyn HostEnvironment, sandbox: &SandboxName) -> Result<Option<Sand
 }
 
 /// 既存Sandboxが、この案件のものであることをread-onlyで確認する。
+///
+/// `templates`はmetadataが正本とする世代のTemplate名であり、rebuild intent中は
+/// 2世代を受け入れる。
 pub fn verify_identity(
     entry: &SandboxEntry,
     sandbox: &SandboxName,
-    template_name: &str,
+    templates: &[String],
     workspace_root: &Path,
 ) -> Result<()> {
-    let template = LoadedTemplate {
-        name: template_name.to_string(),
-        loaded: false,
-    };
     verify(
         entry,
         sandbox,
-        &template,
+        templates,
         &workspace_path(workspace_root, sandbox),
     )
 }
@@ -191,7 +213,7 @@ pub fn verify_identity(
 fn verify(
     entry: &SandboxEntry,
     sandbox: &SandboxName,
-    template: &LoadedTemplate,
+    templates: &[String],
     workspace: &Path,
 ) -> Result<()> {
     match &entry.workspace {
@@ -219,12 +241,12 @@ fn verify(
     }
 
     match &entry.template {
-        Some(observed) if *observed == template.name => Ok(()),
+        Some(observed) if templates.iter().any(|expected| expected == observed) => Ok(()),
         Some(observed) => Err(unusable(
             sandbox.as_str(),
             format!(
                 "the sandbox was made from {observed}, not from {}",
-                template.name
+                templates.join(" or ")
             ),
         )),
         None => Err(unusable(

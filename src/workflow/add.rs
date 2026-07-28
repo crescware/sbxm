@@ -330,9 +330,9 @@ fn already_built(
         return Ok(None);
     };
 
-    // Templateは、metadataが適用済みとして持つ世代から導出する。
-    let template = image::image_name(&registration.sandbox, &provisioning.dockerfile_sha256);
-    sandbox::verify_identity(&entry, &registration.sandbox, &template, workspace_root)?;
+    // Templateは、metadataが正本とする世代から導出する。
+    let templates = image::template_names(&registration.sandbox, metadata);
+    sandbox::verify_identity(&entry, &registration.sandbox, &templates, workspace_root)?;
 
     let worktrees = observed_worktrees(host, &entry.name, layout, metadata)?;
     Ok(Some(AddOutput {

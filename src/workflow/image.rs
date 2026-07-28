@@ -13,7 +13,7 @@ use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::compatibility::{ImageIdentity, parse_image_inspect};
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::hash::short_hex;
-use crate::metadata::METADATA_VERSION;
+use crate::metadata::{METADATA_VERSION, ProjectMetadata};
 use crate::msg;
 use crate::paths::{self, PRIVATE_DIR_MODE, PathScope, ProjectPaths};
 use crate::project::{CanonicalProjectId, SandboxName};
@@ -29,6 +29,18 @@ const BUILD_CONTEXT_PREFIX: &str = "sbxm-build-context-";
 /// `<sandbox-name>-template:<dockerfile-sha256-first-12-hex>`
 pub fn image_name(sandbox: &SandboxName, dockerfile_sha256: &str) -> String {
     format!("{}-template:{}", sandbox, short_hex(dockerfile_sha256))
+}
+
+/// metadataが正本とする世代のTemplate名。
+///
+/// rebuild intent中は2件になる。Sandboxがどちらの世代から作られていても、その案件の
+/// ものであることに変わりはない。
+pub fn template_names(sandbox: &SandboxName, metadata: &ProjectMetadata) -> Vec<String> {
+    metadata
+        .generations()
+        .iter()
+        .map(|generation| image_name(sandbox, generation))
+        .collect()
 }
 
 /// 案件と世代が一致することを宣言するlabelの組。
@@ -256,7 +268,7 @@ pub fn generation_is_built(
 ///
 /// `docker image inspect`は不在でも他の失敗でも非ゼロで終わるため、それだけで
 /// 不在と判定しない。まず一覧で存在を確かめ、observeできない状態はerrorとして返す。
-fn inspect(host: &dyn HostEnvironment, name: &str) -> Result<Option<ImageIdentity>> {
+pub fn inspect(host: &dyn HostEnvironment, name: &str) -> Result<Option<ImageIdentity>> {
     if !exists(host, name)? {
         return Ok(None);
     }
