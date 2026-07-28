@@ -209,7 +209,13 @@ pub fn verify_identity(
 
 /// 既存Sandboxが期待する構成であることを確認する。
 ///
-/// 誰が作成したかは条件にしない。1項目でも確認できない場合は再利用しない。
+/// 誰が作成したかは条件にしない。案件との対応は、canonical project IDから導出した
+/// 名前と、その案件だけが使う中立Workspaceの実pathで判定する。
+///
+/// 由来Templateは、runtimeが示す場合だけ照合する。対象versionは一覧にTemplateを
+/// 含めないため、示さない一覧からは世代を確かめられない。ここで拒否すると、名前と
+/// workspaceが一致しているSandboxを一度も使えなくなる。世代の一致は`rebuild`が
+/// 必要とする条件であり、この検査が保証するものではない。
 fn verify(
     entry: &SandboxEntry,
     sandbox: &SandboxName,
@@ -249,10 +255,8 @@ fn verify(
                 templates.join(" or ")
             ),
         )),
-        None => Err(unusable(
-            sandbox.as_str(),
-            "this Docker Sandboxes version does not report the template of a sandbox".to_string(),
-        )),
+        // 一覧がTemplateを持たないversionでは、名前とworkspaceだけを根拠にする。
+        None => Ok(()),
     }
 }
 
@@ -560,25 +564,56 @@ mod tests {
     }
 
     #[test]
-    fn a_runtime_that_hides_the_workspace_or_the_template_is_not_guessed_at() {
+    fn a_runtime_that_hides_the_workspace_is_not_guessed_at() {
         let root = workspace_root();
-        for listing in [
-            format!(
-                r#"[{{"name":"{}","state":"running","template":"{}"}}]"#,
-                sandbox(),
-                template().name
-            ),
-            format!(
-                r#"[{{"name":"{}","state":"running","workspace":"{}"}}]"#,
-                sandbox(),
-                workspace_path(root.path(), &sandbox()).display()
-            ),
-        ] {
-            let host = FakeSbx::listing(&[&listing]);
-            let error = ensure(&host, &sandbox(), &template(), root.path())
-                .expect_err("an unverifiable sandbox is not reused");
-            assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
-        }
+        // workspaceが分からない一覧からは、この案件のSandboxだと言えない。
+        let listing = format!(
+            r#"[{{"name":"{}","state":"running","template":"{}"}}]"#,
+            sandbox(),
+            template().name
+        );
+        let host = FakeSbx::listing(&[&listing]);
+        let error = ensure(&host, &sandbox(), &template(), root.path())
+            .expect_err("an unverifiable sandbox is not reused");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+    }
+
+    #[test]
+    fn a_runtime_that_does_not_report_templates_still_identifies_the_sandbox() {
+        let root = workspace_root();
+        // 対象versionの一覧はTemplateを持たない。名前とworkspaceで対応を判定する。
+        let listing = format!(
+            r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
+            sandbox(),
+            workspace_path(root.path(), &sandbox()).display()
+        );
+        let host = FakeSbx::listing(&[&listing]);
+
+        let ready = ensure(&host, &sandbox(), &template(), root.path())
+            .expect("the sandbox of this project is used");
+        assert!(!ready.created, "an existing sandbox is not made again");
+        assert!(
+            !host
+                .calls()
+                .iter()
+                .any(|args| args.first().is_some_and(|arg| arg == "create")),
+            "nothing is created over it: {:?}",
+            host.calls()
+        );
+    }
+
+    #[test]
+    fn a_sandbox_made_from_another_template_is_still_refused_when_it_is_reported() {
+        let root = workspace_root();
+        let listing = format!(
+            r#"[{{"name":"{}","status":"running","workspaces":["{}"],"template":"other-template:1"}}]"#,
+            sandbox(),
+            workspace_path(root.path(), &sandbox()).display()
+        );
+        let host = FakeSbx::listing(&[&listing]);
+        let error = ensure(&host, &sandbox(), &template(), root.path())
+            .expect_err("a template the runtime does report is still checked");
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
     }
 
     #[test]

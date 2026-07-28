@@ -87,6 +87,8 @@ Docker Sandboxes CLIはEarly Accessであり、出力書式は変わり得る。
 
 `docker image inspect`はimageが存在しない場合もEngineへ問い合わせられない場合も非ゼロで終わるため、exit statusだけで不在と判定しない。存在の判定には`docker image ls --quiet <image>`を使い、この一覧が失敗した場合はimageを不在へ丸めずexit code `1`とする。
 
+`sbx ls --json`はSandboxの由来Templateを示さない。案件との対応は、canonical project IDから導出したSandbox名と、その案件だけが使う中立Workspaceの実pathで判定する。世代の一致はこの検査の保証範囲ではない。runtimeがTemplateを示すversionでは、示された値も照合する。
+
 runtimeのimage storeは、Templateの由来となったhost imageを示さない。一覧が持つ`id`はruntime内部の短縮idであり、`docker image inspect`の`Id`とは別のstoreの値である。Templateと世代の対応は、loadしたarchiveがlabelで宣言していた案件と世代と、`<image名>:<世代>`という名前で登録されたことの2つを根拠とする。
 
 archiveの検証は、tarの`manifest.json`と、それが名前で指すimage configだけを読む。保存されたtagが期待するimage名と一致し、image configが期待するlabelをすべて宣言していることを条件とする。archive本体のlayerは読まない。
