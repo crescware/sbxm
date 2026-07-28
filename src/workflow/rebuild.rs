@@ -111,18 +111,15 @@ pub fn run(
         ));
     }
 
-    switch(
+    let context = Switch {
         config,
         location,
-        host,
-        &paths,
-        &name,
-        &mut project_metadata,
-        &built.template,
+        paths: &paths,
         project,
         workspace_root,
         poll,
-    )?;
+    };
+    context.run(host, &name, &mut project_metadata, &built.template)?;
 
     // 全検証が終わってから、適用済みhashを更新してintentを削除する。
     project_metadata.provisioning.dockerfile_sha256 = target.clone();
@@ -197,82 +194,98 @@ fn prepare_generation(
     })
 }
 
-/// Sandboxを新世代へ切り替える。
-#[allow(clippy::too_many_arguments)]
-fn switch(
-    config: &GlobalConfig,
-    location: &ConfigLocation,
-    host: &dyn HostEnvironment,
-    paths: &ProjectPaths,
-    name: &SandboxName,
-    metadata: &mut ProjectMetadata,
-    template: &super::template::LoadedTemplate,
-    project: &ProjectId,
-    workspace_root: &Path,
+/// Sandboxの切り替えが最初から最後まで使う文脈。
+///
+/// 工程ごとに変わるのはSandbox名、metadata、新Templateだけである。
+struct Switch<'a> {
+    config: &'a GlobalConfig,
+    location: &'a ConfigLocation,
+    paths: &'a ProjectPaths,
+    project: &'a ProjectId,
+    workspace_root: &'a Path,
     poll: Poll,
-) -> Result<()> {
-    let layout = SandboxLayout::new(&metadata.canonical_id);
-    let target_template = template.name.clone();
-    let previous_template = metadata
-        .rebuild
-        .as_ref()
-        .map(|intent| image_name(name, &intent.previous_dockerfile_sha256));
+}
 
-    // 新世代の準備には時間がかかる。切り替える対象は、その後の観測から決める。
-    let entries = daemon::list(host)?;
-    // Sandboxが不在の中断点からは、作成工程から続ける。
-    if let Some(entry) = inventory::single(&entries, name.as_str())? {
-        let observed = entry
-            .template
-            .clone()
-            .unwrap_or_else(|| "<unreported>".to_string());
-        if observed == target_template {
-            // 既にtarget世代のSandboxがある。作成工程はskipして続きから進める。
-        } else if Some(&observed) == previous_template.as_ref() {
-            // 削除したSandboxを作り直すには、daemonを安全に再起動できる必要がある。
-            // 別案件へ接続中のsessionがあるなら、消す前に止まる。
-            daemon::require_no_active_session(host)?;
-            if entry.state == SandboxState::Stopped {
-                // 固定済みの世代から復旧する場合に限り、保存状態を観測するために起動する。
-                // 新規`rebuild`は停止中Sandboxを拒否したうえで、ここまで来ない。
-                let guard = daemon::restart_without_ssh_agent(host, location)?;
-                inventory::start(host, name.as_str())?;
-                inventory::wait_until_running(host, metadata, workspace_root, poll)?;
-                drop(guard);
+impl Switch<'_> {
+    /// Sandboxを新世代へ切り替える。
+    fn run(
+        &self,
+        host: &dyn HostEnvironment,
+        name: &SandboxName,
+        metadata: &mut ProjectMetadata,
+        template: &super::template::LoadedTemplate,
+    ) -> Result<()> {
+        let Switch {
+            config,
+            location,
+            paths,
+            project,
+            workspace_root,
+            poll,
+        } = *self;
+        let layout = SandboxLayout::new(&metadata.canonical_id);
+        let target_template = template.name.clone();
+        let previous_template = metadata
+            .rebuild
+            .as_ref()
+            .map(|intent| image_name(name, &intent.previous_dockerfile_sha256));
+
+        // 新世代の準備には時間がかかる。切り替える対象は、その後の観測から決める。
+        let entries = daemon::list(host)?;
+        // Sandboxが不在の中断点からは、作成工程から続ける。
+        if let Some(entry) = inventory::single(&entries, name.as_str())? {
+            let observed = entry
+                .template
+                .clone()
+                .unwrap_or_else(|| "<unreported>".to_string());
+            if observed == target_template {
+                // 既にtarget世代のSandboxがある。作成工程はskipして続きから進める。
+            } else if Some(&observed) == previous_template.as_ref() {
+                // 削除したSandboxを作り直すには、daemonを安全に再起動できる必要がある。
+                // 別案件へ接続中のsessionがあるなら、消す前に止まる。
+                daemon::require_no_active_session(host)?;
+                if entry.state == SandboxState::Stopped {
+                    // 固定済みの世代から復旧する場合に限り、保存状態を観測するために起動する。
+                    // 新規`rebuild`は停止中Sandboxを拒否したうえで、ここまで来ない。
+                    let guard = daemon::restart_without_ssh_agent(host, location)?;
+                    inventory::start(host, name.as_str())?;
+                    inventory::wait_until_running(host, metadata, workspace_root, poll)?;
+                    drop(guard);
+                }
+                protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
+                // 通常modeの削除command。データ保護検査は上で済ませている。
+                inventory::remove(host, name, false, poll)?;
+            } else {
+                // targetでもpreviousでもない世代は、この案件の成果物として扱えない。
+                return Err(Error::new(
+                    ErrorId::SandboxUnusable,
+                    msg!(
+                        "error-sandbox-unusable",
+                        sandbox = name,
+                        detail = format!(
+                            "the sandbox was made from {observed}, and this rebuild switches from {} to {target_template}",
+                            previous_template.unwrap_or_else(|| "<unknown>".to_string())
+                        )
+                    ),
+                ));
             }
-            protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
-            // 通常modeの削除command。データ保護検査は上で済ませている。
-            inventory::remove(host, name, false, poll)?;
-        } else {
-            // targetでもpreviousでもない世代は、この案件の成果物として扱えない。
-            return Err(Error::new(
-                ErrorId::SandboxUnusable,
-                msg!(
-                    "error-sandbox-unusable",
-                    sandbox = name,
-                    detail = format!(
-                        "the sandbox was made from {observed}, and this rebuild switches from {} to {target_template}",
-                        previous_template.unwrap_or_else(|| "<unknown>".to_string())
-                    )
-                ),
-            ));
         }
+
+        let daemon_guard = daemon::restart_without_ssh_agent(host, location)?;
+        let ready = sandbox::ensure(host, name, template, workspace_root)?;
+        drop(daemon_guard);
+
+        identity::ensure(host, &ready.name, &config.git)?;
+        files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
+        // 再作成したSandboxは、`add`と同じ条件でGitHubへ届く必要がある。
+        secret::require_github(host, &ready.name)?;
+        repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
+        let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
+        repository::ensure_worktrees(host, &ready.name, &layout, paths, metadata, &branch)?;
+        // 適用済みhashを更新する前に、credentialの隔離まで確かめる。
+        sandbox::require_credentials_isolated(host, &ready.name)?;
+        Ok(())
     }
-
-    let daemon_guard = daemon::restart_without_ssh_agent(host, location)?;
-    let ready = sandbox::ensure(host, name, template, workspace_root)?;
-    drop(daemon_guard);
-
-    identity::ensure(host, &ready.name, &config.git)?;
-    files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
-    // 再作成したSandboxは、`add`と同じ条件でGitHubへ届く必要がある。
-    secret::require_github(host, &ready.name)?;
-    repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
-    let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
-    repository::ensure_worktrees(host, &ready.name, &layout, paths, metadata, &branch)?;
-    // 適用済みhashを更新する前に、credentialの隔離まで確かめる。
-    sandbox::require_credentials_isolated(host, &ready.name)?;
-    Ok(())
 }
 
 /// 現在のDockerfileのSHA-256。
