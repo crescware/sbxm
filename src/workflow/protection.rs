@@ -384,7 +384,9 @@ fn examine(
 }
 
 /// 対象Sandboxにsessionが接続していないこと。
-fn require_no_active_session(host: &dyn HostEnvironment, sandbox_name: &str) -> Result<()> {
+///
+/// 削除の直前に確かめ直す場合も、この規則を使う。
+pub fn require_no_active_session(host: &dyn HostEnvironment, sandbox_name: &str) -> Result<()> {
     let entries = daemon::list(host)?;
     let Some(entry) = entries.iter().find(|entry| entry.name == sandbox_name) else {
         return Ok(());

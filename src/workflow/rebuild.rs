@@ -5,9 +5,8 @@
 //! 設けない。
 
 use std::path::Path;
-use std::time::Instant;
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
 use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
@@ -242,7 +241,8 @@ fn switch(
                 drop(guard);
             }
             protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
-            remove(host, name, poll)?;
+            // 通常modeの削除command。データ保護検査は上で済ませている。
+            inventory::remove(host, name, false, poll)?;
         } else {
             // targetでもpreviousでもない世代は、この案件の成果物として扱えない。
             return Err(Error::new(
@@ -273,29 +273,6 @@ fn switch(
     // 適用済みhashを更新する前に、credentialの隔離まで確かめる。
     sandbox::require_credentials_isolated(host, &ready.name)?;
     Ok(())
-}
-
-/// 旧世代のSandboxを削除し、不在を確認する。
-fn remove(host: &dyn HostEnvironment, name: &SandboxName, poll: Poll) -> Result<()> {
-    let spec = CommandSpec::passthrough("sbx", &["rm", name.as_str()])
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&spec)?.require_success()?;
-
-    let deadline = Instant::now() + poll.limit;
-    loop {
-        let entries = daemon::list(host)?;
-        if !entries.iter().any(|entry| entry.name == name.as_str()) {
-            return Ok(());
-        }
-        if Instant::now() >= deadline {
-            return Err(Error::new(
-                ErrorId::SandboxStillPresent,
-                msg!("error-sandbox-still-present", sandbox = name),
-            ));
-        }
-        std::thread::sleep(poll.interval);
-    }
 }
 
 /// 現在のDockerfileのSHA-256。

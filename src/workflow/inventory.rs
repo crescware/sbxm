@@ -13,6 +13,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
+use crate::project::SandboxName;
 
 use super::image::template_names;
 use super::{daemon, sandbox};
@@ -171,6 +172,50 @@ pub fn wait_until_running(
         }
         std::thread::sleep(poll.interval);
     }
+}
+
+/// Sandboxを削除し、一覧から消えるまで待つ。
+///
+/// commandの戻り値だけを不在の根拠にしない。`force`はデータ保護検査を省略した
+/// 削除であり、runtimeへ渡す引数だけが変わる。
+pub fn remove(
+    host: &dyn HostEnvironment,
+    name: &SandboxName,
+    force: bool,
+    poll: Poll,
+) -> Result<()> {
+    let mut args = vec!["rm"];
+    if force {
+        args.push("--force");
+    }
+    args.push(name.as_str());
+    // 削除の進捗は外部toolが出したまま転送する。
+    let spec = CommandSpec::passthrough("sbx", &args)
+        .env(EnvPolicy::InheritWithoutSshAgent)
+        .timeout(TimeoutClass::SandboxLifecycle);
+    host.run(&spec)?.require_success()?;
+
+    let deadline = Instant::now() + poll.limit;
+    loop {
+        if !daemon::list(host)?
+            .iter()
+            .any(|entry| entry.name == name.as_str())
+        {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(still_present(name));
+        }
+        std::thread::sleep(poll.interval);
+    }
+}
+
+/// 削除したはずのSandboxが一覧に残っている。
+pub fn still_present(name: &SandboxName) -> Error {
+    Error::new(
+        ErrorId::SandboxStillPresent,
+        msg!("error-sandbox-still-present", sandbox = name),
+    )
 }
 
 /// 現在のinventoryを1回の一覧取得から組み立てる。

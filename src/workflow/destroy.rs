@@ -4,9 +4,8 @@
 //! 利用者が管理する成果物は保持する。
 
 use std::path::Path;
-use std::time::Instant;
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::HostEnvironment;
 use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{CreationMode, ProjectMetadata};
@@ -145,9 +144,9 @@ pub fn execute(
     if prepared.state != ProjectState::NotCreated {
         if !prepared.force {
             // 削除の直前に、sessionが接続していないことを確かめ直す。
-            require_no_active_session(host, prepared.name.as_str())?;
+            protection::require_no_active_session(host, prepared.name.as_str())?;
         }
-        remove_sandbox(host, &prepared.name, prepared.force, poll)?;
+        inventory::remove(host, &prepared.name, prepared.force, poll)?;
     }
     require_absent(host, &prepared.name)?;
 
@@ -190,79 +189,15 @@ pub fn execute(
     })
 }
 
-fn remove_sandbox(
-    host: &dyn HostEnvironment,
-    name: &SandboxName,
-    force: bool,
-    poll: Poll,
-) -> Result<()> {
-    let mut args = vec!["rm"];
-    if force {
-        args.push("--force");
-    }
-    args.push(name.as_str());
-    let spec = CommandSpec::passthrough("sbx", &args)
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&spec)?.require_success()?;
-
-    let deadline = Instant::now() + poll.limit;
-    loop {
-        if !daemon::list(host)?
-            .iter()
-            .any(|entry| entry.name == name.as_str())
-        {
-            return Ok(());
-        }
-        if Instant::now() >= deadline {
-            return Err(Error::new(
-                ErrorId::SandboxStillPresent,
-                msg!("error-sandbox-still-present", sandbox = name),
-            ));
-        }
-        std::thread::sleep(poll.interval);
-    }
-}
-
 /// Sandboxが存在しないことを1回確認する。
 fn require_absent(host: &dyn HostEnvironment, name: &SandboxName) -> Result<()> {
     if daemon::list(host)?
         .iter()
         .any(|entry| entry.name == name.as_str())
     {
-        return Err(Error::new(
-            ErrorId::SandboxStillPresent,
-            msg!("error-sandbox-still-present", sandbox = name),
-        ));
+        return Err(inventory::still_present(name));
     }
     Ok(())
-}
-
-fn require_no_active_session(host: &dyn HostEnvironment, name: &str) -> Result<()> {
-    let entries = daemon::list(host)?;
-    let Some(entry) = entries.iter().find(|entry| entry.name == name) else {
-        return Ok(());
-    };
-    match entry.active_sessions {
-        Some(0) => Ok(()),
-        Some(count) => Err(Error::single(
-            Diagnostic::new(
-                ErrorId::DaemonSessionActive,
-                msg!(
-                    "error-daemon-session-active",
-                    sandboxes = format!("{name} ({count})")
-                ),
-            )
-            .remediation(msg!("remediation-daemon-session-active")),
-        )),
-        None => Err(Error::single(
-            Diagnostic::new(
-                ErrorId::DaemonSessionUnobservable,
-                msg!("error-daemon-session-unobservable", sandbox = name),
-            )
-            .remediation(msg!("remediation-daemon-session-unobservable")),
-        )),
-    }
 }
 
 /// 削除対象。
