@@ -550,6 +550,30 @@ fn the_macos_preferred_language_is_read_only_when_lang_is_absent() {
 }
 
 #[test]
+fn a_guessed_source_locale_is_not_put_to_the_user() {
+    let host =
+        FakeHost::new().responding("defaults read -g AppleLanguages", "(\n    \"en-US\"\n)\n");
+    let mut prompt = ScriptedPrompt {
+        language: Some(Locale::Ja),
+        ..ScriptedPrompt::default()
+    };
+
+    let locale = resolve_locale(
+        &InitRequest {
+            mode: InitMode::Interactive,
+            lang: None,
+            interactivity: tty(),
+        },
+        &host,
+        &mut prompt,
+    )
+    .unwrap();
+
+    assert_eq!(locale, Locale::En);
+    assert!(prompt.calls.borrow().is_empty());
+}
+
+#[test]
 fn option_mode_never_prompts_for_the_language() {
     let host =
         FakeHost::new().responding("defaults read -g AppleLanguages", "(\n    \"ja-JP\"\n)\n");
