@@ -42,10 +42,10 @@ fn a_project_that_is_not_registered_is_sent_to_add() {
     );
 }
 
-/// docker、`sbx`、gitの応答を状態として持ち、`add`の全工程を通せるhost。
+/// docker、`sbx`、gitの応答を状態として持ち、`add`と`prepare`の全工程を通せるhost。
 ///
 /// 各工程の副作用は、その工程が成功したときにだけ起こす。中断した実行の続きを
-/// 同じ`add`が進められるかどうかは、この性質の上で判定できる。
+/// 同じ`prepare`が進められるかどうかは、この性質の上で判定できる。
 struct World {
     /// tag -> buildが宣言したlabel。
     images: RefCell<BTreeMap<String, Vec<(String, String)>>>,
@@ -622,7 +622,7 @@ impl Bench {
     }
 }
 
-/// `add`が外部工程を呼ぶ順に並べた、失敗させる工程とその診断。
+/// `add`と`prepare`が外部工程を呼ぶ順に並べた、失敗させる工程とその診断。
 const STEPS: [(&str, ErrorId); 11] = [
     ("git clone git@github.com", ErrorId::ExternalCommandFailed),
     ("docker build", ErrorId::ExternalCommandFailed),
@@ -638,7 +638,7 @@ const STEPS: [(&str, ErrorId); 11] = [
 ];
 
 #[test]
-fn an_interruption_at_any_step_is_continued_by_the_same_add() {
+fn an_interruption_at_any_step_is_continued_by_the_same_prepare() {
     let bench = bench();
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None);

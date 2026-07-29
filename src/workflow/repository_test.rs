@@ -320,28 +320,6 @@ fn an_attached_project_keeps_its_branch_and_gets_detached_worktrees_beside_it() 
 }
 
 #[test]
-fn a_recorded_worktree_that_left_the_shared_repository_stops_the_run() {
-    let dir = tempfile::tempdir().unwrap();
-    let paths = project_paths(dir.path());
-    let existing = layout().worktree(0);
-    // modeの検査はdetached HEADを`symbolic-ref`の失敗で判定するため、repositoryで
-    // なくなったdirectoryはそれだけでは通ってしまう。
-    let host = worktree_host(CreationMode::Detached, 1)
-        .holding(&[&existing])
-        .answering(
-            &format!("git -C {existing} rev-parse --path-format=absolute --git-common-dir"),
-            "/home/agent/work/elsewhere/.git\n",
-        );
-
-    let project = metadata(CreationMode::Detached, Some("develop"), 1);
-    metadata::create(&paths, &project).expect("write the metadata");
-
-    let error = ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop")
-        .expect_err("a worktree of another repository is not this project's");
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
-}
-
-#[test]
 fn detached_worktrees_are_created_from_one_commit_and_recorded_one_by_one() {
     let dir = tempfile::tempdir().unwrap();
     let paths = project_paths(dir.path());

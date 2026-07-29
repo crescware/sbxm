@@ -29,7 +29,7 @@ fn mode_of(path: &Path) -> u32 {
         .mode()
         & 0o777
 }
-/// `sbx ls`だけを答え、Sandbox内のcommandは成功として扱うhost。
+
 #[test]
 fn registering_a_project_creates_the_documented_layout() {
     let (_dir, config) = setup();
