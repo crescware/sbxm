@@ -231,7 +231,7 @@ fn examine(
         )));
     }
 
-    let git_dir = read(
+    let git_dir = sandbox::read(
         host,
         sandbox_name,
         &["git", "-C", path, "rev-parse", "--git-dir"],
@@ -253,7 +253,7 @@ fn examine(
         }
     }
 
-    let head = read(
+    let head = sandbox::read(
         host,
         sandbox_name,
         &["git", "-C", path, "rev-parse", "HEAD"],
@@ -302,7 +302,7 @@ fn examine(
             )));
         }
         let upstream = upstream.stdout_text().trim().to_string();
-        let ahead = read(
+        let ahead = sandbox::read(
             host,
             sandbox_name,
             &[
@@ -325,7 +325,7 @@ fn examine(
         (Mode::Attached, Some(branch), Remote::Pushed)
     } else {
         // detached HEADは、originのいずれかのrefから到達できることを条件とする。
-        let unreachable = read(
+        let unreachable = sandbox::read(
             host,
             sandbox_name,
             &[
@@ -368,11 +368,6 @@ fn examine(
 /// 読まない。判定できない場合は、削除して良いことを示す値へ丸めずerrorとする。
 fn answered(outcome: &CommandOutcome, subject: &str) -> Result<i32> {
     sandbox::inner_exit_code(outcome).ok_or_else(|| sandbox::unobservable(outcome, subject))
-}
-
-fn read(host: &dyn HostEnvironment, sandbox_name: &str, args: &[&str]) -> Result<String> {
-    let outcome = sandbox::exec(host, sandbox_name, args)?.require_success()?;
-    Ok(outcome.stdout_text().trim().to_string())
 }
 
 /// 保存されていない作業を失わないため、削除も再作成も行わない。

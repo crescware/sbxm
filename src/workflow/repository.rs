@@ -85,7 +85,7 @@ fn verify_bare_clone(
     project: &ProjectId,
     git_dir: &str,
 ) -> Result<()> {
-    let bare = read(
+    let bare = sandbox::read(
         host,
         sandbox,
         &[
@@ -103,7 +103,7 @@ fn verify_bare_clone(
         ));
     }
 
-    let urls = read(
+    let urls = sandbox::read(
         host,
         sandbox,
         &[
@@ -142,7 +142,7 @@ fn verify_bare_clone(
         }
     }
 
-    let refspecs = read(
+    let refspecs = sandbox::read(
         host,
         sandbox,
         &[
@@ -267,7 +267,7 @@ fn remote_default_branch(
     sandbox: &str,
     git_dir: &str,
 ) -> Result<String> {
-    let output = read(
+    let output = sandbox::read(
         host,
         sandbox,
         &[
@@ -320,7 +320,7 @@ pub fn ensure_worktrees(
 ) -> Result<Vec<String>> {
     let git_dir = layout.bare_git_dir();
     let reference = git::origin_ref(branch);
-    let expected_commit = read(
+    let expected_commit = sandbox::read(
         host,
         sandbox,
         &["git", "--git-dir", &git_dir, "rev-parse", &reference],
@@ -409,7 +409,7 @@ fn provision_worktree(
     if !sandbox::path_exists(host, sandbox, path)? {
         create_worktree(host, sandbox, git_dir, path, branch, mode)?;
     }
-    let head = read(host, sandbox, &["git", "-C", path, "rev-parse", "HEAD"])?;
+    let head = sandbox::read(host, sandbox, &["git", "-C", path, "rev-parse", "HEAD"])?;
     if head != expected_commit {
         return Err(unusable(
             path,
@@ -435,7 +435,7 @@ fn adopt_worktree(
 ) -> Result<()> {
     // `--path-format=absolute`を付けないと、gitは条件によって相対pathを返す。bare git
     // dirとの一致を見る比較では、返る形が決まっていないと判定にならない。
-    let common = read(
+    let common = sandbox::read(
         host,
         sandbox,
         &[
@@ -487,12 +487,6 @@ fn verify_mode(
         }
     }
     Ok(())
-}
-
-/// Sandbox内のcommandの標準出力。
-fn read(host: &dyn HostEnvironment, sandbox: &str, args: &[&str]) -> Result<String> {
-    let outcome = sandbox::exec(host, sandbox, args)?.require_success()?;
-    Ok(outcome.stdout_text().trim().to_string())
 }
 
 /// 成果物を自動削除せず、観測した不一致を示して停止する。

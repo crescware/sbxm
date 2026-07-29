@@ -135,6 +135,12 @@ pub fn exec_as_root(
     run_exec(host, sandbox, Some("root"), args)
 }
 
+/// Sandbox内のcommandの標準出力。
+pub fn read(host: &dyn HostEnvironment, sandbox: &str, args: &[&str]) -> Result<String> {
+    let outcome = exec(host, sandbox, args)?.require_success()?;
+    Ok(outcome.stdout_text().trim().to_string())
+}
+
 /// Sandbox内で、進捗をそのまま見せるcommandを実行する。
 ///
 /// cloneやfetchのように、時間のかかる工程の進捗を実行中に見せるために使う。
