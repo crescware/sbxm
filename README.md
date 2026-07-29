@@ -1,155 +1,249 @@
 # sbxm
 
-A Rust CLI that sets up, connects to, diagnoses and tears down a Docker Sandbox per project.
+`sbxm` gives each GitHub project its own Docker Sandbox and a predictable set
+of Git worktrees. It handles the host clone, sandbox image, repository setup,
+day-to-day connections, diagnostics, rebuilds, and teardown.
+
+The sandbox receives the Git identity and configuration files you choose, but
+not your host project directory, Docker socket, or SSH agent. GitHub credentials
+are supplied through the Docker Sandboxes secret proxy instead of being copied
+into the sandbox.
 
 日本語版: [docs/README.ja.md](docs/README.ja.md)
 
-## Manual verification
+## Requirements
 
-The automated tests replace every external command with a fake, so they say
-nothing about the Docker Sandboxes CLI on a real machine. This section is the
-record of running sbxm against it. Every case is listed with the command, the
-expected exit code and the expected result; fill in the observed result and the
-CLI version when you run it.
+- macOS 14 or later on Apple silicon
+- Docker Desktop with a running Docker Engine
+- **[Docker Sandboxes CLI 0.37.0 or later](https://docs.docker.com/ai/sandboxes/get-started/)**
+- Git and SSH
+- A GitHub personal access token for each repository you want to manage
 
-Run it on the target platform only: macOS 14 or later on Apple silicon, with
-Docker Desktop and the Docker Sandboxes CLI 0.37.0 or later.
+Run `sbxm status --global` after initialization to check these requirements and
+the Docker Sandboxes environment.
 
-### Before you start
+## Installation
 
-- Use a private test repository. Never make a real project the first subject.
-- Use a throwaway `HOME` so the run cannot touch your own configuration:
-  `env HOME="$(mktemp -d)" sbxm ...`
-- Record the exact CLI version: `sbx version`, `docker version`.
+> [!WARNING]
+> Installation is not available yet. This section describes the planned
+> Homebrew interface and is included as a draft.
 
-### The GitHub token
-
-`prepare` clones the repository from inside the sandbox, which has no SSH
-agent, so it authenticates with a token stored as a Docker Sandboxes secret.
-`add` prints the sandbox name and the command that registers it; the token is
-registered between `add` and `prepare`.
-
-The token is registered as a custom secret, not as the `github` service secret:
-
+```sh
+brew install crescware/tap/sbxm
 ```
+
+## Quick start
+
+### 1. Initialize sbxm
+
+```sh
+sbxm init
+```
+
+The interactive setup creates `~/.sbxm/config.toml` and asks for:
+
+- the directory where host-side project clones should live;
+- the Git name and email to use inside sandboxes.
+
+It chooses the display language from your system locale and lets you confirm
+the choice when needed.
+
+For non-interactive setup, provide all three configuration values:
+
+```sh
+sbxm init \
+  --lang en \
+  --base-path "$HOME/Projects" \
+  --git-user-name "Your Name" \
+  --git-user-email "you@example.com"
+```
+
+Then verify the host:
+
+```sh
+sbxm status --global
+```
+
+### 2. Register a project
+
+Projects are identified as `owner/repository`:
+
+```sh
+sbxm add owner/repository
+```
+
+This registers the project, creates its host clone and Dockerfile, and prints
+the sandbox name and exact next commands. It does not build the sandbox yet.
+
+By default, the sandbox gets one worktree on the repository's default branch.
+For several independent worktrees, choose a starting branch and detached mode:
+
+```sh
+sbxm add owner/repository --detach main --worktrees 3
+```
+
+Detached worktrees are useful when several agents or tasks need isolated
+working directories. The supported count is 1–32.
+
+### 3. Register the GitHub credential
+
+Create a personal access token that can read and write the repository:
+
+- a fine-grained token needs **Contents: read and write** and
+  **Metadata: read**;
+- a classic token needs the `repo` scope.
+
+`sbxm add` prints a project-specific `sbx secret set-custom` command. Run that
+command with your token before preparing the project. The command resembles:
+
+```sh
 sbx secret set-custom <sandbox> \
   --host github.com \
   --host '**.github.com' \
   --host '**.githubusercontent.com' \
   --host ghcr.io \
-  --env GH_TOKEN --value <token>
+  --env GH_TOKEN \
+  --value <token>
 ```
 
-A custom secret shows the sandbox a placeholder and leaves the real token with
-the proxy, which swaps the placeholder for the real token in requests that go to
-a registered host. The token never enters the sandbox, and the token type does
-not matter. The `github` service secret was not usable here: on real hardware it
-authenticated a fine-grained token and left a classic one unauthenticated.
+The secret proxy keeps the real token outside the sandbox. The sandbox sees a
+placeholder, which the proxy replaces only for requests to the registered
+hosts.
 
-Every host development presents the token to has to be on the list, and on one
-secret. A host that is not registered receives the placeholder unchanged and
-answers `401` however good the token is: `git` reaches `github.com`, `gh` reaches
-`api.github.com`, and registering only the first is enough to make push work
-while every `gh` command fails. Splitting the hosts across several secrets does
-not work either, because each secret has its own placeholder and `GH_TOKEN` holds
-one value.
+### 4. Build and enter the sandbox
 
-`--host` takes wildcards, where `*` matches one label and `**` matches any
-number, so four patterns cover the whole surface: `**.github.com` takes in the
-API, `codeload`, `uploads` and the package registries, and
-`**.githubusercontent.com` takes in `raw` and its siblings. Naming the patterns
-rather than today's hosts means a host GitHub adds later is already covered.
+```sh
+sbxm prepare owner/repository
+sbxm open owner/repository
+```
 
-Covering more than is needed costs nothing here. The proxy only swaps a
-placeholder it finds, so a request that never carries one — a presigned release
-asset or LFS object on `objects.githubusercontent.com` — passes through
-untouched whether or not the pattern covers it.
+`prepare` builds the project image, creates the sandbox, clones the repository
+inside it, and creates the managed worktrees. `open` starts a stopped sandbox
+when necessary and connects over SSH.
 
-A custom secret binds to a sandbox when the sandbox is created, so registering
-it afterwards does not reach a sandbox that already exists. `prepare` asks for
-the secret before it creates anything, and looks inside the sandbox afterwards
-to confirm the placeholder arrived.
+Inside the sandbox, worktrees are located at:
 
-Issue a token that can read and write that one repository.
+```text
+/home/agent/work/<repository>/<repository>.tree-1
+/home/agent/work/<repository>/<repository>.tree-2
+...
+```
 
-| Token | Setting |
+## Daily use
+
+```sh
+# See every managed project and its sandbox state
+sbxm ls
+
+# Inspect one project without changing it
+sbxm status owner/repository
+
+# Connect to a project
+sbxm open owner/repository
+
+# Stop one or more projects without deleting them
+sbxm stop owner/repository
+sbxm stop owner/repository another/project
+```
+
+When run in an interactive terminal, `open`, `stop`, and `destroy` can prompt
+you to select a project if the project argument is omitted.
+
+## Customize a project
+
+### Edit the sandbox image
+
+`sbxm add` creates a Dockerfile in the project's host-side directory. Edit that
+file to add tools or system dependencies, then apply it:
+
+```sh
+sbxm rebuild owner/repository
+```
+
+Rebuilding recreates the sandbox. To protect work, sbxm refuses a normal
+rebuild when worktrees contain dirty files, unpushed commits, or unmanaged
+worktrees.
+
+### Add managed worktrees
+
+A built project can gain more managed worktrees without a rebuild:
+
+```sh
+sbxm apply owner/repository --worktrees 4
+```
+
+The count can only increase. For a project registered in the default attached
+mode, the first worktree stays on its tracking branch and additional worktrees
+are detached.
+
+### Place configuration files
+
+Declare host files in `~/.sbxm/config.toml`:
+
+```toml
+[[files]]
+source = "/Users/you/.config/example/config.toml"
+destination = ".config/example/config.toml"
+
+[[files]]
+source = "/Users/you/.config/another-tool/settings.toml"
+destination = ".config/another-tool/settings.toml"
+```
+
+The destination is relative to the sandbox user's home directory. Declarations
+are placed during `prepare`; apply later changes explicitly:
+
+```sh
+sbxm apply owner/repository --files
+```
+
+`--files` overwrites the declared destinations. Keep tokens, private keys, and
+other credentials out of these files; use Docker Sandboxes secrets for those.
+
+Both apply scopes may be requested together:
+
+```sh
+sbxm apply owner/repository --files --worktrees 4
+```
+
+## Tear down a project
+
+```sh
+sbxm destroy owner/repository
+```
+
+Before deleting anything, sbxm shows what will be removed and what will remain.
+Normal teardown checks for dirty worktrees, unpushed commits, and active
+sessions. In an interactive terminal, it then asks you to type the sandbox
+name.
+
+The sandbox and sbxm's project metadata are deleted. The host clone, project
+Dockerfile, built images, loaded templates, and registered secrets are kept, so
+the project can be registered again later.
+
+If you intentionally need to bypass data-protection and active-session checks:
+
+```sh
+sbxm destroy --force owner/repository
+```
+
+Use `--force` only when you have independently confirmed that nothing inside
+the sandbox needs to be preserved.
+
+## Command overview
+
+| Command | Purpose |
 |---|---|
-| Fine-grained | Contents read and write, Metadata read |
-| Fine-grained, optional | Pull requests, Issues, Actions, only if the work needs them |
-| Classic | The `repo` scope |
+| `sbxm init` | Create the global configuration |
+| `sbxm add owner/repository` | Register a GitHub project and create its host artifacts |
+| `sbxm prepare owner/repository` | Build and provision the project's sandbox |
+| `sbxm open [owner/repository]` | Start the sandbox if needed and connect over SSH |
+| `sbxm stop [owner/repository ...]` | Stop one or more sandboxes |
+| `sbxm ls` | List managed projects and sandbox states |
+| `sbxm status --global` | Diagnose the host and Docker Sandboxes environment |
+| `sbxm status owner/repository` | Diagnose a project without changing it |
+| `sbxm apply owner/repository ...` | Apply declared files or add managed worktrees |
+| `sbxm rebuild owner/repository` | Recreate a sandbox from its edited Dockerfile |
+| `sbxm destroy [owner/repository]` | Delete a sandbox and stop managing the project |
 
-`add` prints these requirements too, so they do not have to be remembered.
-
-### Redaction
-
-Before recording anything, remove:
-
-- tokens and secret values of any kind
-- the macOS user name inside paths, replaced by `<user>`
-- SSH public keys and agent socket paths
-- repository names, if the test repository is not public
-
-### Cases
-
-| # | Command | Expected exit | Expected result |
-|---:|---|---:|---|
-| 1 | `sbxm init` in a fresh HOME | 0 | `~/.sbxm/config.toml` created with mode 0600 |
-| 2 | `sbxm --lang ja init`, `sbxm --lang en init` | 0 | help and output follow the chosen language |
-| 3 | `sbxm add <owner>/<repo>` | 0 | registers the project, clones it onto the host, and names the sandbox and the token command |
-| 4 | register the secret, then `sbxm prepare <owner>/<repo>` | 0 | builds the sandbox and the repository in one run |
-| 5 | `sbxm prepare <owner>/<repo>` without the secret | 1 | stops at `github-secret-missing` with the command that registers it, before it builds an image or creates a sandbox |
-| 5a | register the secret after the sandbox exists, then `sbxm prepare` | 1 | stops at `sandbox-secret-not-applied` and names the `sbx rm` that lets it be built anew |
-| 5b | inside the sandbox, `git ls-remote origin` in the bare repository | 0 | git authenticates with the placeholder and never asks for a username |
-| 6 | `sbxm add <owner>/<repo2> --worktrees 3 --detach develop` then `sbxm prepare` | 0 | three worktrees on the same commit of `origin/develop` |
-| 7 | create an extra worktree inside the sandbox by hand | - | it is the unmanaged case for the later checks |
-| 8 | inspect the sandbox workspace | - | no project path and no user home is visible inside |
-| 9 | `ssh-add -L` and `docker info` inside the sandbox | non-zero | no agent keys, no host Docker socket |
-| 10 | run Codex, Claude Code and `gh auth status` inside | 0 | each reaches the network it needs |
-| 11 | `sbxm open <owner>/<repo>` from stopped and from running | 0 | both connect; the stopped one is started first |
-| 13 | `sbxm stop <a> <b>` and then again | 0 | first stops both, second is a no-op |
-| 14 | `sbxm ls` | 0 | running, stopped and not-created appear, unmanaged sandboxes separately |
-| 15 | `sbxm status <owner>/<repo>` | 0 or 1 | managed and unmanaged worktrees, dirty state and SSH agent are reported |
-| 16 | `sbxm apply <owner>/<repo> --files` | 0 | only the declared files change |
-| 16a | `sbxm apply <owner>/<repo> --worktrees 3` on a project built with one | 0 | two more worktrees appear beside the first, which keeps its branch and its commits |
-| 16b | `sbxm apply <owner>/<repo>` with no option | 1 | `apply-scope-required`, and nothing is touched |
-| 17 | `sbxm rebuild <owner>/<repo>` with no Dockerfile change | 0 | reports that nothing was applied |
-| 18 | break the Dockerfile, then `sbxm rebuild` | 1 | the build fails and the existing sandbox still runs |
-| 19 | `sbxm rebuild` with a dirty tree or unpushed commits | 1 | `unsaved-work`, naming what would be lost |
-| 20 | `sbxm rebuild` with the unmanaged worktree from case 7 | 1 | `unmanaged-worktree-present`, naming the worktree and how to remove it |
-| 21 | `sbxm rebuild` on a stopped sandbox | 0 | starts it to read its saved state, then rebuilds |
-| 22 | `sbxm rebuild` on a clean, managed-only sandbox | 0 | the new generation is applied |
-| 23 | interrupt case 22 right after the sandbox is removed, then rerun | 0 | continues from the recorded generation |
-| 24 | `sbxm status <owner>/<repo>` after case 22 | 0 | the new Dockerfile hash, worktrees, files and Git identity are in place |
-| 25 | `sbxm destroy` with a dirty managed worktree | 1 | `unsaved-work` |
-| 26 | `sbxm destroy` with a dirty unmanaged worktree | 1 | `unsaved-work` |
-| 27 | `sbxm destroy` with unpushed commits | 1 | `unsaved-work` |
-| 28 | `sbxm destroy` on a clean project, typing the sandbox name | 0 | deleted after the typed confirmation |
-| 29 | `sbxm destroy --force` on a running sandbox with unsaved work | 0 | deleted, with the skipped checks stated |
-| 30 | `sbxm destroy --force` on a stopped sandbox | 0 | deleted |
-| 31 | the same in a non-interactive shell with the project spelled out | 0 | no prompt in either mode |
-| 32 | after a destroy, inspect the host | - | host clone, Dockerfile, image, template, workspace and secret are kept |
-| 33 | after a destroy, inspect `.sbxm` | - | metadata, lock file and cache are gone |
-| 34 | `sbxm open <owner>/<repo>` after a destroy | 1 | the project is no longer managed |
-| 35 | `sbxm add <owner>/<repo>` again | 0 | registers as a new project |
-| 36 | case 35 with the kept Dockerfile | 0 | the first build uses the Dockerfile that survived the destroy |
-
-### Result
-
-| Item | Value |
-|---|---|
-| Date | not run yet |
-| macOS / arch | |
-| `sbx version` | |
-| `docker version` | |
-| Cases passed | |
-| Cases failed | |
-
-### Daemon safety probe
-
-The items of the Phase 2 spec belong here too. Record them the same way.
-
-| # | Question |
-|---:|---|
-| 1 | A daemon started with `SSH_AUTH_SOCK` forwards the agent into the sandbox |
-| 2 | A daemon started with `SSH_AUTH_SOCK` unset does not |
-| 3 | A sandbox can be reused or created after the daemon is stopped and started |
+Use `sbxm --help` or `sbxm <command> --help` for the complete CLI reference.
