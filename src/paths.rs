@@ -46,6 +46,11 @@ pub fn lexically_standardize(path: &Path) -> PathBuf {
     out
 }
 
+/// symlinkを解決できない場合は宣言されたpathのまま比較する。
+pub fn real_path(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| lexically_standardize(path))
+}
+
 /// pathがsymlinkかどうか。存在しない場合は`false`。
 pub fn is_symlink(path: &Path) -> bool {
     fs::symlink_metadata(path)

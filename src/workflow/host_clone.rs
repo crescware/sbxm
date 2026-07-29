@@ -88,8 +88,8 @@ fn inspect(
     }
 
     let top_level = read_git(host, target, &["rev-parse", "--show-toplevel"])?;
-    let observed = canonicalize(Path::new(&top_level));
-    let expected = canonicalize(target);
+    let observed = paths::real_path(Path::new(&top_level));
+    let expected = paths::real_path(target);
     if observed != expected {
         return Err(unusable(
             target,
@@ -195,11 +195,6 @@ fn read_git(host: &dyn HostEnvironment, target: &Path, args: &[&str]) -> Result<
         .working_dir(target);
     let outcome = host.run(&spec)?.require_success()?;
     Ok(outcome.stdout_text().trim().to_string())
-}
-
-/// symlinkを解決できない場合は宣言されたpathのまま比較する。
-fn canonicalize(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| paths::lexically_standardize(path))
 }
 
 fn file_type_name(metadata: &fs::Metadata) -> &'static str {

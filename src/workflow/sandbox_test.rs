@@ -2,6 +2,7 @@ use super::*;
 
 use crate::project::ProjectId;
 use std::cell::RefCell;
+use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 struct FakeSbx {

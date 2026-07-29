@@ -20,6 +20,25 @@ fn standardization_removes_dot_and_parent_components() {
 }
 
 #[test]
+fn a_path_that_cannot_be_resolved_is_compared_as_declared() {
+    let missing = Path::new("/no/such/dir/../file");
+    assert_eq!(real_path(missing), PathBuf::from("/no/such/file"));
+    assert_eq!(real_path(missing), lexically_standardize(missing));
+
+    let dir = temp_dir();
+    let real = dir.path().join("real");
+    fs::create_dir(&real).expect("create directory");
+    let link = dir.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).expect("create symlink");
+    assert_eq!(
+        real_path(&link),
+        fs::canonicalize(&real).expect("resolve directory"),
+        "an existing path is resolved through its symlinks"
+    );
+    assert_ne!(real_path(&link), lexically_standardize(&link));
+}
+
+#[test]
 fn permission_check_rejects_group_and_other_bits() {
     assert!(!permission_too_open(0o600));
     assert!(!permission_too_open(0o700));
