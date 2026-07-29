@@ -1,24 +1,14 @@
 use super::*;
-use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+use crate::command::{EnvPolicy, OutputPolicy};
 use crate::error::ExitCode;
 use crate::metadata;
-use crate::testing::host::FakeSbx;
-use crate::testing::project::{Fixture, fixture};
+use crate::paths::PRIVATE_FILE_MODE;
+use crate::testing::host::{FakeSbx, assert_lifecycle};
+use crate::testing::poll::poll;
+use crate::testing::project::{Fixture, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::protection::clean_host;
 use std::os::unix::fs::PermissionsExt;
-use std::time::Duration;
-
-fn poll() -> Poll {
-    Poll {
-        interval: Duration::from_millis(1),
-        limit: Duration::from_millis(20),
-    }
-}
-
-fn project_id(value: &str) -> ProjectId {
-    ProjectId::parse(value).expect("valid project id")
-}
 
 fn path_of(target: &Target) -> Option<&str> {
     match target {
@@ -101,11 +91,7 @@ fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() {
     .expect("prepare");
     execute(&host, &prepared, poll()).expect("destroy");
 
-    // 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
-    let removal = host.spec(&format!("rm --force {}", project.sandbox));
-    assert_eq!(removal.output, OutputPolicy::Passthrough);
-    assert_eq!(removal.env, EnvPolicy::InheritWithoutSshAgent);
-    assert_eq!(removal.timeout, TimeoutClass::SandboxLifecycle);
+    assert_lifecycle(&host, &format!("rm --force {}", project.sandbox));
 
     // 判定に使う出力はsbxmが読む。
     let listing = host.spec("ls --json");
@@ -178,6 +164,28 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() {
     assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
     assert!(!host.ran("rm "), "nothing is removed");
     assert!(project.paths.metadata_file().exists());
+}
+
+#[test]
+fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
+    let fixture = fixture();
+    let host = FakeSbx::listing("[]");
+
+    let error = prepare(
+        &fixture.config,
+        Some(&project_id("example-org/example-repo")),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .expect_err("a project that is not managed has nothing to destroy");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+    assert!(
+        host.calls().is_empty(),
+        "the host is not asked anything before the target is decided: {:?}",
+        host.calls()
+    );
 }
 
 #[test]
@@ -350,6 +358,37 @@ fn force_mode_and_a_non_interactive_run_are_not_asked_to_confirm() {
     let mut with_terminal = ScriptedConfirm::canceling();
     confirm(&forced, true, &mut with_terminal).expect("force mode skips the confirmation");
     assert_eq!(with_terminal.asked, 0);
+}
+
+#[test]
+fn the_project_lock_is_held_across_the_confirmation() {
+    let fixture = fixture();
+    let (_host, prepared) = prepared_project(&fixture, false);
+    let lock_file = ProjectPaths::derive(
+        &fixture.config.base_path,
+        &project_id("example-org/example-repo").canonical(),
+    )
+    .lock_file();
+
+    // 確認を待つあいだも、別の実行はこの案件へ入れない。
+    let waiting = std::time::Duration::from_millis(200);
+    paths::acquire_exclusive_lock(
+        &lock_file,
+        waiting,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .expect_err("another run cannot reach the project while the confirmation is pending");
+
+    // lockはPreparedとともに解放される。
+    drop(prepared);
+    paths::acquire_exclusive_lock(
+        &lock_file,
+        waiting,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .expect("the lock is released with Prepared");
 }
 
 /// `.sbxm`から書き込みを取り上げ、cleanupを失敗させる。

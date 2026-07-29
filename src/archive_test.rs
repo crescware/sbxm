@@ -1,7 +1,6 @@
 use super::*;
+use crate::testing::value::IMAGE_ID;
 use std::io::Write;
-
-const IMAGE_ID: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
 fn tar(entries: &[(&str, &[u8])]) -> Vec<u8> {
     tar_bytes(entries)

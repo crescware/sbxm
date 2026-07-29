@@ -3,13 +3,14 @@ use crate::command::{CommandOutcome, CommandSpec};
 use crate::config::{HostFileSource, SandboxHomeRelativePath};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeSbx {
     /// Sandbox内のfileと、そのdigest。
     files: HashMap<String, String>,
     /// Sandbox内でsymlinkであるpath。
     symlinks: Vec<String>,
+    /// 非zeroで答えるinner command。
+    failing: Option<String>,
     calls: RefCell<Vec<Vec<String>>>,
 }
 
@@ -18,6 +19,7 @@ impl FakeSbx {
         FakeSbx {
             files: HashMap::new(),
             symlinks: Vec::new(),
+            failing: None,
             calls: RefCell::new(Vec::new()),
         }
     }
@@ -28,6 +30,7 @@ impl FakeSbx {
         FakeSbx {
             files,
             symlinks: Vec::new(),
+            failing: None,
             calls: RefCell::new(Vec::new()),
         }
     }
@@ -35,6 +38,12 @@ impl FakeSbx {
     /// 指定したpathをsymlinkとして扱う。
     fn linking(mut self, path: &str) -> FakeSbx {
         self.symlinks.push(path.to_string());
+        self
+    }
+
+    /// 指定したinner commandを失敗させる。
+    fn failing(mut self, command: &str) -> FakeSbx {
+        self.failing = Some(command.to_string());
         self
     }
 
@@ -59,37 +68,34 @@ impl HostEnvironment for FakeSbx {
         let mut code = 0;
         let mut stdout = String::new();
 
-        if let Some(position) = spec.args.iter().position(|arg| arg == "--") {
-            let inner = &spec.args[position + 1..];
-            match inner.first().map(String::as_str) {
-                Some("test") => {
-                    let target = inner.last().cloned().unwrap_or_default();
-                    let present = match inner.get(1).map(String::as_str) {
-                        Some("-h") => self.symlinks.contains(&target),
-                        _ => self.files.contains_key(&target),
-                    };
-                    code = i32::from(!present);
-                }
-                Some("sha256sum") => {
-                    let target = inner.last().cloned().unwrap_or_default();
-                    match self.files.get(&target) {
-                        Some(digest) => stdout = format!("{digest}  {target}\n"),
-                        None => code = 1,
-                    }
-                }
-                _ => {}
+        let inner = crate::testing::command::inner_args(spec);
+        match inner.first().copied() {
+            Some("test") => {
+                let target = inner.last().copied().unwrap_or_default();
+                let present = match inner.get(1).copied() {
+                    Some("-h") => self.symlinks.iter().any(|known| known == target),
+                    _ => self.files.contains_key(target),
+                };
+                code = i32::from(!present);
             }
+            Some("sha256sum") => {
+                let target = inner.last().copied().unwrap_or_default();
+                match self.files.get(target) {
+                    Some(digest) => stdout = format!("{digest}  {target}\n"),
+                    None => code = 1,
+                }
+            }
+            _ => {}
+        }
+        if inner.first().is_some_and(|arg| {
+            self.failing
+                .as_deref()
+                .is_some_and(|failing| failing == *arg)
+        }) {
+            code = 1;
         }
 
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }
 
@@ -164,6 +170,34 @@ fn a_declared_file_is_staged_installed_and_moved_into_place() {
     assert!(
         host.ran("/tmp/sbxm-file-0"),
         "the staged copy is removed afterwards: {calls:?}"
+    );
+}
+
+#[test]
+fn a_failed_placement_still_removes_what_it_staged() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = source_file(dir.path(), b"declared = true\n");
+    let host = FakeSbx::empty().failing("mv");
+
+    let error = place_all(
+        &host,
+        "sbxm-example",
+        &[declaration(&source, ".config/example/config.toml")],
+        Conflict::Refuse,
+    )
+    .expect_err("the rename is the last step and it failed");
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+
+    let pending = "/home/agent/.config/example/config.toml.sbxm-new".to_string();
+    let staged = "/tmp/sbxm-file-0".to_string();
+    assert!(
+        host.calls()
+            .iter()
+            .any(|args| args.contains(&"rm".to_string())
+                && args.contains(&staged)
+                && args.contains(&pending)),
+        "both temporary files are removed on the way out: {:?}",
+        host.calls()
     );
 }
 

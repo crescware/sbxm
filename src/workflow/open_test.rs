@@ -1,17 +1,12 @@
 use super::*;
-use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+use crate::command::{OutputPolicy, TimeoutClass};
 use crate::metadata::{self, RebuildIntent};
-use crate::testing::host::FakeSbx;
-use crate::testing::project::{Fixture, Registered, fixture};
+use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};
+use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent};
+use crate::testing::poll::poll;
+use crate::testing::project::{Fixture, Registered, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
 use std::time::Duration;
-
-fn poll() -> Poll {
-    Poll {
-        interval: Duration::from_millis(1),
-        limit: Duration::from_millis(20),
-    }
-}
 
 /// Docker疎通とworktree一覧に応答するhost。
 fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
@@ -22,22 +17,19 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
         layout.bare_root(),
         layout.worktree_name(0)
     );
-    host.answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
-        .answering(
-            &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),
-            1,
-            "",
-        )
-        .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 2, "")
-        .answering(
-            &format!(
-                "exec {} -- git --git-dir {} worktree list --porcelain -z",
-                project.sandbox,
-                layout.bare_git_dir()
-            ),
-            0,
-            &listing,
-        )
+    let host = isolated_agent(
+        host.answering("version --format {{.Server.Version}}", 0, "27.0.3\n"),
+        project.sandbox.as_str(),
+    );
+    host.answering(
+        &format!(
+            "exec {} -- git --git-dir {} worktree list --porcelain -z",
+            project.sandbox,
+            layout.bare_git_dir()
+        ),
+        0,
+        &listing,
+    )
 }
 
 fn prepare_for(fixture: &Fixture, host: &FakeSbx) -> Result<Prepared> {
@@ -107,24 +99,58 @@ fn a_stopped_project_is_started_without_a_terminal_and_waited_for() {
     prepare_for(&fixture, &host).expect("prepare");
 
     assert!(host.ran("/bin/true"), "{:?}", host.calls());
-    let start = host.spec("/bin/true");
-    assert_eq!(
-        start.output,
-        OutputPolicy::Passthrough,
-        "the runtime's own progress is shown as it is"
-    );
-    assert_eq!(start.env, EnvPolicy::InheritWithoutSshAgent);
+    assert_lifecycle(&host, "/bin/true");
 }
 
 #[test]
 fn a_project_without_a_sandbox_is_sent_back_to_add() {
     let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
+    let project = fixture.register("Example-Org/Example-Repo");
     let host = ready(FakeSbx::listing("[]"), &project);
 
     let error = prepare_for(&fixture, &host).expect_err("open never creates a sandbox");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(diagnostic.description.id, "error-sandbox-not-created");
+    assert_eq!(
+        diagnostic.description.args,
+        vec![
+            ("project", "Example-Org/Example-Repo".to_string()),
+            ("sandbox", project.sandbox.to_string())
+        ]
+    );
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .expect("the user is told how to build the sandbox");
+    assert_eq!(remediation.id, "remediation-sandbox-not-created");
+    assert_eq!(
+        remediation.args,
+        vec![("command", "sbxm add Example-Org/Example-Repo".to_string())]
+    );
     assert!(!host.ran("daemon stop"), "the daemon is left alone");
+}
+
+#[test]
+fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
+    let fixture = fixture();
+    let host = FakeSbx::listing("[]");
+
+    let error = prepare(
+        &fixture.config,
+        Some(&project_id("example-org/example-repo")),
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+        poll(),
+    )
+    .expect_err("a project that is not managed has nothing to open");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+    assert!(
+        host.calls().is_empty(),
+        "the host is not asked anything before the target is decided: {:?}",
+        host.calls()
+    );
 }
 
 #[test]

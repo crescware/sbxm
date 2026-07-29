@@ -1,21 +1,10 @@
 use super::*;
 use crate::command::OutputPolicy;
 use crate::metadata::{self, RebuildIntent};
-use crate::testing::host::FakeSbx;
-use crate::testing::project::fixture;
+use crate::testing::host::{FakeSbx, assert_lifecycle};
+use crate::testing::poll::poll;
+use crate::testing::project::{fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
-use std::time::Duration;
-
-fn poll() -> Poll {
-    Poll {
-        interval: Duration::from_millis(1),
-        limit: Duration::from_millis(20),
-    }
-}
-
-fn project_id(value: &str) -> ProjectId {
-    ProjectId::parse(value).expect("valid project id")
-}
 
 #[test]
 fn only_the_running_targets_are_stopped() {
@@ -63,9 +52,7 @@ fn only_the_running_targets_are_stopped() {
         "a sandbox that is already stopped is left alone"
     );
 
-    let stop = host.spec(&format!("stop {}", first.sandbox));
-    assert_eq!(stop.output, OutputPolicy::Passthrough);
-    assert_eq!(stop.env, EnvPolicy::InheritWithoutSshAgent);
+    assert_lifecycle(&host, &format!("stop {}", first.sandbox));
     assert_eq!(
         host.spec("ls --json").output,
         OutputPolicy::Capture,

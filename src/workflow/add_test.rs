@@ -2,7 +2,7 @@ use super::*;
 use crate::config::{GitIdentity, GlobalConfig};
 use crate::i18n::Locale;
 use crate::metadata::RebuildIntent;
-use crate::paths::AbsoluteBasePath;
+use crate::paths::{AbsoluteBasePath, LOCK_TIMEOUT};
 use crate::testing::add_request::request;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -29,7 +29,7 @@ fn mode_of(path: &Path) -> u32 {
         .mode()
         & 0o777
 }
-/// `sbx ls`だけを答え、Sandbox内のcommandは成功として扱うhost。
+
 #[test]
 fn registering_a_project_creates_the_documented_layout() {
     let (_dir, config) = setup();
@@ -378,7 +378,10 @@ fn a_broken_project_anywhere_under_the_base_path_stops_registration() {
 
     let error = register(&config, &request("example-org/example-repo", None, None))
         .expect_err("a listing that cannot be trusted stops the run");
-    assert!(error.contains(ErrorId::MetadataUnknownVersion), "{error:?}");
+    assert!(
+        error.contains_id(ErrorId::MetadataUnknownVersion),
+        "{error:?}"
+    );
     assert!(
         !dir.path().join("example-org").exists(),
         "nothing may be created while the listing is broken"

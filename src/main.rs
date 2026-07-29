@@ -12,6 +12,7 @@ mod error;
 mod git;
 mod hash;
 mod i18n;
+mod image_labels;
 mod metadata;
 mod paths;
 mod progress;
@@ -47,7 +48,6 @@ fn main() -> ProcessExitCode {
 }
 
 fn run(argv: &[String]) -> ExitCode {
-    // helpとusageを構築する前に、argvから`--lang`だけを副作用なく先読みする。
     let peeked = cli::peek_lang(argv);
 
     let location = match ConfigLocation::discover() {
@@ -62,7 +62,8 @@ fn run(argv: &[String]) -> ExitCode {
     progress::install(display_locale);
     let catalog = Catalog::new(display_locale);
 
-    // `--lang`が不正な場合はconfigを読まず、shell localeまたは`en`でparse errorを表示する。
+    // 表示localeはconfigからbest-effortで解決済みである。`--lang`の不正はconfigの
+    // validation errorより先に報告するため、壊れたconfigがparse errorを覆い隠さない。
     if let PeekedLang::Invalid(value) = &peeked {
         let error = cli::invalid_lang_error(value);
         report(&catalog, &error);
@@ -608,7 +609,7 @@ fn print_prepare_output(catalog: &Catalog, output: &prepare::PrepareOutput) {
             ),
             (
                 "add-field-sandbox-state",
-                sandbox_state(output.sandbox_state).to_string()
+                output.sandbox_state.as_str().to_string()
             ),
         ])
     );
@@ -665,7 +666,7 @@ fn print_prepare_output(catalog: &Catalog, output: &prepare::PrepareOutput) {
     print_notes(catalog, &output.notes);
 
     let mut values: Vec<(&str, &str)> = vec![(
-        sandbox_state(output.sandbox_state),
+        output.sandbox_state.as_str(),
         sandbox_state_legend(output.sandbox_state),
     )];
     for worktree in &output.worktrees {
@@ -705,7 +706,6 @@ fn print_project_status(catalog: &Catalog, status: &status_project::ProjectStatu
         )
     );
 
-    // 0件でもsectionとheaderを出す。表がないことと、観測できなかったことは別である。
     let rows: Vec<Vec<String>> = status
         .worktrees
         .iter()
@@ -886,8 +886,6 @@ fn print_stop_report(catalog: &Catalog, report: &stop::StopReport) -> ExitCode {
 }
 
 /// `ls`の出力。
-///
-/// 0件でもheaderを表示する。
 fn print_listing(catalog: &Catalog, listing: &ls::Listing) {
     let reporter = Reporter::new(catalog);
     let projects: Vec<Vec<String>> = listing
@@ -1009,14 +1007,7 @@ fn print_apply_output(catalog: &Catalog, output: &workflow::apply::ApplyOutput) 
     let _ = std::io::stdout().flush();
 }
 
-/// 翻訳しない状態値と、その凡例。
-fn sandbox_state(state: SandboxState) -> &'static str {
-    match state {
-        SandboxState::Running => "running",
-        SandboxState::Stopped => "stopped",
-    }
-}
-
+/// 状態値の凡例。
 fn sandbox_state_legend(state: SandboxState) -> &'static str {
     match state {
         SandboxState::Running => "legend-sandbox-running",
@@ -1090,10 +1081,6 @@ fn effective_catalog(
 }
 
 fn report(catalog: &Catalog, error: &Error) {
-    // Ctrl-CとEscは何も変更していないため、追加の説明を出さない。
-    if matches!(error, Error::Canceled) {
-        return;
-    }
     let reporter = Reporter::new(catalog);
     reporter.print_error(error, &mut std::io::stderr());
 }

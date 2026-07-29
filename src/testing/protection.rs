@@ -3,6 +3,7 @@
 use crate::project::SandboxLayout;
 use crate::testing::host::FakeSbx;
 use crate::testing::project::{Fixture, Registered};
+use crate::testing::value::COMMIT;
 
 /// 検査を通るworktreeを持つhost。
 pub fn clean_host(fixture: &Fixture, project: &Registered) -> FakeSbx {
@@ -34,7 +35,7 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> FakeSbx {
         .answering(
             &format!("exec {name} -- git -C {managed} rev-parse HEAD"),
             0,
-            "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5\n",
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!("exec {name} -- git -C {managed} symbolic-ref --quiet --short HEAD"),

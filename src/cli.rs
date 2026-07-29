@@ -175,7 +175,7 @@ fn supported_value_name() -> &'static str {
         .as_str()
 }
 
-/// `--lang`の不正値に対するerror。configを読まずに表示する。
+/// `--lang`の不正値に対するerror。configのvalidationより先に報告する。
 pub fn invalid_lang_error(value: &str) -> Error {
     Error::new(
         ErrorId::InvalidLang,
@@ -650,8 +650,7 @@ fn add_args(matches: &ArgMatches) -> Result<AddArgs> {
     })
 }
 
-/// `apply`は適用する対象の明示を必須とする。省略した対象へは触れないため、何も
-/// 指定しない実行は何をするか決まらない。
+/// 省略した対象へは触れないため、何も指定しない実行は何をするか決まらない。
 fn apply_args(matches: &ArgMatches) -> Result<ApplyArgs> {
     let files = matches.get_flag("files");
     let worktrees = matches.get_one::<u32>("worktrees").copied();

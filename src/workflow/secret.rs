@@ -151,7 +151,7 @@ pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
 ///
 /// 未設定でも失敗させず空文字を返させる。`printenv`のexit statusで分けると、
 /// 「設定されていない」と「読めなかった」を区別できない。
-pub(super) fn placeholder_probe() -> String {
+pub(crate) fn placeholder_probe() -> String {
     format!("printf %s \"${{{GITHUB_TOKEN_ENV}:-}}\"")
 }
 

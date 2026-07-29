@@ -14,12 +14,12 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
-use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
 use super::tools::Note;
-use super::{daemon, repository, sandbox, tools};
+use super::{daemon, inventory, rebuild, repository, sandbox, select, tools};
 use crate::project::SandboxLayout;
 
 /// 何を適用するか。
@@ -58,74 +58,30 @@ pub fn run(
     workspace_root: &Path,
 ) -> Result<ApplyOutput> {
     let canonical = project.canonical();
-    let paths = ProjectPaths::derive(&config.base_path, &canonical);
-    let not_managed = || {
-        Error::single(
-            Diagnostic::new(
-                ErrorId::ProjectNotManaged,
-                msg!("error-project-not-managed", project = project),
-            )
-            .remediation(msg!(
-                "remediation-project-not-managed",
-                command = format!("sbxm add {project}")
-            )),
-        )
-    };
-
-    if metadata::load(&paths)?.is_none() {
-        // 管理対象でない案件にはlock fileも作らない。
-        return Err(not_managed());
-    }
-    let _lock = paths::acquire_exclusive_lock(
-        &paths.lock_file(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ProjectPath,
-    )?;
-
-    // lock取得後のmetadataを、以降の判定の正本とする。
-    let Some(mut metadata) = metadata::load(&paths)? else {
-        return Err(not_managed());
-    };
-    require_no_rebuild(&metadata)?;
+    let mut locked = select::locked(config, project)?;
+    rebuild::require_no_rebuild(&locked.metadata)?;
 
     let name = SandboxName::derive(&canonical);
     let entry = daemon::list(host)?
         .into_iter()
         .find(|entry| entry.name == name.as_str())
-        .ok_or_else(|| {
-            Error::single(
-                Diagnostic::new(
-                    ErrorId::SandboxNotCreated,
-                    msg!(
-                        "error-sandbox-not-created",
-                        project = metadata.display_id(),
-                        sandbox = name
-                    ),
-                )
-                .remediation(msg!(
-                    "remediation-sandbox-not-created",
-                    command = format!("sbxm add {}", metadata.display_id())
-                )),
-            )
-        })?;
+        .ok_or_else(|| inventory::not_created(&locked.metadata, name.as_str()))?;
 
     sandbox::verify_identity(&entry, &name, workspace_root)?;
 
     if entry.state != SandboxState::Running {
-        // 停止中のSandboxを暗黙に起動しない。
         return Err(Error::single(
             Diagnostic::new(
                 ErrorId::SandboxNotRunning,
                 msg!(
                     "error-sandbox-not-running",
                     sandbox = entry.name,
-                    observed = state_of(entry.state)
+                    observed = entry.state.as_str()
                 ),
             )
             .remediation(msg!(
                 "remediation-sandbox-not-running",
-                command = format!("sbxm open {}", metadata.display_id())
+                command = format!("sbxm open {}", locked.metadata.display_id())
             )),
         ));
     }
@@ -138,18 +94,24 @@ pub fn run(
     let mut worktrees = None;
     let mut notes = Vec::new();
     if let Some(count) = scope.worktrees {
-        raise_worktrees(&paths, &mut metadata, count)?;
+        raise_worktrees(&locked.paths, &mut locked.metadata, count)?;
         let layout = SandboxLayout::new(&canonical);
         repository::ensure_bare_clone(host, &entry.name, project, &layout)?;
-        let branch =
-            repository::resolve_start_ref(host, &entry.name, &layout, &paths, &mut metadata)?;
-        let managed = repository::ensure_worktrees(host, &entry.name, &layout, &metadata, &branch)?;
-        worktrees = Some(metadata.provisioning.requested_worktrees);
+        let branch = repository::resolve_start_ref(
+            host,
+            &entry.name,
+            &layout,
+            &locked.paths,
+            &mut locked.metadata,
+        )?;
+        let managed =
+            repository::ensure_worktrees(host, &entry.name, &layout, &locked.metadata, &branch)?;
+        worktrees = Some(locked.metadata.provisioning.requested_worktrees);
         notes = tools::worktrees_ready(host, &entry.name, &layout, managed.len())?;
     }
 
     Ok(ApplyOutput {
-        project: metadata.display_id(),
+        project: locked.metadata.display_id(),
         sandbox: entry.name,
         files,
         worktrees,
@@ -182,34 +144,6 @@ fn raise_worktrees(paths: &ProjectPaths, metadata: &mut ProjectMetadata, count: 
     }
     metadata.provisioning.requested_worktrees = count;
     metadata::update(paths, metadata)
-}
-
-/// 世代の切替中は、fileを配置せず`rebuild`の再実行を案内する。
-fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
-    if metadata.rebuild.is_none() {
-        return Ok(());
-    }
-    Err(Error::single(
-        Diagnostic::new(
-            ErrorId::RebuildIntentPending,
-            msg!(
-                "error-rebuild-intent-pending",
-                project = metadata.display_id()
-            ),
-        )
-        .remediation(msg!(
-            "remediation-run-rebuild",
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        )),
-    ))
-}
-
-/// 翻訳しない状態値。
-fn state_of(state: SandboxState) -> &'static str {
-    match state {
-        SandboxState::Running => "running",
-        SandboxState::Stopped => "stopped",
-    }
 }
 
 #[cfg(test)]

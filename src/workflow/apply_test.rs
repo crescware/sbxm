@@ -10,22 +10,18 @@ use crate::config::{FileDeclaration, GitIdentity, HostFileSource, SandboxHomeRel
 use crate::hash::sha256_hex;
 use crate::i18n::Locale;
 use crate::metadata::{CreationMode, Provisioning, RebuildIntent};
-use crate::paths::AbsoluteBasePath;
+use crate::paths::{AbsoluteBasePath, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::project::CanonicalProjectId;
-use crate::testing::value::DIGEST;
+use crate::testing::sandbox::InnerCommandSandbox;
+use crate::testing::value::{COMMIT, DIGEST};
 use crate::workflow::image::image_name;
 use std::cell::RefCell;
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 
 struct FakeSbx {
     listing: String,
-    calls: RefCell<Vec<Vec<String>>>,
-    /// Sandbox内commandへの応答。keyは`--`より後ろを空白で連結したもの。
-    answers: std::collections::HashMap<String, (i32, String)>,
-    /// Sandbox内に存在するpath。
-    present: RefCell<Vec<String>>,
+    inner: InnerCommandSandbox,
     /// 外部commandを呼ぶ時点でproject lockを取れてしまうか。
     lock_path: Option<PathBuf>,
     lock_was_free: RefCell<Option<bool>>,
@@ -35,22 +31,24 @@ impl FakeSbx {
     fn listing(output: &str) -> FakeSbx {
         FakeSbx {
             listing: output.to_string(),
-            calls: RefCell::new(Vec::new()),
-            answers: std::collections::HashMap::new(),
-            present: RefCell::new(Vec::new()),
+            inner: InnerCommandSandbox::new(),
             lock_path: None,
             lock_was_free: RefCell::new(None),
         }
     }
 
     fn answering(mut self, command: &str, stdout: &str) -> FakeSbx {
-        self.answers
-            .insert(command.to_string(), (0, stdout.to_string()));
+        self.inner = self.inner.answering(command, stdout);
         self
     }
 
     fn failing(mut self, command: &str) -> FakeSbx {
-        self.answers.insert(command.to_string(), (1, String::new()));
+        self.inner = self.inner.failing(command);
+        self
+    }
+
+    fn holding(mut self, paths: &[&str]) -> FakeSbx {
+        self.inner = self.inner.holding(paths);
         self
     }
 
@@ -73,14 +71,14 @@ impl FakeSbx {
             )
             .answering(
                 &format!("git --git-dir {git_dir} rev-parse refs/remotes/origin/main"),
-                "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5\n",
+                &format!("{COMMIT}\n"),
             );
         let mut host = host;
         for index in 0..32 {
             let path = layout.worktree(index);
             host = host.answering(
                 &format!("git -C {path} rev-parse HEAD"),
-                "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5\n",
+                &format!("{COMMIT}\n"),
             );
             host = host.answering(
                 &format!("git -C {path} rev-parse --path-format=absolute --git-common-dir"),
@@ -95,8 +93,7 @@ impl FakeSbx {
                 _ => host.failing(&format!("git -C {path} symbolic-ref -q HEAD")),
             };
         }
-        host.present.borrow_mut().push(git_dir);
-        host
+        host.holding(&[&git_dir])
     }
 
     /// workflowの実行中にlockが保持されているかを観測する。
@@ -105,11 +102,12 @@ impl FakeSbx {
         self
     }
 
+    fn calls(&self) -> Vec<Vec<String>> {
+        self.inner.calls()
+    }
+
     fn ran(&self, needle: &str) -> bool {
-        self.calls
-            .borrow()
-            .iter()
-            .any(|args| args.join(" ").contains(needle))
+        self.inner.ran(needle)
     }
 }
 
@@ -119,7 +117,6 @@ impl HostEnvironment for FakeSbx {
     }
 
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
-        self.calls.borrow_mut().push(spec.args.clone());
         if let Some(path) = &self.lock_path
             && self.lock_was_free.borrow().is_none()
         {
@@ -131,46 +128,14 @@ impl HostEnvironment for FakeSbx {
             );
             *self.lock_was_free.borrow_mut() = Some(taken.is_ok());
         }
-        let (code, stdout) = if spec.args.first().is_some_and(|arg| arg == "ls") {
-            (0, self.listing.clone())
-        } else {
-            let inner: Vec<String> = spec
-                .args
-                .iter()
-                .skip_while(|arg| *arg != "--")
-                .skip(1)
-                .cloned()
-                .collect();
-            if inner.first().is_some_and(|arg| arg == "test") {
-                let target = inner.last().cloned().unwrap_or_default();
-                (
-                    i32::from(!self.present.borrow().contains(&target)),
-                    String::new(),
-                )
-            } else if inner.join(" ").contains("worktree add") {
-                let path = inner
-                    .iter()
-                    .find(|arg| arg.contains(".tree-"))
-                    .cloned()
-                    .unwrap_or_default();
-                self.present.borrow_mut().push(path);
-                (0, String::new())
-            } else {
-                match self.answers.get(&inner.join(" ")) {
-                    Some((code, stdout)) => (*code, stdout.clone()),
-                    None => (0, String::new()),
-                }
+        let outcome = self.inner.run(spec)?;
+        // Sandbox一覧だけはこちらが答える。残りはinner commandへの応答に任せる。
+        match spec.args.first() {
+            Some(arg) if arg == "ls" => {
+                Ok(crate::testing::command::outcome(spec, 0, &self.listing))
             }
-        };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+            _ => Ok(outcome),
+        }
     }
 }
 
@@ -381,7 +346,7 @@ fn nothing_else_in_the_project_is_touched() {
         assert!(
             !host.ran(forbidden),
             "sync-files must not run {forbidden}: {:?}",
-            host.calls.borrow()
+            host.calls()
         );
     }
     assert_eq!(
@@ -406,6 +371,16 @@ fn a_stopped_sandbox_is_not_started_and_the_user_is_sent_to_open() {
             .as_ref()
             .map(|message| message.id),
         Some("remediation-sandbox-not-running")
+    );
+    // 起動commandは`exec <name> -- /bin/true`であるため、一覧以外が走っていないことで見る。
+    let beyond_listing: Vec<Vec<String>> = host
+        .calls()
+        .into_iter()
+        .filter(|args| args.first().map(String::as_str) != Some("ls"))
+        .collect();
+    assert!(
+        beyond_listing.is_empty(),
+        "a stopped sandbox is not started implicitly: {beyond_listing:?}"
     );
 }
 
@@ -438,10 +413,7 @@ fn a_rebuild_in_progress_places_nothing() {
     let error = run(&config, &project(), FILES_ONLY, &host, &workspace_root)
         .expect_err("a half-switched sandbox is not the target of a placement");
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
-    assert!(
-        host.calls.borrow().is_empty(),
-        "nothing is asked of the runtime"
-    );
+    assert!(host.calls().is_empty(), "nothing is asked of the runtime");
 }
 
 #[test]

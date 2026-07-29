@@ -2,8 +2,8 @@ use super::*;
 
 use crate::project::ProjectId;
 use std::cell::RefCell;
+use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeSbx {
     listings: RefCell<Vec<String>>,
@@ -45,15 +45,7 @@ impl HostEnvironment for FakeSbx {
         } else {
             String::new()
         };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(0),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, 0, &stdout))
     }
 }
 
@@ -74,15 +66,7 @@ impl HostEnvironment for FakeProbe {
         } else {
             self.keys
         };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.as_bytes().to_vec(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, stdout))
     }
 }
 
@@ -118,6 +102,33 @@ fn either_a_socket_or_a_reachable_agent_counts_as_exposed() {
             .expect_err("the host agent is reachable from inside");
         assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
     }
+}
+
+#[test]
+fn the_key_material_an_agent_lists_never_reaches_a_diagnostic() {
+    let host = FakeProbe {
+        socket: (1, ""),
+        keys: (
+            0,
+            "ssh-rsa AAAAB3Nza-a-key-that-must-not-be-shown user@host\n",
+        ),
+    };
+
+    assert_eq!(
+        ssh_agent_is_exposed(&host, "sandbox").expect("the check answered"),
+        ["ssh-add reached an agent"],
+        "what is observed is that an agent answered, not what it holds"
+    );
+
+    let error = require_credentials_isolated(&host, "sandbox")
+        .expect_err("an agent that lists keys is reachable from inside");
+    assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
+
+    let rendered = format!("{error:?}");
+    assert!(
+        !rendered.contains("AAAAB3Nza") && !rendered.contains("must-not-be-shown"),
+        "the diagnostic names the sandbox only: {rendered}"
+    );
 }
 
 #[test]

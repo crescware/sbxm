@@ -3,7 +3,6 @@ use crate::command::CommandOutcome;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeHost {
     responses: HashMap<String, String>,
@@ -30,15 +29,7 @@ impl HostEnvironment for FakeHost {
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         let key = format!("{} {}", spec.program, spec.args.join(" "));
         match self.responses.get(&key) {
-            Some(stdout) => Ok(CommandOutcome {
-                program: spec.program.clone(),
-                args: spec.args.clone(),
-                working_dir: spec.working_dir.clone(),
-                status: std::process::ExitStatus::from_raw(0),
-                stdout: stdout.clone().into_bytes(),
-                stderr: Vec::new(),
-                stderr_lossy: false,
-            }),
+            Some(stdout) => Ok(crate::testing::command::outcome(spec, 0, stdout)),
             None => Err(Error::new(
                 ErrorId::ExternalCommandNotFound,
                 msg!("error-external-command-not-found", program = spec.program),
@@ -559,6 +550,30 @@ fn the_macos_preferred_language_is_read_only_when_lang_is_absent() {
 }
 
 #[test]
+fn a_guessed_source_locale_is_not_put_to_the_user() {
+    let host =
+        FakeHost::new().responding("defaults read -g AppleLanguages", "(\n    \"en-US\"\n)\n");
+    let mut prompt = ScriptedPrompt {
+        language: Some(Locale::Ja),
+        ..ScriptedPrompt::default()
+    };
+
+    let locale = resolve_locale(
+        &InitRequest {
+            mode: InitMode::Interactive,
+            lang: None,
+            interactivity: tty(),
+        },
+        &host,
+        &mut prompt,
+    )
+    .unwrap();
+
+    assert_eq!(locale, Locale::En);
+    assert!(prompt.calls.borrow().is_empty());
+}
+
+#[test]
 fn option_mode_never_prompts_for_the_language() {
     let host =
         FakeHost::new().responding("defaults read -g AppleLanguages", "(\n    \"ja-JP\"\n)\n");
@@ -593,4 +608,18 @@ fn apple_languages_output_is_reduced_to_the_first_entry() {
     );
     assert_eq!(parse_apple_languages("(\n    \"zz-ZZ\"\n)\n"), None);
     assert_eq!(parse_apple_languages(""), None);
+}
+
+#[test]
+fn an_interrupted_init_prompt_is_a_cancel_and_any_other_read_failure_asks_for_a_terminal() {
+    let canceled = TerminalPrompt::map_error(dialoguer::Error::IO(std::io::Error::from(
+        std::io::ErrorKind::Interrupted,
+    )));
+    assert_eq!(canceled.exit_code(), crate::error::ExitCode::Canceled);
+
+    let unreadable = TerminalPrompt::map_error(dialoguer::Error::IO(std::io::Error::from(
+        std::io::ErrorKind::BrokenPipe,
+    )));
+    assert_eq!(unreadable.first_id(), Some(ErrorId::InitRequiresTty));
+    assert_ne!(unreadable.exit_code(), crate::error::ExitCode::Canceled);
 }

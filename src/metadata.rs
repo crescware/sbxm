@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
+use crate::error::{Diagnostic, DocumentVersion, Error, ErrorId, Result, fail};
 use crate::git;
 use crate::msg;
 use crate::paths::{
@@ -21,6 +21,13 @@ use crate::project::{CanonicalProjectId, ProjectId, SandboxName};
 
 /// このbuildが読み書きするmetadataのversion。
 pub const METADATA_VERSION: u32 = 1;
+
+/// metadataのversionの読み方。
+const DOCUMENT: DocumentVersion = DocumentVersion {
+    supported: METADATA_VERSION,
+    unknown: ErrorId::MetadataUnknownVersion,
+    unknown_message: "error-metadata-unknown-version",
+};
 
 /// managed worktreeの下限と上限。CLIのoption validationと同じ範囲を使う。
 pub const MIN_WORKTREES: u32 = 1;
@@ -72,7 +79,7 @@ pub struct Provisioning {
 
 /// `rebuild`のSandbox切替中だけ存在する適用予定世代。
 ///
-/// 記録するのは`rebuild`を実装するPhaseであり、本buildは読むだけである。
+/// `rebuild`が新世代の成果物を揃えた時点で記録し、切替完了で消す。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RebuildIntent {
     pub target_dockerfile_sha256: String,
@@ -216,22 +223,7 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         )
     };
 
-    // versionを最初に確定させ、未知versionを他の項目より前に診断する。
-    match raw.version {
-        Some(version) if version == i64::from(METADATA_VERSION) => {}
-        Some(version) => {
-            return fail(
-                ErrorId::MetadataUnknownVersion,
-                msg!(
-                    "error-metadata-unknown-version",
-                    path = paths::display(path),
-                    version = version,
-                    supported = METADATA_VERSION
-                ),
-            );
-        }
-        None => return Err(missing("version")),
-    }
+    DOCUMENT.require(raw.version, &paths::display(path), || missing("version"))?;
 
     let owner = raw.owner.ok_or_else(|| missing("owner"))?;
     let repository = raw.repository.ok_or_else(|| missing("repository"))?;
@@ -274,7 +266,6 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         .start_ref
         .ok_or_else(|| missing("provisioning.start_ref"))?;
     let start_ref = if start_ref_value.is_empty() {
-        // attached modeだけが、remote default branchの解決前を表せる。
         if mode == CreationMode::Detached {
             return Err(invalid(
                 "provisioning.start_ref",
@@ -440,7 +431,6 @@ pub fn discover(base: &AbsoluteBasePath) -> Result<Vec<DiscoveredProject>> {
                 Ok(metadata) => {
                     let paths = ProjectPaths::derive(base, &metadata.canonical_id);
                     if paths.root() != project_root {
-                        // metadataが宣言する案件は、導出されるpathにだけ置ける。
                         diagnostics.push(Diagnostic::new(
                             ErrorId::MetadataPathMismatch,
                             msg!(

@@ -3,6 +3,7 @@
 //! 解釈できない出力から状態を推測しない。parseできない出力はerrorとして扱う。
 
 use crate::error::{Error, ErrorId, Result};
+use crate::image_labels::{LabelDefect, labels_from_declared};
 use crate::msg;
 
 /// 要件となる最小version。
@@ -190,36 +191,22 @@ pub fn parse_image_inspect(output: &str) -> Result<ImageIdentity> {
         .filter(|id| !id.is_empty())
         .ok_or_else(|| unparseable("docker image inspect", "the image has no Id"))?;
 
-    let mut labels = std::collections::BTreeMap::new();
-    match object.get("Config").and_then(|config| config.as_object()) {
-        Some(config) => match config.get("Labels") {
-            Some(serde_json::Value::Object(declared)) => {
-                for (key, value) in declared {
-                    let value = value.as_str().ok_or_else(|| {
-                        unparseable(
-                            "docker image inspect",
-                            &format!("label {key} does not hold a string"),
-                        )
-                    })?;
-                    labels.insert(key.clone(), value.to_string());
-                }
-            }
-            // labelを1つも持たないimageでは`null`になる。
-            Some(serde_json::Value::Null) | None => {}
-            Some(_) => {
-                return Err(unparseable(
-                    "docker image inspect",
-                    "Labels is neither an object nor null",
-                ));
-            }
-        },
-        None => {
-            return Err(unparseable(
-                "docker image inspect",
-                "the image has no Config section",
-            ));
-        }
-    }
+    let Some(config) = object.get("Config").and_then(|config| config.as_object()) else {
+        return Err(unparseable(
+            "docker image inspect",
+            "the image has no Config section",
+        ));
+    };
+    let labels = labels_from_declared(config.get("Labels")).map_err(|defect| match defect {
+        LabelDefect::NotAnObject => unparseable(
+            "docker image inspect",
+            "Labels is neither an object nor null",
+        ),
+        LabelDefect::ValueNotAString(key) => unparseable(
+            "docker image inspect",
+            &format!("label {key} does not hold a string"),
+        ),
+    })?;
 
     Ok(ImageIdentity { id, labels })
 }
@@ -252,6 +239,16 @@ pub fn parse_login_status(output: &str) -> Result<bool> {
 pub enum SandboxState {
     Running,
     Stopped,
+}
+
+impl SandboxState {
+    /// 翻訳しない安定した表記。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SandboxState::Running => "running",
+            SandboxState::Stopped => "stopped",
+        }
+    }
 }
 
 /// `sbx ls`が示すSandbox 1件。
@@ -314,25 +311,9 @@ pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
 
 /// `sbx ls --json`が並べるSandbox。
 ///
-/// 対象versionは`{"sandboxes": [...]}`で包む。包みのない形も、行区切りの形も
-/// 受け付けるが、Sandbox以外のkeyを持つ包みは推測せずerrorにする。
+/// 対象versionは`{"sandboxes": [...]}`で包む。
 fn sandbox_documents(output: &str) -> Result<Vec<serde_json::Value>> {
-    let trimmed = output.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    if let Ok(serde_json::Value::Object(object)) =
-        serde_json::from_str::<serde_json::Value>(trimmed)
-        && let Some(listed) = object.get("sandboxes")
-    {
-        return match listed {
-            serde_json::Value::Array(items) => Ok(items.clone()),
-            // Sandboxが1件もない場合の表現として受け付ける。
-            serde_json::Value::Null => Ok(Vec::new()),
-            _ => Err(unparseable("sbx ls", "sandboxes is not a list")),
-        };
-    }
-    json_documents("sbx ls", output)
+    wrapped_documents("sbx ls", "sandboxes", output)
 }
 
 /// Sandboxが使っているWorkspace。
@@ -373,8 +354,8 @@ fn workspace_of(object: &serde_json::Map<String, serde_json::Value>) -> Result<O
 
 /// `sbx secret ls`が示すcustom secretの登録。
 ///
-/// 対象hostと環境変数名だけを持つ。PLACEHOLDER列とSECRET列は読まない。前者は
-/// sandboxの中から観測できる値であり、後者にはtokenの一部が現れる。
+/// 対象host、環境変数名、placeholderを持つ。`SECRET`列は読まない。tokenの一部が
+/// 現れるためである。
 #[derive(Debug, PartialEq, Eq)]
 pub struct CustomSecret {
     /// proxyが認証を差し替える対象host。
@@ -473,6 +454,27 @@ fn table_fields(line: &str) -> Vec<&str> {
         .collect()
 }
 
+/// 一覧を`key`で包んだ出力を読む。
+///
+/// 包みのない形も、行区切りの形も受け付ける。包みの値が`null`なら0件とする。
+fn wrapped_documents(program: &str, key: &str, output: &str) -> Result<Vec<serde_json::Value>> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    if let Ok(serde_json::Value::Object(object)) =
+        serde_json::from_str::<serde_json::Value>(trimmed)
+        && let Some(listed) = object.get(key)
+    {
+        return match listed {
+            serde_json::Value::Array(items) => Ok(items.clone()),
+            serde_json::Value::Null => Ok(Vec::new()),
+            _ => Err(unparseable(program, &format!("{key} is not a list"))),
+        };
+    }
+    json_documents(program, output)
+}
+
 /// 一覧形式と1行1件のJSON形式のどちらでも読む。
 fn json_documents(program: &str, output: &str) -> Result<Vec<serde_json::Value>> {
     let trimmed = output.trim();
@@ -548,23 +550,9 @@ pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
 
 /// `sbx template ls --json`が並べるimage。
 ///
-/// 対象versionは`{"images": [...]}`で包む。包みのない形も受け付ける。
+/// 対象versionは`{"images": [...]}`で包む。
 fn template_documents(output: &str) -> Result<Vec<serde_json::Value>> {
-    let trimmed = output.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    if let Ok(serde_json::Value::Object(object)) =
-        serde_json::from_str::<serde_json::Value>(trimmed)
-        && let Some(listed) = object.get("images")
-    {
-        return match listed {
-            serde_json::Value::Array(items) => Ok(items.clone()),
-            serde_json::Value::Null => Ok(Vec::new()),
-            _ => Err(unparseable("sbx template ls", "images is not a list")),
-        };
-    }
-    json_documents("sbx template ls", output)
+    wrapped_documents("sbx template ls", "images", output)
 }
 
 /// 同じimageを指す参照の書き方。

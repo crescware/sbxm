@@ -10,15 +10,17 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::config::GlobalConfig;
-use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
+use crate::error::{Msg, Result};
 use crate::metadata::{self, CreationMode, ProjectMetadata};
 use crate::msg;
-use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::files::PlacedFile;
 use super::tools::Note;
-use super::{daemon, files, identity, image, repository, sandbox, secret, template, tools};
+use super::{
+    daemon, files, identity, image, rebuild, repository, sandbox, secret, select, template, tools,
+};
 
 /// 出力のworktree 1行。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,32 +57,19 @@ pub fn run(
     workspace_root: &Path,
 ) -> Result<PrepareOutput> {
     let canonical = project.canonical();
-    let paths = ProjectPaths::derive(&config.base_path, &canonical);
     let name = SandboxName::derive(&canonical);
 
-    // 対象が登録されていない案件にlock fileを作らない。
-    if metadata::load(&paths)?.is_none() {
-        return Err(not_registered(project));
-    }
-    let _lock = paths::acquire_exclusive_lock(
-        &paths.lock_file(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ProjectPath,
-    )?;
-
-    // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
-    let mut project_metadata = metadata::load(&paths)?.ok_or_else(|| not_registered(project))?;
-    require_no_rebuild(&project_metadata)?;
+    let mut locked = select::locked(config, project)?;
+    rebuild::require_no_rebuild(&locked.metadata)?;
 
     let layout = SandboxLayout::new(&canonical);
     let mut warnings = Vec::new();
 
     if let Some(output) = already_built(
         host,
-        &paths,
+        &locked.paths,
         &name,
-        &project_metadata,
+        &locked.metadata,
         &layout,
         workspace_root,
     )? {
@@ -91,11 +80,11 @@ pub fn run(
     // 届かないため、作成より前に、そしてimageを組む前に確認する。
     secret::require_github(host, name.as_str())?;
 
-    let current = super::add::current_dockerfile_hash(&paths)?;
+    let current = super::add::current_dockerfile_hash(&locked.paths)?;
     let generation = adopt_generation(
         host,
-        &paths,
-        &mut project_metadata,
+        &locked.paths,
+        &mut locked.metadata,
         &name,
         &current,
         &mut warnings,
@@ -104,12 +93,12 @@ pub fn run(
     let built = image::ensure(
         host,
         &name,
-        &project_metadata.canonical_id,
-        &paths.dockerfile(),
+        &locked.metadata.canonical_id,
+        &locked.paths.dockerfile(),
         &generation,
     )?;
     warnings.extend(built.warnings.clone());
-    let archive = image::ensure_archive(host, &paths, &built, &generation)?;
+    let archive = image::ensure_archive(host, &locked.paths, &built, &generation)?;
     let loaded = template::ensure(host, &archive, &built)?;
 
     let ready = sandbox::ensure(host, &name, &loaded, workspace_root)?;
@@ -123,18 +112,23 @@ pub fn run(
     secret::configure_git_credential(host, &ready.name)?;
 
     repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
-    let branch =
-        repository::resolve_start_ref(host, &ready.name, &layout, &paths, &mut project_metadata)?;
+    let branch = repository::resolve_start_ref(
+        host,
+        &ready.name,
+        &layout,
+        &locked.paths,
+        &mut locked.metadata,
+    )?;
     let managed =
-        repository::ensure_worktrees(host, &ready.name, &layout, &project_metadata, &branch)?;
+        repository::ensure_worktrees(host, &ready.name, &layout, &locked.metadata, &branch)?;
 
-    let worktrees = observed_worktrees(host, &ready.name, &layout, &project_metadata)?;
+    let worktrees = observed_worktrees(host, &ready.name, &layout, &locked.metadata)?;
     let notes = tools::worktrees_ready(host, &ready.name, &layout, managed.len())?;
 
     Ok(PrepareOutput {
-        project: project_metadata.display_id(),
+        project: locked.metadata.display_id(),
         sandbox: ready.name,
-        mode: project_metadata.provisioning.mode,
+        mode: locked.metadata.provisioning.mode,
         start_ref: branch,
         sandbox_state: ready.state,
         worktrees,
@@ -215,7 +209,6 @@ fn adopt_generation(
     }
 
     if image::generation_is_built(host, name, &metadata.canonical_id, &stored)? {
-        // 初回構築の途中へ別世代を混在させない。
         warnings.push(msg!(
             "warning-dockerfile-changed-during-build",
             project = metadata.display_id(),
@@ -246,7 +239,6 @@ fn observed_worktrees(
     let mut rows = Vec::with_capacity(names.len());
     for name in names {
         let path = format!("{}/{}", layout.bare_root(), name);
-        // 停止中のSandboxではHEADを読めない。観測できない値を推測で埋めない。
         let outcome = sandbox::exec(host, sandbox, &["git", "-C", &path, "rev-parse", "HEAD"])?;
         let head = outcome
             .success()
@@ -260,40 +252,6 @@ fn observed_worktrees(
         });
     }
     Ok(rows)
-}
-
-/// 登録されていない案件は構築できない。
-fn not_registered(project: &ProjectId) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::ProjectNotManaged,
-            msg!("error-project-not-managed", project = project),
-        )
-        .remediation(msg!(
-            "remediation-project-not-managed",
-            command = format!("sbxm add {project}")
-        )),
-    )
-}
-
-/// 世代の切替中は構築を進めず、`rebuild`の完了を案内する。
-fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
-    if metadata.rebuild.is_none() {
-        return Ok(());
-    }
-    Err(Error::single(
-        Diagnostic::new(
-            ErrorId::RebuildIntentPending,
-            msg!(
-                "error-rebuild-intent-pending",
-                project = metadata.display_id()
-            ),
-        )
-        .remediation(msg!(
-            "remediation-run-rebuild",
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        )),
-    ))
 }
 
 #[cfg(test)]

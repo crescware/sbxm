@@ -8,6 +8,11 @@ use crate::project::{ProjectId, SandboxName};
 use crate::testing::value::DIGEST;
 use std::path::PathBuf;
 
+/// testが書く案件IDは常に妥当とする。
+pub fn project_id(value: &str) -> ProjectId {
+    ProjectId::parse(value).expect("valid project id")
+}
+
 /// 登録済みの1案件。
 #[derive(Debug, Clone)]
 pub struct Registered {
@@ -54,7 +59,7 @@ pub fn fixture() -> Fixture {
 impl Fixture {
     /// 案件を登録済みの状態にする。
     pub fn register(&self, project: &str) -> Registered {
-        let id = ProjectId::parse(project).expect("valid project id");
+        let id = project_id(project);
         let canonical = id.canonical();
         let paths = ProjectPaths::derive(&self.config.base_path, &canonical);
         std::fs::create_dir_all(paths.sbxm_dir()).expect("create .sbxm");

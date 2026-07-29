@@ -4,7 +4,6 @@
 //! Sandboxへ公開しない。既存Sandboxは、作成元を問わず、期待する状態と一致することを
 //! 観測できた場合だけ再利用する。
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
@@ -136,6 +135,12 @@ pub fn exec_as_root(
     run_exec(host, sandbox, Some("root"), args)
 }
 
+/// Sandbox内のcommandの標準出力。
+pub fn read(host: &dyn HostEnvironment, sandbox: &str, args: &[&str]) -> Result<String> {
+    let outcome = exec(host, sandbox, args)?.require_success()?;
+    Ok(outcome.stdout_text().trim().to_string())
+}
+
 /// Sandbox内で、進捗をそのまま見せるcommandを実行する。
 ///
 /// cloneやfetchのように、時間のかかる工程の進捗を実行中に見せるために使う。
@@ -206,8 +211,8 @@ pub fn verify_identity(
 fn verify(entry: &SandboxEntry, sandbox: &SandboxName, workspace: &Path) -> Result<()> {
     match &entry.workspace {
         Some(observed) => {
-            let observed = real_path(Path::new(observed));
-            let expected = real_path(workspace);
+            let observed = paths::real_path(Path::new(observed));
+            let expected = paths::real_path(workspace);
             if observed != expected {
                 return Err(unusable(
                     sandbox.as_str(),
@@ -236,11 +241,6 @@ pub fn path_exists(host: &dyn HostEnvironment, sandbox: &str, path: &str) -> Res
     Ok(exec(host, sandbox, &["test", "-e", path])?.success())
 }
 
-/// symlinkを解決できない場合は宣言されたpathのまま比較する。
-fn real_path(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| paths::lexically_standardize(path))
-}
-
 /// hostのSSH AgentへSandboxの中から到達できるか。
 ///
 /// 露出していないことは、検査commandが答えた場合にだけ言える。検査が成立しなかった
@@ -261,7 +261,6 @@ pub fn ssh_agent_is_exposed(
     }
 
     let keys = exec(host, sandbox, &["ssh-add", "-L"])?;
-    // 公開鍵本文は読まず、agentへ接続できたかどうかだけを見る。
     match inner_exit_code(&keys) {
         // 鍵の有無にかかわらず、agentへ接続できた時点で露出している。
         Some(0) | Some(1) => observed.push("ssh-add reached an agent"),

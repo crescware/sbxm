@@ -1,9 +1,9 @@
 use super::*;
 use crate::command::{CommandOutcome, HostEnvironment};
 use crate::paths::AbsoluteBasePath;
+use crate::testing::project::project_id;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::os::unix::process::ExitStatusExt;
 
 /// gitの応答を差し替え、起動された内容を記録するhost。
 struct FakeGit {
@@ -55,21 +55,13 @@ impl HostEnvironment for FakeGit {
             fs::create_dir_all(path.join(".git")).expect("create the cloned working tree");
         }
         let stdout = self.answers.get(&key).cloned().unwrap_or_default();
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(0),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, 0, &stdout))
     }
 }
 
 fn project_paths(dir: &Path) -> (ProjectPaths, ProjectId) {
     let base = AbsoluteBasePath::new(dir).expect("valid base path");
-    let project = ProjectId::parse("Example-Org/Example-Repo").expect("valid project id");
+    let project = project_id("Example-Org/Example-Repo");
     let paths = ProjectPaths::derive(&base, &project.canonical());
     fs::create_dir_all(paths.root()).expect("create the project root");
     (paths, project)

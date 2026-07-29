@@ -1,11 +1,16 @@
 //! Sandboxを持つhostのfake。
 
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::command::{
+    CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, OutputPolicy, TimeoutClass,
+};
 use crate::error::Result;
 use std::cell::RefCell;
-use std::os::unix::process::ExitStatusExt;
 
 /// Sandbox一覧を返し、実行された指定を記録するhost。
+///
+/// 応答のkeyは引数全体(`exec <name> -- printenv SSH_AUTH_SOCK`のような文字列)である。
+/// `--`より後ろのinner commandだけで答えるfakeは
+/// `crate::testing::sandbox::InnerCommandSandbox`。
 pub struct FakeSbx {
     pub listing: RefCell<Vec<String>>,
     pub answers: std::collections::HashMap<String, (i32, String)>,
@@ -68,6 +73,54 @@ impl FakeSbx {
     }
 }
 
+/// Sandboxのlifecycleを動かす指定であることを確かめる。
+///
+/// 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
+pub fn assert_lifecycle(host: &FakeSbx, needle: &str) {
+    let spec = host.spec(needle);
+    assert_eq!(
+        spec.output,
+        OutputPolicy::Passthrough,
+        "{needle} shows the external tool's own progress"
+    );
+    assert_eq!(
+        spec.env,
+        EnvPolicy::InheritWithoutSshAgent,
+        "{needle} does not hand the SSH Agent to the sandbox"
+    );
+    assert_eq!(
+        spec.timeout,
+        TimeoutClass::SandboxLifecycle,
+        "{needle} runs under the lifecycle timeout"
+    );
+}
+
+/// custom secretが登録済みで、placeholderも解決できるSandbox。
+pub fn registered_secret(host: FakeSbx, sandbox: &str) -> FakeSbx {
+    host.answering(
+        &format!("secret ls {sandbox}"),
+        0,
+        &format!(
+            "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
+            crate::workflow::secret::GITHUB_HOSTS.join(" ")
+        ),
+    )
+    .answering(
+        &format!(
+            "exec {sandbox} -- sh -c {}",
+            crate::workflow::secret::placeholder_probe()
+        ),
+        0,
+        "sbx-cs-example",
+    )
+}
+
+/// host側のSSH Agentへ到達できないSandbox。
+pub fn isolated_agent(host: FakeSbx, sandbox: &str) -> FakeSbx {
+    host.answering(&format!("exec {sandbox} -- printenv SSH_AUTH_SOCK"), 1, "")
+        .answering(&format!("exec {sandbox} -- ssh-add -L"), 2, "")
+}
+
 impl HostEnvironment for FakeSbx {
     fn command_exists(&self, _program: &str) -> bool {
         true
@@ -90,14 +143,6 @@ impl HostEnvironment for FakeSbx {
                 None => (0, String::new()),
             }
         };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }

@@ -46,6 +46,11 @@ pub fn lexically_standardize(path: &Path) -> PathBuf {
     out
 }
 
+/// symlinkを解決できない場合は宣言されたpathのまま比較する。
+pub fn real_path(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| lexically_standardize(path))
+}
+
 /// pathがsymlinkかどうか。存在しない場合は`false`。
 pub fn is_symlink(path: &Path) -> bool {
     fs::symlink_metadata(path)
@@ -415,7 +420,6 @@ fn atomic_write_with_precondition(
     {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            // 中断した実行の残骸は自動削除しない。
             return Err(Error::single(
                 Diagnostic::new(
                     ErrorId::TempFileLeftBehind,
@@ -521,21 +525,7 @@ fn replaceable_identity(target: &Path, mode: u32) -> Result<FileIdentity> {
     }
     let observed = metadata.permissions().mode();
     if permission_too_open(observed) {
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::ProjectFilePermissionTooOpen,
-                msg!(
-                    "security-project-file-permission-description",
-                    path = display(target),
-                    observed = format_mode(observed)
-                ),
-            )
-            .remediation(msg!(
-                "security-project-file-permission-remediation",
-                path = display(target),
-                expected = format_mode(mode)
-            )),
-        ));
+        return Err(PathScope::ProjectPath.permission_error(target, observed, mode));
     }
     Ok(FileIdentity {
         device: metadata.dev(),
@@ -841,6 +831,16 @@ impl ProjectPaths {
     /// `<project-root>/.sbxm/project.lock`
     pub fn lock_file(&self) -> PathBuf {
         self.sbxm_dir().join("project.lock")
+    }
+
+    /// 案件のlockを取る。timeout、mode、scopeは全workflowで共通とする。
+    pub fn acquire_lock(&self) -> Result<ExclusiveLock> {
+        acquire_exclusive_lock(
+            &self.lock_file(),
+            LOCK_TIMEOUT,
+            PRIVATE_FILE_MODE,
+            PathScope::ProjectPath,
+        )
     }
 
     /// `<project-root>/.sbxm/Dockerfile`

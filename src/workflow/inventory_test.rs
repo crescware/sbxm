@@ -130,7 +130,7 @@ fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() {
         &fixture.workspace_root,
     )
     .expect_err("a broken project stops the listing");
-    assert!(error.contains(ErrorId::MetadataUnknownVersion));
+    assert!(error.contains_id(ErrorId::MetadataUnknownVersion));
 }
 
 #[test]

@@ -3,7 +3,6 @@ use crate::command::CommandOutcome;
 use crate::i18n::{Catalog, Locale};
 use crate::workflow::Reporter;
 use std::collections::HashMap;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeHost {
     present: Vec<String>,
@@ -65,15 +64,9 @@ impl HostEnvironment for FakeHost {
             format!("{} {}", spec.program, spec.args.join(" "))
         };
         match self.responses.get(&key) {
-            Some(Ok((stdout, stderr, code))) => Ok(CommandOutcome {
-                program: spec.program.clone(),
-                args: spec.args.clone(),
-                working_dir: spec.working_dir.clone(),
-                status: std::process::ExitStatus::from_raw(code << 8),
-                stdout: stdout.clone().into_bytes(),
-                stderr: stderr.clone().into_bytes(),
-                stderr_lossy: false,
-            }),
+            Some(Ok((stdout, stderr, code))) => Ok(crate::testing::command::outcome_with_stderr(
+                spec, *code, stdout, stderr,
+            )),
             Some(Err(ErrorId::ExternalCommandTimeout)) => Err(Error::new(
                 ErrorId::ExternalCommandTimeout,
                 msg!(
@@ -377,6 +370,48 @@ fn sandbox_state_is_reported_from_the_structured_output() {
         status_of(&status, "status-item-daemon"),
         StatusValue::Running
     );
+}
+
+#[test]
+fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() {
+    let (_dir, location) = location_with_config(None);
+
+    for observed in ["Isolated", "Open"] {
+        let host = FakeHost::macos()
+            .responding(
+                "sbx policy ls",
+                &format!(r#"[{{"name":"{observed}","active":true}}]"#),
+            )
+            .responding("sbx daemon status", "Status: running\n");
+        let status = diagnose(&location, &host);
+
+        assert_eq!(
+            status_of(&status, "status-item-network-policy"),
+            StatusValue::Error,
+            "{observed} is not {EXPECTED_NETWORK_POLICY}"
+        );
+        let diagnostic = status
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.id == ErrorId::NetworkPolicyMismatch)
+            .unwrap_or_else(|| panic!("{observed} must be diagnosed: {:?}", status.diagnostics));
+        assert!(
+            diagnostic
+                .description
+                .args
+                .contains(&("observed", observed.to_string())),
+            "{:?}",
+            diagnostic.description.args
+        );
+        assert!(
+            diagnostic
+                .description
+                .args
+                .contains(&("expected", EXPECTED_NETWORK_POLICY.to_string())),
+            "{:?}",
+            diagnostic.description.args
+        );
+    }
 }
 
 #[test]

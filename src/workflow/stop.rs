@@ -10,12 +10,12 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
-use crate::paths::{self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
+use crate::paths::ExclusiveLock;
 use crate::project::{ProjectId, SandboxName};
 
-use super::daemon;
 use super::inventory::{self, Poll, ProjectState};
 use super::select::{self, ProjectPrompt};
+use super::{daemon, rebuild};
 
 /// 1案件の停止結果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,18 +85,9 @@ pub fn run(
     }
 
     // 4. 複数lockはcanonical ID昇順に取得する。
-    let lock_paths: Vec<std::path::PathBuf> = selected
-        .iter()
-        .map(|candidate| candidate.paths.lock_file())
-        .collect();
-    let mut locks: Vec<ExclusiveLock> = Vec::with_capacity(lock_paths.len());
-    for path in &lock_paths {
-        locks.push(paths::acquire_exclusive_lock(
-            path,
-            LOCK_TIMEOUT,
-            PRIVATE_FILE_MODE,
-            PathScope::ProjectPath,
-        )?);
+    let mut locks: Vec<ExclusiveLock> = Vec::with_capacity(selected.len());
+    for candidate in &selected {
+        locks.push(candidate.paths.acquire_lock()?);
     }
 
     // 5. lock取得後のmetadataとstateでpreconditionを判定し直す。
@@ -157,27 +148,8 @@ fn validate(
     entries: &[crate::compatibility::SandboxEntry],
     workspace_root: &Path,
 ) -> Result<ProjectState> {
-    require_no_rebuild(metadata)?;
+    rebuild::require_no_rebuild(metadata)?;
     inventory::state_of(entries, metadata, workspace_root)
-}
-
-fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
-    if metadata.rebuild.is_none() {
-        return Ok(());
-    }
-    Err(Error::single(
-        Diagnostic::new(
-            ErrorId::RebuildIntentPending,
-            msg!(
-                "error-rebuild-intent-pending",
-                project = metadata.display_id()
-            ),
-        )
-        .remediation(msg!(
-            "remediation-run-rebuild",
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        )),
-    ))
 }
 
 /// 1件を停止し、stoppedになるまで待つ。

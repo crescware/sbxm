@@ -1,47 +1,17 @@
 use super::*;
-use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+use crate::command::OutputPolicy;
 use crate::hash::sha256_hex;
-use crate::testing::host::FakeSbx;
-use crate::testing::project::fixture;
+use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent, registered_secret};
+use crate::testing::image::template_listing;
+use crate::testing::poll::poll;
+use crate::testing::project::{Fixture, Registered, fixture, project_id};
 use crate::testing::protection::clean_host;
+use crate::testing::value::COMMIT;
 use std::os::unix::fs::PermissionsExt;
-use std::time::Duration;
 
-fn poll() -> Poll {
-    Poll {
-        interval: Duration::from_millis(1),
-        limit: Duration::from_millis(20),
-    }
-}
-
-fn project_id(value: &str) -> ProjectId {
-    ProjectId::parse(value).expect("valid project id")
-}
-
-/// runtimeのimage storeが示す一覧。registry prefixを補って表示する。
-fn template_listing(image: &str) -> String {
-    let (repository, tag) = image.rsplit_once(':').expect("an image reference");
-    format!(
-        r#"{{"images":[{{"id":"a3d0f4449170","repository":"docker.io/library/{repository}","tag":"{tag}"}}]}}"#
-    )
-}
 /// 再作成後の検証を通るSandbox。secretがあり、SSH Agentへ到達できない。
 fn verified(host: FakeSbx, name: &str) -> FakeSbx {
-    host.answering(
-            &format!("secret ls {name}"),
-            0,
-            &format!(
-                    "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
-                    crate::workflow::secret::GITHUB_HOSTS.join(" ")
-                ),
-        )
-        .answering(&format!("exec {name} -- printenv SSH_AUTH_SOCK"), 1, "")
-        .answering(&format!("exec {name} -- ssh-add -L"), 2, "")
-        .answering(
-            &format!("exec {name} -- sh -c {}", secret::placeholder_probe()),
-            0,
-            "sbx-cs-example",
-        )
+    isolated_agent(registered_secret(host, name), name)
 }
 
 #[test]
@@ -229,7 +199,6 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
     let layout = SandboxLayout::new(&project.metadata.canonical_id);
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
-    let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
     let name = project.sandbox.as_str();
     let host = verified(host, name)
         .answering(
@@ -250,12 +219,12 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
         .answering(
             &format!("exec {name} -- git --git-dir {git_dir} rev-parse refs/remotes/origin/main"),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!("exec {name} -- git -C {worktree} rev-parse HEAD"),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!(
@@ -289,11 +258,7 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
         "the run continued from the creation step: {:?}",
         host.calls()
     );
-    // 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
-    let creation = host.spec("create --name");
-    assert_eq!(creation.output, OutputPolicy::Passthrough);
-    assert_eq!(creation.env, EnvPolicy::InheritWithoutSshAgent);
-    assert_eq!(creation.timeout, TimeoutClass::SandboxLifecycle);
+    assert_lifecycle(&host, "create --name");
 }
 
 #[test]
@@ -314,7 +279,7 @@ fn a_new_generation_that_cannot_be_produced_leaves_the_existing_sandbox_alone() 
     .expect_err("the new generation never became usable");
     assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
     assert!(
-        !host.ran("rm ") && !host.ran("create --name"),
+        !host.ran("stop") && !host.ran("rm ") && !host.ran("create --name"),
         "the sandbox that is still running is untouched: {:?}",
         host.calls()
     );
@@ -415,7 +380,6 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
     let layout = SandboxLayout::new(&project.metadata.canonical_id);
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
-    let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
     let name = project.sandbox.as_str();
     let host = verified(host, name)
         .answering(
@@ -436,12 +400,12 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
         .answering(
             &format!("exec {name} -- git --git-dir {git_dir} rev-parse refs/remotes/origin/main"),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!("exec {name} -- git -C {worktree} rev-parse HEAD"),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!(
@@ -490,22 +454,11 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
     );
 }
 
-#[test]
-fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
-    let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
-    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
-    let target = sha256_hex(b"FROM scratch\n");
-
-    // Sandbox削除の直後で中断した状態を作る。
-    let mut metadata = project.metadata.clone();
-    metadata.rebuild = Some(RebuildIntent {
-        target_dockerfile_sha256: target.clone(),
-        previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
-    });
-    metadata::update(&project.paths, &metadata).unwrap();
-
-    let image = image::image_name(&project.sandbox, &target);
+/// 固定した世代の成果物が揃い、再作成後の検証も通るhost。
+///
+/// 中断した`rebuild`の続きを、そのまま最後まで走らせられる状態を表す。
+fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> FakeSbx {
+    let image = image::image_name(&project.sandbox, target);
     let workspace = fixture.workspace_root.join(project.sandbox.as_str());
     std::fs::create_dir_all(&workspace).unwrap();
     std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -530,21 +483,12 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
                 "template ls --json",
                 0,
                 &template_listing(&image),
-            )
-            .answering(
-                &format!("secret ls {}", project.sandbox),
-                0,
-                &format!(
-                    "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
-                    crate::workflow::secret::GITHUB_HOSTS.join(" ")
-                ),
             );
     // 再作成後のSandbox内で、共有repositoryとworktreeが期待どおりに揃う。
     let layout = SandboxLayout::new(&project.metadata.canonical_id);
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
-    let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
-    let host = verified(host, project.sandbox.as_str())
+    verified(host, project.sandbox.as_str())
         .answering(
             &format!(
                 "exec {} -- git --git-dir {git_dir} rev-parse --is-bare-repository",
@@ -575,7 +519,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
                 project.sandbox
             ),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!(
@@ -583,7 +527,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
                 project.sandbox
             ),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!(
@@ -600,7 +544,25 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
             ),
             0,
             "refs/heads/main\n",
-        );
+        )
+}
+
+#[test]
+fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+    let target = sha256_hex(b"FROM scratch\n");
+
+    // Sandbox削除の直後で中断した状態を作る。
+    let mut metadata = project.metadata.clone();
+    metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: target.clone(),
+        previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&project.paths, &metadata).unwrap();
+
+    let host = continuing(&fixture, &project, &target);
 
     let output = run(
         &fixture.config,
@@ -635,5 +597,103 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
     assert_eq!(
         host.spec("template ls --json").output,
         OutputPolicy::Capture
+    );
+}
+
+#[test]
+fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let target = sha256_hex(b"FROM scratch\n");
+
+    // 世代を固定したあとに、Dockerfileがさらに書き換えられた状態を作る。
+    let mut metadata = project.metadata.clone();
+    metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: target.clone(),
+        previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&project.paths, &metadata).unwrap();
+    std::fs::write(project.paths.dockerfile(), "FROM alpine\n").unwrap();
+
+    let host = continuing(&fixture, &project, &target);
+    let output = run(
+        &fixture.config,
+        &project_id("example-org/example-repo"),
+        &host,
+        &fixture.workspace_root,
+        poll(),
+    )
+    .expect("the fixed generation is completed");
+
+    assert_eq!(
+        output.applied, target,
+        "the generation that was fixed is the one that is applied"
+    );
+    assert_eq!(
+        output
+            .warnings
+            .iter()
+            .map(|message| message.id)
+            .collect::<Vec<_>>(),
+        vec!["warning-dockerfile-changed-during-rebuild"]
+    );
+    let stored = metadata::load(&project.paths).unwrap().expect("present");
+    assert_eq!(
+        stored.provisioning.dockerfile_sha256, target,
+        "the edit is not recorded as applied"
+    );
+    assert!(stored.rebuild.is_none());
+    let edited = image::image_name(&project.sandbox, &sha256_hex(b"FROM alpine\n"));
+    assert!(
+        !host.ran(&edited),
+        "the edit is left for the next rebuild: {:?}",
+        host.calls()
+    );
+}
+
+#[test]
+fn a_failure_after_the_switch_leaves_the_intent_in_place() {
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+    let target = sha256_hex(b"FROM scratch\n");
+    let previous = project.metadata.provisioning.dockerfile_sha256.clone();
+
+    let mut metadata = project.metadata.clone();
+    metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: target.clone(),
+        previous_dockerfile_sha256: previous.clone(),
+    });
+    metadata::update(&project.paths, &metadata).unwrap();
+
+    // 切り替えの最後の検査だけを落とす。作り直したSandboxからhostのSSH Agentへ届く。
+    let host = continuing(&fixture, &project, &target).answering(
+        &format!("exec {} -- ssh-add -L", project.sandbox),
+        0,
+        "ssh-ed25519 AAAA example\n",
+    );
+
+    let error = run(
+        &fixture.config,
+        &project_id("example-org/example-repo"),
+        &host,
+        &fixture.workspace_root,
+        poll(),
+    )
+    .expect_err("a sandbox that reaches the host agent is not accepted");
+    assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
+
+    let stored = metadata::load(&project.paths).unwrap().expect("present");
+    assert_eq!(
+        stored
+            .rebuild
+            .as_ref()
+            .map(|intent| intent.target_dockerfile_sha256.as_str()),
+        Some(target.as_str()),
+        "the fixed generation is still there, so a re-run continues from it"
+    );
+    assert_eq!(
+        stored.provisioning.dockerfile_sha256, previous,
+        "the generation is not applied until every check has passed"
     );
 }

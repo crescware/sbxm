@@ -1,6 +1,6 @@
 use super::*;
-use crate::testing::host::FakeSbx;
-use crate::testing::project::{Registered, fixture};
+use crate::testing::host::{FakeSbx, isolated_agent, registered_secret};
+use crate::testing::project::{Fixture, Registered, fixture, project_id};
 
 fn value_of(status: &ProjectStatus, item: &str) -> Value {
     status
@@ -9,10 +9,6 @@ fn value_of(status: &ProjectStatus, item: &str) -> Value {
         .find(|entry| entry.item == item)
         .unwrap_or_else(|| panic!("item {item} is missing"))
         .value
-}
-
-fn project_id(value: &str) -> ProjectId {
-    ProjectId::parse(value).expect("valid project id")
 }
 
 /// imageがまだ存在しないhost。一覧は答えるが、1件も返さない。
@@ -211,6 +207,22 @@ fn an_unrelated_project_does_not_decide_this_one() {
 fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
+    let host = without_image(FakeSbx::listing("[]"), &project);
+
+    let status = diagnose(
+        &fixture.config,
+        &project_id("example-org/example-repo"),
+        &host,
+        &fixture.workspace_root,
+    )
+    .expect("diagnose");
+    assert_eq!(value_of(&status, "status-item-image"), Value::Missing);
+    assert!(
+        status.diagnostics.is_empty(),
+        "an image that is simply not there is not a failure: {:?}",
+        status.diagnostics
+    );
+
     let image = image::image_name(
         &project.sandbox,
         &project.metadata.provisioning.dockerfile_sha256,
@@ -253,68 +265,57 @@ fn a_changed_dockerfile_is_reported_as_the_next_rebuild_rather_than_a_fault() {
     assert!(status.is_healthy(), "a changed Dockerfile is not an error");
 }
 
+/// 中まで見られる稼働中Sandbox。`worktrees`は`worktree list --porcelain -z`の答え。
+fn looking_inside(fixture: &Fixture, project: &Registered, worktrees: &str) -> FakeSbx {
+    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let host = FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")))
+        .answering(
+            &format!(
+                "exec {} -- git --git-dir {} rev-parse --is-bare-repository",
+                project.sandbox,
+                layout.bare_git_dir()
+            ),
+            0,
+            "true\n",
+        )
+        .answering(
+            &format!(
+                "exec {} -- git --git-dir {} worktree list --porcelain -z",
+                project.sandbox,
+                layout.bare_git_dir()
+            ),
+            0,
+            worktrees,
+        )
+        .answering(
+            &format!(
+                "exec {} -- git -C {}/agent-scratch status --porcelain=v2 -z --untracked-files=all",
+                project.sandbox,
+                layout.bare_root()
+            ),
+            0,
+            "1 .M N... 100644 100644 100644 abc abc file.txt\0",
+        );
+    isolated_agent(
+        registered_secret(host, project.sandbox.as_str()),
+        project.sandbox.as_str(),
+    )
+}
+
+/// bare entryと、管理下・管理外のworktreeを1件ずつ並べたporcelain出力。
+fn three_entries(project: &Registered) -> String {
+    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    format!(
+        "worktree {root}\0bare\0\0worktree {root}/example-repo.tree-0\0branch refs/heads/main\0\0worktree {root}/agent-scratch\0detached\0\0",
+        root = layout.bare_root()
+    )
+}
+
 #[test]
 fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let listing = format!("[{}]", fixture.entry(&project, "running"));
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
-    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
-    let unmanaged = format!("{}/agent-scratch", layout.bare_root());
-
-    let host = FakeSbx::listing(&listing)
-            .answering(
-                &format!(
-                    "exec {} -- git --git-dir {} rev-parse --is-bare-repository",
-                    project.sandbox,
-                    layout.bare_git_dir()
-                ),
-                0,
-                "true\n",
-            )
-            .answering(
-                &format!(
-                    "exec {} -- git --git-dir {} worktree list --porcelain -z",
-                    project.sandbox,
-                    layout.bare_git_dir()
-                ),
-                0,
-                &format!(
-                    "worktree {}\0bare\0\0worktree {managed}\0branch refs/heads/main\0\0worktree {unmanaged}\0detached\0\0",
-                    layout.bare_root()
-                ),
-            )
-            .answering(
-                &format!(
-                    "exec {} -- git -C {unmanaged} status --porcelain=v2 -z --untracked-files=all",
-                    project.sandbox
-                ),
-                0,
-                "1 .M N... 100644 100644 100644 abc abc file.txt\0",
-            )
-            .answering(
-                &format!("secret ls {}", project.sandbox),
-                0,
-                &format!(
-                    "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
-                    crate::workflow::secret::GITHUB_HOSTS.join(" ")
-                ),
-            )
-            .answering(
-                &format!(
-                    "exec {} -- sh -c {}",
-                    project.sandbox,
-                    super::super::secret::placeholder_probe()
-                ),
-                0,
-                "sbx-cs-example",
-            )
-            .answering(
-                &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),
-                1,
-                "",
-            )
-            .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 2, "");
+    let host = looking_inside(&fixture, &project, &three_entries(&project));
 
     let status = diagnose(
         &fixture.config,
@@ -350,6 +351,49 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() {
                 state: Value::Dirty,
             },
         ]
+    );
+    assert_eq!(value_of(&status, "status-item-worktrees"), Value::Ready);
+    assert!(status.diagnostics.is_empty(), "{:?}", status.diagnostics);
+}
+
+#[test]
+fn a_worktree_outside_the_shared_repository_is_not_counted_as_the_projects() {
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let worktrees = format!(
+        "{}worktree /work/elsewhere\0detached\0\0",
+        three_entries(&project)
+    );
+    let host = looking_inside(&fixture, &project, &worktrees);
+
+    let status = diagnose(
+        &fixture.config,
+        &project_id("example-org/example-repo"),
+        &host,
+        &fixture.workspace_root,
+    )
+    .expect("diagnose");
+
+    assert_eq!(value_of(&status, "status-item-worktrees"), Value::Mismatch);
+    assert_eq!(
+        status
+            .worktrees
+            .iter()
+            .map(|row| row.path.as_str())
+            .collect::<Vec<&str>>(),
+        vec!["example-repo.tree-0", "agent-scratch"],
+        "an outside worktree is not one of the project's"
+    );
+    assert!(
+        status.diagnostics.iter().any(|diagnostic| {
+            diagnostic.id == ErrorId::SandboxRepositoryUnusable
+                && diagnostic
+                    .description
+                    .args
+                    .contains(&("path", "/work/elsewhere".to_string()))
+        }),
+        "the outside worktree is named: {:?}",
+        status.diagnostics
     );
 }
 

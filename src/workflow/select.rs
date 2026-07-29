@@ -10,7 +10,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
-use crate::paths::ProjectPaths;
+use crate::paths::{ExclusiveLock, ProjectPaths};
 use crate::project::ProjectId;
 
 /// 選択された1案件。runtime状態は持たない。
@@ -36,6 +36,35 @@ impl Candidate {
             None => Err(not_managed(&self.display_id())),
         }
     }
+
+    /// project lockを取り、lock後の内容で読み直す。
+    pub fn lock(self) -> Result<Locked> {
+        let lock = self.paths.acquire_lock()?;
+        let metadata = self.reload()?;
+        Ok(Locked {
+            paths: self.paths,
+            metadata,
+            _lock: lock,
+        })
+    }
+}
+
+/// project lockを保持したまま読み直した1案件。
+///
+/// 選択の時点で読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
+/// 管理対象でない案件にはlock fileを作らない。
+///
+/// 読み直しの時点でmetadataが消えていた場合、案件名は引数の綴りではなく、
+/// 保存されていたmetadataの綴りで報告する。promptで選んだ場合は引数が存在しないため、
+/// 読み直しの経路は1つに保つ。
+///
+/// lockは値の生存期間だけ有効である。分解するとその場でlockが外れるため、
+/// fieldは`locked.paths`・`locked.metadata`として使う。
+#[derive(Debug)]
+pub struct Locked {
+    pub paths: ProjectPaths,
+    pub metadata: ProjectMetadata,
+    _lock: ExclusiveLock,
 }
 
 /// 対話選択。testでは差し替える。
@@ -115,12 +144,20 @@ fn load(config: &GlobalConfig, project: &ProjectId) -> Result<Candidate> {
     let paths = ProjectPaths::derive(&config.base_path, &project.canonical());
     match metadata::load(&paths)? {
         Some(metadata) => Ok(Candidate { paths, metadata }),
-        None => Err(not_managed(&project.to_string())),
+        None => Err(not_managed(project)),
     }
 }
 
+/// 完全指定された案件をlockし、lock後のmetadataとともに返す。
+///
+/// promptを持たないcommandの入口。`load`が先に存在を確かめるため、管理対象でない
+/// 案件にはlock fileを作らない。
+pub fn locked(config: &GlobalConfig, project: &ProjectId) -> Result<Locked> {
+    load(config, project)?.lock()
+}
+
 /// 管理対象でない案件を、登録commandとともに拒否する。
-fn not_managed(project: &str) -> Error {
+pub(super) fn not_managed(project: &dyn std::fmt::Display) -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::ProjectNotManaged,
@@ -179,6 +216,21 @@ fn unresolved(index: usize, count: usize) -> Error {
     )
 }
 
+/// 中断は何も変更せず終える。それ以外は端末を読めなかったこととして報告する。
+pub fn unreadable_prompt(error: std::io::Error) -> Error {
+    if error.kind() == std::io::ErrorKind::Interrupted {
+        return Error::Canceled;
+    }
+    // 端末を読み取れなかったことを、引数の不足として報告しない。
+    Error::single(
+        Diagnostic::new(
+            ErrorId::PromptUnreadable,
+            msg!("error-prompt-unreadable", detail = error),
+        )
+        .remediation(msg!("remediation-prompt-unreadable")),
+    )
+}
+
 /// dialoguerを使う対話実装。
 pub struct TerminalProjectPrompt {
     /// promptの見出しに使うFTL message ID。
@@ -194,20 +246,9 @@ impl TerminalProjectPrompt {
             .unwrap_or_else(|failure| failure.to_string())
     }
 
-    /// EscとCtrl-Cは何も変更せずexit code `130`とする。
     fn map_error(error: dialoguer::Error) -> Error {
         match error {
-            dialoguer::Error::IO(io) if io.kind() == std::io::ErrorKind::Interrupted => {
-                Error::Canceled
-            }
-            // 端末を読み取れなかったことを、引数の不足として報告しない。
-            other => Error::single(
-                Diagnostic::new(
-                    ErrorId::PromptUnreadable,
-                    msg!("error-prompt-unreadable", detail = other),
-                )
-                .remediation(msg!("remediation-prompt-unreadable")),
-            ),
+            dialoguer::Error::IO(io) => unreadable_prompt(io),
         }
     }
 }

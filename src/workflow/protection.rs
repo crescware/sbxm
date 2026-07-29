@@ -231,7 +231,7 @@ fn examine(
         )));
     }
 
-    let git_dir = read(
+    let git_dir = sandbox::read(
         host,
         sandbox_name,
         &["git", "-C", path, "rev-parse", "--git-dir"],
@@ -249,11 +249,11 @@ fn examine(
                 )));
             }
             1 => {}
-            _ => return Err(unobservable(&probe, &candidate)),
+            _ => return Err(sandbox::unobservable(&probe, &candidate)),
         }
     }
 
-    let head = read(
+    let head = sandbox::read(
         host,
         sandbox_name,
         &["git", "-C", path, "rev-parse", "HEAD"],
@@ -276,7 +276,7 @@ fn examine(
     let attached = match answered(&branch, "HEAD")? {
         0 => true,
         1 => false,
-        _ => return Err(unobservable(&branch, "HEAD")),
+        _ => return Err(sandbox::unobservable(&branch, "HEAD")),
     };
 
     let (mode, branch, remote) = if attached {
@@ -302,7 +302,7 @@ fn examine(
             )));
         }
         let upstream = upstream.stdout_text().trim().to_string();
-        let ahead = read(
+        let ahead = sandbox::read(
             host,
             sandbox_name,
             &[
@@ -325,7 +325,7 @@ fn examine(
         (Mode::Attached, Some(branch), Remote::Pushed)
     } else {
         // detached HEADは、originのいずれかのrefから到達できることを条件とする。
-        let unreachable = read(
+        let unreachable = sandbox::read(
             host,
             sandbox_name,
             &[
@@ -367,27 +367,7 @@ fn examine(
 /// `sbx exec`がcommandを起動できなかった場合を、内側のcommandが返した結果として
 /// 読まない。判定できない場合は、削除して良いことを示す値へ丸めずerrorとする。
 fn answered(outcome: &CommandOutcome, subject: &str) -> Result<i32> {
-    sandbox::inner_exit_code(outcome).ok_or_else(|| unobservable(outcome, subject))
-}
-
-/// 内側のcommandが答えなかった場合の診断。原値をそのまま残す。
-fn unobservable(outcome: &CommandOutcome, subject: &str) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::SandboxCheckUnobservable,
-            msg!(
-                "error-sandbox-check-unobservable",
-                subject = subject,
-                exit_status = outcome.status
-            ),
-        )
-        .external(outcome.failure()),
-    )
-}
-
-fn read(host: &dyn HostEnvironment, sandbox_name: &str, args: &[&str]) -> Result<String> {
-    let outcome = sandbox::exec(host, sandbox_name, args)?.require_success()?;
-    Ok(outcome.stdout_text().trim().to_string())
+    sandbox::inner_exit_code(outcome).ok_or_else(|| sandbox::unobservable(outcome, subject))
 }
 
 /// 保存されていない作業を失わないため、削除も再作成も行わない。

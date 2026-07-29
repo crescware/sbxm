@@ -2,11 +2,13 @@ use super::*;
 use crate::command::{CommandOutcome, OutputPolicy, TimeoutClass};
 use crate::compatibility::SandboxState;
 use crate::config::GitIdentity;
-use crate::error::Result;
+use crate::error::{ErrorId, Result};
 use crate::hash::sha256_hex;
 use crate::i18n::Locale;
-use crate::paths::{AbsoluteBasePath, PRIVATE_DIR_MODE};
+use crate::paths::{self, AbsoluteBasePath, PRIVATE_DIR_MODE};
 use crate::testing::add_request::request;
+use crate::testing::archive::image_archive_bytes;
+use crate::testing::project::project_id;
 use crate::testing::value::COMMIT;
 use crate::workflow::add::AddRequest;
 use crate::workflow::files::Placement;
@@ -22,7 +24,7 @@ fn a_project_that_is_not_registered_is_sent_to_add() {
 
     let error = run(
         &bench.config,
-        &ProjectId::parse("example-org/example-repo").expect("valid project id"),
+        &project_id("example-org/example-repo"),
         &world,
         bench.workspace_root.path(),
     )
@@ -41,10 +43,82 @@ fn a_project_that_is_not_registered_is_sent_to_add() {
     );
 }
 
-/// docker、`sbx`、gitの応答を状態として持ち、`add`の全工程を通せるhost。
+#[test]
+fn an_unregistered_project_gets_no_lock_file() {
+    let bench = bench();
+    let world = World::new();
+    let project = project_id("example-org/example-repo");
+    let paths = ProjectPaths::derive(&bench.config.base_path, &project.canonical());
+    // lock fileを置ける状態、つまりmetadataのない`.sbxm`だけがある状態で確かめる。
+    fs::create_dir_all(paths.sbxm_dir()).expect("the project directory is left behind");
+
+    run(&bench.config, &project, &world, bench.workspace_root.path())
+        .expect_err("there is nothing to build yet");
+
+    assert!(
+        !paths.lock_file().exists(),
+        "an unregistered project is not given a lock file"
+    );
+    assert_eq!(
+        fs::read_dir(paths.sbxm_dir())
+            .expect("read the project directory")
+            .count(),
+        0,
+        "nothing is written under an unregistered project"
+    );
+}
+
+#[test]
+fn a_rebuild_in_progress_builds_nothing() {
+    let bench = bench();
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None);
+    super::super::add::run(&bench.config, &request, &world).expect("the project is registered");
+
+    let paths = ProjectPaths::derive(&bench.config.base_path, &request.project.canonical());
+    let mut stored = metadata::load(&paths)
+        .expect("read the metadata")
+        .expect("present");
+    stored.rebuild = Some(metadata::RebuildIntent {
+        target_dockerfile_sha256: sha256_hex(b"target"),
+        previous_dockerfile_sha256: stored.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&paths, &stored).expect("record the intent");
+
+    let mark = world.mark();
+    let error = run(
+        &bench.config,
+        &request.project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .expect_err("a half-switched project is not built on");
+    assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
+
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .expect("the user is told how to get out of it");
+    assert_eq!(remediation.id, "remediation-run-rebuild");
+    let command = remediation
+        .args
+        .iter()
+        .find(|(name, _)| *name == "command")
+        .map(|(_, value)| value.clone())
+        .expect("the remediation carries the command to run");
+    assert_eq!(command, "sbxm rebuild Example-Org/Example-Repo");
+
+    assert!(
+        world.since(mark).is_empty(),
+        "nothing is asked of the host: {:?}",
+        world.since(mark)
+    );
+}
+
+/// docker、`sbx`、gitの応答を状態として持ち、`add`と`prepare`の全工程を通せるhost。
 ///
 /// 各工程の副作用は、その工程が成功したときにだけ起こす。中断した実行の続きを
-/// 同じ`add`が進められるかどうかは、この性質の上で判定できる。
+/// 同じ`prepare`が進められるかどうかは、この性質の上で判定できる。
 struct World {
     /// tag -> buildが宣言したlabel。
     images: RefCell<BTreeMap<String, Vec<(String, String)>>>,
@@ -66,8 +140,8 @@ struct World {
     /// Sandbox内にあるcommand。既定のtemplateが入れるものを持つ。
     commands: RefCell<BTreeSet<String>>,
     default_branch: String,
-    /// 一致した起動を失敗させる。副作用は起こさない。
-    fail: RefCell<Option<String>>,
+    /// 一致した起動を、実行せずにこのexit statusと標準出力で答える。副作用は起こさない。
+    answer: RefCell<Option<(String, i32, String)>>,
     calls: RefCell<Vec<crate::command::CommandSpec>>,
 }
 
@@ -107,7 +181,7 @@ impl World {
                     .collect(),
             ),
             default_branch: "main".to_string(),
-            fail: RefCell::new(None),
+            answer: RefCell::new(None),
             calls: RefCell::new(Vec::new()),
         }
     }
@@ -124,11 +198,25 @@ impl World {
 
     /// 次の実行で、指定した起動だけを失敗させる。
     fn failing(&self, needle: &str) {
-        *self.fail.borrow_mut() = Some(needle.to_string());
+        self.answering(needle, 1, "");
+    }
+
+    /// 失敗しながら出力も返す起動。実物と同じく、失敗は出力の空さでは見分けられない。
+    fn failing_with(&self, needle: &str, stdout: &str) {
+        self.answering(needle, 1, stdout);
+    }
+
+    /// 成功しながら何も出力しない起動。exit statusだけでは観測できたと言えない。
+    fn succeeding_silently(&self, needle: &str) {
+        self.answering(needle, 0, "");
+    }
+
+    fn answering(&self, needle: &str, code: i32, stdout: &str) {
+        *self.answer.borrow_mut() = Some((needle.to_string(), code, stdout.to_string()));
     }
 
     fn nothing_fails(&self) {
-        *self.fail.borrow_mut() = None;
+        *self.answer.borrow_mut() = None;
     }
 
     fn invocations(&self) -> Vec<String> {
@@ -166,16 +254,7 @@ impl World {
         code: i32,
         stdout: &str,
     ) -> CommandOutcome {
-        use std::os::unix::process::ExitStatusExt;
-        CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.as_bytes().to_vec(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        }
+        crate::testing::command::outcome(spec, code, stdout)
     }
 
     fn host_git(&self, spec: &crate::command::CommandSpec) -> (i32, String) {
@@ -247,26 +326,13 @@ impl World {
                 None => (1, String::new()),
             },
             ["image", "save", name, "--output", output] => {
-                // 実物と同じく、archiveはimage configをlabelごと持つ。
-                let labels = self.images.borrow().get(*name).cloned().unwrap_or_default();
-                let rendered = labels
+                let owned = self.images.borrow().get(*name).cloned().unwrap_or_default();
+                let labels: Vec<(&str, &str)> = owned
                     .iter()
-                    .map(|(key, value)| format!("\"{key}\":\"{value}\""))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let config = format!(r#"{{"config":{{"Labels":{{{rendered}}}}}}}"#);
-                let hex = IMAGE_ID.strip_prefix("sha256:").expect("a digest");
-                fs::write(
-                    output,
-                    crate::archive::tar_bytes(&[
-                        (&format!("blobs/sha256/{hex}"), config.as_bytes()),
-                        (
-                            "manifest.json",
-                            crate::archive::manifest_json(name, IMAGE_ID).as_bytes(),
-                        ),
-                    ]),
-                )
-                .expect("write the archive");
+                    .map(|(key, value)| (key.as_str(), value.as_str()))
+                    .collect();
+                fs::write(output, image_archive_bytes(name, IMAGE_ID, &labels))
+                    .expect("write the archive");
                 (0, String::new())
             }
             _ => (0, String::new()),
@@ -562,11 +628,11 @@ impl crate::command::HostEnvironment for World {
     fn run(&self, spec: &crate::command::CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let invocation = format!("{} {}", spec.program, spec.args.join(" "));
-        if let Some(needle) = self.fail.borrow().as_deref()
-            && invocation.contains(needle)
+        if let Some((needle, code, stdout)) = self.answer.borrow().as_ref()
+            && invocation.contains(needle.as_str())
         {
-            // 失敗した工程は、その工程の副作用を残さない。
-            return Ok(self.outcome(spec, 1, ""));
+            // 答えを差し替えた工程は実行せず、その工程の副作用も残さない。
+            return Ok(self.outcome(spec, *code, stdout));
         }
 
         let (code, stdout) = match spec.program.as_str() {
@@ -643,7 +709,7 @@ impl Bench {
     }
 }
 
-/// `add`が外部工程を呼ぶ順に並べた、失敗させる工程とその診断。
+/// `add`と`prepare`が外部工程を呼ぶ順に並べた、失敗させる工程とその診断。
 const STEPS: [(&str, ErrorId); 11] = [
     ("git clone git@github.com", ErrorId::ExternalCommandFailed),
     ("docker build", ErrorId::ExternalCommandFailed),
@@ -659,7 +725,7 @@ const STEPS: [(&str, ErrorId); 11] = [
 ];
 
 #[test]
-fn an_interruption_at_any_step_is_continued_by_the_same_add() {
+fn an_interruption_at_any_step_is_continued_by_the_same_prepare() {
     let bench = bench();
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None);
@@ -754,6 +820,159 @@ fn a_finished_build_is_a_no_op_for_the_same_add() {
             world.since(mark)
         );
     }
+}
+
+#[test]
+fn a_head_that_cannot_be_read_is_left_unknown() {
+    let bench = bench();
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None);
+    bench.build(&world, &request).expect("the first run builds");
+
+    // 停止中のSandboxと同じく、worktreeのHEADだけが読めない状態にする。読めない読み取りも
+    // 出力は返すので、成功したかどうかはexit statusでしか分からない。
+    world.failing_with("rev-parse HEAD", "fatal: not a git repository\n");
+    let output = run(
+        &bench.config,
+        &request.project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .expect("a project that is built stays built");
+
+    assert!(output.already_built);
+    assert_eq!(output.worktrees.len(), 1);
+    assert_eq!(
+        output.worktrees[0].head, None,
+        "the output of a failed read is not reported as a HEAD"
+    );
+    assert_eq!(
+        output.worktrees[0].created_from, "refs/remotes/origin/main",
+        "what metadata declares is still reported"
+    );
+    assert_eq!(output.worktrees[0].mode, CreationMode::Attached);
+}
+
+#[test]
+fn a_head_that_reads_back_empty_is_left_unknown() {
+    let bench = bench();
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None);
+    bench.build(&world, &request).expect("the first run builds");
+
+    // 成功しながら何も答えない読み取り。値がない以上、観測できたことにはならない。
+    world.succeeding_silently("rev-parse HEAD");
+    let output = run(
+        &bench.config,
+        &request.project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .expect("a project that is built stays built");
+
+    assert!(output.already_built);
+    assert_eq!(output.worktrees.len(), 1);
+    assert_eq!(
+        output.worktrees[0].head, None,
+        "an empty answer is not reported as a HEAD"
+    );
+}
+
+/// 編集後のDockerfileの内容。世代が変わったことだけが要る。
+const EDITED_DOCKERFILE: &[u8] = b"FROM example:edited\n";
+
+#[test]
+fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_started_from() {
+    let bench = bench();
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None);
+
+    // imageまで組み上がり、Sandboxの作成で中断した実行を作る。
+    world.failing("sbx create");
+    bench
+        .build(&world, &request)
+        .expect_err("the run stops at sandbox creation");
+    world.nothing_fails();
+
+    let started_from = bench
+        .stored("Example-Org/Example-Repo")
+        .provisioning
+        .dockerfile_sha256;
+    let paths = ProjectPaths::derive(&bench.config.base_path, &request.project.canonical());
+    fs::write(paths.dockerfile(), EDITED_DOCKERFILE).expect("edit the Dockerfile");
+
+    let mark = world.mark();
+    let output = run(
+        &bench.config,
+        &request.project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .expect("the interrupted run finishes");
+
+    assert_eq!(
+        output
+            .warnings
+            .iter()
+            .map(|message| message.id)
+            .collect::<Vec<_>>(),
+        vec!["warning-dockerfile-changed-during-build"]
+    );
+    assert_eq!(
+        bench
+            .stored("Example-Org/Example-Repo")
+            .provisioning
+            .dockerfile_sha256,
+        started_from,
+        "the generation the build started from is the one it is finished on"
+    );
+    let edited = image::image_name(
+        &SandboxName::derive(&request.project.canonical()),
+        &sha256_hex(EDITED_DOCKERFILE),
+    );
+    assert!(
+        !world.since(mark).iter().any(|call| call.contains(&edited)),
+        "the edited Dockerfile is left for rebuild: {:?}",
+        world.since(mark)
+    );
+}
+
+#[test]
+fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built() {
+    let bench = bench();
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None);
+    super::super::add::run(&bench.config, &request, &world).expect("the project is registered");
+
+    let paths = ProjectPaths::derive(&bench.config.base_path, &request.project.canonical());
+    fs::write(paths.dockerfile(), EDITED_DOCKERFILE).expect("edit the Dockerfile");
+    let edited = sha256_hex(EDITED_DOCKERFILE);
+
+    let output = run(
+        &bench.config,
+        &request.project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .expect("the build runs on the Dockerfile that is there");
+
+    assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+    assert_eq!(
+        bench
+            .stored("Example-Org/Example-Repo")
+            .provisioning
+            .dockerfile_sha256,
+        edited,
+        "the edited Dockerfile becomes the generation to build"
+    );
+    assert!(
+        world.ran(&image::image_name(
+            &SandboxName::derive(&request.project.canonical()),
+            &edited
+        )),
+        "{:?}",
+        world.invocations()
+    );
 }
 
 #[test]

@@ -48,7 +48,7 @@ pub struct WorktreesReady<'a> {
     pub notes: &'a mut Vec<Note>,
 }
 
-/// sbxmが一度も起動しないtool。
+/// sbxmが利用者の作業の代わりに起動することのないtool。設定と観測だけを行う。
 pub trait Tool {
     /// Sandbox内でのcommand名。Dockerfileのmarker名にも使う。
     fn name(&self) -> &'static str;

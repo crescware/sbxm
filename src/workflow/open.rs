@@ -9,12 +9,11 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
-use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::project::{ProjectId, SandboxLayout};
 
 use super::inventory::{self, Poll, ProjectState};
 use super::select::{self, ProjectPrompt};
-use super::{daemon, worktree};
+use super::{daemon, rebuild, worktree};
 
 /// 接続先と、接続前に見せる情報。
 #[derive(Debug)]
@@ -47,40 +46,27 @@ pub fn prepare(
     poll: Poll,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let candidate = select::one(config, requested, prompt)?;
+    let locked = select::one(config, requested, prompt)?.lock()?;
 
-    let _lock = paths::acquire_exclusive_lock(
-        &candidate.paths.lock_file(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ProjectPath,
-    )?;
-
-    // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
-    let metadata = candidate.reload()?;
+    let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
-    require_no_rebuild(&metadata)?;
+    rebuild::require_no_rebuild(metadata)?;
 
     require_docker(host)?;
 
     let entries = daemon::list(host)?;
-    if inventory::state_of(&entries, &metadata, workspace_root)? == ProjectState::NotCreated {
-        // `open`はSandboxを新規作成しない。
-        return Err(not_created(&metadata, name.as_str()));
-    }
-
-    match inventory::state_of(&entries, &metadata, workspace_root)? {
+    match inventory::state_of(&entries, metadata, workspace_root)? {
         ProjectState::Running => {}
         ProjectState::Stopped => inventory::start(host, name.as_str())?,
-        ProjectState::NotCreated => return Err(not_created(&metadata, name.as_str())),
+        ProjectState::NotCreated => return Err(inventory::not_created(metadata, name.as_str())),
     }
-    inventory::wait_until_running(host, &metadata, workspace_root, poll)?;
+    inventory::wait_until_running(host, metadata, workspace_root, poll)?;
 
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
     crate::workflow::sandbox::require_credentials_isolated(host, name.as_str())?;
 
     let layout = SandboxLayout::new(&metadata.canonical_id);
-    let worktrees = verify_worktrees(host, name.as_str(), &layout, &metadata)?;
+    let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
 
     Ok(Prepared {
         project: metadata.display_id(),
@@ -116,42 +102,6 @@ fn require_docker(host: &dyn HostEnvironment) -> Result<()> {
         )
         .remediation(msg!("remediation-start-docker")),
     ))
-}
-
-fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
-    if metadata.rebuild.is_none() {
-        return Ok(());
-    }
-    Err(Error::single(
-        Diagnostic::new(
-            ErrorId::RebuildIntentPending,
-            msg!(
-                "error-rebuild-intent-pending",
-                project = metadata.display_id()
-            ),
-        )
-        .remediation(msg!(
-            "remediation-run-rebuild",
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        )),
-    ))
-}
-
-fn not_created(metadata: &ProjectMetadata, sandbox: &str) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::SandboxNotCreated,
-            msg!(
-                "error-sandbox-not-created",
-                project = metadata.display_id(),
-                sandbox = sandbox
-            ),
-        )
-        .remediation(msg!(
-            "remediation-sandbox-not-created",
-            command = format!("sbxm add {}", metadata.display_id())
-        )),
-    )
 }
 
 /// metadataが宣言するmanaged worktreeが、Sandbox内のGitに揃っていることを確認する。

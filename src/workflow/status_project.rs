@@ -16,7 +16,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::image::{self, LABEL_CANONICAL_ID, LABEL_DOCKERFILE_SHA256};
 use super::inventory::{self, ProjectState};
-use super::{daemon, sandbox, worktree};
+use super::{daemon, sandbox, select, worktree};
 
 /// project scopeの状態値。翻訳しない安定したenum。
 ///
@@ -144,16 +144,7 @@ pub fn diagnose(
     let canonical = project.canonical();
     let paths = ProjectPaths::derive(&config.base_path, &canonical);
     let Some(metadata) = crate::metadata::load(&paths)? else {
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::ProjectNotManaged,
-                msg!("error-project-not-managed", project = project),
-            )
-            .remediation(msg!(
-                "remediation-project-not-managed",
-                command = format!("sbxm add {project}")
-            )),
-        ));
+        return Err(select::not_managed(project));
     };
     let name = SandboxName::derive(&canonical);
 
@@ -251,7 +242,6 @@ fn check_image(
     let generation = &metadata.provisioning.dockerfile_sha256;
     let image = image::image_name(name, generation);
 
-    // imageがないことと、Docker Engineへ問い合わせられないことを同じ値へ丸めない。
     let value = match image::inspect(host, &image) {
         Ok(Some(identity)) => {
             let declares_project =
@@ -362,7 +352,6 @@ fn check_inside(
         Some(ProjectState::NotCreated) => Some(Value::NotApplicable),
         // read-onlyの検査でもSandboxを起動し得るため実行しない。
         Some(ProjectState::Stopped) => Some(Value::NotObservedStopped),
-        // 観測できなかった状態を、Sandboxが無いことへ丸めない。
         None => Some(Value::Mismatch),
         Some(ProjectState::Running) => None,
     };
@@ -439,7 +428,7 @@ fn check_bare_repository(
             Some(sandbox::GIT_FATAL) => Value::Missing,
             _ => {
                 status.diagnostics.extend(
-                    unobservable(&outcome, &git_dir)
+                    sandbox::unobservable(&outcome, &git_dir)
                         .diagnostics()
                         .iter()
                         .cloned(),
@@ -482,11 +471,9 @@ fn check_worktrees(
     let mut value = Value::Ready;
     for entry in entries {
         if entry.bare {
-            // bare entryはworktree数へ含めない。
             continue;
         }
         let Some(relative) = entry.relative_to(&bare_root) else {
-            // bare root配下へstandardizeできないpathは、案件の成果物として扱わない。
             status.diagnostics.push(Diagnostic::new(
                 ErrorId::SandboxRepositoryUnusable,
                 msg!(
@@ -572,9 +559,12 @@ fn worktree_state(
             }
         }
         Ok(outcome) => {
-            status
-                .diagnostics
-                .extend(unobservable(&outcome, path).diagnostics().iter().cloned());
+            status.diagnostics.extend(
+                sandbox::unobservable(&outcome, path)
+                    .diagnostics()
+                    .iter()
+                    .cloned(),
+            );
             Value::Mismatch
         }
         Err(error) => {
@@ -618,21 +608,6 @@ fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &mut 
         }
     };
     status.push("status-item-ssh-agent", value);
-}
-
-/// 内側のcommandが答えなかった場合の診断。原値をそのまま残す。
-fn unobservable(outcome: &crate::command::CommandOutcome, subject: &str) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::SandboxCheckUnobservable,
-            msg!(
-                "error-sandbox-check-unobservable",
-                subject = subject,
-                exit_status = outcome.status
-            ),
-        )
-        .external(outcome.failure()),
-    )
 }
 
 #[cfg(test)]

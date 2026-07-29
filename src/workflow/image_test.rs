@@ -1,9 +1,9 @@
 use super::*;
 use crate::command::{CommandOutcome, OutputPolicy};
 use crate::project::ProjectId;
-use crate::testing::value::DIGEST;
+use crate::testing::archive::image_archive_bytes;
+use crate::testing::value::{DIGEST, IMAGE_ID};
 use std::cell::RefCell;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeDocker {
     /// `docker image inspect`が返す出力。`None`はimageが存在しない状態。
@@ -12,6 +12,8 @@ struct FakeDocker {
     build_fails: bool,
     /// Docker Engineへ問い合わせられない状態。
     listing_fails: bool,
+    /// buildの途中でbuild contextを消してしまう外部tool。
+    removes_context: bool,
 }
 
 impl FakeDocker {
@@ -26,11 +28,17 @@ impl FakeDocker {
             calls: RefCell::new(Vec::new()),
             build_fails: false,
             listing_fails: false,
+            removes_context: false,
         }
     }
 
     fn failing_build(mut self) -> FakeDocker {
         self.build_fails = true;
+        self
+    }
+
+    fn losing_its_context(mut self) -> FakeDocker {
+        self.removes_context = true;
         self
     }
 
@@ -62,6 +70,9 @@ impl HostEnvironment for FakeDocker {
         let saving = sub(0, "image") && sub(1, "save");
         let listing = sub(0, "image") && sub(1, "ls");
         let (code, stdout) = if building {
+            if self.removes_context {
+                let _ = fs::remove_dir_all(spec.args.last().expect("the context is the last"));
+            }
             (i32::from(self.build_fails), String::new())
         } else if saving {
             (0, String::new())
@@ -87,15 +98,7 @@ impl HostEnvironment for FakeDocker {
                 _ => (1, String::new()),
             }
         };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }
 
@@ -200,6 +203,33 @@ fn an_image_that_declares_the_same_project_and_generation_is_reused() {
             .iter()
             .any(|args| args.first().is_some_and(|arg| arg == "build")),
         "a matching image is not rebuilt"
+    );
+}
+
+#[test]
+fn a_context_that_cannot_be_removed_is_a_warning_not_a_failed_build() {
+    let dir = tempfile::tempdir().unwrap();
+    let dockerfile = dir.path().join("Dockerfile");
+    fs::write(&dockerfile, "FROM scratch\n").unwrap();
+    let host = FakeDocker::new(vec![Some(&matching_inspect()), None]).losing_its_context();
+
+    let image = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
+        .expect("a context that is already gone does not undo the image");
+    assert!(image.built);
+    assert_eq!(image.warnings.len(), 1, "{:?}", image.warnings);
+    assert_eq!(image.warnings[0].id, "warning-build-context-left-behind");
+
+    let path = image.warnings[0]
+        .args
+        .iter()
+        .find_map(|(key, value)| (*key == "path").then_some(value))
+        .expect("the leftover directory is named");
+    assert!(
+        Path::new(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(BUILD_CONTEXT_PREFIX)),
+        "{path} is not a build context"
     );
 }
 
@@ -333,25 +363,13 @@ fn save_archive(host: &FakeDocker, image_name: &str, image_id: &str) {
         .skip_while(|arg| *arg != "--output")
         .nth(1)
         .expect("the save names an output path");
-    // 実物と同じく、archiveはimage configをlabelごと持つ。
-    let rendered = declared_labels()
+    let owned = declared_labels();
+    let labels: Vec<(&str, &str)> = owned
         .iter()
-        .map(|(key, value)| format!("\"{key}\":\"{value}\""))
-        .collect::<Vec<_>>()
-        .join(",");
-    let config = format!(r#"{{"config":{{"Labels":{{{rendered}}}}}}}"#);
-    let hex = image_id.strip_prefix("sha256:").unwrap_or(image_id);
-    fs::write(
-        output,
-        crate::archive::tar_bytes(&[
-            (&format!("blobs/sha256/{hex}"), config.as_bytes()),
-            (
-                "manifest.json",
-                crate::archive::manifest_json(image_name, image_id).as_bytes(),
-            ),
-        ]),
-    )
-    .expect("write the archive");
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect();
+    fs::write(output, image_archive_bytes(image_name, image_id, &labels))
+        .expect("write the archive");
 }
 
 /// `image save`の呼び出しでarchiveを書くhost。
@@ -387,7 +405,7 @@ fn project_paths(dir: &Path) -> ProjectPaths {
 fn built_image() -> BuiltImage {
     BuiltImage {
         name: image_name(&sandbox(), DIGEST),
-        id: "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+        id: IMAGE_ID.to_string(),
         labels: expected_labels(&canonical(), DIGEST),
         built: true,
         warnings: Vec::new(),
