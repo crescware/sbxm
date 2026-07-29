@@ -807,6 +807,36 @@ fn a_finished_build_is_a_no_op_for_the_same_add() {
     }
 }
 
+#[test]
+fn a_head_that_cannot_be_read_is_left_unknown() {
+    let bench = bench();
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None);
+    bench.build(&world, &request).expect("the first run builds");
+
+    // 停止中のSandboxと同じく、worktreeのHEADだけが読めない状態にする。
+    world.failing("rev-parse HEAD");
+    let output = run(
+        &bench.config,
+        &request.project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .expect("a project that is built stays built");
+
+    assert!(output.already_built);
+    assert_eq!(output.worktrees.len(), 1);
+    assert_eq!(
+        output.worktrees[0].head, None,
+        "an unreadable HEAD is not guessed at"
+    );
+    assert_eq!(
+        output.worktrees[0].created_from, "refs/remotes/origin/main",
+        "what metadata declares is still reported"
+    );
+    assert_eq!(output.worktrees[0].mode, CreationMode::Attached);
+}
+
 /// 編集後のDockerfileの内容。世代が変わったことだけが要る。
 const EDITED_DOCKERFILE: &[u8] = b"FROM example:edited\n";
 

@@ -239,7 +239,6 @@ fn observed_worktrees(
     let mut rows = Vec::with_capacity(names.len());
     for name in names {
         let path = format!("{}/{}", layout.bare_root(), name);
-        // 停止中のSandboxではHEADを読めない。観測できない値を推測で埋めない。
         let outcome = sandbox::exec(host, sandbox, &["git", "-C", &path, "rev-parse", "HEAD"])?;
         let head = outcome
             .success()
