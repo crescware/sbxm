@@ -116,6 +116,24 @@ pub fn state_of(
     })
 }
 
+/// Sandboxをまだ持たない案件を、構築commandとともに拒否する。
+pub fn not_created(metadata: &ProjectMetadata, sandbox: &str) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::SandboxNotCreated,
+            msg!(
+                "error-sandbox-not-created",
+                project = metadata.display_id(),
+                sandbox = sandbox
+            ),
+        )
+        .remediation(msg!(
+            "remediation-sandbox-not-created",
+            command = format!("sbxm add {}", metadata.display_id())
+        )),
+    )
+}
+
 /// 名前が一致するentryを1件だけ取り出す。
 ///
 /// 同名が複数ある一覧からは、どれがこの案件のSandboxかを決められない。先頭を選んで

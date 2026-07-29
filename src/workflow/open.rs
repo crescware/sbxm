@@ -60,13 +60,13 @@ pub fn prepare(
     let entries = daemon::list(host)?;
     if inventory::state_of(&entries, &metadata, workspace_root)? == ProjectState::NotCreated {
         // `open`はSandboxを新規作成しない。
-        return Err(not_created(&metadata, name.as_str()));
+        return Err(inventory::not_created(&metadata, name.as_str()));
     }
 
     match inventory::state_of(&entries, &metadata, workspace_root)? {
         ProjectState::Running => {}
         ProjectState::Stopped => inventory::start(host, name.as_str())?,
-        ProjectState::NotCreated => return Err(not_created(&metadata, name.as_str())),
+        ProjectState::NotCreated => return Err(inventory::not_created(&metadata, name.as_str())),
     }
     inventory::wait_until_running(host, &metadata, workspace_root, poll)?;
 
@@ -110,23 +110,6 @@ fn require_docker(host: &dyn HostEnvironment) -> Result<()> {
         )
         .remediation(msg!("remediation-start-docker")),
     ))
-}
-
-fn not_created(metadata: &ProjectMetadata, sandbox: &str) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::SandboxNotCreated,
-            msg!(
-                "error-sandbox-not-created",
-                project = metadata.display_id(),
-                sandbox = sandbox
-            ),
-        )
-        .remediation(msg!(
-            "remediation-sandbox-not-created",
-            command = format!("sbxm add {}", metadata.display_id())
-        )),
-    )
 }
 
 /// metadataが宣言するmanaged worktreeが、Sandbox内のGitに揃っていることを確認する。

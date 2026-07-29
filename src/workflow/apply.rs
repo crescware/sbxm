@@ -19,7 +19,7 @@ use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
 use super::tools::Note;
-use super::{daemon, rebuild, repository, sandbox, select, tools};
+use super::{daemon, inventory, rebuild, repository, sandbox, select, tools};
 use crate::project::SandboxLayout;
 
 /// 何を適用するか。
@@ -75,22 +75,7 @@ pub fn run(
     let entry = daemon::list(host)?
         .into_iter()
         .find(|entry| entry.name == name.as_str())
-        .ok_or_else(|| {
-            Error::single(
-                Diagnostic::new(
-                    ErrorId::SandboxNotCreated,
-                    msg!(
-                        "error-sandbox-not-created",
-                        project = metadata.display_id(),
-                        sandbox = name
-                    ),
-                )
-                .remediation(msg!(
-                    "remediation-sandbox-not-created",
-                    command = format!("sbxm add {}", metadata.display_id())
-                )),
-            )
-        })?;
+        .ok_or_else(|| inventory::not_created(&metadata, name.as_str()))?;
 
     sandbox::verify_identity(&entry, &name, workspace_root)?;
 

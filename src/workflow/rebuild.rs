@@ -314,20 +314,7 @@ fn require_created(
 ) -> Result<()> {
     match state {
         ProjectState::Running | ProjectState::Stopped => Ok(()),
-        ProjectState::NotCreated => Err(Error::single(
-            Diagnostic::new(
-                ErrorId::SandboxNotCreated,
-                msg!(
-                    "error-sandbox-not-created",
-                    project = metadata.display_id(),
-                    sandbox = name
-                ),
-            )
-            .remediation(msg!(
-                "remediation-sandbox-not-created",
-                command = format!("sbxm add {}", metadata.display_id())
-            )),
-        )),
+        ProjectState::NotCreated => Err(inventory::not_created(metadata, name.as_str())),
     }
 }
 
