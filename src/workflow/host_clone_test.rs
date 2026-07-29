@@ -1,6 +1,7 @@
 use super::*;
 use crate::command::{CommandOutcome, HostEnvironment};
 use crate::paths::AbsoluteBasePath;
+use crate::testing::project::project_id;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -60,7 +61,7 @@ impl HostEnvironment for FakeGit {
 
 fn project_paths(dir: &Path) -> (ProjectPaths, ProjectId) {
     let base = AbsoluteBasePath::new(dir).expect("valid base path");
-    let project = ProjectId::parse("Example-Org/Example-Repo").expect("valid project id");
+    let project = project_id("Example-Org/Example-Repo");
     let paths = ProjectPaths::derive(&base, &project.canonical());
     fs::create_dir_all(paths.root()).expect("create the project root");
     (paths, project)

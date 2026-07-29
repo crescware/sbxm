@@ -2,11 +2,12 @@ use super::*;
 use crate::metadata::Provisioning;
 use crate::paths::AbsoluteBasePath;
 use crate::project::CanonicalProjectId;
+use crate::testing::project::project_id;
 use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::COMMIT;
 
 fn project() -> ProjectId {
-    ProjectId::parse("Example-Org/Example-Repo").expect("valid project id")
+    project_id("Example-Org/Example-Repo")
 }
 
 fn canonical() -> CanonicalProjectId {

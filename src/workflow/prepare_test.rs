@@ -8,6 +8,7 @@ use crate::i18n::Locale;
 use crate::paths::{self, AbsoluteBasePath, PRIVATE_DIR_MODE};
 use crate::testing::add_request::request;
 use crate::testing::archive::image_archive_bytes;
+use crate::testing::project::project_id;
 use crate::testing::value::COMMIT;
 use crate::workflow::add::AddRequest;
 use crate::workflow::files::Placement;
@@ -23,7 +24,7 @@ fn a_project_that_is_not_registered_is_sent_to_add() {
 
     let error = run(
         &bench.config,
-        &ProjectId::parse("example-org/example-repo").expect("valid project id"),
+        &project_id("example-org/example-repo"),
         &world,
         bench.workspace_root.path(),
     )
@@ -46,7 +47,7 @@ fn a_project_that_is_not_registered_is_sent_to_add() {
 fn an_unregistered_project_gets_no_lock_file() {
     let bench = bench();
     let world = World::new();
-    let project = ProjectId::parse("example-org/example-repo").expect("valid project id");
+    let project = project_id("example-org/example-repo");
     let paths = ProjectPaths::derive(&bench.config.base_path, &project.canonical());
     // lock fileを置ける状態、つまりmetadataのない`.sbxm`だけがある状態で確かめる。
     fs::create_dir_all(paths.sbxm_dir()).expect("the project directory is left behind");
