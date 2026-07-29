@@ -415,7 +415,6 @@ fn atomic_write_with_precondition(
     {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            // 中断した実行の残骸は自動削除しない。
             return Err(Error::single(
                 Diagnostic::new(
                     ErrorId::TempFileLeftBehind,
@@ -521,21 +520,7 @@ fn replaceable_identity(target: &Path, mode: u32) -> Result<FileIdentity> {
     }
     let observed = metadata.permissions().mode();
     if permission_too_open(observed) {
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::ProjectFilePermissionTooOpen,
-                msg!(
-                    "security-project-file-permission-description",
-                    path = display(target),
-                    observed = format_mode(observed)
-                ),
-            )
-            .remediation(msg!(
-                "security-project-file-permission-remediation",
-                path = display(target),
-                expected = format_mode(mode)
-            )),
-        ));
+        return Err(PathScope::ProjectPath.permission_error(target, observed, mode));
     }
     Ok(FileIdentity {
         device: metadata.dev(),
