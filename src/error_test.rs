@@ -64,3 +64,47 @@ fn external_failure_keeps_raw_stderr() {
     };
     assert_eq!(failure.stderr_text(), "boom\n");
 }
+
+/// 未知versionの診断を組み立てる文書定義。
+fn document() -> DocumentVersion {
+    DocumentVersion {
+        supported: 1,
+        unknown: ErrorId::ConfigUnknownVersion,
+        unknown_message: "error-config-unknown-version",
+    }
+}
+
+/// version欄が無い場合に呼ばれたことを示す診断。
+fn missing() -> Error {
+    Error::new(
+        ErrorId::ConfigMissingField,
+        msg!("error-config-missing-field"),
+    )
+}
+
+#[test]
+fn an_unknown_version_names_the_path_the_value_found_and_the_version_supported() {
+    let error = document()
+        .require(Some(99), "/tmp/x", missing)
+        .expect_err("this build reads version 1 only");
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(diagnostic.id, ErrorId::ConfigUnknownVersion);
+    assert_eq!(diagnostic.description.id, "error-config-unknown-version");
+    assert_eq!(
+        diagnostic.description.args,
+        vec![
+            ("path", "/tmp/x".to_string()),
+            ("version", "99".to_string()),
+            ("supported", "1".to_string())
+        ]
+    );
+}
+
+#[test]
+fn the_supported_version_is_accepted_and_a_missing_version_is_left_to_the_caller() {
+    assert!(document().require(Some(1), "/tmp/x", missing).is_ok());
+    let error = document()
+        .require(None, "/tmp/x", missing)
+        .expect_err("a document without a version field is refused");
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigMissingField));
+}
