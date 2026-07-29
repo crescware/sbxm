@@ -105,6 +105,33 @@ fn either_a_socket_or_a_reachable_agent_counts_as_exposed() {
 }
 
 #[test]
+fn the_key_material_an_agent_lists_never_reaches_a_diagnostic() {
+    let host = FakeProbe {
+        socket: (1, ""),
+        keys: (
+            0,
+            "ssh-rsa AAAAB3Nza-a-key-that-must-not-be-shown user@host\n",
+        ),
+    };
+
+    assert_eq!(
+        ssh_agent_is_exposed(&host, "sandbox").expect("the check answered"),
+        ["ssh-add reached an agent"],
+        "what is observed is that an agent answered, not what it holds"
+    );
+
+    let error = require_credentials_isolated(&host, "sandbox")
+        .expect_err("an agent that lists keys is reachable from inside");
+    assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
+
+    let rendered = format!("{error:?}");
+    assert!(
+        !rendered.contains("AAAAB3Nza") && !rendered.contains("must-not-be-shown"),
+        "the diagnostic names the sandbox only: {rendered}"
+    );
+}
+
+#[test]
 fn a_probe_that_could_not_run_is_not_read_as_isolation() {
     let host = FakeProbe {
         socket: (126, ""),

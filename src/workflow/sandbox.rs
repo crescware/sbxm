@@ -261,7 +261,6 @@ pub fn ssh_agent_is_exposed(
     }
 
     let keys = exec(host, sandbox, &["ssh-add", "-L"])?;
-    // 公開鍵本文は読まず、agentへ接続できたかどうかだけを見る。
     match inner_exit_code(&keys) {
         // 鍵の有無にかかわらず、agentへ接続できた時点で露出している。
         Some(0) | Some(1) => observed.push("ssh-add reached an agent"),
