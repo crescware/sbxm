@@ -19,8 +19,7 @@ const GITHUB_HOST: &str = "github.com";
 
 /// Git identityを設定する。
 ///
-/// `gh`はsbxm自身のworkflowが一度も呼ばない。Sandbox内のcloneもfetchも素のgitがHTTPSで
-/// 行い、認証はcredential helperが担う。そのため`gh`の設定はここには含めない。
+/// Sandbox内のcloneもfetchも素のgitがHTTPSで行い、認証はcredential helperが担う。
 pub fn ensure(host: &dyn HostEnvironment, sandbox: &str, git: &GitIdentity) -> Result<()> {
     ensure_git_config(host, sandbox, "user.name", &git.user_name)?;
     ensure_git_config(host, sandbox, "user.email", &git.user_email)
