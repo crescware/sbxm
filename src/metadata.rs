@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
+use crate::error::{Diagnostic, DocumentVersion, Error, ErrorId, Result, fail};
 use crate::git;
 use crate::msg;
 use crate::paths::{
@@ -21,6 +21,13 @@ use crate::project::{CanonicalProjectId, ProjectId, SandboxName};
 
 /// このbuildが読み書きするmetadataのversion。
 pub const METADATA_VERSION: u32 = 1;
+
+/// metadataのversionの読み方。
+const DOCUMENT: DocumentVersion = DocumentVersion {
+    supported: METADATA_VERSION,
+    unknown: ErrorId::MetadataUnknownVersion,
+    unknown_message: "error-metadata-unknown-version",
+};
 
 /// managed worktreeの下限と上限。CLIのoption validationと同じ範囲を使う。
 pub const MIN_WORKTREES: u32 = 1;
@@ -216,22 +223,7 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         )
     };
 
-    // versionを最初に確定させ、未知versionを他の項目より前に診断する。
-    match raw.version {
-        Some(version) if version == i64::from(METADATA_VERSION) => {}
-        Some(version) => {
-            return fail(
-                ErrorId::MetadataUnknownVersion,
-                msg!(
-                    "error-metadata-unknown-version",
-                    path = paths::display(path),
-                    version = version,
-                    supported = METADATA_VERSION
-                ),
-            );
-        }
-        None => return Err(missing("version")),
-    }
+    DOCUMENT.require(raw.version, &paths::display(path), || missing("version"))?;
 
     let owner = raw.owner.ok_or_else(|| missing("owner"))?;
     let repository = raw.repository.ok_or_else(|| missing("repository"))?;

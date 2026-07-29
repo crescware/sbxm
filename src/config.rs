@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Diagnostic, Error, ErrorId, Msg, Result, fail};
+use crate::error::{Diagnostic, DocumentVersion, Error, ErrorId, Msg, Result, fail};
 use crate::i18n::Locale;
 use crate::msg;
 use crate::paths::{
@@ -19,6 +19,13 @@ use crate::paths::{
 
 /// このbuildが読み書きするconfigのversion。
 pub const CONFIG_VERSION: u32 = 1;
+
+/// configのversionの読み方。
+const DOCUMENT: DocumentVersion = DocumentVersion {
+    supported: CONFIG_VERSION,
+    unknown: ErrorId::ConfigUnknownVersion,
+    unknown_message: "error-config-unknown-version",
+};
 
 /// version 1で意味を持つtop-level key。
 const KNOWN_TOP_LEVEL_KEYS: &[&str] = &["version", "language", "base_path", "git", "files"];
@@ -294,22 +301,9 @@ fn parse(text: &str, path: &Path) -> Result<ConfigState> {
         )
     };
 
-    // versionを最初に確定させ、未知versionを他の項目より前に診断する。
-    match raw.version {
-        Some(version) if version == i64::from(CONFIG_VERSION) => {}
-        Some(version) => {
-            return fail(
-                ErrorId::ConfigUnknownVersion,
-                msg!(
-                    "error-config-unknown-version",
-                    path = paths::display(path),
-                    version = version,
-                    supported = CONFIG_VERSION
-                ),
-            );
-        }
-        None => return Err(missing_field("version")),
-    }
+    DOCUMENT.require(raw.version, &paths::display(path), || {
+        missing_field("version")
+    })?;
 
     let language_value = raw.language.ok_or_else(|| missing_field("language"))?;
     let language = Locale::parse_exact(&language_value).ok_or_else(|| {
