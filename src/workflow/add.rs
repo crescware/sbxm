@@ -75,7 +75,6 @@ impl TargetConfiguration {
                 })
             }
             None => {
-                // 2個以上のmanaged worktreeは、起点branchの明示を必須とする。
                 if requested_worktrees > 1 {
                     return fail(
                         ErrorId::WorktreesRequireDetach,
