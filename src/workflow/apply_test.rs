@@ -368,6 +368,16 @@ fn a_stopped_sandbox_is_not_started_and_the_user_is_sent_to_open() {
             .map(|message| message.id),
         Some("remediation-sandbox-not-running")
     );
+    // 起動commandは`exec <name> -- /bin/true`であるため、一覧以外が走っていないことで見る。
+    let beyond_listing: Vec<Vec<String>> = host
+        .calls()
+        .into_iter()
+        .filter(|args| args.first().map(String::as_str) != Some("ls"))
+        .collect();
+    assert!(
+        beyond_listing.is_empty(),
+        "a stopped sandbox is not started implicitly: {beyond_listing:?}"
+    );
 }
 
 #[test]

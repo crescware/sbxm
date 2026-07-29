@@ -70,7 +70,6 @@ pub fn run(
     sandbox::verify_identity(&entry, &name, workspace_root)?;
 
     if entry.state != SandboxState::Running {
-        // 停止中のSandboxを暗黙に起動しない。
         return Err(Error::single(
             Diagnostic::new(
                 ErrorId::SandboxNotRunning,
