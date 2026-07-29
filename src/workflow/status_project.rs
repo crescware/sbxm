@@ -16,7 +16,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::image::{self, LABEL_CANONICAL_ID, LABEL_DOCKERFILE_SHA256};
 use super::inventory::{self, ProjectState};
-use super::{daemon, sandbox, worktree};
+use super::{daemon, sandbox, select, worktree};
 
 /// project scopeの状態値。翻訳しない安定したenum。
 ///
@@ -144,16 +144,7 @@ pub fn diagnose(
     let canonical = project.canonical();
     let paths = ProjectPaths::derive(&config.base_path, &canonical);
     let Some(metadata) = crate::metadata::load(&paths)? else {
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::ProjectNotManaged,
-                msg!("error-project-not-managed", project = project),
-            )
-            .remediation(msg!(
-                "remediation-project-not-managed",
-                command = format!("sbxm add {project}")
-            )),
-        ));
+        return Err(select::not_managed(project));
     };
     let name = SandboxName::derive(&canonical);
 

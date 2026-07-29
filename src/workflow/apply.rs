@@ -19,7 +19,7 @@ use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
 use super::tools::Note;
-use super::{daemon, rebuild, repository, sandbox, tools};
+use super::{daemon, rebuild, repository, sandbox, select, tools};
 use crate::project::SandboxLayout;
 
 /// 何を適用するか。
@@ -59,28 +59,15 @@ pub fn run(
 ) -> Result<ApplyOutput> {
     let canonical = project.canonical();
     let paths = ProjectPaths::derive(&config.base_path, &canonical);
-    let not_managed = || {
-        Error::single(
-            Diagnostic::new(
-                ErrorId::ProjectNotManaged,
-                msg!("error-project-not-managed", project = project),
-            )
-            .remediation(msg!(
-                "remediation-project-not-managed",
-                command = format!("sbxm add {project}")
-            )),
-        )
-    };
-
     if metadata::load(&paths)?.is_none() {
         // 管理対象でない案件にはlock fileも作らない。
-        return Err(not_managed());
+        return Err(select::not_managed(project));
     }
     let _lock = paths.acquire_lock()?;
 
     // lock取得後のmetadataを、以降の判定の正本とする。
     let Some(mut metadata) = metadata::load(&paths)? else {
-        return Err(not_managed());
+        return Err(select::not_managed(project));
     };
     rebuild::require_no_rebuild(&metadata)?;
 

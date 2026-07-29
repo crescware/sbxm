@@ -10,7 +10,7 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::config::GlobalConfig;
-use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
+use crate::error::{Msg, Result};
 use crate::metadata::{self, CreationMode, ProjectMetadata};
 use crate::msg;
 use crate::paths::ProjectPaths;
@@ -19,7 +19,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use super::files::PlacedFile;
 use super::tools::Note;
 use super::{
-    daemon, files, identity, image, rebuild, repository, sandbox, secret, template, tools,
+    daemon, files, identity, image, rebuild, repository, sandbox, secret, select, template, tools,
 };
 
 /// 出力のworktree 1行。
@@ -62,12 +62,13 @@ pub fn run(
 
     // 対象が登録されていない案件にlock fileを作らない。
     if metadata::load(&paths)?.is_none() {
-        return Err(not_registered(project));
+        return Err(select::not_managed(project));
     }
     let _lock = paths.acquire_lock()?;
 
     // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
-    let mut project_metadata = metadata::load(&paths)?.ok_or_else(|| not_registered(project))?;
+    let mut project_metadata =
+        metadata::load(&paths)?.ok_or_else(|| select::not_managed(project))?;
     rebuild::require_no_rebuild(&project_metadata)?;
 
     let layout = SandboxLayout::new(&canonical);
@@ -257,20 +258,6 @@ fn observed_worktrees(
         });
     }
     Ok(rows)
-}
-
-/// 登録されていない案件は構築できない。
-fn not_registered(project: &ProjectId) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::ProjectNotManaged,
-            msg!("error-project-not-managed", project = project),
-        )
-        .remediation(msg!(
-            "remediation-project-not-managed",
-            command = format!("sbxm add {project}")
-        )),
-    )
 }
 
 #[cfg(test)]

@@ -19,7 +19,7 @@ use super::files::{self, Conflict};
 use super::image;
 use super::inventory::{self, Poll, ProjectState};
 use super::protection::{self, Unmanaged};
-use super::{daemon, identity, repository, sandbox, secret, template, tools};
+use super::{daemon, identity, repository, sandbox, secret, select, template, tools};
 
 /// `rebuild`の結果。
 #[derive(Debug, Clone)]
@@ -46,12 +46,13 @@ pub fn run(
     let name = SandboxName::derive(&canonical);
 
     let Some(_) = metadata::load(&paths)? else {
-        return Err(not_managed(project));
+        return Err(select::not_managed(project));
     };
     let _lock = paths.acquire_lock()?;
 
     // lock取得後の状態を正本とする。
-    let mut project_metadata = metadata::load(&paths)?.ok_or_else(|| not_managed(project))?;
+    let mut project_metadata =
+        metadata::load(&paths)?.ok_or_else(|| select::not_managed(project))?;
     let current = super::add::current_dockerfile_hash(&paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。
     let entries = daemon::list(host)?;
@@ -328,19 +329,6 @@ fn require_created(
             )),
         )),
     }
-}
-
-fn not_managed(project: &ProjectId) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::ProjectNotManaged,
-            msg!("error-project-not-managed", project = project),
-        )
-        .remediation(msg!(
-            "remediation-project-not-managed",
-            command = format!("sbxm add {project}")
-        )),
-    )
 }
 
 #[cfg(test)]

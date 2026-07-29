@@ -115,12 +115,12 @@ fn load(config: &GlobalConfig, project: &ProjectId) -> Result<Candidate> {
     let paths = ProjectPaths::derive(&config.base_path, &project.canonical());
     match metadata::load(&paths)? {
         Some(metadata) => Ok(Candidate { paths, metadata }),
-        None => Err(not_managed(&project.to_string())),
+        None => Err(not_managed(project)),
     }
 }
 
 /// 管理対象でない案件を、登録commandとともに拒否する。
-fn not_managed(project: &str) -> Error {
+pub(super) fn not_managed(project: &dyn std::fmt::Display) -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::ProjectNotManaged,

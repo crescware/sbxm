@@ -2,7 +2,7 @@ use super::*;
 use crate::command::{CommandOutcome, OutputPolicy, TimeoutClass};
 use crate::compatibility::SandboxState;
 use crate::config::GitIdentity;
-use crate::error::Result;
+use crate::error::{ErrorId, Result};
 use crate::hash::sha256_hex;
 use crate::i18n::Locale;
 use crate::paths::{self, AbsoluteBasePath, PRIVATE_DIR_MODE};
