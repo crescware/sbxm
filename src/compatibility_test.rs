@@ -151,6 +151,20 @@ fn the_listing_of_the_target_version_is_read_as_it_is() {
 }
 
 #[test]
+fn a_null_listing_is_read_as_nothing_rather_than_refused() {
+    assert!(
+        parse_sandbox_list(r#"{"sandboxes": null}"#)
+            .expect("a null sandbox listing")
+            .is_empty()
+    );
+    assert!(
+        parse_template_list(r#"{"images": null}"#)
+            .expect("a null template listing")
+            .is_empty()
+    );
+}
+
+#[test]
 fn a_sandbox_with_more_than_one_workspace_is_not_guessed_at() {
     let two =
         r#"{"sandboxes":[{"name":"sbxm-a","status":"running","workspaces":["/tmp/a","/tmp/b"]}]}"#;

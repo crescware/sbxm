@@ -301,25 +301,9 @@ pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
 
 /// `sbx ls --json`が並べるSandbox。
 ///
-/// 対象versionは`{"sandboxes": [...]}`で包む。包みのない形も、行区切りの形も
-/// 受け付けるが、Sandbox以外のkeyを持つ包みは推測せずerrorにする。
+/// 対象versionは`{"sandboxes": [...]}`で包む。
 fn sandbox_documents(output: &str) -> Result<Vec<serde_json::Value>> {
-    let trimmed = output.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    if let Ok(serde_json::Value::Object(object)) =
-        serde_json::from_str::<serde_json::Value>(trimmed)
-        && let Some(listed) = object.get("sandboxes")
-    {
-        return match listed {
-            serde_json::Value::Array(items) => Ok(items.clone()),
-            // Sandboxが1件もない場合の表現として受け付ける。
-            serde_json::Value::Null => Ok(Vec::new()),
-            _ => Err(unparseable("sbx ls", "sandboxes is not a list")),
-        };
-    }
-    json_documents("sbx ls", output)
+    wrapped_documents("sbx ls", "sandboxes", output)
 }
 
 /// Sandboxが使っているWorkspace。
@@ -460,6 +444,27 @@ fn table_fields(line: &str) -> Vec<&str> {
         .collect()
 }
 
+/// 一覧を`key`で包んだ出力を読む。
+///
+/// 包みのない形も、行区切りの形も受け付ける。包みの値が`null`なら0件とする。
+fn wrapped_documents(program: &str, key: &str, output: &str) -> Result<Vec<serde_json::Value>> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    if let Ok(serde_json::Value::Object(object)) =
+        serde_json::from_str::<serde_json::Value>(trimmed)
+        && let Some(listed) = object.get(key)
+    {
+        return match listed {
+            serde_json::Value::Array(items) => Ok(items.clone()),
+            serde_json::Value::Null => Ok(Vec::new()),
+            _ => Err(unparseable(program, &format!("{key} is not a list"))),
+        };
+    }
+    json_documents(program, output)
+}
+
 /// 一覧形式と1行1件のJSON形式のどちらでも読む。
 fn json_documents(program: &str, output: &str) -> Result<Vec<serde_json::Value>> {
     let trimmed = output.trim();
@@ -535,23 +540,9 @@ pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
 
 /// `sbx template ls --json`が並べるimage。
 ///
-/// 対象versionは`{"images": [...]}`で包む。包みのない形も受け付ける。
+/// 対象versionは`{"images": [...]}`で包む。
 fn template_documents(output: &str) -> Result<Vec<serde_json::Value>> {
-    let trimmed = output.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    if let Ok(serde_json::Value::Object(object)) =
-        serde_json::from_str::<serde_json::Value>(trimmed)
-        && let Some(listed) = object.get("images")
-    {
-        return match listed {
-            serde_json::Value::Array(items) => Ok(items.clone()),
-            serde_json::Value::Null => Ok(Vec::new()),
-            _ => Err(unparseable("sbx template ls", "images is not a list")),
-        };
-    }
-    json_documents("sbx template ls", output)
+    wrapped_documents("sbx template ls", "images", output)
 }
 
 /// 同じimageを指す参照の書き方。
