@@ -22,15 +22,24 @@ fn fake_executable(dir: &Path, name: &str, body: &str) -> PathBuf {
 /// 別threadのtestがforkしている最中は、書き込み直後のfileが`ETXTBSY`で起動できない
 /// ことがある。実装ではなくtest環境の競合なので、短い間だけ再試行する。
 fn run_fake(spec: &CommandSpec) -> Result<CommandOutcome> {
+    run_fake_with_limit(spec, None)
+}
+
+/// `run_fake`と同じ再試行のうえで、timeout classの既定値ではない待ち時間を使う。
+fn run_fake_with_limit(spec: &CommandSpec, limit: Option<Duration>) -> Result<CommandOutcome> {
+    let attempt = || match limit {
+        Some(limit) => run_with_limit(spec, limit),
+        None => run(spec),
+    };
     for _ in 0..50 {
-        match run(spec) {
+        match attempt() {
             Err(error) if error.contains_id(ErrorId::ExternalCommandSpawnFailed) => {
                 std::thread::sleep(Duration::from_millis(10));
             }
             other => return other,
         }
     }
-    run(spec)
+    attempt()
 }
 
 #[test]
@@ -219,64 +228,13 @@ fn a_command_that_exceeds_its_timeout_is_terminated() {
     let spec = CommandSpec::probe(fake.to_str().unwrap(), &[]);
     // probeの10秒を待たずに判定するため、直接短いdeadlineを使う。
     let started = Instant::now();
-    let error = run_with_limit(&spec, Duration::from_millis(200))
+    let error = run_fake_with_limit(&spec, Some(Duration::from_millis(200)))
         .expect_err("the command must be terminated");
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "the child must be killed promptly"
     );
-}
-
-/// timeout classの既定値を使わずに待ち時間を差し替えるtest helper。
-fn run_with_limit(spec: &CommandSpec, limit: Duration) -> Result<CommandOutcome> {
-    let mut command = Command::new(&spec.program);
-    command
-        .args(&spec.args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    // run_fakeと同じ理由で、`ETXTBSY`のあいだだけ再試行する。
-    let mut child = loop {
-        match command.spawn() {
-            Ok(child) => break child,
-            Err(error) if error.raw_os_error() == Some(26) => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Err(error) => panic!("the fake tool could not be started: {error}"),
-        }
-    };
-    let deadline = Instant::now() + limit;
-    loop {
-        match child.try_wait().expect("try_wait") {
-            Some(status) => {
-                return Ok(CommandOutcome {
-                    program: spec.program.clone(),
-                    args: spec.args.clone(),
-                    working_dir: spec.working_dir.clone(),
-                    status,
-                    stdout: Vec::new(),
-                    stderr: Vec::new(),
-                    stderr_lossy: false,
-                });
-            }
-            None => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return fail(
-                        ErrorId::ExternalCommandTimeout,
-                        msg!(
-                            "error-external-command-timeout",
-                            program = spec.program,
-                            seconds = limit.as_secs()
-                        ),
-                    );
-                }
-                std::thread::sleep(WAIT_POLL_INTERVAL);
-            }
-        }
-    }
 }
 
 #[test]

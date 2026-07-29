@@ -192,6 +192,18 @@ impl CommandOutcome {
 
 /// 外部commandを実行する。
 pub fn run(spec: &CommandSpec) -> Result<CommandOutcome> {
+    run_inner(spec, spec.timeout.duration())
+}
+
+/// timeout classの既定値ではない待ち時間で実行する。
+///
+/// 最短のclassでも10秒あるため、deadlineに達する側の分岐はtestからしか踏めない。
+#[cfg(test)]
+pub fn run_with_limit(spec: &CommandSpec, limit: Duration) -> Result<CommandOutcome> {
+    run_inner(spec, Some(limit))
+}
+
+fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<CommandOutcome> {
     let mut command = Command::new(&spec.program);
     command.args(&spec.args);
     // defaultで現在processのenvironmentを継承する。
@@ -242,7 +254,7 @@ pub fn run(spec: &CommandSpec) -> Result<CommandOutcome> {
     let stdout_reader = child.stdout.take().map(spawn_reader);
     let stderr_reader = child.stderr.take().map(spawn_reader);
 
-    let status = wait_with_timeout(&mut child, spec)?;
+    let status = wait_with_limit(&mut child, spec, limit)?;
 
     let stdout = stdout_reader
         .map(|handle| handle.join().unwrap_or_default())
@@ -299,8 +311,12 @@ fn spawn_reader<R: Read + Send + 'static>(mut pipe: R) -> std::thread::JoinHandl
     })
 }
 
-fn wait_with_timeout(child: &mut Child, spec: &CommandSpec) -> Result<ExitStatus> {
-    let Some(limit) = spec.timeout.duration() else {
+fn wait_with_limit(
+    child: &mut Child,
+    spec: &CommandSpec,
+    limit: Option<Duration>,
+) -> Result<ExitStatus> {
+    let Some(limit) = limit else {
         // 対話processは、利用者が終えるまで待つ。
         return child.wait().map_err(|error| {
             Error::new(
