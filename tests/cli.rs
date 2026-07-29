@@ -252,6 +252,7 @@ fn diagnostics_name_a_stable_error_id() {
             "init-incomplete-options",
         ),
         (vec!["add", "not-a-project"], "invalid-project-id"),
+        (vec!["apply", "owner/repo"], "apply-scope-required"),
     ] {
         let run = sbxm(home.path(), &arguments);
         assert!(

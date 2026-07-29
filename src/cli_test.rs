@@ -389,6 +389,40 @@ fn more_than_one_worktree_requires_an_explicit_start_branch() {
 }
 
 #[test]
+fn apply_requires_an_explicit_scope() {
+    let error = run(&["apply", "owner/repo"], tty()).expect_err("apply without a scope is refused");
+    assert_eq!(error.first_id(), Some(ErrorId::ApplyScopeRequired));
+
+    assert!(matches!(
+        command(&["apply", "owner/repo", "--files"], tty()),
+        Command::Apply(ApplyArgs {
+            files: true,
+            worktrees: None,
+            ..
+        })
+    ));
+    assert!(matches!(
+        command(&["apply", "owner/repo", "--worktrees", "3"], tty()),
+        Command::Apply(ApplyArgs {
+            files: false,
+            worktrees: Some(3),
+            ..
+        })
+    ));
+    assert!(matches!(
+        command(
+            &["apply", "owner/repo", "--files", "--worktrees", "3"],
+            tty()
+        ),
+        Command::Apply(ApplyArgs {
+            files: true,
+            worktrees: Some(3),
+            ..
+        })
+    ));
+}
+
+#[test]
 fn commands_that_always_need_a_project_refuse_to_prompt() {
     for name in ["add", "apply", "rebuild"] {
         let error = run(&[name], tty()).expect_err("{name} requires a project");
