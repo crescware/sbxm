@@ -118,7 +118,6 @@ pub fn run(
     };
     context.run(host, &name, &mut locked.metadata, &built.template)?;
 
-    // 全検証が終わってから、適用済みhashを更新してintentを削除する。
     locked.metadata.provisioning.dockerfile_sha256 = target.clone();
     locked.metadata.rebuild = None;
     metadata::update(&locked.paths, &locked.metadata)?;
@@ -256,7 +255,6 @@ impl Switch<'_> {
         repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
         repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch)?;
-        // 適用済みhashを更新する前に、credentialの隔離まで確かめる。
         sandbox::require_credentials_isolated(host, &ready.name)?;
         Ok(())
     }

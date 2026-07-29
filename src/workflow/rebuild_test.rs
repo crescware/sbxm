@@ -654,3 +654,50 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
         host.calls()
     );
 }
+
+#[test]
+fn a_failure_after_the_switch_leaves_the_intent_in_place() {
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+    let target = sha256_hex(b"FROM scratch\n");
+    let previous = project.metadata.provisioning.dockerfile_sha256.clone();
+
+    let mut metadata = project.metadata.clone();
+    metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: target.clone(),
+        previous_dockerfile_sha256: previous.clone(),
+    });
+    metadata::update(&project.paths, &metadata).unwrap();
+
+    // 切り替えの最後の検査だけを落とす。作り直したSandboxからhostのSSH Agentへ届く。
+    let host = continuing(&fixture, &project, &target).answering(
+        &format!("exec {} -- ssh-add -L", project.sandbox),
+        0,
+        "ssh-ed25519 AAAA example\n",
+    );
+
+    let error = run(
+        &fixture.config,
+        &project_id("example-org/example-repo"),
+        &host,
+        &fixture.workspace_root,
+        poll(),
+    )
+    .expect_err("a sandbox that reaches the host agent is not accepted");
+    assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
+
+    let stored = metadata::load(&project.paths).unwrap().expect("present");
+    assert_eq!(
+        stored
+            .rebuild
+            .as_ref()
+            .map(|intent| intent.target_dockerfile_sha256.as_str()),
+        Some(target.as_str()),
+        "the fixed generation is still there, so a re-run continues from it"
+    );
+    assert_eq!(
+        stored.provisioning.dockerfile_sha256, previous,
+        "the generation is not applied until every check has passed"
+    );
+}
