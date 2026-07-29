@@ -2,19 +2,13 @@ use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::hash::sha256_hex;
 use crate::testing::host::FakeSbx;
+use crate::testing::image::template_listing;
 use crate::testing::poll::poll;
 use crate::testing::project::{fixture, project_id};
 use crate::testing::protection::clean_host;
 use crate::testing::value::COMMIT;
 use std::os::unix::fs::PermissionsExt;
 
-/// runtimeのimage storeが示す一覧。registry prefixを補って表示する。
-fn template_listing(image: &str) -> String {
-    let (repository, tag) = image.rsplit_once(':').expect("an image reference");
-    format!(
-        r#"{{"images":[{{"id":"a3d0f4449170","repository":"docker.io/library/{repository}","tag":"{tag}"}}]}}"#
-    )
-}
 /// 再作成後の検証を通るSandbox。secretがあり、SSH Agentへ到達できない。
 fn verified(host: FakeSbx, name: &str) -> FakeSbx {
     host.answering(

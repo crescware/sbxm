@@ -1,5 +1,6 @@
 use super::*;
 use crate::command::CommandOutcome;
+use crate::testing::image::template_listing;
 use std::cell::RefCell;
 
 struct FakeSbx {
@@ -57,18 +58,10 @@ fn image() -> BuiltImage {
     }
 }
 
-/// runtimeのimage storeが示す一覧。registry prefixを補って表示する。
-fn listing(name: &str) -> String {
-    let (repository, tag) = name.rsplit_once(':').expect("an image reference");
-    format!(
-        r#"{{"images":[{{"id":"a3d0f4449170","repository":"docker.io/library/{repository}","tag":"{tag}"}}]}}"#
-    )
-}
-
 #[test]
 fn an_archive_is_loaded_and_the_result_is_verified() {
     let image = image();
-    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &listing(&image.name)]);
+    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)]);
     let archive = Path::new("/tmp/template-111111111111.tar");
 
     let template = ensure(&host, archive, &image).expect("load");
@@ -90,7 +83,7 @@ fn an_archive_is_loaded_and_the_result_is_verified() {
 #[test]
 fn every_sandbox_command_runs_without_the_ssh_agent() {
     let image = image();
-    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &listing(&image.name)]);
+    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)]);
     ensure(&host, Path::new("/tmp/template.tar"), &image).expect("load");
 
     for spec in host.calls.borrow().iter() {
@@ -106,7 +99,7 @@ fn every_sandbox_command_runs_without_the_ssh_agent() {
 #[test]
 fn a_template_that_already_holds_the_image_is_reused() {
     let image = image();
-    let host = FakeSbx::listing(&[&listing(&image.name)]);
+    let host = FakeSbx::listing(&[&template_listing(&image.name)]);
 
     let template = ensure(&host, Path::new("/tmp/template.tar"), &image).expect("reuse");
     assert!(!template.loaded);
@@ -123,7 +116,7 @@ fn a_template_that_already_holds_the_image_is_reused() {
 fn the_registry_prefix_the_runtime_adds_still_names_the_same_template() {
     let image = image();
     // runtimeは`docker.io/library/`を補って表示する。sbxmが渡すのは補う前の表記。
-    let host = FakeSbx::listing(&[&listing(&image.name)]);
+    let host = FakeSbx::listing(&[&template_listing(&image.name)]);
 
     let template = ensure(&host, Path::new("/tmp/template.tar"), &image)
         .expect("the prefixed listing names the same template");

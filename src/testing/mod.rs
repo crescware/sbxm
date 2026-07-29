@@ -6,6 +6,7 @@
 pub mod add_request;
 pub mod command;
 pub mod host;
+pub mod image;
 pub mod poll;
 pub mod project;
 pub mod prompt;
