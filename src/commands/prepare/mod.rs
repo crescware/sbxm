@@ -3,6 +3,8 @@
 mod exec;
 mod print;
 pub mod run;
+#[cfg(test)]
+mod world;
 
 pub use exec::exec;
 
@@ -14,7 +16,7 @@ use crate::error::Result;
 use crate::project::ProjectId;
 
 pub fn spec(builder: &Builder) -> Result<ClapCommand> {
-    Ok(builder.untemplated("prepare", "cli-prepare-about")?.arg(
+    Ok(builder.positional("prepare", "cli-prepare-about")?.arg(
         Arg::new("project")
             .required(true)
             .value_name(PROJECT_VALUE_NAME)

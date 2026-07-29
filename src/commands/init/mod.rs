@@ -1,6 +1,8 @@
 //! `sbxm init`。
 
 mod exec;
+#[cfg(test)]
+mod fake;
 pub mod run;
 
 pub use exec::exec;

@@ -1,0 +1,207 @@
+//! `project.toml`の読み取り。
+//!
+//! 解釈できない値から目標構成を推測せず、validation規則に合わない文書は拒否する。
+
+use std::path::Path;
+
+use serde::Deserialize;
+
+use crate::error::{Error, ErrorId, Result};
+use crate::git;
+use crate::msg;
+use crate::paths::{self};
+use crate::project::{CanonicalProjectId, ProjectId};
+
+use super::{
+    CreationMode, DOCUMENT, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata, Provisioning,
+    RebuildIntent,
+};
+
+/// TOMLの生表現。structへ変換する前に必須項目と値を検査する。
+#[derive(Debug, Deserialize)]
+pub(super) struct RawMetadata {
+    version: Option<i64>,
+    owner: Option<String>,
+    repository: Option<String>,
+    canonical_id: Option<String>,
+    provisioning: Option<RawProvisioning>,
+    rebuild: Option<RawRebuild>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct RawProvisioning {
+    mode: Option<String>,
+    start_ref: Option<String>,
+    requested_worktrees: Option<i64>,
+    dockerfile_sha256: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct RawRebuild {
+    target_dockerfile_sha256: Option<String>,
+    previous_dockerfile_sha256: Option<String>,
+}
+
+/// metadataのtextを検証する。
+pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
+    let raw: RawMetadata = toml::from_str(text).map_err(|error: toml::de::Error| {
+        Error::new(
+            ErrorId::MetadataInvalidSyntax,
+            msg!(
+                "error-metadata-invalid-syntax",
+                path = paths::display(path),
+                detail = error.message()
+            ),
+        )
+    })?;
+
+    let missing = |field: &'static str| {
+        Error::new(
+            ErrorId::MetadataMissingField,
+            msg!(
+                "error-metadata-missing-field",
+                path = paths::display(path),
+                field = field
+            ),
+        )
+    };
+    let invalid = |field: &'static str, detail: String| {
+        Error::new(
+            ErrorId::MetadataInvalidValue,
+            msg!(
+                "error-metadata-invalid-value",
+                path = paths::display(path),
+                field = field,
+                detail = detail
+            ),
+        )
+    };
+
+    DOCUMENT.require(raw.version, &paths::display(path), || missing("version"))?;
+
+    let owner = raw.owner.ok_or_else(|| missing("owner"))?;
+    let repository = raw.repository.ok_or_else(|| missing("repository"))?;
+    let canonical_value = raw.canonical_id.ok_or_else(|| missing("canonical_id"))?;
+
+    let display_id = ProjectId::parse(&format!("{owner}/{repository}"))
+        .map_err(|_| invalid("owner", format!("{owner}/{repository} is not a project ID")))?;
+    let canonical_id = CanonicalProjectId::parse(&canonical_value).map_err(|_| {
+        invalid(
+            "canonical_id",
+            format!("{canonical_value} is not a canonical project ID"),
+        )
+    })?;
+    if display_id.canonical() != canonical_id {
+        return Err(invalid(
+            "canonical_id",
+            format!(
+                "{canonical_id} does not match owner and repository, which fold to {}",
+                display_id.canonical()
+            ),
+        ));
+    }
+
+    let provisioning = raw.provisioning.ok_or_else(|| missing("provisioning"))?;
+    let mode_value = provisioning
+        .mode
+        .ok_or_else(|| missing("provisioning.mode"))?;
+    let mode = CreationMode::parse(&mode_value).ok_or_else(|| {
+        invalid(
+            "provisioning.mode",
+            format!(
+                "{mode_value} is neither {} nor {}",
+                CreationMode::Attached,
+                CreationMode::Detached
+            ),
+        )
+    })?;
+
+    let start_ref_value = provisioning
+        .start_ref
+        .ok_or_else(|| missing("provisioning.start_ref"))?;
+    let start_ref = if start_ref_value.is_empty() {
+        if mode == CreationMode::Detached {
+            return Err(invalid(
+                "provisioning.start_ref",
+                format!("{} mode requires an explicit start branch", mode),
+            ));
+        }
+        None
+    } else {
+        git::validate_branch_name(&start_ref_value).map_err(|_| {
+            invalid(
+                "provisioning.start_ref",
+                format!("{start_ref_value} is not a branch name"),
+            )
+        })?;
+        Some(start_ref_value)
+    };
+
+    let requested = provisioning
+        .requested_worktrees
+        .ok_or_else(|| missing("provisioning.requested_worktrees"))?;
+    let requested_worktrees = u32::try_from(requested)
+        .ok()
+        .filter(|value| (MIN_WORKTREES..=MAX_WORKTREES).contains(value))
+        .ok_or_else(|| {
+            invalid(
+                "provisioning.requested_worktrees",
+                format!("{requested} is outside {MIN_WORKTREES}-{MAX_WORKTREES}"),
+            )
+        })?;
+
+    let dockerfile_sha256 = provisioning
+        .dockerfile_sha256
+        .ok_or_else(|| missing("provisioning.dockerfile_sha256"))?;
+    require_sha256(&dockerfile_sha256)
+        .map_err(|detail| invalid("provisioning.dockerfile_sha256", detail))?;
+
+    let rebuild = match raw.rebuild {
+        Some(rebuild) => {
+            let target = rebuild
+                .target_dockerfile_sha256
+                .ok_or_else(|| missing("rebuild.target_dockerfile_sha256"))?;
+            require_sha256(&target)
+                .map_err(|detail| invalid("rebuild.target_dockerfile_sha256", detail))?;
+            let previous = rebuild
+                .previous_dockerfile_sha256
+                .ok_or_else(|| missing("rebuild.previous_dockerfile_sha256"))?;
+            require_sha256(&previous)
+                .map_err(|detail| invalid("rebuild.previous_dockerfile_sha256", detail))?;
+            Some(RebuildIntent {
+                target_dockerfile_sha256: target,
+                previous_dockerfile_sha256: previous,
+            })
+        }
+        None => None,
+    };
+
+    Ok(ProjectMetadata {
+        owner,
+        repository,
+        canonical_id,
+        provisioning: Provisioning {
+            mode,
+            start_ref,
+            requested_worktrees,
+            dockerfile_sha256,
+        },
+        rebuild,
+    })
+}
+
+/// SHA-256のlowercase hexであること。
+pub(super) fn require_sha256(value: &str) -> std::result::Result<(), String> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(format!("{value} is not a lowercase SHA-256 hex digest"));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "parse_test.rs"]
+mod parse_test;

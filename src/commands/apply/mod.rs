@@ -1,6 +1,8 @@
 //! `sbxm apply`。
 
 mod exec;
+#[cfg(test)]
+mod fake;
 mod print;
 pub mod run;
 
@@ -26,7 +28,7 @@ pub struct Args {
 
 pub fn spec(builder: &Builder) -> Result<ClapCommand> {
     Ok(builder
-        .untemplated("apply", "cli-apply-about")?
+        .positional("apply", "cli-apply-about")?
         .arg(
             Arg::new("project")
                 .required(true)

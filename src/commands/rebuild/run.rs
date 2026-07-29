@@ -297,3 +297,7 @@ fn require_created(
 #[cfg(test)]
 #[path = "run_test.rs"]
 mod run_test;
+
+#[cfg(test)]
+#[path = "resume_test.rs"]
+mod resume_test;

@@ -1,4 +1,6 @@
 use super::*;
+use crate::project::SandboxLayout;
+use crate::support::image;
 use crate::testing::host::{FakeSbx, isolated_agent, registered_secret};
 use crate::testing::project::{Fixture, Registered, fixture, project_id};
 

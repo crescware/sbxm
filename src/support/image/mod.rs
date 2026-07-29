@@ -337,5 +337,8 @@ fn compare_labels(identity: &ImageIdentity, expected: &[(String, String)]) -> St
 }
 
 #[cfg(test)]
-#[path = "image_test.rs"]
-mod image_test;
+mod fake;
+
+#[cfg(test)]
+#[path = "mod_test.rs"]
+mod mod_test;

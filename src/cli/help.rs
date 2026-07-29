@@ -69,33 +69,25 @@ impl<'a> Builder<'a> {
 
     /// optionだけを持つcommandの器。
     pub fn leaf(&self, name: &'static str, about_id: &'static str) -> Result<ClapCommand> {
-        self.shell(name, about_id, Some(self.leaf.clone()))
+        self.shell(name, about_id, self.leaf.clone())
     }
 
     /// 位置引数を持つcommandの器。
     pub fn positional(&self, name: &'static str, about_id: &'static str) -> Result<ClapCommand> {
-        self.shell(name, about_id, Some(self.positional.clone()))
-    }
-
-    /// templateを持たないcommandの器。
-    ///
-    /// headingはCLI parser libraryの英語固定表記になるため、選択したlocaleに従わない。
-    /// `apply`と`prepare`だけがこの状態にある。
-    pub fn untemplated(&self, name: &'static str, about_id: &'static str) -> Result<ClapCommand> {
-        self.shell(name, about_id, None)
+        self.shell(name, about_id, self.positional.clone())
     }
 
     fn shell(
         &self,
         name: &'static str,
         about_id: &'static str,
-        template: Option<String>,
+        template: String,
     ) -> Result<ClapCommand> {
-        let mut command = ClapCommand::new(name).about(self.text(about_id)?);
-        if let Some(template) = template {
-            command = command.help_template(template);
-        }
-        Ok(command.disable_help_flag(true).arg(self.help_flag()))
+        Ok(ClapCommand::new(name)
+            .about(self.text(about_id)?)
+            .help_template(template)
+            .disable_help_flag(true)
+            .arg(self.help_flag()))
     }
 }
 
