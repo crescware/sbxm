@@ -1,91 +1,9 @@
 use super::*;
-use crate::command::{CommandOutcome, CommandSpec};
 use crate::metadata::Provisioning;
 use crate::paths::AbsoluteBasePath;
 use crate::project::CanonicalProjectId;
+use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::COMMIT;
-use std::cell::RefCell;
-use std::collections::HashMap;
-
-struct FakeSandbox {
-    /// Sandbox内に存在するpath。
-    present: RefCell<Vec<String>>,
-    /// 特定のcommandに対する応答。
-    answers: HashMap<String, (i32, String)>,
-    calls: RefCell<Vec<Vec<String>>>,
-}
-
-impl FakeSandbox {
-    fn new() -> FakeSandbox {
-        FakeSandbox {
-            present: RefCell::new(Vec::new()),
-            answers: HashMap::new(),
-            calls: RefCell::new(Vec::new()),
-        }
-    }
-
-    fn holding(mut self, paths: &[&str]) -> FakeSandbox {
-        self.present = RefCell::new(paths.iter().map(|path| path.to_string()).collect());
-        self
-    }
-
-    fn answering(mut self, command: &str, stdout: &str) -> FakeSandbox {
-        self.answers
-            .insert(command.to_string(), (0, stdout.to_string()));
-        self
-    }
-
-    fn failing(mut self, command: &str) -> FakeSandbox {
-        self.answers.insert(command.to_string(), (1, String::new()));
-        self
-    }
-
-    fn calls(&self) -> Vec<Vec<String>> {
-        self.calls.borrow().clone()
-    }
-
-    fn ran(&self, needle: &str) -> bool {
-        self.calls()
-            .iter()
-            .any(|args| args.join(" ").contains(needle))
-    }
-}
-
-impl HostEnvironment for FakeSandbox {
-    fn command_exists(&self, _program: &str) -> bool {
-        true
-    }
-
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
-        self.calls.borrow_mut().push(spec.args.clone());
-        let inner = crate::testing::command::inner_args(spec);
-        let key = inner.join(" ");
-
-        let (code, stdout) = if inner.first().is_some_and(|arg| *arg == "test") {
-            let target = inner.last().copied().unwrap_or_default();
-            (
-                i32::from(!self.present.borrow().iter().any(|known| known == target)),
-                String::new(),
-            )
-        } else if key.contains("worktree add") {
-            // 作成に成功したworktreeは、以後存在するものとして扱う。
-            let path = inner
-                .iter()
-                .find(|arg| arg.contains(".tree-"))
-                .copied()
-                .unwrap_or_default();
-            self.present.borrow_mut().push(path.to_string());
-            (0, String::new())
-        } else {
-            match self.answers.get(&key) {
-                Some((code, stdout)) => (*code, stdout.clone()),
-                None => (0, String::new()),
-            }
-        };
-
-        Ok(crate::testing::command::outcome(spec, code, &stdout))
-    }
-}
 
 fn project() -> ProjectId {
     ProjectId::parse("Example-Org/Example-Repo").expect("valid project id")
@@ -100,9 +18,9 @@ fn layout() -> SandboxLayout {
 }
 
 /// bare cloneの検査を通る応答。
-fn healthy_clone() -> FakeSandbox {
+fn healthy_clone() -> InnerCommandSandbox {
     let git_dir = layout().bare_git_dir();
-    FakeSandbox::new()
+    InnerCommandSandbox::new()
         .answering(
             &format!("git --git-dir {git_dir} rev-parse --is-bare-repository"),
             "true\n",
@@ -205,7 +123,7 @@ fn an_attached_project_resolves_the_remote_default_branch_and_records_it() {
     let dir = tempfile::tempdir().unwrap();
     let paths = project_paths(dir.path());
     let git_dir = layout().bare_git_dir();
-    let host = FakeSandbox::new().answering(
+    let host = InnerCommandSandbox::new().answering(
         &format!("git --git-dir {git_dir} ls-remote --symref origin HEAD"),
         "ref: refs/heads/main\tHEAD\n9f5b1c\tHEAD\n",
     );
@@ -233,7 +151,7 @@ fn the_start_branch_is_judged_again_by_git_inside_the_sandbox() {
     let dir = tempfile::tempdir().unwrap();
     let paths = project_paths(dir.path());
     // hostのvalidationは通るが、gitがbranch名として受け付けない値。
-    let host = FakeSandbox::new().failing("git check-ref-format --branch feature..login");
+    let host = InnerCommandSandbox::new().failing("git check-ref-format --branch feature..login");
 
     let mut project = metadata(CreationMode::Detached, Some("feature..login"), 1);
     metadata::create(&paths, &project).expect("write the metadata");
@@ -253,7 +171,7 @@ fn a_resolved_branch_that_git_refuses_is_not_recorded() {
     let dir = tempfile::tempdir().unwrap();
     let paths = project_paths(dir.path());
     let git_dir = layout().bare_git_dir();
-    let host = FakeSandbox::new()
+    let host = InnerCommandSandbox::new()
         .answering(
             &format!("git --git-dir {git_dir} ls-remote --symref origin HEAD"),
             "ref: refs/heads/main\tHEAD\n",
@@ -279,7 +197,7 @@ fn a_start_branch_that_has_no_remote_tracking_ref_stops_the_run() {
     let dir = tempfile::tempdir().unwrap();
     let paths = project_paths(dir.path());
     let git_dir = layout().bare_git_dir();
-    let host = FakeSandbox::new().failing(&format!(
+    let host = InnerCommandSandbox::new().failing(&format!(
         "git --git-dir {git_dir} show-ref --verify --quiet refs/remotes/origin/develop"
     ));
 
@@ -292,9 +210,9 @@ fn a_start_branch_that_has_no_remote_tracking_ref_stops_the_run() {
 }
 
 /// worktreeの検査を通る応答。
-fn worktree_host(mode: CreationMode, count: u32) -> FakeSandbox {
+fn worktree_host(mode: CreationMode, count: u32) -> InnerCommandSandbox {
     let git_dir = layout().bare_git_dir();
-    let mut host = FakeSandbox::new().answering(
+    let mut host = InnerCommandSandbox::new().answering(
         &format!("git --git-dir {git_dir} rev-parse refs/remotes/origin/develop"),
         &format!("{COMMIT}\n"),
     );

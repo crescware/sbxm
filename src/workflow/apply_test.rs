@@ -12,6 +12,7 @@ use crate::i18n::Locale;
 use crate::metadata::{CreationMode, Provisioning, RebuildIntent};
 use crate::paths::AbsoluteBasePath;
 use crate::project::CanonicalProjectId;
+use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::{COMMIT, DIGEST};
 use crate::workflow::image::image_name;
 use std::cell::RefCell;
@@ -20,11 +21,7 @@ use std::path::PathBuf;
 
 struct FakeSbx {
     listing: String,
-    calls: RefCell<Vec<Vec<String>>>,
-    /// Sandbox内commandへの応答。keyは`--`より後ろを空白で連結したもの。
-    answers: std::collections::HashMap<String, (i32, String)>,
-    /// Sandbox内に存在するpath。
-    present: RefCell<Vec<String>>,
+    inner: InnerCommandSandbox,
     /// 外部commandを呼ぶ時点でproject lockを取れてしまうか。
     lock_path: Option<PathBuf>,
     lock_was_free: RefCell<Option<bool>>,
@@ -34,22 +31,19 @@ impl FakeSbx {
     fn listing(output: &str) -> FakeSbx {
         FakeSbx {
             listing: output.to_string(),
-            calls: RefCell::new(Vec::new()),
-            answers: std::collections::HashMap::new(),
-            present: RefCell::new(Vec::new()),
+            inner: InnerCommandSandbox::new(),
             lock_path: None,
             lock_was_free: RefCell::new(None),
         }
     }
 
     fn answering(mut self, command: &str, stdout: &str) -> FakeSbx {
-        self.answers
-            .insert(command.to_string(), (0, stdout.to_string()));
+        self.inner = self.inner.answering(command, stdout);
         self
     }
 
     fn failing(mut self, command: &str) -> FakeSbx {
-        self.answers.insert(command.to_string(), (1, String::new()));
+        self.inner = self.inner.failing(command);
         self
     }
 
@@ -94,7 +88,7 @@ impl FakeSbx {
                 _ => host.failing(&format!("git -C {path} symbolic-ref -q HEAD")),
             };
         }
-        host.present.borrow_mut().push(git_dir);
+        host.inner.present.borrow_mut().push(git_dir);
         host
     }
 
@@ -104,11 +98,12 @@ impl FakeSbx {
         self
     }
 
+    fn calls(&self) -> Vec<Vec<String>> {
+        self.inner.calls()
+    }
+
     fn ran(&self, needle: &str) -> bool {
-        self.calls
-            .borrow()
-            .iter()
-            .any(|args| args.join(" ").contains(needle))
+        self.inner.ran(needle)
     }
 }
 
@@ -118,7 +113,6 @@ impl HostEnvironment for FakeSbx {
     }
 
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
-        self.calls.borrow_mut().push(spec.args.clone());
         if let Some(path) = &self.lock_path
             && self.lock_was_free.borrow().is_none()
         {
@@ -130,32 +124,14 @@ impl HostEnvironment for FakeSbx {
             );
             *self.lock_was_free.borrow_mut() = Some(taken.is_ok());
         }
-        let (code, stdout) = if spec.args.first().is_some_and(|arg| arg == "ls") {
-            (0, self.listing.clone())
-        } else {
-            let inner = crate::testing::command::inner_args(spec);
-            if inner.first().is_some_and(|arg| *arg == "test") {
-                let target = inner.last().copied().unwrap_or_default();
-                (
-                    i32::from(!self.present.borrow().iter().any(|known| known == target)),
-                    String::new(),
-                )
-            } else if inner.join(" ").contains("worktree add") {
-                let path = inner
-                    .iter()
-                    .find(|arg| arg.contains(".tree-"))
-                    .copied()
-                    .unwrap_or_default();
-                self.present.borrow_mut().push(path.to_string());
-                (0, String::new())
-            } else {
-                match self.answers.get(&inner.join(" ")) {
-                    Some((code, stdout)) => (*code, stdout.clone()),
-                    None => (0, String::new()),
-                }
+        let outcome = self.inner.run(spec)?;
+        // Sandbox一覧だけはこちらが答える。残りはinner commandへの応答に任せる。
+        match spec.args.first() {
+            Some(arg) if arg == "ls" => {
+                Ok(crate::testing::command::outcome(spec, 0, &self.listing))
             }
-        };
-        Ok(crate::testing::command::outcome(spec, code, &stdout))
+            _ => Ok(outcome),
+        }
     }
 }
 
@@ -366,7 +342,7 @@ fn nothing_else_in_the_project_is_touched() {
         assert!(
             !host.ran(forbidden),
             "sync-files must not run {forbidden}: {:?}",
-            host.calls.borrow()
+            host.calls()
         );
     }
     assert_eq!(
@@ -423,10 +399,7 @@ fn a_rebuild_in_progress_places_nothing() {
     let error = run(&config, &project(), FILES_ONLY, &host, &workspace_root)
         .expect_err("a half-switched sandbox is not the target of a placement");
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
-    assert!(
-        host.calls.borrow().is_empty(),
-        "nothing is asked of the runtime"
-    );
+    assert!(host.calls().is_empty(), "nothing is asked of the runtime");
 }
 
 #[test]

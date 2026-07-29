@@ -5,6 +5,10 @@ use crate::error::Result;
 use std::cell::RefCell;
 
 /// Sandbox一覧を返し、実行された指定を記録するhost。
+///
+/// 応答のkeyは引数全体(`exec <name> -- printenv SSH_AUTH_SOCK`のような文字列)である。
+/// `--`より後ろのinner commandだけで答えるfakeは
+/// `crate::testing::sandbox::InnerCommandSandbox`。
 pub struct FakeSbx {
     pub listing: RefCell<Vec<String>>,
     pub answers: std::collections::HashMap<String, (i32, String)>,
