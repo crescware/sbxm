@@ -17,20 +17,16 @@ fn fake_executable(dir: &Path, name: &str, body: &str) -> PathBuf {
     path
 }
 
-/// 作りたてのfake executableを実行する。
-///
-/// 別threadのtestがforkしている最中は、書き込み直後のfileが`ETXTBSY`で起動できない
-/// ことがある。実装ではなくtest環境の競合なので、短い間だけ再試行する。
+/// 作りたてのfake executableを、timeout classの既定値で実行する。
 fn run_fake(spec: &CommandSpec) -> Result<CommandOutcome> {
-    run_fake_with_limit(spec, None)
+    retrying(|| run(spec))
 }
 
-/// `run_fake`と同じ再試行のうえで、timeout classの既定値ではない待ち時間を使う。
-fn run_fake_with_limit(spec: &CommandSpec, limit: Option<Duration>) -> Result<CommandOutcome> {
-    let attempt = || match limit {
-        Some(limit) => run_with_limit(spec, limit),
-        None => run(spec),
-    };
+/// spawnに失敗した試行だけをやり直す。
+///
+/// 別threadのtestがforkしている最中は、書き込み直後のfileが`ETXTBSY`で起動できない
+/// ことがある。実装ではなくtest環境の競合なので、短い間だけ繰り返す。
+fn retrying(attempt: impl Fn() -> Result<CommandOutcome>) -> Result<CommandOutcome> {
     for _ in 0..50 {
         match attempt() {
             Err(error) if error.contains_id(ErrorId::ExternalCommandSpawnFailed) => {
@@ -228,7 +224,7 @@ fn a_command_that_exceeds_its_timeout_is_terminated() {
     let spec = CommandSpec::probe(fake.to_str().unwrap(), &[]);
     // probeの10秒を待たずに判定するため、直接短いdeadlineを使う。
     let started = Instant::now();
-    let error = run_fake_with_limit(&spec, Some(Duration::from_millis(200)))
+    let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
         .expect_err("the command must be terminated");
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     assert!(
