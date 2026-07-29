@@ -235,6 +235,18 @@ fn a_lossy_external_stream_is_reported_as_such() {
 }
 
 #[test]
+fn a_table_with_no_rows_still_shows_its_header() {
+    let catalog = Catalog::new(Locale::En);
+    let table = Reporter::new(&catalog)
+        .render_value_table(&["column-project", "column-sandbox", "column-state"], &[]);
+    assert_eq!(table.lines().count(), 1);
+    let header = table.lines().next().expect("the header line");
+    assert!(header.contains("PROJECT"), "{header}");
+    assert!(header.contains("SANDBOX"), "{header}");
+    assert!(header.contains("STATE"), "{header}");
+}
+
+#[test]
 fn a_canceled_run_prints_nothing() {
     let catalog = Catalog::new(Locale::En);
     let mut buffer: Vec<u8> = Vec::new();

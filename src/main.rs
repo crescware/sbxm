@@ -707,7 +707,7 @@ fn print_project_status(catalog: &Catalog, status: &status_project::ProjectStatu
         )
     );
 
-    // 0件でもsectionとheaderを出す。表がないことと、観測できなかったことは別である。
+    // 表がないことと、観測できなかったことは別である。
     let rows: Vec<Vec<String>> = status
         .worktrees
         .iter()
@@ -888,8 +888,6 @@ fn print_stop_report(catalog: &Catalog, report: &stop::StopReport) -> ExitCode {
 }
 
 /// `ls`の出力。
-///
-/// 0件でもheaderを表示する。
 fn print_listing(catalog: &Catalog, listing: &ls::Listing) {
     let reporter = Reporter::new(catalog);
     let projects: Vec<Vec<String>> = listing
