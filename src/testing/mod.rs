@@ -5,7 +5,9 @@
 
 pub mod add_request;
 pub mod archive;
+pub mod cli;
 pub mod command;
+pub mod fs;
 pub mod host;
 pub mod image;
 pub mod poll;

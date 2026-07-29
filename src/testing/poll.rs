@@ -1,6 +1,6 @@
 //! testが状態の変化を待つ間隔。
 
-use crate::workflow::inventory::Poll;
+use crate::support::inventory::Poll;
 use std::time::Duration;
 
 /// 実時間を待たずに待機の打ち切りまで進める間隔と上限。
