@@ -3,18 +3,11 @@ use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::error::ExitCode;
 use crate::metadata;
 use crate::testing::host::FakeSbx;
+use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, fixture};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::protection::clean_host;
 use std::os::unix::fs::PermissionsExt;
-use std::time::Duration;
-
-fn poll() -> Poll {
-    Poll {
-        interval: Duration::from_millis(1),
-        limit: Duration::from_millis(20),
-    }
-}
 
 fn project_id(value: &str) -> ProjectId {
     ProjectId::parse(value).expect("valid project id")

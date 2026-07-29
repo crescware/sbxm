@@ -2,16 +2,10 @@ use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::metadata::{self, RebuildIntent};
 use crate::testing::host::FakeSbx;
+use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, fixture};
 use crate::testing::prompt::ScriptedPrompt;
 use std::time::Duration;
-
-fn poll() -> Poll {
-    Poll {
-        interval: Duration::from_millis(1),
-        limit: Duration::from_millis(20),
-    }
-}
 
 /// Docker疎通とworktree一覧に応答するhost。
 fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
