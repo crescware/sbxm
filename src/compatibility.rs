@@ -344,8 +344,8 @@ fn workspace_of(object: &serde_json::Map<String, serde_json::Value>) -> Result<O
 
 /// `sbx secret ls`が示すcustom secretの登録。
 ///
-/// 対象hostと環境変数名だけを持つ。PLACEHOLDER列とSECRET列は読まない。前者は
-/// sandboxの中から観測できる値であり、後者にはtokenの一部が現れる。
+/// 対象host、環境変数名、placeholderを持つ。`SECRET`列は読まない。tokenの一部が
+/// 現れるためである。
 #[derive(Debug, PartialEq, Eq)]
 pub struct CustomSecret {
     /// proxyが認証を差し替える対象host。

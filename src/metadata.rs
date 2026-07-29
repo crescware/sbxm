@@ -72,7 +72,7 @@ pub struct Provisioning {
 
 /// `rebuild`のSandbox切替中だけ存在する適用予定世代。
 ///
-/// 記録するのは`rebuild`を実装するPhaseであり、本buildは読むだけである。
+/// `rebuild`が新世代の成果物を揃えた時点で記録し、切替完了で消す。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RebuildIntent {
     pub target_dockerfile_sha256: String,
@@ -274,7 +274,6 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         .start_ref
         .ok_or_else(|| missing("provisioning.start_ref"))?;
     let start_ref = if start_ref_value.is_empty() {
-        // attached modeだけが、remote default branchの解決前を表せる。
         if mode == CreationMode::Detached {
             return Err(invalid(
                 "provisioning.start_ref",
@@ -440,7 +439,6 @@ pub fn discover(base: &AbsoluteBasePath) -> Result<Vec<DiscoveredProject>> {
                 Ok(metadata) => {
                     let paths = ProjectPaths::derive(base, &metadata.canonical_id);
                     if paths.root() != project_root {
-                        // metadataが宣言する案件は、導出されるpathにだけ置ける。
                         diagnostics.push(Diagnostic::new(
                             ErrorId::MetadataPathMismatch,
                             msg!(
