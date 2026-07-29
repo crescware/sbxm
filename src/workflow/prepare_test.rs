@@ -139,8 +139,8 @@ struct World {
     /// Sandbox内にあるcommand。既定のtemplateが入れるものを持つ。
     commands: RefCell<BTreeSet<String>>,
     default_branch: String,
-    /// 一致した起動を失敗させる。副作用は起こさない。
-    fail: RefCell<Option<String>>,
+    /// 一致した起動を、実行せずにこのexit statusと標準出力で答える。副作用は起こさない。
+    answer: RefCell<Option<(String, i32, String)>>,
     calls: RefCell<Vec<crate::command::CommandSpec>>,
 }
 
@@ -180,7 +180,7 @@ impl World {
                     .collect(),
             ),
             default_branch: "main".to_string(),
-            fail: RefCell::new(None),
+            answer: RefCell::new(None),
             calls: RefCell::new(Vec::new()),
         }
     }
@@ -197,11 +197,25 @@ impl World {
 
     /// 次の実行で、指定した起動だけを失敗させる。
     fn failing(&self, needle: &str) {
-        *self.fail.borrow_mut() = Some(needle.to_string());
+        self.answering(needle, 1, "");
+    }
+
+    /// 失敗しながら出力も返す起動。実物と同じく、失敗は出力の空さでは見分けられない。
+    fn failing_with(&self, needle: &str, stdout: &str) {
+        self.answering(needle, 1, stdout);
+    }
+
+    /// 成功しながら何も出力しない起動。exit statusだけでは観測できたと言えない。
+    fn succeeding_silently(&self, needle: &str) {
+        self.answering(needle, 0, "");
+    }
+
+    fn answering(&self, needle: &str, code: i32, stdout: &str) {
+        *self.answer.borrow_mut() = Some((needle.to_string(), code, stdout.to_string()));
     }
 
     fn nothing_fails(&self) {
-        *self.fail.borrow_mut() = None;
+        *self.answer.borrow_mut() = None;
     }
 
     fn invocations(&self) -> Vec<String> {
@@ -613,11 +627,11 @@ impl crate::command::HostEnvironment for World {
     fn run(&self, spec: &crate::command::CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let invocation = format!("{} {}", spec.program, spec.args.join(" "));
-        if let Some(needle) = self.fail.borrow().as_deref()
-            && invocation.contains(needle)
+        if let Some((needle, code, stdout)) = self.answer.borrow().as_ref()
+            && invocation.contains(needle.as_str())
         {
-            // 失敗した工程は、その工程の副作用を残さない。
-            return Ok(self.outcome(spec, 1, ""));
+            // 答えを差し替えた工程は実行せず、その工程の副作用も残さない。
+            return Ok(self.outcome(spec, *code, stdout));
         }
 
         let (code, stdout) = match spec.program.as_str() {
@@ -814,8 +828,9 @@ fn a_head_that_cannot_be_read_is_left_unknown() {
     let request = request("Example-Org/Example-Repo", None, None);
     bench.build(&world, &request).expect("the first run builds");
 
-    // 停止中のSandboxと同じく、worktreeのHEADだけが読めない状態にする。
-    world.failing("rev-parse HEAD");
+    // 停止中のSandboxと同じく、worktreeのHEADだけが読めない状態にする。読めない読み取りも
+    // 出力は返すので、成功したかどうかはexit statusでしか分からない。
+    world.failing_with("rev-parse HEAD", "fatal: not a git repository\n");
     let output = run(
         &bench.config,
         &request.project,
@@ -828,13 +843,38 @@ fn a_head_that_cannot_be_read_is_left_unknown() {
     assert_eq!(output.worktrees.len(), 1);
     assert_eq!(
         output.worktrees[0].head, None,
-        "an unreadable HEAD is not guessed at"
+        "the output of a failed read is not reported as a HEAD"
     );
     assert_eq!(
         output.worktrees[0].created_from, "refs/remotes/origin/main",
         "what metadata declares is still reported"
     );
     assert_eq!(output.worktrees[0].mode, CreationMode::Attached);
+}
+
+#[test]
+fn a_head_that_reads_back_empty_is_left_unknown() {
+    let bench = bench();
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None);
+    bench.build(&world, &request).expect("the first run builds");
+
+    // 成功しながら何も答えない読み取り。値がない以上、観測できたことにはならない。
+    world.succeeding_silently("rev-parse HEAD");
+    let output = run(
+        &bench.config,
+        &request.project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .expect("a project that is built stays built");
+
+    assert!(output.already_built);
+    assert_eq!(output.worktrees.len(), 1);
+    assert_eq!(
+        output.worktrees[0].head, None,
+        "an empty answer is not reported as a HEAD"
+    );
 }
 
 /// 編集後のDockerfileの内容。世代が変わったことだけが要る。
