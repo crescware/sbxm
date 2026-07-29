@@ -151,7 +151,6 @@ fn build(
     let leftover = paths::display(context.path());
     let mut warnings = Vec::new();
     if let Err(error) = context.close() {
-        // buildが成功していれば、cleanup失敗だけで成果物を失敗扱いにしない。
         warnings.push(msg!(
             "warning-build-context-left-behind",
             path = leftover,

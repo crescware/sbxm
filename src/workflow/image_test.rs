@@ -12,6 +12,8 @@ struct FakeDocker {
     build_fails: bool,
     /// Docker Engineへ問い合わせられない状態。
     listing_fails: bool,
+    /// buildの途中でbuild contextを消してしまう外部tool。
+    removes_context: bool,
 }
 
 impl FakeDocker {
@@ -26,11 +28,17 @@ impl FakeDocker {
             calls: RefCell::new(Vec::new()),
             build_fails: false,
             listing_fails: false,
+            removes_context: false,
         }
     }
 
     fn failing_build(mut self) -> FakeDocker {
         self.build_fails = true;
+        self
+    }
+
+    fn losing_its_context(mut self) -> FakeDocker {
+        self.removes_context = true;
         self
     }
 
@@ -62,6 +70,9 @@ impl HostEnvironment for FakeDocker {
         let saving = sub(0, "image") && sub(1, "save");
         let listing = sub(0, "image") && sub(1, "ls");
         let (code, stdout) = if building {
+            if self.removes_context {
+                let _ = fs::remove_dir_all(spec.args.last().expect("the context is the last"));
+            }
             (i32::from(self.build_fails), String::new())
         } else if saving {
             (0, String::new())
@@ -192,6 +203,33 @@ fn an_image_that_declares_the_same_project_and_generation_is_reused() {
             .iter()
             .any(|args| args.first().is_some_and(|arg| arg == "build")),
         "a matching image is not rebuilt"
+    );
+}
+
+#[test]
+fn a_context_that_cannot_be_removed_is_a_warning_not_a_failed_build() {
+    let dir = tempfile::tempdir().unwrap();
+    let dockerfile = dir.path().join("Dockerfile");
+    fs::write(&dockerfile, "FROM scratch\n").unwrap();
+    let host = FakeDocker::new(vec![Some(&matching_inspect()), None]).losing_its_context();
+
+    let image = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
+        .expect("a context that is already gone does not undo the image");
+    assert!(image.built);
+    assert_eq!(image.warnings.len(), 1, "{:?}", image.warnings);
+    assert_eq!(image.warnings[0].id, "warning-build-context-left-behind");
+
+    let path = image.warnings[0]
+        .args
+        .iter()
+        .find_map(|(key, value)| (*key == "path").then_some(value))
+        .expect("the leftover directory is named");
+    assert!(
+        Path::new(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(BUILD_CONTEXT_PREFIX)),
+        "{path} is not a build context"
     );
 }
 
