@@ -5,12 +5,17 @@
 
 pub mod add_request;
 pub mod archive;
+pub mod cli;
 pub mod command;
+pub mod fs;
+pub mod global_status;
 pub mod host;
 pub mod image;
+pub mod metadata;
 pub mod poll;
 pub mod project;
 pub mod prompt;
 pub mod protection;
+pub mod repository;
 pub mod sandbox;
 pub mod value;

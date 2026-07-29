@@ -1,7 +1,7 @@
 //! 選択を決め打ちするprompt。
 
 use crate::error::{Error, Result};
-use crate::workflow::select::ProjectPrompt;
+use crate::support::select::ProjectPrompt;
 
 /// 選択結果を決め打ちするprompt。
 pub struct ScriptedPrompt {

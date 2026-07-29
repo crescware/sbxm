@@ -102,13 +102,13 @@ pub fn registered_secret(host: FakeSbx, sandbox: &str) -> FakeSbx {
         0,
         &format!(
             "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
-            crate::workflow::secret::GITHUB_HOSTS.join(" ")
+            crate::support::secret::GITHUB_HOSTS.join(" ")
         ),
     )
     .answering(
         &format!(
             "exec {sandbox} -- sh -c {}",
-            crate::workflow::secret::placeholder_probe()
+            crate::support::secret::placeholder_probe()
         ),
         0,
         "sbx-cs-example",

@@ -23,18 +23,19 @@ Phase 1のcommand自体はprojectやSandboxを作成しない。
 Cargo.toml
 src/
 ├── main.rs
-├── cli.rs
+├── cli/
 ├── config.rs
 ├── error.rs
 ├── i18n.rs
 ├── project.rs
-├── paths.rs
+├── paths/
 ├── command.rs
-├── compatibility.rs
-└── workflow/
-    ├── mod.rs
-    ├── init.rs
-    └── status_global.rs
+├── compatibility/
+├── commands/
+│   ├── mod.rs
+│   ├── init/
+│   └── status/
+└── support/
 locales/
 ├── README.md
 ├── en.ftl
@@ -43,6 +44,9 @@ tests/
 └── snapshots/
     └── cli-surface.txt
 ```
+
+1 commandは`src/commands/<command>/`が持ち、引数、実行、出力をそのdirectoryへ置く。
+commandをまたぐ部品だけを`src/support/`が持つ。
 
 主なdependencyは`clap`、`serde`、`toml`、`dirs`、`fluent-bundle`、`unic-langid`、`dialoguer`、`serde_json`、`tempfile`とする。dependency versionは実装PRでlock fileとともに固定する。
 
