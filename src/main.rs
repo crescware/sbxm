@@ -48,7 +48,6 @@ fn main() -> ProcessExitCode {
 }
 
 fn run(argv: &[String]) -> ExitCode {
-    // helpとusageを構築する前に、argvから`--lang`だけを副作用なく先読みする。
     let peeked = cli::peek_lang(argv);
 
     let location = match ConfigLocation::discover() {
