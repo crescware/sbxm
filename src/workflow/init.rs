@@ -270,7 +270,7 @@ impl TerminalPrompt {
             .unwrap_or_else(|failure| failure.to_string())
     }
 
-    /// EscとCtrl-Cは何も変更せずexit code `130`とする。
+    /// 中断は何も変更せず終える。それ以外はTTYの不足として報告する。
     fn map_error(error: dialoguer::Error) -> Error {
         match error {
             dialoguer::Error::IO(io) if io.kind() == std::io::ErrorKind::Interrupted => {

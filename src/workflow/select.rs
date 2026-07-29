@@ -212,7 +212,7 @@ fn unresolved(index: usize, count: usize) -> Error {
     )
 }
 
-/// EscとCtrl-Cは何も変更せずexit code `130`とする。
+/// 中断は何も変更せず終える。それ以外は端末を読めなかったこととして報告する。
 pub fn unreadable_prompt(error: std::io::Error) -> Error {
     if error.kind() == std::io::ErrorKind::Interrupted {
         return Error::Canceled;

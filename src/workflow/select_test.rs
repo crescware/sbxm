@@ -149,3 +149,13 @@ fn a_project_that_is_not_managed_is_named_in_the_diagnostic() {
     .expect_err("an unmanaged project cannot be the target");
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
 }
+
+#[test]
+fn an_interrupted_prompt_is_a_cancel_and_any_other_read_failure_is_reported() {
+    let canceled = unreadable_prompt(std::io::Error::from(std::io::ErrorKind::Interrupted));
+    assert_eq!(canceled.exit_code(), ExitCode::Canceled);
+
+    let unreadable = unreadable_prompt(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+    assert_eq!(unreadable.first_id(), Some(ErrorId::PromptUnreadable));
+    assert_ne!(unreadable.exit_code(), ExitCode::Canceled);
+}
