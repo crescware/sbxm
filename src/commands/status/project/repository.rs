@@ -193,3 +193,7 @@ pub(super) fn worktree_state(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "repository_test.rs"]
+mod repository_test;

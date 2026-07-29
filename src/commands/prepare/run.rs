@@ -258,3 +258,27 @@ fn observed_worktrees(
 #[cfg(test)]
 #[path = "run_test.rs"]
 mod run_test;
+
+#[cfg(test)]
+#[path = "resume_test.rs"]
+mod resume_test;
+
+#[cfg(test)]
+#[path = "generation_test.rs"]
+mod generation_test;
+
+#[cfg(test)]
+#[path = "worktree_test.rs"]
+mod worktree_test;
+
+#[cfg(test)]
+#[path = "secret_test.rs"]
+mod secret_test;
+
+#[cfg(test)]
+#[path = "tools_test.rs"]
+mod tools_test;
+
+#[cfg(test)]
+#[path = "output_test.rs"]
+mod output_test;

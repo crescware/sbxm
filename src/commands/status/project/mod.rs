@@ -3,6 +3,9 @@
 //! 1案件の構築状態、作業可能性、credential隔離をread-onlyで診断する。repair、起動、
 //! 停止、file更新を行わない。作成元やsbxm独自のmarkerは検査せず、現在の状態だけを見る。
 
+#[cfg(test)]
+mod fake;
+
 mod artifacts;
 mod inside;
 mod repository;

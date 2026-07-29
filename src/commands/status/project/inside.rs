@@ -160,3 +160,7 @@ pub(super) fn check_ssh_agent(
     };
     status.push("status-item-ssh-agent", value);
 }
+
+#[cfg(test)]
+#[path = "inside_test.rs"]
+mod inside_test;

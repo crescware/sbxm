@@ -131,3 +131,7 @@ pub(super) fn check_archive(
     };
     status.push("status-item-template-archive", value);
 }
+
+#[cfg(test)]
+#[path = "artifacts_test.rs"]
+mod artifacts_test;
