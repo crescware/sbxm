@@ -5,6 +5,7 @@ use crate::testing::host::FakeSbx;
 use crate::testing::poll::poll;
 use crate::testing::project::{fixture, project_id};
 use crate::testing::protection::clean_host;
+use crate::testing::value::COMMIT;
 use std::os::unix::fs::PermissionsExt;
 
 /// runtimeのimage storeが示す一覧。registry prefixを補って表示する。
@@ -218,7 +219,6 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
     let layout = SandboxLayout::new(&project.metadata.canonical_id);
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
-    let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
     let name = project.sandbox.as_str();
     let host = verified(host, name)
         .answering(
@@ -239,12 +239,12 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
         .answering(
             &format!("exec {name} -- git --git-dir {git_dir} rev-parse refs/remotes/origin/main"),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!("exec {name} -- git -C {worktree} rev-parse HEAD"),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!(
@@ -404,7 +404,6 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
     let layout = SandboxLayout::new(&project.metadata.canonical_id);
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
-    let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
     let name = project.sandbox.as_str();
     let host = verified(host, name)
         .answering(
@@ -425,12 +424,12 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
         .answering(
             &format!("exec {name} -- git --git-dir {git_dir} rev-parse refs/remotes/origin/main"),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!("exec {name} -- git -C {worktree} rev-parse HEAD"),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!(
@@ -532,7 +531,6 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
     let layout = SandboxLayout::new(&project.metadata.canonical_id);
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
-    let commit = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
     let host = verified(host, project.sandbox.as_str())
         .answering(
             &format!(
@@ -564,7 +562,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
                 project.sandbox
             ),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!(
@@ -572,7 +570,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
                 project.sandbox
             ),
             0,
-            &format!("{commit}\n"),
+            &format!("{COMMIT}\n"),
         )
         .answering(
             &format!(

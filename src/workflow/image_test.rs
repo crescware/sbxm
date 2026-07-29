@@ -1,7 +1,7 @@
 use super::*;
 use crate::command::{CommandOutcome, OutputPolicy};
 use crate::project::ProjectId;
-use crate::testing::value::DIGEST;
+use crate::testing::value::{DIGEST, IMAGE_ID};
 use std::cell::RefCell;
 
 struct FakeDocker {
@@ -378,7 +378,7 @@ fn project_paths(dir: &Path) -> ProjectPaths {
 fn built_image() -> BuiltImage {
     BuiltImage {
         name: image_name(&sandbox(), DIGEST),
-        id: "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+        id: IMAGE_ID.to_string(),
         labels: expected_labels(&canonical(), DIGEST),
         built: true,
         warnings: Vec::new(),

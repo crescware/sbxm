@@ -3,10 +3,9 @@ use crate::command::{CommandOutcome, CommandSpec};
 use crate::metadata::Provisioning;
 use crate::paths::AbsoluteBasePath;
 use crate::project::CanonicalProjectId;
+use crate::testing::value::COMMIT;
 use std::cell::RefCell;
 use std::collections::HashMap;
-
-const COMMIT: &str = "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5";
 
 struct FakeSandbox {
     /// Sandbox内に存在するpath。

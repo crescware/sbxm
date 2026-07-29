@@ -12,7 +12,7 @@ use crate::i18n::Locale;
 use crate::metadata::{CreationMode, Provisioning, RebuildIntent};
 use crate::paths::AbsoluteBasePath;
 use crate::project::CanonicalProjectId;
-use crate::testing::value::DIGEST;
+use crate::testing::value::{COMMIT, DIGEST};
 use crate::workflow::image::image_name;
 use std::cell::RefCell;
 use std::os::unix::fs::PermissionsExt;
@@ -72,14 +72,14 @@ impl FakeSbx {
             )
             .answering(
                 &format!("git --git-dir {git_dir} rev-parse refs/remotes/origin/main"),
-                "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5\n",
+                &format!("{COMMIT}\n"),
             );
         let mut host = host;
         for index in 0..32 {
             let path = layout.worktree(index);
             host = host.answering(
                 &format!("git -C {path} rev-parse HEAD"),
-                "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5\n",
+                &format!("{COMMIT}\n"),
             );
             host = host.answering(
                 &format!("git -C {path} rev-parse --path-format=absolute --git-common-dir"),

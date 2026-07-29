@@ -2,6 +2,7 @@ use super::*;
 use crate::testing::host::FakeSbx;
 use crate::testing::project::{Registered, fixture};
 use crate::testing::protection::clean_host;
+use crate::testing::value::COMMIT;
 
 fn inspect_with(host: &FakeSbx, project: &Registered, unmanaged: Unmanaged) -> Result<Protection> {
     let layout = SandboxLayout::new(&project.metadata.canonical_id);
@@ -28,7 +29,7 @@ fn a_clean_managed_worktree_passes_and_is_reported() {
             relative: "example-repo.tree-0".to_string(),
             kind: Kind::Managed,
             mode: Mode::Attached,
-            head: "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5".to_string(),
+            head: COMMIT.to_string(),
             branch: Some("main".to_string()),
             remote: Remote::Pushed,
         }]
@@ -141,7 +142,7 @@ fn an_unmanaged_worktree_is_refused_for_rebuild_and_examined_for_destroy() {
             .answering(
                 &format!("exec {name} -- git -C {extra} rev-parse HEAD"),
                 0,
-                "9f5b1c5a2b6d4e8f0a1b2c3d4e5f60718293a4b5\n",
+                &format!("{COMMIT}\n"),
             )
             .answering(
                 &format!("exec {name} -- git -C {extra} symbolic-ref --quiet --short HEAD"),
