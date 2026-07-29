@@ -242,7 +242,6 @@ fn check_image(
     let generation = &metadata.provisioning.dockerfile_sha256;
     let image = image::image_name(name, generation);
 
-    // imageがないことと、Docker Engineへ問い合わせられないことを同じ値へ丸めない。
     let value = match image::inspect(host, &image) {
         Ok(Some(identity)) => {
             let declares_project =
@@ -353,7 +352,6 @@ fn check_inside(
         Some(ProjectState::NotCreated) => Some(Value::NotApplicable),
         // read-onlyの検査でもSandboxを起動し得るため実行しない。
         Some(ProjectState::Stopped) => Some(Value::NotObservedStopped),
-        // 観測できなかった状態を、Sandboxが無いことへ丸めない。
         None => Some(Value::Mismatch),
         Some(ProjectState::Running) => None,
     };
@@ -473,11 +471,9 @@ fn check_worktrees(
     let mut value = Value::Ready;
     for entry in entries {
         if entry.bare {
-            // bare entryはworktree数へ含めない。
             continue;
         }
         let Some(relative) = entry.relative_to(&bare_root) else {
-            // bare root配下へstandardizeできないpathは、案件の成果物として扱わない。
             status.diagnostics.push(Diagnostic::new(
                 ErrorId::SandboxRepositoryUnusable,
                 msg!(
