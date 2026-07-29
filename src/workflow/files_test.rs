@@ -9,6 +9,8 @@ struct FakeSbx {
     files: HashMap<String, String>,
     /// Sandbox内でsymlinkであるpath。
     symlinks: Vec<String>,
+    /// 非zeroで答えるinner command。
+    failing: Option<String>,
     calls: RefCell<Vec<Vec<String>>>,
 }
 
@@ -17,6 +19,7 @@ impl FakeSbx {
         FakeSbx {
             files: HashMap::new(),
             symlinks: Vec::new(),
+            failing: None,
             calls: RefCell::new(Vec::new()),
         }
     }
@@ -27,6 +30,7 @@ impl FakeSbx {
         FakeSbx {
             files,
             symlinks: Vec::new(),
+            failing: None,
             calls: RefCell::new(Vec::new()),
         }
     }
@@ -34,6 +38,12 @@ impl FakeSbx {
     /// 指定したpathをsymlinkとして扱う。
     fn linking(mut self, path: &str) -> FakeSbx {
         self.symlinks.push(path.to_string());
+        self
+    }
+
+    /// 指定したinner commandを失敗させる。
+    fn failing(mut self, command: &str) -> FakeSbx {
+        self.failing = Some(command.to_string());
         self
     }
 
@@ -76,6 +86,13 @@ impl HostEnvironment for FakeSbx {
                 }
             }
             _ => {}
+        }
+        if inner.first().is_some_and(|arg| {
+            self.failing
+                .as_deref()
+                .is_some_and(|failing| failing == *arg)
+        }) {
+            code = 1;
         }
 
         Ok(crate::testing::command::outcome(spec, code, &stdout))
@@ -153,6 +170,34 @@ fn a_declared_file_is_staged_installed_and_moved_into_place() {
     assert!(
         host.ran("/tmp/sbxm-file-0"),
         "the staged copy is removed afterwards: {calls:?}"
+    );
+}
+
+#[test]
+fn a_failed_placement_still_removes_what_it_staged() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = source_file(dir.path(), b"declared = true\n");
+    let host = FakeSbx::empty().failing("mv");
+
+    let error = place_all(
+        &host,
+        "sbxm-example",
+        &[declaration(&source, ".config/example/config.toml")],
+        Conflict::Refuse,
+    )
+    .expect_err("the rename is the last step and it failed");
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+
+    let pending = "/home/agent/.config/example/config.toml.sbxm-new".to_string();
+    let staged = "/tmp/sbxm-file-0".to_string();
+    assert!(
+        host.calls()
+            .iter()
+            .any(|args| args.contains(&"rm".to_string())
+                && args.contains(&staged)
+                && args.contains(&pending)),
+        "both temporary files are removed on the way out: {:?}",
+        host.calls()
     );
 }
 

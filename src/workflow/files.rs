@@ -257,7 +257,6 @@ fn copy_into_sandbox(
     let pending = format!("{destination}.sbxm-new");
     let result = copy_steps(host, sandbox, source, &staged, destination, &pending);
 
-    // 一時fileは成功・失敗のどちらでも残さない。
     let _ = sandbox::exec_as_root(host, sandbox, &["rm", "-f", &staged, &pending]);
     result
 }
