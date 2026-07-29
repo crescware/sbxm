@@ -96,6 +96,12 @@ fn exactly_one_locale_is_the_source() {
     assert_eq!(sources, vec![Locale::SOURCE]);
 }
 
+/// `tests/ftl.rs`の`SOURCE`と一致させる。
+#[test]
+fn the_source_locale_tag_is_the_one_tests_ftl_checks_against() {
+    assert_eq!(Locale::SOURCE.as_str(), "en");
+}
+
 #[test]
 fn language_tags_are_normalized_to_the_primary_subtag() {
     assert_eq!(Locale::from_language_tag("ja"), Some(Locale::Ja));
