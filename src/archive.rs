@@ -9,6 +9,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::error::{Error, ErrorId, Result};
+use crate::image_labels::{LabelDefect, labels_from_declared};
 use crate::msg;
 use crate::paths;
 
@@ -94,29 +95,17 @@ fn read_config_labels(
         .and_then(|value| value.as_object())
         .ok_or_else(|| unusable(path, format!("{config_entry} has no image configuration")))?;
 
-    let declared = match config.get("Labels").or_else(|| config.get("labels")) {
-        Some(serde_json::Value::Object(declared)) => declared.clone(),
-        // labelを1つも持たないimageでは`null`になる。
-        Some(serde_json::Value::Null) | None => serde_json::Map::new(),
-        Some(_) => {
-            return Err(unusable(
-                path,
-                format!("{config_entry} declares labels that are not an object"),
-            ));
-        }
-    };
-
-    let mut labels = std::collections::BTreeMap::new();
-    for (key, value) in declared {
-        let value = value.as_str().ok_or_else(|| {
-            unusable(
-                path,
-                format!("label {key} in {config_entry} is not a string"),
-            )
-        })?;
-        labels.insert(key, value.to_string());
-    }
-    Ok(labels)
+    let declared = config.get("Labels").or_else(|| config.get("labels"));
+    labels_from_declared(declared).map_err(|defect| match defect {
+        LabelDefect::NotAnObject => unusable(
+            path,
+            format!("{config_entry} declares labels that are not an object"),
+        ),
+        LabelDefect::ValueNotAString(key) => unusable(
+            path,
+            format!("label {key} in {config_entry} is not a string"),
+        ),
+    })
 }
 
 /// archiveのmanifestを読む。

@@ -12,6 +12,7 @@ mod error;
 mod git;
 mod hash;
 mod i18n;
+mod image_labels;
 mod metadata;
 mod paths;
 mod progress;

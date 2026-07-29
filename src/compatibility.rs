@@ -3,6 +3,7 @@
 //! 解釈できない出力から状態を推測しない。parseできない出力はerrorとして扱う。
 
 use crate::error::{Error, ErrorId, Result};
+use crate::image_labels::{LabelDefect, labels_from_declared};
 use crate::msg;
 
 /// 要件となる最小version。
@@ -190,36 +191,22 @@ pub fn parse_image_inspect(output: &str) -> Result<ImageIdentity> {
         .filter(|id| !id.is_empty())
         .ok_or_else(|| unparseable("docker image inspect", "the image has no Id"))?;
 
-    let mut labels = std::collections::BTreeMap::new();
-    match object.get("Config").and_then(|config| config.as_object()) {
-        Some(config) => match config.get("Labels") {
-            Some(serde_json::Value::Object(declared)) => {
-                for (key, value) in declared {
-                    let value = value.as_str().ok_or_else(|| {
-                        unparseable(
-                            "docker image inspect",
-                            &format!("label {key} does not hold a string"),
-                        )
-                    })?;
-                    labels.insert(key.clone(), value.to_string());
-                }
-            }
-            // labelを1つも持たないimageでは`null`になる。
-            Some(serde_json::Value::Null) | None => {}
-            Some(_) => {
-                return Err(unparseable(
-                    "docker image inspect",
-                    "Labels is neither an object nor null",
-                ));
-            }
-        },
-        None => {
-            return Err(unparseable(
-                "docker image inspect",
-                "the image has no Config section",
-            ));
-        }
-    }
+    let Some(config) = object.get("Config").and_then(|config| config.as_object()) else {
+        return Err(unparseable(
+            "docker image inspect",
+            "the image has no Config section",
+        ));
+    };
+    let labels = labels_from_declared(config.get("Labels")).map_err(|defect| match defect {
+        LabelDefect::NotAnObject => unparseable(
+            "docker image inspect",
+            "Labels is neither an object nor null",
+        ),
+        LabelDefect::ValueNotAString(key) => unparseable(
+            "docker image inspect",
+            &format!("label {key} does not hold a string"),
+        ),
+    })?;
 
     Ok(ImageIdentity { id, labels })
 }
