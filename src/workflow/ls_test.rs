@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::ErrorId;
-use crate::workflow::inventory::inventory_test::{FakeSbx, fixture};
+use crate::testing::host::FakeSbx;
+use crate::testing::project::fixture;
 
 #[test]
 fn managed_projects_and_unmanaged_sandboxes_are_listed_separately() {

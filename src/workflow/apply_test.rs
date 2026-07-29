@@ -12,13 +12,12 @@ use crate::i18n::Locale;
 use crate::metadata::{CreationMode, Provisioning, RebuildIntent};
 use crate::paths::AbsoluteBasePath;
 use crate::project::CanonicalProjectId;
+use crate::testing::value::DIGEST;
 use crate::workflow::image::image_name;
 use std::cell::RefCell;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
-
-const DIGEST: &str = "1111111111111111111111111111111111111111111111111111111111111111";
 
 struct FakeSbx {
     listing: String,

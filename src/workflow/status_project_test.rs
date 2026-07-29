@@ -1,5 +1,6 @@
 use super::*;
-use crate::workflow::inventory::inventory_test::{FakeSbx, Registered, fixture};
+use crate::testing::host::FakeSbx;
+use crate::testing::project::{Registered, fixture};
 
 fn value_of(status: &ProjectStatus, item: &str) -> Value {
     status

@@ -238,4 +238,4 @@ impl ProjectPrompt for TerminalProjectPrompt {
 
 #[cfg(test)]
 #[path = "select_test.rs"]
-pub mod select_test;
+mod select_test;

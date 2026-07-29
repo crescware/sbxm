@@ -2,9 +2,10 @@ use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::error::ExitCode;
 use crate::metadata;
-use crate::workflow::inventory::inventory_test::{FakeSbx, Fixture, fixture};
-use crate::workflow::protection::protection_test::clean_host;
-use crate::workflow::select::select_test::ScriptedPrompt;
+use crate::testing::host::FakeSbx;
+use crate::testing::project::{Fixture, fixture};
+use crate::testing::prompt::ScriptedPrompt;
+use crate::testing::protection::clean_host;
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
@@ -344,7 +345,7 @@ fn force_mode_and_a_non_interactive_run_are_not_asked_to_confirm() {
         .expect("a fully specified project needs no prompt");
     assert_eq!(without_terminal.asked, 0);
 
-    let forced_fixture = crate::workflow::inventory::inventory_test::fixture();
+    let forced_fixture = crate::testing::project::fixture();
     let (_host, forced) = prepared_project(&forced_fixture, true);
     let mut with_terminal = ScriptedConfirm::canceling();
     confirm(&forced, true, &mut with_terminal).expect("force mode skips the confirmation");

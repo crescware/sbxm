@@ -401,4 +401,4 @@ fn refuse(reason: Msg) -> Error {
 
 #[cfg(test)]
 #[path = "protection_test.rs"]
-pub mod protection_test;
+mod protection_test;

@@ -16,6 +16,8 @@ mod metadata;
 mod paths;
 mod progress;
 mod project;
+#[cfg(test)]
+mod testing;
 mod workflow;
 
 use std::io::Write;

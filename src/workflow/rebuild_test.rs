@@ -1,8 +1,9 @@
 use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::hash::sha256_hex;
-use crate::workflow::inventory::inventory_test::{FakeSbx, fixture};
-use crate::workflow::protection::protection_test::clean_host;
+use crate::testing::host::FakeSbx;
+use crate::testing::project::fixture;
+use crate::testing::protection::clean_host;
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 

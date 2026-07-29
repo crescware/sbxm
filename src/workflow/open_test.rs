@@ -1,8 +1,9 @@
 use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::metadata::{self, RebuildIntent};
-use crate::workflow::inventory::inventory_test::{FakeSbx, Fixture, Registered, fixture};
-use crate::workflow::select::select_test::ScriptedPrompt;
+use crate::testing::host::FakeSbx;
+use crate::testing::project::{Fixture, Registered, fixture};
+use crate::testing::prompt::ScriptedPrompt;
 use std::time::Duration;
 
 fn poll() -> Poll {
