@@ -1,6 +1,7 @@
 use super::*;
 use crate::command::{CommandOutcome, OutputPolicy};
 use crate::project::ProjectId;
+use crate::testing::archive::image_archive_bytes;
 use crate::testing::value::{DIGEST, IMAGE_ID};
 use std::cell::RefCell;
 
@@ -324,25 +325,13 @@ fn save_archive(host: &FakeDocker, image_name: &str, image_id: &str) {
         .skip_while(|arg| *arg != "--output")
         .nth(1)
         .expect("the save names an output path");
-    // 実物と同じく、archiveはimage configをlabelごと持つ。
-    let rendered = declared_labels()
+    let owned = declared_labels();
+    let labels: Vec<(&str, &str)> = owned
         .iter()
-        .map(|(key, value)| format!("\"{key}\":\"{value}\""))
-        .collect::<Vec<_>>()
-        .join(",");
-    let config = format!(r#"{{"config":{{"Labels":{{{rendered}}}}}}}"#);
-    let hex = image_id.strip_prefix("sha256:").unwrap_or(image_id);
-    fs::write(
-        output,
-        crate::archive::tar_bytes(&[
-            (&format!("blobs/sha256/{hex}"), config.as_bytes()),
-            (
-                "manifest.json",
-                crate::archive::manifest_json(image_name, image_id).as_bytes(),
-            ),
-        ]),
-    )
-    .expect("write the archive");
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect();
+    fs::write(output, image_archive_bytes(image_name, image_id, &labels))
+        .expect("write the archive");
 }
 
 /// `image save`の呼び出しでarchiveを書くhost。

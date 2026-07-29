@@ -4,6 +4,7 @@
 //! fileに残す。
 
 pub mod add_request;
+pub mod archive;
 pub mod command;
 pub mod host;
 pub mod image;

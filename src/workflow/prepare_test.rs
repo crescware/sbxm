@@ -7,6 +7,7 @@ use crate::hash::sha256_hex;
 use crate::i18n::Locale;
 use crate::paths::{AbsoluteBasePath, PRIVATE_DIR_MODE};
 use crate::testing::add_request::request;
+use crate::testing::archive::image_archive_bytes;
 use crate::testing::value::COMMIT;
 use crate::workflow::add::AddRequest;
 use crate::workflow::files::Placement;
@@ -238,26 +239,13 @@ impl World {
                 None => (1, String::new()),
             },
             ["image", "save", name, "--output", output] => {
-                // 実物と同じく、archiveはimage configをlabelごと持つ。
-                let labels = self.images.borrow().get(*name).cloned().unwrap_or_default();
-                let rendered = labels
+                let owned = self.images.borrow().get(*name).cloned().unwrap_or_default();
+                let labels: Vec<(&str, &str)> = owned
                     .iter()
-                    .map(|(key, value)| format!("\"{key}\":\"{value}\""))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let config = format!(r#"{{"config":{{"Labels":{{{rendered}}}}}}}"#);
-                let hex = IMAGE_ID.strip_prefix("sha256:").expect("a digest");
-                fs::write(
-                    output,
-                    crate::archive::tar_bytes(&[
-                        (&format!("blobs/sha256/{hex}"), config.as_bytes()),
-                        (
-                            "manifest.json",
-                            crate::archive::manifest_json(name, IMAGE_ID).as_bytes(),
-                        ),
-                    ]),
-                )
-                .expect("write the archive");
+                    .map(|(key, value)| (key.as_str(), value.as_str()))
+                    .collect();
+                fs::write(output, image_archive_bytes(name, IMAGE_ID, &labels))
+                    .expect("write the archive");
                 (0, String::new())
             }
             _ => (0, String::new()),
