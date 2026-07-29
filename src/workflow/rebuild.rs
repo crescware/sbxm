@@ -285,6 +285,26 @@ fn start_to_read_saved_state(
     Ok(())
 }
 
+/// 世代の切替中は工程を進めず、`rebuild`の完了を案内する。
+pub fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
+    if metadata.rebuild.is_none() {
+        return Ok(());
+    }
+    Err(Error::single(
+        Diagnostic::new(
+            ErrorId::RebuildIntentPending,
+            msg!(
+                "error-rebuild-intent-pending",
+                project = metadata.display_id()
+            ),
+        )
+        .remediation(msg!(
+            "remediation-run-rebuild",
+            command = format!("sbxm rebuild {}", metadata.display_id())
+        )),
+    ))
+}
+
 /// `rebuild`は、Sandboxを持つ案件だけを対象とする。
 fn require_created(
     metadata: &ProjectMetadata,

@@ -21,7 +21,7 @@ use crate::paths::{
 };
 use crate::project::{ProjectId, SandboxName};
 
-use super::host_clone;
+use super::{host_clone, rebuild};
 
 /// 案件のDockerfileを新規作成するときの初期template。
 ///
@@ -256,19 +256,8 @@ pub fn current_dockerfile_hash(paths: &ProjectPaths) -> Result<String> {
 fn check_continuable(stored: &ProjectMetadata, request: &AddRequest) -> Result<()> {
     let display_id = stored.display_id();
 
-    if stored.rebuild.is_some() {
-        // 世代の切替中であり、初回構築の継続とは別の工程が必要になる。
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::RebuildIntentPending,
-                msg!("error-rebuild-intent-pending", project = display_id),
-            )
-            .remediation(msg!(
-                "remediation-run-rebuild",
-                command = format!("sbxm rebuild {display_id}")
-            )),
-        ));
-    }
+    // 世代の切替中であり、初回構築の継続とは別の工程が必要になる。
+    rebuild::require_no_rebuild(stored)?;
 
     let provisioning = &stored.provisioning;
     let mismatch = |requested: String, stored: String| {

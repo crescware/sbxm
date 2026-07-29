@@ -13,7 +13,7 @@ use crate::project::{ProjectId, SandboxLayout};
 
 use super::inventory::{self, Poll, ProjectState};
 use super::select::{self, ProjectPrompt};
-use super::{daemon, worktree};
+use super::{daemon, rebuild, worktree};
 
 /// 接続先と、接続前に見せる情報。
 #[derive(Debug)]
@@ -53,7 +53,7 @@ pub fn prepare(
     // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
     let metadata = candidate.reload()?;
     let name = metadata.sandbox_name();
-    require_no_rebuild(&metadata)?;
+    rebuild::require_no_rebuild(&metadata)?;
 
     require_docker(host)?;
 
@@ -109,25 +109,6 @@ fn require_docker(host: &dyn HostEnvironment) -> Result<()> {
             ),
         )
         .remediation(msg!("remediation-start-docker")),
-    ))
-}
-
-fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
-    if metadata.rebuild.is_none() {
-        return Ok(());
-    }
-    Err(Error::single(
-        Diagnostic::new(
-            ErrorId::RebuildIntentPending,
-            msg!(
-                "error-rebuild-intent-pending",
-                project = metadata.display_id()
-            ),
-        )
-        .remediation(msg!(
-            "remediation-run-rebuild",
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        )),
     ))
 }
 

@@ -13,9 +13,9 @@ use crate::msg;
 use crate::paths::ExclusiveLock;
 use crate::project::{ProjectId, SandboxName};
 
-use super::daemon;
 use super::inventory::{self, Poll, ProjectState};
 use super::select::{self, ProjectPrompt};
+use super::{daemon, rebuild};
 
 /// 1案件の停止結果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,27 +148,8 @@ fn validate(
     entries: &[crate::compatibility::SandboxEntry],
     workspace_root: &Path,
 ) -> Result<ProjectState> {
-    require_no_rebuild(metadata)?;
+    rebuild::require_no_rebuild(metadata)?;
     inventory::state_of(entries, metadata, workspace_root)
-}
-
-fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
-    if metadata.rebuild.is_none() {
-        return Ok(());
-    }
-    Err(Error::single(
-        Diagnostic::new(
-            ErrorId::RebuildIntentPending,
-            msg!(
-                "error-rebuild-intent-pending",
-                project = metadata.display_id()
-            ),
-        )
-        .remediation(msg!(
-            "remediation-run-rebuild",
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        )),
-    ))
 }
 
 /// 1件を停止し、stoppedになるまで待つ。

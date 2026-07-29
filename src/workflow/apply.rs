@@ -19,7 +19,7 @@ use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
 use super::tools::Note;
-use super::{daemon, repository, sandbox, tools};
+use super::{daemon, rebuild, repository, sandbox, tools};
 use crate::project::SandboxLayout;
 
 /// 何を適用するか。
@@ -82,7 +82,7 @@ pub fn run(
     let Some(mut metadata) = metadata::load(&paths)? else {
         return Err(not_managed());
     };
-    require_no_rebuild(&metadata)?;
+    rebuild::require_no_rebuild(&metadata)?;
 
     let name = SandboxName::derive(&canonical);
     let entry = daemon::list(host)?
@@ -177,26 +177,6 @@ fn raise_worktrees(paths: &ProjectPaths, metadata: &mut ProjectMetadata, count: 
     }
     metadata.provisioning.requested_worktrees = count;
     metadata::update(paths, metadata)
-}
-
-/// 世代の切替中は、fileを配置せず`rebuild`の再実行を案内する。
-fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
-    if metadata.rebuild.is_none() {
-        return Ok(());
-    }
-    Err(Error::single(
-        Diagnostic::new(
-            ErrorId::RebuildIntentPending,
-            msg!(
-                "error-rebuild-intent-pending",
-                project = metadata.display_id()
-            ),
-        )
-        .remediation(msg!(
-            "remediation-run-rebuild",
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        )),
-    ))
 }
 
 /// 翻訳しない状態値。

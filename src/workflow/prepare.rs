@@ -18,7 +18,9 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::files::PlacedFile;
 use super::tools::Note;
-use super::{daemon, files, identity, image, repository, sandbox, secret, template, tools};
+use super::{
+    daemon, files, identity, image, rebuild, repository, sandbox, secret, template, tools,
+};
 
 /// 出力のworktree 1行。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,7 +68,7 @@ pub fn run(
 
     // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
     let mut project_metadata = metadata::load(&paths)?.ok_or_else(|| not_registered(project))?;
-    require_no_rebuild(&project_metadata)?;
+    rebuild::require_no_rebuild(&project_metadata)?;
 
     let layout = SandboxLayout::new(&canonical);
     let mut warnings = Vec::new();
@@ -269,26 +271,6 @@ fn not_registered(project: &ProjectId) -> Error {
             command = format!("sbxm add {project}")
         )),
     )
-}
-
-/// 世代の切替中は構築を進めず、`rebuild`の完了を案内する。
-fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
-    if metadata.rebuild.is_none() {
-        return Ok(());
-    }
-    Err(Error::single(
-        Diagnostic::new(
-            ErrorId::RebuildIntentPending,
-            msg!(
-                "error-rebuild-intent-pending",
-                project = metadata.display_id()
-            ),
-        )
-        .remediation(msg!(
-            "remediation-run-rebuild",
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        )),
-    ))
 }
 
 #[cfg(test)]
