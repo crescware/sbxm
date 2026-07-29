@@ -1092,10 +1092,6 @@ fn effective_catalog(
 }
 
 fn report(catalog: &Catalog, error: &Error) {
-    // Ctrl-CとEscは何も変更していないため、追加の説明を出さない。
-    if matches!(error, Error::Canceled) {
-        return;
-    }
     let reporter = Reporter::new(catalog);
     reporter.print_error(error, &mut std::io::stderr());
 }

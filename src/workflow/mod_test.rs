@@ -235,6 +235,14 @@ fn a_lossy_external_stream_is_reported_as_such() {
 }
 
 #[test]
+fn a_canceled_run_prints_nothing() {
+    let catalog = Catalog::new(Locale::En);
+    let mut buffer: Vec<u8> = Vec::new();
+    Reporter::new(&catalog).print_error(&Error::Canceled, &mut buffer);
+    assert!(buffer.is_empty());
+}
+
+#[test]
 fn every_diagnostic_of_a_multi_error_run_is_shown() {
     let catalog = Catalog::new(Locale::En);
     let reporter = Reporter::new(&catalog);
