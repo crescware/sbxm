@@ -286,46 +286,33 @@ impl ConfirmPrompt for TerminalConfirmPrompt {
             .unwrap_or_else(|failure| failure.to_string());
 
         let term = Term::stderr();
-        term.write_line(&heading).map_err(unreadable_prompt)?;
+        term.write_line(&heading)
+            .map_err(select::unreadable_prompt)?;
 
         let mut typed = String::new();
         loop {
-            match term.read_key().map_err(unreadable_prompt)? {
+            match term.read_key().map_err(select::unreadable_prompt)? {
                 Key::Enter => break,
                 Key::Escape | Key::CtrlC => return Err(Error::Canceled),
                 Key::Backspace => {
                     if typed.pop().is_some() {
-                        term.clear_chars(1).map_err(unreadable_prompt)?;
+                        term.clear_chars(1).map_err(select::unreadable_prompt)?;
                     }
                 }
                 Key::Char(character) => {
                     typed.push(character);
                     term.write_str(&character.to_string())
-                        .map_err(unreadable_prompt)?;
+                        .map_err(select::unreadable_prompt)?;
                 }
                 // 行編集は提供しない。名前の入力に必要な打鍵だけを受け取る。
                 _ => {}
             }
         }
-        term.write_line("").map_err(unreadable_prompt)?;
+        term.write_line("").map_err(select::unreadable_prompt)?;
 
         // yes/noでは削除しない。完全一致だけを続行の合図とする。
         Ok(typed.trim() == expected)
     }
-}
-
-/// 端末を読み書きできなかった。回答を判定できない。
-fn unreadable_prompt(error: std::io::Error) -> Error {
-    if error.kind() == std::io::ErrorKind::Interrupted {
-        return Error::Canceled;
-    }
-    Error::single(
-        Diagnostic::new(
-            ErrorId::PromptUnreadable,
-            msg!("error-prompt-unreadable", detail = error),
-        )
-        .remediation(msg!("remediation-prompt-unreadable")),
-    )
 }
 
 /// 削除して良いことを利用者に確かめる。

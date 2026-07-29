@@ -179,6 +179,21 @@ fn unresolved(index: usize, count: usize) -> Error {
     )
 }
 
+/// EscとCtrl-Cは何も変更せずexit code `130`とする。
+pub fn unreadable_prompt(error: std::io::Error) -> Error {
+    if error.kind() == std::io::ErrorKind::Interrupted {
+        return Error::Canceled;
+    }
+    // 端末を読み取れなかったことを、引数の不足として報告しない。
+    Error::single(
+        Diagnostic::new(
+            ErrorId::PromptUnreadable,
+            msg!("error-prompt-unreadable", detail = error),
+        )
+        .remediation(msg!("remediation-prompt-unreadable")),
+    )
+}
+
 /// dialoguerを使う対話実装。
 pub struct TerminalProjectPrompt {
     /// promptの見出しに使うFTL message ID。
@@ -194,20 +209,9 @@ impl TerminalProjectPrompt {
             .unwrap_or_else(|failure| failure.to_string())
     }
 
-    /// EscとCtrl-Cは何も変更せずexit code `130`とする。
     fn map_error(error: dialoguer::Error) -> Error {
         match error {
-            dialoguer::Error::IO(io) if io.kind() == std::io::ErrorKind::Interrupted => {
-                Error::Canceled
-            }
-            // 端末を読み取れなかったことを、引数の不足として報告しない。
-            other => Error::single(
-                Diagnostic::new(
-                    ErrorId::PromptUnreadable,
-                    msg!("error-prompt-unreadable", detail = other),
-                )
-                .remediation(msg!("remediation-prompt-unreadable")),
-            ),
+            dialoguer::Error::IO(io) => unreadable_prompt(io),
         }
     }
 }
