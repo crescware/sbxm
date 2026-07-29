@@ -439,7 +439,7 @@ fn check_bare_repository(
             Some(sandbox::GIT_FATAL) => Value::Missing,
             _ => {
                 status.diagnostics.extend(
-                    unobservable(&outcome, &git_dir)
+                    sandbox::unobservable(&outcome, &git_dir)
                         .diagnostics()
                         .iter()
                         .cloned(),
@@ -572,9 +572,12 @@ fn worktree_state(
             }
         }
         Ok(outcome) => {
-            status
-                .diagnostics
-                .extend(unobservable(&outcome, path).diagnostics().iter().cloned());
+            status.diagnostics.extend(
+                sandbox::unobservable(&outcome, path)
+                    .diagnostics()
+                    .iter()
+                    .cloned(),
+            );
             Value::Mismatch
         }
         Err(error) => {
@@ -618,21 +621,6 @@ fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &mut 
         }
     };
     status.push("status-item-ssh-agent", value);
-}
-
-/// 内側のcommandが答えなかった場合の診断。原値をそのまま残す。
-fn unobservable(outcome: &crate::command::CommandOutcome, subject: &str) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::SandboxCheckUnobservable,
-            msg!(
-                "error-sandbox-check-unobservable",
-                subject = subject,
-                exit_status = outcome.status
-            ),
-        )
-        .external(outcome.failure()),
-    )
 }
 
 #[cfg(test)]
