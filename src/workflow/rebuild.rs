@@ -54,7 +54,6 @@ pub fn run(
         // intentがある場合は、intentに固定した世代だけを完成させる。
         Some(intent) => intent.target_dockerfile_sha256.clone(),
         None => {
-            // 状態表が先にある。Sandboxを持たない案件には、変更の有無を答えない。
             require_created(&locked.metadata, state, &name)?;
             if current == locked.metadata.provisioning.dockerfile_sha256 {
                 return Ok(RebuildOutput {
@@ -85,7 +84,6 @@ pub fn run(
         }
     };
 
-    // 新世代の成果物が揃うまで、既存Sandboxを停止も削除もしない。
     let built = prepare_generation(
         host,
         &locked.paths,

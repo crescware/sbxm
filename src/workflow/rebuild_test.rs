@@ -283,7 +283,7 @@ fn a_new_generation_that_cannot_be_produced_leaves_the_existing_sandbox_alone() 
     .expect_err("the new generation never became usable");
     assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
     assert!(
-        !host.ran("rm ") && !host.ran("create --name"),
+        !host.ran("stop") && !host.ran("rm ") && !host.ran("create --name"),
         "the sandbox that is still running is untouched: {:?}",
         host.calls()
     );
