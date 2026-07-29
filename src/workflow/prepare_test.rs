@@ -166,16 +166,7 @@ impl World {
         code: i32,
         stdout: &str,
     ) -> CommandOutcome {
-        use std::os::unix::process::ExitStatusExt;
-        CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.as_bytes().to_vec(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        }
+        crate::testing::command::outcome(spec, code, stdout)
     }
 
     fn host_git(&self, spec: &crate::command::CommandSpec) -> (i32, String) {

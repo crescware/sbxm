@@ -3,7 +3,6 @@ use crate::command::{CommandOutcome, OutputPolicy};
 use crate::project::ProjectId;
 use crate::testing::value::DIGEST;
 use std::cell::RefCell;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeDocker {
     /// `docker image inspect`が返す出力。`None`はimageが存在しない状態。
@@ -87,15 +86,7 @@ impl HostEnvironment for FakeDocker {
                 _ => (1, String::new()),
             }
         };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }
 

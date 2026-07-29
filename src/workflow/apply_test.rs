@@ -16,7 +16,6 @@ use crate::testing::value::DIGEST;
 use crate::workflow::image::image_name;
 use std::cell::RefCell;
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 
 struct FakeSbx {
@@ -134,26 +133,20 @@ impl HostEnvironment for FakeSbx {
         let (code, stdout) = if spec.args.first().is_some_and(|arg| arg == "ls") {
             (0, self.listing.clone())
         } else {
-            let inner: Vec<String> = spec
-                .args
-                .iter()
-                .skip_while(|arg| *arg != "--")
-                .skip(1)
-                .cloned()
-                .collect();
-            if inner.first().is_some_and(|arg| arg == "test") {
-                let target = inner.last().cloned().unwrap_or_default();
+            let inner = crate::testing::command::inner_args(spec);
+            if inner.first().is_some_and(|arg| *arg == "test") {
+                let target = inner.last().copied().unwrap_or_default();
                 (
-                    i32::from(!self.present.borrow().contains(&target)),
+                    i32::from(!self.present.borrow().iter().any(|known| known == target)),
                     String::new(),
                 )
             } else if inner.join(" ").contains("worktree add") {
                 let path = inner
                     .iter()
                     .find(|arg| arg.contains(".tree-"))
-                    .cloned()
+                    .copied()
                     .unwrap_or_default();
-                self.present.borrow_mut().push(path);
+                self.present.borrow_mut().push(path.to_string());
                 (0, String::new())
             } else {
                 match self.answers.get(&inner.join(" ")) {
@@ -162,15 +155,7 @@ impl HostEnvironment for FakeSbx {
                 }
             }
         };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }
 

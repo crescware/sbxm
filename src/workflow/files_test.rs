@@ -3,7 +3,6 @@ use crate::command::{CommandOutcome, CommandSpec};
 use crate::config::{HostFileSource, SandboxHomeRelativePath};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeSbx {
     /// Sandbox内のfileと、そのdigest。
@@ -59,37 +58,27 @@ impl HostEnvironment for FakeSbx {
         let mut code = 0;
         let mut stdout = String::new();
 
-        if let Some(position) = spec.args.iter().position(|arg| arg == "--") {
-            let inner = &spec.args[position + 1..];
-            match inner.first().map(String::as_str) {
-                Some("test") => {
-                    let target = inner.last().cloned().unwrap_or_default();
-                    let present = match inner.get(1).map(String::as_str) {
-                        Some("-h") => self.symlinks.contains(&target),
-                        _ => self.files.contains_key(&target),
-                    };
-                    code = i32::from(!present);
-                }
-                Some("sha256sum") => {
-                    let target = inner.last().cloned().unwrap_or_default();
-                    match self.files.get(&target) {
-                        Some(digest) => stdout = format!("{digest}  {target}\n"),
-                        None => code = 1,
-                    }
-                }
-                _ => {}
+        let inner = crate::testing::command::inner_args(spec);
+        match inner.first().copied() {
+            Some("test") => {
+                let target = inner.last().copied().unwrap_or_default();
+                let present = match inner.get(1).copied() {
+                    Some("-h") => self.symlinks.iter().any(|known| known == target),
+                    _ => self.files.contains_key(target),
+                };
+                code = i32::from(!present);
             }
+            Some("sha256sum") => {
+                let target = inner.last().copied().unwrap_or_default();
+                match self.files.get(target) {
+                    Some(digest) => stdout = format!("{digest}  {target}\n"),
+                    None => code = 1,
+                }
+            }
+            _ => {}
         }
 
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }
 

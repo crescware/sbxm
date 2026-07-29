@@ -3,7 +3,6 @@ use crate::command::CommandOutcome;
 use crate::i18n::{Catalog, Locale};
 use crate::workflow::Reporter;
 use std::collections::HashMap;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeHost {
     present: Vec<String>,
@@ -65,15 +64,9 @@ impl HostEnvironment for FakeHost {
             format!("{} {}", spec.program, spec.args.join(" "))
         };
         match self.responses.get(&key) {
-            Some(Ok((stdout, stderr, code))) => Ok(CommandOutcome {
-                program: spec.program.clone(),
-                args: spec.args.clone(),
-                working_dir: spec.working_dir.clone(),
-                status: std::process::ExitStatus::from_raw(code << 8),
-                stdout: stdout.clone().into_bytes(),
-                stderr: stderr.clone().into_bytes(),
-                stderr_lossy: false,
-            }),
+            Some(Ok((stdout, stderr, code))) => Ok(crate::testing::command::outcome_with_stderr(
+                spec, *code, stdout, stderr,
+            )),
             Some(Err(ErrorId::ExternalCommandTimeout)) => Err(Error::new(
                 ErrorId::ExternalCommandTimeout,
                 msg!(

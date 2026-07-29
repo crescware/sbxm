@@ -1,7 +1,6 @@
 use super::*;
 use crate::command::{CommandOutcome, CommandSpec};
 use std::cell::RefCell;
-use std::os::unix::process::ExitStatusExt;
 
 /// probeへ決め打ちで答え、それ以外の起動を成功として扱うhost。
 struct FakeSbx {
@@ -46,13 +45,7 @@ impl HostEnvironment for FakeSbx {
 
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.args.clone());
-        let inner: Vec<&str> = spec
-            .args
-            .iter()
-            .skip_while(|arg| *arg != "--")
-            .skip(1)
-            .map(String::as_str)
-            .collect();
+        let inner = crate::testing::command::inner_args(spec);
 
         let (code, stdout) = match inner.as_slice() {
             ["sh", "-c", script] if *script == probe() => (0, self.named.clone()),
@@ -66,15 +59,7 @@ impl HostEnvironment for FakeSbx {
             _ => (0, String::new()),
         };
 
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }
 

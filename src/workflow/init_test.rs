@@ -3,7 +3,6 @@ use crate::command::CommandOutcome;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeHost {
     responses: HashMap<String, String>,
@@ -30,15 +29,7 @@ impl HostEnvironment for FakeHost {
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         let key = format!("{} {}", spec.program, spec.args.join(" "));
         match self.responses.get(&key) {
-            Some(stdout) => Ok(CommandOutcome {
-                program: spec.program.clone(),
-                args: spec.args.clone(),
-                working_dir: spec.working_dir.clone(),
-                status: std::process::ExitStatus::from_raw(0),
-                stdout: stdout.clone().into_bytes(),
-                stderr: Vec::new(),
-                stderr_lossy: false,
-            }),
+            Some(stdout) => Ok(crate::testing::command::outcome(spec, 0, stdout)),
             None => Err(Error::new(
                 ErrorId::ExternalCommandNotFound,
                 msg!("error-external-command-not-found", program = spec.program),

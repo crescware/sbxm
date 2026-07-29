@@ -2,7 +2,6 @@ use super::*;
 use crate::command::{CommandOutcome, CommandSpec};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeSbx {
     /// Sandbox内で既に設定されている値。
@@ -46,13 +45,7 @@ impl HostEnvironment for FakeSbx {
 
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.args.clone());
-        let inner: Vec<&str> = spec
-            .args
-            .iter()
-            .skip_while(|arg| *arg != "--")
-            .skip(1)
-            .map(String::as_str)
-            .collect();
+        let inner = crate::testing::command::inner_args(spec);
 
         let (code, stdout) = match inner.as_slice() {
             ["git", "config", "--global", "--get", key] => self.stored(key),
@@ -60,15 +53,7 @@ impl HostEnvironment for FakeSbx {
             _ => (0, String::new()),
         };
 
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }
 

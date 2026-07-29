@@ -1,7 +1,6 @@
 use super::*;
 use crate::command::CommandOutcome;
 use std::cell::RefCell;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeSbx {
     /// `template ls`が返す出力。呼び出しごとに先頭から使う。
@@ -44,15 +43,7 @@ impl HostEnvironment for FakeSbx {
         } else {
             String::new()
         };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(0),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, 0, &stdout))
     }
 }
 

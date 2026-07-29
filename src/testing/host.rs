@@ -3,7 +3,6 @@
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::error::Result;
 use std::cell::RefCell;
-use std::os::unix::process::ExitStatusExt;
 
 /// Sandbox一覧を返し、実行された指定を記録するhost。
 pub struct FakeSbx {
@@ -90,14 +89,6 @@ impl HostEnvironment for FakeSbx {
                 None => (0, String::new()),
             }
         };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }

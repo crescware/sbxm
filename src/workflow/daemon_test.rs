@@ -1,7 +1,6 @@
 use super::*;
 use crate::command::CommandOutcome;
 use std::cell::RefCell;
-use std::os::unix::process::ExitStatusExt;
 
 struct FakeSbx {
     listing: String,
@@ -41,15 +40,7 @@ impl HostEnvironment for FakeSbx {
         } else {
             String::new()
         };
-        Ok(CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(code << 8),
-            stdout: stdout.into_bytes(),
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
 }
 
