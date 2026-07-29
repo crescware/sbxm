@@ -147,6 +147,44 @@ fn an_attached_project_resolves_the_remote_default_branch_and_records_it() {
 }
 
 #[test]
+fn a_head_that_points_at_something_other_than_a_branch_is_not_a_start_point() {
+    let git_dir = layout().bare_git_dir();
+    let cases = [
+        // branch以外を指すHEAD。
+        "ref: refs/tags/v1.0.0\tHEAD\n9f5b1c\tHEAD\n",
+        // branchのpathだが、名前として渡せない綴り。
+        "ref: refs/heads/-oops\tHEAD\n9f5b1c\tHEAD\n",
+    ];
+
+    for answer in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = project_paths(dir.path());
+        let host = InnerCommandSandbox::new().answering(
+            &format!("git --git-dir {git_dir} ls-remote --symref origin HEAD"),
+            answer,
+        );
+
+        let mut project = metadata(CreationMode::Attached, None, 1);
+        metadata::create(&paths, &project).expect("write the metadata");
+
+        let error = resolve_start_ref(&host, "sbxm-example", &layout(), &paths, &mut project)
+            .expect_err("only a branch can be the start point");
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+
+        let stored = metadata::load(&paths).unwrap().expect("present");
+        assert_eq!(
+            stored.provisioning.start_ref, None,
+            "nothing is adopted from a HEAD that names no branch"
+        );
+        assert!(
+            !host.ran("check-ref-format"),
+            "a name that is not a branch is never handed to git: {:?}",
+            host.calls()
+        );
+    }
+}
+
+#[test]
 fn the_start_branch_is_judged_again_by_git_inside_the_sandbox() {
     let dir = tempfile::tempdir().unwrap();
     let paths = project_paths(dir.path());

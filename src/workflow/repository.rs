@@ -288,7 +288,6 @@ fn remote_default_branch(
         let Some(reference) = rest.split_whitespace().next() else {
             continue;
         };
-        // branch以外がHEADの指す先である場合は受け付けない。
         if let Some(branch) = reference.strip_prefix("refs/heads/")
             && git::validate_branch_name(branch).is_ok()
         {
