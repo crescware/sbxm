@@ -195,13 +195,42 @@ fn a_broken_configuration_does_not_stop_help_from_being_shown() {
 }
 
 #[test]
-fn an_unsupported_language_fails_without_reading_the_configuration() {
+fn an_unsupported_language_is_reported_before_any_configuration_error() {
+    use std::os::unix::fs::PermissionsExt;
+
     let home = temp_home();
     // 実在しないtagを使う。将来どの言語を足してもこのtestは意味を保つ。
     let run = sbxm(home.path(), &["--lang", "zz", "ls"]);
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("invalid-lang"), "{}", run.stderr);
     assert!(run.stdout.is_empty(), "{}", run.stdout);
+
+    // 壊れたconfigはparse errorを覆い隠さない。
+    let dir = home.path().join(".sbxm");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(dir.join("config.toml"), "version = 99\n").unwrap();
+    std::fs::set_permissions(
+        dir.join("config.toml"),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .unwrap();
+
+    let run = sbxm(home.path(), &["--lang", "zz", "ls"]);
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("invalid-lang"), "{}", run.stderr);
+    assert!(
+        !run.stderr.contains("config-unknown-version"),
+        "the broken config must not be diagnosed instead: {}",
+        run.stderr
+    );
+
+    // 読めるconfigがあっても、`--lang`の不正はそのまま失敗する。
+    let base = home.path().join("Projects");
+    write_config(home.path(), &base, "ja");
+    let run = sbxm(home.path(), &["--lang", "zz", "ls"]);
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("invalid-lang"), "{}", run.stderr);
 }
 
 #[test]

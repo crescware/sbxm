@@ -63,7 +63,8 @@ fn run(argv: &[String]) -> ExitCode {
     progress::install(display_locale);
     let catalog = Catalog::new(display_locale);
 
-    // `--lang`が不正な場合はconfigを読まず、shell localeまたは`en`でparse errorを表示する。
+    // 表示localeはconfigからbest-effortで解決済みである。`--lang`の不正はconfigの
+    // validation errorより先に報告するため、壊れたconfigがparse errorを覆い隠さない。
     if let PeekedLang::Invalid(value) = &peeked {
         let error = cli::invalid_lang_error(value);
         report(&catalog, &error);
