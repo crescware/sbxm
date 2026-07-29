@@ -42,6 +42,31 @@ fn managed_projects_and_unmanaged_sandboxes_are_listed_separately() {
 }
 
 #[test]
+fn an_unmanaged_sandbox_without_a_workspace_shows_a_placeholder() {
+    let fixture = fixture();
+    let host = FakeSbx::listing(
+        r#"[{"name":"sbxm-known","state":"Running","workspace":"/tmp/known","template":"other:1"},{"name":"sbxm-nowhere","state":"Running","template":"other:1"}]"#,
+    );
+
+    let listing = run(&fixture.config, &host, &fixture.workspace_root).expect("list");
+    assert_eq!(
+        listing.unmanaged,
+        vec![
+            UnmanagedRow {
+                sandbox: "sbxm-known".to_string(),
+                state: "Running".to_string(),
+                workspace: "/tmp/known".to_string(),
+            },
+            UnmanagedRow {
+                sandbox: "sbxm-nowhere".to_string(),
+                state: "Running".to_string(),
+                workspace: "-".to_string(),
+            },
+        ]
+    );
+}
+
+#[test]
 fn a_project_without_a_sandbox_is_listed_as_not_created() {
     let fixture = fixture();
     fixture.register("example-org/example-repo");

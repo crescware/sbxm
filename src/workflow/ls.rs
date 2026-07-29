@@ -59,7 +59,6 @@ pub fn run(
                 sandbox: entry.name.clone(),
                 // 管理外Sandboxはsbxmの管理状態を持たないため、原値のまま示す。
                 state: entry.raw_state.clone(),
-                // 観測できない項目を推測で埋めない。
                 workspace: entry.workspace.clone().unwrap_or_else(|| "-".to_string()),
             })
             .collect(),
