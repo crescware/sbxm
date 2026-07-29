@@ -1,6 +1,6 @@
 use super::*;
 use crate::testing::host::FakeSbx;
-use crate::testing::project::{Registered, fixture};
+use crate::testing::project::{Registered, fixture, project_id};
 
 fn value_of(status: &ProjectStatus, item: &str) -> Value {
     status
@@ -9,10 +9,6 @@ fn value_of(status: &ProjectStatus, item: &str) -> Value {
         .find(|entry| entry.item == item)
         .unwrap_or_else(|| panic!("item {item} is missing"))
         .value
-}
-
-fn project_id(value: &str) -> ProjectId {
-    ProjectId::parse(value).expect("valid project id")
 }
 
 /// imageがまだ存在しないhost。一覧は答えるが、1件も返さない。

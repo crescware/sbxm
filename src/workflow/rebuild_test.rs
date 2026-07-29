@@ -3,13 +3,9 @@ use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::hash::sha256_hex;
 use crate::testing::host::FakeSbx;
 use crate::testing::poll::poll;
-use crate::testing::project::fixture;
+use crate::testing::project::{fixture, project_id};
 use crate::testing::protection::clean_host;
 use std::os::unix::fs::PermissionsExt;
-
-fn project_id(value: &str) -> ProjectId {
-    ProjectId::parse(value).expect("valid project id")
-}
 
 /// runtimeのimage storeが示す一覧。registry prefixを補って表示する。
 fn template_listing(image: &str) -> String {

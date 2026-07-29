@@ -1,11 +1,7 @@
 use super::*;
 use crate::error::ExitCode;
-use crate::testing::project::fixture;
+use crate::testing::project::{fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
-
-fn project_id(value: &str) -> ProjectId {
-    ProjectId::parse(value).expect("valid project id")
-}
 
 #[test]
 fn a_named_project_is_used_without_asking() {

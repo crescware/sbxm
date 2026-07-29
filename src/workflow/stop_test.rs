@@ -3,12 +3,8 @@ use crate::command::OutputPolicy;
 use crate::metadata::{self, RebuildIntent};
 use crate::testing::host::FakeSbx;
 use crate::testing::poll::poll;
-use crate::testing::project::fixture;
+use crate::testing::project::{fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
-
-fn project_id(value: &str) -> ProjectId {
-    ProjectId::parse(value).expect("valid project id")
-}
 
 #[test]
 fn only_the_running_targets_are_stopped() {

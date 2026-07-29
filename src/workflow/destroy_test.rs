@@ -4,14 +4,10 @@ use crate::error::ExitCode;
 use crate::metadata;
 use crate::testing::host::FakeSbx;
 use crate::testing::poll::poll;
-use crate::testing::project::{Fixture, fixture};
+use crate::testing::project::{Fixture, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::protection::clean_host;
 use std::os::unix::fs::PermissionsExt;
-
-fn project_id(value: &str) -> ProjectId {
-    ProjectId::parse(value).expect("valid project id")
-}
 
 fn path_of(target: &Target) -> Option<&str> {
     match target {
