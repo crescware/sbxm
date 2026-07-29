@@ -107,6 +107,12 @@ fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() {
 }
 
 #[test]
+fn the_sandbox_state_has_one_untranslated_spelling() {
+    assert_eq!(SandboxState::Running.as_str(), "running");
+    assert_eq!(SandboxState::Stopped.as_str(), "stopped");
+}
+
+#[test]
 fn the_listing_of_the_target_version_is_read_as_it_is() {
     // 対象versionが実際に出力する形。`sandboxes`で包み、workspaceは配列で示す。
     let observed = r#"{

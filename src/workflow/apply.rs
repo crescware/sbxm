@@ -87,7 +87,7 @@ pub fn run(
                 msg!(
                     "error-sandbox-not-running",
                     sandbox = entry.name,
-                    observed = state_of(entry.state)
+                    observed = entry.state.as_str()
                 ),
             )
             .remediation(msg!(
@@ -149,14 +149,6 @@ fn raise_worktrees(paths: &ProjectPaths, metadata: &mut ProjectMetadata, count: 
     }
     metadata.provisioning.requested_worktrees = count;
     metadata::update(paths, metadata)
-}
-
-/// 翻訳しない状態値。
-fn state_of(state: SandboxState) -> &'static str {
-    match state {
-        SandboxState::Running => "running",
-        SandboxState::Stopped => "stopped",
-    }
 }
 
 #[cfg(test)]

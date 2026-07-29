@@ -241,6 +241,16 @@ pub enum SandboxState {
     Stopped,
 }
 
+impl SandboxState {
+    /// 翻訳しない安定した表記。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SandboxState::Running => "running",
+            SandboxState::Stopped => "stopped",
+        }
+    }
+}
+
 /// `sbx ls`が示すSandbox 1件。
 ///
 /// 対応versionの`sbx ls --json`は、元にしたTemplateも接続中のsession数も示さない。

@@ -610,7 +610,7 @@ fn print_prepare_output(catalog: &Catalog, output: &prepare::PrepareOutput) {
             ),
             (
                 "add-field-sandbox-state",
-                sandbox_state(output.sandbox_state).to_string()
+                output.sandbox_state.as_str().to_string()
             ),
         ])
     );
@@ -667,7 +667,7 @@ fn print_prepare_output(catalog: &Catalog, output: &prepare::PrepareOutput) {
     print_notes(catalog, &output.notes);
 
     let mut values: Vec<(&str, &str)> = vec![(
-        sandbox_state(output.sandbox_state),
+        output.sandbox_state.as_str(),
         sandbox_state_legend(output.sandbox_state),
     )];
     for worktree in &output.worktrees {
@@ -1009,14 +1009,7 @@ fn print_apply_output(catalog: &Catalog, output: &workflow::apply::ApplyOutput) 
     let _ = std::io::stdout().flush();
 }
 
-/// 翻訳しない状態値と、その凡例。
-fn sandbox_state(state: SandboxState) -> &'static str {
-    match state {
-        SandboxState::Running => "running",
-        SandboxState::Stopped => "stopped",
-    }
-}
-
+/// 状態値の凡例。
 fn sandbox_state_legend(state: SandboxState) -> &'static str {
     match state {
         SandboxState::Running => "legend-sandbox-running",
