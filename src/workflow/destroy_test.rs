@@ -170,6 +170,28 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() {
 }
 
 #[test]
+fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
+    let fixture = fixture();
+    let host = FakeSbx::listing("[]");
+
+    let error = prepare(
+        &fixture.config,
+        Some(&project_id("example-org/example-repo")),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .expect_err("a project that is not managed has nothing to destroy");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+    assert!(
+        host.calls().is_empty(),
+        "the host is not asked anything before the target is decided: {:?}",
+        host.calls()
+    );
+}
+
+#[test]
 fn a_project_without_a_sandbox_only_loses_its_management_data() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");

@@ -4,7 +4,7 @@ use crate::metadata::{self, RebuildIntent};
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};
 use crate::testing::host::{FakeSbx, isolated_agent};
 use crate::testing::poll::poll;
-use crate::testing::project::{Fixture, Registered, fixture};
+use crate::testing::project::{Fixture, Registered, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
 use std::time::Duration;
 
@@ -135,6 +135,28 @@ fn a_project_without_a_sandbox_is_sent_back_to_add() {
         vec![("command", "sbxm add Example-Org/Example-Repo".to_string())]
     );
     assert!(!host.ran("daemon stop"), "the daemon is left alone");
+}
+
+#[test]
+fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
+    let fixture = fixture();
+    let host = FakeSbx::listing("[]");
+
+    let error = prepare(
+        &fixture.config,
+        Some(&project_id("example-org/example-repo")),
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+        poll(),
+    )
+    .expect_err("a project that is not managed has nothing to open");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+    assert!(
+        host.calls().is_empty(),
+        "the host is not asked anything before the target is decided: {:?}",
+        host.calls()
+    );
 }
 
 #[test]
