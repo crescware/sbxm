@@ -209,7 +209,6 @@ fn adopt_generation(
     }
 
     if image::generation_is_built(host, name, &metadata.canonical_id, &stored)? {
-        // 初回構築の途中へ別世代を混在させない。
         warnings.push(msg!(
             "warning-dockerfile-changed-during-build",
             project = metadata.display_id(),

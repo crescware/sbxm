@@ -807,6 +807,103 @@ fn a_finished_build_is_a_no_op_for_the_same_add() {
     }
 }
 
+/// 編集後のDockerfileの内容。世代が変わったことだけが要る。
+const EDITED_DOCKERFILE: &[u8] = b"FROM example:edited\n";
+
+#[test]
+fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_started_from() {
+    let bench = bench();
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None);
+
+    // imageまで組み上がり、Sandboxの作成で中断した実行を作る。
+    world.failing("sbx create");
+    bench
+        .build(&world, &request)
+        .expect_err("the run stops at sandbox creation");
+    world.nothing_fails();
+
+    let started_from = bench
+        .stored("Example-Org/Example-Repo")
+        .provisioning
+        .dockerfile_sha256;
+    let paths = ProjectPaths::derive(&bench.config.base_path, &request.project.canonical());
+    fs::write(paths.dockerfile(), EDITED_DOCKERFILE).expect("edit the Dockerfile");
+
+    let mark = world.mark();
+    let output = run(
+        &bench.config,
+        &request.project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .expect("the interrupted run finishes");
+
+    assert_eq!(
+        output
+            .warnings
+            .iter()
+            .map(|message| message.id)
+            .collect::<Vec<_>>(),
+        vec!["warning-dockerfile-changed-during-build"]
+    );
+    assert_eq!(
+        bench
+            .stored("Example-Org/Example-Repo")
+            .provisioning
+            .dockerfile_sha256,
+        started_from,
+        "the generation the build started from is the one it is finished on"
+    );
+    let edited = image::image_name(
+        &SandboxName::derive(&request.project.canonical()),
+        &sha256_hex(EDITED_DOCKERFILE),
+    );
+    assert!(
+        !world.since(mark).iter().any(|call| call.contains(&edited)),
+        "the edited Dockerfile is left for rebuild: {:?}",
+        world.since(mark)
+    );
+}
+
+#[test]
+fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built() {
+    let bench = bench();
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None);
+    super::super::add::run(&bench.config, &request, &world).expect("the project is registered");
+
+    let paths = ProjectPaths::derive(&bench.config.base_path, &request.project.canonical());
+    fs::write(paths.dockerfile(), EDITED_DOCKERFILE).expect("edit the Dockerfile");
+    let edited = sha256_hex(EDITED_DOCKERFILE);
+
+    let output = run(
+        &bench.config,
+        &request.project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .expect("the build runs on the Dockerfile that is there");
+
+    assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+    assert_eq!(
+        bench
+            .stored("Example-Org/Example-Repo")
+            .provisioning
+            .dockerfile_sha256,
+        edited,
+        "the edited Dockerfile becomes the generation to build"
+    );
+    assert!(
+        world.ran(&image::image_name(
+            &SandboxName::derive(&request.project.canonical()),
+            &edited
+        )),
+        "{:?}",
+        world.invocations()
+    );
+}
+
 #[test]
 fn git_is_given_the_placeholder_before_it_reaches_github() {
     let bench = bench();
