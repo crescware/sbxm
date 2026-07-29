@@ -101,10 +101,34 @@ fn a_check_that_could_not_run_is_never_read_as_a_pass() {
             "",
         );
 
-    for host in [marker, head, upstream] {
+    let cases = [
+        (marker, format!("{managed}/.git/MERGE_HEAD"), 126),
+        (head, "HEAD".to_string(), 127),
+        (upstream, "@{upstream}".to_string(), 125),
+    ];
+    for (host, subject, code) in cases {
         let error = inspect_with(&host, &project, Unmanaged::Allowed)
             .expect_err("a check that did not answer never means the worktree is safe");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
+        let diagnostic = &error.diagnostics()[0];
+        assert_eq!(
+            diagnostic.description.id,
+            "error-sandbox-check-unobservable"
+        );
+        assert_eq!(
+            diagnostic.description.args,
+            vec![
+                ("subject", subject),
+                ("exit_status", format!("exit status: {code}"))
+            ],
+            "the diagnostic names the check that did not answer"
+        );
+        let external = diagnostic
+            .external
+            .as_ref()
+            .expect("the runtime's own failure is kept with the diagnostic");
+        assert_eq!(external.program, "sbx");
+        assert_eq!(external.exit_status, format!("exit status: {code}"));
     }
 }
 
