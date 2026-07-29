@@ -47,6 +47,11 @@ impl FakeSbx {
         self
     }
 
+    fn holding(mut self, paths: &[&str]) -> FakeSbx {
+        self.inner = self.inner.holding(paths);
+        self
+    }
+
     /// 共有repositoryとworktreeが揃ったSandboxとして答える。
     fn holding_repository(self) -> FakeSbx {
         let layout = SandboxLayout::new(&canonical());
@@ -88,8 +93,7 @@ impl FakeSbx {
                 _ => host.failing(&format!("git -C {path} symbolic-ref -q HEAD")),
             };
         }
-        host.inner.present.borrow_mut().push(git_dir);
-        host
+        host.holding(&[&git_dir])
     }
 
     /// workflowの実行中にlockが保持されているかを観測する。

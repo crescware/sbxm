@@ -13,7 +13,7 @@ use std::collections::HashMap;
 #[derive(Default)]
 pub struct InnerCommandSandbox {
     /// Sandbox内に存在するpath。
-    pub present: RefCell<Vec<String>>,
+    present: RefCell<Vec<String>>,
     /// 特定のinner commandに対する応答。
     answers: HashMap<String, (i32, String)>,
     calls: RefCell<Vec<Vec<String>>>,
