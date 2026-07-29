@@ -46,30 +46,27 @@ pub fn prepare(
     poll: Poll,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let candidate = select::one(config, requested, prompt)?;
+    let locked = select::one(config, requested, prompt)?.lock()?;
 
-    let _lock = candidate.paths.acquire_lock()?;
-
-    // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
-    let metadata = candidate.reload()?;
+    let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
-    rebuild::require_no_rebuild(&metadata)?;
+    rebuild::require_no_rebuild(metadata)?;
 
     require_docker(host)?;
 
     let entries = daemon::list(host)?;
-    match inventory::state_of(&entries, &metadata, workspace_root)? {
+    match inventory::state_of(&entries, metadata, workspace_root)? {
         ProjectState::Running => {}
         ProjectState::Stopped => inventory::start(host, name.as_str())?,
-        ProjectState::NotCreated => return Err(inventory::not_created(&metadata, name.as_str())),
+        ProjectState::NotCreated => return Err(inventory::not_created(metadata, name.as_str())),
     }
-    inventory::wait_until_running(host, &metadata, workspace_root, poll)?;
+    inventory::wait_until_running(host, metadata, workspace_root, poll)?;
 
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
     crate::workflow::sandbox::require_credentials_isolated(host, name.as_str())?;
 
     let layout = SandboxLayout::new(&metadata.canonical_id);
-    let worktrees = verify_worktrees(host, name.as_str(), &layout, &metadata)?;
+    let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
 
     Ok(Prepared {
         project: metadata.display_id(),

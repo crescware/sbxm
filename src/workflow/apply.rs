@@ -58,24 +58,14 @@ pub fn run(
     workspace_root: &Path,
 ) -> Result<ApplyOutput> {
     let canonical = project.canonical();
-    let paths = ProjectPaths::derive(&config.base_path, &canonical);
-    if metadata::load(&paths)?.is_none() {
-        // 管理対象でない案件にはlock fileも作らない。
-        return Err(select::not_managed(project));
-    }
-    let _lock = paths.acquire_lock()?;
-
-    // lock取得後のmetadataを、以降の判定の正本とする。
-    let Some(mut metadata) = metadata::load(&paths)? else {
-        return Err(select::not_managed(project));
-    };
-    rebuild::require_no_rebuild(&metadata)?;
+    let mut locked = select::locked(config, project)?;
+    rebuild::require_no_rebuild(&locked.metadata)?;
 
     let name = SandboxName::derive(&canonical);
     let entry = daemon::list(host)?
         .into_iter()
         .find(|entry| entry.name == name.as_str())
-        .ok_or_else(|| inventory::not_created(&metadata, name.as_str()))?;
+        .ok_or_else(|| inventory::not_created(&locked.metadata, name.as_str()))?;
 
     sandbox::verify_identity(&entry, &name, workspace_root)?;
 
@@ -92,7 +82,7 @@ pub fn run(
             )
             .remediation(msg!(
                 "remediation-sandbox-not-running",
-                command = format!("sbxm open {}", metadata.display_id())
+                command = format!("sbxm open {}", locked.metadata.display_id())
             )),
         ));
     }
@@ -105,18 +95,24 @@ pub fn run(
     let mut worktrees = None;
     let mut notes = Vec::new();
     if let Some(count) = scope.worktrees {
-        raise_worktrees(&paths, &mut metadata, count)?;
+        raise_worktrees(&locked.paths, &mut locked.metadata, count)?;
         let layout = SandboxLayout::new(&canonical);
         repository::ensure_bare_clone(host, &entry.name, project, &layout)?;
-        let branch =
-            repository::resolve_start_ref(host, &entry.name, &layout, &paths, &mut metadata)?;
-        let managed = repository::ensure_worktrees(host, &entry.name, &layout, &metadata, &branch)?;
-        worktrees = Some(metadata.provisioning.requested_worktrees);
+        let branch = repository::resolve_start_ref(
+            host,
+            &entry.name,
+            &layout,
+            &locked.paths,
+            &mut locked.metadata,
+        )?;
+        let managed =
+            repository::ensure_worktrees(host, &entry.name, &layout, &locked.metadata, &branch)?;
+        worktrees = Some(locked.metadata.provisioning.requested_worktrees);
         notes = tools::worktrees_ready(host, &entry.name, &layout, managed.len())?;
     }
 
     Ok(ApplyOutput {
-        project: metadata.display_id(),
+        project: locked.metadata.display_id(),
         sandbox: entry.name,
         files,
         worktrees,

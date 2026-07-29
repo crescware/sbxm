@@ -10,7 +10,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
-use crate::paths::ProjectPaths;
+use crate::paths::{ExclusiveLock, ProjectPaths};
 use crate::project::ProjectId;
 
 /// 選択された1案件。runtime状態は持たない。
@@ -36,6 +36,31 @@ impl Candidate {
             None => Err(not_managed(&self.display_id())),
         }
     }
+
+    /// project lockを取り、lock後の内容で読み直す。
+    pub fn lock(self) -> Result<Locked> {
+        let lock = self.paths.acquire_lock()?;
+        let metadata = self.reload()?;
+        Ok(Locked {
+            paths: self.paths,
+            metadata,
+            _lock: lock,
+        })
+    }
+}
+
+/// project lockを保持したまま読み直した1案件。
+///
+/// 選択の時点で読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
+/// 管理対象でない案件にはlock fileを作らない。
+///
+/// lockは値の生存期間だけ有効である。分解するとその場でlockが外れるため、
+/// fieldは`locked.paths`・`locked.metadata`として使う。
+#[derive(Debug)]
+pub struct Locked {
+    pub paths: ProjectPaths,
+    pub metadata: ProjectMetadata,
+    _lock: ExclusiveLock,
 }
 
 /// 対話選択。testでは差し替える。
@@ -117,6 +142,14 @@ fn load(config: &GlobalConfig, project: &ProjectId) -> Result<Candidate> {
         Some(metadata) => Ok(Candidate { paths, metadata }),
         None => Err(not_managed(project)),
     }
+}
+
+/// 完全指定された案件をlockし、lock後のmetadataとともに返す。
+///
+/// promptを持たないcommandの入口。`load`が先に存在を確かめるため、管理対象でない
+/// 案件にはlock fileを作らない。
+pub fn locked(config: &GlobalConfig, project: &ProjectId) -> Result<Locked> {
+    load(config, project)?.lock()
 }
 
 /// 管理対象でない案件を、登録commandとともに拒否する。

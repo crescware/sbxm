@@ -57,28 +57,19 @@ pub fn run(
     workspace_root: &Path,
 ) -> Result<PrepareOutput> {
     let canonical = project.canonical();
-    let paths = ProjectPaths::derive(&config.base_path, &canonical);
     let name = SandboxName::derive(&canonical);
 
-    // 対象が登録されていない案件にlock fileを作らない。
-    if metadata::load(&paths)?.is_none() {
-        return Err(select::not_managed(project));
-    }
-    let _lock = paths.acquire_lock()?;
-
-    // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
-    let mut project_metadata =
-        metadata::load(&paths)?.ok_or_else(|| select::not_managed(project))?;
-    rebuild::require_no_rebuild(&project_metadata)?;
+    let mut locked = select::locked(config, project)?;
+    rebuild::require_no_rebuild(&locked.metadata)?;
 
     let layout = SandboxLayout::new(&canonical);
     let mut warnings = Vec::new();
 
     if let Some(output) = already_built(
         host,
-        &paths,
+        &locked.paths,
         &name,
-        &project_metadata,
+        &locked.metadata,
         &layout,
         workspace_root,
     )? {
@@ -89,11 +80,11 @@ pub fn run(
     // 届かないため、作成より前に、そしてimageを組む前に確認する。
     secret::require_github(host, name.as_str())?;
 
-    let current = super::add::current_dockerfile_hash(&paths)?;
+    let current = super::add::current_dockerfile_hash(&locked.paths)?;
     let generation = adopt_generation(
         host,
-        &paths,
-        &mut project_metadata,
+        &locked.paths,
+        &mut locked.metadata,
         &name,
         &current,
         &mut warnings,
@@ -102,12 +93,12 @@ pub fn run(
     let built = image::ensure(
         host,
         &name,
-        &project_metadata.canonical_id,
-        &paths.dockerfile(),
+        &locked.metadata.canonical_id,
+        &locked.paths.dockerfile(),
         &generation,
     )?;
     warnings.extend(built.warnings.clone());
-    let archive = image::ensure_archive(host, &paths, &built, &generation)?;
+    let archive = image::ensure_archive(host, &locked.paths, &built, &generation)?;
     let loaded = template::ensure(host, &archive, &built)?;
 
     let ready = sandbox::ensure(host, &name, &loaded, workspace_root)?;
@@ -121,18 +112,23 @@ pub fn run(
     secret::configure_git_credential(host, &ready.name)?;
 
     repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
-    let branch =
-        repository::resolve_start_ref(host, &ready.name, &layout, &paths, &mut project_metadata)?;
+    let branch = repository::resolve_start_ref(
+        host,
+        &ready.name,
+        &layout,
+        &locked.paths,
+        &mut locked.metadata,
+    )?;
     let managed =
-        repository::ensure_worktrees(host, &ready.name, &layout, &project_metadata, &branch)?;
+        repository::ensure_worktrees(host, &ready.name, &layout, &locked.metadata, &branch)?;
 
-    let worktrees = observed_worktrees(host, &ready.name, &layout, &project_metadata)?;
+    let worktrees = observed_worktrees(host, &ready.name, &layout, &locked.metadata)?;
     let notes = tools::worktrees_ready(host, &ready.name, &layout, managed.len())?;
 
     Ok(PrepareOutput {
-        project: project_metadata.display_id(),
+        project: locked.metadata.display_id(),
         sandbox: ready.name,
-        mode: project_metadata.provisioning.mode,
+        mode: locked.metadata.provisioning.mode,
         start_ref: branch,
         sandbox_state: ready.state,
         worktrees,

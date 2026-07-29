@@ -10,7 +10,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{CreationMode, ProjectMetadata};
 use crate::msg;
-use crate::paths::{self, ExclusiveLock, PathScope, ProjectPaths};
+use crate::paths::{self, PathScope, ProjectPaths};
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::daemon;
@@ -51,7 +51,7 @@ pub struct Prepared {
     name: SandboxName,
     state: ProjectState,
     force: bool,
-    _lock: ExclusiveLock,
+    _locked: select::Locked,
 }
 
 /// 削除の結果。
@@ -72,16 +72,13 @@ pub fn prepare(
     workspace_root: &Path,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let candidate = select::one(config, requested, prompt)?;
-    let paths = candidate.paths.clone();
+    let locked = select::one(config, requested, prompt)?.lock()?;
+    let paths = locked.paths.clone();
 
-    let lock = paths.acquire_lock()?;
-
-    // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
-    let metadata = candidate.reload()?;
+    let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
     let entries = daemon::list(host)?;
-    let state = inventory::state_of(&entries, &metadata, workspace_root)?;
+    let state = inventory::state_of(&entries, metadata, workspace_root)?;
 
     let worktrees = if force || state == ProjectState::NotCreated {
         Vec::new()
@@ -104,7 +101,7 @@ pub fn prepare(
             ));
         }
         let layout = SandboxLayout::new(&metadata.canonical_id);
-        protection::inspect(host, name.as_str(), &layout, &metadata, Unmanaged::Allowed)?.worktrees
+        protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Allowed)?.worktrees
     };
 
     let plan = DestroyPlan {
@@ -115,7 +112,7 @@ pub fn prepare(
         worktrees,
         removes: removes(&paths, &name, state),
         keeps: keeps(&paths),
-        re_register: re_register(&paths, &metadata)?,
+        re_register: re_register(&paths, metadata)?,
     };
 
     Ok(Prepared {
@@ -124,7 +121,7 @@ pub fn prepare(
         name,
         state,
         force,
-        _lock: lock,
+        _locked: locked,
     })
 }
 

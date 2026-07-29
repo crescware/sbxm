@@ -42,31 +42,23 @@ pub fn run(
     poll: Poll,
 ) -> Result<RebuildOutput> {
     let canonical = project.canonical();
-    let paths = ProjectPaths::derive(&config.base_path, &canonical);
     let name = SandboxName::derive(&canonical);
 
-    let Some(_) = metadata::load(&paths)? else {
-        return Err(select::not_managed(project));
-    };
-    let _lock = paths.acquire_lock()?;
-
-    // lock取得後の状態を正本とする。
-    let mut project_metadata =
-        metadata::load(&paths)?.ok_or_else(|| select::not_managed(project))?;
-    let current = super::add::current_dockerfile_hash(&paths)?;
+    let mut locked = select::locked(config, project)?;
+    let current = super::add::current_dockerfile_hash(&locked.paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。
     let entries = daemon::list(host)?;
-    let state = inventory::state_of(&entries, &project_metadata, workspace_root)?;
+    let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;
 
-    let target = match &project_metadata.rebuild {
+    let target = match &locked.metadata.rebuild {
         // intentがある場合は、intentに固定した世代だけを完成させる。
         Some(intent) => intent.target_dockerfile_sha256.clone(),
         None => {
             // 状態表が先にある。Sandboxを持たない案件には、変更の有無を答えない。
-            require_created(&project_metadata, state, &name)?;
-            if current == project_metadata.provisioning.dockerfile_sha256 {
+            require_created(&locked.metadata, state, &name)?;
+            if current == locked.metadata.provisioning.dockerfile_sha256 {
                 return Ok(RebuildOutput {
-                    project: project_metadata.display_id(),
+                    project: locked.metadata.display_id(),
                     sandbox: name.as_str().to_string(),
                     applied: current,
                     unchanged: true,
@@ -75,7 +67,7 @@ pub fn run(
             }
             start_to_read_saved_state(
                 host,
-                &project_metadata,
+                &locked.metadata,
                 &name,
                 state == ProjectState::Stopped,
                 workspace_root,
@@ -86,7 +78,7 @@ pub fn run(
                 host,
                 name.as_str(),
                 &layout,
-                &project_metadata,
+                &locked.metadata,
                 Unmanaged::Refused,
             )?;
             current.clone()
@@ -94,13 +86,20 @@ pub fn run(
     };
 
     // 新世代の成果物が揃うまで、既存Sandboxを停止も削除もしない。
-    let built = prepare_generation(host, &paths, &name, &project_metadata, &target, &current)?;
-    if project_metadata.rebuild.is_none() {
-        project_metadata.rebuild = Some(RebuildIntent {
+    let built = prepare_generation(
+        host,
+        &locked.paths,
+        &name,
+        &locked.metadata,
+        &target,
+        &current,
+    )?;
+    if locked.metadata.rebuild.is_none() {
+        locked.metadata.rebuild = Some(RebuildIntent {
             target_dockerfile_sha256: target.clone(),
-            previous_dockerfile_sha256: project_metadata.provisioning.dockerfile_sha256.clone(),
+            previous_dockerfile_sha256: locked.metadata.provisioning.dockerfile_sha256.clone(),
         });
-        metadata::update(&paths, &project_metadata)?;
+        metadata::update(&locked.paths, &locked.metadata)?;
     }
 
     let mut warnings = built.warnings;
@@ -108,27 +107,27 @@ pub fn run(
         // intent記録後の編集は上書きせず、次の`rebuild`対象として案内する。
         warnings.push(msg!(
             "warning-dockerfile-changed-during-rebuild",
-            project = project_metadata.display_id(),
-            command = format!("sbxm rebuild {}", project_metadata.display_id())
+            project = locked.metadata.display_id(),
+            command = format!("sbxm rebuild {}", locked.metadata.display_id())
         ));
     }
 
     let context = Switch {
         config,
-        paths: &paths,
+        paths: &locked.paths,
         project,
         workspace_root,
         poll,
     };
-    context.run(host, &name, &mut project_metadata, &built.template)?;
+    context.run(host, &name, &mut locked.metadata, &built.template)?;
 
     // 全検証が終わってから、適用済みhashを更新してintentを削除する。
-    project_metadata.provisioning.dockerfile_sha256 = target.clone();
-    project_metadata.rebuild = None;
-    metadata::update(&paths, &project_metadata)?;
+    locked.metadata.provisioning.dockerfile_sha256 = target.clone();
+    locked.metadata.rebuild = None;
+    metadata::update(&locked.paths, &locked.metadata)?;
 
     Ok(RebuildOutput {
-        project: project_metadata.display_id(),
+        project: locked.metadata.display_id(),
         sandbox: name.as_str().to_string(),
         applied: target,
         unchanged: false,
