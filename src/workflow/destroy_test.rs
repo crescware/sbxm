@@ -2,6 +2,7 @@ use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::error::ExitCode;
 use crate::metadata;
+use crate::paths::PRIVATE_FILE_MODE;
 use crate::testing::host::FakeSbx;
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, fixture, project_id};
@@ -361,6 +362,37 @@ fn force_mode_and_a_non_interactive_run_are_not_asked_to_confirm() {
     let mut with_terminal = ScriptedConfirm::canceling();
     confirm(&forced, true, &mut with_terminal).expect("force mode skips the confirmation");
     assert_eq!(with_terminal.asked, 0);
+}
+
+#[test]
+fn the_project_lock_is_held_across_the_confirmation() {
+    let fixture = fixture();
+    let (_host, prepared) = prepared_project(&fixture, false);
+    let lock_file = ProjectPaths::derive(
+        &fixture.config.base_path,
+        &project_id("example-org/example-repo").canonical(),
+    )
+    .lock_file();
+
+    // 確認を待つあいだも、別の実行はこの案件へ入れない。
+    let waiting = std::time::Duration::from_millis(200);
+    paths::acquire_exclusive_lock(
+        &lock_file,
+        waiting,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .expect_err("another run cannot reach the project while the confirmation is pending");
+
+    // lockはPreparedとともに解放される。
+    drop(prepared);
+    paths::acquire_exclusive_lock(
+        &lock_file,
+        waiting,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .expect("the lock is released with Prepared");
 }
 
 /// `.sbxm`から書き込みを取り上げ、cleanupを失敗させる。
