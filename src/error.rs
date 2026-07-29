@@ -26,273 +26,170 @@ impl ExitCode {
     }
 }
 
-/// 翻訳しない安定した英語error ID。
+/// `ErrorId`のvariantと、その安定した英語表記を1箇所で宣言する。
 ///
-/// script側の分岐対象となる公開契約であり、locale、libraryのversion、
-/// 外部commandのexit codeによって変化しない。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ErrorId {
-    // --- CLI parseと引数関係 ---
-    InvalidArguments,
-    UnknownArgument,
-    InvalidValue,
-    MissingRequiredArgument,
-    MissingSubcommand,
-    UnknownSubcommand,
-    ConflictingArguments,
-    InvalidLang,
-    InitIncompleteOptions,
-    WorktreesOutOfRange,
-    WorktreesRequireDetach,
-    WorktreesNotReducible,
-    ApplyScopeRequired,
-    ProjectArgumentRequired,
-    StatusScopeRequired,
+/// 片方だけを足せる形にすると、表記のないIDも、testの一覧から漏れるIDも作れて
+/// しまう。同じ1行で宣言し、testが辿る`ALL`も同じ宣言から組み立てる。
+macro_rules! error_ids {
+    ($($variant:ident => $text:literal),+ $(,)?) => {
+        /// 翻訳しない安定した英語error ID。
+        ///
+        /// script側の分岐対象となる公開契約であり、locale、libraryのversion、
+        /// 外部commandのexit codeによって変化しない。
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        pub enum ErrorId {
+            $($variant),+
+        }
 
-    // --- Project識別子 ---
-    InvalidProjectId,
-    ReservedRepositoryName,
+        impl ErrorId {
+            /// 安定した英語表記。翻訳せず、表示にもそのまま使う。
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(ErrorId::$variant => $text),+
+                }
+            }
 
-    // --- Global config ---
-    ConfigMissing,
-    ConfigUnreadable,
-    ConfigInvalidSyntax,
-    ConfigUnknownVersion,
-    ConfigMissingField,
-    ConfigInvalidValue,
-    ConfigPermissionTooOpen,
-    ConfigSymlink,
-    ConfigNotOwned,
-    ConfigDirPermissionTooOpen,
-    ConfigDirSymlink,
-    ConfigDirNotOwned,
-    BasePathNotAbsolute,
-    BasePathNotDirectory,
-    BasePathNotWritable,
-    BasePathEscapesRoot,
-    FileDeclarationInvalidSource,
-    FileDeclarationInvalidDestination,
-
-    // --- Project metadata ---
-    MetadataUnreadable,
-    MetadataInvalidSyntax,
-    MetadataUnknownVersion,
-    MetadataMissingField,
-    MetadataInvalidValue,
-    MetadataPathMismatch,
-    MetadataDuplicateProject,
-    SandboxNameCollision,
-    InvalidBranchName,
-    TargetConfigurationMismatch,
-    RebuildIntentPending,
-
-    // --- Host clone ---
-    HostCloneUnusable,
-
-    // --- Image ---
-    ImageUnusable,
-    BuildContextNotEmpty,
-    ArchiveUnusable,
-    TemplateUnusable,
-    SandboxUnusable,
-    DeclaredFileUnusable,
-    DeclaredFileConflict,
-    SandboxIdentityMismatch,
-    GithubSecretMissing,
-    SandboxSecretNotApplied,
-    SandboxRepositoryUnusable,
-    StartRefUnresolved,
-    ProjectNotManaged,
-    NoManagedProjects,
-    SelectionUnresolved,
-    SandboxNotCreated,
-    SandboxNotRunning,
-    SandboxStillRunning,
-    SandboxStillPresent,
-    RebuildGenerationMissing,
-    DestroyNotConfirmed,
-    SandboxCheckUnobservable,
-    GlobalScopeUnobservable,
-    SshAgentExposed,
-    UnsavedWork,
-    WorktreeOutsideRepository,
-    UnmanagedWorktreePresent,
-    SbxLoginMissing,
-    SbxLoginUnobservable,
-    RemoteSshUnconfigured,
-    RemoteSshUnobservable,
-
-    // --- 案件のhost path ---
-    ProjectPathSymlink,
-    ProjectPathUnexpectedType,
-    ProjectPathUnreadable,
-    ProjectPathNotOwned,
-    ProjectFilePermissionTooOpen,
-
-    // --- 永続化 ---
-    AtomicWriteFailed,
-    TempFileLeftBehind,
-    CleanupFailed,
-    TargetAppearedConcurrently,
-    TargetChangedConcurrently,
-    LockTimeout,
-    LockUnavailable,
-
-    // --- 外部command ---
-    ExternalCommandNotFound,
-    ExternalCommandSpawnFailed,
-    ExternalCommandFailed,
-    ExternalCommandTimeout,
-    ExternalOutputUnparseable,
-
-    // --- Docker Sandboxes互換性 ---
-    SbxVersionUnparseable,
-    SbxVersionBelowMinimum,
-
-    // --- Host環境診断 ---
-    PlatformUnsupported,
-    PlatformUnobservable,
-    HostCommandMissing,
-    DockerUnreachable,
-    NetworkPolicyMismatch,
-    NetworkPolicyUnobservable,
-    DaemonUnobservable,
-
-    // --- init ---
-    InitRequiresTty,
-    PromptUnreadable,
-    GitIdentityInvalid,
-
-    // --- 内部 ---
-    MessageFormatFailed,
+            /// 全variant。宣言から組み立てるため、追加し忘れが起きない。
+            #[cfg(test)]
+            pub const ALL: &'static [ErrorId] = &[$(ErrorId::$variant),+];
+        }
+    };
 }
 
-impl ErrorId {
-    /// 安定した英語表記。翻訳せず、表示にもそのまま使う。
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ErrorId::InvalidArguments => "invalid-arguments",
-            ErrorId::UnknownArgument => "unknown-argument",
-            ErrorId::InvalidValue => "invalid-value",
-            ErrorId::MissingRequiredArgument => "missing-required-argument",
-            ErrorId::MissingSubcommand => "missing-subcommand",
-            ErrorId::UnknownSubcommand => "unknown-subcommand",
-            ErrorId::ConflictingArguments => "conflicting-arguments",
-            ErrorId::InvalidLang => "invalid-lang",
-            ErrorId::InitIncompleteOptions => "init-incomplete-options",
-            ErrorId::WorktreesOutOfRange => "worktrees-out-of-range",
-            ErrorId::WorktreesRequireDetach => "worktrees-require-detach",
-            ErrorId::WorktreesNotReducible => "worktrees-not-reducible",
-            ErrorId::ApplyScopeRequired => "apply-scope-required",
-            ErrorId::ProjectArgumentRequired => "project-argument-required",
-            ErrorId::StatusScopeRequired => "status-scope-required",
+error_ids! {
+    // --- CLI parseと引数関係 ---
+    InvalidArguments => "invalid-arguments",
+    UnknownArgument => "unknown-argument",
+    InvalidValue => "invalid-value",
+    MissingRequiredArgument => "missing-required-argument",
+    MissingSubcommand => "missing-subcommand",
+    UnknownSubcommand => "unknown-subcommand",
+    ConflictingArguments => "conflicting-arguments",
+    InvalidLang => "invalid-lang",
+    InitIncompleteOptions => "init-incomplete-options",
+    WorktreesOutOfRange => "worktrees-out-of-range",
+    WorktreesRequireDetach => "worktrees-require-detach",
+    WorktreesNotReducible => "worktrees-not-reducible",
+    ApplyScopeRequired => "apply-scope-required",
+    ProjectArgumentRequired => "project-argument-required",
+    StatusScopeRequired => "status-scope-required",
 
-            ErrorId::InvalidProjectId => "invalid-project-id",
-            ErrorId::ReservedRepositoryName => "reserved-repository-name",
+    // --- Project識別子 ---
+    InvalidProjectId => "invalid-project-id",
+    ReservedRepositoryName => "reserved-repository-name",
 
-            ErrorId::ConfigMissing => "config-missing",
-            ErrorId::ConfigUnreadable => "config-unreadable",
-            ErrorId::ConfigInvalidSyntax => "config-invalid-syntax",
-            ErrorId::ConfigUnknownVersion => "config-unknown-version",
-            ErrorId::ConfigMissingField => "config-missing-field",
-            ErrorId::ConfigInvalidValue => "config-invalid-value",
-            ErrorId::ConfigPermissionTooOpen => "config-permission-too-open",
-            ErrorId::ConfigSymlink => "config-symlink",
-            ErrorId::ConfigNotOwned => "config-not-owned",
-            ErrorId::ConfigDirPermissionTooOpen => "config-dir-permission-too-open",
-            ErrorId::ConfigDirSymlink => "config-dir-symlink",
-            ErrorId::ConfigDirNotOwned => "config-dir-not-owned",
-            ErrorId::BasePathNotAbsolute => "base-path-not-absolute",
-            ErrorId::BasePathNotDirectory => "base-path-not-directory",
-            ErrorId::BasePathNotWritable => "base-path-not-writable",
-            ErrorId::BasePathEscapesRoot => "base-path-escapes-root",
-            ErrorId::FileDeclarationInvalidSource => "file-declaration-invalid-source",
-            ErrorId::FileDeclarationInvalidDestination => "file-declaration-invalid-destination",
+    // --- Global config ---
+    ConfigMissing => "config-missing",
+    ConfigUnreadable => "config-unreadable",
+    ConfigInvalidSyntax => "config-invalid-syntax",
+    ConfigUnknownVersion => "config-unknown-version",
+    ConfigMissingField => "config-missing-field",
+    ConfigInvalidValue => "config-invalid-value",
+    ConfigPermissionTooOpen => "config-permission-too-open",
+    ConfigSymlink => "config-symlink",
+    ConfigNotOwned => "config-not-owned",
+    ConfigDirPermissionTooOpen => "config-dir-permission-too-open",
+    ConfigDirSymlink => "config-dir-symlink",
+    ConfigDirNotOwned => "config-dir-not-owned",
+    BasePathNotAbsolute => "base-path-not-absolute",
+    BasePathNotDirectory => "base-path-not-directory",
+    BasePathNotWritable => "base-path-not-writable",
+    BasePathEscapesRoot => "base-path-escapes-root",
+    FileDeclarationInvalidSource => "file-declaration-invalid-source",
+    FileDeclarationInvalidDestination => "file-declaration-invalid-destination",
 
-            ErrorId::MetadataUnreadable => "metadata-unreadable",
-            ErrorId::MetadataInvalidSyntax => "metadata-invalid-syntax",
-            ErrorId::MetadataUnknownVersion => "metadata-unknown-version",
-            ErrorId::MetadataMissingField => "metadata-missing-field",
-            ErrorId::MetadataInvalidValue => "metadata-invalid-value",
-            ErrorId::MetadataPathMismatch => "metadata-path-mismatch",
-            ErrorId::MetadataDuplicateProject => "metadata-duplicate-project",
-            ErrorId::SandboxNameCollision => "sandbox-name-collision",
-            ErrorId::InvalidBranchName => "invalid-branch-name",
-            ErrorId::TargetConfigurationMismatch => "target-configuration-mismatch",
-            ErrorId::RebuildIntentPending => "rebuild-intent-pending",
+    // --- Project metadata ---
+    MetadataUnreadable => "metadata-unreadable",
+    MetadataInvalidSyntax => "metadata-invalid-syntax",
+    MetadataUnknownVersion => "metadata-unknown-version",
+    MetadataMissingField => "metadata-missing-field",
+    MetadataInvalidValue => "metadata-invalid-value",
+    MetadataPathMismatch => "metadata-path-mismatch",
+    MetadataDuplicateProject => "metadata-duplicate-project",
+    SandboxNameCollision => "sandbox-name-collision",
+    InvalidBranchName => "invalid-branch-name",
+    TargetConfigurationMismatch => "target-configuration-mismatch",
+    RebuildIntentPending => "rebuild-intent-pending",
 
-            ErrorId::HostCloneUnusable => "host-clone-unusable",
+    // --- Host clone ---
+    HostCloneUnusable => "host-clone-unusable",
 
-            ErrorId::ImageUnusable => "image-unusable",
-            ErrorId::BuildContextNotEmpty => "build-context-not-empty",
-            ErrorId::ArchiveUnusable => "archive-unusable",
-            ErrorId::TemplateUnusable => "template-unusable",
-            ErrorId::SandboxUnusable => "sandbox-unusable",
-            ErrorId::DeclaredFileUnusable => "declared-file-unusable",
-            ErrorId::DeclaredFileConflict => "declared-file-conflict",
-            ErrorId::SandboxIdentityMismatch => "sandbox-identity-mismatch",
-            ErrorId::GithubSecretMissing => "github-secret-missing",
-            ErrorId::SandboxSecretNotApplied => "sandbox-secret-not-applied",
-            ErrorId::SandboxRepositoryUnusable => "sandbox-repository-unusable",
-            ErrorId::StartRefUnresolved => "start-ref-unresolved",
-            ErrorId::ProjectNotManaged => "project-not-managed",
-            ErrorId::NoManagedProjects => "no-managed-projects",
-            ErrorId::SelectionUnresolved => "selection-unresolved",
-            ErrorId::SandboxNotCreated => "sandbox-not-created",
-            ErrorId::SandboxNotRunning => "sandbox-not-running",
-            ErrorId::SandboxStillRunning => "sandbox-still-running",
-            ErrorId::SandboxStillPresent => "sandbox-still-present",
-            ErrorId::RebuildGenerationMissing => "rebuild-generation-missing",
-            ErrorId::DestroyNotConfirmed => "destroy-not-confirmed",
-            ErrorId::SandboxCheckUnobservable => "sandbox-check-unobservable",
-            ErrorId::GlobalScopeUnobservable => "global-scope-unobservable",
-            ErrorId::SshAgentExposed => "ssh-agent-exposed",
-            ErrorId::UnsavedWork => "unsaved-work",
-            ErrorId::WorktreeOutsideRepository => "worktree-outside-repository",
-            ErrorId::UnmanagedWorktreePresent => "unmanaged-worktree-present",
-            ErrorId::SbxLoginMissing => "sbx-login-missing",
-            ErrorId::SbxLoginUnobservable => "sbx-login-unobservable",
-            ErrorId::RemoteSshUnconfigured => "remote-ssh-unconfigured",
-            ErrorId::RemoteSshUnobservable => "remote-ssh-unobservable",
+    // --- Image ---
+    ImageUnusable => "image-unusable",
+    BuildContextNotEmpty => "build-context-not-empty",
+    ArchiveUnusable => "archive-unusable",
+    TemplateUnusable => "template-unusable",
+    SandboxUnusable => "sandbox-unusable",
+    DeclaredFileUnusable => "declared-file-unusable",
+    DeclaredFileConflict => "declared-file-conflict",
+    SandboxIdentityMismatch => "sandbox-identity-mismatch",
+    GithubSecretMissing => "github-secret-missing",
+    SandboxSecretNotApplied => "sandbox-secret-not-applied",
+    SandboxRepositoryUnusable => "sandbox-repository-unusable",
+    StartRefUnresolved => "start-ref-unresolved",
+    ProjectNotManaged => "project-not-managed",
+    NoManagedProjects => "no-managed-projects",
+    SelectionUnresolved => "selection-unresolved",
+    SandboxNotCreated => "sandbox-not-created",
+    SandboxNotRunning => "sandbox-not-running",
+    SandboxStillRunning => "sandbox-still-running",
+    SandboxStillPresent => "sandbox-still-present",
+    RebuildGenerationMissing => "rebuild-generation-missing",
+    DestroyNotConfirmed => "destroy-not-confirmed",
+    SandboxCheckUnobservable => "sandbox-check-unobservable",
+    GlobalScopeUnobservable => "global-scope-unobservable",
+    SshAgentExposed => "ssh-agent-exposed",
+    UnsavedWork => "unsaved-work",
+    WorktreeOutsideRepository => "worktree-outside-repository",
+    UnmanagedWorktreePresent => "unmanaged-worktree-present",
+    SbxLoginMissing => "sbx-login-missing",
+    SbxLoginUnobservable => "sbx-login-unobservable",
+    RemoteSshUnconfigured => "remote-ssh-unconfigured",
+    RemoteSshUnobservable => "remote-ssh-unobservable",
 
-            ErrorId::ProjectPathSymlink => "project-path-symlink",
-            ErrorId::ProjectPathUnexpectedType => "project-path-unexpected-type",
-            ErrorId::ProjectPathUnreadable => "project-path-unreadable",
-            ErrorId::ProjectPathNotOwned => "project-path-not-owned",
-            ErrorId::ProjectFilePermissionTooOpen => "project-file-permission-too-open",
+    // --- 案件のhost path ---
+    ProjectPathSymlink => "project-path-symlink",
+    ProjectPathUnexpectedType => "project-path-unexpected-type",
+    ProjectPathUnreadable => "project-path-unreadable",
+    ProjectPathNotOwned => "project-path-not-owned",
+    ProjectFilePermissionTooOpen => "project-file-permission-too-open",
 
-            ErrorId::AtomicWriteFailed => "atomic-write-failed",
-            ErrorId::TempFileLeftBehind => "temp-file-left-behind",
-            ErrorId::CleanupFailed => "cleanup-failed",
-            ErrorId::TargetAppearedConcurrently => "target-appeared-concurrently",
-            ErrorId::TargetChangedConcurrently => "target-changed-concurrently",
-            ErrorId::LockTimeout => "lock-timeout",
-            ErrorId::LockUnavailable => "lock-unavailable",
+    // --- 永続化 ---
+    AtomicWriteFailed => "atomic-write-failed",
+    TempFileLeftBehind => "temp-file-left-behind",
+    CleanupFailed => "cleanup-failed",
+    TargetAppearedConcurrently => "target-appeared-concurrently",
+    TargetChangedConcurrently => "target-changed-concurrently",
+    LockTimeout => "lock-timeout",
+    LockUnavailable => "lock-unavailable",
 
-            ErrorId::ExternalCommandNotFound => "external-command-not-found",
-            ErrorId::ExternalCommandSpawnFailed => "external-command-spawn-failed",
-            ErrorId::ExternalCommandFailed => "external-command-failed",
-            ErrorId::ExternalCommandTimeout => "external-command-timeout",
-            ErrorId::ExternalOutputUnparseable => "external-output-unparseable",
+    // --- 外部command ---
+    ExternalCommandNotFound => "external-command-not-found",
+    ExternalCommandSpawnFailed => "external-command-spawn-failed",
+    ExternalCommandFailed => "external-command-failed",
+    ExternalCommandTimeout => "external-command-timeout",
+    ExternalOutputUnparseable => "external-output-unparseable",
 
-            ErrorId::SbxVersionUnparseable => "sbx-version-unparseable",
-            ErrorId::SbxVersionBelowMinimum => "sbx-version-below-minimum",
+    // --- Docker Sandboxes互換性 ---
+    SbxVersionUnparseable => "sbx-version-unparseable",
+    SbxVersionBelowMinimum => "sbx-version-below-minimum",
 
-            ErrorId::PlatformUnsupported => "platform-unsupported",
-            ErrorId::PlatformUnobservable => "platform-unobservable",
-            ErrorId::HostCommandMissing => "host-command-missing",
-            ErrorId::DockerUnreachable => "docker-unreachable",
-            ErrorId::NetworkPolicyMismatch => "network-policy-mismatch",
-            ErrorId::NetworkPolicyUnobservable => "network-policy-unobservable",
-            ErrorId::DaemonUnobservable => "daemon-unobservable",
+    // --- Host環境診断 ---
+    PlatformUnsupported => "platform-unsupported",
+    PlatformUnobservable => "platform-unobservable",
+    HostCommandMissing => "host-command-missing",
+    DockerUnreachable => "docker-unreachable",
+    NetworkPolicyMismatch => "network-policy-mismatch",
+    NetworkPolicyUnobservable => "network-policy-unobservable",
+    DaemonUnobservable => "daemon-unobservable",
 
-            ErrorId::InitRequiresTty => "init-requires-tty",
-            ErrorId::PromptUnreadable => "prompt-unreadable",
-            ErrorId::GitIdentityInvalid => "git-identity-invalid",
+    // --- init ---
+    InitRequiresTty => "init-requires-tty",
+    PromptUnreadable => "prompt-unreadable",
+    GitIdentityInvalid => "git-identity-invalid",
 
-            ErrorId::MessageFormatFailed => "message-format-failed",
-        }
-    }
+    // --- 内部 ---
+    MessageFormatFailed => "message-format-failed",
 }
 
 impl std::fmt::Display for ErrorId {

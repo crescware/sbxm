@@ -18,7 +18,7 @@ fn cancellation_maps_to_130_and_everything_else_to_1() {
 
 #[test]
 fn error_ids_are_stable_kebab_case_ascii() {
-    for id in all_error_ids() {
+    for id in ErrorId::ALL {
         let text = id.as_str();
         assert!(!text.is_empty(), "{id:?} has an empty error ID");
         assert!(
@@ -35,7 +35,7 @@ fn error_ids_are_stable_kebab_case_ascii() {
 
 #[test]
 fn error_ids_are_unique() {
-    let mut seen: Vec<&'static str> = all_error_ids().iter().map(|id| id.as_str()).collect();
+    let mut seen: Vec<&'static str> = ErrorId::ALL.iter().map(|id| id.as_str()).collect();
     let total = seen.len();
     seen.sort_unstable();
     seen.dedup();
@@ -63,116 +63,4 @@ fn external_failure_keeps_raw_stderr() {
         stderr_lossy: false,
     };
     assert_eq!(failure.stderr_text(), "boom\n");
-}
-
-/// `ErrorId`の全variant。新しいIDを追加したらここにも追加する。
-pub(super) fn all_error_ids() -> Vec<ErrorId> {
-    vec![
-        ErrorId::InvalidArguments,
-        ErrorId::UnknownArgument,
-        ErrorId::InvalidValue,
-        ErrorId::MissingRequiredArgument,
-        ErrorId::MissingSubcommand,
-        ErrorId::UnknownSubcommand,
-        ErrorId::ConflictingArguments,
-        ErrorId::InvalidLang,
-        ErrorId::InitIncompleteOptions,
-        ErrorId::WorktreesOutOfRange,
-        ErrorId::WorktreesRequireDetach,
-        ErrorId::ProjectArgumentRequired,
-        ErrorId::StatusScopeRequired,
-        ErrorId::InvalidProjectId,
-        ErrorId::ReservedRepositoryName,
-        ErrorId::ConfigMissing,
-        ErrorId::ConfigUnreadable,
-        ErrorId::ConfigInvalidSyntax,
-        ErrorId::ConfigUnknownVersion,
-        ErrorId::ConfigMissingField,
-        ErrorId::ConfigInvalidValue,
-        ErrorId::ConfigPermissionTooOpen,
-        ErrorId::ConfigSymlink,
-        ErrorId::ConfigNotOwned,
-        ErrorId::ConfigDirPermissionTooOpen,
-        ErrorId::ConfigDirSymlink,
-        ErrorId::ConfigDirNotOwned,
-        ErrorId::BasePathNotAbsolute,
-        ErrorId::BasePathNotDirectory,
-        ErrorId::BasePathNotWritable,
-        ErrorId::BasePathEscapesRoot,
-        ErrorId::FileDeclarationInvalidSource,
-        ErrorId::FileDeclarationInvalidDestination,
-        ErrorId::MetadataUnreadable,
-        ErrorId::MetadataInvalidSyntax,
-        ErrorId::TargetConfigurationMismatch,
-        ErrorId::RebuildIntentPending,
-        ErrorId::MetadataUnknownVersion,
-        ErrorId::MetadataMissingField,
-        ErrorId::MetadataInvalidValue,
-        ErrorId::MetadataPathMismatch,
-        ErrorId::MetadataDuplicateProject,
-        ErrorId::SandboxNameCollision,
-        ErrorId::InvalidBranchName,
-        ErrorId::HostCloneUnusable,
-        ErrorId::ImageUnusable,
-        ErrorId::BuildContextNotEmpty,
-        ErrorId::ArchiveUnusable,
-        ErrorId::TemplateUnusable,
-        ErrorId::SandboxUnusable,
-        ErrorId::DeclaredFileUnusable,
-        ErrorId::DeclaredFileConflict,
-        ErrorId::SandboxIdentityMismatch,
-        ErrorId::GithubSecretMissing,
-        ErrorId::SandboxSecretNotApplied,
-        ErrorId::SandboxRepositoryUnusable,
-        ErrorId::StartRefUnresolved,
-        ErrorId::ProjectNotManaged,
-        ErrorId::NoManagedProjects,
-        ErrorId::SelectionUnresolved,
-        ErrorId::SandboxNotCreated,
-        ErrorId::SandboxNotRunning,
-        ErrorId::SandboxStillRunning,
-        ErrorId::SandboxStillPresent,
-        ErrorId::RebuildGenerationMissing,
-        ErrorId::DestroyNotConfirmed,
-        ErrorId::SandboxCheckUnobservable,
-        ErrorId::GlobalScopeUnobservable,
-        ErrorId::SshAgentExposed,
-        ErrorId::UnsavedWork,
-        ErrorId::WorktreeOutsideRepository,
-        ErrorId::UnmanagedWorktreePresent,
-        ErrorId::SbxLoginMissing,
-        ErrorId::SbxLoginUnobservable,
-        ErrorId::RemoteSshUnconfigured,
-        ErrorId::RemoteSshUnobservable,
-        ErrorId::ProjectPathSymlink,
-        ErrorId::ProjectPathUnexpectedType,
-        ErrorId::ProjectPathUnreadable,
-        ErrorId::ProjectPathNotOwned,
-        ErrorId::ProjectFilePermissionTooOpen,
-        ErrorId::AtomicWriteFailed,
-        ErrorId::TempFileLeftBehind,
-        ErrorId::CleanupFailed,
-        ErrorId::TargetAppearedConcurrently,
-        ErrorId::TargetChangedConcurrently,
-        ErrorId::LockTimeout,
-        ErrorId::LockUnavailable,
-        ErrorId::ExternalCommandNotFound,
-        ErrorId::ExternalCommandSpawnFailed,
-        ErrorId::ExternalCommandFailed,
-        ErrorId::ExternalCommandTimeout,
-        ErrorId::ExternalOutputUnparseable,
-        ErrorId::SbxVersionUnparseable,
-        ErrorId::SbxVersionBelowMinimum,
-        ErrorId::PlatformUnsupported,
-        ErrorId::PlatformUnobservable,
-        ErrorId::HostCommandMissing,
-        ErrorId::DockerUnreachable,
-        ErrorId::NetworkPolicyMismatch,
-        ErrorId::NetworkPolicyUnobservable,
-        ErrorId::DaemonUnobservable,
-        ErrorId::InitRequiresTty,
-        ErrorId::PromptUnreadable,
-        ErrorId::GitIdentityInvalid,
-        ErrorId::MessageFormatFailed,
-    ]
 }
