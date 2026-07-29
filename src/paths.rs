@@ -833,6 +833,16 @@ impl ProjectPaths {
         self.sbxm_dir().join("project.lock")
     }
 
+    /// 案件のlockを取る。timeout、mode、scopeは全workflowで共通とする。
+    pub fn acquire_lock(&self) -> Result<ExclusiveLock> {
+        acquire_exclusive_lock(
+            &self.lock_file(),
+            LOCK_TIMEOUT,
+            PRIVATE_FILE_MODE,
+            PathScope::ProjectPath,
+        )
+    }
+
     /// `<project-root>/.sbxm/Dockerfile`
     pub fn dockerfile(&self) -> PathBuf {
         self.sbxm_dir().join("Dockerfile")

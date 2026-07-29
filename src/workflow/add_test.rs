@@ -2,7 +2,7 @@ use super::*;
 use crate::config::{GitIdentity, GlobalConfig};
 use crate::i18n::Locale;
 use crate::metadata::RebuildIntent;
-use crate::paths::AbsoluteBasePath;
+use crate::paths::{AbsoluteBasePath, LOCK_TIMEOUT};
 use crate::testing::add_request::request;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;

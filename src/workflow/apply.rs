@@ -14,7 +14,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
-use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxName};
 
 use super::files::{self, PlacedFile};
@@ -76,12 +76,7 @@ pub fn run(
         // 管理対象でない案件にはlock fileも作らない。
         return Err(not_managed());
     }
-    let _lock = paths::acquire_exclusive_lock(
-        &paths.lock_file(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ProjectPath,
-    )?;
+    let _lock = paths.acquire_lock()?;
 
     // lock取得後のmetadataを、以降の判定の正本とする。
     let Some(mut metadata) = metadata::load(&paths)? else {

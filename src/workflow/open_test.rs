@@ -1,6 +1,7 @@
 use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::metadata::{self, RebuildIntent};
+use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};
 use crate::testing::host::{FakeSbx, isolated_agent};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, fixture};

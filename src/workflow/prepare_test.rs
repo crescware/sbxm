@@ -5,7 +5,7 @@ use crate::config::GitIdentity;
 use crate::error::Result;
 use crate::hash::sha256_hex;
 use crate::i18n::Locale;
-use crate::paths::{AbsoluteBasePath, PRIVATE_DIR_MODE};
+use crate::paths::{self, AbsoluteBasePath, PRIVATE_DIR_MODE};
 use crate::testing::add_request::request;
 use crate::testing::archive::image_archive_bytes;
 use crate::testing::value::COMMIT;

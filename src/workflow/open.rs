@@ -9,7 +9,6 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
-use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::project::{ProjectId, SandboxLayout};
 
 use super::inventory::{self, Poll, ProjectState};
@@ -49,12 +48,7 @@ pub fn prepare(
     // 対象が決まる前にhostの状態へ触れない。
     let candidate = select::one(config, requested, prompt)?;
 
-    let _lock = paths::acquire_exclusive_lock(
-        &candidate.paths.lock_file(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ProjectPath,
-    )?;
+    let _lock = candidate.paths.acquire_lock()?;
 
     // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
     let metadata = candidate.reload()?;

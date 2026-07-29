@@ -10,7 +10,7 @@ use crate::config::{FileDeclaration, GitIdentity, HostFileSource, SandboxHomeRel
 use crate::hash::sha256_hex;
 use crate::i18n::Locale;
 use crate::metadata::{CreationMode, Provisioning, RebuildIntent};
-use crate::paths::AbsoluteBasePath;
+use crate::paths::{AbsoluteBasePath, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::project::CanonicalProjectId;
 use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::{COMMIT, DIGEST};

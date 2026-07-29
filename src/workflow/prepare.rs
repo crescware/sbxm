@@ -13,7 +13,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{self, CreationMode, ProjectMetadata};
 use crate::msg;
-use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::files::PlacedFile;
@@ -62,12 +62,7 @@ pub fn run(
     if metadata::load(&paths)?.is_none() {
         return Err(not_registered(project));
     }
-    let _lock = paths::acquire_exclusive_lock(
-        &paths.lock_file(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ProjectPath,
-    )?;
+    let _lock = paths.acquire_lock()?;
 
     // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
     let mut project_metadata = metadata::load(&paths)?.ok_or_else(|| not_registered(project))?;

@@ -12,7 +12,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{self, ProjectMetadata, RebuildIntent};
 use crate::msg;
-use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::files::{self, Conflict};
@@ -48,12 +48,7 @@ pub fn run(
     let Some(_) = metadata::load(&paths)? else {
         return Err(not_managed(project));
     };
-    let _lock = paths::acquire_exclusive_lock(
-        &paths.lock_file(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ProjectPath,
-    )?;
+    let _lock = paths.acquire_lock()?;
 
     // lock取得後の状態を正本とする。
     let mut project_metadata = metadata::load(&paths)?.ok_or_else(|| not_managed(project))?;

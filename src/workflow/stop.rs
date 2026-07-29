@@ -10,7 +10,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
-use crate::paths::{self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
+use crate::paths::ExclusiveLock;
 use crate::project::{ProjectId, SandboxName};
 
 use super::daemon;
@@ -85,18 +85,9 @@ pub fn run(
     }
 
     // 4. 複数lockはcanonical ID昇順に取得する。
-    let lock_paths: Vec<std::path::PathBuf> = selected
-        .iter()
-        .map(|candidate| candidate.paths.lock_file())
-        .collect();
-    let mut locks: Vec<ExclusiveLock> = Vec::with_capacity(lock_paths.len());
-    for path in &lock_paths {
-        locks.push(paths::acquire_exclusive_lock(
-            path,
-            LOCK_TIMEOUT,
-            PRIVATE_FILE_MODE,
-            PathScope::ProjectPath,
-        )?);
+    let mut locks: Vec<ExclusiveLock> = Vec::with_capacity(selected.len());
+    for candidate in &selected {
+        locks.push(candidate.paths.acquire_lock()?);
     }
 
     // 5. lock取得後のmetadataとstateでpreconditionを判定し直す。

@@ -10,7 +10,7 @@ use crate::config::GlobalConfig;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{CreationMode, ProjectMetadata};
 use crate::msg;
-use crate::paths::{self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::paths::{self, ExclusiveLock, PathScope, ProjectPaths};
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use super::daemon;
@@ -75,12 +75,7 @@ pub fn prepare(
     let candidate = select::one(config, requested, prompt)?;
     let paths = candidate.paths.clone();
 
-    let lock = paths::acquire_exclusive_lock(
-        &paths.lock_file(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ProjectPath,
-    )?;
+    let lock = paths.acquire_lock()?;
 
     // lockを取る前に読んだmetadataは古くなり得る。判定はlock後の内容だけで行う。
     let metadata = candidate.reload()?;

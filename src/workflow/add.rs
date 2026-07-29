@@ -17,7 +17,7 @@ use crate::metadata::{
 };
 use crate::msg;
 use crate::paths::{
-    self, ExclusiveLock, LOCK_TIMEOUT, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths,
+    self, ExclusiveLock, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths,
 };
 use crate::project::{ProjectId, SandboxName};
 
@@ -144,12 +144,7 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
     paths::ensure_private_dir(&paths.sbxm_dir(), PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
     paths::ensure_private_dir(&paths.cache_dir(), PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
 
-    let lock = paths::acquire_exclusive_lock(
-        &paths.lock_file(),
-        LOCK_TIMEOUT,
-        PRIVATE_FILE_MODE,
-        PathScope::ProjectPath,
-    )?;
+    let lock = paths.acquire_lock()?;
 
     // lock取得後にmetadataを取り直し、preconditionを判定し直す。
     let stored = metadata::load(&paths)?;
