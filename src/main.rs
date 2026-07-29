@@ -706,7 +706,6 @@ fn print_project_status(catalog: &Catalog, status: &status_project::ProjectStatu
         )
     );
 
-    // 表がないことと、観測できなかったことは別である。
     let rows: Vec<Vec<String>> = status
         .worktrees
         .iter()
