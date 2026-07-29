@@ -111,11 +111,29 @@ fn a_stopped_project_is_started_without_a_terminal_and_waited_for() {
 #[test]
 fn a_project_without_a_sandbox_is_sent_back_to_add() {
     let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
+    let project = fixture.register("Example-Org/Example-Repo");
     let host = ready(FakeSbx::listing("[]"), &project);
 
     let error = prepare_for(&fixture, &host).expect_err("open never creates a sandbox");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(diagnostic.description.id, "error-sandbox-not-created");
+    assert_eq!(
+        diagnostic.description.args,
+        vec![
+            ("project", "Example-Org/Example-Repo".to_string()),
+            ("sandbox", project.sandbox.to_string())
+        ]
+    );
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .expect("the user is told how to build the sandbox");
+    assert_eq!(remediation.id, "remediation-sandbox-not-created");
+    assert_eq!(
+        remediation.args,
+        vec![("command", "sbxm add Example-Org/Example-Repo".to_string())]
+    );
     assert!(!host.ran("daemon stop"), "the daemon is left alone");
 }
 
