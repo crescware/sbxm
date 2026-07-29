@@ -175,7 +175,7 @@ fn supported_value_name() -> &'static str {
         .as_str()
 }
 
-/// `--lang`の不正値に対するerror。configを読まずに表示する。
+/// `--lang`の不正値に対するerror。configのvalidationより先に報告する。
 pub fn invalid_lang_error(value: &str) -> Error {
     Error::new(
         ErrorId::InvalidLang,

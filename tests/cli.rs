@@ -225,12 +225,30 @@ fn an_unsupported_language_is_reported_before_any_configuration_error() {
         run.stderr
     );
 
-    // 読めるconfigがあっても、`--lang`の不正はそのまま失敗する。
+    // 読めるconfigがあっても、`--lang`の不正はそのまま失敗する。診断の本文は
+    // configが宣言したlocaleで出す。resourceを複製せず、2回の実行の差で見る。
     let base = home.path().join("Projects");
+    write_config(home.path(), &base, "en");
+    let english = sbxm(home.path(), &["--lang", "zz", "ls"]);
+    assert_eq!(english.code, 1);
+    assert!(
+        english.stderr.contains("invalid-lang"),
+        "{}",
+        english.stderr
+    );
+
     write_config(home.path(), &base, "ja");
-    let run = sbxm(home.path(), &["--lang", "zz", "ls"]);
-    assert_eq!(run.code, 1);
-    assert!(run.stderr.contains("invalid-lang"), "{}", run.stderr);
+    let japanese = sbxm(home.path(), &["--lang", "zz", "ls"]);
+    assert_eq!(japanese.code, 1);
+    assert!(
+        japanese.stderr.contains("invalid-lang"),
+        "{}",
+        japanese.stderr
+    );
+    assert_ne!(
+        english.stderr, japanese.stderr,
+        "the diagnostic must be rendered in the locale the config declares"
+    );
 }
 
 #[test]
