@@ -202,7 +202,6 @@ pub fn remove(host: &dyn HostEnvironment, name: &SandboxName, poll: Poll) -> Res
     // promptに答える手段がなく、対話実行でも二度訊くことになる。
     crate::progress::step(&msg!("progress-removing-sandbox"));
     let args = ["rm", "--force", name.as_str()];
-    // 削除の進捗は外部toolが出したまま転送する。
     let spec = CommandSpec::passthrough("sbx", &args)
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);
