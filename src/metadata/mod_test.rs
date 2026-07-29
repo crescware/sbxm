@@ -35,7 +35,7 @@ fn a_missing_metadata_file_is_not_an_error_but_a_symlinked_one_is() {
     assert_eq!(load(&project).unwrap(), None);
 
     fs::create_dir_all(project.sbxm_dir()).unwrap();
-    let real = dir.path().join("elsewhere.toml");
+    let real = dir.path().join("elsewhere.yaml");
     fs::write(&real, render(&attached("example-org", "example-repo"))).unwrap();
     std::os::unix::fs::symlink(&real, project.metadata_file()).unwrap();
 

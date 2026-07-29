@@ -13,7 +13,7 @@ use super::{DiscoveredProject, read_optional};
 
 /// `base_path`直下の案件metadataをすべて読む。
 ///
-/// 対象は`<base-path>/*/*.project/.sbxm/project.toml`だけとし、directory entryと
+/// 対象は`<base-path>/*/*.project/.sbxm/project.yaml`だけとし、directory entryと
 /// metadata fileのsymlinkを追跡しない。1件の破損を無視して部分的な一覧を返さず、
 /// 検出した不整合はすべて並べて返す。
 pub fn discover(base: &AbsoluteBasePath) -> Result<Vec<DiscoveredProject>> {
@@ -29,7 +29,7 @@ pub fn discover(base: &AbsoluteBasePath) -> Result<Vec<DiscoveredProject>> {
             {
                 continue;
             }
-            let metadata_path = project_root.join(".sbxm").join("project.toml");
+            let metadata_path = project_root.join(".sbxm").join("project.yaml");
             let text = match read_optional(&metadata_path) {
                 Ok(Some(text)) => text,
                 Ok(None) => continue,

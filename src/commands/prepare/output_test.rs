@@ -53,7 +53,7 @@ fn the_declared_file_is_placed_once_and_left_alone_afterwards() {
         world
             .digests
             .borrow()
-            .get("/home/agent/.config/example/config.toml")
+            .get("/home/agent/.config/example/settings.yaml")
             .map(String::as_str),
         Some(sha256_hex(b"declared = true\n").as_str()),
         "the declared file reaches the destination it was declared for"
@@ -66,13 +66,13 @@ fn the_declared_file_is_placed_once_and_left_alone_afterwards() {
     // 同じ内容の再配置は、Sandboxへ書き込まない。
     let world = World::new();
     world.digests.borrow_mut().insert(
-        "/home/agent/.config/example/config.toml".to_string(),
+        "/home/agent/.config/example/settings.yaml".to_string(),
         sha256_hex(b"declared = true\n"),
     );
     world
         .present
         .borrow_mut()
-        .insert("/home/agent/.config/example/config.toml".to_string());
+        .insert("/home/agent/.config/example/settings.yaml".to_string());
     let output = bench.build(&world, &request).expect("build");
     assert_eq!(output.files[0].placement, Placement::Unchanged);
     assert!(

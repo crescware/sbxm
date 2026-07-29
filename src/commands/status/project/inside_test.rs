@@ -93,7 +93,7 @@ fn an_unrelated_project_does_not_decide_this_one() {
         .as_path()
         .join("broken/broken.project/.sbxm");
     std::fs::create_dir_all(&broken).unwrap();
-    std::fs::write(broken.join("project.toml"), "version = 2\n").unwrap();
+    std::fs::write(broken.join("project.yaml"), "version: 2\n").unwrap();
 
     let host = without_image(
         FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "stopped"))),

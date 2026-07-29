@@ -69,7 +69,7 @@ error-reserved-repository-name = { $value } is reserved and cannot be used as a 
 
 error-config-missing = No global configuration was found at { $path }.
 error-config-unreadable = The global configuration at { $path } could not be read: { $detail }
-error-config-invalid-syntax = The global configuration at { $path } is not valid TOML: { $detail }
+error-config-invalid-syntax = The global configuration at { $path } is not valid YAML: { $detail }
 error-config-unknown-version = The global configuration at { $path } declares version { $version }, but this build supports { $supported }.
 error-config-missing-field = The global configuration at { $path } is missing the required field { $field }.
 error-config-invalid-value = Field { $field } in { $path } is not valid: { $detail }
@@ -81,7 +81,7 @@ error-file-declaration-invalid-destination = Declared file { $index } has an inv
 warning-config-unknown-key = Unknown key { $key } in { $path } was ignored.
 
 error-metadata-unreadable = The project metadata at { $path } could not be read: { $detail }
-error-metadata-invalid-syntax = The project metadata at { $path } is not valid TOML: { $detail }
+error-metadata-invalid-syntax = The project metadata at { $path } is not valid YAML: { $detail }
 error-metadata-unknown-version = The project metadata at { $path } declares version { $version }, but this build supports { $supported }.
 error-metadata-missing-field = The project metadata at { $path } is missing the required field { $field }.
 error-metadata-invalid-value = Field { $field } in { $path } is not valid: { $detail }

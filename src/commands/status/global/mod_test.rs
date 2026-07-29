@@ -53,7 +53,7 @@ fn a_missing_configuration_points_at_init_without_stopping_the_other_checks() {
 
 #[test]
 fn an_invalid_configuration_is_diagnosed_rather_than_repaired() {
-    let (_dir, location) = location_with_config(Some("version = 99\n"));
+    let (_dir, location) = location_with_config(Some("version: 99\n"));
     let status = diagnose(&location, &FakeHost::macos());
 
     assert_eq!(status_of(&status, "status-item-config"), StatusValue::Error);

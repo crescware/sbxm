@@ -37,7 +37,7 @@ fn discovery_looks_at_the_documented_shape_only() {
     fs::create_dir_all(dir.path().join("owner/deeper/nested.project/.sbxm")).unwrap();
     fs::write(
         dir.path()
-            .join("owner/deeper/nested.project/.sbxm/project.toml"),
+            .join("owner/deeper/nested.project/.sbxm/project.yaml"),
         render(&attached("owner", "nested")),
     )
     .unwrap();
@@ -79,7 +79,7 @@ fn one_broken_project_stops_the_whole_listing() {
         "example-repo",
         &render(&attached("example-org", "example-repo")),
     );
-    write_project(dir.path(), "broken-org", "broken-repo", "version = 2\n");
+    write_project(dir.path(), "broken-org", "broken-repo", "version: 2\n");
 
     let error = discover(&base).expect_err("a partial listing is never returned");
     assert!(

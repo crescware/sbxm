@@ -32,7 +32,7 @@ pub fn bench() -> Bench {
     )
     .expect("the workspace root belongs to the current user only");
 
-    let source = home.path().join("declared.toml");
+    let source = home.path().join("declared.yaml");
     fs::write(&source, b"declared = true\n").expect("write the declared file");
 
     let config = GlobalConfig {
@@ -45,8 +45,10 @@ pub fn bench() -> Bench {
         files: vec![crate::config::FileDeclaration {
             source: crate::config::HostFileSource::new(&paths::display(&source))
                 .expect("valid source"),
-            destination: crate::config::SandboxHomeRelativePath::new(".config/example/config.toml")
-                .expect("valid destination"),
+            destination: crate::config::SandboxHomeRelativePath::new(
+                ".config/example/settings.yaml",
+            )
+            .expect("valid destination"),
         }],
     };
     Bench {

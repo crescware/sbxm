@@ -1,10 +1,8 @@
-//! `project.toml`の読み取り。
+//! `project.yaml`の読み取り。
 //!
 //! 解釈できない値から目標構成を推測せず、validation規則に合わない文書は拒否する。
 
 use std::path::Path;
-
-use serde::Deserialize;
 
 use crate::error::{Error, ErrorId, Result};
 use crate::git;
@@ -12,48 +10,28 @@ use crate::msg;
 use crate::paths::{self};
 use crate::project::{CanonicalProjectId, ProjectId};
 
+use super::document::RawMetadata;
 use super::{
     CreationMode, DOCUMENT, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata, Provisioning,
     RebuildIntent,
 };
 
-/// TOMLの生表現。structへ変換する前に必須項目と値を検査する。
-#[derive(Debug, Deserialize)]
-pub(super) struct RawMetadata {
-    version: Option<i64>,
-    owner: Option<String>,
-    repository: Option<String>,
-    canonical_id: Option<String>,
-    provisioning: Option<RawProvisioning>,
-    rebuild: Option<RawRebuild>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RawProvisioning {
-    mode: Option<String>,
-    start_ref: Option<String>,
-    requested_worktrees: Option<i64>,
-    dockerfile_sha256: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RawRebuild {
-    target_dockerfile_sha256: Option<String>,
-    previous_dockerfile_sha256: Option<String>,
-}
-
 /// metadataのtextを検証する。
 pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
-    let raw: RawMetadata = toml::from_str(text).map_err(|error: toml::de::Error| {
-        Error::new(
-            ErrorId::MetadataInvalidSyntax,
-            msg!(
-                "error-metadata-invalid-syntax",
-                path = paths::display(path),
-                detail = error.message()
-            ),
-        )
-    })?;
+    // 空のdocumentはnullとして読める。keyを1つも持たないmappingと同じ扱いにし、
+    // 欠落したfieldをsyntax errorではなく名前で報告する。
+    let raw = yaml_serde::from_str::<Option<RawMetadata>>(text)
+        .map_err(|error: yaml_serde::Error| {
+            Error::new(
+                ErrorId::MetadataInvalidSyntax,
+                msg!(
+                    "error-metadata-invalid-syntax",
+                    path = paths::display(path),
+                    detail = error
+                ),
+            )
+        })?
+        .unwrap_or_default();
 
     let missing = |field: &'static str| {
         Error::new(
@@ -116,25 +94,29 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         )
     })?;
 
-    let start_ref_value = provisioning
+    // keyの欠落は記録そのものの欠落、`null`は起点branchが未確定であることを指す。
+    let start_ref = match provisioning
         .start_ref
-        .ok_or_else(|| missing("provisioning.start_ref"))?;
-    let start_ref = if start_ref_value.is_empty() {
-        if mode == CreationMode::Detached {
-            return Err(invalid(
-                "provisioning.start_ref",
-                format!("{} mode requires an explicit start branch", mode),
-            ));
+        .ok_or_else(|| missing("provisioning.start_ref"))?
+    {
+        None => {
+            if mode == CreationMode::Detached {
+                return Err(invalid(
+                    "provisioning.start_ref",
+                    format!("{mode} mode requires an explicit start branch"),
+                ));
+            }
+            None
         }
-        None
-    } else {
-        git::validate_branch_name(&start_ref_value).map_err(|_| {
-            invalid(
-                "provisioning.start_ref",
-                format!("{start_ref_value} is not a branch name"),
-            )
-        })?;
-        Some(start_ref_value)
+        Some(value) => {
+            git::validate_branch_name(&value).map_err(|_| {
+                invalid(
+                    "provisioning.start_ref",
+                    format!("{value} is not a branch name"),
+                )
+            })?;
+            Some(value)
+        }
     };
 
     let requested = provisioning

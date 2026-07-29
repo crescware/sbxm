@@ -115,7 +115,7 @@ fn errors_show_the_stable_id_the_description_and_the_remediation() {
             ErrorId::ConfigMissing,
             msg!(
                 "error-config-missing",
-                path = "/home/example/.sbxm/config.toml"
+                path = "/home/example/.sbxm/config.yaml"
             ),
         )
         .remediation(msg!("remediation-run-init")),
@@ -126,7 +126,7 @@ fn errors_show_the_stable_id_the_description_and_the_remediation() {
     let text = String::from_utf8(buffer).unwrap();
 
     assert!(text.starts_with("error: config-missing\n"), "{text}");
-    assert!(text.contains("/home/example/.sbxm/config.toml"), "{text}");
+    assert!(text.contains("/home/example/.sbxm/config.yaml"), "{text}");
     assert!(text.contains("sbxm init"), "{text}");
 }
 

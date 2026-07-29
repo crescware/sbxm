@@ -375,7 +375,7 @@ fn a_broken_project_anywhere_under_the_base_path_stops_registration() {
     let (dir, config) = setup();
     let broken = dir.path().join("broken-org").join("broken-repo.project");
     fs::create_dir_all(broken.join(".sbxm")).unwrap();
-    fs::write(broken.join(".sbxm").join("project.toml"), "version = 2\n").unwrap();
+    fs::write(broken.join(".sbxm").join("project.yaml"), "version: 2\n").unwrap();
 
     let error = register(&config, &request("example-org/example-repo", None, None))
         .expect_err("a listing that cannot be trusted stops the run");

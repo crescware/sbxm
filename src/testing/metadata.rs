@@ -40,7 +40,7 @@ pub fn write_project(base: &Path, owner: &str, repository: &str, text: &str) -> 
     let dir = root.join(".sbxm");
     std::fs::create_dir_all(&dir).expect("create .sbxm");
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("mode");
-    let path = dir.join("project.toml");
+    let path = dir.join("project.yaml");
     std::fs::write(&path, text).expect("write metadata");
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("mode");
     root

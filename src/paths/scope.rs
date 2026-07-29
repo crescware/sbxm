@@ -13,7 +13,7 @@ use super::inspect::{display, format_mode};
 /// 対処が変わる。判定そのものは共通で、報告だけを用途ごとに分ける。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathScope {
-    /// `~/.sbxm/config.toml`のようなglobal設定file。
+    /// `~/.sbxm/config.yaml`のようなglobal設定file。
     ConfigFile,
     /// `~/.sbxm`のようなglobal設定directory。
     ConfigDir,

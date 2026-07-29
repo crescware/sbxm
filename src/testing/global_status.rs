@@ -114,7 +114,7 @@ pub fn location_with_config(text: Option<&str>) -> (tempfile::TempDir, ConfigLoc
 
 pub fn valid_config(base: &Path) -> String {
     format!(
-        "version = 1\nlanguage = \"en\"\nbase_path = \"{}\"\n\n[git]\nuser_name = \"Example User\"\nuser_email = \"user@example.com\"\n",
+        "version: 1\nlanguage: en\nbase_path: \"{}\"\n\ngit:\n  user_name: Example User\n  user_email: user@example.com\n",
         base.display()
     )
 }

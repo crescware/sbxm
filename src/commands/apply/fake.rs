@@ -196,7 +196,7 @@ pub fn listing(workspace_root: &Path, state: &str) -> String {
 pub fn declaration(source: &Path) -> FileDeclaration {
     FileDeclaration {
         source: HostFileSource::new(&crate::paths::display(source)).unwrap(),
-        destination: SandboxHomeRelativePath::new(".config/example/config.toml").unwrap(),
+        destination: SandboxHomeRelativePath::new(".config/example/settings.yaml").unwrap(),
     }
 }
 
