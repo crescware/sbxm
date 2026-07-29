@@ -373,6 +373,48 @@ fn sandbox_state_is_reported_from_the_structured_output() {
 }
 
 #[test]
+fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() {
+    let (_dir, location) = location_with_config(None);
+
+    for observed in ["Isolated", "Open"] {
+        let host = FakeHost::macos()
+            .responding(
+                "sbx policy ls",
+                &format!(r#"[{{"name":"{observed}","active":true}}]"#),
+            )
+            .responding("sbx daemon status", "Status: running\n");
+        let status = diagnose(&location, &host);
+
+        assert_eq!(
+            status_of(&status, "status-item-network-policy"),
+            StatusValue::Error,
+            "{observed} is not {EXPECTED_NETWORK_POLICY}"
+        );
+        let diagnostic = status
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.id == ErrorId::NetworkPolicyMismatch)
+            .unwrap_or_else(|| panic!("{observed} must be diagnosed: {:?}", status.diagnostics));
+        assert!(
+            diagnostic
+                .description
+                .args
+                .contains(&("observed", observed.to_string())),
+            "{:?}",
+            diagnostic.description.args
+        );
+        assert!(
+            diagnostic
+                .description
+                .args
+                .contains(&("expected", EXPECTED_NETWORK_POLICY.to_string())),
+            "{:?}",
+            diagnostic.description.args
+        );
+    }
+}
+
+#[test]
 fn a_version_that_cannot_be_parsed_stops_the_dependent_checks() {
     let (_dir, location) = location_with_config(None);
     let host = FakeHost::macos().responding("sbx version", "unreleased build\n");

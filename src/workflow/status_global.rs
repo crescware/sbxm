@@ -193,7 +193,6 @@ fn check_platform(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
             }
         }
         (Err(error), _) | (_, Err(error)) => {
-            // 観測できない場合に推測した状態を返さない。
             push(status, "status-item-platform", StatusValue::Error);
             status.diagnostics.push(Diagnostic::new(
                 ErrorId::PlatformUnobservable,
@@ -447,7 +446,6 @@ fn check_network_policy(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
                 push(status, "status-item-network-policy", StatusValue::Ready);
             }
             Ok(observed) => {
-                // より制限が強いpolicyも動作と安全性を推測して受け入れない。
                 push(status, "status-item-network-policy", StatusValue::Error);
                 status.diagnostics.push(
                     Diagnostic::new(
