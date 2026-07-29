@@ -1,7 +1,7 @@
 use super::*;
-use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+use crate::command::OutputPolicy;
 use crate::hash::sha256_hex;
-use crate::testing::host::{FakeSbx, isolated_agent, registered_secret};
+use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent, registered_secret};
 use crate::testing::image::template_listing;
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, fixture, project_id};
@@ -258,11 +258,7 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
         "the run continued from the creation step: {:?}",
         host.calls()
     );
-    // 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
-    let creation = host.spec("create --name");
-    assert_eq!(creation.output, OutputPolicy::Passthrough);
-    assert_eq!(creation.env, EnvPolicy::InheritWithoutSshAgent);
-    assert_eq!(creation.timeout, TimeoutClass::SandboxLifecycle);
+    assert_lifecycle(&host, "create --name");
 }
 
 #[test]

@@ -1,8 +1,8 @@
 use super::*;
-use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+use crate::command::{OutputPolicy, TimeoutClass};
 use crate::metadata::{self, RebuildIntent};
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};
-use crate::testing::host::{FakeSbx, isolated_agent};
+use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
@@ -99,13 +99,7 @@ fn a_stopped_project_is_started_without_a_terminal_and_waited_for() {
     prepare_for(&fixture, &host).expect("prepare");
 
     assert!(host.ran("/bin/true"), "{:?}", host.calls());
-    let start = host.spec("/bin/true");
-    assert_eq!(
-        start.output,
-        OutputPolicy::Passthrough,
-        "the runtime's own progress is shown as it is"
-    );
-    assert_eq!(start.env, EnvPolicy::InheritWithoutSshAgent);
+    assert_lifecycle(&host, "/bin/true");
 }
 
 #[test]

@@ -1,9 +1,9 @@
 use super::*;
-use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+use crate::command::{EnvPolicy, OutputPolicy};
 use crate::error::ExitCode;
 use crate::metadata;
 use crate::paths::PRIVATE_FILE_MODE;
-use crate::testing::host::FakeSbx;
+use crate::testing::host::{FakeSbx, assert_lifecycle};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
@@ -91,11 +91,7 @@ fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() {
     .expect("prepare");
     execute(&host, &prepared, poll()).expect("destroy");
 
-    // 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
-    let removal = host.spec(&format!("rm --force {}", project.sandbox));
-    assert_eq!(removal.output, OutputPolicy::Passthrough);
-    assert_eq!(removal.env, EnvPolicy::InheritWithoutSshAgent);
-    assert_eq!(removal.timeout, TimeoutClass::SandboxLifecycle);
+    assert_lifecycle(&host, &format!("rm --force {}", project.sandbox));
 
     // 判定に使う出力はsbxmが読む。
     let listing = host.spec("ls --json");

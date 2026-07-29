@@ -1,6 +1,8 @@
 //! Sandboxを持つhostのfake。
 
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::command::{
+    CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, OutputPolicy, TimeoutClass,
+};
 use crate::error::Result;
 use std::cell::RefCell;
 
@@ -69,6 +71,28 @@ impl FakeSbx {
             .unwrap_or_else(|| panic!("no command matched {needle}"))
             .clone()
     }
+}
+
+/// Sandboxのlifecycleを動かす指定であることを確かめる。
+///
+/// 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
+pub fn assert_lifecycle(host: &FakeSbx, needle: &str) {
+    let spec = host.spec(needle);
+    assert_eq!(
+        spec.output,
+        OutputPolicy::Passthrough,
+        "{needle} shows the external tool's own progress"
+    );
+    assert_eq!(
+        spec.env,
+        EnvPolicy::InheritWithoutSshAgent,
+        "{needle} does not hand the SSH Agent to the sandbox"
+    );
+    assert_eq!(
+        spec.timeout,
+        TimeoutClass::SandboxLifecycle,
+        "{needle} runs under the lifecycle timeout"
+    );
 }
 
 /// custom secretが登録済みで、placeholderも解決できるSandbox。
