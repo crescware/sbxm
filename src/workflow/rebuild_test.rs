@@ -4,7 +4,7 @@ use crate::hash::sha256_hex;
 use crate::testing::host::{FakeSbx, isolated_agent, registered_secret};
 use crate::testing::image::template_listing;
 use crate::testing::poll::poll;
-use crate::testing::project::{fixture, project_id};
+use crate::testing::project::{Fixture, Registered, fixture, project_id};
 use crate::testing::protection::clean_host;
 use crate::testing::value::COMMIT;
 use std::os::unix::fs::PermissionsExt;
@@ -458,22 +458,11 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
     );
 }
 
-#[test]
-fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
-    let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
-    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
-    let target = sha256_hex(b"FROM scratch\n");
-
-    // Sandbox削除の直後で中断した状態を作る。
-    let mut metadata = project.metadata.clone();
-    metadata.rebuild = Some(RebuildIntent {
-        target_dockerfile_sha256: target.clone(),
-        previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
-    });
-    metadata::update(&project.paths, &metadata).unwrap();
-
-    let image = image::image_name(&project.sandbox, &target);
+/// 固定した世代の成果物が揃い、再作成後の検証も通るhost。
+///
+/// 中断した`rebuild`の続きを、そのまま最後まで走らせられる状態を表す。
+fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> FakeSbx {
+    let image = image::image_name(&project.sandbox, target);
     let workspace = fixture.workspace_root.join(project.sandbox.as_str());
     std::fs::create_dir_all(&workspace).unwrap();
     std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -503,7 +492,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
     let layout = SandboxLayout::new(&project.metadata.canonical_id);
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
-    let host = verified(host, project.sandbox.as_str())
+    verified(host, project.sandbox.as_str())
         .answering(
             &format!(
                 "exec {} -- git --git-dir {git_dir} rev-parse --is-bare-repository",
@@ -559,7 +548,25 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
             ),
             0,
             "refs/heads/main\n",
-        );
+        )
+}
+
+#[test]
+fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+    let target = sha256_hex(b"FROM scratch\n");
+
+    // Sandbox削除の直後で中断した状態を作る。
+    let mut metadata = project.metadata.clone();
+    metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: target.clone(),
+        previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&project.paths, &metadata).unwrap();
+
+    let host = continuing(&fixture, &project, &target);
 
     let output = run(
         &fixture.config,
@@ -594,5 +601,56 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
     assert_eq!(
         host.spec("template ls --json").output,
         OutputPolicy::Capture
+    );
+}
+
+#[test]
+fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let target = sha256_hex(b"FROM scratch\n");
+
+    // 世代を固定したあとに、Dockerfileがさらに書き換えられた状態を作る。
+    let mut metadata = project.metadata.clone();
+    metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: target.clone(),
+        previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&project.paths, &metadata).unwrap();
+    std::fs::write(project.paths.dockerfile(), "FROM alpine\n").unwrap();
+
+    let host = continuing(&fixture, &project, &target);
+    let output = run(
+        &fixture.config,
+        &project_id("example-org/example-repo"),
+        &host,
+        &fixture.workspace_root,
+        poll(),
+    )
+    .expect("the fixed generation is completed");
+
+    assert_eq!(
+        output.applied, target,
+        "the generation that was fixed is the one that is applied"
+    );
+    assert_eq!(
+        output
+            .warnings
+            .iter()
+            .map(|message| message.id)
+            .collect::<Vec<_>>(),
+        vec!["warning-dockerfile-changed-during-rebuild"]
+    );
+    let stored = metadata::load(&project.paths).unwrap().expect("present");
+    assert_eq!(
+        stored.provisioning.dockerfile_sha256, target,
+        "the edit is not recorded as applied"
+    );
+    assert!(stored.rebuild.is_none());
+    let edited = image::image_name(&project.sandbox, &sha256_hex(b"FROM alpine\n"));
+    assert!(
+        !host.ran(&edited),
+        "the edit is left for the next rebuild: {:?}",
+        host.calls()
     );
 }

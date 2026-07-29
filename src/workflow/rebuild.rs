@@ -102,7 +102,6 @@ pub fn run(
 
     let mut warnings = built.warnings;
     if current != target {
-        // intent記録後の編集は上書きせず、次の`rebuild`対象として案内する。
         warnings.push(msg!(
             "warning-dockerfile-changed-during-rebuild",
             project = locked.metadata.display_id(),
