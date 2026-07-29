@@ -58,11 +58,6 @@ pub fn prepare(
     require_docker(host)?;
 
     let entries = daemon::list(host)?;
-    if inventory::state_of(&entries, &metadata, workspace_root)? == ProjectState::NotCreated {
-        // `open`はSandboxを新規作成しない。
-        return Err(inventory::not_created(&metadata, name.as_str()));
-    }
-
     match inventory::state_of(&entries, &metadata, workspace_root)? {
         ProjectState::Running => {}
         ProjectState::Stopped => inventory::start(host, name.as_str())?,
