@@ -151,6 +151,41 @@ fn a_project_that_is_not_managed_is_named_in_the_diagnostic() {
 }
 
 #[test]
+fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it() {
+    let fixture = fixture();
+    let project = fixture.register("Example-Org/Example-Repo");
+
+    let candidate = one(
+        &fixture.config,
+        Some(&project_id("example-org/example-repo")),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .expect("the project is managed when it is selected");
+
+    // 選択とlock後の読み直しのあいだに、並行するdestroyがmetadataを消すことがある。
+    std::fs::remove_file(project.paths.metadata_file()).expect("remove the metadata");
+
+    let error = candidate
+        .lock()
+        .expect_err("a project without metadata is no longer managed");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(
+        diagnostic.description.args,
+        vec![("project", "Example-Org/Example-Repo".to_string())],
+        "the stored spelling is reported, not the one the argument used"
+    );
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .expect("the user is told how to register the project again");
+    assert_eq!(
+        remediation.args,
+        vec![("command", "sbxm add Example-Org/Example-Repo".to_string())]
+    );
+}
+
+#[test]
 fn an_interrupted_prompt_is_a_cancel_and_any_other_read_failure_is_reported() {
     let canceled = unreadable_prompt(std::io::Error::from(std::io::ErrorKind::Interrupted));
     assert_eq!(canceled.exit_code(), ExitCode::Canceled);
