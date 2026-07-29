@@ -24,7 +24,7 @@ fn fake_executable(dir: &Path, name: &str, body: &str) -> PathBuf {
 fn run_fake(spec: &CommandSpec) -> Result<CommandOutcome> {
     for _ in 0..50 {
         match run(spec) {
-            Err(error) if error.contains(ErrorId::ExternalCommandSpawnFailed) => {
+            Err(error) if error.contains_id(ErrorId::ExternalCommandSpawnFailed) => {
                 std::thread::sleep(Duration::from_millis(10));
             }
             other => return other,

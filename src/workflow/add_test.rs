@@ -378,7 +378,10 @@ fn a_broken_project_anywhere_under_the_base_path_stops_registration() {
 
     let error = register(&config, &request("example-org/example-repo", None, None))
         .expect_err("a listing that cannot be trusted stops the run");
-    assert!(error.contains(ErrorId::MetadataUnknownVersion), "{error:?}");
+    assert!(
+        error.contains_id(ErrorId::MetadataUnknownVersion),
+        "{error:?}"
+    );
     assert!(
         !dir.path().join("example-org").exists(),
         "nothing may be created while the listing is broken"

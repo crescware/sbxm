@@ -442,15 +442,10 @@ impl Error {
             .any(|diagnostic| diagnostic.id == id)
     }
 
-    /// 最初の診断のerror ID。testと呼び出し側の分岐に使う。
+    /// 最初の診断のerror ID。testの検証に使う。
     #[cfg(test)]
     pub fn first_id(&self) -> Option<ErrorId> {
         self.diagnostics().first().map(|d| d.id)
-    }
-
-    #[cfg(test)]
-    pub fn contains(&self, id: ErrorId) -> bool {
-        self.diagnostics().iter().any(|d| d.id == id)
     }
 }
 

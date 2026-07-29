@@ -290,7 +290,10 @@ fn one_broken_project_stops_the_whole_listing() {
     write_project(dir.path(), "broken-org", "broken-repo", "version = 2\n");
 
     let error = discover(&base).expect_err("a partial listing is never returned");
-    assert!(error.contains(ErrorId::MetadataUnknownVersion), "{error:?}");
+    assert!(
+        error.contains_id(ErrorId::MetadataUnknownVersion),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -306,7 +309,10 @@ fn a_project_stored_outside_its_derived_path_is_refused() {
     );
 
     let error = discover(&base).expect_err("the derived path is the only place a project lives");
-    assert!(error.contains(ErrorId::MetadataPathMismatch), "{error:?}");
+    assert!(
+        error.contains_id(ErrorId::MetadataPathMismatch),
+        "{error:?}"
+    );
 }
 
 fn registered(canonical_id: &str, sandbox_name: &str, root: &str) -> Registered {
