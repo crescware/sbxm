@@ -1,7 +1,7 @@
 use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::metadata::{self, RebuildIntent};
-use crate::testing::host::FakeSbx;
+use crate::testing::host::{FakeSbx, isolated_agent};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, fixture};
 use crate::testing::prompt::ScriptedPrompt;
@@ -16,22 +16,19 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
         layout.bare_root(),
         layout.worktree_name(0)
     );
-    host.answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
-        .answering(
-            &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),
-            1,
-            "",
-        )
-        .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 2, "")
-        .answering(
-            &format!(
-                "exec {} -- git --git-dir {} worktree list --porcelain -z",
-                project.sandbox,
-                layout.bare_git_dir()
-            ),
-            0,
-            &listing,
-        )
+    let host = isolated_agent(
+        host.answering("version --format {{.Server.Version}}", 0, "27.0.3\n"),
+        project.sandbox.as_str(),
+    );
+    host.answering(
+        &format!(
+            "exec {} -- git --git-dir {} worktree list --porcelain -z",
+            project.sandbox,
+            layout.bare_git_dir()
+        ),
+        0,
+        &listing,
+    )
 }
 
 fn prepare_for(fixture: &Fixture, host: &FakeSbx) -> Result<Prepared> {

@@ -71,6 +71,32 @@ impl FakeSbx {
     }
 }
 
+/// custom secretが登録済みで、placeholderも解決できるSandbox。
+pub fn registered_secret(host: FakeSbx, sandbox: &str) -> FakeSbx {
+    host.answering(
+        &format!("secret ls {sandbox}"),
+        0,
+        &format!(
+            "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
+            crate::workflow::secret::GITHUB_HOSTS.join(" ")
+        ),
+    )
+    .answering(
+        &format!(
+            "exec {sandbox} -- sh -c {}",
+            crate::workflow::secret::placeholder_probe()
+        ),
+        0,
+        "sbx-cs-example",
+    )
+}
+
+/// host側のSSH Agentへ到達できないSandbox。
+pub fn isolated_agent(host: FakeSbx, sandbox: &str) -> FakeSbx {
+    host.answering(&format!("exec {sandbox} -- printenv SSH_AUTH_SOCK"), 1, "")
+        .answering(&format!("exec {sandbox} -- ssh-add -L"), 2, "")
+}
+
 impl HostEnvironment for FakeSbx {
     fn command_exists(&self, _program: &str) -> bool {
         true

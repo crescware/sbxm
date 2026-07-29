@@ -1,7 +1,7 @@
 use super::*;
 use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::hash::sha256_hex;
-use crate::testing::host::FakeSbx;
+use crate::testing::host::{FakeSbx, isolated_agent, registered_secret};
 use crate::testing::image::template_listing;
 use crate::testing::poll::poll;
 use crate::testing::project::{fixture, project_id};
@@ -11,21 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 
 /// 再作成後の検証を通るSandbox。secretがあり、SSH Agentへ到達できない。
 fn verified(host: FakeSbx, name: &str) -> FakeSbx {
-    host.answering(
-            &format!("secret ls {name}"),
-            0,
-            &format!(
-                    "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
-                    crate::workflow::secret::GITHUB_HOSTS.join(" ")
-                ),
-        )
-        .answering(&format!("exec {name} -- printenv SSH_AUTH_SOCK"), 1, "")
-        .answering(&format!("exec {name} -- ssh-add -L"), 2, "")
-        .answering(
-            &format!("exec {name} -- sh -c {}", secret::placeholder_probe()),
-            0,
-            "sbx-cs-example",
-        )
+    isolated_agent(registered_secret(host, name), name)
 }
 
 #[test]
@@ -512,14 +498,6 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
                 "template ls --json",
                 0,
                 &template_listing(&image),
-            )
-            .answering(
-                &format!("secret ls {}", project.sandbox),
-                0,
-                &format!(
-                    "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
-                    crate::workflow::secret::GITHUB_HOSTS.join(" ")
-                ),
             );
     // 再作成後のSandbox内で、共有repositoryとworktreeが期待どおりに揃う。
     let layout = SandboxLayout::new(&project.metadata.canonical_id);

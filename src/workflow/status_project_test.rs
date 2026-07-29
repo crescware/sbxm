@@ -1,5 +1,5 @@
 use super::*;
-use crate::testing::host::FakeSbx;
+use crate::testing::host::{FakeSbx, isolated_agent, registered_secret};
 use crate::testing::project::{Registered, fixture, project_id};
 
 fn value_of(status: &ProjectStatus, item: &str) -> Value {
@@ -287,30 +287,11 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() {
                 ),
                 0,
                 "1 .M N... 100644 100644 100644 abc abc file.txt\0",
-            )
-            .answering(
-                &format!("secret ls {}", project.sandbox),
-                0,
-                &format!(
-                    "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
-                    crate::workflow::secret::GITHUB_HOSTS.join(" ")
-                ),
-            )
-            .answering(
-                &format!(
-                    "exec {} -- sh -c {}",
-                    project.sandbox,
-                    super::super::secret::placeholder_probe()
-                ),
-                0,
-                "sbx-cs-example",
-            )
-            .answering(
-                &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),
-                1,
-                "",
-            )
-            .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 2, "");
+            );
+    let host = isolated_agent(
+        registered_secret(host, project.sandbox.as_str()),
+        project.sandbox.as_str(),
+    );
 
     let status = diagnose(
         &fixture.config,
