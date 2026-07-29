@@ -40,7 +40,7 @@ brew install crescware/tap/sbxm
 sbxm init
 ```
 
-The interactive setup creates `~/.sbxm/config.toml` and asks for:
+The interactive setup creates `~/.sbxm/config.yaml` and asks for:
 
 - the directory where host-side project clones should live;
 - the Git name and email to use inside sandboxes.
@@ -178,16 +178,15 @@ are detached.
 
 ### Place configuration files
 
-Declare host files in `~/.sbxm/config.toml`:
+Declare host files in `~/.sbxm/config.yaml`:
 
-```toml
-[[files]]
-source = "/Users/you/.config/example/config.toml"
-destination = ".config/example/config.toml"
+```yaml
+files:
+  - source: /Users/you/.gitconfig
+    destination: .gitconfig
 
-[[files]]
-source = "/Users/you/.config/another-tool/settings.toml"
-destination = ".config/another-tool/settings.toml"
+  - source: /Users/you/.config/another-tool/settings.yaml
+    destination: .config/another-tool/settings.yaml
 ```
 
 The destination is relative to the sandbox user's home directory. Declarations

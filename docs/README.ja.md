@@ -39,7 +39,7 @@ brew install crescware/tap/sbxm
 sbxm init
 ```
 
-対話形式のセットアップによって`~/.sbxm/config.toml`が作成され、次の項目を尋ねられます。
+対話形式のセットアップによって`~/.sbxm/config.yaml`が作成され、次の項目を尋ねられます。
 
 - ホスト側のプロジェクトcloneを置くディレクトリ
 - Sandbox内で使うGitの名前とメールアドレス
@@ -175,16 +175,15 @@ worktree数は増やすことだけができます。デフォルトのattached 
 
 ### 設定ファイルを配置する
 
-ホスト側のファイルを`~/.sbxm/config.toml`に宣言します。
+ホスト側のファイルを`~/.sbxm/config.yaml`に宣言します。
 
-```toml
-[[files]]
-source = "/Users/you/.config/example/config.toml"
-destination = ".config/example/config.toml"
+```yaml
+files:
+  - source: /Users/you/.gitconfig
+    destination: .gitconfig
 
-[[files]]
-source = "/Users/you/.config/another-tool/settings.toml"
-destination = ".config/another-tool/settings.toml"
+  - source: /Users/you/.config/another-tool/settings.yaml
+    destination: .config/another-tool/settings.yaml
 ```
 
 配置先はSandbox userのhome directoryからの相対pathです。宣言したファイルは

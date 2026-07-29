@@ -44,7 +44,7 @@ fn a_clean_running_project_is_planned_then_removed() {
             .plan
             .removes
             .iter()
-            .any(|target| path_of(target).is_some_and(|path| path.contains("project.toml")))
+            .any(|target| path_of(target).is_some_and(|path| path.contains("project.yaml")))
     );
     assert!(
         prepared

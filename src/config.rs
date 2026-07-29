@@ -1,4 +1,4 @@
-//! Global config `~/.sbxm/config.toml`。
+//! Global config `~/.sbxm/config.yaml`。
 //!
 //! configはtoken、secret、runtime状態を保存しない。不正なconfigを自動修復せず、
 //! `init`も上書きしない。
@@ -64,9 +64,9 @@ impl ConfigLocation {
         self.home.join(".sbxm")
     }
 
-    /// `~/.sbxm/config.toml`
+    /// `~/.sbxm/config.yaml`
     pub fn config_file(&self) -> PathBuf {
-        self.dir().join("config.toml")
+        self.dir().join("config.yaml")
     }
 
     /// `~/.sbxm/init.lock`
@@ -158,7 +158,7 @@ pub enum ConfigState {
     },
 }
 
-/// TOMLの生表現。structへ変換する前にtop-level keyを検査する。
+/// YAMLの生表現。structへ変換する前にtop-level keyを検査する。
 #[derive(Debug, Deserialize, Serialize)]
 struct RawConfig {
     version: Option<i64>,
@@ -241,40 +241,45 @@ pub fn load(location: &ConfigLocation) -> Result<ConfigState> {
 
 /// configのtextを検証する。filesystemには触れない部分の判定をまとめる。
 fn parse(text: &str, path: &Path) -> Result<ConfigState> {
-    let document: toml::Value = toml::from_str(text).map_err(|error| {
+    let syntax_error = |error: yaml_serde::Error| {
         Error::new(
             ErrorId::ConfigInvalidSyntax,
             msg!(
                 "error-config-invalid-syntax",
                 path = paths::display(path),
-                detail = error.message()
+                detail = error
             ),
         )
-    })?;
+    };
+
+    let document: yaml_serde::Value = yaml_serde::from_str(text).map_err(syntax_error)?;
+    // 空のdocumentもcommentだけのdocumentもnullとして読める。keyを1つも持たない
+    // mappingと同じ扱いにし、欠落したfieldをsyntax errorではなく名前で報告する。
+    let document = if document.is_null() {
+        yaml_serde::Value::Mapping(yaml_serde::Mapping::new())
+    } else {
+        document
+    };
 
     let mut warnings = Vec::new();
-    if let Some(table) = document.as_table() {
-        for key in table.keys() {
-            if !KNOWN_TOP_LEVEL_KEYS.contains(&key.as_str()) {
+    if let Some(mapping) = document.as_mapping() {
+        for key in mapping.keys() {
+            // YAMLのkeyは文字列とは限らない。既知keyはすべて文字列なので、
+            // 文字列でないkeyはその表記のまま未知として報告する。
+            let name = key
+                .as_str()
+                .map_or_else(|| format!("{key:?}"), str::to_string);
+            if !KNOWN_TOP_LEVEL_KEYS.contains(&name.as_str()) {
                 warnings.push(msg!(
                     "warning-config-unknown-key",
                     path = paths::display(path),
-                    key = key
+                    key = name
                 ));
             }
         }
     }
 
-    let raw: RawConfig = document.try_into().map_err(|error: toml::de::Error| {
-        Error::new(
-            ErrorId::ConfigInvalidSyntax,
-            msg!(
-                "error-config-invalid-syntax",
-                path = paths::display(path),
-                detail = error.message()
-            ),
-        )
-    })?;
+    let raw: RawConfig = yaml_serde::from_value(document).map_err(syntax_error)?;
 
     let missing_field = |field: &'static str| {
         Error::new(
@@ -400,43 +405,35 @@ pub fn validate_git_identity_value(value: &str) -> std::result::Result<(), &'sta
     Ok(())
 }
 
-/// configをTOMLへ描画する。
+/// configをYAMLへ描画する。
+///
+/// 引用符の付け方は`yaml_serde`の判断に委ね、sbxmは介入しない。介入するなら危険な値の
+/// listを持つか、YAMLを手で組み立てるかのどちらかになる。前者は維持できず、後者はこの
+/// 関数がserializeへ移った理由そのものを捨てる。
+///
+/// 帰結として、出力はYAML 1.2として読まれることを前提とする。`no`や`yes`は引用されず、
+/// YAML 1.1の実装から読めばbooleanになる。sbxmは自分が書いたfileを同じcrateで読むため、
+/// 往復は一致する。
 pub fn render(config: &GlobalConfig) -> String {
-    let mut out = String::new();
-    out.push_str(&format!("version = {CONFIG_VERSION}\n"));
-    out.push_str(&format!(
-        "language = {}\n",
-        toml_string(config.language.as_str())
-    ));
-    out.push_str(&format!(
-        "base_path = {}\n",
-        toml_string(&paths::display(config.base_path.as_path()))
-    ));
-    out.push_str("\n[git]\n");
-    out.push_str(&format!(
-        "user_name = {}\n",
-        toml_string(&config.git.user_name)
-    ));
-    out.push_str(&format!(
-        "user_email = {}\n",
-        toml_string(&config.git.user_email)
-    ));
-    for declaration in &config.files {
-        out.push_str("\n[[files]]\n");
-        out.push_str(&format!(
-            "source = {}\n",
-            toml_string(&paths::display(declaration.source.as_path()))
-        ));
-        out.push_str(&format!(
-            "destination = {}\n",
-            toml_string(&paths::display(declaration.destination.as_path()))
-        ));
-    }
-    out
-}
-
-fn toml_string(value: &str) -> String {
-    toml::Value::String(value.to_string()).to_string()
+    let raw = RawConfig {
+        version: Some(i64::from(CONFIG_VERSION)),
+        language: Some(config.language.as_str().to_string()),
+        base_path: Some(paths::display(config.base_path.as_path())),
+        git: Some(RawGit {
+            user_name: Some(config.git.user_name.clone()),
+            user_email: Some(config.git.user_email.clone()),
+        }),
+        files: config
+            .files
+            .iter()
+            .map(|declaration| RawFile {
+                source: Some(paths::display(declaration.source.as_path())),
+                destination: Some(paths::display(declaration.destination.as_path())),
+            })
+            .collect(),
+    };
+    // RawConfigは文字列と整数とVecだけで構成され、YAMLで表現できない値を持たない。
+    yaml_serde::to_string(&raw).expect("a configuration is representable as YAML")
 }
 
 /// `~/.sbxm`を`0700`で検証または作成する。

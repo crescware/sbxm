@@ -35,7 +35,7 @@ fn a_named_project_is_read_without_discovering_the_others() {
         .as_path()
         .join("broken/broken.project/.sbxm");
     std::fs::create_dir_all(&broken).unwrap();
-    std::fs::write(broken.join("project.toml"), "version = 2\n").unwrap();
+    std::fs::write(broken.join("project.yaml"), "version: 2\n").unwrap();
 
     let chosen = one(
         &fixture.config,

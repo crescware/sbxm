@@ -186,7 +186,7 @@ fn an_invalid_configuration_stops_init_instead_of_being_repaired() {
     let (_dir, location) = home();
     std::fs::create_dir_all(location.dir()).unwrap();
     std::fs::set_permissions(location.dir(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    std::fs::write(location.config_file(), "version = 99\n").unwrap();
+    std::fs::write(location.config_file(), "version: 99\n").unwrap();
     std::fs::set_permissions(
         location.config_file(),
         std::fs::Permissions::from_mode(0o600),
@@ -209,7 +209,7 @@ fn an_invalid_configuration_stops_init_instead_of_being_repaired() {
     assert_eq!(error.first_id(), Some(ErrorId::ConfigUnknownVersion));
     assert_eq!(
         std::fs::read_to_string(location.config_file()).unwrap(),
-        "version = 99\n"
+        "version: 99\n"
     );
 }
 

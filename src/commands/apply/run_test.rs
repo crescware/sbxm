@@ -15,7 +15,7 @@ const FILES_ONLY: Scope = Scope {
 #[test]
 fn asking_for_worktrees_leaves_the_declared_files_alone() {
     let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("declared.toml");
+    let source = dir.path().join("declared.yaml");
     std::fs::write(&source, b"declared = true\n").unwrap();
 
     let (_home, config, workspace_root) = setup(vec![declaration(&source)]);
@@ -64,7 +64,7 @@ fn a_number_below_what_the_project_has_is_refused() {
 #[test]
 fn a_running_project_gets_the_declared_files_replaced() {
     let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("declared.toml");
+    let source = dir.path().join("declared.yaml");
     std::fs::write(&source, b"declared = true\n").unwrap();
     let _ = sha256_hex(b"declared = true\n");
 
@@ -81,7 +81,7 @@ fn a_running_project_gets_the_declared_files_replaced() {
 #[test]
 fn the_project_lock_is_held_while_the_files_are_replaced() {
     let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("declared.toml");
+    let source = dir.path().join("declared.yaml");
     std::fs::write(&source, b"declared = true\n").unwrap();
 
     let (_home, config, workspace_root) = setup(vec![declaration(&source)]);
@@ -132,7 +132,7 @@ fn a_project_that_is_not_managed_gets_no_lock_file() {
 #[test]
 fn nothing_else_in_the_project_is_touched() {
     let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("declared.toml");
+    let source = dir.path().join("declared.yaml");
     std::fs::write(&source, b"declared = true\n").unwrap();
     let (_home, config, workspace_root) = setup(vec![declaration(&source)]);
     let paths = write_metadata(&config, None);

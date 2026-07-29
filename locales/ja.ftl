@@ -69,7 +69,7 @@ error-reserved-repository-name = { $value } は予約語のためrepository名�
 
 error-config-missing = global設定が { $path } に見つかりません。
 error-config-unreadable = { $path } のglobal設定を読み取れません: { $detail }
-error-config-invalid-syntax = { $path } のglobal設定がTOMLとして不正です: { $detail }
+error-config-invalid-syntax = { $path } のglobal設定がYAMLとして不正です: { $detail }
 error-config-unknown-version = { $path } のglobal設定はversion { $version } ですが、このbuildが対応するのは { $supported } です。
 error-config-missing-field = { $path } のglobal設定に必須項目 { $field } がありません。
 error-config-invalid-value = { $path } の項目 { $field } の値が不正です: { $detail }
@@ -81,7 +81,7 @@ error-file-declaration-invalid-destination = 宣言file { $index } のdestinatio
 warning-config-unknown-key = { $path } の未知のkey { $key } を無視しました。
 
 error-metadata-unreadable = { $path } の案件metadataを読み取れません: { $detail }
-error-metadata-invalid-syntax = { $path } の案件metadataがTOMLとして不正です: { $detail }
+error-metadata-invalid-syntax = { $path } の案件metadataがYAMLとして不正です: { $detail }
 error-metadata-unknown-version = { $path } の案件metadataはversion { $version } ですが、このbuildが対応するのは { $supported } です。
 error-metadata-missing-field = { $path } の案件metadataに必須項目 { $field } がありません。
 error-metadata-invalid-value = { $path } の項目 { $field } の値が不正です: { $detail }

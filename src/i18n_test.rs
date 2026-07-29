@@ -141,11 +141,11 @@ fn formatting_does_not_insert_isolation_marks() {
     let rendered = catalog
         .format(&msg!(
             "error-config-missing",
-            path = "/home/example/.sbxm/config.toml"
+            path = "/home/example/.sbxm/config.yaml"
         ))
         .expect("built-in message must format");
     assert!(
-        rendered.contains("/home/example/.sbxm/config.toml"),
+        rendered.contains("/home/example/.sbxm/config.yaml"),
         "argument must be interpolated verbatim: {rendered}"
     );
     assert!(

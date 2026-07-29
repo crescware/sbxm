@@ -1,10 +1,11 @@
-//! Project metadata `<project-root>/.sbxm/project.toml`。
+//! Project metadata `<project-root>/.sbxm/project.yaml`。
 //!
 //! metadataは進捗cacheではなく、利用者が要求した目標構成である。sbxmは成果物の
 //! 作成元を追跡しないため、validation規則を満たすmetadataは、誰が書いたかを問わず
 //! 同じものとして扱う。
 
 mod discover;
+mod document;
 mod parse;
 mod render;
 

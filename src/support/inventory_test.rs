@@ -123,7 +123,7 @@ fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() {
         .as_path()
         .join("broken/broken.project/.sbxm");
     std::fs::create_dir_all(&broken).unwrap();
-    std::fs::write(broken.join("project.toml"), "version = 2\n").unwrap();
+    std::fs::write(broken.join("project.yaml"), "version: 2\n").unwrap();
     let error = take(
         &fixture.config,
         &FakeSbx::listing("[]"),

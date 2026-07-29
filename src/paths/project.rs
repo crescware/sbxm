@@ -143,9 +143,9 @@ impl ProjectPaths {
         self.root.join(".sbxm")
     }
 
-    /// `<project-root>/.sbxm/project.toml`
+    /// `<project-root>/.sbxm/project.yaml`
     pub fn metadata_file(&self) -> PathBuf {
-        self.sbxm_dir().join("project.toml")
+        self.sbxm_dir().join("project.yaml")
     }
 
     /// `<project-root>/.sbxm/project.lock`

@@ -23,7 +23,7 @@ use std::time::Duration;
 
 /// `~/.sbxm`と案件の`.sbxm`のような、利用者専用directoryのpermission。
 pub const PRIVATE_DIR_MODE: u32 = 0o700;
-/// `~/.sbxm/config.toml`とproject metadataのpermission。
+/// `~/.sbxm/config.yaml`とproject metadataのpermission。
 pub const PRIVATE_FILE_MODE: u32 = 0o600;
 /// lock取得の待機上限。
 pub const LOCK_TIMEOUT: Duration = Duration::from_secs(10);

@@ -72,11 +72,11 @@ fn write_config(home: &Path, base_path: &Path, language: &str) {
     let dir = home.join(".sbxm");
     std::fs::create_dir_all(&dir).expect("create ~/.sbxm");
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("mode");
-    let path = dir.join("config.toml");
+    let path = dir.join("config.yaml");
     std::fs::write(
         &path,
         format!(
-            "version = 1\nlanguage = \"{language}\"\nbase_path = \"{}\"\n\n[git]\nuser_name = \"Example User\"\nuser_email = \"user@example.com\"\n",
+            "version: 1\nlanguage: {language}\nbase_path: \"{}\"\n\ngit:\n  user_name: Example User\n  user_email: user@example.com\n",
             base_path.display()
         ),
     )
@@ -173,9 +173,9 @@ fn a_broken_configuration_does_not_stop_help_from_being_shown() {
     let dir = home.path().join(".sbxm");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-    std::fs::write(dir.join("config.toml"), "version = 99\n").unwrap();
+    std::fs::write(dir.join("config.yaml"), "version: 99\n").unwrap();
     std::fs::set_permissions(
-        dir.join("config.toml"),
+        dir.join("config.yaml"),
         std::fs::Permissions::from_mode(0o600),
     )
     .unwrap();
@@ -209,9 +209,9 @@ fn an_unsupported_language_is_reported_before_any_configuration_error() {
     let dir = home.path().join(".sbxm");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-    std::fs::write(dir.join("config.toml"), "version = 99\n").unwrap();
+    std::fs::write(dir.join("config.yaml"), "version: 99\n").unwrap();
     std::fs::set_permissions(
-        dir.join("config.toml"),
+        dir.join("config.yaml"),
         std::fs::Permissions::from_mode(0o600),
     )
     .unwrap();
@@ -354,7 +354,7 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
 
     // 登録そのものは終わっているため、案件directoryが残る。
     let root = base.join("example-org").join("example-repo.project");
-    let metadata = root.join(".sbxm").join("project.toml");
+    let metadata = root.join(".sbxm").join("project.yaml");
     assert!(metadata.is_file(), "the project is registered");
     assert!(root.join(".sbxm").join("Dockerfile").is_file());
     assert!(root.join(".sbxm").join(".cache").is_dir());
@@ -369,11 +369,11 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
 
     let written = std::fs::read_to_string(&metadata).unwrap();
     assert!(
-        written.contains("canonical_id = \"example-org/example-repo\""),
+        written.contains("canonical_id: example-org/example-repo"),
         "{written}"
     );
-    assert!(written.contains("owner = \"Example-Org\""), "{written}");
-    assert!(written.contains("mode = \"attached\""), "{written}");
+    assert!(written.contains("owner: Example-Org"), "{written}");
+    assert!(written.contains("mode: attached"), "{written}");
 }
 
 #[test]
@@ -525,22 +525,22 @@ fn option_mode_init_creates_a_private_configuration_without_a_terminal() {
     );
 
     assert_eq!(run.code, 0, "{}", run.stderr);
-    assert!(run.stdout.contains("config.toml"), "{}", run.stdout);
+    assert!(run.stdout.contains("config.yaml"), "{}", run.stdout);
     assert!(
         run.stdout.contains("sbxm status --global"),
         "{}",
         run.stdout
     );
 
-    let config = home.path().join(".sbxm").join("config.toml");
+    let config = home.path().join(".sbxm").join("config.yaml");
     assert!(config.is_file());
     let mode = std::fs::metadata(&config).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
     assert!(base.is_dir(), "the base path is created");
 
     let written = std::fs::read_to_string(&config).unwrap();
-    assert!(written.contains("version = 1"), "{written}");
-    assert!(written.contains("language = \"en\""), "{written}");
+    assert!(written.contains("version: 1"), "{written}");
+    assert!(written.contains("language: en"), "{written}");
     assert!(
         !written.contains("token") && !written.contains("secret"),
         "the configuration must not carry credentials: {written}"
@@ -565,7 +565,7 @@ fn re_running_init_changes_nothing_and_succeeds() {
 
     let first = sbxm(home.path(), &arguments);
     assert_eq!(first.code, 0, "{}", first.stderr);
-    let config = home.path().join(".sbxm").join("config.toml");
+    let config = home.path().join(".sbxm").join("config.yaml");
     let before = std::fs::read_to_string(&config).unwrap();
 
     let second = sbxm(home.path(), &arguments);
@@ -584,7 +584,7 @@ fn interactive_init_outside_a_terminal_creates_nothing() {
     let run = sbxm(home.path(), &["init"]);
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("init-requires-tty"), "{}", run.stderr);
-    assert!(!home.path().join(".sbxm").join("config.toml").exists());
+    assert!(!home.path().join(".sbxm").join("config.yaml").exists());
 }
 
 #[test]
