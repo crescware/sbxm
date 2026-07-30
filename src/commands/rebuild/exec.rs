@@ -32,16 +32,12 @@ pub fn exec(project: &ProjectId, context: &Context, ui: &mut Ui) -> ExitCode {
     for warning in &output.warnings {
         ui.warning(warning);
     }
-    let summary = if output.unchanged {
-        msg!("rebuild-unchanged", project = output.project)
-    } else {
-        msg!(
-            "rebuild-applied",
-            project = output.project,
-            sandbox = output.sandbox,
-            generation = short_hex(&output.applied)
-        )
-    };
+    let summary = msg!(
+        "rebuild-applied",
+        project = output.project,
+        sandbox = output.sandbox,
+        generation = short_hex(&output.applied)
+    );
     ui.stdout(&Document::new().summary(summary));
     ExitCode::Success
 }

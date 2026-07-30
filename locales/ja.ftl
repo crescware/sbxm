@@ -318,7 +318,6 @@ destroy-re-register = 必要になったら再登録できます。
 column-branch = branch (BRANCH)
 column-remote = remote (REMOTE)
 select-destroy-heading = どの案件を破棄しますか?
-rebuild-unchanged = { $project } のDockerfileは適用済みの内容と同じため、何も変更しませんでした。
 rebuild-applied = { $project } を再構築しました。{ $sandbox } は世代 { $generation } で動作します。
 
 select-open-heading = どの案件を開きますか?

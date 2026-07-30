@@ -11,15 +11,90 @@ use crate::ui::SilentProgress;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
-fn a_dockerfile_that_did_not_change_is_a_no_op() {
+fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() {
     let fixture = fixture();
     let mut project = fixture.register("example-org/example-repo");
     // 適用済みhashと同じ内容のDockerfileを置く。
     std::fs::write(project.paths.dockerfile(), "unchanged\n").unwrap();
-    project.metadata.provisioning.dockerfile_sha256 = sha256_hex(b"unchanged\n");
+    let target = sha256_hex(b"unchanged\n");
+    project.metadata.provisioning.dockerfile_sha256 = target.clone();
     metadata::update(&project.paths, &project.metadata).unwrap();
 
-    let host = FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "running")));
+    let image = image::image_name(&project.sandbox, &target);
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let host = clean_host(&fixture, &project)
+        .answering(&format!("image ls --quiet {image}"), 0, "sha256:existing\n")
+        .answering(
+            &format!("image inspect {image}"),
+            0,
+            &format!(
+                r#"[{{"Id":"sha256:existing","Config":{{"Labels":{{"io.crescware.sbxm.canonical-id":"example-org/example-repo","io.crescware.sbxm.dockerfile-sha256":"{target}","io.crescware.sbxm.metadata-version":"1"}}}}}}]"#
+            ),
+        )
+        .answering("template ls --json", 0, &template_listing(&image));
+
+    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let git_dir = layout.bare_git_dir();
+    let worktree = layout.worktree(0);
+    let name = project.sandbox.as_str();
+    let host = verified(host, name)
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} rev-parse --is-bare-repository"),
+            0,
+            "true\n",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.url"),
+            0,
+            "https://github.com/example-org/example-repo.git\n",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.fetch"),
+            0,
+            "+refs/heads/*:refs/remotes/origin/*\n",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} rev-parse refs/remotes/origin/main"),
+            0,
+            &format!("{COMMIT}\n"),
+        )
+        .answering(
+            &format!("exec {name} -- git -C {worktree} rev-parse HEAD"),
+            0,
+            &format!("{COMMIT}\n"),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git -C {worktree} rev-parse --path-format=absolute --git-common-dir"
+            ),
+            0,
+            &format!("{git_dir}\n"),
+        )
+        .answering(
+            &format!("exec {name} -- git -C {worktree} symbolic-ref -q HEAD"),
+            0,
+            "refs/heads/main\n",
+        );
+
+    let running = format!("[{}]", fixture.entry(&project, "running"));
+    let created = format!(
+        r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
+        project.sandbox,
+        workspace.display()
+    );
+    // 一覧は末尾から取り出される。状態の判定、削除前の確認、削除完了の確認、作成前の
+    // 確認までは稼働中のSandboxが対象と観測し、作成後は新しいSandboxを観測する。
+    *host.listing.borrow_mut() = vec![
+        created,
+        "[]".to_string(),
+        "[]".to_string(),
+        running.clone(),
+        running,
+    ];
+
     let output = run(
         &fixture.config,
         &project_id("example-org/example-repo"),
@@ -28,13 +103,22 @@ fn a_dockerfile_that_did_not_change_is_a_no_op() {
         poll(),
         &mut SilentProgress,
     )
-    .expect("nothing to apply");
+    .expect("the same generation is applied again");
 
-    assert!(output.unchanged);
-    assert_eq!(output.applied, sha256_hex(b"unchanged\n"));
+    assert_eq!(output.applied, target);
     assert!(
-        !host.ran("build") && !host.ran("rm "),
-        "a no-op touches nothing: {:?}",
+        !host.ran("build"),
+        "the existing image is reused: {:?}",
+        host.calls()
+    );
+    assert!(
+        !host.ran("template load"),
+        "the existing template is reused: {:?}",
+        host.calls()
+    );
+    assert!(
+        host.ran("rm ") && host.ran("create --name"),
+        "an unchanged Dockerfile still recreates the sandbox: {:?}",
         host.calls()
     );
 }
