@@ -131,7 +131,6 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
     .expect("the fixed generation is completed");
 
     assert_eq!(output.applied, target);
-    assert!(!output.unchanged);
     let stored = metadata::load(&project.paths).unwrap().expect("present");
     assert_eq!(stored.provisioning.dockerfile_sha256, target);
     assert!(

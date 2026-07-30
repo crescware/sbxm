@@ -1,8 +1,8 @@
 //! `sbxm rebuild`。
 //!
-//! 利用者が編集したDockerfileを新しい世代としてbuildし、保存されていない作業がない
-//! ことを確かめてから、同じ目標構成でSandboxを作り直す。安全検査を省略するoptionは
-//! 設けない。
+//! 保存されていない作業がないことを確かめてから、同じ目標構成でSandboxを作り直す。
+//! Dockerfileが変わっていれば新しい世代としてbuildし、変わっていなければ既存のimageを
+//! 再利用する。安全検査を省略するoptionは設けない。
 
 use std::path::Path;
 
@@ -31,12 +31,10 @@ pub struct RebuildOutput {
     pub sandbox: String,
     /// 適用済みになったDockerfile hash。
     pub applied: String,
-    /// 何も変更しなかったか。
-    pub unchanged: bool,
     pub warnings: Vec<Warning>,
 }
 
-/// Dockerfileの変更をSandboxへ適用する。
+/// 保存されていない作業がないことを確かめてから、Sandboxを作り直す。
 pub fn run(
     config: &GlobalConfig,
     project: &ProjectId,
@@ -59,15 +57,6 @@ pub fn run(
         Some(intent) => intent.target_dockerfile_sha256.clone(),
         None => {
             require_created(&locked.metadata, state, &name)?;
-            if current == locked.metadata.provisioning.dockerfile_sha256 {
-                return Ok(RebuildOutput {
-                    project: locked.metadata.display_id(),
-                    sandbox: name.as_str().to_string(),
-                    applied: current,
-                    unchanged: true,
-                    warnings: Vec::new(),
-                });
-            }
             start_to_read_saved_state(
                 host,
                 &locked.metadata,
@@ -136,7 +125,6 @@ pub fn run(
         project: locked.metadata.display_id(),
         sandbox: name.as_str().to_string(),
         applied: target,
-        unchanged: false,
         warnings,
     })
 }

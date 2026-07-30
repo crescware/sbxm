@@ -318,7 +318,6 @@ destroy-re-register = Register it again when you need it.
 column-branch = BRANCH
 column-remote = REMOTE
 select-destroy-heading = Which project do you want to destroy?
-rebuild-unchanged = The Dockerfile of { $project } is the one that is applied, so nothing was changed.
 rebuild-applied = { $project } was rebuilt: { $sandbox } now runs generation { $generation }.
 
 select-open-heading = Which project do you want to open?
