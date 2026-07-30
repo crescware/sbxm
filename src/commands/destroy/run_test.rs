@@ -3,7 +3,9 @@ use crate::command::{EnvPolicy, OutputPolicy};
 use crate::error::ExitCode;
 use crate::metadata;
 use crate::paths::PRIVATE_FILE_MODE;
-use crate::testing::host::{FakeSbx, assert_lifecycle};
+use crate::testing::host::{
+    FakeSbx, assert_lifecycle, custom_secret_listing, no_custom_secrets, no_secrets,
+};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
@@ -17,6 +19,22 @@ fn path_of(target: &Target) -> Option<&str> {
     }
 }
 
+/// 説明で示す対象が計画に並んでいるか。
+fn describes(plan: &DestroyPlan, id: &str) -> bool {
+    plan.removes
+        .iter()
+        .chain(plan.keeps.iter())
+        .any(|target| matches!(target, Target::Described(message) if message.id == id))
+}
+
+/// hostへ渡った指定の順番。工程の前後関係を検証する。
+fn position(host: &FakeSbx, needle: &str) -> usize {
+    host.calls()
+        .iter()
+        .position(|args| args.join(" ").contains(needle))
+        .unwrap_or_else(|| panic!("no command matched {needle}"))
+}
+
 #[test]
 fn a_clean_running_project_is_planned_then_removed() {
     let fixture = fixture();
@@ -24,7 +42,7 @@ fn a_clean_running_project_is_planned_then_removed() {
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
     std::fs::create_dir_all(project.paths.cache_dir()).unwrap();
     // 削除後の一覧では対象が消えている。
-    let host = clean_host(&fixture, &project);
+    let host = no_secrets(clean_host(&fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
@@ -77,7 +95,7 @@ fn a_clean_running_project_is_planned_then_removed() {
 fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let host = clean_host(&fixture, &project);
+    let host = no_secrets(clean_host(&fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
@@ -119,7 +137,10 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() {
     .expect_err("a stopped sandbox cannot be inspected");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
 
-    let host = FakeSbx::listings(&[&stopped, "[]"]);
+    let host = no_secrets(
+        FakeSbx::listings(&[&stopped, "[]"]),
+        project.sandbox.as_str(),
+    );
     let prepared = prepare(
         &fixture.config,
         Some(&project_id("example-org/example-repo")),
@@ -192,7 +213,7 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
 fn a_project_without_a_sandbox_only_loses_its_management_data() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let host = FakeSbx::listing("[]");
+    let host = no_secrets(FakeSbx::listing("[]"), project.sandbox.as_str());
 
     let prepared = prepare(
         &fixture.config,
@@ -208,6 +229,124 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() {
     execute(&host, &prepared, poll()).expect("destroy");
     assert!(!host.ran("rm "), "there is no sandbox to remove");
     assert!(!project.paths.metadata_file().exists());
+}
+
+#[test]
+fn the_token_registration_goes_away_with_the_sandbox() {
+    // scopeはSandboxの有無と無関係に残る。登録を残したまま管理を解くと、次に同じ案件を
+    // addして案内どおりにset-customを実行しても、同じenvの登録が既にあるとして拒否される。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let sandbox = project.sandbox.as_str();
+    let host = clean_host(&fixture, &project).answering_in_turn(
+        &format!("secret ls {sandbox}"),
+        &[
+            (0, &custom_secret_listing(sandbox, "sbx-cs-example")),
+            (0, &no_custom_secrets(sandbox)),
+        ],
+    );
+    host.listing.borrow_mut().insert(0, "[]".to_string());
+
+    let prepared = prepare(
+        &fixture.config,
+        Some(&project_id("example-org/example-repo")),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .expect("prepare");
+    // 消す前に、tokenの登録も消えることを見せる。
+    assert!(describes(&prepared.plan, "destroy-target-secret"));
+
+    execute(&host, &prepared, poll()).expect("destroy");
+    assert!(
+        host.ran(&format!(
+            "secret rm {sandbox} --placeholder sbx-cs-example --force"
+        )),
+        "the registration is named by its placeholder: {:?}",
+        host.calls()
+    );
+    // 消し損ねたSandboxがplaceholderを持ったまま残る順序にしない。
+    assert!(
+        position(&host, &format!("rm --force {sandbox}")) < position(&host, "secret rm"),
+        "the sandbox goes first, then the token it was given"
+    );
+    assert!(!project.paths.metadata_file().exists());
+}
+
+#[test]
+fn a_registration_that_survives_its_removal_keeps_the_project_managed() {
+    // commandの戻り値だけを不在の根拠にしない。残ったままなら、同じcommandでやり直せる
+    // 状態を保ったまま停止する。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let sandbox = project.sandbox.as_str();
+    let host = clean_host(&fixture, &project).answering(
+        &format!("secret ls {sandbox}"),
+        0,
+        &custom_secret_listing(sandbox, "sbx-cs-example"),
+    );
+    host.listing.borrow_mut().insert(0, "[]".to_string());
+
+    let prepared = prepare(
+        &fixture.config,
+        Some(&project_id("example-org/example-repo")),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .expect("prepare");
+
+    let error = execute(&host, &prepared, poll()).expect_err("the registration is still listed");
+    assert_eq!(error.first_id(), Some(ErrorId::SecretStillRegistered));
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .expect("the user is told how to remove it");
+    assert!(
+        remediation.args.iter().any(|(_, value)| value
+            == &format!("sbx secret rm {sandbox} --placeholder sbx-cs-example --force")),
+        "the remediation carries the command that removes it: {remediation:?}"
+    );
+    assert!(
+        project.paths.metadata_file().exists(),
+        "the project stays managed so destroy can be run again"
+    );
+}
+
+#[test]
+fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() {
+    // global scopeのsecretはほかのSandboxも使う。1案件の後片付けで消す対象ではない。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let sandbox = project.sandbox.as_str();
+    let host = clean_host(&fixture, &project).answering(
+        &format!("secret ls {sandbox}"),
+        0,
+        &custom_secret_listing("global", "sbx-cs-elsewhere"),
+    );
+    host.listing.borrow_mut().insert(0, "[]".to_string());
+
+    let prepared = prepare(
+        &fixture.config,
+        Some(&project_id("example-org/example-repo")),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .expect("prepare");
+
+    execute(&host, &prepared, poll()).expect("destroy");
+    assert!(
+        !host.ran("secret rm"),
+        "a registration this project did not own is untouched: {:?}",
+        host.calls()
+    );
+    // ほかのSandbox向けのsecretは保持対象として示す。
+    assert!(describes(&prepared.plan, "destroy-target-secrets"));
 }
 
 #[test]
@@ -241,7 +380,7 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() {
     std::fs::write(elsewhere.join("keep.txt"), "not ours\n").unwrap();
     std::os::unix::fs::symlink(&elsewhere, project.paths.cache_dir()).unwrap();
 
-    let host = clean_host(&fixture, &project);
+    let host = no_secrets(clean_host(&fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
     let prepared = prepare(
         &fixture.config,
@@ -300,7 +439,7 @@ impl ConfirmPrompt for ScriptedConfirm {
 /// 削除して良い状態の案件を1件用意する。
 fn prepared_project(fixture: &Fixture, force: bool) -> (FakeSbx, Prepared) {
     let project = fixture.register("example-org/example-repo");
-    let host = clean_host(fixture, &project);
+    let host = no_secrets(clean_host(fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
     let prepared = prepare(
         &fixture.config,
@@ -412,7 +551,7 @@ fn unseal(directory: &std::path::Path) {
 fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let host = clean_host(&fixture, &project);
+    let host = no_secrets(clean_host(&fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
@@ -439,7 +578,7 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() {
 fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let host = clean_host(&fixture, &project);
+    let host = no_secrets(clean_host(&fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
@@ -484,6 +623,10 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() {
 
     let error = execute(&host, &prepared, poll()).expect_err("the sandbox is still there");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxStillPresent));
+    assert!(
+        !host.ran("secret rm"),
+        "a sandbox that still exists keeps the token it was given"
+    );
     assert!(
         project.paths.metadata_file().exists(),
         "the project stays managed so destroy can be run again"

@@ -125,6 +125,7 @@ error_ids! {
     SandboxIdentityMismatch => "sandbox-identity-mismatch",
     GithubSecretMissing => "github-secret-missing",
     SandboxSecretNotApplied => "sandbox-secret-not-applied",
+    SecretStillRegistered => "secret-still-registered",
     SandboxRepositoryUnusable => "sandbox-repository-unusable",
     StartRefUnresolved => "start-ref-unresolved",
     ProjectNotManaged => "project-not-managed",

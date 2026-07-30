@@ -212,9 +212,11 @@ sbxmは何かを削除する前に、削除するものと残すものを表示�
 dirty worktree、pushしていないcommit、active sessionを検査します。対話端末では、
 続いてSandbox名の入力を求めます。
 
-Sandboxとsbxmのプロジェクトmetadataは削除されます。ホスト側のclone、プロジェクトの
-Dockerfile、build済みimage、load済みtemplate、登録済みsecretは残るため、あとから
-プロジェクトを再登録できます。
+Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに登録した`GH_TOKEN`のcustom
+secretは削除されます。登録が残ると、同じプロジェクトに対する次の`sbx secret set-custom`
+が重複として失敗し、存在しないSandbox宛のtokenを預けたままになります。ホスト側のclone、
+プロジェクトのDockerfile、build済みimage、load済みtemplate、それ以外を対象に登録した
+secretは残るため、tokenを再登録すればあとからプロジェクトを再登録できます。
 
 データ保護とactive sessionの検査を意図的に省略する必要がある場合は、次を実行します。
 

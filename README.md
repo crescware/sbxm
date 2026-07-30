@@ -216,9 +216,13 @@ Normal teardown checks for dirty worktrees, unpushed commits, and active
 sessions. In an interactive terminal, it then asks you to type the sandbox
 name.
 
-The sandbox and sbxm's project metadata are deleted. The host clone, project
-Dockerfile, built images, loaded templates, and registered secrets are kept, so
-the project can be registered again later.
+The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
+registered for that sandbox are deleted. A registration left behind would make
+the next `sbx secret set-custom` for the same project fail as a duplicate, and
+it would keep a token for a sandbox that no longer exists. The host clone,
+project Dockerfile, built images, loaded templates, and every secret registered
+for anything else are kept, so the project can be registered again later with a
+token registered anew.
 
 If you intentionally need to bypass data-protection and active-session checks:
 

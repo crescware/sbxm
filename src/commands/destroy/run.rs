@@ -16,6 +16,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::support::daemon;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, Unmanaged, WorktreeReport};
+use crate::support::secret;
 use crate::support::select::{self, ProjectPrompt};
 
 /// 削除対象・保持対象の1件。
@@ -141,6 +142,11 @@ pub fn execute(
         require_absent(host, &prepared.name)?;
     }
 
+    // tokenの登録はSandboxを消しても残る。Sandboxが消えたあとに解くのは、消し損ねた
+    // Sandboxがplaceholderを持ったまま動き続ける状態を作らないためである。commit pointの
+    // 前に行うため、失敗したときは案件が管理下に残り、同じcommandでやり直せる。
+    secret::forget_github(host, prepared.name.as_str())?;
+
     // 削除もほかのmutationと同じ規則で行う。symlinkの先を消さない。
     let cache = prepared.paths.cache_dir();
     if paths::is_symlink(&cache) {
@@ -189,6 +195,9 @@ fn require_absent(host: &dyn HostEnvironment, name: &SandboxName) -> Result<()> 
 }
 
 /// 削除対象。
+///
+/// pathと同じく、そこに何かがある場合に消すものとして並べる。存在の有無で行を出し
+/// 分けると、確認の前に見せる内容がhostへの問い合わせの成否に左右される。
 fn removes(paths: &ProjectPaths, name: &SandboxName, state: ProjectState) -> Vec<Target> {
     let mut removes = Vec::new();
     if state != ProjectState::NotCreated {
@@ -197,6 +206,11 @@ fn removes(paths: &ProjectPaths, name: &SandboxName, state: ProjectState) -> Vec
             sandbox = name
         )));
     }
+    removes.push(Target::Described(msg!(
+        "destroy-target-secret",
+        sandbox = name,
+        env = secret::GITHUB_TOKEN_ENV
+    )));
     removes.push(Target::Path(paths::display(&paths.metadata_file())));
     removes.push(Target::Path(paths::display(&paths.lock_file())));
     removes.push(Target::Path(paths::display(&paths.cache_dir())));
