@@ -18,6 +18,7 @@ use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, Unmanaged, WorktreeReport};
 use crate::support::secret;
 use crate::support::select::{self, ProjectPrompt};
+use crate::ui::{ProgressSink, PromptUi, Remediation, Warning};
 
 /// 削除対象・保持対象の1件。
 #[derive(Debug, Clone)]
@@ -60,7 +61,7 @@ pub struct Prepared {
 pub struct DestroyOutcome {
     pub project: String,
     pub re_register: String,
-    pub warnings: Vec<Msg>,
+    pub warnings: Vec<Warning>,
 }
 
 /// 対象を特定し、削除して良い状態であることを確かめる。
@@ -73,7 +74,7 @@ pub fn prepare(
     workspace_root: &Path,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let locked = select::one(config, requested, prompt)?.lock()?;
+    let locked = select::one(config, requested, msg!("select-destroy-heading"), prompt)?.lock()?;
     let paths = locked.paths.clone();
 
     let metadata = &locked.metadata;
@@ -95,10 +96,10 @@ pub fn prepare(
                         observed = "stopped"
                     ),
                 )
-                .remediation(msg!(
-                    "remediation-destroy-force",
-                    command = format!("sbxm destroy --force {}", metadata.display_id())
-                )),
+                .remediation(
+                    Remediation::text(msg!("remediation-destroy-force"))
+                        .try_run(format!("sbxm destroy --force {}", metadata.display_id())),
+                ),
             ));
         }
         let layout = SandboxLayout::new(&metadata.canonical_id);
@@ -133,10 +134,11 @@ pub fn execute(
     host: &dyn HostEnvironment,
     prepared: &Prepared,
     poll: Poll,
+    progress: &mut dyn ProgressSink,
 ) -> Result<DestroyOutcome> {
     if prepared.state != ProjectState::NotCreated {
         // 削除は、一覧から消えたことを確かめるまで完了しない。
-        inventory::remove(host, &prepared.name, poll)?;
+        inventory::remove(host, &prepared.name, poll, progress)?;
     } else {
         // 削除commandを実行しない場合だけ、一覧で不在を1回確かめる。
         require_absent(host, &prepared.name)?;
@@ -172,11 +174,11 @@ pub fn execute(
     if lock_file.exists()
         && let Err(error) = std::fs::remove_file(&lock_file)
     {
-        warnings.push(msg!(
+        warnings.push(Warning::text(msg!(
             "warning-lock-file-left-behind",
             path = paths::display(&lock_file),
             detail = error
-        ));
+        )));
     }
 
     Ok(DestroyOutcome {
@@ -278,50 +280,23 @@ pub trait ConfirmPrompt {
     fn confirm_sandbox_name(&mut self, expected: &str) -> Result<bool>;
 }
 
-/// 端末から1行を読む対話実装。
+/// 共通promptで1行を読む対話実装。
 ///
-/// EscとCtrl-Cはどちらも何も変更せず終える。text入力を`dialoguer::Input`ではなく
-/// 自前で読むのは、Escを打鍵として受け取ってしまわないためである。
+/// yes/noでは削除しない。完全一致だけを続行の合図とするため、選択一覧ではなく
+/// 自由入力を使う。EscとCtrl-Cはどちらも何も変更せず終える。
 pub struct TerminalConfirmPrompt {
-    /// この実行の表示言語。
-    pub locale: crate::i18n::Locale,
+    prompt: PromptUi,
+}
+
+impl TerminalConfirmPrompt {
+    pub fn new(prompt: PromptUi) -> TerminalConfirmPrompt {
+        TerminalConfirmPrompt { prompt }
+    }
 }
 
 impl ConfirmPrompt for TerminalConfirmPrompt {
     fn confirm_sandbox_name(&mut self, expected: &str) -> Result<bool> {
-        use dialoguer::console::{Key, Term};
-
-        let catalog = crate::i18n::Catalog::new(self.locale);
-        let heading = catalog
-            .text("destroy-confirm-prompt")
-            .unwrap_or_else(|failure| failure.to_string());
-
-        let term = Term::stderr();
-        term.write_line(&heading)
-            .map_err(select::unreadable_prompt)?;
-
-        let mut typed = String::new();
-        loop {
-            match term.read_key().map_err(select::unreadable_prompt)? {
-                Key::Enter => break,
-                Key::Escape | Key::CtrlC => return Err(Error::Canceled),
-                Key::Backspace => {
-                    if typed.pop().is_some() {
-                        term.clear_chars(1).map_err(select::unreadable_prompt)?;
-                    }
-                }
-                Key::Char(character) => {
-                    typed.push(character);
-                    term.write_str(&character.to_string())
-                        .map_err(select::unreadable_prompt)?;
-                }
-                // 行編集は提供しない。名前の入力に必要な打鍵だけを受け取る。
-                _ => {}
-            }
-        }
-        term.write_line("").map_err(select::unreadable_prompt)?;
-
-        // yes/noでは削除しない。完全一致だけを続行の合図とする。
+        let typed = self.prompt.exact(msg!("destroy-confirm-prompt"))?;
         Ok(typed.trim() == expected)
     }
 }
