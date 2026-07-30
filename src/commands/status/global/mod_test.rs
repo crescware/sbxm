@@ -2,10 +2,10 @@ use super::*;
 use crate::compatibility::EXPECTED_NETWORK_POLICY;
 use crate::error::ErrorId;
 use crate::i18n::{Catalog, Locale};
-use crate::support::Reporter;
 use crate::testing::global_status::{
     FakeHost, items, location_with_config, status_of, valid_config,
 };
+use crate::testing::render::plain;
 
 #[test]
 fn every_row_is_shown_in_the_documented_order_even_when_checks_fail() {
@@ -46,7 +46,11 @@ fn a_missing_configuration_points_at_init_without_stopping_the_other_checks() {
         .find(|diagnostic| diagnostic.id == ErrorId::ConfigMissing)
         .expect("the missing configuration is diagnosed");
     assert_eq!(
-        diagnostic.remediation.as_ref().map(|message| message.id),
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
         Some("remediation-run-init")
     );
 }
@@ -170,7 +174,11 @@ fn a_missing_host_command_is_reported_with_an_install_hint() {
         .find(|diagnostic| diagnostic.id == ErrorId::HostCommandMissing)
         .expect("the missing command is diagnosed");
     assert_eq!(
-        diagnostic.remediation.as_ref().map(|message| message.id),
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
         Some("remediation-install-command")
     );
 }
@@ -349,13 +357,9 @@ fn several_problems_are_all_reported_at_once() {
 fn the_rendered_report_shows_only_the_global_section() {
     let (_dir, location) = location_with_config(None);
     let status = diagnose(&location, &FakeHost::macos());
-    let catalog = Catalog::new(Locale::En);
-    let reporter = Reporter::new(&catalog);
-    let table = reporter.render_status_table(
-        "status-global-section",
-        "status-column-item",
-        "status-column-status",
-        &status.rows,
+    let table = plain(
+        &crate::commands::status::print::global_document(&status, Locale::En),
+        Locale::En,
     );
 
     assert!(table.starts_with("GLOBAL\n"), "{table}");

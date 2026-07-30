@@ -1,26 +1,21 @@
 //! `open`の実行と出力。
 
-use std::io::Write;
-
 use crate::command::RealHost;
 use crate::error::ExitCode;
 use crate::msg;
 use crate::project::ProjectId;
-use crate::support::display::{format_or_report, text_or_report};
-use crate::support::select::TerminalProjectPrompt;
 use crate::support::{inventory, sandbox};
+use crate::ui::{Document, Inline, Ui};
 
 use super::super::{Context, report};
 
-pub fn exec(project: Option<&ProjectId>, context: &Context) -> ExitCode {
-    let (config, catalog) = match context.require_config() {
+pub fn exec(project: Option<&ProjectId>, context: &Context, ui: &mut Ui) -> ExitCode {
+    let (config, locale) = match context.require_config() {
         Ok(pair) => pair,
-        Err(error) => return report(&context.fallback_catalog(), &error),
+        Err(error) => return report(ui, &error),
     };
-    let mut prompt = TerminalProjectPrompt {
-        heading: "select-open-heading",
-        locale: catalog.locale(),
-    };
+    ui.set_locale(locale);
+    let mut prompt = ui.prompt();
     let prepared = match super::run::prepare(
         &config,
         project,
@@ -28,34 +23,33 @@ pub fn exec(project: Option<&ProjectId>, context: &Context) -> ExitCode {
         &mut prompt,
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
         inventory::Poll::default(),
+        ui,
     ) {
         Ok(prepared) => prepared,
-        Err(error) => return report(&catalog, &error),
+        Err(error) => return report(ui, &error),
     };
 
     // 接続先はterminalを引き渡す前に見せる。
-    let mut stderr = std::io::stderr();
-    let _ = writeln!(
-        stderr,
-        "{}",
-        format_or_report(
-            &catalog,
-            &msg!(
+    ui.stderr(
+        &Document::new()
+            .summary(msg!(
                 "open-connecting",
                 project = prepared.project,
                 sandbox = prepared.sandbox
-            )
-        )
+            ))
+            .lines(
+                Some(msg!("open-worktrees-heading")),
+                prepared
+                    .worktrees
+                    .iter()
+                    .map(Inline::path)
+                    .map(Into::into)
+                    .collect(),
+            ),
     );
-    if !prepared.worktrees.is_empty() {
-        let _ = writeln!(stderr, "{}", text_or_report(&catalog, "open-worktrees"));
-        for worktree in &prepared.worktrees {
-            let _ = writeln!(stderr, "  {worktree}");
-        }
-    }
 
     match super::run::connect(&RealHost, &prepared) {
         Ok(()) => ExitCode::Success,
-        Err(error) => report(&catalog, &error),
+        Err(error) => report(ui, &error),
     }
 }

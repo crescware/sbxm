@@ -1,28 +1,24 @@
 //! `destroy`の実行。
 //!
-//! 消す前に計画を見せ、確認を取ってから実行する。
+//! 消す前に計画を見せ、確認を取ってから実行する。確認前の計画と実行後の結果は
+//! 別のdocumentとして作り、同じ画面のなかで混ざらないようにする。
 
 use crate::command::RealHost;
 use crate::error::ExitCode;
-use crate::msg;
-use crate::support::Reporter;
-use crate::support::display::format_or_report;
-use crate::support::select::TerminalProjectPrompt;
 use crate::support::{inventory, sandbox};
+use crate::ui::Ui;
 
 use super::super::{Context, report};
 use super::run::TerminalConfirmPrompt;
 use super::{Args, print};
 
-pub fn exec(args: &Args, context: &Context) -> ExitCode {
-    let (config, catalog) = match context.require_config() {
+pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
+    let (config, locale) = match context.require_config() {
         Ok(pair) => pair,
-        Err(error) => return report(&context.fallback_catalog(), &error),
+        Err(error) => return report(ui, &error),
     };
-    let mut prompt = TerminalProjectPrompt {
-        heading: "select-destroy-heading",
-        locale: catalog.locale(),
-    };
+    ui.set_locale(locale);
+    let mut prompt = ui.prompt();
     let prepared = match super::run::prepare(
         &config,
         args.project.as_ref(),
@@ -32,39 +28,30 @@ pub fn exec(args: &Args, context: &Context) -> ExitCode {
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
     ) {
         Ok(prepared) => prepared,
-        Err(error) => return report(&catalog, &error),
+        Err(error) => return report(ui, &error),
     };
 
-    print::plan(&catalog, &prepared.plan);
-    let mut confirm = TerminalConfirmPrompt {
-        locale: catalog.locale(),
-    };
+    ui.stdout(&print::plan_document(&prepared.plan, locale));
+    if prepared.plan.force {
+        ui.warning(&print::force_notice());
+    }
+
+    let mut confirm = TerminalConfirmPrompt::new(ui.prompt());
     if let Err(error) =
         super::run::confirm(&prepared, context.interactivity.can_prompt(), &mut confirm)
     {
-        return report(&catalog, &error);
+        return report(ui, &error);
     }
+    ui.note_prompt_output();
 
-    let outcome = match super::run::execute(&RealHost, &prepared, inventory::Poll::default()) {
+    let outcome = match super::run::execute(&RealHost, &prepared, inventory::Poll::default(), ui) {
         Ok(outcome) => outcome,
-        Err(error) => return report(&catalog, &error),
+        Err(error) => return report(ui, &error),
     };
 
-    let reporter = Reporter::new(&catalog);
-    let mut stderr = std::io::stderr();
     for warning in &outcome.warnings {
-        reporter.print_warning(warning, &mut stderr);
+        ui.warning(warning);
     }
-    println!(
-        "{}",
-        format_or_report(&catalog, &msg!("destroy-done", project = outcome.project))
-    );
-    println!(
-        "{}",
-        format_or_report(
-            &catalog,
-            &msg!("destroy-re-register", command = outcome.re_register)
-        )
-    );
+    ui.stdout(&print::outcome_document(&outcome));
     ExitCode::Success
 }

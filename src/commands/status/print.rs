@@ -1,37 +1,43 @@
 //! `status`の出力。
+//!
+//! 表そのものが結論であるためsummaryを足さない。診断はstdoutの表へ列を増やさず、
+//! stderrのdiagnosticとして出す。
 
-use std::io::Write;
+use crate::error::ExitCode;
+use crate::i18n::Locale;
+use crate::msg;
+use crate::ui::{Cell, Document, Field, Inline, Table, Ui};
 
-use crate::error::{Error, ExitCode};
-use crate::i18n::Catalog;
-use crate::support::Reporter;
-use crate::support::display::text_or_report;
-
+use super::super::present::Legend;
 use super::global::GlobalStatus;
 use super::project::ProjectStatus;
 
-/// global scopeの`status`の出力。
-pub fn global(catalog: &Catalog, status: &GlobalStatus) -> ExitCode {
-    let reporter = Reporter::new(catalog);
-
-    let table = reporter.render_status_table(
-        "status-global-section",
-        "status-column-item",
-        "status-column-status",
-        &status.rows,
-    );
-    print!("{table}");
-    if let Some(legend) = reporter.render_legend(&status.rows) {
-        print!("\n{legend}");
+/// global scopeの`status`が並べるもの。
+pub fn global_document(status: &GlobalStatus, locale: Locale) -> Document {
+    let mut legend = Legend::new(locale);
+    let mut table = Table::new(vec![
+        msg!("status-column-item"),
+        msg!("status-column-status"),
+    ]);
+    for row in &status.rows {
+        let value = legend.global_status(row.status);
+        table.push(vec![Cell::label(msg!(row.item)), value.into()]);
     }
-    let _ = std::io::stdout().flush();
 
-    let mut stderr = std::io::stderr();
+    Document::new()
+        .table(Some(msg!("status-global-section")), table)
+        .legend(Legend::heading(), legend.entries())
+}
+
+/// global scopeの`status`。
+pub fn global(ui: &mut Ui, status: &GlobalStatus) -> ExitCode {
+    ui.stdout(&global_document(status, ui.locale()));
+
     for warning in &status.warnings {
-        reporter.print_warning(warning, &mut stderr);
+        ui.warning(warning);
     }
     for diagnostic in &status.diagnostics {
-        reporter.print_error(&Error::single(diagnostic.clone()), &mut stderr);
+        ui.stderr(&Document::new().diagnostic(diagnostic.clone()));
     }
 
     if status.is_healthy() {
@@ -41,69 +47,55 @@ pub fn global(catalog: &Catalog, status: &GlobalStatus) -> ExitCode {
     }
 }
 
-/// project scopeの`status`の出力。
+/// project scopeの`status`が並べるもの。
 ///
 /// 指定案件だけを診断し、global環境の検査結果を混ぜない。
-pub fn project(catalog: &Catalog, status: &ProjectStatus) -> ExitCode {
-    let reporter = Reporter::new(catalog);
+pub fn project_document(status: &ProjectStatus, locale: Locale) -> Document {
+    let mut legend = Legend::new(locale);
 
-    let mut fields: Vec<(&str, String)> = vec![("status-item-project", status.project.clone())];
+    let mut fields = vec![Field::new(
+        msg!("status-item-project"),
+        Inline::important(status.project.clone()),
+    )];
     fields.extend(
         status
             .items
             .iter()
-            .map(|item| (item.item, item.value.as_str().to_string())),
-    );
-    println!("{}", text_or_report(catalog, "status-project-section"));
-    print!(
-        "{}",
-        reporter.render_value_table(
-            &["status-column-item", "status-column-value"],
-            &fields
-                .iter()
-                .map(|(item, value)| vec![text_or_report(catalog, item), value.clone()])
-                .collect::<Vec<_>>(),
-        )
+            .map(|item| Field::new(msg!(item.item), legend.project_status(item.value))),
     );
 
-    let rows: Vec<Vec<String>> = status
-        .worktrees
-        .iter()
-        .map(|worktree| {
-            vec![
-                worktree.path.clone(),
-                worktree.kind.to_string(),
-                worktree.mode.as_str().to_string(),
-                worktree.state.as_str().to_string(),
-            ]
-        })
-        .collect();
-    println!("\n{}", text_or_report(catalog, "status-worktrees-section"));
-    print!(
-        "{}",
-        reporter.render_value_table(
-            &["column-path", "column-kind", "column-mode", "column-state"],
-            &rows,
-        )
-    );
-
-    let mut values: Vec<(&str, &str)> = status
-        .items
-        .iter()
-        .map(|item| (item.value.as_str(), item.value.legend_id()))
-        .collect();
+    let mut worktrees = Table::new(vec![
+        msg!("column-path"),
+        msg!("column-kind"),
+        msg!("column-mode"),
+        msg!("column-state"),
+    ]);
     for worktree in &status.worktrees {
-        values.push((worktree.mode.as_str(), worktree.mode.legend_id()));
-        values.push((worktree.state.as_str(), worktree.state.legend_id()));
+        worktrees.push(vec![
+            Inline::path(worktree.path.clone()).into(),
+            Inline::text(worktree.kind).into(),
+            legend.project_status(worktree.mode).into(),
+            legend.project_status(worktree.state).into(),
+        ]);
     }
-    if let Some(legend) = reporter.render_value_legend(&values) {
-        print!("\n{legend}");
-    }
-    let _ = std::io::stdout().flush();
 
-    let mut stderr = std::io::stderr();
+    let heading = msg!("status-worktrees-section");
+    let document = Document::new().fields(Some(msg!("status-project-section")), fields);
+    // 「worktreeが1本もない」という観測自体が診断結果であるため、空でもsectionを残す。
+    let document = if worktrees.is_empty() {
+        document.empty_section(Some(heading), msg!("status-no-worktrees"))
+    } else {
+        document.table(Some(heading), worktrees)
+    };
+    document.legend(Legend::heading(), legend.entries())
+}
+
+/// project scopeの`status`。
+pub fn project(ui: &mut Ui, status: &ProjectStatus) -> ExitCode {
+    ui.stdout(&project_document(status, ui.locale()));
+
     for diagnostic in &status.diagnostics {
-        reporter.print_error(&Error::single(diagnostic.clone()), &mut stderr);
+        ui.stderr(&Document::new().diagnostic(diagnostic.clone()));
     }
     if status.is_healthy() {
         ExitCode::Success

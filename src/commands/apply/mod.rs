@@ -3,7 +3,7 @@
 mod exec;
 #[cfg(test)]
 mod fake;
-mod print;
+pub mod print;
 pub mod run;
 
 pub use exec::exec;

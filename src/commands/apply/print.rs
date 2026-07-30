@@ -1,77 +1,40 @@
 //! `apply`の出力。
+//!
+//! worktreeとfileはそれぞれ独立した結果であるため、適用した範囲だけをsummaryにする。
 
-use std::io::Write;
-
-use crate::i18n::Catalog;
+use crate::i18n::Locale;
 use crate::msg;
-use crate::paths;
-use crate::support::Reporter;
-use crate::support::display::{format_or_report, placement_legend, print_notes, text_or_report};
+use crate::ui::Document;
 
+use super::super::prepare::print::{files, notes};
+use super::super::present::Legend;
 use super::run::ApplyOutput;
 
-/// `apply`の成功出力。
-pub fn output(catalog: &Catalog, output: &ApplyOutput) {
-    let reporter = Reporter::new(catalog);
-    if let Some(count) = output.worktrees {
-        println!(
-            "{}",
-            format_or_report(
-                catalog,
-                &msg!(
-                    "apply-worktrees-done",
-                    count = count,
-                    project = output.project,
-                    sandbox = output.sandbox
-                )
-            )
-        );
-    }
-    print_notes(catalog, &output.notes);
-    if output.files.is_empty() && output.worktrees.is_some() {
-        return;
-    }
-    println!(
-        "{}",
-        format_or_report(
-            catalog,
-            &msg!(
-                "apply-files-done",
-                count = output.files.len(),
-                project = output.project,
-                sandbox = output.sandbox
-            )
-        )
-    );
+/// `apply`が並べるもの。
+pub fn document(output: &ApplyOutput, locale: Locale) -> Document {
+    let mut legend = Legend::new(locale);
+    let mut document = Document::new();
 
-    let files: Vec<Vec<String>> = output
-        .files
-        .iter()
-        .map(|file| {
-            vec![
-                paths::display(&file.source),
-                file.destination.clone(),
-                file.placement.as_str().to_string(),
-            ]
-        })
-        .collect();
-    if !files.is_empty() {
-        print!(
-            "\n{}",
-            reporter.render_value_table(
-                &["column-file", "column-destination", "column-result"],
-                &files,
-            )
-        );
-        println!("{}", text_or_report(catalog, "files-secret-hint"));
-        let values: Vec<(&str, &str)> = output
-            .files
-            .iter()
-            .map(|file| placement_legend(file.placement))
-            .collect();
-        if let Some(legend) = reporter.render_value_legend(&values) {
-            print!("\n{legend}");
-        }
+    if let Some(count) = output.worktrees {
+        document = document.summary(msg!(
+            "apply-worktrees-done",
+            count = count,
+            project = output.project,
+            sandbox = output.sandbox
+        ));
     }
-    let _ = std::io::stdout().flush();
+    // worktreeだけを適用した実行では、fileの結果を0件として報告しない。
+    if !output.files.is_empty() || output.worktrees.is_none() {
+        document = document.summary(msg!(
+            "apply-files-done",
+            count = output.files.len(),
+            project = output.project,
+            sandbox = output.sandbox
+        ));
+    }
+
+    document
+        .concat(notes(&output.notes))
+        .concat(files(&output.files, &mut legend))
+        .legend(Legend::heading(), legend.entries())
 }
