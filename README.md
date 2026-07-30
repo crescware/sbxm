@@ -250,3 +250,27 @@ the sandbox needs to be preserved.
 | `sbxm destroy [owner/repository]` | Delete a sandbox and stop managing the project |
 
 Use `sbxm --help` or `sbxm <command> --help` for the complete CLI reference.
+
+## Output
+
+sbxm writes results to standard output and progress, prompts, warnings and
+errors to standard error, so a redirected result stays free of anything but the
+result.
+
+Color is decided per stream. When only standard output is piped, the result is
+plain text while the diagnostics left on the terminal keep their color. Colors
+come from the ANSI palette your terminal theme defines rather than from fixed
+values, so they follow the contrast you already chose.
+
+| Setting | Effect |
+|---|---|
+| `--color=auto` | Color a stream only when it is a terminal (the default) |
+| `--color=always` | Color even a redirected stream |
+| `--color=never` | Never color anything |
+| `NO_COLOR` | Turns color off whatever its value, including empty |
+| `CLICOLOR_FORCE` | Turns color on unless it is `0` |
+| `TERM=dumb` | Turns color off and falls back to ASCII markers |
+
+An explicit `--color` wins over every environment variable. Removing color
+never removes information: markers, labels and blank lines carry the same
+meaning on their own.

@@ -243,3 +243,24 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm destroy [owner/repository]` | Sandboxを削除し、プロジェクトの管理を終了する |
 
 完全なCLI referenceは、`sbxm --help`または`sbxm <command> --help`で確認できます。
+
+## 出力
+
+sbxmは結果を標準出力へ、進捗、prompt、警告、errorを標準エラー出力へ書きます。結果を
+リダイレクトしても、結果以外は混ざりません。
+
+色はstreamごとに判定します。標準出力だけをpipeした場合、結果はplain textになり、端末に
+残る診断は色付きのままです。色は固定値ではなく端末themeが定義するANSIの標準色を使うため、
+利用者が選んだcontrastをそのまま尊重します。
+
+| 設定 | 効果 |
+|---|---|
+| `--color=auto` | streamが端末のときだけ色を付ける（既定） |
+| `--color=always` | リダイレクト先にも色を付ける |
+| `--color=never` | 色を付けない |
+| `NO_COLOR` | 値にかかわらず、空文字でも色を無効にする |
+| `CLICOLOR_FORCE` | `0` 以外なら色を有効にする |
+| `TERM=dumb` | 色を無効にし、markerをASCIIへ切り替える |
+
+明示した `--color` は、どの環境変数よりも優先されます。色を消しても情報は失われません。
+marker、label、空行だけで同じ意味を読み取れます。

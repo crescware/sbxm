@@ -191,8 +191,8 @@ Unicodeを安全に表示できない環境向けにASCII fallbackを持つ。
 | error | `×` | `x` |
 | current | `›` | `>` |
 | vertical rule | `│` | `|` |
-| branch | `├` / `└` | `+` / `\` |
 | horizontal rule | `─` | `-` |
+| move keys | `↑` / `↓` | `^` / `v` |
 
 Unicode/ASCIIのどちらでも意味を変えない。表示幅は実際に選んだglyphで計算する。
 
@@ -499,6 +499,7 @@ localeによってheadingの長さや語順が変わっても、block構造、se
 ```rust
 pub enum Role {
     Heading,
+    TableHeader,
     ProgressMarker,
     SuccessMarker,
     WarningMarker,
@@ -519,19 +520,30 @@ pub enum VisualState {
 }
 
 pub enum Block {
-    Progress(Progress),
-    Summary(Summary),
+    Progress(Msg),
+    Summary(Msg),
     Section(Section),
     Guidance(Guidance),
+    Warning(Msg),
+    Note(Msg),
     Command(CommandLine),
-    Diagnostic(DiagnosticView),
-    Rule(Rule),
+    Diagnostic(Box<Diagnostic>),
+    Verbatim(String),
+    Rule,
 }
 ```
 
+`Warning`と`Note`は、markerとlocalized labelを伴う一行として同じ規則で描く。severityを色だけに委ねないため、labelは翻訳対象とする。
+
+`Verbatim`はhelpとversionだけが使う。既に組み立てられた本文をそのまま置き、末尾の改行だけをrendererが揃える。
+
+sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれかとする。tableとlistのcellは`Cell`とし、翻訳する項目名と翻訳しない値を型で分ける。混ぜると、状態値まで訳す経路と項目名を原文のまま出す経路の両方が作れてしまう。
+
 具体的なterminal crateの型を`ui` module外へ公開しない。callerは意味型だけを使う。
 
-`StyleSpec`はbold、underline、foregroundを表現できるが、italic、背景色、点滅、RGB、256色indexを持たない。
+`StyleSpec`はbold、dim、underline、foregroundを表現できるが、italic、背景色、点滅、RGB、256色indexを持たない。dimは補助情報にだけ使い、`Muted`と`TableHeader`以外のroleへは付かない。
+
+promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`を借りたままにしない。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
 
 ## 新しい出力を追加する手順
 
