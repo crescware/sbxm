@@ -136,7 +136,7 @@ fn a_project_without_a_sandbox_is_sent_back_to_add() {
             .iter()
             .map(|command| command.as_str())
             .collect::<Vec<_>>(),
-        vec!["sbxm add Example-Org/Example-Repo"]
+        vec!["sbxm prepare Example-Org/Example-Repo"]
     );
     assert!(!host.ran("daemon stop"), "the daemon is left alone");
 }

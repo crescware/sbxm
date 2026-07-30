@@ -129,9 +129,11 @@ pub fn not_created(metadata: &ProjectMetadata, sandbox: &str) -> Error {
                 sandbox = sandbox
             ),
         )
+        // 案件は既に登録済みである。`add`はimageにもsandboxにも触れないため、
+        // 構築するcommandを案内する。
         .remediation(
             Remediation::text(msg!("remediation-sandbox-not-created"))
-                .try_run(format!("sbxm add {}", metadata.display_id())),
+                .try_run(format!("sbxm prepare {}", metadata.display_id())),
         ),
     )
 }
