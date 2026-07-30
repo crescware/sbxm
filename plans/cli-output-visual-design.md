@@ -70,9 +70,25 @@ stdout が非TTYの場合、正常結果を downstream で扱えるよう ANSI e
 | 注意・未確定 | yellow | `!`、warning、`stopped`、`missing`、`unknown` など確認や行動を要する状態値 |
 | 失敗 | red | `×`、`error`、`failed`、`invalid` など失敗状態値 |
 
+### 色方式の意思決定
+
+色の基本方式には ANSI の標準16色を採用する。ここで ANSI は escape sequence という出力方式だけでなく、利用者の terminal theme が定義する named color を使うという選択を含む。
+
+固定した truecolor RGB や256色 palette を標準にはしない。製品固有のRGBは一見洗練された色味を作りやすいが、利用者が選んだ dark/light theme、背景色、contrast 設定と独立してしまい、読みにくい組み合わせを作るためである。terminal theme が持つ cyan、green、yellow、red を semantic color として使えば、利用者が自身の環境向けに調整した contrast を尊重できる。
+
+本設計における現代的な見た目は、特殊な色番号ではなく、少ない意味色、限定された着色範囲、bold、underline、罫線、空白による一貫した情報階層で作る。truecolor 対応 terminal でも、標準動作が固定RGBへ自動昇格することはない。
+
+将来、明示的な theme option を設ける場合に限り、利用者が選択する追加 palette として truecolor を検討できる。その場合も標準ANSI theme、色なし出力、light/dark双方のcontrast testを維持し、意味 role と具体色の対応を caller へ露出しない。
+
 dim は補助説明、凡例、所要時間の見込み、外部 command の invocation metadata にだけ使用する。path と ID は原則として端末既定色のまま bold にする。実行を指示する command は後述する専用 block で表示する。
 
-magenta、背景色、点滅、italic は使わない。背景色は端末 theme との衝突が大きく、italic はアルファベット以外の字形で視認性を落とす。絵文字も使わず、幅が安定した ASCII/Unicode 記号に限定する。
+magenta、背景色、点滅、italic は使わない。背景色は端末 theme との衝突が大きく、italic はアルファベット以外の字形で視認性を落とす。
+
+emoji は一律に禁止する。本設計でいう emoji とは、terminal やOSによって二色以上の色を持つ pictograph として描画され得る文字、emoji variation selector、ZWJ sequence、国旗やkeycapなどの合成emojiを含む。色付きで表示されるかどうかを現在のterminalだけで判断しない。
+
+`→`、`✓`、`×`、`!`、`›`、`│` のように一つの前景色で描画する text symbol は使用してよい。symbol には renderer が semantic color を一色だけ適用する。文字自身が複数色を持つ表現、terminal側で色を制御できない表現、text presentation と emoji presentation が環境によって揺れる表現は使わない。
+
+これにより、terminal theme との一貫性、色なし出力、表示幅、screen reader向け transcript を安定させる。新しい marker を追加するときは、見た目が似ているemojiを選ぶのではなく、単色のASCIIまたはUnicode text symbolをglyph setへ登録する。
 
 ### bold、underline、罫線
 
@@ -510,6 +526,7 @@ style 適用後の表示幅を table alignment に使ってはならない。ali
 - plain renderer は ANSI escape byte を一切含まない
 - styled cell を含む table でも列位置が plain text と一致する
 - renderer が italic attribute を生成しない
+- 組み込み marker と罫線が emoji variation selector、ZWJ、複数色emoji sequenceを含まない
 - underline と罫線の有無で message の意味や操作可否が変わらない
 - Unicode 罫線を ASCII fallback へ置き換えても block の境界を識別できる
 - `BlockWriter` は先頭空行、二重空行、末尾の過剰改行を作らない
@@ -548,6 +565,7 @@ stdout と stderr は別々に assertion する。統合順序を test の前提
 - 通常本文の過半を着色しない
 - bold は読み順または操作対象を示し、長い本文や table 全体へ無差別に適用しない
 - italic を locale や内容にかかわらず使用しない
+- emojiと複数色pictographを使用せず、markerと罫線には単色のtext symbolだけを使う
 - underline と罫線は意味の補助として使用できるが、それらを除いても情報を失わない
 - 一つの意味に複数の色を使わず、一つの色へ無関係な意味を過度に集約しない
 - section 間は空行一行、section heading と内容の間は空行なしで全 command が統一される
