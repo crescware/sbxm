@@ -213,6 +213,17 @@ fn the_registration_is_removed_by_its_placeholder_and_verified_gone() {
         ],
         "the custom secret is named by its placeholder, and sbx is not asked to confirm"
     );
+    // 案内する文字列と実行する引数がずれると、対処方法どおりに実行しても結果が変わる。
+    assert_eq!(
+        format!("sbx {}", calls[1].join(" ")),
+        forget_command("sbxm-example", "sbx-cs-example"),
+        "sbxm runs exactly the command it names when the removal has to be repeated by hand"
+    );
+    // scopeを渡さない実行はscopeの選択を対話で訊く。stdinを閉じて実行するため答えられない。
+    assert!(
+        calls[1].contains(&"sbxm-example".to_string()),
+        "the scope is given, so nothing is asked interactively: {calls:?}"
+    );
     assert_eq!(
         calls.len(),
         3,
