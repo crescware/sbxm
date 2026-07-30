@@ -382,6 +382,7 @@ name = "sbxm"
 version = "0.0.1"
 dependencies = [
  "clap",
+ "console",
  "dialoguer",
  "dirs",
  "fluent-bundle",
