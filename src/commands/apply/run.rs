@@ -21,6 +21,8 @@ use crate::project::SandboxLayout;
 use crate::support::files::{self, PlacedFile};
 use crate::support::tools::Note;
 use crate::support::{daemon, generation, inventory, repository, sandbox, select, tools};
+use crate::ui::ProgressSink;
+use crate::ui::Remediation;
 
 /// 何を適用するか。
 ///
@@ -56,6 +58,7 @@ pub fn run(
     scope: Scope,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<ApplyOutput> {
     let canonical = project.canonical();
     let mut locked = select::locked(config, project)?;
@@ -79,10 +82,10 @@ pub fn run(
                     observed = entry.state.as_str()
                 ),
             )
-            .remediation(msg!(
-                "remediation-sandbox-not-running",
-                command = format!("sbxm open {}", locked.metadata.display_id())
-            )),
+            .remediation(
+                Remediation::text(msg!("remediation-sandbox-not-running"))
+                    .try_run(format!("sbxm open {}", locked.metadata.display_id())),
+            ),
         ));
     }
 
@@ -96,7 +99,7 @@ pub fn run(
     if let Some(count) = scope.worktrees {
         raise_worktrees(&locked.paths, &mut locked.metadata, count)?;
         let layout = SandboxLayout::new(&canonical);
-        repository::ensure_bare_clone(host, &entry.name, project, &layout)?;
+        repository::ensure_bare_clone(host, &entry.name, project, &layout, progress)?;
         let branch = repository::resolve_start_ref(
             host,
             &entry.name,
@@ -104,8 +107,14 @@ pub fn run(
             &locked.paths,
             &mut locked.metadata,
         )?;
-        let managed =
-            repository::ensure_worktrees(host, &entry.name, &layout, &locked.metadata, &branch)?;
+        let managed = repository::ensure_worktrees(
+            host,
+            &entry.name,
+            &layout,
+            &locked.metadata,
+            &branch,
+            progress,
+        )?;
         worktrees = Some(locked.metadata.provisioning.requested_worktrees);
         notes = tools::worktrees_ready(host, &entry.name, &layout, managed.len())?;
     }

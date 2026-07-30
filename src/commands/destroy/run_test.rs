@@ -10,6 +10,7 @@ use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::protection::clean_host;
+use crate::ui::SilentProgress;
 use std::os::unix::fs::PermissionsExt;
 
 fn path_of(target: &Target) -> Option<&str> {
@@ -76,7 +77,7 @@ fn a_clean_running_project_is_planned_then_removed() {
         "sbxm add Example-Org/Example-Repo --worktrees 1"
     );
 
-    let outcome = execute(&host, &prepared, poll()).expect("destroy");
+    let outcome = execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
     assert!(outcome.warnings.is_empty());
     assert!(host.ran(&format!("rm --force {}", project.sandbox)));
     assert!(
@@ -107,7 +108,7 @@ fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() {
         &fixture.workspace_root,
     )
     .expect("prepare");
-    execute(&host, &prepared, poll()).expect("destroy");
+    execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
 
     assert_lifecycle(&host, &format!("rm --force {}", project.sandbox));
 
@@ -153,7 +154,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() {
     assert!(prepared.plan.force);
     assert!(prepared.plan.worktrees.is_empty());
 
-    execute(&host, &prepared, poll()).expect("destroy");
+    execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
     // `--force`は`sbx`の確認promptを省くためのもので、常に付ける。sbxm側の
     // `--force`はsbxm自身のデータ保護検査を省くことを指す。
     assert!(host.ran(&format!("rm --force {}", project.sandbox)));
@@ -226,7 +227,7 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() {
     .expect("prepare");
     assert_eq!(prepared.plan.state, ProjectState::NotCreated);
 
-    execute(&host, &prepared, poll()).expect("destroy");
+    execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
     assert!(!host.ran("rm "), "there is no sandbox to remove");
     assert!(!project.paths.metadata_file().exists());
 }
@@ -259,7 +260,7 @@ fn the_token_registration_goes_away_with_the_sandbox() {
     // 消す前に、tokenの登録も消えることを見せる。
     assert!(describes(&prepared.plan, "destroy-target-secret"));
 
-    execute(&host, &prepared, poll()).expect("destroy");
+    execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
     assert!(
         host.ran(&format!(
             "secret rm {sandbox} --placeholder sbx-cs-example --force"
@@ -299,16 +300,17 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() {
     )
     .expect("prepare");
 
-    let error = execute(&host, &prepared, poll()).expect_err("the registration is still listed");
+    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
+        .expect_err("the registration is still listed");
     assert_eq!(error.first_id(), Some(ErrorId::SecretStillRegistered));
     let remediation = error.diagnostics()[0]
         .remediation
         .as_ref()
         .expect("the user is told how to remove it");
     assert!(
-        remediation.args.iter().any(|(_, value)| value
-            == &format!("sbx secret rm {sandbox} --placeholder sbx-cs-example --force")),
-        "the remediation carries the command that removes it: {remediation:?}"
+        remediation.commands.iter().any(|command| command.as_str()
+            == format!("sbx secret rm {sandbox} --placeholder sbx-cs-example --force")),
+        "the command that removes it is its own line: {remediation:?}"
     );
     assert!(
         project.paths.metadata_file().exists(),
@@ -339,7 +341,7 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() {
     )
     .expect("prepare");
 
-    execute(&host, &prepared, poll()).expect("destroy");
+    execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
     assert!(
         !host.ran("secret rm"),
         "a registration this project did not own is untouched: {:?}",
@@ -392,7 +394,8 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() {
     )
     .expect("prepare");
 
-    let error = execute(&host, &prepared, poll()).expect_err("a symlinked cache is refused");
+    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
+        .expect_err("a symlinked cache is refused");
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
     assert!(
         elsewhere.join("keep.txt").exists(),
@@ -565,7 +568,8 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() {
     .expect("prepare");
 
     let sealed = seal(&project.paths);
-    let error = execute(&host, &prepared, poll()).expect_err("the metadata cannot be removed");
+    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
+        .expect_err("the metadata cannot be removed");
     assert_eq!(error.first_id(), Some(ErrorId::CleanupFailed));
     assert!(
         project.paths.metadata_file().exists(),
@@ -595,7 +599,8 @@ fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged
     std::fs::remove_file(project.paths.metadata_file()).unwrap();
     let sealed = seal(&project.paths);
 
-    let outcome = execute(&host, &prepared, poll()).expect("the project is unmanaged already");
+    let outcome = execute(&host, &prepared, poll(), &mut SilentProgress)
+        .expect("the project is unmanaged already");
     assert_eq!(outcome.warnings.len(), 1, "the leftover is reported once");
     assert!(
         project.paths.lock_file().exists(),
@@ -621,7 +626,8 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() {
     )
     .expect("prepare");
 
-    let error = execute(&host, &prepared, poll()).expect_err("the sandbox is still there");
+    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
+        .expect_err("the sandbox is still there");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxStillPresent));
     assert!(
         !host.ran("secret rm"),

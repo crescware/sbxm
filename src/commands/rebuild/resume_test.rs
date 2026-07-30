@@ -7,6 +7,7 @@ use crate::testing::image::template_listing;
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, fixture, project_id};
 use crate::testing::value::COMMIT;
+use crate::ui::SilentProgress;
 use std::os::unix::fs::PermissionsExt;
 
 /// 固定した世代の成果物が揃い、再作成後の検証も通るhost。
@@ -125,6 +126,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect("the fixed generation is completed");
 
@@ -177,6 +179,7 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect("the fixed generation is completed");
 
@@ -188,7 +191,7 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
         output
             .warnings
             .iter()
-            .map(|message| message.id)
+            .map(|warning| warning.description.id)
             .collect::<Vec<_>>(),
         vec!["warning-dockerfile-changed-during-rebuild"]
     );
@@ -234,6 +237,7 @@ fn a_failure_after_the_switch_leaves_the_intent_in_place() {
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect_err("a sandbox that reaches the host agent is not accepted");
     assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));

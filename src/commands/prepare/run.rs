@@ -10,7 +10,7 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::config::GlobalConfig;
-use crate::error::{Msg, Result};
+use crate::error::Result;
 use crate::metadata::{self, CreationMode, ProjectMetadata};
 use crate::msg;
 use crate::paths::ProjectPaths;
@@ -22,6 +22,7 @@ use crate::support::{
     daemon, files, generation, identity, image, repository, sandbox, secret, select, template,
     tools,
 };
+use crate::ui::{ProgressSink, Warning};
 
 /// 出力のworktree 1行。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +48,7 @@ pub struct PrepareOutput {
     pub notes: Vec<Note>,
     /// 既に構築済みで、この実行が何も変更しなかったか。
     pub already_built: bool,
-    pub warnings: Vec<Msg>,
+    pub warnings: Vec<Warning>,
 }
 
 /// 登録済み案件のSandboxを構築する。
@@ -56,6 +57,7 @@ pub fn run(
     project: &ProjectId,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<PrepareOutput> {
     let canonical = project.canonical();
     let name = SandboxName::derive(&canonical);
@@ -97,12 +99,13 @@ pub fn run(
         &locked.metadata.canonical_id,
         &locked.paths.dockerfile(),
         &generation,
+        progress,
     )?;
     warnings.extend(built.warnings.clone());
-    let archive = image::ensure_archive(host, &locked.paths, &built, &generation)?;
-    let loaded = template::ensure(host, &archive, &built)?;
+    let archive = image::ensure_archive(host, &locked.paths, &built, &generation, progress)?;
+    let loaded = template::ensure(host, &archive, &built, progress)?;
 
-    let ready = sandbox::ensure(host, &name, &loaded, workspace_root)?;
+    let ready = sandbox::ensure(host, &name, &loaded, workspace_root, progress)?;
     // hostのSSH Agentが届かないことを、daemonの起動条件から推定せず中から確かめる。
     sandbox::require_credentials_isolated(host, &ready.name)?;
     secret::require_placeholder_present(host, &ready.name)?;
@@ -112,7 +115,7 @@ pub fn run(
     tools::sandbox_ready(host, &ready.name)?;
     secret::configure_git_credential(host, &ready.name)?;
 
-    repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
+    repository::ensure_bare_clone(host, &ready.name, project, &layout, progress)?;
     let branch = repository::resolve_start_ref(
         host,
         &ready.name,
@@ -120,8 +123,14 @@ pub fn run(
         &locked.paths,
         &mut locked.metadata,
     )?;
-    let managed =
-        repository::ensure_worktrees(host, &ready.name, &layout, &locked.metadata, &branch)?;
+    let managed = repository::ensure_worktrees(
+        host,
+        &ready.name,
+        &layout,
+        &locked.metadata,
+        &branch,
+        progress,
+    )?;
 
     let worktrees = observed_worktrees(host, &ready.name, &layout, &locked.metadata)?;
     let notes = tools::worktrees_ready(host, &ready.name, &layout, managed.len())?;
@@ -202,7 +211,7 @@ fn adopt_generation(
     metadata: &mut ProjectMetadata,
     name: &SandboxName,
     current: &str,
-    warnings: &mut Vec<Msg>,
+    warnings: &mut Vec<Warning>,
 ) -> Result<String> {
     let stored = metadata.provisioning.dockerfile_sha256.clone();
     if current == stored {
@@ -210,11 +219,15 @@ fn adopt_generation(
     }
 
     if image::generation_is_built(host, name, &metadata.canonical_id, &stored)? {
-        warnings.push(msg!(
-            "warning-dockerfile-changed-during-build",
-            project = metadata.display_id(),
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        ));
+        // 注意だけを出して終えない。現在のDockerfileを適用する手順まで示す。
+        warnings.push(
+            Warning::text(msg!(
+                "warning-dockerfile-changed-during-build",
+                project = metadata.display_id()
+            ))
+            .explain(msg!("guidance-apply-current-dockerfile"))
+            .try_run(format!("sbxm rebuild {}", metadata.display_id())),
+        );
         return Ok(stored);
     }
 

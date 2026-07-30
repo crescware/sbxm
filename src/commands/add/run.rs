@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::command::HostEnvironment;
 use crate::config::GlobalConfig;
-use crate::error::{Diagnostic, Error, ErrorId, Msg, Result, fail};
+use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::git;
 use crate::hash::sha256_hex;
 use crate::metadata::{
@@ -24,6 +24,7 @@ use crate::project::{ProjectId, SandboxName};
 use crate::support::generation;
 
 use super::host_clone;
+use crate::ui::{ProgressSink, Remediation, Warning};
 
 /// 案件のDockerfileを新規作成するときの初期template。
 ///
@@ -200,7 +201,7 @@ pub struct AddOutput {
     pub host_clone: PathBuf,
     /// 既に登録済みで、この実行が目標構成を変えなかったか。
     pub already_registered: bool,
-    pub warnings: Vec<Msg>,
+    pub warnings: Vec<Warning>,
 }
 
 /// 案件を管理下へ置き、host cloneを用意する。
@@ -211,13 +212,14 @@ pub fn run(
     config: &GlobalConfig,
     request: &AddRequest,
     host: &dyn HostEnvironment,
+    progress: &mut dyn ProgressSink,
 ) -> Result<AddOutput> {
     let paths = ProjectPaths::derive(&config.base_path, &request.project.canonical());
     let already_registered = metadata::load(&paths)?.is_some();
 
     let registration = register(config, request)?;
     // host cloneは利用者のSSH鍵でhost上から取る。Sandboxのsecretは要らない。
-    let clone = host_clone::ensure(host, &registration.paths, &request.project)?;
+    let clone = host_clone::ensure(host, &registration.paths, &request.project, progress)?;
 
     let provisioning = &registration.metadata.provisioning;
     Ok(AddOutput {
@@ -253,10 +255,10 @@ fn check_continuable(stored: &ProjectMetadata, request: &AddRequest) -> Result<(
                     stored = stored
                 ),
             )
-            .remediation(msg!(
-                "remediation-target-configuration-mismatch",
-                command = format!("sbxm add {display_id}")
-            )),
+            .remediation(
+                Remediation::text(msg!("remediation-target-configuration-mismatch"))
+                    .try_run(format!("sbxm add {display_id}")),
+            ),
         ))
     };
 

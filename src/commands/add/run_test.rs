@@ -338,7 +338,11 @@ fn a_rebuild_in_progress_sends_the_user_to_rebuild() {
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
     let diagnostic = &error.diagnostics()[0];
     assert_eq!(
-        diagnostic.remediation.as_ref().map(|message| message.id),
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
         Some("remediation-run-rebuild")
     );
 }

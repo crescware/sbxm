@@ -7,6 +7,7 @@ use crate::testing::poll::poll;
 use crate::testing::project::{fixture, project_id};
 use crate::testing::protection::clean_host;
 use crate::testing::value::COMMIT;
+use crate::ui::SilentProgress;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
@@ -25,6 +26,7 @@ fn a_dockerfile_that_did_not_change_is_a_no_op() {
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect("nothing to apply");
 
@@ -54,6 +56,7 @@ fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_docker
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect_err("there is no sandbox to report as unchanged");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
@@ -69,6 +72,7 @@ fn a_project_that_is_not_managed_cannot_be_rebuilt() {
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect_err("there is nothing to rebuild");
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
@@ -94,6 +98,7 @@ fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() {
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     );
 
     assert!(
@@ -116,6 +121,7 @@ fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() {
         &absent,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect_err("a project without a sandbox has nothing to switch");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
@@ -143,6 +149,7 @@ fn unsaved_work_stops_the_rebuild_before_anything_is_built() {
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect_err("a dirty worktree is not recreated");
     assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
@@ -240,6 +247,7 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect("the sandbox that is gone is created instead of removed");
 
@@ -270,6 +278,7 @@ fn a_new_generation_that_cannot_be_produced_leaves_the_existing_sandbox_alone() 
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect_err("the new generation never became usable");
     assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
@@ -311,13 +320,18 @@ fn a_fixed_generation_with_neither_artifacts_nor_its_dockerfile_says_how_to_reco
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect_err("generations are never mixed");
     assert_eq!(error.first_id(), Some(ErrorId::RebuildGenerationMissing));
 
     let diagnostic = &error.diagnostics()[0];
     assert_eq!(
-        diagnostic.remediation.as_ref().map(|message| message.id),
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
         Some("remediation-rebuild-generation-missing")
     );
     assert!(
@@ -431,6 +445,7 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
         &host,
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect("the fixed generation is completed from a stopped previous one");
 
