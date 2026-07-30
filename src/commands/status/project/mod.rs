@@ -21,9 +21,9 @@ use crate::project::{ProjectId, SandboxName};
 
 use crate::support::select;
 
+use crate::ui::Remediation;
 use artifacts::{check_archive, check_directory, check_dockerfile, check_image};
 use inside::{check_inside, check_sandbox};
-use crate::ui::Remediation;
 
 /// project scopeの状態値。翻訳しない安定したenum。
 ///

@@ -26,7 +26,10 @@ fn a_shared_definition_is_expanded_where_it_is_referenced() {
         let remediation = catalog
             .text("remediation-github-secret-missing")
             .expect("the remediation renders");
-        assert!(remediation.contains("Contents"), "{locale:?}: {remediation}");
+        assert!(
+            remediation.contains("Contents"),
+            "{locale:?}: {remediation}"
+        );
         assert!(
             !remediation.contains("sbx "),
             "{locale:?}: a command must not be embedded in the prose: {remediation}"
