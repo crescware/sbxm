@@ -9,7 +9,7 @@
 //! 扱いを変え、classic personal access tokenを注入しないためである。
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
-use crate::compatibility::parse_custom_secrets;
+use crate::compatibility::{CustomSecret, parse_custom_secrets};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
@@ -74,21 +74,108 @@ pub fn register_command(sandbox: &str, placeholder: Option<&str>) -> String {
     )
 }
 
+/// tokenの登録を解くcommand。
+///
+/// custom secretはenvでもhostでもなくplaceholderで指す。`sbx secret ls`のcustom secretの
+/// 表にNAME列はなく、placeholderがこの登録を一意に示す唯一の公開値である。
+///
+/// `--force`は`sbx`の確認promptを省く。消してよいかはsbxmが先に判定しており、
+/// `destroy`は自前の確認も済ませている。
+pub fn forget_command(sandbox: &str, placeholder: &str) -> String {
+    format!("sbx secret rm {sandbox} --placeholder {placeholder} --force")
+}
+
+/// Sandbox scopeのcustom secretを読む。
+///
+/// `--service`で絞ると出力へ値の一部が現れる。一覧のまま読む形で呼ぶ。
+fn list_customs(host: &dyn HostEnvironment, sandbox: &str) -> Result<Vec<CustomSecret>> {
+    let spec = CommandSpec::capture("sbx", &["secret", "ls", sandbox])
+        .env(EnvPolicy::InheritWithoutSshAgent)
+        .timeout(TimeoutClass::SandboxLifecycle);
+    let outcome = host.run(&spec)?.require_success()?;
+    parse_custom_secrets(&outcome.stdout_text())
+}
+
+/// このscopeへ結び付いた、sbxmが案内したtokenの登録。
+///
+/// scopeが一致するものだけを選ぶ。global scopeのsecretはほかのSandboxも使うため、
+/// 1案件の後片付けで消してよい対象ではない。envも見るのは、利用者が同じscopeへ別の
+/// secretを登録していることがあるためである。sbxmは自分が案内した登録だけを扱う。
+fn scoped_github(customs: Vec<CustomSecret>, sandbox: &str) -> Vec<CustomSecret> {
+    customs
+        .into_iter()
+        .filter(|custom| custom.scope == sandbox && custom.env == GITHUB_TOKEN_ENV)
+        .collect()
+}
+
+/// Sandboxを消したあと、そのscopeに残るtokenの登録も解く。
+///
+/// scopeはSandboxの有無と無関係に残る。Sandboxだけを消すと、次に同じ案件を登録して
+/// 案内どおりに`set-custom`を実行しても、同じenvの登録が既にあるとして拒否される。
+/// 消したSandbox宛のtokenを預けたままにしないためでもある。
+///
+/// 消えたことは一覧を読み直して確かめる。commandの戻り値だけを不在の根拠にしない。
+/// 返す値は解いた登録のplaceholderであり、tokenそのものは読まない。
+pub fn forget_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<Vec<String>> {
+    let registered = scoped_github(list_customs(host, sandbox)?, sandbox);
+    if registered.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 同じenvへhostを分けて登録した状態から来ることがある。1件だけ消して残さない。
+    for custom in &registered {
+        let spec = CommandSpec::capture(
+            "sbx",
+            &[
+                "secret",
+                "rm",
+                sandbox,
+                "--placeholder",
+                &custom.placeholder,
+                "--force",
+            ],
+        )
+        .env(EnvPolicy::InheritWithoutSshAgent)
+        .timeout(TimeoutClass::SandboxLifecycle);
+        host.run(&spec)?.require_success()?;
+    }
+
+    let left = scoped_github(list_customs(host, sandbox)?, sandbox);
+    if let Some(custom) = left.first() {
+        return Err(Error::single(
+            Diagnostic::new(
+                ErrorId::SecretStillRegistered,
+                msg!(
+                    "error-secret-still-registered",
+                    sandbox = sandbox,
+                    env = GITHUB_TOKEN_ENV
+                ),
+            )
+            .remediation(msg!(
+                "remediation-secret-still-registered",
+                command = forget_command(sandbox, &custom.placeholder)
+            )),
+        ));
+    }
+
+    Ok(registered
+        .into_iter()
+        .map(|custom| custom.placeholder)
+        .collect())
+}
+
 /// GitHubのcustom secretが登録済みであることを確認する。
 ///
 /// 未登録なら、発行条件と登録commandを示して前提条件不足として停止する。custom secretは
 /// Sandboxの作成時に結び付くため、この確認はSandboxを作る前に行う。
 pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
-    // `--service`で絞ると出力へ値の一部が現れる。一覧のまま読む形で呼ぶ。
-    let spec = CommandSpec::capture("sbx", &["secret", "ls", sandbox])
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::SandboxLifecycle);
-    let outcome = host.run(&spec)?.require_success()?;
-    let customs = parse_custom_secrets(&outcome.stdout_text())?;
+    let customs = list_customs(host, sandbox)?;
 
     // 1件のsecretが全hostを覆っていることを求める。複数のsecretへ分けて登録すると
     // placeholderが分かれ、Sandboxはそのうち1つしか受け取れない。
-    let covered = |custom: &crate::compatibility::CustomSecret| {
+    //
+    // scopeは絞らない。global scopeの登録でもSandboxはplaceholderを受け取れる。
+    let covered = |custom: &CustomSecret| {
         custom.env == GITHUB_TOKEN_ENV
             && GITHUB_HOSTS
                 .iter()

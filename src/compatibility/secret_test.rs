@@ -14,6 +14,7 @@ fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
     assert_eq!(
         parse_custom_secrets(observed).unwrap(),
         vec![CustomSecret {
+            scope: "sbxm-example".to_string(),
             placeholder: "sbx-cs-example".to_string(),
             targets: vec!["github.com".to_string()],
             env: "GH_TOKEN".to_string(),
@@ -48,6 +49,7 @@ fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
     assert_eq!(
         parsed,
         vec![CustomSecret {
+            scope: "sbxm-example".to_string(),
             targets: vec![
                 "github.com".to_string(),
                 "**.github.com".to_string(),
@@ -60,10 +62,16 @@ fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
         "the pattern is compared as written, so it has to survive the listing unexpanded"
     );
 
+    // scopeを読めない一覧からは、消してよい登録とほかのSandboxが使う登録を区別できない。
+    let scopeless = "CUSTOM SECRETS\n\
+                         TARGETS      ENV        PLACEHOLDER      SECRET\n\
+                         github.com   GH_TOKEN   sbx-cs-example   ghp_example\n";
+
     for output in [
         "",
         "CUSTOM SECRETS\nSCOPE          ENV\nsbxm-example   GH_TOKEN\n",
         "CUSTOM SECRETS\nSCOPE          TARGETS      ENV\nsbxm-example   github.com\n",
+        scopeless,
     ] {
         let error = parse_custom_secrets(output).expect_err("{output} must be refused");
         assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));

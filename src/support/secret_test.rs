@@ -3,14 +3,29 @@ use crate::command::CommandOutcome;
 use std::cell::RefCell;
 
 struct FakeSbx {
-    listing: String,
+    /// `secret ls`へ順に返す出力。末尾から取り出し、最後の1件は繰り返す。
+    listings: RefCell<Vec<String>>,
     calls: RefCell<Vec<Vec<String>>>,
 }
 
 impl FakeSbx {
     fn listing(output: &str) -> FakeSbx {
         FakeSbx {
-            listing: output.to_string(),
+            listings: RefCell::new(vec![output.to_string()]),
+            calls: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// mutationの前後で観測が変わるhost。
+    fn listings(outputs: &[&str]) -> FakeSbx {
+        FakeSbx {
+            listings: RefCell::new(
+                outputs
+                    .iter()
+                    .rev()
+                    .map(|value| value.to_string())
+                    .collect(),
+            ),
             calls: RefCell::new(Vec::new()),
         }
     }
@@ -23,17 +38,35 @@ impl HostEnvironment for FakeSbx {
 
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.args.clone());
-        Ok(crate::testing::command::outcome(spec, 0, &self.listing))
+        let mut listings = self.listings.borrow_mut();
+        let output = listings.last().cloned().unwrap_or_default();
+        // 一覧を読み直す工程だけが次の観測へ進む。最後の1件は繰り返す。
+        let reads_listing = spec.args.first().is_some_and(|arg| arg == "secret")
+            && spec.args.get(1).is_some_and(|arg| arg == "ls");
+        if reads_listing && listings.len() > 1 {
+            listings.pop();
+        }
+        Ok(crate::testing::command::outcome(spec, 0, &output))
     }
 }
 
 fn registered() -> String {
+    scoped("sbxm-example", "sbx-cs-example")
+}
+
+/// 1件のcustom secretが並ぶ一覧。
+fn scoped(scope: &str, placeholder: &str) -> String {
     format!(
         "CUSTOM SECRETS\n\
              SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
-             sbxm-example   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
+             {scope}   {}   GH_TOKEN   {placeholder}   ghp_example\n",
         GITHUB_HOSTS.join(" ")
     )
+}
+
+/// 1件も登録がないscopeの一覧。
+fn none() -> String {
+    "No secrets found for scope \"sbxm-example\".\n".to_string()
 }
 
 #[test]
@@ -159,6 +192,133 @@ fn a_missing_secret_stops_with_the_command_that_registers_it() {
             .iter()
             .any(|(_, value)| value == &register_command("sbxm-example", None))
     );
+}
+
+#[test]
+fn the_registration_is_removed_by_its_placeholder_and_verified_gone() {
+    let host = FakeSbx::listings(&[&registered(), &none()]);
+    let removed = forget_github(&host, "sbxm-example").expect("the registration is removed");
+    assert_eq!(removed, vec!["sbx-cs-example".to_string()]);
+
+    let calls = host.calls.borrow();
+    assert_eq!(
+        calls[1],
+        vec![
+            "secret".to_string(),
+            "rm".to_string(),
+            "sbxm-example".to_string(),
+            "--placeholder".to_string(),
+            "sbx-cs-example".to_string(),
+            "--force".to_string()
+        ],
+        "the custom secret is named by its placeholder, and sbx is not asked to confirm"
+    );
+    assert_eq!(
+        calls.len(),
+        3,
+        "the listing is read again, so absence is observed instead of assumed: {calls:?}"
+    );
+}
+
+#[test]
+fn every_registration_of_the_env_in_this_scope_is_removed() {
+    // hostを分けて登録した状態から来ることがある。1件だけ消すと、残った側が次の登録を
+    // 重複として拒否させる。
+    let host = FakeSbx::listings(&[
+        "CUSTOM SECRETS\n\
+             SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
+             sbxm-example   github.com   GH_TOKEN   sbx-cs-one       ghp_example\n\
+             sbxm-example   ghcr.io      GH_TOKEN   sbx-cs-two       ghp_example\n",
+        &none(),
+    ]);
+
+    let removed = forget_github(&host, "sbxm-example").expect("both are removed");
+    assert_eq!(
+        removed,
+        vec!["sbx-cs-one".to_string(), "sbx-cs-two".to_string()]
+    );
+}
+
+#[test]
+fn a_registration_of_another_scope_is_not_removed_with_this_sandbox() {
+    // global scopeのsecretはほかのSandboxも使う。placeholderで指して消すと、この案件と
+    // 無関係なSandboxがrepositoryへ届かなくなる。
+    let host = FakeSbx::listing(&scoped("global", "sbx-cs-elsewhere"));
+    let removed = forget_github(&host, "sbxm-example").expect("nothing of this project is there");
+    assert!(removed.is_empty());
+    assert!(
+        !host
+            .calls
+            .borrow()
+            .iter()
+            .any(|args| args.contains(&"rm".to_string())),
+        "nothing is removed: {:?}",
+        host.calls.borrow()
+    );
+}
+
+#[test]
+fn a_secret_the_user_registered_for_something_else_is_left_alone() {
+    // 同じscopeへ別のsecretを登録していることがある。sbxmは自分が案内した登録だけを扱う。
+    let host = FakeSbx::listing(
+        "CUSTOM SECRETS\n\
+             SCOPE          TARGETS            ENV                 PLACEHOLDER      SECRET\n\
+             sbxm-example   api.example.com    ANTHROPIC_API_KEY   sbx-cs-other     sk-example\n",
+    );
+    let removed = forget_github(&host, "sbxm-example").expect("nothing sbxm registered is there");
+    assert!(removed.is_empty());
+    assert!(
+        !host
+            .calls
+            .borrow()
+            .iter()
+            .any(|args| args.contains(&"rm".to_string())),
+        "nothing is removed: {:?}",
+        host.calls.borrow()
+    );
+}
+
+#[test]
+fn nothing_is_removed_when_no_token_was_ever_registered() {
+    let host = FakeSbx::listing(&none());
+    assert!(
+        forget_github(&host, "sbxm-example")
+            .expect("an unregistered scope is not an error")
+            .is_empty()
+    );
+    assert_eq!(host.calls.borrow().len(), 1, "only the listing is read");
+}
+
+#[test]
+fn a_registration_that_survives_the_removal_is_reported_with_the_command_to_run() {
+    // 一覧に残り続ける。消えたことを確かめるまで完了としない。
+    let host = FakeSbx::listing(&registered());
+    let error = forget_github(&host, "sbxm-example").expect_err("the registration is still listed");
+
+    assert_eq!(error.first_id(), Some(ErrorId::SecretStillRegistered));
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .expect("the user is told how to remove it");
+    assert!(
+        remediation
+            .args
+            .iter()
+            .any(|(_, value)| value == &forget_command("sbxm-example", "sbx-cs-example"))
+    );
+}
+
+#[test]
+fn the_value_of_a_secret_is_never_named_while_removing_it() {
+    let host = FakeSbx::listings(&[&registered(), &none()]);
+    forget_github(&host, "sbxm-example").expect("the registration is removed");
+
+    for args in host.calls.borrow().iter() {
+        assert!(
+            !args.iter().any(|arg| arg == "--value" || arg == "--token"),
+            "sbxm only names the placeholder: {args:?}"
+        );
+    }
 }
 
 #[test]

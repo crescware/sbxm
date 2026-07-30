@@ -14,6 +14,8 @@ use std::cell::RefCell;
 pub struct FakeSbx {
     pub listing: RefCell<Vec<String>>,
     pub answers: std::collections::HashMap<String, (i32, String)>,
+    /// 同じ指定へ順に返す応答。末尾から取り出す。
+    pub sequences: RefCell<std::collections::HashMap<String, Vec<(i32, String)>>>,
     pub specs: RefCell<Vec<CommandSpec>>,
 }
 
@@ -22,6 +24,7 @@ impl FakeSbx {
         FakeSbx {
             listing: RefCell::new(vec![output.to_string()]),
             answers: std::collections::HashMap::new(),
+            sequences: RefCell::new(std::collections::HashMap::new()),
             specs: RefCell::new(Vec::new()),
         }
     }
@@ -37,6 +40,7 @@ impl FakeSbx {
                     .collect(),
             ),
             answers: std::collections::HashMap::new(),
+            sequences: RefCell::new(std::collections::HashMap::new()),
             specs: RefCell::new(Vec::new()),
         }
     }
@@ -44,6 +48,21 @@ impl FakeSbx {
     pub fn answering(mut self, command: &str, code: i32, stdout: &str) -> FakeSbx {
         self.answers
             .insert(command.to_string(), (code, stdout.to_string()));
+        self
+    }
+
+    /// 1つの指定へ、呼び出しごとに異なる応答を返す。最後の1件は繰り返し使う。
+    ///
+    /// mutationの前後で観測が変わる工程を、実機と同じ順序で辿るために使う。
+    pub fn answering_in_turn(self, command: &str, answers: &[(i32, &str)]) -> FakeSbx {
+        self.sequences.borrow_mut().insert(
+            command.to_string(),
+            answers
+                .iter()
+                .rev()
+                .map(|(code, stdout)| (*code, stdout.to_string()))
+                .collect(),
+        );
         self
     }
 
@@ -95,15 +114,27 @@ pub fn assert_lifecycle(host: &FakeSbx, needle: &str) {
     );
 }
 
+/// このscopeへ1件のcustom secretが登録されている`sbx secret ls`の出力。
+///
+/// 実機と同じく、scope名で始まる行に対象host、env、placeholderが続く。
+pub fn custom_secret_listing(scope: &str, placeholder: &str) -> String {
+    format!(
+        "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n{scope}   {}   GH_TOKEN   {placeholder}   ghp_example\n",
+        crate::support::secret::GITHUB_HOSTS.join(" ")
+    )
+}
+
+/// custom secretが1件も登録されていないscopeの出力。
+pub fn no_custom_secrets(scope: &str) -> String {
+    format!("No secrets found for scope \"{scope}\".\n")
+}
+
 /// custom secretが登録済みで、placeholderも解決できるSandbox。
 pub fn registered_secret(host: FakeSbx, sandbox: &str) -> FakeSbx {
     host.answering(
         &format!("secret ls {sandbox}"),
         0,
-        &format!(
-            "CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\nx   {}   GH_TOKEN   sbx-cs-example   ghp_example\n",
-            crate::support::secret::GITHUB_HOSTS.join(" ")
-        ),
+        &custom_secret_listing(sandbox, "sbx-cs-example"),
     )
     .answering(
         &format!(
@@ -112,6 +143,15 @@ pub fn registered_secret(host: FakeSbx, sandbox: &str) -> FakeSbx {
         ),
         0,
         "sbx-cs-example",
+    )
+}
+
+/// tokenの登録がないSandbox scope。
+pub fn no_secrets(host: FakeSbx, sandbox: &str) -> FakeSbx {
+    host.answering(
+        &format!("secret ls {sandbox}"),
+        0,
+        &no_custom_secrets(sandbox),
     )
 }
 
@@ -137,6 +177,12 @@ impl HostEnvironment for FakeSbx {
                 listings.last().cloned().unwrap_or_default()
             };
             (0, output)
+        } else if let Some(queued) = self.sequences.borrow_mut().get_mut(&key) {
+            if queued.len() > 1 {
+                queued.pop().unwrap_or_default()
+            } else {
+                queued.last().cloned().unwrap_or_default()
+            }
         } else {
             match self.answers.get(&key) {
                 Some((code, stdout)) => (*code, stdout.clone()),

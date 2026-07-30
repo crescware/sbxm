@@ -6,10 +6,15 @@ use super::json::unparseable;
 
 /// `sbx secret ls`が示すcustom secretの登録。
 ///
-/// 対象host、環境変数名、placeholderを持つ。`SECRET`列は読まない。tokenの一部が
+/// scope、対象host、環境変数名、placeholderを持つ。`SECRET`列は読まない。tokenの一部が
 /// 現れるためである。
 #[derive(Debug, PartialEq, Eq)]
 pub struct CustomSecret {
+    /// この登録が属するscope。
+    ///
+    /// Sandboxへ結び付いた登録はそのSandbox名を示す。global scopeの登録はどのSandboxでも
+    /// 使われるため、1案件の後片付けで消してよい対象と区別する必要がある。
+    pub scope: String,
     /// proxyが認証を差し替える対象host。
     pub targets: Vec<String>,
     /// placeholderを受け取るSandbox内の環境変数名。
@@ -60,6 +65,7 @@ pub fn parse_custom_secrets(output: &str) -> Result<Vec<CustomSecret>> {
                 )
             })
     };
+    let scope_at = column_of("SCOPE")?;
     let targets_at = column_of("TARGETS")?;
     let env_at = column_of("ENV")?;
     let placeholder_at = column_of("PLACEHOLDER")?;
@@ -83,6 +89,7 @@ pub fn parse_custom_secrets(output: &str) -> Result<Vec<CustomSecret>> {
             ));
         }
         customs.push(CustomSecret {
+            scope: fields[scope_at].to_string(),
             targets: fields[targets_at]
                 .split([',', ' '])
                 .filter(|target| !target.is_empty())
