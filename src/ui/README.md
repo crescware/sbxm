@@ -155,6 +155,8 @@ underlineは一律禁止にしない。参照または操作可能であるこ�
 
 単なる強調、severity、path、commandへ慣例的に付けない。terminal hyperlinkでない文字列をlinkに見せない。
 
+現在の出力はどれにも当たらないため、style modelはunderlineを持たない。実際に開けるURLを出す出力ができた時点で、`Role`と写像へ同時に足す。使い道のない語彙を先に置くと、あとから慣例的な強調として使われる。
+
 ### 背景色など
 
 背景色、点滅は使わない。terminal themeとの衝突が大きく、情報量に対して視覚的な負荷が高いためである。
@@ -190,9 +192,9 @@ Unicodeを安全に表示できない環境向けにASCII fallbackを持つ。
 | success | `✓` | `+` |
 | error | `×` | `x` |
 | current | `›` | `>` |
-| vertical rule | `│` | `|` |
-| horizontal rule | `─` | `-` |
 | move keys | `↑` / `↓` | `^` / `v` |
+
+罫線は現在どの出力も使っていない。外部outputとsbxm自身の診断は四空白の字下げで分けている。所属関係が字下げと空行だけでは曖昧になる出力ができた時点で、`GlyphSet`へASCII fallbackとともに足す。
 
 Unicode/ASCIIのどちらでも意味を変えない。表示幅は実際に選んだglyphで計算する。
 

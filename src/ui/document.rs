@@ -33,8 +33,6 @@ pub enum Block {
     Diagnostic(Box<Diagnostic>),
     /// 既に組み立てられた本文。helpとversionのように、翻訳もstyleも外で決まるもの。
     Verbatim(String),
-    /// blockの所属関係を示す水平の区切り。
-    Rule,
 }
 
 /// 見出しと内容。見出しと内容の間には空行を置かない。
@@ -104,8 +102,6 @@ pub struct Guidance {
 pub enum GuidanceItem {
     /// 順序のある操作。
     Ordered { number: usize, text: Msg },
-    /// 順序のない説明。
-    Bullet(Msg),
     /// markerを付けない説明。
     Plain(Msg),
 }
@@ -230,11 +226,6 @@ impl Document {
     /// 空行を作らない。
     pub fn verbatim(self, text: impl Into<String>) -> Document {
         self.push(Block::Verbatim(text.into()))
-    }
-
-    /// blockの所属関係を示す区切り。
-    pub fn rule(self) -> Document {
-        self.push(Block::Rule)
     }
 
     /// 別のdocumentを末尾へ連結する。blockの順序は保たれる。

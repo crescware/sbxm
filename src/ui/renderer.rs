@@ -196,14 +196,6 @@ impl Painter {
                 }
                 Trailing::Normal
             }
-            Block::Rule => {
-                let width = self.policy.width.unwrap_or(72).clamp(8, 72);
-                line(
-                    out,
-                    &self.role(&self.glyphs().horizontal_rule.repeat(width), Role::Muted),
-                );
-                Trailing::Normal
-            }
         }
     }
 
@@ -223,7 +215,6 @@ impl Painter {
             GuidanceItem::Ordered { number, text } => {
                 format!("{INDENT}{number}. {}", self.format(catalog, text))
             }
-            GuidanceItem::Bullet(text) => format!("{INDENT}- {}", self.format(catalog, text)),
             GuidanceItem::Plain(text) => format!("{INDENT}{}", self.format(catalog, text)),
         }
     }
@@ -516,9 +507,6 @@ fn console_style(spec: StyleSpec) -> console::Style {
     }
     if spec.dim {
         style = style.dim();
-    }
-    if spec.underline {
-        style = style.underlined();
     }
     if let Some(foreground) = spec.foreground {
         style = style.fg(match foreground {

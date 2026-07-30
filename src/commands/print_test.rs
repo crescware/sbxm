@@ -38,7 +38,6 @@ fn shape(document: &Document) -> Vec<&'static str> {
             Block::Command(_) => "command",
             Block::Diagnostic(_) => "diagnostic",
             Block::Verbatim(_) => "verbatim",
-            Block::Rule => "rule",
         })
         .collect()
 }

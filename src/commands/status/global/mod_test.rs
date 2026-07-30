@@ -1,7 +1,7 @@
 use super::*;
 use crate::compatibility::EXPECTED_NETWORK_POLICY;
 use crate::error::ErrorId;
-use crate::i18n::{Catalog, Locale};
+use crate::i18n::Locale;
 use crate::testing::global_status::{
     FakeHost, items, location_with_config, status_of, valid_config,
 };

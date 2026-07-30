@@ -33,8 +33,6 @@ pub enum Role {
     Important,
     /// 操作説明、凡例、metadataのような補助情報。
     Muted,
-    /// terminal hyperlinkとして実際に開ける参照。
-    Link,
     /// promptのkeyboard focusがある行。
     PromptCurrent,
     /// promptで選択済みであることを示すcheckbox。
@@ -74,8 +72,6 @@ pub(super) struct StyleSpec {
     pub bold: bool,
     /// 補助情報であることを示す減光。
     pub dim: bool,
-    /// 参照または操作可能であることの補助。severityには使わない。
-    pub underline: bool,
     pub foreground: Option<Color>,
 }
 
@@ -133,10 +129,6 @@ pub(super) fn role_style(role: Role) -> StyleSpec {
             dim: true,
             ..StyleSpec::plain()
         },
-        Role::Link => StyleSpec {
-            underline: true,
-            ..StyleSpec::plain()
-        },
         Role::PromptCurrent => StyleSpec::bold_color(Color::Cyan),
         Role::PromptChecked => StyleSpec::color(Color::Green),
     }
@@ -152,7 +144,7 @@ pub(super) fn state_style(state: VisualState) -> StyleSpec {
     }
 }
 
-/// markerと罫線に使う文字。
+/// markerに使う文字。
 ///
 /// 一つの前景色で描画されるtext symbolだけを持つ。二色以上のpictographとして描画され
 /// 得る文字、variation selector、ZWJ sequence、regional indicator、keycap sequenceは
@@ -164,8 +156,6 @@ pub(super) struct GlyphSet {
     pub warning: &'static str,
     pub error: &'static str,
     pub current: &'static str,
-    pub vertical_rule: &'static str,
-    pub horizontal_rule: &'static str,
     /// promptの操作説明が指す上下キー。key名は翻訳しない。
     pub arrow_up: &'static str,
     pub arrow_down: &'static str,
@@ -177,8 +167,6 @@ const UNICODE: GlyphSet = GlyphSet {
     warning: "!",
     error: "\u{00d7}",
     current: "\u{203a}",
-    vertical_rule: "\u{2502}",
-    horizontal_rule: "\u{2500}",
     arrow_up: "\u{2191}",
     arrow_down: "\u{2193}",
 };
@@ -189,8 +177,6 @@ const ASCII: GlyphSet = GlyphSet {
     warning: "!",
     error: "x",
     current: ">",
-    vertical_rule: "|",
-    horizontal_rule: "-",
     arrow_up: "^",
     arrow_down: "v",
 };
@@ -206,15 +192,13 @@ pub(super) fn glyphs(characters: CharacterSet) -> GlyphSet {
 impl GlyphSet {
     /// 定義した全glyph。testが一覧を取りこぼさないよう、宣言と同じ場所から作る。
     #[cfg(test)]
-    pub(super) fn all(self) -> [&'static str; 9] {
+    pub(super) fn all(self) -> [&'static str; 7] {
         [
             self.progress,
             self.success,
             self.warning,
             self.error,
             self.current,
-            self.vertical_rule,
-            self.horizontal_rule,
             self.arrow_up,
             self.arrow_down,
         ]

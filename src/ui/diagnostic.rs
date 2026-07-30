@@ -47,10 +47,6 @@ impl Remediation {
             None => self,
         }
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.explanation.is_empty() && self.commands.is_empty()
-    }
 }
 
 /// 説明だけの対処方法は、message1件からそのまま作れる。

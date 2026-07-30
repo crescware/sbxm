@@ -1,7 +1,7 @@
 use super::*;
 
 /// 実装が写像を持つrole。variantを足したらここへも足す。
-const ROLES: [Role; 12] = [
+const ROLES: [Role; 11] = [
     Role::Heading,
     Role::TableHeader,
     Role::ProgressMarker,
@@ -11,7 +11,6 @@ const ROLES: [Role; 12] = [
     Role::Command,
     Role::Important,
     Role::Muted,
-    Role::Link,
     Role::PromptCurrent,
     Role::PromptChecked,
 ];
@@ -75,18 +74,6 @@ fn a_command_line_is_the_only_body_text_that_is_both_bold_and_colored() {
     let command = role_style(Role::Command);
     assert!(command.bold);
     assert_eq!(command.foreground, Some(Color::Cyan));
-}
-
-#[test]
-fn underline_is_reserved_for_references() {
-    for role in ROLES {
-        let style = role_style(role);
-        assert_eq!(
-            style.underline,
-            role == Role::Link,
-            "{role:?} must not borrow the look of a hyperlink"
-        );
-    }
 }
 
 #[test]

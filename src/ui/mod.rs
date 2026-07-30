@@ -13,7 +13,7 @@ mod width;
 pub use diagnostic::{Remediation, Warning};
 pub use document::{Document, Field, GuidanceItem, LegendEntry};
 pub use policy::{ColorMode, Environment, OutputPolicy, Terminals};
-pub use prompt::{PromptUi, Selection};
+pub use prompt::PromptUi;
 pub use style::VisualState;
 pub use table::{Cell, Table};
 pub use text::{CommandLine, Inline};
@@ -32,9 +32,11 @@ pub trait ProgressSink {
     fn step(&mut self, message: Msg);
 }
 
-/// 何も表示しないsink。出力を持たない経路とtestが使う。
+/// 何も表示しないsink。出力を持たない経路が使う。
+#[cfg(test)]
 pub struct SilentProgress;
 
+#[cfg(test)]
 impl ProgressSink for SilentProgress {
     fn step(&mut self, message: Msg) {
         let _ = message;
@@ -64,6 +66,7 @@ impl Ui<'static> {
 
 impl<'a> Ui<'a> {
     /// bufferへ書くUI。testが独立したstreamを注入するために使う。
+    #[cfg(test)]
     pub fn capture(
         locale: Locale,
         policy: OutputPolicy,

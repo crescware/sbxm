@@ -115,7 +115,8 @@ pub struct StreamPolicy {
 }
 
 impl StreamPolicy {
-    /// ANSIを一切出さないstream。testと非TTYの既定。
+    /// ANSIを一切出さないstream。
+    #[cfg(test)]
     pub fn plain() -> StreamPolicy {
         StreamPolicy {
             color: false,
@@ -184,7 +185,8 @@ impl OutputPolicy {
         }
     }
 
-    /// ANSIを一切出さない条件。localeを決める前のerror報告とtestに使う。
+    /// ANSIを一切出さない条件。
+    #[cfg(test)]
     pub fn plain() -> OutputPolicy {
         OutputPolicy {
             stdout: StreamPolicy::plain(),
