@@ -576,7 +576,7 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 - `println!("\n...")`でblock間隔を作る
 - status文字列から色を推測する
 - commandごとにprompt themeを作る
-- dialoguerの既定themeとcustom themeを混在させる
+- prompt libraryの既定themeとcustom themeを混在させる
 - global mutable UI stateを作る
 - snapshotだけで規約を守る
 - legacy rendererとdesign systemを恒久的に併存させる
@@ -651,7 +651,7 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 - 利用者向けの`print!`、`println!`、`eprintln!`が`ui`外にない
 - ANSI literalがrenderer外にない
 - terminal style crateのimportが`ui`外にない
-- `dialoguer::Select`と`MultiSelect`の生成がprompt component外にない
+- 選択promptの生成がprompt component外にない
 - FTL action/remediation messageにliteral commandがない
 - command用でないFTL messageに`$command` placeholderがない
 
