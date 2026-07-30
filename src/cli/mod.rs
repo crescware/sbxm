@@ -14,12 +14,14 @@
 //! 本moduleは1から3までを担当し、config、filesystem、外部状態には触れない。
 //! 3のcommand固有部分は`crate::commands`の各commandが持つ。
 
+mod color;
 mod diagnostics;
 pub mod help;
 mod interactivity;
 mod lang;
 pub mod project_arg;
 
+pub use color::peek_color;
 pub use help::Builder;
 pub use interactivity::Interactivity;
 pub use lang::{PeekedLang, invalid_lang_error, peek_lang};
@@ -77,6 +79,7 @@ fn build_command(catalog: &Catalog) -> Result<ClapCommand> {
         .subcommand_required(true)
         .arg_required_else_help(false)
         .arg(lang::arg(&builder)?)
+        .arg(color::arg(&builder)?)
         .arg(builder.help_flag())
         .arg(
             Arg::new("version")
