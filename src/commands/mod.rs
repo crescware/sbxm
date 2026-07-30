@@ -19,6 +19,10 @@ pub mod stop;
 mod context;
 mod present;
 
+#[cfg(test)]
+#[path = "print_test.rs"]
+mod print_test;
+
 pub use context::{Context, report};
 
 use clap::{ArgMatches, Command as ClapCommand};

@@ -38,7 +38,10 @@ pub fn exec(mode: &Mode, context: &Context, ui: &mut Ui) -> ExitCode {
     ui.stdout(
         &Document::new()
             .summary(summary)
-            .guidance(None, vec![GuidanceItem::Plain(msg!("init-next-step"))])
+            .guidance(
+                Some(msg!("add-next-heading")),
+                vec![GuidanceItem::Plain(msg!("init-next-step"))],
+            )
             .try_command("sbxm status --global"),
     );
     ExitCode::Success

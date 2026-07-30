@@ -8,7 +8,7 @@
 
 use crate::i18n::Locale;
 use crate::msg;
-use crate::ui::{Cell, Document, Field, GuidanceItem, Inline, Table, Warning};
+use crate::ui::{Cell, Document, Field, GuidanceItem, Inline, Table, VisualState, Warning};
 
 use super::super::present::Legend;
 use super::run::{DestroyOutcome, DestroyPlan, Target};
@@ -30,7 +30,12 @@ pub fn plan_document(plan: &DestroyPlan, locale: Locale) -> Document {
             ),
             Field::new(
                 msg!("add-field-sandbox-state"),
-                legend.project_state(plan.state),
+                // 削除計画のなかでは、稼働しているという事実に良し悪しはない。
+                // ここでgreenを出すと、消える対象が健全であることの承認に見える。
+                legend.cell(
+                    Inline::state(plan.state.as_str(), VisualState::Neutral),
+                    plan.state.legend_id(),
+                ),
             ),
         ],
     );
