@@ -18,6 +18,7 @@ use crate::msg;
 use crate::paths;
 
 use super::image::BuiltImage;
+use crate::ui::ProgressSink;
 
 /// 使用できる状態のTemplate。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +37,7 @@ pub fn ensure(
     host: &dyn HostEnvironment,
     archive: &Path,
     image: &BuiltImage,
+    progress: &mut dyn ProgressSink,
 ) -> Result<LoadedTemplate> {
     if find(host, &image.name)?.is_some() {
         return Ok(LoadedTemplate {
@@ -44,7 +46,7 @@ pub fn ensure(
         });
     }
 
-    crate::progress::step(&msg!("progress-loading-template"));
+    progress.step(msg!("progress-loading-template"));
     let spec = CommandSpec::passthrough("sbx", &["template", "load", &paths::display(archive)])
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);

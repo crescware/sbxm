@@ -10,6 +10,7 @@ use crate::project::SandboxLayout;
 use super::sandbox;
 
 use super::unusable;
+use crate::ui::ProgressSink;
 
 /// managed worktreeを、indexを固定したまま用意する。
 ///
@@ -22,6 +23,7 @@ pub fn ensure_worktrees(
     layout: &SandboxLayout,
     project: &ProjectMetadata,
     branch: &str,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Vec<String>> {
     let git_dir = layout.bare_git_dir();
     let reference = git::origin_ref(branch);
@@ -30,7 +32,7 @@ pub fn ensure_worktrees(
         sandbox,
         &["git", "--git-dir", &git_dir, "rev-parse", &reference],
     )?;
-    crate::progress::step(&msg!("progress-creating-worktrees"));
+    progress.step(msg!("progress-creating-worktrees"));
     for index in 0..project.provisioning.requested_worktrees {
         let path = layout.worktree(index);
         if sandbox::path_exists(host, sandbox, &path)? {

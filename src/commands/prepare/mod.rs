@@ -1,7 +1,7 @@
 //! `sbxm prepare`。
 
 mod exec;
-mod print;
+pub mod print;
 pub mod run;
 #[cfg(test)]
 mod world;

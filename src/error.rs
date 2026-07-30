@@ -270,7 +270,11 @@ impl ExternalFailure {
 pub struct Diagnostic {
     pub id: ErrorId,
     pub description: Msg,
-    pub remediation: Option<Msg>,
+    /// 説明と、実行するcommandを分けて持つ対処方法。
+    ///
+    /// 説明文へcommandを埋め込むと、command行を独立させるという表示の不変条件を
+    /// rendererが守れず、翻訳者がcommandの綴りを預かることにもなる。
+    pub remediation: Option<crate::ui::Remediation>,
     pub external: Option<ExternalFailure>,
 }
 
@@ -284,8 +288,8 @@ impl Diagnostic {
         }
     }
 
-    pub fn remediation(mut self, remediation: Msg) -> Self {
-        self.remediation = Some(remediation);
+    pub fn remediation(mut self, remediation: impl Into<crate::ui::Remediation>) -> Self {
+        self.remediation = Some(remediation.into());
         self
     }
 

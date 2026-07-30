@@ -5,7 +5,7 @@
 
 mod exec;
 pub mod global;
-mod print;
+pub mod print;
 pub mod project;
 
 pub use exec::exec;

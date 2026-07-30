@@ -29,9 +29,9 @@ pub(super) fn check_docker_sandboxes(
         status.diagnostics.push(
             Diagnostic::new(
                 ErrorId::HostCommandMissing,
-                msg!("error-host-command-missing", command = "sbx"),
+                msg!("error-host-command-missing", program = "sbx"),
             )
-            .remediation(msg!("remediation-install-command", command = "sbx")),
+            .remediation(msg!("remediation-install-command", program = "sbx")),
         );
         for item in dependent_items {
             push(status, item, StatusValue::Error);

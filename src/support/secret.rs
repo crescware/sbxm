@@ -12,6 +12,7 @@ use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{CustomSecret, parse_custom_secrets};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
+use crate::ui::Remediation;
 
 /// gitがcredentialを提示する先。
 pub const GITHUB_HOST: &str = "github.com";
@@ -162,10 +163,10 @@ pub fn forget_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<Vec<St
                     env = GITHUB_TOKEN_ENV
                 ),
             )
-            .remediation(msg!(
-                "remediation-secret-still-registered",
-                command = forget_command(sandbox, &custom.placeholder)
-            )),
+            .remediation(
+                Remediation::text(msg!("remediation-secret-still-registered"))
+                    .try_run(forget_command(sandbox, &custom.placeholder)),
+            ),
         ));
     }
 
@@ -233,14 +234,10 @@ pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
             ),
         )
         .remediation(match existing {
-            Some(placeholder) => msg!(
-                "remediation-github-secret-incomplete",
-                command = register_command(sandbox, Some(placeholder))
-            ),
-            None => msg!(
-                "remediation-github-secret-missing",
-                command = register_command(sandbox, None)
-            ),
+            Some(placeholder) => Remediation::text(msg!("remediation-github-secret-incomplete"))
+                .try_run(register_command(sandbox, Some(placeholder))),
+            None => Remediation::text(msg!("remediation-github-secret-missing"))
+                .try_run(register_command(sandbox, None)),
         }),
     ))
 }
@@ -274,10 +271,10 @@ pub fn require_placeholder_present(host: &dyn HostEnvironment, sandbox: &str) ->
                 host = GITHUB_HOST
             ),
         )
-        .remediation(msg!(
-            "remediation-sandbox-secret-not-applied",
-            command = format!("sbx rm {sandbox}")
-        )),
+        .remediation(
+            Remediation::text(msg!("remediation-sandbox-secret-not-applied"))
+                .try_run(format!("sbx rm {sandbox}")),
+        ),
     ))
 }
 

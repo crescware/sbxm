@@ -11,6 +11,7 @@ use crate::support::StatusValue;
 
 use super::external::{describe, external_of, read_stdout};
 use super::{GlobalStatus, push};
+use crate::ui::Remediation;
 
 /// Docker Sandboxesへのlogin状態。
 ///
@@ -24,7 +25,9 @@ pub(super) fn check_login(host: &dyn HostEnvironment, status: &mut GlobalStatus)
                 push(status, "status-item-login", StatusValue::Missing);
                 status.diagnostics.push(
                     Diagnostic::new(ErrorId::SbxLoginMissing, msg!("error-sbx-login-missing"))
-                        .remediation(msg!("remediation-sbx-login", command = "sbx login")),
+                        .remediation(
+                            Remediation::text(msg!("remediation-sbx-login")).try_run("sbx login"),
+                        ),
                 );
             }
             Err(error) => {

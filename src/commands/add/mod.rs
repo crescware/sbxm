@@ -2,7 +2,7 @@
 
 mod exec;
 mod host_clone;
-mod print;
+pub mod print;
 pub mod run;
 
 pub use exec::exec;

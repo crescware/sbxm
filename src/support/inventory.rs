@@ -16,6 +16,8 @@ use crate::msg;
 use crate::project::SandboxName;
 
 use super::{daemon, sandbox};
+use crate::ui::ProgressSink;
+use crate::ui::Remediation;
 
 /// 状態が変わるのを待つ間隔と上限。
 ///
@@ -127,10 +129,12 @@ pub fn not_created(metadata: &ProjectMetadata, sandbox: &str) -> Error {
                 sandbox = sandbox
             ),
         )
-        .remediation(msg!(
-            "remediation-sandbox-not-created",
-            command = format!("sbxm add {}", metadata.display_id())
-        )),
+        // 案件は既に登録済みである。`add`はimageにもsandboxにも触れないため、
+        // 構築するcommandを案内する。
+        .remediation(
+            Remediation::text(msg!("remediation-sandbox-not-created"))
+                .try_run(format!("sbxm prepare {}", metadata.display_id())),
+        ),
     )
 }
 
@@ -148,8 +152,12 @@ pub fn single<'a>(entries: &'a [SandboxEntry], name: &str) -> Result<Option<&'a 
 }
 
 /// 非対話でSandboxを起動する。
-pub fn start(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
-    crate::progress::step(&msg!("progress-starting-sandbox"));
+pub fn start(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    progress: &mut dyn ProgressSink,
+) -> Result<()> {
+    progress.step(msg!("progress-starting-sandbox"));
     let spec = CommandSpec::passthrough("sbx", &["exec", sandbox, "--", "/bin/true"])
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);
@@ -182,10 +190,10 @@ pub fn wait_until_running(
                         observed = observed
                     ),
                 )
-                .remediation(msg!(
-                    "remediation-diagnose-project",
-                    command = format!("sbxm status {}", metadata.display_id())
-                )),
+                .remediation(
+                    Remediation::text(msg!("remediation-diagnose-project"))
+                        .try_run(format!("sbxm status {}", metadata.display_id())),
+                ),
             ));
         }
         std::thread::sleep(poll.interval);
@@ -196,11 +204,16 @@ pub fn wait_until_running(
 ///
 /// commandの戻り値だけを不在の根拠にしない。`force`はデータ保護検査を省略した
 /// 削除であり、runtimeへ渡す引数だけが変わる。
-pub fn remove(host: &dyn HostEnvironment, name: &SandboxName, poll: Poll) -> Result<()> {
+pub fn remove(
+    host: &dyn HostEnvironment,
+    name: &SandboxName,
+    poll: Poll,
+    progress: &mut dyn ProgressSink,
+) -> Result<()> {
     // `--force`が省くのは`sbx`の確認promptだけである。削除してよいかはsbxmが先に
     // 判定しており、`destroy`は自前の確認も済ませている。非対話で走る実行では
     // promptに答える手段がなく、対話実行でも二度訊くことになる。
-    crate::progress::step(&msg!("progress-removing-sandbox"));
+    progress.step(msg!("progress-removing-sandbox"));
     let args = ["rm", "--force", name.as_str()];
     let spec = CommandSpec::passthrough("sbx", &args)
         .env(EnvPolicy::InheritWithoutSshAgent)

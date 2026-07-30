@@ -1,5 +1,6 @@
 sbxm
   id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+  id=color --color value=auto|always|never args=1 global action=Set order=901
   id=help --help -h args=0 action=Help order=1000
   id=version --version -V args=0 action=Version order=1001
   init
@@ -8,44 +9,54 @@ sbxm
     id=git-user-name --git-user-name value=NAME args=1 action=Set order=2
     id=git-user-email --git-user-email value=EMAIL args=1 action=Set order=3
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   add
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=1 required action=Set order=999
     id=worktrees --worktrees value=N args=1 action=Set order=1
     id=detach --detach value=BRANCH args=1 action=Set order=2
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   apply
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=1 required action=Set order=999
     id=files --files args=0 action=SetTrue order=1
     id=worktrees --worktrees value=N args=1 action=Set order=2
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   prepare
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=1 required action=Set order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   rebuild
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=1 required action=Set order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   open
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=1 action=Set order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   stop
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=0.. action=Append order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   ls
     id=help --help -h args=0 action=Help order=1000
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   status
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=1 action=Set order=999
     id=global --global -g args=0 action=SetTrue order=1
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   destroy
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=owner/repository args=1 action=Set order=999
     id=force --force -f args=0 action=SetTrue order=1
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901

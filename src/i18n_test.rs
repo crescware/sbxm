@@ -22,16 +22,17 @@ fn a_shared_definition_is_expanded_where_it_is_referenced() {
             "{locale:?}: add repeats the permissions: {guidance}"
         );
 
+        // 実行するcommandは翻訳resourceではなくmodelが持つため、共有定義だけを確かめる。
         let remediation = catalog
-            .format(&msg!(
-                "remediation-github-secret-missing",
-                command = "sbx secret set example github"
-            ))
+            .text("remediation-github-secret-missing")
             .expect("the remediation renders");
         assert!(
-            remediation.contains("Contents")
-                && remediation.contains("sbx secret set example github"),
+            remediation.contains("Contents"),
             "{locale:?}: {remediation}"
+        );
+        assert!(
+            !remediation.contains("sbx "),
+            "{locale:?}: a command must not be embedded in the prose: {remediation}"
         );
     }
 }

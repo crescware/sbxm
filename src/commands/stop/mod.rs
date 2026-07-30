@@ -1,7 +1,7 @@
 //! `sbxm stop`。
 
 mod exec;
-mod print;
+pub mod print;
 pub mod run;
 
 pub use exec::exec;

@@ -15,6 +15,8 @@ use crate::project::SandboxName;
 
 use super::daemon;
 use super::template::LoadedTemplate;
+use crate::ui::ProgressSink;
+use crate::ui::Remediation;
 
 /// 中立Workspaceのroot。
 ///
@@ -70,6 +72,7 @@ pub fn ensure(
     sandbox: &SandboxName,
     template: &LoadedTemplate,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<ReadySandbox> {
     // rootを別accountが所有していると、その下のworkspaceを入れ替えられる。
     paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
@@ -86,7 +89,7 @@ pub fn ensure(
         });
     }
 
-    crate::progress::step(&msg!("progress-creating-sandbox"));
+    progress.step(msg!("progress-creating-sandbox"));
     let spec = CommandSpec::passthrough(
         "sbx",
         &[
@@ -286,10 +289,10 @@ pub fn require_credentials_isolated(host: &dyn HostEnvironment, sandbox: &str) -
                 observed = observed.join(", ")
             ),
         )
-        .remediation(msg!(
-            "security-ssh-agent-exposed-remediation",
-            command = format!("sbx rm {sandbox}")
-        )),
+        .remediation(
+            Remediation::text(msg!("security-ssh-agent-exposed-remediation"))
+                .try_run(format!("sbx rm {sandbox}")),
+        ),
     ))
 }
 

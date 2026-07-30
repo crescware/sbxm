@@ -1,8 +1,10 @@
 //! sbxm。案件ごとのDocker Sandboxを構築、接続、診断、破棄するCLI。
 //!
 //! 実行順は、引数validation、config load、project解決、外部command、mutationとする。
-//! commandの実装は`commands`が1 command 1 directoryで持ち、本fileはlocale決定と
-//! 引き渡しだけを行う。
+//! commandの実装は`commands`が1 command 1 directoryで持ち、本fileはlocale決定、描画条件の
+//! 決定、引き渡しだけを行う。
+//!
+//! 利用者向けの描画はすべて`ui`が行う。本fileはstreamへ直接書かない。
 
 mod archive;
 mod cli;
@@ -17,11 +19,11 @@ mod i18n;
 mod image_labels;
 mod metadata;
 mod paths;
-mod progress;
 mod project;
 mod support;
 #[cfg(test)]
 mod testing;
+mod ui;
 
 use std::process::ExitCode as ProcessExitCode;
 
@@ -29,8 +31,8 @@ use cli::{Interactivity, Outcome, PeekedLang};
 use commands::Context;
 use config::{ConfigLocation, ConfigState};
 use error::ExitCode;
-use i18n::{Catalog, Locale, shell_locale};
-use support::display::report;
+use i18n::{Locale, shell_locale};
+use ui::{Document, Environment, OutputPolicy, Terminals, Ui};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();
@@ -40,35 +42,42 @@ fn main() -> ProcessExitCode {
 
 fn run(argv: &[String]) -> ExitCode {
     let peeked = cli::peek_lang(argv);
+    let policy = OutputPolicy::resolve(
+        cli::peek_color(argv),
+        &Environment::detect(),
+        &Terminals::detect(),
+    );
 
     let location = match ConfigLocation::discover() {
         Ok(location) => location,
         Err(error) => {
-            report(&Catalog::new(Locale::En), &error);
+            // localeが決まる前の失敗も、同じ描画条件で報告する。
+            let mut ui = Ui::terminal(Locale::SOURCE, policy);
+            ui.error(&error);
             return error.exit_code();
         }
     };
 
     let display_locale = resolve_display_locale(&peeked, &location);
-    progress::install(display_locale);
-    let catalog = Catalog::new(display_locale);
+    let mut ui = Ui::terminal(display_locale, policy);
 
     // 表示localeはconfigからbest-effortで解決済みである。`--lang`の不正はconfigの
     // validation errorより先に報告するため、壊れたconfigがparse errorを覆い隠さない。
     if let PeekedLang::Invalid(value) = &peeked {
         let error = cli::invalid_lang_error(value);
-        report(&catalog, &error);
+        ui.error(&error);
         return error.exit_code();
     }
 
     let interactivity = Interactivity::detect();
+    let catalog = i18n::Catalog::new(display_locale);
     match cli::parse(argv, &catalog, interactivity) {
         Ok(Outcome::Help(text)) => {
-            print!("{text}");
+            ui.help(&text);
             ExitCode::Success
         }
         Ok(Outcome::Version(text)) => {
-            println!("{text}");
+            ui.stdout(&Document::new().verbatim(text));
             ExitCode::Success
         }
         Ok(Outcome::Run(command)) => {
@@ -78,13 +87,12 @@ fn run(argv: &[String]) -> ExitCode {
                     PeekedLang::Valid(locale) => Some(locale),
                     _ => None,
                 },
-                display_locale,
                 interactivity,
             };
-            commands::dispatch(&command, &context)
+            commands::dispatch(&command, &context, &mut ui)
         }
         Err(error) => {
-            report(&catalog, &error);
+            ui.error(&error);
             error.exit_code()
         }
     }

@@ -3,6 +3,7 @@ use super::super::world::{World, bench};
 use super::*;
 use crate::hash::sha256_hex;
 use crate::testing::add_request::request;
+use crate::ui::SilentProgress;
 use std::fs;
 
 /// 編集後のDockerfileの内容。世代が変わったことだけが要る。
@@ -34,6 +35,7 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
         &request.project,
         &world,
         bench.workspace_root.path(),
+        &mut SilentProgress,
     )
     .expect("the interrupted run finishes");
 
@@ -41,7 +43,7 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
         output
             .warnings
             .iter()
-            .map(|message| message.id)
+            .map(|warning| warning.description.id)
             .collect::<Vec<_>>(),
         vec!["warning-dockerfile-changed-during-build"]
     );
@@ -69,7 +71,7 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
     let bench = bench();
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None);
-    crate::commands::add::run::run(&bench.config, &request, &world)
+    crate::commands::add::run::run(&bench.config, &request, &world, &mut SilentProgress)
         .expect("the project is registered");
 
     let paths = ProjectPaths::derive(&bench.config.base_path, &request.project.canonical());
@@ -81,6 +83,7 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
         &request.project,
         &world,
         bench.workspace_root.path(),
+        &mut SilentProgress,
     )
     .expect("the build runs on the Dockerfile that is there");
 

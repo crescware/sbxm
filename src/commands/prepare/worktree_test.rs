@@ -3,6 +3,7 @@ use super::super::world::{World, bench};
 use super::*;
 use crate::testing::add_request::request;
 use crate::testing::value::COMMIT;
+use crate::ui::SilentProgress;
 
 #[test]
 fn a_head_that_cannot_be_read_is_left_unknown() {
@@ -19,6 +20,7 @@ fn a_head_that_cannot_be_read_is_left_unknown() {
         &request.project,
         &world,
         bench.workspace_root.path(),
+        &mut SilentProgress,
     )
     .expect("a project that is built stays built");
 
@@ -49,6 +51,7 @@ fn a_head_that_reads_back_empty_is_left_unknown() {
         &request.project,
         &world,
         bench.workspace_root.path(),
+        &mut SilentProgress,
     )
     .expect("a project that is built stays built");
 

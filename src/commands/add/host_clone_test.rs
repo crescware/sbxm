@@ -2,6 +2,7 @@ use super::*;
 use crate::command::{CommandOutcome, HostEnvironment};
 use crate::paths::AbsoluteBasePath;
 use crate::testing::project::project_id;
+use crate::ui::SilentProgress;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -87,7 +88,7 @@ fn a_missing_clone_is_created_from_the_ssh_remote_and_then_verified() {
     let (paths, project) = project_paths(dir.path());
     let host = healthy(&paths.host_clone()).cloning_into(&paths.host_clone());
 
-    let clone = ensure(&host, &paths, &project).expect("the clone is created");
+    let clone = ensure(&host, &paths, &project, &mut SilentProgress).expect("the clone is created");
     assert!(clone.created);
     assert_eq!(clone.path, paths.host_clone());
 
@@ -112,7 +113,7 @@ fn the_clone_forwards_its_progress_while_the_checks_capture_their_output() {
     let dir = tempfile::tempdir().unwrap();
     let (paths, project) = project_paths(dir.path());
     let host = healthy(&paths.host_clone()).cloning_into(&paths.host_clone());
-    ensure(&host, &paths, &project).expect("the clone is created");
+    ensure(&host, &paths, &project, &mut SilentProgress).expect("the clone is created");
 
     let calls = host.calls.borrow();
     let clone = &calls[0];
@@ -139,7 +140,8 @@ fn an_existing_clone_of_the_same_repository_is_reused_without_cloning_again() {
     fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
     let host = healthy(&paths.host_clone());
 
-    let clone = ensure(&host, &paths, &project).expect("the existing clone is reused");
+    let clone =
+        ensure(&host, &paths, &project, &mut SilentProgress).expect("the existing clone is reused");
     assert!(!clone.created);
     assert!(
         !host
@@ -157,8 +159,13 @@ fn a_dirty_working_tree_does_not_stop_the_build() {
     fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
     fs::write(paths.host_clone().join("uncommitted.txt"), b"work").unwrap();
 
-    ensure(&healthy(&paths.host_clone()), &paths, &project)
-        .expect("uncommitted work is the user's, not a reason to stop");
+    ensure(
+        &healthy(&paths.host_clone()),
+        &paths,
+        &project,
+        &mut SilentProgress,
+    )
+    .expect("uncommitted work is the user's, not a reason to stop");
 }
 
 #[test]
@@ -171,7 +178,8 @@ fn a_clone_of_another_repository_is_refused_instead_of_being_replaced() {
         "git@github.com:other-org/other-repo.git\n",
     );
 
-    let error = ensure(&host, &paths, &project).expect_err("a different remote is refused");
+    let error = ensure(&host, &paths, &project, &mut SilentProgress)
+        .expect_err("a different remote is refused");
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     assert!(
         paths.host_clone().join(".git").exists(),
@@ -191,8 +199,8 @@ fn an_ambiguous_or_missing_origin_is_refused() {
     ] {
         let host =
             healthy(&paths.host_clone()).answering("config --get-all remote.origin.url", urls);
-        let error =
-            ensure(&host, &paths, &project).expect_err("origin must name exactly one remote");
+        let error = ensure(&host, &paths, &project, &mut SilentProgress)
+            .expect_err("origin must name exactly one remote");
         assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     }
 }
@@ -204,7 +212,8 @@ fn a_bare_repository_or_a_nested_working_tree_is_refused() {
     fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
 
     let bare = healthy(&paths.host_clone()).answering("rev-parse --is-bare-repository", "true\n");
-    let error = ensure(&bare, &paths, &project).expect_err("a bare repository has no worktree");
+    let error = ensure(&bare, &paths, &project, &mut SilentProgress)
+        .expect_err("a bare repository has no worktree");
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
 
     // 期待pathの中に居ても、top-levelが別のdirectoryなら再利用しない。
@@ -212,8 +221,8 @@ fn a_bare_repository_or_a_nested_working_tree_is_refused() {
         "rev-parse --show-toplevel",
         &format!("{}\n", dir.path().display()),
     );
-    let error =
-        ensure(&nested, &paths, &project).expect_err("the clone must be its own working tree");
+    let error = ensure(&nested, &paths, &project, &mut SilentProgress)
+        .expect_err("the clone must be its own working tree");
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
 }
 
@@ -230,8 +239,13 @@ fn a_git_directory_that_points_outside_the_project_is_refused() {
     )
     .unwrap();
 
-    let error = ensure(&healthy(&paths.host_clone()), &paths, &project)
-        .expect_err("a worktree file that leaves the project is refused");
+    let error = ensure(
+        &healthy(&paths.host_clone()),
+        &paths,
+        &project,
+        &mut SilentProgress,
+    )
+    .expect_err("a worktree file that leaves the project is refused");
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
 
     // 案件directoryの中を指すworktree fileは受け入れる。
@@ -242,6 +256,11 @@ fn a_git_directory_that_points_outside_the_project_is_refused() {
         format!("gitdir: {}\n", inside.display()),
     )
     .unwrap();
-    ensure(&healthy(&paths.host_clone()), &paths, &project)
-        .expect("a git directory inside the project is part of the project");
+    ensure(
+        &healthy(&paths.host_clone()),
+        &paths,
+        &project,
+        &mut SilentProgress,
+    )
+    .expect("a git directory inside the project is part of the project");
 }

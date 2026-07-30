@@ -8,6 +8,7 @@ use crate::hash::sha256_hex;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::{self, PathScope, ProjectPaths};
+use crate::ui::Remediation;
 
 /// host側にある現在のDockerfileの世代。
 pub fn current_dockerfile_hash(paths: &ProjectPaths) -> Result<String> {
@@ -40,9 +41,9 @@ pub fn require_no_rebuild(metadata: &ProjectMetadata) -> Result<()> {
                 project = metadata.display_id()
             ),
         )
-        .remediation(msg!(
-            "remediation-run-rebuild",
-            command = format!("sbxm rebuild {}", metadata.display_id())
-        )),
+        .remediation(
+            Remediation::text(msg!("remediation-run-rebuild"))
+                .try_run(format!("sbxm rebuild {}", metadata.display_id())),
+        ),
     ))
 }

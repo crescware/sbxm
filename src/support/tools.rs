@@ -16,21 +16,31 @@ use crate::error::{Msg, Result};
 use crate::msg;
 use crate::project::SandboxLayout;
 
+use crate::ui::CommandLine;
+
 use super::identity;
 use super::sandbox;
 
 /// `mise`の設定を持つと判断するfile。
 const MISE_FILES: [&str; 3] = ["mise.toml", ".mise.toml", ".tool-versions"];
 
+/// 利用者がSandboxの中で自分で実行するcommand。sbxmは代わりに実行しない。
+const MISE_COMMANDS: [&str; 2] = ["mise trust", "mise install"];
+
 /// toolが利用者へ返す案内。
 ///
 /// sbxmが代わりに実行しないことを示すために使う。errorではないため、stdoutへ出す。
+///
+/// 実行を求めるcommandは説明文へ埋め込まず、typedな一行として持つ。rendererが独立した
+/// blockとして描き、利用者はそのまま複写できる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Note {
     pub heading: Msg,
     /// 案内の対象。pathや識別子であり、翻訳しない。
     pub items: Vec<String>,
     pub hint: Msg,
+    /// 利用者が自分で実行するcommand。
+    pub commands: Vec<CommandLine>,
 }
 
 /// Sandboxが使える状態になった瞬間。
@@ -107,6 +117,10 @@ impl Tool for Mise {
                 heading: msg!("add-mise-heading"),
                 items,
                 hint: msg!("add-mise-hint"),
+                commands: MISE_COMMANDS
+                    .iter()
+                    .filter_map(|command| CommandLine::optional(*command))
+                    .collect(),
             });
         }
         Ok(())

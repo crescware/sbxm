@@ -1,98 +1,109 @@
 //! `destroy`の出力。
+//!
+//! 破壊操作の確認画面ではgreenを使わない。削除対象の見出しもredではなくboldとし、
+//! 保持対象は既定色にする。redを画面全体へ広げるとerrorと見分けにくくなり、消える
+//! ものと残るものを落ち着いて比べられなくなる。
+//!
+//! force modeの通知は結果ではなく注意であるため、warningとしてstderrへ出す。
 
-use std::io::Write;
-
-use crate::i18n::Catalog;
+use crate::i18n::Locale;
 use crate::msg;
-use crate::support::Reporter;
-use crate::support::display::{format_or_report, text_or_report};
+use crate::ui::{Cell, Document, Field, GuidanceItem, Inline, Table, VisualState, Warning};
 
-use super::run::{DestroyPlan, Target};
+use super::super::present::Legend;
+use super::run::{DestroyOutcome, DestroyPlan, Target};
 
 /// `destroy`が何を消し、何を残すかを削除前に見せる。
-pub fn plan(catalog: &Catalog, plan: &DestroyPlan) {
-    let reporter = Reporter::new(catalog);
-    let mut stderr = std::io::stderr();
+pub fn plan_document(plan: &DestroyPlan, locale: Locale) -> Document {
+    let mut legend = Legend::new(locale);
 
-    print!(
-        "{}",
-        reporter.render_fields(&[
-            ("add-field-project", plan.project.clone()),
-            ("add-field-sandbox", plan.sandbox.clone()),
-            ("add-field-sandbox-state", plan.state.as_str().to_string()),
-        ])
+    let mut document = Document::new().fields(
+        None,
+        vec![
+            Field::new(
+                msg!("add-field-project"),
+                Inline::important(plan.project.clone()),
+            ),
+            Field::new(
+                msg!("add-field-sandbox"),
+                Inline::important(plan.sandbox.clone()),
+            ),
+            Field::new(
+                msg!("add-field-sandbox-state"),
+                // 削除計画のなかでは、稼働しているという事実に良し悪しはない。
+                // ここでgreenを出すと、消える対象が健全であることの承認に見える。
+                legend.cell(
+                    Inline::state(plan.state.as_str(), VisualState::Neutral),
+                    plan.state.legend_id(),
+                ),
+            ),
+        ],
     );
 
-    if plan.force {
-        let _ = writeln!(
-            stderr,
-            "{}",
-            text_or_report(catalog, "destroy-force-notice")
-        );
-    } else if !plan.worktrees.is_empty() {
-        let rows: Vec<Vec<String>> = plan
-            .worktrees
-            .iter()
-            .map(|worktree| {
-                vec![
-                    worktree.relative.clone(),
-                    worktree.kind.as_str().to_string(),
-                    worktree.mode.as_str().to_string(),
-                    worktree.branch.clone().unwrap_or_else(|| "-".to_string()),
-                    worktree.head.clone(),
-                    worktree.remote.as_str().to_string(),
-                ]
-            })
-            .collect();
-        println!("\n{}", text_or_report(catalog, "status-worktrees-section"));
-        print!(
-            "{}",
-            reporter.render_value_table(
-                &[
-                    "column-path",
-                    "column-kind",
-                    "column-mode",
-                    "column-branch",
-                    "column-head",
-                    "column-remote"
-                ],
-                &rows,
-            )
-        );
+    let mut worktrees = Table::new(vec![
+        msg!("column-path"),
+        msg!("column-kind"),
+        msg!("column-mode"),
+        msg!("column-branch"),
+        msg!("column-head"),
+        msg!("column-remote"),
+    ]);
+    for worktree in &plan.worktrees {
         // 状態値は翻訳しないため、正本locale以外では説明を添える。
-        let values: Vec<(&str, &str)> = plan
-            .worktrees
-            .iter()
-            .flat_map(|worktree| worktree.legends())
-            .collect();
-        if let Some(legend) = reporter.render_value_legend(&values) {
-            print!("\n{legend}");
+        for (value, description) in worktree.legends() {
+            legend.add(value, description);
         }
+        worktrees.push(vec![
+            Inline::path(worktree.relative.clone()).into(),
+            Inline::text(worktree.kind.as_str()).into(),
+            Inline::text(worktree.mode.as_str()).into(),
+            Inline::text(worktree.branch.clone().unwrap_or_else(|| "-".to_string())).into(),
+            Inline::text(worktree.head.clone()).into(),
+            Inline::text(worktree.remote.as_str()).into(),
+        ]);
     }
+    document = document.table(Some(msg!("status-worktrees-section")), worktrees);
 
-    println!("\n{}", text_or_report(catalog, "destroy-removes"));
-    for target in &plan.removes {
-        println!("  {}", describe(catalog, target));
-    }
-    println!("{}", text_or_report(catalog, "destroy-keeps"));
-    for target in &plan.keeps {
-        println!("  {}", describe(catalog, target));
-    }
-    // 消す前に、消したあと元へ戻す方法まで見せる。
-    println!(
-        "\n{}",
-        format_or_report(
-            catalog,
-            &msg!("destroy-re-register", command = plan.re_register.clone())
+    document = document
+        .lines(
+            Some(msg!("destroy-removes")),
+            plan.removes.iter().map(target).collect(),
         )
-    );
-    let _ = std::io::stdout().flush();
+        .lines(
+            Some(msg!("destroy-keeps")),
+            plan.keeps.iter().map(target).collect(),
+        );
+
+    // 消す前に、消したあと元へ戻す方法まで見せる。
+    document
+        .guidance(
+            Some(msg!("destroy-recovery-heading")),
+            vec![GuidanceItem::Plain(msg!("destroy-re-register"))],
+        )
+        .try_command(plan.re_register.clone())
+        .legend(Legend::heading(), legend.entries())
 }
 
-/// 削除対象・保持対象の1行。pathはそのまま、それ以外は説明を訳す。
-fn describe(catalog: &Catalog, target: &Target) -> String {
+/// force modeが省く検査。結果ではなく注意である。
+pub fn force_notice() -> Warning {
+    Warning::text(msg!("destroy-force-notice"))
+}
+
+/// 削除後の結果。
+pub fn outcome_document(outcome: &DestroyOutcome) -> Document {
+    Document::new()
+        .summary(msg!("destroy-done", project = outcome.project))
+        .guidance(
+            Some(msg!("destroy-recovery-heading")),
+            vec![GuidanceItem::Plain(msg!("destroy-re-register"))],
+        )
+        .try_command(outcome.re_register.clone())
+}
+
+/// 削除対象・保持対象の1行。pathはそのまま、pathで示せない対象は説明を訳す。
+fn target(target: &Target) -> Cell {
     match target {
-        Target::Path(path) => path.clone(),
-        Target::Described(message) => format_or_report(catalog, message),
+        Target::Path(path) => Inline::path(path.clone()).into(),
+        Target::Described(message) => Cell::label(message.clone()),
     }
 }

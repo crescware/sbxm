@@ -7,11 +7,12 @@
 //! 選択はSandboxの状態を読む前に終える。対象が決まる前にhostの状態へ触れない。
 
 use crate::config::GlobalConfig;
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
 use crate::paths::{ExclusiveLock, ProjectPaths};
 use crate::project::ProjectId;
+use crate::ui::{PromptUi, Remediation};
 
 /// 選択された1案件。runtime状態は持たない。
 #[derive(Debug, Clone)]
@@ -68,24 +69,38 @@ pub struct Locked {
 }
 
 /// 対話選択。testでは差し替える。
+///
+/// 見出しをcommandから受け取るのは、promptの描き方をcommandごとに変えないためである。
+/// 実装は`ui`のpromptだけが持ち、commandは何を訊くかだけを決める。
 pub trait ProjectPrompt {
     /// 1件を選ぶ。
-    fn select_one(&mut self, candidates: &[String]) -> Result<usize>;
+    fn select_one(&mut self, heading: Msg, candidates: &[String]) -> Result<usize>;
     /// 1件以上を選ぶ。未選択の確定は受け付けない。
-    fn select_many(&mut self, candidates: &[String]) -> Result<Vec<usize>>;
+    fn select_many(&mut self, heading: Msg, candidates: &[String]) -> Result<Vec<usize>>;
+}
+
+impl ProjectPrompt for PromptUi {
+    fn select_one(&mut self, heading: Msg, candidates: &[String]) -> Result<usize> {
+        PromptUi::select_one(self, heading, candidates)
+    }
+
+    fn select_many(&mut self, heading: Msg, candidates: &[String]) -> Result<Vec<usize>> {
+        PromptUi::select_many(self, heading, candidates)
+    }
 }
 
 /// 引数、またはpromptで1件の案件を決める。
 pub fn one(
     config: &GlobalConfig,
     requested: Option<&ProjectId>,
+    heading: Msg,
     prompt: &mut dyn ProjectPrompt,
 ) -> Result<Candidate> {
     if let Some(project) = requested {
         return load(config, project);
     }
     let mut candidates = candidates(config)?;
-    let index = prompt.select_one(&labels(&candidates))?;
+    let index = prompt.select_one(heading, &labels(&candidates))?;
     if index >= candidates.len() {
         return Err(unresolved(index, candidates.len()));
     }
@@ -98,6 +113,7 @@ pub fn one(
 pub fn many(
     config: &GlobalConfig,
     requested: &[ProjectId],
+    heading: Msg,
     prompt: &mut dyn ProjectPrompt,
 ) -> Result<Vec<Candidate>> {
     if !requested.is_empty() {
@@ -122,7 +138,7 @@ pub fn many(
     }
 
     let candidates = candidates(config)?;
-    let indexes = prompt.select_many(&labels(&candidates))?;
+    let indexes = prompt.select_many(heading, &labels(&candidates))?;
     // 未選択の確定は受け付けない。操作せず終える場合はEscまたはCtrl-Cを使う。
     if indexes.is_empty() {
         return Err(unresolved(0, candidates.len()));
@@ -163,10 +179,10 @@ pub fn not_managed(project: &dyn std::fmt::Display) -> Error {
             ErrorId::ProjectNotManaged,
             msg!("error-project-not-managed", project = project),
         )
-        .remediation(msg!(
-            "remediation-project-not-managed",
-            command = format!("sbxm add {project}")
-        )),
+        .remediation(
+            Remediation::text(msg!("remediation-project-not-managed"))
+                .try_run(format!("sbxm add {project}")),
+        ),
     )
 }
 
@@ -201,10 +217,10 @@ fn no_managed_projects() -> Error {
             ErrorId::NoManagedProjects,
             msg!("error-no-managed-projects"),
         )
-        .remediation(msg!(
-            "remediation-no-managed-projects",
-            command = "sbxm add <owner>/<repository>"
-        )),
+        .remediation(
+            Remediation::text(msg!("remediation-no-managed-projects"))
+                .try_run("sbxm add <owner>/<repository>"),
+        ),
     )
 }
 
@@ -214,67 +230,6 @@ fn unresolved(index: usize, count: usize) -> Error {
         ErrorId::SelectionUnresolved,
         msg!("error-selection-unresolved", index = index, count = count),
     )
-}
-
-/// 中断は何も変更せず終える。それ以外は端末を読めなかったこととして報告する。
-pub fn unreadable_prompt(error: std::io::Error) -> Error {
-    if error.kind() == std::io::ErrorKind::Interrupted {
-        return Error::Canceled;
-    }
-    // 端末を読み取れなかったことを、引数の不足として報告しない。
-    Error::single(
-        Diagnostic::new(
-            ErrorId::PromptUnreadable,
-            msg!("error-prompt-unreadable", detail = error),
-        )
-        .remediation(msg!("remediation-prompt-unreadable")),
-    )
-}
-
-/// dialoguerを使う対話実装。
-pub struct TerminalProjectPrompt {
-    /// promptの見出しに使うFTL message ID。
-    pub heading: &'static str,
-    /// この実行の表示言語。promptもほかの出力と同じ言語で読める必要がある。
-    pub locale: crate::i18n::Locale,
-}
-
-impl TerminalProjectPrompt {
-    fn text(&self) -> String {
-        crate::i18n::Catalog::new(self.locale)
-            .text(self.heading)
-            .unwrap_or_else(|failure| failure.to_string())
-    }
-
-    fn map_error(error: dialoguer::Error) -> Error {
-        match error {
-            dialoguer::Error::IO(io) => unreadable_prompt(io),
-        }
-    }
-}
-
-impl ProjectPrompt for TerminalProjectPrompt {
-    fn select_one(&mut self, candidates: &[String]) -> Result<usize> {
-        dialoguer::Select::new()
-            .with_prompt(self.text())
-            .items(candidates)
-            .interact()
-            .map_err(TerminalProjectPrompt::map_error)
-    }
-
-    fn select_many(&mut self, candidates: &[String]) -> Result<Vec<usize>> {
-        loop {
-            let selected = dialoguer::MultiSelect::new()
-                .with_prompt(self.text())
-                .items(candidates)
-                .interact()
-                .map_err(TerminalProjectPrompt::map_error)?;
-            // 未選択の確定は受け付けない。操作せず終える場合はEscまたはCtrl-Cを使う。
-            if !selected.is_empty() {
-                return Ok(selected);
-            }
-        }
-    }
 }
 
 #[cfg(test)]

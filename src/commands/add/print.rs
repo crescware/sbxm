@@ -1,74 +1,76 @@
 //! `add`の出力。
+//!
+//! 登録とhost cloneまでを示し、次にやることを続けて出す。GitHub tokenの登録先は
+//! Sandbox名であり、その名前はここで確定する。
+//!
+//! 実行を求めるcommandは説明文へ混ぜず、独立blockとして渡す。番号は説明行に付き、
+//! command行には付かない。
 
-use std::io::Write;
-
-use crate::i18n::Catalog;
 use crate::msg;
 use crate::paths;
-use crate::support::Reporter;
-use crate::support::display::{format_or_report, text_or_report};
 use crate::support::secret;
+use crate::ui::{Document, Field, GuidanceItem, Inline};
 
+use super::super::present;
 use super::run::AddOutput;
 
-/// `add`の成功出力。
-///
-/// 登録とhost cloneまでを示し、次にやることを続けて出す。GitHub tokenの登録先は
-/// Sandbox名であり、その名前はここで確定する。
-pub fn output(catalog: &Catalog, output: &AddOutput) {
-    let reporter = Reporter::new(catalog);
-    let mut stderr = std::io::stderr();
-    for warning in &output.warnings {
-        reporter.print_warning(warning, &mut stderr);
-    }
-
-    let message = if output.already_registered {
+/// `add`が並べるもの。
+pub fn document(output: &AddOutput) -> Document {
+    let summary = if output.already_registered {
         msg!("add-already-registered", project = output.project)
     } else {
         msg!("add-registered", project = output.project)
     };
-    println!("{}", format_or_report(catalog, &message));
 
-    print!(
-        "{}",
-        reporter.render_fields(&[
-            ("add-field-project", output.project.clone()),
-            ("add-field-sandbox", output.sandbox.clone()),
-            ("add-field-creation-mode", output.mode.to_string()),
-            (
-                "add-field-start-branch",
-                output.start_ref.clone().unwrap_or_else(|| "-".to_string())
-            ),
-            (
-                "add-field-managed-worktrees",
-                output.requested_worktrees.to_string()
-            ),
-            ("add-field-host-clone", paths::display(&output.host_clone)),
-        ])
-    );
-
-    println!("\n{}", text_or_report(catalog, "add-next-heading"));
-    // tokenの権限は、失敗したときだけでなくここでも示す。暗記させない。
-    println!("  {}", text_or_report(catalog, "add-next-token"));
-    println!(
-        "  {}",
-        format_or_report(
-            catalog,
-            &msg!(
-                "add-next-secret",
-                command = secret::register_command(&output.sandbox, None)
-            )
+    Document::new()
+        .summary(summary)
+        .fields(
+            None,
+            vec![
+                Field::new(
+                    msg!("add-field-project"),
+                    Inline::important(output.project.clone()),
+                ),
+                Field::new(
+                    msg!("add-field-sandbox"),
+                    Inline::important(output.sandbox.clone()),
+                ),
+                Field::new(
+                    msg!("add-field-creation-mode"),
+                    present::creation_mode(output.mode),
+                ),
+                Field::new(
+                    msg!("add-field-start-branch"),
+                    Inline::text(output.start_ref.clone().unwrap_or_else(|| "-".to_string())),
+                ),
+                Field::new(
+                    msg!("add-field-managed-worktrees"),
+                    Inline::text(output.requested_worktrees.to_string()),
+                ),
+                Field::new(
+                    msg!("add-field-host-clone"),
+                    Inline::path(paths::display(&output.host_clone)),
+                ),
+            ],
         )
-    );
-    println!(
-        "  {}",
-        format_or_report(
-            catalog,
-            &msg!(
-                "add-next-prepare",
-                command = format!("sbxm prepare {}", output.project)
-            )
+        // tokenの権限は、失敗したときだけでなくここでも示す。暗記させない。
+        .guidance(
+            Some(msg!("add-next-heading")),
+            vec![
+                GuidanceItem::Ordered {
+                    number: 1,
+                    text: msg!("add-next-secret"),
+                },
+                GuidanceItem::Plain(msg!("add-next-token")),
+            ],
         )
-    );
-    let _ = std::io::stdout().flush();
+        .try_command(secret::register_command(&output.sandbox, None))
+        .guidance(
+            None,
+            vec![GuidanceItem::Ordered {
+                number: 2,
+                text: msg!("add-next-prepare"),
+            }],
+        )
+        .try_command(format!("sbxm prepare {}", output.project))
 }

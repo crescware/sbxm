@@ -39,9 +39,9 @@ pub(super) fn check_host_commands(
             status.diagnostics.push(
                 Diagnostic::new(
                     ErrorId::HostCommandMissing,
-                    msg!("error-host-command-missing", command = program),
+                    msg!("error-host-command-missing", program = program),
                 )
-                .remediation(msg!("remediation-install-command", command = program)),
+                .remediation(msg!("remediation-install-command", program = program)),
             );
         }
     }
@@ -51,9 +51,9 @@ pub(super) fn check_host_commands(
         status.diagnostics.push(
             Diagnostic::new(
                 ErrorId::HostCommandMissing,
-                msg!("error-host-command-missing", command = "docker"),
+                msg!("error-host-command-missing", program = "docker"),
             )
-            .remediation(msg!("remediation-install-command", command = "docker")),
+            .remediation(msg!("remediation-install-command", program = "docker")),
         );
         return present;
     }

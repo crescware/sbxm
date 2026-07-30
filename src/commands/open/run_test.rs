@@ -6,6 +6,7 @@ use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
+use crate::ui::SilentProgress;
 use std::time::Duration;
 
 /// Docker疎通とworktree一覧に応答するhost。
@@ -40,6 +41,7 @@ fn prepare_for(fixture: &Fixture, host: &FakeSbx) -> Result<Prepared> {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
 }
 
@@ -123,10 +125,18 @@ fn a_project_without_a_sandbox_is_sent_back_to_add() {
         .remediation
         .as_ref()
         .expect("the user is told how to build the sandbox");
-    assert_eq!(remediation.id, "remediation-sandbox-not-created");
     assert_eq!(
-        remediation.args,
-        vec![("command", "sbxm add Example-Org/Example-Repo".to_string())]
+        remediation.explanation.first().map(|message| message.id),
+        Some("remediation-sandbox-not-created")
+    );
+    // 実行を求めるcommandは説明文へ埋め込まず、独立した一行として持つ。
+    assert_eq!(
+        remediation
+            .commands
+            .iter()
+            .map(|command| command.as_str())
+            .collect::<Vec<_>>(),
+        vec!["sbxm prepare Example-Org/Example-Repo"]
     );
     assert!(!host.ran("daemon stop"), "the daemon is left alone");
 }
@@ -143,6 +153,7 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect_err("a project that is not managed has nothing to open");
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
@@ -194,6 +205,7 @@ fn an_intent_recorded_after_the_selection_is_still_seen() {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
+        &mut SilentProgress,
     )
     .expect_err("the intent on disk decides, not the copy from the selection");
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
@@ -215,9 +227,9 @@ fn a_sandbox_that_never_reaches_running_is_reported_rather_than_assumed() {
         .expect("the user is told how to look at it");
     assert!(
         remediation
-            .args
+            .commands
             .iter()
-            .any(|(_, value)| value == "sbxm status example-org/example-repo"),
+            .any(|command| command.as_str() == "sbxm status example-org/example-repo"),
         "the remediation names a command that can be run: {remediation:?}"
     );
 }

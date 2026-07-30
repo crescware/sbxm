@@ -14,6 +14,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{daemon, generation, sandbox, worktree};
+use crate::ui::ProgressSink;
 
 /// 接続先と、接続前に見せる情報。
 #[derive(Debug)]
@@ -44,9 +45,10 @@ pub fn prepare(
     prompt: &mut dyn ProjectPrompt,
     workspace_root: &Path,
     poll: Poll,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let locked = select::one(config, requested, prompt)?.lock()?;
+    let locked = select::one(config, requested, msg!("select-open-heading"), prompt)?.lock()?;
 
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
@@ -57,7 +59,7 @@ pub fn prepare(
     let entries = daemon::list(host)?;
     match inventory::state_of(&entries, metadata, workspace_root)? {
         ProjectState::Running => {}
-        ProjectState::Stopped => inventory::start(host, name.as_str())?,
+        ProjectState::Stopped => inventory::start(host, name.as_str(), progress)?,
         ProjectState::NotCreated => return Err(inventory::not_created(metadata, name.as_str())),
     }
     inventory::wait_until_running(host, metadata, workspace_root, poll)?;

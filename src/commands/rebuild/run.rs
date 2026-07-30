@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
 use crate::config::GlobalConfig;
-use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
+use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata, RebuildIntent};
 use crate::msg;
 use crate::paths::ProjectPaths;
@@ -22,6 +22,7 @@ use crate::support::protection::{self, Unmanaged};
 use crate::support::{
     daemon, generation, identity, repository, sandbox, secret, select, template, tools,
 };
+use crate::ui::{ProgressSink, Remediation, Warning};
 
 /// `rebuild`の結果。
 #[derive(Debug, Clone)]
@@ -32,7 +33,7 @@ pub struct RebuildOutput {
     pub applied: String,
     /// 何も変更しなかったか。
     pub unchanged: bool,
-    pub warnings: Vec<Msg>,
+    pub warnings: Vec<Warning>,
 }
 
 /// Dockerfileの変更をSandboxへ適用する。
@@ -42,6 +43,7 @@ pub fn run(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     poll: Poll,
+    progress: &mut dyn ProgressSink,
 ) -> Result<RebuildOutput> {
     let canonical = project.canonical();
     let name = SandboxName::derive(&canonical);
@@ -73,6 +75,7 @@ pub fn run(
                 state == ProjectState::Stopped,
                 workspace_root,
                 poll,
+                progress,
             )?;
             let layout = SandboxLayout::new(&canonical);
             protection::inspect(
@@ -93,6 +96,7 @@ pub fn run(
         &locked.metadata,
         &target,
         &current,
+        progress,
     )?;
     if locked.metadata.rebuild.is_none() {
         locked.metadata.rebuild = Some(RebuildIntent {
@@ -104,11 +108,15 @@ pub fn run(
 
     let mut warnings = built.warnings;
     if current != target {
-        warnings.push(msg!(
-            "warning-dockerfile-changed-during-rebuild",
-            project = locked.metadata.display_id(),
-            command = format!("sbxm rebuild {}", locked.metadata.display_id())
-        ));
+        // 注意だけを出して終えない。現在のDockerfileを適用する手順まで示す。
+        warnings.push(
+            Warning::text(msg!(
+                "warning-dockerfile-changed-during-rebuild",
+                project = locked.metadata.display_id()
+            ))
+            .explain(msg!("guidance-apply-current-dockerfile"))
+            .try_run(format!("sbxm rebuild {}", locked.metadata.display_id())),
+        );
     }
 
     let context = Switch {
@@ -118,7 +126,7 @@ pub fn run(
         workspace_root,
         poll,
     };
-    context.run(host, &name, &mut locked.metadata, &built.template)?;
+    context.run(host, &name, &mut locked.metadata, &built.template, progress)?;
 
     locked.metadata.provisioning.dockerfile_sha256 = target.clone();
     locked.metadata.rebuild = None;
@@ -136,7 +144,7 @@ pub fn run(
 /// 新世代のimage、archive、Template。
 struct Generation {
     template: template::LoadedTemplate,
-    warnings: Vec<Msg>,
+    warnings: Vec<Warning>,
 }
 
 /// target世代の成果物を用意する。
@@ -150,6 +158,7 @@ fn prepare_generation(
     metadata: &ProjectMetadata,
     target: &str,
     current: &str,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Generation> {
     if current != target && !image::generation_is_built(host, name, &metadata.canonical_id, target)?
     {
@@ -164,10 +173,11 @@ fn prepare_generation(
                     observed = current
                 ),
             )
-            .remediation(msg!(
-                "remediation-rebuild-generation-missing",
-                command = format!("sbxm destroy --force {}", metadata.display_id())
-            )),
+            .remediation(
+                Remediation::text(msg!("remediation-rebuild-generation-missing"))
+                    .explain(msg!("remediation-rebuild-generation-missing-destroy"))
+                    .try_run(format!("sbxm destroy --force {}", metadata.display_id())),
+            ),
         ));
     }
 
@@ -177,13 +187,14 @@ fn prepare_generation(
         &metadata.canonical_id,
         &paths.dockerfile(),
         target,
+        progress,
     )?;
     // 中断した再構築を続ける場合、成功済みの工程はinspectしてskipする。
     let template = match template::existing(host, &built)? {
         Some(template) => template,
         None => {
-            let archive = image::ensure_archive(host, paths, &built, target)?;
-            template::ensure(host, &archive, &built)?
+            let archive = image::ensure_archive(host, paths, &built, target, progress)?;
+            template::ensure(host, &archive, &built, progress)?
         }
     };
     Ok(Generation {
@@ -211,6 +222,7 @@ impl Switch<'_> {
         name: &SandboxName,
         metadata: &mut ProjectMetadata,
         template: &template::LoadedTemplate,
+        progress: &mut dyn ProgressSink,
     ) -> Result<()> {
         let Switch {
             config,
@@ -236,17 +248,18 @@ impl Switch<'_> {
                 entry.state == SandboxState::Stopped,
                 workspace_root,
                 poll,
+                progress,
             )?;
             protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
             // データ保護検査は上で済ませている。
-            inventory::remove(host, name, poll)?;
+            inventory::remove(host, name, poll, progress)?;
         }
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは
         // 作成時に結び付くため、作り直す前に確認する。
         secret::require_github(host, name.as_str())?;
 
-        let ready = sandbox::ensure(host, name, template, workspace_root)?;
+        let ready = sandbox::ensure(host, name, template, workspace_root, progress)?;
 
         secret::require_placeholder_present(host, &ready.name)?;
 
@@ -254,9 +267,9 @@ impl Switch<'_> {
         tools::sandbox_ready(host, &ready.name)?;
         secret::configure_git_credential(host, &ready.name)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
-        repository::ensure_bare_clone(host, &ready.name, project, &layout)?;
+        repository::ensure_bare_clone(host, &ready.name, project, &layout, progress)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
-        repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch)?;
+        repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch, progress)?;
         sandbox::require_credentials_isolated(host, &ready.name)?;
         Ok(())
     }
@@ -273,11 +286,12 @@ fn start_to_read_saved_state(
     stopped: bool,
     workspace_root: &Path,
     poll: Poll,
+    progress: &mut dyn ProgressSink,
 ) -> Result<()> {
     if !stopped {
         return Ok(());
     }
-    inventory::start(host, name.as_str())?;
+    inventory::start(host, name.as_str(), progress)?;
     inventory::wait_until_running(host, metadata, workspace_root, poll)?;
     Ok(())
 }

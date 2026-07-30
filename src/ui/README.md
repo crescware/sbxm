@@ -155,6 +155,8 @@ underlineは一律禁止にしない。参照または操作可能であるこ�
 
 単なる強調、severity、path、commandへ慣例的に付けない。terminal hyperlinkでない文字列をlinkに見せない。
 
+現在の出力はどれにも当たらないため、style modelはunderlineを持たない。実際に開けるURLを出す出力ができた時点で、`Role`と写像へ同時に足す。使い道のない語彙を先に置くと、あとから慣例的な強調として使われる。
+
 ### 背景色など
 
 背景色、点滅は使わない。terminal themeとの衝突が大きく、情報量に対して視覚的な負荷が高いためである。
@@ -190,9 +192,9 @@ Unicodeを安全に表示できない環境向けにASCII fallbackを持つ。
 | success | `✓` | `+` |
 | error | `×` | `x` |
 | current | `›` | `>` |
-| vertical rule | `│` | `|` |
-| branch | `├` / `└` | `+` / `\` |
-| horizontal rule | `─` | `-` |
+| move keys | `↑` / `↓` | `^` / `v` |
+
+罫線は現在どの出力も使っていない。外部outputとsbxm自身の診断は四空白の字下げで分けている。所属関係が字下げと空行だけでは曖昧になる出力ができた時点で、`GlyphSet`へASCII fallbackとともに足す。
 
 Unicode/ASCIIのどちらでも意味を変えない。表示幅は実際に選んだglyphで計算する。
 
@@ -499,6 +501,7 @@ localeによってheadingの長さや語順が変わっても、block構造、se
 ```rust
 pub enum Role {
     Heading,
+    TableHeader,
     ProgressMarker,
     SuccessMarker,
     WarningMarker,
@@ -519,19 +522,30 @@ pub enum VisualState {
 }
 
 pub enum Block {
-    Progress(Progress),
-    Summary(Summary),
+    Progress(Msg),
+    Summary(Msg),
     Section(Section),
     Guidance(Guidance),
+    Warning(Msg),
+    Note(Msg),
     Command(CommandLine),
-    Diagnostic(DiagnosticView),
-    Rule(Rule),
+    Diagnostic(Box<Diagnostic>),
+    Verbatim(String),
+    Rule,
 }
 ```
 
+`Warning`と`Note`は、markerとlocalized labelを伴う一行として同じ規則で描く。severityを色だけに委ねないため、labelは翻訳対象とする。
+
+`Verbatim`はhelpとversionだけが使う。既に組み立てられた本文をそのまま置き、末尾の改行だけをrendererが揃える。
+
+sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれかとする。tableとlistのcellは`Cell`とし、翻訳する項目名と翻訳しない値を型で分ける。混ぜると、状態値まで訳す経路と項目名を原文のまま出す経路の両方が作れてしまう。
+
 具体的なterminal crateの型を`ui` module外へ公開しない。callerは意味型だけを使う。
 
-`StyleSpec`はbold、underline、foregroundを表現できるが、italic、背景色、点滅、RGB、256色indexを持たない。
+`StyleSpec`はbold、dim、underline、foregroundを表現できるが、italic、背景色、点滅、RGB、256色indexを持たない。dimは補助情報にだけ使い、`Muted`と`TableHeader`以外のroleへは付かない。
+
+promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`を借りたままにしない。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
 
 ## 新しい出力を追加する手順
 
@@ -562,7 +576,7 @@ pub enum Block {
 - `println!("\n...")`でblock間隔を作る
 - status文字列から色を推測する
 - commandごとにprompt themeを作る
-- dialoguerの既定themeとcustom themeを混在させる
+- prompt libraryの既定themeとcustom themeを混在させる
 - global mutable UI stateを作る
 - snapshotだけで規約を守る
 - legacy rendererとdesign systemを恒久的に併存させる
@@ -637,7 +651,7 @@ pub enum Block {
 - 利用者向けの`print!`、`println!`、`eprintln!`が`ui`外にない
 - ANSI literalがrenderer外にない
 - terminal style crateのimportが`ui`外にない
-- `dialoguer::Select`と`MultiSelect`の生成がprompt component外にない
+- 選択promptの生成がprompt component外にない
 - FTL action/remediation messageにliteral commandがない
 - command用でないFTL messageに`$command` placeholderがない
 

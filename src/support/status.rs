@@ -24,7 +24,7 @@ impl StatusValue {
     }
 
     /// 凡例に使うFTL message ID。
-    pub(super) fn legend_id(self) -> &'static str {
+    pub fn legend_id(self) -> &'static str {
         match self {
             StatusValue::Ready => "legend-ready",
             StatusValue::Missing => "legend-missing",

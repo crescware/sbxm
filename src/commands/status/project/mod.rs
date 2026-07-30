@@ -21,6 +21,7 @@ use crate::project::{ProjectId, SandboxName};
 
 use crate::support::select;
 
+use crate::ui::Remediation;
 use artifacts::{check_archive, check_directory, check_dockerfile, check_image};
 use inside::{check_inside, check_sandbox};
 
@@ -127,10 +128,10 @@ impl ProjectStatus {
                 ErrorId::GlobalScopeUnobservable,
                 msg!("error-global-scope-unobservable"),
             )
-            .remediation(msg!(
-                "remediation-run-global-status",
-                command = "sbxm status --global"
-            )),
+            .remediation(
+                Remediation::text(msg!("remediation-run-global-status"))
+                    .try_run("sbxm status --global"),
+            ),
         );
     }
 }

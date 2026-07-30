@@ -485,14 +485,12 @@ fn apple_languages_output_is_reduced_to_the_first_entry() {
 
 #[test]
 fn an_interrupted_init_prompt_is_a_cancel_and_any_other_read_failure_asks_for_a_terminal() {
-    let canceled = TerminalPrompt::map_error(dialoguer::Error::IO(std::io::Error::from(
-        std::io::ErrorKind::Interrupted,
-    )));
+    let canceled = TerminalPrompt::require_tty(Error::Canceled);
     assert_eq!(canceled.exit_code(), crate::error::ExitCode::Canceled);
 
-    let unreadable = TerminalPrompt::map_error(dialoguer::Error::IO(std::io::Error::from(
-        std::io::ErrorKind::BrokenPipe,
-    )));
+    let unreadable = TerminalPrompt::require_tty(crate::ui::prompt::unreadable(
+        std::io::Error::from(std::io::ErrorKind::BrokenPipe),
+    ));
     assert_eq!(unreadable.first_id(), Some(ErrorId::InitRequiresTty));
     assert_ne!(unreadable.exit_code(), crate::error::ExitCode::Canceled);
 }

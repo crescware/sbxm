@@ -1,10 +1,18 @@
 use super::*;
 use crate::testing::repository::*;
+use crate::ui::SilentProgress;
 
 #[test]
 fn a_missing_repository_is_cloned_bare_over_https_and_then_verified() {
     let host = healthy_clone();
-    ensure_bare_clone(&host, "sbxm-example", &project(), &layout()).expect("clone");
+    ensure_bare_clone(
+        &host,
+        "sbxm-example",
+        &project(),
+        &layout(),
+        &mut SilentProgress,
+    )
+    .expect("clone");
 
     assert!(
         host.ran("git init --bare /home/agent/work/example-repo/.git"),
@@ -24,7 +32,14 @@ fn a_missing_repository_is_cloned_bare_over_https_and_then_verified() {
 fn an_existing_repository_of_the_same_project_is_reused() {
     let git_dir = layout().bare_git_dir();
     let host = healthy_clone().holding(&[&git_dir]);
-    ensure_bare_clone(&host, "sbxm-example", &project(), &layout()).expect("reuse");
+    ensure_bare_clone(
+        &host,
+        "sbxm-example",
+        &project(),
+        &layout(),
+        &mut SilentProgress,
+    )
+    .expect("reuse");
 
     assert!(
         !host.ran("git clone"),
@@ -55,8 +70,14 @@ fn a_repository_that_does_not_match_is_refused_instead_of_being_replaced() {
 
     for host in cases {
         let host = host.holding(&[&git_dir]);
-        let error = ensure_bare_clone(&host, "sbxm-example", &project(), &layout())
-            .expect_err("a repository that cannot be proven is refused");
+        let error = ensure_bare_clone(
+            &host,
+            "sbxm-example",
+            &project(),
+            &layout(),
+            &mut SilentProgress,
+        )
+        .expect_err("a repository that cannot be proven is refused");
         assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
         assert!(!host.ran("rm "), "nothing is deleted: {:?}", host.calls());
     }

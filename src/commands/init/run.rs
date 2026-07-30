@@ -12,10 +12,11 @@ use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::config::{
     self, ConfigLocation, ConfigState, GitIdentity, GlobalConfig, validate_git_identity_value,
 };
-use crate::error::{Error, ErrorId, Msg, Result, fail};
+use crate::error::{Error, ErrorId, Result, fail};
 use crate::i18n::{Catalog, Locale, shell_locale};
 use crate::msg;
 use crate::paths::{self, AbsoluteBasePath, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
+use crate::ui::{PromptUi, Warning};
 
 /// 対話modeの入力。
 ///
@@ -44,7 +45,7 @@ pub struct InitOutput {
     /// 既に初期化済みで、何も変更しなかったか。
     pub already_initialized: bool,
     pub config_path: PathBuf,
-    pub warnings: Vec<Msg>,
+    pub warnings: Vec<Warning>,
 }
 
 /// `sbxm init`を実行する。
@@ -262,10 +263,19 @@ fn git_candidate(host: &dyn HostEnvironment, key: &str) -> String {
     }
 }
 
-/// dialoguerを使う対話実装。
-pub struct TerminalPrompt;
+/// 共通promptを使う対話実装。
+///
+/// 言語選択もproject選択と同じ単一選択themeで描く。`init`だけが別のpromptを持つと、
+/// 最初に触れる画面がほかのcommandと違って見える。
+pub struct TerminalPrompt {
+    prompt: PromptUi,
+}
 
 impl TerminalPrompt {
+    pub fn new(prompt: PromptUi) -> TerminalPrompt {
+        TerminalPrompt { prompt }
+    }
+
     fn text(catalog: &Catalog, id: &str) -> String {
         catalog
             .text(id)
@@ -273,11 +283,12 @@ impl TerminalPrompt {
     }
 
     /// 中断は何も変更せず終える。それ以外はTTYの不足として報告する。
-    fn map_error(error: dialoguer::Error) -> Error {
+    ///
+    /// `init`は端末が要る唯一のcommandであり、読めない端末は引数不足でも一時障害でもなく
+    /// 対話modeを選べない状態そのものである。
+    pub(super) fn require_tty(error: Error) -> Error {
         match error {
-            dialoguer::Error::IO(io) if io.kind() == std::io::ErrorKind::Interrupted => {
-                Error::Canceled
-            }
+            Error::Canceled => Error::Canceled,
             _ => Error::new(ErrorId::InitRequiresTty, msg!("error-init-requires-tty")),
         }
     }
@@ -296,53 +307,41 @@ impl Prompt for TerminalPrompt {
             .map(|locale| TerminalPrompt::text(&Catalog::new(*locale), "locale-name"))
             .collect();
 
-        let index = dialoguer::Select::new()
-            .with_prompt(TerminalPrompt::text(catalog, "init-prompt-language"))
-            .items(&items)
-            .interact()
-            .map_err(TerminalPrompt::map_error)?;
+        let index = self
+            .prompt
+            .select_one(msg!("init-prompt-language"), &items)
+            .map_err(TerminalPrompt::require_tty)?;
         Ok(*choices
             .get(index)
             .expect("the selection index stays within the offered items"))
     }
 
-    fn base_path(&mut self, catalog: &Catalog) -> Result<String> {
-        dialoguer::Input::<String>::new()
-            .with_prompt(TerminalPrompt::text(catalog, "init-prompt-base-path"))
-            .interact_text()
-            .map_err(TerminalPrompt::map_error)
+    fn base_path(&mut self, _catalog: &Catalog) -> Result<String> {
+        self.prompt
+            .input(msg!("init-prompt-base-path"), "")
+            .map_err(TerminalPrompt::require_tty)
     }
 
-    fn git_user_name(&mut self, catalog: &Catalog, candidate: &str) -> Result<String> {
-        let mut input = dialoguer::Input::<String>::new()
-            .with_prompt(TerminalPrompt::text(catalog, "init-prompt-git-user-name"));
-        if !candidate.is_empty() {
-            // 候補を表示して明示確定させる。
-            input = input.with_initial_text(candidate);
-        }
-        input.interact_text().map_err(TerminalPrompt::map_error)
+    fn git_user_name(&mut self, _catalog: &Catalog, candidate: &str) -> Result<String> {
+        // 候補を表示して明示確定させる。
+        self.prompt
+            .input(msg!("init-prompt-git-user-name"), candidate)
+            .map_err(TerminalPrompt::require_tty)
     }
 
-    fn git_user_email(&mut self, catalog: &Catalog, candidate: &str) -> Result<String> {
-        let mut input = dialoguer::Input::<String>::new()
-            .with_prompt(TerminalPrompt::text(catalog, "init-prompt-git-user-email"));
-        if !candidate.is_empty() {
-            input = input.with_initial_text(candidate);
-        }
-        input.interact_text().map_err(TerminalPrompt::map_error)
+    fn git_user_email(&mut self, _catalog: &Catalog, candidate: &str) -> Result<String> {
+        self.prompt
+            .input(msg!("init-prompt-git-user-email"), candidate)
+            .map_err(TerminalPrompt::require_tty)
     }
 
-    fn confirm_create_base_path(&mut self, catalog: &Catalog, path: &Path) -> Result<bool> {
-        let message = catalog
-            .format(&msg!(
+    fn confirm_create_base_path(&mut self, _catalog: &Catalog, path: &Path) -> Result<bool> {
+        self.prompt
+            .confirm(msg!(
                 "init-prompt-create-base-path",
                 path = paths::display(path)
             ))
-            .unwrap_or_else(|failure| failure.to_string());
-        dialoguer::Confirm::new()
-            .with_prompt(message)
-            .interact()
-            .map_err(TerminalPrompt::map_error)
+            .map_err(TerminalPrompt::require_tty)
     }
 }
 

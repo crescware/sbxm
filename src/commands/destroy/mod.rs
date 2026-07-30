@@ -1,7 +1,7 @@
 //! `sbxm destroy`。
 
 mod exec;
-mod print;
+pub mod print;
 pub mod run;
 
 pub use exec::exec;
@@ -54,7 +54,7 @@ pub fn args(matches: &ArgMatches, interactivity: Interactivity) -> Result<Args> 
                 ErrorId::ProjectArgumentRequired,
                 msg!(
                     "error-project-argument-required",
-                    command = "sbxm destroy --force"
+                    subcommand = "sbxm destroy --force"
                 ),
             )
         }

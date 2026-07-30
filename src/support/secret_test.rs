@@ -185,12 +185,15 @@ fn a_missing_secret_stops_with_the_command_that_registers_it() {
         .remediation
         .as_ref()
         .expect("the user is told how to register it");
-    assert_eq!(remediation.id, "remediation-github-secret-missing");
+    assert_eq!(
+        remediation.explanation[0].id,
+        "remediation-github-secret-missing"
+    );
     assert!(
         remediation
-            .args
+            .commands
             .iter()
-            .any(|(_, value)| value == &register_command("sbxm-example", None))
+            .any(|command| command.as_str() == register_command("sbxm-example", None))
     );
 }
 
@@ -313,9 +316,9 @@ fn a_registration_that_survives_the_removal_is_reported_with_the_command_to_run(
         .expect("the user is told how to remove it");
     assert!(
         remediation
-            .args
+            .commands
             .iter()
-            .any(|(_, value)| value == &forget_command("sbxm-example", "sbx-cs-example"))
+            .any(|command| command.as_str() == forget_command("sbxm-example", "sbx-cs-example"))
     );
 }
 
@@ -353,9 +356,9 @@ fn a_sandbox_without_the_placeholder_is_refused_instead_of_assumed_ready() {
         .expect("the user is told how to get out of it");
     assert!(
         remediation
-            .args
+            .commands
             .iter()
-            .any(|(_, value)| value == "sbx rm sbxm-example")
+            .any(|command| command.as_str() == "sbx rm sbxm-example")
     );
 }
 
@@ -385,12 +388,14 @@ fn an_incomplete_secret_is_told_to_keep_the_placeholder_the_sandbox_already_hold
         .remediation
         .as_ref()
         .expect("the user is told how to get out of it");
-    assert_eq!(remediation.id, "remediation-github-secret-incomplete");
+    assert_eq!(
+        remediation.explanation[0].id,
+        "remediation-github-secret-incomplete"
+    );
     let command = remediation
-        .args
-        .iter()
-        .find(|(name, _)| *name == "command")
-        .map(|(_, value)| value.clone())
+        .commands
+        .first()
+        .map(|command| command.as_str().to_string())
         .expect("the remediation carries the command to run");
     assert!(
         command.contains("--placeholder sbx-cs-Y1k0SfTWbkN6HzCO"),
@@ -412,12 +417,15 @@ fn a_sandbox_with_no_secret_at_all_is_told_to_register_one_without_a_placeholder
         .remediation
         .as_ref()
         .expect("present");
-    assert_eq!(remediation.id, "remediation-github-secret-missing");
+    assert_eq!(
+        remediation.explanation[0].id,
+        "remediation-github-secret-missing"
+    );
     assert!(
         remediation
-            .args
+            .commands
             .iter()
-            .all(|(_, value)| !value.contains("--placeholder")),
+            .all(|command| !command.as_str().contains("--placeholder")),
         "there is no placeholder to keep, so none is invented"
     );
 }

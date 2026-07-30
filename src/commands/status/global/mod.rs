@@ -14,10 +14,11 @@ mod settings;
 
 use crate::command::HostEnvironment;
 use crate::config::ConfigLocation;
-use crate::error::{Diagnostic, Msg};
+use crate::error::Diagnostic;
 
 use crate::support::{Row, StatusValue};
 
+use crate::ui::Warning;
 use host_commands::check_host_commands;
 use platform::check_platform;
 use sandboxes::check_docker_sandboxes;
@@ -27,7 +28,7 @@ use settings::{check_base_path, check_config};
 pub struct GlobalStatus {
     pub rows: Vec<Row>,
     pub diagnostics: Vec<Diagnostic>,
-    pub warnings: Vec<Msg>,
+    pub warnings: Vec<Warning>,
 }
 impl GlobalStatus {
     pub fn is_healthy(&self) -> bool {

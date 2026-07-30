@@ -13,6 +13,7 @@ use crate::git;
 use crate::msg;
 use crate::paths::{self, PathScope, ProjectPaths};
 use crate::project::ProjectId;
+use crate::ui::ProgressSink;
 
 /// 採用したhost clone。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,11 +31,12 @@ pub fn ensure(
     host: &dyn HostEnvironment,
     paths: &ProjectPaths,
     project: &ProjectId,
+    progress: &mut dyn ProgressSink,
 ) -> Result<HostClone> {
     let target = paths.host_clone();
 
     if fs::symlink_metadata(&target).is_err() {
-        clone(host, &target, project)?;
+        clone(host, &target, project, progress)?;
         // 作成直後も、再利用と同じ規則で成果物を検証する。
         inspect(host, paths, project, &target)?;
         return Ok(HostClone {
@@ -50,9 +52,14 @@ pub fn ensure(
     })
 }
 
-fn clone(host: &dyn HostEnvironment, target: &Path, project: &ProjectId) -> Result<()> {
+fn clone(
+    host: &dyn HostEnvironment,
+    target: &Path,
+    project: &ProjectId,
+    progress: &mut dyn ProgressSink,
+) -> Result<()> {
     let url = git::ssh_remote_url(project.owner(), project.repository());
-    crate::progress::step(&msg!("progress-cloning-host"));
+    progress.step(msg!("progress-cloning-host"));
     // 進捗はgitが出したまま転送する。sbxmは実況を重ねない。
     let spec = CommandSpec::passthrough("git", &["clone", &url, &paths::display(target)])
         .timeout(TimeoutClass::RepositoryTransfer);

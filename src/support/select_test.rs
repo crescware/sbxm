@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::ExitCode;
+use crate::msg;
 use crate::testing::project::{fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
 
@@ -13,6 +14,7 @@ fn a_named_project_is_used_without_asking() {
     let chosen = one(
         &fixture.config,
         Some(&project_id("Example-Org/Example-Repo")),
+        msg!("select-open-heading"),
         &mut prompt,
     )
     .expect("the named project is found");
@@ -40,6 +42,7 @@ fn a_named_project_is_read_without_discovering_the_others() {
     let chosen = one(
         &fixture.config,
         Some(&project_id("example-org/example-repo")),
+        msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(0),
     )
     .expect("an unrelated project does not decide this one");
@@ -53,7 +56,13 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() {
     fixture.register("other/repo");
 
     let mut prompt = ScriptedPrompt::choosing(1);
-    let chosen = one(&fixture.config, None, &mut prompt).expect("select");
+    let chosen = one(
+        &fixture.config,
+        None,
+        msg!("select-open-heading"),
+        &mut prompt,
+    )
+    .expect("select");
     assert_eq!(chosen.display_id(), "other/repo");
     assert_eq!(
         prompt.asked.borrow()[0],
@@ -70,8 +79,13 @@ fn cancelling_the_prompt_changes_nothing() {
     let fixture = fixture();
     fixture.register("example-org/example-repo");
 
-    let error = one(&fixture.config, None, &mut ScriptedPrompt::canceling())
-        .expect_err("a cancelled prompt is not a selection");
+    let error = one(
+        &fixture.config,
+        None,
+        msg!("select-open-heading"),
+        &mut ScriptedPrompt::canceling(),
+    )
+    .expect_err("a cancelled prompt is not a selection");
     assert_eq!(error.exit_code(), ExitCode::Canceled);
 }
 
@@ -80,12 +94,23 @@ fn no_managed_project_is_an_error_rather_than_an_empty_prompt() {
     let fixture = fixture();
 
     let mut prompt = ScriptedPrompt::choosing(0);
-    let error =
-        one(&fixture.config, None, &mut prompt).expect_err("there is nothing to choose from");
+    let error = one(
+        &fixture.config,
+        None,
+        msg!("select-open-heading"),
+        &mut prompt,
+    )
+    .expect_err("there is nothing to choose from");
     assert_eq!(error.first_id(), Some(ErrorId::NoManagedProjects));
     assert!(prompt.asked.borrow().is_empty(), "no empty prompt is shown");
 
-    let error = many(&fixture.config, &[], &mut prompt).expect_err("the same holds for many");
+    let error = many(
+        &fixture.config,
+        &[],
+        msg!("select-stop-heading"),
+        &mut prompt,
+    )
+    .expect_err("the same holds for many");
     assert_eq!(error.first_id(), Some(ErrorId::NoManagedProjects));
 }
 
@@ -94,14 +119,20 @@ fn a_selection_that_matches_no_candidate_is_not_a_cancel() {
     let fixture = fixture();
     fixture.register("example-org/example-repo");
 
-    let error = one(&fixture.config, None, &mut ScriptedPrompt::choosing(7))
-        .expect_err("an answer outside the candidates is not a selection");
+    let error = one(
+        &fixture.config,
+        None,
+        msg!("select-open-heading"),
+        &mut ScriptedPrompt::choosing(7),
+    )
+    .expect_err("an answer outside the candidates is not a selection");
     assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
 
     // 未選択の確定も、対象が決まらなかったこととして扱う。
     let error = many(
         &fixture.config,
         &[],
+        msg!("select-stop-heading"),
         &mut ScriptedPrompt::choosing_many(&[]),
     )
     .expect_err("confirming nothing selects nothing");
@@ -122,6 +153,7 @@ fn several_named_projects_are_deduplicated_and_ordered() {
             project_id("alpha/repo"),
             project_id("zeta/repo"),
         ],
+        msg!("select-stop-heading"),
         &mut prompt,
     )
     .expect("select");
@@ -144,6 +176,7 @@ fn a_project_that_is_not_managed_is_named_in_the_diagnostic() {
     let error = one(
         &fixture.config,
         Some(&project_id("other/repo")),
+        msg!("select-open-heading"),
         &mut prompt,
     )
     .expect_err("an unmanaged project cannot be the target");
@@ -158,6 +191,7 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
     let candidate = one(
         &fixture.config,
         Some(&project_id("example-org/example-repo")),
+        msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(0),
     )
     .expect("the project is managed when it is selected");
@@ -179,18 +213,25 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
         .remediation
         .as_ref()
         .expect("the user is told how to register the project again");
+    // 実行を求めるcommandは説明文へ埋め込まず、独立した一行として持つ。
     assert_eq!(
-        remediation.args,
-        vec![("command", "sbxm add Example-Org/Example-Repo".to_string())]
+        remediation
+            .commands
+            .iter()
+            .map(|command| command.as_str())
+            .collect::<Vec<_>>(),
+        vec!["sbxm add Example-Org/Example-Repo"]
     );
 }
 
 #[test]
 fn an_interrupted_prompt_is_a_cancel_and_any_other_read_failure_is_reported() {
-    let canceled = unreadable_prompt(std::io::Error::from(std::io::ErrorKind::Interrupted));
+    let canceled =
+        crate::ui::prompt::unreadable(std::io::Error::from(std::io::ErrorKind::Interrupted));
     assert_eq!(canceled.exit_code(), ExitCode::Canceled);
 
-    let unreadable = unreadable_prompt(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+    let unreadable =
+        crate::ui::prompt::unreadable(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
     assert_eq!(unreadable.first_id(), Some(ErrorId::PromptUnreadable));
     assert_ne!(unreadable.exit_code(), ExitCode::Canceled);
 }

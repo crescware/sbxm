@@ -13,6 +13,7 @@ use crate::support::{daemon, sandbox, secret};
 
 use super::repository::{check_bare_repository, check_worktrees};
 use super::{ProjectStatus, Value};
+use crate::ui::Remediation;
 
 /// Sandboxとworkspaceの状態。
 ///
@@ -143,10 +144,10 @@ pub(super) fn check_ssh_agent(
                         observed = observed.join(", ")
                     ),
                 )
-                .remediation(msg!(
-                    "security-ssh-agent-exposed-remediation",
-                    command = format!("sbx rm {name}")
-                )),
+                .remediation(
+                    Remediation::text(msg!("security-ssh-agent-exposed-remediation"))
+                        .try_run(format!("sbx rm {name}")),
+                ),
             );
             Value::Exposed
         }

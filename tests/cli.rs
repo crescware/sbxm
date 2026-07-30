@@ -271,8 +271,9 @@ fn parser_failures_map_to_exit_code_one() {
             "{arguments:?} must exit with 1, got {}: {}",
             run.code, run.stderr
         );
+        // markerは色なしでも残る。severityを色だけに委ねない。
         assert!(
-            run.stderr.starts_with("error: "),
+            run.stderr.starts_with("\u{d7} error: "),
             "{arguments:?}: {}",
             run.stderr
         );
@@ -437,7 +438,7 @@ fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() {
         .expect("both sections are shown, even with nothing to list");
     assert!(project.starts_with("PROJECT\n"), "{}", run.stdout);
     assert_eq!(
-        first_column(project.trim_start_matches("PROJECT\n")),
+        first_column(&format!("_\n{}", project.trim_start_matches("PROJECT\n"))),
         vec![
             "Project",
             "Metadata",
@@ -456,9 +457,10 @@ fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() {
         "{}",
         run.stdout
     );
+    // worktreeが1本もないことも観測結果である。列だけの表ではなく一行で示す。
     assert_eq!(
         worktrees.lines().next(),
-        Some("PATH  KIND  MODE  STATE"),
+        Some("  No managed worktree was observed."),
         "{}",
         run.stdout
     );
@@ -656,12 +658,16 @@ fn the_japanese_mode_adds_a_legend_for_the_values_that_appeared() {
     let home = temp_home();
     let run = sbxm(home.path(), &["--lang", "ja", "status", "--global"]);
 
-    assert!(run.stdout.contains("状態値の凡例"), "{}", run.stdout);
-    assert!(run.stdout.contains("error:"), "{}", run.stdout);
+    let legend = run
+        .stdout
+        .split_once("状態値の凡例\n")
+        .expect("the legend is its own section")
+        .1;
+    // 値は訳さず、説明だけを訳す。
+    assert!(legend.contains("error "), "{legend}");
     assert!(
-        !run.stdout.contains("running:"),
-        "values that did not appear must be left out: {}",
-        run.stdout
+        !legend.contains("running"),
+        "values that did not appear must be left out: {legend}"
     );
 
     // 英語modeには凡例を出さない。

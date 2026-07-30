@@ -6,6 +6,7 @@ use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use super::Outcome;
+use crate::ui::Remediation;
 
 pub fn interpret(error: clap::Error) -> Result<Outcome> {
     match error.kind() {
@@ -73,13 +74,15 @@ fn map(error: &clap::Error) -> Error {
         _ => (ErrorId::InvalidArguments, msg!("error-invalid-arguments")),
     };
 
-    let mut diagnostic = Diagnostic::new(id, description);
+    // usageが取れた場合も、引数の一覧そのものはhelpにしかない。両方を示す。
+    let mut remediation = Remediation::new();
     if let Some(usage) = usage {
-        diagnostic = diagnostic.remediation(msg!("usage-hint", usage = usage.trim()));
-    } else {
-        diagnostic = diagnostic.remediation(msg!("remediation-run-help", command = "sbxm --help"));
+        remediation = remediation.explain(msg!("usage-hint", usage = usage.trim()));
     }
-    Error::single(diagnostic)
+    let remediation = remediation
+        .explain(msg!("remediation-run-help"))
+        .try_run("sbxm --help");
+    Error::single(Diagnostic::new(id, description).remediation(remediation))
 }
 
 fn context_string(error: &clap::Error, kind: ContextKind) -> Option<String> {

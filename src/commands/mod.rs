@@ -17,6 +17,11 @@ pub mod status;
 pub mod stop;
 
 mod context;
+mod present;
+
+#[cfg(test)]
+#[path = "print_test.rs"]
+mod print_test;
 
 pub use context::{Context, report};
 
@@ -26,6 +31,7 @@ use crate::cli::{Builder, Interactivity};
 use crate::error::{ErrorId, ExitCode, Result, fail};
 use crate::msg;
 use crate::project::ProjectId;
+use crate::ui::Ui;
 
 /// 実行するcommand。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,17 +89,19 @@ pub fn from_matches(
 }
 
 /// commandを実行し、結果を表示してexit codeを返す。
-pub fn dispatch(command: &Command, context: &Context) -> ExitCode {
+///
+/// `Ui`はworkflow objectへ広げず、明示的な引数として渡す。
+pub fn dispatch(command: &Command, context: &Context, ui: &mut Ui) -> ExitCode {
     match command {
-        Command::Init(mode) => init::exec(mode, context),
-        Command::Add(args) => add::exec(args, context),
-        Command::Apply(args) => apply::exec(args, context),
-        Command::Prepare(project) => prepare::exec(project, context),
-        Command::Rebuild(project) => rebuild::exec(project, context),
-        Command::Open(project) => open::exec(project.as_ref(), context),
-        Command::Stop(projects) => stop::exec(projects, context),
-        Command::Ls => ls::exec(context),
-        Command::Status(scope) => status::exec(scope, context),
-        Command::Destroy(args) => destroy::exec(args, context),
+        Command::Init(mode) => init::exec(mode, context, ui),
+        Command::Add(args) => add::exec(args, context, ui),
+        Command::Apply(args) => apply::exec(args, context, ui),
+        Command::Prepare(project) => prepare::exec(project, context, ui),
+        Command::Rebuild(project) => rebuild::exec(project, context, ui),
+        Command::Open(project) => open::exec(project.as_ref(), context, ui),
+        Command::Stop(projects) => stop::exec(projects, context, ui),
+        Command::Ls => ls::exec(context, ui),
+        Command::Status(scope) => status::exec(scope, context, ui),
+        Command::Destroy(args) => destroy::exec(args, context, ui),
     }
 }

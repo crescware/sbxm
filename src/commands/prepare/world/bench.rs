@@ -13,6 +13,7 @@ use crate::project::ProjectId;
 
 use super::super::run::{PrepareOutput, run};
 use super::World;
+use crate::ui::SilentProgress;
 
 /// 宣言file 1件を持つ、実行時と同じ形の入力一式。
 pub struct Bench {
@@ -62,12 +63,13 @@ pub fn bench() -> Bench {
 impl Bench {
     /// `add`で登録してから`prepare`で構築する。工程は通しで判定する。
     pub fn build(&self, world: &World, request: &AddRequest) -> Result<PrepareOutput> {
-        crate::commands::add::run::run(&self.config, request, world)?;
+        crate::commands::add::run::run(&self.config, request, world, &mut SilentProgress)?;
         run(
             &self.config,
             &request.project,
             world,
             self.workspace_root.path(),
+            &mut SilentProgress,
         )
     }
 
