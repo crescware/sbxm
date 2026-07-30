@@ -185,7 +185,7 @@ fn unknown_top_level_keys_are_warnings_in_version_1() {
         panic!("the configuration must load");
     };
     assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].id, "warning-config-unknown-key");
+    assert_eq!(warnings[0].description.id, "warning-config-unknown-key");
 }
 
 #[test]

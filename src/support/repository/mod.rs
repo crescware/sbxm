@@ -16,6 +16,7 @@ use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
 
 use super::sandbox;
+use crate::ui::ProgressSink;
 
 /// このbuildが使うfetch refspec。完全一致だけを再利用の条件とする。
 pub(crate) const FETCH_REFSPEC: &str = "+refs/heads/*:refs/remotes/origin/*";
@@ -28,13 +29,14 @@ pub fn ensure_bare_clone(
     sandbox: &str,
     project: &ProjectId,
     layout: &SandboxLayout,
+    progress: &mut dyn ProgressSink,
 ) -> Result<()> {
     let git_dir = layout.bare_git_dir();
 
     if sandbox::path_exists(host, sandbox, &git_dir)? {
-        crate::progress::step(&msg!("progress-checking-repository"));
+        progress.step(msg!("progress-checking-repository"));
     } else {
-        crate::progress::step(&msg!("progress-preparing-repository"));
+        progress.step(msg!("progress-preparing-repository"));
         sandbox::exec(host, sandbox, &["mkdir", "-p", &layout.bare_root()])?.require_success()?;
         let url = git::https_remote_url(project.owner(), project.repository());
         // `git clone --bare`はremoteのbranchを`refs/heads/*`へ複製する。そのbranchは
@@ -72,7 +74,7 @@ pub fn ensure_bare_clone(
     verify_bare_clone(host, sandbox, project, &git_dir)?;
 
     // remote-tracking refを現在の状態にしてから、起点refを解決する。
-    crate::progress::step(&msg!("progress-fetching-repository"));
+    progress.step(msg!("progress-fetching-repository"));
     sandbox::exec_with_progress(
         host,
         sandbox,

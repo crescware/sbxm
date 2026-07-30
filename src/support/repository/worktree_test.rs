@@ -4,6 +4,7 @@ use crate::metadata;
 use crate::metadata::CreationMode;
 use crate::testing::repository::*;
 use crate::testing::value::MOVED;
+use crate::ui::SilentProgress;
 
 #[test]
 fn a_project_that_asks_for_more_worktrees_gets_the_missing_ones_and_keeps_the_rest() {
@@ -19,8 +20,15 @@ fn a_project_that_asks_for_more_worktrees_gets_the_missing_ones_and_keeps_the_re
     let project = metadata(CreationMode::Detached, Some("develop"), 3);
     metadata::create(&paths, &project).expect("write the metadata");
 
-    let managed = ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop")
-        .expect("the worktrees that are missing are the ones that get made");
+    let managed = ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout(),
+        &project,
+        "develop",
+        &mut SilentProgress,
+    )
+    .expect("the worktrees that are missing are the ones that get made");
 
     assert_eq!(managed.len(), 3);
     assert!(
@@ -58,8 +66,15 @@ fn an_attached_project_keeps_its_branch_and_gets_detached_worktrees_beside_it() 
     let project = metadata(CreationMode::Attached, Some("develop"), 3);
     metadata::create(&paths, &project).expect("write the metadata");
 
-    let managed = ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop")
-        .expect("an attached worktree does not stop the others from being made");
+    let managed = ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout(),
+        &project,
+        "develop",
+        &mut SilentProgress,
+    )
+    .expect("an attached worktree does not stop the others from being made");
 
     assert_eq!(managed.len(), 3);
     for index in 1..3 {
@@ -92,8 +107,15 @@ fn detached_worktrees_are_created_from_one_commit_and_recorded_one_by_one() {
     let project = metadata(CreationMode::Detached, Some("develop"), 3);
     metadata::create(&paths, &project).expect("write the metadata");
 
-    let managed =
-        ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop").expect("create");
+    let managed = ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout(),
+        &project,
+        "develop",
+        &mut SilentProgress,
+    )
+    .expect("create");
 
     assert_eq!(
         managed,
@@ -123,7 +145,15 @@ fn an_attached_project_gets_one_tracking_branch() {
     let project = metadata(CreationMode::Attached, Some("develop"), 1);
     metadata::create(&paths, &project).expect("write the metadata");
 
-    ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop").expect("create");
+    ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout(),
+        &project,
+        "develop",
+        &mut SilentProgress,
+    )
+    .expect("create");
 
     assert!(
         host.ran(&format!(
@@ -143,8 +173,15 @@ fn a_worktree_that_is_already_there_and_correct_is_adopted_without_recreating_it
     let project = metadata(CreationMode::Detached, Some("develop"), 1);
     metadata::create(&paths, &project).expect("write the metadata");
 
-    let managed =
-        ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop").expect("adopt");
+    let managed = ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout(),
+        &project,
+        "develop",
+        &mut SilentProgress,
+    )
+    .expect("adopt");
 
     assert_eq!(managed.len(), 1);
     assert!(
@@ -169,7 +206,14 @@ fn a_worktree_of_another_repository_is_not_taken_for_this_project() {
 
     let project = metadata(CreationMode::Detached, Some("develop"), 1);
     metadata::create(&paths, &project).ok();
-    let error = ensure_worktrees(&host, "sbxm-example", &layout(), &project, "develop")
-        .expect_err("a worktree of another repository is not this project's");
+    let error = ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout(),
+        &project,
+        "develop",
+        &mut SilentProgress,
+    )
+    .expect_err("a worktree of another repository is not this project's");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
 }

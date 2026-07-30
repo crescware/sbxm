@@ -3,6 +3,7 @@ use super::*;
 use crate::command::{CommandOutcome, OutputPolicy};
 use crate::testing::archive::image_archive_bytes;
 use crate::testing::value::{DIGEST, IMAGE_ID};
+use crate::ui::SilentProgress;
 
 #[test]
 fn the_image_name_carries_the_sandbox_and_the_dockerfile_generation() {
@@ -20,7 +21,15 @@ fn a_missing_image_is_built_into_an_empty_context_and_then_verified() {
     // 1回目のinspectは不在、buildのあとは一致する。
     let host = FakeDocker::new(vec![Some(&matching_inspect()), None]);
 
-    let image = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST).expect("build");
+    let image = ensure(
+        &host,
+        &sandbox(),
+        &canonical(),
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect("build");
     assert!(image.built);
     assert_eq!(image.id, "sha256:image");
 
@@ -61,7 +70,15 @@ fn an_image_that_declares_the_same_project_and_generation_is_reused() {
     fs::write(&dockerfile, "FROM scratch\n").unwrap();
     let host = FakeDocker::new(vec![Some(&matching_inspect())]);
 
-    let image = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST).expect("reuse");
+    let image = ensure(
+        &host,
+        &sandbox(),
+        &canonical(),
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect("reuse");
     assert!(!image.built);
     assert!(
         !host
@@ -79,13 +96,24 @@ fn a_context_that_cannot_be_removed_is_a_warning_not_a_failed_build() {
     fs::write(&dockerfile, "FROM scratch\n").unwrap();
     let host = FakeDocker::new(vec![Some(&matching_inspect()), None]).losing_its_context();
 
-    let image = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
-        .expect("a context that is already gone does not undo the image");
+    let image = ensure(
+        &host,
+        &sandbox(),
+        &canonical(),
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect("a context that is already gone does not undo the image");
     assert!(image.built);
     assert_eq!(image.warnings.len(), 1, "{:?}", image.warnings);
-    assert_eq!(image.warnings[0].id, "warning-build-context-left-behind");
+    assert_eq!(
+        image.warnings[0].description.id,
+        "warning-build-context-left-behind"
+    );
 
     let path = image.warnings[0]
+        .description
         .args
         .iter()
         .find_map(|(key, value)| (*key == "path").then_some(value))
@@ -107,8 +135,15 @@ fn an_image_that_declares_something_else_is_a_collision_and_is_left_alone() {
     let foreign = inspect_output(&[(LABEL_CANONICAL_ID, "other-org/other-repo")]);
     let host = FakeDocker::new(vec![Some(&matching_inspect()), Some(&foreign)]);
 
-    let error = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
-        .expect_err("the generation name is taken by something else");
+    let error = ensure(
+        &host,
+        &sandbox(),
+        &canonical(),
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect_err("the generation name is taken by something else");
     assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
     assert!(
         !host
@@ -126,8 +161,15 @@ fn an_engine_that_cannot_be_asked_is_not_read_as_an_absent_image() {
     fs::write(&dockerfile, "FROM scratch\n").unwrap();
     let host = FakeDocker::unreachable_engine();
 
-    let error = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
-        .expect_err("an unobservable engine is not an image that is merely missing");
+    let error = ensure(
+        &host,
+        &sandbox(),
+        &canonical(),
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect_err("an unobservable engine is not an image that is merely missing");
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     assert!(
         !host
@@ -153,8 +195,15 @@ fn an_image_that_exists_but_cannot_be_inspected_stops_the_run() {
     // 一覧には現れるが、inspectが答えない。
     let host = FakeDocker::new(vec![Some("not json")]);
 
-    let error = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
-        .expect_err("an image that cannot be read is not rebuilt over");
+    let error = ensure(
+        &host,
+        &sandbox(),
+        &canonical(),
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect_err("an image that cannot be read is not rebuilt over");
     assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
 }
 
@@ -166,8 +215,15 @@ fn a_build_that_produces_the_wrong_labels_is_refused() {
     let wrong = inspect_output(&[(LABEL_CANONICAL_ID, "example-org/example-repo")]);
     let host = FakeDocker::new(vec![Some(&wrong), None]);
 
-    let error = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
-        .expect_err("a build is only done when the result proves it");
+    let error = ensure(
+        &host,
+        &sandbox(),
+        &canonical(),
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect_err("a build is only done when the result proves it");
     assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
 }
 
@@ -178,8 +234,15 @@ fn a_failed_build_removes_its_context_and_stops_the_workflow() {
     fs::write(&dockerfile, "FROM scratch\n").unwrap();
     let host = FakeDocker::new(vec![None]).failing_build();
 
-    let error = ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST)
-        .expect_err("a failed build is a failed step");
+    let error = ensure(
+        &host,
+        &sandbox(),
+        &canonical(),
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect_err("a failed build is a failed step");
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
 
     let calls = host.calls();
@@ -200,7 +263,15 @@ fn the_build_forwards_its_progress() {
     let dockerfile = dir.path().join("Dockerfile");
     fs::write(&dockerfile, "FROM scratch\n").unwrap();
     let host = FakeDocker::new(vec![Some(&matching_inspect()), None]);
-    ensure(&host, &sandbox(), &canonical(), &dockerfile, DIGEST).expect("build");
+    ensure(
+        &host,
+        &sandbox(),
+        &canonical(),
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect("build");
 
     let calls = host.calls.borrow();
     for spec in calls.iter() {
@@ -293,7 +364,7 @@ fn the_archive_is_written_to_a_temporary_path_and_then_moved_into_place() {
     let image = built_image();
     let host = saving_host(&image);
 
-    let archive = ensure_archive(&host, &paths, &image, DIGEST).expect("save");
+    let archive = ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress).expect("save");
     assert_eq!(archive, paths.template_archive(short_hex(DIGEST)));
     assert!(archive.is_file());
     assert!(
@@ -319,7 +390,14 @@ fn an_interrupted_temporary_archive_is_replaced_rather_than_reused() {
     let temporary = paths.template_archive_temp(short_hex(DIGEST));
     fs::write(&temporary, b"a partial archive from an interrupted run").unwrap();
 
-    ensure_archive(&saving_host(&image), &paths, &image, DIGEST).expect("save");
+    ensure_archive(
+        &saving_host(&image),
+        &paths,
+        &image,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .expect("save");
 
     let archive = paths.template_archive(short_hex(DIGEST));
     assert!(archive.is_file());
@@ -343,7 +421,7 @@ fn an_archive_that_holds_another_image_leaves_the_official_one_untouched() {
         image_id: image.id.clone(),
         inner: FakeDocker::new(Vec::new()),
     };
-    let error = ensure_archive(&host, &paths, &image, DIGEST)
+    let error = ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress)
         .expect_err("an archive of another image is not promoted");
     assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
     assert_eq!(

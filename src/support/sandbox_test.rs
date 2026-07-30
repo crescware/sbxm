@@ -1,6 +1,7 @@
 use super::*;
 
 use crate::project::ProjectId;
+use crate::ui::SilentProgress;
 use std::cell::RefCell;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -179,7 +180,14 @@ fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() {
     let workspace = workspace_path(root.path(), &sandbox());
     let host = FakeSbx::listing(&["[]", &listing(&workspace, "running")]);
 
-    let ready = ensure(&host, &sandbox(), &template(), root.path()).expect("create");
+    let ready = ensure(
+        &host,
+        &sandbox(),
+        &template(),
+        root.path(),
+        &mut SilentProgress,
+    )
+    .expect("create");
     assert!(ready.created);
     assert_eq!(ready.state, SandboxState::Running);
     assert_eq!(ready.workspace, workspace);
@@ -218,7 +226,14 @@ fn a_sandbox_that_matches_the_expected_state_is_reused_whoever_made_it() {
     let workspace = workspace_path(root.path(), &sandbox());
     let host = FakeSbx::listing(&[&listing(&workspace, "stopped")]);
 
-    let ready = ensure(&host, &sandbox(), &template(), root.path()).expect("reuse");
+    let ready = ensure(
+        &host,
+        &sandbox(),
+        &template(),
+        root.path(),
+        &mut SilentProgress,
+    )
+    .expect("reuse");
     assert!(!ready.created);
     assert_eq!(ready.state, SandboxState::Stopped);
     assert!(
@@ -236,8 +251,14 @@ fn a_sandbox_with_another_workspace_stops_the_run() {
     let elsewhere = root.path().join("elsewhere");
     fs::create_dir_all(&elsewhere).unwrap();
     let host = FakeSbx::listing(&[&listing(&elsewhere, "running")]);
-    let error = ensure(&host, &sandbox(), &template(), root.path())
-        .expect_err("a sandbox that works elsewhere is not this project's");
+    let error = ensure(
+        &host,
+        &sandbox(),
+        &template(),
+        root.path(),
+        &mut SilentProgress,
+    )
+    .expect_err("a sandbox that works elsewhere is not this project's");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
 }
 
@@ -251,8 +272,14 @@ fn a_runtime_that_hides_the_workspace_is_not_guessed_at() {
         template().name
     );
     let host = FakeSbx::listing(&[&listing]);
-    let error = ensure(&host, &sandbox(), &template(), root.path())
-        .expect_err("an unverifiable sandbox is not reused");
+    let error = ensure(
+        &host,
+        &sandbox(),
+        &template(),
+        root.path(),
+        &mut SilentProgress,
+    )
+    .expect_err("an unverifiable sandbox is not reused");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
 }
 
@@ -267,8 +294,14 @@ fn the_listing_of_the_target_version_identifies_the_sandbox() {
     );
     let host = FakeSbx::listing(&[&listing]);
 
-    let ready = ensure(&host, &sandbox(), &template(), root.path())
-        .expect("the sandbox of this project is used");
+    let ready = ensure(
+        &host,
+        &sandbox(),
+        &template(),
+        root.path(),
+        &mut SilentProgress,
+    )
+    .expect("the sandbox of this project is used");
     assert!(!ready.created, "an existing sandbox is not made again");
     assert!(
         !host
@@ -288,8 +321,14 @@ fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() {
     std::os::unix::fs::symlink(&real, workspace_path(root.path(), &sandbox())).unwrap();
 
     let host = FakeSbx::listing(&["[]"]);
-    let error = ensure(&host, &sandbox(), &template(), root.path())
-        .expect_err("a symlinked workspace is refused");
+    let error = ensure(
+        &host,
+        &sandbox(),
+        &template(),
+        root.path(),
+        &mut SilentProgress,
+    )
+    .expect_err("a symlinked workspace is refused");
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
     assert!(host.calls().is_empty(), "nothing is asked of the runtime");
 }

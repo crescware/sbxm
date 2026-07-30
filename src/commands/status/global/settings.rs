@@ -10,6 +10,7 @@ use crate::paths;
 use crate::support::StatusValue;
 
 use super::{GlobalStatus, push};
+use crate::ui::Remediation;
 
 pub(super) fn check_config(
     location: &ConfigLocation,
@@ -31,7 +32,7 @@ pub(super) fn check_config(
                         path = paths::display(&location.config_file())
                     ),
                 )
-                .remediation(msg!("remediation-run-init")),
+                .remediation(Remediation::text(msg!("remediation-run-init")).try_run("sbxm init")),
             );
             None
         }

@@ -6,6 +6,7 @@ use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use super::Outcome;
+use crate::ui::Remediation;
 
 pub fn interpret(error: clap::Error) -> Result<Outcome> {
     match error.kind() {
@@ -77,7 +78,8 @@ fn map(error: &clap::Error) -> Error {
     if let Some(usage) = usage {
         diagnostic = diagnostic.remediation(msg!("usage-hint", usage = usage.trim()));
     } else {
-        diagnostic = diagnostic.remediation(msg!("remediation-run-help", command = "sbxm --help"));
+        diagnostic = diagnostic
+            .remediation(Remediation::text(msg!("remediation-run-help")).try_run("sbxm --help"));
     }
     Error::single(diagnostic)
 }

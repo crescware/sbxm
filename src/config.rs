@@ -9,13 +9,14 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Diagnostic, DocumentVersion, Error, ErrorId, Msg, Result, fail};
+use crate::error::{Diagnostic, DocumentVersion, Error, ErrorId, Result, fail};
 use crate::i18n::Locale;
 use crate::msg;
 use crate::paths::{
     self, AbsoluteBasePath, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, atomic_create,
     permission_too_open,
 };
+use crate::ui::Warning;
 
 /// このbuildが読み書きするconfigのversion。
 pub const CONFIG_VERSION: u32 = 1;
@@ -154,7 +155,7 @@ pub enum ConfigState {
     /// 有効なconfig。version 1では未知のtop-level keyをwarningとして返す。
     Valid {
         config: Box<GlobalConfig>,
-        warnings: Vec<Msg>,
+        warnings: Vec<Warning>,
     },
 }
 
@@ -270,11 +271,11 @@ fn parse(text: &str, path: &Path) -> Result<ConfigState> {
                 .as_str()
                 .map_or_else(|| format!("{key:?}"), str::to_string);
             if !KNOWN_TOP_LEVEL_KEYS.contains(&name.as_str()) {
-                warnings.push(msg!(
+                warnings.push(Warning::text(msg!(
                     "warning-config-unknown-key",
                     path = paths::display(path),
                     key = name
-                ));
+                )));
             }
         }
     }

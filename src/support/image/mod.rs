@@ -11,12 +11,13 @@ use crate::archive;
 
 use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::compatibility::{ImageIdentity, parse_image_inspect};
-use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
+use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::hash::short_hex;
 use crate::metadata::METADATA_VERSION;
 use crate::msg;
 use crate::paths::{self, PRIVATE_DIR_MODE, PathScope, ProjectPaths};
 use crate::project::{CanonicalProjectId, SandboxName};
+use crate::ui::{ProgressSink, Warning};
 
 /// imageが宣言するlabel。案件と世代の対応を、image自身が持つ。
 pub const LABEL_CANONICAL_ID: &str = "io.crescware.sbxm.canonical-id";
@@ -63,7 +64,7 @@ pub struct BuiltImage {
     /// この実行でbuildしたか。
     pub built: bool,
     /// 成果物としては成立したが、利用者へ伝える必要がある事実。
-    pub warnings: Vec<Msg>,
+    pub warnings: Vec<Warning>,
 }
 
 /// 世代に対応するimageを用意する。
@@ -75,6 +76,7 @@ pub fn ensure(
     canonical: &CanonicalProjectId,
     dockerfile: &Path,
     dockerfile_sha256: &str,
+    progress: &mut dyn ProgressSink,
 ) -> Result<BuiltImage> {
     let name = image_name(sandbox, dockerfile_sha256);
     let labels = expected_labels(canonical, dockerfile_sha256);
@@ -93,7 +95,7 @@ pub fn ensure(
         });
     }
 
-    let warnings = build(host, &name, &labels, dockerfile)?;
+    let warnings = build(host, &name, &labels, dockerfile, progress)?;
 
     let identity = inspect(host, &name)?.ok_or_else(|| {
         Error::new(
@@ -124,7 +126,8 @@ fn build(
     name: &str,
     labels: &[(String, String)],
     dockerfile: &Path,
-) -> Result<Vec<Msg>> {
+    progress: &mut dyn ProgressSink,
+) -> Result<Vec<Warning>> {
     let context = ephemeral_context()?;
 
     let mut args: Vec<String> = Vec::new();
@@ -140,7 +143,7 @@ fn build(
 
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     // buildの進捗はdockerが出したまま転送する。
-    crate::progress::step(&msg!("progress-building-image"));
+    progress.step(msg!("progress-building-image"));
     let spec = CommandSpec::passthrough("docker", &[&["build"], borrowed.as_slice()].concat())
         .timeout(TimeoutClass::ImageBuild);
     let result = host
@@ -151,11 +154,11 @@ fn build(
     let leftover = paths::display(context.path());
     let mut warnings = Vec::new();
     if let Err(error) = context.close() {
-        warnings.push(msg!(
+        warnings.push(Warning::text(msg!(
             "warning-build-context-left-behind",
             path = leftover,
             detail = error
-        ));
+        )));
     }
     result?;
     Ok(warnings)
@@ -210,6 +213,7 @@ pub fn ensure_archive(
     paths: &ProjectPaths,
     image: &BuiltImage,
     dockerfile_sha256: &str,
+    progress: &mut dyn ProgressSink,
 ) -> Result<PathBuf> {
     let generation = short_hex(dockerfile_sha256);
     let temporary = paths.template_archive_temp(generation);
@@ -229,7 +233,7 @@ pub fn ensure_archive(
         })?;
     }
 
-    crate::progress::step(&msg!("progress-saving-archive"));
+    progress.step(msg!("progress-saving-archive"));
     let spec = CommandSpec::passthrough(
         "docker",
         &[

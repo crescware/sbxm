@@ -50,6 +50,6 @@ pub fn require_prompt_capability(interactivity: Interactivity, command: &str) ->
     }
     fail(
         ErrorId::ProjectArgumentRequired,
-        msg!("error-project-argument-required", command = command),
+        msg!("error-project-argument-required", subcommand = command),
     )
 }

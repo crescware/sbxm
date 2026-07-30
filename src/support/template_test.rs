@@ -1,6 +1,7 @@
 use super::*;
 use crate::command::CommandOutcome;
 use crate::testing::image::template_listing;
+use crate::ui::SilentProgress;
 use std::cell::RefCell;
 
 struct FakeSbx {
@@ -64,7 +65,7 @@ fn an_archive_is_loaded_and_the_result_is_verified() {
     let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)]);
     let archive = Path::new("/tmp/template-111111111111.tar");
 
-    let template = ensure(&host, archive, &image).expect("load");
+    let template = ensure(&host, archive, &image, &mut SilentProgress).expect("load");
     assert!(template.loaded);
     assert_eq!(template.name, image.name);
 
@@ -84,7 +85,13 @@ fn an_archive_is_loaded_and_the_result_is_verified() {
 fn every_sandbox_command_runs_without_the_ssh_agent() {
     let image = image();
     let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)]);
-    ensure(&host, Path::new("/tmp/template.tar"), &image).expect("load");
+    ensure(
+        &host,
+        Path::new("/tmp/template.tar"),
+        &image,
+        &mut SilentProgress,
+    )
+    .expect("load");
 
     for spec in host.calls.borrow().iter() {
         assert_eq!(
@@ -101,7 +108,13 @@ fn a_template_that_already_holds_the_image_is_reused() {
     let image = image();
     let host = FakeSbx::listing(&[&template_listing(&image.name)]);
 
-    let template = ensure(&host, Path::new("/tmp/template.tar"), &image).expect("reuse");
+    let template = ensure(
+        &host,
+        Path::new("/tmp/template.tar"),
+        &image,
+        &mut SilentProgress,
+    )
+    .expect("reuse");
     assert!(!template.loaded);
     assert!(
         !host
@@ -118,8 +131,13 @@ fn the_registry_prefix_the_runtime_adds_still_names_the_same_template() {
     // runtimeは`docker.io/library/`を補って表示する。sbxmが渡すのは補う前の表記。
     let host = FakeSbx::listing(&[&template_listing(&image.name)]);
 
-    let template = ensure(&host, Path::new("/tmp/template.tar"), &image)
-        .expect("the prefixed listing names the same template");
+    let template = ensure(
+        &host,
+        Path::new("/tmp/template.tar"),
+        &image,
+        &mut SilentProgress,
+    )
+    .expect("the prefixed listing names the same template");
     assert!(!template.loaded);
 }
 
@@ -128,7 +146,12 @@ fn a_load_that_leaves_no_template_behind_is_a_failure() {
     let image = image();
     let host = FakeSbx::listing(&[r#"{"images":[]}"#, r#"{"images":[]}"#]);
 
-    let error = ensure(&host, Path::new("/tmp/template.tar"), &image)
-        .expect_err("the load has to produce the template");
+    let error = ensure(
+        &host,
+        Path::new("/tmp/template.tar"),
+        &image,
+        &mut SilentProgress,
+    )
+    .expect_err("the load has to produce the template");
     assert_eq!(error.first_id(), Some(ErrorId::TemplateUnusable));
 }
