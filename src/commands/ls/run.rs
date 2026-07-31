@@ -1,21 +1,25 @@
 //! `sbxm ls`。
 //!
-//! 管理案件と、管理外のSandboxを別のtableで一覧する。取り込みも削除も行わない。
+//! 一覧はglobal registryから作る。base pathの走査もcwdからの推測も行わない。
+//! entryが指すpathが消えていても黙って落とさず、観測した状態をそのまま並べる。
+//! 取り込みも削除も行わない。
 
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::config::GlobalConfig;
+use crate::config::ConfigLocation;
 use crate::error::Result;
 
-use crate::support::inventory::{self, ProjectState};
+use crate::support::inventory::{self, Observed};
 
 /// 一覧の1行。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectRow {
     pub project: String,
+    /// registryが指すhost project root。
+    pub root: String,
     pub sandbox: String,
-    pub state: ProjectState,
+    pub observed: Observed,
 }
 
 /// 管理外Sandboxの1行。
@@ -32,24 +36,28 @@ pub struct UnmanagedRow {
 pub struct Listing {
     pub projects: Vec<ProjectRow>,
     pub unmanaged: Vec<UnmanagedRow>,
+    /// 全案件が登録済みで、成果物がregistryと一致しているか。
+    pub settled: bool,
 }
 
 /// 管理案件と管理外Sandboxを一覧する。
 pub fn run(
-    config: &GlobalConfig,
+    location: &ConfigLocation,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
 ) -> Result<Listing> {
-    let inventory = inventory::take(config, host, workspace_root)?;
+    let inventory = inventory::take(location, host, workspace_root)?;
 
     Ok(Listing {
+        settled: inventory.is_settled(),
         projects: inventory
             .projects
             .iter()
             .map(|project| ProjectRow {
-                project: project.display_id(),
-                sandbox: project.sandbox.as_str().to_string(),
-                state: project.state,
+                project: project.display_id.clone(),
+                root: crate::paths::display(&project.project_root),
+                sandbox: project.sandbox.clone(),
+                observed: project.observed.clone(),
             })
             .collect(),
         unmanaged: inventory

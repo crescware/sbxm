@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
-use crate::config::GlobalConfig;
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata, RebuildIntent};
 use crate::msg;
@@ -36,6 +36,7 @@ pub struct RebuildOutput {
 
 /// 保存されていない作業がないことを確かめてから、Sandboxを作り直す。
 pub fn run(
+    location: &ConfigLocation,
     config: &GlobalConfig,
     project: &ProjectId,
     host: &dyn HostEnvironment,
@@ -46,7 +47,7 @@ pub fn run(
     let canonical = project.canonical();
     let name = SandboxName::derive(&canonical);
 
-    let mut locked = select::locked(config, project)?;
+    let mut locked = select::locked(location, project)?;
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。
     let entries = daemon::list(host)?;
@@ -148,7 +149,8 @@ fn prepare_generation(
     current: &str,
     progress: &mut dyn ProgressSink,
 ) -> Result<Generation> {
-    if current != target && !image::generation_is_built(host, name, &metadata.canonical_id, target)?
+    if current != target
+        && !image::generation_is_built(host, name, metadata.canonical_id(), target)?
     {
         // 固定済みtargetの成果物がなく、Dockerfileも別世代であるため再生成できない。
         return Err(Error::single(
@@ -172,7 +174,7 @@ fn prepare_generation(
     let built = image::ensure(
         host,
         name,
-        &metadata.canonical_id,
+        metadata.canonical_id(),
         &paths.dockerfile(),
         target,
         progress,
@@ -219,7 +221,7 @@ impl Switch<'_> {
             workspace_root,
             poll,
         } = *self;
-        let layout = SandboxLayout::new(&metadata.canonical_id);
+        let layout = SandboxLayout::new(metadata.canonical_id());
 
         // 新世代の準備には時間がかかる。切り替える対象は、その後の観測から決める。
         let entries = daemon::list(host)?;
@@ -251,7 +253,7 @@ impl Switch<'_> {
 
         secret::require_placeholder_present(host, &ready.name)?;
 
-        identity::ensure(host, &ready.name, &config.git)?;
+        identity::ensure(host, &ready.name, &metadata.git_identity)?;
         tools::sandbox_ready(host, &ready.name)?;
         secret::configure_git_credential(host, &ready.name)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;

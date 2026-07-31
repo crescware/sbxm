@@ -1,7 +1,11 @@
 //! Global config `~/.sbxm/config.yaml`。
 //!
-//! configはtoken、secret、runtime状態を保存しない。不正なconfigを自動修復せず、
-//! `init`も上書きしない。
+//! configは利用者設定だけを持つ。登録案件の索引は`registry.yaml`が持ち、責務を混ぜない。
+//! configはtoken、secret、runtime状態を保存しない。
+//!
+//! fileが存在しないこと、および既知のoptional fieldが無いことは正常であり、default設定
+//! として扱う。ただし、存在するconfigが構文不正、未知version、permission不正、symlink、
+//! read失敗である場合はdefaultへfallbackせず拒否する。不正なconfigを自動修復しない。
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -13,8 +17,7 @@ use crate::error::{Diagnostic, DocumentVersion, Error, ErrorId, Result, fail};
 use crate::i18n::Locale;
 use crate::msg;
 use crate::paths::{
-    self, AbsoluteBasePath, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, atomic_create,
-    permission_too_open,
+    self, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, atomic_create, permission_too_open,
 };
 use crate::ui::Warning;
 
@@ -29,7 +32,7 @@ const DOCUMENT: DocumentVersion = DocumentVersion {
 };
 
 /// version 1で意味を持つtop-level key。
-const KNOWN_TOP_LEVEL_KEYS: &[&str] = &["version", "language", "base_path", "git", "files"];
+const KNOWN_TOP_LEVEL_KEYS: &[&str] = &["version", "language", "files"];
 
 /// `~/.sbxm`配下の固定path。
 ///
@@ -70,9 +73,14 @@ impl ConfigLocation {
         self.dir().join("config.yaml")
     }
 
-    /// `~/.sbxm/init.lock`
-    pub fn init_lock(&self) -> PathBuf {
-        self.dir().join("init.lock")
+    /// `~/.sbxm/registry.yaml`
+    pub fn registry_file(&self) -> PathBuf {
+        self.dir().join("registry.yaml")
+    }
+
+    /// `~/.sbxm/registry.lock`
+    pub fn registry_lock(&self) -> PathBuf {
+        self.dir().join("registry.lock")
     }
 }
 
@@ -124,13 +132,6 @@ impl SandboxHomeRelativePath {
     }
 }
 
-/// Sandbox内で使用するGit identity。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GitIdentity {
-    pub user_name: String,
-    pub user_email: String,
-}
-
 /// host上の通常fileをSandbox内へ配置する宣言。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileDeclaration {
@@ -139,18 +140,19 @@ pub struct FileDeclaration {
 }
 
 /// validation済みのglobal config。
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// 欠落したoptional fieldは未保存として扱う。表示言語が未保存であることと、
+/// 特定の言語が保存されていることを同じ値にしない。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GlobalConfig {
-    pub language: Locale,
-    pub base_path: AbsoluteBasePath,
-    pub git: GitIdentity,
+    pub language: Option<Locale>,
     pub files: Vec<FileDeclaration>,
 }
 
 /// config loadの結果。
 #[derive(Debug)]
 pub enum ConfigState {
-    /// configが存在しない。`init`は新規作成へ進み、他のcommandは`init`を案内する。
+    /// configが存在しない。default設定として扱う。
     Missing,
     /// 有効なconfig。version 1では未知のtop-level keyをwarningとして返す。
     Valid {
@@ -159,21 +161,23 @@ pub enum ConfigState {
     },
 }
 
+impl ConfigState {
+    /// 保存済みの設定、または不在を意味するdefault設定。
+    pub fn settings(self) -> GlobalConfig {
+        match self {
+            ConfigState::Missing => GlobalConfig::default(),
+            ConfigState::Valid { config, .. } => *config,
+        }
+    }
+}
+
 /// YAMLの生表現。structへ変換する前にtop-level keyを検査する。
 #[derive(Debug, Deserialize, Serialize)]
 struct RawConfig {
     version: Option<i64>,
     language: Option<String>,
-    base_path: Option<String>,
-    git: Option<RawGit>,
     #[serde(default)]
     files: Vec<RawFile>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct RawGit {
-    user_name: Option<String>,
-    user_email: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -311,33 +315,16 @@ fn parse(text: &str, path: &Path) -> Result<ConfigState> {
         missing_field("version")
     })?;
 
-    let language_value = raw.language.ok_or_else(|| missing_field("language"))?;
-    let language = Locale::parse_exact(&language_value).ok_or_else(|| {
-        invalid_value(
-            "language",
-            format!(
-                "{language_value} is not one of {}",
-                supported_language_list()
-            ),
-        )
-    })?;
-
-    let base_path_value = raw.base_path.ok_or_else(|| missing_field("base_path"))?;
-    let base_path = AbsoluteBasePath::new(Path::new(&base_path_value))?;
-
-    let git = raw.git.ok_or_else(|| missing_field("git"))?;
-    let user_name = git
-        .user_name
-        .ok_or_else(|| missing_field("git.user_name"))?;
-    let user_email = git
-        .user_email
-        .ok_or_else(|| missing_field("git.user_email"))?;
-    if let Err(detail) = validate_git_identity_value(&user_name) {
-        return Err(invalid_value("git.user_name", detail.to_string()));
-    }
-    if let Err(detail) = validate_git_identity_value(&user_email) {
-        return Err(invalid_value("git.user_email", detail.to_string()));
-    }
+    // 欠落した`language`は未保存であり、不正な値とは別の状態である。
+    let language = match raw.language {
+        Some(value) => Some(Locale::parse_exact(&value).ok_or_else(|| {
+            invalid_value(
+                "language",
+                format!("{value} is not one of {}", supported_language_list()),
+            )
+        })?),
+        None => None,
+    };
 
     let mut files = Vec::with_capacity(raw.files.len());
     for (index, entry) in raw.files.into_iter().enumerate() {
@@ -374,15 +361,7 @@ fn parse(text: &str, path: &Path) -> Result<ConfigState> {
     }
 
     Ok(ConfigState::Valid {
-        config: Box::new(GlobalConfig {
-            language,
-            base_path,
-            git: GitIdentity {
-                user_name,
-                user_email,
-            },
-            files,
-        }),
+        config: Box::new(GlobalConfig { language, files }),
         warnings,
     })
 }
@@ -393,17 +372,6 @@ fn supported_language_list() -> String {
         .map(|locale| locale.as_str())
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-/// Git identityの値として使えるか。
-pub fn validate_git_identity_value(value: &str) -> std::result::Result<(), &'static str> {
-    if value.trim().is_empty() {
-        return Err("detail-value-empty");
-    }
-    if value.contains('\n') || value.contains('\r') {
-        return Err("detail-value-has-newline");
-    }
-    Ok(())
 }
 
 /// configをYAMLへ描画する。
@@ -418,12 +386,7 @@ pub fn validate_git_identity_value(value: &str) -> std::result::Result<(), &'sta
 pub fn render(config: &GlobalConfig) -> String {
     let raw = RawConfig {
         version: Some(i64::from(CONFIG_VERSION)),
-        language: Some(config.language.as_str().to_string()),
-        base_path: Some(paths::display(config.base_path.as_path())),
-        git: Some(RawGit {
-            user_name: Some(config.git.user_name.clone()),
-            user_email: Some(config.git.user_email.clone()),
-        }),
+        language: config.language.map(|locale| locale.as_str().to_string()),
         files: config
             .files
             .iter()
@@ -437,18 +400,121 @@ pub fn render(config: &GlobalConfig) -> String {
     yaml_serde::to_string(&raw).expect("a configuration is representable as YAML")
 }
 
+/// 表示言語だけをconfigへ保存する。
+///
+/// 既存configがあれば`language`の行だけを足すか差し替え、利用者が手で書いたコメント、
+/// 空行、key順、`files`をそのまま残す。既知fieldだけで全文書を描き直さない。
+///
+/// 行単位の編集はYAMLの書き方すべてを扱えない。書く前に編集結果を読み直し、意図した
+/// 設定にならないなら、利用者のfileを壊さず拒否する。
+pub fn save_language(location: &ConfigLocation, locale: Locale) -> Result<PathBuf> {
+    ensure_config_dir(location)?;
+    let path = location.config_file();
+    let line = format!("language: {}", locale.as_str());
+
+    let updated = match read_existing(&path)? {
+        Some(text) => {
+            let updated = replace_language_line(&text, &line);
+            require_declares_language(&updated, &path, locale)?;
+            updated
+        }
+        None => render(&GlobalConfig {
+            language: Some(locale),
+            files: Vec::new(),
+        }),
+    };
+
+    if paths::regular_file_exists(&path, PathScope::ConfigFile)? {
+        crate::paths::atomic_replace(&path, &updated, PRIVATE_FILE_MODE)?;
+    } else {
+        atomic_create(&path, &updated, PRIVATE_FILE_MODE)?;
+    }
+    Ok(path)
+}
+
+/// 編集結果が、意図した言語だけを足した有効なconfigになっているか。
+fn require_declares_language(updated: &str, path: &Path, locale: Locale) -> Result<()> {
+    if let Ok(ConfigState::Valid { config, .. }) = parse(updated, path)
+        && config.language == Some(locale)
+    {
+        return Ok(());
+    }
+    Err(Error::single(
+        Diagnostic::new(
+            ErrorId::ConfigNotRewritable,
+            msg!(
+                "error-config-not-rewritable",
+                path = paths::display(path),
+                field = "language"
+            ),
+        )
+        .remediation(msg!(
+            "remediation-config-not-rewritable",
+            path = paths::display(path),
+            declaration = line_of(locale)
+        )),
+    ))
+}
+
+/// 利用者へ書き足してもらう1行。
+fn line_of(locale: Locale) -> String {
+    format!("language: {}", locale.as_str())
+}
+
+/// 既存configの原文。存在しなければ`None`。
+fn read_existing(path: &Path) -> Result<Option<String>> {
+    if !paths::regular_file_exists(path, PathScope::ConfigFile)? {
+        return Ok(None);
+    }
+    fs::read_to_string(path).map(Some).map_err(|error| {
+        Error::new(
+            ErrorId::ConfigUnreadable,
+            msg!(
+                "error-config-unreadable",
+                path = paths::display(path),
+                detail = error
+            ),
+        )
+    })
+}
+
+/// top-levelの`language`行だけを差し替える。無ければ`version`行の直後へ足す。
+fn replace_language_line(text: &str, line: &str) -> String {
+    let declares_language = text.lines().any(|source| source.starts_with("language:"));
+    let mut out = String::with_capacity(text.len() + line.len() + 1);
+    let mut written = false;
+    for source in text.lines() {
+        if declares_language {
+            if !written && source.starts_with("language:") {
+                out.push_str(line);
+                out.push('\n');
+                written = true;
+                continue;
+            }
+            out.push_str(source);
+            out.push('\n');
+            continue;
+        }
+        out.push_str(source);
+        out.push('\n');
+        if !written && source.starts_with("version:") {
+            out.push_str(line);
+            out.push('\n');
+            written = true;
+        }
+    }
+    if !written {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
 /// `~/.sbxm`を`0700`で検証または作成する。
 pub fn ensure_config_dir(location: &ConfigLocation) -> Result<PathBuf> {
     let dir = location.dir();
     paths::ensure_private_dir(&dir, PRIVATE_DIR_MODE, PathScope::ConfigDir)?;
     Ok(dir)
-}
-
-/// configを新規作成する。既存configは上書きしない。
-pub fn create(location: &ConfigLocation, config: &GlobalConfig) -> Result<PathBuf> {
-    let path = location.config_file();
-    atomic_create(&path, &render(config), PRIVATE_FILE_MODE)?;
-    Ok(path)
 }
 
 #[cfg(test)]

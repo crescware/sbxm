@@ -12,7 +12,7 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() {
     let host = looking_inside(&fixture, &project, &three_entries(&project));
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -61,7 +61,7 @@ fn a_worktree_outside_the_shared_repository_is_not_counted_as_the_projects() {
     let host = looking_inside(&fixture, &project, &worktrees);
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -96,7 +96,7 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
     let listing = format!("[{}]", fixture.entry(&project, "running"));
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let host = FakeSbx::listing(&listing).answering(
         &format!(
             "exec {} -- git --git-dir {} rev-parse --is-bare-repository",
@@ -108,7 +108,7 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() {
     );
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -130,7 +130,7 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() {
         "",
     );
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,

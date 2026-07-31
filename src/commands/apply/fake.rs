@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::config::{
-    FileDeclaration, GitIdentity, GlobalConfig, HostFileSource, SandboxHomeRelativePath,
+    ConfigLocation, FileDeclaration, GlobalConfig, HostFileSource, SandboxHomeRelativePath,
 };
 use crate::error::Result;
 use crate::i18n::Locale;
 use crate::metadata::{self, CreationMode, ProjectMetadata, Provisioning, RebuildIntent};
-use crate::paths::{AbsoluteBasePath, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::paths::{PRIVATE_FILE_MODE, PathScope, ProjectParent, ProjectPaths};
 use crate::project::{CanonicalProjectId, ProjectId, SandboxLayout, SandboxName};
+use crate::registry::{RegistryEntry, RegistryGuard};
 use crate::support::image::image_name;
 use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::{COMMIT, DIGEST};
@@ -146,38 +147,52 @@ pub fn canonical() -> CanonicalProjectId {
     project().canonical()
 }
 
-pub fn setup(files: Vec<FileDeclaration>) -> (tempfile::TempDir, GlobalConfig, PathBuf) {
+pub fn setup(
+    files: Vec<FileDeclaration>,
+) -> (
+    tempfile::TempDir,
+    ConfigLocation,
+    ProjectParent,
+    GlobalConfig,
+    PathBuf,
+) {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path().join("Projects");
     std::fs::create_dir_all(&base).unwrap();
     let config = GlobalConfig {
-        language: Locale::En,
-        base_path: AbsoluteBasePath::new(&base).unwrap(),
-        git: GitIdentity {
-            user_name: "Example User".into(),
-            user_email: "user@example.com".into(),
-        },
+        language: Some(Locale::En),
         files,
     };
+    let parent = ProjectParent::at(&base).unwrap();
     let workspace_root = dir.path().join("workspaces");
     std::fs::create_dir_all(workspace_root.join(SandboxName::derive(&canonical()).as_str()))
         .unwrap();
-    (dir, config, workspace_root)
+    let location = ConfigLocation::from_home(dir.path().to_path_buf());
+    (dir, location, parent, config, workspace_root)
 }
 
-pub fn write_metadata(config: &GlobalConfig, rebuild: Option<RebuildIntent>) -> ProjectPaths {
-    let paths = ProjectPaths::derive(&config.base_path, &canonical());
+pub fn write_metadata(
+    location: &ConfigLocation,
+    parent: &ProjectParent,
+    rebuild: Option<RebuildIntent>,
+) -> ProjectPaths {
+    let paths = ProjectPaths::derive(parent, &canonical());
     std::fs::create_dir_all(paths.sbxm_dir()).unwrap();
+    let repository = crate::testing::project::ssh_repository("Example-Org/Example-Repo");
+    let mut guard = RegistryGuard::acquire(location).unwrap();
+    guard
+        .insert(RegistryEntry::new(paths.root(), repository.clone()).unwrap())
+        .unwrap();
+    drop(guard);
     let metadata = ProjectMetadata {
-        owner: "Example-Org".into(),
-        repository: "Example-Repo".into(),
-        canonical_id: canonical(),
+        repository,
         provisioning: Provisioning {
             mode: CreationMode::Attached,
             start_ref: Some("main".into()),
             requested_worktrees: 1,
             dockerfile_sha256: DIGEST.into(),
         },
+        git_identity: crate::testing::metadata::git_identity(),
         rebuild,
     };
     metadata::create(&paths, &metadata).unwrap();

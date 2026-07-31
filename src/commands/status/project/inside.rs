@@ -91,7 +91,7 @@ pub(super) fn check_inside(
     }
 
     check_secret(host, name, status);
-    let layout = SandboxLayout::new(&metadata.canonical_id);
+    let layout = SandboxLayout::new(metadata.canonical_id());
     check_bare_repository(host, name, &layout, status);
     check_worktrees(host, name, &layout, metadata, status);
     check_ssh_agent(host, name, status);

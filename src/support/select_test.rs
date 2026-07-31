@@ -8,11 +8,11 @@ use crate::testing::prompt::ScriptedPrompt;
 fn a_named_project_is_used_without_asking() {
     let fixture = fixture();
     fixture.register("example-org/example-repo");
-    fixture.register("other/repo");
+    fixture.register("other/other-repo");
 
     let mut prompt = ScriptedPrompt::choosing(1);
     let chosen = one(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("Example-Org/Example-Repo")),
         msg!("select-open-heading"),
         &mut prompt,
@@ -31,16 +31,12 @@ fn a_named_project_is_read_without_discovering_the_others() {
     fixture.register("example-org/example-repo");
 
     // 無関係な案件のmetadataが壊れていても、完全指定された対象は読める。
-    let broken = fixture
-        .config
-        .base_path
-        .as_path()
-        .join("broken/broken.project/.sbxm");
+    let broken = fixture.parent.as_path().join("broken/broken.project/.sbxm");
     std::fs::create_dir_all(&broken).unwrap();
     std::fs::write(broken.join("project.yaml"), "version: 2\n").unwrap();
 
     let chosen = one(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(0),
@@ -53,22 +49,22 @@ fn a_named_project_is_read_without_discovering_the_others() {
 fn an_omitted_target_is_chosen_from_the_managed_projects() {
     let fixture = fixture();
     fixture.register("example-org/example-repo");
-    fixture.register("other/repo");
+    fixture.register("other/other-repo");
 
     let mut prompt = ScriptedPrompt::choosing(1);
     let chosen = one(
-        &fixture.config,
+        &fixture.location,
         None,
         msg!("select-open-heading"),
         &mut prompt,
     )
     .expect("select");
-    assert_eq!(chosen.display_id(), "other/repo");
+    assert_eq!(chosen.display_id(), "other/other-repo");
     assert_eq!(
         prompt.asked.borrow()[0],
         vec![
             "example-org/example-repo".to_string(),
-            "other/repo".to_string()
+            "other/other-repo".to_string()
         ],
         "candidates are listed in canonical order"
     );
@@ -80,7 +76,7 @@ fn cancelling_the_prompt_changes_nothing() {
     fixture.register("example-org/example-repo");
 
     let error = one(
-        &fixture.config,
+        &fixture.location,
         None,
         msg!("select-open-heading"),
         &mut ScriptedPrompt::canceling(),
@@ -95,7 +91,7 @@ fn no_managed_project_is_an_error_rather_than_an_empty_prompt() {
 
     let mut prompt = ScriptedPrompt::choosing(0);
     let error = one(
-        &fixture.config,
+        &fixture.location,
         None,
         msg!("select-open-heading"),
         &mut prompt,
@@ -105,7 +101,7 @@ fn no_managed_project_is_an_error_rather_than_an_empty_prompt() {
     assert!(prompt.asked.borrow().is_empty(), "no empty prompt is shown");
 
     let error = many(
-        &fixture.config,
+        &fixture.location,
         &[],
         msg!("select-stop-heading"),
         &mut prompt,
@@ -120,7 +116,7 @@ fn a_selection_that_matches_no_candidate_is_not_a_cancel() {
     fixture.register("example-org/example-repo");
 
     let error = one(
-        &fixture.config,
+        &fixture.location,
         None,
         msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(7),
@@ -130,7 +126,7 @@ fn a_selection_that_matches_no_candidate_is_not_a_cancel() {
 
     // 未選択の確定も、対象が決まらなかったこととして扱う。
     let error = many(
-        &fixture.config,
+        &fixture.location,
         &[],
         msg!("select-stop-heading"),
         &mut ScriptedPrompt::choosing_many(&[]),
@@ -142,16 +138,16 @@ fn a_selection_that_matches_no_candidate_is_not_a_cancel() {
 #[test]
 fn several_named_projects_are_deduplicated_and_ordered() {
     let fixture = fixture();
-    fixture.register("zeta/repo");
-    fixture.register("alpha/repo");
+    fixture.register("zeta/zulu");
+    fixture.register("alpha/alfa");
 
     let mut prompt = ScriptedPrompt::choosing_many(&[0]);
     let selected = many(
-        &fixture.config,
+        &fixture.location,
         &[
-            project_id("Zeta/Repo"),
-            project_id("alpha/repo"),
-            project_id("zeta/repo"),
+            project_id("Zeta/Zulu"),
+            project_id("alpha/alfa"),
+            project_id("zeta/zulu"),
         ],
         msg!("select-stop-heading"),
         &mut prompt,
@@ -162,7 +158,7 @@ fn several_named_projects_are_deduplicated_and_ordered() {
             .iter()
             .map(|project| project.display_id())
             .collect::<Vec<_>>(),
-        vec!["alpha/repo".to_string(), "zeta/repo".to_string()]
+        vec!["alpha/alfa".to_string(), "zeta/zulu".to_string()]
     );
     assert!(prompt.asked.borrow().is_empty());
 }
@@ -174,8 +170,8 @@ fn a_project_that_is_not_managed_is_named_in_the_diagnostic() {
 
     let mut prompt = ScriptedPrompt::choosing(0);
     let error = one(
-        &fixture.config,
-        Some(&project_id("other/repo")),
+        &fixture.location,
+        Some(&project_id("other/other-repo")),
         msg!("select-open-heading"),
         &mut prompt,
     )
@@ -189,7 +185,7 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
     let project = fixture.register("Example-Org/Example-Repo");
 
     let candidate = one(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(0),
@@ -197,22 +193,28 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
     .expect("the project is managed when it is selected");
 
     // 選択とlock後の読み直しのあいだに、並行するdestroyがmetadataを消すことがある。
+    // registry entryは残るため、案件は未登録ではなく登録途中として報告される。
     std::fs::remove_file(project.paths.metadata_file()).expect("remove the metadata");
 
     let error = candidate
         .lock()
-        .expect_err("a project without metadata is no longer managed");
-    assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+        .expect_err("a project without metadata cannot be worked on");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectIncomplete));
     let diagnostic = &error.diagnostics()[0];
     assert_eq!(
-        diagnostic.description.args,
-        vec![("project", "Example-Org/Example-Repo".to_string())],
-        "the stored spelling is reported, not the one the argument used"
+        diagnostic
+            .description
+            .args
+            .iter()
+            .find(|(key, _)| *key == "project")
+            .map(|(_, value)| value.as_str()),
+        Some("Example-Org/Example-Repo"),
+        "the registered spelling is reported, not the one the argument used"
     );
     let remediation = diagnostic
         .remediation
         .as_ref()
-        .expect("the user is told how to register the project again");
+        .expect("the user is told how to continue the registration");
     // 実行を求めるcommandは説明文へ埋め込まず、独立した一行として持つ。
     assert_eq!(
         remediation
@@ -220,7 +222,7 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
             .iter()
             .map(|command| command.as_str())
             .collect::<Vec<_>>(),
-        vec!["sbxm add Example-Org/Example-Repo"]
+        vec!["sbxm add git@github.com:Example-Org/Example-Repo.git"]
     );
 }
 
@@ -234,4 +236,40 @@ fn an_interrupted_prompt_is_a_cancel_and_any_other_read_failure_is_reported() {
         crate::ui::prompt::unreadable(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
     assert_eq!(unreadable.first_id(), Some(ErrorId::PromptUnreadable));
     assert_ne!(unreadable.exit_code(), ExitCode::Canceled);
+}
+
+#[test]
+fn a_registry_path_is_observed_before_it_is_read_or_written() {
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let root = project.paths.root().to_path_buf();
+
+    // 保存済みのabsolute pathでも、そこにdirectoryがあることを確かめてから使う。
+    std::fs::remove_dir_all(&root).expect("undo the project root");
+    std::fs::write(&root, b"not a directory").expect("put something else there");
+
+    let candidate = one(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")),
+        msg!("select-open-heading"),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .expect("the entry still names the project");
+    let error = candidate
+        .lock()
+        .expect_err("a path that is not a directory is never worked on");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+
+    // symlinkも追跡しない。指す先は案件directoryの外にあり得る。
+    std::fs::remove_file(&root).unwrap();
+    let elsewhere = fixture.parent.as_path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &root).unwrap();
+
+    let error =
+        crate::support::select::find(&fixture.location, &project_id("example-org/example-repo"))
+            .expect("the entry still names the project")
+            .lock()
+            .expect_err("a symlinked project root is refused");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
 }

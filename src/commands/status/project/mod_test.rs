@@ -8,7 +8,7 @@ fn a_project_that_is_not_managed_cannot_be_diagnosed() {
     let fixture = fixture();
     let host = FakeSbx::listing("[]");
     let error = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -24,7 +24,7 @@ fn the_items_are_reported_in_the_documented_order() {
     let host = without_image(FakeSbx::listing("[]"), &project);
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -61,7 +61,7 @@ fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() {
     let host = without_image(FakeSbx::listing("[]"), &project);
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("Example-Org/Example-Repo"),
         &host,
         &fixture.workspace_root,

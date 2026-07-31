@@ -15,7 +15,7 @@ fn a_stopped_sandbox_is_not_started_to_look_inside_it() {
     );
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -50,7 +50,7 @@ fn a_sandbox_state_that_cannot_be_read_is_not_reported_as_a_missing_sandbox() {
     let host = without_image(FakeSbx::listing("not json"), &project);
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -87,11 +87,7 @@ fn an_unrelated_project_does_not_decide_this_one() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
     // 別案件のmetadataが壊れていても、この案件の状態は読める。
-    let broken = fixture
-        .config
-        .base_path
-        .as_path()
-        .join("broken/broken.project/.sbxm");
+    let broken = fixture.parent.as_path().join("broken/broken.project/.sbxm");
     std::fs::create_dir_all(&broken).unwrap();
     std::fs::write(broken.join("project.yaml"), "version: 2\n").unwrap();
 
@@ -100,7 +96,7 @@ fn an_unrelated_project_does_not_decide_this_one() {
         &project,
     );
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -123,7 +119,7 @@ fn an_ssh_agent_inside_the_sandbox_is_a_security_failure() {
         .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 2, "");
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -155,7 +151,7 @@ fn an_agent_that_answers_without_keys_is_still_reachable() {
         .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 1, "");
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -179,7 +175,7 @@ fn a_check_that_could_not_run_is_not_read_as_not_exposed() {
         .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 127, "");
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,

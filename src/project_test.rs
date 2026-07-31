@@ -52,7 +52,6 @@ fn the_display_form_keeps_the_casing_while_the_canonical_form_folds_it() {
     assert_eq!(id.owner(), "Example-Org");
     assert_eq!(id.repository(), "Example.Repo");
     assert_eq!(id.canonical().to_string(), "example-org/example.repo");
-    assert_eq!(id.canonical().owner(), "example-org");
     assert_eq!(id.canonical().repository(), "example.repo");
 }
 
@@ -70,22 +69,6 @@ fn identifiers_that_differ_only_in_case_are_the_same_project() {
         SandboxName::derive(&lower.canonical()),
         SandboxName::derive(&mixed.canonical())
     );
-}
-
-#[test]
-fn a_canonical_identifier_refuses_anything_that_is_not_already_folded() {
-    assert_eq!(
-        CanonicalProjectId::parse("owner/repo").unwrap().to_string(),
-        "owner/repo"
-    );
-    for value in ["Owner/repo", "owner/Repo", "owner", "owner/repo/extra"] {
-        let error = CanonicalProjectId::parse(value).expect_err("{value} is not a canonical ID");
-        assert_eq!(
-            error.first_id(),
-            Some(ErrorId::InvalidProjectId),
-            "value {value} produced the wrong error"
-        );
-    }
 }
 
 fn sandbox_name(value: &str) -> String {

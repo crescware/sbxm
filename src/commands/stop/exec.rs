@@ -10,14 +10,14 @@ use super::super::{Context, report};
 use super::print;
 
 pub fn exec(projects: &[ProjectId], context: &Context, ui: &mut Ui) -> ExitCode {
-    let (config, locale) = match context.require_config() {
+    let (_config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
     let mut prompt = ui.prompt();
     match super::run::run(
-        &config,
+        context.location,
         projects,
         &RealHost,
         &mut prompt,

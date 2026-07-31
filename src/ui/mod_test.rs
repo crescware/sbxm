@@ -137,8 +137,12 @@ fn a_cancel_reports_nothing_at_all() {
 fn every_diagnostic_of_one_error_is_reported() {
     let error = crate::error::Error::many(vec![
         Diagnostic::new(
-            ErrorId::ConfigMissing,
-            crate::msg!("error-config-missing", path = "/x"),
+            ErrorId::ConfigUnreadable,
+            crate::msg!(
+                "error-config-unreadable",
+                path = "/x",
+                detail = "no such file"
+            ),
         ),
         Diagnostic::new(
             ErrorId::DockerUnreachable,

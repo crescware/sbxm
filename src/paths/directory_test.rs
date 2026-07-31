@@ -86,3 +86,33 @@ fn a_directory_is_never_created_through_a_symlink_or_over_another_file() {
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
     assert_eq!(fs::read_to_string(&file).unwrap(), "x");
 }
+
+#[test]
+fn a_private_directory_is_never_observed_wider_than_it_was_asked_for() {
+    // 作ってからpermissionを絞ると、そのあいだに別のprocessが広いmodeを観測する。
+    // mkdirの時点でmodeを決めることで、途中の状態を見せない。
+    let dir = temp_dir();
+    let target = dir.path().join("state");
+    let observed: Vec<Result<()>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let target = target.clone();
+                scope.spawn(move || {
+                    ensure_private_dir(&target, PRIVATE_DIR_MODE, PathScope::ConfigDir)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("the thread finishes"))
+            .collect()
+    });
+
+    for outcome in observed {
+        outcome.expect("every run sees a directory it may use");
+    }
+    assert_eq!(
+        fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        PRIVATE_DIR_MODE
+    );
+}

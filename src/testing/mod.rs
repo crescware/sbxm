@@ -16,6 +16,7 @@ pub mod poll;
 pub mod project;
 pub mod prompt;
 pub mod protection;
+pub mod registry;
 pub mod render;
 pub mod repository;
 pub mod sandbox;

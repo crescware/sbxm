@@ -361,7 +361,7 @@ fn translated_diagnostic_labels_keep_the_source_term() {
     // 利用者が正本localeの用語で検索できるよう「訳語 (正本localeの語)」の形式とする。
     const LABELS: [&str; 6] = [
         "status-item-config",
-        "status-item-base-path",
+        "status-item-state-directory",
         "status-item-network-policy",
         "status-item-daemon",
         "status-column-item",

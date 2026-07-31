@@ -6,12 +6,14 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::config::GlobalConfig;
+use crate::config::ConfigLocation;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
-use crate::metadata::{CreationMode, ProjectMetadata};
+use crate::metadata::{self, CreationMode, ProjectMetadata};
 use crate::msg;
 use crate::paths::{self, PathScope, ProjectPaths};
-use crate::project::{ProjectId, SandboxLayout, SandboxName};
+use crate::project::{CanonicalProjectId, ProjectId, SandboxLayout, SandboxName};
+use crate::registry::{RegistryEntry, RegistryGuard};
+use crate::repository::RepositoryIdentity;
 
 use crate::support::daemon;
 use crate::support::inventory::{self, Poll, ProjectState};
@@ -56,6 +58,32 @@ pub struct Prepared {
     _locked: select::Locked,
 }
 
+impl Prepared {
+    /// 管理解除後にregistryから外す案件。
+    pub fn unregistration(&self) -> Unregistration {
+        Unregistration {
+            paths: self.paths.clone(),
+            repository: self._locked.metadata.repository.clone(),
+        }
+    }
+}
+
+/// この実行が管理を解いた案件。registry entryを外す条件の観測に使う。
+///
+/// project lockを手放したあとで判定するため、canonical project IDだけでなく、
+/// destroyがcommitした状態を確かめるのに要る情報をまとめて持つ。
+#[derive(Debug, Clone)]
+pub struct Unregistration {
+    paths: ProjectPaths,
+    repository: RepositoryIdentity,
+}
+
+impl Unregistration {
+    fn canonical_id(&self) -> &CanonicalProjectId {
+        self.repository.canonical_id()
+    }
+}
+
 /// 削除の結果。
 #[derive(Debug, Clone)]
 pub struct DestroyOutcome {
@@ -66,7 +94,7 @@ pub struct DestroyOutcome {
 
 /// 対象を特定し、削除して良い状態であることを確かめる。
 pub fn prepare(
-    config: &GlobalConfig,
+    location: &ConfigLocation,
     requested: Option<&ProjectId>,
     force: bool,
     host: &dyn HostEnvironment,
@@ -74,7 +102,8 @@ pub fn prepare(
     workspace_root: &Path,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let locked = select::one(config, requested, msg!("select-destroy-heading"), prompt)?.lock()?;
+    let locked =
+        select::one(location, requested, msg!("select-destroy-heading"), prompt)?.lock()?;
     let paths = locked.paths.clone();
 
     let metadata = &locked.metadata;
@@ -102,7 +131,7 @@ pub fn prepare(
                 ),
             ));
         }
-        let layout = SandboxLayout::new(&metadata.canonical_id);
+        let layout = SandboxLayout::new(metadata.canonical_id());
         protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Allowed)?.worktrees
     };
 
@@ -235,9 +264,10 @@ fn keeps(paths: &ProjectPaths) -> Vec<Target> {
 /// 別の結果になるcommandとして見せない。
 fn re_register(paths: &ProjectPaths, metadata: &ProjectMetadata) -> Result<String> {
     let provisioning = &metadata.provisioning;
+    // 登録時と同じclone URLを示す。transportを暗黙に変えるcommandを案内しない。
     let command = format!(
         "sbxm add {} --worktrees {}",
-        metadata.display_id(),
+        metadata.repository.clone_url(),
         provisioning.requested_worktrees
     );
     match provisioning.mode {
@@ -292,6 +322,62 @@ impl TerminalConfirmPrompt {
     pub fn new(prompt: PromptUi) -> TerminalConfirmPrompt {
         TerminalConfirmPrompt { prompt }
     }
+}
+
+/// 管理解除の最後に、対応するregistry entryだけを削除する。
+///
+/// registry entryを先に消して案件を発見不能にしない。project lockを手放したあとで
+/// 短時間だけregistry lockを取るため、2つのlockを同時には保持しない。
+///
+/// どちらのlockも持たない隙間に、同じ案件の`add`が登録をやり直していることがある。
+/// canonical project IDの一致だけを根拠にentryを消さず、この実行がcommitした管理解除が
+/// registry lockの下でも維持されていることを確かめる。再登録を観測したentryは、
+/// 消さずに警告として報告する。
+pub fn unregister(
+    location: &ConfigLocation,
+    unregistration: &Unregistration,
+) -> Result<Option<Warning>> {
+    let mut guard = RegistryGuard::acquire(location)?;
+    let canonical = unregistration.canonical_id();
+    let Some(entry) = guard.registry().find(canonical) else {
+        return Ok(None);
+    };
+    if !still_unmanaged(entry, unregistration)? {
+        return Ok(Some(registered_again(entry)));
+    }
+    guard.remove(canonical)?;
+    Ok(None)
+}
+
+/// この実行が解いた管理が、registry lockの下でも維持されているか。
+///
+/// 別のrootや別のclone URLへ登録し直されたentryは、この実行が消したentryではない。
+/// metadataが戻っていれば案件は再び管理下にあり、entryは新しい登録意図を指している。
+/// 観測できなければ、維持されていると推測しない。
+fn still_unmanaged(entry: &RegistryEntry, unregistration: &Unregistration) -> Result<bool> {
+    if entry.project_root() != unregistration.paths.root()
+        || !entry.repository().same_target(&unregistration.repository)
+    {
+        return Ok(false);
+    }
+    let root = unregistration.paths.root();
+    match std::fs::symlink_metadata(root) {
+        // rootごと無くなっていれば、再登録は起きていない。
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(error) => return Err(PathScope::ProjectPath.unreadable_error(root, &error.to_string())),
+        Ok(_) => {}
+    }
+    paths::require_owned_directory(root, PathScope::ProjectPath)?;
+    Ok(metadata::load(&unregistration.paths)?.is_none())
+}
+
+/// 管理を解いているあいだに登録し直された案件を、entryを残したまま報告する。
+fn registered_again(entry: &RegistryEntry) -> Warning {
+    Warning::text(msg!(
+        "warning-project-registered-again",
+        project = entry.repository().display_id(),
+        path = paths::display(entry.project_root())
+    ))
 }
 
 impl ConfirmPrompt for TerminalConfirmPrompt {

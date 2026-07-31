@@ -10,16 +10,16 @@ pub use exec::exec;
 use clap::{Arg, ArgMatches, Command as ClapCommand};
 
 use crate::cli::Builder;
-use crate::cli::project_arg::{PROJECT_VALUE_NAME, required_project};
+use crate::cli::project_arg::{CLONE_URL_VALUE_NAME, required_clone_url};
 use crate::error::{ErrorId, Result, fail};
 use crate::metadata::{MAX_WORKTREES, MIN_WORKTREES};
 use crate::msg;
-use crate::project::ProjectId;
+use crate::repository::RepositoryIdentity;
 
 /// `add`の目標構成。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Args {
-    pub project: ProjectId,
+    pub repository: RepositoryIdentity,
     pub worktrees: Option<u32>,
     pub detach: Option<String>,
 }
@@ -28,10 +28,10 @@ pub fn spec(builder: &Builder) -> Result<ClapCommand> {
     Ok(builder
         .positional("add", "cli-add-about")?
         .arg(
-            Arg::new("project")
+            Arg::new("repository")
                 .required(true)
-                .value_name(PROJECT_VALUE_NAME)
-                .help(builder.text("cli-add-project-help")?),
+                .value_name(CLONE_URL_VALUE_NAME)
+                .help(builder.text("cli-add-repository-help")?),
         )
         .arg(
             Arg::new("worktrees")
@@ -48,7 +48,7 @@ pub fn spec(builder: &Builder) -> Result<ClapCommand> {
 }
 
 pub fn args(matches: &ArgMatches) -> Result<Args> {
-    let project = required_project(matches)?;
+    let repository = required_clone_url(matches)?;
     let detach = matches.get_one::<String>("detach").cloned();
 
     let worktrees = match matches.get_one::<String>("worktrees") {
@@ -81,7 +81,7 @@ pub fn args(matches: &ArgMatches) -> Result<Args> {
     }
 
     Ok(Args {
-        project,
+        repository,
         worktrees,
         detach,
     })

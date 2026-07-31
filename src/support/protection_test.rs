@@ -5,7 +5,7 @@ use crate::testing::protection::clean_host;
 use crate::testing::value::COMMIT;
 
 fn inspect_with(host: &FakeSbx, project: &Registered, unmanaged: Unmanaged) -> Result<Protection> {
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     inspect(
         host,
         project.sandbox.as_str(),
@@ -40,7 +40,7 @@ fn a_clean_managed_worktree_passes_and_is_reported() {
 fn work_that_is_not_committed_or_not_pushed_stops_the_run() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
 
@@ -78,7 +78,7 @@ fn work_that_is_not_committed_or_not_pushed_stops_the_run() {
 fn a_check_that_could_not_run_is_never_read_as_a_pass() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
 
@@ -136,7 +136,7 @@ fn a_check_that_could_not_run_is_never_read_as_a_pass() {
 fn an_unmanaged_worktree_is_refused_for_rebuild_and_examined_for_destroy() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
     let extra = format!("{}/agent-scratch", layout.bare_root());
@@ -200,7 +200,7 @@ fn an_unmanaged_worktree_is_refused_for_rebuild_and_examined_for_destroy() {
 fn a_worktree_that_is_not_an_artifact_of_this_project_is_not_reported_as_unsaved_work() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let listing = format!(
         "exec {name} -- git --git-dir {} worktree list --porcelain -z",
@@ -227,7 +227,7 @@ fn a_sandbox_whose_git_lists_no_worktree_has_nothing_to_lose() {
     // 宣言との食い違いを理由に止めると、作り直す手段がなくなる。
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let listing = format!(
         "exec {name} -- git --git-dir {} worktree list --porcelain -z",
@@ -248,7 +248,7 @@ fn a_sandbox_whose_git_lists_no_worktree_has_nothing_to_lose() {
 fn a_detached_head_that_no_remote_reaches_stops_the_run() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
 
@@ -278,7 +278,7 @@ fn a_sandbox_without_the_shared_repository_has_nothing_to_lose() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
     let name = project.sandbox.as_str();
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let host = clean_host(&fixture, &project).answering(
         &format!("exec {name} -- test -e {}", layout.bare_git_dir()),
         1,

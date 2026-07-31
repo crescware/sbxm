@@ -7,13 +7,25 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub(super) struct RawMetadata {
     pub version: Option<i64>,
-    pub owner: Option<String>,
-    pub repository: Option<String>,
-    pub canonical_id: Option<String>,
+    pub repository: Option<RawRepository>,
     pub provisioning: Option<RawProvisioning>,
+    pub git_identity: Option<RawGitIdentity>,
     /// Sandboxの切替中だけ現れる。切替中でなければkeyごと書かない。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rebuild: Option<RawRebuild>,
+}
+
+/// 登録対象の不変なrepository identity。
+///
+/// clone URLからtransportを実行時に推測し直さないよう、解釈済みの値をそのまま持つ。
+#[derive(Debug, Deserialize, Serialize)]
+pub(super) struct RawRepository {
+    pub provider: Option<String>,
+    pub owner: Option<String>,
+    pub name: Option<String>,
+    pub canonical_id: Option<String>,
+    pub clone_transport: Option<String>,
+    pub clone_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -24,6 +36,12 @@ pub(super) struct RawProvisioning {
     pub start_ref: Option<Option<String>>,
     pub requested_worktrees: Option<i64>,
     pub dockerfile_sha256: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(super) struct RawGitIdentity {
+    pub user_name: Option<String>,
+    pub user_email: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

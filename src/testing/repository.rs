@@ -1,7 +1,7 @@
 //! `support::repository`のtestが共有するfixture。
 
 use crate::metadata::{CreationMode, ProjectMetadata, Provisioning};
-use crate::paths::{AbsoluteBasePath, ProjectPaths};
+use crate::paths::{ProjectParent, ProjectPaths};
 use crate::project::{CanonicalProjectId, ProjectId, SandboxLayout};
 use crate::support::repository::FETCH_REFSPEC;
 use crate::testing::project::project_id;
@@ -40,22 +40,21 @@ pub fn healthy_clone() -> InnerCommandSandbox {
 
 pub fn metadata(mode: CreationMode, start_ref: Option<&str>, count: u32) -> ProjectMetadata {
     ProjectMetadata {
-        owner: "Example-Org".to_string(),
-        repository: "Example-Repo".to_string(),
-        canonical_id: canonical(),
+        repository: crate::testing::project::ssh_repository("Example-Org/Example-Repo"),
         provisioning: Provisioning {
             mode,
             start_ref: start_ref.map(|value| value.to_string()),
             requested_worktrees: count,
             dockerfile_sha256: "1".repeat(64),
         },
+        git_identity: crate::testing::metadata::git_identity(),
         rebuild: None,
     }
 }
 
 pub fn project_paths(dir: &std::path::Path) -> ProjectPaths {
-    let base = AbsoluteBasePath::new(dir).expect("valid base path");
-    let paths = ProjectPaths::derive(&base, &canonical());
+    let parent = ProjectParent::at(dir).expect("valid parent directory");
+    let paths = ProjectPaths::derive(&parent, &canonical());
     std::fs::create_dir_all(paths.sbxm_dir()).expect("create .sbxm");
     paths
 }

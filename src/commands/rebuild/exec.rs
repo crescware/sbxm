@@ -11,12 +11,13 @@ use crate::ui::{Document, Ui};
 use super::super::{Context, report};
 
 pub fn exec(project: &ProjectId, context: &Context, ui: &mut Ui) -> ExitCode {
-    let (config, locale) = match context.require_config() {
+    let (config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
     let output = match super::run::run(
+        context.location,
         &config,
         project,
         &RealHost,

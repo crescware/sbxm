@@ -13,15 +13,23 @@ fn metadata_written_before_worktrees_stopped_being_recorded_still_parses() {
     // 残っていても案件の目標構成は変わらない。
     let text = "\
 version: 1
-owner: Example-Org
-repository: Example-Repo
-canonical_id: example-org/example-repo
+repository:
+  provider: github
+  owner: Example-Org
+  name: Example-Repo
+  canonical_id: example-org/example-repo
+  clone_transport: ssh
+  clone_url: git@github.com:Example-Org/Example-Repo.git
 
 provisioning:
   mode: detached
   start_ref: develop
   requested_worktrees: 2
   dockerfile_sha256: \"1111111111111111111111111111111111111111111111111111111111111111\"
+
+git_identity:
+  user_name: Example User
+  user_email: user@example.com
 
 worktrees:
   managed:
@@ -130,9 +138,12 @@ fn an_unknown_version_is_diagnosed_before_other_fields() {
 fn required_fields_are_named_when_they_are_missing() {
     let full = render(&attached("example-org", "example-repo"));
     for field in [
+        "provider:",
         "owner:",
-        "repository:",
+        "name:",
         "canonical_id:",
+        "clone_transport:",
+        "clone_url:",
         "mode:",
         "start_ref:",
         "requested_worktrees:",

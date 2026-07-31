@@ -1,17 +1,66 @@
-//! Sandbox内のGit identity。
+//! Git identity。
 //!
-//! 既存の設定値が同じならそのままにし、異なる場合は別の利用者のSandboxである
-//! 可能性があるため自動で上書きしない。
+//! 新規登録時にhostの`git config --global`から取得し、案件metadataへsnapshotする。
+//! Sandbox内へ設定するのは、そのsnapshotだけである。
+//!
+//! Sandbox内の既存の設定値が同じならそのままにし、異なる場合は別の利用者のSandboxで
+//! ある可能性があるため自動で上書きしない。
 //!
 //! `gh`のprotocol設定もここに置く。値の性質が同じで、一致しない値の扱いを同じ形で
 //! 決めるためである。呼ぶかどうかは`tools`が`gh`の有無で決める。
 
-use crate::command::HostEnvironment;
-use crate::config::GitIdentity;
+use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::metadata::{GitIdentity, validate_git_identity_value};
 use crate::msg;
+use crate::ui::Remediation;
 
 use super::sandbox;
+
+/// hostが宣言しているGit identityを読む。
+///
+/// 不在、空、複数値、観測不能のいずれも、推測で補わず拒否する。案件を作る前に呼び、
+/// 設定するcommandを案内する。
+pub fn from_host(host: &dyn HostEnvironment) -> Result<GitIdentity> {
+    Ok(GitIdentity {
+        user_name: read_global(host, "user.name")?,
+        user_email: read_global(host, "user.email")?,
+    })
+}
+
+fn read_global(host: &dyn HostEnvironment, key: &str) -> Result<String> {
+    // `--get-all`は複数回宣言された値をすべて返す。1つに絞れない設定を黙って選ばない。
+    let spec = CommandSpec::probe("git", &["config", "--global", "--get-all", key])
+        .timeout(TimeoutClass::LocalFilesystem);
+    let outcome = host.run(&spec)?;
+    if !outcome.success() {
+        return Err(unavailable(key, "no value is set"));
+    }
+    // 空の宣言も1つの宣言である。落として1件に見せると、gitが解決する値と食い違う。
+    let stdout = outcome.stdout_text();
+    let values: Vec<&str> = stdout.lines().collect();
+    let [value] = values.as_slice() else {
+        let detail = format!("{} values are set", values.len());
+        return Err(unavailable(key, &detail));
+    };
+    let value = value.trim();
+    validate_git_identity_value(value).map_err(|detail| unavailable(key, detail))?;
+    Ok(value.to_string())
+}
+
+/// hostのGit identityを、設定するcommandとともに要求する。
+fn unavailable(key: &str, detail: &str) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::GitIdentityUnavailable,
+            msg!("error-git-identity-unavailable", key = key, detail = detail),
+        )
+        .remediation(
+            Remediation::text(msg!("remediation-git-identity-unavailable"))
+                .try_run(format!("git config --global {key} <value>")),
+        ),
+    )
+}
 
 /// GitHubとのやり取りに使うprotocol。Sandbox内のcloneはHTTPSを使う。
 const GIT_PROTOCOL: &str = "https";

@@ -11,7 +11,7 @@ fn exit_codes_are_the_published_contract() {
 fn cancellation_maps_to_130_and_everything_else_to_1() {
     assert_eq!(Error::Canceled.exit_code(), ExitCode::Canceled);
     assert_eq!(
-        Error::new(ErrorId::ConfigMissing, msg!("config-missing")).exit_code(),
+        Error::new(ErrorId::ConfigUnreadable, msg!("config-unreadable")).exit_code(),
         ExitCode::Failure
     );
 }

@@ -141,8 +141,9 @@ fn formatting_does_not_insert_isolation_marks() {
     let catalog = Catalog::new(Locale::En);
     let rendered = catalog
         .format(&msg!(
-            "error-config-missing",
-            path = "/home/example/.sbxm/config.yaml"
+            "error-config-unreadable",
+            path = "/home/example/.sbxm/config.yaml",
+            detail = "no such file"
         ))
         .expect("built-in message must format");
     assert!(

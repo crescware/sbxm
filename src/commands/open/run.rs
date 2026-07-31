@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use crate::command::{CommandSpec, HostEnvironment};
-use crate::config::GlobalConfig;
+use crate::config::ConfigLocation;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -39,7 +39,7 @@ pub struct Prepared {
 /// lockはこの関数のあいだだけ保持する。SSH sessionそのものはsbxmのmutationではなく、
 /// 接続中に別terminalの`stop`が待たされる状態を作らない。
 pub fn prepare(
-    config: &GlobalConfig,
+    location: &ConfigLocation,
     requested: Option<&ProjectId>,
     host: &dyn HostEnvironment,
     prompt: &mut dyn ProjectPrompt,
@@ -48,7 +48,7 @@ pub fn prepare(
     progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let locked = select::one(config, requested, msg!("select-open-heading"), prompt)?.lock()?;
+    let locked = select::one(location, requested, msg!("select-open-heading"), prompt)?.lock()?;
 
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
@@ -67,7 +67,7 @@ pub fn prepare(
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
     sandbox::require_credentials_isolated(host, name.as_str())?;
 
-    let layout = SandboxLayout::new(&metadata.canonical_id);
+    let layout = SandboxLayout::new(metadata.canonical_id());
     let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
 
     Ok(Prepared {

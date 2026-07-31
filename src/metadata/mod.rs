@@ -4,12 +4,10 @@
 //! 作成元を追跡しないため、validation規則を満たすmetadataは、誰が書いたかを問わず
 //! 同じものとして扱う。
 
-mod discover;
 mod document;
 mod parse;
 mod render;
 
-pub use discover::discover;
 pub use parse::parse;
 pub use render::render;
 
@@ -20,6 +18,7 @@ use crate::error::{DocumentVersion, ErrorId, Result, fail};
 use crate::msg;
 use crate::paths::{self, PRIVATE_FILE_MODE, ProjectPaths, atomic_create, atomic_replace};
 use crate::project::{CanonicalProjectId, SandboxName};
+use crate::repository::RepositoryIdentity;
 
 /// このbuildが読み書きするmetadataのversion。
 pub const METADATA_VERSION: u32 = 1;
@@ -80,33 +79,54 @@ pub struct RebuildIntent {
     pub target_dockerfile_sha256: String,
     pub previous_dockerfile_sha256: String,
 }
+/// Sandbox内で使用するGit identity。
+///
+/// 新規登録時にhostの`git config --global`から取得し、以後は保存値だけを使う。
+/// host設定が後から変わっても、登録済み案件のidentityを暗黙変更しない。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitIdentity {
+    pub user_name: String,
+    pub user_email: String,
+}
+
+/// Git identityの値として使えるか。
+pub fn validate_git_identity_value(value: &str) -> std::result::Result<(), &'static str> {
+    if value.trim().is_empty() {
+        return Err("the value is empty");
+    }
+    if value.contains('\n') || value.contains('\r') {
+        return Err("the value contains a line break");
+    }
+    Ok(())
+}
+
 /// 1案件のmetadata。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectMetadata {
-    /// GitHub上の表記のままのowner。
-    pub owner: String,
-    /// GitHub上の表記のままのrepository。
-    pub repository: String,
-    pub canonical_id: CanonicalProjectId,
+    /// 登録対象の不変なrepository identity。
+    ///
+    /// clone URL文字列から実行時にtransportを推測し直さないよう、解釈済みの構造で持つ。
+    pub repository: RepositoryIdentity,
     pub provisioning: Provisioning,
+    /// Sandbox内で使うGit identity。登録時のhost設定のsnapshotである。
+    pub git_identity: GitIdentity,
     pub rebuild: Option<RebuildIntent>,
 }
 impl ProjectMetadata {
     /// 表示に使う`<owner>/<repository>`。
     pub fn display_id(&self) -> String {
-        format!("{}/{}", self.owner, self.repository)
+        self.repository.display_id()
+    }
+
+    /// 突き合わせの正本となるcanonical project ID。
+    pub fn canonical_id(&self) -> &CanonicalProjectId {
+        self.repository.canonical_id()
     }
 
     /// canonical project IDから決定的に導出したSandbox名。
     pub fn sandbox_name(&self) -> SandboxName {
-        SandboxName::derive(&self.canonical_id)
+        SandboxName::derive(self.canonical_id())
     }
-}
-/// 探索で見つかった1案件。
-#[derive(Debug, Clone)]
-pub struct DiscoveredProject {
-    pub paths: ProjectPaths,
-    pub metadata: ProjectMetadata,
 }
 /// metadataをread-onlyで読む。存在しなければ`None`。
 pub fn load(paths: &ProjectPaths) -> Result<Option<ProjectMetadata>> {
@@ -136,6 +156,31 @@ fn read_optional(path: &Path) -> Result<Option<String>> {
                 detail = "the metadata path is a symbolic link"
             ),
         );
+    }
+    // 通常fileであることを確かめてから開く。FIFOのような特殊fileを開いて待たない。
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => {
+            return fail(
+                ErrorId::MetadataUnreadable,
+                msg!(
+                    "error-metadata-unreadable",
+                    path = paths::display(path),
+                    detail = "the metadata path is not a regular file"
+                ),
+            );
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return fail(
+                ErrorId::MetadataUnreadable,
+                msg!(
+                    "error-metadata-unreadable",
+                    path = paths::display(path),
+                    detail = error
+                ),
+            );
+        }
     }
     match fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),

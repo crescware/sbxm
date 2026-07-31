@@ -11,7 +11,7 @@ use std::time::Duration;
 
 /// Docker疎通とworktree一覧に応答するhost。
 fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let listing = format!(
         "worktree {}\0bare\0\0worktree {}/{}\0branch refs/heads/main\0\0",
         layout.bare_root(),
@@ -35,7 +35,7 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
 
 fn prepare_for(fixture: &Fixture, host: &FakeSbx) -> Result<Prepared> {
     prepare(
-        &fixture.config,
+        &fixture.location,
         None,
         host,
         &mut ScriptedPrompt::choosing(0),
@@ -147,7 +147,7 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
     let host = FakeSbx::listing("[]");
 
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         &host,
         &mut ScriptedPrompt::choosing(0),
@@ -199,7 +199,7 @@ fn an_intent_recorded_after_the_selection_is_still_seen() {
     metadata::update(&project.paths, &metadata).expect("record the intent");
 
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&ProjectId::parse("example-org/example-repo").unwrap()),
         &host,
         &mut ScriptedPrompt::choosing(0),
@@ -239,7 +239,7 @@ fn a_missing_managed_worktree_stops_before_the_terminal_is_handed_over() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
     let running = format!("[{}]", fixture.entry(&project, "running"));
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     // directoryはあってもGitのworktreeでなければ、宣言を満たしていない。
     let host = ready(FakeSbx::listing(&running), &project).answering(
         &format!(

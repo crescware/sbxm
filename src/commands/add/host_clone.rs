@@ -9,10 +9,9 @@ use std::path::{Path, PathBuf};
 
 use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
-use crate::git;
 use crate::msg;
 use crate::paths::{self, PathScope, ProjectPaths};
-use crate::project::ProjectId;
+use crate::repository::{RepositoryIdentity, accepted_clone_url_forms};
 use crate::ui::ProgressSink;
 
 /// 採用したhost clone。
@@ -30,39 +29,48 @@ pub struct HostClone {
 pub fn ensure(
     host: &dyn HostEnvironment,
     paths: &ProjectPaths,
-    project: &ProjectId,
+    repository: &RepositoryIdentity,
     progress: &mut dyn ProgressSink,
 ) -> Result<HostClone> {
     let target = paths.host_clone();
 
-    if fs::symlink_metadata(&target).is_err() {
-        clone(host, &target, project, progress)?;
-        // 作成直後も、再利用と同じ規則で成果物を検証する。
-        inspect(host, paths, project, &target)?;
-        return Ok(HostClone {
-            path: target,
-            created: true,
-        });
+    // 不在と、観測できないことを区別する。そこにあるものを確かめられないまま
+    // cloneへ進むと、既存の成果物の上で外部commandの挙動に判断を委ねることになる。
+    match fs::symlink_metadata(&target) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            clone(host, &target, repository, progress)?;
+            // 作成直後も、再利用と同じ規則で成果物を検証する。
+            inspect(host, paths, repository, &target)?;
+            Ok(HostClone {
+                path: target,
+                created: true,
+            })
+        }
+        Err(error) => Err(PathScope::ProjectPath.unreadable_error(&target, &error.to_string())),
+        Ok(_) => {
+            inspect(host, paths, repository, &target)?;
+            Ok(HostClone {
+                path: target,
+                created: false,
+            })
+        }
     }
-
-    inspect(host, paths, project, &target)?;
-    Ok(HostClone {
-        path: target,
-        created: false,
-    })
 }
 
 fn clone(
     host: &dyn HostEnvironment,
     target: &Path,
-    project: &ProjectId,
+    repository: &RepositoryIdentity,
     progress: &mut dyn ProgressSink,
 ) -> Result<()> {
-    let url = git::ssh_remote_url(project.owner(), project.repository());
     progress.step(msg!("progress-cloning-host"));
-    // 進捗はgitが出したまま転送する。sbxmは実況を重ねない。
-    let spec = CommandSpec::passthrough("git", &["clone", &url, &paths::display(target)])
-        .timeout(TimeoutClass::RepositoryTransfer);
+    // 進捗はgitが出したまま転送する。sbxmは実況を重ねない。clone URLはshellを介さず、
+    // validation済みのargumentとして渡す。
+    let spec = CommandSpec::passthrough(
+        "git",
+        &["clone", repository.clone_url(), &paths::display(target)],
+    )
+    .timeout(TimeoutClass::RepositoryTransfer);
     host.run(&spec)?.require_success()?;
     Ok(())
 }
@@ -71,7 +79,7 @@ fn clone(
 fn inspect(
     host: &dyn HostEnvironment,
     paths: &ProjectPaths,
-    project: &ProjectId,
+    repository: &RepositoryIdentity,
     target: &Path,
 ) -> Result<()> {
     if paths::is_symlink(target) {
@@ -119,18 +127,26 @@ fn inspect(
             format!("origin has {} URLs, so the remote is ambiguous", urls.len()),
         ));
     };
-    let canonical = project.canonical();
-    match git::canonical_id_of_remote(url) {
-        Some(observed) if observed == canonical.as_str() => Ok(()),
-        Some(observed) => Err(unusable(
+    // originも登録時と同じ規則でparseする。読めないURLを一致しているとみなさない。
+    let Ok(observed) = RepositoryIdentity::parse_clone_url(url) else {
+        return Err(unusable(
             target,
-            format!("origin points at {observed}, not at {canonical}"),
-        )),
-        None => Err(unusable(
+            format!(
+                "origin URL {url} is not one of {}",
+                accepted_clone_url_forms()
+            ),
+        ));
+    };
+    if !observed.same_target(repository) {
+        return Err(unusable(
             target,
-            format!("origin URL {url} does not name a GitHub repository"),
-        )),
+            format!(
+                "origin points at {observed}, not at {}",
+                repository.clone_url()
+            ),
+        ));
     }
+    Ok(())
 }
 
 /// `.git`が案件directoryの外を指していないことを確認する。

@@ -1,13 +1,13 @@
 use super::*;
 use crate::command::{EnvPolicy, OutputPolicy};
-use crate::error::ExitCode;
+use crate::error::{ErrorId, ExitCode};
 use crate::metadata;
 use crate::paths::PRIVATE_FILE_MODE;
 use crate::testing::host::{
     FakeSbx, assert_lifecycle, custom_secret_listing, no_custom_secrets, no_secrets,
 };
 use crate::testing::poll::poll;
-use crate::testing::project::{Fixture, fixture, project_id};
+use crate::testing::project::{Fixture, Registered, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::protection::clean_host;
 use crate::ui::SilentProgress;
@@ -47,7 +47,7 @@ fn a_clean_running_project_is_planned_then_removed() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("Example-Org/Example-Repo")),
         false,
         &host,
@@ -74,7 +74,7 @@ fn a_clean_running_project_is_planned_then_removed() {
     );
     assert_eq!(
         prepared.plan.re_register,
-        "sbxm add Example-Org/Example-Repo --worktrees 1"
+        "sbxm add git@github.com:Example-Org/Example-Repo.git --worktrees 1"
     );
 
     let outcome = execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
@@ -100,7 +100,7 @@ fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -128,7 +128,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() {
 
     let host = FakeSbx::listing(&stopped);
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -143,7 +143,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() {
         project.sandbox.as_str(),
     );
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         true,
         &host,
@@ -165,7 +165,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() {
 fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
     let host = clean_host(&fixture, &project).answering(
@@ -175,7 +175,7 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() {
     );
 
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -194,7 +194,7 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
     let host = FakeSbx::listing("[]");
 
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -217,7 +217,7 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() {
     let host = no_secrets(FakeSbx::listing("[]"), project.sandbox.as_str());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -249,7 +249,7 @@ fn the_token_registration_goes_away_with_the_sandbox() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -291,7 +291,7 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -332,7 +332,7 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -363,7 +363,7 @@ fn the_re_registration_command_repeats_the_target_configuration() {
 
     assert_eq!(
         re_register(&project.paths, &metadata).expect("the target configuration is complete"),
-        "sbxm add example-org/example-repo --worktrees 3 --detach develop"
+        "sbxm add git@github.com:example-org/example-repo.git --worktrees 3 --detach develop"
     );
 
     // 起点branchのないdetachedは再現できない。誤ったcommandを見せない。
@@ -385,7 +385,7 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() {
     let host = no_secrets(clean_host(&fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -445,7 +445,7 @@ fn prepared_project(fixture: &Fixture, force: bool) -> (FakeSbx, Prepared) {
     let host = no_secrets(clean_host(fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         force,
         &host,
@@ -507,7 +507,7 @@ fn the_project_lock_is_held_across_the_confirmation() {
     let fixture = fixture();
     let (_host, prepared) = prepared_project(&fixture, false);
     let lock_file = ProjectPaths::derive(
-        &fixture.config.base_path,
+        &fixture.parent,
         &project_id("example-org/example-repo").canonical(),
     )
     .lock_file();
@@ -558,7 +558,7 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -586,7 +586,7 @@ fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -617,7 +617,7 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() {
     let host = clean_host(&fixture, &project);
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -637,4 +637,147 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() {
         project.paths.metadata_file().exists(),
         "the project stays managed so destroy can be run again"
     );
+}
+
+/// 管理解除をcommitした案件として、registryから外す要求を組み立てる。
+fn unregistration_of(project: &Registered) -> Unregistration {
+    Unregistration {
+        paths: project.paths.clone(),
+        repository: project.metadata.repository.clone(),
+    }
+}
+
+#[test]
+fn unregistering_removes_the_entry_of_that_project_and_no_other() {
+    let fixture = fixture();
+    let target = fixture.register("example-org/example-repo");
+    let other = fixture.register("other-org/other-repo");
+    // metadataの削除が管理解除のcommit pointである。
+    std::fs::remove_file(target.paths.metadata_file()).expect("remove the metadata");
+
+    assert!(
+        unregister(&fixture.location, &unregistration_of(&target))
+            .expect("unregister")
+            .is_none()
+    );
+
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert_eq!(
+        registry
+            .entries()
+            .iter()
+            .map(|entry| entry.canonical_id().as_str())
+            .collect::<Vec<_>>(),
+        vec!["other-org/other-repo"]
+    );
+    assert!(
+        other.paths.metadata_file().exists(),
+        "another project is untouched"
+    );
+    // 利用者の成果物は残す。registryから外れたあとは未登録のhost artifactとして扱う。
+    assert!(target.paths.root().is_dir());
+}
+
+#[test]
+fn a_project_registered_again_during_the_removal_keeps_its_entry() {
+    // destroyはmetadataを消してproject lockを手放したあとでregistry lockを取る。その
+    // 隙間に同じ案件のaddが登録をやり直していれば、entryは新しい登録意図を指している。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let host = no_secrets(clean_host(&fixture, &project), project.sandbox.as_str());
+    host.listing.borrow_mut().insert(0, "[]".to_string());
+    let prepared = prepare(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .expect("prepare");
+
+    let unregistration = prepared.unregistration();
+    execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
+    drop(prepared);
+
+    // project lockが空いているあいだに、別の実行のaddがmetadataを作り直した。
+    metadata::create(&project.paths, &project.metadata).expect("register the project again");
+
+    let warning = unregister(&fixture.location, &unregistration)
+        .expect("unregister")
+        .expect("the re-registration is reported");
+    assert_eq!(warning.description.id, "warning-project-registered-again");
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert!(
+        registry.find(project.metadata.canonical_id()).is_some(),
+        "the project that was registered again stays discoverable"
+    );
+}
+
+#[test]
+fn an_entry_that_names_another_root_is_left_to_the_run_that_recorded_it() {
+    // 同じcanonical project IDでも、別のrootを指すentryはこの実行が記録したものではない。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let unregistration = unregistration_of(&project);
+    std::fs::remove_file(project.paths.metadata_file()).expect("remove the metadata");
+
+    // 別の実行が、entryを外して別のrootへ登録し直した。
+    let mut guard = RegistryGuard::acquire(&fixture.location).expect("acquire the registry lock");
+    guard
+        .remove(project.metadata.canonical_id())
+        .expect("remove the entry");
+    drop(guard);
+    let elsewhere = fixture._dir.path().join("elsewhere.project");
+    std::fs::create_dir_all(&elsewhere).expect("create the other root");
+    fixture.record(&elsewhere, project.metadata.repository.clone());
+
+    let warning = unregister(&fixture.location, &unregistration)
+        .expect("unregister")
+        .expect("an entry another run recorded is reported");
+    assert_eq!(warning.description.id, "warning-project-registered-again");
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert_eq!(
+        registry
+            .find(project.metadata.canonical_id())
+            .expect("the entry stays")
+            .project_root(),
+        elsewhere,
+        "the registration of the other run is untouched"
+    );
+}
+
+#[test]
+fn a_root_that_cannot_be_verified_keeps_the_entry_instead_of_guessing() {
+    // 再登録の有無を観測できなければ、管理解除が維持されているとみなさない。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let unregistration = unregistration_of(&project);
+    std::fs::remove_dir_all(project.paths.root()).expect("remove the project root");
+    std::fs::write(project.paths.root(), b"not a project root\n").expect("put a file in its place");
+
+    let error = unregister(&fixture.location, &unregistration)
+        .expect_err("a root that is not a directory cannot be verified");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert!(
+        registry.find(project.metadata.canonical_id()).is_some(),
+        "the entry stays until the state can be observed"
+    );
+}
+
+#[test]
+fn an_entry_left_behind_by_a_crash_after_the_commit_point_is_tolerated() {
+    // metadata削除後、registry entry削除前に中断すると、不整合entryが残り得る。
+    // 通常modeで推測して消さず、read-onlyの観測へ残す。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    std::fs::remove_file(project.paths.metadata_file()).expect("remove the metadata");
+
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert_eq!(registry.entries().len(), 1);
+
+    let error = select::locked(&fixture.location, &project_id("example-org/example-repo"))
+        .expect_err("the project cannot be worked on");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectIncomplete));
 }

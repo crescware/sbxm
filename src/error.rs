@@ -66,7 +66,6 @@ error_ids! {
     UnknownSubcommand => "unknown-subcommand",
     ConflictingArguments => "conflicting-arguments",
     InvalidLang => "invalid-lang",
-    InitIncompleteOptions => "init-incomplete-options",
     WorktreesOutOfRange => "worktrees-out-of-range",
     WorktreesRequireDetach => "worktrees-require-detach",
     WorktreesNotReducible => "worktrees-not-reducible",
@@ -77,26 +76,34 @@ error_ids! {
     // --- Project識別子 ---
     InvalidProjectId => "invalid-project-id",
     ReservedRepositoryName => "reserved-repository-name",
+    InvalidCloneUrl => "invalid-clone-url",
 
     // --- Global config ---
-    ConfigMissing => "config-missing",
     ConfigUnreadable => "config-unreadable",
     ConfigInvalidSyntax => "config-invalid-syntax",
     ConfigUnknownVersion => "config-unknown-version",
     ConfigMissingField => "config-missing-field",
     ConfigInvalidValue => "config-invalid-value",
+    ConfigNotRewritable => "config-not-rewritable",
     ConfigPermissionTooOpen => "config-permission-too-open",
     ConfigSymlink => "config-symlink",
     ConfigNotOwned => "config-not-owned",
     ConfigDirPermissionTooOpen => "config-dir-permission-too-open",
     ConfigDirSymlink => "config-dir-symlink",
     ConfigDirNotOwned => "config-dir-not-owned",
-    BasePathNotAbsolute => "base-path-not-absolute",
-    BasePathNotDirectory => "base-path-not-directory",
-    BasePathNotWritable => "base-path-not-writable",
-    BasePathEscapesRoot => "base-path-escapes-root",
+    GlobalStateUnusable => "global-state-unusable",
     FileDeclarationInvalidSource => "file-declaration-invalid-source",
     FileDeclarationInvalidDestination => "file-declaration-invalid-destination",
+
+    // --- Global registry ---
+    RegistryUnreadable => "registry-unreadable",
+    RegistryInvalidSyntax => "registry-invalid-syntax",
+    RegistryUnknownVersion => "registry-unknown-version",
+    RegistryMissingField => "registry-missing-field",
+    RegistryInvalidValue => "registry-invalid-value",
+    RegistryDuplicateProject => "registry-duplicate-project",
+    RegistryDuplicateRoot => "registry-duplicate-root",
+    RegistryEntryMismatch => "registry-entry-mismatch",
 
     // --- Project metadata ---
     MetadataUnreadable => "metadata-unreadable",
@@ -104,8 +111,6 @@ error_ids! {
     MetadataUnknownVersion => "metadata-unknown-version",
     MetadataMissingField => "metadata-missing-field",
     MetadataInvalidValue => "metadata-invalid-value",
-    MetadataPathMismatch => "metadata-path-mismatch",
-    MetadataDuplicateProject => "metadata-duplicate-project",
     SandboxNameCollision => "sandbox-name-collision",
     InvalidBranchName => "invalid-branch-name",
     TargetConfigurationMismatch => "target-configuration-mismatch",
@@ -129,6 +134,8 @@ error_ids! {
     SandboxRepositoryUnusable => "sandbox-repository-unusable",
     StartRefUnresolved => "start-ref-unresolved",
     ProjectNotManaged => "project-not-managed",
+    ProjectIncomplete => "project-incomplete",
+    ProjectInconsistent => "project-inconsistent",
     NoManagedProjects => "no-managed-projects",
     SelectionUnresolved => "selection-unresolved",
     SandboxNotCreated => "sandbox-not-created",
@@ -149,6 +156,8 @@ error_ids! {
     RemoteSshUnobservable => "remote-ssh-unobservable",
 
     // --- 案件のhost path ---
+    ProjectPathCollision => "project-path-collision",
+    WorkingDirectoryUnusable => "working-directory-unusable",
     ProjectPathSymlink => "project-path-symlink",
     ProjectPathUnexpectedType => "project-path-unexpected-type",
     ProjectPathUnreadable => "project-path-unreadable",
@@ -184,10 +193,9 @@ error_ids! {
     NetworkPolicyUnobservable => "network-policy-unobservable",
     DaemonUnobservable => "daemon-unobservable",
 
-    // --- init ---
-    InitRequiresTty => "init-requires-tty",
+    // --- 対話 ---
     PromptUnreadable => "prompt-unreadable",
-    GitIdentityInvalid => "git-identity-invalid",
+    GitIdentityUnavailable => "git-identity-unavailable",
 
     // --- 内部 ---
     MessageFormatFailed => "message-format-failed",

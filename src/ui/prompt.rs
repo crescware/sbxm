@@ -249,38 +249,9 @@ impl PromptUi {
         Ok(indexes)
     }
 
-    /// 1行の自由入力。
-    ///
-    /// 行編集は提供しない。Escを打鍵として飲み込まないよう、libraryのline editorではなく
-    /// 打鍵をそのまま読む。
-    pub fn input(&mut self, heading: Msg, initial: &str) -> Result<String> {
-        self.read_line(heading, initial)
-    }
-
     /// 完全一致だけを続行の合図とする入力。
     pub fn exact(&mut self, heading: Msg) -> Result<String> {
         self.read_line(heading, "")
-    }
-
-    /// yes/no。既定はnoとし、Enterだけでは進めない。
-    pub fn confirm(&mut self, question: Msg) -> Result<bool> {
-        let term = Term::stderr();
-        let hint = self.painter.muted(CONFIRM_KEYS);
-        term.write_line(&format!("{} {hint}", self.painter.heading(&question)))
-            .map_err(unreadable)?;
-
-        loop {
-            match term.read_key().map_err(unreadable)? {
-                Key::Escape | Key::CtrlC => return Err(Error::Canceled),
-                Key::Enter => return Ok(false),
-                Key::Char(character) => match character.to_ascii_lowercase() {
-                    'y' => return Ok(true),
-                    'n' => return Ok(false),
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
     }
 
     fn read_line(&mut self, heading: Msg, initial: &str) -> Result<String> {
@@ -314,9 +285,6 @@ impl PromptUi {
         Ok(typed)
     }
 }
-
-/// yes/noのkey。key名は翻訳せず、既定がnoであることを大文字で示す。
-const CONFIRM_KEYS: &str = "[y/N]";
 
 /// promptが候補に対応しない選択を返した場合。cancelとは区別する。
 fn unresolved(index: usize, count: usize) -> Error {

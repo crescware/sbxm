@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::config::GlobalConfig;
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::Result;
 use crate::metadata::{self, CreationMode, ProjectMetadata};
 use crate::msg;
@@ -53,6 +53,7 @@ pub struct PrepareOutput {
 
 /// 登録済み案件のSandboxを構築する。
 pub fn run(
+    location: &ConfigLocation,
     config: &GlobalConfig,
     project: &ProjectId,
     host: &dyn HostEnvironment,
@@ -62,7 +63,7 @@ pub fn run(
     let canonical = project.canonical();
     let name = SandboxName::derive(&canonical);
 
-    let mut locked = select::locked(config, project)?;
+    let mut locked = select::locked(location, project)?;
     generation::require_no_rebuild(&locked.metadata)?;
 
     let layout = SandboxLayout::new(&canonical);
@@ -96,7 +97,7 @@ pub fn run(
     let built = image::ensure(
         host,
         &name,
-        &locked.metadata.canonical_id,
+        locked.metadata.canonical_id(),
         &locked.paths.dockerfile(),
         &generation,
         progress,
@@ -111,7 +112,7 @@ pub fn run(
     secret::require_placeholder_present(host, &ready.name)?;
 
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
-    identity::ensure(host, &ready.name, &config.git)?;
+    identity::ensure(host, &ready.name, &locked.metadata.git_identity)?;
     tools::sandbox_ready(host, &ready.name)?;
     secret::configure_git_credential(host, &ready.name)?;
 
@@ -218,7 +219,7 @@ fn adopt_generation(
         return Ok(stored);
     }
 
-    if image::generation_is_built(host, name, &metadata.canonical_id, &stored)? {
+    if image::generation_is_built(host, name, metadata.canonical_id(), &stored)? {
         // 注意だけを出して終えない。現在のDockerfileを適用する手順まで示す。
         warnings.push(
             Warning::text(msg!(

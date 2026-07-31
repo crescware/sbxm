@@ -41,7 +41,7 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> FakeSbx 
                 &template_listing(&image),
             );
     // 再作成後のSandbox内で、共有repositoryとworktreeが期待どおりに揃う。
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
     verified(host, project.sandbox.as_str())
@@ -121,6 +121,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
     let host = continuing(&fixture, &project, &target);
 
     let output = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -173,6 +174,7 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
 
     let host = continuing(&fixture, &project, &target);
     let output = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -231,6 +233,7 @@ fn a_failure_after_the_switch_leaves_the_intent_in_place() {
     );
 
     let error = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,

@@ -10,12 +10,13 @@ use super::super::{Context, report};
 use super::print;
 
 pub fn exec(project: &ProjectId, context: &Context, ui: &mut Ui) -> ExitCode {
-    let (config, locale) = match context.require_config() {
+    let (config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
     match super::run::run(
+        context.location,
         &config,
         project,
         &RealHost,

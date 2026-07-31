@@ -2,7 +2,7 @@ use super::super::world::{World, bench};
 use super::*;
 use crate::error::ErrorId;
 use crate::hash::sha256_hex;
-use crate::testing::add_request::request;
+use crate::testing::add_request::{project_of, request};
 use crate::testing::project::project_id;
 use crate::ui::SilentProgress;
 use std::fs;
@@ -13,6 +13,7 @@ fn a_project_that_is_not_registered_is_sent_to_add() {
     let world = World::new();
 
     let error = run(
+        &bench.location,
         &bench.config,
         &project_id("example-org/example-repo"),
         &world,
@@ -43,11 +44,12 @@ fn an_unregistered_project_gets_no_lock_file() {
     let bench = bench();
     let world = World::new();
     let project = project_id("example-org/example-repo");
-    let paths = ProjectPaths::derive(&bench.config.base_path, &project.canonical());
+    let paths = ProjectPaths::derive(&bench.parent, &project.canonical());
     // lock fileを置ける状態、つまりmetadataのない`.sbxm`だけがある状態で確かめる。
     fs::create_dir_all(paths.sbxm_dir()).expect("the project directory is left behind");
 
     run(
+        &bench.location,
         &bench.config,
         &project,
         &world,
@@ -74,10 +76,16 @@ fn a_rebuild_in_progress_builds_nothing() {
     let bench = bench();
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None);
-    crate::commands::add::run::run(&bench.config, &request, &world, &mut SilentProgress)
-        .expect("the project is registered");
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &world,
+        &mut SilentProgress,
+    )
+    .expect("the project is registered");
 
-    let paths = ProjectPaths::derive(&bench.config.base_path, &request.project.canonical());
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
     let mut stored = metadata::load(&paths)
         .expect("read the metadata")
         .expect("present");
@@ -89,8 +97,9 @@ fn a_rebuild_in_progress_builds_nothing() {
 
     let mark = world.mark();
     let error = run(
+        &bench.location,
         &bench.config,
-        &request.project,
+        &project_of(&request),
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,

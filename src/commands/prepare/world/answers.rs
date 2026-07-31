@@ -19,6 +19,11 @@ impl World {
                 fs::create_dir_all(Path::new(target).join(".git")).expect("create the clone");
                 (0, String::new())
             }
+            // 新規登録が読むhostのGit identity。
+            ["config", "--global", "--get-all", "user.name"] => (0, "Example User\n".to_string()),
+            ["config", "--global", "--get-all", "user.email"] => {
+                (0, "user@example.com\n".to_string())
+            }
             ["rev-parse", "--is-bare-repository"] => (0, "false\n".to_string()),
             ["rev-parse", "--show-toplevel"] => (
                 0,

@@ -12,7 +12,7 @@ fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() {
     let host = without_image(FakeSbx::listing("[]"), &project);
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -32,7 +32,7 @@ fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() {
     let host = FakeSbx::listing("[]").answering(&format!("image ls --quiet {image}"), 1, "");
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,
@@ -57,7 +57,7 @@ fn a_changed_dockerfile_is_reported_as_the_next_rebuild_rather_than_a_fault() {
     let host = without_image(FakeSbx::listing("[]"), &project);
 
     let status = diagnose(
-        &fixture.config,
+        &fixture.location,
         &project_id("example-org/example-repo"),
         &host,
         &fixture.workspace_root,

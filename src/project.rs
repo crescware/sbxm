@@ -92,40 +92,16 @@ pub struct CanonicalProjectId {
 }
 
 impl CanonicalProjectId {
-    /// 既にcanonical形式である文字列を検証する。
-    ///
-    /// metadataが持つ`canonical_id`の読み込みに使う。大文字を含む値は、表示用の表記が
-    /// canonical形式の位置へ書かれた不整合として拒否する。
-    pub fn parse(value: &str) -> Result<CanonicalProjectId> {
-        let id = ProjectId::parse(value)?;
-        let canonical = id.canonical();
-        if canonical.as_str() != value {
-            return fail(
-                ErrorId::InvalidProjectId,
-                msg!("error-invalid-project-id", value = value),
-            );
-        }
-        Ok(canonical)
-    }
-
     pub fn as_str(&self) -> &str {
         &self.value
     }
 
-    /// lowercase化したowner。host pathの1階層目に使う。
-    pub fn owner(&self) -> &str {
-        self.split().0
-    }
-
     /// lowercase化したrepository。host pathとSandbox内pathに使う。
     pub fn repository(&self) -> &str {
-        self.split().1
-    }
-
-    fn split(&self) -> (&str, &str) {
         self.value
             .split_once('/')
             .expect("a canonical project ID has exactly one slash")
+            .1
     }
 }
 

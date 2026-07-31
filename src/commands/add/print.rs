@@ -73,4 +73,13 @@ pub fn document(output: &AddOutput) -> Document {
             }],
         )
         .try_command(format!("sbxm prepare {}", output.project))
+        // 案件IDを打ち直させない。次のcommandはそのままcopyできる形で出す。
+        .guidance(
+            None,
+            vec![GuidanceItem::Ordered {
+                number: 3,
+                text: msg!("add-next-open"),
+            }],
+        )
+        .try_command(format!("sbxm open {}", output.project))
 }

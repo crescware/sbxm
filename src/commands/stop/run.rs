@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
-use crate::config::GlobalConfig;
+use crate::config::ConfigLocation;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -68,7 +68,7 @@ pub struct StopReport {
 /// 全対象のvalidationをmutation前に完了し、1件でも進められない状態があれば
 /// 何も停止しない。停止の途中で失敗した場合は、後続の対象を停止しない。
 pub fn run(
-    config: &GlobalConfig,
+    location: &ConfigLocation,
     requested: &[ProjectId],
     host: &dyn HostEnvironment,
     prompt: &mut dyn ProjectPrompt,
@@ -76,12 +76,12 @@ pub fn run(
     poll: Poll,
 ) -> Result<StopReport> {
     // 1. 全対象のmetadataを解決する。canonical ID昇順で返る。
-    let selected = select::many(config, requested, msg!("select-stop-heading"), prompt)?;
+    let selected = select::many(location, requested, msg!("select-stop-heading"), prompt)?;
 
     // 2-3. 1回の一覧取得で全stateを解決し、進められない状態が1件でもあれば止める。
     let entries = daemon::list(host)?;
     for candidate in &selected {
-        validate(&candidate.metadata, &entries, workspace_root)?;
+        validate(&candidate.reload()?, &entries, workspace_root)?;
     }
 
     // 4. 複数lockはcanonical ID昇順に取得する。
