@@ -20,6 +20,7 @@ pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
         worktrees: args.worktrees,
     };
     match super::run::run(
+        context.location,
         &config,
         &args.project,
         scope,

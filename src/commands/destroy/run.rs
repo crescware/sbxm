@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::config::{ConfigLocation, GlobalConfig};
+use crate::config::ConfigLocation;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{CreationMode, ProjectMetadata};
 use crate::msg;
@@ -74,7 +74,7 @@ pub struct DestroyOutcome {
 
 /// 対象を特定し、削除して良い状態であることを確かめる。
 pub fn prepare(
-    config: &GlobalConfig,
+    location: &ConfigLocation,
     requested: Option<&ProjectId>,
     force: bool,
     host: &dyn HostEnvironment,
@@ -82,7 +82,8 @@ pub fn prepare(
     workspace_root: &Path,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let locked = select::one(config, requested, msg!("select-destroy-heading"), prompt)?.lock()?;
+    let locked =
+        select::one(location, requested, msg!("select-destroy-heading"), prompt)?.lock()?;
     let paths = locked.paths.clone();
 
     let metadata = &locked.metadata;

@@ -47,7 +47,7 @@ fn a_clean_running_project_is_planned_then_removed() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("Example-Org/Example-Repo")),
         false,
         &host,
@@ -100,7 +100,7 @@ fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -128,7 +128,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() {
 
     let host = FakeSbx::listing(&stopped);
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -143,7 +143,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() {
         project.sandbox.as_str(),
     );
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         true,
         &host,
@@ -175,7 +175,7 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() {
     );
 
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -194,7 +194,7 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
     let host = FakeSbx::listing("[]");
 
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -217,7 +217,7 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() {
     let host = no_secrets(FakeSbx::listing("[]"), project.sandbox.as_str());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -249,7 +249,7 @@ fn the_token_registration_goes_away_with_the_sandbox() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -291,7 +291,7 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -332,7 +332,7 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -385,7 +385,7 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() {
     let host = no_secrets(clean_host(&fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -445,7 +445,7 @@ fn prepared_project(fixture: &Fixture, force: bool) -> (FakeSbx, Prepared) {
     let host = no_secrets(clean_host(fixture, &project), project.sandbox.as_str());
     host.listing.borrow_mut().insert(0, "[]".to_string());
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         force,
         &host,
@@ -558,7 +558,7 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() {
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -586,7 +586,7 @@ fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged
     host.listing.borrow_mut().insert(0, "[]".to_string());
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,
@@ -617,7 +617,7 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() {
     let host = clean_host(&fixture, &project);
 
     let prepared = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         false,
         &host,

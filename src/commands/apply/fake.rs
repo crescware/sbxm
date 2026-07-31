@@ -5,13 +5,15 @@ use std::path::{Path, PathBuf};
 
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::config::{
-    FileDeclaration, GitIdentity, GlobalConfig, HostFileSource, SandboxHomeRelativePath,
+    ConfigLocation, FileDeclaration, GitIdentity, GlobalConfig, HostFileSource,
+    SandboxHomeRelativePath,
 };
 use crate::error::Result;
 use crate::i18n::Locale;
 use crate::metadata::{self, CreationMode, ProjectMetadata, Provisioning, RebuildIntent};
 use crate::paths::{AbsoluteBasePath, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
 use crate::project::{CanonicalProjectId, ProjectId, SandboxLayout, SandboxName};
+use crate::registry::{RegistryEntry, RegistryGuard};
 use crate::support::image::image_name;
 use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::{COMMIT, DIGEST};
@@ -146,7 +148,9 @@ pub fn canonical() -> CanonicalProjectId {
     project().canonical()
 }
 
-pub fn setup(files: Vec<FileDeclaration>) -> (tempfile::TempDir, GlobalConfig, PathBuf) {
+pub fn setup(
+    files: Vec<FileDeclaration>,
+) -> (tempfile::TempDir, ConfigLocation, GlobalConfig, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path().join("Projects");
     std::fs::create_dir_all(&base).unwrap();
@@ -162,14 +166,25 @@ pub fn setup(files: Vec<FileDeclaration>) -> (tempfile::TempDir, GlobalConfig, P
     let workspace_root = dir.path().join("workspaces");
     std::fs::create_dir_all(workspace_root.join(SandboxName::derive(&canonical()).as_str()))
         .unwrap();
-    (dir, config, workspace_root)
+    let location = ConfigLocation::from_home(dir.path().to_path_buf());
+    (dir, location, config, workspace_root)
 }
 
-pub fn write_metadata(config: &GlobalConfig, rebuild: Option<RebuildIntent>) -> ProjectPaths {
+pub fn write_metadata(
+    location: &ConfigLocation,
+    config: &GlobalConfig,
+    rebuild: Option<RebuildIntent>,
+) -> ProjectPaths {
     let paths = ProjectPaths::derive(&config.base_path, &canonical());
     std::fs::create_dir_all(paths.sbxm_dir()).unwrap();
+    let repository = crate::testing::project::ssh_repository("Example-Org/Example-Repo");
+    let mut guard = RegistryGuard::acquire(location).unwrap();
+    guard
+        .insert(RegistryEntry::new(paths.root(), repository.clone()).unwrap())
+        .unwrap();
+    drop(guard);
     let metadata = ProjectMetadata {
-        repository: crate::testing::project::ssh_repository("Example-Org/Example-Repo"),
+        repository,
         provisioning: Provisioning {
             mode: CreationMode::Attached,
             start_ref: Some("main".into()),

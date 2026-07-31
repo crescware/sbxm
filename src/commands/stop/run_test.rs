@@ -24,7 +24,7 @@ fn only_the_running_targets_are_stopped() {
     let host = FakeSbx::listings(&[&running, &running, &after]);
 
     let report = run(
-        &fixture.config,
+        &fixture.location,
         &[project_id("zeta/zulu"), project_id("alpha/alfa")],
         &host,
         &mut ScriptedPrompt::choosing(0),
@@ -67,7 +67,7 @@ fn a_project_without_a_sandbox_is_a_no_op_success() {
     let host = FakeSbx::listing("[]");
 
     let report = run(
-        &fixture.config,
+        &fixture.location,
         &[project_id("example-org/example-repo")],
         &host,
         &mut ScriptedPrompt::choosing(0),
@@ -99,7 +99,7 @@ fn a_rebuild_in_progress_stops_nothing_at_all() {
     let host = FakeSbx::listing(&listing);
 
     let error = run(
-        &fixture.config,
+        &fixture.location,
         &[project_id("alpha/alfa"), project_id("zeta/zulu")],
         &host,
         &mut ScriptedPrompt::choosing(0),
@@ -127,7 +127,7 @@ fn an_intent_recorded_after_the_first_check_is_still_seen() {
     metadata::update(&project.paths, &metadata).expect("record the intent");
 
     let error = run(
-        &fixture.config,
+        &fixture.location,
         &[project_id("alpha/alfa")],
         &host,
         &mut ScriptedPrompt::choosing(0),
@@ -152,7 +152,7 @@ fn a_failure_leaves_the_remaining_targets_running() {
     let host = FakeSbx::listing(&running).answering(&format!("stop {}", first.sandbox), 1, "");
 
     let report = run(
-        &fixture.config,
+        &fixture.location,
         &[project_id("alpha/alfa"), project_id("zeta/zulu")],
         &host,
         &mut ScriptedPrompt::choosing(0),
@@ -178,7 +178,7 @@ fn a_sandbox_that_stays_running_is_reported_as_failed() {
     let host = FakeSbx::listing(&running);
 
     let report = run(
-        &fixture.config,
+        &fixture.location,
         &[project_id("example-org/example-repo")],
         &host,
         &mut ScriptedPrompt::choosing(0),
@@ -213,7 +213,7 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() {
     let host = FakeSbx::listings(&[&running, &running, &after]);
 
     let report = run(
-        &fixture.config,
+        &fixture.location,
         &[],
         &host,
         &mut ScriptedPrompt::choosing_many(&[0]),

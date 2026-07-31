@@ -1,10 +1,11 @@
 //! 案件が登録された状態のtest環境。
 
-use crate::config::{GitIdentity, GlobalConfig};
+use crate::config::{ConfigLocation, GitIdentity, GlobalConfig};
 use crate::i18n::Locale;
 use crate::metadata::{self, CreationMode, ProjectMetadata, Provisioning};
 use crate::paths::{AbsoluteBasePath, ProjectPaths};
 use crate::project::{ProjectId, SandboxName};
+use crate::registry::{RegistryEntry, RegistryGuard};
 use crate::repository::RepositoryIdentity;
 use crate::testing::value::DIGEST;
 use std::path::PathBuf;
@@ -34,9 +35,10 @@ pub struct Registered {
     pub sandbox: SandboxName,
 }
 
-/// base pathとworkspace rootを持つtest環境。
+/// global state directory、base path、workspace rootを持つtest環境。
 pub struct Fixture {
     pub _dir: tempfile::TempDir,
+    pub location: ConfigLocation,
     pub config: GlobalConfig,
     pub workspace_root: PathBuf,
 }
@@ -63,6 +65,7 @@ pub fn fixture() -> Fixture {
         files: Vec::new(),
     };
     Fixture {
+        location: ConfigLocation::from_home(dir.path().to_path_buf()),
         _dir: dir,
         config,
         workspace_root,
@@ -70,14 +73,14 @@ pub fn fixture() -> Fixture {
 }
 
 impl Fixture {
-    /// 案件を登録済みの状態にする。
+    /// 案件を、registry entryとmetadataの両方が揃った状態にする。
     pub fn register(&self, project: &str) -> Registered {
         let repository = ssh_repository(project);
         let canonical = repository.canonical_id().clone();
         let paths = ProjectPaths::derive(&self.config.base_path, &canonical);
         std::fs::create_dir_all(paths.sbxm_dir()).expect("create .sbxm");
         let metadata = ProjectMetadata {
-            repository,
+            repository: repository.clone(),
             provisioning: Provisioning {
                 mode: CreationMode::Attached,
                 start_ref: Some("main".into()),
@@ -87,12 +90,21 @@ impl Fixture {
             rebuild: None,
         };
         metadata::create(&paths, &metadata).expect("write the metadata");
+        self.record(paths.root(), repository);
         let sandbox = SandboxName::derive(&canonical);
         Registered {
             paths,
             metadata,
             sandbox,
         }
+    }
+
+    /// registryへentryだけを記録する。metadataやproject rootは作らない。
+    pub fn record(&self, root: &std::path::Path, repository: RepositoryIdentity) {
+        let mut guard = RegistryGuard::acquire(&self.location).expect("acquire the registry lock");
+        guard
+            .insert(RegistryEntry::new(root, repository).expect("a valid entry"))
+            .expect("record the registration");
     }
 
     /// 案件に対応するSandboxの一覧行。

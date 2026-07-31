@@ -16,7 +16,7 @@ pub use inspect::{
     display, is_symlink, lexically_standardize, permission_too_open, real_path, regular_file_exists,
 };
 pub use lock::{ExclusiveLock, acquire_exclusive_lock};
-pub use project::{AbsoluteBasePath, PROJECT_DIR_SUFFIX, ProjectPaths};
+pub use project::{AbsoluteBasePath, ProjectPaths};
 pub use scope::PathScope;
 
 use std::time::Duration;

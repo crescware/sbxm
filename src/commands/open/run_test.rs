@@ -35,7 +35,7 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
 
 fn prepare_for(fixture: &Fixture, host: &FakeSbx) -> Result<Prepared> {
     prepare(
-        &fixture.config,
+        &fixture.location,
         None,
         host,
         &mut ScriptedPrompt::choosing(0),
@@ -147,7 +147,7 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() {
     let host = FakeSbx::listing("[]");
 
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         &host,
         &mut ScriptedPrompt::choosing(0),
@@ -199,7 +199,7 @@ fn an_intent_recorded_after_the_selection_is_still_seen() {
     metadata::update(&project.paths, &metadata).expect("record the intent");
 
     let error = prepare(
-        &fixture.config,
+        &fixture.location,
         Some(&ProjectId::parse("example-org/example-repo").unwrap()),
         &host,
         &mut ScriptedPrompt::choosing(0),

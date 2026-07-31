@@ -10,7 +10,7 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
-use crate::config::GlobalConfig;
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
@@ -53,6 +53,7 @@ pub struct ApplyOutput {
 /// Sandboxの中身を変えるmutationであるため、対象を確かめた後にproject lockを取得し、
 /// lock取得後のmetadataでpreconditionを判定し直してから適用する。
 pub fn run(
+    location: &ConfigLocation,
     config: &GlobalConfig,
     project: &ProjectId,
     scope: Scope,
@@ -61,7 +62,7 @@ pub fn run(
     progress: &mut dyn ProgressSink,
 ) -> Result<ApplyOutput> {
     let canonical = project.canonical();
-    let mut locked = select::locked(config, project)?;
+    let mut locked = select::locked(location, project)?;
     generation::require_no_rebuild(&locked.metadata)?;
 
     let name = SandboxName::derive(&canonical);

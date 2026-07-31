@@ -16,7 +16,7 @@ use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::Placement;
-use crate::support::inventory::ProjectState;
+use crate::support::inventory::{Observed, ProjectState};
 use crate::support::status::StatusValue;
 use crate::ui::{Inline, LegendEntry, VisualState};
 
@@ -65,6 +65,19 @@ pub fn project_state(state: ProjectState) -> Inline {
         ProjectState::Stopped | ProjectState::NotCreated => VisualState::Attention,
     };
     Inline::state(state.as_str(), visual)
+}
+
+/// registry entryから観測した案件の状態。
+///
+/// registryと成果物が食い違っている状態は、注意ではなく失敗として示す。
+pub fn observed(observed: &Observed) -> Inline {
+    match observed {
+        Observed::Registered(state) => project_state(*state),
+        Observed::Incomplete => Inline::state(observed.as_str(), VisualState::Attention),
+        Observed::Missing | Observed::Inconsistent => {
+            Inline::state(observed.as_str(), VisualState::Negative)
+        }
+    }
 }
 
 /// 構築後のSandboxの状態。
@@ -158,8 +171,8 @@ impl Legend {
         self.cell(project_status(value), value.legend_id())
     }
 
-    pub fn project_state(&mut self, state: ProjectState) -> Inline {
-        self.cell(project_state(state), state.legend_id())
+    pub fn observed(&mut self, value: &Observed) -> Inline {
+        self.cell(observed(value), value.legend_id())
     }
 
     pub fn sandbox_state(&mut self, state: SandboxState) -> Inline {

@@ -13,9 +13,7 @@ use super::scope::PathScope;
 use super::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
 
 /// project rootのdirectory名に付ける接尾辞。
-///
-/// metadata探索が`<base-path>/*/*.project`だけを対象とするための目印でもある。
-pub const PROJECT_DIR_SUFFIX: &str = ".project";
+const PROJECT_DIR_SUFFIX: &str = ".project";
 
 /// validation済みのbase path。
 ///

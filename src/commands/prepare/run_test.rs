@@ -13,6 +13,7 @@ fn a_project_that_is_not_registered_is_sent_to_add() {
     let world = World::new();
 
     let error = run(
+        &bench.location,
         &bench.config,
         &project_id("example-org/example-repo"),
         &world,
@@ -48,6 +49,7 @@ fn an_unregistered_project_gets_no_lock_file() {
     fs::create_dir_all(paths.sbxm_dir()).expect("the project directory is left behind");
 
     run(
+        &bench.location,
         &bench.config,
         &project,
         &world,
@@ -95,6 +97,7 @@ fn a_rebuild_in_progress_builds_nothing() {
 
     let mark = world.mark();
     let error = run(
+        &bench.location,
         &bench.config,
         &project_of(&request),
         &world,

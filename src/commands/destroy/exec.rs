@@ -13,14 +13,14 @@ use super::run::TerminalConfirmPrompt;
 use super::{Args, print};
 
 pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
-    let (config, locale) = match context.require_config() {
+    let (_config, locale) = match context.require_config() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
     let mut prompt = ui.prompt();
     let prepared = match super::run::prepare(
-        &config,
+        context.location,
         args.project.as_ref(),
         args.force,
         &RealHost,

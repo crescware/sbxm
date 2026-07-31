@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
-use crate::config::GlobalConfig;
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata, RebuildIntent};
 use crate::msg;
@@ -36,6 +36,7 @@ pub struct RebuildOutput {
 
 /// 保存されていない作業がないことを確かめてから、Sandboxを作り直す。
 pub fn run(
+    location: &ConfigLocation,
     config: &GlobalConfig,
     project: &ProjectId,
     host: &dyn HostEnvironment,
@@ -46,7 +47,7 @@ pub fn run(
     let canonical = project.canonical();
     let name = SandboxName::derive(&canonical);
 
-    let mut locked = select::locked(config, project)?;
+    let mut locked = select::locked(location, project)?;
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。
     let entries = daemon::list(host)?;

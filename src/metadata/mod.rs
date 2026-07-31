@@ -4,12 +4,10 @@
 //! 作成元を追跡しないため、validation規則を満たすmetadataは、誰が書いたかを問わず
 //! 同じものとして扱う。
 
-mod discover;
 mod document;
 mod parse;
 mod render;
 
-pub use discover::discover;
 pub use parse::parse;
 pub use render::render;
 
@@ -106,12 +104,6 @@ impl ProjectMetadata {
     pub fn sandbox_name(&self) -> SandboxName {
         SandboxName::derive(self.canonical_id())
     }
-}
-/// 探索で見つかった1案件。
-#[derive(Debug, Clone)]
-pub struct DiscoveredProject {
-    pub paths: ProjectPaths,
-    pub metadata: ProjectMetadata,
 }
 /// metadataをread-onlyで読む。存在しなければ`None`。
 pub fn load(paths: &ProjectPaths) -> Result<Option<ProjectMetadata>> {

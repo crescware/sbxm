@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::config::GlobalConfig;
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::Result;
 use crate::metadata::{self, CreationMode, ProjectMetadata};
 use crate::msg;
@@ -53,6 +53,7 @@ pub struct PrepareOutput {
 
 /// 登録済み案件のSandboxを構築する。
 pub fn run(
+    location: &ConfigLocation,
     config: &GlobalConfig,
     project: &ProjectId,
     host: &dyn HostEnvironment,
@@ -62,7 +63,7 @@ pub fn run(
     let canonical = project.canonical();
     let name = SandboxName::derive(&canonical);
 
-    let mut locked = select::locked(config, project)?;
+    let mut locked = select::locked(location, project)?;
     generation::require_no_rebuild(&locked.metadata)?;
 
     let layout = SandboxLayout::new(&canonical);

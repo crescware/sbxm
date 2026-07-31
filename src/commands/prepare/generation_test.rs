@@ -31,6 +31,7 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
 
     let mark = world.mark();
     let output = run(
+        &bench.location,
         &bench.config,
         &project_of(&request),
         &world,
@@ -85,6 +86,7 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
     let edited = sha256_hex(EDITED_DOCKERFILE);
 
     let output = run(
+        &bench.location,
         &bench.config,
         &project_of(&request),
         &world,

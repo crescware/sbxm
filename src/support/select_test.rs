@@ -12,7 +12,7 @@ fn a_named_project_is_used_without_asking() {
 
     let mut prompt = ScriptedPrompt::choosing(1);
     let chosen = one(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("Example-Org/Example-Repo")),
         msg!("select-open-heading"),
         &mut prompt,
@@ -40,7 +40,7 @@ fn a_named_project_is_read_without_discovering_the_others() {
     std::fs::write(broken.join("project.yaml"), "version: 2\n").unwrap();
 
     let chosen = one(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(0),
@@ -57,7 +57,7 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() {
 
     let mut prompt = ScriptedPrompt::choosing(1);
     let chosen = one(
-        &fixture.config,
+        &fixture.location,
         None,
         msg!("select-open-heading"),
         &mut prompt,
@@ -80,7 +80,7 @@ fn cancelling_the_prompt_changes_nothing() {
     fixture.register("example-org/example-repo");
 
     let error = one(
-        &fixture.config,
+        &fixture.location,
         None,
         msg!("select-open-heading"),
         &mut ScriptedPrompt::canceling(),
@@ -95,7 +95,7 @@ fn no_managed_project_is_an_error_rather_than_an_empty_prompt() {
 
     let mut prompt = ScriptedPrompt::choosing(0);
     let error = one(
-        &fixture.config,
+        &fixture.location,
         None,
         msg!("select-open-heading"),
         &mut prompt,
@@ -105,7 +105,7 @@ fn no_managed_project_is_an_error_rather_than_an_empty_prompt() {
     assert!(prompt.asked.borrow().is_empty(), "no empty prompt is shown");
 
     let error = many(
-        &fixture.config,
+        &fixture.location,
         &[],
         msg!("select-stop-heading"),
         &mut prompt,
@@ -120,7 +120,7 @@ fn a_selection_that_matches_no_candidate_is_not_a_cancel() {
     fixture.register("example-org/example-repo");
 
     let error = one(
-        &fixture.config,
+        &fixture.location,
         None,
         msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(7),
@@ -130,7 +130,7 @@ fn a_selection_that_matches_no_candidate_is_not_a_cancel() {
 
     // 未選択の確定も、対象が決まらなかったこととして扱う。
     let error = many(
-        &fixture.config,
+        &fixture.location,
         &[],
         msg!("select-stop-heading"),
         &mut ScriptedPrompt::choosing_many(&[]),
@@ -147,7 +147,7 @@ fn several_named_projects_are_deduplicated_and_ordered() {
 
     let mut prompt = ScriptedPrompt::choosing_many(&[0]);
     let selected = many(
-        &fixture.config,
+        &fixture.location,
         &[
             project_id("Zeta/Zulu"),
             project_id("alpha/alfa"),
@@ -174,7 +174,7 @@ fn a_project_that_is_not_managed_is_named_in_the_diagnostic() {
 
     let mut prompt = ScriptedPrompt::choosing(0);
     let error = one(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("other/other-repo")),
         msg!("select-open-heading"),
         &mut prompt,
@@ -189,7 +189,7 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
     let project = fixture.register("Example-Org/Example-Repo");
 
     let candidate = one(
-        &fixture.config,
+        &fixture.location,
         Some(&project_id("example-org/example-repo")),
         msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(0),
@@ -197,22 +197,28 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
     .expect("the project is managed when it is selected");
 
     // 選択とlock後の読み直しのあいだに、並行するdestroyがmetadataを消すことがある。
+    // registry entryは残るため、案件は未登録ではなく登録途中として報告される。
     std::fs::remove_file(project.paths.metadata_file()).expect("remove the metadata");
 
     let error = candidate
         .lock()
-        .expect_err("a project without metadata is no longer managed");
-    assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+        .expect_err("a project without metadata cannot be worked on");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectIncomplete));
     let diagnostic = &error.diagnostics()[0];
     assert_eq!(
-        diagnostic.description.args,
-        vec![("project", "Example-Org/Example-Repo".to_string())],
-        "the stored spelling is reported, not the one the argument used"
+        diagnostic
+            .description
+            .args
+            .iter()
+            .find(|(key, _)| *key == "project")
+            .map(|(_, value)| value.as_str()),
+        Some("Example-Org/Example-Repo"),
+        "the registered spelling is reported, not the one the argument used"
     );
     let remediation = diagnostic
         .remediation
         .as_ref()
-        .expect("the user is told how to register the project again");
+        .expect("the user is told how to continue the registration");
     // 実行を求めるcommandは説明文へ埋め込まず、独立した一行として持つ。
     assert_eq!(
         remediation
@@ -220,7 +226,7 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
             .iter()
             .map(|command| command.as_str())
             .collect::<Vec<_>>(),
-        vec!["sbxm add <github-clone-url>"]
+        vec!["sbxm add git@github.com:Example-Org/Example-Repo.git"]
     );
 }
 

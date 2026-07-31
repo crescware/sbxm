@@ -17,6 +17,7 @@ pub fn exec(project: &ProjectId, context: &Context, ui: &mut Ui) -> ExitCode {
     };
     ui.set_locale(locale);
     let output = match super::run::run(
+        context.location,
         &config,
         project,
         &RealHost,

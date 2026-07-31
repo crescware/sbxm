@@ -75,6 +75,7 @@ impl Bench {
         let project = ProjectId::parse(&request.repository.display_id())
             .expect("the registered repository names a project");
         run(
+            &self.location,
             &self.config,
             &project,
             world,

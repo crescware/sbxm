@@ -11,7 +11,7 @@ use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::{PlacedFile, Placement};
-use crate::support::inventory::ProjectState;
+use crate::support::inventory::{Observed, ProjectState};
 use crate::support::status::{Row, StatusValue};
 use crate::testing::render::plain;
 use crate::ui::document::{Block, SectionBody};
@@ -198,10 +198,12 @@ fn listing() -> super::ls::run::Listing {
     super::ls::run::Listing {
         projects: vec![super::ls::run::ProjectRow {
             project: "owner/repo".to_string(),
+            root: "/home/user/Projects/repo.project".to_string(),
             sandbox: "owner-repo".to_string(),
-            state: ProjectState::Running,
+            observed: Observed::Registered(ProjectState::Running),
         }],
         unmanaged: Vec::new(),
+        settled: true,
     }
 }
 
@@ -230,6 +232,7 @@ fn ls_says_so_when_there_is_nothing_to_list() {
     let empty = super::ls::run::Listing {
         projects: Vec::new(),
         unmanaged: Vec::new(),
+        settled: true,
     };
     assert_eq!(
         shape(&super::ls::print::document(&empty, Locale::En)),

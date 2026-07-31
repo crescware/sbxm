@@ -2,6 +2,9 @@
 //!
 //! 一覧そのものが結論であるためsummaryを足さない。管理案件と管理外Sandboxは別のsection
 //! とし、管理外が1件もなければそのsectionごと省く。
+//!
+//! registryが指すpathが消えていても行を落とさない。観測した状態をそのまま示し、
+//! 復旧に必要なentryを一覧から失わせない。
 
 use crate::i18n::Locale;
 use crate::msg;
@@ -16,14 +19,16 @@ pub fn document(listing: &Listing, locale: Locale) -> Document {
 
     let mut projects = Table::new(vec![
         msg!("column-project"),
+        msg!("column-project-root"),
         msg!("column-sandbox"),
         msg!("column-state"),
     ]);
     for row in &listing.projects {
         projects.push(vec![
             Inline::important(row.project.clone()).into(),
+            Inline::path(row.root.clone()).into(),
             Inline::text(row.sandbox.clone()).into(),
-            legend.project_state(row.state).into(),
+            legend.observed(&row.observed).into(),
         ]);
     }
 

@@ -1,42 +1,55 @@
 //! 対象案件の選択。
 //!
-//! 引数で完全指定された場合はpromptを出さず、導出したpathのmetadataだけを読む。
-//! 引数を省略できるcommandでは、metadata探索で作った候補を、既定選択のないpromptとして
+//! 案件の場所はglobal registryだけが持つ。引数で完全指定された場合もpromptで選んだ
+//! 場合も、registryが指すproject rootのmetadataを読む。cwdや配置規則から対象を
+//! 推測しない。
+//!
+//! 引数を省略できるcommandでは、registryが持つ案件を、既定選択のないpromptとして
 //! stderrへ表示する。EscとCtrl-Cは何も変更せず終了する。
 //!
 //! 選択はSandboxの状態を読む前に終える。対象が決まる前にhostの状態へ触れない。
 
-use crate::config::GlobalConfig;
+use crate::config::ConfigLocation;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
-use crate::paths::{ExclusiveLock, ProjectPaths};
+use crate::paths::{self, ExclusiveLock, ProjectPaths};
 use crate::project::ProjectId;
-use crate::repository::CLONE_URL_PLACEHOLDER;
+use crate::registry;
+use crate::repository::{CLONE_URL_PLACEHOLDER, RepositoryIdentity};
 use crate::ui::{PromptUi, Remediation};
 
 /// 選択された1案件。runtime状態は持たない。
+///
+/// 表示に必要な情報はregistry entryだけで揃う。metadataはlockを取ってから読む。
 #[derive(Debug, Clone)]
 pub struct Candidate {
     pub paths: ProjectPaths,
-    pub metadata: ProjectMetadata,
+    pub repository: RepositoryIdentity,
 }
 
 impl Candidate {
     /// 表示に使う`<owner>/<repository>`。
     pub fn display_id(&self) -> String {
-        self.metadata.display_id()
+        self.repository.display_id()
     }
 
     /// lock取得後に読み直したmetadata。
     ///
-    /// 選択時のmetadataはlockの外で読んだものであり、そのあいだに`rebuild`が
-    /// 始まっていることがある。preconditionの判定にはこちらを使う。
+    /// 選択時に読んだmetadataは古くなり得るため、preconditionの判定にはこちらを使う。
+    /// registry entryと一致しないmetadataは、どちらかを正しいものとして採用しない。
     pub fn reload(&self) -> Result<ProjectMetadata> {
-        match metadata::load(&self.paths)? {
-            Some(metadata) => Ok(metadata),
-            None => Err(not_managed(&self.display_id())),
+        let Some(metadata) = metadata::load(&self.paths)? else {
+            return Err(incomplete_registration(self));
+        };
+        if !metadata.repository.same_target(&self.repository) {
+            return Err(inconsistent_registration(
+                &self.paths,
+                &metadata,
+                &self.repository,
+            ));
         }
+        Ok(metadata)
     }
 
     /// project lockを取り、lock後の内容で読み直す。
@@ -92,15 +105,15 @@ impl ProjectPrompt for PromptUi {
 
 /// 引数、またはpromptで1件の案件を決める。
 pub fn one(
-    config: &GlobalConfig,
+    location: &ConfigLocation,
     requested: Option<&ProjectId>,
     heading: Msg,
     prompt: &mut dyn ProjectPrompt,
 ) -> Result<Candidate> {
     if let Some(project) = requested {
-        return load(config, project);
+        return load(location, project);
     }
-    let mut candidates = candidates(config)?;
+    let mut candidates = candidates(location)?;
     let index = prompt.select_one(heading, &labels(&candidates))?;
     if index >= candidates.len() {
         return Err(unresolved(index, candidates.len()));
@@ -112,7 +125,7 @@ pub fn one(
 ///
 /// 引数は重複を除き、canonical ID昇順で返す。
 pub fn many(
-    config: &GlobalConfig,
+    location: &ConfigLocation,
     requested: &[ProjectId],
     heading: Msg,
     prompt: &mut dyn ProjectPrompt,
@@ -120,25 +133,25 @@ pub fn many(
     if !requested.is_empty() {
         let mut selected: Vec<Candidate> = Vec::new();
         for project in requested {
-            let found = load(config, project)?;
+            let found = load(location, project)?;
             if !selected
                 .iter()
-                .any(|already| already.metadata.canonical_id() == found.metadata.canonical_id())
+                .any(|already| already.repository.canonical_id() == found.repository.canonical_id())
             {
                 selected.push(found);
             }
         }
         selected.sort_by(|left, right| {
-            left.metadata
+            left.repository
                 .canonical_id()
                 .as_str()
                 .as_bytes()
-                .cmp(right.metadata.canonical_id().as_str().as_bytes())
+                .cmp(right.repository.canonical_id().as_str().as_bytes())
         });
         return Ok(selected);
     }
 
-    let candidates = candidates(config)?;
+    let candidates = candidates(location)?;
     let indexes = prompt.select_many(heading, &labels(&candidates))?;
     // 未選択の確定は受け付けない。操作せず終える場合はEscまたはCtrl-Cを使う。
     if indexes.is_empty() {
@@ -157,10 +170,14 @@ pub fn many(
 /// 完全指定された案件のmetadataを、導出したpathから読む。
 ///
 /// 探索を行わないため、対象と無関係な案件の状態に左右されない。
-fn load(config: &GlobalConfig, project: &ProjectId) -> Result<Candidate> {
-    let paths = ProjectPaths::derive(&config.base_path, &project.canonical());
-    match metadata::load(&paths)? {
-        Some(metadata) => Ok(Candidate { paths, metadata }),
+fn load(location: &ConfigLocation, project: &ProjectId) -> Result<Candidate> {
+    let registry = registry::load(location)?;
+    let canonical = project.canonical();
+    match registry.find(&canonical) {
+        Some(entry) => Ok(Candidate {
+            paths: ProjectPaths::at(entry.project_root(), &canonical),
+            repository: entry.repository().clone(),
+        }),
         None => Err(not_managed(project)),
     }
 }
@@ -169,8 +186,8 @@ fn load(config: &GlobalConfig, project: &ProjectId) -> Result<Candidate> {
 ///
 /// promptを持たないcommandの入口。`load`が先に存在を確かめるため、管理対象でない
 /// 案件にはlock fileを作らない。
-pub fn locked(config: &GlobalConfig, project: &ProjectId) -> Result<Locked> {
-    load(config, project)?.lock()
+pub fn locked(location: &ConfigLocation, project: &ProjectId) -> Result<Locked> {
+    load(location, project)?.lock()
 }
 
 /// 管理対象でない案件を、登録commandとともに拒否する。
@@ -191,17 +208,18 @@ pub fn not_managed(project: &dyn std::fmt::Display) -> Error {
 }
 
 /// promptへ並べる候補。canonical ID昇順で、0件は選択を開始できないerrorとする。
-fn candidates(config: &GlobalConfig) -> Result<Vec<Candidate>> {
-    let discovered = metadata::discover(&config.base_path)?;
-    if discovered.is_empty() {
+fn candidates(location: &ConfigLocation) -> Result<Vec<Candidate>> {
+    let registry = registry::load(location)?;
+    if registry.entries().is_empty() {
         // 候補0件は、選択を取り消した状態ではなく対象選択を開始できないerrorである。
         return Err(no_managed_projects());
     }
-    Ok(discovered
-        .into_iter()
-        .map(|project| Candidate {
-            paths: project.paths,
-            metadata: project.metadata,
+    Ok(registry
+        .entries()
+        .iter()
+        .map(|entry| Candidate {
+            paths: ProjectPaths::at(entry.project_root(), entry.canonical_id()),
+            repository: entry.repository().clone(),
         })
         .collect())
 }
@@ -225,6 +243,46 @@ fn no_managed_projects() -> Error {
             Remediation::text(msg!("remediation-no-managed-projects"))
                 .try_run(format!("sbxm add {CLONE_URL_PLACEHOLDER}")),
         ),
+    )
+}
+
+/// registryへは登録されているが、project metadataがまだ無い。
+///
+/// 登録意図は残っているため、同じ要求の`add`だけが続きを実行できる。
+pub fn incomplete_registration(candidate: &Candidate) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::ProjectIncomplete,
+            msg!(
+                "error-project-incomplete",
+                project = candidate.display_id(),
+                path = paths::display(candidate.paths.root())
+            ),
+        )
+        .remediation(
+            Remediation::text(msg!("remediation-project-incomplete"))
+                .try_run(format!("sbxm add {}", candidate.repository.clone_url())),
+        ),
+    )
+}
+
+/// registry entryとproject metadataが別の案件を指している。
+pub fn inconsistent_registration(
+    paths: &ProjectPaths,
+    metadata: &ProjectMetadata,
+    expected: &RepositoryIdentity,
+) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::ProjectInconsistent,
+            msg!(
+                "error-project-inconsistent",
+                path = paths::display(&paths.metadata_file()),
+                observed = metadata.repository.clone_url(),
+                expected = expected.clone_url()
+            ),
+        )
+        .remediation(msg!("remediation-project-inconsistent")),
     )
 }
 

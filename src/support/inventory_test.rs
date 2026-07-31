@@ -14,19 +14,22 @@ fn projects_and_sandboxes_are_paired_by_exact_name() {
         fixture.entry(&second, "stopped")
     ));
 
-    let inventory = take(&fixture.config, &host, &fixture.workspace_root).expect("inventory");
+    let inventory = take(&fixture.location, &host, &fixture.workspace_root).expect("inventory");
     assert_eq!(
         inventory
             .projects
             .iter()
-            .map(|project| (project.display_id(), project.state))
+            .map(|project| (project.display_id.clone(), project.observed.clone()))
             .collect::<Vec<_>>(),
         vec![
             (
                 "Example-Org/Example-Repo".to_string(),
-                ProjectState::Running
+                Observed::Registered(ProjectState::Running)
             ),
-            ("other/other-repo".to_string(), ProjectState::Stopped),
+            (
+                "other/other-repo".to_string(),
+                Observed::Registered(ProjectState::Stopped)
+            ),
         ],
         "projects are listed in canonical order"
     );
@@ -39,9 +42,12 @@ fn a_project_without_a_sandbox_is_not_created_rather_than_missing() {
     fixture.register("example-org/example-repo");
     let host = FakeSbx::listing("[]");
 
-    let inventory = take(&fixture.config, &host, &fixture.workspace_root).expect("inventory");
-    assert_eq!(inventory.projects[0].state, ProjectState::NotCreated);
-    assert_eq!(inventory.projects[0].state.as_str(), "not-created");
+    let inventory = take(&fixture.location, &host, &fixture.workspace_root).expect("inventory");
+    assert_eq!(
+        inventory.projects[0].observed,
+        Observed::Registered(ProjectState::NotCreated)
+    );
+    assert_eq!(inventory.projects[0].observed.as_str(), "not-created");
 }
 
 #[test]
@@ -53,7 +59,7 @@ fn a_sandbox_that_belongs_to_no_project_is_listed_separately() {
         fixture.entry(&project, "running")
     ));
 
-    let inventory = take(&fixture.config, &host, &fixture.workspace_root).expect("inventory");
+    let inventory = take(&fixture.location, &host, &fixture.workspace_root).expect("inventory");
     assert_eq!(inventory.projects.len(), 1);
     assert_eq!(
         inventory
@@ -79,7 +85,7 @@ fn an_inconsistent_pairing_is_refused_rather_than_reported_as_a_state() {
         )
     ));
 
-    let error = take(&fixture.config, &host, &fixture.workspace_root)
+    let error = take(&fixture.location, &host, &fixture.workspace_root)
         .expect_err("a sandbox that works elsewhere is not this project's");
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
 }
@@ -96,7 +102,7 @@ fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() {
         fixture.entry(&project, "stopped")
     );
     let error = take(
-        &fixture.config,
+        &fixture.location,
         &FakeSbx::listing(&duplicated),
         &fixture.workspace_root,
     )
@@ -109,28 +115,41 @@ fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() {
         project.sandbox
     );
     let error = take(
-        &fixture.config,
+        &fixture.location,
         &FakeSbx::listing(&unknown),
         &fixture.workspace_root,
     )
     .expect_err("an unknown state is not rounded to a known one");
     assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
 
-    // metadataが1件でも壊れていれば一覧を作らない。
-    let broken = fixture
-        .config
-        .base_path
-        .as_path()
-        .join("broken.project/.sbxm");
-    std::fs::create_dir_all(&broken).unwrap();
-    std::fs::write(broken.join("project.yaml"), "version: 2\n").unwrap();
-    let error = take(
-        &fixture.config,
+    // 読めないmetadataは、そのentryだけを`inconsistent`として示す。ほかのentryは
+    // 一覧から消さない。
+    let broken = fixture.config.base_path.as_path().join("broken.project");
+    std::fs::create_dir_all(broken.join(".sbxm")).unwrap();
+    std::fs::write(broken.join(".sbxm").join("project.yaml"), "version: 2\n").unwrap();
+    fixture.record(
+        &broken,
+        crate::testing::project::ssh_repository("org/broken"),
+    );
+
+    let inventory = take(
+        &fixture.location,
         &FakeSbx::listing("[]"),
         &fixture.workspace_root,
     )
-    .expect_err("a broken project stops the listing");
-    assert!(error.contains_id(ErrorId::MetadataUnknownVersion));
+    .expect("a broken project does not take the listing down with it");
+    assert_eq!(
+        inventory
+            .projects
+            .iter()
+            .map(|project| (project.display_id.as_str(), project.observed.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("example-org/example-repo", "not-created"),
+            ("org/broken", "inconsistent"),
+        ]
+    );
+    assert!(!inventory.is_settled());
 }
 
 #[test]

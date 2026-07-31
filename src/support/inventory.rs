@@ -4,16 +4,18 @@
 //! 名前は完全一致で突き合わせ、substringや表示textの検索は使わない。
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{SandboxEntry, SandboxState};
-use crate::config::GlobalConfig;
+use crate::config::ConfigLocation;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
+use crate::paths::ProjectPaths;
 use crate::project::SandboxName;
+use crate::registry::{self, RegistryEntry};
 
 use super::{daemon, sandbox};
 use crate::ui::ProgressSink;
@@ -74,19 +76,57 @@ impl std::fmt::Display for ProjectState {
     }
 }
 
+/// registry entryを起点に観測した、1案件の現在の状態。
+///
+/// 状態名を永続化せず、entry、project root、metadata、Sandbox一覧という事実から
+/// そのつど算出する。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Observed {
+    /// project rootが無い。作成前に中断したか、あとから移動・削除された。
+    Missing,
+    /// project rootはあるが、metadataがまだ無い。
+    Incomplete,
+    /// metadataがregistry entryと一致しない、または読めない。
+    Inconsistent,
+    /// 一致するmetadataがあり、Sandboxの状態まで観測できた。
+    Registered(ProjectState),
+}
+
+impl Observed {
+    /// 翻訳しない安定した表記。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Observed::Missing => "missing",
+            Observed::Incomplete => "incomplete",
+            Observed::Inconsistent => "inconsistent",
+            Observed::Registered(state) => state.as_str(),
+        }
+    }
+
+    /// 凡例に使うFTL message ID。
+    pub fn legend_id(&self) -> &'static str {
+        match self {
+            Observed::Missing => "legend-missing",
+            Observed::Incomplete => "legend-incomplete",
+            Observed::Inconsistent => "legend-inconsistent",
+            Observed::Registered(state) => state.legend_id(),
+        }
+    }
+
+    /// 登録が完了し、成果物がentryと一致しているか。
+    pub fn is_settled(&self) -> bool {
+        matches!(self, Observed::Registered(_))
+    }
+}
+
 /// 1件の管理案件と、その現在の状態。
 #[derive(Debug, Clone)]
 pub struct ManagedProject {
-    pub metadata: ProjectMetadata,
+    /// 表示に使う`<owner>/<repository>`。registry entryから決まる。
+    pub display_id: String,
+    pub project_root: PathBuf,
     pub sandbox: String,
-    pub state: ProjectState,
-}
-
-impl ManagedProject {
-    /// 表示に使う`<owner>/<repository>`。
-    pub fn display_id(&self) -> String {
-        self.metadata.display_id()
-    }
+    pub observed: Observed,
 }
 
 /// 管理案件と、管理外のSandbox。
@@ -96,6 +136,15 @@ pub struct Inventory {
     pub projects: Vec<ManagedProject>,
     /// Sandbox name byte昇順。
     pub unmanaged: Vec<SandboxEntry>,
+}
+
+impl Inventory {
+    /// 全案件が登録済みで、entryと成果物が一致しているか。
+    pub fn is_settled(&self) -> bool {
+        self.projects
+            .iter()
+            .all(|project| project.observed.is_settled())
+    }
 }
 
 /// 1案件の現在の状態を、取得済みの一覧から決める。
@@ -242,29 +291,34 @@ pub fn still_present(name: &SandboxName) -> Error {
 
 /// 現在のinventoryを1回の一覧取得から組み立てる。
 ///
-/// metadataが1件でも不正、Sandbox名が重複、対応が矛盾する場合は、部分的に正しそうな
-/// 結果を返さずerrorとする。
+/// registryが読めない、Sandbox名が重複、対応が矛盾する場合は、部分的に正しそうな
+/// 結果を返さずerrorとする。個々の案件の観測結果は、entryを黙って落とさずそのまま返す。
 pub fn take(
-    config: &GlobalConfig,
+    location: &ConfigLocation,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
 ) -> Result<Inventory> {
-    let discovered = metadata::discover(&config.base_path)?;
+    let registry = registry::load(location)?;
     let entries = daemon::list(host)?;
     require_unique_names(&entries)?;
 
-    let mut projects = Vec::with_capacity(discovered.len());
+    let mut projects = Vec::with_capacity(registry.entries().len());
     let mut claimed: BTreeSet<String> = BTreeSet::new();
-    for project in discovered {
-        let name = project.metadata.sandbox_name();
-        let state = state_of(&entries, &project.metadata, workspace_root)?;
-        if state != ProjectState::NotCreated {
+    for entry in registry.entries() {
+        let name = entry.sandbox_name();
+        let paths = ProjectPaths::at(entry.project_root(), entry.canonical_id());
+        let observed = observe(&paths, entry, &entries, workspace_root)?;
+        if matches!(
+            observed,
+            Observed::Registered(ProjectState::Running | ProjectState::Stopped)
+        ) {
             claimed.insert(name.as_str().to_string());
         }
         projects.push(ManagedProject {
-            metadata: project.metadata,
+            display_id: entry.repository().display_id(),
+            project_root: entry.project_root().to_path_buf(),
             sandbox: name.as_str().to_string(),
-            state,
+            observed,
         });
     }
 
@@ -278,6 +332,34 @@ pub fn take(
         projects,
         unmanaged,
     })
+}
+
+/// 1件のregistry entryが指す成果物を観測する。
+///
+/// entryを黙って削除せず、観測できた事実をそのまま返す。metadataが読めないことと
+/// 一致しないことは、どちらもentryを信用できない状態として`inconsistent`とする。
+fn observe(
+    paths: &ProjectPaths,
+    entry: &RegistryEntry,
+    sandboxes: &[SandboxEntry],
+    workspace_root: &Path,
+) -> Result<Observed> {
+    if !paths.root().is_dir() {
+        return Ok(Observed::Missing);
+    }
+    let metadata = match metadata::load(paths) {
+        Ok(Some(metadata)) => metadata,
+        Ok(None) => return Ok(Observed::Incomplete),
+        Err(_) => return Ok(Observed::Inconsistent),
+    };
+    if !metadata.repository.same_target(entry.repository()) {
+        return Ok(Observed::Inconsistent);
+    }
+    Ok(Observed::Registered(state_of(
+        sandboxes,
+        &metadata,
+        workspace_root,
+    )?))
 }
 
 /// 同名のSandboxが複数ある一覧からは、対応を決められない。

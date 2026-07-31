@@ -121,6 +121,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
     let host = continuing(&fixture, &project, &target);
 
     let output = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -173,6 +174,7 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
 
     let host = continuing(&fixture, &project, &target);
     let output = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -231,6 +233,7 @@ fn a_failure_after_the_switch_leaves_the_intent_in_place() {
     );
 
     let error = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,

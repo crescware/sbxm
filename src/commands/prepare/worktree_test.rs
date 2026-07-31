@@ -16,6 +16,7 @@ fn a_head_that_cannot_be_read_is_left_unknown() {
     // 出力は返すので、成功したかどうかはexit statusでしか分からない。
     world.failing_with("rev-parse HEAD", "fatal: not a git repository\n");
     let output = run(
+        &bench.location,
         &bench.config,
         &project_of(&request),
         &world,
@@ -47,6 +48,7 @@ fn a_head_that_reads_back_empty_is_left_unknown() {
     // 成功しながら何も答えない読み取り。値がない以上、観測できたことにはならない。
     world.succeeding_silently("rev-parse HEAD");
     let output = run(
+        &bench.location,
         &bench.config,
         &project_of(&request),
         &world,

@@ -96,6 +96,7 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() {
     ];
 
     let output = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -135,6 +136,7 @@ fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_docker
 
     let host = FakeSbx::listing("[]");
     let error = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -151,6 +153,7 @@ fn a_project_that_is_not_managed_cannot_be_rebuilt() {
     let fixture = fixture();
     let host = FakeSbx::listing("[]");
     let error = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -177,6 +180,7 @@ fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() {
 
     // 起動の先で止まってよい。ここで見たいのは、停止を理由に拒否しないことである。
     let _ = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -200,6 +204,7 @@ fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() {
 
     let absent = FakeSbx::listing("[]");
     let error = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &absent,
@@ -228,6 +233,7 @@ fn unsaved_work_stops_the_rebuild_before_anything_is_built() {
     );
 
     let error = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -326,6 +332,7 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
         );
 
     run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -357,6 +364,7 @@ fn a_new_generation_that_cannot_be_produced_leaves_the_existing_sandbox_alone() 
     let host = clean_host(&fixture, &project);
 
     let error = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -399,6 +407,7 @@ fn a_fixed_generation_with_neither_artifacts_nor_its_dockerfile_says_how_to_reco
 
     let host = clean_host(&fixture, &project);
     let error = run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
@@ -524,6 +533,7 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
     ];
 
     run(
+        &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo"),
         &host,
