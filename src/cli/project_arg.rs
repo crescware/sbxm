@@ -7,6 +7,7 @@ use clap::ArgMatches;
 use crate::error::{Error, ErrorId, Result, fail};
 use crate::msg;
 use crate::project::ProjectId;
+use crate::repository::RepositoryIdentity;
 
 use super::Interactivity;
 
@@ -15,6 +16,23 @@ use super::Interactivity;
 /// clapはrequiredなvalueを`<>`、optionalなvalueを`[]`で囲む。どちらの表示でも読めるよう、
 /// value name自体には囲み記号を含めない。
 pub const PROJECT_VALUE_NAME: &str = "owner/repository";
+
+/// 登録対象を指す位置引数のvalue name。
+pub const CLONE_URL_VALUE_NAME: &str = "github-clone-url";
+
+/// GitHubが表示するclone URLを解釈する。
+pub fn required_clone_url(matches: &ArgMatches) -> Result<RepositoryIdentity> {
+    let value = matches.get_one::<String>("repository").ok_or_else(|| {
+        Error::new(
+            ErrorId::MissingRequiredArgument,
+            msg!(
+                "error-missing-required-argument",
+                argument = "<github-clone-url>"
+            ),
+        )
+    })?;
+    RepositoryIdentity::parse_clone_url(value)
+}
 
 pub fn required_project(matches: &ArgMatches) -> Result<ProjectId> {
     let value = matches.get_one::<String>("project").ok_or_else(|| {

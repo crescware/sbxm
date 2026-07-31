@@ -67,7 +67,7 @@ pub fn prepare(
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
     sandbox::require_credentials_isolated(host, name.as_str())?;
 
-    let layout = SandboxLayout::new(&metadata.canonical_id);
+    let layout = SandboxLayout::new(metadata.canonical_id());
     let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
 
     Ok(Prepared {

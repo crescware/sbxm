@@ -8,7 +8,7 @@ use crate::error::{Error, ErrorId, Result};
 use crate::git;
 use crate::msg;
 use crate::paths::{self};
-use crate::project::{CanonicalProjectId, ProjectId};
+use crate::repository::RepositoryIdentity;
 
 use super::document::RawMetadata;
 use super::{
@@ -57,27 +57,31 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
 
     DOCUMENT.require(raw.version, &paths::display(path), || missing("version"))?;
 
-    let owner = raw.owner.ok_or_else(|| missing("owner"))?;
-    let repository = raw.repository.ok_or_else(|| missing("repository"))?;
-    let canonical_value = raw.canonical_id.ok_or_else(|| missing("canonical_id"))?;
-
-    let display_id = ProjectId::parse(&format!("{owner}/{repository}"))
-        .map_err(|_| invalid("owner", format!("{owner}/{repository} is not a project ID")))?;
-    let canonical_id = CanonicalProjectId::parse(&canonical_value).map_err(|_| {
-        invalid(
-            "canonical_id",
-            format!("{canonical_value} is not a canonical project ID"),
-        )
-    })?;
-    if display_id.canonical() != canonical_id {
-        return Err(invalid(
-            "canonical_id",
-            format!(
-                "{canonical_id} does not match owner and repository, which fold to {}",
-                display_id.canonical()
-            ),
-        ));
-    }
+    let declared = raw.repository.ok_or_else(|| missing("repository"))?;
+    let provider = declared
+        .provider
+        .ok_or_else(|| missing("repository.provider"))?;
+    let owner = declared.owner.ok_or_else(|| missing("repository.owner"))?;
+    let name = declared.name.ok_or_else(|| missing("repository.name"))?;
+    let canonical_value = declared
+        .canonical_id
+        .ok_or_else(|| missing("repository.canonical_id"))?;
+    let transport = declared
+        .clone_transport
+        .ok_or_else(|| missing("repository.clone_transport"))?;
+    let clone_url = declared
+        .clone_url
+        .ok_or_else(|| missing("repository.clone_url"))?;
+    // clone URLを正本として読み直し、ほかのfieldがその解釈と一致することを確かめる。
+    let repository = RepositoryIdentity::from_parts(
+        &provider,
+        &owner,
+        &name,
+        &canonical_value,
+        &transport,
+        &clone_url,
+    )
+    .map_err(|detail| invalid("repository", detail))?;
 
     let provisioning = raw.provisioning.ok_or_else(|| missing("provisioning"))?;
     let mode_value = provisioning
@@ -159,9 +163,7 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
     };
 
     Ok(ProjectMetadata {
-        owner,
         repository,
-        canonical_id,
         provisioning: Provisioning {
             mode,
             start_ref,

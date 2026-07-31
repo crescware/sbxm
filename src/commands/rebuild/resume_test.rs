@@ -41,7 +41,7 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> FakeSbx 
                 &template_listing(&image),
             );
     // 再作成後のSandbox内で、共有repositoryとworktreeが期待どおりに揃う。
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
     verified(host, project.sandbox.as_str())

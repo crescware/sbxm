@@ -254,7 +254,6 @@ fn a_prompt_needs_both_stdin_and_stderr_to_be_a_terminal() {
 #[test]
 fn an_invalid_project_identifier_is_refused_by_every_command_that_takes_one() {
     for arguments in [
-        vec!["add", "not-a-project"],
         vec!["apply", "--files", "owner/repo/extra"],
         vec!["rebuild", "/repo"],
         vec!["open", "owner/"],

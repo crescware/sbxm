@@ -74,7 +74,7 @@ fn a_clean_running_project_is_planned_then_removed() {
     );
     assert_eq!(
         prepared.plan.re_register,
-        "sbxm add Example-Org/Example-Repo --worktrees 1"
+        "sbxm add git@github.com:Example-Org/Example-Repo.git --worktrees 1"
     );
 
     let outcome = execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
@@ -165,7 +165,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() {
 fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
     let host = clean_host(&fixture, &project).answering(
@@ -363,7 +363,7 @@ fn the_re_registration_command_repeats_the_target_configuration() {
 
     assert_eq!(
         re_register(&project.paths, &metadata).expect("the target configuration is complete"),
-        "sbxm add example-org/example-repo --worktrees 3 --detach develop"
+        "sbxm add git@github.com:example-org/example-repo.git --worktrees 3 --detach develop"
     );
 
     // 起点branchのないdetachedは再現できない。誤ったcommandを見せない。

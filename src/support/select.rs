@@ -12,6 +12,7 @@ use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
 use crate::paths::{ExclusiveLock, ProjectPaths};
 use crate::project::ProjectId;
+use crate::repository::CLONE_URL_PLACEHOLDER;
 use crate::ui::{PromptUi, Remediation};
 
 /// 選択された1案件。runtime状態は持たない。
@@ -122,17 +123,17 @@ pub fn many(
             let found = load(config, project)?;
             if !selected
                 .iter()
-                .any(|already| already.metadata.canonical_id == found.metadata.canonical_id)
+                .any(|already| already.metadata.canonical_id() == found.metadata.canonical_id())
             {
                 selected.push(found);
             }
         }
         selected.sort_by(|left, right| {
             left.metadata
-                .canonical_id
+                .canonical_id()
                 .as_str()
                 .as_bytes()
-                .cmp(right.metadata.canonical_id.as_str().as_bytes())
+                .cmp(right.metadata.canonical_id().as_str().as_bytes())
         });
         return Ok(selected);
     }
@@ -173,6 +174,9 @@ pub fn locked(config: &GlobalConfig, project: &ProjectId) -> Result<Locked> {
 }
 
 /// 管理対象でない案件を、登録commandとともに拒否する。
+///
+/// 登録にはclone URLが要る。未登録の案件からはtransportを決められないため、
+/// URLそのものは推測せず、利用者が差し替える位置を示す。
 pub fn not_managed(project: &dyn std::fmt::Display) -> Error {
     Error::single(
         Diagnostic::new(
@@ -181,7 +185,7 @@ pub fn not_managed(project: &dyn std::fmt::Display) -> Error {
         )
         .remediation(
             Remediation::text(msg!("remediation-project-not-managed"))
-                .try_run(format!("sbxm add {project}")),
+                .try_run(format!("sbxm add {CLONE_URL_PLACEHOLDER}")),
         ),
     )
 }
@@ -219,7 +223,7 @@ fn no_managed_projects() -> Error {
         )
         .remediation(
             Remediation::text(msg!("remediation-no-managed-projects"))
-                .try_run("sbxm add <owner>/<repository>"),
+                .try_run(format!("sbxm add {CLONE_URL_PLACEHOLDER}")),
         ),
     )
 }

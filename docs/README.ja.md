@@ -64,11 +64,18 @@ sbxm status --global
 
 ### 2. プロジェクトを登録する
 
-プロジェクトは`owner/repository`形式で指定します。
+GitHubが表示するclone URLを、そのまま渡します。
 
 ```sh
-sbxm add owner/repository
+sbxm add git@github.com:owner/repository.git
 ```
+
+```sh
+sbxm add https://github.com/owner/repository.git
+```
+
+`sbxm add`が受理するのはこの2形式だけです。ホスト側のcloneは渡したtransportを
+そのまま使うため、登録後にSSHとHTTPSを入れ替えることはできません。
 
 このコマンドはプロジェクトを登録し、ホスト側のcloneとDockerfileを作成したうえで、
 Sandbox名と次に実行する正確なコマンドを表示します。この時点ではまだSandboxを
@@ -78,7 +85,7 @@ Sandbox名と次に実行する正確なコマンドを表示します。この�
 worktreeを複数用意する場合は、起点となるbranchとdetached modeを指定します。
 
 ```sh
-sbxm add owner/repository --detach main --worktrees 3
+sbxm add git@github.com:owner/repository.git --detach main --worktrees 3
 ```
 
 複数のagentやタスクで作業ディレクトリを分離したい場合に、detached worktreeが役立ちます。
@@ -231,7 +238,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | コマンド | 用途 |
 |---|---|
 | `sbxm init` | global configを作成する |
-| `sbxm add owner/repository` | GitHubプロジェクトを登録し、ホスト側の成果物を作成する |
+| `sbxm add <github-clone-url>` | GitHubプロジェクトを登録し、ホスト側の成果物を作成する |
 | `sbxm prepare owner/repository` | プロジェクトのSandboxをbuildして構築する |
 | `sbxm open [owner/repository]` | 必要に応じてSandboxを起動し、SSHで接続する |
 | `sbxm stop [owner/repository ...]` | 1つ以上のSandboxを停止する |

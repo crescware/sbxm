@@ -4,7 +4,8 @@ use crate::i18n::Locale;
 use crate::metadata::RebuildIntent;
 use crate::paths::{AbsoluteBasePath, LOCK_TIMEOUT};
 use crate::support::generation::current_dockerfile_hash;
-use crate::testing::add_request::request;
+use crate::testing::add_request::{from, request};
+use crate::testing::project::{https_repository, ssh_repository};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::Duration;
@@ -48,7 +49,7 @@ fn registering_a_project_creates_the_documented_layout() {
     let metadata = &registration.metadata;
     assert_eq!(metadata.display_id(), "Example-Org/Example-Repo");
     assert_eq!(
-        metadata.canonical_id.to_string(),
+        metadata.canonical_id().to_string(),
         "example-org/example-repo"
     );
     assert_eq!(
@@ -307,9 +308,7 @@ fn options_that_disagree_with_the_stored_target_stop_the_run() {
         fs::read_to_string(
             ProjectPaths::derive(
                 &config.base_path,
-                &ProjectId::parse("example-org/example-repo")
-                    .unwrap()
-                    .canonical()
+                ssh_repository("example-org/example-repo").canonical_id()
             )
             .metadata_file()
         )
@@ -404,5 +403,78 @@ fn an_existing_non_directory_in_the_way_is_refused() {
     assert_eq!(
         fs::read_to_string(dir.path().join("example-org")).unwrap(),
         "not a directory"
+    );
+}
+
+#[test]
+fn the_same_repository_over_another_transport_is_not_the_same_registration() {
+    let (_dir, config) = setup();
+    let first =
+        register(&config, &request("Example-Org/Example-Repo", None, None)).expect("register");
+    let before = fs::read_to_string(first.paths.metadata_file()).unwrap();
+    drop(first);
+
+    let error = register(
+        &config,
+        &from(https_repository("Example-Org/Example-Repo"), None, None),
+    )
+    .expect_err("SSH and HTTPS are not the same configuration");
+    assert_eq!(error.first_id(), Some(ErrorId::TargetConfigurationMismatch));
+
+    // errorは登録済みのURLで再実行するcommandを示す。
+    let diagnostic = &error.diagnostics()[0];
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .expect("the user is told which URL the project was registered with");
+    assert_eq!(
+        remediation
+            .commands
+            .iter()
+            .map(|command| command.as_str())
+            .collect::<Vec<_>>(),
+        vec!["sbxm add git@github.com:Example-Org/Example-Repo.git"]
+    );
+
+    assert_eq!(
+        fs::read_to_string(
+            ProjectPaths::derive(
+                &config.base_path,
+                ssh_repository("Example-Org/Example-Repo").canonical_id()
+            )
+            .metadata_file()
+        )
+        .unwrap(),
+        before,
+        "a refused re-run must not rewrite the stored clone URL"
+    );
+}
+
+#[test]
+fn only_the_display_casing_of_the_clone_url_may_differ_on_a_re_run() {
+    let (_dir, config) = setup();
+    let first =
+        register(&config, &request("Example-Org/Example-Repo", None, None)).expect("register");
+    let before = fs::read_to_string(first.paths.metadata_file()).unwrap();
+    drop(first);
+
+    let again = register(&config, &request("example-org/example-repo", None, None))
+        .expect("the same repository continues the build");
+    assert_eq!(
+        again.metadata.repository.clone_url(),
+        "git@github.com:Example-Org/Example-Repo.git"
+    );
+    drop(again);
+    assert_eq!(
+        fs::read_to_string(
+            ProjectPaths::derive(
+                &config.base_path,
+                ssh_repository("example-org/example-repo").canonical_id()
+            )
+            .metadata_file()
+        )
+        .unwrap(),
+        before,
+        "the stored display spelling is never rewritten"
     );
 }

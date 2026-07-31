@@ -77,6 +77,7 @@ error_ids! {
     // --- Project識別子 ---
     InvalidProjectId => "invalid-project-id",
     ReservedRepositoryName => "reserved-repository-name",
+    InvalidCloneUrl => "invalid-clone-url",
 
     // --- Global config ---
     ConfigMissing => "config-missing",

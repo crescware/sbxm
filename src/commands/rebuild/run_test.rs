@@ -36,7 +36,7 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() {
         )
         .answering("template ls --json", 0, &template_listing(&image));
 
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
     let name = project.sandbox.as_str();
@@ -217,7 +217,7 @@ fn unsaved_work_stops_the_rebuild_before_anything_is_built() {
     let fixture = fixture();
     let project = fixture.register("example-org/example-repo");
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
 
@@ -282,7 +282,7 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() {
     // 手作業で消えている状況になる。
     *host.listing.borrow_mut() = vec![created, "[]".to_string(), "[]".to_string(), running];
 
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
     let name = project.sandbox.as_str();
@@ -470,7 +470,7 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() {
                 &template_listing(&image),
             );
 
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
     let name = project.sandbox.as_str();

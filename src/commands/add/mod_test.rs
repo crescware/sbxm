@@ -5,8 +5,11 @@ use crate::testing::cli::{command, parse_argv, tty};
 #[test]
 fn worktree_counts_outside_the_allowed_range_are_refused() {
     for value in ["0", "33", "999", "abc", ""] {
-        let error = parse_argv(&["add", "owner/repo", "--worktrees", value], tty())
-            .expect_err("{value} must be refused");
+        let error = parse_argv(
+            &["add", "git@github.com:owner/repo.git", "--worktrees", value],
+            tty(),
+        )
+        .expect_err("{value} must be refused");
         assert_eq!(
             error.first_id(),
             Some(ErrorId::WorktreesOutOfRange),
@@ -14,11 +17,17 @@ fn worktree_counts_outside_the_allowed_range_are_refused() {
         );
     }
     // 負値はoptionとして解釈されるため、値の範囲ではなくsyntaxの段階で止まる。
-    let error = parse_argv(&["add", "owner/repo", "--worktrees", "-1"], tty())
-        .expect_err("a negative count never reaches the range check");
+    let error = parse_argv(
+        &["add", "git@github.com:owner/repo.git", "--worktrees", "-1"],
+        tty(),
+    )
+    .expect_err("a negative count never reaches the range check");
     assert_eq!(error.exit_code(), crate::error::ExitCode::Failure);
     assert!(matches!(
-        command(&["add", "owner/repo", "--worktrees", "1"], tty()),
+        command(
+            &["add", "git@github.com:owner/repo.git", "--worktrees", "1"],
+            tty()
+        ),
         Command::Add(Args {
             worktrees: Some(1),
             ..
@@ -28,7 +37,7 @@ fn worktree_counts_outside_the_allowed_range_are_refused() {
         command(
             &[
                 "add",
-                "owner/repo",
+                "git@github.com:owner/repo.git",
                 "--worktrees",
                 "32",
                 "--detach",
@@ -45,15 +54,18 @@ fn worktree_counts_outside_the_allowed_range_are_refused() {
 
 #[test]
 fn more_than_one_worktree_requires_an_explicit_start_branch() {
-    let error = parse_argv(&["add", "owner/repo", "--worktrees", "2"], tty())
-        .expect_err("two worktrees without a branch are refused");
+    let error = parse_argv(
+        &["add", "git@github.com:owner/repo.git", "--worktrees", "2"],
+        tty(),
+    )
+    .expect_err("two worktrees without a branch are refused");
     assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
 
     assert!(matches!(
         command(
             &[
                 "add",
-                "owner/repo",
+                "git@github.com:owner/repo.git",
                 "--worktrees",
                 "2",
                 "--detach",

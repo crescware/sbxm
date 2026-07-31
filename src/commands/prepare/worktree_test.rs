@@ -1,7 +1,7 @@
 //! managed worktreeの作成と、観測できたHEAD。
 use super::super::world::{World, bench};
 use super::*;
-use crate::testing::add_request::request;
+use crate::testing::add_request::{project_of, request};
 use crate::testing::value::COMMIT;
 use crate::ui::SilentProgress;
 
@@ -17,7 +17,7 @@ fn a_head_that_cannot_be_read_is_left_unknown() {
     world.failing_with("rev-parse HEAD", "fatal: not a git repository\n");
     let output = run(
         &bench.config,
-        &request.project,
+        &project_of(&request),
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,
@@ -48,7 +48,7 @@ fn a_head_that_reads_back_empty_is_left_unknown() {
     world.succeeding_silently("rev-parse HEAD");
     let output = run(
         &bench.config,
-        &request.project,
+        &project_of(&request),
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,

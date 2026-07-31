@@ -169,9 +169,7 @@ pub fn write_metadata(config: &GlobalConfig, rebuild: Option<RebuildIntent>) -> 
     let paths = ProjectPaths::derive(&config.base_path, &canonical());
     std::fs::create_dir_all(paths.sbxm_dir()).unwrap();
     let metadata = ProjectMetadata {
-        owner: "Example-Org".into(),
-        repository: "Example-Repo".into(),
-        canonical_id: canonical(),
+        repository: crate::testing::project::ssh_repository("Example-Org/Example-Repo"),
         provisioning: Provisioning {
             mode: CreationMode::Attached,
             start_ref: Some("main".into()),

@@ -51,11 +51,6 @@ pub fn origin_ref(branch: &str) -> String {
 /// 対応するhosting service。MVPはGitHubだけを対象とする。
 const GITHUB_HOST: &str = "github.com";
 
-/// host cloneが使うSSH remote。
-pub fn ssh_remote_url(owner: &str, repository: &str) -> String {
-    format!("git@{GITHUB_HOST}:{owner}/{repository}.git")
-}
-
 /// Sandbox内のcloneが使うHTTPS remote。
 pub fn https_remote_url(owner: &str, repository: &str) -> String {
     format!("https://{GITHUB_HOST}/{owner}/{repository}.git")

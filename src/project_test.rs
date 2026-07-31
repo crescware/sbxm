@@ -72,22 +72,6 @@ fn identifiers_that_differ_only_in_case_are_the_same_project() {
     );
 }
 
-#[test]
-fn a_canonical_identifier_refuses_anything_that_is_not_already_folded() {
-    assert_eq!(
-        CanonicalProjectId::parse("owner/repo").unwrap().to_string(),
-        "owner/repo"
-    );
-    for value in ["Owner/repo", "owner/Repo", "owner", "owner/repo/extra"] {
-        let error = CanonicalProjectId::parse(value).expect_err("{value} is not a canonical ID");
-        assert_eq!(
-            error.first_id(),
-            Some(ErrorId::InvalidProjectId),
-            "value {value} produced the wrong error"
-        );
-    }
-}
-
 fn sandbox_name(value: &str) -> String {
     SandboxName::derive(&ProjectId::parse(value).unwrap().canonical())
         .as_str()

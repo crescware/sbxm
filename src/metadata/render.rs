@@ -1,16 +1,22 @@
 //! `project.yaml`の書き出し。
 
-use super::document::{RawMetadata, RawProvisioning, RawRebuild};
+use super::document::{RawMetadata, RawProvisioning, RawRebuild, RawRepository};
 use super::{METADATA_VERSION, ProjectMetadata};
 
 /// metadataをYAMLへ描画する。
 pub fn render(metadata: &ProjectMetadata) -> String {
     let provisioning = &metadata.provisioning;
+    let repository = &metadata.repository;
     let raw = RawMetadata {
         version: Some(i64::from(METADATA_VERSION)),
-        owner: Some(metadata.owner.clone()),
-        repository: Some(metadata.repository.clone()),
-        canonical_id: Some(metadata.canonical_id.as_str().to_string()),
+        repository: Some(RawRepository {
+            provider: Some(repository.provider().as_str().to_string()),
+            owner: Some(repository.owner().to_string()),
+            name: Some(repository.name().to_string()),
+            canonical_id: Some(repository.canonical_id().as_str().to_string()),
+            clone_transport: Some(repository.transport().as_str().to_string()),
+            clone_url: Some(repository.clone_url().to_string()),
+        }),
         provisioning: Some(RawProvisioning {
             mode: Some(provisioning.mode.as_str().to_string()),
             start_ref: Some(provisioning.start_ref.clone()),

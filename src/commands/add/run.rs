@@ -19,7 +19,8 @@ use crate::msg;
 use crate::paths::{
     self, ExclusiveLock, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths,
 };
-use crate::project::{ProjectId, SandboxName};
+use crate::project::SandboxName;
+use crate::repository::RepositoryIdentity;
 
 use crate::support::generation;
 
@@ -35,7 +36,8 @@ const BUNDLED_DOCKERFILE: &str = include_str!("../../../assets/Dockerfile");
 /// `add`の入力。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddRequest {
-    pub project: ProjectId,
+    /// clone URLから解釈した登録対象。
+    pub repository: RepositoryIdentity,
     pub worktrees: Option<u32>,
     pub detach: Option<String>,
 }
@@ -116,26 +118,26 @@ pub struct Registration {
 /// 5. 目標構成を含むmetadataをatomic writeする
 pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registration> {
     let target = TargetConfiguration::from_request(request)?;
-    let canonical = request.project.canonical();
+    let canonical = request.repository.canonical_id().clone();
     let sandbox = SandboxName::derive(&canonical);
 
     // 破損した案件が1件でもあれば、一覧を部分的に信用せずここで停止する。
     let known = metadata::discover(&config.base_path)?;
     if let Some(other) = known.iter().find(|project| {
-        project.metadata.canonical_id != canonical && project.metadata.sandbox_name() == sandbox
+        *project.metadata.canonical_id() != canonical && project.metadata.sandbox_name() == sandbox
     }) {
         return fail(
             ErrorId::SandboxNameCollision,
             msg!(
                 "error-sandbox-name-collision",
                 sandbox = sandbox,
-                projects = format!("{}, {}", canonical, other.metadata.canonical_id)
+                projects = format!("{}, {}", canonical, other.metadata.canonical_id())
             ),
         );
     }
     if let Some(project) = known
         .iter()
-        .find(|project| project.metadata.canonical_id == canonical)
+        .find(|project| *project.metadata.canonical_id() == canonical)
     {
         // mutationの前に、保存済み目標構成との一致を判定する。
         check_continuable(&project.metadata, request)?;
@@ -161,9 +163,7 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
         Some(stored) => stored,
         None => {
             let metadata = ProjectMetadata {
-                owner: request.project.owner().to_string(),
-                repository: request.project.repository().to_string(),
-                canonical_id: canonical,
+                repository: request.repository.clone(),
                 provisioning: Provisioning {
                     mode: target.mode,
                     start_ref: target.start_ref,
@@ -214,12 +214,17 @@ pub fn run(
     host: &dyn HostEnvironment,
     progress: &mut dyn ProgressSink,
 ) -> Result<AddOutput> {
-    let paths = ProjectPaths::derive(&config.base_path, &request.project.canonical());
+    let paths = ProjectPaths::derive(&config.base_path, request.repository.canonical_id());
     let already_registered = metadata::load(&paths)?.is_some();
 
     let registration = register(config, request)?;
-    // host cloneは利用者のSSH鍵でhost上から取る。Sandboxのsecretは要らない。
-    let clone = host_clone::ensure(host, &registration.paths, &request.project, progress)?;
+    // host cloneは、validation済みの入力と同じtransportとclone URLで取る。
+    let clone = host_clone::ensure(
+        host,
+        &registration.paths,
+        &registration.metadata.repository,
+        progress,
+    )?;
 
     let provisioning = &registration.metadata.provisioning;
     Ok(AddOutput {
@@ -237,8 +242,10 @@ pub fn run(
 /// 保存済みmetadataを持つ案件で、この`add`が構築を続けてよいかを判定する。
 ///
 /// 省略されたoptionは保存値を使う。指定されたoptionは保存値との完全一致を要求する。
+/// 登録済みのrepository identityは、transportまで含めた完全一致を要求する。
 fn check_continuable(stored: &ProjectMetadata, request: &AddRequest) -> Result<()> {
     let display_id = stored.display_id();
+    let registered_url = stored.repository.clone_url().to_string();
 
     // 世代の切替中であり、初回構築の継続とは別の工程が必要になる。
     generation::require_no_rebuild(stored)?;
@@ -257,10 +264,19 @@ fn check_continuable(stored: &ProjectMetadata, request: &AddRequest) -> Result<(
             )
             .remediation(
                 Remediation::text(msg!("remediation-target-configuration-mismatch"))
-                    .try_run(format!("sbxm add {display_id}")),
+                    // 保存済みの綴りをそのまま示す。再実行で登録内容を書き換えさせない。
+                    .try_run(format!("sbxm add {registered_url}")),
             ),
         ))
     };
+
+    // 同じcanonical project IDでも、SSHとHTTPSを同一構成とみなさない。
+    if !stored.repository.same_target(&request.repository) {
+        return mismatch(
+            request.repository.clone_url().to_string(),
+            stored.repository.clone_url().to_string(),
+        );
+    }
 
     if let Some(branch) = &request.detach {
         let stored_branch = provisioning.start_ref.clone().unwrap_or_default();

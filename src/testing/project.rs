@@ -5,12 +5,25 @@ use crate::i18n::Locale;
 use crate::metadata::{self, CreationMode, ProjectMetadata, Provisioning};
 use crate::paths::{AbsoluteBasePath, ProjectPaths};
 use crate::project::{ProjectId, SandboxName};
+use crate::repository::RepositoryIdentity;
 use crate::testing::value::DIGEST;
 use std::path::PathBuf;
 
 /// testが書く案件IDは常に妥当とする。
 pub fn project_id(value: &str) -> ProjectId {
     ProjectId::parse(value).expect("valid project id")
+}
+
+/// `<owner>/<repository>`からSSH clone URLのidentityを作る。
+pub fn ssh_repository(value: &str) -> RepositoryIdentity {
+    RepositoryIdentity::parse_clone_url(&format!("git@github.com:{value}.git"))
+        .expect("valid clone URL")
+}
+
+/// `<owner>/<repository>`からHTTPS clone URLのidentityを作る。
+pub fn https_repository(value: &str) -> RepositoryIdentity {
+    RepositoryIdentity::parse_clone_url(&format!("https://github.com/{value}.git"))
+        .expect("valid clone URL")
 }
 
 /// 登録済みの1案件。
@@ -59,14 +72,12 @@ pub fn fixture() -> Fixture {
 impl Fixture {
     /// 案件を登録済みの状態にする。
     pub fn register(&self, project: &str) -> Registered {
-        let id = project_id(project);
-        let canonical = id.canonical();
+        let repository = ssh_repository(project);
+        let canonical = repository.canonical_id().clone();
         let paths = ProjectPaths::derive(&self.config.base_path, &canonical);
         std::fs::create_dir_all(paths.sbxm_dir()).expect("create .sbxm");
         let metadata = ProjectMetadata {
-            owner: id.owner().to_string(),
-            repository: id.repository().to_string(),
-            canonical_id: canonical.clone(),
+            repository,
             provisioning: Provisioning {
                 mode: CreationMode::Attached,
                 start_ref: Some("main".into()),

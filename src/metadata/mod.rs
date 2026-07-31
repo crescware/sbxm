@@ -20,6 +20,7 @@ use crate::error::{DocumentVersion, ErrorId, Result, fail};
 use crate::msg;
 use crate::paths::{self, PRIVATE_FILE_MODE, ProjectPaths, atomic_create, atomic_replace};
 use crate::project::{CanonicalProjectId, SandboxName};
+use crate::repository::RepositoryIdentity;
 
 /// このbuildが読み書きするmetadataのversion。
 pub const METADATA_VERSION: u32 = 1;
@@ -83,23 +84,27 @@ pub struct RebuildIntent {
 /// 1案件のmetadata。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectMetadata {
-    /// GitHub上の表記のままのowner。
-    pub owner: String,
-    /// GitHub上の表記のままのrepository。
-    pub repository: String,
-    pub canonical_id: CanonicalProjectId,
+    /// 登録対象の不変なrepository identity。
+    ///
+    /// clone URL文字列から実行時にtransportを推測し直さないよう、解釈済みの構造で持つ。
+    pub repository: RepositoryIdentity,
     pub provisioning: Provisioning,
     pub rebuild: Option<RebuildIntent>,
 }
 impl ProjectMetadata {
     /// 表示に使う`<owner>/<repository>`。
     pub fn display_id(&self) -> String {
-        format!("{}/{}", self.owner, self.repository)
+        self.repository.display_id()
+    }
+
+    /// 突き合わせの正本となるcanonical project ID。
+    pub fn canonical_id(&self) -> &CanonicalProjectId {
+        self.repository.canonical_id()
     }
 
     /// canonical project IDから決定的に導出したSandbox名。
     pub fn sandbox_name(&self) -> SandboxName {
-        SandboxName::derive(&self.canonical_id)
+        SandboxName::derive(self.canonical_id())
     }
 }
 /// 探索で見つかった1案件。

@@ -15,7 +15,7 @@ cli-init-git-user-name-help = Git user.name applied inside sandboxes
 cli-init-git-user-email-help = Git user.email applied inside sandboxes
 
 cli-add-about = Register a GitHub repository and clone it onto this host
-cli-add-project-help = Target project as owner/repository
+cli-add-repository-help = GitHub clone URL of the repository to register
 cli-add-worktrees-help = Number of managed worktrees to create (1-32)
 cli-add-detach-help = Remote branch every managed worktree starts from, in detached mode
 
@@ -66,6 +66,7 @@ usage-hint = { $usage }
 
 error-invalid-project-id = { $value } is not a valid owner/repository identifier.
 error-reserved-repository-name = { $value } is reserved and cannot be used as a repository name.
+error-invalid-clone-url = { $value } is not a clone URL sbxm accepts. Accepted forms: { $accepted }
 
 error-config-missing = No global configuration was found at { $path }.
 error-config-unreadable = The global configuration at { $path } could not be read: { $detail }
@@ -197,6 +198,7 @@ remediation-target-configuration-mismatch = Leave those options out to continue 
 remediation-image-collision = Inspect { $image } yourself, then remove or rename it once you are sure it is not needed. sbxm does not overwrite an image it did not build.
 remediation-cleanup-failed = Remove { $path } yourself once you are sure nothing else needs it, then run the command again.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.
+remediation-invalid-clone-url = Open the repository on GitHub, copy the clone URL it shows, and pass it unchanged.
 remediation-fix-config = Edit { $path } and run the command again.
 remediation-install-command = Install { $program } and make sure it is on PATH.
 remediation-start-docker = Start Docker Desktop and wait until the engine reports it is running.

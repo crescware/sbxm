@@ -40,9 +40,7 @@ pub fn healthy_clone() -> InnerCommandSandbox {
 
 pub fn metadata(mode: CreationMode, start_ref: Option<&str>, count: u32) -> ProjectMetadata {
     ProjectMetadata {
-        owner: "Example-Org".to_string(),
-        repository: "Example-Repo".to_string(),
-        canonical_id: canonical(),
+        repository: crate::testing::project::ssh_repository("Example-Org/Example-Repo"),
         provisioning: Provisioning {
             mode,
             start_ref: start_ref.map(|value| value.to_string()),

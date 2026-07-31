@@ -15,7 +15,7 @@ pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
     };
     ui.set_locale(locale);
     let request = AddRequest {
-        project: args.project.clone(),
+        repository: args.repository.clone(),
         worktrees: args.worktrees,
         detach: args.detach.clone(),
     };

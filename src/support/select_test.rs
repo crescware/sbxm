@@ -220,7 +220,7 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
             .iter()
             .map(|command| command.as_str())
             .collect::<Vec<_>>(),
-        vec!["sbxm add Example-Org/Example-Repo"]
+        vec!["sbxm add <github-clone-url>"]
     );
 }
 

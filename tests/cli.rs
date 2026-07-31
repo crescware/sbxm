@@ -259,8 +259,9 @@ fn parser_failures_map_to_exit_code_one() {
         vec!["nope"],
         vec![],
         vec!["add"],
-        vec!["add", "owner/repo", "--worktrees", "0"],
-        vec!["add", "owner/repo", "--worktrees", "2"],
+        vec!["add", "owner/repo"],
+        vec!["add", "git@github.com:owner/repo.git", "--worktrees", "0"],
+        vec!["add", "git@github.com:owner/repo.git", "--worktrees", "2"],
         vec!["status"],
         vec!["status", "--global", "owner/repo"],
         vec!["init", "--base-path", "/tmp/projects"],
@@ -288,18 +289,22 @@ fn diagnostics_name_a_stable_error_id() {
         (vec!["ls", "--nope"], "unknown-argument"),
         (vec!["status"], "status-scope-required"),
         (
-            vec!["add", "owner/repo", "--worktrees", "33"],
+            vec!["add", "git@github.com:owner/repo.git", "--worktrees", "33"],
             "worktrees-out-of-range",
         ),
         (
-            vec!["add", "owner/repo", "--worktrees", "2"],
+            vec!["add", "git@github.com:owner/repo.git", "--worktrees", "2"],
             "worktrees-require-detach",
         ),
         (
             vec!["init", "--base-path", "/tmp/projects"],
             "init-incomplete-options",
         ),
-        (vec!["add", "not-a-project"], "invalid-project-id"),
+        (vec!["add", "not-a-project"], "invalid-clone-url"),
+        (
+            vec!["add", "git@github.com:not a project/repo.git"],
+            "invalid-project-id",
+        ),
         (vec!["apply", "owner/repo"], "apply-scope-required"),
     ] {
         let run = sbxm(home.path(), &arguments);
@@ -344,7 +349,12 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
 
     let run = sbxm(
         home.path(),
-        &["--lang", "en", "add", "Example-Org/Example-Repo"],
+        &[
+            "--lang",
+            "en",
+            "add",
+            "git@github.com:Example-Org/Example-Repo.git",
+        ],
     );
     assert_eq!(run.code, 1, "{}", run.stderr);
     assert!(
@@ -374,6 +384,12 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
         "{written}"
     );
     assert!(written.contains("owner: Example-Org"), "{written}");
+    assert!(written.contains("provider: github"), "{written}");
+    assert!(written.contains("clone_transport: ssh"), "{written}");
+    assert!(
+        written.contains("clone_url: git@github.com:Example-Org/Example-Repo.git"),
+        "{written}"
+    );
     assert!(written.contains("mode: attached"), "{written}");
 }
 
@@ -403,7 +419,8 @@ fn home_with_project(project: &str) -> (tempfile::TempDir, std::path::PathBuf) {
     let base = home.path().join("Projects");
     std::fs::create_dir_all(&base).unwrap();
     write_config(home.path(), &base, "en");
-    let run = sbxm(home.path(), &["--lang", "en", "add", project]);
+    let url = format!("git@github.com:{project}.git");
+    let run = sbxm(home.path(), &["--lang", "en", "add", &url]);
     assert_eq!(run.code, 1, "{}", run.stderr);
     (home, base)
 }
@@ -502,7 +519,11 @@ fn apply_refuses_a_project_that_was_never_added() {
     );
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("project-not-managed"), "{}", run.stderr);
-    assert!(run.stderr.contains("sbxm add owner/repo"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("sbxm add <github-clone-url>"),
+        "{}",
+        run.stderr
+    );
 }
 
 #[test]

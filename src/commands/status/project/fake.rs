@@ -26,7 +26,7 @@ pub fn without_image(host: FakeSbx, project: &Registered) -> FakeSbx {
 
 /// 中まで見られる稼働中Sandbox。`worktrees`は`worktree list --porcelain -z`の答え。
 pub fn looking_inside(fixture: &Fixture, project: &Registered, worktrees: &str) -> FakeSbx {
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let host = FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")))
         .answering(
             &format!(
@@ -63,7 +63,7 @@ pub fn looking_inside(fixture: &Fixture, project: &Registered, worktrees: &str) 
 
 /// bare entryと、管理下・管理外のworktreeを1件ずつ並べたporcelain出力。
 pub fn three_entries(project: &Registered) -> String {
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     format!(
         "worktree {root}\0bare\0\0worktree {root}/example-repo.tree-0\0branch refs/heads/main\0\0worktree {root}/agent-scratch\0detached\0\0",
         root = layout.bare_root()

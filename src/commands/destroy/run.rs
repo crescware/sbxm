@@ -102,7 +102,7 @@ pub fn prepare(
                 ),
             ));
         }
-        let layout = SandboxLayout::new(&metadata.canonical_id);
+        let layout = SandboxLayout::new(metadata.canonical_id());
         protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Allowed)?.worktrees
     };
 
@@ -235,9 +235,10 @@ fn keeps(paths: &ProjectPaths) -> Vec<Target> {
 /// 別の結果になるcommandとして見せない。
 fn re_register(paths: &ProjectPaths, metadata: &ProjectMetadata) -> Result<String> {
     let provisioning = &metadata.provisioning;
+    // 登録時と同じclone URLを示す。transportを暗黙に変えるcommandを案内しない。
     let command = format!(
         "sbxm add {} --worktrees {}",
-        metadata.display_id(),
+        metadata.repository.clone_url(),
         provisioning.requested_worktrees
     );
     match provisioning.mode {

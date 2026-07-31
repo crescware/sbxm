@@ -7,7 +7,7 @@ use crate::testing::value::COMMIT;
 
 /// 検査を通るworktreeを持つhost。
 pub fn clean_host(fixture: &Fixture, project: &Registered) -> FakeSbx {
-    let layout = SandboxLayout::new(&project.metadata.canonical_id);
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
     FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")))

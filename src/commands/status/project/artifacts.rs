@@ -85,8 +85,8 @@ pub(super) fn check_image(
 
     let value = match image::inspect(host, &image) {
         Ok(Some(identity)) => {
-            let declares_project =
-                identity.labels.get(LABEL_CANONICAL_ID) == Some(&metadata.canonical_id.to_string());
+            let declares_project = identity.labels.get(LABEL_CANONICAL_ID)
+                == Some(&metadata.canonical_id().to_string());
             let declares_generation =
                 identity.labels.get(LABEL_DOCKERFILE_SHA256) == Some(generation);
             if declares_project && declares_generation {

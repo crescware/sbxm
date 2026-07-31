@@ -40,14 +40,14 @@ pub fn discover(base: &AbsoluteBasePath) -> Result<Vec<DiscoveredProject>> {
             };
             match parse(&text, &metadata_path) {
                 Ok(metadata) => {
-                    let paths = ProjectPaths::derive(base, &metadata.canonical_id);
+                    let paths = ProjectPaths::derive(base, metadata.canonical_id());
                     if paths.root() != project_root {
                         diagnostics.push(Diagnostic::new(
                             ErrorId::MetadataPathMismatch,
                             msg!(
                                 "error-metadata-path-mismatch",
                                 path = paths::display(&metadata_path),
-                                canonical_id = metadata.canonical_id,
+                                canonical_id = metadata.canonical_id(),
                                 expected = paths::display(paths.root())
                             ),
                         ));
@@ -62,10 +62,10 @@ pub fn discover(base: &AbsoluteBasePath) -> Result<Vec<DiscoveredProject>> {
 
     found.sort_by(|left, right| {
         left.metadata
-            .canonical_id
+            .canonical_id()
             .as_str()
             .as_bytes()
-            .cmp(right.metadata.canonical_id.as_str().as_bytes())
+            .cmp(right.metadata.canonical_id().as_str().as_bytes())
     });
     diagnostics.extend(conflicts(&found));
 
@@ -87,7 +87,7 @@ pub(super) fn conflicts(found: &[DiscoveredProject]) -> Vec<Diagnostic> {
     let registered: Vec<Registered> = found
         .iter()
         .map(|project| Registered {
-            canonical_id: project.metadata.canonical_id.to_string(),
+            canonical_id: project.metadata.canonical_id().to_string(),
             sandbox_name: project.metadata.sandbox_name().as_str().to_string(),
             root: paths::display(project.paths.root()),
         })

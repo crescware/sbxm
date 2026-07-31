@@ -66,11 +66,18 @@ sbxm status --global
 
 ### 2. Register a project
 
-Projects are identified as `owner/repository`:
+Pass the clone URL GitHub shows for the repository, unchanged:
 
 ```sh
-sbxm add owner/repository
+sbxm add git@github.com:owner/repository.git
 ```
+
+```sh
+sbxm add https://github.com/owner/repository.git
+```
+
+These two forms are the only ones `sbxm add` accepts. The host clone uses the
+transport you pass, so SSH and HTTPS are not interchangeable afterwards.
 
 This registers the project, creates its host clone and Dockerfile, and prints
 the sandbox name and exact next commands. It does not build the sandbox yet.
@@ -79,7 +86,7 @@ By default, the sandbox gets one worktree on the repository's default branch.
 For several independent worktrees, choose a starting branch and detached mode:
 
 ```sh
-sbxm add owner/repository --detach main --worktrees 3
+sbxm add git@github.com:owner/repository.git --detach main --worktrees 3
 ```
 
 Detached worktrees are useful when several agents or tasks need isolated
@@ -238,7 +245,7 @@ the sandbox needs to be preserved.
 | Command | Purpose |
 |---|---|
 | `sbxm init` | Create the global configuration |
-| `sbxm add owner/repository` | Register a GitHub project and create its host artifacts |
+| `sbxm add <github-clone-url>` | Register a GitHub project and create its host artifacts |
 | `sbxm prepare owner/repository` | Build and provision the project's sandbox |
 | `sbxm open [owner/repository]` | Start the sandbox if needed and connect over SSH |
 | `sbxm stop [owner/repository ...]` | Stop one or more sandboxes |

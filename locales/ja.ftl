@@ -15,7 +15,7 @@ cli-init-git-user-name-help = Sandbox内へ設定するGitのuser.name
 cli-init-git-user-email-help = Sandbox内へ設定するGitのuser.email
 
 cli-add-about = GitHub repositoryを管理対象へ登録し、host上へcloneします
-cli-add-project-help = 対象案件をowner/repository形式で指定します
+cli-add-repository-help = 登録するrepositoryのGitHub clone URL
 cli-add-worktrees-help = 作成するmanaged worktreeの数 (1〜32)
 cli-add-detach-help = detached modeで全managed worktreeの起点にするremote branch
 
@@ -66,6 +66,7 @@ usage-hint = { $usage }
 
 error-invalid-project-id = { $value } はowner/repository形式として正しくありません。
 error-reserved-repository-name = { $value } は予約語のためrepository名に使用できません。
+error-invalid-clone-url = { $value } はsbxmが受理するclone URLではありません。受理する形式: { $accepted }
 
 error-config-missing = global設定が { $path } に見つかりません。
 error-config-unreadable = { $path } のglobal設定を読み取れません: { $detail }
@@ -197,6 +198,7 @@ remediation-target-configuration-mismatch = 保存済みの目標構成で続け
 remediation-image-collision = { $image } の内容をご自身で確認し、不要であることを確かめてから削除または改名してください。sbxmは自分がbuildしていないimageを上書きしません。
 remediation-cleanup-failed = ほかに必要とするものがないことを確かめてから { $path } をご自身で削除し、もう一度実行してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。
+remediation-invalid-clone-url = GitHubでrepositoryを開き、表示されるclone URLをそのまま渡してください。
 remediation-fix-config = { $path } を編集してからもう一度実行してください。
 remediation-install-command = { $program } を導入し、PATH上に置いてください。
 remediation-start-docker = Docker Desktopを起動し、engineがrunningになるまで待ってください。

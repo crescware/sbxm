@@ -18,7 +18,7 @@ fn discovery_returns_every_project_in_canonical_order() {
     let found = discover(&base).expect("every project parses");
     let ids: Vec<String> = found
         .iter()
-        .map(|project| project.metadata.canonical_id.to_string())
+        .map(|project| project.metadata.canonical_id().to_string())
         .collect();
     assert_eq!(ids, vec!["alpha/another", "alpha/repo", "zeta/repo"]);
 }
@@ -46,7 +46,7 @@ fn discovery_looks_at_the_documented_shape_only() {
     let found = discover(&base).expect("only the documented shape is read");
     assert_eq!(found.len(), 1);
     assert_eq!(
-        found[0].metadata.canonical_id.to_string(),
+        found[0].metadata.canonical_id().to_string(),
         "example-org/example-repo"
     );
 }
@@ -124,7 +124,7 @@ fn distinct_projects_are_not_a_conflict() {
         .map(|(owner, repository)| {
             let metadata = attached(owner, repository);
             DiscoveredProject {
-                paths: ProjectPaths::derive(&base, &metadata.canonical_id),
+                paths: ProjectPaths::derive(&base, metadata.canonical_id()),
                 metadata,
             }
         })

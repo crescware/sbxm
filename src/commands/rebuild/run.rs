@@ -148,7 +148,8 @@ fn prepare_generation(
     current: &str,
     progress: &mut dyn ProgressSink,
 ) -> Result<Generation> {
-    if current != target && !image::generation_is_built(host, name, &metadata.canonical_id, target)?
+    if current != target
+        && !image::generation_is_built(host, name, metadata.canonical_id(), target)?
     {
         // 固定済みtargetの成果物がなく、Dockerfileも別世代であるため再生成できない。
         return Err(Error::single(
@@ -172,7 +173,7 @@ fn prepare_generation(
     let built = image::ensure(
         host,
         name,
-        &metadata.canonical_id,
+        metadata.canonical_id(),
         &paths.dockerfile(),
         target,
         progress,
@@ -219,7 +220,7 @@ impl Switch<'_> {
             workspace_root,
             poll,
         } = *self;
-        let layout = SandboxLayout::new(&metadata.canonical_id);
+        let layout = SandboxLayout::new(metadata.canonical_id());
 
         // 新世代の準備には時間がかかる。切り替える対象は、その後の観測から決める。
         let entries = daemon::list(host)?;

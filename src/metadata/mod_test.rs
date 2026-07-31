@@ -9,7 +9,7 @@ fn metadata_is_written_privately_and_replaced_in_place() {
     let dir = tempfile::tempdir().unwrap();
     let base = AbsoluteBasePath::new(dir.path()).unwrap();
     let metadata = attached("example-org", "example-repo");
-    let project = ProjectPaths::derive(&base, &metadata.canonical_id);
+    let project = ProjectPaths::derive(&base, metadata.canonical_id());
     fs::create_dir_all(project.sbxm_dir()).unwrap();
 
     create(&project, &metadata).expect("create");

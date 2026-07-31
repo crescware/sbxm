@@ -96,7 +96,7 @@ pub fn run(
     let built = image::ensure(
         host,
         &name,
-        &locked.metadata.canonical_id,
+        locked.metadata.canonical_id(),
         &locked.paths.dockerfile(),
         &generation,
         progress,
@@ -218,7 +218,7 @@ fn adopt_generation(
         return Ok(stored);
     }
 
-    if image::generation_is_built(host, name, &metadata.canonical_id, &stored)? {
+    if image::generation_is_built(host, name, metadata.canonical_id(), &stored)? {
         // 注意だけを出して終えない。現在のDockerfileを適用する手順まで示す。
         warnings.push(
             Warning::text(msg!(

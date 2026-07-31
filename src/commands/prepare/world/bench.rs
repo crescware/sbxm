@@ -64,9 +64,11 @@ impl Bench {
     /// `add`で登録してから`prepare`で構築する。工程は通しで判定する。
     pub fn build(&self, world: &World, request: &AddRequest) -> Result<PrepareOutput> {
         crate::commands::add::run::run(&self.config, request, world, &mut SilentProgress)?;
+        let project = ProjectId::parse(&request.repository.display_id())
+            .expect("the registered repository names a project");
         run(
             &self.config,
-            &request.project,
+            &project,
             world,
             self.workspace_root.path(),
             &mut SilentProgress,

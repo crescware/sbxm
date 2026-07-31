@@ -67,18 +67,14 @@ fn remotes_that_do_not_name_a_github_repository_are_not_normalized() {
 }
 
 #[test]
-fn remote_urls_are_built_from_the_display_names() {
-    assert_eq!(
-        ssh_remote_url("Example-Org", "Example-Repo"),
-        "git@github.com:Example-Org/Example-Repo.git"
-    );
+fn the_sandbox_remote_url_is_built_from_the_display_names() {
     assert_eq!(
         https_remote_url("Example-Org", "Example-Repo"),
         "https://github.com/Example-Org/Example-Repo.git"
     );
     // 表記が違っても、正規化すれば同じ案件を指す。
     assert_eq!(
-        canonical_id_of_remote(&ssh_remote_url("Example-Org", "Example-Repo")),
+        canonical_id_of_remote(&https_remote_url("Example-Org", "Example-Repo")),
         canonical_id_of_remote(&https_remote_url("example-org", "example-repo"))
     );
 }

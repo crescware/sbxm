@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::metadata::{CreationMode, ProjectMetadata, Provisioning};
 use crate::project::{CanonicalProjectId, ProjectId};
+use crate::testing::project::ssh_repository;
 use crate::testing::value::DIGEST;
 
 /// `DIGEST`とは別の世代を指す固定値。
@@ -19,9 +20,7 @@ pub fn canonical(value: &str) -> CanonicalProjectId {
 /// attached modeの1案件。
 pub fn attached(owner: &str, repository: &str) -> ProjectMetadata {
     ProjectMetadata {
-        owner: owner.to_string(),
-        repository: repository.to_string(),
-        canonical_id: canonical(&format!("{owner}/{repository}")),
+        repository: ssh_repository(&format!("{owner}/{repository}")),
         provisioning: Provisioning {
             mode: CreationMode::Attached,
             start_ref: Some("main".to_string()),
