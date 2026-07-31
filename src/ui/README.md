@@ -258,7 +258,7 @@ progressは処理開始前にstderrへ書き、直ちにflushする。
 成功結果を可能な限り一行で示す。
 
 ```text
-✓ Prepared <project-id> in <sandbox>
+✓ Prepared Example-Org/Example-Repo in sbxm-example-org-example-repo-99a40327a69b
 ```
 
 既存の完了文が同じ内容を示す場合はsummaryを重複させない。詳細がある場合だけ、空行を一行置いてsectionへ続ける。
@@ -267,8 +267,8 @@ progressは処理開始前にstderrへ書き、直ちにflushする。
 
 ```text
 PROJECT
-Project   <project-id>
-Sandbox   <sandbox>
+Project   Example-Org/Example-Repo
+Sandbox   sbxm-example-org-example-repo-99a40327a69b
 
 WORKTREES
 Path       Mode      State
@@ -323,7 +323,7 @@ sbx secret set ...
 
   2. Prepare the sandbox.
 
-sbxm prepare <project-id>
+sbxm prepare Example-Org/Example-Repo
 
 ```
 
