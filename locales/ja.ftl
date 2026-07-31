@@ -134,6 +134,7 @@ error-sandbox-not-created = { $project } は登録済みですが、Sandbox { $s
 error-sandbox-not-running = Sandbox { $sandbox } は { $observed } です。このcommandはrunningのSandboxだけを対象とします。
 warning-dockerfile-changed-during-rebuild = { $project } のDockerfileは、再構築が世代を固定したあとに変更されました。この実行は固定済みの世代を適用しています。
 warning-lock-file-left-behind = 案件の管理は解除しましたが、lock file { $path } を削除できませんでした: { $detail }
+warning-project-registered-again = この実行が管理を解いているあいだに { $project } が { $path } へ登録し直されたため、registry entryは残しました。
 warning-dockerfile-changed-during-build = { $project } のDockerfileが初回構築の途中で変わったため、開始時の世代のまま構築を完了しました。
 error-project-path-collision = { $path } は既に { $observed } のものであるため、{ $requested } をそこへ登録できません。
 error-project-path-occupied = { $path } は既に存在し、どの案件にも登録されていないため、{ $requested } をそこへ登録できません。

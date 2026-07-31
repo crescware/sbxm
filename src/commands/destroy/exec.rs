@@ -44,16 +44,19 @@ pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
     }
     ui.note_prompt_output();
 
-    let outcome = match super::run::execute(&RealHost, &prepared, inventory::Poll::default(), ui) {
-        Ok(outcome) => outcome,
-        Err(error) => return report(ui, &error),
-    };
+    let mut outcome =
+        match super::run::execute(&RealHost, &prepared, inventory::Poll::default(), ui) {
+            Ok(outcome) => outcome,
+            Err(error) => return report(ui, &error),
+        };
 
     // project lockを手放してから、短時間だけregistry lockを取ってentryを外す。
-    let canonical = prepared.canonical_id().clone();
+    let unregistration = prepared.unregistration();
     drop(prepared);
-    if let Err(error) = super::run::unregister(context.location, &canonical) {
-        return report(ui, &error);
+    match super::run::unregister(context.location, &unregistration) {
+        // 管理を解いた案件が登録し直されていれば、entryは残したまま報告する。
+        Ok(kept) => outcome.warnings.extend(kept),
+        Err(error) => return report(ui, &error),
     }
 
     for warning in &outcome.warnings {

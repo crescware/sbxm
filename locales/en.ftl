@@ -134,6 +134,7 @@ error-sandbox-not-created = { $project } is registered, but its sandbox { $sandb
 error-sandbox-not-running = The sandbox { $sandbox } is { $observed }, and this command only acts on a running sandbox.
 warning-dockerfile-changed-during-rebuild = The Dockerfile of { $project } changed while the rebuild was already fixed on a generation, so this run applied the fixed one.
 warning-lock-file-left-behind = The project is no longer managed, but its lock file { $path } could not be removed: { $detail }
+warning-project-registered-again = { $project } was registered again at { $path } while this run was removing it, so its registry entry is kept.
 warning-dockerfile-changed-during-build = The Dockerfile of { $project } changed while its first build was still running, so the build finished with the generation it started from.
 error-project-path-collision = { $path } already belongs to { $observed }, so { $requested } cannot be registered there.
 error-project-path-occupied = { $path } already exists and is not registered to any project, so { $requested } cannot be registered there.

@@ -7,7 +7,7 @@ use crate::testing::host::{
     FakeSbx, assert_lifecycle, custom_secret_listing, no_custom_secrets, no_secrets,
 };
 use crate::testing::poll::poll;
-use crate::testing::project::{Fixture, fixture, project_id};
+use crate::testing::project::{Fixture, Registered, fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::protection::clean_host;
 use crate::ui::SilentProgress;
@@ -639,13 +639,27 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() {
     );
 }
 
+/// 管理解除をcommitした案件として、registryから外す要求を組み立てる。
+fn unregistration_of(project: &Registered) -> Unregistration {
+    Unregistration {
+        paths: project.paths.clone(),
+        repository: project.metadata.repository.clone(),
+    }
+}
+
 #[test]
 fn unregistering_removes_the_entry_of_that_project_and_no_other() {
     let fixture = fixture();
     let target = fixture.register("example-org/example-repo");
     let other = fixture.register("other-org/other-repo");
+    // metadataの削除が管理解除のcommit pointである。
+    std::fs::remove_file(target.paths.metadata_file()).expect("remove the metadata");
 
-    unregister(&fixture.location, target.metadata.canonical_id()).expect("unregister");
+    assert!(
+        unregister(&fixture.location, &unregistration_of(&target))
+            .expect("unregister")
+            .is_none()
+    );
 
     let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
     assert_eq!(
@@ -662,6 +676,94 @@ fn unregistering_removes_the_entry_of_that_project_and_no_other() {
     );
     // 利用者の成果物は残す。registryから外れたあとは未登録のhost artifactとして扱う。
     assert!(target.paths.root().is_dir());
+}
+
+#[test]
+fn a_project_registered_again_during_the_removal_keeps_its_entry() {
+    // destroyはmetadataを消してproject lockを手放したあとでregistry lockを取る。その
+    // 隙間に同じ案件のaddが登録をやり直していれば、entryは新しい登録意図を指している。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let host = no_secrets(clean_host(&fixture, &project), project.sandbox.as_str());
+    host.listing.borrow_mut().insert(0, "[]".to_string());
+    let prepared = prepare(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .expect("prepare");
+
+    let unregistration = prepared.unregistration();
+    execute(&host, &prepared, poll(), &mut SilentProgress).expect("destroy");
+    drop(prepared);
+
+    // project lockが空いているあいだに、別の実行のaddがmetadataを作り直した。
+    metadata::create(&project.paths, &project.metadata).expect("register the project again");
+
+    let warning = unregister(&fixture.location, &unregistration)
+        .expect("unregister")
+        .expect("the re-registration is reported");
+    assert_eq!(warning.description.id, "warning-project-registered-again");
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert!(
+        registry.find(project.metadata.canonical_id()).is_some(),
+        "the project that was registered again stays discoverable"
+    );
+}
+
+#[test]
+fn an_entry_that_names_another_root_is_left_to_the_run_that_recorded_it() {
+    // 同じcanonical project IDでも、別のrootを指すentryはこの実行が記録したものではない。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let unregistration = unregistration_of(&project);
+    std::fs::remove_file(project.paths.metadata_file()).expect("remove the metadata");
+
+    // 別の実行が、entryを外して別のrootへ登録し直した。
+    let mut guard = RegistryGuard::acquire(&fixture.location).expect("acquire the registry lock");
+    guard
+        .remove(project.metadata.canonical_id())
+        .expect("remove the entry");
+    drop(guard);
+    let elsewhere = fixture._dir.path().join("elsewhere.project");
+    std::fs::create_dir_all(&elsewhere).expect("create the other root");
+    fixture.record(&elsewhere, project.metadata.repository.clone());
+
+    let warning = unregister(&fixture.location, &unregistration)
+        .expect("unregister")
+        .expect("an entry another run recorded is reported");
+    assert_eq!(warning.description.id, "warning-project-registered-again");
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert_eq!(
+        registry
+            .find(project.metadata.canonical_id())
+            .expect("the entry stays")
+            .project_root(),
+        elsewhere,
+        "the registration of the other run is untouched"
+    );
+}
+
+#[test]
+fn a_root_that_cannot_be_verified_keeps_the_entry_instead_of_guessing() {
+    // 再登録の有無を観測できなければ、管理解除が維持されているとみなさない。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let unregistration = unregistration_of(&project);
+    std::fs::remove_dir_all(project.paths.root()).expect("remove the project root");
+    std::fs::write(project.paths.root(), b"not a project root\n").expect("put a file in its place");
+
+    let error = unregister(&fixture.location, &unregistration)
+        .expect_err("a root that is not a directory cannot be verified");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert!(
+        registry.find(project.metadata.canonical_id()).is_some(),
+        "the entry stays until the state can be observed"
+    );
 }
 
 #[test]
