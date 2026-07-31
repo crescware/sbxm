@@ -15,6 +15,14 @@
 
 既存config、既存project layout、既存metadataのmigrationと後方互換性は提供しない。この仕様へ切り替えるreleaseでは、旧形式の状態を新形式として読み替えない。
 
+この仕様のscopeは、`init`の廃止、`add`のcwd配置とclone URL入力、最初の`add`における
+言語設定、および任意の場所にある登録済みprojectを解決するための最小限のglobal registryに
+限定する。registryやproject成果物の不整合を診断結果から修復する`doctor` workflowは必要だが、
+今回設計または実装しない。不整合からの回復を今回のcommandへ部分的に持ち込まない。
+
+本仕様にも、sbxm共通の[設計原則](../docs/design-principles.md)を適用する。特に、状態や
+ownershipを一意に確認できない場合は、推測でadoptまたは修復せず、mutation前に拒否する。
+
 ## 2. 利用者向けの基本フロー
 
 ```sh
@@ -187,12 +195,19 @@ files: []
 
 意味:
 
-- `language`: 永続的な表示言語
-- `files`: Sandbox内へ配置する任意のhost file宣言
+- `language`: optionalな永続的表示言語。欠落時は未保存として扱う
+- `files`: optionalなSandbox内へ配置するhost file宣言。欠落時は空として扱う
 
-config fileが存在しないことは正常であり、default設定として扱う。`files`は空とみなす。ただし、存在するconfigが構文不正、未知version、permission不正、symlink、またはread失敗である場合はdefaultへfallbackせず、現行の安全規則に従って拒否する。
+config fileが存在しないこと、および既知のoptional fieldが存在しないことは正常であり、
+default設定として扱う。`version`だけを持つ空の設定も有効とする。ただし、存在するconfigが
+構文不正、未知version、permission不正、symlink、またはread失敗である場合はdefaultへ
+fallbackせず、現行の安全規則に従って拒否する。
 
 `config.yaml`と`registry.yaml`は別documentである。言語設定の更新でregistryを書き換えず、project登録でconfigを書き換えない。ただし、初回の対話的`add`で言語を選んだ場合だけは、後述の規則に従ってconfigを新規作成または更新してからproject登録へ進む。
+
+既存configへ言語を保存するときは`language`だけを追加または更新する。利用者が手書きした
+コメント、空行、key順、および`files`を保持し、既知fieldだけによる全文書の再renderを
+行わない。
 
 ### 6.2表示言語の決定
 
@@ -239,7 +254,9 @@ stdinまたはstderrがTTYでない`add`ではpromptを表示せず、言語を�
 
 任意の場所へ配置された全projectを、単一のregistry documentで管理する。
 
-registryには索引と中断した登録の再開に必要な意図を保存する。project workflowにおけるproject固有情報の正本はproject rootの`.sbxm/project.yaml`とするが、project metadataを作る前の中断から同じ要求だけを安全に再開できるよう、entryにも登録時のrepository identity、provisioning、Git identityを持たせる。
+registryには索引と不変なrepository identityだけを保存する。project workflowにおける
+project固有情報の正本はproject rootの`.sbxm/project.yaml`とし、可変な`provisioning`と
+`git_identity`をregistryへ二重に保存しない。
 
 ```yaml
 version: 1
@@ -249,13 +266,6 @@ projects:
     provider: github
     clone_transport: ssh
     clone_url: git@github.com:Example-Org/Alpha.git
-    provisioning:
-      mode: attached
-      start_ref: null
-      requested_worktrees: 1
-    git_identity:
-      user_name: Example User
-      user_email: user@example.com
 ```
 
 registryへ`state` fieldを保存しない。登録状態は、registry entry、project root、project metadata、host cloneというfilesystem上の事実を観測して算出する。
@@ -270,7 +280,10 @@ registryへ`state` fieldを保存しない。登録状態は、registry entry、
 
 状態名を永続化して観測事実と二重管理しない。project rootやmetadataがない状態も、entry自体が有効であれば登録意図の予約として扱う。read-only commandは観測結果から登録途中または不整合を表示し、同一要求の`add`だけが続きを実行できる。
 
-`clone_url`、`provisioning`、`git_identity`は、project metadata作成前の中断でも登録意図を完全に復元するためregistryにも保存する。project metadataが存在する場合は同じ値を持つことを検証する。二つの正本を自由に更新するのではなく、registryは登録予約と索引、project metadataはproject workflowの正本として扱う。不一致時はどちらかを推測で採用しない。
+registryの`clone_url`は登録対象の不変なrepository identityとして保存する。project
+metadata作成前の再実行では、その回に明示されたprovisioning optionと観測したGit identityを
+検証してmetadataを作成する。metadata作成後の`provisioning`と`git_identity`はmetadataだけを
+正本とし、registryとの一致検証対象にしない。
 
 registryの不変条件:
 
@@ -280,7 +293,6 @@ registryの不変条件:
 - canonical project IDとproject rootはvalidation済みの値だけを持つ
 - project rootは絶対pathである
 - `provider`、`clone transport`、`clone URL`が同じentryのcanonical project IDと一致する
-- `provisioning`と`git_identity`がvalidation済みである
 - 観測から算出できる状態を表すfieldを持たない
 
 registry entryが指すdirectoryの移動または消失を、自動探索、cwd、類似名から推測して修復しない。entryを黙って削除しない。
@@ -302,7 +314,7 @@ registry mutationは`~/.sbxm/registry.lock`に対するglobal exclusive lockで�
 
 一部entryだけが正常でも、壊れたregistryの一部をmutationの根拠として信用しない。registryが不正な場合、すべてのmutationを停止する。
 
-registry lockはregistry documentの一意性を守る。project固有のmutationは、registry lockに加えて保存済みproject rootのproject lockで直列化する。deadlockを避けるため、複数lockが必要なworkflowでは常にregistry lock、project lockの順で取得する。
+registry lockはregistry documentの一意性を守る。project固有のmutationは、registry lockに加えて保存済みproject rootのproject lockで直列化する。deadlockを避けるため、複数lockが必要なworkflowでは常にregistry lock、project lockの順で取得する。複数のproject lockを取得する場合はcanonical project IDの昇順で取得する。
 
 ## 7. Project metadata
 
@@ -370,10 +382,11 @@ global configからGit identity fieldを削除する。既存projectのidentity�
 4. registry lockを保持したままproject rootを作成し、project lockを取得する
 5. Dockerfileとproject metadataをatomic createする
 6. entryとproject metadataを再検証する
-7. project lockとregistry lockを解放する
+7. registry lockだけを解放する
 8. host cloneをproject lock下で作成または検証する
+9. project lockを解放する
 
-project metadata作成までの短いlocal filesystem工程ではglobal registry lockを保持する。長時間かかるclone中はglobal registry lockを保持しない。登録意図のentryを先に記録するため、別cwdから同じcanonical project IDを登録しようとしても、先行要求を見失わない。同じcanonical ID、root、clone URL、provisioning要求による再実行だけが保存済みrootで続きを実行できる。
+project metadata作成までの短いlocal filesystem工程ではglobal registry lockを保持する。長時間かかるclone中はglobal registry lockを保持しない。登録意図のentryを先に記録するため、別cwdから同じcanonical project IDを登録しようとしても、先行要求を見失わない。同じcanonical ID、root、clone URLと、明示指定されたprovisioning要求による再実行だけが保存済みrootで続きを実行できる。
 
 工程途中の失敗をrollback目的で暗黙削除しない。再実行が同じ意図を安全に継続できるよう、registry entryと成功済み成果物を残す。少なくとも次のcrash pointをtestする。
 
@@ -384,6 +397,10 @@ project metadata作成までの短いlocal filesystem工程ではglobal registry
 - clone後、結果表示前
 
 entryが指すrootを作成できない状態になっても、別pathへ暗黙変更しない。read-only診断と、同じ要求による再実行で観測した原因を表示する。利用者の成果物やentryを自動削除しない。
+
+新規登録先のproject rootが既に存在する場合、その内容がmetadataやclone URLと一致して
+見えてもadoptしない。registry entryがない既存成果物のownershipは`add`では確定できないため、
+path collisionとしてmutation前に拒否する。
 
 ### 8.3登録済みproject
 
@@ -439,22 +456,33 @@ read-only一覧では、復旧に必要な全entryを可能な範囲で表示し
 - 任意global configの状態
 - registry documentのversion、構文、permission
 - canonical project ID、project root、Sandbox名の重複
-- 各登録project rootの存在
-- registryとproject metadataの一致
-- project metadataとhost clone originの一致
 - Git identityの利用可能性
 
 config不在は`defaults`として正常扱いする。registry不在は登録project 0件として正常扱いする。不整合を報告しても、自動作成、自動削除、自動移動、自動修復を行わない。
 
+`status --global`は登録projectを巡回せず、各project root、metadata、host clone originを
+検査しない。これらのproject単位の観測と表示は`ls`の責務とし、登録数によって
+`status --global`の実行時間や出力行数を増加させない。
+
 ## 11. `destroy`とregistry
 
-projectを管理対象から外す成功した`destroy`は、project固有stateの処理と同じtransaction境界でregistry entryを削除する。registry entryだけを先に消して、projectを発見不能にしない。
+projectを管理対象から外す`destroy`は、長時間かかるSandbox削除中にregistry lockを保持しない。
+project lock下でproject固有stateを処理し、metadata削除をproject側のcommit pointとしたあと、
+短時間だけregistry lockを取得して対応entryを削除する。registry entryだけを先に消して、
+projectを発見不能にしない。
 
 通常destroyがDockerfileやhost cloneなど利用者の成果物を残す現行方針は維持する。残したdirectoryをregistryから外したあとは、未登録のhost artifactとして扱う。
 
-registryまたはproject metadataが不整合な場合、通常modeで推測してentryを削除しない。不整合状態からregistryだけを明示的に修復するworkflowは、この仕様とは別に設計する。
+metadata削除後かつregistry entry削除前にcrashした場合は、不整合entryが残り得る。この状態を
+許容し、`destroy --force`の意味を拡張してentryを削除しない。
+
+registryまたはproject metadataが不整合な場合、通常modeで推測してentryを削除しない。
+`unregister` commandは追加しない。不整合状態を観測して修復する`doctor`は将来の別仕様とし、
+今回は不整合からの回復を保証しない。
 
 ## 12. Securityとfailure policy
+
+この節はsbxm共通の[設計原則](../docs/design-principles.md)を具体化する。
 
 - clone URLはshellへ渡さず、validation済みargumentとして`git clone`へ渡す
 - HTTPS URLにcredentialを許可しない
@@ -486,6 +514,7 @@ registryまたはproject metadataが不整合な場合、通常modeで推測し�
 - owner directoryを作らない
 - 同じcwdへ異なるrepositoryを追加できる
 - 同じcwdの同名repository path collisionをmutation前に拒否する
+- registry entryがない既存project rootをadoptせず拒否する
 - 登録済みprojectの再実行はcwdを無視する
 
 ### Language
@@ -517,7 +546,9 @@ registryまたはproject metadataが不整合な場合、通常modeで推測し�
 - `ls`と選択候補がregistry由来になる
 - 完全指定commandがregistryからrootを解決する
 - `status --global`がconfig不在とregistry不在を正常扱いする
+- `status --global`が登録projectを巡回しない
 - `destroy`成功時に対応entryだけを削除する
+- metadata削除後かつregistry entry削除前のcrashで不整合entryが残り得る
 - registry不整合時にmutationしない
 
 ## 14. Scope外
@@ -531,6 +562,10 @@ registryまたはproject metadataが不整合な場合、通常modeで推測し�
 - 登録済みprojectのGit identity変更
 - cwdから既存projectを暗黙選択する機能
 - registry不整合を推測で修復するcommand
+- registry不整合を観測して明示修復する`doctor` workflow
+- registryにない既存project成果物のadopt
 - `config.yaml`を対話編集する新しい公開command
 
-不整合の明示修復workflowが必要になった場合は、観測、対象指定、削除範囲を別仕様で定義する。
+不整合entryは、`add`途中のcrash、利用者によるproject directoryの移動または削除、
+`destroy`途中のcrashによって残り得る。この状態を今回の既知の制約として許容する。
+将来`doctor`を設計する場合は、観測、対象指定、削除範囲を別仕様で定義する。
