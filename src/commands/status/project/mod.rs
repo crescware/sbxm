@@ -142,12 +142,7 @@ pub fn diagnose(
     workspace_root: &Path,
 ) -> Result<ProjectStatus> {
     // 案件の場所はregistryだけが持つ。配置規則から再計算しない。
-    let candidate = select::one(
-        location,
-        Some(project),
-        msg!("select-destroy-heading"),
-        &mut select::NoPrompt,
-    )?;
+    let candidate = select::find(location, project)?;
     let paths = candidate.paths.clone();
     let metadata = candidate.reload()?;
     let name = metadata.sandbox_name();

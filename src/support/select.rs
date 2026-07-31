@@ -103,22 +103,6 @@ impl ProjectPrompt for PromptUi {
     }
 }
 
-/// 対象を完全指定するcommandが渡す、決して尋ねないprompt。
-///
-/// 引数がある経路では`one`はpromptへ到達しない。到達したなら、それは候補を組み立てる
-/// 側の誤りである。
-pub struct NoPrompt;
-
-impl ProjectPrompt for NoPrompt {
-    fn select_one(&mut self, _heading: Msg, candidates: &[String]) -> Result<usize> {
-        Err(unresolved(0, candidates.len()))
-    }
-
-    fn select_many(&mut self, _heading: Msg, candidates: &[String]) -> Result<Vec<usize>> {
-        Err(unresolved(0, candidates.len()))
-    }
-}
-
 /// 引数、またはpromptで1件の案件を決める。
 pub fn one(
     location: &ConfigLocation,
@@ -127,7 +111,7 @@ pub fn one(
     prompt: &mut dyn ProjectPrompt,
 ) -> Result<Candidate> {
     if let Some(project) = requested {
-        return load(location, project);
+        return find(location, project);
     }
     let mut candidates = candidates(location)?;
     let index = prompt.select_one(heading, &labels(&candidates))?;
@@ -149,7 +133,7 @@ pub fn many(
     if !requested.is_empty() {
         let mut selected: Vec<Candidate> = Vec::new();
         for project in requested {
-            let found = load(location, project)?;
+            let found = find(location, project)?;
             if !selected
                 .iter()
                 .any(|already| already.repository.canonical_id() == found.repository.canonical_id())
@@ -186,7 +170,7 @@ pub fn many(
 /// 完全指定された案件のmetadataを、導出したpathから読む。
 ///
 /// 探索を行わないため、対象と無関係な案件の状態に左右されない。
-fn load(location: &ConfigLocation, project: &ProjectId) -> Result<Candidate> {
+pub fn find(location: &ConfigLocation, project: &ProjectId) -> Result<Candidate> {
     let registry = registry::load(location)?;
     let canonical = project.canonical();
     match registry.find(&canonical) {
@@ -203,7 +187,7 @@ fn load(location: &ConfigLocation, project: &ProjectId) -> Result<Candidate> {
 /// promptを持たないcommandの入口。`load`が先に存在を確かめるため、管理対象でない
 /// 案件にはlock fileを作らない。
 pub fn locked(location: &ConfigLocation, project: &ProjectId) -> Result<Locked> {
-    load(location, project)?.lock()
+    find(location, project)?.lock()
 }
 
 /// 管理対象でない案件を、登録commandとともに拒否する。
