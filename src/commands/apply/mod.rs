@@ -44,6 +44,7 @@ pub fn spec(builder: &Builder) -> Result<ClapCommand> {
         .arg(
             Arg::new("worktrees")
                 .long("worktrees")
+                .short('t')
                 .value_name("N")
                 .value_parser(clap::value_parser!(u32))
                 .help(builder.text("cli-apply-worktrees-help")?),

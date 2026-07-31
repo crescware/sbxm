@@ -36,6 +36,7 @@ pub fn spec(builder: &Builder) -> Result<ClapCommand> {
         .arg(
             Arg::new("worktrees")
                 .long("worktrees")
+                .short('t')
                 .value_name("N")
                 .help(builder.text("cli-add-worktrees-help")?),
         )

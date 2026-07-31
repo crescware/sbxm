@@ -36,3 +36,16 @@ fn apply_requires_an_explicit_scope() {
         })
     ));
 }
+
+/// `-t`は`--worktrees`の別名であり、同じ本数として解釈される。
+#[test]
+fn the_short_form_requests_the_same_worktree_count() {
+    assert!(matches!(
+        command(&["apply", "owner/repo", "-t", "3"], tty()),
+        Command::Apply(Args {
+            files: false,
+            worktrees: Some(3),
+            ..
+        })
+    ));
+}
