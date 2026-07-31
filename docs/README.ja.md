@@ -35,7 +35,7 @@ brew install crescware/tap/sbxm
 
 ### 1. ホスト環境を検証する
 
-初期化の手順はありません。sbxmが必要とするものが揃っているかを確認します。
+sbxmが必要とするものが揃っているかを確認します。
 
 ```sh
 sbxm status --global

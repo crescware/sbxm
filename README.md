@@ -36,7 +36,7 @@ brew install crescware/tap/sbxm
 
 ### 1. Verify the host
 
-There is nothing to initialize. Check that the host has what sbxm needs:
+Check that the host has what sbxm needs:
 
 ```sh
 sbxm status --global
