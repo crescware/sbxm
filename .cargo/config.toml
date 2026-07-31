@@ -1,0 +1,9 @@
+# Linuxでは`rustc`がlinkerを同梱せず、外部の`cc`へリンク工程を渡す。sandboxのように
+# C toolchainが無い環境でもゼロからbuildできるよう、`mise.toml`が導入するzigをlinkerに使う。
+# macOSはSDKを別途要するため対象にしない。
+
+[target.aarch64-unknown-linux-gnu]
+linker = ".cargo/zig-cc"
+
+[target.x86_64-unknown-linux-gnu]
+linker = ".cargo/zig-cc"

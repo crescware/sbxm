@@ -1,0 +1,3 @@
+#!/bin/sh
+# cargoはlinkerに単一の実行ファイルしか渡せないため、`zig cc`をここで束ねる。
+exec zig cc "$@"
