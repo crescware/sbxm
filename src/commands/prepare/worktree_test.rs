@@ -1,4 +1,6 @@
 //! managed worktreeの作成と、観測できたHEAD。
+use crate::testing::outcome::{Checked, Required};
+
 use super::super::world::{World, bench};
 use super::*;
 use crate::testing::add_request::{project_of, request};
@@ -6,11 +8,13 @@ use crate::testing::value::COMMIT;
 use crate::ui::SilentProgress;
 
 #[test]
-fn a_head_that_cannot_be_read_is_left_unknown() {
-    let bench = bench();
+fn a_head_that_cannot_be_read_is_left_unknown() -> Checked {
+    let bench = bench()?;
     let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None);
-    bench.build(&world, &request).expect("the first run builds");
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first run builds")?;
 
     // 停止中のSandboxと同じく、worktreeのHEADだけが読めない状態にする。読めない読み取りも
     // 出力は返すので、成功したかどうかはexit statusでしか分からない。
@@ -18,12 +22,12 @@ fn a_head_that_cannot_be_read_is_left_unknown() {
     let output = run(
         &bench.location,
         &bench.config,
-        &project_of(&request),
+        &project_of(&request)?,
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,
     )
-    .expect("a project that is built stays built");
+    .required_because("a project that is built stays built")?;
 
     assert!(output.already_built);
     assert_eq!(output.worktrees.len(), 1);
@@ -36,26 +40,29 @@ fn a_head_that_cannot_be_read_is_left_unknown() {
         "what metadata declares is still reported"
     );
     assert_eq!(output.worktrees[0].mode, CreationMode::Attached);
+    Ok(())
 }
 
 #[test]
-fn a_head_that_reads_back_empty_is_left_unknown() {
-    let bench = bench();
+fn a_head_that_reads_back_empty_is_left_unknown() -> Checked {
+    let bench = bench()?;
     let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None);
-    bench.build(&world, &request).expect("the first run builds");
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first run builds")?;
 
     // 成功しながら何も答えない読み取り。値がない以上、観測できたことにはならない。
     world.succeeding_silently("rev-parse HEAD");
     let output = run(
         &bench.location,
         &bench.config,
-        &project_of(&request),
+        &project_of(&request)?,
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,
     )
-    .expect("a project that is built stays built");
+    .required_because("a project that is built stays built")?;
 
     assert!(output.already_built);
     assert_eq!(output.worktrees.len(), 1);
@@ -63,15 +70,16 @@ fn a_head_that_reads_back_empty_is_left_unknown() {
         output.worktrees[0].head, None,
         "an empty answer is not reported as a HEAD"
     );
+    Ok(())
 }
 
 #[test]
-fn three_detached_worktrees_start_from_one_commit_of_the_named_branch() {
-    let bench = bench();
+fn three_detached_worktrees_start_from_one_commit_of_the_named_branch() -> Checked {
+    let bench = bench()?;
     let world = World::new();
-    let request = request("Example-Org/Example-Repo", Some(3), Some("develop"));
+    let request = request("Example-Org/Example-Repo", Some(3), Some("develop"))?;
 
-    let output = bench.build(&world, &request).expect("build");
+    let output = bench.build(&world, &request).required_because("build")?;
     assert_eq!(output.mode, CreationMode::Detached);
     assert_eq!(output.start_ref, "develop");
     assert_eq!(output.worktrees.len(), 3);
@@ -90,4 +98,5 @@ fn three_detached_worktrees_start_from_one_commit_of_the_named_branch() {
     // bare repositoryとworktreeは、1 treeでも3 treesでも分かれている。
     assert!(world.ran("git init --bare /home/agent/work/example-repo/.git"));
     assert!(world.ran("remote add origin https://github.com/Example-Org/Example-Repo.git"));
+    Ok(())
 }

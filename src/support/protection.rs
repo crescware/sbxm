@@ -206,52 +206,8 @@ fn examine(
 ) -> Result<WorktreeReport> {
     let path = entry.path.as_str();
 
-    let status = sandbox::exec(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "-C",
-            path,
-            "status",
-            "--porcelain=v2",
-            "-z",
-            "--untracked-files=all",
-        ],
-    )?
-    .require_success()?;
-    if !status
-        .stdout_text()
-        .trim_matches(['\0', '\n', ' '])
-        .is_empty()
-    {
-        return Err(refuse(msg!(
-            "error-unsaved-work-uncommitted",
-            target = relative
-        )));
-    }
-
-    let git_dir = sandbox::read(
-        host,
-        sandbox_name,
-        &["git", "-C", path, "rev-parse", "--git-dir"],
-    )?;
-    for marker in IN_PROGRESS_MARKERS {
-        let candidate = format!("{git_dir}/{marker}");
-        let probe = sandbox::exec(host, sandbox_name, &["test", "-e", &candidate])?;
-        // `test`はfileの不在を`1`で示す。commandを起動できなかったことを不在として読まない。
-        match answered(&probe, &candidate)? {
-            0 => {
-                return Err(refuse(msg!(
-                    "error-unsaved-work-in-progress",
-                    target = relative,
-                    operation = marker
-                )));
-            }
-            1 => {}
-            _ => return Err(sandbox::unobservable(&probe, &candidate)),
-        }
-    }
+    require_clean_tree(host, sandbox_name, path, relative)?;
+    require_no_operation_in_progress(host, sandbox_name, path, relative)?;
 
     let head = sandbox::read(
         host,
@@ -281,70 +237,10 @@ fn examine(
 
     let (mode, branch, remote) = if attached {
         let branch = branch.stdout_text().trim().to_string();
-        let upstream = sandbox::exec(
-            host,
-            sandbox_name,
-            &[
-                "git",
-                "-C",
-                path,
-                "rev-parse",
-                "--abbrev-ref",
-                "--symbolic-full-name",
-                "@{upstream}",
-            ],
-        )?;
-        // upstream未設定はgitが非ゼロで示す。起動できなかった場合と区別する。
-        if answered(&upstream, "@{upstream}")? != 0 {
-            return Err(refuse(msg!(
-                "error-unsaved-work-no-upstream",
-                target = relative
-            )));
-        }
-        let upstream = upstream.stdout_text().trim().to_string();
-        let ahead = sandbox::read(
-            host,
-            sandbox_name,
-            &[
-                "git",
-                "-C",
-                path,
-                "rev-list",
-                "--count",
-                &format!("{upstream}..HEAD"),
-            ],
-        )?;
-        if ahead != "0" {
-            return Err(refuse(msg!(
-                "error-unsaved-work-unpushed",
-                target = relative,
-                count = ahead,
-                upstream = upstream
-            )));
-        }
+        require_pushed(host, sandbox_name, path, relative)?;
         (Mode::Attached, Some(branch), Remote::Pushed)
     } else {
-        // detached HEADは、originのいずれかのrefから到達できることを条件とする。
-        let unreachable = sandbox::read(
-            host,
-            sandbox_name,
-            &[
-                "git",
-                "-C",
-                path,
-                "rev-list",
-                "--count",
-                "HEAD",
-                "--not",
-                "--remotes=origin",
-            ],
-        )?;
-        if unreachable != "0" {
-            return Err(refuse(msg!(
-                "error-unsaved-work-unreachable",
-                target = relative
-            )));
-        }
+        require_reachable_from_origin(host, sandbox_name, path, relative)?;
         (Mode::Detached, None, Remote::Reachable)
     };
 
@@ -360,6 +256,152 @@ fn examine(
         branch,
         remote,
     })
+}
+
+/// 未commitの変更も未追跡fileも無いこと。
+fn require_clean_tree(
+    host: &dyn HostEnvironment,
+    sandbox_name: &str,
+    path: &str,
+    relative: &str,
+) -> Result<()> {
+    let status = sandbox::exec(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "-C",
+            path,
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--untracked-files=all",
+        ],
+    )?
+    .require_success()?;
+    if status
+        .stdout_text()
+        .trim_matches(['\0', '\n', ' '])
+        .is_empty()
+    {
+        return Ok(());
+    }
+    Err(refuse(msg!(
+        "error-unsaved-work-uncommitted",
+        target = relative
+    )))
+}
+
+/// merge、rebase、cherry-pickのような操作が途中で止まっていないこと。
+fn require_no_operation_in_progress(
+    host: &dyn HostEnvironment,
+    sandbox_name: &str,
+    path: &str,
+    relative: &str,
+) -> Result<()> {
+    let git_dir = sandbox::read(
+        host,
+        sandbox_name,
+        &["git", "-C", path, "rev-parse", "--git-dir"],
+    )?;
+    for marker in IN_PROGRESS_MARKERS {
+        let candidate = format!("{git_dir}/{marker}");
+        let probe = sandbox::exec(host, sandbox_name, &["test", "-e", &candidate])?;
+        // `test`はfileの不在を`1`で示す。commandを起動できなかったことを不在として読まない。
+        match answered(&probe, &candidate)? {
+            0 => {
+                return Err(refuse(msg!(
+                    "error-unsaved-work-in-progress",
+                    target = relative,
+                    operation = marker
+                )));
+            }
+            1 => {}
+            _ => return Err(sandbox::unobservable(&probe, &candidate)),
+        }
+    }
+    Ok(())
+}
+
+/// upstreamがあり、そこへ載っていないcommitを持たないこと。
+fn require_pushed(
+    host: &dyn HostEnvironment,
+    sandbox_name: &str,
+    path: &str,
+    relative: &str,
+) -> Result<()> {
+    let upstream = sandbox::exec(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "-C",
+            path,
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
+    )?;
+    // upstream未設定はgitが非ゼロで示す。起動できなかった場合と区別する。
+    if answered(&upstream, "@{upstream}")? != 0 {
+        return Err(refuse(msg!(
+            "error-unsaved-work-no-upstream",
+            target = relative
+        )));
+    }
+    let upstream = upstream.stdout_text().trim().to_string();
+    let ahead = sandbox::read(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "-C",
+            path,
+            "rev-list",
+            "--count",
+            &format!("{upstream}..HEAD"),
+        ],
+    )?;
+    if ahead == "0" {
+        return Ok(());
+    }
+    Err(refuse(msg!(
+        "error-unsaved-work-unpushed",
+        target = relative,
+        count = ahead,
+        upstream = upstream
+    )))
+}
+
+/// detached HEADが、originのいずれかのrefから到達できること。
+fn require_reachable_from_origin(
+    host: &dyn HostEnvironment,
+    sandbox_name: &str,
+    path: &str,
+    relative: &str,
+) -> Result<()> {
+    let unreachable = sandbox::read(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "-C",
+            path,
+            "rev-list",
+            "--count",
+            "HEAD",
+            "--not",
+            "--remotes=origin",
+        ],
+    )?;
+    if unreachable == "0" {
+        return Ok(());
+    }
+    Err(refuse(msg!(
+        "error-unsaved-work-unreachable",
+        target = relative
+    )))
 }
 
 /// Sandbox内の検査commandが答えた終了status。

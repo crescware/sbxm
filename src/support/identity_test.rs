@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use crate::command::{CommandOutcome, CommandSpec};
 use std::cell::RefCell;
@@ -14,7 +16,7 @@ impl FakeSbx {
         FakeSbx {
             settings: settings
                 .iter()
-                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
                 .collect(),
             calls: RefCell::new(Vec::new()),
         }
@@ -65,9 +67,9 @@ fn identity() -> GitIdentity {
 }
 
 #[test]
-fn an_unset_sandbox_is_configured_from_the_global_configuration() {
+fn an_unset_sandbox_is_configured_from_the_global_configuration() -> Checked {
     let host = FakeSbx::holding(&[]);
-    ensure(&host, "sbxm-example", &identity()).expect("configure");
+    ensure(&host, "sbxm-example", &identity()).required_because("configure")?;
 
     assert!(host.wrote("Example User"));
     assert!(host.wrote("user@example.com"));
@@ -79,12 +81,13 @@ fn an_unset_sandbox_is_configured_from_the_global_configuration() {
         "gh belongs to the tool listing, not to the git identity: {:?}",
         host.calls()
     );
+    Ok(())
 }
 
 #[test]
-fn the_protocol_is_written_only_when_it_is_not_already_https() {
+fn the_protocol_is_written_only_when_it_is_not_already_https() -> Checked {
     let host = FakeSbx::holding(&[]);
-    ensure_git_protocol(&host, "sbxm-example").expect("configure");
+    ensure_git_protocol(&host, "sbxm-example").required_because("configure")?;
     assert!(
         host.calls()
             .iter()
@@ -94,7 +97,7 @@ fn the_protocol_is_written_only_when_it_is_not_already_https() {
 
     // ghの既定は`https`である。一致を観測したSandboxへは書き込まない。
     let host = FakeSbx::holding(&[("git_protocol", GIT_PROTOCOL)]);
-    ensure_git_protocol(&host, "sbxm-example").expect("nothing to do");
+    ensure_git_protocol(&host, "sbxm-example").required_because("nothing to do")?;
     assert!(
         !host
             .calls()
@@ -103,23 +106,25 @@ fn the_protocol_is_written_only_when_it_is_not_already_https() {
         "{:?}",
         host.calls()
     );
+    Ok(())
 }
 
 #[test]
-fn a_protocol_that_was_changed_by_hand_stops_the_run() {
+fn a_protocol_that_was_changed_by_hand_stops_the_run() -> Checked {
     let host = FakeSbx::holding(&[("git_protocol", "ssh")]);
-    let error =
-        ensure_git_protocol(&host, "sbxm-example").expect_err("a different value is refused");
+    let error = ensure_git_protocol(&host, "sbxm-example")
+        .refused_because("a different value is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
+    Ok(())
 }
 
 #[test]
-fn values_that_already_match_are_left_as_they_are() {
+fn values_that_already_match_are_left_as_they_are() -> Checked {
     let host = FakeSbx::holding(&[
         ("user.name", "Example User"),
         ("user.email", "user@example.com"),
     ]);
-    ensure(&host, "sbxm-example", &identity()).expect("nothing to do");
+    ensure(&host, "sbxm-example", &identity()).required_because("nothing to do")?;
 
     assert!(
         !host
@@ -129,10 +134,11 @@ fn values_that_already_match_are_left_as_they_are() {
         "an already configured sandbox is not written to: {:?}",
         host.calls()
     );
+    Ok(())
 }
 
 #[test]
-fn a_sandbox_configured_for_someone_else_is_not_overwritten() {
+fn a_sandbox_configured_for_someone_else_is_not_overwritten() -> Checked {
     for settings in [
         vec![("user.name", "Another User")],
         vec![
@@ -142,7 +148,7 @@ fn a_sandbox_configured_for_someone_else_is_not_overwritten() {
     ] {
         let host = FakeSbx::holding(&settings);
         let error = ensure(&host, "sbxm-example", &identity())
-            .expect_err("a different value belongs to someone else");
+            .refused_because("a different value belongs to someone else")?;
         assert_eq!(
             error.first_id(),
             Some(ErrorId::SandboxIdentityMismatch),
@@ -159,6 +165,7 @@ fn a_sandbox_configured_for_someone_else_is_not_overwritten() {
             host.calls()
         );
     }
+    Ok(())
 }
 
 /// hostの`git config --global --get-all`が返す原文を決め打ちするhost。

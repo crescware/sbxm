@@ -23,7 +23,7 @@ pub fn parse_daemon_status(output: &str) -> Result<DaemonState> {
 
     match state.as_deref() {
         Some("running") => Ok(DaemonState::Running),
-        Some("stopped") | Some("not running") | Some("not-running") => Ok(DaemonState::Stopped),
+        Some("stopped" | "not running" | "not-running") => Ok(DaemonState::Stopped),
         Some(other) => Err(unparseable(
             "sbx daemon status",
             &format!("status {other} has no defined meaning in this build"),

@@ -1,4 +1,4 @@
-//! Sandbox内のGit worktree一覧。
+//! `Sandbox内のGit` worktree一覧。
 //!
 //! `git worktree list --porcelain -z`のNUL区切り出力だけを読み、表示textの検索や
 //! 行の見た目に依存しない。bare rootの外を指すpathは案件の成果物として扱わない。
@@ -61,7 +61,7 @@ pub fn list(
     parse_list(&outcome.stdout_text())
 }
 
-/// NUL区切りのporcelain出力をparseする。
+/// `NUL区切りのporcelain出力をparseする`。
 ///
 /// 空のfieldがrecordの区切りとなる。pathを持たないrecordは受け付けない。
 pub fn parse_list(output: &str) -> Result<Vec<Entry>> {

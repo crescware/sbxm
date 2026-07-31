@@ -2,6 +2,8 @@
 //!
 //! sbxmが書き出すのと同じ形でentryを組み立てる。
 
+use std::fmt::Write as _;
+
 /// 1 entryのfieldを、書き出す順のまま持つ。
 pub struct Entry {
     fields: Vec<(String, String)>,
@@ -18,7 +20,7 @@ impl Entry {
         )
     }
 
-    /// canonical IDとproject rootとtransportから組み立てる。
+    /// canonical `IDとproject` rootとtransportから組み立てる。
     pub fn of(canonical_id: &str, project_root: &str, transport: &str) -> Entry {
         let clone_url = match transport {
             "ssh" => format!("git@github.com:{canonical_id}.git"),
@@ -63,11 +65,12 @@ impl Entry {
         self.fields
             .iter()
             .enumerate()
-            .map(|(index, (key, value))| {
+            .fold(String::new(), |mut out, (index, (key, value))| {
                 let prefix = if index == 0 { "- " } else { "  " };
-                format!("{prefix}{key}: {value}\n")
+                // Stringへの書き込みは失敗しない。
+                let _ = writeln!(out, "{prefix}{key}: {value}");
+                out
             })
-            .collect()
     }
 }
 

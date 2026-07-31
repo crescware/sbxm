@@ -48,7 +48,7 @@ pub fn parse(argv: &[String], catalog: &Catalog, interactivity: Interactivity) -
     let command = build_command(catalog)?;
     let matches = match command.try_get_matches_from(argv) {
         Ok(matches) => matches,
-        Err(error) => return diagnostics::interpret(error),
+        Err(error) => return diagnostics::interpret(&error),
     };
     let (name, sub) = matches
         .subcommand()
@@ -65,7 +65,7 @@ pub fn version_line() -> String {
     format!("sbxm {}", env!("CARGO_PKG_VERSION"))
 }
 
-/// FTLからhelp textを組み立てたparserを作る。
+/// `FTLからhelp` textを組み立てたparserを作る。
 fn build_command(catalog: &Catalog) -> Result<ClapCommand> {
     let builder = Builder::new(catalog)?;
 

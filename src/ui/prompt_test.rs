@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Required};
+
 use super::*;
 
 use crate::ui::policy::CharacterSet;
@@ -5,7 +7,7 @@ use crate::ui::policy::CharacterSet;
 fn labels() -> Vec<String> {
     ["owner/alpha", "owner/bravo", "owner/charlie"]
         .iter()
-        .map(|label| label.to_string())
+        .map(|label| (*label).to_string())
         .collect()
 }
 
@@ -203,7 +205,7 @@ fn the_arrow_keys_fall_back_to_ascii() {
 }
 
 #[test]
-fn a_single_candidate_still_shows_its_state() {
+fn a_single_candidate_still_shows_its_state() -> Checked {
     let selection = Selection::new(1, true, true);
     let drawn = painter(StreamPolicy::plain()).frame(
         &msg!("select-stop-heading"),
@@ -211,9 +213,10 @@ fn a_single_candidate_still_shows_its_state() {
         &selection,
         None,
     );
-    let row = drawn.last().expect("the only candidate");
+    let row = drawn.last().required_because("the only candidate")?;
     assert!(row.starts_with("\u{203a} [ ] owner/alpha"), "{row:?}");
     assert!(row.contains("(current)"), "{row:?}");
+    Ok(())
 }
 
 #[test]
@@ -245,10 +248,10 @@ fn the_viewport_keeps_the_current_row_visible() {
 
 #[test]
 fn an_interrupted_read_is_a_cancel_and_any_other_failure_is_reported() {
-    let canceled = unreadable(std::io::Error::from(std::io::ErrorKind::Interrupted));
+    let canceled = unreadable(&std::io::Error::from(std::io::ErrorKind::Interrupted));
     assert_eq!(canceled.exit_code(), crate::error::ExitCode::Canceled);
 
-    let broken = unreadable(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+    let broken = unreadable(&std::io::Error::from(std::io::ErrorKind::BrokenPipe));
     assert_eq!(broken.first_id(), Some(ErrorId::PromptUnreadable));
     assert_ne!(broken.exit_code(), crate::error::ExitCode::Canceled);
 }

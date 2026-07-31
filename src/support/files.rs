@@ -284,8 +284,7 @@ fn copy_steps(
 
     let parent = destination
         .rsplit_once('/')
-        .map(|(parent, _)| parent.to_string())
-        .unwrap_or_else(|| AGENT_HOME.to_string());
+        .map_or_else(|| AGENT_HOME.to_string(), |(parent, _)| parent.to_string());
     sandbox::exec_as_root(
         host,
         sandbox,

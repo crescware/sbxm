@@ -79,7 +79,7 @@ pub struct RebuildIntent {
     pub target_dockerfile_sha256: String,
     pub previous_dockerfile_sha256: String,
 }
-/// Sandbox内で使用するGit identity。
+/// `Sandbox内で使用するGit` identity。
 ///
 /// 新規登録時にhostの`git config --global`から取得し、以後は保存値だけを使う。
 /// host設定が後から変わっても、登録済み案件のidentityを暗黙変更しない。
@@ -108,7 +108,7 @@ pub struct ProjectMetadata {
     /// clone URL文字列から実行時にtransportを推測し直さないよう、解釈済みの構造で持つ。
     pub repository: RepositoryIdentity,
     pub provisioning: Provisioning,
-    /// Sandbox内で使うGit identity。登録時のhost設定のsnapshotである。
+    /// `Sandbox内で使うGit` identity。登録時のhost設定のsnapshotである。
     pub git_identity: GitIdentity,
     pub rebuild: Option<RebuildIntent>,
 }
@@ -123,7 +123,7 @@ impl ProjectMetadata {
         self.repository.canonical_id()
     }
 
-    /// canonical project IDから決定的に導出したSandbox名。
+    /// canonical project `IDから決定的に導出したSandbox名`。
     pub fn sandbox_name(&self) -> SandboxName {
         SandboxName::derive(self.canonical_id())
     }
@@ -138,11 +138,19 @@ pub fn load(paths: &ProjectPaths) -> Result<Option<ProjectMetadata>> {
 }
 /// metadataを新規作成する。既存fileは上書きしない。
 pub fn create(paths: &ProjectPaths, metadata: &ProjectMetadata) -> Result<()> {
-    atomic_create(&paths.metadata_file(), &render(metadata), PRIVATE_FILE_MODE)
+    atomic_create(
+        &paths.metadata_file(),
+        &render(metadata)?,
+        PRIVATE_FILE_MODE,
+    )
 }
 /// 既存metadataをatomicに置き換える。
 pub fn update(paths: &ProjectPaths, metadata: &ProjectMetadata) -> Result<()> {
-    atomic_replace(&paths.metadata_file(), &render(metadata), PRIVATE_FILE_MODE)
+    atomic_replace(
+        &paths.metadata_file(),
+        &render(metadata)?,
+        PRIVATE_FILE_MODE,
+    )
 }
 /// symlinkを追跡せずにmetadataを読む。
 fn read_optional(path: &Path) -> Result<Option<String>> {

@@ -33,6 +33,10 @@ pub(super) struct RawProvisioning {
     pub mode: Option<String>,
     /// 起点branchが未確定なら`null`。keyの欠落とは区別する。
     #[serde(default, deserialize_with = "present_option")]
+    #[expect(
+        clippy::option_option,
+        reason = "外側がkeyの有無、内側が値の有無であり、2段の`Option`そのものが区別を担う"
+    )]
     pub start_ref: Option<Option<String>>,
     pub requested_worktrees: Option<i64>,
     pub dockerfile_sha256: Option<String>,
@@ -54,6 +58,10 @@ pub(super) struct RawRebuild {
 ///
 /// `Option<Option<String>>`をそのまま読むと`null`もkeyの欠落もどちらも`None`になり、
 /// 「未確定として記録された」のか「記録が欠けている」のかを言い分けられない。
+#[expect(
+    clippy::option_option,
+    reason = "外側がkeyの有無、内側が値の有無であり、2段の`Option`そのものが区別を担う"
+)]
 fn present_option<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
 where
     D: Deserializer<'de>,

@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused};
+
 use super::*;
 
 #[test]
@@ -12,7 +14,7 @@ fn ordinary_branch_names_are_accepted() {
 }
 
 #[test]
-fn branch_names_that_could_be_misread_by_an_external_command_are_refused() {
+fn branch_names_that_could_be_misread_by_an_external_command_are_refused() -> Checked {
     for value in [
         "",
         "-delete",
@@ -20,13 +22,14 @@ fn branch_names_that_could_be_misread_by_an_external_command_are_refused() {
         "with\0nul",
         &"b".repeat(256),
     ] {
-        let error = validate_branch_name(value).expect_err("{value:?} must be refused");
+        let error = validate_branch_name(value).refused_because("{value:?} must be refused")?;
         assert_eq!(
             error.first_id(),
             Some(ErrorId::InvalidBranchName),
             "value {value:?} produced the wrong error"
         );
     }
+    Ok(())
 }
 
 #[test]

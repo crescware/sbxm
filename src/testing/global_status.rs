@@ -2,6 +2,8 @@
 //!
 //! 診断は外部commandの応答から決まるため、応答そのものをtestが組み立てる。
 
+use crate::testing::outcome::{Checked, Required};
+
 use std::collections::HashMap;
 
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
@@ -25,7 +27,7 @@ impl FakeHost {
     }
 
     pub fn with_commands(mut self, programs: &[&str]) -> FakeHost {
-        self.present = programs.iter().map(|value| value.to_string()).collect();
+        self.present = programs.iter().map(|value| (*value).to_string()).collect();
         self
     }
 
@@ -99,21 +101,22 @@ impl HostEnvironment for FakeHost {
     }
 }
 
-pub fn location_with_config(text: Option<&str>) -> (tempfile::TempDir, ConfigLocation) {
-    let dir = tempfile::tempdir().expect("temporary home");
+pub fn location_with_config(text: Option<&str>) -> Checked<(tempfile::TempDir, ConfigLocation)> {
+    let dir = tempfile::tempdir().required_because("temporary home")?;
     let location = ConfigLocation::from_home(dir.path().to_path_buf());
     if let Some(text) = text {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::create_dir_all(location.dir()).unwrap();
-        std::fs::set_permissions(location.dir(), std::fs::Permissions::from_mode(0o700)).unwrap();
-        std::fs::write(location.config_file(), text).unwrap();
+        std::fs::create_dir_all(location.dir()).required()?;
+        std::fs::set_permissions(location.dir(), std::fs::Permissions::from_mode(0o700))
+            .required()?;
+        std::fs::write(location.config_file(), text).required()?;
         std::fs::set_permissions(
             location.config_file(),
             std::fs::Permissions::from_mode(0o600),
         )
-        .unwrap();
+        .required()?;
     }
-    (dir, location)
+    Ok((dir, location))
 }
 
 pub fn valid_config() -> String {
@@ -124,11 +127,11 @@ pub fn items(status: &GlobalStatus) -> Vec<&'static str> {
     status.rows.iter().map(|row| row.item).collect()
 }
 
-pub fn status_of(status: &GlobalStatus, item: &str) -> StatusValue {
-    status
+pub fn status_of(status: &GlobalStatus, item: &str) -> Checked<StatusValue> {
+    Ok(status
         .rows
         .iter()
         .find(|row| row.item == item)
-        .unwrap_or_else(|| panic!("row {item} is missing"))
-        .status
+        .required_because(&format!("row {item} is missing"))?
+        .status)
 }

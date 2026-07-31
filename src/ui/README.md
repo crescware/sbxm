@@ -99,9 +99,9 @@ color modeは`Auto`、`Always`、`Never`の三値とする。
 2. `NO_COLOR`が存在すれば`Never`
 3. `CLICOLOR_FORCE`が`0`以外なら`Always`
 4. `TERM=dumb`なら`Never`
-5. `Auto`は対象streamがTTYのときだけ有効
+5. `Auto``は対象streamがTTYのときだけ有効`
 
-`NO_COLOR`は値を問わず、空文字でもopt-outとして扱う。`Always`は利用者が明示した場合だけredirect先へANSI sequenceを出す。
+`NO_COLOR`は値を問わず、空文字でもopt-outとして扱う。`Always``は利用者が明示した場合だけredirect先へANSI` sequenceを出す。
 
 CIかどうかを独自に推測しない。TTY、標準的な環境変数、明示optionに従う。
 
@@ -184,7 +184,7 @@ emojiは一律に禁止する。
 
 symbol自身は色を持たず、rendererがsemantic foregroundを一色だけ適用する。markerと罫線はprivateな`GlyphSet`へ集約し、commandや翻訳resourceが独自の記号を追加しない。
 
-Unicodeを安全に表示できない環境向けにASCII fallbackを持つ。
+`Unicodeを安全に表示できない環境向けにASCII` fallbackを持つ。
 
 | 意味 | Unicode | ASCII |
 | --- | --- | --- |
@@ -566,7 +566,7 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 
 - `ui` module外でANSI escape sequenceを生成する
 - callerが具体色を指定する
-- 固定RGBや256色indexを標準themeへ追加する
+- `固定RGBや256色indexを標準themeへ追加する`
 - terminal capabilityによってtruecolorへ自動昇格する
 - italic、背景色、点滅をstyle modelへ追加する
 - emojiや複数色pictographをmarker、heading、statusへ使う
@@ -606,7 +606,7 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 - ZWJ sequenceがない
 - regional indicatorがない
 - keycap sequenceがない
-- UnicodeとASCIIで意味が同じ
+- `UnicodeとASCIIで意味が同じ`
 - glyphを含むdisplay widthが正しい
 
 ### document
@@ -657,7 +657,7 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 
 ## review checklist
 
-新しいCLI表示をreviewするときは次を確認する。
+`新しいCLI表示をreviewするときは次を確認する`。
 
 - 最初に読むべき箇所が明確か
 - 色を消しても意味が残るか

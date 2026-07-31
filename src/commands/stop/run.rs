@@ -76,7 +76,7 @@ pub fn run(
     poll: Poll,
 ) -> Result<StopReport> {
     // 1. 全対象のmetadataを解決する。canonical ID昇順で返る。
-    let selected = select::many(location, requested, msg!("select-stop-heading"), prompt)?;
+    let selected = select::many(location, requested, &msg!("select-stop-heading"), prompt)?;
 
     // 2-3. 1回の一覧取得で全stateを解決し、進められない状態が1件でもあれば止める。
     let entries = daemon::list(host)?;

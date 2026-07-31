@@ -4,6 +4,10 @@
 //! 検査対象のlocaleは`locales/`にあるresourceから決めるため、言語を増やしても
 //! 本fileを編集しない。規約は`locales/README.md`が持つ。
 
+mod outcome;
+
+use outcome::{Checked, Required, Unmet};
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use fluent_syntax::ast;
@@ -17,57 +21,57 @@ fn locales_dir() -> std::path::PathBuf {
 }
 
 /// 同梱するresourceのtag。
-fn locales() -> Vec<String> {
-    let mut tags: Vec<String> = std::fs::read_dir(locales_dir())
-        .expect("the locales directory is readable")
-        .map(|entry| entry.expect("directory entry").path())
-        .filter(|path| path.extension().is_some_and(|extension| extension == "ftl"))
-        .filter_map(|path| {
-            path.file_stem()
-                .and_then(|stem| stem.to_str())
-                .map(|stem| stem.to_string())
-        })
-        .collect();
+fn locales() -> Checked<Vec<String>> {
+    let mut tags: Vec<String> = Vec::new();
+    for entry in
+        std::fs::read_dir(locales_dir()).required_because("the locales directory is readable")?
+    {
+        let path = entry.required_because("directory entry")?.path();
+        if path.extension().is_some_and(|extension| extension == "ftl")
+            && let Some(tag) = path.file_stem().and_then(|stem| stem.to_str())
+        {
+            tags.push(tag.to_string());
+        }
+    }
     tags.sort();
     assert!(
         tags.iter().any(|tag| tag == SOURCE),
         "the source locale {SOURCE}.ftl must ship"
     );
-    tags
+    Ok(tags)
 }
 
 /// 正本locale以外。
-fn translations() -> Vec<String> {
-    locales().into_iter().filter(|tag| tag != SOURCE).collect()
+fn translations() -> Checked<Vec<String>> {
+    Ok(locales()?.into_iter().filter(|tag| tag != SOURCE).collect())
 }
 
-fn source(locale: &str) -> String {
+fn source(locale: &str) -> Checked<String> {
     let path = locales_dir().join(format!("{locale}.ftl"));
     std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("{} could not be read: {error}", path.display()))
+        .required_because(&format!("{} could not be read", path.display()))
 }
 
 /// message IDが持つ値を、resourceの原文のまま取り出す。
-fn value_of(locale: &str, id: &str) -> String {
-    let text = source(locale);
+fn value_of(locale: &str, id: &str) -> Checked<String> {
+    let text = source(locale)?;
     let prefix = format!("{id} = ");
-    text.lines()
+    Ok(text
+        .lines()
         .find_map(|line| line.strip_prefix(&prefix))
-        .unwrap_or_else(|| panic!("{locale}.ftl has no {id}"))
-        .to_string()
+        .required_because(&format!("{locale}.ftl has no {id}"))?
+        .to_string())
 }
 
-fn parse(locale: &str) -> ast::Resource<String> {
-    let text = source(locale);
-    match parser::parse(text) {
-        Ok(resource) => resource,
-        Err((_, errors)) => panic!("{locale}.ftl failed to parse: {errors:?}"),
-    }
+fn parse(locale: &str) -> Checked<ast::Resource<String>> {
+    let text = source(locale)?;
+    parser::parse(text)
+        .map_err(|(_, errors)| Unmet::new(format!("{locale}.ftl failed to parse: {errors:?}")))
 }
 
 /// message IDと、そのmessageが参照するplaceholderの集合。
-fn placeholders(locale: &str) -> BTreeMap<String, BTreeSet<String>> {
-    let resource = parse(locale);
+fn placeholders(locale: &str) -> Checked<BTreeMap<String, BTreeSet<String>>> {
+    let resource = parse(locale)?;
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
     for entry in &resource.body {
@@ -94,7 +98,7 @@ fn placeholders(locale: &str) -> BTreeMap<String, BTreeSet<String>> {
             );
         }
     }
-    out
+    Ok(out)
 }
 
 fn collect_pattern(pattern: &ast::Pattern<String>, out: &mut BTreeSet<String>) {
@@ -136,18 +140,19 @@ fn collect_inline(inline: &ast::InlineExpression<String>, out: &mut BTreeSet<Str
 }
 
 #[test]
-fn every_built_in_locale_parses() {
-    for locale in locales() {
-        parse(&locale);
+fn every_built_in_locale_parses() -> Checked {
+    for locale in locales()? {
+        parse(&locale)?;
     }
+    Ok(())
 }
 
 #[test]
-fn every_locale_defines_exactly_the_same_message_ids() {
-    let expected: BTreeSet<String> = placeholders(SOURCE).keys().cloned().collect();
+fn every_locale_defines_exactly_the_same_message_ids() -> Checked {
+    let expected: BTreeSet<String> = placeholders(SOURCE)?.keys().cloned().collect();
 
-    for locale in translations() {
-        let observed: BTreeSet<String> = placeholders(&locale).keys().cloned().collect();
+    for locale in translations()? {
+        let observed: BTreeSet<String> = placeholders(&locale)?.keys().cloned().collect();
 
         let missing: Vec<&String> = expected.difference(&observed).collect();
         let extra: Vec<&String> = observed.difference(&expected).collect();
@@ -161,15 +166,16 @@ fn every_locale_defines_exactly_the_same_message_ids() {
             "{locale}.ftl defines message IDs that {SOURCE}.ftl does not: {extra:?}"
         );
     }
+    Ok(())
 }
 
 #[test]
-fn every_message_uses_the_same_placeholders_in_every_locale() {
-    let expected = placeholders(SOURCE);
+fn every_message_uses_the_same_placeholders_in_every_locale() -> Checked {
+    let expected = placeholders(SOURCE)?;
 
     let mut mismatches = Vec::new();
-    for locale in translations() {
-        let observed = placeholders(&locale);
+    for locale in translations()? {
+        let observed = placeholders(&locale)?;
         for (id, expected) in &expected {
             let Some(observed) = observed.get(id) else {
                 continue;
@@ -184,19 +190,20 @@ fn every_message_uses_the_same_placeholders_in_every_locale() {
         "placeholder sets differ from the source locale:\n{}",
         mismatches.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn security_messages_provide_a_description_and_a_remediation() {
-    for locale in locales() {
-        let ids: BTreeSet<String> = placeholders(&locale).keys().cloned().collect();
+fn security_messages_provide_a_description_and_a_remediation() -> Checked {
+    for locale in locales()? {
+        let ids: BTreeSet<String> = placeholders(&locale)?.keys().cloned().collect();
         let mut families: BTreeSet<String> = BTreeSet::new();
         for id in &ids {
             for suffix in ["-description", "-remediation"] {
-                if let Some(family) = id
-                    .strip_prefix("security-")
-                    .and_then(|rest| rest.strip_suffix(suffix).map(|family| family.to_string()))
-                {
+                if let Some(family) = id.strip_prefix("security-").and_then(|rest| {
+                    rest.strip_suffix(suffix)
+                        .map(std::string::ToString::to_string)
+                }) {
                     families.insert(family);
                 }
             }
@@ -215,14 +222,15 @@ fn security_messages_provide_a_description_and_a_remediation() {
             }
         }
     }
+    Ok(())
 }
 
 #[test]
-fn resources_carry_content_only() {
+fn resources_carry_content_only() -> Checked {
     // 規約は`locales/README.md`が1箇所で持つ。resourceへコメントや見出しを書くと、
     // 言語の数だけ同じ規約を維持することになる。
-    for locale in locales() {
-        for (index, line) in source(&locale).lines().enumerate() {
+    for locale in locales()? {
+        for (index, line) in source(&locale)?.lines().enumerate() {
             assert!(
                 !line.starts_with('#'),
                 "{locale}.ftl:{} is a comment; conventions belong in locales/README.md: {line}",
@@ -230,12 +238,13 @@ fn resources_carry_content_only() {
             );
         }
     }
+    Ok(())
 }
 
 #[test]
-fn message_ids_are_kebab_case() {
-    for locale in locales() {
-        for id in placeholders(&locale).keys() {
+fn message_ids_are_kebab_case() -> Checked {
+    for locale in locales()? {
+        for id in placeholders(&locale)?.keys() {
             let name = id.split('.').next().unwrap_or(id);
             assert!(
                 name.bytes()
@@ -244,38 +253,41 @@ fn message_ids_are_kebab_case() {
             );
         }
     }
+    Ok(())
 }
 
 #[test]
-fn the_legend_describes_the_value_instead_of_repeating_it() {
+fn the_legend_describes_the_value_instead_of_repeating_it() -> Checked {
     // 状態値は翻訳しない。凡例は`ready: <説明>`の形で説明だけを訳す。
-    for locale in translations() {
+    for locale in translations()? {
         for value in ["ready", "missing", "error", "running", "stopped"] {
-            let legend = value_of(&locale, &format!("legend-{value}"));
+            let legend = value_of(&locale, &format!("legend-{value}"))?;
             assert!(
                 legend != value,
                 "{locale}.ftl: the legend for {value} must describe the value, not repeat it"
             );
         }
     }
+    Ok(())
 }
 
 #[test]
-fn a_sandbox_state_and_a_host_service_state_are_described_separately() {
+fn a_sandbox_state_and_a_host_service_state_are_described_separately() -> Checked {
     // 同じ`running`でも、Sandboxの状態とhost serviceの状態は別の説明を持つ。
-    for locale in locales() {
+    for locale in locales()? {
         for value in ["running", "stopped"] {
-            let service = value_of(&locale, &format!("legend-{value}"));
-            let sandbox = value_of(&locale, &format!("legend-sandbox-{value}"));
+            let service = value_of(&locale, &format!("legend-{value}"))?;
+            let sandbox = value_of(&locale, &format!("legend-sandbox-{value}"))?;
             assert_ne!(
                 service, sandbox,
                 "{locale}.ftl: {value} means something different for a sandbox than for a service"
             );
         }
     }
+    Ok(())
 }
 
-/// 実装が参照するmessage IDだと分かるprefix。
+/// 実装が参照するmessage `IDだと分かるprefix`。
 ///
 /// error IDの安定した表記と紛れないよう、prefixは表示文字列側だけを指すものにする。
 const MESSAGE_PREFIXES: [&str; 10] = [
@@ -292,12 +304,12 @@ const MESSAGE_PREFIXES: [&str; 10] = [
 ];
 
 #[test]
-fn every_message_id_the_implementation_asks_for_exists() {
-    let defined: BTreeSet<String> = placeholders(SOURCE).keys().cloned().collect();
+fn every_message_id_the_implementation_asks_for_exists() -> Checked {
+    let defined: BTreeSet<String> = placeholders(SOURCE)?.keys().cloned().collect();
     let mut missing: BTreeSet<String> = BTreeSet::new();
 
-    for path in rust_sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src")) {
-        let text = std::fs::read_to_string(&path).expect("the source is readable");
+    for path in rust_sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"))? {
+        let text = std::fs::read_to_string(&path).required_because("the source is readable")?;
         for literal in string_literals(&text) {
             let looks_like_id = MESSAGE_PREFIXES
                 .iter()
@@ -315,21 +327,22 @@ fn every_message_id_the_implementation_asks_for_exists() {
         missing.is_empty(),
         "the implementation asks for message IDs that {SOURCE}.ftl does not define: {missing:?}"
     );
+    Ok(())
 }
 
-fn rust_sources(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+fn rust_sources(root: &std::path::Path) -> Checked<Vec<std::path::PathBuf>> {
     let mut found = Vec::new();
-    let entries = std::fs::read_dir(root).expect("the source directory is readable");
+    let entries = std::fs::read_dir(root).required_because("the source directory is readable")?;
     for entry in entries {
-        let path = entry.expect("directory entry").path();
+        let path = entry.required_because("directory entry")?.path();
         if path.is_dir() {
-            found.extend(rust_sources(&path));
+            found.extend(rust_sources(&path)?);
         } else if path.extension().is_some_and(|extension| extension == "rs") {
             found.push(path);
         }
     }
     found.sort();
-    found
+    Ok(found)
 }
 
 /// sourceに書かれた文字列literalを、escapeを飛ばして取り出す。
@@ -357,7 +370,7 @@ fn string_literals(text: &str) -> Vec<String> {
 }
 
 #[test]
-fn translated_diagnostic_labels_keep_the_source_term() {
+fn translated_diagnostic_labels_keep_the_source_term() -> Checked {
     // 利用者が正本localeの用語で検索できるよう「訳語 (正本localeの語)」の形式とする。
     const LABELS: [&str; 6] = [
         "status-item-config",
@@ -368,14 +381,15 @@ fn translated_diagnostic_labels_keep_the_source_term() {
         "status-column-status",
     ];
 
-    for locale in translations() {
+    for locale in translations()? {
         for id in LABELS {
-            let term = value_of(SOURCE, id);
-            let translated = value_of(&locale, id);
+            let term = value_of(SOURCE, id)?;
+            let translated = value_of(&locale, id)?;
             assert!(
                 translated.contains(&format!("({term})")),
                 "{locale}.ftl: {id} must keep the source term in parentheses: {translated}"
             );
         }
     }
+    Ok(())
 }

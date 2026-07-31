@@ -1,4 +1,6 @@
 //! 進捗の見せ方と、宣言fileの配置結果。
+use crate::testing::outcome::{Checked, Required};
+
 use super::super::world::{World, bench};
 use crate::command::{OutputPolicy, TimeoutClass};
 use crate::hash::sha256_hex;
@@ -6,12 +8,12 @@ use crate::support::files::Placement;
 use crate::testing::add_request::request;
 
 #[test]
-fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() {
-    let bench = bench();
+fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() -> Checked {
+    let bench = bench()?;
     let world = World::new();
     bench
-        .build(&world, &request("Example-Org/Example-Repo", None, None))
-        .expect("build");
+        .build(&world, &request("Example-Org/Example-Repo", None, None)?)
+        .required_because("build")?;
 
     for (needle, timeout) in [
         ("docker build", TimeoutClass::ImageBuild),
@@ -40,14 +42,15 @@ fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() {
             "{needle} is read rather than shown"
         );
     }
+    Ok(())
 }
 
 #[test]
-fn the_declared_file_is_placed_once_and_left_alone_afterwards() {
-    let bench = bench();
+fn the_declared_file_is_placed_once_and_left_alone_afterwards() -> Checked {
+    let bench = bench()?;
     let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None);
-    bench.build(&world, &request).expect("build");
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench.build(&world, &request).required_because("build")?;
 
     assert_eq!(
         world
@@ -73,10 +76,11 @@ fn the_declared_file_is_placed_once_and_left_alone_afterwards() {
         .present
         .borrow_mut()
         .insert("/home/agent/.config/example/settings.yaml".to_string());
-    let output = bench.build(&world, &request).expect("build");
+    let output = bench.build(&world, &request).required_because("build")?;
     assert_eq!(output.files[0].placement, Placement::Unchanged);
     assert!(
         !world.ran("sbx cp"),
         "an identical destination is left alone"
     );
+    Ok(())
 }

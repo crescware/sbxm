@@ -25,7 +25,7 @@ impl InnerCommandSandbox {
     }
 
     pub fn holding(mut self, paths: &[&str]) -> InnerCommandSandbox {
-        self.present = RefCell::new(paths.iter().map(|path| path.to_string()).collect());
+        self.present = RefCell::new(paths.iter().map(|path| (*path).to_string()).collect());
         self
     }
 

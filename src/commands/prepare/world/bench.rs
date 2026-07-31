@@ -1,5 +1,7 @@
 //! `add`から`prepare`までを通しで動かす台。
 
+use crate::testing::outcome::{Checked, Required};
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
@@ -25,39 +27,39 @@ pub struct Bench {
     pub config: GlobalConfig,
 }
 
-pub fn bench() -> Bench {
-    let base = tempfile::tempdir().expect("temporary base path");
-    let home = tempfile::tempdir().expect("temporary home");
-    let workspace_root = tempfile::tempdir().expect("temporary workspace root");
+pub fn bench() -> Checked<Bench> {
+    let base = tempfile::tempdir().required_because("temporary base path")?;
+    let home = tempfile::tempdir().required_because("temporary home")?;
+    let workspace_root = tempfile::tempdir().required_because("temporary workspace root")?;
     fs::set_permissions(
         workspace_root.path(),
         fs::Permissions::from_mode(PRIVATE_DIR_MODE),
     )
-    .expect("the workspace root belongs to the current user only");
+    .required_because("the workspace root belongs to the current user only")?;
 
     let source = home.path().join("declared.yaml");
-    fs::write(&source, b"declared = true\n").expect("write the declared file");
+    fs::write(&source, b"declared = true\n").required_because("write the declared file")?;
 
     let config = GlobalConfig {
         language: Some(Locale::En),
         git_identity: None,
         files: vec![crate::config::FileDeclaration {
             source: crate::config::HostFileSource::new(&paths::display(&source))
-                .expect("valid source"),
+                .required_because("valid source")?,
             destination: crate::config::SandboxHomeRelativePath::new(
                 ".config/example/settings.yaml",
             )
-            .expect("valid destination"),
+            .required_because("valid destination")?,
         }],
     };
-    Bench {
+    Ok(Bench {
         location: ConfigLocation::from_home(home.path().to_path_buf()),
-        parent: ProjectParent::at(base.path()).expect("valid parent directory"),
+        parent: ProjectParent::at(base.path()).required_because("valid parent directory")?,
         _base: base,
         _home: home,
         workspace_root,
         config,
-    }
+    })
 }
 
 impl Bench {
@@ -71,8 +73,7 @@ impl Bench {
             world,
             &mut SilentProgress,
         )?;
-        let project = ProjectId::parse(&request.repository.display_id())
-            .expect("the registered repository names a project");
+        let project = ProjectId::parse(&request.repository.display_id())?;
         run(
             &self.location,
             &self.config,
@@ -83,11 +84,11 @@ impl Bench {
         )
     }
 
-    pub fn stored(&self, project: &str) -> ProjectMetadata {
-        let canonical = ProjectId::parse(project).unwrap().canonical();
+    pub fn stored(&self, project: &str) -> Checked<ProjectMetadata> {
+        let canonical = ProjectId::parse(project).required()?.canonical();
         let paths = ProjectPaths::derive(&self.parent, &canonical);
         metadata::load(&paths)
-            .expect("read the metadata")
-            .expect("present")
+            .required_because("read the metadata")?
+            .required_because("present")
     }
 }

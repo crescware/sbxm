@@ -10,7 +10,7 @@ use crate::msg;
 use crate::paths::{self};
 use crate::repository::RepositoryIdentity;
 
-use super::document::RawMetadata;
+use super::document::{RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository};
 use super::{
     CreationMode, DOCUMENT, GitIdentity, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata,
     Provisioning, RebuildIntent, validate_git_identity_value,
@@ -33,47 +33,70 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         })?
         .unwrap_or_default();
 
-    let missing = |field: &'static str| {
-        Error::new(
-            ErrorId::MetadataMissingField,
-            msg!(
-                "error-metadata-missing-field",
-                path = paths::display(path),
-                field = field
-            ),
-        )
-    };
-    let invalid = |field: &'static str, detail: String| {
-        Error::new(
-            ErrorId::MetadataInvalidValue,
-            msg!(
-                "error-metadata-invalid-value",
-                path = paths::display(path),
-                field = field,
-                detail = detail
-            ),
-        )
-    };
+    DOCUMENT.require(raw.version, &paths::display(path), || {
+        missing(path, "version")
+    })?;
 
-    DOCUMENT.require(raw.version, &paths::display(path), || missing("version"))?;
+    let repository = parse_repository(raw.repository, path)?;
+    let provisioning = parse_provisioning(raw.provisioning, path)?;
+    let git_identity = parse_git_identity(raw.git_identity, path)?;
+    let rebuild = parse_rebuild(raw.rebuild, path)?;
 
-    let declared = raw.repository.ok_or_else(|| missing("repository"))?;
+    Ok(ProjectMetadata {
+        repository,
+        provisioning,
+        git_identity,
+        rebuild,
+    })
+}
+
+/// 必須fieldが無いことを報告する。
+fn missing(path: &Path, field: &'static str) -> Error {
+    Error::new(
+        ErrorId::MetadataMissingField,
+        msg!(
+            "error-metadata-missing-field",
+            path = paths::display(path),
+            field = field
+        ),
+    )
+}
+
+/// fieldの値が受け付けられないことを報告する。
+fn invalid(path: &Path, field: &'static str, detail: &str) -> Error {
+    Error::new(
+        ErrorId::MetadataInvalidValue,
+        msg!(
+            "error-metadata-invalid-value",
+            path = paths::display(path),
+            field = field,
+            detail = detail
+        ),
+    )
+}
+
+/// clone URLを正本として読み直し、ほかのfieldがその解釈と一致することを確かめる。
+fn parse_repository(raw: Option<RawRepository>, path: &Path) -> Result<RepositoryIdentity> {
+    let declared = raw.ok_or_else(|| missing(path, "repository"))?;
     let provider = declared
         .provider
-        .ok_or_else(|| missing("repository.provider"))?;
-    let owner = declared.owner.ok_or_else(|| missing("repository.owner"))?;
-    let name = declared.name.ok_or_else(|| missing("repository.name"))?;
+        .ok_or_else(|| missing(path, "repository.provider"))?;
+    let owner = declared
+        .owner
+        .ok_or_else(|| missing(path, "repository.owner"))?;
+    let name = declared
+        .name
+        .ok_or_else(|| missing(path, "repository.name"))?;
     let canonical_value = declared
         .canonical_id
-        .ok_or_else(|| missing("repository.canonical_id"))?;
+        .ok_or_else(|| missing(path, "repository.canonical_id"))?;
     let transport = declared
         .clone_transport
-        .ok_or_else(|| missing("repository.clone_transport"))?;
+        .ok_or_else(|| missing(path, "repository.clone_transport"))?;
     let clone_url = declared
         .clone_url
-        .ok_or_else(|| missing("repository.clone_url"))?;
-    // clone URLを正本として読み直し、ほかのfieldがその解釈と一致することを確かめる。
-    let repository = RepositoryIdentity::from_parts(
+        .ok_or_else(|| missing(path, "repository.clone_url"))?;
+    RepositoryIdentity::from_parts(
         &provider,
         &owner,
         &name,
@@ -81,16 +104,20 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         &transport,
         &clone_url,
     )
-    .map_err(|detail| invalid("repository", detail))?;
+    .map_err(|detail| invalid(path, "repository", &detail))
+}
 
-    let provisioning = raw.provisioning.ok_or_else(|| missing("provisioning"))?;
+/// 構築の指定を読む。
+fn parse_provisioning(raw: Option<RawProvisioning>, path: &Path) -> Result<Provisioning> {
+    let provisioning = raw.ok_or_else(|| missing(path, "provisioning"))?;
     let mode_value = provisioning
         .mode
-        .ok_or_else(|| missing("provisioning.mode"))?;
+        .ok_or_else(|| missing(path, "provisioning.mode"))?;
     let mode = CreationMode::parse(&mode_value).ok_or_else(|| {
         invalid(
+            path,
             "provisioning.mode",
-            format!(
+            &format!(
                 "{mode_value} is neither {} nor {}",
                 CreationMode::Attached,
                 CreationMode::Detached
@@ -101,13 +128,14 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
     // keyの欠落は記録そのものの欠落、`null`は起点branchが未確定であることを指す。
     let start_ref = match provisioning
         .start_ref
-        .ok_or_else(|| missing("provisioning.start_ref"))?
+        .ok_or_else(|| missing(path, "provisioning.start_ref"))?
     {
         None => {
             if mode == CreationMode::Detached {
                 return Err(invalid(
+                    path,
                     "provisioning.start_ref",
-                    format!("{mode} mode requires an explicit start branch"),
+                    &format!("{mode} mode requires an explicit start branch"),
                 ));
             }
             None
@@ -115,8 +143,9 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         Some(value) => {
             git::validate_branch_name(&value).map_err(|_| {
                 invalid(
+                    path,
                     "provisioning.start_ref",
-                    format!("{value} is not a branch name"),
+                    &format!("{value} is not a branch name"),
                 )
             })?;
             Some(value)
@@ -125,70 +154,70 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
 
     let requested = provisioning
         .requested_worktrees
-        .ok_or_else(|| missing("provisioning.requested_worktrees"))?;
+        .ok_or_else(|| missing(path, "provisioning.requested_worktrees"))?;
     let requested_worktrees = u32::try_from(requested)
         .ok()
         .filter(|value| (MIN_WORKTREES..=MAX_WORKTREES).contains(value))
         .ok_or_else(|| {
             invalid(
+                path,
                 "provisioning.requested_worktrees",
-                format!("{requested} is outside {MIN_WORKTREES}-{MAX_WORKTREES}"),
+                &format!("{requested} is outside {MIN_WORKTREES}-{MAX_WORKTREES}"),
             )
         })?;
 
     let dockerfile_sha256 = provisioning
         .dockerfile_sha256
-        .ok_or_else(|| missing("provisioning.dockerfile_sha256"))?;
+        .ok_or_else(|| missing(path, "provisioning.dockerfile_sha256"))?;
     require_sha256(&dockerfile_sha256)
-        .map_err(|detail| invalid("provisioning.dockerfile_sha256", detail))?;
+        .map_err(|detail| invalid(path, "provisioning.dockerfile_sha256", &detail))?;
 
-    let declared_identity = raw.git_identity.ok_or_else(|| missing("git_identity"))?;
-    let user_name = declared_identity
+    Ok(Provisioning {
+        mode,
+        start_ref,
+        requested_worktrees,
+        dockerfile_sha256,
+    })
+}
+
+/// 登録時に固定した名義を読む。
+fn parse_git_identity(raw: Option<RawGitIdentity>, path: &Path) -> Result<GitIdentity> {
+    let declared = raw.ok_or_else(|| missing(path, "git_identity"))?;
+    let user_name = declared
         .user_name
-        .ok_or_else(|| missing("git_identity.user_name"))?;
-    let user_email = declared_identity
+        .ok_or_else(|| missing(path, "git_identity.user_name"))?;
+    let user_email = declared
         .user_email
-        .ok_or_else(|| missing("git_identity.user_email"))?;
+        .ok_or_else(|| missing(path, "git_identity.user_email"))?;
     validate_git_identity_value(&user_name)
-        .map_err(|detail| invalid("git_identity.user_name", detail.to_string()))?;
+        .map_err(|detail| invalid(path, "git_identity.user_name", detail))?;
     validate_git_identity_value(&user_email)
-        .map_err(|detail| invalid("git_identity.user_email", detail.to_string()))?;
-    let git_identity = GitIdentity {
+        .map_err(|detail| invalid(path, "git_identity.user_email", detail))?;
+    Ok(GitIdentity {
         user_name,
         user_email,
-    };
-
-    let rebuild = match raw.rebuild {
-        Some(rebuild) => {
-            let target = rebuild
-                .target_dockerfile_sha256
-                .ok_or_else(|| missing("rebuild.target_dockerfile_sha256"))?;
-            require_sha256(&target)
-                .map_err(|detail| invalid("rebuild.target_dockerfile_sha256", detail))?;
-            let previous = rebuild
-                .previous_dockerfile_sha256
-                .ok_or_else(|| missing("rebuild.previous_dockerfile_sha256"))?;
-            require_sha256(&previous)
-                .map_err(|detail| invalid("rebuild.previous_dockerfile_sha256", detail))?;
-            Some(RebuildIntent {
-                target_dockerfile_sha256: target,
-                previous_dockerfile_sha256: previous,
-            })
-        }
-        None => None,
-    };
-
-    Ok(ProjectMetadata {
-        repository,
-        provisioning: Provisioning {
-            mode,
-            start_ref,
-            requested_worktrees,
-            dockerfile_sha256,
-        },
-        git_identity,
-        rebuild,
     })
+}
+
+/// 途中で止まった世代交代の記録を読む。
+fn parse_rebuild(raw: Option<RawRebuild>, path: &Path) -> Result<Option<RebuildIntent>> {
+    let Some(rebuild) = raw else {
+        return Ok(None);
+    };
+    let target = rebuild
+        .target_dockerfile_sha256
+        .ok_or_else(|| missing(path, "rebuild.target_dockerfile_sha256"))?;
+    require_sha256(&target)
+        .map_err(|detail| invalid(path, "rebuild.target_dockerfile_sha256", &detail))?;
+    let previous = rebuild
+        .previous_dockerfile_sha256
+        .ok_or_else(|| missing(path, "rebuild.previous_dockerfile_sha256"))?;
+    require_sha256(&previous)
+        .map_err(|detail| invalid(path, "rebuild.previous_dockerfile_sha256", &detail))?;
+    Ok(Some(RebuildIntent {
+        target_dockerfile_sha256: target,
+        previous_dockerfile_sha256: previous,
+    }))
 }
 
 /// SHA-256のlowercase hexであること。

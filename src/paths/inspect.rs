@@ -89,8 +89,7 @@ pub fn format_mode(mode: u32) -> String {
 /// permissionだけでは、ほかのaccountが所有する`0700`のdirectoryを自分のものと
 /// 区別できない。所有関係は観測した値で判定する。
 pub(super) fn current_user() -> u32 {
-    // SAFETY: geteuid(2)は引数を取らず、失敗しない。
-    unsafe { libc::geteuid() }
+    rustix::process::geteuid().as_raw()
 }
 
 /// 現在の利用者が所有していないpathを、内容を変更せず拒否する。

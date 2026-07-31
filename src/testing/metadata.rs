@@ -1,5 +1,7 @@
 //! Project metadataのtestが共有するfixture。
 
+use crate::testing::outcome::{Checked, Required};
+
 use crate::metadata::{CreationMode, GitIdentity, ProjectMetadata, Provisioning};
 use crate::project::{CanonicalProjectId, ProjectId};
 use crate::testing::project::ssh_repository;
@@ -8,10 +10,10 @@ use crate::testing::value::DIGEST;
 /// `DIGEST`とは別の世代を指す固定値。
 pub const OTHER_DIGEST: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 
-pub fn canonical(value: &str) -> CanonicalProjectId {
-    ProjectId::parse(value)
-        .expect("valid project id")
-        .canonical()
+pub fn canonical(value: &str) -> Checked<CanonicalProjectId> {
+    Ok(ProjectId::parse(value)
+        .required_because("valid project id")?
+        .canonical())
 }
 
 /// testが使う、利用者が選んだことになっているGit identity。
@@ -23,9 +25,9 @@ pub fn git_identity() -> GitIdentity {
 }
 
 /// attached modeの1案件。
-pub fn attached(owner: &str, repository: &str) -> ProjectMetadata {
-    ProjectMetadata {
-        repository: ssh_repository(&format!("{owner}/{repository}")),
+pub fn attached(owner: &str, repository: &str) -> Checked<ProjectMetadata> {
+    Ok(ProjectMetadata {
+        repository: ssh_repository(&format!("{owner}/{repository}"))?,
         provisioning: Provisioning {
             mode: CreationMode::Attached,
             start_ref: Some("main".to_string()),
@@ -34,5 +36,5 @@ pub fn attached(owner: &str, repository: &str) -> ProjectMetadata {
         },
         git_identity: git_identity(),
         rebuild: None,
-    }
+    })
 }

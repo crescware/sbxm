@@ -1,5 +1,7 @@
 //! `apply`のtestが動かすSandboxのfake。
 
+use crate::testing::outcome::{Checked, Required};
+
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
@@ -53,8 +55,8 @@ impl FakeSbx {
     }
 
     /// 共有repositoryとworktreeが揃ったSandboxとして答える。
-    pub fn holding_repository(self) -> FakeSbx {
-        let layout = SandboxLayout::new(&canonical());
+    pub fn holding_repository(self) -> Checked<FakeSbx> {
+        let layout = SandboxLayout::new(&canonical()?);
         let git_dir = layout.bare_git_dir();
         let host = self
             .answering(
@@ -93,7 +95,7 @@ impl FakeSbx {
                 _ => host.failing(&format!("git -C {path} symbolic-ref -q HEAD")),
             };
         }
-        host.holding(&[&git_dir])
+        Ok(host.holding(&[&git_dir]))
     }
 
     /// workflowの実行中にlockが保持されているかを観測する。
@@ -139,51 +141,51 @@ impl HostEnvironment for FakeSbx {
     }
 }
 
-pub fn project() -> ProjectId {
-    ProjectId::parse("Example-Org/Example-Repo").unwrap()
+pub fn project() -> Checked<ProjectId> {
+    ProjectId::parse("Example-Org/Example-Repo").required()
 }
 
-pub fn canonical() -> CanonicalProjectId {
-    project().canonical()
+pub fn canonical() -> Checked<CanonicalProjectId> {
+    Ok(project()?.canonical())
 }
 
 pub fn setup(
     files: Vec<FileDeclaration>,
-) -> (
+) -> Checked<(
     tempfile::TempDir,
     ConfigLocation,
     ProjectParent,
     GlobalConfig,
     PathBuf,
-) {
-    let dir = tempfile::tempdir().unwrap();
+)> {
+    let dir = tempfile::tempdir().required()?;
     let base = dir.path().join("Projects");
-    std::fs::create_dir_all(&base).unwrap();
+    std::fs::create_dir_all(&base).required()?;
     let config = GlobalConfig {
         language: Some(Locale::En),
         git_identity: None,
         files,
     };
-    let parent = ProjectParent::at(&base).unwrap();
+    let parent = ProjectParent::at(&base).required()?;
     let workspace_root = dir.path().join("workspaces");
-    std::fs::create_dir_all(workspace_root.join(SandboxName::derive(&canonical()).as_str()))
-        .unwrap();
+    std::fs::create_dir_all(workspace_root.join(SandboxName::derive(&canonical()?).as_str()))
+        .required()?;
     let location = ConfigLocation::from_home(dir.path().to_path_buf());
-    (dir, location, parent, config, workspace_root)
+    Ok((dir, location, parent, config, workspace_root))
 }
 
 pub fn write_metadata(
     location: &ConfigLocation,
     parent: &ProjectParent,
     rebuild: Option<RebuildIntent>,
-) -> ProjectPaths {
-    let paths = ProjectPaths::derive(parent, &canonical());
-    std::fs::create_dir_all(paths.sbxm_dir()).unwrap();
-    let repository = crate::testing::project::ssh_repository("Example-Org/Example-Repo");
-    let mut guard = RegistryGuard::acquire(location).unwrap();
+) -> Checked<ProjectPaths> {
+    let paths = ProjectPaths::derive(parent, &canonical()?);
+    std::fs::create_dir_all(paths.sbxm_dir()).required()?;
+    let repository = crate::testing::project::ssh_repository("Example-Org/Example-Repo")?;
+    let mut guard = RegistryGuard::acquire(location).required()?;
     guard
-        .insert(RegistryEntry::new(paths.root(), repository.clone()).unwrap())
-        .unwrap();
+        .insert(RegistryEntry::new(paths.root(), repository.clone()).required()?)
+        .required()?;
     drop(guard);
     let metadata = ProjectMetadata {
         repository,
@@ -196,24 +198,24 @@ pub fn write_metadata(
         git_identity: crate::testing::metadata::git_identity(),
         rebuild,
     };
-    metadata::create(&paths, &metadata).unwrap();
-    paths
+    metadata::create(&paths, &metadata).required()?;
+    Ok(paths)
 }
 
-pub fn listing(workspace_root: &Path, state: &str) -> String {
-    let name = SandboxName::derive(&canonical());
-    format!(
+pub fn listing(workspace_root: &Path, state: &str) -> Checked<String> {
+    let name = SandboxName::derive(&canonical()?);
+    Ok(format!(
         r#"[{{"name":"{name}","state":"{state}","workspace":"{}","template":"{}","active_sessions":0}}]"#,
         workspace_root.join(name.as_str()).display(),
         image_name(&name, DIGEST)
-    )
+    ))
 }
 
-pub fn declaration(source: &Path) -> FileDeclaration {
-    FileDeclaration {
-        source: HostFileSource::new(&crate::paths::display(source)).unwrap(),
-        destination: SandboxHomeRelativePath::new(".config/example/settings.yaml").unwrap(),
-    }
+pub fn declaration(source: &Path) -> Checked<FileDeclaration> {
+    Ok(FileDeclaration {
+        source: HostFileSource::new(&crate::paths::display(source)).required()?,
+        destination: SandboxHomeRelativePath::new(".config/example/settings.yaml").required()?,
+    })
 }
 
 /// worktreeだけを適用するscope。

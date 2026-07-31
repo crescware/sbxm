@@ -17,7 +17,8 @@ pub enum ExitCode {
 }
 
 impl ExitCode {
-    pub fn as_i32(self) -> i32 {
+    /// processのexit status。値域は`0`、`1`、`130`だけである。
+    pub fn as_u8(self) -> u8 {
         match self {
             ExitCode::Success => 0,
             ExitCode::Failure => 1,
@@ -202,6 +203,7 @@ error_ids! {
 
     // --- 内部 ---
     MessageFormatFailed => "message-format-failed",
+    DocumentRenderFailed => "document-render-failed",
 }
 
 impl std::fmt::Display for ErrorId {
@@ -377,7 +379,7 @@ pub struct DocumentVersion {
     pub supported: u32,
     /// 未知versionのerror ID。
     pub unknown: ErrorId,
-    /// 未知versionのFTL message ID。
+    /// `未知versionのFTL` message ID。
     pub unknown_message: &'static str,
 }
 

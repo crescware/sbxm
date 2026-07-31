@@ -53,30 +53,29 @@ pub fn run(
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;
 
-    let target = match &locked.metadata.rebuild {
-        // intentがある場合は、intentに固定した世代だけを完成させる。
-        Some(intent) => intent.target_dockerfile_sha256.clone(),
-        None => {
-            require_created(&locked.metadata, state, &name)?;
-            start_to_read_saved_state(
-                host,
-                &locked.metadata,
-                &name,
-                state == ProjectState::Stopped,
-                workspace_root,
-                poll,
-                progress,
-            )?;
-            let layout = SandboxLayout::new(&canonical);
-            protection::inspect(
-                host,
-                name.as_str(),
-                &layout,
-                &locked.metadata,
-                Unmanaged::Refused,
-            )?;
-            current.clone()
-        }
+    // intentがある場合は、intentに固定した世代だけを完成させる。
+    let target = if let Some(intent) = &locked.metadata.rebuild {
+        intent.target_dockerfile_sha256.clone()
+    } else {
+        require_created(&locked.metadata, state, &name)?;
+        start_to_read_saved_state(
+            host,
+            &locked.metadata,
+            &name,
+            state == ProjectState::Stopped,
+            workspace_root,
+            poll,
+            progress,
+        )?;
+        let layout = SandboxLayout::new(&canonical);
+        protection::inspect(
+            host,
+            name.as_str(),
+            &layout,
+            &locked.metadata,
+            Unmanaged::Refused,
+        )?;
+        current.clone()
     };
 
     let built = prepare_generation(
@@ -118,7 +117,11 @@ pub fn run(
     };
     context.run(host, &name, &mut locked.metadata, &built.template, progress)?;
 
-    locked.metadata.provisioning.dockerfile_sha256 = target.clone();
+    locked
+        .metadata
+        .provisioning
+        .dockerfile_sha256
+        .clone_from(&target);
     locked.metadata.rebuild = None;
     metadata::update(&locked.paths, &locked.metadata)?;
 
@@ -180,12 +183,11 @@ fn prepare_generation(
         progress,
     )?;
     // 中断した再構築を続ける場合、成功済みの工程はinspectしてskipする。
-    let template = match template::existing(host, &built)? {
-        Some(template) => template,
-        None => {
-            let archive = image::ensure_archive(host, paths, &built, target, progress)?;
-            template::ensure(host, &archive, &built, progress)?
-        }
+    let template = if let Some(template) = template::existing(host, &built)? {
+        template
+    } else {
+        let archive = image::ensure_archive(host, paths, &built, target, progress)?;
+        template::ensure(host, &archive, &built, progress)?
     };
     Ok(Generation {
         template,

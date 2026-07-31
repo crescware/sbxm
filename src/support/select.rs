@@ -98,17 +98,17 @@ pub struct Locked {
 /// 実装は`ui`のpromptだけが持ち、commandは何を訊くかだけを決める。
 pub trait ProjectPrompt {
     /// 1件を選ぶ。
-    fn select_one(&mut self, heading: Msg, candidates: &[String]) -> Result<usize>;
+    fn select_one(&mut self, heading: &Msg, candidates: &[String]) -> Result<usize>;
     /// 1件以上を選ぶ。未選択の確定は受け付けない。
-    fn select_many(&mut self, heading: Msg, candidates: &[String]) -> Result<Vec<usize>>;
+    fn select_many(&mut self, heading: &Msg, candidates: &[String]) -> Result<Vec<usize>>;
 }
 
 impl ProjectPrompt for PromptUi {
-    fn select_one(&mut self, heading: Msg, candidates: &[String]) -> Result<usize> {
+    fn select_one(&mut self, heading: &Msg, candidates: &[String]) -> Result<usize> {
         PromptUi::select_one(self, heading, candidates)
     }
 
-    fn select_many(&mut self, heading: Msg, candidates: &[String]) -> Result<Vec<usize>> {
+    fn select_many(&mut self, heading: &Msg, candidates: &[String]) -> Result<Vec<usize>> {
         PromptUi::select_many(self, heading, candidates)
     }
 }
@@ -117,7 +117,7 @@ impl ProjectPrompt for PromptUi {
 pub fn one(
     location: &ConfigLocation,
     requested: Option<&ProjectId>,
-    heading: Msg,
+    heading: &Msg,
     prompt: &mut dyn ProjectPrompt,
 ) -> Result<Candidate> {
     if let Some(project) = requested {
@@ -137,7 +137,7 @@ pub fn one(
 pub fn many(
     location: &ConfigLocation,
     requested: &[ProjectId],
-    heading: Msg,
+    heading: &Msg,
     prompt: &mut dyn ProjectPrompt,
 ) -> Result<Vec<Candidate>> {
     if !requested.is_empty() {
@@ -234,12 +234,9 @@ fn candidates(location: &ConfigLocation) -> Result<Vec<Candidate>> {
         .collect())
 }
 
-/// 表示にはGitHub上の表記を使う。
+/// `表示にはGitHub上の表記を使う`。
 fn labels(candidates: &[Candidate]) -> Vec<String> {
-    candidates
-        .iter()
-        .map(|candidate| candidate.display_id())
-        .collect()
+    candidates.iter().map(Candidate::display_id).collect()
 }
 
 /// 選択候補となる管理案件が0件であることを、対象選択を開始できないerrorとして返す。

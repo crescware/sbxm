@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Required};
+
 use super::*;
 
 #[test]
@@ -14,9 +16,9 @@ fn an_image_that_declares_no_labels_has_an_empty_label_map() {
 }
 
 #[test]
-fn declared_labels_are_read_as_strings_keyed_by_name() {
+fn declared_labels_are_read_as_strings_keyed_by_name() -> Checked {
     let declared = serde_json::json!({"b": "second", "a": "first"});
-    let labels = labels_from_declared(Some(&declared)).unwrap();
+    let labels = labels_from_declared(Some(&declared)).required()?;
     assert_eq!(
         labels.into_iter().collect::<Vec<_>>(),
         vec![
@@ -24,6 +26,7 @@ fn declared_labels_are_read_as_strings_keyed_by_name() {
             ("b".to_string(), "second".to_string()),
         ]
     );
+    Ok(())
 }
 
 #[test]

@@ -1,5 +1,7 @@
 //! imageのtestが使うdocker fake。
 
+use crate::testing::outcome::{Checked, Required};
+
 use std::cell::RefCell;
 
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
@@ -27,7 +29,7 @@ impl FakeDocker {
             inspect: RefCell::new(
                 inspect
                     .into_iter()
-                    .map(|value| value.map(|text| text.to_string()))
+                    .map(|value| value.map(std::string::ToString::to_string))
                     .collect(),
             ),
             calls: RefCell::new(Vec::new()),
@@ -75,8 +77,10 @@ impl HostEnvironment for FakeDocker {
         let saving = sub(0, "image") && sub(1, "save");
         let listing = sub(0, "image") && sub(1, "ls");
         let (code, stdout) = if building {
-            if self.removes_context {
-                let _ = fs::remove_dir_all(spec.args.last().expect("the context is the last"));
+            if self.removes_context
+                && let Some(context) = spec.args.last()
+            {
+                let _ = fs::remove_dir_all(context);
             }
             (i32::from(self.build_fails), String::new())
         } else if saving {
@@ -90,7 +94,7 @@ impl HostEnvironment for FakeDocker {
                     .inspect
                     .borrow()
                     .last()
-                    .is_some_and(|value| value.is_some());
+                    .is_some_and(std::option::Option::is_some);
                 if !present {
                     // 不在の回はinspectまで進まないため、ここで1件を消費する。
                     self.inspect.borrow_mut().pop();
@@ -107,14 +111,14 @@ impl HostEnvironment for FakeDocker {
     }
 }
 
-pub fn canonical() -> CanonicalProjectId {
-    ProjectId::parse("example-org/example-repo")
-        .unwrap()
-        .canonical()
+pub fn canonical() -> Checked<CanonicalProjectId> {
+    Ok(ProjectId::parse("example-org/example-repo")
+        .required()?
+        .canonical())
 }
 
-pub fn sandbox() -> SandboxName {
-    SandboxName::derive(&canonical())
+pub fn sandbox() -> Checked<SandboxName> {
+    Ok(SandboxName::derive(&canonical()?))
 }
 
 pub fn inspect_output(labels: &[(&str, &str)]) -> String {
@@ -126,19 +130,19 @@ pub fn inspect_output(labels: &[(&str, &str)]) -> String {
     format!(r#"[{{"Id":"sha256:image","Config":{{"Labels":{{{labels}}}}}}}]"#)
 }
 
-pub fn declared_labels() -> Vec<(&'static str, String)> {
-    vec![
-        (LABEL_CANONICAL_ID, canonical().to_string()),
+pub fn declared_labels() -> Checked<Vec<(&'static str, String)>> {
+    Ok(vec![
+        (LABEL_CANONICAL_ID, canonical()?.to_string()),
         (LABEL_DOCKERFILE_SHA256, DIGEST.to_string()),
         (LABEL_METADATA_VERSION, METADATA_VERSION.to_string()),
-    ]
+    ])
 }
 
-pub fn matching_inspect() -> String {
-    let owned = declared_labels();
+pub fn matching_inspect() -> Checked<String> {
+    let owned = declared_labels()?;
     let borrowed: Vec<(&str, &str)> = owned
         .iter()
         .map(|(key, value)| (*key, value.as_str()))
         .collect();
-    inspect_output(&borrowed)
+    Ok(inspect_output(&borrowed))
 }

@@ -120,7 +120,7 @@ pub(super) fn provision_worktree(
     if head != expected_commit {
         return Err(unusable(
             path,
-            format!("HEAD is {head}, and this project starts from {expected_commit}"),
+            &format!("HEAD is {head}, and this project starts from {expected_commit}"),
         ));
     }
     verify_mode(host, sandbox, path, branch, mode)
@@ -157,7 +157,7 @@ pub(super) fn adopt_worktree(
     if common != git_dir {
         return Err(unusable(
             path,
-            format!("the worktree belongs to {common}, not to {git_dir}"),
+            &format!("the worktree belongs to {common}, not to {git_dir}"),
         ));
     }
     Ok(())
@@ -181,14 +181,17 @@ pub(super) fn verify_mode(
         CreationMode::Attached => {
             let expected = format!("refs/heads/{branch}");
             if !outcome.success() || observed != expected {
-                return Err(unusable(path, format!("the worktree is not on {expected}")));
+                return Err(unusable(
+                    path,
+                    &format!("the worktree is not on {expected}"),
+                ));
             }
         }
         CreationMode::Detached => {
             if outcome.success() {
                 return Err(unusable(
                     path,
-                    format!("the worktree is on {observed}, and this project uses detached heads"),
+                    &format!("the worktree is on {observed}, and this project uses detached heads"),
                 ));
             }
         }

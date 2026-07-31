@@ -24,7 +24,7 @@ pub const PROJECT_VALUE_NAME: &str = "project-id";
 /// 登録対象を指す位置引数のvalue name。
 pub const CLONE_URL_VALUE_NAME: &str = "github-clone-url";
 
-/// GitHubが表示するclone URLを解釈する。
+/// `GitHubが表示するclone` URLを解釈する。
 pub fn required_clone_url(matches: &ArgMatches) -> Result<RepositoryIdentity> {
     let value = matches.get_one::<String>("repository").ok_or_else(|| {
         Error::new(
@@ -53,12 +53,11 @@ pub fn optional_project(
     interactivity: Interactivity,
     command: &str,
 ) -> Result<Option<ProjectId>> {
-    match matches.get_one::<String>("project") {
-        Some(value) => Ok(Some(ProjectId::parse(value)?)),
-        None => {
-            require_prompt_capability(interactivity, command)?;
-            Ok(None)
-        }
+    if let Some(value) = matches.get_one::<String>("project") {
+        Ok(Some(ProjectId::parse(value)?))
+    } else {
+        require_prompt_capability(interactivity, command)?;
+        Ok(None)
     }
 }
 

@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Unmet};
+
 use super::*;
 
 use crate::msg;
@@ -51,7 +53,7 @@ fn a_command_that_cannot_be_built_leaves_no_block_behind() {
 }
 
 #[test]
-fn a_table_section_keeps_the_cells_it_was_given() {
+fn a_table_section_keeps_the_cells_it_was_given() -> Checked {
     let table = Table::new(vec![msg!("column-project"), msg!("column-state")]).row(vec![
         Inline::text("owner/repository").into(),
         Inline::state("running", VisualState::Positive).into(),
@@ -59,16 +61,17 @@ fn a_table_section_keeps_the_cells_it_was_given() {
     let document = Document::new().table(Some(msg!("ls-projects-section")), table);
 
     let Block::Section(section) = &document.blocks()[0] else {
-        panic!("a table becomes a section");
+        return Err(Unmet::new("a table becomes a section".to_string()));
     };
     let SectionBody::Table(table) = &section.body else {
-        panic!("the body stays a table");
+        return Err(Unmet::new("the body stays a table".to_string()));
     };
     assert_eq!(table.rows().len(), 1);
     assert_eq!(
         table.rows()[0][1],
         Inline::state("running", VisualState::Positive).into()
     );
+    Ok(())
 }
 
 #[test]
@@ -101,7 +104,7 @@ fn guidance_keeps_its_numbering_across_the_command_blocks_between_it() {
         })
         .filter_map(|item| match item {
             GuidanceItem::Ordered { number, .. } => Some(*number),
-            _ => None,
+            GuidanceItem::Plain(_) => None,
         })
         .collect();
     assert_eq!(numbers, vec![1, 2]);

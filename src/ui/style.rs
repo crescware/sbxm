@@ -4,7 +4,7 @@
 //! 示し、具体色はここだけが決める。同じ意味が全commandと全localeで同じ見え方になるのは
 //! この一方向の写像があるためであり、command固有の色を作れないのもそのためである。
 //!
-//! 具体色はANSI標準16色のnamed colorだけを表す。固定RGBや256色indexを持たないのは
+//! `具体色はANSI標準16色のnamed` colorだけを表す。固定RGBや256色indexを持たないのは
 //! 機能不足ではなく、利用者のterminal themeとcontrast設定を尊重するための制約である。
 
 use super::policy::CharacterSet;
@@ -112,7 +112,8 @@ impl StyleSpec {
 /// roleに対応する装飾。
 pub(super) fn role_style(role: Role) -> StyleSpec {
     match role {
-        Role::Heading => StyleSpec::bold(),
+        // 見出しと照合の基準は、どちらも周囲から1段だけ前へ出す。
+        Role::Heading | Role::Important => StyleSpec::bold(),
         // 列名は読み飛ばす対象であり、階層は示すが本文より前へ出さない。
         Role::TableHeader => StyleSpec {
             bold: true,
@@ -120,17 +121,16 @@ pub(super) fn role_style(role: Role) -> StyleSpec {
             ..StyleSpec::plain()
         },
         Role::ProgressMarker => StyleSpec::color(Color::Cyan),
-        Role::SuccessMarker => StyleSpec::color(Color::Green),
+        // 成功と選択済みは、どちらも「満たされている」ことを同じ緑で示す。
+        Role::SuccessMarker | Role::PromptChecked => StyleSpec::color(Color::Green),
         Role::WarningMarker => StyleSpec::color(Color::Yellow),
         Role::ErrorMarker => StyleSpec::bold_color(Color::Red),
-        Role::Command => StyleSpec::bold_color(Color::Cyan),
-        Role::Important => StyleSpec::bold(),
+        // 入力する一行とfocusのある行は、どちらも「いま手を動かす対象」である。
+        Role::Command | Role::PromptCurrent => StyleSpec::bold_color(Color::Cyan),
         Role::Muted => StyleSpec {
             dim: true,
             ..StyleSpec::plain()
         },
-        Role::PromptCurrent => StyleSpec::bold_color(Color::Cyan),
-        Role::PromptChecked => StyleSpec::color(Color::Green),
     }
 }
 

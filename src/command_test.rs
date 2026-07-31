@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use std::fs;
 use std::io::Write;
@@ -5,16 +7,17 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 /// 実行内容を記録するfake executableを作る。
-fn fake_executable(dir: &Path, name: &str, body: &str) -> PathBuf {
+fn fake_executable(dir: &Path, name: &str, body: &str) -> Checked<PathBuf> {
     let path = dir.join(name);
     {
-        let mut file = fs::File::create(&path).expect("create fake executable");
+        let mut file = fs::File::create(&path).required_because("create fake executable")?;
         file.write_all(format!("#!/bin/sh\n{body}\n").as_bytes())
-            .expect("write fake executable");
-        file.sync_all().expect("flush fake executable");
+            .required_because("write fake executable")?;
+        file.sync_all().required_because("flush fake executable")?;
     }
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("make executable");
-    path
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+        .required_because("make executable")?;
+    Ok(path)
 }
 
 /// 作りたてのfake executableを、timeout classの既定値で実行する。
@@ -56,30 +59,31 @@ fn timeout_classes_match_the_documented_defaults() {
 }
 
 #[test]
-fn a_command_runs_in_the_working_directory_it_was_given() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_command_runs_in_the_working_directory_it_was_given() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let workspace = dir.path().join("workspace");
-    fs::create_dir(&workspace).unwrap();
+    fs::create_dir(&workspace).required()?;
     let record = dir.path().join("record");
     let fake = fake_executable(
         dir.path(),
         "fake-tool",
         &format!(r#"pwd > "{}""#, record.display()),
-    );
+    )?;
 
-    let spec = CommandSpec::capture(fake.to_str().unwrap(), &[]).working_dir(&workspace);
-    run_fake(&spec).expect("the fake tool runs");
+    let spec = CommandSpec::capture(fake.to_str().required()?, &[]).working_dir(&workspace);
+    run_fake(&spec).required_because("the fake tool runs")?;
 
-    let observed = fs::read_to_string(&record).unwrap();
+    let observed = fs::read_to_string(&record).required()?;
     assert_eq!(
-        std::fs::canonicalize(observed.trim()).unwrap(),
-        std::fs::canonicalize(&workspace).unwrap()
+        std::fs::canonicalize(observed.trim()).required()?,
+        std::fs::canonicalize(&workspace).required()?
     );
+    Ok(())
 }
 
 #[test]
-fn passthrough_hands_the_streams_to_the_terminal_instead_of_capturing_them() {
-    let dir = tempfile::tempdir().unwrap();
+fn passthrough_hands_the_streams_to_the_terminal_instead_of_capturing_them() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
     let fake = fake_executable(
         dir.path(),
@@ -88,13 +92,13 @@ fn passthrough_hands_the_streams_to_the_terminal_instead_of_capturing_them() {
             r#"printf 'progress'; printf 'warning' >&2; printf 'ran' > "{}""#,
             record.display()
         ),
-    );
+    )?;
 
-    let spec = CommandSpec::passthrough(fake.to_str().unwrap(), &[]);
-    let outcome = run_fake(&spec).expect("the fake tool runs");
+    let spec = CommandSpec::passthrough(fake.to_str().required()?, &[]);
+    let outcome = run_fake(&spec).required_because("the fake tool runs")?;
 
     assert_eq!(
-        fs::read_to_string(&record).unwrap(),
+        fs::read_to_string(&record).required()?,
         "ran",
         "the command still runs"
     );
@@ -103,27 +107,29 @@ fn passthrough_hands_the_streams_to_the_terminal_instead_of_capturing_them() {
         "passthrough output belongs to the terminal, not to a buffer"
     );
     assert!(!outcome.stderr_lossy);
+    Ok(())
 }
 
 #[test]
-fn a_failure_keeps_the_invocation_that_produced_it() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_failure_keeps_the_invocation_that_produced_it() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let workspace = dir.path().join("workspace");
-    fs::create_dir(&workspace).unwrap();
-    let fake = fake_executable(dir.path(), "fake-tool", "exit 2");
+    fs::create_dir(&workspace).required()?;
+    let fake = fake_executable(dir.path(), "fake-tool", "exit 2")?;
 
-    let spec =
-        CommandSpec::capture(fake.to_str().unwrap(), &["clone", "--bare"]).working_dir(&workspace);
-    let failure = run_fake(&spec).expect("runs").failure();
+    let spec = CommandSpec::capture(fake.to_str().required()?, &["clone", "--bare"])
+        .working_dir(&workspace);
+    let failure = run_fake(&spec).required_because("runs")?.failure();
 
     assert_eq!(failure.safe_args, vec!["clone", "--bare"]);
     assert_eq!(failure.working_dir.as_deref(), Some(workspace.as_path()));
     assert!(failure.exit_status.contains('2'));
+    Ok(())
 }
 
 #[test]
-fn every_argument_reaches_the_program_in_order() {
-    let dir = tempfile::tempdir().unwrap();
+fn every_argument_reaches_the_program_in_order() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
     let fake = fake_executable(
         dir.path(),
@@ -132,36 +138,41 @@ fn every_argument_reaches_the_program_in_order() {
             r#"for a in "$@"; do echo "arg=$a"; done > "{}""#,
             record.display()
         ),
-    );
+    )?;
 
-    let spec = CommandSpec::probe(fake.to_str().unwrap(), &["ls", "--json"]);
-    let outcome = run_fake(&spec).expect("the fake tool runs");
+    let spec = CommandSpec::probe(fake.to_str().required()?, &["ls", "--json"]);
+    let outcome = run_fake(&spec).required_because("the fake tool runs")?;
     assert!(outcome.success());
 
-    assert_eq!(fs::read_to_string(&record).unwrap(), "arg=ls\narg=--json\n");
+    assert_eq!(
+        fs::read_to_string(&record).required()?,
+        "arg=ls\narg=--json\n"
+    );
+    Ok(())
 }
 
 #[test]
-fn arguments_are_passed_without_a_shell() {
-    let dir = tempfile::tempdir().unwrap();
+fn arguments_are_passed_without_a_shell() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
     let fake = fake_executable(
         dir.path(),
         "fake-tool",
         &format!(r#"printf '%s' "$1" > "{}""#, record.display()),
-    );
+    )?;
 
     // shellを介さないため、metacharacterはそのまま1個のargumentとして届く。
     let dangerous = "; rm -rf / #$(whoami)";
-    let spec = CommandSpec::probe(fake.to_str().unwrap(), &[dangerous]);
-    run_fake(&spec).expect("the fake tool runs");
+    let spec = CommandSpec::probe(fake.to_str().required()?, &[dangerous]);
+    run_fake(&spec).required_because("the fake tool runs")?;
 
-    assert_eq!(fs::read_to_string(&record).unwrap(), dangerous);
+    assert_eq!(fs::read_to_string(&record).required()?, dangerous);
+    Ok(())
 }
 
 #[test]
-fn security_sensitive_runs_drop_the_ssh_agent_socket() {
-    let dir = tempfile::tempdir().unwrap();
+fn security_sensitive_runs_drop_the_ssh_agent_socket() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
     let fake = fake_executable(
         dir.path(),
@@ -170,110 +181,120 @@ fn security_sensitive_runs_drop_the_ssh_agent_socket() {
             r#"printf 'ssh=%s\n' "${{SSH_AUTH_SOCK-<unset>}}" > "{}""#,
             record.display()
         ),
-    );
+    )?;
 
     // 親processのenvironmentは継承されるが、SSH_AUTH_SOCKだけは除外される。
-    let inherited = CommandSpec::probe(fake.to_str().unwrap(), &[]);
-    run_fake(&inherited).expect("run with inherited environment");
-    let with_agent = fs::read_to_string(&record).unwrap();
+    let inherited = CommandSpec::probe(fake.to_str().required()?, &[]);
+    run_fake(&inherited).required_because("run with inherited environment")?;
+    let with_agent = fs::read_to_string(&record).required()?;
 
     let stripped =
-        CommandSpec::probe(fake.to_str().unwrap(), &[]).env(EnvPolicy::InheritWithoutSshAgent);
-    run_fake(&stripped).expect("run without the agent socket");
-    let without_agent = fs::read_to_string(&record).unwrap();
+        CommandSpec::probe(fake.to_str().required()?, &[]).env(EnvPolicy::InheritWithoutSshAgent);
+    run_fake(&stripped).required_because("run without the agent socket")?;
+    let without_agent = fs::read_to_string(&record).required()?;
 
     assert_eq!(without_agent, "ssh=<unset>\n");
     // 親がSSH_AUTH_SOCKを持たない環境でも、除外側は常にunsetである。
     assert!(with_agent.starts_with("ssh="));
+    Ok(())
 }
 
 #[test]
-fn capture_keeps_both_streams_separately() {
-    let dir = tempfile::tempdir().unwrap();
+fn capture_keeps_both_streams_separately() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let fake = fake_executable(
         dir.path(),
         "fake-tool",
         "printf 'to stdout'; printf 'to stderr' >&2; exit 3",
-    );
+    )?;
 
-    let outcome = run_fake(&CommandSpec::probe(fake.to_str().unwrap(), &[])).expect("runs");
+    let outcome =
+        run_fake(&CommandSpec::probe(fake.to_str().required()?, &[])).required_because("runs")?;
     assert_eq!(outcome.stdout_text(), "to stdout");
     assert_eq!(outcome.failure().stderr_text(), "to stderr");
     assert!(!outcome.success());
     assert_eq!(outcome.status.code(), Some(3));
+    Ok(())
 }
 
 #[test]
-fn invalid_utf8_output_is_kept_as_bytes_and_reported_as_lossy() {
-    let dir = tempfile::tempdir().unwrap();
-    let fake = fake_executable(dir.path(), "fake-tool", r#"printf '\377\376' >&2"#);
+fn invalid_utf8_output_is_kept_as_bytes_and_reported_as_lossy() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let fake = fake_executable(dir.path(), "fake-tool", r"printf '\377\376' >&2")?;
 
-    let outcome = run_fake(&CommandSpec::probe(fake.to_str().unwrap(), &[])).expect("runs");
+    let outcome =
+        run_fake(&CommandSpec::probe(fake.to_str().required()?, &[])).required_because("runs")?;
     assert_eq!(outcome.stderr, vec![0xff, 0xfe]);
     assert!(
         outcome.stderr_lossy,
         "a lossy conversion must be reported as such"
     );
+    Ok(())
 }
 
 #[test]
-fn a_command_that_exceeds_its_timeout_is_terminated() {
-    let dir = tempfile::tempdir().unwrap();
-    let fake = fake_executable(dir.path(), "fake-tool", "sleep 30");
+fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let fake = fake_executable(dir.path(), "fake-tool", "sleep 30")?;
 
-    let spec = CommandSpec::probe(fake.to_str().unwrap(), &[]);
+    let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
     // probeの10秒を待たずに判定するため、直接短いdeadlineを使う。
     let started = Instant::now();
     let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
-        .expect_err("the command must be terminated");
+        .refused_because("the command must be terminated")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "the child must be killed promptly"
     );
+    Ok(())
 }
 
 #[test]
-fn a_missing_program_is_distinguished_from_other_spawn_failures() {
+fn a_missing_program_is_distinguished_from_other_spawn_failures() -> Checked {
     let spec = CommandSpec::probe("sbxm-no-such-program-exists", &[]);
-    let error = run(&spec).expect_err("missing programs fail");
+    let error = run(&spec).refused_because("missing programs fail")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
+    Ok(())
 }
 
 #[test]
-fn a_non_zero_status_maps_to_one_while_keeping_the_original_value() {
-    let dir = tempfile::tempdir().unwrap();
-    let fake = fake_executable(dir.path(), "fake-tool", "printf 'boom' >&2; exit 42");
+fn a_non_zero_status_maps_to_one_while_keeping_the_original_value() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let fake = fake_executable(dir.path(), "fake-tool", "printf 'boom' >&2; exit 42")?;
 
-    let outcome = run_fake(&CommandSpec::probe(fake.to_str().unwrap(), &[])).expect("runs");
+    let outcome =
+        run_fake(&CommandSpec::probe(fake.to_str().required()?, &[])).required_because("runs")?;
     let error = outcome
         .require_success()
-        .expect_err("a non-zero status is a failure");
+        .refused_because("a non-zero status is a failure")?;
     assert_eq!(error.exit_code(), crate::error::ExitCode::Failure);
     let diagnostic = &error.diagnostics()[0];
     let external = diagnostic
         .external
         .as_ref()
-        .expect("the original values are kept in the diagnostic");
+        .required_because("the original values are kept in the diagnostic")?;
     assert!(external.exit_status.contains("42"));
     assert_eq!(external.stderr_text(), "boom");
+    Ok(())
 }
 
 #[test]
-fn path_lookup_finds_an_executable_placed_at_the_front_of_path() {
-    let dir = tempfile::tempdir().unwrap();
-    fake_executable(dir.path(), "sbxm-fake-on-path", "exit 0");
+fn path_lookup_finds_an_executable_placed_at_the_front_of_path() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    fake_executable(dir.path(), "sbxm-fake-on-path", "exit 0")?;
 
     let original = std::env::var_os("PATH").unwrap_or_default();
     let mut entries = vec![dir.path().to_path_buf()];
     entries.extend(std::env::split_paths(&original));
-    let joined = std::env::join_paths(entries).expect("join PATH");
+    let joined = std::env::join_paths(entries).required_because("join PATH")?;
 
-    // SAFETY: このtestだけがPATHを変更し、変更後も既存の全entryを保持する。
-    unsafe { std::env::set_var("PATH", &joined) };
-    let found = exists_on_path("sbxm-fake-on-path");
-    unsafe { std::env::set_var("PATH", &original) };
-
-    assert!(found, "an executable at the front of PATH must be found");
+    // processのPATHは書き換えず、探索の対象となる値だけを渡す。
+    assert!(
+        exists_in_path_value("sbxm-fake-on-path", &joined),
+        "an executable at the front of PATH must be found"
+    );
+    assert!(!exists_in_path_value("sbxm-fake-on-path", &original));
     assert!(!exists_on_path("sbxm-fake-on-path"));
+    Ok(())
 }

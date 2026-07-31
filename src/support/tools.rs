@@ -102,7 +102,9 @@ impl Tool for Mise {
 
     fn on_worktrees_ready(&self, ready: &mut WorktreesReady) -> Result<()> {
         let mut items = Vec::new();
-        for index in 0..ready.count as u32 {
+        // managed worktreeの個数は設定の上限で抑えられており、u32へ収まる。
+        let count = u32::try_from(ready.count).unwrap_or(u32::MAX);
+        for index in 0..count {
             let path = ready.layout.worktree(index);
             for name in MISE_FILES {
                 let target = format!("{path}/{name}");

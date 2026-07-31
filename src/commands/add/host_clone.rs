@@ -24,7 +24,7 @@ pub struct HostClone {
 
 /// host cloneを用意する。
 ///
-/// GitHubへのSSH認証とrepository accessは、owner、repository、利用者のSSH設定に
+/// `GitHubへのSSH認証とrepository` accessは、owner、repository、利用者のSSH設定に
 /// よって結果が変わる。この工程のcloneを疎通の正本の検査とする。
 pub fn ensure(
     host: &dyn HostEnvironment,
@@ -90,7 +90,7 @@ fn inspect(
     if !metadata.is_dir() {
         return Err(unusable(
             target,
-            format!("the clone path is a {}", file_type_name(&metadata)),
+            &format!("the clone path is a {}", file_type_name(&metadata)),
         ));
     }
     require_git_dir_inside_the_project(paths, target)?;
@@ -98,7 +98,7 @@ fn inspect(
     if read_git(host, target, &["rev-parse", "--is-bare-repository"])? != "false" {
         return Err(unusable(
             target,
-            "the repository is bare, so it has no working tree".to_string(),
+            "the repository is bare, so it has no working tree",
         ));
     }
 
@@ -108,7 +108,7 @@ fn inspect(
     if observed != expected {
         return Err(unusable(
             target,
-            format!(
+            &format!(
                 "the working tree of {} is {}",
                 paths::display(&expected),
                 paths::display(&observed)
@@ -124,14 +124,14 @@ fn inspect(
     let [url] = urls.as_slice() else {
         return Err(unusable(
             target,
-            format!("origin has {} URLs, so the remote is ambiguous", urls.len()),
+            &format!("origin has {} URLs, so the remote is ambiguous", urls.len()),
         ));
     };
     // originも登録時と同じ規則でparseする。読めないURLを一致しているとみなさない。
     let Ok(observed) = RepositoryIdentity::parse_clone_url(url) else {
         return Err(unusable(
             target,
-            format!(
+            &format!(
                 "origin URL {url} is not one of {}",
                 accepted_clone_url_forms()
             ),
@@ -140,7 +140,7 @@ fn inspect(
     if !observed.same_target(repository) {
         return Err(unusable(
             target,
-            format!(
+            &format!(
                 "origin points at {observed}, not at {}",
                 repository.clone_url()
             ),
@@ -158,7 +158,7 @@ fn require_git_dir_inside_the_project(paths: &ProjectPaths, target: &Path) -> Re
     let metadata = fs::symlink_metadata(&git_path).map_err(|error| {
         unusable(
             target,
-            format!("{} could not be read: {error}", paths::display(&git_path)),
+            &format!("{} could not be read: {error}", paths::display(&git_path)),
         )
     })?;
 
@@ -168,7 +168,7 @@ fn require_git_dir_inside_the_project(paths: &ProjectPaths, target: &Path) -> Re
     if !metadata.is_file() {
         return Err(unusable(
             target,
-            format!(
+            &format!(
                 "{} is a {}",
                 paths::display(&git_path),
                 file_type_name(&metadata)
@@ -179,7 +179,7 @@ fn require_git_dir_inside_the_project(paths: &ProjectPaths, target: &Path) -> Re
     let contents = fs::read_to_string(&git_path).map_err(|error| {
         unusable(
             target,
-            format!("{} could not be read: {error}", paths::display(&git_path)),
+            &format!("{} could not be read: {error}", paths::display(&git_path)),
         )
     })?;
     let Some(declared) = contents
@@ -188,7 +188,7 @@ fn require_git_dir_inside_the_project(paths: &ProjectPaths, target: &Path) -> Re
     else {
         return Err(unusable(
             target,
-            format!("{} names no git directory", paths::display(&git_path)),
+            &format!("{} names no git directory", paths::display(&git_path)),
         ));
     };
     let declared = declared.trim();
@@ -200,7 +200,7 @@ fn require_git_dir_inside_the_project(paths: &ProjectPaths, target: &Path) -> Re
     if !resolved.starts_with(paths.root()) {
         return Err(unusable(
             target,
-            format!(
+            &format!(
                 "{} points at {}, which is outside {}",
                 paths::display(&git_path),
                 paths::display(&resolved),
@@ -232,7 +232,7 @@ fn file_type_name(metadata: &fs::Metadata) -> &'static str {
 }
 
 /// 既存cloneを自動削除せず、観測した不一致を示して停止する。
-fn unusable(target: &Path, detail: String) -> Error {
+fn unusable(target: &Path, detail: &str) -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::HostCloneUnusable,

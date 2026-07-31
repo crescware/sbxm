@@ -143,6 +143,7 @@ error-project-path-occupied = { $path } already exists and is not registered to 
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 
+error-document-render-failed = The { $document } document could not be built: { $detail }
 error-atomic-write-failed = Writing { $path } failed: { $detail }
 error-cleanup-failed = { $path } could not be removed: { $detail }
 error-temp-file-left-behind = An interrupted run left the temporary file { $path } behind.

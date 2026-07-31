@@ -1,4 +1,6 @@
 //! bare repositoryとmanaged worktreeの診断。
+use crate::testing::outcome::{Checked, Required};
+
 use super::super::diagnose;
 use super::super::fake::*;
 use super::*;
@@ -6,27 +8,27 @@ use crate::testing::host::FakeSbx;
 use crate::testing::project::{fixture, project_id};
 
 #[test]
-fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() {
-    let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
-    let host = looking_inside(&fixture, &project, &three_entries(&project));
+fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() -> Checked {
+    let fixture = fixture()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = looking_inside(&fixture, &project, &three_entries(&project))?;
 
     let status = diagnose(
         &fixture.location,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
     )
-    .expect("diagnose");
+    .required_because("diagnose")?;
 
-    assert_eq!(value_of(&status, "status-item-sandbox"), Value::Running);
-    assert_eq!(value_of(&status, "status-item-secret"), Value::Ready);
+    assert_eq!(value_of(&status, "status-item-sandbox")?, Value::Running);
+    assert_eq!(value_of(&status, "status-item-secret")?, Value::Ready);
     assert_eq!(
-        value_of(&status, "status-item-bare-repository"),
+        value_of(&status, "status-item-bare-repository")?,
         Value::Ready
     );
     assert_eq!(
-        value_of(&status, "status-item-ssh-agent"),
+        value_of(&status, "status-item-ssh-agent")?,
         Value::NotExposed
     );
     assert_eq!(
@@ -46,29 +48,30 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() {
             },
         ]
     );
-    assert_eq!(value_of(&status, "status-item-worktrees"), Value::Ready);
+    assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Ready);
     assert!(status.diagnostics.is_empty(), "{:?}", status.diagnostics);
+    Ok(())
 }
 
 #[test]
-fn a_worktree_outside_the_shared_repository_is_not_counted_as_the_projects() {
-    let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
+fn a_worktree_outside_the_shared_repository_is_not_counted_as_the_projects() -> Checked {
+    let fixture = fixture()?;
+    let project = fixture.register("example-org/example-repo")?;
     let worktrees = format!(
         "{}worktree /work/elsewhere\0detached\0\0",
         three_entries(&project)
     );
-    let host = looking_inside(&fixture, &project, &worktrees);
+    let host = looking_inside(&fixture, &project, &worktrees)?;
 
     let status = diagnose(
         &fixture.location,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
     )
-    .expect("diagnose");
+    .required_because("diagnose")?;
 
-    assert_eq!(value_of(&status, "status-item-worktrees"), Value::Mismatch);
+    assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Mismatch);
     assert_eq!(
         status
             .worktrees
@@ -89,13 +92,14 @@ fn a_worktree_outside_the_shared_repository_is_not_counted_as_the_projects() {
         "the outside worktree is named: {:?}",
         status.diagnostics
     );
+    Ok(())
 }
 
 #[test]
-fn a_repository_check_that_could_not_run_is_not_read_as_missing() {
-    let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
-    let listing = format!("[{}]", fixture.entry(&project, "running"));
+fn a_repository_check_that_could_not_run_is_not_read_as_missing() -> Checked {
+    let fixture = fixture()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let listing = format!("[{}]", fixture.entry(&project, "running")?);
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let host = FakeSbx::listing(&listing).answering(
         &format!(
@@ -109,13 +113,13 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() {
 
     let status = diagnose(
         &fixture.location,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
     )
-    .expect("diagnose");
+    .required_because("diagnose")?;
     assert_eq!(
-        value_of(&status, "status-item-bare-repository"),
+        value_of(&status, "status-item-bare-repository")?,
         Value::Mismatch
     );
 
@@ -131,13 +135,14 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() {
     );
     let status = diagnose(
         &fixture.location,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
     )
-    .expect("diagnose");
+    .required_because("diagnose")?;
     assert_eq!(
-        value_of(&status, "status-item-bare-repository"),
+        value_of(&status, "status-item-bare-repository")?,
         Value::Missing
     );
+    Ok(())
 }

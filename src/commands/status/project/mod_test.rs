@@ -1,35 +1,38 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::fake::*;
 use super::*;
 use crate::testing::host::FakeSbx;
 use crate::testing::project::{fixture, project_id};
 
 #[test]
-fn a_project_that_is_not_managed_cannot_be_diagnosed() {
-    let fixture = fixture();
+fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
+    let fixture = fixture()?;
     let host = FakeSbx::listing("[]");
     let error = diagnose(
         &fixture.location,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
     )
-    .expect_err("there is nothing to diagnose");
+    .refused_because("there is nothing to diagnose")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
+    Ok(())
 }
 
 #[test]
-fn the_items_are_reported_in_the_documented_order() {
-    let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
+fn the_items_are_reported_in_the_documented_order() -> Checked {
+    let fixture = fixture()?;
+    let project = fixture.register("example-org/example-repo")?;
     let host = without_image(FakeSbx::listing("[]"), &project);
 
     let status = diagnose(
         &fixture.location,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
     )
-    .expect("diagnose");
+    .required_because("diagnose")?;
 
     assert_eq!(
         status
@@ -52,32 +55,34 @@ fn the_items_are_reported_in_the_documented_order() {
             "status-item-ssh-agent",
         ]
     );
+    Ok(())
 }
 
 #[test]
-fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() {
-    let fixture = fixture();
-    let project = fixture.register("Example-Org/Example-Repo");
+fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() -> Checked {
+    let fixture = fixture()?;
+    let project = fixture.register("Example-Org/Example-Repo")?;
     let host = without_image(FakeSbx::listing("[]"), &project);
 
     let status = diagnose(
         &fixture.location,
-        &project_id("Example-Org/Example-Repo"),
+        &project_id("Example-Org/Example-Repo")?,
         &host,
         &fixture.workspace_root,
     )
-    .expect("diagnose");
+    .required_because("diagnose")?;
 
     assert_eq!(status.project, "Example-Org/Example-Repo");
-    assert_eq!(value_of(&status, "status-item-metadata"), Value::Ready);
-    assert_eq!(value_of(&status, "status-item-sandbox"), Value::NotCreated);
+    assert_eq!(value_of(&status, "status-item-metadata")?, Value::Ready);
+    assert_eq!(value_of(&status, "status-item-sandbox")?, Value::NotCreated);
     for item in [
         "status-item-secret",
         "status-item-bare-repository",
         "status-item-worktrees",
         "status-item-ssh-agent",
     ] {
-        assert_eq!(value_of(&status, item), Value::NotApplicable, "{item}");
+        assert_eq!(value_of(&status, item)?, Value::NotApplicable, "{item}");
     }
     assert!(status.worktrees.is_empty());
+    Ok(())
 }

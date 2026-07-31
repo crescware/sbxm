@@ -3,6 +3,8 @@
 //! 翻訳文の微修正でtestが壊れないよう、文言ではなくblockの順序と役割を確かめる。
 //! どう描かれるかは`src/ui`のinvariant testが持ち、ここは何を並べるかだけを見る。
 
+use crate::testing::outcome::{Checked, Required, Unmet};
+
 use std::path::PathBuf;
 
 use crate::compatibility::SandboxState;
@@ -85,14 +87,15 @@ fn add_separates_each_next_step_from_the_command_it_asks_for() {
 }
 
 #[test]
-fn add_reports_a_repeat_run_without_pretending_something_changed() {
+fn add_reports_a_repeat_run_without_pretending_something_changed() -> Checked {
     let mut output = add_output();
     output.already_registered = true;
-    let drawn = plain(&super::add::print::document(&output), Locale::En);
+    let drawn = plain(&super::add::print::document(&output), Locale::En)?;
     assert!(
         drawn.starts_with("\u{2713} owner/repo is already managed"),
         "{drawn}"
     );
+    Ok(())
 }
 
 fn placed() -> Vec<PlacedFile> {
@@ -153,14 +156,14 @@ fn prepare_leaves_out_a_table_it_has_no_rows_for() {
 }
 
 #[test]
-fn a_tool_note_puts_what_the_user_must_run_on_its_own_line() {
+fn a_tool_note_puts_what_the_user_must_run_on_its_own_line() -> Checked {
     let notes = vec![crate::support::tools::Note {
         heading: msg!("add-mise-heading"),
         items: vec!["/workspace/mise.toml".to_string()],
         hint: msg!("add-mise-hint"),
         commands: vec![
-            crate::ui::CommandLine::new("mise trust").expect("one line"),
-            crate::ui::CommandLine::new("mise install").expect("one line"),
+            crate::ui::CommandLine::new("mise trust").required_because("one line")?,
+            crate::ui::CommandLine::new("mise install").required_because("one line")?,
         ],
     }];
     let document = super::prepare::print::notes(&notes);
@@ -169,6 +172,7 @@ fn a_tool_note_puts_what_the_user_must_run_on_its_own_line() {
         vec!["lines", "guidance", "command", "command"]
     );
     assert_eq!(commands(&document), vec!["mise trust", "mise install"]);
+    Ok(())
 }
 
 fn apply_output(worktrees: Option<u32>, files: Vec<PlacedFile>) -> super::apply::run::ApplyOutput {
@@ -275,13 +279,13 @@ fn global_status_is_a_table_and_nothing_else() {
 }
 
 #[test]
-fn a_status_value_carries_the_state_its_context_gives_it() {
+fn a_status_value_carries_the_state_its_context_gives_it() -> Checked {
     let document = super::status::print::global_document(&global_status(), Locale::En);
     let Block::Section(section) = &document.blocks()[0] else {
-        panic!("a table");
+        return Err(Unmet::new("a table".to_string()));
     };
     let SectionBody::Table(table) = &section.body else {
-        panic!("a table");
+        return Err(Unmet::new("a table".to_string()));
     };
     assert_eq!(
         table.rows()[0][1],
@@ -291,6 +295,7 @@ fn a_status_value_carries_the_state_its_context_gives_it() {
         table.rows()[1][1],
         Inline::state("error", VisualState::Negative).into()
     );
+    Ok(())
 }
 
 fn project_status(
@@ -357,21 +362,22 @@ fn stop_report(result: super::stop::run::StopResult) -> super::stop::run::StopRe
 }
 
 #[test]
-fn stopping_a_sandbox_is_a_success_even_though_the_word_is_stopped() {
+fn stopping_a_sandbox_is_a_success_even_though_the_word_is_stopped() -> Checked {
     let document = super::stop::print::document(
         &stop_report(super::stop::run::StopResult::Stopped),
         Locale::En,
     );
     let Block::Section(section) = &document.blocks()[0] else {
-        panic!("a table");
+        return Err(Unmet::new("a table".to_string()));
     };
     let SectionBody::Table(table) = &section.body else {
-        panic!("a table");
+        return Err(Unmet::new("a table".to_string()));
     };
     assert_eq!(
         table.rows()[0][2],
         Inline::state("stopped", VisualState::Positive).into()
     );
+    Ok(())
 }
 
 fn destroy_plan(force: bool) -> super::destroy::run::DestroyPlan {
@@ -403,12 +409,12 @@ fn the_deletion_plan_separates_what_goes_from_what_stays() {
 }
 
 #[test]
-fn the_deletion_plan_never_paints_anything_green() {
+fn the_deletion_plan_never_paints_anything_green() -> Checked {
     // 破壊操作の確認画面で成功色を使わない。消えるものと残るものを落ち着いて比べる。
     let drawn = plain(
         &super::destroy::print::plan_document(&destroy_plan(false), Locale::En),
         Locale::En,
-    );
+    )?;
     assert!(!drawn.contains('\u{1b}'), "the plan is plain here: {drawn}");
 
     let mut buffer: Vec<u8> = Vec::new();
@@ -422,11 +428,12 @@ fn the_deletion_plan_never_paints_anything_green() {
             &super::destroy::print::plan_document(&destroy_plan(false), Locale::En),
         );
     }
-    let colored = String::from_utf8(buffer).expect("UTF-8");
+    let colored = String::from_utf8(buffer).required_because("UTF-8")?;
     assert!(
         !colored.contains("\u{1b}[32m"),
         "green belongs to success, not to a deletion plan: {colored:?}"
     );
+    Ok(())
 }
 
 #[test]

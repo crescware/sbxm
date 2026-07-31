@@ -1,9 +1,11 @@
+use crate::testing::outcome::{Checked, Required};
+
 use super::*;
 
 #[test]
-fn the_porcelain_listing_is_read_field_by_field() {
+fn the_porcelain_listing_is_read_field_by_field() -> Checked {
     let output = "worktree /home/agent/work/repo\0bare\0\0worktree /home/agent/work/repo/repo.tree-0\0HEAD abc\0branch refs/heads/main\0\0worktree /home/agent/work/repo/repo.tree-1\0HEAD abc\0detached\0\0";
-    let entries = parse_list(output).expect("the listing parses");
+    let entries = parse_list(output).required_because("the listing parses")?;
     assert_eq!(
         entries,
         vec![
@@ -24,8 +26,13 @@ fn the_porcelain_listing_is_read_field_by_field() {
             },
         ]
     );
-    assert!(parse_list("").expect("an empty listing").is_empty());
+    assert!(
+        parse_list("")
+            .required_because("an empty listing")?
+            .is_empty()
+    );
     assert!(parse_list("detached\0\0").is_err());
+    Ok(())
 }
 
 #[test]

@@ -2,15 +2,16 @@
 
 use crate::project::SandboxLayout;
 use crate::testing::host::FakeSbx;
+use crate::testing::outcome::Checked;
 use crate::testing::project::{Fixture, Registered};
 use crate::testing::value::COMMIT;
 
 /// 検査を通るworktreeを持つhost。
-pub fn clean_host(fixture: &Fixture, project: &Registered) -> FakeSbx {
+pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
-    FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")))
+    Ok(FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")?))
         .answering(
             &format!(
                 "exec {name} -- git --git-dir {} worktree list --porcelain -z",
@@ -60,5 +61,5 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> FakeSbx {
         .answering(&format!("exec {name} -- test -e {managed}/.git/REVERT_HEAD"), 1, "")
         .answering(&format!("exec {name} -- test -e {managed}/.git/BISECT_LOG"), 1, "")
         .answering(&format!("exec {name} -- test -e {managed}/.git/rebase-merge"), 1, "")
-        .answering(&format!("exec {name} -- test -e {managed}/.git/rebase-apply"), 1, "")
+        .answering(&format!("exec {name} -- test -e {managed}/.git/rebase-apply"), 1, ""))
 }

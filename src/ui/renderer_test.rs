@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Required};
+
 use super::*;
 
 use crate::error::{Diagnostic, ErrorId, ExternalFailure};
@@ -11,20 +13,20 @@ use crate::ui::table::Cell;
 /// ANSI escapeの始まり。色を出さないstreamには1 byteも現れてはならない。
 const ESC: u8 = 0x1b;
 
-fn draw(document: &Document, policy: StreamPolicy) -> String {
+fn draw(document: &Document, policy: StreamPolicy) -> Checked<String> {
     let mut buffer: Vec<u8> = Vec::new();
     {
         let mut renderer = Renderer::new(&mut buffer, policy);
         renderer.write(&Catalog::new(Locale::En), document);
     }
-    String::from_utf8(buffer).expect("the renderer writes UTF-8")
+    String::from_utf8(buffer).required_because("the renderer writes UTF-8")
 }
 
-fn plain(document: &Document) -> String {
+fn plain(document: &Document) -> Checked<String> {
     draw(document, StreamPolicy::plain())
 }
 
-fn colored(document: &Document) -> String {
+fn colored(document: &Document) -> Checked<String> {
     draw(document, StreamPolicy::colored())
 }
 
@@ -68,127 +70,140 @@ fn representative() -> Document {
 }
 
 #[test]
-fn a_stream_without_color_contains_no_escape_byte() {
-    let drawn = plain(&representative());
+fn a_stream_without_color_contains_no_escape_byte() -> Checked {
+    let drawn = plain(&representative())?;
     assert!(
         !drawn.as_bytes().contains(&ESC),
         "a redirected stream must stay copy-and-pasteable: {drawn:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn the_standard_theme_never_reaches_for_truecolor_or_256_colors() {
-    let drawn = colored(&representative());
+fn the_standard_theme_never_reaches_for_truecolor_or_256_colors() -> Checked {
+    let drawn = colored(&representative())?;
     assert!(!drawn.contains("\u{1b}[38;2;"), "{drawn:?}");
     assert!(!drawn.contains("\u{1b}[38;5;"), "{drawn:?}");
     assert!(
         !drawn.contains("\u{1b}[48;"),
         "a background color: {drawn:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn the_renderer_never_emits_italic_or_blink() {
-    let drawn = colored(&representative());
+fn the_renderer_never_emits_italic_or_blink() -> Checked {
+    let drawn = colored(&representative())?;
     assert!(!drawn.contains("\u{1b}[3m"), "italic: {drawn:?}");
     assert!(!drawn.contains("\u{1b}[5m"), "blink: {drawn:?}");
+    Ok(())
 }
 
 #[test]
-fn output_never_begins_with_a_blank_line() {
-    assert!(!plain(&representative()).starts_with('\n'));
+fn output_never_begins_with_a_blank_line() -> Checked {
+    assert!(!plain(&representative())?.starts_with('\n'));
+    Ok(())
 }
 
 #[test]
-fn blocks_are_separated_by_exactly_one_blank_line() {
-    let drawn = plain(&representative());
+fn blocks_are_separated_by_exactly_one_blank_line() -> Checked {
+    let drawn = plain(&representative())?;
     assert!(!drawn.contains("\n\n\n"), "{drawn:?}");
+    Ok(())
 }
 
 #[test]
-fn a_document_closes_with_a_single_newline() {
-    let drawn = plain(&Document::new().summary(msg!("add-registered", project = "owner/alpha")));
+fn a_document_closes_with_a_single_newline() -> Checked {
+    let drawn = plain(&Document::new().summary(msg!("add-registered", project = "owner/alpha")))?;
     assert!(drawn.ends_with('\n'));
     assert!(!drawn.ends_with("\n\n"), "{drawn:?}");
+    Ok(())
 }
 
 #[test]
-fn a_heading_sits_directly_above_its_content() {
-    let drawn = plain(&Document::new().table(Some(msg!("ls-projects-section")), listing()));
+fn a_heading_sits_directly_above_its_content() -> Checked {
+    let drawn = plain(&Document::new().table(Some(msg!("ls-projects-section")), listing()))?;
     let mut lines = drawn.lines();
     assert_eq!(lines.next(), Some("PROJECTS"));
     assert!(
         lines.next().is_some_and(|line| line.starts_with("PROJECT")),
         "{drawn:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn a_command_line_owns_its_line_with_a_blank_line_on_each_side() {
+fn a_command_line_owns_its_line_with_a_blank_line_on_each_side() -> Checked {
     let drawn = plain(
         &Document::new()
             .guidance(None, vec![GuidanceItem::Plain(msg!("add-next-prepare"))])
             .try_command("sbxm prepare owner/alpha")
             .note(msg!("files-secret-hint")),
-    );
+    )?;
     let lines: Vec<&str> = drawn.lines().collect();
     let index = lines
         .iter()
         .position(|line| *line == "sbxm prepare owner/alpha")
-        .expect("the command occupies a line of its own");
+        .required_because("the command occupies a line of its own")?;
     assert_eq!(lines[index - 1], "", "{drawn:?}");
     assert_eq!(lines[index + 1], "", "{drawn:?}");
+    Ok(())
 }
 
 #[test]
-fn a_trailing_command_still_closes_with_a_blank_line() {
-    let drawn = plain(&Document::new().try_command("sbxm prepare owner/alpha"));
+fn a_trailing_command_still_closes_with_a_blank_line() -> Checked {
+    let drawn = plain(&Document::new().try_command("sbxm prepare owner/alpha"))?;
     assert_eq!(drawn, "sbxm prepare owner/alpha\n\n");
+    Ok(())
 }
 
 #[test]
-fn a_command_line_carries_nothing_the_user_did_not_type() {
-    let drawn = plain(&Document::new().try_command("sbxm prepare owner/alpha"));
-    let command = drawn.lines().next().expect("a command line");
+fn a_command_line_carries_nothing_the_user_did_not_type() -> Checked {
+    let drawn = plain(&Document::new().try_command("sbxm prepare owner/alpha"))?;
+    let command = drawn.lines().next().required_because("a command line")?;
     for decoration in ["$", "`", "1.", "- ", "  "] {
         assert!(
             !command.contains(decoration),
             "{decoration:?} is not part of what gets pasted: {command:?}"
         );
     }
+    Ok(())
 }
 
 #[test]
-fn consecutive_progress_lines_are_not_separated() {
+fn consecutive_progress_lines_are_not_separated() -> Checked {
     let drawn = plain(
         &Document::new()
             .progress(msg!("progress-creating-sandbox"))
             .progress(msg!("progress-starting-sandbox")),
-    );
+    )?;
     assert_eq!(drawn.lines().filter(|line| line.is_empty()).count(), 0);
     assert_eq!(drawn.lines().count(), 2);
+    Ok(())
 }
 
 #[test]
-fn a_summary_after_progress_is_separated_by_one_blank_line() {
+fn a_summary_after_progress_is_separated_by_one_blank_line() -> Checked {
     let drawn = plain(
         &Document::new()
             .progress(msg!("progress-creating-sandbox"))
             .summary(msg!("add-registered", project = "owner/alpha")),
-    );
+    )?;
     let lines: Vec<&str> = drawn.lines().collect();
     assert_eq!(lines[1], "", "{drawn:?}");
     assert_eq!(lines.len(), 3, "{drawn:?}");
+    Ok(())
 }
 
 #[test]
-fn column_positions_do_not_move_when_color_is_switched_on() {
+fn column_positions_do_not_move_when_color_is_switched_on() -> Checked {
     let document = Document::new().table(None, listing());
-    assert_eq!(plain(&document), strip_ansi(&colored(&document)));
+    assert_eq!(plain(&document)?, strip_ansi(&colored(&document)?));
+    Ok(())
 }
 
 #[test]
-fn full_width_labels_keep_the_columns_aligned() {
+fn full_width_labels_keep_the_columns_aligned() -> Checked {
     let document = Document::new().table(
         None,
         Table::new(vec![msg!("column-project"), msg!("column-state")])
@@ -206,40 +221,39 @@ fn full_width_labels_keep_the_columns_aligned() {
         let mut renderer = Renderer::new(&mut buffer, StreamPolicy::plain());
         renderer.write(&Catalog::new(Locale::Ja), &document);
     }
-    let drawn = String::from_utf8(buffer).expect("UTF-8");
-    let starts: Vec<usize> = drawn
-        .lines()
-        .skip(1)
-        .map(|line| {
-            let value = line.rfind("ready").expect("the value column");
-            super::display_width(&line[..value])
-        })
-        .collect();
+    let drawn = String::from_utf8(buffer).required_because("UTF-8")?;
+    let mut starts: Vec<usize> = Vec::new();
+    for line in drawn.lines().skip(1) {
+        let value = line.rfind("ready").required_because("the value column")?;
+        starts.push(super::display_width(&line[..value]));
+    }
     assert!(
         starts.windows(2).all(|pair| pair[0] == pair[1]),
         "the value column starts at the same display column: {drawn:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn only_the_state_cell_of_a_row_is_colored() {
-    let drawn = colored(&Document::new().table(None, listing()));
+fn only_the_state_cell_of_a_row_is_colored() -> Checked {
+    let drawn = colored(&Document::new().table(None, listing()))?;
     let row = drawn
         .lines()
         .find(|line| line.contains("owner/alpha"))
-        .expect("the row");
+        .required_because("the row")?;
     assert!(
         !row.starts_with('\u{1b}'),
         "the project id stays plain: {row:?}"
     );
     assert!(row.contains("\u{1b}[32mrunning"), "{row:?}");
+    Ok(())
 }
 
 #[test]
-fn an_ascii_stream_swaps_the_glyphs_without_changing_the_meaning() {
+fn an_ascii_stream_swaps_the_glyphs_without_changing_the_meaning() -> Checked {
     let document = Document::new().progress(msg!("progress-creating-sandbox"));
-    let unicode = plain(&document);
-    let ascii = draw(&document, StreamPolicy::ascii());
+    let unicode = plain(&document)?;
+    let ascii = draw(&document, StreamPolicy::ascii())?;
 
     assert!(unicode.starts_with("\u{2192} "), "{unicode:?}");
     assert!(ascii.starts_with("> "), "{ascii:?}");
@@ -248,26 +262,29 @@ fn an_ascii_stream_swaps_the_glyphs_without_changing_the_meaning() {
         ascii.trim_start_matches(['>', ' ']),
         "the sentence is the same either way"
     );
+    Ok(())
 }
 
 #[test]
-fn a_warning_names_its_severity_in_words_as_well_as_in_color() {
-    let drawn = plain(&Document::new().warning(msg!("destroy-force-notice")));
+fn a_warning_names_its_severity_in_words_as_well_as_in_color() -> Checked {
+    let drawn = plain(&Document::new().warning(msg!("destroy-force-notice")))?;
     assert!(drawn.starts_with("! Warning: "), "{drawn:?}");
+    Ok(())
 }
 
 #[test]
-fn a_note_is_told_apart_from_a_warning_without_color() {
-    let drawn = plain(&Document::new().note(msg!("files-secret-hint")));
+fn a_note_is_told_apart_from_a_warning_without_color() -> Checked {
+    let drawn = plain(&Document::new().note(msg!("files-secret-hint")))?;
     assert!(drawn.starts_with("! Note: "), "{drawn:?}");
+    Ok(())
 }
 
 #[test]
-fn a_diagnostic_keeps_its_id_in_english_behind_a_marker() {
+fn a_diagnostic_keeps_its_id_in_english_behind_a_marker() -> Checked {
     let drawn = plain(&Document::new().diagnostic(Diagnostic::new(
         ErrorId::DockerUnreachable,
         msg!("error-docker-unreachable", detail = "no answer"),
-    )));
+    )))?;
     assert!(
         drawn.starts_with("\u{d7} error: docker-unreachable\n"),
         "{drawn:?}"
@@ -279,10 +296,11 @@ fn a_diagnostic_keeps_its_id_in_english_behind_a_marker() {
             .nth(1)
             .is_some_and(|line| line.starts_with("  ") && !line.trim().is_empty())
     );
+    Ok(())
 }
 
 #[test]
-fn a_remediation_separates_the_explanation_from_the_command() {
+fn a_remediation_separates_the_explanation_from_the_command() -> Checked {
     let drawn = plain(
         &Document::new().diagnostic(
             Diagnostic::new(
@@ -298,14 +316,15 @@ fn a_remediation_separates_the_explanation_from_the_command() {
                     .try_run("sbxm status --global"),
             ),
         ),
-    );
+    )?;
     let lines: Vec<&str> = drawn.lines().collect();
     let command = lines
         .iter()
         .position(|line| *line == "sbxm status --global")
-        .expect("the command is its own line");
+        .required_because("the command is its own line")?;
     assert_eq!(lines[command - 1], "", "{drawn:?}");
     assert!(lines.contains(&"  Try:"), "{drawn:?}");
+    Ok(())
 }
 
 fn failed(stderr: &[u8], args: &[&str]) -> Diagnostic {
@@ -319,7 +338,7 @@ fn failed(stderr: &[u8], args: &[&str]) -> Diagnostic {
     )
     .external(ExternalFailure {
         program: "docker".to_string(),
-        safe_args: args.iter().map(|arg| arg.to_string()).collect(),
+        safe_args: args.iter().map(|arg| (*arg).to_string()).collect(),
         working_dir: None,
         exit_status: "1".to_string(),
         stderr: stderr.to_vec(),
@@ -328,36 +347,39 @@ fn failed(stderr: &[u8], args: &[&str]) -> Diagnostic {
 }
 
 #[test]
-fn external_output_is_indented_and_closed_with_a_newline() {
+fn external_output_is_indented_and_closed_with_a_newline() -> Checked {
     // 末尾に改行がない外部outputでも、blockは改行で閉じる。
-    let drawn = plain(&Document::new().diagnostic(failed(b"first\nsecond", &["build"])));
+    let drawn = plain(&Document::new().diagnostic(failed(b"first\nsecond", &["build"])))?;
     assert!(drawn.contains("\n    first\n    second\n"), "{drawn:?}");
     assert!(drawn.ends_with('\n'));
+    Ok(())
 }
 
 #[test]
-fn external_output_is_bracketed_by_a_reset_when_the_stream_is_colored() {
+fn external_output_is_bracketed_by_a_reset_when_the_stream_is_colored() -> Checked {
     // 外部が残したstyleを、sbxm自身の出力へ持ち越さない。
-    let drawn = colored(&Document::new().diagnostic(failed(b"\x1b[31mred\n", &[])));
+    let drawn = colored(&Document::new().diagnostic(failed(b"\x1b[31mred\n", &[])))?;
     assert!(
         drawn.contains("    \u{1b}[0m\u{1b}[31mred\u{1b}[0m\n"),
         "{drawn:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn the_invocation_of_a_failed_command_is_its_own_line() {
-    let drawn = plain(&Document::new().diagnostic(failed(b"", &["build", "--tag"])));
+fn the_invocation_of_a_failed_command_is_its_own_line() -> Checked {
+    let drawn = plain(&Document::new().diagnostic(failed(b"", &["build", "--tag"])))?;
     let lines: Vec<&str> = drawn.lines().collect();
     let index = lines
         .iter()
         .position(|line| *line == "docker build --tag")
-        .expect("the invocation is shown as one line");
+        .required_because("the invocation is shown as one line")?;
     assert_eq!(lines[index - 1], "", "{drawn:?}");
+    Ok(())
 }
 
 #[test]
-fn several_diagnostics_are_separated_by_one_blank_line() {
+fn several_diagnostics_are_separated_by_one_blank_line() -> Checked {
     let drawn = plain(
         &Document::new()
             .diagnostic(Diagnostic::new(
@@ -372,22 +394,24 @@ fn several_diagnostics_are_separated_by_one_blank_line() {
                 ErrorId::DockerUnreachable,
                 msg!("error-docker-unreachable", detail = "no answer"),
             )),
-    );
+    )?;
     assert!(!drawn.contains("\n\n\n"), "{drawn:?}");
     assert_eq!(drawn.matches("\u{d7} error:").count(), 2, "{drawn:?}");
+    Ok(())
 }
 
 #[test]
-fn help_text_keeps_its_own_shape_and_gains_one_trailing_newline() {
-    let drawn = plain(&Document::new().verbatim("Usage: sbxm\n\nOptions:\n  --help\n\n\n"));
+fn help_text_keeps_its_own_shape_and_gains_one_trailing_newline() -> Checked {
+    let drawn = plain(&Document::new().verbatim("Usage: sbxm\n\nOptions:\n  --help\n\n\n"))?;
     assert_eq!(drawn, "Usage: sbxm\n\nOptions:\n  --help\n");
+    Ok(())
 }
 
 #[test]
-fn every_matrix_combination_renders_the_same_structure() {
+fn every_matrix_combination_renders_the_same_structure() -> Checked {
     // localeと文字集合と色を変えても、blockの数と境界の規則は変わらない。
     let document = representative();
-    let expected = plain(&document).lines().count();
+    let expected = plain(&document)?.lines().count();
     for locale in Locale::ALL {
         for policy in [
             StreamPolicy::plain(),
@@ -399,7 +423,7 @@ fn every_matrix_combination_renders_the_same_structure() {
                 let mut renderer = Renderer::new(&mut buffer, policy);
                 renderer.write(&Catalog::new(locale), &document);
             }
-            let drawn = String::from_utf8(buffer).expect("UTF-8");
+            let drawn = String::from_utf8(buffer).required_because("UTF-8")?;
             assert_eq!(
                 drawn.lines().count(),
                 expected,
@@ -415,18 +439,20 @@ fn every_matrix_combination_renders_the_same_structure() {
             }
         }
     }
+    Ok(())
 }
 
 #[test]
-fn a_dumb_terminal_gets_ascii_glyphs_and_no_escape_byte() {
+fn a_dumb_terminal_gets_ascii_glyphs_and_no_escape_byte() -> Checked {
     let policy = StreamPolicy {
         color: false,
         characters: CharacterSet::Ascii,
         width: None,
     };
-    let drawn = draw(&representative(), policy);
+    let drawn = draw(&representative(), policy)?;
     assert!(!drawn.as_bytes().contains(&ESC), "{drawn:?}");
     assert!(drawn.starts_with("+ "), "{drawn:?}");
+    Ok(())
 }
 
 /// ANSI sequenceを取り除く。列位置の比較にだけ使う。

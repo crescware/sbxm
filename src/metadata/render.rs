@@ -4,7 +4,7 @@ use super::document::{RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, 
 use super::{METADATA_VERSION, ProjectMetadata};
 
 /// metadataをYAMLへ描画する。
-pub fn render(metadata: &ProjectMetadata) -> String {
+pub fn render(metadata: &ProjectMetadata) -> crate::error::Result<String> {
     let provisioning = &metadata.provisioning;
     let repository = &metadata.repository;
     let raw = RawMetadata {
@@ -32,6 +32,5 @@ pub fn render(metadata: &ProjectMetadata) -> String {
             previous_dockerfile_sha256: Some(rebuild.previous_dockerfile_sha256.clone()),
         }),
     };
-    // RawMetadataは文字列と整数だけで構成され、YAMLで表現できない値を持たない。
-    yaml_serde::to_string(&raw).expect("project metadata is representable as YAML")
+    crate::config::serialized(&raw, "project.yaml")
 }

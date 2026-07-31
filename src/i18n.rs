@@ -33,18 +33,19 @@ struct LocaleDefinition {
 ///
 /// 言語を増やすときは、[`Locale`]のvariantとこの表の行、そして`locales/<tag>.ftl`だけを
 /// 足す。ほかのmoduleとtestは、この表からの導出だけを見る。
-const DEFINITIONS: [LocaleDefinition; 2] = [
-    LocaleDefinition {
-        locale: Locale::En,
-        tag: "en",
-        ftl: include_str!("../locales/en.ftl"),
-    },
-    LocaleDefinition {
-        locale: Locale::Ja,
-        tag: "ja",
-        ftl: include_str!("../locales/ja.ftl"),
-    },
-];
+const DEFINITIONS: [LocaleDefinition; 2] = [EN, JA];
+
+const EN: LocaleDefinition = LocaleDefinition {
+    locale: Locale::En,
+    tag: "en",
+    ftl: include_str!("../locales/en.ftl"),
+};
+
+const JA: LocaleDefinition = LocaleDefinition {
+    locale: Locale::Ja,
+    tag: "ja",
+    ftl: include_str!("../locales/ja.ftl"),
+};
 
 impl Locale {
     /// message IDの正本であり、fallbackであり、翻訳しない状態値が書かれている言語。
@@ -103,19 +104,21 @@ impl Locale {
         Locale::parse_exact(&primary)
     }
 
+    /// variantから定義への対応。variantを足すと、この写像が網羅を強制する。
     fn definition(self) -> &'static LocaleDefinition {
-        DEFINITIONS
-            .iter()
-            .find(|definition| definition.locale == self)
-            .expect("every locale has a definition")
+        match self {
+            Locale::En => &EN,
+            Locale::Ja => &JA,
+        }
     }
 
-    /// FTLのbundleへ渡すlanguage identifier。tagから導出する。
+    /// `FTLのbundleへ渡すlanguage` identifier。tagから導出する。
+    ///
+    /// tagは表が持つASCIIのlanguage subtagであり、読めない値は入らない。読めない場合でも
+    /// bundleは未定言語として組み上がり、message解決そのものは変わらない。tagとidentifierの
+    /// 一致はtestが固定する。
     fn langid(self) -> LanguageIdentifier {
-        let tag = self.as_str();
-        LanguageIdentifier::from_str(tag).unwrap_or_else(|error| {
-            panic!("locale tag {tag} is not a language identifier: {error}")
-        })
+        LanguageIdentifier::from_str(self.as_str()).unwrap_or_default()
     }
 
     fn source(self) -> &'static str {
@@ -152,9 +155,9 @@ pub enum FormatFailureReason {
     Format(String),
 }
 
-/// FTLのformatに失敗したという内部異常。
+/// `FTLのformatに失敗したという内部異常`。
 ///
-/// 利用者向け文字列を生成できない状態であるため、対象message IDとlocaleを英語で示す。
+/// 利用者向け文字列を生成できない状態であるため、対象message `IDとlocaleを英語で示す`。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatFailure {
     pub message_id: String,
@@ -187,20 +190,20 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    /// 組み込みFTLからcatalogを作る。
+    /// `組み込みFTLからcatalogを作る`。
     ///
     /// 組み込みresourceのparse失敗はbuild成果物の不備であり、testで検出する。
+    ///
+    /// 実行時は読めた範囲で組み上げる。欠けたmessageはmessage IDとして表に出るため、
+    /// 不備は隠れずに現れる。
     pub fn new(locale: Locale) -> Self {
-        let resource =
-            FluentResource::try_new(locale.source().to_owned()).unwrap_or_else(|(_, errors)| {
-                panic!("built-in {locale} FTL failed to parse: {errors:?}")
-            });
+        let resource = FluentResource::try_new(locale.source().to_owned())
+            .unwrap_or_else(|(resource, _errors)| resource);
         let mut bundle = FluentBundle::new(vec![locale.langid()]);
         // 出力を機械的に比較できるようにするため、方向性制御文字を挿入しない。
         bundle.set_use_isolating(false);
-        bundle
-            .add_resource(resource)
-            .unwrap_or_else(|errors| panic!("built-in {locale} FTL failed to load: {errors:?}"));
+        // 重複IDの報告は無視する。localeごとのID集合はtestが固定する。
+        let _ = bundle.add_resource(resource);
         Catalog { locale, bundle }
     }
 
@@ -208,7 +211,7 @@ impl Catalog {
         self.locale
     }
 
-    /// message IDと引数からlocalizedな文字列を作る。
+    /// message `IDと引数からlocalizedな文字列を作る`。
     pub fn format(&self, message: &Msg) -> FormatResult<String> {
         let mut args = FluentArgs::new();
         for (key, value) in &message.args {

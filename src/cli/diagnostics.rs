@@ -8,14 +8,14 @@ use crate::msg;
 use super::Outcome;
 use crate::ui::Remediation;
 
-pub fn interpret(error: clap::Error) -> Result<Outcome> {
+pub fn interpret(error: &clap::Error) -> Result<Outcome> {
     match error.kind() {
         // helpとversionはexit code `0`。libraryの既定exit codeは透過しない。
         ErrorKind::DisplayHelp | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
             Ok(Outcome::Help(error.render().to_string()))
         }
         ErrorKind::DisplayVersion => Ok(Outcome::Version(super::version_line())),
-        _ => Err(map(&error)),
+        _ => Err(map(error)),
     }
 }
 
@@ -93,7 +93,7 @@ fn context_string(error: &clap::Error, kind: ContextKind) -> Option<String> {
         Some(ContextValue::StyledStrs(values)) => Some(
             values
                 .iter()
-                .map(|value| value.to_string())
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(", "),
         ),

@@ -41,9 +41,9 @@ impl TimeoutClass {
         match self {
             TimeoutClass::Probe => Some(Duration::from_secs(10)),
             TimeoutClass::LocalFilesystem => Some(Duration::from_secs(60)),
-            TimeoutClass::ImageBuild => Some(Duration::from_secs(1800)),
+            TimeoutClass::ImageBuild => Some(IMAGE_BUILD_LIMIT),
             TimeoutClass::SandboxLifecycle => Some(Duration::from_secs(600)),
-            TimeoutClass::RepositoryTransfer => Some(Duration::from_secs(1800)),
+            TimeoutClass::RepositoryTransfer => Some(REPOSITORY_TRANSFER_LIMIT),
             TimeoutClass::Interactive => None,
         }
     }
@@ -71,6 +71,11 @@ pub enum OutputPolicy {
 
 const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
+/// base imageのpullとpackage導入を含むimage構築の上限。
+const IMAGE_BUILD_LIMIT: Duration = Duration::from_secs(1800);
+/// 転送量がrepositoryの大きさで決まるGit転送の上限。
+const REPOSITORY_TRANSFER_LIMIT: Duration = Duration::from_secs(1800);
+
 /// 1回の外部command実行の指定。
 #[derive(Debug, Clone)]
 pub struct CommandSpec {
@@ -93,7 +98,7 @@ impl CommandSpec {
     pub fn capture(program: &str, args: &[&str]) -> CommandSpec {
         CommandSpec {
             program: program.to_string(),
-            args: args.iter().map(|arg| arg.to_string()).collect(),
+            args: args.iter().map(|arg| (*arg).to_string()).collect(),
             env: EnvPolicy::Inherit,
             timeout: TimeoutClass::Probe,
             output: OutputPolicy::Capture,
@@ -303,7 +308,7 @@ fn spawn_reader<R: Read + Send + 'static>(mut pipe: R) -> std::thread::JoinHandl
             match pipe.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(read) => collected.extend_from_slice(&buffer[..read]),
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
                 Err(_) => break,
             }
         }
@@ -368,7 +373,14 @@ pub fn exists_on_path(program: &str) -> bool {
     let Some(path) = std::env::var_os("PATH") else {
         return false;
     };
-    std::env::split_paths(&path).any(|dir| {
+    exists_in_path_value(program, &path)
+}
+
+/// 与えられたPATHの値だけを見て、commandが存在するかを調べる。
+///
+/// process全体のPATHを書き換えずにこの探索をtestできるよう、環境変数の読み取りと分ける。
+fn exists_in_path_value(program: &str, path: &std::ffi::OsStr) -> bool {
+    std::env::split_paths(path).any(|dir| {
         let candidate = dir.join(program);
         is_executable(&candidate)
     })
