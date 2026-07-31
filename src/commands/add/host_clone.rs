@@ -34,21 +34,27 @@ pub fn ensure(
 ) -> Result<HostClone> {
     let target = paths.host_clone();
 
-    if fs::symlink_metadata(&target).is_err() {
-        clone(host, &target, repository, progress)?;
-        // 作成直後も、再利用と同じ規則で成果物を検証する。
-        inspect(host, paths, repository, &target)?;
-        return Ok(HostClone {
-            path: target,
-            created: true,
-        });
+    // 不在と、観測できないことを区別する。そこにあるものを確かめられないまま
+    // cloneへ進むと、既存の成果物の上で外部commandの挙動に判断を委ねることになる。
+    match fs::symlink_metadata(&target) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            clone(host, &target, repository, progress)?;
+            // 作成直後も、再利用と同じ規則で成果物を検証する。
+            inspect(host, paths, repository, &target)?;
+            Ok(HostClone {
+                path: target,
+                created: true,
+            })
+        }
+        Err(error) => Err(PathScope::ProjectPath.unreadable_error(&target, &error.to_string())),
+        Ok(_) => {
+            inspect(host, paths, repository, &target)?;
+            Ok(HostClone {
+                path: target,
+                created: false,
+            })
+        }
     }
-
-    inspect(host, paths, repository, &target)?;
-    Ok(HostClone {
-        path: target,
-        created: false,
-    })
 }
 
 fn clone(

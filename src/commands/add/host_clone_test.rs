@@ -5,6 +5,7 @@ use crate::testing::project::{https_repository, ssh_repository};
 use crate::ui::SilentProgress;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::os::unix::fs::PermissionsExt;
 
 /// gitの応答を差し替え、起動された内容を記録するhost。
 struct FakeGit {
@@ -339,4 +340,29 @@ fn an_origin_that_is_not_one_of_the_accepted_forms_is_refused() {
             .expect_err("an origin sbxm cannot read is never assumed to match");
         assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     }
+}
+
+#[test]
+fn a_clone_path_that_cannot_be_observed_is_never_cloned_over() {
+    // SAFETY: geteuid(2)は引数を取らず、失敗しない。
+    if unsafe { libc::geteuid() } == 0 {
+        // rootはsearch bitに関わらず観測できるため、この状態を作れない。
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let (paths, repository) = project_paths(dir.path());
+    let host = healthy(&paths.host_clone()).cloning_into(&paths.host_clone());
+
+    // 案件rootのsearch bitを外すと、その下にcloneがあるかを観測できなくなる。
+    fs::set_permissions(paths.root(), fs::Permissions::from_mode(0o600)).unwrap();
+    let outcome = ensure(&host, &paths, &repository, &mut SilentProgress);
+    fs::set_permissions(paths.root(), fs::Permissions::from_mode(0o700)).unwrap();
+
+    let error = outcome.expect_err("an unobservable clone path is refused");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    assert!(
+        host.args_of_calls().is_empty(),
+        "a path sbxm could not observe is never cloned onto: {:?}",
+        host.args_of_calls()
+    );
 }
