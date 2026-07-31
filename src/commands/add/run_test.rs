@@ -728,3 +728,35 @@ fn the_git_identity_the_host_declares_is_snapshotted_into_the_metadata() {
     .expect("the stored registration continues");
     assert_eq!(again.metadata.git_identity, identity());
 }
+
+#[test]
+fn a_run_interrupted_before_its_artifacts_exist_is_continued_by_the_same_add() {
+    let setup = setup();
+    let request = request("example-org/example-repo", None, None);
+    let first = register(&setup.location, &setup.parent, &request, &identity()).expect("register");
+    let root = first.paths.root().to_path_buf();
+    drop(first);
+
+    // 中断点: registry entryを記録したあと、project rootを作る前。
+    fs::remove_dir_all(&root).expect("undo the project root");
+    let again = register(&setup.location, &setup.parent, &request, &identity())
+        .expect("the entry is continued");
+    assert_eq!(
+        again.paths.root(),
+        root,
+        "the recorded intent decides where the project goes"
+    );
+    assert!(again.paths.metadata_file().is_file());
+    drop(again);
+
+    // 中断点: project rootを作ったあと、metadataを書く前。
+    fs::remove_file(root.join(".sbxm").join("project.yaml")).expect("undo the metadata");
+    let again = register(&setup.location, &setup.parent, &request, &identity())
+        .expect("the metadata is created on the next run");
+    assert!(again.paths.metadata_file().is_file());
+    drop(again);
+
+    // どの中断点からの再開でも、entryは1件のままである。
+    let registry = crate::registry::load(&setup.location).expect("the registry stays valid");
+    assert_eq!(registry.entries().len(), 1);
+}
