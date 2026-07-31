@@ -6,7 +6,7 @@ sbxm
   add
     id=help --help -h args=0 action=Help order=1000
     id=repository positional value=github-clone-url args=1 required action=Set order=999
-    id=worktrees --worktrees value=N args=1 action=Set order=1
+    id=worktrees --worktrees -t value=N args=1 action=Set order=1
     id=detach --detach value=BRANCH args=1 action=Set order=2
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
@@ -14,7 +14,7 @@ sbxm
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=1 required action=Set order=999
     id=files --files args=0 action=SetTrue order=1
-    id=worktrees --worktrees value=N args=1 action=Set order=2
+    id=worktrees --worktrees -t value=N args=1 action=Set order=2
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
   prepare

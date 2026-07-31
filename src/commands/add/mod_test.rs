@@ -52,6 +52,28 @@ fn worktree_counts_outside_the_allowed_range_are_refused() {
     ));
 }
 
+/// `-t`は`--worktrees`の別名であり、同じ本数として解釈される。
+#[test]
+fn the_short_form_requests_the_same_worktree_count() {
+    assert!(matches!(
+        command(
+            &[
+                "add",
+                "git@github.com:owner/repo.git",
+                "-t",
+                "3",
+                "--detach",
+                "develop"
+            ],
+            tty()
+        ),
+        Command::Add(Args {
+            worktrees: Some(3),
+            ..
+        })
+    ));
+}
+
 #[test]
 fn more_than_one_worktree_requires_an_explicit_start_branch() {
     let error = parse_argv(
