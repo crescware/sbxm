@@ -382,6 +382,27 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
         0o700
     );
 
+    // 索引は`~/.sbxm/registry.yaml`が持ち、project rootを絶対pathで指す。
+    let registry = home.path().join(".sbxm").join("registry.yaml");
+    let index = std::fs::read_to_string(&registry).unwrap();
+    assert!(index.contains("version: 1"), "{index}");
+    assert!(
+        index.contains("canonical_id: example-org/example-repo"),
+        "{index}"
+    );
+    assert!(
+        index.contains(&format!("project_root: {}", root.display())),
+        "{index}"
+    );
+    assert!(
+        index.contains("clone_url: git@github.com:Example-Org/Example-Repo.git"),
+        "{index}"
+    );
+    assert_eq!(
+        std::fs::metadata(&registry).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+
     let written = std::fs::read_to_string(&metadata).unwrap();
     assert!(
         written.contains("canonical_id: example-org/example-repo"),

@@ -20,6 +20,7 @@ mod image_labels;
 mod metadata;
 mod paths;
 mod project;
+mod registry;
 mod repository;
 mod support;
 #[cfg(test)]

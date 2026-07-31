@@ -81,6 +81,15 @@ error-file-declaration-invalid-source = Declared file { $index } has an invalid 
 error-file-declaration-invalid-destination = Declared file { $index } has an invalid destination { $destination }: { $detail }
 warning-config-unknown-key = Unknown key { $key } in { $path } was ignored.
 
+error-registry-unreadable = The project registry at { $path } could not be read: { $detail }
+error-registry-invalid-syntax = The project registry at { $path } is not valid YAML: { $detail }
+error-registry-unknown-version = The project registry at { $path } declares version { $version }, but this build supports { $supported }.
+error-registry-missing-field = The project registry at { $path } is missing the required field { $field }.
+error-registry-invalid-value = Registry field { $field } is not valid: { $detail }
+error-registry-duplicate-project = { $canonical_id } is registered more than once, at: { $paths }
+error-registry-duplicate-root = { $path } is registered for more than one project: { $projects }
+error-registry-entry-mismatch = { $canonical_id } is already registered as { $stored }, and this run asks for { $requested }.
+
 error-metadata-unreadable = The project metadata at { $path } could not be read: { $detail }
 error-metadata-invalid-syntax = The project metadata at { $path } is not valid YAML: { $detail }
 error-metadata-unknown-version = The project metadata at { $path } declares version { $version }, but this build supports { $supported }.
@@ -133,6 +142,7 @@ warning-dockerfile-changed-during-rebuild = The Dockerfile of { $project } chang
 warning-lock-file-left-behind = The project is no longer managed, but its lock file { $path } could not be removed: { $detail }
 warning-dockerfile-changed-during-build = The Dockerfile of { $project } changed while its first build was still running, so the build finished with the generation it started from.
 error-project-path-collision = { $path } already belongs to { $observed }, so { $requested } cannot be registered there.
+error-project-path-occupied = { $path } already exists and is not registered to any project, so { $requested } cannot be registered there.
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 
@@ -199,6 +209,8 @@ remediation-target-configuration-mismatch = Leave those options out to continue 
 remediation-image-collision = Inspect { $image } yourself, then remove or rename it once you are sure it is not needed. sbxm does not overwrite an image it did not build.
 remediation-cleanup-failed = Remove { $path } yourself once you are sure nothing else needs it, then run the command again.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.
+remediation-registry-entry-mismatch = Compare the registry with the project directory yourself. sbxm never rewrites a registration to make a run succeed.
+remediation-project-path-occupied = Inspect { $path } yourself, then move it aside or register the project from another parent directory. sbxm never adopts artifacts it did not register.
 remediation-project-path-collision = Run the command again from another parent directory. sbxm never adds an owner directory to work around a name that is already taken.
 remediation-invalid-clone-url = Open the repository on GitHub, copy the clone URL it shows, and pass it unchanged.
 remediation-fix-config = Edit { $path } and run the command again.

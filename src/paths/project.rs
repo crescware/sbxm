@@ -118,8 +118,15 @@ impl ProjectPaths {
         let root = parent
             .as_path()
             .join(format!("{}{PROJECT_DIR_SUFFIX}", id.repository()));
+        ProjectPaths::at(&root, id)
+    }
+
+    /// 保存済みのproject rootから組み立てる。
+    ///
+    /// 登録済み案件の配置は保存済みrootだけを正本とし、実行時の配置規則で再計算しない。
+    pub fn at(root: &Path, id: &CanonicalProjectId) -> ProjectPaths {
         ProjectPaths {
-            root,
+            root: root.to_path_buf(),
             repository: id.repository().to_string(),
         }
     }

@@ -4,7 +4,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use crate::commands::add::run::AddRequest;
-use crate::config::{GitIdentity, GlobalConfig};
+use crate::config::{ConfigLocation, GitIdentity, GlobalConfig};
 use crate::error::Result;
 use crate::i18n::Locale;
 use crate::metadata::{self, ProjectMetadata};
@@ -20,6 +20,7 @@ pub struct Bench {
     pub _base: tempfile::TempDir,
     pub _home: tempfile::TempDir,
     pub workspace_root: tempfile::TempDir,
+    pub location: ConfigLocation,
     pub config: GlobalConfig,
 }
 
@@ -53,6 +54,7 @@ pub fn bench() -> Bench {
         }],
     };
     Bench {
+        location: ConfigLocation::from_home(home.path().to_path_buf()),
         _base: base,
         _home: home,
         workspace_root,
@@ -63,7 +65,13 @@ pub fn bench() -> Bench {
 impl Bench {
     /// `add`で登録してから`prepare`で構築する。工程は通しで判定する。
     pub fn build(&self, world: &World, request: &AddRequest) -> Result<PrepareOutput> {
-        crate::commands::add::run::run(&self.config, request, world, &mut SilentProgress)?;
+        crate::commands::add::run::run(
+            &self.location,
+            &self.config,
+            request,
+            world,
+            &mut SilentProgress,
+        )?;
         let project = ProjectId::parse(&request.repository.display_id())
             .expect("the registered repository names a project");
         run(

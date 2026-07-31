@@ -19,7 +19,7 @@ pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
         worktrees: args.worktrees,
         detach: args.detach.clone(),
     };
-    match super::run::run(&config, &request, &RealHost, ui) {
+    match super::run::run(context.location, &config, &request, &RealHost, ui) {
         Ok(output) => {
             for warning in &output.warnings {
                 ui.warning(warning);

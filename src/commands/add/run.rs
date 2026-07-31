@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::command::HostEnvironment;
-use crate::config::GlobalConfig;
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::git;
 use crate::hash::sha256_hex;
@@ -20,6 +20,7 @@ use crate::paths::{
     self, ExclusiveLock, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths,
 };
 use crate::project::{CanonicalProjectId, SandboxName};
+use crate::registry::{self, Registry, RegistryEntry, RegistryGuard};
 use crate::repository::RepositoryIdentity;
 
 use crate::support::generation;
@@ -111,52 +112,43 @@ pub struct Registration {
 
 /// 案件を登録し、以後の外部mutationへ進める状態にする。
 ///
-/// 1. 入力を検証し、既存案件との衝突検査を完了する
-/// 2. project root、`.sbxm`、`.cache`を作る
-/// 3. project lockを取得する
-/// 4. Dockerfileがなければbundled templateから作り、あれば内容を変えず採用する
-/// 5. 目標構成を含むmetadataをatomic writeする
-pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registration> {
+/// 1. global registry lockを取得し、document全体を検証する
+/// 2. registry全体と新規要求の衝突を検査する
+/// 3. 登録意図を持つentryをregistryへatomic recordする
+/// 4. registry lockを保持したままproject rootを作り、project lockを取得する
+/// 5. Dockerfileとproject metadataをatomic createする
+/// 6. entryとproject metadataを再検証する
+/// 7. registry lockだけを解放する
+///
+/// 長時間かかるhost cloneは、registry lockを解放したあとで`run`が行う。
+pub fn register(
+    location: &ConfigLocation,
+    config: &GlobalConfig,
+    request: &AddRequest,
+) -> Result<Registration> {
     let target = TargetConfiguration::from_request(request)?;
     let canonical = request.repository.canonical_id().clone();
     let sandbox = SandboxName::derive(&canonical);
 
-    // 破損した案件が1件でもあれば、一覧を部分的に信用せずここで停止する。
-    let known = metadata::discover(&config.base_path)?;
-    if let Some(other) = known.iter().find(|project| {
-        *project.metadata.canonical_id() != canonical && project.metadata.sandbox_name() == sandbox
-    }) {
-        return fail(
-            ErrorId::SandboxNameCollision,
-            msg!(
-                "error-sandbox-name-collision",
-                sandbox = sandbox,
-                projects = format!("{}, {}", canonical, other.metadata.canonical_id())
-            ),
-        );
-    }
-    if let Some(project) = known
-        .iter()
-        .find(|project| *project.metadata.canonical_id() == canonical)
-    {
-        // mutationの前に、保存済み目標構成との一致を判定する。
-        check_continuable(&project.metadata, request)?;
-    }
+    // registryが不正なら、一部entryだけを信用せずここで停止する。
+    let mut guard = RegistryGuard::acquire(location)?;
 
-    let paths = ProjectPaths::derive(&config.base_path, &canonical);
-    // owner名を含むdirectoryを作らないため、同じ親directoryでは同じrepository名が
-    // 同じpathを要求する。衝突をowner名の付与で回避せず、mutation前に拒否する。
-    if let Some(other) = known
-        .iter()
-        .find(|project| project.paths.root() == paths.root())
-        .filter(|project| *project.metadata.canonical_id() != canonical)
-    {
-        return Err(path_collision(
-            paths.root(),
-            other.metadata.canonical_id(),
-            &canonical,
-        ));
-    }
+    let paths = match guard.registry().find(&canonical) {
+        Some(entry) => {
+            // 登録済みなら、実行時の配置規則から新しい候補pathを作らない。
+            require_same_registration(entry, &request.repository)?;
+            ProjectPaths::at(entry.project_root(), &canonical)
+        }
+        None => {
+            let candidate = ProjectPaths::derive(&config.base_path, &canonical);
+            check_new_registration(guard.registry(), &candidate, &canonical, &sandbox)?;
+            guard.insert(RegistryEntry::new(
+                candidate.root(),
+                request.repository.clone(),
+            )?)?;
+            candidate
+        }
+    };
 
     paths::ensure_directory(paths.root())?;
     paths::ensure_private_dir(&paths.sbxm_dir(), PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
@@ -197,12 +189,116 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
         }
     };
 
+    // entryとmetadataが同じ案件を指していることを、registry lockを手放す前に確かめる。
+    let entry = guard
+        .registry()
+        .find(&canonical)
+        .ok_or_else(|| missing_entry(&canonical))?;
+    if entry.project_root() != paths.root() {
+        return Err(path_collision(
+            paths.root(),
+            entry.canonical_id(),
+            &canonical,
+        ));
+    }
+    require_same_registration(entry, &metadata.repository)?;
+    drop(guard);
+
     Ok(Registration {
         paths,
         sandbox,
         metadata,
         _lock: lock,
     })
+}
+
+/// 新規登録として、この候補pathを使ってよいかを判定する。
+///
+/// registry entryのない既存成果物のownershipは`add`では確定できない。名前が一致する
+/// だけのdirectoryをadoptせず、path collisionとして拒否する。
+fn check_new_registration(
+    registry: &Registry,
+    candidate: &ProjectPaths,
+    canonical: &CanonicalProjectId,
+    sandbox: &SandboxName,
+) -> Result<()> {
+    if let Some(other) = registry
+        .entries()
+        .iter()
+        .find(|entry| entry.project_root() == candidate.root())
+    {
+        return Err(path_collision(
+            candidate.root(),
+            other.canonical_id(),
+            canonical,
+        ));
+    }
+    if let Some(other) = registry
+        .entries()
+        .iter()
+        .find(|entry| entry.sandbox_name() == *sandbox)
+    {
+        return fail(
+            ErrorId::SandboxNameCollision,
+            msg!(
+                "error-sandbox-name-collision",
+                sandbox = sandbox,
+                projects = format!("{}, {}", canonical, other.canonical_id())
+            ),
+        );
+    }
+    if std::fs::symlink_metadata(candidate.root()).is_ok() {
+        return Err(Error::single(
+            Diagnostic::new(
+                ErrorId::ProjectPathCollision,
+                msg!(
+                    "error-project-path-occupied",
+                    path = paths::display(candidate.root()),
+                    requested = canonical
+                ),
+            )
+            .remediation(msg!(
+                "remediation-project-path-occupied",
+                path = paths::display(candidate.root())
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// registry entryが、この実行の登録対象と同じ構成を指しているか。
+fn require_same_registration(entry: &RegistryEntry, requested: &RepositoryIdentity) -> Result<()> {
+    if entry.repository().same_target(requested) {
+        return Ok(());
+    }
+    Err(Error::single(
+        Diagnostic::new(
+            ErrorId::TargetConfigurationMismatch,
+            msg!(
+                "error-target-configuration-mismatch",
+                project = entry.repository().display_id(),
+                requested = requested.clone_url(),
+                stored = entry.repository().clone_url()
+            ),
+        )
+        .remediation(
+            Remediation::text(msg!("remediation-target-configuration-mismatch"))
+                .try_run(format!("sbxm add {}", entry.repository().clone_url())),
+        ),
+    ))
+}
+
+/// 記録したはずのentryが、lockを保持したまま読み直したregistryにない。
+fn missing_entry(canonical: &CanonicalProjectId) -> Error {
+    Error::new(
+        ErrorId::RegistryEntryMismatch,
+        msg!(
+            "error-registry-entry-mismatch",
+            canonical_id = canonical,
+            stored = "-",
+            requested = canonical
+        ),
+    )
 }
 
 /// `add`の結果。
@@ -229,15 +325,21 @@ pub struct AddOutput {
 /// Sandboxは作らない。Sandbox名はcanonical project IDから決まるため、この時点で
 /// 確定して呼び出し側へ返せる。GitHub tokenの登録先がその名前になる。
 pub fn run(
+    location: &ConfigLocation,
     config: &GlobalConfig,
     request: &AddRequest,
     host: &dyn HostEnvironment,
     progress: &mut dyn ProgressSink,
 ) -> Result<AddOutput> {
-    let paths = ProjectPaths::derive(&config.base_path, request.repository.canonical_id());
-    let already_registered = metadata::load(&paths)?.is_some();
+    let already_registered = registry::load(location)?
+        .find(request.repository.canonical_id())
+        .map(|entry| ProjectPaths::at(entry.project_root(), entry.canonical_id()))
+        .map(|paths| metadata::load(&paths))
+        .transpose()?
+        .flatten()
+        .is_some();
 
-    let registration = register(config, request)?;
+    let registration = register(location, config, request)?;
     // host cloneは、validation済みの入力と同じtransportとclone URLで取る。
     let clone = host_clone::ensure(
         host,

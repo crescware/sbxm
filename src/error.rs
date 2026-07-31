@@ -99,6 +99,16 @@ error_ids! {
     FileDeclarationInvalidSource => "file-declaration-invalid-source",
     FileDeclarationInvalidDestination => "file-declaration-invalid-destination",
 
+    // --- Global registry ---
+    RegistryUnreadable => "registry-unreadable",
+    RegistryInvalidSyntax => "registry-invalid-syntax",
+    RegistryUnknownVersion => "registry-unknown-version",
+    RegistryMissingField => "registry-missing-field",
+    RegistryInvalidValue => "registry-invalid-value",
+    RegistryDuplicateProject => "registry-duplicate-project",
+    RegistryDuplicateRoot => "registry-duplicate-root",
+    RegistryEntryMismatch => "registry-entry-mismatch",
+
     // --- Project metadata ---
     MetadataUnreadable => "metadata-unreadable",
     MetadataInvalidSyntax => "metadata-invalid-syntax",

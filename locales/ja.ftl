@@ -81,6 +81,15 @@ error-file-declaration-invalid-source = 宣言file { $index } のsource { $sourc
 error-file-declaration-invalid-destination = 宣言file { $index } のdestination { $destination } が不正です: { $detail }
 warning-config-unknown-key = { $path } の未知のkey { $key } を無視しました。
 
+error-registry-unreadable = { $path } の案件registryを読み取れません: { $detail }
+error-registry-invalid-syntax = { $path } の案件registryがYAMLとして不正です: { $detail }
+error-registry-unknown-version = { $path } の案件registryはversion { $version } ですが、このbuildが対応するのは { $supported } です。
+error-registry-missing-field = { $path } の案件registryに必須項目 { $field } がありません。
+error-registry-invalid-value = registryの項目 { $field } の値が不正です: { $detail }
+error-registry-duplicate-project = { $canonical_id } が複数回登録されています: { $paths }
+error-registry-duplicate-root = { $path } が複数の案件に対して登録されています: { $projects }
+error-registry-entry-mismatch = { $canonical_id } は既に { $stored } として登録されており、この実行は { $requested } を指定しています。
+
 error-metadata-unreadable = { $path } の案件metadataを読み取れません: { $detail }
 error-metadata-invalid-syntax = { $path } の案件metadataがYAMLとして不正です: { $detail }
 error-metadata-unknown-version = { $path } の案件metadataはversion { $version } ですが、このbuildが対応するのは { $supported } です。
@@ -133,6 +142,7 @@ warning-dockerfile-changed-during-rebuild = { $project } のDockerfileは、再�
 warning-lock-file-left-behind = 案件の管理は解除しましたが、lock file { $path } を削除できませんでした: { $detail }
 warning-dockerfile-changed-during-build = { $project } のDockerfileが初回構築の途中で変わったため、開始時の世代のまま構築を完了しました。
 error-project-path-collision = { $path } は既に { $observed } のものであるため、{ $requested } をそこへ登録できません。
+error-project-path-occupied = { $path } は既に存在し、どの案件にも登録されていないため、{ $requested } をそこへ登録できません。
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
 
@@ -199,6 +209,8 @@ remediation-target-configuration-mismatch = 保存済みの目標構成で続け
 remediation-image-collision = { $image } の内容をご自身で確認し、不要であることを確かめてから削除または改名してください。sbxmは自分がbuildしていないimageを上書きしません。
 remediation-cleanup-failed = ほかに必要とするものがないことを確かめてから { $path } をご自身で削除し、もう一度実行してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。
+remediation-registry-entry-mismatch = registryと案件directoryを自分で突き合わせてください。sbxmは実行を通すために登録内容を書き換えることはしません。
+remediation-project-path-occupied = { $path } を自分で確認し、退避するか、別の親directoryで登録してください。sbxmは自分が登録していない成果物を取り込むことはしません。
 remediation-project-path-collision = 別の親directoryでもう一度実行してください。sbxmは名前の衝突を避けるためにowner名のdirectoryを足すことはしません。
 remediation-invalid-clone-url = GitHubでrepositoryを開き、表示されるclone URLをそのまま渡してください。
 remediation-fix-config = { $path } を編集してからもう一度実行してください。

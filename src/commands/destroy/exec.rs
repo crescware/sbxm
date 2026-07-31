@@ -49,6 +49,13 @@ pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
         Err(error) => return report(ui, &error),
     };
 
+    // project lockを手放してから、短時間だけregistry lockを取ってentryを外す。
+    let canonical = prepared.canonical_id().clone();
+    drop(prepared);
+    if let Err(error) = super::run::unregister(context.location, &canonical) {
+        return report(ui, &error);
+    }
+
     for warning in &outcome.warnings {
         ui.warning(warning);
     }

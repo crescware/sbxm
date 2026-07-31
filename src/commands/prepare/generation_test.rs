@@ -71,8 +71,14 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
     let bench = bench();
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None);
-    crate::commands::add::run::run(&bench.config, &request, &world, &mut SilentProgress)
-        .expect("the project is registered");
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.config,
+        &request,
+        &world,
+        &mut SilentProgress,
+    )
+    .expect("the project is registered");
 
     let paths = ProjectPaths::derive(&bench.config.base_path, request.repository.canonical_id());
     fs::write(paths.dockerfile(), EDITED_DOCKERFILE).expect("edit the Dockerfile");

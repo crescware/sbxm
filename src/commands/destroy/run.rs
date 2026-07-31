@@ -6,12 +6,13 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::config::GlobalConfig;
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{CreationMode, ProjectMetadata};
 use crate::msg;
 use crate::paths::{self, PathScope, ProjectPaths};
-use crate::project::{ProjectId, SandboxLayout, SandboxName};
+use crate::project::{CanonicalProjectId, ProjectId, SandboxLayout, SandboxName};
+use crate::registry::RegistryGuard;
 
 use crate::support::daemon;
 use crate::support::inventory::{self, Poll, ProjectState};
@@ -54,6 +55,13 @@ pub struct Prepared {
     state: ProjectState,
     force: bool,
     _locked: select::Locked,
+}
+
+impl Prepared {
+    /// 管理解除後にregistryから外す案件。
+    pub fn canonical_id(&self) -> &CanonicalProjectId {
+        self._locked.metadata.canonical_id()
+    }
 }
 
 /// 削除の結果。
@@ -293,6 +301,15 @@ impl TerminalConfirmPrompt {
     pub fn new(prompt: PromptUi) -> TerminalConfirmPrompt {
         TerminalConfirmPrompt { prompt }
     }
+}
+
+/// 管理解除の最後に、対応するregistry entryだけを削除する。
+///
+/// registry entryを先に消して案件を発見不能にしない。project lockを手放したあとで
+/// 短時間だけregistry lockを取るため、2つのlockを同時には保持しない。
+pub fn unregister(location: &ConfigLocation, canonical: &CanonicalProjectId) -> Result<()> {
+    let mut guard = RegistryGuard::acquire(location)?;
+    guard.remove(canonical)
 }
 
 impl ConfirmPrompt for TerminalConfirmPrompt {

@@ -141,6 +141,27 @@ impl RepositoryIdentity {
         transport: &str,
         clone_url: &str,
     ) -> std::result::Result<RepositoryIdentity, String> {
+        let identity =
+            RepositoryIdentity::from_index_parts(provider, canonical_id, transport, clone_url)?;
+        if identity.owner != owner || identity.name != name {
+            return Err(format!(
+                "the clone URL names {}/{}, not {owner}/{name}",
+                identity.owner, identity.name
+            ));
+        }
+        Ok(identity)
+    }
+
+    /// 索引が持つfieldから復元する。
+    ///
+    /// 表示上の綴りはclone URLから読み直す。索引は表示用のownerとrepositoryを二重に
+    /// 保存しない。
+    pub fn from_index_parts(
+        provider: &str,
+        canonical_id: &str,
+        transport: &str,
+        clone_url: &str,
+    ) -> std::result::Result<RepositoryIdentity, String> {
         let declared_provider = Provider::parse(provider)
             .ok_or_else(|| format!("{provider} is not a supported provider"))?;
         let declared_transport = CloneTransport::parse(transport)
@@ -158,12 +179,6 @@ impl RepositoryIdentity {
             return Err(format!(
                 "the clone URL uses the {} transport, not {declared_transport}",
                 identity.transport
-            ));
-        }
-        if identity.owner != owner || identity.name != name {
-            return Err(format!(
-                "the clone URL names {}/{}, not {owner}/{name}",
-                identity.owner, identity.name
             ));
         }
         if identity.canonical_id.as_str() != canonical_id {

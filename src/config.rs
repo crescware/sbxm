@@ -74,6 +74,16 @@ impl ConfigLocation {
     pub fn init_lock(&self) -> PathBuf {
         self.dir().join("init.lock")
     }
+
+    /// `~/.sbxm/registry.yaml`
+    pub fn registry_file(&self) -> PathBuf {
+        self.dir().join("registry.yaml")
+    }
+
+    /// `~/.sbxm/registry.lock`
+    pub fn registry_lock(&self) -> PathBuf {
+        self.dir().join("registry.lock")
+    }
 }
 
 /// Sandbox内の`agent` homeへ配置するhost file。

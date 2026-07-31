@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::{GitIdentity, GlobalConfig};
+use crate::config::{ConfigLocation, GitIdentity, GlobalConfig};
 use crate::i18n::Locale;
 use crate::metadata::RebuildIntent;
 use crate::paths::{AbsoluteBasePath, LOCK_TIMEOUT};
@@ -10,8 +10,17 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::Duration;
 
-fn setup() -> (tempfile::TempDir, GlobalConfig) {
+/// base pathとglobal state directoryを持つtest環境。
+struct Setup {
+    dir: tempfile::TempDir,
+    _home: tempfile::TempDir,
+    location: ConfigLocation,
+    config: GlobalConfig,
+}
+
+fn setup() -> Setup {
     let dir = tempfile::tempdir().expect("temporary base path");
+    let home = tempfile::tempdir().expect("temporary home");
     let config = GlobalConfig {
         language: Locale::En,
         base_path: AbsoluteBasePath::new(dir.path()).expect("valid base path"),
@@ -21,7 +30,12 @@ fn setup() -> (tempfile::TempDir, GlobalConfig) {
         },
         files: Vec::new(),
     };
-    (dir, config)
+    Setup {
+        location: ConfigLocation::from_home(home.path().to_path_buf()),
+        dir,
+        _home: home,
+        config,
+    }
 }
 
 fn mode_of(path: &Path) -> u32 {
@@ -34,9 +48,13 @@ fn mode_of(path: &Path) -> u32 {
 
 #[test]
 fn registering_a_project_creates_the_documented_layout() {
-    let (_dir, config) = setup();
-    let registration =
-        register(&config, &request("Example-Org/Example-Repo", None, None)).expect("register");
+    let setup = setup();
+    let registration = register(
+        &setup.location,
+        &setup.config,
+        &request("Example-Org/Example-Repo", None, None),
+    )
+    .expect("register");
 
     let paths = &registration.paths;
     assert!(paths.root().is_dir());
@@ -70,9 +88,13 @@ fn registering_a_project_creates_the_documented_layout() {
 
 #[test]
 fn the_bundled_dockerfile_is_written_once_and_never_edited_again() {
-    let (_dir, config) = setup();
-    let registration =
-        register(&config, &request("example-org/example-repo", None, None)).expect("register");
+    let setup = setup();
+    let registration = register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/example-repo", None, None),
+    )
+    .expect("register");
     let dockerfile = registration.paths.dockerfile();
     assert_eq!(
         fs::read_to_string(&dockerfile).unwrap(),
@@ -82,8 +104,12 @@ fn the_bundled_dockerfile_is_written_once_and_never_edited_again() {
     drop(registration);
 
     fs::write(&dockerfile, "FROM scratch\n").unwrap();
-    let registration =
-        register(&config, &request("example-org/example-repo", None, None)).expect("register");
+    let registration = register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/example-repo", None, None),
+    )
+    .expect("register");
     assert_eq!(
         fs::read_to_string(&dockerfile).unwrap(),
         "FROM scratch\n",
@@ -178,7 +204,7 @@ fn the_bundled_dockerfile_pins_every_tool_it_installs() {
 
 #[test]
 fn the_options_decide_the_target_configuration() {
-    let (_dir, config) = setup();
+    let setup = setup();
     let cases = [
         ("one/alpha", None, None, CreationMode::Attached, None, 1),
         ("two/bravo", Some(1), None, CreationMode::Attached, None, 1),
@@ -209,8 +235,12 @@ fn the_options_decide_the_target_configuration() {
     ];
 
     for (project, worktrees, detach, mode, start_ref, count) in cases {
-        let registration =
-            register(&config, &request(project, worktrees, detach)).expect("register");
+        let registration = register(
+            &setup.location,
+            &setup.config,
+            &request(project, worktrees, detach),
+        )
+        .expect("register");
         let provisioning = &registration.metadata.provisioning;
         assert_eq!(provisioning.mode, mode, "{project}");
         assert_eq!(provisioning.start_ref.as_deref(), start_ref, "{project}");
@@ -218,22 +248,27 @@ fn the_options_decide_the_target_configuration() {
     }
 
     // 2個以上のmanaged worktreeは起点branchの明示を必須とする。
-    let error = register(&config, &request("six/foxtrot", Some(2), None))
-        .expect_err("two worktrees need an explicit branch");
+    let error = register(
+        &setup.location,
+        &setup.config,
+        &request("six/foxtrot", Some(2), None),
+    )
+    .expect_err("two worktrees need an explicit branch");
     assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
 }
 
 #[test]
 fn an_unusable_start_branch_stops_before_anything_is_created() {
-    let (dir, config) = setup();
+    let setup = setup();
     let error = register(
-        &config,
+        &setup.location,
+        &setup.config,
         &request("example-org/example-repo", None, Some("-x")),
     )
     .expect_err("a branch that could be read as an option is refused");
     assert_eq!(error.first_id(), Some(ErrorId::InvalidBranchName));
     assert_eq!(
-        fs::read_dir(dir.path()).unwrap().count(),
+        fs::read_dir(setup.dir.path()).unwrap().count(),
         0,
         "nothing may be created before the input is accepted"
     );
@@ -241,17 +276,22 @@ fn an_unusable_start_branch_stops_before_anything_is_created() {
 
 #[test]
 fn re_running_add_without_options_continues_from_the_stored_target() {
-    let (_dir, config) = setup();
+    let setup = setup();
     let first = register(
-        &config,
+        &setup.location,
+        &setup.config,
         &request("example-org/example-repo", Some(3), Some("develop")),
     )
     .expect("register");
     let before = fs::read_to_string(first.paths.metadata_file()).unwrap();
     drop(first);
 
-    let again =
-        register(&config, &request("example-org/example-repo", None, None)).expect("re-run");
+    let again = register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/example-repo", None, None),
+    )
+    .expect("re-run");
     assert_eq!(again.metadata.provisioning.requested_worktrees, 3);
     assert_eq!(
         again.metadata.provisioning.start_ref.as_deref(),
@@ -266,9 +306,10 @@ fn re_running_add_without_options_continues_from_the_stored_target() {
 
 #[test]
 fn options_that_disagree_with_the_stored_target_stop_the_run() {
-    let (_dir, config) = setup();
+    let setup = setup();
     let first = register(
-        &config,
+        &setup.location,
+        &setup.config,
         &request("example-org/example-repo", Some(3), Some("develop")),
     )
     .expect("register");
@@ -277,7 +318,8 @@ fn options_that_disagree_with_the_stored_target_stop_the_run() {
 
     // 完全に一致するoptionは受け付ける。
     register(
-        &config,
+        &setup.location,
+        &setup.config,
         &request("example-org/example-repo", Some(3), Some("develop")),
     )
     .expect("the same options continue the build");
@@ -289,7 +331,8 @@ fn options_that_disagree_with_the_stored_target_stop_the_run() {
         (None, Some("main")),
     ] {
         let error = register(
-            &config,
+            &setup.location,
+            &setup.config,
             &request("example-org/example-repo", worktrees, detach),
         )
         .expect_err("a different target configuration is refused");
@@ -301,13 +344,17 @@ fn options_that_disagree_with_the_stored_target_stop_the_run() {
     }
 
     // 組み合わせとして成立しないoptionは、保存値と比べる前に拒否する。
-    let error = register(&config, &request("example-org/example-repo", Some(3), None))
-        .expect_err("two worktrees still need an explicit branch");
+    let error = register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/example-repo", Some(3), None),
+    )
+    .expect_err("two worktrees still need an explicit branch");
     assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
     assert_eq!(
         fs::read_to_string(
             ProjectPaths::derive(
-                &config.base_path,
+                &setup.config.base_path,
                 ssh_repository("example-org/example-repo").canonical_id()
             )
             .metadata_file()
@@ -319,9 +366,13 @@ fn options_that_disagree_with_the_stored_target_stop_the_run() {
 
 #[test]
 fn a_rebuild_in_progress_sends_the_user_to_rebuild() {
-    let (_dir, config) = setup();
-    let registration =
-        register(&config, &request("example-org/example-repo", None, None)).expect("register");
+    let setup = setup();
+    let registration = register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/example-repo", None, None),
+    )
+    .expect("register");
     let paths = registration.paths.clone();
     let mut metadata = registration.metadata.clone();
     drop(registration);
@@ -332,8 +383,12 @@ fn a_rebuild_in_progress_sends_the_user_to_rebuild() {
     });
     metadata::update(&paths, &metadata).expect("record the intent");
 
-    let error = register(&config, &request("example-org/example-repo", None, None))
-        .expect_err("add does not continue through a rebuild");
+    let error = register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/example-repo", None, None),
+    )
+    .expect_err("add does not continue through a rebuild");
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
     let diagnostic = &error.diagnostics()[0];
     assert_eq!(
@@ -348,9 +403,13 @@ fn a_rebuild_in_progress_sends_the_user_to_rebuild() {
 
 #[test]
 fn the_project_lock_is_held_for_the_whole_workflow() {
-    let (_dir, config) = setup();
-    let registration =
-        register(&config, &request("example-org/example-repo", None, None)).expect("register");
+    let setup = setup();
+    let registration = register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/example-repo", None, None),
+    )
+    .expect("register");
     let lock_path = registration.paths.lock_file();
     assert_eq!(mode_of(&lock_path), PRIVATE_FILE_MODE);
 
@@ -374,56 +433,109 @@ fn the_project_lock_is_held_for_the_whole_workflow() {
 }
 
 #[test]
-fn a_broken_project_anywhere_under_the_base_path_stops_registration() {
-    let (dir, config) = setup();
-    let broken = dir.path().join("broken-repo.project");
-    fs::create_dir_all(broken.join(".sbxm")).unwrap();
-    fs::write(broken.join(".sbxm").join("project.yaml"), "version: 2\n").unwrap();
+fn a_registry_that_cannot_be_trusted_stops_registration() {
+    let setup = setup();
+    std::fs::create_dir_all(setup.location.dir()).unwrap();
+    std::fs::set_permissions(setup.location.dir(), fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(setup.location.registry_file(), "version: 2\nprojects: []\n").unwrap();
+    std::fs::set_permissions(
+        setup.location.registry_file(),
+        fs::Permissions::from_mode(0o600),
+    )
+    .unwrap();
 
-    let error = register(&config, &request("example-org/example-repo", None, None))
-        .expect_err("a listing that cannot be trusted stops the run");
+    let error = register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/example-repo", None, None),
+    )
+    .expect_err("a registry that cannot be trusted stops the run");
     assert!(
-        error.contains_id(ErrorId::MetadataUnknownVersion),
+        error.contains_id(ErrorId::RegistryUnknownVersion),
         "{error:?}"
     );
     assert!(
-        !dir.path().join("example-repo.project").exists(),
-        "nothing may be created while the listing is broken"
+        !setup.dir.path().join("example-repo.project").exists(),
+        "nothing may be created while the registry is broken"
     );
 }
 
 #[test]
-fn an_existing_non_directory_in_the_way_is_refused() {
-    let (dir, config) = setup();
-    fs::write(dir.path().join("example-repo.project"), b"not a directory").unwrap();
+fn an_existing_artifact_in_the_way_is_never_adopted() {
+    // registry entryのない既存成果物のownershipは`add`では確定できない。名前が一致
+    // するだけのpathを取り込まず、path collisionとして拒否する。
+    let setup = setup();
+    for existing in [
+        Existing::File(b"not a directory".to_vec()),
+        Existing::Directory,
+    ] {
+        let root = setup.dir.path().join("example-repo.project");
+        existing.create(&root);
 
-    let error = register(&config, &request("example-org/example-repo", None, None))
-        .expect_err("a project root that is a file is refused");
-    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
-    assert_eq!(
-        fs::read_to_string(dir.path().join("example-repo.project")).unwrap(),
-        "not a directory"
-    );
+        let error = register(
+            &setup.location,
+            &setup.config,
+            &request("example-org/example-repo", None, None),
+        )
+        .expect_err("an unregistered artifact is never adopted");
+        assert_eq!(error.first_id(), Some(ErrorId::ProjectPathCollision));
+        assert!(
+            !root.join(".sbxm").exists(),
+            "nothing is created inside an artifact sbxm does not own"
+        );
+        existing.remove(&root);
+    }
+}
+
+/// 候補pathを塞ぐ既存成果物。
+enum Existing {
+    File(Vec<u8>),
+    Directory,
+}
+
+impl Existing {
+    fn create(&self, root: &Path) {
+        match self {
+            Existing::File(contents) => fs::write(root, contents).unwrap(),
+            Existing::Directory => fs::create_dir_all(root).unwrap(),
+        }
+    }
+
+    fn remove(&self, root: &Path) {
+        match self {
+            Existing::File(_) => fs::remove_file(root).unwrap(),
+            Existing::Directory => fs::remove_dir_all(root).unwrap(),
+        }
+    }
 }
 
 #[test]
 fn the_same_repository_name_under_another_owner_is_a_path_collision() {
-    let (dir, config) = setup();
-    register(&config, &request("example-org/alpha", None, None)).expect("the first one registers");
+    let setup = setup();
+    register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/alpha", None, None),
+    )
+    .expect("the first one registers");
 
-    let error = register(&config, &request("other-org/alpha", None, None))
-        .expect_err("the second one wants the same directory");
+    let error = register(
+        &setup.location,
+        &setup.config,
+        &request("other-org/alpha", None, None),
+    )
+    .expect_err("the second one wants the same directory");
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathCollision));
 
     // 先に登録した案件の成果物は残り、owner名を足したdirectoryも作られない。
     let stored = metadata::load(&ProjectPaths::derive(
-        &config.base_path,
+        &setup.config.base_path,
         ssh_repository("example-org/alpha").canonical_id(),
     ))
     .expect("load")
     .expect("present");
     assert_eq!(stored.canonical_id().to_string(), "example-org/alpha");
-    let entries: Vec<String> = fs::read_dir(dir.path())
+    let entries: Vec<String> = fs::read_dir(setup.dir.path())
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
@@ -432,14 +544,19 @@ fn the_same_repository_name_under_another_owner_is_a_path_collision() {
 
 #[test]
 fn the_same_repository_over_another_transport_is_not_the_same_registration() {
-    let (_dir, config) = setup();
-    let first =
-        register(&config, &request("Example-Org/Example-Repo", None, None)).expect("register");
+    let setup = setup();
+    let first = register(
+        &setup.location,
+        &setup.config,
+        &request("Example-Org/Example-Repo", None, None),
+    )
+    .expect("register");
     let before = fs::read_to_string(first.paths.metadata_file()).unwrap();
     drop(first);
 
     let error = register(
-        &config,
+        &setup.location,
+        &setup.config,
         &from(https_repository("Example-Org/Example-Repo"), None, None),
     )
     .expect_err("SSH and HTTPS are not the same configuration");
@@ -463,7 +580,7 @@ fn the_same_repository_over_another_transport_is_not_the_same_registration() {
     assert_eq!(
         fs::read_to_string(
             ProjectPaths::derive(
-                &config.base_path,
+                &setup.config.base_path,
                 ssh_repository("Example-Org/Example-Repo").canonical_id()
             )
             .metadata_file()
@@ -476,14 +593,22 @@ fn the_same_repository_over_another_transport_is_not_the_same_registration() {
 
 #[test]
 fn only_the_display_casing_of_the_clone_url_may_differ_on_a_re_run() {
-    let (_dir, config) = setup();
-    let first =
-        register(&config, &request("Example-Org/Example-Repo", None, None)).expect("register");
+    let setup = setup();
+    let first = register(
+        &setup.location,
+        &setup.config,
+        &request("Example-Org/Example-Repo", None, None),
+    )
+    .expect("register");
     let before = fs::read_to_string(first.paths.metadata_file()).unwrap();
     drop(first);
 
-    let again = register(&config, &request("example-org/example-repo", None, None))
-        .expect("the same repository continues the build");
+    let again = register(
+        &setup.location,
+        &setup.config,
+        &request("example-org/example-repo", None, None),
+    )
+    .expect("the same repository continues the build");
     assert_eq!(
         again.metadata.repository.clone_url(),
         "git@github.com:Example-Org/Example-Repo.git"
@@ -492,7 +617,7 @@ fn only_the_display_casing_of_the_clone_url_may_differ_on_a_re_run() {
     assert_eq!(
         fs::read_to_string(
             ProjectPaths::derive(
-                &config.base_path,
+                &setup.config.base_path,
                 ssh_repository("example-org/example-repo").canonical_id()
             )
             .metadata_file()

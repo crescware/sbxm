@@ -74,8 +74,14 @@ fn a_rebuild_in_progress_builds_nothing() {
     let bench = bench();
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None);
-    crate::commands::add::run::run(&bench.config, &request, &world, &mut SilentProgress)
-        .expect("the project is registered");
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.config,
+        &request,
+        &world,
+        &mut SilentProgress,
+    )
+    .expect("the project is registered");
 
     let paths = ProjectPaths::derive(&bench.config.base_path, request.repository.canonical_id());
     let mut stored = metadata::load(&paths)
