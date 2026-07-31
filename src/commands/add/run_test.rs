@@ -180,10 +180,10 @@ fn the_bundled_dockerfile_pins_every_tool_it_installs() {
 fn the_options_decide_the_target_configuration() {
     let (_dir, config) = setup();
     let cases = [
-        ("one/repo", None, None, CreationMode::Attached, None, 1),
-        ("two/repo", Some(1), None, CreationMode::Attached, None, 1),
+        ("one/alpha", None, None, CreationMode::Attached, None, 1),
+        ("two/bravo", Some(1), None, CreationMode::Attached, None, 1),
         (
-            "three/repo",
+            "three/charlie",
             None,
             Some("develop"),
             CreationMode::Detached,
@@ -191,7 +191,7 @@ fn the_options_decide_the_target_configuration() {
             1,
         ),
         (
-            "four/repo",
+            "four/delta",
             Some(1),
             Some("develop"),
             CreationMode::Detached,
@@ -199,7 +199,7 @@ fn the_options_decide_the_target_configuration() {
             1,
         ),
         (
-            "five/repo",
+            "five/echo",
             Some(3),
             Some("develop"),
             CreationMode::Detached,
@@ -218,7 +218,7 @@ fn the_options_decide_the_target_configuration() {
     }
 
     // 2個以上のmanaged worktreeは起点branchの明示を必須とする。
-    let error = register(&config, &request("six/repo", Some(2), None))
+    let error = register(&config, &request("six/foxtrot", Some(2), None))
         .expect_err("two worktrees need an explicit branch");
     assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
 }
@@ -376,7 +376,7 @@ fn the_project_lock_is_held_for_the_whole_workflow() {
 #[test]
 fn a_broken_project_anywhere_under_the_base_path_stops_registration() {
     let (dir, config) = setup();
-    let broken = dir.path().join("broken-org").join("broken-repo.project");
+    let broken = dir.path().join("broken-repo.project");
     fs::create_dir_all(broken.join(".sbxm")).unwrap();
     fs::write(broken.join(".sbxm").join("project.yaml"), "version: 2\n").unwrap();
 
@@ -387,7 +387,7 @@ fn a_broken_project_anywhere_under_the_base_path_stops_registration() {
         "{error:?}"
     );
     assert!(
-        !dir.path().join("example-org").exists(),
+        !dir.path().join("example-repo.project").exists(),
         "nothing may be created while the listing is broken"
     );
 }
@@ -395,15 +395,39 @@ fn a_broken_project_anywhere_under_the_base_path_stops_registration() {
 #[test]
 fn an_existing_non_directory_in_the_way_is_refused() {
     let (dir, config) = setup();
-    fs::write(dir.path().join("example-org"), b"not a directory").unwrap();
+    fs::write(dir.path().join("example-repo.project"), b"not a directory").unwrap();
 
     let error = register(&config, &request("example-org/example-repo", None, None))
-        .expect_err("an owner path that is a file is refused");
+        .expect_err("a project root that is a file is refused");
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
     assert_eq!(
-        fs::read_to_string(dir.path().join("example-org")).unwrap(),
+        fs::read_to_string(dir.path().join("example-repo.project")).unwrap(),
         "not a directory"
     );
+}
+
+#[test]
+fn the_same_repository_name_under_another_owner_is_a_path_collision() {
+    let (dir, config) = setup();
+    register(&config, &request("example-org/alpha", None, None)).expect("the first one registers");
+
+    let error = register(&config, &request("other-org/alpha", None, None))
+        .expect_err("the second one wants the same directory");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathCollision));
+
+    // 先に登録した案件の成果物は残り、owner名を足したdirectoryも作られない。
+    let stored = metadata::load(&ProjectPaths::derive(
+        &config.base_path,
+        ssh_repository("example-org/alpha").canonical_id(),
+    ))
+    .expect("load")
+    .expect("present");
+    assert_eq!(stored.canonical_id().to_string(), "example-org/alpha");
+    let entries: Vec<String> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(entries, vec!["alpha.project".to_string()]);
 }
 
 #[test]

@@ -8,7 +8,7 @@ use crate::testing::prompt::ScriptedPrompt;
 fn a_named_project_is_used_without_asking() {
     let fixture = fixture();
     fixture.register("example-org/example-repo");
-    fixture.register("other/repo");
+    fixture.register("other/other-repo");
 
     let mut prompt = ScriptedPrompt::choosing(1);
     let chosen = one(
@@ -53,7 +53,7 @@ fn a_named_project_is_read_without_discovering_the_others() {
 fn an_omitted_target_is_chosen_from_the_managed_projects() {
     let fixture = fixture();
     fixture.register("example-org/example-repo");
-    fixture.register("other/repo");
+    fixture.register("other/other-repo");
 
     let mut prompt = ScriptedPrompt::choosing(1);
     let chosen = one(
@@ -63,12 +63,12 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() {
         &mut prompt,
     )
     .expect("select");
-    assert_eq!(chosen.display_id(), "other/repo");
+    assert_eq!(chosen.display_id(), "other/other-repo");
     assert_eq!(
         prompt.asked.borrow()[0],
         vec![
             "example-org/example-repo".to_string(),
-            "other/repo".to_string()
+            "other/other-repo".to_string()
         ],
         "candidates are listed in canonical order"
     );
@@ -142,16 +142,16 @@ fn a_selection_that_matches_no_candidate_is_not_a_cancel() {
 #[test]
 fn several_named_projects_are_deduplicated_and_ordered() {
     let fixture = fixture();
-    fixture.register("zeta/repo");
-    fixture.register("alpha/repo");
+    fixture.register("zeta/zulu");
+    fixture.register("alpha/alfa");
 
     let mut prompt = ScriptedPrompt::choosing_many(&[0]);
     let selected = many(
         &fixture.config,
         &[
-            project_id("Zeta/Repo"),
-            project_id("alpha/repo"),
-            project_id("zeta/repo"),
+            project_id("Zeta/Zulu"),
+            project_id("alpha/alfa"),
+            project_id("zeta/zulu"),
         ],
         msg!("select-stop-heading"),
         &mut prompt,
@@ -162,7 +162,7 @@ fn several_named_projects_are_deduplicated_and_ordered() {
             .iter()
             .map(|project| project.display_id())
             .collect::<Vec<_>>(),
-        vec!["alpha/repo".to_string(), "zeta/repo".to_string()]
+        vec!["alpha/alfa".to_string(), "zeta/zulu".to_string()]
     );
     assert!(prompt.asked.borrow().is_empty());
 }
@@ -175,7 +175,7 @@ fn a_project_that_is_not_managed_is_named_in_the_diagnostic() {
     let mut prompt = ScriptedPrompt::choosing(0);
     let error = one(
         &fixture.config,
-        Some(&project_id("other/repo")),
+        Some(&project_id("other/other-repo")),
         msg!("select-open-heading"),
         &mut prompt,
     )

@@ -32,10 +32,10 @@ pub fn attached(owner: &str, repository: &str) -> ProjectMetadata {
 }
 
 /// 導出どおりのpathへmetadataを書き、project rootを返す。
-pub fn write_project(base: &Path, owner: &str, repository: &str, text: &str) -> PathBuf {
-    let root = base
-        .join(owner.to_ascii_lowercase())
-        .join(format!("{}.project", repository.to_ascii_lowercase()));
+///
+/// project rootは親directoryの直下に置く。ownerはmetadataの内容だけに現れる。
+pub fn write_project(base: &Path, repository: &str, text: &str) -> PathBuf {
+    let root = base.join(format!("{}.project", repository.to_ascii_lowercase()));
     let dir = root.join(".sbxm");
     std::fs::create_dir_all(&dir).expect("create .sbxm");
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("mode");

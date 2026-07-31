@@ -102,33 +102,29 @@ impl std::fmt::Display for AbsoluteBasePath {
     }
 }
 
-/// 案件が使うhost path。canonical project IDから決定的に導出する。
+/// 案件が使うhost path。
 ///
-/// ownerとrepositoryのlowercase化により、case-insensitive filesystem上の重複を防ぐ。
+/// project rootは、親directoryの直下へ`<repository-lower>.project`として置く。owner名を
+/// 含むdirectoryは作らないため、同じ親directoryでは同じrepository名が同じpathを要求する。
+/// repositoryのlowercase化により、case-insensitive filesystem上の重複を防ぐ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectPaths {
-    owner_dir: PathBuf,
     root: PathBuf,
     repository: String,
 }
 
 impl ProjectPaths {
-    pub fn derive(base: &AbsoluteBasePath, id: &CanonicalProjectId) -> ProjectPaths {
-        let owner_dir = base.as_path().join(id.owner());
-        let root = owner_dir.join(format!("{}{PROJECT_DIR_SUFFIX}", id.repository()));
+    pub fn derive(parent: &AbsoluteBasePath, id: &CanonicalProjectId) -> ProjectPaths {
+        let root = parent
+            .as_path()
+            .join(format!("{}{PROJECT_DIR_SUFFIX}", id.repository()));
         ProjectPaths {
-            owner_dir,
             root,
             repository: id.repository().to_string(),
         }
     }
 
-    /// `<base-path>/<owner-lower>`
-    pub fn owner_dir(&self) -> &Path {
-        &self.owner_dir
-    }
-
-    /// `<base-path>/<owner-lower>/<repository-lower>.project`
+    /// `<parent>/<repository-lower>.project`
     pub fn root(&self) -> &Path {
         &self.root
     }

@@ -132,6 +132,7 @@ error-sandbox-not-running = Sandbox { $sandbox } は { $observed } です。こ�
 warning-dockerfile-changed-during-rebuild = { $project } のDockerfileは、再構築が世代を固定したあとに変更されました。この実行は固定済みの世代を適用しています。
 warning-lock-file-left-behind = 案件の管理は解除しましたが、lock file { $path } を削除できませんでした: { $detail }
 warning-dockerfile-changed-during-build = { $project } のDockerfileが初回構築の途中で変わったため、開始時の世代のまま構築を完了しました。
+error-project-path-collision = { $path } は既に { $observed } のものであるため、{ $requested } をそこへ登録できません。
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
 
@@ -198,6 +199,7 @@ remediation-target-configuration-mismatch = 保存済みの目標構成で続け
 remediation-image-collision = { $image } の内容をご自身で確認し、不要であることを確かめてから削除または改名してください。sbxmは自分がbuildしていないimageを上書きしません。
 remediation-cleanup-failed = ほかに必要とするものがないことを確かめてから { $path } をご自身で削除し、もう一度実行してください。
 remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行が使用していないことを確かめてから削除してください。
+remediation-project-path-collision = 別の親directoryでもう一度実行してください。sbxmは名前の衝突を避けるためにowner名のdirectoryを足すことはしません。
 remediation-invalid-clone-url = GitHubでrepositoryを開き、表示されるclone URLをそのまま渡してください。
 remediation-fix-config = { $path } を編集してからもう一度実行してください。
 remediation-install-command = { $program } を導入し、PATH上に置いてください。

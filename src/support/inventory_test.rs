@@ -7,7 +7,7 @@ use crate::testing::project::fixture;
 fn projects_and_sandboxes_are_paired_by_exact_name() {
     let fixture = fixture();
     let first = fixture.register("Example-Org/Example-Repo");
-    let second = fixture.register("other/repo");
+    let second = fixture.register("other/other-repo");
     let host = FakeSbx::listing(&format!(
         "[{},{}]",
         fixture.entry(&first, "running"),
@@ -26,7 +26,7 @@ fn projects_and_sandboxes_are_paired_by_exact_name() {
                 "Example-Org/Example-Repo".to_string(),
                 ProjectState::Running
             ),
-            ("other/repo".to_string(), ProjectState::Stopped),
+            ("other/other-repo".to_string(), ProjectState::Stopped),
         ],
         "projects are listed in canonical order"
     );
@@ -121,7 +121,7 @@ fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() {
         .config
         .base_path
         .as_path()
-        .join("broken/broken.project/.sbxm");
+        .join("broken.project/.sbxm");
     std::fs::create_dir_all(&broken).unwrap();
     std::fs::write(broken.join("project.yaml"), "version: 2\n").unwrap();
     let error = take(

@@ -96,20 +96,12 @@ impl CanonicalProjectId {
         &self.value
     }
 
-    /// lowercase化したowner。host pathの1階層目に使う。
-    pub fn owner(&self) -> &str {
-        self.split().0
-    }
-
     /// lowercase化したrepository。host pathとSandbox内pathに使う。
     pub fn repository(&self) -> &str {
-        self.split().1
-    }
-
-    fn split(&self) -> (&str, &str) {
         self.value
             .split_once('/')
             .expect("a canonical project ID has exactly one slash")
+            .1
     }
 }
 

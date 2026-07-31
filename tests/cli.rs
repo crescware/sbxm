@@ -363,8 +363,12 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
         run.stderr
     );
 
-    // 登録そのものは終わっているため、案件directoryが残る。
-    let root = base.join("example-org").join("example-repo.project");
+    // 登録そのものは終わっているため、案件directoryが残る。owner名のdirectoryは作らない。
+    let root = base.join("example-repo.project");
+    assert!(
+        !base.join("example-org").exists(),
+        "the project root sits directly under the parent directory"
+    );
     let metadata = root.join(".sbxm").join("project.yaml");
     assert!(metadata.is_file(), "the project is registered");
     assert!(root.join(".sbxm").join("Dockerfile").is_file());

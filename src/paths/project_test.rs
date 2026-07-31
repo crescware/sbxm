@@ -53,13 +53,10 @@ fn project_paths_follow_the_documented_layout() {
     let base = base(Path::new("/Users/example/Projects"));
     let paths = ProjectPaths::derive(&base, &project_id("Example-Org/Example-Repo"));
 
-    assert_eq!(
-        paths.owner_dir(),
-        Path::new("/Users/example/Projects/example-org")
-    );
+    // owner名のdirectoryは作らない。project rootは親directoryの直下に並ぶ。
     assert_eq!(
         paths.root(),
-        Path::new("/Users/example/Projects/example-org/example-repo.project")
+        Path::new("/Users/example/Projects/example-repo.project")
     );
     let root = paths.root();
     assert_eq!(paths.host_clone(), root.join("example-repo"));
@@ -83,5 +80,16 @@ fn project_paths_are_lowercase_so_one_project_cannot_take_two_directories() {
     assert_eq!(
         ProjectPaths::derive(&base, &project_id("Example-Org/Example-Repo")),
         ProjectPaths::derive(&base, &project_id("example-org/example-repo"))
+    );
+}
+
+#[test]
+fn the_same_repository_name_under_two_owners_wants_the_same_directory() {
+    // owner名を足して衝突を避けないため、この2件は同じpathを要求する。衝突の扱いは
+    // 登録側が決める。
+    let base = base(Path::new("/Users/example/Projects"));
+    assert_eq!(
+        ProjectPaths::derive(&base, &project_id("example-org/alpha")).root(),
+        ProjectPaths::derive(&base, &project_id("other-org/alpha")).root()
     );
 }

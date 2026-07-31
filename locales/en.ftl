@@ -132,6 +132,7 @@ error-sandbox-not-running = The sandbox { $sandbox } is { $observed }, and this 
 warning-dockerfile-changed-during-rebuild = The Dockerfile of { $project } changed while the rebuild was already fixed on a generation, so this run applied the fixed one.
 warning-lock-file-left-behind = The project is no longer managed, but its lock file { $path } could not be removed: { $detail }
 warning-dockerfile-changed-during-build = The Dockerfile of { $project } changed while its first build was still running, so the build finished with the generation it started from.
+error-project-path-collision = { $path } already belongs to { $observed }, so { $requested } cannot be registered there.
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path { $path } could not be read: { $detail }
 
@@ -198,6 +199,7 @@ remediation-target-configuration-mismatch = Leave those options out to continue 
 remediation-image-collision = Inspect { $image } yourself, then remove or rename it once you are sure it is not needed. sbxm does not overwrite an image it did not build.
 remediation-cleanup-failed = Remove { $path } yourself once you are sure nothing else needs it, then run the command again.
 remediation-remove-temp-file = Inspect { $path }, then delete it once you are sure no other run is using it.
+remediation-project-path-collision = Run the command again from another parent directory. sbxm never adds an owner directory to work around a name that is already taken.
 remediation-invalid-clone-url = Open the repository on GitHub, copy the clone URL it shows, and pass it unchanged.
 remediation-fix-config = Edit { $path } and run the command again.
 remediation-install-command = Install { $program } and make sure it is on PATH.

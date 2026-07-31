@@ -9,8 +9,8 @@ use crate::testing::prompt::ScriptedPrompt;
 #[test]
 fn only_the_running_targets_are_stopped() {
     let fixture = fixture();
-    let first = fixture.register("alpha/repo");
-    let second = fixture.register("zeta/repo");
+    let first = fixture.register("alpha/alfa");
+    let second = fixture.register("zeta/zulu");
     let running = format!(
         "[{},{}]",
         fixture.entry(&first, "running"),
@@ -25,7 +25,7 @@ fn only_the_running_targets_are_stopped() {
 
     let report = run(
         &fixture.config,
-        &[project_id("zeta/repo"), project_id("alpha/repo")],
+        &[project_id("zeta/zulu"), project_id("alpha/alfa")],
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
@@ -40,8 +40,8 @@ fn only_the_running_targets_are_stopped() {
             .map(|outcome| (outcome.project.as_str(), outcome.result))
             .collect::<Vec<_>>(),
         vec![
-            ("alpha/repo", StopResult::Stopped),
-            ("zeta/repo", StopResult::Unchanged),
+            ("alpha/alfa", StopResult::Stopped),
+            ("zeta/zulu", StopResult::Unchanged),
         ],
         "targets are processed in canonical order"
     );
@@ -82,8 +82,8 @@ fn a_project_without_a_sandbox_is_a_no_op_success() {
 #[test]
 fn a_rebuild_in_progress_stops_nothing_at_all() {
     let fixture = fixture();
-    let first = fixture.register("alpha/repo");
-    let second = fixture.register("zeta/repo");
+    let first = fixture.register("alpha/alfa");
+    let second = fixture.register("zeta/zulu");
     let mut metadata = second.metadata.clone();
     metadata.rebuild = Some(RebuildIntent {
         target_dockerfile_sha256: "2".repeat(64),
@@ -100,7 +100,7 @@ fn a_rebuild_in_progress_stops_nothing_at_all() {
 
     let error = run(
         &fixture.config,
-        &[project_id("alpha/repo"), project_id("zeta/repo")],
+        &[project_id("alpha/alfa"), project_id("zeta/zulu")],
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
@@ -114,7 +114,7 @@ fn a_rebuild_in_progress_stops_nothing_at_all() {
 #[test]
 fn an_intent_recorded_after_the_first_check_is_still_seen() {
     let fixture = fixture();
-    let project = fixture.register("alpha/repo");
+    let project = fixture.register("alpha/alfa");
     let listing = format!("[{}]", fixture.entry(&project, "running"));
     let host = FakeSbx::listing(&listing);
 
@@ -128,7 +128,7 @@ fn an_intent_recorded_after_the_first_check_is_still_seen() {
 
     let error = run(
         &fixture.config,
-        &[project_id("alpha/repo")],
+        &[project_id("alpha/alfa")],
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
@@ -142,8 +142,8 @@ fn an_intent_recorded_after_the_first_check_is_still_seen() {
 #[test]
 fn a_failure_leaves_the_remaining_targets_running() {
     let fixture = fixture();
-    let first = fixture.register("alpha/repo");
-    let second = fixture.register("zeta/repo");
+    let first = fixture.register("alpha/alfa");
+    let second = fixture.register("zeta/zulu");
     let running = format!(
         "[{},{}]",
         fixture.entry(&first, "running"),
@@ -153,7 +153,7 @@ fn a_failure_leaves_the_remaining_targets_running() {
 
     let report = run(
         &fixture.config,
-        &[project_id("alpha/repo"), project_id("zeta/repo")],
+        &[project_id("alpha/alfa"), project_id("zeta/zulu")],
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
@@ -198,8 +198,8 @@ fn a_sandbox_that_stays_running_is_reported_as_failed() {
 #[test]
 fn an_omitted_target_is_chosen_from_the_managed_projects() {
     let fixture = fixture();
-    let first = fixture.register("alpha/repo");
-    let second = fixture.register("zeta/repo");
+    let first = fixture.register("alpha/alfa");
+    let second = fixture.register("zeta/zulu");
     let running = format!(
         "[{},{}]",
         fixture.entry(&first, "running"),
@@ -222,5 +222,5 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() {
     )
     .expect("stop");
     assert_eq!(report.outcomes.len(), 1);
-    assert_eq!(report.outcomes[0].project, "alpha/repo");
+    assert_eq!(report.outcomes[0].project, "alpha/alfa");
 }

@@ -150,6 +150,7 @@ error_ids! {
     RemoteSshUnobservable => "remote-ssh-unobservable",
 
     // --- 案件のhost path ---
+    ProjectPathCollision => "project-path-collision",
     ProjectPathSymlink => "project-path-symlink",
     ProjectPathUnexpectedType => "project-path-unexpected-type",
     ProjectPathUnreadable => "project-path-unreadable",

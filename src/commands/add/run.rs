@@ -19,7 +19,7 @@ use crate::msg;
 use crate::paths::{
     self, ExclusiveLock, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths,
 };
-use crate::project::SandboxName;
+use crate::project::{CanonicalProjectId, SandboxName};
 use crate::repository::RepositoryIdentity;
 
 use crate::support::generation;
@@ -112,7 +112,7 @@ pub struct Registration {
 /// 案件を登録し、以後の外部mutationへ進める状態にする。
 ///
 /// 1. 入力を検証し、既存案件との衝突検査を完了する
-/// 2. owner directory、project root、`.sbxm`、`.cache`を作る
+/// 2. project root、`.sbxm`、`.cache`を作る
 /// 3. project lockを取得する
 /// 4. Dockerfileがなければbundled templateから作り、あれば内容を変えず採用する
 /// 5. 目標構成を含むmetadataをatomic writeする
@@ -144,7 +144,20 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
     }
 
     let paths = ProjectPaths::derive(&config.base_path, &canonical);
-    paths::ensure_directory(paths.owner_dir())?;
+    // owner名を含むdirectoryを作らないため、同じ親directoryでは同じrepository名が
+    // 同じpathを要求する。衝突をowner名の付与で回避せず、mutation前に拒否する。
+    if let Some(other) = known
+        .iter()
+        .find(|project| project.paths.root() == paths.root())
+        .filter(|project| *project.metadata.canonical_id() != canonical)
+    {
+        return Err(path_collision(
+            paths.root(),
+            other.metadata.canonical_id(),
+            &canonical,
+        ));
+    }
+
     paths::ensure_directory(paths.root())?;
     paths::ensure_private_dir(&paths.sbxm_dir(), PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
     paths::ensure_private_dir(&paths.cache_dir(), PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
@@ -154,6 +167,13 @@ pub fn register(config: &GlobalConfig, request: &AddRequest) -> Result<Registrat
     // lock取得後にmetadataを取り直し、preconditionを判定し直す。
     let stored = metadata::load(&paths)?;
     if let Some(stored) = &stored {
+        if *stored.canonical_id() != canonical {
+            return Err(path_collision(
+                paths.root(),
+                stored.canonical_id(),
+                &canonical,
+            ));
+        }
         check_continuable(stored, request)?;
     }
 
@@ -296,6 +316,28 @@ fn check_continuable(stored: &ProjectMetadata, request: &AddRequest) -> Result<(
         );
     }
     Ok(())
+}
+
+/// 同じproject rootを別の案件が既に使っている。
+///
+/// owner名などを自動的に加えて衝突を回避しない。別の親directoryで登録するよう案内する。
+fn path_collision(
+    root: &std::path::Path,
+    occupant: &CanonicalProjectId,
+    requested: &CanonicalProjectId,
+) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::ProjectPathCollision,
+            msg!(
+                "error-project-path-collision",
+                path = paths::display(root),
+                observed = occupant,
+                requested = requested
+            ),
+        )
+        .remediation(msg!("remediation-project-path-collision")),
+    )
 }
 
 /// Dockerfileを採用し、そのSHA-256を返す。

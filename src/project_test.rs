@@ -52,7 +52,6 @@ fn the_display_form_keeps_the_casing_while_the_canonical_form_folds_it() {
     assert_eq!(id.owner(), "Example-Org");
     assert_eq!(id.repository(), "Example.Repo");
     assert_eq!(id.canonical().to_string(), "example-org/example.repo");
-    assert_eq!(id.canonical().owner(), "example-org");
     assert_eq!(id.canonical().repository(), "example.repo");
 }
 

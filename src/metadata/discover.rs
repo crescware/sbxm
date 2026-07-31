@@ -13,50 +13,48 @@ use super::{DiscoveredProject, read_optional};
 
 /// `base_path`直下の案件metadataをすべて読む。
 ///
-/// 対象は`<base-path>/*/*.project/.sbxm/project.yaml`だけとし、directory entryと
+/// 対象は`<base-path>/*.project/.sbxm/project.yaml`だけとし、directory entryと
 /// metadata fileのsymlinkを追跡しない。1件の破損を無視して部分的な一覧を返さず、
 /// 検出した不整合はすべて並べて返す。
 pub fn discover(base: &AbsoluteBasePath) -> Result<Vec<DiscoveredProject>> {
     let mut found: Vec<DiscoveredProject> = Vec::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
-    for owner_dir in sorted_child_directories(base.as_path(), &mut diagnostics) {
-        for project_root in sorted_child_directories(&owner_dir, &mut diagnostics) {
-            if !project_root
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(PROJECT_DIR_SUFFIX))
-            {
+    for project_root in sorted_child_directories(base.as_path(), &mut diagnostics) {
+        if !project_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(PROJECT_DIR_SUFFIX))
+        {
+            continue;
+        }
+        let metadata_path = project_root.join(".sbxm").join("project.yaml");
+        let text = match read_optional(&metadata_path) {
+            Ok(Some(text)) => text,
+            Ok(None) => continue,
+            Err(error) => {
+                diagnostics.extend(error.diagnostics().iter().cloned());
                 continue;
             }
-            let metadata_path = project_root.join(".sbxm").join("project.yaml");
-            let text = match read_optional(&metadata_path) {
-                Ok(Some(text)) => text,
-                Ok(None) => continue,
-                Err(error) => {
-                    diagnostics.extend(error.diagnostics().iter().cloned());
+        };
+        match parse(&text, &metadata_path) {
+            Ok(metadata) => {
+                let paths = ProjectPaths::derive(base, metadata.canonical_id());
+                if paths.root() != project_root {
+                    diagnostics.push(Diagnostic::new(
+                        ErrorId::MetadataPathMismatch,
+                        msg!(
+                            "error-metadata-path-mismatch",
+                            path = paths::display(&metadata_path),
+                            canonical_id = metadata.canonical_id(),
+                            expected = paths::display(paths.root())
+                        ),
+                    ));
                     continue;
                 }
-            };
-            match parse(&text, &metadata_path) {
-                Ok(metadata) => {
-                    let paths = ProjectPaths::derive(base, metadata.canonical_id());
-                    if paths.root() != project_root {
-                        diagnostics.push(Diagnostic::new(
-                            ErrorId::MetadataPathMismatch,
-                            msg!(
-                                "error-metadata-path-mismatch",
-                                path = paths::display(&metadata_path),
-                                canonical_id = metadata.canonical_id(),
-                                expected = paths::display(paths.root())
-                            ),
-                        ));
-                        continue;
-                    }
-                    found.push(DiscoveredProject { paths, metadata });
-                }
-                Err(error) => diagnostics.extend(error.diagnostics().iter().cloned()),
+                found.push(DiscoveredProject { paths, metadata });
             }
+            Err(error) => diagnostics.extend(error.diagnostics().iter().cloned()),
         }
     }
 
