@@ -72,6 +72,29 @@ not make a directory per project or follow a naming rule. The first
 interactive `add` also asks once which language sbxm should speak, and
 remembers the answer in `~/.sbxm/config.yaml`.
 
+The same first `add` asks which name and email the project's commits are made
+under. Your host `git config --global` values are offered as the starting text,
+so pressing Enter twice accepts them, and typing over them chooses something
+else. The answer is saved in `~/.sbxm/config.yaml` and later runs never ask
+again. sbxm never reads your host Git settings as the answer on its own.
+
+Each project also keeps its own copy of the identity, written when it is
+registered. Changing the saved default afterwards leaves projects you already
+registered under the name they were registered with.
+
+To use a different identity for one project, or to register without a terminal
+to answer on, declare both halves:
+
+```sh
+sbxm add git@github.com:<owner>/<repository>.git \
+  --git-user-name '<name>' --git-user-email '<email>'
+```
+
+Declaring them applies to that run only and does not change the saved default,
+the same way `--lang` does not change the saved language. Passing only one of
+the two is refused before anything is read or created. A run with no terminal,
+no saved default, and no declaration stops rather than guessing.
+
 This registers the project, creates its host clone and Dockerfile, and prints
 the sandbox name and exact next commands. It does not build the sandbox yet.
 
@@ -249,8 +272,8 @@ A project lives entirely in the directory you registered it from:
 ```
 
 Under `~/.sbxm`, sbxm keeps `registry.yaml` — the index of registered projects
-and where each one lives — and, once you have chosen a display language or
-declared files, `config.yaml`. The registry is the only thing that knows where
+and where each one lives — and, once you have chosen a display language or an
+identity, or declared files, `config.yaml`. The registry is the only thing that knows where
 a project is, so moving a project directory makes `ls` report it as `missing`
 rather than sbxm guessing at the new location.
 

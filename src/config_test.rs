@@ -70,6 +70,10 @@ fn a_valid_configuration_round_trips_through_render_and_load() {
     let (_dir, location) = location();
     let config = GlobalConfig {
         language: Some(Locale::Ja),
+        git_identity: Some(GitIdentity {
+            user_name: "Example User".to_string(),
+            user_email: "user@example.com".to_string(),
+        }),
         files: vec![FileDeclaration {
             source: HostFileSource::new("/Users/example/.gitconfig").unwrap(),
             destination: SandboxHomeRelativePath::new(".gitconfig").unwrap(),
@@ -287,6 +291,11 @@ fn rendered_values_survive_a_round_trip_even_when_they_look_like_yaml_syntax() {
     for value in yaml_lookalike_values() {
         let config = GlobalConfig {
             language: Some(Locale::En),
+            // 名義も利用者が打った任意の文字列である。YAMLの意味を持つ値でも往復する。
+            git_identity: Some(GitIdentity {
+                user_name: value.to_string(),
+                user_email: format!("{value}@example.com"),
+            }),
             files: vec![FileDeclaration {
                 source: HostFileSource::new(&format!("/hosts/{value}")).unwrap(),
                 destination: SandboxHomeRelativePath::new(&format!(".config/{value}")).unwrap(),
@@ -313,6 +322,7 @@ fn rendered_values_survive_a_round_trip_even_when_they_look_like_yaml_syntax() {
 fn rendering_quotes_values_that_need_escaping() {
     let config = GlobalConfig {
         language: Some(Locale::En),
+        git_identity: None,
         files: vec![FileDeclaration {
             source: HostFileSource::new("/Users/ex ample/.gitconfig").unwrap(),
             destination: SandboxHomeRelativePath::new(".gitconfig").unwrap(),
@@ -343,4 +353,142 @@ fn a_configuration_that_cannot_be_edited_one_line_at_a_time_is_left_alone() {
     );
     // 拒否したあとも、そのconfigはそのまま読める。
     assert_eq!(loaded(&location).language, None);
+}
+
+// --- 名義 ---
+
+fn example_identity() -> GitIdentity {
+    GitIdentity {
+        user_name: "Example User".to_string(),
+        user_email: "user@example.com".to_string(),
+    }
+}
+
+#[test]
+fn the_git_identity_is_saved_without_rewriting_what_the_user_wrote() {
+    let (_dir, location) = location();
+    let handwritten = "\
+# my settings
+version: 1
+language: ja
+
+files:
+  - source: /Users/example/.gitconfig
+    destination: .gitconfig
+";
+    write_config(&location, handwritten);
+
+    let path = save_git_identity(&location, &example_identity()).expect("the identity is saved");
+    let written = fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        written,
+        "\
+# my settings
+version: 1
+git_user_name: Example User
+git_user_email: user@example.com
+language: ja
+
+files:
+  - source: /Users/example/.gitconfig
+    destination: .gitconfig
+",
+        "comments, blank lines, key order and files are kept"
+    );
+    assert_eq!(loaded(&location).git_identity, Some(example_identity()));
+    assert_eq!(
+        loaded(&location).language,
+        Some(Locale::Ja),
+        "saving one setting leaves the others alone"
+    );
+
+    // 二度目は2行を差し替えるだけで、重複させない。
+    let replaced = GitIdentity {
+        user_name: "Other User".to_string(),
+        user_email: "other@example.com".to_string(),
+    };
+    save_git_identity(&location, &replaced).expect("the identity is replaced");
+    let written = fs::read_to_string(&path).unwrap();
+    assert_eq!(loaded(&location).git_identity, Some(replaced));
+    assert_eq!(
+        written.matches("git_user_name:").count(),
+        1,
+        "the line is replaced rather than repeated: {written}"
+    );
+    assert!(!written.contains("Example User"), "{written}");
+    assert!(written.starts_with("# my settings\n"), "{written}");
+}
+
+#[test]
+fn saving_the_identity_creates_a_private_configuration_when_there_is_none() {
+    let (_dir, location) = location();
+    let path =
+        save_git_identity(&location, &example_identity()).expect("the configuration is created");
+
+    let file_mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(file_mode, 0o600);
+    assert_eq!(loaded(&location).git_identity, Some(example_identity()));
+    assert_eq!(
+        loaded(&location).language,
+        None,
+        "choosing an identity does not choose a language"
+    );
+}
+
+#[test]
+fn an_unsaved_identity_is_absent_rather_than_written_as_null() {
+    let config = GlobalConfig {
+        language: Some(Locale::En),
+        git_identity: None,
+        files: Vec::new(),
+    };
+    let rendered = render(&config);
+    assert!(
+        !rendered.contains("git_user_name"),
+        "not having chosen is not the same as having chosen nothing: {rendered}"
+    );
+}
+
+#[test]
+fn half_a_declared_identity_is_refused_rather_than_half_applied() {
+    // 名義は2つで1つの意図である。残りを推測して補わず、欠けているfieldを名指す。
+    for (text, missing) in [
+        (
+            "version: 1\ngit_user_name: Example User\n",
+            "git_user_email",
+        ),
+        (
+            "version: 1\ngit_user_email: user@example.com\n",
+            "git_user_name",
+        ),
+    ] {
+        let (_dir, location) = location();
+        write_config(&location, text);
+
+        let error = load(&location).expect_err("{text} must be refused");
+        assert_eq!(error.first_id(), Some(ErrorId::ConfigMissingField));
+        let described = &error.diagnostics()[0].description;
+        assert!(
+            described
+                .args
+                .iter()
+                .any(|(key, value)| *key == "field" && value == missing),
+            "the error names the field that is missing: {:?}",
+            described.args
+        );
+    }
+}
+
+#[test]
+fn an_identity_value_that_git_cannot_use_is_refused() {
+    for text in [
+        "version: 1\ngit_user_name: \"\"\ngit_user_email: user@example.com\n",
+        "version: 1\ngit_user_name: Example User\ngit_user_email: \"   \"\n",
+    ] {
+        let (_dir, location) = location();
+        write_config(&location, text);
+
+        let error = load(&location).expect_err("{text} must be refused");
+        assert_eq!(error.first_id(), Some(ErrorId::ConfigInvalidValue));
+    }
 }

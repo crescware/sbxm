@@ -702,7 +702,7 @@ fn a_re_run_uses_the_stored_root_whatever_directory_it_is_run_from() {
 }
 
 #[test]
-fn the_git_identity_the_host_declares_is_snapshotted_into_the_metadata() {
+fn the_chosen_git_identity_is_snapshotted_into_the_metadata() {
     let setup = setup();
     let registration = register(
         &setup.location,
@@ -714,7 +714,7 @@ fn the_git_identity_the_host_declares_is_snapshotted_into_the_metadata() {
     assert_eq!(registration.metadata.git_identity, identity());
     drop(registration);
 
-    // hostの設定が変わっても、登録済み案件のidentityは変わらない。
+    // 既定が変わっても、登録済み案件のidentityは変わらない。
     let changed = crate::metadata::GitIdentity {
         user_name: "Someone Else".into(),
         user_email: "else@example.com".into(),

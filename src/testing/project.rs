@@ -59,6 +59,7 @@ pub fn fixture() -> Fixture {
     .expect("the workspace root belongs to the current user only");
     let config = GlobalConfig {
         language: Some(Locale::En),
+        git_identity: None,
         files: Vec::new(),
     };
     Fixture {

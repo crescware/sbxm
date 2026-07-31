@@ -24,7 +24,7 @@ use crate::project::{CanonicalProjectId, SandboxName};
 use crate::registry::{self, Registry, RegistryEntry, RegistryGuard};
 use crate::repository::RepositoryIdentity;
 
-use crate::support::{generation, identity};
+use crate::support::generation;
 
 use super::host_clone;
 use crate::ui::{ProgressSink, Remediation, Warning};
@@ -359,14 +359,14 @@ pub fn run(
     location: &ConfigLocation,
     parent: &ProjectParent,
     request: &AddRequest,
+    git_identity: &GitIdentity,
     host: &dyn HostEnvironment,
     progress: &mut dyn ProgressSink,
 ) -> Result<AddOutput> {
     let already_registered = was_already_registered(location, &request.repository)?;
 
-    // Sandbox内で使うidentityは、案件を作る前にhostから確定させる。
-    let git_identity = identity::from_host(host)?;
-    let registration = register(location, parent, request, &git_identity)?;
+    // Sandbox内で使うidentityは、案件を作る前に呼び出し側が決めている。
+    let registration = register(location, parent, request, git_identity)?;
     // host cloneは、validation済みの入力と同じtransportとclone URLで取る。
     let clone = host_clone::ensure(
         host,

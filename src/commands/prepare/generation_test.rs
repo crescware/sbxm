@@ -76,6 +76,7 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
         &bench.location,
         &bench.parent,
         &request,
+        &crate::testing::metadata::git_identity(),
         &world,
         &mut SilentProgress,
     )

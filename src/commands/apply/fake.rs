@@ -161,6 +161,7 @@ pub fn setup(
     std::fs::create_dir_all(&base).unwrap();
     let config = GlobalConfig {
         language: Some(Locale::En),
+        git_identity: None,
         files,
     };
     let parent = ProjectParent::at(&base).unwrap();

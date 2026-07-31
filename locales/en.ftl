@@ -14,6 +14,8 @@ cli-add-about = Register a GitHub repository and clone it onto this host
 cli-add-repository-help = GitHub clone URL of the repository to register
 cli-add-worktrees-help = Number of managed worktrees to create (1-32)
 cli-add-detach-help = Remote branch every managed worktree starts from, in detached mode
+cli-add-git-user-name-help = Name this project's commits are made under; give it together with --git-user-email
+cli-add-git-user-email-help = Email address this project's commits are made under; give it together with --git-user-name
 
 cli-apply-about = Apply a change to a built project without rebuilding its sandbox
 cli-apply-project-help = Target project, by the owner/repository ID it is registered under
@@ -208,7 +210,7 @@ remediation-remove-temp-file = Inspect { $path }, then delete it once you are su
 remediation-registry-entry-mismatch = Compare the registry with the project directory yourself. sbxm never rewrites a registration to make a run succeed.
 remediation-project-path-occupied = Inspect { $path } yourself, then move it aside or register the project from another parent directory. sbxm never adopts artifacts it did not register.
 remediation-project-path-collision = Run the command again from another parent directory. sbxm never adds an owner directory to work around a name that is already taken.
-remediation-git-identity-unavailable = Declare it for your account, then run the command again. sbxm stores what the host declares and never invents a value.
+remediation-git-identity-undecidable = Register once from a terminal to choose the identity, or declare both options for this run. sbxm does not take the host's settings as your intent.
 remediation-invalid-clone-url = Open the repository on GitHub, copy the clone URL it shows, and pass it unchanged.
 remediation-config-not-rewritable = Add `{ $declaration }` to { $path } yourself, then run the command again. sbxm does not rewrite a configuration it cannot edit one line at a time.
 remediation-fix-config = Edit { $path } and run the command again.
@@ -247,7 +249,9 @@ security-ssh-agent-exposed-description = The host SSH agent can be reached from 
 security-ssh-agent-exposed-remediation = A sandbox keeps whatever the daemon gave it when it was created, so restarting the daemon is not enough on its own. Stop every running sandbox, start the daemon again from a shell where SSH_AUTH_SOCK is unset, drop this sandbox, then run the command again to build it clean.
 
 
-error-git-identity-unavailable = The host declares no usable Git { $key }: { $detail }
+error-git-identity-incomplete = The Git identity is only half declared. { $missing } is missing
+error-git-identity-undecidable = There is no identity to give this project: none is saved as the default, none was declared, and there is nowhere to ask
+error-git-identity-invalid = That is not a usable Git { $field }: { $detail }
 
 status-global-section = GLOBAL
 status-column-item = ITEM
@@ -389,6 +393,8 @@ remediation-heading = Try:
 remediation-rebuild-generation-missing-destroy = If it cannot be restored, deleting the sandbox and the management data keeps the host clone and the Dockerfile.
 guidance-apply-current-dockerfile = Apply the current Dockerfile.
 prompt-language-heading = 表示言語を選択してください / Choose a display language
+prompt-git-user-name = Enter the name this project's commits are made under
+prompt-git-user-email = Enter the email address this project's commits are made under
 prompt-current = current
 prompt-selected = Selected { $value }
 prompt-selected-count = Selected: { $count }

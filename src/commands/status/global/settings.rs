@@ -5,13 +5,11 @@
 
 use std::path::Path;
 
-use crate::command::HostEnvironment;
-use crate::config::{self, ConfigLocation, ConfigState};
+use crate::config::{self, ConfigLocation, ConfigState, GlobalConfig};
 use crate::error::{Diagnostic, ErrorId};
 use crate::msg;
 use crate::paths;
 use crate::registry;
-use crate::support::identity;
 
 use crate::support::StatusValue;
 
@@ -51,21 +49,28 @@ pub(super) fn check_state_directory(location: &ConfigLocation, status: &mut Glob
 }
 
 /// 任意のglobal config。不在は`defaults`として正常に扱う。
-pub(super) fn check_config(location: &ConfigLocation, status: &mut GlobalStatus) {
-    let value = match config::load(location) {
-        Ok(ConfigState::Valid { warnings, .. }) => {
+///
+/// 読めた設定は、後続の診断が同じfileをもう一度読まずに済むよう返す。読めなければ
+/// `None`とし、その事実はここで一度だけ報告する。
+pub(super) fn check_config(
+    location: &ConfigLocation,
+    status: &mut GlobalStatus,
+) -> Option<GlobalConfig> {
+    let (value, config) = match config::load(location) {
+        Ok(ConfigState::Valid { config, warnings }) => {
             status.warnings.extend(warnings);
-            StatusValue::Ready
+            (StatusValue::Ready, Some(*config))
         }
-        Ok(ConfigState::Missing) => StatusValue::Defaults,
+        Ok(ConfigState::Missing) => (StatusValue::Defaults, Some(GlobalConfig::default())),
         Err(error) => {
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
-            StatusValue::Error
+            (StatusValue::Error, None)
         }
     };
     push(status, "status-item-config", value);
+    config
 }
 
 /// registry documentのversion、構文、permission、不変条件。
@@ -85,16 +90,18 @@ pub(super) fn check_registry(location: &ConfigLocation, status: &mut GlobalStatu
     push(status, "status-item-registry", value);
 }
 
-/// 新規登録に使えるhostのGit identity。
-pub(super) fn check_git_identity(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
-    let value = match identity::from_host(host) {
-        Ok(_) => StatusValue::Ready,
-        Err(error) => {
-            status
-                .diagnostics
-                .extend(error.diagnostics().iter().cloned());
-            StatusValue::Missing
-        }
+/// 新規登録の既定として保存されているGit identity。
+///
+/// hostの設定は見ない。既定を選ぶのは利用者であり、未保存であることは、対話的な
+/// `add`がまだ一度も訊いていないことを意味する。errorではないため案内も出さない。
+///
+/// configそのものが読めない場合は`check_config`が既に報告しているため、ここでは
+/// 同じ事実を重ねて報告しない。
+pub(super) fn check_git_identity(config: Option<&GlobalConfig>, status: &mut GlobalStatus) {
+    let value = match config {
+        Some(config) if config.git_identity.is_some() => StatusValue::Ready,
+        Some(_) => StatusValue::Missing,
+        None => StatusValue::Error,
     };
     push(status, "status-item-git-identity", value);
 }

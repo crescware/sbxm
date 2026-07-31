@@ -14,7 +14,7 @@ pub fn canonical(value: &str) -> CanonicalProjectId {
         .canonical()
 }
 
-/// testが使うhost由来のGit identity。
+/// testが使う、利用者が選んだことになっているGit identity。
 pub fn git_identity() -> GitIdentity {
     GitIdentity {
         user_name: "Example User".to_string(),
