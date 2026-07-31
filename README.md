@@ -224,7 +224,9 @@ the next `sbx secret set-custom` for the same project fail as a duplicate, and
 it would keep a token for a sandbox that no longer exists. The host clone,
 project Dockerfile, built images, loaded templates, and every secret registered
 for anything else are kept, so the project can be registered again later with a
-token registered anew.
+token registered anew. Because those artifacts stay behind and sbxm never
+adopts a directory it did not register, registering the project again in the
+same place means moving them aside first.
 
 If you intentionally need to bypass data-protection and active-session checks:
 
@@ -234,6 +236,22 @@ sbxm destroy --force owner/repository
 
 Use `--force` only when you have independently confirmed that nothing inside
 the sandbox needs to be preserved.
+
+## Where sbxm keeps things
+
+A project lives entirely in the directory you registered it from:
+
+```text
+<parent>/<repository>.project/
+├── <repository>/       # the host clone
+└── .sbxm/              # metadata, Dockerfile, lock, cache
+```
+
+Under `~/.sbxm`, sbxm keeps `registry.yaml` — the index of registered projects
+and where each one lives — and, once you have chosen a display language or
+declared files, `config.yaml`. The registry is the only thing that knows where
+a project is, so moving a project directory makes `ls` report it as `missing`
+rather than sbxm guessing at the new location.
 
 ## Command overview
 

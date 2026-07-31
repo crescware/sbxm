@@ -229,6 +229,21 @@ sbxm destroy --force owner/repository
 
 Sandbox内に残すべきものがないと別途確認できた場合に限って、`--force`を使用してください。
 
+## sbxmが置くもの
+
+プロジェクトは、登録したディレクトリの中で完結します。
+
+```text
+<親ディレクトリ>/<repository>.project/
+├── <repository>/       # ホスト側のclone
+└── .sbxm/              # metadata、Dockerfile、lock、cache
+```
+
+`~/.sbxm`には、登録済みプロジェクトとその場所の索引である`registry.yaml`を置きます。
+表示言語を選ぶか、配置するファイルを宣言した時点で`config.yaml`も作られます。
+プロジェクトの場所を知っているのはregistryだけであるため、プロジェクトのディレクトリを
+移動すると、sbxmは新しい場所を推測せず`ls`で`missing`として表示します。
+
 ## コマンド一覧
 
 | コマンド | 用途 |
