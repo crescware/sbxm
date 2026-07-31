@@ -3,7 +3,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use super::*;
 use crate::testing::registry::{Entry, document};
 
-fn parsed(text: &str) -> Checked<Registry> {
+fn parsed(text: &str) -> Checked<Index> {
     parse(text, Path::new("/home/user/.sbxm/registry.yaml")).required_because("the document parses")
 }
 

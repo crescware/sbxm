@@ -1,7 +1,8 @@
 //! Sandboxに入っているtoolが返した案内。
+
 use crate::testing::outcome::{Checked, Required};
 
-use super::super::world::{World, bench};
+use super::super::fake::{Bench, World};
 use crate::testing::add_request::request;
 
 /// managed worktreeが持ち込んだ`mise.toml`のpath。
@@ -9,7 +10,7 @@ const DECLARED_MISE: &str = "/home/agent/work/example-repo/example-repo.tree-0/m
 
 #[test]
 fn what_the_tools_answer_reaches_the_output() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     world.carrying(DECLARED_MISE);
 
@@ -23,7 +24,7 @@ fn what_the_tools_answer_reaches_the_output() -> Checked {
 
 #[test]
 fn a_tool_the_sandbox_lacks_never_reaches_the_output() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     world.without("mise");
     world.carrying(DECLARED_MISE);
@@ -42,7 +43,7 @@ fn a_tool_the_sandbox_lacks_never_reaches_the_output() -> Checked {
 
 #[test]
 fn a_sandbox_without_gh_is_never_asked_to_configure_it() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     world.without("gh");
 

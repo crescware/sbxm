@@ -3,26 +3,16 @@
 mod exec;
 #[cfg(test)]
 mod fake;
+mod parse;
+mod rebuild_output;
 pub mod run;
+mod spec;
+mod start_to_read_saved_state;
+mod switch;
 
 pub use exec::exec;
-
-use clap::{Arg, ArgMatches, Command as ClapCommand};
-
-use crate::cli::Builder;
-use crate::cli::project_arg::{PROJECT_VALUE_NAME, required_project};
-use crate::error::Result;
-use crate::project::ProjectId;
-
-pub fn spec(builder: &Builder) -> Result<ClapCommand> {
-    Ok(builder.positional("rebuild", "cli-rebuild-about")?.arg(
-        Arg::new("project")
-            .required(true)
-            .value_name(PROJECT_VALUE_NAME)
-            .help(builder.text("cli-rebuild-project-help")?),
-    ))
-}
-
-pub fn args(matches: &ArgMatches) -> Result<ProjectId> {
-    required_project(matches)
-}
+pub use parse::parse;
+pub use rebuild_output::RebuildOutput;
+pub use spec::spec;
+use start_to_read_saved_state::start_to_read_saved_state;
+use switch::Switch;

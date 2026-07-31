@@ -1,17 +1,22 @@
+use crate::metadata::{self};
+use crate::paths::ProjectPaths;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::super::world::{World, bench};
-use super::*;
-use crate::error::ErrorId;
+use super::{
+    super::fake::{Bench, World},
+    *,
+};
+use crate::design::SilentProgress;
+use crate::diagnostics::ErrorId;
 use crate::hash::sha256_hex;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::project::project_id;
-use crate::ui::SilentProgress;
 use std::fs;
 
 #[test]
 fn a_project_that_is_not_registered_is_sent_to_add() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
 
     let error = run(
@@ -44,7 +49,7 @@ fn a_project_that_is_not_registered_is_sent_to_add() -> Checked {
 
 #[test]
 fn an_unregistered_project_gets_no_lock_file() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let project = project_id("example-org/example-repo")?;
     let paths = ProjectPaths::derive(&bench.parent, &project.canonical());
@@ -78,7 +83,7 @@ fn an_unregistered_project_gets_no_lock_file() -> Checked {
 
 #[test]
 fn a_rebuild_in_progress_builds_nothing() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
     crate::commands::add::run::run(

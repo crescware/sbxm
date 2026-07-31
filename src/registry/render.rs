@@ -4,11 +4,13 @@
 
 use crate::paths;
 
-use super::document::{RawEntry, RawRegistry};
-use super::{REGISTRY_VERSION, Registry};
+use super::{
+    Index, REGISTRY_VERSION,
+    document::{RawEntry, RawRegistry},
+};
 
 /// registryをYAMLへ描画する。
-pub fn render(registry: &Registry) -> crate::error::Result<String> {
+pub fn render(registry: &Index) -> crate::diagnostics::Result<String> {
     let raw = RawRegistry {
         version: Some(i64::from(REGISTRY_VERSION)),
         projects: registry

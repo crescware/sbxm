@@ -1,11 +1,19 @@
+use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
+use crate::diagnostics::{ErrorId, Result};
+use crate::hash::short_hex;
+use crate::msg;
+use crate::paths::{self, PRIVATE_DIR_MODE, ProjectPaths};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::fake::*;
-use super::*;
+use super::{fake::*, *};
 use crate::command::{CommandOutcome, OutputPolicy};
+use crate::design::SilentProgress;
 use crate::testing::archive::image_archive_bytes;
 use crate::testing::value::{DIGEST, IMAGE_ID};
-use crate::ui::SilentProgress;
 
 #[test]
 fn the_image_name_carries_the_sandbox_and_the_dockerfile_generation() -> Checked {
@@ -342,7 +350,7 @@ impl HostEnvironment for SavingDocker {
             && spec.args.get(1).is_some_and(|arg| arg == "save")
         {
             save_archive(&self.inner, &self.image_name, &self.image_id).map_err(|unmet| {
-                crate::error::Error::new(
+                crate::diagnostics::Error::new(
                     ErrorId::ArchiveUnusable,
                     msg!("error-archive-unusable", path = "-", detail = unmet),
                 )

@@ -7,6 +7,9 @@ mod atomic;
 mod directory;
 mod inspect;
 mod lock;
+mod lock_timeout;
+mod private_dir_mode;
+mod private_file_mode;
 mod project;
 mod scope;
 
@@ -16,14 +19,8 @@ pub use inspect::{
     display, is_symlink, lexically_standardize, permission_too_open, real_path, regular_file_exists,
 };
 pub use lock::{ExclusiveLock, acquire_exclusive_lock};
+pub use lock_timeout::LOCK_TIMEOUT;
+pub use private_dir_mode::PRIVATE_DIR_MODE;
+pub use private_file_mode::PRIVATE_FILE_MODE;
 pub use project::{ProjectParent, ProjectPaths};
 pub use scope::PathScope;
-
-use std::time::Duration;
-
-/// `~/.sbxm`と案件の`.sbxm`のような、利用者専用directoryのpermission。
-pub const PRIVATE_DIR_MODE: u32 = 0o700;
-/// `~/.sbxm/config.yaml`とproject metadataのpermission。
-pub const PRIVATE_FILE_MODE: u32 = 0o600;
-/// lock取得の待機上限。
-pub const LOCK_TIMEOUT: Duration = Duration::from_secs(10);

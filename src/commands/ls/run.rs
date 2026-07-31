@@ -1,44 +1,12 @@
-//! `sbxm ls`。
-//!
-//! 一覧はglobal registryから作る。base pathの走査もcwdからの推測も行わない。
-//! entryが指すpathが消えていても黙って落とさず、観測した状態をそのまま並べる。
-//! 取り込みも削除も行わない。
-
 use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::config::ConfigLocation;
-use crate::error::Result;
+use crate::diagnostics::Result;
 
-use crate::support::inventory::{self, Observed};
+use crate::support::inventory::{self};
 
-/// 一覧の1行。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectRow {
-    pub project: String,
-    /// registryが指すhost project root。
-    pub root: String,
-    pub sandbox: String,
-    pub observed: Observed,
-}
-
-/// 管理外Sandboxの1行。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnmanagedRow {
-    pub sandbox: String,
-    /// runtimeが示したままのstate。sbxmのenumへ写像しない。
-    pub state: String,
-    pub workspace: String,
-}
-
-/// `ls`の結果。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Listing {
-    pub projects: Vec<ProjectRow>,
-    pub unmanaged: Vec<UnmanagedRow>,
-    /// 全案件が登録済みで、成果物がregistryと一致しているか。
-    pub settled: bool,
-}
+use super::{Listing, ProjectRow, UnmanagedRow};
 
 /// 管理案件と管理外Sandboxを一覧する。
 pub fn run(

@@ -1,6 +1,12 @@
+use crate::commands::add::{BUNDLED_DOCKERFILE, register, was_already_registered};
+use crate::diagnostics::ErrorId;
+use crate::hash::sha256_hex;
+use crate::metadata::{self, CreationMode};
+use crate::paths::{self, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use std::fs;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::*;
 use crate::config::ConfigLocation;
 use crate::metadata::RebuildIntent;
 use crate::paths::{LOCK_TIMEOUT, ProjectParent};
@@ -594,7 +600,7 @@ fn the_same_repository_over_another_transport_is_not_the_same_registration() -> 
         remediation
             .commands
             .iter()
-            .map(crate::ui::text::CommandLine::as_str)
+            .map(crate::design::text::CommandLine::as_str)
             .collect::<Vec<_>>(),
         vec!["sbxm add git@github.com:Example-Org/Example-Repo.git"]
     );

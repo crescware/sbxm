@@ -2,9 +2,9 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::command::{CommandOutcome, HostEnvironment};
+use crate::design::SilentProgress;
 use crate::paths::ProjectParent;
 use crate::testing::project::{https_repository, ssh_repository};
-use crate::ui::SilentProgress;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
@@ -94,7 +94,7 @@ fn a_missing_clone_is_created_from_the_ssh_remote_and_then_verified() -> Checked
     let (paths, repository) = project_paths(dir.path())?;
     let host = healthy(&paths.host_clone()).cloning_into(&paths.host_clone());
 
-    let clone = ensure(&host, &paths, &repository, &mut SilentProgress)
+    let clone = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
         .required_because("the clone is created")?;
     assert!(clone.created);
     assert_eq!(clone.path, paths.host_clone());
@@ -121,7 +121,7 @@ fn the_clone_forwards_its_progress_while_the_checks_capture_their_output() -> Ch
     let dir = tempfile::tempdir().required()?;
     let (paths, repository) = project_paths(dir.path())?;
     let host = healthy(&paths.host_clone()).cloning_into(&paths.host_clone());
-    ensure(&host, &paths, &repository, &mut SilentProgress)
+    HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
         .required_because("the clone is created")?;
 
     let calls = host.calls.borrow();
@@ -150,7 +150,7 @@ fn an_existing_clone_of_the_same_repository_is_reused_without_cloning_again() ->
     fs::create_dir_all(paths.host_clone().join(".git")).required()?;
     let host = healthy(&paths.host_clone());
 
-    let clone = ensure(&host, &paths, &repository, &mut SilentProgress)
+    let clone = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
         .required_because("the existing clone is reused")?;
     assert!(!clone.created);
     assert!(
@@ -170,7 +170,7 @@ fn a_dirty_working_tree_does_not_stop_the_build() -> Checked {
     fs::create_dir_all(paths.host_clone().join(".git")).required()?;
     fs::write(paths.host_clone().join("uncommitted.txt"), b"work").required()?;
 
-    ensure(
+    HostClone::ensure(
         &healthy(&paths.host_clone()),
         &paths,
         &repository,
@@ -190,7 +190,7 @@ fn a_clone_of_another_repository_is_refused_instead_of_being_replaced() -> Check
         "git@github.com:other-org/other-repo.git\n",
     );
 
-    let error = ensure(&host, &paths, &repository, &mut SilentProgress)
+    let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
         .refused_because("a different remote is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     assert!(
@@ -212,7 +212,7 @@ fn an_ambiguous_or_missing_origin_is_refused() -> Checked {
     ] {
         let host =
             healthy(&paths.host_clone()).answering("config --get-all remote.origin.url", urls);
-        let error = ensure(&host, &paths, &repository, &mut SilentProgress)
+        let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
             .refused_because("origin must name exactly one remote")?;
         assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     }
@@ -226,7 +226,7 @@ fn a_bare_repository_or_a_nested_working_tree_is_refused() -> Checked {
     fs::create_dir_all(paths.host_clone().join(".git")).required()?;
 
     let bare = healthy(&paths.host_clone()).answering("rev-parse --is-bare-repository", "true\n");
-    let error = ensure(&bare, &paths, &repository, &mut SilentProgress)
+    let error = HostClone::ensure(&bare, &paths, &repository, &mut SilentProgress)
         .refused_because("a bare repository has no worktree")?;
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
 
@@ -235,7 +235,7 @@ fn a_bare_repository_or_a_nested_working_tree_is_refused() -> Checked {
         "rev-parse --show-toplevel",
         &format!("{}\n", dir.path().display()),
     );
-    let error = ensure(&nested, &paths, &repository, &mut SilentProgress)
+    let error = HostClone::ensure(&nested, &paths, &repository, &mut SilentProgress)
         .refused_because("the clone must be its own working tree")?;
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     Ok(())
@@ -254,7 +254,7 @@ fn a_git_directory_that_points_outside_the_project_is_refused() -> Checked {
     )
     .required()?;
 
-    let error = ensure(
+    let error = HostClone::ensure(
         &healthy(&paths.host_clone()),
         &paths,
         &repository,
@@ -271,7 +271,7 @@ fn a_git_directory_that_points_outside_the_project_is_refused() -> Checked {
         format!("gitdir: {}\n", inside.display()),
     )
     .required()?;
-    ensure(
+    HostClone::ensure(
         &healthy(&paths.host_clone()),
         &paths,
         &repository,
@@ -296,7 +296,7 @@ fn an_https_registration_clones_over_https() -> Checked {
         )
         .cloning_into(&paths.host_clone());
 
-    ensure(&host, &paths, &repository, &mut SilentProgress)
+    HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
         .required_because("the clone is created")?;
     assert_eq!(
         host.args_of_calls()[0],
@@ -320,7 +320,7 @@ fn an_origin_that_names_the_same_repository_over_another_transport_is_refused() 
         "config --get-all remote.origin.url",
         "https://github.com/Example-Org/Example-Repo.git\n",
     );
-    let error = ensure(&host, &paths, &repository, &mut SilentProgress)
+    let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
         .refused_because("SSH and HTTPS are not the same configuration")?;
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     Ok(())
@@ -336,7 +336,7 @@ fn an_origin_only_the_display_casing_differs_in_is_accepted() -> Checked {
         "config --get-all remote.origin.url",
         "git@github.com:example-org/example-repo.git\n",
     );
-    ensure(&host, &paths, &repository, &mut SilentProgress)
+    HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
         .required_because("only the display casing differs, so it is the same repository")?;
     Ok(())
 }
@@ -354,7 +354,7 @@ fn an_origin_that_is_not_one_of_the_accepted_forms_is_refused() -> Checked {
     ] {
         let host =
             healthy(&paths.host_clone()).answering("config --get-all remote.origin.url", url);
-        let error = ensure(&host, &paths, &repository, &mut SilentProgress)
+        let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
             .refused_because("an origin sbxm cannot read is never assumed to match")?;
         assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     }
@@ -373,7 +373,7 @@ fn a_clone_path_that_cannot_be_observed_is_never_cloned_over() -> Checked {
 
     // 案件rootのsearch bitを外すと、その下にcloneがあるかを観測できなくなる。
     fs::set_permissions(paths.root(), fs::Permissions::from_mode(0o600)).required()?;
-    let outcome = ensure(&host, &paths, &repository, &mut SilentProgress);
+    let outcome = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress);
     fs::set_permissions(paths.root(), fs::Permissions::from_mode(0o700)).required()?;
 
     let error = outcome.refused_because("an unobservable clone path is refused")?;

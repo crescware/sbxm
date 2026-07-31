@@ -1,3 +1,7 @@
+use crate::diagnostics::ErrorId;
+use crate::metadata::{CreationMode, ProjectMetadata, Provisioning, RebuildIntent};
+use std::path::Path;
+
 use std::fmt::Write as _;
 
 /// 行を改行付きで連ねる。

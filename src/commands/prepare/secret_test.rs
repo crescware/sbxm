@@ -1,13 +1,14 @@
 //! GitHub tokenがSandboxへ入らないこと。
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::super::world::{World, bench};
-use crate::error::ErrorId;
+use super::super::fake::{Bench, World};
+use crate::diagnostics::ErrorId;
 use crate::testing::add_request::request;
 
 #[test]
 fn git_is_given_the_placeholder_before_it_reaches_github() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
     bench
@@ -30,7 +31,7 @@ fn git_is_given_the_placeholder_before_it_reaches_github() -> Checked {
 
 #[test]
 fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     world.secrets.borrow_mut().clear();
     let request = request("Example-Org/Example-Repo", None, None)?;

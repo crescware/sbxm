@@ -1,0 +1,1 @@
+pub const MINIMUM_MACOS_MAJOR: u32 = 14;

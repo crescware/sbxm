@@ -1,8 +1,10 @@
+use crate::diagnostics::ErrorId;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
+use crate::design::SilentProgress;
 use crate::testing::repository::*;
-use crate::ui::SilentProgress;
 
 #[test]
 fn a_missing_repository_is_cloned_bare_over_https_and_then_verified() -> Checked {

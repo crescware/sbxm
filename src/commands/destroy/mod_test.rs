@@ -1,3 +1,6 @@
+use crate::diagnostics::ErrorId;
+use crate::project::ProjectId;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;

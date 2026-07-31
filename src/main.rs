@@ -4,7 +4,7 @@
 //! commandの実装は`commands`が1 command 1 directoryで持ち、本fileはlocale決定、描画条件の
 //! 決定、引き渡しだけを行う。
 //!
-//! 利用者向けの描画はすべて`ui`が行う。本fileはstreamへ直接書かない。
+//! 利用者向けの描画はすべて`design`が行う。本fileはstreamへ直接書かない。
 
 mod archive;
 mod cli;
@@ -12,7 +12,8 @@ mod command;
 mod commands;
 mod compatibility;
 mod config;
-mod error;
+mod design;
+mod diagnostics;
 mod git;
 mod hash;
 mod i18n;
@@ -25,16 +26,15 @@ mod repository;
 mod support;
 #[cfg(test)]
 mod testing;
-mod ui;
 
 use std::process::ExitCode as ProcessExitCode;
 
 use cli::{Interactivity, Outcome, PeekedLang};
 use commands::Context;
 use config::{ConfigLocation, ConfigState};
-use error::ExitCode;
+use design::{Document, Environment, OutputPolicy, Terminals, Ui};
+use diagnostics::ExitCode;
 use i18n::{Locale, shell_locale};
-use ui::{Document, Environment, OutputPolicy, Terminals, Ui};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();

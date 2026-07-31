@@ -1,15 +1,18 @@
+use crate::commands::ls::{ProjectRow, UnmanagedRow};
+use crate::support::inventory::Observed;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::error::ErrorId;
+use crate::diagnostics::ErrorId;
 use crate::paths::display;
 use crate::support::inventory::ProjectState;
 use crate::testing::host::FakeSbx;
-use crate::testing::project::{fixture, ssh_repository};
+use crate::testing::project::{Fixture, ssh_repository};
 
 #[test]
 fn managed_projects_and_unmanaged_sandboxes_are_listed_separately() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let first = fixture.register("Example-Org/Example-Repo")?;
     let second = fixture.register("other/repo")?;
     let host = FakeSbx::listing(&format!(
@@ -51,7 +54,7 @@ fn managed_projects_and_unmanaged_sandboxes_are_listed_separately() -> Checked {
 
 #[test]
 fn an_unmanaged_sandbox_without_a_workspace_shows_a_placeholder() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let host = FakeSbx::listing(
         r#"[{"name":"sbxm-known","state":"Running","workspace":"/tmp/known","template":"other:1"},{"name":"sbxm-nowhere","state":"Running","template":"other:1"}]"#,
     );
@@ -78,7 +81,7 @@ fn an_unmanaged_sandbox_without_a_workspace_shows_a_placeholder() -> Checked {
 
 #[test]
 fn a_project_without_a_sandbox_is_listed_as_not_created() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     fixture.register("example-org/example-repo")?;
     let listing = run(
         &fixture.location,
@@ -96,7 +99,7 @@ fn a_project_without_a_sandbox_is_listed_as_not_created() -> Checked {
 
 #[test]
 fn an_entry_whose_artifacts_are_not_there_is_shown_rather_than_dropped() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let missing = fixture.parent.as_path().join("gone.project");
     fixture.record(&missing, ssh_repository("example-org/gone")?)?;
 
@@ -130,7 +133,7 @@ fn an_entry_whose_artifacts_are_not_there_is_shown_rather_than_dropped() -> Chec
 
 #[test]
 fn a_project_directory_that_names_another_project_is_inconsistent() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     // registryはこのrootをexample-org/example-repoのものとして持っている。
     fixture.record(
@@ -172,7 +175,7 @@ fn a_project_directory_that_names_another_project_is_inconsistent() -> Checked {
 
 #[test]
 fn a_host_with_nothing_on_it_still_lists_successfully() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let listing = run(
         &fixture.location,
         &FakeSbx::listing("[]"),
@@ -186,7 +189,7 @@ fn a_host_with_nothing_on_it_still_lists_successfully() -> Checked {
 
 #[test]
 fn a_listing_that_cannot_be_trusted_produces_no_rows() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo");
     let host = FakeSbx::listing(&format!(
         r#"[{{"name":"{}","state":"pausing","workspace":"/tmp/x","template":"x"}}]"#,

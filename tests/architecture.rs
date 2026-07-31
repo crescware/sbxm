@@ -1,7 +1,7 @@
 //! デザインシステムの境界。
 //!
 //! 規約は文書だけでは守れない。ここが検出するのは「どこで何を組み立ててよいか」であり、
-//! 見た目そのものは`src/ui`のinvariant testが持つ。
+//! 見た目そのものは`src/design`のinvariant testが持つ。
 //!
 //! 検出は禁止APIと明確なprefixに限る。文字列検索だけでは`docker`のような語と実行
 //! commandを完全には区別できないため、曖昧な判定を足して誤検出を増やさない。
@@ -13,10 +13,10 @@ use outcome::{Checked, Required};
 use std::path::{Path, PathBuf};
 
 /// 描画を組み立ててよい唯一の場所。
-const UI: &str = "src/ui";
+const DESIGN: &str = "src/design";
 
 /// ANSI escape sequenceを生成してよい唯一のfile。
-const RENDERER: &str = "src/ui/renderer.rs";
+const RENDERER: &str = "src/design/painter.rs";
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
@@ -52,9 +52,9 @@ fn collect(directory: &Path, found: &mut Vec<PathBuf>) -> Checked {
     Ok(())
 }
 
-/// `src/ui`の外か。
-fn outside_ui(path: &str) -> bool {
-    !path.starts_with(UI)
+/// `src/design`の外か。
+fn outside_design(path: &str) -> bool {
+    !path.starts_with(DESIGN)
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn user_facing_output_is_not_written_with_a_print_macro() -> Checked {
     // 直接書くと、block間隔とstreamの責務がcommandごとに散る。
     let mut offenders = Vec::new();
     for (path, text) in sources()? {
-        if !outside_ui(&path) {
+        if !outside_design(&path) {
             continue;
         }
         for (index, line) in text.lines().enumerate() {
@@ -108,10 +108,10 @@ fn ansi_escape_sequences_are_generated_in_one_file() -> Checked {
 
 #[test]
 fn the_terminal_crate_is_imported_only_by_the_design_system() -> Checked {
-    // 具体的なterminal crateの型を`ui`の外へ公開しない。
+    // 具体的なterminal crateの型を`design`の外へ公開しない。
     let mut offenders = Vec::new();
     for (path, text) in sources()? {
-        if !outside_ui(&path) {
+        if !outside_design(&path) {
             continue;
         }
         for (index, line) in text.lines().enumerate() {
@@ -127,7 +127,7 @@ fn the_terminal_crate_is_imported_only_by_the_design_system() -> Checked {
     }
     assert!(
         offenders.is_empty(),
-        "the terminal crate stays inside {UI}:\n{}",
+        "the terminal crate stays inside {DESIGN}:\n{}",
         offenders.join("\n")
     );
     Ok(())
@@ -137,7 +137,7 @@ fn the_terminal_crate_is_imported_only_by_the_design_system() -> Checked {
 fn selection_prompts_are_built_in_one_place() -> Checked {
     let mut offenders = Vec::new();
     for (path, text) in sources()? {
-        if path == "src/ui/prompt.rs" {
+        if path == "src/design/prompt.rs" {
             continue;
         }
         for (index, line) in text.lines().enumerate() {
@@ -161,7 +161,7 @@ fn no_command_writes_its_own_block_spacing() -> Checked {
     // 先頭の改行で余白を作ると、rendererの間隔管理を迂回する。
     let mut offenders = Vec::new();
     for (path, text) in sources()? {
-        if !outside_ui(&path) || path.ends_with("_test.rs") {
+        if !outside_design(&path) || path.ends_with("_test.rs") {
             continue;
         }
         for (index, line) in text.lines().enumerate() {

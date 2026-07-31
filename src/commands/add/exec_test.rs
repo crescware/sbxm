@@ -1,6 +1,13 @@
+use crate::commands::Context;
+use crate::commands::add::Args;
+use crate::commands::add::{ask_language, choose_git_identity, choose_language};
+use crate::config::{self, GlobalConfig};
+use crate::diagnostics::ErrorId;
+use crate::i18n::Locale;
+use crate::metadata::GitIdentity;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::*;
 use crate::cli::Interactivity;
 use crate::config::ConfigLocation;
 use crate::testing::cli::{non_tty, tty};
@@ -143,7 +150,7 @@ fn cancelling_the_prompt_changes_nothing_and_exits_with_130() -> Checked {
     let error = choose_language(&context, &GlobalConfig::default(), Locale::En, &mut prompt)
         .refused_because("a cancelled prompt stops the run")?;
 
-    assert_eq!(error.exit_code(), crate::error::ExitCode::Canceled);
+    assert_eq!(error.exit_code(), crate::diagnostics::ExitCode::Canceled);
     assert!(!location.dir().exists(), "nothing is created");
     Ok(())
 }
@@ -375,7 +382,7 @@ fn cancelling_the_identity_prompt_saves_nothing() -> Checked {
     )
     .refused_because("a cancelled prompt stops the run")?;
 
-    assert_eq!(error.exit_code(), crate::error::ExitCode::Canceled);
+    assert_eq!(error.exit_code(), crate::diagnostics::ExitCode::Canceled);
     assert!(!location.dir().exists(), "nothing is created");
     Ok(())
 }

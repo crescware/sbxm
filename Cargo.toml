@@ -17,7 +17,7 @@ clap = { version = "4.6.4", default-features = false, features = [
   "error-context",
   "suggestions",
 ] }
-# 端末styleとkey入力の唯一の供給元。`src/ui`だけがこのcrateをimportし、その型を
+# 端末styleとkey入力の唯一の供給元。`src/design`だけがこのcrateをimportし、その型を
 # module外へ公開しない。
 console = { version = "0.16.4", default-features = false, features = [
   "std",
@@ -35,6 +35,7 @@ yaml_serde = "0.10"
 
 [dev-dependencies]
 fluent-syntax = "0.12.0"
+syn = { version = "2.0.0", features = ["full"] }
 
 [lints]
 workspace = true

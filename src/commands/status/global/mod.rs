@@ -5,70 +5,19 @@
 //!
 //! 検査対象は、sbxm自身がhost上で直接使用する設定、platform、command、serviceに限定する。
 
+mod diagnose;
 mod external;
+mod global_status;
 mod host_commands;
+#[cfg(test)]
+#[path = "mod_test.rs"]
+mod mod_test;
 mod platform;
+mod push;
 mod sandboxes;
 mod service;
 mod settings;
 
-use crate::command::HostEnvironment;
-use crate::config::ConfigLocation;
-use crate::error::Diagnostic;
-
-use crate::support::{Row, StatusValue};
-
-use crate::ui::Warning;
-use host_commands::check_host_commands;
-use platform::check_platform;
-use sandboxes::check_docker_sandboxes;
-use settings::{check_config, check_git_identity, check_registry, check_state_directory};
-
-/// 診断結果。
-pub struct GlobalStatus {
-    pub rows: Vec<Row>,
-    pub diagnostics: Vec<Diagnostic>,
-    pub warnings: Vec<Warning>,
-}
-impl GlobalStatus {
-    pub fn is_healthy(&self) -> bool {
-        self.diagnostics.is_empty()
-    }
-}
-/// hostとglobal環境を診断する。何も変更しない。
-pub fn diagnose(location: &ConfigLocation, host: &dyn HostEnvironment) -> GlobalStatus {
-    let mut status = GlobalStatus {
-        rows: Vec::new(),
-        diagnostics: Vec::new(),
-        warnings: Vec::new(),
-    };
-
-    // 1. global state directory、config、registry
-    check_state_directory(location, &mut status);
-    let config = check_config(location, &mut status);
-    check_registry(location, &mut status);
-
-    // 2. platform
-    check_platform(host, &mut status);
-
-    // 3-4. hostが直接実行するcommandと、Docker Client/Server疎通
-    let present = check_host_commands(host, &mut status);
-
-    // 5. 新規登録の既定となるGit identity
-    check_git_identity(config.as_ref(), &mut status);
-
-    // 5-9. Docker Sandboxes CLIとそのserviceの状態
-    check_docker_sandboxes(host, present.contains(&"sbx"), &mut status);
-
-    status
-}
-fn push(status: &mut GlobalStatus, item: &'static str, value: StatusValue) {
-    status.rows.push(Row {
-        item,
-        status: value,
-    });
-}
-
-#[cfg(test)]
-#[path = "mod_test.rs"]
-mod mod_test;
+pub use diagnose::diagnose;
+pub use global_status::GlobalStatus;
+use push::push;

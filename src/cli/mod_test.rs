@@ -1,3 +1,8 @@
+use crate::commands::{self, Command};
+use crate::diagnostics::ErrorId;
+use crate::i18n::Catalog;
+use clap::{Arg, Command as ClapCommand};
+
 use crate::testing::outcome::{Checked, Refused, Required, Unmet};
 
 use super::*;

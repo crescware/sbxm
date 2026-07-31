@@ -1,52 +1,21 @@
-//! `sbxm apply`。
-//!
-//! 構築済みの案件へ、作り直さずに反映できる変更を適用する。適用するものはoptionで
-//! 明示させる。省略した対象には触れない。
-//!
-//! 作り直しを要する変更は`rebuild`が担当する。projectの登録、構築の継続、
-//! image・Template操作は行わない。
-
 use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
 use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxName};
 
+use crate::design::ProgressSink;
+use crate::design::Remediation;
 use crate::project::SandboxLayout;
-use crate::support::files::{self, PlacedFile};
-use crate::support::tools::Note;
+use crate::support::files::{self};
 use crate::support::{daemon, generation, inventory, repository, sandbox, select, tools};
-use crate::ui::ProgressSink;
-use crate::ui::Remediation;
 
-/// 何を適用するか。
-///
-/// 省略した対象は変更しない。宣言fileの配置は既存のfileを上書きするため、暗黙には
-/// 走らせない。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Scope {
-    /// global configが宣言するfileを再配置する。
-    pub files: bool,
-    /// managed worktreeの目標本数。現在より多い値だけを受け付ける。
-    pub worktrees: Option<u32>,
-}
-
-/// `apply`の結果。
-#[derive(Debug, Clone)]
-pub struct ApplyOutput {
-    pub project: String,
-    pub sandbox: String,
-    pub files: Vec<PlacedFile>,
-    /// worktreeを適用した場合の、適用後の本数。
-    pub worktrees: Option<u32>,
-    /// Sandboxに入っているtoolが返した案内。
-    pub notes: Vec<Note>,
-}
+use super::{ApplyOutput, Scope};
 
 /// 構築済みの案件へ変更を適用する。
 ///
@@ -62,7 +31,7 @@ pub fn run(
     progress: &mut dyn ProgressSink,
 ) -> Result<ApplyOutput> {
     let canonical = project.canonical();
-    let mut locked = select::locked(location, project)?;
+    let mut locked = select::Locked::acquire(location, project)?;
     generation::require_no_rebuild(&locked.metadata)?;
 
     let name = SandboxName::derive(&canonical);
@@ -117,7 +86,7 @@ pub fn run(
             progress,
         )?;
         worktrees = Some(locked.metadata.provisioning.requested_worktrees);
-        notes = tools::worktrees_ready(host, &entry.name, &layout, managed.len())?;
+        notes = tools::WorktreesReady::announce(host, &entry.name, &layout, managed.len())?;
     }
 
     Ok(ApplyOutput {

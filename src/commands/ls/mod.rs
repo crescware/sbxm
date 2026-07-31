@@ -1,16 +1,15 @@
 //! `sbxm ls`。
 
 mod exec;
+mod listing;
 pub mod print;
+mod project_row;
 pub mod run;
+mod spec;
+mod unmanaged_row;
 
 pub use exec::exec;
-
-use clap::Command as ClapCommand;
-
-use crate::cli::Builder;
-use crate::error::Result;
-
-pub fn spec(builder: &Builder) -> Result<ClapCommand> {
-    builder.leaf("ls", "cli-ls-about")
-}
+pub use listing::Listing;
+pub use project_row::ProjectRow;
+pub use spec::spec;
+pub use unmanaged_row::UnmanagedRow;

@@ -1,15 +1,19 @@
 //! managed worktreeの作成と、観測できたHEAD。
+use crate::metadata::CreationMode;
+
 use crate::testing::outcome::{Checked, Required};
 
-use super::super::world::{World, bench};
-use super::*;
+use super::{
+    super::fake::{Bench, World},
+    *,
+};
+use crate::design::SilentProgress;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::value::COMMIT;
-use crate::ui::SilentProgress;
 
 #[test]
 fn a_head_that_cannot_be_read_is_left_unknown() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
     bench
@@ -45,7 +49,7 @@ fn a_head_that_cannot_be_read_is_left_unknown() -> Checked {
 
 #[test]
 fn a_head_that_reads_back_empty_is_left_unknown() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
     bench
@@ -75,7 +79,7 @@ fn a_head_that_reads_back_empty_is_left_unknown() -> Checked {
 
 #[test]
 fn three_detached_worktrees_start_from_one_commit_of_the_named_branch() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", Some(3), Some("develop"))?;
 

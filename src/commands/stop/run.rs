@@ -1,13 +1,9 @@
-//! `sbxm stop`。
-//!
-//! 対象のSandboxを停止する。内部filesystem、Git、package、Docker imageは削除しない。
-
 use std::path::Path;
 use std::time::Instant;
 
 use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::diagnostics::{Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::ExclusiveLock;
@@ -17,51 +13,7 @@ use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{daemon, generation};
 
-/// 1案件の停止結果。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StopResult {
-    /// この実行で停止した。
-    Stopped,
-    /// この実行では停止していない。
-    Unchanged,
-    /// 停止に失敗した。
-    Failed,
-}
-
-impl StopResult {
-    /// 翻訳しない安定した表記。
-    pub fn as_str(self) -> &'static str {
-        match self {
-            StopResult::Stopped => "stopped",
-            StopResult::Unchanged => "unchanged",
-            StopResult::Failed => "failed",
-        }
-    }
-
-    pub fn legend_id(self) -> &'static str {
-        match self {
-            StopResult::Stopped => "legend-stopped-now",
-            StopResult::Unchanged => "legend-not-stopped",
-            StopResult::Failed => "legend-failed",
-        }
-    }
-}
-
-/// 対象1件の結果。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StopOutcome {
-    pub project: String,
-    pub sandbox: String,
-    pub result: StopResult,
-}
-
-/// `stop`の結果。
-#[derive(Debug, Clone)]
-pub struct StopReport {
-    pub outcomes: Vec<StopOutcome>,
-    /// 失敗した対象の診断。1件でもあればexit code `1`とする。
-    pub failures: Vec<Diagnostic>,
-}
+use super::{StopReport, StopResult, Target};
 
 /// 対象のSandboxを停止する。
 ///
@@ -123,23 +75,6 @@ pub fn run(
 
     drop(locks);
     Ok(StopReport { outcomes, failures })
-}
-
-/// 停止対象1件。
-struct Target {
-    display_id: String,
-    sandbox: SandboxName,
-    state: ProjectState,
-}
-
-impl Target {
-    fn outcome(&self, result: StopResult) -> StopOutcome {
-        StopOutcome {
-            project: self.display_id.clone(),
-            sandbox: self.sandbox.as_str().to_string(),
-            result,
-        }
-    }
 }
 
 /// 停止して良い状態であることを確かめ、現在のstateを返す。

@@ -3,7 +3,7 @@
 //! ここへ置くのは複数のcommandから呼ばれるものだけとし、1 commandからしか呼ばれない
 //! ものは`crate::commands`のcommand directoryが持つ。
 //!
-//! 利用者向けの描画は持たない。表示の語彙、色、blockの間隔、promptは`crate::ui`が
+//! 利用者向けの描画は持たない。表示の語彙、色、blockの間隔、promptは`crate::design`が
 //! application全体のinterfaceとして持つ。
 
 pub mod daemon;
