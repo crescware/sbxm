@@ -645,3 +645,86 @@ fn only_the_display_casing_of_the_clone_url_may_differ_on_a_re_run() {
         "the stored display spelling is never rewritten"
     );
 }
+
+#[test]
+fn the_same_parent_directory_holds_more_than_one_repository() {
+    let setup = setup();
+    for project in ["example-org/alpha", "other-org/beta"] {
+        register(
+            &setup.location,
+            &setup.parent,
+            &request(project, None, None),
+            &identity(),
+        )
+        .expect("register");
+    }
+
+    let mut entries: Vec<String> = fs::read_dir(setup.dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    entries.sort();
+    assert_eq!(
+        entries,
+        vec!["alpha.project".to_string(), "beta.project".to_string()]
+    );
+}
+
+#[test]
+fn a_re_run_uses_the_stored_root_whatever_directory_it_is_run_from() {
+    let setup = setup();
+    let first = register(
+        &setup.location,
+        &setup.parent,
+        &request("example-org/example-repo", None, None),
+        &identity(),
+    )
+    .expect("register");
+    let stored = first.paths.root().to_path_buf();
+    drop(first);
+
+    // 別の親directoryから実行しても、保存済みrootだけを対象にする。
+    let elsewhere = tempfile::tempdir().expect("another parent directory");
+    let again = register(
+        &setup.location,
+        &ProjectParent::at(elsewhere.path()).expect("valid parent directory"),
+        &request("example-org/example-repo", None, None),
+        &identity(),
+    )
+    .expect("the stored registration continues");
+    assert_eq!(again.paths.root(), stored);
+    drop(again);
+    assert_eq!(
+        fs::read_dir(elsewhere.path()).unwrap().count(),
+        0,
+        "a registered project is never re-placed by where the command ran"
+    );
+}
+
+#[test]
+fn the_git_identity_the_host_declares_is_snapshotted_into_the_metadata() {
+    let setup = setup();
+    let registration = register(
+        &setup.location,
+        &setup.parent,
+        &request("example-org/example-repo", None, None),
+        &identity(),
+    )
+    .expect("register");
+    assert_eq!(registration.metadata.git_identity, identity());
+    drop(registration);
+
+    // hostの設定が変わっても、登録済み案件のidentityは変わらない。
+    let changed = crate::metadata::GitIdentity {
+        user_name: "Someone Else".into(),
+        user_email: "else@example.com".into(),
+    };
+    let again = register(
+        &setup.location,
+        &setup.parent,
+        &request("example-org/example-repo", None, None),
+        &changed,
+    )
+    .expect("the stored registration continues");
+    assert_eq!(again.metadata.git_identity, identity());
+}

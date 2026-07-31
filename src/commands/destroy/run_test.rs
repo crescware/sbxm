@@ -1,6 +1,6 @@
 use super::*;
 use crate::command::{EnvPolicy, OutputPolicy};
-use crate::error::ExitCode;
+use crate::error::{ErrorId, ExitCode};
 use crate::metadata;
 use crate::paths::PRIVATE_FILE_MODE;
 use crate::testing::host::{
@@ -637,4 +637,45 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() {
         project.paths.metadata_file().exists(),
         "the project stays managed so destroy can be run again"
     );
+}
+
+#[test]
+fn unregistering_removes_the_entry_of_that_project_and_no_other() {
+    let fixture = fixture();
+    let target = fixture.register("example-org/example-repo");
+    let other = fixture.register("other-org/other-repo");
+
+    unregister(&fixture.location, target.metadata.canonical_id()).expect("unregister");
+
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert_eq!(
+        registry
+            .entries()
+            .iter()
+            .map(|entry| entry.canonical_id().as_str())
+            .collect::<Vec<_>>(),
+        vec!["other-org/other-repo"]
+    );
+    assert!(
+        other.paths.metadata_file().exists(),
+        "another project is untouched"
+    );
+    // 利用者の成果物は残す。registryから外れたあとは未登録のhost artifactとして扱う。
+    assert!(target.paths.root().is_dir());
+}
+
+#[test]
+fn an_entry_left_behind_by_a_crash_after_the_commit_point_is_tolerated() {
+    // metadata削除後、registry entry削除前に中断すると、不整合entryが残り得る。
+    // 通常modeで推測して消さず、read-onlyの観測へ残す。
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    std::fs::remove_file(project.paths.metadata_file()).expect("remove the metadata");
+
+    let registry = crate::registry::load(&fixture.location).expect("the registry stays valid");
+    assert_eq!(registry.entries().len(), 1);
+
+    let error = select::locked(&fixture.location, &project_id("example-org/example-repo"))
+        .expect_err("the project cannot be worked on");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectIncomplete));
 }

@@ -621,6 +621,55 @@ fn a_run_that_cannot_prompt_neither_asks_for_a_language_nor_saves_one() {
 }
 
 #[test]
+fn init_is_not_part_of_the_published_surface() {
+    let home = temp_home();
+    let run = sbxm(home.path(), &["init"]);
+    assert_eq!(run.code, 1);
+    assert!(run.stderr.contains("unknown-subcommand"), "{}", run.stderr);
+    assert!(
+        !home.path().join(".sbxm").exists(),
+        "an unknown command creates nothing"
+    );
+
+    let help = sbxm(home.path(), &["--lang", "en", "--help"]);
+    assert_eq!(help.code, 0, "{}", help.stderr);
+    assert!(!help.stdout.contains("init"), "{}", help.stdout);
+}
+
+#[test]
+fn global_status_answers_without_visiting_the_registered_projects() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = temp_home();
+    let dir = home.path().join(".sbxm");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // 実在しないproject rootを指すentry。案件を巡回するなら、ここで失敗する。
+    std::fs::write(
+        dir.join("registry.yaml"),
+        "version: 1\nprojects:\n- canonical_id: example-org/example-repo\n  project_root: /nowhere/example-repo.project\n  provider: github\n  clone_transport: ssh\n  clone_url: git@github.com:Example-Org/Example-Repo.git\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        dir.join("registry.yaml"),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .unwrap();
+
+    let run = sbxm(home.path(), &["--lang", "en", "status", "--global"]);
+    let registry_row = run
+        .stdout
+        .lines()
+        .find(|line| line.starts_with("Project registry"))
+        .expect("the registry row is shown");
+    assert!(registry_row.contains("ready"), "{}", run.stdout);
+    assert!(
+        !run.stderr.contains("example-repo"),
+        "no project is visited: {}",
+        run.stderr
+    );
+}
+
+#[test]
 fn read_only_commands_never_create_a_configuration() {
     let home = temp_home();
     for arguments in [vec!["ls"], vec!["status", "--global"], vec!["--help"]] {

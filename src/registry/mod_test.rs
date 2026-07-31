@@ -254,3 +254,42 @@ fn a_concurrent_run_waits_for_the_registry_lock() {
     )
     .expect("the lock is released when the guard ends");
 }
+
+#[test]
+fn concurrent_registrations_of_different_projects_lose_no_entry() {
+    let (_dir, location) = home();
+    let projects = [
+        "alpha/alfa",
+        "bravo/bravo",
+        "charlie/charlie",
+        "delta/delta",
+    ];
+
+    std::thread::scope(|scope| {
+        for project in projects {
+            let location = location.clone();
+            scope.spawn(move || {
+                let mut guard =
+                    RegistryGuard::acquire(&location).expect("the lock serialises the runs");
+                guard
+                    .insert(entry_for(
+                        project,
+                        &format!(
+                            "/home/user/Projects/{}.project",
+                            project.split('/').nth(1).unwrap()
+                        ),
+                    ))
+                    .expect("record");
+            });
+        }
+    });
+
+    let registry = load(&location).expect("the document stays valid");
+    let mut recorded: Vec<&str> = registry
+        .entries()
+        .iter()
+        .map(|entry| entry.canonical_id().as_str())
+        .collect();
+    recorded.sort_unstable();
+    assert_eq!(recorded, projects);
+}
