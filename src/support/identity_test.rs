@@ -197,39 +197,62 @@ impl HostEnvironment for FakeGitConfig {
 }
 
 #[test]
-fn the_host_identity_is_read_from_what_git_declares() {
+fn the_candidate_is_what_git_declares() {
     let host = FakeGitConfig::answering(&[
         ("user.name", 0, "Example User\n"),
         ("user.email", 0, "  user@example.com  \n"),
     ]);
     assert_eq!(
-        from_host(&host).expect("the host declares both"),
-        identity()
+        candidate_from_host(&host, "user.name"),
+        identity().user_name
+    );
+    assert_eq!(
+        candidate_from_host(&host, "user.email"),
+        identity().user_email
     );
 }
 
 #[test]
-fn a_declaration_that_cannot_be_reduced_to_one_value_is_refused() {
-    for (name, email) in [
+fn a_declaration_that_cannot_be_reduced_to_one_value_offers_no_candidate() {
+    for (code, stdout) in [
         // 未設定。
-        ((1, ""), (0, "user@example.com\n")),
-        ((0, "Example User\n"), (1, "")),
+        (1, ""),
         // 複数値。空の宣言も1つの宣言であり、落として1件に見せない。
-        ((0, "Example User\nOther User\n"), (0, "user@example.com\n")),
-        ((0, "Example User\n\n"), (0, "user@example.com\n")),
-        ((0, "\nExample User\n"), (0, "user@example.com\n")),
+        (0, "Example User\nOther User\n"),
+        (0, "Example User\n\n"),
+        (0, "\nExample User\n"),
         // 空、または改行だけの値。
-        ((0, "   \n"), (0, "user@example.com\n")),
+        (0, "   \n"),
     ] {
-        let host = FakeGitConfig::answering(&[
-            ("user.name", name.0, name.1),
-            ("user.email", email.0, email.1),
-        ]);
-        let error = from_host(&host).expect_err("{name:?} {email:?} must be refused");
+        let host = FakeGitConfig::answering(&[("user.name", code, stdout)]);
         assert_eq!(
-            error.first_id(),
-            Some(ErrorId::GitIdentityUnavailable),
-            "{name:?} {email:?} produced the wrong error"
+            candidate_from_host(&host, "user.name"),
+            "",
+            "({code}, {stdout:?}) must offer no candidate"
         );
+    }
+}
+
+#[test]
+fn a_host_that_cannot_be_observed_offers_no_candidate_rather_than_failing() {
+    // 候補は決定ではない。読めないことを案件を止める理由にしない。
+    let host = UnobservableHost;
+    assert_eq!(candidate_from_host(&host, "user.name"), "");
+    assert_eq!(candidate_from_host(&host, "user.email"), "");
+}
+
+/// `git`そのものを実行できないhost。
+struct UnobservableHost;
+
+impl HostEnvironment for UnobservableHost {
+    fn command_exists(&self, _program: &str) -> bool {
+        false
+    }
+
+    fn run(&self, _spec: &CommandSpec) -> Result<CommandOutcome> {
+        Err(crate::error::Error::new(
+            ErrorId::HostCommandMissing,
+            msg!("error-host-command-missing", program = "git"),
+        ))
     }
 }

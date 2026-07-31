@@ -254,6 +254,13 @@ impl PromptUi {
         self.read_line(heading, "")
     }
 
+    /// 候補を初期値として置いた入力。
+    ///
+    /// 候補は打ち直せる文字列として現れ、確定した値ではない。空の候補は空欄で始まる。
+    pub fn input(&mut self, heading: Msg, candidate: &str) -> Result<String> {
+        self.read_line(heading, candidate)
+    }
+
     fn read_line(&mut self, heading: Msg, initial: &str) -> Result<String> {
         let term = Term::stderr();
         term.write_line(&self.painter.heading(&heading))

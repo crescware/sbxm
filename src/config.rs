@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Diagnostic, DocumentVersion, Error, ErrorId, Result, fail};
 use crate::i18n::Locale;
+use crate::metadata::{GitIdentity, validate_git_identity_value};
 use crate::msg;
 use crate::paths::{
     self, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, atomic_create, permission_too_open,
@@ -32,7 +33,13 @@ const DOCUMENT: DocumentVersion = DocumentVersion {
 };
 
 /// version 1で意味を持つtop-level key。
-const KNOWN_TOP_LEVEL_KEYS: &[&str] = &["version", "language", "files"];
+const KNOWN_TOP_LEVEL_KEYS: &[&str] = &[
+    "version",
+    "language",
+    "git_user_name",
+    "git_user_email",
+    "files",
+];
 
 /// `~/.sbxm`配下の固定path。
 ///
@@ -142,10 +149,13 @@ pub struct FileDeclaration {
 /// validation済みのglobal config。
 ///
 /// 欠落したoptional fieldは未保存として扱う。表示言語が未保存であることと、
-/// 特定の言語が保存されていることを同じ値にしない。
+/// 特定の言語が保存されていることを同じ値にしない。Git identityも同じで、未保存で
+/// あることは、利用者がまだ案件の名義を選んでいないことを意味する。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GlobalConfig {
     pub language: Option<Locale>,
+    /// 利用者が選んだ、新規登録の既定となる名義。
+    pub git_identity: Option<GitIdentity>,
     pub files: Vec<FileDeclaration>,
 }
 
@@ -176,6 +186,12 @@ impl ConfigState {
 struct RawConfig {
     version: Option<i64>,
     language: Option<String>,
+    // 未保存のidentityはkeyごと書かない。`null`を書くと、選ばれていないことと
+    // 空を選んだことが同じ見た目になる。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    git_user_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    git_user_email: Option<String>,
     #[serde(default)]
     files: Vec<RawFile>,
 }
@@ -326,6 +342,23 @@ fn parse(text: &str, path: &Path) -> Result<ConfigState> {
         None => None,
     };
 
+    // 名義は2つで1つの意図である。片方だけの宣言から残りを推測して補わない。
+    let git_identity = match (raw.git_user_name, raw.git_user_email) {
+        (None, None) => None,
+        (Some(user_name), Some(user_email)) => {
+            validate_git_identity_value(&user_name)
+                .map_err(|detail| invalid_value("git_user_name", detail.to_string()))?;
+            validate_git_identity_value(&user_email)
+                .map_err(|detail| invalid_value("git_user_email", detail.to_string()))?;
+            Some(GitIdentity {
+                user_name,
+                user_email,
+            })
+        }
+        (Some(_), None) => return Err(missing_field("git_user_email")),
+        (None, Some(_)) => return Err(missing_field("git_user_name")),
+    };
+
     let mut files = Vec::with_capacity(raw.files.len());
     for (index, entry) in raw.files.into_iter().enumerate() {
         let source_value = entry.source.ok_or_else(|| missing_field("files.source"))?;
@@ -361,7 +394,11 @@ fn parse(text: &str, path: &Path) -> Result<ConfigState> {
     }
 
     Ok(ConfigState::Valid {
-        config: Box::new(GlobalConfig { language, files }),
+        config: Box::new(GlobalConfig {
+            language,
+            git_identity,
+            files,
+        }),
         warnings,
     })
 }
@@ -387,6 +424,14 @@ pub fn render(config: &GlobalConfig) -> String {
     let raw = RawConfig {
         version: Some(i64::from(CONFIG_VERSION)),
         language: config.language.map(|locale| locale.as_str().to_string()),
+        git_user_name: config
+            .git_identity
+            .as_ref()
+            .map(|git| git.user_name.clone()),
+        git_user_email: config
+            .git_identity
+            .as_ref()
+            .map(|git| git.user_email.clone()),
         files: config
             .files
             .iter()
@@ -414,22 +459,57 @@ pub fn save_language(location: &ConfigLocation, locale: Locale) -> Result<PathBu
 
     let updated = match read_existing(&path)? {
         Some(text) => {
-            let updated = replace_language_line(&text, &line);
+            let updated = replace_line(&text, "language:", &line);
             require_declares_language(&updated, &path, locale)?;
             updated
         }
         None => render(&GlobalConfig {
             language: Some(locale),
+            git_identity: None,
             files: Vec::new(),
         }),
     };
 
-    if paths::regular_file_exists(&path, PathScope::ConfigFile)? {
-        crate::paths::atomic_replace(&path, &updated, PRIVATE_FILE_MODE)?;
-    } else {
-        atomic_create(&path, &updated, PRIVATE_FILE_MODE)?;
-    }
+    write_config(&path, &updated)?;
     Ok(path)
+}
+
+/// 選ばれたGit identityだけをconfigへ保存する。
+///
+/// `save_language`と同じ契約で、既存configの原文を保ったまま2行だけを足すか差し替える。
+/// 名義は2つで1つの意図であるため、片方だけが書かれた状態を残さない。
+pub fn save_git_identity(location: &ConfigLocation, git: &GitIdentity) -> Result<PathBuf> {
+    ensure_config_dir(location)?;
+    let path = location.config_file();
+
+    let updated = match read_existing(&path)? {
+        Some(text) => {
+            // 新しく足す行は`version`の直後へ入る。あとの呼び出しが前の行を押し下げる
+            // ため、読み手が期待する名前・mail addressの順に並ぶよう逆から書く。
+            let updated = replace_line(&text, "git_user_email:", &email_line(git));
+            let updated = replace_line(&updated, "git_user_name:", &name_line(git));
+            require_declares_git_identity(&updated, &path, git)?;
+            updated
+        }
+        None => render(&GlobalConfig {
+            language: None,
+            git_identity: Some(git.clone()),
+            files: Vec::new(),
+        }),
+    };
+
+    write_config(&path, &updated)?;
+    Ok(path)
+}
+
+/// 編集結果をconfigへ書く。既存fileは置き換え、無ければ作る。
+fn write_config(path: &Path, updated: &str) -> Result<()> {
+    if paths::regular_file_exists(path, PathScope::ConfigFile)? {
+        crate::paths::atomic_replace(path, updated, PRIVATE_FILE_MODE)?;
+    } else {
+        atomic_create(path, updated, PRIVATE_FILE_MODE)?;
+    }
+    Ok(())
 }
 
 /// 編集結果が、意図した言語だけを足した有効なconfigになっているか。
@@ -456,9 +536,60 @@ fn require_declares_language(updated: &str, path: &Path, locale: Locale) -> Resu
     ))
 }
 
+/// 編集結果が、意図した名義だけを足した有効なconfigになっているか。
+fn require_declares_git_identity(updated: &str, path: &Path, git: &GitIdentity) -> Result<()> {
+    if let Ok(ConfigState::Valid { config, .. }) = parse(updated, path)
+        && config.git_identity.as_ref() == Some(git)
+    {
+        return Ok(());
+    }
+    Err(Error::single(
+        Diagnostic::new(
+            ErrorId::ConfigNotRewritable,
+            msg!(
+                "error-config-not-rewritable",
+                path = paths::display(path),
+                field = "git_user_name, git_user_email"
+            ),
+        )
+        .remediation(msg!(
+            "remediation-config-not-rewritable",
+            path = paths::display(path),
+            declaration = format!("{}\n{}", name_line(git), email_line(git))
+        )),
+    ))
+}
+
 /// 利用者へ書き足してもらう1行。
 fn line_of(locale: Locale) -> String {
     format!("language: {}", locale.as_str())
+}
+
+fn name_line(git: &GitIdentity) -> String {
+    declaration("git_user_name", &git.user_name)
+}
+
+fn email_line(git: &GitIdentity) -> String {
+    declaration("git_user_email", &git.user_email)
+}
+
+/// 名義の1行を、YAML自身の引用規則で組み立てる。
+///
+/// 名前もmail addressも利用者が打った任意の文字列であり、`#`や`:`のようにYAMLの
+/// 意味を持つ文字を含みうる。行を自分で足す以上、引用もserializerへ決めさせる。
+///
+/// `validate_git_identity_value`が改行を拒むため、値は必ず1行に収まる。1 keyの
+/// mappingは1行として描かれ、その行がそのまま差し替える単位になる。
+fn declaration(key: &str, value: &str) -> String {
+    let mut mapping = yaml_serde::Mapping::new();
+    mapping.insert(
+        yaml_serde::Value::String(key.to_string()),
+        yaml_serde::Value::String(value.to_string()),
+    );
+    yaml_serde::to_string(&mapping)
+        .expect("a pair of strings is representable as YAML")
+        .trim_end()
+        .to_string()
 }
 
 /// 既存configの原文。存在しなければ`None`。
@@ -478,14 +609,14 @@ fn read_existing(path: &Path) -> Result<Option<String>> {
     })
 }
 
-/// top-levelの`language`行だけを差し替える。無ければ`version`行の直後へ足す。
-fn replace_language_line(text: &str, line: &str) -> String {
-    let declares_language = text.lines().any(|source| source.starts_with("language:"));
+/// top-levelの`prefix`で始まる行だけを差し替える。無ければ`version`行の直後へ足す。
+fn replace_line(text: &str, prefix: &str, line: &str) -> String {
+    let declares_key = text.lines().any(|source| source.starts_with(prefix));
     let mut out = String::with_capacity(text.len() + line.len() + 1);
     let mut written = false;
     for source in text.lines() {
-        if declares_language {
-            if !written && source.starts_with("language:") {
+        if declares_key {
+            if !written && source.starts_with(prefix) {
                 out.push_str(line);
                 out.push('\n');
                 written = true;

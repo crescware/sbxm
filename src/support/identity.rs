@@ -1,7 +1,10 @@
 //! Git identity。
 //!
-//! 新規登録時にhostの`git config --global`から取得し、案件metadataへsnapshotする。
-//! Sandbox内へ設定するのは、そのsnapshotだけである。
+//! 案件の名義は利用者が選ぶ。選ばれた値はglobal configへ既定として保存され、登録時に
+//! 案件metadataへsnapshotされる。Sandbox内へ設定するのは、そのsnapshotだけである。
+//!
+//! hostの`git config --global`はこの選択の候補にしかならない。読めなくても案件を
+//! 止めない。値を決めるのはhostではなく利用者である。
 //!
 //! Sandbox内の既存の設定値が同じならそのままにし、異なる場合は別の利用者のSandboxで
 //! ある可能性があるため自動で上書きしない。
@@ -13,53 +16,35 @@ use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{GitIdentity, validate_git_identity_value};
 use crate::msg;
-use crate::ui::Remediation;
 
 use super::sandbox;
 
-/// hostが宣言しているGit identityを読む。
+/// 入力欄へ置くhostの候補を読む。
 ///
-/// 不在、空、複数値、観測不能のいずれも、推測で補わず拒否する。案件を作る前に呼び、
-/// 設定するcommandを案内する。
-pub fn from_host(host: &dyn HostEnvironment) -> Result<GitIdentity> {
-    Ok(GitIdentity {
-        user_name: read_global(host, "user.name")?,
-        user_email: read_global(host, "user.email")?,
-    })
-}
-
-fn read_global(host: &dyn HostEnvironment, key: &str) -> Result<String> {
-    // `--get-all`は複数回宣言された値をすべて返す。1つに絞れない設定を黙って選ばない。
+/// 候補であって決定ではないため、読めない場合を失敗として扱わない。不在、空、複数値、
+/// 観測不能のいずれも空文字とし、利用者が自分で打てる空欄として現れる。
+///
+/// `--get-all`は複数回宣言された値をすべて返す。1つに絞れない設定から候補を選ばない。
+pub fn candidate_from_host(host: &dyn HostEnvironment, key: &str) -> String {
     let spec = CommandSpec::probe("git", &["config", "--global", "--get-all", key])
         .timeout(TimeoutClass::LocalFilesystem);
-    let outcome = host.run(&spec)?;
+    let Ok(outcome) = host.run(&spec) else {
+        return String::new();
+    };
     if !outcome.success() {
-        return Err(unavailable(key, "no value is set"));
+        return String::new();
     }
     // 空の宣言も1つの宣言である。落として1件に見せると、gitが解決する値と食い違う。
     let stdout = outcome.stdout_text();
     let values: Vec<&str> = stdout.lines().collect();
     let [value] = values.as_slice() else {
-        let detail = format!("{} values are set", values.len());
-        return Err(unavailable(key, &detail));
+        return String::new();
     };
     let value = value.trim();
-    validate_git_identity_value(value).map_err(|detail| unavailable(key, detail))?;
-    Ok(value.to_string())
-}
-
-/// hostのGit identityを、設定するcommandとともに要求する。
-fn unavailable(key: &str, detail: &str) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::GitIdentityUnavailable,
-            msg!("error-git-identity-unavailable", key = key, detail = detail),
-        )
-        .remediation(
-            Remediation::text(msg!("remediation-git-identity-unavailable"))
-                .try_run(format!("git config --global {key} <value>")),
-        ),
-    )
+    if validate_git_identity_value(value).is_err() {
+        return String::new();
+    }
+    value.to_string()
 }
 
 /// GitHubとのやり取りに使うprotocol。Sandbox内のcloneはHTTPSを使う。

@@ -76,3 +76,69 @@ fn more_than_one_worktree_requires_an_explicit_start_branch() {
         Command::Add(_)
     ));
 }
+
+#[test]
+fn a_declared_identity_is_carried_only_when_both_halves_are_given() {
+    assert!(matches!(
+        command(
+            &[
+                "add",
+                "git@github.com:owner/repo.git",
+                "--git-user-name",
+                "Example User",
+                "--git-user-email",
+                "user@example.com",
+            ],
+            tty()
+        ),
+        Command::Add(Args {
+            git_identity: Some(_),
+            ..
+        })
+    ));
+
+    // 宣言が無いことは、既定かpromptで決めるという意味であり、errorではない。
+    assert!(matches!(
+        command(&["add", "git@github.com:owner/repo.git"], tty()),
+        Command::Add(Args {
+            git_identity: None,
+            ..
+        })
+    ));
+
+    // 片方だけは不完全な意図である。足りないoption名を示して止まる。
+    for (option, value) in [
+        ("--git-user-name", "Example User"),
+        ("--git-user-email", "user@example.com"),
+    ] {
+        let error = parse_argv(
+            &["add", "git@github.com:owner/repo.git", option, value],
+            tty(),
+        )
+        .expect_err("{option} alone must be refused");
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::GitIdentityIncomplete),
+            "{option} produced the wrong error"
+        );
+    }
+}
+
+#[test]
+fn a_declared_value_that_git_cannot_use_is_refused() {
+    for (name, email) in [("", "user@example.com"), ("Example User", "  ")] {
+        let error = parse_argv(
+            &[
+                "add",
+                "git@github.com:owner/repo.git",
+                "--git-user-name",
+                name,
+                "--git-user-email",
+                email,
+            ],
+            tty(),
+        )
+        .expect_err("{name:?} {email:?} must be refused");
+        assert_eq!(error.first_id(), Some(ErrorId::InvalidValue));
+    }
+}

@@ -40,6 +40,7 @@ pub fn bench() -> Bench {
 
     let config = GlobalConfig {
         language: Some(Locale::En),
+        git_identity: None,
         files: vec![crate::config::FileDeclaration {
             source: crate::config::HostFileSource::new(&paths::display(&source))
                 .expect("valid source"),
@@ -66,6 +67,7 @@ impl Bench {
             &self.location,
             &self.parent,
             request,
+            &crate::testing::metadata::git_identity(),
             world,
             &mut SilentProgress,
         )?;

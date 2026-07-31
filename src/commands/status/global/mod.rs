@@ -45,7 +45,7 @@ pub fn diagnose(location: &ConfigLocation, host: &dyn HostEnvironment) -> Global
 
     // 1. global state directory、config、registry
     check_state_directory(location, &mut status);
-    check_config(location, &mut status);
+    let config = check_config(location, &mut status);
     check_registry(location, &mut status);
 
     // 2. platform
@@ -54,8 +54,8 @@ pub fn diagnose(location: &ConfigLocation, host: &dyn HostEnvironment) -> Global
     // 3-4. hostが直接実行するcommandと、Docker Client/Server疎通
     let present = check_host_commands(host, &mut status);
 
-    // 5. 新規登録に使えるGit identity
-    check_git_identity(host, &mut status);
+    // 5. 新規登録の既定となるGit identity
+    check_git_identity(config.as_ref(), &mut status);
 
     // 5-9. Docker Sandboxes CLIとそのserviceの状態
     check_docker_sandboxes(host, present.contains(&"sbx"), &mut status);

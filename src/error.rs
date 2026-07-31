@@ -195,7 +195,10 @@ error_ids! {
 
     // --- 対話 ---
     PromptUnreadable => "prompt-unreadable",
-    GitIdentityUnavailable => "git-identity-unavailable",
+    // 名義の宣言が片方だけである。
+    GitIdentityIncomplete => "git-identity-incomplete",
+    // 訊く手段も、保存済みの既定も、宣言も無い。
+    GitIdentityUndecidable => "git-identity-undecidable",
 
     // --- 内部 ---
     MessageFormatFailed => "message-format-failed",

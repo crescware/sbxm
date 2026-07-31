@@ -80,6 +80,7 @@ fn a_rebuild_in_progress_builds_nothing() {
         &bench.location,
         &bench.parent,
         &request,
+        &crate::testing::metadata::git_identity(),
         &world,
         &mut SilentProgress,
     )

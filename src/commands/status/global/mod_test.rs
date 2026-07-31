@@ -86,7 +86,9 @@ fn a_registry_that_cannot_be_read_is_diagnosed_without_visiting_any_project() {
 }
 
 #[test]
-fn a_host_without_a_git_identity_cannot_register_a_new_project() {
+fn an_unchosen_git_identity_is_reported_as_missing_rather_than_as_a_fault() {
+    // hostが何を宣言していようと、既定を選ぶのは利用者である。まだ選んでいないことは
+    // 診断すべき異常ではなく、対話的な`add`がまだ一度も訊いていないだけである。
     let (_dir, location) = location_with_config(None);
     let host = FakeHost::macos().failing("git config --global --get-all user.email", "", 1);
 
@@ -96,10 +98,27 @@ fn a_host_without_a_git_identity_cannot_register_a_new_project() {
         StatusValue::Missing
     );
     assert!(
-        status
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.id == ErrorId::GitIdentityUnavailable)
+        !status.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic.id,
+            ErrorId::GitIdentityUndecidable | ErrorId::GitIdentityIncomplete
+        )),
+        "an unchosen identity produces no diagnostic: {:?}",
+        status.diagnostics
+    );
+}
+
+#[test]
+fn a_chosen_git_identity_is_read_from_the_configuration_rather_than_the_host() {
+    let (_dir, location) = location_with_config(Some(
+        "version: 1\ngit_user_name: Example User\ngit_user_email: user@example.com\n",
+    ));
+    // hostが答えられなくても、保存済みの既定はそのまま使える。
+    let host = FakeHost::macos().failing("git config --global --get-all user.name", "", 1);
+
+    let status = diagnose(&location, &host);
+    assert_eq!(
+        status_of(&status, "status-item-git-identity"),
+        StatusValue::Ready
     );
 }
 

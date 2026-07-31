@@ -60,8 +60,8 @@ fn temp_home() -> tempfile::TempDir {
 
 /// hostのGit identityだけに答える`git`を用意し、そのdirectoryを返す。
 ///
-/// `add`は案件を作る前にhostのGit identityを読む。PATHを空にしたままでは、その手前で
-/// 止まって登録の契約を確かめられない。cloneには答えないため、実行はcloneで止まる。
+/// hostの値はpromptへ置く候補にしかならないため、名義を宣言する実行はこれを読まない。
+/// それでも`git`自体は必要である。cloneには答えないため、実行はcloneで止まる。
 fn fake_git(home: &Path) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let bin = home.join("bin");
@@ -397,6 +397,10 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
             "en",
             "add",
             "git@github.com:Example-Org/Example-Repo.git",
+            "--git-user-name",
+            "Example User",
+            "--git-user-email",
+            "user@example.com",
         ],
     );
     assert_eq!(run.code, 1, "{}", run.stderr);
@@ -488,7 +492,20 @@ fn home_with_project(project: &str) -> (tempfile::TempDir, std::path::PathBuf) {
     std::fs::create_dir_all(&base).unwrap();
     write_config(home.path(), "en");
     let url = format!("git@github.com:{project}.git");
-    let run = sbxm_with_git(home.path(), &base, &["--lang", "en", "add", &url]);
+    let run = sbxm_with_git(
+        home.path(),
+        &base,
+        &[
+            "--lang",
+            "en",
+            "add",
+            &url,
+            "--git-user-name",
+            "Example User",
+            "--git-user-email",
+            "user@example.com",
+        ],
+    );
     assert_eq!(run.code, 1, "{}", run.stderr);
     (home, base)
 }
@@ -600,7 +617,8 @@ fn a_run_that_cannot_prompt_neither_asks_for_a_language_nor_saves_one() {
     let base = home.path().join("Projects");
     std::fs::create_dir_all(&base).unwrap();
 
-    // 非対話の`add`はpromptを出さず、言語を永続化しない。`--lang`も保存しない。
+    // 非対話の`add`はpromptを出さず、言語も名義も永続化しない。`--lang`と同じく、
+    // command lineの宣言はそのprocessだけのoverrideである。
     let run = sbxm_with_git(
         home.path(),
         &base,
@@ -609,15 +627,90 @@ fn a_run_that_cannot_prompt_neither_asks_for_a_language_nor_saves_one() {
             "ja",
             "add",
             "git@github.com:Example-Org/Example-Repo.git",
+            "--git-user-name",
+            "Example User",
+            "--git-user-email",
+            "user@example.com",
         ],
     );
     assert_eq!(run.code, 1, "{}", run.stderr);
     assert!(
         !home.path().join(".sbxm").join("config.yaml").exists(),
-        "the display language is the user's to choose, not a side effect of --lang"
+        "neither the language nor the identity becomes a side effect of an option"
     );
     // それでも登録は進む。registryは作られる。
     assert!(home.path().join(".sbxm").join("registry.yaml").is_file());
+}
+
+#[test]
+fn a_non_interactive_add_without_an_identity_refuses_before_creating_anything() {
+    let home = temp_home();
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).unwrap();
+
+    // hostは名義を宣言しているが、それは候補であって利用者の意図ではない。訊く先も
+    // 保存された既定も宣言も無い実行は、何も作らずに終わる。
+    let run = sbxm_with_git(
+        home.path(),
+        &base,
+        &[
+            "--lang",
+            "en",
+            "add",
+            "git@github.com:Example-Org/Example-Repo.git",
+        ],
+    );
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    assert!(
+        run.stderr.contains("git-identity-undecidable"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        !home.path().join(".sbxm").exists(),
+        "no global state is created: {}",
+        run.stderr
+    );
+    assert!(
+        !base.join("example-repo.project").exists(),
+        "no project directory is created"
+    );
+}
+
+#[test]
+fn half_a_declared_identity_is_refused_before_anything_is_read() {
+    let home = temp_home();
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).unwrap();
+
+    for option in [
+        ("--git-user-name", "Example User"),
+        ("--git-user-email", "user@example.com"),
+    ] {
+        let run = sbxm_with_git(
+            home.path(),
+            &base,
+            &[
+                "--lang",
+                "en",
+                "add",
+                "git@github.com:Example-Org/Example-Repo.git",
+                option.0,
+                option.1,
+            ],
+        );
+        assert_eq!(run.code, 1, "{}", run.stderr);
+        assert!(
+            run.stderr.contains("git-identity-incomplete"),
+            "{} alone must be refused: {}",
+            option.0,
+            run.stderr
+        );
+        assert!(
+            !home.path().join(".sbxm").exists(),
+            "nothing is read or created before the declaration is complete"
+        );
+    }
 }
 
 #[test]

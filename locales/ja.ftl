@@ -14,6 +14,8 @@ cli-add-about = GitHub repositoryを管理対象へ登録し、host上へclone�
 cli-add-repository-help = 登録するrepositoryのGitHub clone URL
 cli-add-worktrees-help = 作成するmanaged worktreeの数 (1〜32)
 cli-add-detach-help = detached modeで全managed worktreeの起点にするremote branch
+cli-add-git-user-name-help = この案件のcommitに使う名前。--git-user-emailと同時に指定します
+cli-add-git-user-email-help = この案件のcommitに使うmail address。--git-user-nameと同時に指定します
 
 cli-apply-about = 構築済み案件へ、Sandboxを作り直さずに反映できる変更を適用します
 cli-apply-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
@@ -208,7 +210,7 @@ remediation-remove-temp-file = { $path } の内容を確認し、ほかの実行
 remediation-registry-entry-mismatch = registryと案件directoryを自分で突き合わせてください。sbxmは実行を通すために登録内容を書き換えることはしません。
 remediation-project-path-occupied = { $path } を自分で確認し、退避するか、別の親directoryで登録してください。sbxmは自分が登録していない成果物を取り込むことはしません。
 remediation-project-path-collision = 別の親directoryでもう一度実行してください。sbxmは名前の衝突を避けるためにowner名のdirectoryを足すことはしません。
-remediation-git-identity-unavailable = 自分のaccountに設定してから、もう一度実行してください。sbxmはhostが宣言した値を保存するだけで、値を作り出しません。
+remediation-git-identity-undecidable = TTYのある端末で一度登録して名義を選ぶか、この実行で両方のoptionを宣言してください。sbxmはhostの設定を利用者の意図の代わりにしません。
 remediation-invalid-clone-url = GitHubでrepositoryを開き、表示されるclone URLをそのまま渡してください。
 remediation-config-not-rewritable = { $path } へ `{ $declaration }` を自分で書き足してから、もう一度実行してください。sbxmは1行ずつ編集できない設定を書き換えることはしません。
 remediation-fix-config = { $path } を編集してからもう一度実行してください。
@@ -247,7 +249,9 @@ security-ssh-agent-exposed-description = { $sandbox } からhostのSSH Agentへ�
 security-ssh-agent-exposed-remediation = Sandboxは作成時にdaemonから受け取った状態を保持するため、daemonを起動し直すだけでは変わりません。動作中のSandboxをすべて停止し、SSH_AUTH_SOCKを外したshellからdaemonを起動し直し、このSandboxを削除してから、もう一度実行して作り直してください。
 
 
-error-git-identity-unavailable = hostが使用できるGitの { $key } を宣言していません: { $detail }
+error-git-identity-incomplete = Git identityの宣言が揃っていません。{ $missing } がありません
+error-git-identity-undecidable = この案件の名義を決められません。保存された既定がなく、宣言もなく、訊くこともできません
+error-git-identity-invalid = Gitの { $field } として使えない値です: { $detail }
 
 status-global-section = GLOBAL
 status-column-item = 項目 (ITEM)
@@ -389,6 +393,8 @@ remediation-heading = 対処 (Try):
 remediation-rebuild-generation-missing-destroy = 復元できない場合、Sandboxと管理情報を削除すればhost cloneとDockerfileは残ります。
 guidance-apply-current-dockerfile = 現在のDockerfileを適用します。
 prompt-language-heading = 表示言語を選択してください / Choose a display language
+prompt-git-user-name = この案件のcommitに使う名前を入力してください
+prompt-git-user-email = この案件のcommitに使うmail addressを入力してください
 prompt-current = 現在位置
 prompt-selected = { $value } を選びました
 prompt-selected-count = 選択済み: { $count }
