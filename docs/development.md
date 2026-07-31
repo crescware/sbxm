@@ -45,19 +45,24 @@ macOSはこの指定の対象にしない。zigでmacOS向けにリンクする�
 
 ## 検証
 
-変更を提案する前に、次の3つをすべて通す。
+変更を提案する前に、次を通す。
 
 ```sh
-cargo test
-cargo clippy --all-targets
-cargo fmt --check
+mise run check
 ```
 
-満たすべき状態は次のとおり。
+このtaskは整形・lint・testを順に確認し、1つでも満たさなければそこで止まる。満たすべき状態は
+次のとおり。
 
-- testが全件成功する
+- `cargo fmt --all -- --check`が差分を報告しない
 - clippyのwarningが0件である
-- `cargo fmt --check`が差分を報告しない
+- testが全件成功する
+
+整形だけを当てる場合は次を実行する。
+
+```sh
+mise run fmt
+```
 
 CLIの公開契約を変えた場合は`tests/snapshots/cli-surface.txt`が差分として現れる。意図した
 変更であることを確認したうえで、`SBXM_UPDATE_SNAPSHOTS=1`で記録を更新し、その差分をreviewに

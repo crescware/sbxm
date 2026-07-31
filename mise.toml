@@ -1,3 +1,11 @@
 [tools]
 rust = "1.89.0"
 zig = "0.16.0"
+
+[tasks.fmt]
+description = "sourceを整形する"
+run = "cargo fmt --all"
+
+[tasks.check]
+description = "整形・lint・testをすべて確認する"
+run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features"
