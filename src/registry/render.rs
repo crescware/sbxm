@@ -8,7 +8,7 @@ use super::document::{RawEntry, RawRegistry};
 use super::{REGISTRY_VERSION, Registry};
 
 /// registryをYAMLへ描画する。
-pub fn render(registry: &Registry) -> String {
+pub fn render(registry: &Registry) -> crate::error::Result<String> {
     let raw = RawRegistry {
         version: Some(i64::from(REGISTRY_VERSION)),
         projects: registry
@@ -23,6 +23,5 @@ pub fn render(registry: &Registry) -> String {
             })
             .collect(),
     };
-    // RawRegistryは文字列と整数とVecだけで構成され、YAMLで表現できない値を持たない。
-    yaml_serde::to_string(&raw).expect("a registry is representable as YAML")
+    crate::config::serialized(&raw, "registry.yaml")
 }

@@ -99,10 +99,18 @@ pub(super) fn ask_language(prompt: &mut dyn ProjectPrompt, guessed: Locale) -> R
     choices.extend(Locale::ALL.into_iter().filter(|locale| *locale != guessed));
 
     let items: Vec<String> = choices.iter().map(|locale| locale_name(*locale)).collect();
-    let index = prompt.select_one(msg!("prompt-language-heading"), &items)?;
-    Ok(*choices
-        .get(index)
-        .expect("the selection index stays within the offered items"))
+    let index = prompt.select_one(&msg!("prompt-language-heading"), &items)?;
+    // 候補に対応しない選択はcancelではない。promptの契約違反として区別して報告する。
+    choices.get(index).copied().ok_or_else(|| {
+        Error::new(
+            ErrorId::SelectionUnresolved,
+            msg!(
+                "error-selection-unresolved",
+                index = index,
+                count = choices.len()
+            ),
+        )
+    })
 }
 
 /// 名義を1行ずつ訊くprompt。
@@ -116,11 +124,11 @@ pub trait IdentityPrompt {
 
 impl IdentityPrompt for PromptUi {
     fn git_user_name(&mut self, candidate: &str) -> Result<String> {
-        self.input(msg!("prompt-git-user-name"), candidate)
+        self.input(&msg!("prompt-git-user-name"), candidate)
     }
 
     fn git_user_email(&mut self, candidate: &str) -> Result<String> {
-        self.input(msg!("prompt-git-user-email"), candidate)
+        self.input(&msg!("prompt-git-user-email"), candidate)
     }
 }
 

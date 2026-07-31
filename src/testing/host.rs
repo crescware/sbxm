@@ -1,5 +1,7 @@
 //! Sandboxを持つhostのfake。
 
+use crate::testing::outcome::{Checked, Required};
+
 use crate::command::{
     CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, OutputPolicy, TimeoutClass,
 };
@@ -36,7 +38,7 @@ impl FakeSbx {
                 outputs
                     .iter()
                     .rev()
-                    .map(|value| value.to_string())
+                    .map(|value| (*value).to_string())
                     .collect(),
             ),
             answers: std::collections::HashMap::new(),
@@ -60,7 +62,7 @@ impl FakeSbx {
             answers
                 .iter()
                 .rev()
-                .map(|(code, stdout)| (*code, stdout.to_string()))
+                .map(|(code, stdout)| (*code, (*stdout).to_string()))
                 .collect(),
         );
         self
@@ -81,22 +83,23 @@ impl FakeSbx {
     }
 
     /// 引数が一致した最後の1件の指定。envとoutput policyの検証に使う。
-    pub fn spec(&self, needle: &str) -> CommandSpec {
-        self.specs
+    pub fn spec(&self, needle: &str) -> Checked<CommandSpec> {
+        Ok(self
+            .specs
             .borrow()
             .iter()
             .rev()
             .find(|spec| spec.args.join(" ").contains(needle))
-            .unwrap_or_else(|| panic!("no command matched {needle}"))
-            .clone()
+            .required_because(&format!("no command matched {needle}"))?
+            .clone())
     }
 }
 
 /// Sandboxのlifecycleを動かす指定であることを確かめる。
 ///
 /// 外部toolの進捗は隠さず、SSH Agentを渡さず、lifecycleのtimeoutで実行する。
-pub fn assert_lifecycle(host: &FakeSbx, needle: &str) {
-    let spec = host.spec(needle);
+pub fn assert_lifecycle(host: &FakeSbx, needle: &str) -> Checked {
+    let spec = host.spec(needle)?;
     assert_eq!(
         spec.output,
         OutputPolicy::Passthrough,
@@ -112,6 +115,7 @@ pub fn assert_lifecycle(host: &FakeSbx, needle: &str) {
         TimeoutClass::SandboxLifecycle,
         "{needle} runs under the lifecycle timeout"
     );
+    Ok(())
 }
 
 /// このscopeへ1件のcustom secretが登録されている`sbx secret ls`の出力。
@@ -155,7 +159,7 @@ pub fn no_secrets(host: FakeSbx, sandbox: &str) -> FakeSbx {
     )
 }
 
-/// host側のSSH Agentへ到達できないSandbox。
+/// host側のSSH `Agentへ到達できないSandbox`。
 pub fn isolated_agent(host: FakeSbx, sandbox: &str) -> FakeSbx {
     host.answering(&format!("exec {sandbox} -- printenv SSH_AUTH_SOCK"), 1, "")
         .answering(&format!("exec {sandbox} -- ssh-add -L"), 2, "")

@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -7,8 +9,8 @@ use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
 use crate::testing::fs::temp_dir;
 
 #[test]
-fn an_exclusive_lock_serializes_concurrent_holders() {
-    let dir = temp_dir();
+fn an_exclusive_lock_serializes_concurrent_holders() -> Checked {
+    let dir = temp_dir()?;
     let path = dir.path().join("init.lock");
 
     let held = acquire_exclusive_lock(
@@ -17,7 +19,7 @@ fn an_exclusive_lock_serializes_concurrent_holders() {
         PRIVATE_FILE_MODE,
         PathScope::ConfigFile,
     )
-    .expect("acquire");
+    .required_because("acquire")?;
 
     let contended = {
         let path = path.clone();
@@ -33,8 +35,8 @@ fn an_exclusive_lock_serializes_concurrent_holders() {
     };
     let error = contended
         .join()
-        .expect("thread joins")
-        .expect_err("a second holder must wait and then time out");
+        .required_because("thread joins")?
+        .refused_because("a second holder must wait and then time out")?;
     assert_eq!(error.first_id(), Some(ErrorId::LockTimeout));
 
     drop(held);
@@ -45,15 +47,16 @@ fn an_exclusive_lock_serializes_concurrent_holders() {
         PRIVATE_FILE_MODE,
         PathScope::ConfigFile,
     )
-    .expect("the lock can be taken again once the first holder releases it");
+    .required_because("the lock can be taken again once the first holder releases it")?;
+    Ok(())
 }
 
 #[test]
-fn a_lock_file_that_is_not_private_is_never_taken() {
-    let dir = temp_dir();
+fn a_lock_file_that_is_not_private_is_never_taken() -> Checked {
+    let dir = temp_dir()?;
     let path = dir.path().join("project.lock");
-    fs::write(&path, b"").expect("seed the lock file");
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o666)).expect("widen");
+    fs::write(&path, b"").required_because("seed the lock file")?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o666)).required_because("widen")?;
 
     let error = acquire_exclusive_lock(
         &path,
@@ -61,36 +64,38 @@ fn a_lock_file_that_is_not_private_is_never_taken() {
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
-    .expect_err("a lock other accounts can take is not a lock");
+    .refused_because("a lock other accounts can take is not a lock")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::ProjectFilePermissionTooOpen)
     );
-    let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    let mode = fs::metadata(&path).required()?.permissions().mode() & 0o777;
     assert_eq!(mode, 0o666, "sbxm must not repair permissions on its own");
+    Ok(())
 }
 
 #[test]
-fn a_symlinked_lock_path_is_reported_for_the_scope_it_protects() {
-    let dir = temp_dir();
+fn a_symlinked_lock_path_is_reported_for_the_scope_it_protects() -> Checked {
+    let dir = temp_dir()?;
     let real = dir.path().join("real.lock");
-    fs::write(&real, b"").unwrap();
+    fs::write(&real, b"").required()?;
     let link = dir.path().join("project.lock");
-    std::os::unix::fs::symlink(&real, &link).unwrap();
+    std::os::unix::fs::symlink(&real, &link).required()?;
 
     for (scope, expected) in [
         (PathScope::ProjectPath, ErrorId::ProjectPathSymlink),
         (PathScope::ConfigFile, ErrorId::ConfigSymlink),
     ] {
         let error = acquire_exclusive_lock(&link, LOCK_TIMEOUT, PRIVATE_FILE_MODE, scope)
-            .expect_err("symlinked lock paths are refused");
+            .refused_because("symlinked lock paths are refused")?;
         assert_eq!(error.first_id(), Some(expected));
     }
+    Ok(())
 }
 
 #[test]
-fn a_lock_file_survives_the_workflow_that_created_it() {
-    let dir = temp_dir();
+fn a_lock_file_survives_the_workflow_that_created_it() -> Checked {
+    let dir = temp_dir()?;
     let path = dir.path().join("init.lock");
     {
         let _lock = acquire_exclusive_lock(
@@ -99,10 +104,11 @@ fn a_lock_file_survives_the_workflow_that_created_it() {
             PRIVATE_FILE_MODE,
             PathScope::ConfigFile,
         )
-        .expect("acquire");
+        .required_because("acquire")?;
     }
     assert!(
         path.exists(),
         "the lock file is not deleted when the workflow ends"
     );
+    Ok(())
 }

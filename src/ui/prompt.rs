@@ -165,7 +165,7 @@ pub fn action_for(key: &Key) -> Action {
 /// 端末が読めなかったことを報告する。
 ///
 /// 中断は何も変更せず終える。それ以外を引数の不足として報告しない。
-pub fn unreadable(error: std::io::Error) -> Error {
+pub fn unreadable(error: &std::io::Error) -> Error {
     if error.kind() == std::io::ErrorKind::Interrupted {
         return Error::Canceled;
     }
@@ -196,7 +196,7 @@ impl PromptUi {
     }
 
     /// 候補から1件を選ぶ。
-    pub fn select_one(&mut self, heading: Msg, labels: &[String]) -> Result<usize> {
+    pub fn select_one(&mut self, heading: &Msg, labels: &[String]) -> Result<usize> {
         let selected = self.select(heading, labels, false)?;
         selected
             .first()
@@ -205,11 +205,11 @@ impl PromptUi {
     }
 
     /// 候補から1件以上を選ぶ。未選択の確定は受け付けない。
-    pub fn select_many(&mut self, heading: Msg, labels: &[String]) -> Result<Vec<usize>> {
+    pub fn select_many(&mut self, heading: &Msg, labels: &[String]) -> Result<Vec<usize>> {
         self.select(heading, labels, true)
     }
 
-    fn select(&mut self, heading: Msg, labels: &[String], multi: bool) -> Result<Vec<usize>> {
+    fn select(&mut self, heading: &Msg, labels: &[String], multi: bool) -> Result<Vec<usize>> {
         if labels.is_empty() {
             return Err(unresolved(0, 0));
         }
@@ -221,9 +221,9 @@ impl PromptUi {
         let outcome = loop {
             let frame = self
                 .painter
-                .frame(&heading, labels, &selection, viewport(&term));
+                .frame(heading, labels, &selection, viewport(&term));
             if let Err(error) = redraw(&term, drawn, &frame) {
-                break Err(unreadable(error));
+                break Err(unreadable(&error));
             }
             drawn = frame.len();
 
@@ -233,7 +233,7 @@ impl PromptUi {
                     Transition::Done(indexes) => break Ok(indexes),
                     Transition::Canceled => break Err(Error::Canceled),
                 },
-                Err(error) => break Err(unreadable(error)),
+                Err(error) => break Err(unreadable(&error)),
             }
         };
         let _ = term.show_cursor();
@@ -250,45 +250,46 @@ impl PromptUi {
     }
 
     /// 完全一致だけを続行の合図とする入力。
-    pub fn exact(&mut self, heading: Msg) -> Result<String> {
+    pub fn exact(&mut self, heading: &Msg) -> Result<String> {
         self.read_line(heading, "")
     }
 
     /// 候補を初期値として置いた入力。
     ///
     /// 候補は打ち直せる文字列として現れ、確定した値ではない。空の候補は空欄で始まる。
-    pub fn input(&mut self, heading: Msg, candidate: &str) -> Result<String> {
+    pub fn input(&mut self, heading: &Msg, candidate: &str) -> Result<String> {
         self.read_line(heading, candidate)
     }
 
-    fn read_line(&mut self, heading: Msg, initial: &str) -> Result<String> {
+    fn read_line(&mut self, heading: &Msg, initial: &str) -> Result<String> {
         let term = Term::stderr();
-        term.write_line(&self.painter.heading(&heading))
-            .map_err(unreadable)?;
+        term.write_line(&self.painter.heading(heading))
+            .map_err(|error| unreadable(&error))?;
 
         let mut typed = String::from(initial);
         if !typed.is_empty() {
-            term.write_str(&typed).map_err(unreadable)?;
+            term.write_str(&typed).map_err(|error| unreadable(&error))?;
         }
         loop {
-            match term.read_key().map_err(unreadable)? {
+            match term.read_key().map_err(|error| unreadable(&error))? {
                 Key::Enter => break,
                 Key::Escape | Key::CtrlC => return Err(Error::Canceled),
                 Key::Backspace => {
                     if let Some(removed) = typed.pop() {
                         term.clear_chars(display_width(&removed.to_string()))
-                            .map_err(unreadable)?;
+                            .map_err(|error| unreadable(&error))?;
                     }
                 }
                 Key::Char(character) => {
                     typed.push(character);
-                    term.write_str(&character.to_string()).map_err(unreadable)?;
+                    term.write_str(&character.to_string())
+                        .map_err(|error| unreadable(&error))?;
                 }
                 // 行編集は提供しない。入力に必要な打鍵だけを受け取る。
                 _ => {}
             }
         }
-        term.write_line("").map_err(unreadable)?;
+        term.write_line("").map_err(|error| unreadable(&error))?;
         Ok(typed)
     }
 }

@@ -1,3 +1,5 @@
+[workspace]
+
 [package]
 name = "sbxm"
 version = "0.0.1"
@@ -23,7 +25,7 @@ console = { version = "0.16.4", default-features = false, features = [
 ] }
 dirs = "6.0.0"
 fluent-bundle = "0.16.0"
-libc = "0.2.189"
+rustix = { version = "1.1.4", default-features = false, features = ["process"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = { version = "0.11.0", default-features = false }
@@ -33,3 +35,31 @@ yaml_serde = "0.10"
 
 [dev-dependencies]
 fluent-syntax = "0.12.0"
+
+[lints]
+workspace = true
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# デフォルトLint
+all = { level = "deny", priority = -1 }
+
+# より厳格で、多少の誤検知を許容するLint
+pedantic = { level = "deny", priority = -1 }
+
+# AIが安易に生成しやすい処理を個別に禁止
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+
+# 不用意な標準出力を防ぐ
+print_stdout = "deny"
+print_stderr = "deny"
+
+# unsafeを許可するプロジェクトの場合に有効
+undocumented_unsafe_blocks = "deny"

@@ -74,7 +74,7 @@ impl RegistryEntry {
         &self.repository
     }
 
-    /// canonical project IDから決定的に導出したSandbox名。
+    /// canonical project `IDから決定的に導出したSandbox名`。
     pub fn sandbox_name(&self) -> SandboxName {
         SandboxName::derive(self.canonical_id())
     }
@@ -89,7 +89,7 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// canonical project ID昇順のentry。
+    /// canonical project `ID昇順のentry`。
     pub fn entries(&self) -> &[RegistryEntry] {
         &self.entries
     }
@@ -229,7 +229,7 @@ impl RegistryGuard {
 
     /// entryを追加し、documentを丸ごと書き直す。
     ///
-    /// 既に同じcanonical project IDのentryがある場合は何も書かない。
+    /// 既に同じcanonical project `IDのentryがある場合は何も書かない`。
     pub fn insert(&mut self, entry: RegistryEntry) -> Result<()> {
         if let Some(existing) = self.registry.find(entry.canonical_id()) {
             if existing == &entry {
@@ -259,7 +259,7 @@ impl RegistryGuard {
     }
 
     fn write(&mut self, updated: Registry) -> Result<()> {
-        let text = render(&updated);
+        let text = render(&updated)?;
         if paths::regular_file_exists(&self.path, PathScope::ConfigFile)? {
             atomic_replace(&self.path, &text, PRIVATE_FILE_MODE)?;
         } else {

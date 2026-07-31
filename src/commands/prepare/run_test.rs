@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::super::world::{World, bench};
 use super::*;
 use crate::error::ErrorId;
@@ -8,19 +10,19 @@ use crate::ui::SilentProgress;
 use std::fs;
 
 #[test]
-fn a_project_that_is_not_registered_is_sent_to_add() {
-    let bench = bench();
+fn a_project_that_is_not_registered_is_sent_to_add() -> Checked {
+    let bench = bench()?;
     let world = World::new();
 
     let error = run(
         &bench.location,
         &bench.config,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,
     )
-    .expect_err("there is nothing to build yet");
+    .refused_because("there is nothing to build yet")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
 
     let diagnostic = &error.diagnostics()[0];
@@ -37,16 +39,18 @@ fn a_project_that_is_not_registered_is_sent_to_add() {
         "nothing is asked of the host: {:?}",
         world.invocations()
     );
+    Ok(())
 }
 
 #[test]
-fn an_unregistered_project_gets_no_lock_file() {
-    let bench = bench();
+fn an_unregistered_project_gets_no_lock_file() -> Checked {
+    let bench = bench()?;
     let world = World::new();
-    let project = project_id("example-org/example-repo");
+    let project = project_id("example-org/example-repo")?;
     let paths = ProjectPaths::derive(&bench.parent, &project.canonical());
     // lock fileを置ける状態、つまりmetadataのない`.sbxm`だけがある状態で確かめる。
-    fs::create_dir_all(paths.sbxm_dir()).expect("the project directory is left behind");
+    fs::create_dir_all(paths.sbxm_dir())
+        .required_because("the project directory is left behind")?;
 
     run(
         &bench.location,
@@ -56,7 +60,7 @@ fn an_unregistered_project_gets_no_lock_file() {
         bench.workspace_root.path(),
         &mut SilentProgress,
     )
-    .expect_err("there is nothing to build yet");
+    .refused_because("there is nothing to build yet")?;
 
     assert!(
         !paths.lock_file().exists(),
@@ -64,18 +68,19 @@ fn an_unregistered_project_gets_no_lock_file() {
     );
     assert_eq!(
         fs::read_dir(paths.sbxm_dir())
-            .expect("read the project directory")
+            .required_because("read the project directory")?
             .count(),
         0,
         "nothing is written under an unregistered project"
     );
+    Ok(())
 }
 
 #[test]
-fn a_rebuild_in_progress_builds_nothing() {
-    let bench = bench();
+fn a_rebuild_in_progress_builds_nothing() -> Checked {
+    let bench = bench()?;
     let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None);
+    let request = request("Example-Org/Example-Repo", None, None)?;
     crate::commands::add::run::run(
         &bench.location,
         &bench.parent,
@@ -84,40 +89,40 @@ fn a_rebuild_in_progress_builds_nothing() {
         &world,
         &mut SilentProgress,
     )
-    .expect("the project is registered");
+    .required_because("the project is registered")?;
 
     let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
     let mut stored = metadata::load(&paths)
-        .expect("read the metadata")
-        .expect("present");
+        .required_because("read the metadata")?
+        .required_because("present")?;
     stored.rebuild = Some(metadata::RebuildIntent {
         target_dockerfile_sha256: sha256_hex(b"target"),
         previous_dockerfile_sha256: stored.provisioning.dockerfile_sha256.clone(),
     });
-    metadata::update(&paths, &stored).expect("record the intent");
+    metadata::update(&paths, &stored).required_because("record the intent")?;
 
     let mark = world.mark();
     let error = run(
         &bench.location,
         &bench.config,
-        &project_of(&request),
+        &project_of(&request)?,
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,
     )
-    .expect_err("a half-switched project is not built on");
+    .refused_because("a half-switched project is not built on")?;
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
 
     let remediation = error.diagnostics()[0]
         .remediation
         .as_ref()
-        .expect("the user is told how to get out of it");
+        .required_because("the user is told how to get out of it")?;
     assert_eq!(remediation.explanation[0].id, "remediation-run-rebuild");
     // 実行するcommandは説明文ではなく、独立した一行として持つ。
     let command = remediation
         .commands
         .first()
-        .expect("the remediation carries the command to run");
+        .required_because("the remediation carries the command to run")?;
     assert_eq!(command.as_str(), "sbxm rebuild Example-Org/Example-Repo");
 
     assert!(
@@ -125,4 +130,5 @@ fn a_rebuild_in_progress_builds_nothing() {
         "nothing is asked of the host: {:?}",
         world.since(mark)
     );
+    Ok(())
 }

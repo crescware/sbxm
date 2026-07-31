@@ -8,7 +8,7 @@ pub struct Interactivity {
 
 impl Interactivity {
     /// 選択promptはstdinから読み、stderrへ表示する。両方がTTYでなければ使えない。
-    pub fn can_prompt(&self) -> bool {
+    pub fn can_prompt(self) -> bool {
         self.stdin_is_tty && self.stderr_is_tty
     }
 

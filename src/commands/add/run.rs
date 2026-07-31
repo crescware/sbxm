@@ -1,6 +1,6 @@
 //! `sbxm add`。
 //!
-//! 新しいGitHub repositoryを管理対象へ登録し、構築が中断した案件には同じcommandで
+//! `新しいGitHub` repositoryを管理対象へ登録し、構築が中断した案件には同じcommandで
 //! 続きから進む。全工程を`inspect -> decide -> mutate -> verify -> record`で実行し、
 //! 成功済みの成果物をrollback目的で削除しない。
 
@@ -72,29 +72,26 @@ impl TargetConfiguration {
             );
         }
 
-        match &request.detach {
-            Some(branch) => {
-                git::validate_branch_name(branch)?;
-                Ok(TargetConfiguration {
-                    mode: CreationMode::Detached,
-                    start_ref: Some(branch.clone()),
-                    requested_worktrees,
-                })
+        if let Some(branch) = &request.detach {
+            git::validate_branch_name(branch)?;
+            Ok(TargetConfiguration {
+                mode: CreationMode::Detached,
+                start_ref: Some(branch.clone()),
+                requested_worktrees,
+            })
+        } else {
+            if requested_worktrees > 1 {
+                return fail(
+                    ErrorId::WorktreesRequireDetach,
+                    msg!("error-worktrees-require-detach"),
+                );
             }
-            None => {
-                if requested_worktrees > 1 {
-                    return fail(
-                        ErrorId::WorktreesRequireDetach,
-                        msg!("error-worktrees-require-detach"),
-                    );
-                }
-                Ok(TargetConfiguration {
-                    // attached modeのstart refはremote default branchを解決してから確定する。
-                    mode: CreationMode::Attached,
-                    start_ref: None,
-                    requested_worktrees,
-                })
-            }
+            Ok(TargetConfiguration {
+                // attached modeのstart refはremote default branchを解決してから確定する。
+                mode: CreationMode::Attached,
+                start_ref: None,
+                requested_worktrees,
+            })
         }
     }
 }
@@ -135,31 +132,28 @@ pub fn register(
     // registryが不正なら、一部entryだけを信用せずここで停止する。
     let mut guard = RegistryGuard::acquire(location)?;
 
-    let paths = match guard.registry().find(&canonical) {
-        Some(entry) => {
-            // 登録済みなら、実行時の配置規則から新しい候補pathを作らない。
-            require_same_registration(entry, &request.repository)?;
-            let paths = ProjectPaths::at(entry.project_root(), &canonical);
-            // 保存されたabsolute pathでも、そこにあるものを観測してから使う。
-            // rootがまだ無い中断点からの再開だけが、作成工程から続けられる。
-            match observe(paths.root())? {
-                Presence::Present => {
-                    paths::require_owned_directory(paths.root(), PathScope::ProjectPath)?;
-                }
-                Presence::Absent => {}
+    let paths = if let Some(entry) = guard.registry().find(&canonical) {
+        // 登録済みなら、実行時の配置規則から新しい候補pathを作らない。
+        require_same_registration(entry, &request.repository)?;
+        let paths = ProjectPaths::at(entry.project_root(), &canonical);
+        // 保存されたabsolute pathでも、そこにあるものを観測してから使う。
+        // rootがまだ無い中断点からの再開だけが、作成工程から続けられる。
+        match observe(paths.root())? {
+            Presence::Present => {
+                paths::require_owned_directory(paths.root(), PathScope::ProjectPath)?;
             }
-            paths
+            Presence::Absent => {}
         }
-        None => {
-            // cwdを使うのは新規canonical project IDの登録時だけである。
-            let candidate = ProjectPaths::derive(parent, &canonical);
-            check_new_registration(guard.registry(), &candidate, &canonical, &sandbox)?;
-            guard.insert(RegistryEntry::new(
-                candidate.root(),
-                request.repository.clone(),
-            )?)?;
-            candidate
-        }
+        paths
+    } else {
+        // cwdを使うのは新規canonical project IDの登録時だけである。
+        let candidate = ProjectPaths::derive(parent, &canonical);
+        check_new_registration(guard.registry(), &candidate, &canonical, &sandbox)?;
+        guard.insert(RegistryEntry::new(
+            candidate.root(),
+            request.repository.clone(),
+        )?)?;
+        candidate
     };
 
     paths::ensure_directory(paths.root())?;
@@ -183,23 +177,22 @@ pub fn register(
 
     let dockerfile_sha256 = adopt_dockerfile(&paths)?;
 
-    let metadata = match stored {
-        Some(stored) => stored,
-        None => {
-            let metadata = ProjectMetadata {
-                repository: request.repository.clone(),
-                provisioning: Provisioning {
-                    mode: target.mode,
-                    start_ref: target.start_ref,
-                    requested_worktrees: target.requested_worktrees,
-                    dockerfile_sha256: dockerfile_sha256.clone(),
-                },
-                git_identity: git_identity.clone(),
-                rebuild: None,
-            };
-            metadata::create(&paths, &metadata)?;
-            metadata
-        }
+    let metadata = if let Some(stored) = stored {
+        stored
+    } else {
+        let metadata = ProjectMetadata {
+            repository: request.repository.clone(),
+            provisioning: Provisioning {
+                mode: target.mode,
+                start_ref: target.start_ref,
+                requested_worktrees: target.requested_worktrees,
+                dockerfile_sha256: dockerfile_sha256.clone(),
+            },
+            git_identity: git_identity.clone(),
+            rebuild: None,
+        };
+        metadata::create(&paths, &metadata)?;
+        metadata
     };
 
     // entryとmetadataが同じ案件を指していることを、registry lockを手放す前に確かめる。

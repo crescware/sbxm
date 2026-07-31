@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use crate::command::{CommandOutcome, CommandSpec};
 use crate::config::{HostFileSource, SandboxHomeRelativePath};
@@ -99,32 +101,33 @@ impl HostEnvironment for FakeSbx {
     }
 }
 
-fn declaration(source: &Path, destination: &str) -> FileDeclaration {
-    FileDeclaration {
-        source: HostFileSource::new(&paths::display(source)).expect("valid source"),
-        destination: SandboxHomeRelativePath::new(destination).expect("valid destination"),
-    }
+fn declaration(source: &Path, destination: &str) -> Checked<FileDeclaration> {
+    Ok(FileDeclaration {
+        source: HostFileSource::new(&paths::display(source)).required_because("valid source")?,
+        destination: SandboxHomeRelativePath::new(destination)
+            .required_because("valid destination")?,
+    })
 }
 
-fn source_file(dir: &Path, contents: &[u8]) -> PathBuf {
+fn source_file(dir: &Path, contents: &[u8]) -> Checked<PathBuf> {
     let path = dir.join("declared.yaml");
-    fs::write(&path, contents).expect("write the source");
-    path
+    fs::write(&path, contents).required_because("write the source")?;
+    Ok(path)
 }
 
 #[test]
-fn a_declared_file_is_staged_installed_and_moved_into_place() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = source_file(dir.path(), b"declared = true\n");
+fn a_declared_file_is_staged_installed_and_moved_into_place() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
     let host = FakeSbx::empty();
 
     let placed = place_all(
         &host,
         "sbxm-example",
-        &[declaration(&source, ".config/example/settings.yaml")],
+        &[declaration(&source, ".config/example/settings.yaml")?],
         Conflict::Refuse,
     )
-    .expect("place");
+    .required_because("place")?;
 
     assert_eq!(
         placed,
@@ -171,21 +174,22 @@ fn a_declared_file_is_staged_installed_and_moved_into_place() {
         host.ran("/tmp/sbxm-file-0"),
         "the staged copy is removed afterwards: {calls:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn a_failed_placement_still_removes_what_it_staged() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = source_file(dir.path(), b"declared = true\n");
+fn a_failed_placement_still_removes_what_it_staged() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
     let host = FakeSbx::empty().failing("mv");
 
     let error = place_all(
         &host,
         "sbxm-example",
-        &[declaration(&source, ".config/example/settings.yaml")],
+        &[declaration(&source, ".config/example/settings.yaml")?],
         Conflict::Refuse,
     )
-    .expect_err("the rename is the last step and it failed");
+    .refused_because("the rename is the last step and it failed")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
 
     let pending = "/home/agent/.config/example/settings.yaml.sbxm-new".to_string();
@@ -199,60 +203,64 @@ fn a_failed_placement_still_removes_what_it_staged() {
         "both temporary files are removed on the way out: {:?}",
         host.calls()
     );
+    Ok(())
 }
 
 #[test]
-fn a_destination_that_already_holds_the_same_content_is_left_alone() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_destination_that_already_holds_the_same_content_is_left_alone() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let contents = b"declared = true\n";
-    let source = source_file(dir.path(), contents);
+    let source = source_file(dir.path(), contents)?;
     let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", contents);
 
     let placed = place_all(
         &host,
         "sbxm-example",
-        &[declaration(&source, ".config/example/settings.yaml")],
+        &[declaration(&source, ".config/example/settings.yaml")?],
         Conflict::Refuse,
     )
-    .expect("place");
+    .required_because("place")?;
 
     assert_eq!(placed[0].placement, Placement::Unchanged);
     assert!(
         !host.ran("cp"),
         "nothing is copied when the content already matches"
     );
+    Ok(())
 }
 
 #[test]
-fn add_refuses_to_overwrite_a_different_file_while_sync_files_replaces_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = source_file(dir.path(), b"new contents\n");
-    let declarations = [declaration(&source, ".config/example/settings.yaml")];
+fn add_refuses_to_overwrite_a_different_file_while_sync_files_replaces_it() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"new contents\n")?;
+    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
 
     let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", b"older\n");
     let error = place_all(&host, "sbxm-example", &declarations, Conflict::Refuse)
-        .expect_err("a build never overwrites what is already there");
+        .refused_because("a build never overwrites what is already there")?;
     assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
     assert!(!host.ran("cp"));
 
     let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", b"older\n");
     let placed = place_all(&host, "sbxm-example", &declarations, Conflict::Overwrite)
-        .expect("an explicit re-placement replaces it");
+        .required_because("an explicit re-placement replaces it")?;
     assert_eq!(placed[0].placement, Placement::Placed);
     assert!(host.ran("mv"));
+    Ok(())
 }
 
 #[test]
-fn a_source_that_cannot_be_placed_safely_stops_before_anything_is_copied() {
-    let dir = tempfile::tempdir().unwrap();
-    let real = source_file(dir.path(), b"declared\n");
+fn a_source_that_cannot_be_placed_safely_stops_before_anything_is_copied() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let real = source_file(dir.path(), b"declared\n")?;
 
     let link = dir.path().join("link.yaml");
-    std::os::unix::fs::symlink(&real, &link).unwrap();
+    std::os::unix::fs::symlink(&real, &link).required()?;
     let directory = dir.path().join("a-directory");
-    fs::create_dir(&directory).unwrap();
+    fs::create_dir(&directory).required()?;
     let large = dir.path().join("large.bin");
-    fs::write(&large, vec![0_u8; (MAX_SOURCE_BYTES + 1) as usize]).unwrap();
+    let oversized = usize::try_from(MAX_SOURCE_BYTES + 1).required()?;
+    fs::write(&large, vec![0_u8; oversized]).required()?;
     let absent = dir.path().join("absent.yaml");
 
     for source in [link, directory, large, absent] {
@@ -260,10 +268,10 @@ fn a_source_that_cannot_be_placed_safely_stops_before_anything_is_copied() {
         let error = place_all(
             &host,
             "sbxm-example",
-            &[declaration(&source, ".config/example/settings.yaml")],
+            &[declaration(&source, ".config/example/settings.yaml")?],
             Conflict::Refuse,
         )
-        .expect_err("{source:?} must be refused");
+        .refused_because("{source:?} must be refused")?;
         assert_eq!(
             error.first_id(),
             Some(ErrorId::DeclaredFileUnusable),
@@ -271,13 +279,14 @@ fn a_source_that_cannot_be_placed_safely_stops_before_anything_is_copied() {
         );
         assert!(host.calls().is_empty(), "nothing is asked of the sandbox");
     }
+    Ok(())
 }
 
 #[test]
-fn a_destination_reached_through_a_symbolic_link_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = source_file(dir.path(), b"declared = true\n");
-    let declarations = [declaration(&source, ".config/example/settings.yaml")];
+fn a_destination_reached_through_a_symbolic_link_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
+    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
 
     // 途中のdirectoryも、destination自身も、homeの外を指し得る。
     for link in [
@@ -288,7 +297,7 @@ fn a_destination_reached_through_a_symbolic_link_is_refused() {
         for conflict in [Conflict::Refuse, Conflict::Overwrite] {
             let host = FakeSbx::empty().linking(link);
             let error = place_all(&host, "sbxm-example", &declarations, conflict)
-                .expect_err("a path that leaves the agent home is not written to");
+                .refused_because("a path that leaves the agent home is not written to")?;
             assert_eq!(
                 error.first_id(),
                 Some(ErrorId::DeclaredFileUnusable),
@@ -306,21 +315,22 @@ fn a_destination_reached_through_a_symbolic_link_is_refused() {
             );
         }
     }
+    Ok(())
 }
 
 #[test]
-fn every_step_of_the_destination_is_checked_for_a_symbolic_link() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = source_file(dir.path(), b"declared = true\n");
+fn every_step_of_the_destination_is_checked_for_a_symbolic_link() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
     let host = FakeSbx::empty();
 
     place_all(
         &host,
         "sbxm-example",
-        &[declaration(&source, ".config/example/settings.yaml")],
+        &[declaration(&source, ".config/example/settings.yaml")?],
         Conflict::Refuse,
     )
-    .expect("place");
+    .required_because("place")?;
 
     for step in [
         "/home/agent/.config",
@@ -335,22 +345,23 @@ fn every_step_of_the_destination_is_checked_for_a_symbolic_link() {
             host.calls()
         );
     }
+    Ok(())
 }
 
 #[test]
-fn the_content_of_a_declared_file_never_reaches_a_diagnostic() {
-    let dir = tempfile::tempdir().unwrap();
+fn the_content_of_a_declared_file_never_reaches_a_diagnostic() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let secret = "a-value-that-must-not-be-shown";
-    let source = source_file(dir.path(), secret.as_bytes());
+    let source = source_file(dir.path(), secret.as_bytes())?;
     let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", b"older\n");
 
     let error = place_all(
         &host,
         "sbxm-example",
-        &[declaration(&source, ".config/example/settings.yaml")],
+        &[declaration(&source, ".config/example/settings.yaml")?],
         Conflict::Refuse,
     )
-    .expect_err("the conflict is reported");
+    .refused_because("the conflict is reported")?;
 
     let rendered = format!("{error:?}");
     assert!(
@@ -363,4 +374,5 @@ fn the_content_of_a_declared_file_never_reaches_a_diagnostic() {
             "the content never reaches an argument: {args:?}"
         );
     }
+    Ok(())
 }

@@ -59,7 +59,7 @@ impl ScriptedIdentityPrompt {
         !self.offered.borrow().is_empty()
     }
 
-    fn answer(&self, heading: Msg, candidate: &str, typed: &str) -> Result<String> {
+    fn answer(&self, heading: &Msg, candidate: &str, typed: &str) -> Result<String> {
         self.offered
             .borrow_mut()
             .push((heading.id, candidate.to_string()));
@@ -76,11 +76,11 @@ impl ScriptedIdentityPrompt {
 
 impl IdentityPrompt for ScriptedIdentityPrompt {
     fn git_user_name(&mut self, candidate: &str) -> Result<String> {
-        self.answer(msg!("prompt-git-user-name"), candidate, &self.typed_name)
+        self.answer(&msg!("prompt-git-user-name"), candidate, &self.typed_name)
     }
 
     fn git_user_email(&mut self, candidate: &str) -> Result<String> {
-        self.answer(msg!("prompt-git-user-email"), candidate, &self.typed_email)
+        self.answer(&msg!("prompt-git-user-email"), candidate, &self.typed_email)
     }
 }
 
@@ -127,7 +127,7 @@ impl ScriptedPrompt {
 }
 
 impl ProjectPrompt for ScriptedPrompt {
-    fn select_one(&mut self, heading: Msg, candidates: &[String]) -> Result<usize> {
+    fn select_one(&mut self, heading: &Msg, candidates: &[String]) -> Result<usize> {
         self.record(heading, candidates);
         if self.canceled {
             return Err(Error::Canceled);
@@ -135,7 +135,7 @@ impl ProjectPrompt for ScriptedPrompt {
         Ok(self.one)
     }
 
-    fn select_many(&mut self, heading: Msg, candidates: &[String]) -> Result<Vec<usize>> {
+    fn select_many(&mut self, heading: &Msg, candidates: &[String]) -> Result<Vec<usize>> {
         self.record(heading, candidates);
         if self.canceled {
             return Err(Error::Canceled);
@@ -145,7 +145,7 @@ impl ProjectPrompt for ScriptedPrompt {
 }
 
 impl ScriptedPrompt {
-    fn record(&self, heading: Msg, candidates: &[String]) {
+    fn record(&self, heading: &Msg, candidates: &[String]) {
         self.headings.borrow_mut().push(heading.id);
         self.asked.borrow_mut().push(candidates.to_vec());
     }

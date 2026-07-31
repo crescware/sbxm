@@ -1,9 +1,13 @@
+use crate::testing::outcome::{Checked, Required};
+
 use super::*;
 
 #[test]
-fn a_command_line_keeps_what_the_user_types() {
-    let command = CommandLine::new("sbxm prepare owner/repository").expect("a single line");
+fn a_command_line_keeps_what_the_user_types() -> Checked {
+    let command =
+        CommandLine::new("sbxm prepare owner/repository").required_because("a single line")?;
     assert_eq!(command.as_str(), "sbxm prepare owner/repository");
+    Ok(())
 }
 
 #[test]

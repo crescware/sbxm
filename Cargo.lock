@@ -375,7 +375,7 @@ dependencies = [
  "dirs",
  "fluent-bundle",
  "fluent-syntax",
- "libc",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

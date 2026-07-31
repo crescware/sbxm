@@ -16,6 +16,8 @@ const SANDBOX_NAME_MAX_BYTES: usize = 63;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProjectId {
     value: String,
+    /// `value`の中のslashのbyte位置。`parse`が数えた1個だけがここに入る。
+    slash: usize,
 }
 
 impl ProjectId {
@@ -29,9 +31,9 @@ impl ProjectId {
         };
 
         let mut parts = value.split('/');
-        let (owner, repository) = match (parts.next(), parts.next(), parts.next()) {
-            (Some(owner), Some(repository), None) => (owner, repository),
-            _ => return Err(invalid()),
+        let (Some(owner), Some(repository), None) = (parts.next(), parts.next(), parts.next())
+        else {
+            return Err(invalid());
         };
 
         if !is_valid_owner(owner) || !is_valid_repository(repository) {
@@ -50,30 +52,28 @@ impl ProjectId {
 
         Ok(ProjectId {
             value: value.to_string(),
+            slash: owner.len(),
         })
     }
 
-    /// GitHub上の表記のままのowner。
+    /// `GitHub上の表記のままのowner`。
     pub fn owner(&self) -> &str {
-        self.split().0
+        self.value.get(..self.slash).unwrap_or_default()
     }
 
-    /// GitHub上の表記のままのrepository。
+    /// `GitHub上の表記のままのrepository`。
     pub fn repository(&self) -> &str {
-        self.split().1
+        self.value.get(self.slash + 1..).unwrap_or_default()
     }
 
     /// 比較の正本となるASCII lowercase形式。
+    ///
+    /// ASCII lowercase化はbyte長を変えないため、slashの位置はそのまま持ち越せる。
     pub fn canonical(&self) -> CanonicalProjectId {
         CanonicalProjectId {
             value: self.value.to_ascii_lowercase(),
+            slash: self.slash,
         }
-    }
-
-    fn split(&self) -> (&str, &str) {
-        self.value
-            .split_once('/')
-            .expect("a parsed project ID has exactly one slash")
     }
 }
 
@@ -89,6 +89,8 @@ impl std::fmt::Display for ProjectId {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CanonicalProjectId {
     value: String,
+    /// `value`の中のslashのbyte位置。[`ProjectId`]から持ち越す。
+    slash: usize,
 }
 
 impl CanonicalProjectId {
@@ -98,10 +100,7 @@ impl CanonicalProjectId {
 
     /// lowercase化したrepository。host pathとSandbox内pathに使う。
     pub fn repository(&self) -> &str {
-        self.value
-            .split_once('/')
-            .expect("a canonical project ID has exactly one slash")
-            .1
+        self.value.get(self.slash + 1..).unwrap_or_default()
     }
 }
 
@@ -111,7 +110,7 @@ impl std::fmt::Display for CanonicalProjectId {
     }
 }
 
-/// canonical project IDから決定的に導出したSandbox名。
+/// canonical project `IDから決定的に導出したSandbox名`。
 ///
 /// 同じcanonical project IDは常に同じ名前となり、異なるIDは通常hashで区別する。
 /// hash prefixの理論上の衝突は、案件一覧を突き合わせる側がname collisionとして扱う。
@@ -130,13 +129,12 @@ impl SandboxName {
         let hash = &hash[..SHORT_HEX_LENGTH];
         let budget = SANDBOX_NAME_MAX_BYTES - SANDBOX_NAME_PREFIX.len() - 1 - SHORT_HEX_LENGTH;
 
-        let slug = slugify(id.as_str());
-        let mut slug = slug.into_bytes();
+        // slugifyの出力は`[a-z0-9-]`だけであり、byte境界とchar境界が一致する。
+        let mut slug = slugify(id.as_str());
         slug.truncate(budget);
-        while slug.last() == Some(&b'-') {
+        while slug.ends_with('-') {
             slug.pop();
         }
-        let slug = String::from_utf8(slug).expect("the slug holds ASCII only");
 
         let value = if slug.is_empty() {
             format!("{SANDBOX_NAME_PREFIX}{hash}")

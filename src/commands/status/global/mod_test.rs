@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Required};
+
 use super::*;
 use crate::compatibility::EXPECTED_NETWORK_POLICY;
 use crate::error::ErrorId;
@@ -9,8 +11,8 @@ use crate::testing::render::plain;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
-fn every_row_is_shown_in_the_documented_order_even_when_checks_fail() {
-    let (_dir, location) = location_with_config(None);
+fn every_row_is_shown_in_the_documented_order_even_when_checks_fail() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let status = diagnose(&location, &FakeHost::new());
 
     assert_eq!(
@@ -31,24 +33,25 @@ fn every_row_is_shown_in_the_documented_order_even_when_checks_fail() {
             "status-item-remote-ssh",
         ]
     );
+    Ok(())
 }
 
 #[test]
-fn a_missing_configuration_is_the_defaults_rather_than_a_problem() {
-    let (_dir, location) = location_with_config(None);
+fn a_missing_configuration_is_the_defaults_rather_than_a_problem() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let status = diagnose(&location, &FakeHost::macos());
 
     assert_eq!(
-        status_of(&status, "status-item-config"),
+        status_of(&status, "status-item-config")?,
         StatusValue::Defaults
     );
     // 未作成のregistryは登録案件0件であり、errorではない。
     assert_eq!(
-        status_of(&status, "status-item-registry"),
+        status_of(&status, "status-item-registry")?,
         StatusValue::Missing
     );
     assert_eq!(
-        status_of(&status, "status-item-state-directory"),
+        status_of(&status, "status-item-state-directory")?,
         StatusValue::Missing
     );
     assert!(
@@ -59,22 +62,23 @@ fn a_missing_configuration_is_the_defaults_rather_than_a_problem() {
         "{:?}",
         status.diagnostics
     );
+    Ok(())
 }
 
 #[test]
-fn a_registry_that_cannot_be_read_is_diagnosed_without_visiting_any_project() {
-    let (_dir, location) = location_with_config(None);
-    std::fs::create_dir_all(location.dir()).unwrap();
-    std::fs::write(location.registry_file(), "version: 99\nprojects: []\n").unwrap();
+fn a_registry_that_cannot_be_read_is_diagnosed_without_visiting_any_project() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
+    std::fs::create_dir_all(location.dir()).required()?;
+    std::fs::write(location.registry_file(), "version: 99\nprojects: []\n").required()?;
     std::fs::set_permissions(
         location.registry_file(),
         std::fs::Permissions::from_mode(0o600),
     )
-    .unwrap();
+    .required()?;
 
     let status = diagnose(&location, &FakeHost::macos());
     assert_eq!(
-        status_of(&status, "status-item-registry"),
+        status_of(&status, "status-item-registry")?,
         StatusValue::Error
     );
     assert!(
@@ -83,18 +87,19 @@ fn a_registry_that_cannot_be_read_is_diagnosed_without_visiting_any_project() {
             .iter()
             .any(|diagnostic| diagnostic.id == ErrorId::RegistryUnknownVersion)
     );
+    Ok(())
 }
 
 #[test]
-fn an_unchosen_git_identity_is_reported_as_missing_rather_than_as_a_fault() {
+fn an_unchosen_git_identity_is_reported_as_missing_rather_than_as_a_fault() -> Checked {
     // hostが何を宣言していようと、既定を選ぶのは利用者である。まだ選んでいないことは
     // 診断すべき異常ではなく、対話的な`add`がまだ一度も訊いていないだけである。
-    let (_dir, location) = location_with_config(None);
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos().failing("git config --global --get-all user.email", "", 1);
 
     let status = diagnose(&location, &host);
     assert_eq!(
-        status_of(&status, "status-item-git-identity"),
+        status_of(&status, "status-item-git-identity")?,
         StatusValue::Missing
     );
     assert!(
@@ -105,63 +110,73 @@ fn an_unchosen_git_identity_is_reported_as_missing_rather_than_as_a_fault() {
         "an unchosen identity produces no diagnostic: {:?}",
         status.diagnostics
     );
+    Ok(())
 }
 
 #[test]
-fn a_chosen_git_identity_is_read_from_the_configuration_rather_than_the_host() {
+fn a_chosen_git_identity_is_read_from_the_configuration_rather_than_the_host() -> Checked {
     let (_dir, location) = location_with_config(Some(
         "version: 1\ngit_user_name: Example User\ngit_user_email: user@example.com\n",
-    ));
+    ))?;
     // hostが答えられなくても、保存済みの既定はそのまま使える。
     let host = FakeHost::macos().failing("git config --global --get-all user.name", "", 1);
 
     let status = diagnose(&location, &host);
     assert_eq!(
-        status_of(&status, "status-item-git-identity"),
+        status_of(&status, "status-item-git-identity")?,
         StatusValue::Ready
     );
+    Ok(())
 }
 
 #[test]
-fn an_invalid_configuration_is_diagnosed_rather_than_repaired() {
-    let (_dir, location) = location_with_config(Some("version: 99\n"));
+fn an_invalid_configuration_is_diagnosed_rather_than_repaired() -> Checked {
+    let (_dir, location) = location_with_config(Some("version: 99\n"))?;
     let status = diagnose(&location, &FakeHost::macos());
 
-    assert_eq!(status_of(&status, "status-item-config"), StatusValue::Error);
+    assert_eq!(
+        status_of(&status, "status-item-config")?,
+        StatusValue::Error
+    );
     assert!(
         status
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.id == ErrorId::ConfigUnknownVersion)
     );
+    Ok(())
 }
 
 #[test]
-fn an_existing_state_directory_is_ready_and_a_missing_one_is_not_an_error() {
-    let (_home, location) = location_with_config(Some(&valid_config()));
+fn an_existing_state_directory_is_ready_and_a_missing_one_is_not_an_error() -> Checked {
+    let (_home, location) = location_with_config(Some(&valid_config()))?;
     let status = diagnose(&location, &FakeHost::macos());
     assert_eq!(
-        status_of(&status, "status-item-state-directory"),
+        status_of(&status, "status-item-state-directory")?,
         StatusValue::Ready
     );
-    assert_eq!(status_of(&status, "status-item-config"), StatusValue::Ready);
+    assert_eq!(
+        status_of(&status, "status-item-config")?,
+        StatusValue::Ready
+    );
+    Ok(())
 }
 
 #[test]
-fn the_platform_requirement_is_checked_against_the_observed_values() {
-    let (_dir, location) = location_with_config(None);
+fn the_platform_requirement_is_checked_against_the_observed_values() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
 
     let host = FakeHost::macos();
     let status = diagnose(&location, &host);
     assert_eq!(
-        status_of(&status, "status-item-platform"),
+        status_of(&status, "status-item-platform")?,
         StatusValue::Ready
     );
 
     let old = FakeHost::macos().responding("sw_vers -productVersion", "13.6\n");
     let status = diagnose(&location, &old);
     assert_eq!(
-        status_of(&status, "status-item-platform"),
+        status_of(&status, "status-item-platform")?,
         StatusValue::Error
     );
     assert!(
@@ -174,19 +189,20 @@ fn the_platform_requirement_is_checked_against_the_observed_values() {
     let intel = FakeHost::macos().responding("uname -m", "x86_64\n");
     let status = diagnose(&location, &intel);
     assert_eq!(
-        status_of(&status, "status-item-platform"),
+        status_of(&status, "status-item-platform")?,
         StatusValue::Error
     );
+    Ok(())
 }
 
 #[test]
-fn a_platform_that_cannot_be_observed_is_not_guessed() {
-    let (_dir, location) = location_with_config(None);
+fn a_platform_that_cannot_be_observed_is_not_guessed() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::new().with_commands(&["git", "ssh", "docker", "sbx"]);
     let status = diagnose(&location, &host);
 
     assert_eq!(
-        status_of(&status, "status-item-platform"),
+        status_of(&status, "status-item-platform")?,
         StatusValue::Error
     );
     assert!(
@@ -195,11 +211,12 @@ fn a_platform_that_cannot_be_observed_is_not_guessed() {
             .iter()
             .any(|diagnostic| diagnostic.id == ErrorId::PlatformUnobservable)
     );
+    Ok(())
 }
 
 #[test]
-fn only_commands_that_sbxm_runs_directly_are_checked() {
-    let (_dir, location) = location_with_config(None);
+fn only_commands_that_sbxm_runs_directly_are_checked() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     // 利用者が実務で使う可能性があっても、sbxmが直接使わないtoolは検査しない。
     let host = FakeHost::macos();
     let status = diagnose(&location, &host);
@@ -210,20 +227,21 @@ fn only_commands_that_sbxm_runs_directly_are_checked() {
         "{:?}",
         items(&status)
     );
+    Ok(())
 }
 
 #[test]
-fn a_missing_host_command_is_reported_with_an_install_hint() {
-    let (_dir, location) = location_with_config(None);
+fn a_missing_host_command_is_reported_with_an_install_hint() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos().with_commands(&["ssh", "docker", "sbx"]);
     let status = diagnose(&location, &host);
 
-    assert_eq!(status_of(&status, "status-item-git"), StatusValue::Missing);
+    assert_eq!(status_of(&status, "status-item-git")?, StatusValue::Missing);
     let diagnostic = status
         .diagnostics
         .iter()
         .find(|diagnostic| diagnostic.id == ErrorId::HostCommandMissing)
-        .expect("the missing command is diagnosed");
+        .required_because("the missing command is diagnosed")?;
     assert_eq!(
         diagnostic
             .remediation
@@ -232,11 +250,12 @@ fn a_missing_host_command_is_reported_with_an_install_hint() {
             .map(|message| message.id),
         Some("remediation-install-command")
     );
+    Ok(())
 }
 
 #[test]
-fn a_docker_engine_that_does_not_answer_is_an_error_with_the_original_stderr() {
-    let (_dir, location) = location_with_config(None);
+fn a_docker_engine_that_does_not_answer_is_an_error_with_the_original_stderr() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos().failing(
         "docker version --format {{.Server.Version}}",
         "Cannot connect to the Docker daemon",
@@ -244,31 +263,39 @@ fn a_docker_engine_that_does_not_answer_is_an_error_with_the_original_stderr() {
     );
     let status = diagnose(&location, &host);
 
-    assert_eq!(status_of(&status, "status-item-docker"), StatusValue::Error);
+    assert_eq!(
+        status_of(&status, "status-item-docker")?,
+        StatusValue::Error
+    );
     let diagnostic = status
         .diagnostics
         .iter()
         .find(|diagnostic| diagnostic.id == ErrorId::DockerUnreachable)
-        .expect("an unreachable engine is diagnosed");
+        .required_because("an unreachable engine is diagnosed")?;
     let external = diagnostic
         .external
         .as_ref()
-        .expect("the original stderr is preserved");
+        .required_because("the original stderr is preserved")?;
     assert!(external.stderr_text().contains("Cannot connect"));
+    Ok(())
 }
 
 #[test]
-fn a_probe_timeout_is_an_error_rather_than_an_assumed_state() {
-    let (_dir, location) = location_with_config(None);
+fn a_probe_timeout_is_an_error_rather_than_an_assumed_state() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos().timing_out("docker version --format {{.Server.Version}}");
     let status = diagnose(&location, &host);
 
-    assert_eq!(status_of(&status, "status-item-docker"), StatusValue::Error);
+    assert_eq!(
+        status_of(&status, "status-item-docker")?,
+        StatusValue::Error
+    );
+    Ok(())
 }
 
 #[test]
-fn a_version_below_the_minimum_stops_the_dependent_checks() {
-    let (_dir, location) = location_with_config(None);
+fn a_version_below_the_minimum_stops_the_dependent_checks() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos().responding("sbx version", "sbx version 0.36.9\n");
     let status = diagnose(&location, &host);
 
@@ -278,7 +305,7 @@ fn a_version_below_the_minimum_stops_the_dependent_checks() {
         "status-item-daemon",
     ] {
         assert_eq!(
-            status_of(&status, item),
+            status_of(&status, item)?,
             StatusValue::Error,
             "{item} must not be observed through an unsupported CLI"
         );
@@ -290,33 +317,35 @@ fn a_version_below_the_minimum_stops_the_dependent_checks() {
             .any(|diagnostic| diagnostic.id == ErrorId::SbxVersionBelowMinimum),
         "the refused version must be diagnosed"
     );
+    Ok(())
 }
 
 #[test]
-fn sandbox_state_is_reported_from_the_structured_output() {
-    let (_dir, location) = location_with_config(None);
+fn sandbox_state_is_reported_from_the_structured_output() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos()
         .responding("sbx policy ls", r#"[{"name":"Balanced","active":true}]"#)
         .responding("sbx daemon status", "Status: running\n");
     let status = diagnose(&location, &host);
 
     assert_eq!(
-        status_of(&status, "status-item-docker-sandboxes"),
+        status_of(&status, "status-item-docker-sandboxes")?,
         StatusValue::Ready
     );
     assert_eq!(
-        status_of(&status, "status-item-network-policy"),
+        status_of(&status, "status-item-network-policy")?,
         StatusValue::Ready
     );
     assert_eq!(
-        status_of(&status, "status-item-daemon"),
+        status_of(&status, "status-item-daemon")?,
         StatusValue::Running
     );
+    Ok(())
 }
 
 #[test]
-fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() {
-    let (_dir, location) = location_with_config(None);
+fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
 
     for observed in ["Isolated", "Open"] {
         let host = FakeHost::macos()
@@ -328,7 +357,7 @@ fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() {
         let status = diagnose(&location, &host);
 
         assert_eq!(
-            status_of(&status, "status-item-network-policy"),
+            status_of(&status, "status-item-network-policy")?,
             StatusValue::Error,
             "{observed} is not {EXPECTED_NETWORK_POLICY}"
         );
@@ -336,7 +365,10 @@ fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() {
             .diagnostics
             .iter()
             .find(|diagnostic| diagnostic.id == ErrorId::NetworkPolicyMismatch)
-            .unwrap_or_else(|| panic!("{observed} must be diagnosed: {:?}", status.diagnostics));
+            .required_because(&format!(
+                "{observed} must be diagnosed: {:?}",
+                status.diagnostics
+            ))?;
         assert!(
             diagnostic
                 .description
@@ -354,16 +386,17 @@ fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() {
             diagnostic.description.args
         );
     }
+    Ok(())
 }
 
 #[test]
-fn a_version_that_cannot_be_parsed_stops_the_dependent_checks() {
-    let (_dir, location) = location_with_config(None);
+fn a_version_that_cannot_be_parsed_stops_the_dependent_checks() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos().responding("sbx version", "unreleased build\n");
     let status = diagnose(&location, &host);
 
     assert_eq!(
-        status_of(&status, "status-item-docker-sandboxes"),
+        status_of(&status, "status-item-docker-sandboxes")?,
         StatusValue::Error
     );
     assert!(
@@ -372,24 +405,29 @@ fn a_version_that_cannot_be_parsed_stops_the_dependent_checks() {
             .iter()
             .any(|diagnostic| diagnostic.id == ErrorId::SbxVersionUnparseable)
     );
+    Ok(())
 }
 
 #[test]
-fn a_missing_sandboxes_cli_marks_every_dependent_row() {
-    let (_dir, location) = location_with_config(None);
+fn a_missing_sandboxes_cli_marks_every_dependent_row() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos().with_commands(&["git", "ssh", "docker"]);
     let status = diagnose(&location, &host);
 
     assert_eq!(
-        status_of(&status, "status-item-docker-sandboxes"),
+        status_of(&status, "status-item-docker-sandboxes")?,
         StatusValue::Missing
     );
-    assert_eq!(status_of(&status, "status-item-daemon"), StatusValue::Error);
+    assert_eq!(
+        status_of(&status, "status-item-daemon")?,
+        StatusValue::Error
+    );
+    Ok(())
 }
 
 #[test]
-fn several_problems_are_all_reported_at_once() {
-    let (_dir, location) = location_with_config(None);
+fn several_problems_are_all_reported_at_once() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::new().with_commands(&["sbx"]);
     let status = diagnose(&location, &host);
 
@@ -401,26 +439,28 @@ fn several_problems_are_all_reported_at_once() {
     assert!(ids.contains(&ErrorId::PlatformUnobservable), "{ids:?}");
     assert!(ids.contains(&ErrorId::HostCommandMissing), "{ids:?}");
     assert!(!status.is_healthy());
+    Ok(())
 }
 
 #[test]
-fn the_rendered_report_shows_only_the_global_section() {
-    let (_dir, location) = location_with_config(None);
+fn the_rendered_report_shows_only_the_global_section() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
     let status = diagnose(&location, &FakeHost::macos());
     let table = plain(
         &crate::commands::status::print::global_document(&status, Locale::En),
         Locale::En,
-    );
+    )?;
 
     assert!(table.starts_with("GLOBAL\n"), "{table}");
     assert!(!table.contains("PROJECT"), "{table}");
     assert!(!table.contains("WORKTREES"), "{table}");
     assert_eq!(table.lines().count(), 2 + status.rows.len());
+    Ok(())
 }
 
 #[test]
-fn the_report_never_touches_the_configuration_directory() {
-    let (dir, location) = location_with_config(None);
+fn the_report_never_touches_the_configuration_directory() -> Checked {
+    let (dir, location) = location_with_config(None)?;
     diagnose(&location, &FakeHost::macos());
     assert!(
         !location.dir().exists(),
@@ -428,21 +468,22 @@ fn the_report_never_touches_the_configuration_directory() {
         location.dir().display()
     );
     assert_eq!(
-        std::fs::read_dir(dir.path()).unwrap().count(),
+        std::fs::read_dir(dir.path()).required()?.count(),
         0,
         "nothing may be written to the home directory"
     );
+    Ok(())
 }
 
 #[test]
-fn a_state_directory_that_is_a_file_is_an_error() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_state_directory_that_is_a_file_is_an_error() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let location = crate::config::ConfigLocation::from_home(dir.path().to_path_buf());
-    std::fs::write(location.dir(), b"not a directory").unwrap();
+    std::fs::write(location.dir(), b"not a directory").required()?;
 
     let status = diagnose(&location, &FakeHost::macos());
     assert_eq!(
-        status_of(&status, "status-item-state-directory"),
+        status_of(&status, "status-item-state-directory")?,
         StatusValue::Error
     );
     assert!(
@@ -451,4 +492,5 @@ fn a_state_directory_that_is_a_file_is_an_error() {
             .iter()
             .any(|diagnostic| diagnostic.id == ErrorId::GlobalStateUnusable)
     );
+    Ok(())
 }

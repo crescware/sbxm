@@ -1,13 +1,15 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 /// 共有した定義が、参照している側で実際に展開されること。
 ///
 /// FTLのparseだけでは、message参照が解決されるかは分からない。
 #[test]
-fn a_shared_definition_is_expanded_where_it_is_referenced() {
+fn a_shared_definition_is_expanded_where_it_is_referenced() -> Checked {
     for locale in Locale::ALL {
         let catalog = Catalog::new(locale);
         let scopes = catalog
             .text("github-token-scopes")
-            .expect("the shared definition renders");
+            .required_because("the shared definition renders")?;
         assert!(
             scopes.contains("Contents"),
             "{locale:?}: the permissions are named: {scopes}"
@@ -16,7 +18,7 @@ fn a_shared_definition_is_expanded_where_it_is_referenced() {
         // `add`の案内と、未登録で止まったときの案内は同じ定義を出す。
         let guidance = catalog
             .text("add-next-token")
-            .expect("the guidance renders");
+            .required_because("the guidance renders")?;
         assert!(
             guidance.contains("Contents"),
             "{locale:?}: add repeats the permissions: {guidance}"
@@ -25,7 +27,7 @@ fn a_shared_definition_is_expanded_where_it_is_referenced() {
         // 実行するcommandは翻訳resourceではなくmodelが持つため、共有定義だけを確かめる。
         let remediation = catalog
             .text("remediation-github-secret-missing")
-            .expect("the remediation renders");
+            .required_because("the remediation renders")?;
         assert!(
             remediation.contains("Contents"),
             "{locale:?}: {remediation}"
@@ -35,6 +37,7 @@ fn a_shared_definition_is_expanded_where_it_is_referenced() {
             "{locale:?}: a command must not be embedded in the prose: {remediation}"
         );
     }
+    Ok(())
 }
 
 use super::*;
@@ -125,19 +128,20 @@ fn exact_language_values_reject_anything_else() {
 }
 
 #[test]
-fn unknown_message_ids_fail_with_the_id_and_locale() {
+fn unknown_message_ids_fail_with_the_id_and_locale() -> Checked {
     let catalog = Catalog::new(Locale::En);
     let failure = catalog
         .format(&msg!("no-such-message-id"))
-        .expect_err("unknown message IDs must not format");
+        .refused_because("unknown message IDs must not format")?;
     assert_eq!(failure.message_id, "no-such-message-id");
     assert_eq!(failure.locale, Locale::En);
     assert_eq!(failure.reason, FormatFailureReason::UnknownMessage);
     assert!(failure.to_string().contains("message-format-failed"));
+    Ok(())
 }
 
 #[test]
-fn formatting_does_not_insert_isolation_marks() {
+fn formatting_does_not_insert_isolation_marks() -> Checked {
     let catalog = Catalog::new(Locale::En);
     let rendered = catalog
         .format(&msg!(
@@ -145,7 +149,7 @@ fn formatting_does_not_insert_isolation_marks() {
             path = "/home/example/.sbxm/config.yaml",
             detail = "no such file"
         ))
-        .expect("built-in message must format");
+        .required_because("built-in message must format")?;
     assert!(
         rendered.contains("/home/example/.sbxm/config.yaml"),
         "argument must be interpolated verbatim: {rendered}"
@@ -154,4 +158,5 @@ fn formatting_does_not_insert_isolation_marks() {
         !rendered.contains('\u{2068}') && !rendered.contains('\u{2069}'),
         "output must be free of Unicode isolation marks: {rendered:?}"
     );
+    Ok(())
 }

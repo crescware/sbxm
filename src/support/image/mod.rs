@@ -148,7 +148,7 @@ fn build(
         .timeout(TimeoutClass::ImageBuild);
     let result = host
         .run(&spec)
-        .and_then(|outcome| outcome.require_success());
+        .and_then(super::super::command::CommandOutcome::require_success);
 
     // 成功・失敗にかかわらず、この実行が作った一時directoryを削除する。
     let leftover = paths::display(context.path());
@@ -329,11 +329,7 @@ fn compare_labels(identity: &ImageIdentity, expected: &[(String, String)]) -> St
     expected
         .iter()
         .map(|(key, value)| {
-            let observed = identity
-                .labels
-                .get(key)
-                .map(String::as_str)
-                .unwrap_or("<absent>");
+            let observed = identity.labels.get(key).map_or("<absent>", String::as_str);
             format!("{key}: expected {value}, observed {observed}")
         })
         .collect::<Vec<_>>()

@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use crate::command::CommandOutcome;
 use std::cell::RefCell;
@@ -45,24 +47,26 @@ impl HostEnvironment for FakeSbx {
 }
 
 #[test]
-fn the_listing_is_read_without_the_host_ssh_agent() {
+fn the_listing_is_read_without_the_host_ssh_agent() -> Checked {
     let host = FakeSbx::listing(r#"{"sandboxes":[{"name":"sbxm-example","status":"running"}]}"#);
 
-    let entries = list(&host).expect("the listing parses");
+    let entries = list(&host).required_because("the listing parses")?;
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].name, "sbxm-example");
 
     let calls = host.calls.borrow();
     assert_eq!(calls[0].args, vec!["ls".to_string(), "--json".to_string()]);
     assert_eq!(calls[0].env, EnvPolicy::InheritWithoutSshAgent);
+    Ok(())
 }
 
 #[test]
-fn a_listing_that_fails_is_not_read_as_an_empty_one() {
+fn a_listing_that_fails_is_not_read_as_an_empty_one() -> Checked {
     let host = FakeSbx::failing_listing();
-    let error = list(&host).expect_err("a failed listing is not no sandboxes");
+    let error = list(&host).refused_because("a failed listing is not no sandboxes")?;
     assert_eq!(
         error.first_id(),
         Some(crate::error::ErrorId::ExternalCommandFailed)
     );
+    Ok(())
 }

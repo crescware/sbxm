@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 
 use crate::project::ProjectId;
@@ -18,7 +20,7 @@ impl FakeSbx {
                 outputs
                     .iter()
                     .rev()
-                    .map(|value| value.to_string())
+                    .map(|value| (*value).to_string())
                     .collect(),
             ),
             calls: RefCell::new(Vec::new()),
@@ -72,7 +74,7 @@ impl HostEnvironment for FakeProbe {
 }
 
 #[test]
-fn a_sandbox_that_cannot_reach_the_host_agent_passes_the_isolation_check() {
+fn a_sandbox_that_cannot_reach_the_host_agent_passes_the_isolation_check() -> Checked {
     // `printenv`は未設定を`1`で、`ssh-add`はagent不在を`2`で示す。
     let host = FakeProbe {
         socket: (1, ""),
@@ -80,14 +82,15 @@ fn a_sandbox_that_cannot_reach_the_host_agent_passes_the_isolation_check() {
     };
     assert!(
         ssh_agent_is_exposed(&host, "sandbox")
-            .expect("the check answered")
+            .required_because("the check answered")?
             .is_empty()
     );
-    require_credentials_isolated(&host, "sandbox").expect("nothing is exposed");
+    require_credentials_isolated(&host, "sandbox").required_because("nothing is exposed")?;
+    Ok(())
 }
 
 #[test]
-fn either_a_socket_or_a_reachable_agent_counts_as_exposed() {
+fn either_a_socket_or_a_reachable_agent_counts_as_exposed() -> Checked {
     let by_socket = FakeProbe {
         socket: (0, "/tmp/agent.sock\n"),
         keys: (SSH_ADD_NO_AGENT, ""),
@@ -100,13 +103,14 @@ fn either_a_socket_or_a_reachable_agent_counts_as_exposed() {
 
     for host in [by_socket, by_agent] {
         let error = require_credentials_isolated(&host, "sandbox")
-            .expect_err("the host agent is reachable from inside");
+            .refused_because("the host agent is reachable from inside")?;
         assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
     }
+    Ok(())
 }
 
 #[test]
-fn the_key_material_an_agent_lists_never_reaches_a_diagnostic() {
+fn the_key_material_an_agent_lists_never_reaches_a_diagnostic() -> Checked {
     let host = FakeProbe {
         socket: (1, ""),
         keys: (
@@ -116,13 +120,13 @@ fn the_key_material_an_agent_lists_never_reaches_a_diagnostic() {
     };
 
     assert_eq!(
-        ssh_agent_is_exposed(&host, "sandbox").expect("the check answered"),
+        ssh_agent_is_exposed(&host, "sandbox").required_because("the check answered")?,
         ["ssh-add reached an agent"],
         "what is observed is that an agent answered, not what it holds"
     );
 
     let error = require_credentials_isolated(&host, "sandbox")
-        .expect_err("an agent that lists keys is reachable from inside");
+        .refused_because("an agent that lists keys is reachable from inside")?;
     assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
 
     let rendered = format!("{error:?}");
@@ -130,33 +134,35 @@ fn the_key_material_an_agent_lists_never_reaches_a_diagnostic() {
         !rendered.contains("AAAAB3Nza") && !rendered.contains("must-not-be-shown"),
         "the diagnostic names the sandbox only: {rendered}"
     );
+    Ok(())
 }
 
 #[test]
-fn a_probe_that_could_not_run_is_not_read_as_isolation() {
+fn a_probe_that_could_not_run_is_not_read_as_isolation() -> Checked {
     let host = FakeProbe {
         socket: (126, ""),
         keys: (SSH_ADD_NO_AGENT, ""),
     };
     let error = require_credentials_isolated(&host, "sandbox")
-        .expect_err("a check that did not answer never means isolated");
+        .refused_because("a check that did not answer never means isolated")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
+    Ok(())
 }
 
 /// 中立Workspaceのrootを、実行時と同じ条件で用意する。
-fn workspace_root() -> tempfile::TempDir {
-    let root = tempfile::tempdir().expect("temporary workspace root");
+fn workspace_root() -> Checked<tempfile::TempDir> {
+    let root = tempfile::tempdir().required_because("temporary workspace root")?;
     fs::set_permissions(root.path(), fs::Permissions::from_mode(PRIVATE_DIR_MODE))
-        .expect("the root belongs to the current user only");
-    root
+        .required_because("the root belongs to the current user only")?;
+    Ok(root)
 }
 
-fn sandbox() -> SandboxName {
-    SandboxName::derive(
+fn sandbox() -> Checked<SandboxName> {
+    Ok(SandboxName::derive(
         &ProjectId::parse("example-org/example-repo")
-            .unwrap()
+            .required()?
             .canonical(),
-    )
+    ))
 }
 
 fn template() -> LoadedTemplate {
@@ -166,33 +172,33 @@ fn template() -> LoadedTemplate {
     }
 }
 
-fn listing(workspace: &Path, state: &str) -> String {
-    format!(
+fn listing(workspace: &Path, state: &str) -> Checked<String> {
+    Ok(format!(
         r#"[{{"name":"{}","state":"{state}","workspace":"{}"}}]"#,
-        sandbox(),
+        sandbox()?,
         workspace.display()
-    )
+    ))
 }
 
 #[test]
-fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() {
-    let root = workspace_root();
-    let workspace = workspace_path(root.path(), &sandbox());
-    let host = FakeSbx::listing(&["[]", &listing(&workspace, "running")]);
+fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() -> Checked {
+    let root = workspace_root()?;
+    let workspace = workspace_path(root.path(), &sandbox()?);
+    let host = FakeSbx::listing(&["[]", &listing(&workspace, "running")?]);
 
     let ready = ensure(
         &host,
-        &sandbox(),
+        &sandbox()?,
         &template(),
         root.path(),
         &mut SilentProgress,
     )
-    .expect("create");
+    .required_because("create")?;
     assert!(ready.created);
     assert_eq!(ready.state, SandboxState::Running);
     assert_eq!(ready.workspace, workspace);
     assert_eq!(
-        fs::metadata(&workspace).unwrap().permissions().mode() & 0o777,
+        fs::metadata(&workspace).required()?.permissions().mode() & 0o777,
         PRIVATE_DIR_MODE
     );
 
@@ -201,39 +207,41 @@ fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() {
         vec![
             "create".to_string(),
             "--name".to_string(),
-            sandbox().as_str().to_string(),
+            sandbox()?.as_str().to_string(),
             "--template".to_string(),
             template().name,
             AGENT_KIT.to_string(),
             paths::display(&workspace),
         ]
     );
+    Ok(())
 }
 
 #[test]
-fn the_workspace_path_carries_no_project_or_home_path() {
-    let workspace = workspace_path(Path::new(WORKSPACE_ROOT), &sandbox());
+fn the_workspace_path_carries_no_project_or_home_path() -> Checked {
+    let workspace = workspace_path(Path::new(WORKSPACE_ROOT), &sandbox()?);
     assert_eq!(
         workspace,
-        Path::new("/tmp/docker-sandboxes").join(sandbox().as_str())
+        Path::new("/tmp/docker-sandboxes").join(sandbox()?.as_str())
     );
     assert!(!paths::display(&workspace).contains("/Users/"));
+    Ok(())
 }
 
 #[test]
-fn a_sandbox_that_matches_the_expected_state_is_reused_whoever_made_it() {
-    let root = workspace_root();
-    let workspace = workspace_path(root.path(), &sandbox());
-    let host = FakeSbx::listing(&[&listing(&workspace, "stopped")]);
+fn a_sandbox_that_matches_the_expected_state_is_reused_whoever_made_it() -> Checked {
+    let root = workspace_root()?;
+    let workspace = workspace_path(root.path(), &sandbox()?);
+    let host = FakeSbx::listing(&[&listing(&workspace, "stopped")?]);
 
     let ready = ensure(
         &host,
-        &sandbox(),
+        &sandbox()?,
         &template(),
         root.path(),
         &mut SilentProgress,
     )
-    .expect("reuse");
+    .required_because("reuse")?;
     assert!(!ready.created);
     assert_eq!(ready.state, SandboxState::Stopped);
     assert!(
@@ -243,65 +251,68 @@ fn a_sandbox_that_matches_the_expected_state_is_reused_whoever_made_it() {
             .any(|args| args.first().is_some_and(|arg| arg == "create")),
         "an existing sandbox is never created over"
     );
+    Ok(())
 }
 
 #[test]
-fn a_sandbox_with_another_workspace_stops_the_run() {
-    let root = workspace_root();
+fn a_sandbox_with_another_workspace_stops_the_run() -> Checked {
+    let root = workspace_root()?;
     let elsewhere = root.path().join("elsewhere");
-    fs::create_dir_all(&elsewhere).unwrap();
-    let host = FakeSbx::listing(&[&listing(&elsewhere, "running")]);
+    fs::create_dir_all(&elsewhere).required()?;
+    let host = FakeSbx::listing(&[&listing(&elsewhere, "running")?]);
     let error = ensure(
         &host,
-        &sandbox(),
+        &sandbox()?,
         &template(),
         root.path(),
         &mut SilentProgress,
     )
-    .expect_err("a sandbox that works elsewhere is not this project's");
+    .refused_because("a sandbox that works elsewhere is not this project's")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+    Ok(())
 }
 
 #[test]
-fn a_runtime_that_hides_the_workspace_is_not_guessed_at() {
-    let root = workspace_root();
+fn a_runtime_that_hides_the_workspace_is_not_guessed_at() -> Checked {
+    let root = workspace_root()?;
     // workspaceが分からない一覧からは、この案件のSandboxだと言えない。
     let listing = format!(
         r#"[{{"name":"{}","state":"running","template":"{}"}}]"#,
-        sandbox(),
+        sandbox()?,
         template().name
     );
     let host = FakeSbx::listing(&[&listing]);
     let error = ensure(
         &host,
-        &sandbox(),
+        &sandbox()?,
         &template(),
         root.path(),
         &mut SilentProgress,
     )
-    .expect_err("an unverifiable sandbox is not reused");
+    .refused_because("an unverifiable sandbox is not reused")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+    Ok(())
 }
 
 #[test]
-fn the_listing_of_the_target_version_identifies_the_sandbox() {
-    let root = workspace_root();
+fn the_listing_of_the_target_version_identifies_the_sandbox() -> Checked {
+    let root = workspace_root()?;
     // 対象versionの一覧はTemplateを持たない。名前とworkspaceの実pathで対応を判定する。
     let listing = format!(
         r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
-        sandbox(),
-        workspace_path(root.path(), &sandbox()).display()
+        sandbox()?,
+        workspace_path(root.path(), &sandbox()?).display()
     );
     let host = FakeSbx::listing(&[&listing]);
 
     let ready = ensure(
         &host,
-        &sandbox(),
+        &sandbox()?,
         &template(),
         root.path(),
         &mut SilentProgress,
     )
-    .expect("the sandbox of this project is used");
+    .required_because("the sandbox of this project is used")?;
     assert!(!ready.created, "an existing sandbox is not made again");
     assert!(
         !host
@@ -311,24 +322,26 @@ fn the_listing_of_the_target_version_identifies_the_sandbox() {
         "nothing is created over it: {:?}",
         host.calls()
     );
+    Ok(())
 }
 
 #[test]
-fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() {
-    let root = workspace_root();
+fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() -> Checked {
+    let root = workspace_root()?;
     let real = root.path().join("real");
-    fs::create_dir_all(&real).unwrap();
-    std::os::unix::fs::symlink(&real, workspace_path(root.path(), &sandbox())).unwrap();
+    fs::create_dir_all(&real).required()?;
+    std::os::unix::fs::symlink(&real, workspace_path(root.path(), &sandbox()?)).required()?;
 
     let host = FakeSbx::listing(&["[]"]);
     let error = ensure(
         &host,
-        &sandbox(),
+        &sandbox()?,
         &template(),
         root.path(),
         &mut SilentProgress,
     )
-    .expect_err("a symlinked workspace is refused");
+    .refused_because("a symlinked workspace is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
     assert!(host.calls().is_empty(), "nothing is asked of the runtime");
+    Ok(())
 }

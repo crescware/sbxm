@@ -55,7 +55,7 @@ pub fn ensure(
     if find(host, &image.name)?.is_none() {
         return Err(unusable(
             &image.name,
-            "the template is absent right after it was loaded".to_string(),
+            "the template is absent right after it was loaded",
         ));
     }
 
@@ -86,7 +86,7 @@ fn find(host: &dyn HostEnvironment, name: &str) -> Result<Option<TemplateEntry>>
     Ok(entries.into_iter().find(|entry| entry.is_named(name)))
 }
 
-fn unusable(name: &str, detail: String) -> Error {
+fn unusable(name: &str, detail: &str) -> Error {
     Error::new(
         ErrorId::TemplateUnusable,
         msg!("error-template-unusable", template = name, detail = detail),

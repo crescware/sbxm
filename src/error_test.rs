@@ -1,10 +1,12 @@
+use crate::testing::outcome::{Checked, Refused};
+
 use super::*;
 
 #[test]
 fn exit_codes_are_the_published_contract() {
-    assert_eq!(ExitCode::Success.as_i32(), 0);
-    assert_eq!(ExitCode::Failure.as_i32(), 1);
-    assert_eq!(ExitCode::Canceled.as_i32(), 130);
+    assert_eq!(ExitCode::Success.as_u8(), 0);
+    assert_eq!(ExitCode::Failure.as_u8(), 1);
+    assert_eq!(ExitCode::Canceled.as_u8(), 130);
 }
 
 #[test]
@@ -83,10 +85,10 @@ fn missing() -> Error {
 }
 
 #[test]
-fn an_unknown_version_names_the_path_the_value_found_and_the_version_supported() {
+fn an_unknown_version_names_the_path_the_value_found_and_the_version_supported() -> Checked {
     let error = document()
         .require(Some(99), "/tmp/x", missing)
-        .expect_err("this build reads version 1 only");
+        .refused_because("this build reads version 1 only")?;
     let diagnostic = &error.diagnostics()[0];
     assert_eq!(diagnostic.id, ErrorId::ConfigUnknownVersion);
     assert_eq!(diagnostic.description.id, "error-config-unknown-version");
@@ -98,13 +100,15 @@ fn an_unknown_version_names_the_path_the_value_found_and_the_version_supported()
             ("supported", "1".to_string())
         ]
     );
+    Ok(())
 }
 
 #[test]
-fn the_supported_version_is_accepted_and_a_missing_version_is_left_to_the_caller() {
+fn the_supported_version_is_accepted_and_a_missing_version_is_left_to_the_caller() -> Checked {
     assert!(document().require(Some(1), "/tmp/x", missing).is_ok());
     let error = document()
         .require(None, "/tmp/x", missing)
-        .expect_err("a document without a version field is refused");
+        .refused_because("a document without a version field is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::ConfigMissingField));
+    Ok(())
 }

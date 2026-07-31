@@ -68,7 +68,7 @@ impl World {
             secrets: RefCell::new(
                 crate::support::secret::GITHUB_HOSTS
                     .iter()
-                    .map(|host| host.to_string())
+                    .map(|host| (*host).to_string())
                     .collect(),
             ),
             present: RefCell::new(BTreeSet::new()),
@@ -88,7 +88,7 @@ impl World {
         }
     }
 
-    /// 利用者がDockerfileから外したtoolを持たないSandbox。
+    /// `利用者がDockerfileから外したtoolを持たないSandbox`。
     pub fn without(&self, program: &str) {
         self.commands.borrow_mut().remove(program);
     }
@@ -150,12 +150,7 @@ impl World {
             .map(|spec| (spec.output, spec.timeout))
     }
 
-    pub fn outcome(
-        &self,
-        spec: &crate::command::CommandSpec,
-        code: i32,
-        stdout: &str,
-    ) -> CommandOutcome {
+    pub fn outcome(spec: &crate::command::CommandSpec, code: i32, stdout: &str) -> CommandOutcome {
         crate::testing::command::outcome(spec, code, stdout)
     }
 }
@@ -172,15 +167,15 @@ impl crate::command::HostEnvironment for World {
             && invocation.contains(needle.as_str())
         {
             // 答えを差し替えた工程は実行せず、その工程の副作用も残さない。
-            return Ok(self.outcome(spec, *code, stdout));
+            return Ok(Self::outcome(spec, *code, stdout));
         }
 
         let (code, stdout) = match spec.program.as_str() {
-            "git" => self.host_git(spec),
+            "git" => Self::host_git(spec),
             "docker" => self.docker(spec),
             "sbx" => self.sbx(spec),
             _ => (0, String::new()),
         };
-        Ok(self.outcome(spec, code, &stdout))
+        Ok(Self::outcome(spec, code, &stdout))
     }
 }

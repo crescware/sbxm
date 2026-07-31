@@ -26,14 +26,14 @@ pub struct Prepared {
     pub worktrees: Vec<String>,
 }
 
-/// SSHへ引き渡せる状態までSandboxを整える。
+/// `SSHへ引き渡せる状態までSandboxを整える`。
 ///
 /// 1. 対象を引数またはpromptで解決する
 /// 2. project lockを取得する
 /// 3. Docker Engineへの疎通を確認する
 /// 4. 1回の一覧取得からSandbox identityとstateを検証する
 /// 5. runningでなければ起動して待つ
-/// 6. hostのSSH Agentが届かないことをSandboxの中から確認する
+/// 6. hostのSSH `Agentが届かないことをSandboxの中から確認する`
 /// 7. managed worktreeをmetadataとGitから検証する
 ///
 /// lockはこの関数のあいだだけ保持する。SSH sessionそのものはsbxmのmutationではなく、
@@ -48,7 +48,7 @@ pub fn prepare(
     progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let locked = select::one(location, requested, msg!("select-open-heading"), prompt)?.lock()?;
+    let locked = select::one(location, requested, &msg!("select-open-heading"), prompt)?.lock()?;
 
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
@@ -80,7 +80,7 @@ pub fn prepare(
 
 /// terminalをSSHへ引き渡す。
 ///
-/// SSHのexit statusが0なら成功とし、非ゼロは理由を推測せず外部command失敗とする。
+/// `SSHのexit` statusが0なら成功とし、非ゼロは理由を推測せず外部command失敗とする。
 pub fn connect(host: &dyn HostEnvironment, prepared: &Prepared) -> Result<()> {
     let spec = CommandSpec::inherit("ssh", &[&prepared.ssh_host]);
     host.run(&spec)?.require_success()?;

@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::super::fake::verified;
 use super::*;
 use crate::command::OutputPolicy;
@@ -13,11 +15,11 @@ use std::os::unix::fs::PermissionsExt;
 /// 固定した世代の成果物が揃い、再作成後の検証も通るhost。
 ///
 /// 中断した`rebuild`の続きを、そのまま最後まで走らせられる状態を表す。
-fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> FakeSbx {
+fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> Checked<FakeSbx> {
     let image = image::image_name(&project.sandbox, target);
     let workspace = fixture.workspace_root.join(project.sandbox.as_str());
-    std::fs::create_dir_all(&workspace).unwrap();
-    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::create_dir_all(&workspace).required()?;
+    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
     let created = format!(
         r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
         project.sandbox,
@@ -38,13 +40,13 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> FakeSbx 
             .answering(
                 "template ls --json",
                 0,
-                &template_listing(&image),
+                &template_listing(&image)?,
             );
     // 再作成後のSandbox内で、共有repositoryとworktreeが期待どおりに揃う。
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let git_dir = layout.bare_git_dir();
     let worktree = layout.worktree(0);
-    verified(host, project.sandbox.as_str())
+    Ok(verified(host, project.sandbox.as_str())
         .answering(
             &format!(
                 "exec {} -- git --git-dir {git_dir} rev-parse --is-bare-repository",
@@ -100,14 +102,14 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> FakeSbx 
             ),
             0,
             "refs/heads/main\n",
-        )
+        ))
 }
 
 #[test]
-fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
-    let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
-    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() -> Checked {
+    let fixture = fixture()?;
+    let project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let target = sha256_hex(b"FROM scratch\n");
 
     // Sandbox削除の直後で中断した状態を作る。
@@ -116,23 +118,25 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
         target_dockerfile_sha256: target.clone(),
         previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
     });
-    metadata::update(&project.paths, &metadata).unwrap();
+    metadata::update(&project.paths, &metadata).required()?;
 
-    let host = continuing(&fixture, &project, &target);
+    let host = continuing(&fixture, &project, &target)?;
 
     let output = run(
         &fixture.location,
         &fixture.config,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
         poll(),
         &mut SilentProgress,
     )
-    .expect("the fixed generation is completed");
+    .required_because("the fixed generation is completed")?;
 
     assert_eq!(output.applied, target);
-    let stored = metadata::load(&project.paths).unwrap().expect("present");
+    let stored = metadata::load(&project.paths)
+        .required()?
+        .required_because("present")?;
     assert_eq!(stored.provisioning.dockerfile_sha256, target);
     assert!(
         stored.rebuild.is_none(),
@@ -150,17 +154,18 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() {
     );
 
     // 判定に使う出力はsbxmが読む。
-    assert_eq!(host.spec("ls --json").output, OutputPolicy::Capture);
+    assert_eq!(host.spec("ls --json")?.output, OutputPolicy::Capture);
     assert_eq!(
-        host.spec("template ls --json").output,
+        host.spec("template ls --json")?.output,
         OutputPolicy::Capture
     );
+    Ok(())
 }
 
 #[test]
-fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
-    let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
+fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() -> Checked {
+    let fixture = fixture()?;
+    let project = fixture.register("example-org/example-repo")?;
     let target = sha256_hex(b"FROM scratch\n");
 
     // 世代を固定したあとに、Dockerfileがさらに書き換えられた状態を作る。
@@ -169,20 +174,20 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
         target_dockerfile_sha256: target.clone(),
         previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
     });
-    metadata::update(&project.paths, &metadata).unwrap();
-    std::fs::write(project.paths.dockerfile(), "FROM alpine\n").unwrap();
+    metadata::update(&project.paths, &metadata).required()?;
+    std::fs::write(project.paths.dockerfile(), "FROM alpine\n").required()?;
 
-    let host = continuing(&fixture, &project, &target);
+    let host = continuing(&fixture, &project, &target)?;
     let output = run(
         &fixture.location,
         &fixture.config,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
         poll(),
         &mut SilentProgress,
     )
-    .expect("the fixed generation is completed");
+    .required_because("the fixed generation is completed")?;
 
     assert_eq!(
         output.applied, target,
@@ -196,7 +201,9 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
             .collect::<Vec<_>>(),
         vec!["warning-dockerfile-changed-during-rebuild"]
     );
-    let stored = metadata::load(&project.paths).unwrap().expect("present");
+    let stored = metadata::load(&project.paths)
+        .required()?
+        .required_because("present")?;
     assert_eq!(
         stored.provisioning.dockerfile_sha256, target,
         "the edit is not recorded as applied"
@@ -208,13 +215,14 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() {
         "the edit is left for the next rebuild: {:?}",
         host.calls()
     );
+    Ok(())
 }
 
 #[test]
-fn a_failure_after_the_switch_leaves_the_intent_in_place() {
-    let fixture = fixture();
-    let project = fixture.register("example-org/example-repo");
-    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").unwrap();
+fn a_failure_after_the_switch_leaves_the_intent_in_place() -> Checked {
+    let fixture = fixture()?;
+    let project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let target = sha256_hex(b"FROM scratch\n");
     let previous = project.metadata.provisioning.dockerfile_sha256.clone();
 
@@ -223,10 +231,10 @@ fn a_failure_after_the_switch_leaves_the_intent_in_place() {
         target_dockerfile_sha256: target.clone(),
         previous_dockerfile_sha256: previous.clone(),
     });
-    metadata::update(&project.paths, &metadata).unwrap();
+    metadata::update(&project.paths, &metadata).required()?;
 
     // 切り替えの最後の検査だけを落とす。作り直したSandboxからhostのSSH Agentへ届く。
-    let host = continuing(&fixture, &project, &target).answering(
+    let host = continuing(&fixture, &project, &target)?.answering(
         &format!("exec {} -- ssh-add -L", project.sandbox),
         0,
         "ssh-ed25519 AAAA example\n",
@@ -235,16 +243,18 @@ fn a_failure_after_the_switch_leaves_the_intent_in_place() {
     let error = run(
         &fixture.location,
         &fixture.config,
-        &project_id("example-org/example-repo"),
+        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
         poll(),
         &mut SilentProgress,
     )
-    .expect_err("a sandbox that reaches the host agent is not accepted");
+    .refused_because("a sandbox that reaches the host agent is not accepted")?;
     assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
 
-    let stored = metadata::load(&project.paths).unwrap().expect("present");
+    let stored = metadata::load(&project.paths)
+        .required()?
+        .required_because("present")?;
     assert_eq!(
         stored
             .rebuild
@@ -257,4 +267,5 @@ fn a_failure_after_the_switch_leaves_the_intent_in_place() {
         stored.provisioning.dockerfile_sha256, previous,
         "the generation is not applied until every check has passed"
     );
+    Ok(())
 }

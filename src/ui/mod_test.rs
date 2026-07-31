@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Required};
+
 use super::*;
 
 use crate::error::{Diagnostic, ErrorId};
@@ -22,12 +24,12 @@ impl Streams {
         }
     }
 
-    fn out(&self) -> String {
-        String::from_utf8(self.stdout.clone()).expect("UTF-8")
+    fn out(&self) -> Checked<String> {
+        String::from_utf8(self.stdout.clone()).required_because("UTF-8")
     }
 
-    fn err(&self) -> String {
-        String::from_utf8(self.stderr.clone()).expect("UTF-8")
+    fn err(&self) -> Checked<String> {
+        String::from_utf8(self.stderr.clone()).required_because("UTF-8")
     }
 }
 
@@ -36,7 +38,7 @@ fn summary() -> Document {
 }
 
 #[test]
-fn results_go_to_stdout_and_everything_else_to_stderr() {
+fn results_go_to_stdout_and_everything_else_to_stderr() -> Checked {
     let streams = Streams::capture(OutputPolicy::plain(), |ui| {
         ui.progress(crate::msg!("progress-creating-sandbox"));
         ui.warning(&Warning::text(crate::msg!("destroy-force-notice")));
@@ -47,12 +49,14 @@ fn results_go_to_stdout_and_everything_else_to_stderr() {
         ui.stdout(&summary());
     });
 
-    assert!(streams.out().starts_with("\u{2713} "), "{}", streams.out());
-    assert!(!streams.out().contains("error:"), "{}", streams.out());
-    let err = streams.err();
+    let out = streams.out()?;
+    assert!(out.starts_with("\u{2713} "), "{out}");
+    assert!(!out.contains("error:"), "{out}");
+    let err = streams.err()?;
     assert!(err.contains("\u{2192} "), "{err}");
     assert!(err.contains("! Warning: "), "{err}");
     assert!(err.contains("\u{d7} error: "), "{err}");
+    Ok(())
 }
 
 #[test]
@@ -72,39 +76,41 @@ fn the_two_streams_carry_their_own_color_decision() {
 }
 
 #[test]
-fn separate_calls_to_the_same_stream_are_still_one_blank_line_apart() {
+fn separate_calls_to_the_same_stream_are_still_one_blank_line_apart() -> Checked {
     // blockの間隔はdocumentごとではなくstreamごとに数える。
     let streams = Streams::capture(OutputPolicy::plain(), |ui| {
         ui.stdout(&summary());
         ui.stdout(&Document::new().note(crate::msg!("files-secret-hint")));
     });
-    let out = streams.out();
+    let out = streams.out()?;
     assert!(!out.contains("\n\n\n"), "{out:?}");
     assert_eq!(
         out.lines().filter(|line| line.is_empty()).count(),
         1,
         "{out:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn consecutive_progress_stays_together_and_the_summary_after_it_does_not() {
+fn consecutive_progress_stays_together_and_the_summary_after_it_does_not() -> Checked {
     let streams = Streams::capture(OutputPolicy::plain(), |ui| {
         ui.progress(crate::msg!("progress-creating-sandbox"));
         ui.progress(crate::msg!("progress-starting-sandbox"));
         ui.stderr(&Document::new().summary(crate::msg!("destroy-done", project = "owner/alpha")));
     });
-    let err = streams.err();
+    let err = streams.err()?;
     let lines: Vec<&str> = err.lines().collect();
     assert_eq!(lines.len(), 4, "{lines:?}");
     assert_eq!(
         lines[2], "",
         "the summary is one blank line below: {lines:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn a_warning_with_a_follow_up_keeps_the_command_on_its_own_line() {
+fn a_warning_with_a_follow_up_keeps_the_command_on_its_own_line() -> Checked {
     let warning = Warning::text(crate::msg!(
         "warning-dockerfile-changed-during-build",
         project = "owner/alpha"
@@ -113,28 +119,30 @@ fn a_warning_with_a_follow_up_keeps_the_command_on_its_own_line() {
     .try_run("sbxm rebuild owner/alpha");
 
     let streams = Streams::capture(OutputPolicy::plain(), |ui| ui.warning(&warning));
-    let err = streams.err();
+    let err = streams.err()?;
     let lines: Vec<&str> = err.lines().collect();
     let index = lines
         .iter()
         .position(|line| *line == "sbxm rebuild owner/alpha")
-        .expect("the follow-up is its own line");
+        .required_because("the follow-up is its own line")?;
     assert_eq!(lines[index - 1], "", "{err:?}");
     assert!(lines[0].starts_with("! Warning: "), "{err:?}");
+    Ok(())
 }
 
 #[test]
-fn a_cancel_reports_nothing_at_all() {
+fn a_cancel_reports_nothing_at_all() -> Checked {
     // Ctrl-CとEscは何も変更していない。画面にも何も残さない。
     let streams = Streams::capture(OutputPolicy::plain(), |ui| {
         ui.error(&crate::error::Error::Canceled);
     });
-    assert!(streams.err().is_empty(), "{:?}", streams.err());
-    assert!(streams.out().is_empty(), "{:?}", streams.out());
+    assert!(streams.err()?.is_empty(), "{:?}", streams.err());
+    assert!(streams.out()?.is_empty(), "{:?}", streams.out());
+    Ok(())
 }
 
 #[test]
-fn every_diagnostic_of_one_error_is_reported() {
+fn every_diagnostic_of_one_error_is_reported() -> Checked {
     let error = crate::error::Error::many(vec![
         Diagnostic::new(
             ErrorId::ConfigUnreadable,
@@ -150,11 +158,12 @@ fn every_diagnostic_of_one_error_is_reported() {
         ),
     ]);
     let streams = Streams::capture(OutputPolicy::plain(), |ui| ui.error(&error));
-    assert_eq!(streams.err().matches("\u{d7} error:").count(), 2);
+    assert_eq!(streams.err()?.matches("\u{d7} error:").count(), 2);
+    Ok(())
 }
 
 #[test]
-fn the_locale_can_be_switched_once_the_configuration_declares_one() {
+fn the_locale_can_be_switched_once_the_configuration_declares_one() -> Checked {
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     {
@@ -164,8 +173,9 @@ fn the_locale_can_be_switched_once_the_configuration_declares_one() {
         assert_eq!(ui.locale(), Locale::Ja);
         ui.stdout(&Document::new().note(crate::msg!("files-secret-hint")));
     }
-    let out = String::from_utf8(stdout).expect("UTF-8");
+    let out = String::from_utf8(stdout).required_because("UTF-8")?;
     assert!(out.starts_with("! 注記 (Note): "), "{out:?}");
+    Ok(())
 }
 
 #[test]

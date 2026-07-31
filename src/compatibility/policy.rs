@@ -32,7 +32,7 @@ pub fn parse_network_policy(output: &str) -> Result<String> {
                     .get("active")
                     .or_else(|| object.get("current"))
                     .or_else(|| object.get("selected"))
-                    .and_then(|value| value.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false);
                 if selected && let Some(name) = from_object(object) {
                     active.push(name);

@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use crate::command::{CommandOutcome, HostEnvironment};
 use crate::paths::ProjectParent;
@@ -54,19 +56,22 @@ impl HostEnvironment for FakeGit {
         if key.starts_with("clone")
             && let Some(path) = &self.clone_creates
         {
-            fs::create_dir_all(path.join(".git")).expect("create the cloned working tree");
+            // 実物のcloneと同じく、作れなければcloneの失敗として答える。
+            if fs::create_dir_all(path.join(".git")).is_err() {
+                return Ok(crate::testing::command::outcome(spec, 1, ""));
+            }
         }
         let stdout = self.answers.get(&key).cloned().unwrap_or_default();
         Ok(crate::testing::command::outcome(spec, 0, &stdout))
     }
 }
 
-fn project_paths(dir: &Path) -> (ProjectPaths, RepositoryIdentity) {
-    let base = ProjectParent::at(dir).expect("valid parent directory");
-    let repository = ssh_repository("Example-Org/Example-Repo");
+fn project_paths(dir: &Path) -> Checked<(ProjectPaths, RepositoryIdentity)> {
+    let base = ProjectParent::at(dir).required_because("valid parent directory")?;
+    let repository = ssh_repository("Example-Org/Example-Repo")?;
     let paths = ProjectPaths::derive(&base, repository.canonical_id());
-    fs::create_dir_all(paths.root()).expect("create the project root");
-    (paths, repository)
+    fs::create_dir_all(paths.root()).required_because("create the project root")?;
+    Ok((paths, repository))
 }
 
 /// 対象cloneとして通る応答をまとめる。
@@ -84,13 +89,13 @@ fn healthy(clone: &Path) -> FakeGit {
 }
 
 #[test]
-fn a_missing_clone_is_created_from_the_ssh_remote_and_then_verified() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
+fn a_missing_clone_is_created_from_the_ssh_remote_and_then_verified() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
     let host = healthy(&paths.host_clone()).cloning_into(&paths.host_clone());
 
-    let clone =
-        ensure(&host, &paths, &repository, &mut SilentProgress).expect("the clone is created");
+    let clone = ensure(&host, &paths, &repository, &mut SilentProgress)
+        .required_because("the clone is created")?;
     assert!(clone.created);
     assert_eq!(clone.path, paths.host_clone());
 
@@ -108,14 +113,16 @@ fn a_missing_clone_is_created_from_the_ssh_remote_and_then_verified() {
         calls.len() > 1,
         "the clone is verified after it is created: {calls:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn the_clone_forwards_its_progress_while_the_checks_capture_their_output() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
+fn the_clone_forwards_its_progress_while_the_checks_capture_their_output() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
     let host = healthy(&paths.host_clone()).cloning_into(&paths.host_clone());
-    ensure(&host, &paths, &repository, &mut SilentProgress).expect("the clone is created");
+    ensure(&host, &paths, &repository, &mut SilentProgress)
+        .required_because("the clone is created")?;
 
     let calls = host.calls.borrow();
     let clone = &calls[0];
@@ -133,17 +140,18 @@ fn the_clone_forwards_its_progress_while_the_checks_capture_their_output() {
             "every check runs inside the clone"
         );
     }
+    Ok(())
 }
 
 #[test]
-fn an_existing_clone_of_the_same_repository_is_reused_without_cloning_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
-    fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
+fn an_existing_clone_of_the_same_repository_is_reused_without_cloning_again() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
     let host = healthy(&paths.host_clone());
 
     let clone = ensure(&host, &paths, &repository, &mut SilentProgress)
-        .expect("the existing clone is reused");
+        .required_because("the existing clone is reused")?;
     assert!(!clone.created);
     assert!(
         !host
@@ -152,14 +160,15 @@ fn an_existing_clone_of_the_same_repository_is_reused_without_cloning_again() {
             .any(|args| args.first().is_some_and(|arg| arg == "clone")),
         "an existing clone is never cloned over"
     );
+    Ok(())
 }
 
 #[test]
-fn a_dirty_working_tree_does_not_stop_the_build() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
-    fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
-    fs::write(paths.host_clone().join("uncommitted.txt"), b"work").unwrap();
+fn a_dirty_working_tree_does_not_stop_the_build() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
+    fs::write(paths.host_clone().join("uncommitted.txt"), b"work").required()?;
 
     ensure(
         &healthy(&paths.host_clone()),
@@ -167,33 +176,35 @@ fn a_dirty_working_tree_does_not_stop_the_build() {
         &repository,
         &mut SilentProgress,
     )
-    .expect("uncommitted work is the user's, not a reason to stop");
+    .required_because("uncommitted work is the user's, not a reason to stop")?;
+    Ok(())
 }
 
 #[test]
-fn a_clone_of_another_repository_is_refused_instead_of_being_replaced() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
-    fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
+fn a_clone_of_another_repository_is_refused_instead_of_being_replaced() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
     let host = healthy(&paths.host_clone()).answering(
         "config --get-all remote.origin.url",
         "git@github.com:other-org/other-repo.git\n",
     );
 
     let error = ensure(&host, &paths, &repository, &mut SilentProgress)
-        .expect_err("a different remote is refused");
+        .refused_because("a different remote is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     assert!(
         paths.host_clone().join(".git").exists(),
         "nothing is deleted when the clone cannot be used"
     );
+    Ok(())
 }
 
 #[test]
-fn an_ambiguous_or_missing_origin_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
-    fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
+fn an_ambiguous_or_missing_origin_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
 
     for urls in [
         "",
@@ -202,20 +213,21 @@ fn an_ambiguous_or_missing_origin_is_refused() {
         let host =
             healthy(&paths.host_clone()).answering("config --get-all remote.origin.url", urls);
         let error = ensure(&host, &paths, &repository, &mut SilentProgress)
-            .expect_err("origin must name exactly one remote");
+            .refused_because("origin must name exactly one remote")?;
         assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     }
+    Ok(())
 }
 
 #[test]
-fn a_bare_repository_or_a_nested_working_tree_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
-    fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
+fn a_bare_repository_or_a_nested_working_tree_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
 
     let bare = healthy(&paths.host_clone()).answering("rev-parse --is-bare-repository", "true\n");
     let error = ensure(&bare, &paths, &repository, &mut SilentProgress)
-        .expect_err("a bare repository has no worktree");
+        .refused_because("a bare repository has no worktree")?;
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
 
     // 期待pathの中に居ても、top-levelが別のdirectoryなら再利用しない。
@@ -224,22 +236,23 @@ fn a_bare_repository_or_a_nested_working_tree_is_refused() {
         &format!("{}\n", dir.path().display()),
     );
     let error = ensure(&nested, &paths, &repository, &mut SilentProgress)
-        .expect_err("the clone must be its own working tree");
+        .refused_because("the clone must be its own working tree")?;
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
+    Ok(())
 }
 
 #[test]
-fn a_git_directory_that_points_outside_the_project_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
-    fs::create_dir_all(paths.host_clone()).unwrap();
+fn a_git_directory_that_points_outside_the_project_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone()).required()?;
     let elsewhere = dir.path().join("elsewhere.git");
-    fs::create_dir_all(&elsewhere).unwrap();
+    fs::create_dir_all(&elsewhere).required()?;
     fs::write(
         paths.host_clone().join(".git"),
         format!("gitdir: {}\n", elsewhere.display()),
     )
-    .unwrap();
+    .required()?;
 
     let error = ensure(
         &healthy(&paths.host_clone()),
@@ -247,33 +260,34 @@ fn a_git_directory_that_points_outside_the_project_is_refused() {
         &repository,
         &mut SilentProgress,
     )
-    .expect_err("a worktree file that leaves the project is refused");
+    .refused_because("a worktree file that leaves the project is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
 
     // 案件directoryの中を指すworktree fileは受け入れる。
     let inside = paths.root().join(".sbxm").join("worktree.git");
-    fs::create_dir_all(&inside).unwrap();
+    fs::create_dir_all(&inside).required()?;
     fs::write(
         paths.host_clone().join(".git"),
         format!("gitdir: {}\n", inside.display()),
     )
-    .unwrap();
+    .required()?;
     ensure(
         &healthy(&paths.host_clone()),
         &paths,
         &repository,
         &mut SilentProgress,
     )
-    .expect("a git directory inside the project is part of the project");
+    .required_because("a git directory inside the project is part of the project")?;
+    Ok(())
 }
 
 #[test]
-fn an_https_registration_clones_over_https() {
-    let dir = tempfile::tempdir().unwrap();
-    let base = ProjectParent::at(dir.path()).expect("valid parent directory");
-    let repository = https_repository("Example-Org/Example-Repo");
+fn an_https_registration_clones_over_https() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let base = ProjectParent::at(dir.path()).required_because("valid parent directory")?;
+    let repository = https_repository("Example-Org/Example-Repo")?;
     let paths = ProjectPaths::derive(&base, repository.canonical_id());
-    fs::create_dir_all(paths.root()).expect("create the project root");
+    fs::create_dir_all(paths.root()).required_because("create the project root")?;
 
     let host = healthy(&paths.host_clone())
         .answering(
@@ -282,7 +296,8 @@ fn an_https_registration_clones_over_https() {
         )
         .cloning_into(&paths.host_clone());
 
-    ensure(&host, &paths, &repository, &mut SilentProgress).expect("the clone is created");
+    ensure(&host, &paths, &repository, &mut SilentProgress)
+        .required_because("the clone is created")?;
     assert_eq!(
         host.args_of_calls()[0],
         vec![
@@ -292,42 +307,45 @@ fn an_https_registration_clones_over_https() {
         ],
         "the declared transport is the one the clone uses"
     );
+    Ok(())
 }
 
 #[test]
-fn an_origin_that_names_the_same_repository_over_another_transport_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
-    fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
+fn an_origin_that_names_the_same_repository_over_another_transport_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
 
     let host = healthy(&paths.host_clone()).answering(
         "config --get-all remote.origin.url",
         "https://github.com/Example-Org/Example-Repo.git\n",
     );
     let error = ensure(&host, &paths, &repository, &mut SilentProgress)
-        .expect_err("SSH and HTTPS are not the same configuration");
+        .refused_because("SSH and HTTPS are not the same configuration")?;
     assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
+    Ok(())
 }
 
 #[test]
-fn an_origin_only_the_display_casing_differs_in_is_accepted() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
-    fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
+fn an_origin_only_the_display_casing_differs_in_is_accepted() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
 
     let host = healthy(&paths.host_clone()).answering(
         "config --get-all remote.origin.url",
         "git@github.com:example-org/example-repo.git\n",
     );
     ensure(&host, &paths, &repository, &mut SilentProgress)
-        .expect("only the display casing differs, so it is the same repository");
+        .required_because("only the display casing differs, so it is the same repository")?;
+    Ok(())
 }
 
 #[test]
-fn an_origin_that_is_not_one_of_the_accepted_forms_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
-    fs::create_dir_all(paths.host_clone().join(".git")).unwrap();
+fn an_origin_that_is_not_one_of_the_accepted_forms_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
 
     for url in [
         "git@github.com:Example-Org/Example-Repo\n",
@@ -337,32 +355,33 @@ fn an_origin_that_is_not_one_of_the_accepted_forms_is_refused() {
         let host =
             healthy(&paths.host_clone()).answering("config --get-all remote.origin.url", url);
         let error = ensure(&host, &paths, &repository, &mut SilentProgress)
-            .expect_err("an origin sbxm cannot read is never assumed to match");
+            .refused_because("an origin sbxm cannot read is never assumed to match")?;
         assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     }
+    Ok(())
 }
 
 #[test]
-fn a_clone_path_that_cannot_be_observed_is_never_cloned_over() {
-    // SAFETY: geteuid(2)は引数を取らず、失敗しない。
-    if unsafe { libc::geteuid() } == 0 {
+fn a_clone_path_that_cannot_be_observed_is_never_cloned_over() -> Checked {
+    if rustix::process::geteuid().is_root() {
         // rootはsearch bitに関わらず観測できるため、この状態を作れない。
-        return;
+        return Ok(());
     }
-    let dir = tempfile::tempdir().unwrap();
-    let (paths, repository) = project_paths(dir.path());
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
     let host = healthy(&paths.host_clone()).cloning_into(&paths.host_clone());
 
     // 案件rootのsearch bitを外すと、その下にcloneがあるかを観測できなくなる。
-    fs::set_permissions(paths.root(), fs::Permissions::from_mode(0o600)).unwrap();
+    fs::set_permissions(paths.root(), fs::Permissions::from_mode(0o600)).required()?;
     let outcome = ensure(&host, &paths, &repository, &mut SilentProgress);
-    fs::set_permissions(paths.root(), fs::Permissions::from_mode(0o700)).unwrap();
+    fs::set_permissions(paths.root(), fs::Permissions::from_mode(0o700)).required()?;
 
-    let error = outcome.expect_err("an unobservable clone path is refused");
+    let error = outcome.refused_because("an unobservable clone path is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
     assert!(
         host.args_of_calls().is_empty(),
         "a path sbxm could not observe is never cloned onto: {:?}",
         host.args_of_calls()
     );
+    Ok(())
 }

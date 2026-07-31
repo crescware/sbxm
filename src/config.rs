@@ -282,89 +282,100 @@ fn parse(text: &str, path: &Path) -> Result<ConfigState> {
         document
     };
 
-    let mut warnings = Vec::new();
-    if let Some(mapping) = document.as_mapping() {
-        for key in mapping.keys() {
-            // YAMLのkeyは文字列とは限らない。既知keyはすべて文字列なので、
-            // 文字列でないkeyはその表記のまま未知として報告する。
-            let name = key
-                .as_str()
-                .map_or_else(|| format!("{key:?}"), str::to_string);
-            if !KNOWN_TOP_LEVEL_KEYS.contains(&name.as_str()) {
-                warnings.push(Warning::text(msg!(
-                    "warning-config-unknown-key",
-                    path = paths::display(path),
-                    key = name
-                )));
-            }
-        }
-    }
+    let warnings = unknown_key_warnings(&document, path);
 
     let raw: RawConfig = yaml_serde::from_value(document).map_err(syntax_error)?;
 
-    let missing_field = |field: &'static str| {
-        Error::new(
-            ErrorId::ConfigMissingField,
-            msg!(
-                "error-config-missing-field",
-                path = paths::display(path),
-                field = field
-            ),
-        )
-    };
-    let invalid_value = |field: &'static str, detail: String| {
-        Error::single(
-            Diagnostic::new(
-                ErrorId::ConfigInvalidValue,
-                msg!(
-                    "error-config-invalid-value",
-                    path = paths::display(path),
-                    field = field,
-                    detail = detail
-                ),
-            )
-            .remediation(msg!("remediation-fix-config", path = paths::display(path))),
-        )
-    };
-
     DOCUMENT.require(raw.version, &paths::display(path), || {
-        missing_field("version")
+        missing_field(path, "version")
     })?;
 
     // 欠落した`language`は未保存であり、不正な値とは別の状態である。
     let language = match raw.language {
         Some(value) => Some(Locale::parse_exact(&value).ok_or_else(|| {
             invalid_value(
+                path,
                 "language",
-                format!("{value} is not one of {}", supported_language_list()),
+                &format!("{value} is not one of {}", supported_language_list()),
             )
         })?),
         None => None,
     };
 
-    // 名義は2つで1つの意図である。片方だけの宣言から残りを推測して補わない。
-    let git_identity = match (raw.git_user_name, raw.git_user_email) {
-        (None, None) => None,
+    let git_identity = parse_git_identity(raw.git_user_name, raw.git_user_email, path)?;
+
+    let files = parse_files(raw.files, path)?;
+
+    Ok(ConfigState::Valid {
+        config: Box::new(GlobalConfig {
+            language,
+            git_identity,
+            files,
+        }),
+        warnings,
+    })
+}
+
+/// 既知でないtop-level keyを警告として集める。
+///
+/// 未知のkeyは読み飛ばすが、黙って捨てると設定した側が気づけない。
+fn unknown_key_warnings(document: &yaml_serde::Value, path: &Path) -> Vec<Warning> {
+    let Some(mapping) = document.as_mapping() else {
+        return Vec::new();
+    };
+    let mut warnings = Vec::new();
+    for key in mapping.keys() {
+        // YAMLのkeyは文字列とは限らない。既知keyはすべて文字列なので、
+        // 文字列でないkeyはその表記のまま未知として報告する。
+        let name = key
+            .as_str()
+            .map_or_else(|| format!("{key:?}"), str::to_string);
+        if !KNOWN_TOP_LEVEL_KEYS.contains(&name.as_str()) {
+            warnings.push(Warning::text(msg!(
+                "warning-config-unknown-key",
+                path = paths::display(path),
+                key = name
+            )));
+        }
+    }
+    warnings
+}
+
+/// 保存済みの名義を読む。
+///
+/// 名義は2つで1つの意図である。片方だけの宣言から残りを推測して補わない。
+fn parse_git_identity(
+    user_name: Option<String>,
+    user_email: Option<String>,
+    path: &Path,
+) -> Result<Option<GitIdentity>> {
+    match (user_name, user_email) {
+        (None, None) => Ok(None),
         (Some(user_name), Some(user_email)) => {
             validate_git_identity_value(&user_name)
-                .map_err(|detail| invalid_value("git_user_name", detail.to_string()))?;
+                .map_err(|detail| invalid_value(path, "git_user_name", detail))?;
             validate_git_identity_value(&user_email)
-                .map_err(|detail| invalid_value("git_user_email", detail.to_string()))?;
-            Some(GitIdentity {
+                .map_err(|detail| invalid_value(path, "git_user_email", detail))?;
+            Ok(Some(GitIdentity {
                 user_name,
                 user_email,
-            })
+            }))
         }
-        (Some(_), None) => return Err(missing_field("git_user_email")),
-        (None, Some(_)) => return Err(missing_field("git_user_name")),
-    };
+        (Some(_), None) => Err(missing_field(path, "git_user_email")),
+        (None, Some(_)) => Err(missing_field(path, "git_user_name")),
+    }
+}
 
-    let mut files = Vec::with_capacity(raw.files.len());
-    for (index, entry) in raw.files.into_iter().enumerate() {
-        let source_value = entry.source.ok_or_else(|| missing_field("files.source"))?;
+/// 宣言されたfileを読む。
+fn parse_files(raw: Vec<RawFile>, path: &Path) -> Result<Vec<FileDeclaration>> {
+    let mut files = Vec::with_capacity(raw.len());
+    for (index, entry) in raw.into_iter().enumerate() {
+        let source_value = entry
+            .source
+            .ok_or_else(|| missing_field(path, "files.source"))?;
         let destination_value = entry
             .destination
-            .ok_or_else(|| missing_field("files.destination"))?;
+            .ok_or_else(|| missing_field(path, "files.destination"))?;
         let source = HostFileSource::new(&source_value).map_err(|detail| {
             Error::new(
                 ErrorId::FileDeclarationInvalidSource,
@@ -392,15 +403,35 @@ fn parse(text: &str, path: &Path) -> Result<ConfigState> {
             destination,
         });
     }
+    Ok(files)
+}
 
-    Ok(ConfigState::Valid {
-        config: Box::new(GlobalConfig {
-            language,
-            git_identity,
-            files,
-        }),
-        warnings,
-    })
+/// 必須fieldが無いことを報告する。
+fn missing_field(path: &Path, field: &'static str) -> Error {
+    Error::new(
+        ErrorId::ConfigMissingField,
+        msg!(
+            "error-config-missing-field",
+            path = paths::display(path),
+            field = field
+        ),
+    )
+}
+
+/// fieldの値が受け付けられないことを報告する。
+fn invalid_value(path: &Path, field: &'static str, detail: &str) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::ConfigInvalidValue,
+            msg!(
+                "error-config-invalid-value",
+                path = paths::display(path),
+                field = field,
+                detail = detail
+            ),
+        )
+        .remediation(msg!("remediation-fix-config", path = paths::display(path))),
+    )
 }
 
 fn supported_language_list() -> String {
@@ -420,7 +451,7 @@ fn supported_language_list() -> String {
 /// 帰結として、出力はYAML 1.2として読まれることを前提とする。`no`や`yes`は引用されず、
 /// YAML 1.1の実装から読めばbooleanになる。sbxmは自分が書いたfileを同じcrateで読むため、
 /// 往復は一致する。
-pub fn render(config: &GlobalConfig) -> String {
+pub fn render(config: &GlobalConfig) -> Result<String> {
     let raw = RawConfig {
         version: Some(i64::from(CONFIG_VERSION)),
         language: config.language.map(|locale| locale.as_str().to_string()),
@@ -441,8 +472,24 @@ pub fn render(config: &GlobalConfig) -> String {
             })
             .collect(),
     };
-    // RawConfigは文字列と整数とVecだけで構成され、YAMLで表現できない値を持たない。
-    yaml_serde::to_string(&raw).expect("a configuration is representable as YAML")
+    serialized(&raw, "config.yaml")
+}
+
+/// `Raw型をYAMLへ落とす`。
+///
+/// `Raw型は文字列と整数とVecだけで構成されるため、serializeは成立する`。成立しない値が
+/// 混ざったときに黙って壊れた記録を書かないよう、失敗は内部errorとして表に出す。
+pub(crate) fn serialized<T: serde::Serialize>(raw: &T, document: &str) -> Result<String> {
+    yaml_serde::to_string(raw).map_err(|error| {
+        Error::new(
+            ErrorId::DocumentRenderFailed,
+            msg!(
+                "error-document-render-failed",
+                document = document,
+                detail = error
+            ),
+        )
+    })
 }
 
 /// 表示言語だけをconfigへ保存する。
@@ -467,7 +514,7 @@ pub fn save_language(location: &ConfigLocation, locale: Locale) -> Result<PathBu
             language: Some(locale),
             git_identity: None,
             files: Vec::new(),
-        }),
+        })?,
     };
 
     write_config(&path, &updated)?;
@@ -486,8 +533,8 @@ pub fn save_git_identity(location: &ConfigLocation, git: &GitIdentity) -> Result
         Some(text) => {
             // 新しく足す行は`version`の直後へ入る。あとの呼び出しが前の行を押し下げる
             // ため、読み手が期待する名前・mail addressの順に並ぶよう逆から書く。
-            let updated = replace_line(&text, "git_user_email:", &email_line(git));
-            let updated = replace_line(&updated, "git_user_name:", &name_line(git));
+            let updated = replace_line(&text, "git_user_email:", &email_line(git)?);
+            let updated = replace_line(&updated, "git_user_name:", &name_line(git)?);
             require_declares_git_identity(&updated, &path, git)?;
             updated
         }
@@ -495,7 +542,7 @@ pub fn save_git_identity(location: &ConfigLocation, git: &GitIdentity) -> Result
             language: None,
             git_identity: Some(git.clone()),
             files: Vec::new(),
-        }),
+        })?,
     };
 
     write_config(&path, &updated)?;
@@ -555,7 +602,7 @@ fn require_declares_git_identity(updated: &str, path: &Path, git: &GitIdentity) 
         .remediation(msg!(
             "remediation-config-not-rewritable",
             path = paths::display(path),
-            declaration = format!("{}\n{}", name_line(git), email_line(git))
+            declaration = format!("{}\n{}", name_line(git)?, email_line(git)?)
         )),
     ))
 }
@@ -565,11 +612,11 @@ fn line_of(locale: Locale) -> String {
     format!("language: {}", locale.as_str())
 }
 
-fn name_line(git: &GitIdentity) -> String {
+fn name_line(git: &GitIdentity) -> Result<String> {
     declaration("git_user_name", &git.user_name)
 }
 
-fn email_line(git: &GitIdentity) -> String {
+fn email_line(git: &GitIdentity) -> Result<String> {
     declaration("git_user_email", &git.user_email)
 }
 
@@ -580,16 +627,13 @@ fn email_line(git: &GitIdentity) -> String {
 ///
 /// `validate_git_identity_value`が改行を拒むため、値は必ず1行に収まる。1 keyの
 /// mappingは1行として描かれ、その行がそのまま差し替える単位になる。
-fn declaration(key: &str, value: &str) -> String {
+fn declaration(key: &str, value: &str) -> Result<String> {
     let mut mapping = yaml_serde::Mapping::new();
     mapping.insert(
         yaml_serde::Value::String(key.to_string()),
         yaml_serde::Value::String(value.to_string()),
     );
-    yaml_serde::to_string(&mapping)
-        .expect("a pair of strings is representable as YAML")
-        .trim_end()
-        .to_string()
+    Ok(serialized(&mapping, "config.yaml")?.trim_end().to_string())
 }
 
 /// 既存configの原文。存在しなければ`None`。

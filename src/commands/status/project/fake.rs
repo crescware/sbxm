@@ -1,18 +1,20 @@
 //! `status <project>`のtestが使う応答と、結果の読み取り。
 
+use crate::testing::outcome::{Checked, Required};
+
 use crate::commands::status::project::{ProjectStatus, Value};
 use crate::project::SandboxLayout;
 use crate::support::image;
 use crate::testing::host::{FakeSbx, isolated_agent, registered_secret};
 use crate::testing::project::{Fixture, Registered};
 
-pub fn value_of(status: &ProjectStatus, item: &str) -> Value {
-    status
+pub fn value_of(status: &ProjectStatus, item: &str) -> Checked<Value> {
+    Ok(status
         .items
         .iter()
         .find(|entry| entry.item == item)
-        .unwrap_or_else(|| panic!("item {item} is missing"))
-        .value
+        .required_because(&format!("item {item} is missing"))?
+        .value)
 }
 
 /// imageがまだ存在しないhost。一覧は答えるが、1件も返さない。
@@ -25,9 +27,13 @@ pub fn without_image(host: FakeSbx, project: &Registered) -> FakeSbx {
 }
 
 /// 中まで見られる稼働中Sandbox。`worktrees`は`worktree list --porcelain -z`の答え。
-pub fn looking_inside(fixture: &Fixture, project: &Registered, worktrees: &str) -> FakeSbx {
+pub fn looking_inside(
+    fixture: &Fixture,
+    project: &Registered,
+    worktrees: &str,
+) -> Checked<FakeSbx> {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
-    let host = FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")))
+    let host = FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")?))
         .answering(
             &format!(
                 "exec {} -- git --git-dir {} rev-parse --is-bare-repository",
@@ -55,10 +61,10 @@ pub fn looking_inside(fixture: &Fixture, project: &Registered, worktrees: &str) 
             0,
             "1 .M N... 100644 100644 100644 abc abc file.txt\0",
         );
-    isolated_agent(
+    Ok(isolated_agent(
         registered_secret(host, project.sandbox.as_str()),
         project.sandbox.as_str(),
-    )
+    ))
 }
 
 /// bare entryと、管理下・管理外のworktreeを1件ずつ並べたporcelain出力。

@@ -1,12 +1,14 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use crate::compatibility::parse_template_list;
 use crate::error::ErrorId;
 
 #[test]
-fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() {
+fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() -> Checked {
     let output =
         r#"[{"name":"sbxm-a","state":"running","workspace":"/tmp/docker-sandboxes/sbxm-a"}]"#;
-    let entries = parse_sandbox_list(output).expect("a listing parses");
+    let entries = parse_sandbox_list(output).required_because("a listing parses")?;
     assert_eq!(
         entries,
         vec![SandboxEntry {
@@ -19,20 +21,21 @@ fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() {
 
     // 1行1件のJSONと、空の出力も同じ意味で読む。
     let lines = "{\"name\":\"sbxm-a\",\"state\":\"stopped\"}\n{\"name\":\"sbxm-b\",\"status\":\"running\"}\n";
-    let entries = parse_sandbox_list(lines).expect("line-delimited output parses");
+    let entries = parse_sandbox_list(lines).required_because("line-delimited output parses")?;
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].state, SandboxState::Stopped);
     assert_eq!(entries[1].state, SandboxState::Running);
     assert!(
         parse_sandbox_list("  \n")
-            .expect("an empty listing")
+            .required_because("an empty listing")?
             .is_empty()
     );
 
     // 3値へ写像しても、runtimeが示したままの値は表示のために残す。
-    let entries = parse_sandbox_list(r#"[{"name":"sbxm-a","state":"Running"}]"#).unwrap();
+    let entries = parse_sandbox_list(r#"[{"name":"sbxm-a","state":"Running"}]"#).required()?;
     assert_eq!(entries[0].state, SandboxState::Running);
     assert_eq!(entries[0].raw_state, "Running");
+    Ok(())
 }
 
 #[test]
@@ -42,7 +45,7 @@ fn the_sandbox_state_has_one_untranslated_spelling() {
 }
 
 #[test]
-fn the_listing_of_the_target_version_is_read_as_it_is() {
+fn the_listing_of_the_target_version_is_read_as_it_is() -> Checked {
     // 対象versionが実際に出力する形。`sandboxes`で包み、workspaceは配列で示す。
     let observed = r#"{
   "sandboxes": [
@@ -67,7 +70,7 @@ fn the_listing_of_the_target_version_is_read_as_it_is() {
   ]
 }"#;
 
-    let entries = parse_sandbox_list(observed).expect("the real listing parses");
+    let entries = parse_sandbox_list(observed).required_because("the real listing parses")?;
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].name, "crescware-sbxm");
     assert_eq!(entries[0].state, SandboxState::Running);
@@ -80,39 +83,42 @@ fn the_listing_of_the_target_version_is_read_as_it_is() {
     // Sandboxが1件もない場合。
     assert!(
         parse_sandbox_list(r#"{"sandboxes": []}"#)
-            .expect("an empty listing")
+            .required_because("an empty listing")?
             .is_empty()
     );
+    Ok(())
 }
 
 #[test]
-fn a_null_listing_is_read_as_nothing_rather_than_refused() {
+fn a_null_listing_is_read_as_nothing_rather_than_refused() -> Checked {
     assert!(
         parse_sandbox_list(r#"{"sandboxes": null}"#)
-            .expect("a null sandbox listing")
+            .required_because("a null sandbox listing")?
             .is_empty()
     );
     assert!(
         parse_template_list(r#"{"images": null}"#)
-            .expect("a null template listing")
+            .required_because("a null template listing")?
             .is_empty()
     );
+    Ok(())
 }
 
 #[test]
-fn a_sandbox_with_more_than_one_workspace_is_not_guessed_at() {
+fn a_sandbox_with_more_than_one_workspace_is_not_guessed_at() -> Checked {
     let two =
         r#"{"sandboxes":[{"name":"sbxm-a","status":"running","workspaces":["/tmp/a","/tmp/b"]}]}"#;
-    let error = parse_sandbox_list(two).expect_err("one of two workspaces is not chosen");
+    let error = parse_sandbox_list(two).refused_because("one of two workspaces is not chosen")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
 
     let none = r#"{"sandboxes":[{"name":"sbxm-a","status":"running","workspaces":[]}]}"#;
-    let entries = parse_sandbox_list(none).expect("an empty list is observable");
+    let entries = parse_sandbox_list(none).required_because("an empty list is observable")?;
     assert_eq!(entries[0].workspace, None);
+    Ok(())
 }
 
 #[test]
-fn a_sandbox_listing_that_cannot_be_read_is_refused() {
+fn a_sandbox_listing_that_cannot_be_read_is_refused() -> Checked {
     for output in [
         r#"[{"state":"running"}]"#,
         r#"[{"name":"sbxm-a"}]"#,
@@ -120,11 +126,12 @@ fn a_sandbox_listing_that_cannot_be_read_is_refused() {
         r#"["sbxm-a"]"#,
         "true",
     ] {
-        let error = parse_sandbox_list(output).expect_err("{output} must be refused");
+        let error = parse_sandbox_list(output).refused_because("{output} must be refused")?;
         assert_eq!(
             error.first_id(),
             Some(ErrorId::ExternalOutputUnparseable),
             "output {output} produced the wrong error"
         );
     }
+    Ok(())
 }

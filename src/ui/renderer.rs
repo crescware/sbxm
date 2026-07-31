@@ -31,7 +31,7 @@ const EXTERNAL_INDENT: &str = "    ";
 
 /// 外部byte列がstyle stateへ侵入しないための打ち切り。
 ///
-/// 色を出さないstreamはANSI byteを一切生成しないという契約を優先するため、色を出す
+/// `色を出さないstreamはANSI` byteを一切生成しないという契約を優先するため、色を出す
 /// streamにだけ書く。
 const RESET: &str = "\u{1b}[0m";
 
@@ -140,8 +140,8 @@ impl Painter {
         }
     }
 
-    /// FTLのformatに失敗しても出力を止めず、失敗したmessage IDとlocaleを示す。
-    fn format(&self, catalog: &Catalog, message: &Msg) -> String {
+    /// FTLのformatに失敗しても出力を止めず、失敗したmessage `IDとlocaleを示す`。
+    fn format(catalog: &Catalog, message: &Msg) -> String {
         catalog
             .format(message)
             .unwrap_or_else(|failure| failure.to_string())
@@ -151,12 +151,12 @@ impl Painter {
         match block {
             Block::Progress(message) => {
                 let marker = self.role(self.glyphs().progress, Role::ProgressMarker);
-                line(out, &format!("{marker} {}", self.format(catalog, message)));
+                line(out, &format!("{marker} {}", Self::format(catalog, message)));
                 Trailing::Normal
             }
             Block::Summary(message) => {
                 let marker = self.role(self.glyphs().success, Role::SuccessMarker);
-                line(out, &format!("{marker} {}", self.format(catalog, message)));
+                line(out, &format!("{marker} {}", Self::format(catalog, message)));
                 Trailing::Normal
             }
             Block::Section(section) => {
@@ -167,11 +167,11 @@ impl Painter {
                 if let Some(heading) = &guidance.heading {
                     line(
                         out,
-                        &self.role(&self.format(catalog, heading), Role::Heading),
+                        &self.role(&Self::format(catalog, heading), Role::Heading),
                     );
                 }
                 for item in &guidance.items {
-                    line(out, &self.guidance_item(catalog, item));
+                    line(out, &Self::guidance_item(catalog, item));
                 }
                 Trailing::Normal
             }
@@ -202,20 +202,20 @@ impl Painter {
     /// `! Warning: <message>`のように、markerとlocalized labelを添えた一行。
     fn labelled(&self, catalog: &Catalog, message: &Msg, label_id: &'static str) -> String {
         let marker = self.role(self.glyphs().warning, Role::WarningMarker);
-        let label = self.role(&self.format(catalog, &msg!(label_id)), Role::WarningMarker);
-        format!("{marker} {label} {}", self.format(catalog, message))
+        let label = self.role(&Self::format(catalog, &msg!(label_id)), Role::WarningMarker);
+        format!("{marker} {label} {}", Self::format(catalog, message))
     }
 
     fn command(&self, command: &CommandLine) -> String {
         self.role(command.as_str(), Role::Command)
     }
 
-    fn guidance_item(&self, catalog: &Catalog, item: &GuidanceItem) -> String {
+    fn guidance_item(catalog: &Catalog, item: &GuidanceItem) -> String {
         match item {
             GuidanceItem::Ordered { number, text } => {
-                format!("{INDENT}{number}. {}", self.format(catalog, text))
+                format!("{INDENT}{number}. {}", Self::format(catalog, text))
             }
-            GuidanceItem::Plain(text) => format!("{INDENT}{}", self.format(catalog, text)),
+            GuidanceItem::Plain(text) => format!("{INDENT}{}", Self::format(catalog, text)),
         }
     }
 
@@ -224,7 +224,7 @@ impl Painter {
         if let Some(heading) = &section.heading {
             line(
                 out,
-                &self.role(&self.format(catalog, heading), Role::Heading),
+                &self.role(&Self::format(catalog, heading), Role::Heading),
             );
         }
         match &section.body {
@@ -238,7 +238,7 @@ impl Painter {
             }
             SectionBody::Legend(entries) => self.legend(catalog, entries, out),
             SectionBody::Empty(message) => {
-                line(out, &format!("{INDENT}{}", self.format(catalog, message)));
+                line(out, &format!("{INDENT}{}", Self::format(catalog, message)));
             }
         }
     }
@@ -246,7 +246,7 @@ impl Painter {
     fn fields(&self, catalog: &Catalog, fields: &[Field], out: &mut Vec<u8>) {
         let labels: Vec<String> = fields
             .iter()
-            .map(|field| self.format(catalog, &field.label))
+            .map(|field| Self::format(catalog, &field.label))
             .collect();
         let width = column_width(labels.iter().map(String::as_str));
         for (label, field) in labels.iter().zip(fields) {
@@ -261,7 +261,7 @@ impl Painter {
         let headers: Vec<String> = table
             .headers()
             .iter()
-            .map(|header| self.format(catalog, header))
+            .map(|header| Self::format(catalog, header))
             .collect();
 
         // 幅は装飾前の値から数える。行の描画は2度目のformatを避けるため先に済ませる。
@@ -298,7 +298,7 @@ impl Painter {
     fn cell(&self, catalog: &Catalog, cell: &Cell) -> (String, String) {
         match cell {
             Cell::Label(label) => {
-                let text = self.format(catalog, label);
+                let text = Self::format(catalog, label);
                 (text.clone(), text)
             }
             Cell::Value(value) => (value.as_str().to_string(), self.inline(value)),
@@ -308,7 +308,7 @@ impl Painter {
     fn legend(&self, catalog: &Catalog, entries: &[LegendEntry], out: &mut Vec<u8>) {
         let width = column_width(entries.iter().map(|entry| entry.value.as_str()));
         for entry in entries {
-            let described = self.role(&self.format(catalog, &entry.description), Role::Muted);
+            let described = self.role(&Self::format(catalog, &entry.description), Role::Muted);
             line(
                 out,
                 &format!(
@@ -333,7 +333,7 @@ impl Painter {
         line(out, &format!("{marker} {label} {id}"));
         line(
             out,
-            &format!("{INDENT}{}", self.format(catalog, &diagnostic.description)),
+            &format!("{INDENT}{}", Self::format(catalog, &diagnostic.description)),
         );
 
         let mut trailing = Trailing::Normal;
@@ -345,7 +345,7 @@ impl Painter {
                     &format!(
                         "{INDENT}{}",
                         self.role(
-                            &self.format(catalog, &msg!("remediation-heading")),
+                            &Self::format(catalog, &msg!("remediation-heading")),
                             Role::Heading
                         )
                     ),
@@ -353,7 +353,7 @@ impl Painter {
                 for explanation in &remediation.explanation {
                     line(
                         out,
-                        &format!("{EXTERNAL_INDENT}{}", self.format(catalog, explanation)),
+                        &format!("{EXTERNAL_INDENT}{}", Self::format(catalog, explanation)),
                     );
                 }
                 trailing = Trailing::Normal;
@@ -416,7 +416,7 @@ impl Painter {
             return;
         }
         blank(out);
-        let heading = self.format(
+        let heading = Self::format(
             catalog,
             &msg!("external-output-heading", program = external.program),
         );
@@ -434,7 +434,7 @@ impl Painter {
     fn small_heading(&self, catalog: &Catalog, id: &'static str) -> String {
         format!(
             "{INDENT}{}",
-            self.role(&self.format(catalog, &msg!(id)), Role::Heading)
+            self.role(&Self::format(catalog, &msg!(id)), Role::Heading)
         )
     }
 }
@@ -482,24 +482,24 @@ fn row(cells: &[(String, String)], widths: &[usize]) -> String {
 /// 末尾に改行がなくてもblockは改行で閉じる。`reset`は各行の前後へ挟み、原文のstyleが
 /// 次の行やsbxm自身の出力へ残らないようにする。
 fn indented_bytes(out: &mut Vec<u8>, raw: &[u8], indent: &str, reset: &str) {
-    let mut rest = raw;
-    while !rest.is_empty() {
-        let (line, tail) = match rest.iter().position(|byte| *byte == b'\n') {
-            Some(index) => (&rest[..index], &rest[index + 1..]),
-            None => (rest, &rest[rest.len()..]),
+    let mut remaining = raw;
+    while !remaining.is_empty() {
+        let (line, tail) = match remaining.iter().position(|byte| *byte == b'\n') {
+            Some(index) => (&remaining[..index], &remaining[index + 1..]),
+            None => (remaining, &remaining[remaining.len()..]),
         };
         out.extend_from_slice(indent.as_bytes());
         out.extend_from_slice(reset.as_bytes());
         out.extend_from_slice(line);
         out.extend_from_slice(reset.as_bytes());
         out.push(b'\n');
-        rest = tail;
+        remaining = tail;
     }
 }
 
 /// 意味からterminal crateのstyleへ変える唯一の場所。
 ///
-/// 標準themeはANSI named colorだけを使い、RGBや256色indexへ昇格しない。
+/// `標準themeはANSI` named colorだけを使い、RGBや256色indexへ昇格しない。
 fn console_style(spec: StyleSpec) -> console::Style {
     let mut style = console::Style::new().force_styling(true);
     if spec.bold {

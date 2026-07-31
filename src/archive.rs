@@ -50,7 +50,7 @@ pub fn verify_holds_image(
     if !manifest.repo_tags.iter().any(|tag| tag == image_name) {
         return Err(unusable(
             path,
-            format!(
+            &format!(
                 "the archive holds {}, not {image_name}",
                 manifest.repo_tags.join(", ")
             ),
@@ -64,9 +64,9 @@ pub fn verify_holds_image(
             observed => {
                 return Err(unusable(
                     path,
-                    format!(
+                    &format!(
                         "the image in the archive declares {key}: {}, expected {expected}",
-                        observed.map(String::as_str).unwrap_or("<absent>")
+                        observed.map_or("<absent>", String::as_str)
                     ),
                 ));
             }
@@ -83,27 +83,30 @@ fn read_config_labels(
     config_entry: &str,
 ) -> Result<std::collections::BTreeMap<String, String>> {
     let Some(bytes) = read_entry(path, config_entry)? else {
-        return Err(unusable(path, format!("the archive has no {config_entry}")));
+        return Err(unusable(
+            path,
+            &format!("the archive has no {config_entry}"),
+        ));
     };
     let document: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|error| unusable(path, format!("{config_entry} is not JSON: {error}")))?;
+        .map_err(|error| unusable(path, &format!("{config_entry} is not JSON: {error}")))?;
 
     // image configはOCIとDockerのどちらの表記でも`config`objectの下にlabelを持つ。
     let config = document
         .get("config")
         .or_else(|| document.get("Config"))
         .and_then(|value| value.as_object())
-        .ok_or_else(|| unusable(path, format!("{config_entry} has no image configuration")))?;
+        .ok_or_else(|| unusable(path, &format!("{config_entry} has no image configuration")))?;
 
     let declared = config.get("Labels").or_else(|| config.get("labels"));
     labels_from_declared(declared).map_err(|defect| match defect {
         LabelDefect::NotAnObject => unusable(
             path,
-            format!("{config_entry} declares labels that are not an object"),
+            &format!("{config_entry} declares labels that are not an object"),
         ),
         LabelDefect::ValueNotAString(key) => unusable(
             path,
-            format!("label {key} in {config_entry} is not a string"),
+            &format!("label {key} in {config_entry} is not a string"),
         ),
     })
 }
@@ -113,35 +116,35 @@ pub fn read_manifest(path: &Path) -> Result<ArchiveManifest> {
     let Some(bytes) = read_entry(path, MANIFEST_ENTRY)? else {
         return Err(unusable(
             path,
-            format!("the archive has no {MANIFEST_ENTRY}"),
+            &format!("the archive has no {MANIFEST_ENTRY}"),
         ));
     };
     let document: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|error| unusable(path, format!("{MANIFEST_ENTRY} is not JSON: {error}")))?;
+        .map_err(|error| unusable(path, &format!("{MANIFEST_ENTRY} is not JSON: {error}")))?;
     let items = document
         .as_array()
-        .ok_or_else(|| unusable(path, format!("{MANIFEST_ENTRY} is not an array")))?;
+        .ok_or_else(|| unusable(path, &format!("{MANIFEST_ENTRY} is not an array")))?;
     let [item] = items.as_slice() else {
         return Err(unusable(
             path,
-            format!("the archive holds {} images instead of one", items.len()),
+            &format!("the archive holds {} images instead of one", items.len()),
         ));
     };
 
     let config = item
         .get("Config")
         .and_then(|value| value.as_str())
-        .ok_or_else(|| unusable(path, format!("{MANIFEST_ENTRY} names no image config")))?;
+        .ok_or_else(|| unusable(path, &format!("{MANIFEST_ENTRY} names no image config")))?;
     let digest = config_digest(config)
-        .ok_or_else(|| unusable(path, format!("{config} is not an image config digest")))?;
+        .ok_or_else(|| unusable(path, &format!("{config} is not an image config digest")))?;
 
     let repo_tags = match item.get("RepoTags") {
         Some(serde_json::Value::Array(tags)) => tags
             .iter()
             .map(|tag| {
                 tag.as_str()
-                    .map(|tag| tag.to_string())
-                    .ok_or_else(|| unusable(path, "a repository tag is not a string".to_string()))
+                    .map(std::string::ToString::to_string)
+                    .ok_or_else(|| unusable(path, "a repository tag is not a string"))
             })
             .collect::<Result<Vec<String>>>()?,
         // tagを持たないarchiveからは、どのimageを保存したかを判定できない。
@@ -171,7 +174,7 @@ fn config_digest(config: &str) -> Option<String> {
 /// entry本体を読み飛ばしながらheaderだけを辿るため、archiveの大きさに依存しない。
 fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
     let mut file = File::open(path)
-        .map_err(|error| unusable(path, format!("the archive could not be opened: {error}")))?;
+        .map_err(|error| unusable(path, &format!("the archive could not be opened: {error}")))?;
 
     loop {
         let mut header = [0_u8; BLOCK];
@@ -182,7 +185,7 @@ fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
             Err(error) => {
                 return Err(unusable(
                     path,
-                    format!("the archive could not be read: {error}"),
+                    &format!("the archive could not be read: {error}"),
                 ));
             }
         }
@@ -191,30 +194,37 @@ fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
             return Ok(None);
         }
 
-        let name = entry_name(&header)
-            .ok_or_else(|| unusable(path, "an entry has no readable name".to_string()))?;
+        let name =
+            entry_name(&header).ok_or_else(|| unusable(path, "an entry has no readable name"))?;
         let size = octal(&header[124..136])
-            .ok_or_else(|| unusable(path, format!("entry {name} has no readable size")))?;
+            .ok_or_else(|| unusable(path, &format!("entry {name} has no readable size")))?;
 
         if name == wanted {
             if size > MAX_ENTRY_BYTES {
                 return Err(unusable(
                     path,
-                    format!("{name} is {size} bytes, which is larger than sbxm reads"),
+                    &format!("{name} is {size} bytes, which is larger than sbxm reads"),
                 ));
             }
-            let mut data = vec![0_u8; size as usize];
+            let capacity = usize::try_from(size).map_err(|_| {
+                unusable(
+                    path,
+                    &format!("{name} is {size} bytes, which is larger than sbxm reads"),
+                )
+            })?;
+            let mut data = vec![0_u8; capacity];
             file.read_exact(&mut data)
-                .map_err(|error| unusable(path, format!("{name} could not be read: {error}")))?;
+                .map_err(|error| unusable(path, &format!("{name} could not be read: {error}")))?;
             return Ok(Some(data));
         }
 
         // entry本体は512 byte単位で詰められている。
         let padded = size.div_ceil(BLOCK as u64) * BLOCK as u64;
-        file.seek(SeekFrom::Current(padded as i64))
-            .map_err(|error| {
-                unusable(path, format!("the archive could not be scanned: {error}"))
-            })?;
+        let padded = i64::try_from(padded)
+            .map_err(|_| unusable(path, &format!("entry {name} declares an unusable size")))?;
+        file.seek(SeekFrom::Current(padded)).map_err(|error| {
+            unusable(path, &format!("the archive could not be scanned: {error}"))
+        })?;
     }
 }
 
@@ -247,7 +257,7 @@ fn octal(field: &[u8]) -> Option<u64> {
     u64::from_str_radix(&text, 8).ok()
 }
 
-fn unusable(path: &Path, detail: String) -> Error {
+fn unusable(path: &Path, detail: &str) -> Error {
     Error::new(
         ErrorId::ArchiveUnusable,
         msg!(

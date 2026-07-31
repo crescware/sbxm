@@ -64,9 +64,11 @@ impl Ui<'static> {
     }
 }
 
+/// bufferへ書くUI。testが独立したstreamを注入するために使う。
+///
+/// 注入するstreamの生存期間を戻り値へ持ち越すため、`'a`を省略できない。
+#[cfg(test)]
 impl<'a> Ui<'a> {
-    /// bufferへ書くUI。testが独立したstreamを注入するために使う。
-    #[cfg(test)]
     pub fn capture(
         locale: Locale,
         policy: OutputPolicy,
@@ -79,7 +81,9 @@ impl<'a> Ui<'a> {
             stderr: Renderer::new(stderr, policy.stderr),
         }
     }
+}
 
+impl Ui<'_> {
     pub fn locale(&self) -> Locale {
         self.catalog.locale()
     }

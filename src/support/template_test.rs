@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use crate::command::CommandOutcome;
 use crate::testing::image::template_listing;
@@ -17,7 +19,7 @@ impl FakeSbx {
                 outputs
                     .iter()
                     .rev()
-                    .map(|value| value.to_string())
+                    .map(|value| (*value).to_string())
                     .collect(),
             ),
             calls: RefCell::new(Vec::new()),
@@ -60,12 +62,12 @@ fn image() -> BuiltImage {
 }
 
 #[test]
-fn an_archive_is_loaded_and_the_result_is_verified() {
+fn an_archive_is_loaded_and_the_result_is_verified() -> Checked {
     let image = image();
-    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)]);
+    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)?]);
     let archive = Path::new("/tmp/template-111111111111.tar");
 
-    let template = ensure(&host, archive, &image, &mut SilentProgress).expect("load");
+    let template = ensure(&host, archive, &image, &mut SilentProgress).required_because("load")?;
     assert!(template.loaded);
     assert_eq!(template.name, image.name);
 
@@ -79,19 +81,20 @@ fn an_archive_is_loaded_and_the_result_is_verified() {
         ]
     );
     assert_eq!(calls.len(), 3, "the load is verified afterwards: {calls:?}");
+    Ok(())
 }
 
 #[test]
-fn every_sandbox_command_runs_without_the_ssh_agent() {
+fn every_sandbox_command_runs_without_the_ssh_agent() -> Checked {
     let image = image();
-    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)]);
+    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)?]);
     ensure(
         &host,
         Path::new("/tmp/template.tar"),
         &image,
         &mut SilentProgress,
     )
-    .expect("load");
+    .required_because("load")?;
 
     for spec in host.calls.borrow().iter() {
         assert_eq!(
@@ -101,12 +104,13 @@ fn every_sandbox_command_runs_without_the_ssh_agent() {
             spec.args
         );
     }
+    Ok(())
 }
 
 #[test]
-fn a_template_that_already_holds_the_image_is_reused() {
+fn a_template_that_already_holds_the_image_is_reused() -> Checked {
     let image = image();
-    let host = FakeSbx::listing(&[&template_listing(&image.name)]);
+    let host = FakeSbx::listing(&[&template_listing(&image.name)?]);
 
     let template = ensure(
         &host,
@@ -114,7 +118,7 @@ fn a_template_that_already_holds_the_image_is_reused() {
         &image,
         &mut SilentProgress,
     )
-    .expect("reuse");
+    .required_because("reuse")?;
     assert!(!template.loaded);
     assert!(
         !host
@@ -123,13 +127,14 @@ fn a_template_that_already_holds_the_image_is_reused() {
             .any(|args| args.get(1).is_some_and(|arg| arg == "load")),
         "a template that already holds the image is not loaded again"
     );
+    Ok(())
 }
 
 #[test]
-fn the_registry_prefix_the_runtime_adds_still_names_the_same_template() {
+fn the_registry_prefix_the_runtime_adds_still_names_the_same_template() -> Checked {
     let image = image();
     // runtimeは`docker.io/library/`を補って表示する。sbxmが渡すのは補う前の表記。
-    let host = FakeSbx::listing(&[&template_listing(&image.name)]);
+    let host = FakeSbx::listing(&[&template_listing(&image.name)?]);
 
     let template = ensure(
         &host,
@@ -137,12 +142,13 @@ fn the_registry_prefix_the_runtime_adds_still_names_the_same_template() {
         &image,
         &mut SilentProgress,
     )
-    .expect("the prefixed listing names the same template");
+    .required_because("the prefixed listing names the same template")?;
     assert!(!template.loaded);
+    Ok(())
 }
 
 #[test]
-fn a_load_that_leaves_no_template_behind_is_a_failure() {
+fn a_load_that_leaves_no_template_behind_is_a_failure() -> Checked {
     let image = image();
     let host = FakeSbx::listing(&[r#"{"images":[]}"#, r#"{"images":[]}"#]);
 
@@ -152,6 +158,7 @@ fn a_load_that_leaves_no_template_behind_is_a_failure() {
         &image,
         &mut SilentProgress,
     )
-    .expect_err("the load has to produce the template");
+    .refused_because("the load has to produce the template")?;
     assert_eq!(error.first_id(), Some(ErrorId::TemplateUnusable));
+    Ok(())
 }

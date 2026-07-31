@@ -1,8 +1,10 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use crate::error::ErrorId;
 
 #[test]
-fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
+fn the_secret_listing_of_the_target_version_is_read_as_it_is() -> Checked {
     // 対象versionが実際に出力する形。service secretの表のあとに、見出しを挟んで
     // custom secretの表が続く。
     let observed = "SCOPE           TYPE      NAME     SECRET\n\
@@ -12,7 +14,7 @@ fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
                         SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
                         sbxm-example   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n";
     assert_eq!(
-        parse_custom_secrets(observed).unwrap(),
+        parse_custom_secrets(observed).required()?,
         vec![CustomSecret {
             scope: "sbxm-example".to_string(),
             placeholder: "sbx-cs-example".to_string(),
@@ -25,18 +27,18 @@ fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
     // 表だけを読み違えて登録ありとしない。
     let services_only = "SCOPE           TYPE      NAME     SECRET\n\
                              sbxm-example    service   github   (stored)\n";
-    assert!(parse_custom_secrets(services_only).unwrap().is_empty());
+    assert!(parse_custom_secrets(services_only).required()?.is_empty());
 
     // 1件もない場合は表ではなく文で示す。
     let absent = "No secrets found for scope \"sbxm-example\".\n";
-    assert!(parse_custom_secrets(absent).unwrap().is_empty());
+    assert!(parse_custom_secrets(absent).required()?.is_empty());
 
     // 1つの列が複数のhostを並べることがある。空白1つで切ると列がずれる。
     let several = "CUSTOM SECRETS\n\
                        SCOPE          TARGETS                  ENV        PLACEHOLDER      SECRET\n\
                        sbxm-example   github.com gitlab.com    GH_TOKEN   sbx-cs-example   ghp_example\n";
     assert_eq!(
-        parse_custom_secrets(several).unwrap()[0].targets,
+        parse_custom_secrets(several).required()?[0].targets,
         vec!["github.com".to_string(), "gitlab.com".to_string()]
     );
 
@@ -45,7 +47,7 @@ fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
     let wildcards = "CUSTOM SECRETS\n\
                          SCOPE          TARGETS                                                        ENV        PLACEHOLDER               SECRET\n\
                          sbxm-example   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO   ghp_redacted\n";
-    let parsed = parse_custom_secrets(wildcards).unwrap();
+    let parsed = parse_custom_secrets(wildcards).required()?;
     assert_eq!(
         parsed,
         vec![CustomSecret {
@@ -73,7 +75,8 @@ fn the_secret_listing_of_the_target_version_is_read_as_it_is() {
         "CUSTOM SECRETS\nSCOPE          TARGETS      ENV\nsbxm-example   github.com\n",
         scopeless,
     ] {
-        let error = parse_custom_secrets(output).expect_err("{output} must be refused");
+        let error = parse_custom_secrets(output).refused_because("{output} must be refused")?;
         assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
     }
+    Ok(())
 }

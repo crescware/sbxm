@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::super::fake::*;
 use super::*;
 use crate::hash::sha256_hex;
@@ -14,25 +16,25 @@ const FILES_ONLY: Scope = Scope {
 };
 
 #[test]
-fn asking_for_worktrees_leaves_the_declared_files_alone() {
-    let dir = tempfile::tempdir().unwrap();
+fn asking_for_worktrees_leaves_the_declared_files_alone() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let source = dir.path().join("declared.yaml");
-    std::fs::write(&source, b"declared = true\n").unwrap();
+    std::fs::write(&source, b"declared = true\n").required()?;
 
-    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)]);
-    let paths = write_metadata(&location, &parent, None);
-    let host = FakeSbx::listing(&listing(&workspace_root, "running")).holding_repository();
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
+    let paths = write_metadata(&location, &parent, None)?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?).holding_repository()?;
 
     let output = run(
         &location,
         &config,
-        &project(),
+        &project()?,
         WORKTREES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect("worktrees are applied on their own");
+    .required_because("worktrees are applied on their own")?;
 
     assert_eq!(output.worktrees, Some(3));
     assert!(output.files.is_empty());
@@ -42,18 +44,23 @@ fn asking_for_worktrees_leaves_the_declared_files_alone() {
         "the declared files were not asked for"
     );
 
-    let stored = metadata::load(&paths).unwrap().expect("present");
+    let stored = metadata::load(&paths)
+        .required()?
+        .required_because("present")?;
     assert_eq!(stored.provisioning.requested_worktrees, 3);
+    Ok(())
 }
 
 #[test]
-fn a_number_below_what_the_project_has_is_refused() {
-    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
-    let paths = write_metadata(&location, &parent, None);
-    let mut metadata = metadata::load(&paths).unwrap().expect("present");
+fn a_number_below_what_the_project_has_is_refused() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    let paths = write_metadata(&location, &parent, None)?;
+    let mut metadata = metadata::load(&paths)
+        .required()?
+        .required_because("present")?;
     metadata.provisioning.requested_worktrees = 3;
-    metadata::update(&paths, &metadata).unwrap();
-    let host = FakeSbx::listing(&listing(&workspace_root, "running"));
+    metadata::update(&paths, &metadata).required()?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
 
     let scope = Scope {
         files: false,
@@ -62,69 +69,73 @@ fn a_number_below_what_the_project_has_is_refused() {
     let error = run(
         &location,
         &config,
-        &project(),
+        &project()?,
         scope,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect_err("removing a worktree deletes what is checked out in it");
+    .refused_because("removing a worktree deletes what is checked out in it")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreesNotReducible));
 
-    let stored = metadata::load(&paths).unwrap().expect("present");
+    let stored = metadata::load(&paths)
+        .required()?
+        .required_because("present")?;
     assert_eq!(
         stored.provisioning.requested_worktrees, 3,
         "a refused run leaves the target where it was"
     );
+    Ok(())
 }
 
 #[test]
-fn a_running_project_gets_the_declared_files_replaced() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_running_project_gets_the_declared_files_replaced() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let source = dir.path().join("declared.yaml");
-    std::fs::write(&source, b"declared = true\n").unwrap();
+    std::fs::write(&source, b"declared = true\n").required()?;
     let _ = sha256_hex(b"declared = true\n");
 
-    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)]);
-    write_metadata(&location, &parent, None);
-    let host = FakeSbx::listing(&listing(&workspace_root, "running"));
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
+    write_metadata(&location, &parent, None)?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
 
     let output = run(
         &location,
         &config,
-        &project(),
+        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect("sync");
+    .required_because("sync")?;
     assert_eq!(output.project, "Example-Org/Example-Repo");
     assert_eq!(output.files.len(), 1);
     assert!(host.ran("cp --follow-link"));
+    Ok(())
 }
 
 #[test]
-fn the_project_lock_is_held_while_the_files_are_replaced() {
-    let dir = tempfile::tempdir().unwrap();
+fn the_project_lock_is_held_while_the_files_are_replaced() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let source = dir.path().join("declared.yaml");
-    std::fs::write(&source, b"declared = true\n").unwrap();
+    std::fs::write(&source, b"declared = true\n").required()?;
 
-    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)]);
-    let paths = write_metadata(&location, &parent, None);
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
+    let paths = write_metadata(&location, &parent, None)?;
     let host =
-        FakeSbx::listing(&listing(&workspace_root, "running")).watching_lock(paths.lock_file());
+        FakeSbx::listing(&listing(&workspace_root, "running")?).watching_lock(paths.lock_file());
 
     run(
         &location,
         &config,
-        &project(),
+        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect("sync");
+    .required_because("sync")?;
 
     assert_eq!(
         *host.lock_was_free.borrow(),
@@ -133,7 +144,7 @@ fn the_project_lock_is_held_while_the_files_are_replaced() {
     );
     assert_eq!(
         std::fs::metadata(paths.lock_file())
-            .unwrap()
+            .required()?
             .permissions()
             .mode()
             & 0o777,
@@ -147,52 +158,54 @@ fn the_project_lock_is_held_while_the_files_are_replaced() {
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
-    .expect("the lock is released when the workflow ends");
+    .required_because("the lock is released when the workflow ends")?;
+    Ok(())
 }
 
 #[test]
-fn a_project_that_is_not_managed_gets_no_lock_file() {
-    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
+fn a_project_that_is_not_managed_gets_no_lock_file() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
     let host = FakeSbx::listing("[]");
 
     run(
         &location,
         &config,
-        &project(),
+        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect_err("nothing to place");
+    .refused_because("nothing to place")?;
 
-    let paths = ProjectPaths::derive(&parent, &canonical());
+    let paths = ProjectPaths::derive(&parent, &canonical()?);
     assert!(
         !paths.lock_file().exists(),
         "an unmanaged project is not given a lock file"
     );
+    Ok(())
 }
 
 #[test]
-fn nothing_else_in_the_project_is_touched() {
-    let dir = tempfile::tempdir().unwrap();
+fn nothing_else_in_the_project_is_touched() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let source = dir.path().join("declared.yaml");
-    std::fs::write(&source, b"declared = true\n").unwrap();
-    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)]);
-    let paths = write_metadata(&location, &parent, None);
-    let before = std::fs::read_to_string(paths.metadata_file()).unwrap();
-    let host = FakeSbx::listing(&listing(&workspace_root, "running"));
+    std::fs::write(&source, b"declared = true\n").required()?;
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
+    let paths = write_metadata(&location, &parent, None)?;
+    let before = std::fs::read_to_string(paths.metadata_file()).required()?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
 
     run(
         &location,
         &config,
-        &project(),
+        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect("sync");
+    .required_because("sync")?;
 
     for forbidden in [
         "build",
@@ -208,28 +221,29 @@ fn nothing_else_in_the_project_is_touched() {
         );
     }
     assert_eq!(
-        std::fs::read_to_string(paths.metadata_file()).unwrap(),
+        std::fs::read_to_string(paths.metadata_file()).required()?,
         before,
         "the metadata is read-only for sync-files"
     );
+    Ok(())
 }
 
 #[test]
-fn a_stopped_sandbox_is_not_started_and_the_user_is_sent_to_open() {
-    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
-    write_metadata(&location, &parent, None);
-    let host = FakeSbx::listing(&listing(&workspace_root, "stopped"));
+fn a_stopped_sandbox_is_not_started_and_the_user_is_sent_to_open() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    write_metadata(&location, &parent, None)?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "stopped")?);
 
     let error = run(
         &location,
         &config,
-        &project(),
+        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect_err("a stopped sandbox is not started implicitly");
+    .refused_because("a stopped sandbox is not started implicitly")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
     assert_eq!(
         error.diagnostics()[0]
@@ -249,41 +263,43 @@ fn a_stopped_sandbox_is_not_started_and_the_user_is_sent_to_open() {
         beyond_listing.is_empty(),
         "a stopped sandbox is not started implicitly: {beyond_listing:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn a_project_that_is_not_managed_or_not_built_is_refused() {
-    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
+fn a_project_that_is_not_managed_or_not_built_is_refused() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
     let host = FakeSbx::listing("[]");
     let error = run(
         &location,
         &config,
-        &project(),
+        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect_err("an unregistered project has nowhere to place files");
+    .refused_because("an unregistered project has nowhere to place files")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
 
-    write_metadata(&location, &parent, None);
+    write_metadata(&location, &parent, None)?;
     let error = run(
         &location,
         &config,
-        &project(),
+        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect_err("a registered project without a sandbox has nowhere to place files");
+    .refused_because("a registered project without a sandbox has nowhere to place files")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
+    Ok(())
 }
 
 #[test]
-fn a_rebuild_in_progress_places_nothing() {
-    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
+fn a_rebuild_in_progress_places_nothing() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
     write_metadata(
         &location,
         &parent,
@@ -291,28 +307,29 @@ fn a_rebuild_in_progress_places_nothing() {
             target_dockerfile_sha256: "2".repeat(64),
             previous_dockerfile_sha256: DIGEST.into(),
         }),
-    );
-    let host = FakeSbx::listing(&listing(&workspace_root, "running"));
+    )?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
 
     let error = run(
         &location,
         &config,
-        &project(),
+        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect_err("a half-switched sandbox is not the target of a placement");
+    .refused_because("a half-switched sandbox is not the target of a placement")?;
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
     assert!(host.calls().is_empty(), "nothing is asked of the runtime");
+    Ok(())
 }
 
 #[test]
-fn a_sandbox_that_belongs_to_another_project_is_refused() {
-    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
-    write_metadata(&location, &parent, None);
-    let name = SandboxName::derive(&canonical());
+fn a_sandbox_that_belongs_to_another_project_is_refused() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    write_metadata(&location, &parent, None)?;
+    let name = SandboxName::derive(&canonical()?);
     let host = FakeSbx::listing(&format!(
         r#"[{{"name":"{name}","state":"running","workspace":"/tmp/elsewhere","template":"other:1"}}]"#
     ));
@@ -320,12 +337,13 @@ fn a_sandbox_that_belongs_to_another_project_is_refused() {
     let error = run(
         &location,
         &config,
-        &project(),
+        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
         &mut SilentProgress,
     )
-    .expect_err("a sandbox that cannot be identified is not written to");
+    .refused_because("a sandbox that cannot be identified is not written to")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+    Ok(())
 }

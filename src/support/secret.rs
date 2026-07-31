@@ -1,4 +1,4 @@
-//! 案件限定のGitHub credential。
+//! `案件限定のGitHub` credential。
 //!
 //! tokenの発行と入力は自動化しない。存在確認だけをread-onlyで行い、値は取得も
 //! 表示もしない。
@@ -81,7 +81,7 @@ pub fn register_command(sandbox: &str, placeholder: Option<&str>) -> String {
 /// 表にNAME列はなく、placeholderがこの登録を一意に示す唯一の公開値である。
 ///
 /// `--placeholder`は`sbx secret rm --help`のFlagsに現れないhidden flagであり、
-/// 同じhelpのexamplesとCLI referenceが用法を示す。`--help`の一覧にないことを根拠に
+/// `同じhelpのexamplesとCLI` referenceが用法を示す。`--help`の一覧にないことを根拠に
 /// 別の指定へ書き換えない。
 ///
 /// scopeはSandbox名をpositionalで渡して確定させる。`-g`もSandbox名も渡さない実行は
@@ -176,7 +176,7 @@ pub fn forget_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<Vec<St
         .collect())
 }
 
-/// GitHubのcustom secretが登録済みであることを確認する。
+/// `GitHubのcustom` secretが登録済みであることを確認する。
 ///
 /// 未登録なら、発行条件と登録commandを示して前提条件不足として停止する。custom secretは
 /// Sandboxの作成時に結び付くため、この確認はSandboxを作る前に行う。
@@ -278,7 +278,7 @@ pub fn require_placeholder_present(host: &dyn HostEnvironment, sandbox: &str) ->
     ))
 }
 
-/// Sandbox内のgitがGitHubへ提示するcredentialのconfig key。
+/// `Sandbox内のgitがGitHubへ提示するcredentialのconfig` key。
 ///
 /// github.comだけに絞る。ほかのhostへplaceholderを送っても意味がなく、送る相手を
 /// 広げる理由がない。
@@ -290,7 +290,7 @@ fn credential_key() -> String {
 ///
 /// helperはplaceholderを読むだけで、tokenは持たない。gitはこれをBasic認証として
 /// 送り、proxyがgithub.com宛のrequest headerで本物のtokenへ差し替える。usernameは
-/// GitHubのgit endpointでは任意の値でよい。
+/// `GitHubのgit` endpointでは任意の値でよい。
 pub fn configure_git_credential(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     let helper = format!("!f() {{ echo username=x; echo password=${GITHUB_TOKEN_ENV}; }}; f");
     super::sandbox::exec(

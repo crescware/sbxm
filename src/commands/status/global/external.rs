@@ -17,11 +17,10 @@ pub(super) fn read_stdout(
 }
 
 pub(super) fn describe(error: &Error) -> String {
-    error
-        .diagnostics()
-        .first()
-        .map(|diagnostic| diagnostic.id.to_string())
-        .unwrap_or_else(|| "canceled".to_string())
+    error.diagnostics().first().map_or_else(
+        || "canceled".to_string(),
+        |diagnostic| diagnostic.id.to_string(),
+    )
 }
 
 pub(super) fn external_of(error: &Error) -> Option<crate::error::ExternalFailure> {

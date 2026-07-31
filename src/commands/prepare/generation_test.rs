@@ -1,4 +1,6 @@
 //! Dockerfileを編集した時点で、どの世代を完成させるか。
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::super::world::{World, bench};
 use super::*;
 use crate::hash::sha256_hex;
@@ -10,35 +12,36 @@ use std::fs;
 const EDITED_DOCKERFILE: &[u8] = b"FROM example:edited\n";
 
 #[test]
-fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_started_from() {
-    let bench = bench();
+fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_started_from() -> Checked
+{
+    let bench = bench()?;
     let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None);
+    let request = request("Example-Org/Example-Repo", None, None)?;
 
     // imageまで組み上がり、Sandboxの作成で中断した実行を作る。
     world.failing("sbx create");
     bench
         .build(&world, &request)
-        .expect_err("the run stops at sandbox creation");
+        .refused_because("the run stops at sandbox creation")?;
     world.nothing_fails();
 
     let started_from = bench
-        .stored("Example-Org/Example-Repo")
+        .stored("Example-Org/Example-Repo")?
         .provisioning
         .dockerfile_sha256;
     let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    fs::write(paths.dockerfile(), EDITED_DOCKERFILE).expect("edit the Dockerfile");
+    fs::write(paths.dockerfile(), EDITED_DOCKERFILE).required_because("edit the Dockerfile")?;
 
     let mark = world.mark();
     let output = run(
         &bench.location,
         &bench.config,
-        &project_of(&request),
+        &project_of(&request)?,
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,
     )
-    .expect("the interrupted run finishes");
+    .required_because("the interrupted run finishes")?;
 
     assert_eq!(
         output
@@ -50,7 +53,7 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
     );
     assert_eq!(
         bench
-            .stored("Example-Org/Example-Repo")
+            .stored("Example-Org/Example-Repo")?
             .provisioning
             .dockerfile_sha256,
         started_from,
@@ -65,13 +68,14 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
         "the edited Dockerfile is left for rebuild: {:?}",
         world.since(mark)
     );
+    Ok(())
 }
 
 #[test]
-fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built() {
-    let bench = bench();
+fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built() -> Checked {
+    let bench = bench()?;
     let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None);
+    let request = request("Example-Org/Example-Repo", None, None)?;
     crate::commands::add::run::run(
         &bench.location,
         &bench.parent,
@@ -80,26 +84,26 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
         &world,
         &mut SilentProgress,
     )
-    .expect("the project is registered");
+    .required_because("the project is registered")?;
 
     let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    fs::write(paths.dockerfile(), EDITED_DOCKERFILE).expect("edit the Dockerfile");
+    fs::write(paths.dockerfile(), EDITED_DOCKERFILE).required_because("edit the Dockerfile")?;
     let edited = sha256_hex(EDITED_DOCKERFILE);
 
     let output = run(
         &bench.location,
         &bench.config,
-        &project_of(&request),
+        &project_of(&request)?,
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,
     )
-    .expect("the build runs on the Dockerfile that is there");
+    .required_because("the build runs on the Dockerfile that is there")?;
 
     assert!(output.warnings.is_empty(), "{:?}", output.warnings);
     assert_eq!(
         bench
-            .stored("Example-Org/Example-Repo")
+            .stored("Example-Org/Example-Repo")?
             .provisioning
             .dockerfile_sha256,
         edited,
@@ -113,4 +117,5 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
         "{:?}",
         world.invocations()
     );
+    Ok(())
 }

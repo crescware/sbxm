@@ -115,7 +115,7 @@ pub struct StreamPolicy {
 }
 
 impl StreamPolicy {
-    /// ANSIを一切出さないstream。
+    /// `ANSIを一切出さないstream`。
     #[cfg(test)]
     pub fn plain() -> StreamPolicy {
         StreamPolicy {
@@ -160,7 +160,7 @@ impl OutputPolicy {
     /// 2. `NO_COLOR`が存在すれば`Never`
     /// 3. `CLICOLOR_FORCE`が`0`以外なら`Always`
     /// 4. `TERM=dumb`なら`Never`
-    /// 5. `Auto`は対象streamがTTYのときだけ有効
+    /// 5. `Auto``は対象streamがTTYのときだけ有効`
     pub fn resolve(
         mode: ColorMode,
         environment: &Environment,

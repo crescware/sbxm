@@ -3,6 +3,10 @@
 //! exit codeは`0`、`1`、`130`だけを使う。CLI parserを含む内部libraryの既定exit codeを
 //! 公開契約へ透過しない。helpとusageは選択したlocaleで生成する。
 
+mod outcome;
+
+use outcome::{Checked, Required};
+
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -18,19 +22,22 @@ struct Run {
 }
 
 impl Run {
-    fn from(output: Output) -> Run {
-        Run {
+    fn from(output: &Output) -> Checked<Run> {
+        Ok(Run {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            code: output.status.code().expect("the process exits normally"),
-        }
+            code: output
+                .status
+                .code()
+                .required_because("the process exits normally")?,
+        })
     }
 }
 
-/// 一時HOMEを使ってsbxmを実行する。
+/// `一時HOMEを使ってsbxmを実行する`。
 ///
 /// 実行のたびにHOMEを差し替えるため、利用者のconfigには触れない。
-fn sbxm(home: &Path, arguments: &[&str]) -> Run {
+fn sbxm(home: &Path, arguments: &[&str]) -> Checked<Run> {
     sbxm_in(home, home, arguments)
 }
 
@@ -38,7 +45,7 @@ fn sbxm(home: &Path, arguments: &[&str]) -> Run {
 ///
 /// `add`は実行時のcurrent directoryへproject rootを足す。どこで実行したかがそのまま
 /// 配置先になるため、testもcwdを明示する。
-fn sbxm_in(home: &Path, cwd: &Path, arguments: &[&str]) -> Run {
+fn sbxm_in(home: &Path, cwd: &Path, arguments: &[&str]) -> Checked<Run> {
     let output = Command::new(env!("CARGO_BIN_EXE_sbxm"))
         .args(arguments)
         .current_dir(cwd)
@@ -50,22 +57,22 @@ fn sbxm_in(home: &Path, cwd: &Path, arguments: &[&str]) -> Run {
         // PATHを空にして、host toolの有無でstatusが揺れないようにする。
         .env("PATH", "")
         .output()
-        .expect("sbxm runs");
-    Run::from(output)
+        .required_because("sbxm runs")?;
+    Run::from(&output)
 }
 
-fn temp_home() -> tempfile::TempDir {
-    tempfile::tempdir().expect("temporary home")
+fn temp_home() -> Checked<tempfile::TempDir> {
+    tempfile::tempdir().required_because("temporary home")
 }
 
 /// hostのGit identityだけに答える`git`を用意し、そのdirectoryを返す。
 ///
 /// hostの値はpromptへ置く候補にしかならないため、名義を宣言する実行はこれを読まない。
 /// それでも`git`自体は必要である。cloneには答えないため、実行はcloneで止まる。
-fn fake_git(home: &Path) -> std::path::PathBuf {
+fn fake_git(home: &Path) -> Checked<std::path::PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     let bin = home.join("bin");
-    std::fs::create_dir_all(&bin).expect("create the fake bin directory");
+    std::fs::create_dir_all(&bin).required_because("create the fake bin directory")?;
     let git = bin.join("git");
     std::fs::write(
         &git,
@@ -76,14 +83,15 @@ fn fake_git(home: &Path) -> std::path::PathBuf {
          esac\n\
          exit 1\n",
     )
-    .expect("write the fake git");
-    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).expect("mode");
-    bin
+    .required_because("write the fake git")?;
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755))
+        .required_because("mode")?;
+    Ok(bin)
 }
 
-/// hostのGit identityだけに答える`git`を置いたPATHでsbxmを実行する。
-fn sbxm_with_git(home: &Path, cwd: &Path, arguments: &[&str]) -> Run {
-    let bin = fake_git(home);
+/// hostのGit identityだけに答える`git``を置いたPATHでsbxmを実行する`。
+fn sbxm_with_git(home: &Path, cwd: &Path, arguments: &[&str]) -> Checked<Run> {
+    let bin = fake_git(home)?;
     let output = Command::new(env!("CARGO_BIN_EXE_sbxm"))
         .args(arguments)
         .current_dir(cwd)
@@ -93,36 +101,41 @@ fn sbxm_with_git(home: &Path, cwd: &Path, arguments: &[&str]) -> Run {
         .env_remove("LANG")
         .env("PATH", &bin)
         .output()
-        .expect("sbxm runs");
-    Run::from(output)
+        .required_because("sbxm runs")?;
+    Run::from(&output)
 }
 
 /// 同梱するresourceのtag。言語を増やしてもtestを編集しない。
-fn locale_tags() -> Vec<String> {
+fn locale_tags() -> Checked<Vec<String>> {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
-    let mut tags: Vec<String> = std::fs::read_dir(&directory)
-        .expect("the locales directory is readable")
-        .map(|entry| entry.expect("directory entry").path())
-        .filter(|path| path.extension().is_some_and(|extension| extension == "ftl"))
-        .filter_map(|path| {
-            path.file_stem()
-                .and_then(|stem| stem.to_str())
-                .map(|stem| stem.to_string())
-        })
-        .collect();
+    let mut tags: Vec<String> = Vec::new();
+    for entry in
+        std::fs::read_dir(&directory).required_because("the locales directory is readable")?
+    {
+        let path = entry.required_because("directory entry")?.path();
+        if path.extension().is_some_and(|extension| extension == "ftl")
+            && let Some(tag) = path.file_stem().and_then(|stem| stem.to_str())
+        {
+            tags.push(tag.to_string());
+        }
+    }
     tags.sort();
     assert!(!tags.is_empty(), "no FTL resource was found");
-    tags
+    Ok(tags)
 }
 
-fn write_config(home: &Path, language: &str) {
+fn write_config(home: &Path, language: &str) -> Checked {
     use std::os::unix::fs::PermissionsExt;
     let dir = home.join(".sbxm");
-    std::fs::create_dir_all(&dir).expect("create ~/.sbxm");
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("mode");
+    std::fs::create_dir_all(&dir).required_because("create ~/.sbxm")?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+        .required_because("mode")?;
     let path = dir.join("config.yaml");
-    std::fs::write(&path, format!("version: 1\nlanguage: {language}\n")).expect("write config");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("mode");
+    std::fs::write(&path, format!("version: 1\nlanguage: {language}\n"))
+        .required_because("write config")?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .required_because("mode")?;
+    Ok(())
 }
 
 /// helpは全localeで、全commandについて成功する。
@@ -130,10 +143,10 @@ fn write_config(home: &Path, language: &str) {
 /// 出力の中身はresourceが正本であり、ここでは複製しない。構造の契約は
 /// `tests/snapshots/cli-surface.txt`が、slotがresourceで埋まることは`src/cli.rs`のtestが持つ。
 #[test]
-fn help_exits_with_zero_in_every_locale_for_every_command() {
-    let home = temp_home();
-    for tag in locale_tags() {
-        let run = sbxm(home.path(), &["--lang", &tag, "--help"]);
+fn help_exits_with_zero_in_every_locale_for_every_command() -> Checked {
+    let home = temp_home()?;
+    for tag in locale_tags()? {
+        let run = sbxm(home.path(), &["--lang", &tag, "--help"])?;
         assert_eq!(run.code, 0, "{tag}: --help must succeed: {}", run.stderr);
         assert!(run.stderr.is_empty(), "{tag}: {}", run.stderr);
         assert!(
@@ -142,7 +155,7 @@ fn help_exits_with_zero_in_every_locale_for_every_command() {
         );
 
         for command in COMMANDS {
-            let run = sbxm(home.path(), &["--lang", &tag, command, "--help"]);
+            let run = sbxm(home.path(), &["--lang", &tag, command, "--help"])?;
             assert_eq!(
                 run.code, 0,
                 "{tag}: {command} --help must succeed: {}",
@@ -155,108 +168,118 @@ fn help_exits_with_zero_in_every_locale_for_every_command() {
             );
         }
     }
+    Ok(())
 }
 
 /// 同梱したresourceは、そのまま`--lang`が受け付ける値になる。
 ///
 /// 逆向き（登録済みlocaleのresourceが存在すること）は`include_str!`がbuild時に保証する。
 #[test]
-fn every_shipped_resource_is_an_accepted_language() {
-    let home = temp_home();
-    for tag in locale_tags() {
-        let run = sbxm(home.path(), &["--lang", &tag, "--help"]);
+fn every_shipped_resource_is_an_accepted_language() -> Checked {
+    let home = temp_home()?;
+    for tag in locale_tags()? {
+        let run = sbxm(home.path(), &["--lang", &tag, "--help"])?;
         assert_eq!(
             run.code, 0,
             "{tag} ships as a resource but is not accepted: {}",
             run.stderr
         );
     }
+    Ok(())
 }
 
 #[test]
-fn help_is_written_to_stdout_and_never_mixed_with_diagnostics() {
-    let home = temp_home();
-    let run = sbxm(home.path(), &["--help"]);
+fn help_is_written_to_stdout_and_never_mixed_with_diagnostics() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm(home.path(), &["--help"])?;
     assert!(run.stdout.contains("Usage:"), "{}", run.stdout);
     assert!(run.stderr.is_empty(), "{}", run.stderr);
+    Ok(())
 }
 
 #[test]
-fn version_prints_the_version_and_exits_with_zero() {
-    let home = temp_home();
-    let run = sbxm(home.path(), &["--version"]);
+fn version_prints_the_version_and_exits_with_zero() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm(home.path(), &["--version"])?;
     assert_eq!(run.code, 0);
     assert_eq!(
         run.stdout.trim(),
         format!("sbxm {}", env!("CARGO_PKG_VERSION"))
     );
+    Ok(())
 }
 
 #[test]
-fn the_language_option_is_read_before_the_configuration() {
-    let home = temp_home();
-    write_config(home.path(), "ja");
+fn the_language_option_is_read_before_the_configuration() -> Checked {
+    let home = temp_home()?;
+    write_config(home.path(), "ja")?;
 
     // configがjaでも、`--lang en`が優先される。
-    let run = sbxm(home.path(), &["--lang", "en", "--help"]);
+    let run = sbxm(home.path(), &["--lang", "en", "--help"])?;
     assert!(run.stdout.contains("Usage:"), "{}", run.stdout);
 
     // `--lang`がなければconfigのlanguageを使う。
-    let run = sbxm(home.path(), &["--help"]);
+    let run = sbxm(home.path(), &["--help"])?;
     assert!(run.stdout.contains("使い方 (Usage):"), "{}", run.stdout);
+    Ok(())
 }
 
 #[test]
-fn a_broken_configuration_does_not_stop_help_from_being_shown() {
+fn a_broken_configuration_does_not_stop_help_from_being_shown() -> Checked {
     use std::os::unix::fs::PermissionsExt;
-    let home = temp_home();
+    let home = temp_home()?;
     let dir = home.path().join(".sbxm");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-    std::fs::write(dir.join("config.yaml"), "version: 99\n").unwrap();
+    std::fs::create_dir_all(&dir).required_because("the fixture directory is created")?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+        .required_because("the fixture permissions are applied")?;
+    std::fs::write(dir.join("config.yaml"), "version: 99\n")
+        .required_because("the fixture file is written")?;
     std::fs::set_permissions(
         dir.join("config.yaml"),
         std::fs::Permissions::from_mode(0o600),
     )
-    .unwrap();
+    .required_because("the fixture permissions are applied")?;
 
-    let run = sbxm(home.path(), &["--help"]);
+    let run = sbxm(home.path(), &["--help"])?;
     assert_eq!(run.code, 0, "help must not fail because of a broken config");
     assert!(run.stdout.contains("Usage:"), "{}", run.stdout);
 
     // 通常commandは、同じconfig不正をparse成功後のconfig loadで診断する。
-    let run = sbxm(home.path(), &["ls"]);
+    let run = sbxm(home.path(), &["ls"])?;
     assert_eq!(run.code, 1);
     assert!(
         run.stderr.contains("config-unknown-version"),
         "{}",
         run.stderr
     );
+    Ok(())
 }
 
 #[test]
-fn an_unsupported_language_is_reported_before_any_configuration_error() {
+fn an_unsupported_language_is_reported_before_any_configuration_error() -> Checked {
     use std::os::unix::fs::PermissionsExt;
 
-    let home = temp_home();
+    let home = temp_home()?;
     // 実在しないtagを使う。将来どの言語を足してもこのtestは意味を保つ。
-    let run = sbxm(home.path(), &["--lang", "zz", "ls"]);
+    let run = sbxm(home.path(), &["--lang", "zz", "ls"])?;
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("invalid-lang"), "{}", run.stderr);
     assert!(run.stdout.is_empty(), "{}", run.stdout);
 
     // 壊れたconfigはparse errorを覆い隠さない。
     let dir = home.path().join(".sbxm");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-    std::fs::write(dir.join("config.yaml"), "version: 99\n").unwrap();
+    std::fs::create_dir_all(&dir).required_because("the fixture directory is created")?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+        .required_because("the fixture permissions are applied")?;
+    std::fs::write(dir.join("config.yaml"), "version: 99\n")
+        .required_because("the fixture file is written")?;
     std::fs::set_permissions(
         dir.join("config.yaml"),
         std::fs::Permissions::from_mode(0o600),
     )
-    .unwrap();
+    .required_because("the fixture permissions are applied")?;
 
-    let run = sbxm(home.path(), &["--lang", "zz", "ls"]);
+    let run = sbxm(home.path(), &["--lang", "zz", "ls"])?;
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("invalid-lang"), "{}", run.stderr);
     assert!(
@@ -267,8 +290,8 @@ fn an_unsupported_language_is_reported_before_any_configuration_error() {
 
     // 読めるconfigがあっても、`--lang`の不正はそのまま失敗する。診断の本文は
     // configが宣言したlocaleで出す。resourceを複製せず、2回の実行の差で見る。
-    write_config(home.path(), "en");
-    let english = sbxm(home.path(), &["--lang", "zz", "ls"]);
+    write_config(home.path(), "en")?;
+    let english = sbxm(home.path(), &["--lang", "zz", "ls"])?;
     assert_eq!(english.code, 1);
     assert!(
         english.stderr.contains("invalid-lang"),
@@ -276,8 +299,8 @@ fn an_unsupported_language_is_reported_before_any_configuration_error() {
         english.stderr
     );
 
-    write_config(home.path(), "ja");
-    let japanese = sbxm(home.path(), &["--lang", "zz", "ls"]);
+    write_config(home.path(), "ja")?;
+    let japanese = sbxm(home.path(), &["--lang", "zz", "ls"])?;
     assert_eq!(japanese.code, 1);
     assert!(
         japanese.stderr.contains("invalid-lang"),
@@ -288,11 +311,12 @@ fn an_unsupported_language_is_reported_before_any_configuration_error() {
         english.stderr, japanese.stderr,
         "the diagnostic must be rendered in the locale the config declares"
     );
+    Ok(())
 }
 
 #[test]
-fn parser_failures_map_to_exit_code_one() {
-    let home = temp_home();
+fn parser_failures_map_to_exit_code_one() -> Checked {
+    let home = temp_home()?;
     for arguments in [
         vec!["--nope"],
         vec!["nope"],
@@ -304,7 +328,7 @@ fn parser_failures_map_to_exit_code_one() {
         vec!["status"],
         vec!["status", "--global", "owner/repo"],
     ] {
-        let run = sbxm(home.path(), &arguments);
+        let run = sbxm(home.path(), &arguments)?;
         assert_eq!(
             run.code, 1,
             "{arguments:?} must exit with 1, got {}: {}",
@@ -317,11 +341,12 @@ fn parser_failures_map_to_exit_code_one() {
             run.stderr
         );
     }
+    Ok(())
 }
 
 #[test]
-fn diagnostics_name_a_stable_error_id() {
-    let home = temp_home();
+fn diagnostics_name_a_stable_error_id() -> Checked {
+    let home = temp_home()?;
     for (arguments, expected) in [
         (vec!["nope"], "unknown-subcommand"),
         (vec!["ls", "--nope"], "unknown-argument"),
@@ -341,20 +366,21 @@ fn diagnostics_name_a_stable_error_id() {
         ),
         (vec!["apply", "owner/repo"], "apply-scope-required"),
     ] {
-        let run = sbxm(home.path(), &arguments);
+        let run = sbxm(home.path(), &arguments)?;
         assert!(
             run.stderr.contains(expected),
             "{arguments:?} should report {expected}: {}",
             run.stderr
         );
     }
+    Ok(())
 }
 
 #[test]
-fn a_non_interactive_run_that_omits_the_target_is_a_usage_error() {
-    let home = temp_home();
+fn a_non_interactive_run_that_omits_the_target_is_a_usage_error() -> Checked {
+    let home = temp_home()?;
     for command in ["open", "stop", "destroy"] {
-        let run = sbxm(home.path(), &[command]);
+        let run = sbxm(home.path(), &[command])?;
         assert_eq!(run.code, 1, "{command}: {}", run.stderr);
         assert!(
             run.stderr.contains("project-argument-required"),
@@ -362,13 +388,14 @@ fn a_non_interactive_run_that_omits_the_target_is_a_usage_error() {
             run.stderr
         );
     }
+    Ok(())
 }
 
 #[test]
-fn a_missing_configuration_is_the_defaults_rather_than_a_reason_to_stop() {
-    let home = temp_home();
+fn a_missing_configuration_is_the_defaults_rather_than_a_reason_to_stop() -> Checked {
+    let home = temp_home()?;
     // configが無くても、commandはhost toolまで進む。
-    let run = sbxm(home.path(), &["ls"]);
+    let run = sbxm(home.path(), &["ls"])?;
     assert_eq!(run.code, 1);
     assert!(
         run.stderr.contains("external-command-not-found"),
@@ -379,15 +406,16 @@ fn a_missing_configuration_is_the_defaults_rather_than_a_reason_to_stop() {
         !home.path().join(".sbxm").exists(),
         "a read-only command must not create the global state directory"
     );
+    Ok(())
 }
 
 #[test]
-fn add_registers_the_project_before_it_reaches_the_host_tools() {
+fn add_registers_the_project_before_it_reaches_the_host_tools() -> Checked {
     use std::os::unix::fs::PermissionsExt;
-    let home = temp_home();
+    let home = temp_home()?;
     let base = home.path().join("Projects");
-    std::fs::create_dir_all(&base).unwrap();
-    write_config(home.path(), "en");
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
+    write_config(home.path(), "en")?;
 
     let run = sbxm_with_git(
         home.path(),
@@ -402,7 +430,7 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
             "--git-user-email",
             "user@example.com",
         ],
-    );
+    )?;
     assert_eq!(run.code, 1, "{}", run.stderr);
     assert!(
         run.stderr.contains("external-command-failed"),
@@ -422,7 +450,7 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
     assert!(root.join(".sbxm").join(".cache").is_dir());
     assert_eq!(
         std::fs::metadata(root.join(".sbxm"))
-            .unwrap()
+            .required_because("the path sbxm created is observable")?
             .permissions()
             .mode()
             & 0o777,
@@ -431,7 +459,8 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
 
     // 索引は`~/.sbxm/registry.yaml`が持ち、project rootを絶対pathで指す。
     let registry = home.path().join(".sbxm").join("registry.yaml");
-    let index = std::fs::read_to_string(&registry).unwrap();
+    let index =
+        std::fs::read_to_string(&registry).required_because("the file sbxm wrote is readable")?;
     assert!(index.contains("version: 1"), "{index}");
     assert!(
         index.contains("canonical_id: example-org/example-repo"),
@@ -446,11 +475,16 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
         "{index}"
     );
     assert_eq!(
-        std::fs::metadata(&registry).unwrap().permissions().mode() & 0o777,
+        std::fs::metadata(&registry)
+            .required_because("the path sbxm created is observable")?
+            .permissions()
+            .mode()
+            & 0o777,
         0o600
     );
 
-    let written = std::fs::read_to_string(&metadata).unwrap();
+    let written =
+        std::fs::read_to_string(&metadata).required_because("the file sbxm wrote is readable")?;
     assert!(
         written.contains("canonical_id: example-org/example-repo"),
         "{written}"
@@ -463,17 +497,18 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
         "{written}"
     );
     assert!(written.contains("mode: attached"), "{written}");
+    Ok(())
 }
 
 #[test]
-fn ls_needs_the_sandbox_runtime_before_it_can_answer() {
-    let home = temp_home();
+fn ls_needs_the_sandbox_runtime_before_it_can_answer() -> Checked {
+    let home = temp_home()?;
     let base = home.path().join("Projects");
-    std::fs::create_dir_all(&base).unwrap();
-    write_config(home.path(), "en");
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
+    write_config(home.path(), "en")?;
 
     // 一覧はSandbox runtimeの状態から作るため、読めなければ何も出さない。
-    let run = sbxm(home.path(), &["--lang", "en", "ls"]);
+    let run = sbxm(home.path(), &["--lang", "en", "ls"])?;
     assert_eq!(run.code, 1, "{}", run.stdout);
     assert!(run.stdout.is_empty(), "no partial listing: {}", run.stdout);
     assert!(
@@ -481,16 +516,17 @@ fn ls_needs_the_sandbox_runtime_before_it_can_answer() {
         "{}",
         run.stderr
     );
+    Ok(())
 }
 
 /// 案件を登録した状態のHOMEを作る。
 ///
 /// `add`はhost toolに到達した時点で止まるが、登録そのものは終わっている。
-fn home_with_project(project: &str) -> (tempfile::TempDir, std::path::PathBuf) {
-    let home = temp_home();
+fn home_with_project(project: &str) -> Checked<(tempfile::TempDir, std::path::PathBuf)> {
+    let home = temp_home()?;
     let base = home.path().join("Projects");
-    std::fs::create_dir_all(&base).unwrap();
-    write_config(home.path(), "en");
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
+    write_config(home.path(), "en")?;
     let url = format!("git@github.com:{project}.git");
     let run = sbxm_with_git(
         home.path(),
@@ -505,9 +541,9 @@ fn home_with_project(project: &str) -> (tempfile::TempDir, std::path::PathBuf) {
             "--git-user-email",
             "user@example.com",
         ],
-    );
+    )?;
     assert_eq!(run.code, 1, "{}", run.stderr);
-    (home, base)
+    Ok((home, base))
 }
 
 /// 表の1列目を、header行を除いて取り出す。
@@ -527,17 +563,17 @@ fn first_column(table: &str) -> Vec<String> {
 }
 
 #[test]
-fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() {
-    let (home, _base) = home_with_project("owner/repo");
+fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() -> Checked {
+    let (home, _base) = home_with_project("owner/repo")?;
 
     // host toolが無い環境でも、取得できた項目は後続検査の失敗にかかわらず表示する。
-    let run = sbxm(home.path(), &["--lang", "en", "status", "owner/repo"]);
+    let run = sbxm(home.path(), &["--lang", "en", "status", "owner/repo"])?;
     assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
 
     let (project, worktrees) = run
         .stdout
         .split_once("\nWORKTREES\n")
-        .expect("both sections are shown, even with nothing to list");
+        .required_because("both sections are shown, even with nothing to list")?;
     assert!(project.starts_with("PROJECT\n"), "{}", run.stdout);
     assert_eq!(
         first_column(&format!("_\n{}", project.trim_start_matches("PROJECT\n"))),
@@ -576,32 +612,34 @@ fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() {
     for id in ["global-scope-unobservable", "sbxm status --global"] {
         assert!(run.stderr.contains(id), "{}", run.stderr);
     }
+    Ok(())
 }
 
 #[test]
-fn the_japanese_project_status_translates_the_labels_and_keeps_the_values() {
-    let (home, _base) = home_with_project("owner/repo");
+fn the_japanese_project_status_translates_the_labels_and_keeps_the_values() -> Checked {
+    let (home, _base) = home_with_project("owner/repo")?;
 
-    let run = sbxm(home.path(), &["--lang", "ja", "status", "owner/repo"]);
+    let run = sbxm(home.path(), &["--lang", "ja", "status", "owner/repo"])?;
     assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
     // section名と項目名は訳し、状態値は訳さない。
     assert!(run.stdout.contains("案件 (PROJECT)"), "{}", run.stdout);
     assert!(run.stdout.contains("mismatch"), "{}", run.stdout);
     // 凡例はSandboxの状態を説明し、host serviceの説明を流用しない。
     assert!(!run.stdout.contains("service"), "{}", run.stdout);
+    Ok(())
 }
 
 #[test]
-fn apply_refuses_a_project_that_was_never_added() {
-    let home = temp_home();
+fn apply_refuses_a_project_that_was_never_added() -> Checked {
+    let home = temp_home()?;
     let base = home.path().join("Projects");
-    std::fs::create_dir_all(&base).unwrap();
-    write_config(home.path(), "en");
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
+    write_config(home.path(), "en")?;
 
     let run = sbxm(
         home.path(),
         &["--lang", "en", "apply", "--files", "owner/repo"],
-    );
+    )?;
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("project-not-managed"), "{}", run.stderr);
     assert!(
@@ -609,13 +647,14 @@ fn apply_refuses_a_project_that_was_never_added() {
         "{}",
         run.stderr
     );
+    Ok(())
 }
 
 #[test]
-fn a_run_that_cannot_prompt_neither_asks_for_a_language_nor_saves_one() {
-    let home = temp_home();
+fn a_run_that_cannot_prompt_neither_asks_for_a_language_nor_saves_one() -> Checked {
+    let home = temp_home()?;
     let base = home.path().join("Projects");
-    std::fs::create_dir_all(&base).unwrap();
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
 
     // 非対話の`add`はpromptを出さず、言語も名義も永続化しない。`--lang`と同じく、
     // command lineの宣言はそのprocessだけのoverrideである。
@@ -632,7 +671,7 @@ fn a_run_that_cannot_prompt_neither_asks_for_a_language_nor_saves_one() {
             "--git-user-email",
             "user@example.com",
         ],
-    );
+    )?;
     assert_eq!(run.code, 1, "{}", run.stderr);
     assert!(
         !home.path().join(".sbxm").join("config.yaml").exists(),
@@ -640,13 +679,14 @@ fn a_run_that_cannot_prompt_neither_asks_for_a_language_nor_saves_one() {
     );
     // それでも登録は進む。registryは作られる。
     assert!(home.path().join(".sbxm").join("registry.yaml").is_file());
+    Ok(())
 }
 
 #[test]
-fn a_non_interactive_add_without_an_identity_refuses_before_creating_anything() {
-    let home = temp_home();
+fn a_non_interactive_add_without_an_identity_refuses_before_creating_anything() -> Checked {
+    let home = temp_home()?;
     let base = home.path().join("Projects");
-    std::fs::create_dir_all(&base).unwrap();
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
 
     // hostは名義を宣言しているが、それは候補であって利用者の意図ではない。訊く先も
     // 保存された既定も宣言も無い実行は、何も作らずに終わる。
@@ -659,7 +699,7 @@ fn a_non_interactive_add_without_an_identity_refuses_before_creating_anything() 
             "add",
             "git@github.com:Example-Org/Example-Repo.git",
         ],
-    );
+    )?;
     assert_eq!(run.code, 1, "{}", run.stderr);
     assert!(
         run.stderr.contains("git-identity-undecidable"),
@@ -675,33 +715,37 @@ fn a_non_interactive_add_without_an_identity_refuses_before_creating_anything() 
         !base.join("example-repo.project").exists(),
         "no project directory is created"
     );
+    Ok(())
 }
 
 /// 既定の名義を保存済みのconfigを置く。
-fn write_config_with_identity(home: &Path, name: &str, email: &str) {
+fn write_config_with_identity(home: &Path, name: &str, email: &str) -> Checked {
     use std::os::unix::fs::PermissionsExt;
     let dir = home.join(".sbxm");
-    std::fs::create_dir_all(&dir).expect("create ~/.sbxm");
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("mode");
+    std::fs::create_dir_all(&dir).required_because("create ~/.sbxm")?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+        .required_because("mode")?;
     let path = dir.join("config.yaml");
     std::fs::write(
         &path,
         format!("version: 1\nlanguage: en\ngit_user_name: {name}\ngit_user_email: {email}\n"),
     )
-    .expect("write config");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("mode");
+    .required_because("write config")?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .required_because("mode")?;
+    Ok(())
 }
 
 #[test]
-fn half_a_declared_identity_is_refused_whatever_else_could_have_decided_it() {
+fn half_a_declared_identity_is_refused_whatever_else_could_have_decided_it() -> Checked {
     // 片方だけの宣言はCLI parseの段階で止まる。保存済みの既定があっても、残りの半分を
     // そこから補完しない。
     for saved in [false, true] {
-        let home = temp_home();
+        let home = temp_home()?;
         let base = home.path().join("Projects");
-        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
         if saved {
-            write_config_with_identity(home.path(), "Saved User", "saved@example.com");
+            write_config_with_identity(home.path(), "Saved User", "saved@example.com")?;
         }
 
         for option in [
@@ -719,7 +763,7 @@ fn half_a_declared_identity_is_refused_whatever_else_could_have_decided_it() {
                     option.0,
                     option.1,
                 ],
-            );
+            )?;
             assert_eq!(run.code, 1, "{}", run.stderr);
             assert!(
                 run.stderr.contains("git-identity-incomplete"),
@@ -744,12 +788,13 @@ fn half_a_declared_identity_is_refused_whatever_else_could_have_decided_it() {
             );
         }
     }
+    Ok(())
 }
 
 #[test]
-fn init_is_not_part_of_the_published_surface() {
-    let home = temp_home();
-    let run = sbxm(home.path(), &["init"]);
+fn init_is_not_part_of_the_published_surface() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm(home.path(), &["init"])?;
     assert_eq!(run.code, 1);
     assert!(run.stderr.contains("unknown-subcommand"), "{}", run.stderr);
     assert!(
@@ -757,61 +802,65 @@ fn init_is_not_part_of_the_published_surface() {
         "an unknown command creates nothing"
     );
 
-    let help = sbxm(home.path(), &["--lang", "en", "--help"]);
+    let help = sbxm(home.path(), &["--lang", "en", "--help"])?;
     assert_eq!(help.code, 0, "{}", help.stderr);
     assert!(!help.stdout.contains("init"), "{}", help.stdout);
+    Ok(())
 }
 
 #[test]
-fn global_status_answers_without_visiting_the_registered_projects() {
+fn global_status_answers_without_visiting_the_registered_projects() -> Checked {
     use std::os::unix::fs::PermissionsExt;
-    let home = temp_home();
+    let home = temp_home()?;
     let dir = home.path().join(".sbxm");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::create_dir_all(&dir).required_because("the fixture directory is created")?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+        .required_because("the fixture permissions are applied")?;
     // 実在しないproject rootを指すentry。案件を巡回するなら、ここで失敗する。
     std::fs::write(
         dir.join("registry.yaml"),
         "version: 1\nprojects:\n- canonical_id: example-org/example-repo\n  project_root: /nowhere/example-repo.project\n  provider: github\n  clone_transport: ssh\n  clone_url: git@github.com:Example-Org/Example-Repo.git\n",
     )
-    .unwrap();
+    .required_because("the fixture file is written")?;
     std::fs::set_permissions(
         dir.join("registry.yaml"),
         std::fs::Permissions::from_mode(0o600),
     )
-    .unwrap();
+    .required_because("the fixture permissions are applied")?;
 
-    let run = sbxm(home.path(), &["--lang", "en", "status", "--global"]);
+    let run = sbxm(home.path(), &["--lang", "en", "status", "--global"])?;
     let registry_row = run
         .stdout
         .lines()
         .find(|line| line.starts_with("Project registry"))
-        .expect("the registry row is shown");
+        .required_because("the registry row is shown")?;
     assert!(registry_row.contains("ready"), "{}", run.stdout);
     assert!(
         !run.stderr.contains("example-repo"),
         "no project is visited: {}",
         run.stderr
     );
+    Ok(())
 }
 
 #[test]
-fn read_only_commands_never_create_a_configuration() {
-    let home = temp_home();
+fn read_only_commands_never_create_a_configuration() -> Checked {
+    let home = temp_home()?;
     for arguments in [vec!["ls"], vec!["status", "--global"], vec!["--help"]] {
-        let run = sbxm(home.path(), &arguments);
+        let run = sbxm(home.path(), &arguments)?;
         assert!(
             !home.path().join(".sbxm").join("config.yaml").exists(),
             "{arguments:?} created a configuration: {}",
             run.stderr
         );
     }
+    Ok(())
 }
 
 #[test]
-fn global_status_prints_only_the_global_section_and_the_published_columns() {
-    let home = temp_home();
-    let run = sbxm(home.path(), &["--lang", "en", "status", "--global"]);
+fn global_status_prints_only_the_global_section_and_the_published_columns() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm(home.path(), &["--lang", "en", "status", "--global"])?;
 
     let lines: Vec<&str> = run.stdout.lines().collect();
     assert_eq!(lines[0], "GLOBAL");
@@ -842,12 +891,13 @@ fn global_status_prints_only_the_global_section_and_the_published_columns() {
     );
     assert!(!run.stdout.contains("PROJECT"), "{}", run.stdout);
     assert!(!run.stdout.contains("WORKTREES"), "{}", run.stdout);
+    Ok(())
 }
 
 #[test]
-fn global_status_reports_every_problem_and_exits_with_one() {
-    let home = temp_home();
-    let run = sbxm(home.path(), &["--lang", "en", "status", "--global"]);
+fn global_status_reports_every_problem_and_exits_with_one() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm(home.path(), &["--lang", "en", "status", "--global"])?;
 
     assert_eq!(run.code, 1, "an incomplete host is not healthy");
     // 取得できた行は後続検査が失敗しても省略しない。
@@ -861,28 +911,32 @@ fn global_status_reports_every_problem_and_exits_with_one() {
     }
     // 詳細は表の列を増やさず、stderrの診断として出す。
     assert!(!run.stdout.contains("error:"), "{}", run.stdout);
+    Ok(())
 }
 
 #[test]
-fn global_status_never_writes_to_the_host() {
-    let home = temp_home();
-    sbxm(home.path(), &["status", "--global"]);
+fn global_status_never_writes_to_the_host() -> Checked {
+    let home = temp_home()?;
+    sbxm(home.path(), &["status", "--global"])?;
     assert_eq!(
-        std::fs::read_dir(home.path()).unwrap().count(),
+        std::fs::read_dir(home.path())
+            .required_because("the home directory is readable")?
+            .count(),
         0,
         "a read-only diagnosis must not create anything under HOME"
     );
+    Ok(())
 }
 
 #[test]
-fn the_japanese_mode_adds_a_legend_for_the_values_that_appeared() {
-    let home = temp_home();
-    let run = sbxm(home.path(), &["--lang", "ja", "status", "--global"]);
+fn the_japanese_mode_adds_a_legend_for_the_values_that_appeared() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm(home.path(), &["--lang", "ja", "status", "--global"])?;
 
     let legend = run
         .stdout
         .split_once("状態値の凡例\n")
-        .expect("the legend is its own section")
+        .required_because("the legend is its own section")?
         .1;
     // 値は訳さず、説明だけを訳す。
     assert!(legend.contains("error "), "{legend}");
@@ -892,16 +946,18 @@ fn the_japanese_mode_adds_a_legend_for_the_values_that_appeared() {
     );
 
     // 英語modeには凡例を出さない。
-    let english = sbxm(home.path(), &["--lang", "en", "status", "--global"]);
+    let english = sbxm(home.path(), &["--lang", "en", "status", "--global"])?;
     assert!(!english.stdout.contains("Legend"), "{}", english.stdout);
+    Ok(())
 }
 
 #[test]
-fn status_values_stay_untranslated_in_the_japanese_mode() {
-    let home = temp_home();
-    let run = sbxm(home.path(), &["--lang", "ja", "status", "--global"]);
+fn status_values_stay_untranslated_in_the_japanese_mode() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm(home.path(), &["--lang", "ja", "status", "--global"])?;
     assert!(run.stdout.contains("項目 (ITEM)"), "{}", run.stdout);
     assert!(run.stdout.contains("設定 (Config)"), "{}", run.stdout);
     assert!(run.stdout.contains("missing"), "{}", run.stdout);
     assert!(run.stdout.contains("error"), "{}", run.stdout);
+    Ok(())
 }

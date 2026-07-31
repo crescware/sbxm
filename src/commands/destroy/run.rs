@@ -55,7 +55,7 @@ pub struct Prepared {
     name: SandboxName,
     state: ProjectState,
     force: bool,
-    _locked: select::Locked,
+    locked: select::Locked,
 }
 
 impl Prepared {
@@ -63,7 +63,7 @@ impl Prepared {
     pub fn unregistration(&self) -> Unregistration {
         Unregistration {
             paths: self.paths.clone(),
-            repository: self._locked.metadata.repository.clone(),
+            repository: self.locked.metadata.repository.clone(),
         }
     }
 }
@@ -103,7 +103,7 @@ pub fn prepare(
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
     let locked =
-        select::one(location, requested, msg!("select-destroy-heading"), prompt)?.lock()?;
+        select::one(location, requested, &msg!("select-destroy-heading"), prompt)?.lock()?;
     let paths = locked.paths.clone();
 
     let metadata = &locked.metadata;
@@ -152,7 +152,7 @@ pub fn prepare(
         name,
         state,
         force,
-        _locked: locked,
+        locked,
     })
 }
 
@@ -165,12 +165,12 @@ pub fn execute(
     poll: Poll,
     progress: &mut dyn ProgressSink,
 ) -> Result<DestroyOutcome> {
-    if prepared.state != ProjectState::NotCreated {
-        // 削除は、一覧から消えたことを確かめるまで完了しない。
-        inventory::remove(host, &prepared.name, poll, progress)?;
-    } else {
+    if prepared.state == ProjectState::NotCreated {
         // 削除commandを実行しない場合だけ、一覧で不在を1回確かめる。
         require_absent(host, &prepared.name)?;
+    } else {
+        // 削除は、一覧から消えたことを確かめるまで完了しない。
+        inventory::remove(host, &prepared.name, poll, progress)?;
     }
 
     // tokenの登録はSandboxを消しても残る。Sandboxが消えたあとに解くのは、消し損ねた
@@ -382,7 +382,7 @@ fn registered_again(entry: &RegistryEntry) -> Warning {
 
 impl ConfirmPrompt for TerminalConfirmPrompt {
     fn confirm_sandbox_name(&mut self, expected: &str) -> Result<bool> {
-        let typed = self.prompt.exact(msg!("destroy-confirm-prompt"))?;
+        let typed = self.prompt.exact(&msg!("destroy-confirm-prompt"))?;
         Ok(typed.trim() == expected)
     }
 }

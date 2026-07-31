@@ -39,7 +39,7 @@ use ui::{Document, Environment, OutputPolicy, Terminals, Ui};
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();
     let code = run(&argv);
-    ProcessExitCode::from(code.as_i32() as u8)
+    ProcessExitCode::from(code.as_u8())
 }
 
 fn run(argv: &[String]) -> ExitCode {

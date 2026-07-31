@@ -86,7 +86,7 @@ fn sandbox_documents(output: &str) -> Result<Vec<serde_json::Value>> {
     wrapped_documents("sbx ls", "sandboxes", output)
 }
 
-/// Sandboxが使っているWorkspace。
+/// `Sandboxが使っているWorkspace`。
 ///
 /// 対象versionは`workspaces`を配列で示す。sbxmが作るSandboxは中立Workspaceを
 /// 1つだけ持つため、2つ以上ある一覧からはこの案件の成果物と判定しない。

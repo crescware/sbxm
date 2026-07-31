@@ -81,14 +81,14 @@ fn ensure_git_config(
     Ok(())
 }
 
-/// Sandbox内の`gh`が使うprotocolがHTTPSであることを確かめる。
+/// Sandbox内の`gh``が使うprotocolがHTTPSであることを確かめる`。
 ///
 /// sbxmはこの値を読まない。remote URLは自分でHTTPSとして書く。`gh`自身の既定も
 /// `https`であり、設定fileを持たないSandboxでは一致を観測して終わる。書き込みへ
 /// 進むのは`gh`が答えなかった場合だけである。
 ///
 /// 実際に効くのは、中で`ssh`へ変えられていた場合である。SandboxにSSH鍵は無いため、
-/// その`gh`はGitHubへ到達できない。
+/// その`gh``はGitHubへ到達できない`。
 pub(super) fn ensure_git_protocol(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     let outcome = sandbox::exec(
         host,

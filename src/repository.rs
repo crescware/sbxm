@@ -1,6 +1,6 @@
 //! GitHub repository identity。
 //!
-//! 利用者がGitHubからそのままcopyできるclone URLだけを入力として受け取り、provider、
+//! `利用者がGitHubからそのままcopyできるclone` URLだけを入力として受け取り、provider、
 //! 表示上のowner・repository、canonical project ID、clone transport、正規化した
 //! clone URLへ分離する。
 //!
@@ -15,7 +15,7 @@ use crate::ui::Remediation;
 
 /// 受理するhost。初期versionはGitHubだけを対象とする。
 const GITHUB_HOST: &str = "github.com";
-/// SSH clone URLのuser。
+/// SSH clone `URLのuser`。
 const SSH_USER: &str = "git";
 /// clone URLの接尾辞。
 const GIT_SUFFIX: &str = ".git";
@@ -99,7 +99,7 @@ impl std::fmt::Display for CloneTransport {
 
 /// 登録対象の不変なrepository identity。
 ///
-/// 表示にはGitHub上の表記を、突き合わせにはcanonical project IDとtransportを使う。
+/// 表示にはGitHub上の表記を、突き合わせにはcanonical project `IDとtransportを使う`。
 /// clone URLはこの構造から組み立て直すため、保存値と表示値が食い違わない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepositoryIdentity {
@@ -112,7 +112,7 @@ pub struct RepositoryIdentity {
 }
 
 impl RepositoryIdentity {
-    /// GitHubが表示するclone URLを解釈する。
+    /// `GitHubが表示するclone` URLを解釈する。
     ///
     /// 受理するのは次の2形式だけである。
     ///
@@ -194,12 +194,12 @@ impl RepositoryIdentity {
         self.provider
     }
 
-    /// GitHub上の表記のままのowner。
+    /// `GitHub上の表記のままのowner`。
     pub fn owner(&self) -> &str {
         &self.owner
     }
 
-    /// GitHub上の表記のままのrepository。
+    /// `GitHub上の表記のままのrepository`。
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -224,7 +224,7 @@ impl RepositoryIdentity {
 
     /// 同じrepositoryを同じ方式でcloneする構成か。
     ///
-    /// GitHubではownerとrepositoryの表示上の大文字小文字だけが異なっても同じidentity
+    /// `GitHubではownerとrepositoryの表示上の大文字小文字だけが異なっても同じidentity`
     /// として扱う。transportとproviderの差異は同一構成とみなさない。
     pub fn same_target(&self, other: &RepositoryIdentity) -> bool {
         self.provider == other.provider
@@ -297,9 +297,8 @@ fn split_transport(value: &str) -> Option<(CloneTransport, &str)> {
 fn split_repository_path(path: &str) -> Option<(&str, &str)> {
     let path = path.strip_suffix(GIT_SUFFIX)?;
     let mut parts = path.split('/');
-    let (owner, name) = match (parts.next(), parts.next(), parts.next()) {
-        (Some(owner), Some(name), None) => (owner, name),
-        _ => return None,
+    let (Some(owner), Some(name), None) = (parts.next(), parts.next(), parts.next()) else {
+        return None;
     };
     if owner.is_empty() || name.is_empty() {
         return None;

@@ -88,7 +88,7 @@ pub(super) fn check_docker_sandboxes(
     check_remote_ssh(host, status);
 }
 
-/// Remote SSHでSandboxへ接続できる設定になっているか。
+/// Remote `SSHでSandboxへ接続できる設定になっているか`。
 ///
 /// `open`は`<sandbox-name>.sbx`へsshするため、その名前をsshが解決できることを
 /// read-onlyで確かめる。設定方法は対象versionごとに異なるため、実機で確認していない

@@ -1,3 +1,5 @@
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::*;
 use crate::testing::value::IMAGE_ID;
 use std::io::Write;
@@ -6,13 +8,13 @@ fn tar(entries: &[(&str, &[u8])]) -> Vec<u8> {
     tar_bytes(entries)
 }
 
-fn write_archive(entries: &[(&str, &[u8])]) -> (tempfile::TempDir, std::path::PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+fn write_archive(entries: &[(&str, &[u8])]) -> Checked<(tempfile::TempDir, std::path::PathBuf)> {
+    let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("template.tar");
-    let mut file = File::create(&path).unwrap();
-    file.write_all(&tar(entries)).unwrap();
-    file.sync_all().unwrap();
-    (dir, path)
+    let mut file = File::create(&path).required()?;
+    file.write_all(&tar(entries)).required()?;
+    file.sync_all().required()?;
+    Ok((dir, path))
 }
 
 fn manifest(tag: &str, config: &str) -> String {
@@ -43,7 +45,7 @@ fn config_blob() -> Vec<u8> {
 }
 
 #[test]
-fn an_archive_that_holds_the_expected_image_is_accepted() {
+fn an_archive_that_holds_the_expected_image_is_accepted() -> Checked {
     let hex = &IMAGE_ID["sha256:".len()..];
     for config in [
         format!("blobs/sha256/{hex}"),
@@ -56,14 +58,15 @@ fn an_archive_that_holds_the_expected_image_is_accepted() {
             ("oci-layout", b"{}"),
             (config.as_str(), blob.as_slice()),
             (MANIFEST_ENTRY, document.as_bytes()),
-        ]);
+        ])?;
         verify_holds_image(&path, "sbxm-example-template:111111111111", &labels())
-            .unwrap_or_else(|error| panic!("{config} must be accepted: {error:?}"));
+            .required_because(&format!("{config} must be accepted"))?;
     }
+    Ok(())
 }
 
 #[test]
-fn an_image_index_does_not_make_the_archive_foreign() {
+fn an_image_index_does_not_make_the_archive_foreign() -> Checked {
     // buildがattestationを伴うOCI image indexを作る構成では、
     // `docker image inspect`のIdはindexのdigest、archiveが指すのはconfigの
     // digestになる。両者は別物であり、一致しないことが正常である。
@@ -78,14 +81,15 @@ fn an_image_index_does_not_make_the_archive_foreign() {
         ("oci-layout", b"{}"),
         (&format!("blobs/sha256/{config}"), blob.as_slice()),
         (MANIFEST_ENTRY, document.as_bytes()),
-    ]);
+    ])?;
 
     verify_holds_image(&path, tag, &labels())
-        .expect("the archive holds the image whose labels were verified");
+        .required_because("the archive holds the image whose labels were verified")?;
+    Ok(())
 }
 
 #[test]
-fn an_entry_is_found_after_larger_entries_are_skipped() {
+fn an_entry_is_found_after_larger_entries_are_skipped() -> Checked {
     let document = manifest(
         "sbxm-example-template:111111111111",
         &IMAGE_ID.replace("sha256:", "blobs/sha256/"),
@@ -94,22 +98,23 @@ fn an_entry_is_found_after_larger_entries_are_skipped() {
     let (_dir, path) = write_archive(&[
         ("blobs/sha256/layer", layer.as_slice()),
         (MANIFEST_ENTRY, document.as_bytes()),
-    ]);
+    ])?;
 
-    let read = read_manifest(&path).expect("the manifest is found behind the layers");
+    let read = read_manifest(&path).required_because("the manifest is found behind the layers")?;
     assert_eq!(read.config_digest, IMAGE_ID);
+    Ok(())
 }
 
 #[test]
-fn an_archive_of_another_image_or_tag_is_refused() {
+fn an_archive_of_another_image_or_tag_is_refused() -> Checked {
     let hex = &IMAGE_ID["sha256:".len()..];
     let document = manifest(
         "sbxm-other-template:222222222222",
         &format!("blobs/sha256/{hex}"),
     );
-    let (_dir, path) = write_archive(&[(MANIFEST_ENTRY, document.as_bytes())]);
+    let (_dir, path) = write_archive(&[(MANIFEST_ENTRY, document.as_bytes())])?;
     let error = verify_holds_image(&path, "sbxm-example-template:111111111111", &labels())
-        .expect_err("a different tag is refused");
+        .refused_because("a different tag is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
 
     // tagは同じでも、別の案件や別の世代を宣言するimageは受け付けない。
@@ -122,14 +127,15 @@ fn an_archive_of_another_image_or_tag_is_refused() {
     let (_dir, path) = write_archive(&[
         (&format!("blobs/sha256/{hex}"), foreign.as_slice()),
         (MANIFEST_ENTRY, document.as_bytes()),
-    ]);
+    ])?;
     let error = verify_holds_image(&path, "sbxm-example-template:111111111111", &labels())
-        .expect_err("a different image is refused");
+        .refused_because("a different image is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+    Ok(())
 }
 
 #[test]
-fn an_archive_that_cannot_be_interpreted_is_refused_rather_than_trusted() {
+fn an_archive_that_cannot_be_interpreted_is_refused_rather_than_trusted() -> Checked {
     let hex = &IMAGE_ID["sha256:".len()..];
     let cases: Vec<Vec<(&str, Vec<u8>)>> = vec![
             // manifestがない。
@@ -156,17 +162,19 @@ fn an_archive_that_cannot_be_interpreted_is_refused_rather_than_trusted() {
             .iter()
             .map(|(name, data)| (*name, data.as_slice()))
             .collect();
-        let (_dir, path) = write_archive(&borrowed);
+        let (_dir, path) = write_archive(&borrowed)?;
         let error = verify_holds_image(&path, "sbxm-example-template:111111111111", &labels())
-            .expect_err("an archive that cannot be interpreted is refused");
+            .refused_because("an archive that cannot be interpreted is refused")?;
         assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
     }
+    Ok(())
 }
 
 #[test]
-fn a_missing_archive_is_refused_with_the_path() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_missing_archive_is_refused_with_the_path() -> Checked {
+    let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("absent.tar");
-    let error = verify_holds_image(&path, "image", &labels()).expect_err("absent");
+    let error = verify_holds_image(&path, "image", &labels()).refused_because("absent")?;
     assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+    Ok(())
 }

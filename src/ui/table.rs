@@ -77,7 +77,7 @@ impl Table {
     pub(super) fn columns(&self) -> usize {
         self.rows
             .iter()
-            .map(|row| row.len())
+            .map(std::vec::Vec::len)
             .chain(std::iter::once(self.headers.len()))
             .max()
             .unwrap_or(0)

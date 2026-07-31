@@ -109,7 +109,7 @@ pub fn ensure(
     let Some(entry) = find(host, sandbox)? else {
         return Err(unusable(
             sandbox.as_str(),
-            "the sandbox is absent right after it was created".to_string(),
+            "the sandbox is absent right after it was created",
         ));
     };
     verify(&entry, sandbox, &workspace)?;
@@ -182,7 +182,7 @@ fn exec_arguments(sandbox: &str, user: Option<&str>, args: &[&str]) -> Vec<Strin
     }
     full.push(sandbox.to_string());
     full.push("--".to_string());
-    full.extend(args.iter().map(|arg| arg.to_string()));
+    full.extend(args.iter().map(|arg| (*arg).to_string()));
     full
 }
 
@@ -219,7 +219,7 @@ fn verify(entry: &SandboxEntry, sandbox: &SandboxName, workspace: &Path) -> Resu
             if observed != expected {
                 return Err(unusable(
                     sandbox.as_str(),
-                    format!(
+                    &format!(
                         "the sandbox works in {}, not in {}",
                         paths::display(&observed),
                         paths::display(&expected)
@@ -230,8 +230,7 @@ fn verify(entry: &SandboxEntry, sandbox: &SandboxName, workspace: &Path) -> Resu
         None => {
             return Err(unusable(
                 sandbox.as_str(),
-                "this Docker Sandboxes version does not report the workspace of a sandbox"
-                    .to_string(),
+                "this Docker Sandboxes version does not report the workspace of a sandbox",
             ));
         }
     }
@@ -244,7 +243,7 @@ pub fn path_exists(host: &dyn HostEnvironment, sandbox: &str, path: &str) -> Res
     Ok(exec(host, sandbox, &["test", "-e", path])?.success())
 }
 
-/// hostのSSH AgentへSandboxの中から到達できるか。
+/// hostのSSH `AgentへSandboxの中から到達できるか`。
 ///
 /// 露出していないことは、検査commandが答えた場合にだけ言える。検査が成立しなかった
 /// 場合を「露出していない」へ丸めず、判定できないerrorとして返す。
@@ -257,16 +256,15 @@ pub fn ssh_agent_is_exposed(
     let socket = exec(host, sandbox, &["printenv", "SSH_AUTH_SOCK"])?;
     match inner_exit_code(&socket) {
         Some(0) if !socket.stdout_text().trim().is_empty() => observed.push("SSH_AUTH_SOCK is set"),
-        Some(0) => {}
-        // `printenv`は未設定のとき`1`で終わる。
-        Some(1) => {}
+        // 値が空なら露出していない。`printenv`は未設定のとき`1`で終わる。
+        Some(0 | 1) => {}
         _ => return Err(unobservable(&socket, "SSH_AUTH_SOCK")),
     }
 
     let keys = exec(host, sandbox, &["ssh-add", "-L"])?;
     match inner_exit_code(&keys) {
         // 鍵の有無にかかわらず、agentへ接続できた時点で露出している。
-        Some(0) | Some(1) => observed.push("ssh-add reached an agent"),
+        Some(0 | 1) => observed.push("ssh-add reached an agent"),
         Some(SSH_ADD_NO_AGENT) => {}
         _ => return Err(unobservable(&keys, "ssh-add")),
     }
@@ -311,7 +309,7 @@ pub fn unobservable(outcome: &CommandOutcome, subject: &str) -> Error {
     )
 }
 
-fn unusable(name: &str, detail: String) -> Error {
+fn unusable(name: &str, detail: &str) -> Error {
     Error::new(
         ErrorId::SandboxUnusable,
         msg!("error-sandbox-unusable", sandbox = name, detail = detail),

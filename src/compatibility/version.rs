@@ -1,4 +1,4 @@
-//! Docker Sandboxes CLIのversion。
+//! Docker Sandboxes `CLIのversion`。
 //!
 //! `<major>.<minor>.<patch>`だけを読み、周囲の文字列からは意味を取らない。
 

@@ -12,6 +12,7 @@ pub mod global_status;
 pub mod host;
 pub mod image;
 pub mod metadata;
+pub mod outcome;
 pub mod poll;
 pub mod project;
 pub mod prompt;

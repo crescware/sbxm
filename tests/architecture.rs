@@ -6,6 +6,10 @@
 //! 検出は禁止APIと明確なprefixに限る。文字列検索だけでは`docker`のような語と実行
 //! commandを完全には区別できないため、曖昧な判定を足して誤検出を増やさない。
 
+mod outcome;
+
+use outcome::{Checked, Required};
+
 use std::path::{Path, PathBuf};
 
 /// 描画を組み立ててよい唯一の場所。
@@ -19,33 +23,33 @@ fn root() -> PathBuf {
 }
 
 /// `src`配下のRust source。
-fn sources() -> Vec<(String, String)> {
+fn sources() -> Checked<Vec<(String, String)>> {
     let mut found = Vec::new();
-    collect(&root().join("src"), &mut found);
+    collect(&root().join("src"), &mut found)?;
     found.sort();
-    found
-        .into_iter()
-        .map(|path| {
-            let text = std::fs::read_to_string(&path).expect("the source is readable");
-            let relative = path
-                .strip_prefix(root())
-                .expect("inside the repository")
-                .to_string_lossy()
-                .into_owned();
-            (relative, text)
-        })
-        .collect()
+    let mut sources = Vec::with_capacity(found.len());
+    for path in found {
+        let text = std::fs::read_to_string(&path).required_because("the source is readable")?;
+        let relative = path
+            .strip_prefix(root())
+            .required_because("inside the repository")?
+            .to_string_lossy()
+            .into_owned();
+        sources.push((relative, text));
+    }
+    Ok(sources)
 }
 
-fn collect(directory: &Path, found: &mut Vec<PathBuf>) {
-    for entry in std::fs::read_dir(directory).expect("the directory is readable") {
-        let path = entry.expect("directory entry").path();
+fn collect(directory: &Path, found: &mut Vec<PathBuf>) -> Checked {
+    for entry in std::fs::read_dir(directory).required_because("the directory is readable")? {
+        let path = entry.required_because("directory entry")?.path();
         if path.is_dir() {
-            collect(&path, found);
+            collect(&path, found)?;
         } else if path.extension().is_some_and(|extension| extension == "rs") {
             found.push(path);
         }
     }
+    Ok(())
 }
 
 /// `src/ui`の外か。
@@ -54,10 +58,10 @@ fn outside_ui(path: &str) -> bool {
 }
 
 #[test]
-fn user_facing_output_is_not_written_with_a_print_macro() {
+fn user_facing_output_is_not_written_with_a_print_macro() -> Checked {
     // 直接書くと、block間隔とstreamの責務がcommandごとに散る。
     let mut offenders = Vec::new();
-    for (path, text) in sources() {
+    for (path, text) in sources()? {
         if !outside_ui(&path) {
             continue;
         }
@@ -74,12 +78,13 @@ fn user_facing_output_is_not_written_with_a_print_macro() {
         "user-facing output belongs to the design system:\n{}",
         offenders.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn ansi_escape_sequences_are_generated_in_one_file() {
+fn ansi_escape_sequences_are_generated_in_one_file() -> Checked {
     let mut offenders = Vec::new();
-    for (path, text) in sources() {
+    for (path, text) in sources()? {
         if path == RENDERER {
             continue;
         }
@@ -98,13 +103,14 @@ fn ansi_escape_sequences_are_generated_in_one_file() {
         "only {RENDERER} generates ANSI:\n{}",
         offenders.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn the_terminal_crate_is_imported_only_by_the_design_system() {
+fn the_terminal_crate_is_imported_only_by_the_design_system() -> Checked {
     // 具体的なterminal crateの型を`ui`の外へ公開しない。
     let mut offenders = Vec::new();
-    for (path, text) in sources() {
+    for (path, text) in sources()? {
         if !outside_ui(&path) {
             continue;
         }
@@ -124,12 +130,13 @@ fn the_terminal_crate_is_imported_only_by_the_design_system() {
         "the terminal crate stays inside {UI}:\n{}",
         offenders.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn selection_prompts_are_built_in_one_place() {
+fn selection_prompts_are_built_in_one_place() -> Checked {
     let mut offenders = Vec::new();
-    for (path, text) in sources() {
+    for (path, text) in sources()? {
         if path == "src/ui/prompt.rs" {
             continue;
         }
@@ -146,13 +153,14 @@ fn selection_prompts_are_built_in_one_place() {
         "a command must not grow its own prompt:\n{}",
         offenders.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn no_command_writes_its_own_block_spacing() {
+fn no_command_writes_its_own_block_spacing() -> Checked {
     // 先頭の改行で余白を作ると、rendererの間隔管理を迂回する。
     let mut offenders = Vec::new();
-    for (path, text) in sources() {
+    for (path, text) in sources()? {
         if !outside_ui(&path) || path.ends_with("_test.rs") {
             continue;
         }
@@ -172,13 +180,14 @@ fn no_command_writes_its_own_block_spacing() {
         "block spacing belongs to the renderer:\n{}",
         offenders.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn no_resource_pads_itself_with_blank_lines() {
+fn no_resource_pads_itself_with_blank_lines() -> Checked {
     // block間隔はrendererが決める。resourceが前後の余白を持つと二重になる。
     let mut offenders = Vec::new();
-    for (name, text) in resources() {
+    for (name, text) in resources()? {
         for (index, line) in text.lines().enumerate() {
             let Some((_, value)) = line.split_once(" = ") else {
                 continue;
@@ -189,29 +198,31 @@ fn no_resource_pads_itself_with_blank_lines() {
         }
     }
     assert!(offenders.is_empty(), "{}", offenders.join("\n"));
+    Ok(())
 }
 
 /// FTL resourceの原文。
-fn resources() -> Vec<(String, String)> {
+fn resources() -> Checked<Vec<(String, String)>> {
     let directory = root().join("locales");
-    let mut found: Vec<(String, String)> = std::fs::read_dir(&directory)
-        .expect("the locales directory is readable")
-        .map(|entry| entry.expect("directory entry").path())
-        .filter(|path| path.extension().is_some_and(|extension| extension == "ftl"))
-        .map(|path| {
-            let text = std::fs::read_to_string(&path).expect("the resource is readable");
-            (
-                path.file_name()
-                    .expect("a file name")
-                    .to_string_lossy()
-                    .into_owned(),
-                text,
-            )
-        })
-        .collect();
+    let mut found: Vec<(String, String)> = Vec::new();
+    for entry in
+        std::fs::read_dir(&directory).required_because("the locales directory is readable")?
+    {
+        let path = entry.required_because("directory entry")?.path();
+        if path.extension().is_some_and(|extension| extension == "ftl") {
+            let text =
+                std::fs::read_to_string(&path).required_because("the resource is readable")?;
+            let name = path
+                .file_name()
+                .required_because("a file name")?
+                .to_string_lossy()
+                .into_owned();
+            found.push((name, text));
+        }
+    }
     found.sort();
     assert!(!found.is_empty(), "no FTL resource was found");
-    found
+    Ok(found)
 }
 
 /// 実行を求めるcommandだと確実に分かる綴り。
@@ -252,9 +263,9 @@ const INVOCATIONS: [(&str, &[&str]); 5] = [
 ];
 
 #[test]
-fn no_resource_embeds_a_command_the_user_is_meant_to_run() {
+fn no_resource_embeds_a_command_the_user_is_meant_to_run() -> Checked {
     let mut offenders = Vec::new();
-    for (name, text) in resources() {
+    for (name, text) in resources()? {
         for (index, line) in text.lines().enumerate() {
             for (program, subcommands) in INVOCATIONS {
                 let Some(position) = line.find(program) else {
@@ -276,13 +287,14 @@ fn no_resource_embeds_a_command_the_user_is_meant_to_run() {
         "the resource explains and the model supplies the command:\n{}",
         offenders.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn no_resource_carries_a_command_placeholder() {
+fn no_resource_carries_a_command_placeholder() -> Checked {
     // commandはtypedな一行として渡す。placeholderが残っていれば経路が古い。
     let mut offenders = Vec::new();
-    for (name, text) in resources() {
+    for (name, text) in resources()? {
         for (index, line) in text.lines().enumerate() {
             if line.contains("$command") {
                 offenders.push(format!("{name}:{}: {}", index + 1, line.trim()));
@@ -290,13 +302,14 @@ fn no_resource_carries_a_command_placeholder() {
         }
     }
     assert!(offenders.is_empty(), "{}", offenders.join("\n"));
+    Ok(())
 }
 
 #[test]
-fn no_resource_carries_a_severity_marker_or_an_escape() {
+fn no_resource_carries_a_severity_marker_or_an_escape() -> Checked {
     // prefixとstyleはrendererが付ける。翻訳者が記号の一貫性を預からない。
     let mut offenders = Vec::new();
-    for (name, text) in resources() {
+    for (name, text) in resources()? {
         for (index, line) in text.lines().enumerate() {
             let Some((_, value)) = line.split_once(" = ") else {
                 continue;
@@ -313,12 +326,13 @@ fn no_resource_carries_a_severity_marker_or_an_escape() {
         "markers belong to the renderer:\n{}",
         offenders.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn no_resource_carries_an_emoji() {
+fn no_resource_carries_an_emoji() -> Checked {
     let mut offenders = Vec::new();
-    for (name, text) in resources() {
+    for (name, text) in resources()? {
         for (index, line) in text.lines().enumerate() {
             for character in line.chars() {
                 let point = character as u32;
@@ -338,4 +352,5 @@ fn no_resource_carries_an_emoji() {
         "a pictograph can be drawn in more than one color:\n{}",
         offenders.join("\n")
     );
+    Ok(())
 }

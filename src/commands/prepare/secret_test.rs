@@ -1,38 +1,43 @@
 //! GitHub tokenがSandboxへ入らないこと。
+use crate::testing::outcome::{Checked, Refused, Required};
+
 use super::super::world::{World, bench};
 use crate::error::ErrorId;
 use crate::testing::add_request::request;
 
 #[test]
-fn git_is_given_the_placeholder_before_it_reaches_github() {
-    let bench = bench();
+fn git_is_given_the_placeholder_before_it_reaches_github() -> Checked {
+    let bench = bench()?;
     let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None);
-    bench.build(&world, &request).expect("the build completes");
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the build completes")?;
 
     let calls = world.invocations();
     let position = |needle: &str| {
         calls
             .iter()
             .position(|call| call.contains(needle))
-            .unwrap_or_else(|| panic!("no command matched {needle}: {calls:?}"))
+            .required_because(&format!("no command matched {needle}: {calls:?}"))
     };
     assert!(
-        position("credential.https://github.com.helper") < position("fetch --prune origin"),
+        position("credential.https://github.com.helper")? < position("fetch --prune origin")?,
         "a fetch without the credential asks for a username and never finishes"
     );
+    Ok(())
 }
 
 #[test]
-fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there() {
-    let bench = bench();
+fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there() -> Checked {
+    let bench = bench()?;
     let world = World::new();
     world.secrets.borrow_mut().clear();
-    let request = request("Example-Org/Example-Repo", None, None);
+    let request = request("Example-Org/Example-Repo", None, None)?;
 
     let error = bench
         .build(&world, &request)
-        .expect_err("a build without repository access cannot continue");
+        .refused_because("a build without repository access cannot continue")?;
     assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
     assert!(
         !world.ran("git init --bare"),
@@ -54,7 +59,7 @@ fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there(
     }
     let output = bench
         .build(&world, &request)
-        .expect("the same add continues once the secret is registered");
+        .required_because("the same add continues once the secret is registered")?;
     assert_eq!(output.worktrees.len(), 1);
     assert_eq!(
         world
@@ -65,4 +70,5 @@ fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there(
         1,
         "the sandbox that was already there is reused"
     );
+    Ok(())
 }

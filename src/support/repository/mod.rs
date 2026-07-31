@@ -103,7 +103,7 @@ fn verify_bare_clone(
     if bare != "true" {
         return Err(unusable(
             git_dir,
-            "the repository is not bare, so it is not the shared repository".to_string(),
+            "the repository is not bare, so it is not the shared repository",
         ));
     }
 
@@ -126,7 +126,7 @@ fn verify_bare_clone(
     let [url] = urls.as_slice() else {
         return Err(unusable(
             git_dir,
-            format!("origin has {} URLs, so the remote is ambiguous", urls.len()),
+            &format!("origin has {} URLs, so the remote is ambiguous", urls.len()),
         ));
     };
     let canonical = project.canonical();
@@ -135,13 +135,13 @@ fn verify_bare_clone(
         Some(observed) => {
             return Err(unusable(
                 git_dir,
-                format!("origin points at {observed}, not at {canonical}"),
+                &format!("origin points at {observed}, not at {canonical}"),
             ));
         }
         None => {
             return Err(unusable(
                 git_dir,
-                format!("origin URL {url} does not name a GitHub repository"),
+                &format!("origin URL {url} does not name a GitHub repository"),
             ));
         }
     }
@@ -165,7 +165,7 @@ fn verify_bare_clone(
     if refspecs != [FETCH_REFSPEC] {
         return Err(unusable(
             git_dir,
-            format!(
+            &format!(
                 "the fetch refspec is {}, not {FETCH_REFSPEC}",
                 refspecs.join(", ")
             ),
@@ -180,13 +180,13 @@ fn verify_bare_clone(
     if !outcome.success() {
         return Err(unusable(
             git_dir,
-            "the repository does not pass a connectivity check".to_string(),
+            "the repository does not pass a connectivity check",
         ));
     }
     Ok(())
 }
 /// 成果物を自動削除せず、観測した不一致を示して停止する。
-fn unusable(path: &str, detail: String) -> Error {
+fn unusable(path: &str, detail: &str) -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::SandboxRepositoryUnusable,

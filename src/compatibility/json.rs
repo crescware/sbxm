@@ -61,7 +61,7 @@ pub(super) fn string_field(
     object
         .get(key)
         .and_then(|value| value.as_str())
-        .map(|value| value.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 pub(super) fn unparseable(program: &str, detail: &str) -> Error {

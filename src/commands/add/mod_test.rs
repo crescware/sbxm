@@ -1,15 +1,17 @@
+use crate::testing::outcome::{Checked, Refused};
+
 use super::*;
 use crate::commands::Command;
 use crate::testing::cli::{command, parse_argv, tty};
 
 #[test]
-fn worktree_counts_outside_the_allowed_range_are_refused() {
+fn worktree_counts_outside_the_allowed_range_are_refused() -> Checked {
     for value in ["0", "33", "999", "abc", ""] {
         let error = parse_argv(
             &["add", "git@github.com:owner/repo.git", "--worktrees", value],
             tty(),
         )
-        .expect_err("{value} must be refused");
+        .refused_because("{value} must be refused")?;
         assert_eq!(
             error.first_id(),
             Some(ErrorId::WorktreesOutOfRange),
@@ -21,13 +23,13 @@ fn worktree_counts_outside_the_allowed_range_are_refused() {
         &["add", "git@github.com:owner/repo.git", "--worktrees", "-1"],
         tty(),
     )
-    .expect_err("a negative count never reaches the range check");
+    .refused_because("a negative count never reaches the range check")?;
     assert_eq!(error.exit_code(), crate::error::ExitCode::Failure);
     assert!(matches!(
         command(
             &["add", "git@github.com:owner/repo.git", "--worktrees", "1"],
             tty()
-        ),
+        )?,
         Command::Add(Args {
             worktrees: Some(1),
             ..
@@ -44,17 +46,18 @@ fn worktree_counts_outside_the_allowed_range_are_refused() {
                 "develop"
             ],
             tty()
-        ),
+        )?,
         Command::Add(Args {
             worktrees: Some(32),
             ..
         })
     ));
+    Ok(())
 }
 
 /// `-t`は`--worktrees`の別名であり、同じ本数として解釈される。
 #[test]
-fn the_short_form_requests_the_same_worktree_count() {
+fn the_short_form_requests_the_same_worktree_count() -> Checked {
     assert!(matches!(
         command(
             &[
@@ -66,21 +69,22 @@ fn the_short_form_requests_the_same_worktree_count() {
                 "develop"
             ],
             tty()
-        ),
+        )?,
         Command::Add(Args {
             worktrees: Some(3),
             ..
         })
     ));
+    Ok(())
 }
 
 #[test]
-fn more_than_one_worktree_requires_an_explicit_start_branch() {
+fn more_than_one_worktree_requires_an_explicit_start_branch() -> Checked {
     let error = parse_argv(
         &["add", "git@github.com:owner/repo.git", "--worktrees", "2"],
         tty(),
     )
-    .expect_err("two worktrees without a branch are refused");
+    .refused_because("two worktrees without a branch are refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
 
     assert!(matches!(
@@ -94,13 +98,14 @@ fn more_than_one_worktree_requires_an_explicit_start_branch() {
                 "develop"
             ],
             tty()
-        ),
+        )?,
         Command::Add(_)
     ));
+    Ok(())
 }
 
 #[test]
-fn a_declared_identity_is_carried_only_when_both_halves_are_given() {
+fn a_declared_identity_is_carried_only_when_both_halves_are_given() -> Checked {
     assert!(matches!(
         command(
             &[
@@ -112,7 +117,7 @@ fn a_declared_identity_is_carried_only_when_both_halves_are_given() {
                 "user@example.com",
             ],
             tty()
-        ),
+        )?,
         Command::Add(Args {
             git_identity: Some(_),
             ..
@@ -121,7 +126,7 @@ fn a_declared_identity_is_carried_only_when_both_halves_are_given() {
 
     // 宣言が無いことは、既定かpromptで決めるという意味であり、errorではない。
     assert!(matches!(
-        command(&["add", "git@github.com:owner/repo.git"], tty()),
+        command(&["add", "git@github.com:owner/repo.git"], tty())?,
         Command::Add(Args {
             git_identity: None,
             ..
@@ -137,17 +142,18 @@ fn a_declared_identity_is_carried_only_when_both_halves_are_given() {
             &["add", "git@github.com:owner/repo.git", option, value],
             tty(),
         )
-        .expect_err("{option} alone must be refused");
+        .refused_because("{option} alone must be refused")?;
         assert_eq!(
             error.first_id(),
             Some(ErrorId::GitIdentityIncomplete),
             "{option} produced the wrong error"
         );
     }
+    Ok(())
 }
 
 #[test]
-fn a_declared_value_that_git_cannot_use_is_refused() {
+fn a_declared_value_that_git_cannot_use_is_refused() -> Checked {
     for (name, email) in [("", "user@example.com"), ("Example User", "  ")] {
         let error = parse_argv(
             &[
@@ -160,7 +166,8 @@ fn a_declared_value_that_git_cannot_use_is_refused() {
             ],
             tty(),
         )
-        .expect_err("{name:?} {email:?} must be refused");
+        .refused_because("{name:?} {email:?} must be refused")?;
         assert_eq!(error.first_id(), Some(ErrorId::InvalidValue));
     }
+    Ok(())
 }
