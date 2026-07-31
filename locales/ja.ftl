@@ -16,30 +16,30 @@ cli-add-worktrees-help = 作成するmanaged worktreeの数 (1〜32)
 cli-add-detach-help = detached modeで全managed worktreeの起点にするremote branch
 
 cli-apply-about = 構築済み案件へ、Sandboxを作り直さずに反映できる変更を適用します
-cli-apply-project-help = 対象案件をowner/repository形式で指定します
+cli-apply-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
 cli-apply-files-help = global設定で宣言したfileを、既存の内容を上書きして再配置します
 cli-apply-worktrees-help = この案件が持つmanaged worktreeの本数 (1〜32)
 
 cli-prepare-about = 登録済み案件のSandboxを構築し、作業できる状態にします
-cli-prepare-project-help = 対象案件をowner/repository形式で指定します
+cli-prepare-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
 
 cli-rebuild-about = 編集したDockerfileをSandbox再作成によって適用します
-cli-rebuild-project-help = 対象案件をowner/repository形式で指定します
+cli-rebuild-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
 
 cli-open-about = 必要ならSandboxを起動し、SSHで接続します
-cli-open-project-help = 対象案件をowner/repository形式で指定します
+cli-open-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
 
 cli-stop-about = 起動中のSandboxを停止します
-cli-stop-project-help = 対象案件をowner/repository形式で指定します
+cli-stop-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
 
 cli-ls-about = 管理案件とSandboxの状態を一覧します
 
 cli-status-about = host環境または1案件をread-onlyで診断します
-cli-status-project-help = 対象案件をowner/repository形式で指定します
+cli-status-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
 cli-status-global-help = 案件ではなくhostとglobal環境を診断します
 
 cli-destroy-about = 対象案件のSandboxとsbxmの管理情報を破棄します
-cli-destroy-project-help = 対象案件をowner/repository形式で指定します
+cli-destroy-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
 cli-destroy-force-help = データ保護検査とactive session検査を省略して削除します
 
 error-invalid-arguments = 引数を解釈できませんでした。
@@ -54,12 +54,12 @@ error-worktrees-out-of-range = managed worktreeの数は { $minimum } 以上 { $
 error-worktrees-require-detach = managed worktreeを2個以上作る場合は起点branchの明示が必要です。
 error-worktrees-not-reducible = { $project } のmanaged worktreeは { $current } 本で、{ $requested } 本はそれより少ない指定です。
 error-apply-scope-required = 何を適用するかを指定してください。宣言file、managed worktreeの本数、またはその両方です。
-error-project-argument-required = 対話端末ではない実行では、{ $subcommand } にowner/repositoryの完全指定が必要です。
-error-status-scope-required = global環境か1案件のどちらか一方だけを指定してください。
+error-project-argument-required = 対話端末ではない実行では、{ $subcommand } に案件IDの完全指定が必要です。
+error-status-scope-required = global環境か1件の案件IDのどちらか一方だけを指定してください。
 
 usage-hint = { $usage }
 
-error-invalid-project-id = { $value } はowner/repository形式として正しくありません。
+error-invalid-project-id = { $value } は案件IDとして正しくありません。案件IDはowner/repository形式です。
 error-reserved-repository-name = { $value } は予約語のためrepository名に使用できません。
 error-invalid-clone-url = { $value } はsbxmが受理するclone URLではありません。受理する形式: { $accepted }
 

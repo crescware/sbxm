@@ -18,7 +18,7 @@ English: [README.md](../README.md)
 - GitとSSH
 - 管理対象のrepositoryごとに発行したGitHub personal access token
 
-初期設定後に`sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を
+`sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を
 確認できます。
 
 ## インストール
@@ -249,15 +249,15 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | コマンド | 用途 |
 |---|---|
 | `sbxm add <github-clone-url>` | GitHubプロジェクトを登録し、ホスト側の成果物を作成する |
-| `sbxm prepare owner/repository` | プロジェクトのSandboxをbuildして構築する |
-| `sbxm open [owner/repository]` | 必要に応じてSandboxを起動し、SSHで接続する |
-| `sbxm stop [owner/repository ...]` | 1つ以上のSandboxを停止する |
+| `sbxm prepare <project-id>` | プロジェクトのSandboxをbuildして構築する |
+| `sbxm open [<project-id>]` | 必要に応じてSandboxを起動し、SSHで接続する |
+| `sbxm stop [<project-id> ...]` | 1つ以上のSandboxを停止する |
 | `sbxm ls` | 管理対象のプロジェクトとSandboxの状態を一覧表示する |
 | `sbxm status --global` | ホストとDocker Sandboxes環境を診断する |
-| `sbxm status owner/repository` | 変更を加えずにプロジェクトを診断する |
-| `sbxm apply owner/repository ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
-| `sbxm rebuild owner/repository` | 編集したDockerfileからSandboxを作り直す |
-| `sbxm destroy [owner/repository]` | Sandboxを削除し、プロジェクトの管理を終了する |
+| `sbxm status <project-id>` | 変更を加えずにプロジェクトを診断する |
+| `sbxm apply <project-id> ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
+| `sbxm rebuild <project-id>` | 編集したDockerfileからSandboxを作り直す |
+| `sbxm destroy [<project-id>]` | Sandboxを削除し、プロジェクトの管理を終了する |
 
 完全なCLI referenceは、`sbxm --help`または`sbxm <command> --help`で確認できます。
 

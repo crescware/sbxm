@@ -16,30 +16,30 @@ cli-add-worktrees-help = Number of managed worktrees to create (1-32)
 cli-add-detach-help = Remote branch every managed worktree starts from, in detached mode
 
 cli-apply-about = Apply a change to a built project without rebuilding its sandbox
-cli-apply-project-help = Target project as owner/repository
+cli-apply-project-help = Target project, by the owner/repository ID it is registered under
 cli-apply-files-help = Re-place the files declared in the global configuration, overwriting what is there
 cli-apply-worktrees-help = Number of managed worktrees the project should have (1-32)
 
 cli-prepare-about = Build the sandbox of a registered project and make it ready to work in
-cli-prepare-project-help = Target project as owner/repository
+cli-prepare-project-help = Target project, by the owner/repository ID it is registered under
 
 cli-rebuild-about = Apply the edited Dockerfile by recreating the sandbox
-cli-rebuild-project-help = Target project as owner/repository
+cli-rebuild-project-help = Target project, by the owner/repository ID it is registered under
 
 cli-open-about = Start the sandbox if needed and connect to it over SSH
-cli-open-project-help = Target project as owner/repository
+cli-open-project-help = Target project, by the owner/repository ID it is registered under
 
 cli-stop-about = Stop running sandboxes
-cli-stop-project-help = Target projects as owner/repository
+cli-stop-project-help = Target projects, by the owner/repository IDs they are registered under
 
 cli-ls-about = List managed projects and their sandbox state
 
 cli-status-about = Diagnose the host environment or a single project, read-only
-cli-status-project-help = Target project as owner/repository
+cli-status-project-help = Target project, by the owner/repository ID it is registered under
 cli-status-global-help = Diagnose the host and global environment instead of a project
 
 cli-destroy-about = Delete the sandbox and drop sbxm management data for a project
-cli-destroy-project-help = Target project as owner/repository
+cli-destroy-project-help = Target project, by the owner/repository ID it is registered under
 cli-destroy-force-help = Skip data-protection and active-session checks, then delete
 
 error-invalid-arguments = The arguments could not be interpreted.
@@ -54,12 +54,12 @@ error-worktrees-out-of-range = The number of managed worktrees must be between {
 error-worktrees-require-detach = Creating more than one managed worktree requires an explicit start branch.
 error-worktrees-not-reducible = { $project } has { $current } managed worktrees, and { $requested } is fewer.
 error-apply-scope-required = Name what to apply: the declared files, a number of managed worktrees, or both.
-error-project-argument-required = { $subcommand } needs an explicit owner/repository argument when the session is not interactive.
-error-status-scope-required = Specify exactly one scope: either the global environment or one owner/repository.
+error-project-argument-required = { $subcommand } needs an explicit project ID when the session is not interactive.
+error-status-scope-required = Specify exactly one scope: either the global environment or one project ID.
 
 usage-hint = { $usage }
 
-error-invalid-project-id = { $value } is not a valid owner/repository identifier.
+error-invalid-project-id = { $value } is not a valid project ID. A project ID is owner/repository.
 error-reserved-repository-name = { $value } is reserved and cannot be used as a repository name.
 error-invalid-clone-url = { $value } is not a clone URL sbxm accepts. Accepted forms: { $accepted }
 

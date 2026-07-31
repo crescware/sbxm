@@ -19,8 +19,8 @@ into the sandbox.
 - Git and SSH
 - A GitHub personal access token for each repository you want to manage
 
-Run `sbxm status --global` after initialization to check these requirements and
-the Docker Sandboxes environment.
+Run `sbxm status --global` to check these requirements and the Docker Sandboxes
+environment.
 
 ## Installation
 
@@ -258,15 +258,15 @@ rather than sbxm guessing at the new location.
 | Command | Purpose |
 |---|---|
 | `sbxm add <github-clone-url>` | Register a GitHub project and create its host artifacts |
-| `sbxm prepare owner/repository` | Build and provision the project's sandbox |
-| `sbxm open [owner/repository]` | Start the sandbox if needed and connect over SSH |
-| `sbxm stop [owner/repository ...]` | Stop one or more sandboxes |
+| `sbxm prepare <project-id>` | Build and provision the project's sandbox |
+| `sbxm open [<project-id>]` | Start the sandbox if needed and connect over SSH |
+| `sbxm stop [<project-id> ...]` | Stop one or more sandboxes |
 | `sbxm ls` | List managed projects and sandbox states |
 | `sbxm status --global` | Diagnose the host and Docker Sandboxes environment |
-| `sbxm status owner/repository` | Diagnose a project without changing it |
-| `sbxm apply owner/repository ...` | Apply declared files or add managed worktrees |
-| `sbxm rebuild owner/repository` | Recreate a sandbox from its edited Dockerfile |
-| `sbxm destroy [owner/repository]` | Delete a sandbox and stop managing the project |
+| `sbxm status <project-id>` | Diagnose a project without changing it |
+| `sbxm apply <project-id> ...` | Apply declared files or add managed worktrees |
+| `sbxm rebuild <project-id>` | Recreate a sandbox from its edited Dockerfile |
+| `sbxm destroy [<project-id>]` | Delete a sandbox and stop managing the project |
 
 Use `sbxm --help` or `sbxm <command> --help` for the complete CLI reference.
 
