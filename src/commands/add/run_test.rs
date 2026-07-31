@@ -789,3 +789,45 @@ fn a_candidate_root_that_cannot_be_observed_is_never_taken_for_a_free_one() {
         "nothing is recorded from a path sbxm could not observe"
     );
 }
+
+#[test]
+fn a_registered_root_is_observed_before_its_metadata_is_read() {
+    let setup = setup();
+    let request = request("example-org/example-repo", None, None);
+    let registration =
+        register(&setup.location, &setup.parent, &request, &identity()).expect("register");
+    let root = registration.paths.root().to_path_buf();
+    drop(registration);
+
+    assert!(
+        was_already_registered(&setup.location, &request.repository).expect("observe the root"),
+        "a registered project with metadata was already registered"
+    );
+
+    // rootがまだ無い中断点は、登録途中であって登録済みではない。
+    fs::remove_dir_all(&root).expect("undo the project root");
+    assert!(
+        !was_already_registered(&setup.location, &request.repository).expect("observe the root")
+    );
+
+    // rootがsymlinkであれば、その先のmetadataを読みに行かない。
+    let elsewhere = setup.dir.path().join("elsewhere");
+    fs::create_dir_all(elsewhere.join(".sbxm")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &root).unwrap();
+    let error = was_already_registered(&setup.location, &request.repository)
+        .expect_err("a symlinked project root is refused");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+
+    // 通常のdirectoryでないrootも、読む前に観測して拒否する。
+    fs::remove_file(&root).unwrap();
+    fs::write(&root, b"not a project root\n").unwrap();
+    let error = was_already_registered(&setup.location, &request.repository)
+        .expect_err("a root that is not a directory is refused");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+
+    // registryにない案件は、rootを観測するまでもなく未登録である。
+    assert!(
+        !was_already_registered(&setup.location, &ssh_repository("other-org/other-repo"))
+            .expect("the registry answers on its own")
+    );
+}

@@ -362,13 +362,7 @@ pub fn run(
     host: &dyn HostEnvironment,
     progress: &mut dyn ProgressSink,
 ) -> Result<AddOutput> {
-    let already_registered = registry::load(location)?
-        .find(request.repository.canonical_id())
-        .map(|entry| ProjectPaths::at(entry.project_root(), entry.canonical_id()))
-        .map(|paths| metadata::load(&paths))
-        .transpose()?
-        .flatten()
-        .is_some();
+    let already_registered = was_already_registered(location, &request.repository)?;
 
     // Sandbox内で使うidentityは、案件を作る前にhostから確定させる。
     let git_identity = identity::from_host(host)?;
@@ -392,6 +386,29 @@ pub fn run(
         already_registered,
         warnings: Vec::new(),
     })
+}
+
+/// この実行の前から、metadataまで揃った登録済み案件だったか。
+///
+/// registry entryのabsolute pathを、読む前に観測する。保存されたrootであっても、
+/// そこにdirectoryがあり、現在の利用者が所有していることを確かめてからmetadataを読む。
+/// rootがまだ無い中断点は登録途中であり、観測できないrootは不在と同一視しない。
+fn was_already_registered(
+    location: &ConfigLocation,
+    repository: &RepositoryIdentity,
+) -> Result<bool> {
+    let registry = registry::load(location)?;
+    let Some(entry) = registry.find(repository.canonical_id()) else {
+        return Ok(false);
+    };
+    let paths = ProjectPaths::at(entry.project_root(), entry.canonical_id());
+    match observe(paths.root())? {
+        Presence::Absent => Ok(false),
+        Presence::Present => {
+            paths::require_owned_directory(paths.root(), PathScope::ProjectPath)?;
+            Ok(metadata::load(&paths)?.is_some())
+        }
+    }
 }
 
 /// 保存済みmetadataを持つ案件で、この`add`が構築を続けてよいかを判定する。

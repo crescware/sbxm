@@ -157,6 +157,31 @@ fn read_optional(path: &Path) -> Result<Option<String>> {
             ),
         );
     }
+    // 通常fileであることを確かめてから開く。FIFOのような特殊fileを開いて待たない。
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => {
+            return fail(
+                ErrorId::MetadataUnreadable,
+                msg!(
+                    "error-metadata-unreadable",
+                    path = paths::display(path),
+                    detail = "the metadata path is not a regular file"
+                ),
+            );
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return fail(
+                ErrorId::MetadataUnreadable,
+                msg!(
+                    "error-metadata-unreadable",
+                    path = paths::display(path),
+                    detail = error
+                ),
+            );
+        }
+    }
     match fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
