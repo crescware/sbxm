@@ -1,11 +1,11 @@
 //! `open`の実行と出力。
 
 use crate::command::RealHost;
-use crate::error::ExitCode;
+use crate::design::{Document, Inline, Ui};
+use crate::diagnostics::ExitCode;
 use crate::msg;
 use crate::project::ProjectId;
 use crate::support::{inventory, sandbox};
-use crate::ui::{Document, Inline, Ui};
 
 use super::super::{Context, report};
 

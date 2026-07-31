@@ -4,13 +4,15 @@
 //! 別のdocumentとして作り、同じ画面のなかで混ざらないようにする。
 
 use crate::command::RealHost;
-use crate::error::ExitCode;
+use crate::design::Ui;
+use crate::diagnostics::ExitCode;
 use crate::support::{inventory, sandbox};
-use crate::ui::Ui;
 
-use super::super::{Context, report};
-use super::run::TerminalConfirmPrompt;
-use super::{Args, print};
+use super::{
+    super::{Context, report},
+    Args, print,
+    run::TerminalConfirmPrompt,
+};
 
 pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
     let (_config, locale) = match context.settings() {

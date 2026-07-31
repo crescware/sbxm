@@ -1,20 +1,24 @@
+use crate::diagnostics::ErrorId;
+use crate::metadata::{self, RebuildIntent};
+use crate::project::SandboxLayout;
+use crate::support::image;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::super::fake::verified;
-use super::*;
+use super::{super::fake::verified, *};
+use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
 use crate::testing::host::{FakeSbx, assert_lifecycle};
 use crate::testing::image::template_listing;
 use crate::testing::poll::poll;
-use crate::testing::project::{fixture, project_id};
+use crate::testing::project::{Fixture, project_id};
 use crate::testing::protection::clean_host;
 use crate::testing::value::COMMIT;
-use crate::ui::SilentProgress;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     // 適用済みhashと同じ内容のDockerfileを置く。
     std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
@@ -129,7 +133,7 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
 
 #[test]
 fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_dockerfile() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     // `add`は登録時に適用済みhashを書く。Sandboxを作る前に中断した案件は、
     // 現在のDockerfileと同じhashを持ったまま`not-created`で残る。
@@ -154,7 +158,7 @@ fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_docker
 
 #[test]
 fn a_project_that_is_not_managed_cannot_be_rebuilt() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let host = FakeSbx::listing("[]");
     let error = run(
         &fixture.location,
@@ -174,7 +178,7 @@ fn a_project_that_is_not_managed_cannot_be_rebuilt() -> Checked {
 fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() -> Checked {
     // `rebuild`はこのSandboxをこれから作り直す。保存状態を読むためだけの起動を
     // 利用者へ求めない。
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let name = project.sandbox.as_str();
@@ -204,7 +208,7 @@ fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() -> Checked
 
 #[test]
 fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
 
@@ -226,7 +230,7 @@ fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() -> Check
 
 #[test]
 fn unsaved_work_stops_the_rebuild_before_anything_is_built() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let layout = SandboxLayout::new(project.metadata.canonical_id());
@@ -260,7 +264,7 @@ fn unsaved_work_stops_the_rebuild_before_anything_is_built() -> Checked {
 
 #[test]
 fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let target = sha256_hex(b"FROM scratch\n");
@@ -366,7 +370,7 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() -> Check
 
 #[test]
 fn a_new_generation_that_cannot_be_produced_leaves_the_existing_sandbox_alone() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     // buildは走るが、そのあともimageは一覧に現れない。
@@ -405,7 +409,7 @@ fn a_new_generation_that_cannot_be_produced_leaves_the_existing_sandbox_alone() 
 
 #[test]
 fn a_fixed_generation_with_neither_artifacts_nor_its_dockerfile_says_how_to_recover() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     // Dockerfileは、固定した世代とは別の内容へ変わっている。
     std::fs::write(project.paths.dockerfile(), "FROM alpine\n").required()?;
@@ -449,7 +453,7 @@ fn a_fixed_generation_with_neither_artifacts_nor_its_dockerfile_says_how_to_reco
 
 #[test]
 fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let target = sha256_hex(b"FROM scratch\n");

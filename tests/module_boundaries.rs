@@ -227,10 +227,30 @@ fn file_stem(path: &Path) -> &str {
         .unwrap_or("")
 }
 
+/// item名をfile stemへ写す。
+///
+/// `CamelCase`と`SCREAMING_SNAKE_CASE`の両方を同じ規則で扱う。語の境界は、小文字か
+/// 数字のあとの大文字と、大文字が続いたあとに小文字が始まる位置だけとする。既にある
+/// `_`は境界そのものなので、そこへ重ねて`_`を足さない。
 fn snake_case(name: &str) -> String {
+    let characters: Vec<char> = name.chars().collect();
     let mut result = String::with_capacity(name.len());
-    for (index, character) in name.chars().enumerate() {
-        if character.is_ascii_uppercase() && index > 0 {
+    for (index, &character) in characters.iter().enumerate() {
+        if character == '_' {
+            result.push('_');
+            continue;
+        }
+        let previous = index.checked_sub(1).map(|before| characters[before]);
+        let boundary = character.is_ascii_uppercase()
+            && match previous {
+                None | Some('_') => false,
+                // 略語の途中は切らない。`SSH_CLONE`は`ssh_clone`、`ProjectId`は`project_id`。
+                Some(before) if before.is_ascii_uppercase() => characters
+                    .get(index + 1)
+                    .is_some_and(char::is_ascii_lowercase),
+                Some(_) => true,
+            };
+        if boundary {
             result.push('_');
         }
         result.push(character.to_ascii_lowercase());

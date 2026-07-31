@@ -1,7 +1,8 @@
 //! 進捗の見せ方と、宣言fileの配置結果。
+
 use crate::testing::outcome::{Checked, Required};
 
-use super::super::world::{World, bench};
+use super::super::fake::{Bench, World};
 use crate::command::{OutputPolicy, TimeoutClass};
 use crate::hash::sha256_hex;
 use crate::support::files::Placement;
@@ -9,7 +10,7 @@ use crate::testing::add_request::request;
 
 #[test]
 fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     bench
         .build(&world, &request("Example-Org/Example-Repo", None, None)?)
@@ -47,7 +48,7 @@ fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() -> Ch
 
 #[test]
 fn the_declared_file_is_placed_once_and_left_alone_afterwards() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
     bench.build(&world, &request).required_because("build")?;

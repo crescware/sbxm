@@ -8,11 +8,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::design::ProgressSink;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths::{self, PathScope, ProjectPaths};
 use crate::repository::{RepositoryIdentity, accepted_clone_url_forms};
-use crate::ui::ProgressSink;
 
 /// 採用したhost clone。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,37 +22,39 @@ pub struct HostClone {
     pub created: bool,
 }
 
-/// host cloneを用意する。
-///
-/// `GitHubへのSSH認証とrepository` accessは、owner、repository、利用者のSSH設定に
-/// よって結果が変わる。この工程のcloneを疎通の正本の検査とする。
-pub fn ensure(
-    host: &dyn HostEnvironment,
-    paths: &ProjectPaths,
-    repository: &RepositoryIdentity,
-    progress: &mut dyn ProgressSink,
-) -> Result<HostClone> {
-    let target = paths.host_clone();
+impl HostClone {
+    /// host cloneを用意する。
+    ///
+    /// `GitHubへのSSH認証とrepository` accessは、owner、repository、利用者のSSH設定に
+    /// よって結果が変わる。この工程のcloneを疎通の正本の検査とする。
+    pub fn ensure(
+        host: &dyn HostEnvironment,
+        paths: &ProjectPaths,
+        repository: &RepositoryIdentity,
+        progress: &mut dyn ProgressSink,
+    ) -> Result<HostClone> {
+        let target = paths.host_clone();
 
-    // 不在と、観測できないことを区別する。そこにあるものを確かめられないまま
-    // cloneへ進むと、既存の成果物の上で外部commandの挙動に判断を委ねることになる。
-    match fs::symlink_metadata(&target) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            clone(host, &target, repository, progress)?;
-            // 作成直後も、再利用と同じ規則で成果物を検証する。
-            inspect(host, paths, repository, &target)?;
-            Ok(HostClone {
-                path: target,
-                created: true,
-            })
-        }
-        Err(error) => Err(PathScope::ProjectPath.unreadable_error(&target, &error.to_string())),
-        Ok(_) => {
-            inspect(host, paths, repository, &target)?;
-            Ok(HostClone {
-                path: target,
-                created: false,
-            })
+        // 不在と、観測できないことを区別する。そこにあるものを確かめられないまま
+        // cloneへ進むと、既存の成果物の上で外部commandの挙動に判断を委ねることになる。
+        match fs::symlink_metadata(&target) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                clone(host, &target, repository, progress)?;
+                // 作成直後も、再利用と同じ規則で成果物を検証する。
+                inspect(host, paths, repository, &target)?;
+                Ok(HostClone {
+                    path: target,
+                    created: true,
+                })
+            }
+            Err(error) => Err(PathScope::ProjectPath.unreadable_error(&target, &error.to_string())),
+            Ok(_) => {
+                inspect(host, paths, repository, &target)?;
+                Ok(HostClone {
+                    path: target,
+                    created: false,
+                })
+            }
         }
     }
 }

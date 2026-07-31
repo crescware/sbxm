@@ -1,13 +1,15 @@
 //! `prepare`の実行。
 
 use crate::command::RealHost;
-use crate::error::ExitCode;
+use crate::design::Ui;
+use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;
 use crate::support::sandbox;
-use crate::ui::Ui;
 
-use super::super::{Context, report};
-use super::print;
+use super::{
+    super::{Context, report},
+    print,
+};
 
 pub fn exec(project: &ProjectId, context: &Context, ui: &mut Ui) -> ExitCode {
     let (config, locale) = match context.settings() {

@@ -13,6 +13,7 @@ pub mod host;
 pub mod image;
 pub mod metadata;
 pub mod outcome;
+mod plain;
 pub mod poll;
 pub mod project;
 pub mod prompt;
@@ -22,3 +23,5 @@ pub mod render;
 pub mod repository;
 pub mod sandbox;
 pub mod value;
+
+pub use plain::plain;

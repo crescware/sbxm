@@ -1,11 +1,17 @@
 //! Dockerfileを編集した時点で、どの世代を完成させるか。
+use crate::paths::ProjectPaths;
+use crate::project::SandboxName;
+use crate::support::image;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::super::world::{World, bench};
-use super::*;
+use super::{
+    super::fake::{Bench, World},
+    *,
+};
+use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
 use crate::testing::add_request::{project_of, request};
-use crate::ui::SilentProgress;
 use std::fs;
 
 /// 編集後のDockerfileの内容。世代が変わったことだけが要る。
@@ -14,7 +20,7 @@ const EDITED_DOCKERFILE: &[u8] = b"FROM example:edited\n";
 #[test]
 fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_started_from() -> Checked
 {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
 
@@ -73,7 +79,7 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
 
 #[test]
 fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
     crate::commands::add::run::run(

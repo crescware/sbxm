@@ -1,22 +1,20 @@
-//! `project.yaml`の読み取り。
-//!
-//! 解釈できない値から目標構成を推測せず、validation規則に合わない文書は拒否する。
-
 use std::path::Path;
 
-use crate::error::{Error, ErrorId, Result};
+use crate::diagnostics::{Error, ErrorId, Result};
 use crate::git;
 use crate::msg;
 use crate::paths::{self};
 use crate::repository::RepositoryIdentity;
 
-use super::document::{
+use crate::metadata::document::{
     RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository, RawStartRef,
 };
-use super::{
-    CreationMode, DOCUMENT, GitIdentity, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata,
+use crate::metadata::{
+    CreationMode, DOCUMENT_VERSION, GitIdentity, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata,
     Provisioning, RebuildIntent, validate_git_identity_value,
 };
+
+use super::{missing, require_sha256};
 
 /// metadataのtextを検証する。
 pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
@@ -35,7 +33,7 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         })?
         .unwrap_or_default();
 
-    DOCUMENT.require(raw.version, &paths::display(path), || {
+    DOCUMENT_VERSION.require(raw.version, &paths::display(path), || {
         missing(path, "version")
     })?;
 
@@ -50,18 +48,6 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         git_identity,
         rebuild,
     })
-}
-
-/// 必須fieldが無いことを報告する。
-fn missing(path: &Path, field: &'static str) -> Error {
-    Error::new(
-        ErrorId::MetadataMissingField,
-        msg!(
-            "error-metadata-missing-field",
-            path = paths::display(path),
-            field = field
-        ),
-    )
 }
 
 /// fieldの値が受け付けられないことを報告する。
@@ -218,18 +204,6 @@ fn parse_rebuild(raw: Option<RawRebuild>, path: &Path) -> Result<Option<RebuildI
         target_dockerfile_sha256: target,
         previous_dockerfile_sha256: previous,
     }))
-}
-
-/// SHA-256のlowercase hexであること。
-pub(super) fn require_sha256(value: &str) -> std::result::Result<(), String> {
-    if value.len() != 64
-        || !value
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    {
-        return Err(format!("{value} is not a lowercase SHA-256 hex digest"));
-    }
-    Ok(())
 }
 
 #[cfg(test)]

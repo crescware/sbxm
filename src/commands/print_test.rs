@@ -8,16 +8,16 @@ use crate::testing::outcome::{Checked, Required, Unmet};
 use std::path::PathBuf;
 
 use crate::compatibility::SandboxState;
-use crate::error::{Diagnostic, ErrorId, Msg};
+use crate::design::{Block, SectionBody};
+use crate::design::{Document, Inline, VisualState};
+use crate::diagnostics::{Diagnostic, ErrorId, Msg};
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::{PlacedFile, Placement};
 use crate::support::inventory::{Observed, ProjectState};
 use crate::support::status::{Row, StatusValue};
-use crate::testing::render::plain;
-use crate::ui::document::{Block, SectionBody};
-use crate::ui::{Document, Inline, VisualState};
+use crate::testing::plain;
 
 /// blockの並びを役割の名前で表す。
 fn shape(document: &Document) -> Vec<&'static str> {
@@ -56,8 +56,8 @@ fn commands(document: &Document) -> Vec<&str> {
         .collect()
 }
 
-fn add_output() -> super::add::run::AddOutput {
-    super::add::run::AddOutput {
+fn add_output() -> super::add::AddOutput {
+    super::add::AddOutput {
         project: "owner/repo".to_string(),
         sandbox: "owner-repo".to_string(),
         mode: CreationMode::Attached,
@@ -106,14 +106,14 @@ fn placed() -> Vec<PlacedFile> {
     }]
 }
 
-fn prepare_output() -> super::prepare::run::PrepareOutput {
-    super::prepare::run::PrepareOutput {
+fn prepare_output() -> super::prepare::PrepareOutput {
+    super::prepare::PrepareOutput {
         project: "owner/repo".to_string(),
         sandbox: "owner-repo".to_string(),
         mode: CreationMode::Attached,
         start_ref: "main".to_string(),
         sandbox_state: SandboxState::Running,
-        worktrees: vec![super::prepare::run::WorktreeRow {
+        worktrees: vec![super::prepare::WorktreeRow {
             path: "workspace".to_string(),
             created_from: "main".to_string(),
             head: Some("a1b2c3d".to_string()),
@@ -162,8 +162,8 @@ fn a_tool_note_puts_what_the_user_must_run_on_its_own_line() -> Checked {
         items: vec!["/workspace/mise.toml".to_string()],
         hint: msg!("add-mise-hint"),
         commands: vec![
-            crate::ui::CommandLine::new("mise trust").required_because("one line")?,
-            crate::ui::CommandLine::new("mise install").required_because("one line")?,
+            crate::design::CommandLine::new("mise trust").required_because("one line")?,
+            crate::design::CommandLine::new("mise install").required_because("one line")?,
         ],
     }];
     let document = super::prepare::print::notes(&notes);
@@ -175,8 +175,8 @@ fn a_tool_note_puts_what_the_user_must_run_on_its_own_line() -> Checked {
     Ok(())
 }
 
-fn apply_output(worktrees: Option<u32>, files: Vec<PlacedFile>) -> super::apply::run::ApplyOutput {
-    super::apply::run::ApplyOutput {
+fn apply_output(worktrees: Option<u32>, files: Vec<PlacedFile>) -> super::apply::ApplyOutput {
+    super::apply::ApplyOutput {
         project: "owner/repo".to_string(),
         sandbox: "owner-repo".to_string(),
         files,
@@ -203,9 +203,9 @@ fn apply_reports_only_the_scope_it_was_asked_for() {
     );
 }
 
-fn listing() -> super::ls::run::Listing {
-    super::ls::run::Listing {
-        projects: vec![super::ls::run::ProjectRow {
+fn listing() -> super::ls::Listing {
+    super::ls::Listing {
+        projects: vec![super::ls::ProjectRow {
             project: "owner/repo".to_string(),
             root: "/home/user/Projects/repo.project".to_string(),
             sandbox: "owner-repo".to_string(),
@@ -224,7 +224,7 @@ fn ls_shows_the_unmanaged_section_only_when_there_is_one() {
     );
 
     let mut with_unmanaged = listing();
-    with_unmanaged.unmanaged.push(super::ls::run::UnmanagedRow {
+    with_unmanaged.unmanaged.push(super::ls::UnmanagedRow {
         sandbox: "other".to_string(),
         state: "running".to_string(),
         workspace: "/tmp/other".to_string(),
@@ -238,7 +238,7 @@ fn ls_shows_the_unmanaged_section_only_when_there_is_one() {
 #[test]
 fn ls_says_so_when_there_is_nothing_to_list() {
     // 対象ゼロであること自体が答えであるため、sectionごと省かない。
-    let empty = super::ls::run::Listing {
+    let empty = super::ls::Listing {
         projects: Vec::new(),
         unmanaged: Vec::new(),
         settled: true,
@@ -350,9 +350,9 @@ fn a_diagnostic_never_reaches_the_result_document() {
     assert!(!shape(&document).contains(&"diagnostic"));
 }
 
-fn stop_report(result: super::stop::run::StopResult) -> super::stop::run::StopReport {
-    super::stop::run::StopReport {
-        outcomes: vec![super::stop::run::StopOutcome {
+fn stop_report(result: super::stop::StopResult) -> super::stop::StopReport {
+    super::stop::StopReport {
+        outcomes: vec![super::stop::StopOutcome {
             project: "owner/repo".to_string(),
             sandbox: "owner-repo".to_string(),
             result,
@@ -363,10 +363,8 @@ fn stop_report(result: super::stop::run::StopResult) -> super::stop::run::StopRe
 
 #[test]
 fn stopping_a_sandbox_is_a_success_even_though_the_word_is_stopped() -> Checked {
-    let document = super::stop::print::document(
-        &stop_report(super::stop::run::StopResult::Stopped),
-        Locale::En,
-    );
+    let document =
+        super::stop::print::document(&stop_report(super::stop::StopResult::Stopped), Locale::En);
     let Block::Section(section) = &document.blocks()[0] else {
         return Err(Unmet::new("a table".to_string()));
     };
@@ -419,9 +417,9 @@ fn the_deletion_plan_never_paints_anything_green() -> Checked {
 
     let mut buffer: Vec<u8> = Vec::new();
     {
-        let mut renderer = crate::ui::renderer::Renderer::new(
+        let mut renderer = crate::design::renderer::Renderer::new(
             &mut buffer,
-            crate::ui::policy::StreamPolicy::colored(),
+            crate::design::policy::StreamPolicy::colored(),
         );
         renderer.write(
             &crate::i18n::Catalog::new(Locale::En),

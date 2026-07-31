@@ -6,7 +6,7 @@ use super::document::{
 use super::{METADATA_VERSION, ProjectMetadata};
 
 /// metadataをYAMLへ描画する。
-pub fn render(metadata: &ProjectMetadata) -> crate::error::Result<String> {
+pub fn render(metadata: &ProjectMetadata) -> crate::diagnostics::Result<String> {
     let provisioning = &metadata.provisioning;
     let repository = &metadata.repository;
     let raw = RawMetadata {

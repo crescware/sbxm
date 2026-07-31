@@ -1,3 +1,7 @@
+use crate::diagnostics::ErrorId;
+use crate::paths::ProjectPaths;
+use std::fs;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;

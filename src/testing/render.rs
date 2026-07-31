@@ -1,18 +1,9 @@
-//! documentを文字列として確かめる。
-//!
-//! 描画条件を明示して渡すため、testは端末の有無にも環境変数にも左右されない。
-
 use crate::testing::outcome::{Checked, Required};
 
+use crate::design::document::Document;
+use crate::design::policy::StreamPolicy;
+use crate::design::renderer::Renderer;
 use crate::i18n::{Catalog, Locale};
-use crate::ui::document::Document;
-use crate::ui::policy::StreamPolicy;
-use crate::ui::renderer::Renderer;
-
-/// 色を出さない描画。既定の比較対象とする。
-pub fn plain(document: &Document, locale: Locale) -> Checked<String> {
-    render(document, locale, StreamPolicy::plain())
-}
 
 /// 指定した条件での描画。
 pub fn render(document: &Document, locale: Locale, policy: StreamPolicy) -> Checked<String> {

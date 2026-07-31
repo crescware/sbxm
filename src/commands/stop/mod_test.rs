@@ -1,6 +1,7 @@
+use crate::project::ProjectId;
+
 use crate::testing::outcome::{Checked, Required};
 
-use super::*;
 use crate::commands::Command;
 use crate::testing::cli::{command, non_tty};
 

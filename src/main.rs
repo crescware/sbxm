@@ -12,7 +12,8 @@ mod command;
 mod commands;
 mod compatibility;
 mod config;
-mod error;
+mod design;
+mod diagnostics;
 mod git;
 mod hash;
 mod i18n;
@@ -25,16 +26,15 @@ mod repository;
 mod support;
 #[cfg(test)]
 mod testing;
-mod ui;
 
 use std::process::ExitCode as ProcessExitCode;
 
 use cli::{Interactivity, Outcome, PeekedLang};
 use commands::Context;
 use config::{ConfigLocation, ConfigState};
-use error::ExitCode;
+use design::{Document, Environment, OutputPolicy, Terminals, Ui};
+use diagnostics::ExitCode;
 use i18n::{Locale, shell_locale};
-use ui::{Document, Environment, OutputPolicy, Terminals, Ui};
 
 fn main() -> ProcessExitCode {
     let argv: Vec<String> = std::env::args().collect();

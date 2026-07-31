@@ -1,12 +1,12 @@
 //! `rebuild`の実行と出力。
 
 use crate::command::RealHost;
-use crate::error::ExitCode;
+use crate::design::{Document, Ui};
+use crate::diagnostics::ExitCode;
 use crate::hash::short_hex;
 use crate::msg;
 use crate::project::ProjectId;
 use crate::support::{inventory, sandbox};
-use crate::ui::{Document, Ui};
 
 use super::super::{Context, report};
 

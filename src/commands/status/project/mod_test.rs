@@ -1,13 +1,14 @@
+use crate::diagnostics::ErrorId;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::fake::*;
-use super::*;
+use super::{fake::*, *};
 use crate::testing::host::FakeSbx;
-use crate::testing::project::{fixture, project_id};
+use crate::testing::project::{Fixture, project_id};
 
 #[test]
 fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let host = FakeSbx::listing("[]");
     let error = diagnose(
         &fixture.location,
@@ -22,7 +23,7 @@ fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
 
 #[test]
 fn the_items_are_reported_in_the_documented_order() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = without_image(FakeSbx::listing("[]"), &project);
 
@@ -60,7 +61,7 @@ fn the_items_are_reported_in_the_documented_order() -> Checked {
 
 #[test]
 fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
     let host = without_image(FakeSbx::listing("[]"), &project);
 

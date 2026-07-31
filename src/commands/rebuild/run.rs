@@ -1,38 +1,20 @@
-//! `sbxm rebuild`。
-//!
-//! 保存されていない作業がないことを確かめてから、同じ目標構成でSandboxを作り直す。
-//! Dockerfileが変わっていれば新しい世代としてbuildし、変わっていなければ既存のimageを
-//! 再利用する。安全検査を省略するoptionは設けない。
-
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::compatibility::SandboxState;
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::error::{Diagnostic, Error, ErrorId, Result};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata, RebuildIntent};
 use crate::msg;
 use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
-use crate::support::files::{self, Conflict};
+use crate::design::{ProgressSink, Remediation, Warning};
 use crate::support::image;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, Unmanaged};
-use crate::support::{
-    daemon, generation, identity, repository, sandbox, secret, select, template, tools,
-};
-use crate::ui::{ProgressSink, Remediation, Warning};
+use crate::support::{daemon, generation, select, template};
 
-/// `rebuild`の結果。
-#[derive(Debug, Clone)]
-pub struct RebuildOutput {
-    pub project: String,
-    pub sandbox: String,
-    /// 適用済みになったDockerfile hash。
-    pub applied: String,
-    pub warnings: Vec<Warning>,
-}
+use super::{RebuildOutput, Switch, start_to_read_saved_state};
 
 /// 保存されていない作業がないことを確かめてから、Sandboxを作り直す。
 pub fn run(
@@ -47,7 +29,7 @@ pub fn run(
     let canonical = project.canonical();
     let name = SandboxName::derive(&canonical);
 
-    let mut locked = select::locked(location, project)?;
+    let mut locked = select::Locked::acquire(location, project)?;
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。
     let entries = daemon::list(host)?;
@@ -193,99 +175,6 @@ fn prepare_generation(
         template,
         warnings: built.warnings,
     })
-}
-
-/// Sandboxの切り替えが最初から最後まで使う文脈。
-///
-/// 工程ごとに変わるのはSandbox名、metadata、新Templateだけである。
-struct Switch<'a> {
-    config: &'a GlobalConfig,
-    paths: &'a ProjectPaths,
-    project: &'a ProjectId,
-    workspace_root: &'a Path,
-    poll: Poll,
-}
-
-impl Switch<'_> {
-    /// Sandboxを新世代へ切り替える。
-    fn run(
-        &self,
-        host: &dyn HostEnvironment,
-        name: &SandboxName,
-        metadata: &mut ProjectMetadata,
-        template: &template::LoadedTemplate,
-        progress: &mut dyn ProgressSink,
-    ) -> Result<()> {
-        let Switch {
-            config,
-            paths,
-            project,
-            workspace_root,
-            poll,
-        } = *self;
-        let layout = SandboxLayout::new(metadata.canonical_id());
-
-        // 新世代の準備には時間がかかる。切り替える対象は、その後の観測から決める。
-        let entries = daemon::list(host)?;
-        // Sandboxが不在の中断点からは、作成工程から続ける。
-        //
-        // 既にあるSandboxがどちらの世代のものかは問わない。一覧はTemplateを示さず、
-        // 世代を観測する手段がないためである。既存のSandboxは、保存されていない作業が
-        // ないことを確かめてから必ず作り直す。
-        if let Some(entry) = inventory::single(&entries, name.as_str())? {
-            start_to_read_saved_state(
-                host,
-                metadata,
-                name,
-                entry.state == SandboxState::Stopped,
-                workspace_root,
-                poll,
-                progress,
-            )?;
-            protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
-            // データ保護検査は上で済ませている。
-            inventory::remove(host, name, poll, progress)?;
-        }
-
-        // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは
-        // 作成時に結び付くため、作り直す前に確認する。
-        secret::require_github(host, name.as_str())?;
-
-        let ready = sandbox::ensure(host, name, template, workspace_root, progress)?;
-
-        secret::require_placeholder_present(host, &ready.name)?;
-
-        identity::ensure(host, &ready.name, &metadata.git_identity)?;
-        tools::sandbox_ready(host, &ready.name)?;
-        secret::configure_git_credential(host, &ready.name)?;
-        files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;
-        repository::ensure_bare_clone(host, &ready.name, project, &layout, progress)?;
-        let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
-        repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch, progress)?;
-        sandbox::require_credentials_isolated(host, &ready.name)?;
-        Ok(())
-    }
-}
-
-/// 保存されていない作業を読むために、停止しているSandboxを起動する。
-///
-/// `rebuild`はこのSandboxをこれから作り直す。状態を読むためだけの起動を利用者へ
-/// 求めない。
-fn start_to_read_saved_state(
-    host: &dyn HostEnvironment,
-    metadata: &ProjectMetadata,
-    name: &SandboxName,
-    stopped: bool,
-    workspace_root: &Path,
-    poll: Poll,
-    progress: &mut dyn ProgressSink,
-) -> Result<()> {
-    if !stopped {
-        return Ok(());
-    }
-    inventory::start(host, name.as_str(), progress)?;
-    inventory::wait_until_running(host, metadata, workspace_root, poll)?;
-    Ok(())
 }
 
 /// `rebuild`は、Sandboxを持つ案件だけを対象とする。

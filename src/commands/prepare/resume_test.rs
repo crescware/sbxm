@@ -1,10 +1,11 @@
 //! 中断した構築を、同じ`prepare`が続きから進める。
+use crate::metadata::CreationMode;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::super::world::{World, bench};
-use super::*;
+use super::super::fake::{Bench, World};
 use crate::compatibility::SandboxState;
-use crate::error::ErrorId;
+use crate::diagnostics::ErrorId;
 use crate::support::files::Placement;
 use crate::testing::add_request::request;
 use crate::testing::value::COMMIT;
@@ -26,7 +27,7 @@ const STEPS: [(&str, ErrorId); 11] = [
 
 #[test]
 fn an_interruption_at_any_step_is_continued_by_the_same_prepare() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
 
@@ -91,7 +92,7 @@ fn an_interruption_at_any_step_is_continued_by_the_same_prepare() -> Checked {
 
 #[test]
 fn a_finished_build_is_a_no_op_for_the_same_add() -> Checked {
-    let bench = bench()?;
+    let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
     bench

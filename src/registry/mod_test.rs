@@ -1,3 +1,8 @@
+use crate::config::ConfigLocation;
+use crate::diagnostics::ErrorId;
+use crate::paths::{PRIVATE_FILE_MODE, PathScope, acquire_exclusive_lock};
+use std::path::Path;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
@@ -33,7 +38,7 @@ fn a_registry_that_was_never_written_holds_no_project() -> Checked {
     let (dir, location) = home()?;
     assert_eq!(
         load(&location).required_because("no registry is no project")?,
-        Registry::default()
+        Index::default()
     );
     // read-onlyの読み取りは何も作らない。
     assert_eq!(std::fs::read_dir(dir.path()).required()?.count(), 0);

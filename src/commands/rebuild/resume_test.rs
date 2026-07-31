@@ -1,15 +1,19 @@
+use crate::diagnostics::ErrorId;
+use crate::metadata::{self, RebuildIntent};
+use crate::project::SandboxLayout;
+use crate::support::image;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::super::fake::verified;
-use super::*;
+use super::{super::fake::verified, *};
 use crate::command::OutputPolicy;
+use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
 use crate::testing::host::FakeSbx;
 use crate::testing::image::template_listing;
 use crate::testing::poll::poll;
-use crate::testing::project::{Fixture, Registered, fixture, project_id};
+use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::value::COMMIT;
-use crate::ui::SilentProgress;
 use std::os::unix::fs::PermissionsExt;
 
 /// 固定した世代の成果物が揃い、再作成後の検証も通るhost。
@@ -107,7 +111,7 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> Checked<
 
 #[test]
 fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let target = sha256_hex(b"FROM scratch\n");
@@ -164,7 +168,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() -> Checked {
 
 #[test]
 fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let target = sha256_hex(b"FROM scratch\n");
 
@@ -220,7 +224,7 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() ->
 
 #[test]
 fn a_failure_after_the_switch_leaves_the_intent_in_place() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let target = sha256_hex(b"FROM scratch\n");

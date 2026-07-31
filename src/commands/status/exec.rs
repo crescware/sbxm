@@ -1,13 +1,15 @@
 //! `status`の実行。
 
 use crate::command::RealHost;
-use crate::error::ExitCode;
+use crate::design::Ui;
+use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;
 use crate::support::sandbox;
-use crate::ui::Ui;
 
-use super::super::{Context, report};
-use super::{Scope, print};
+use super::{
+    super::{Context, report},
+    Scope, print,
+};
 
 pub fn exec(scope: &Scope, context: &Context, ui: &mut Ui) -> ExitCode {
     match scope {

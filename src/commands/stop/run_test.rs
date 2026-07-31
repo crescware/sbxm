@@ -1,3 +1,6 @@
+use crate::commands::stop::StopResult;
+use crate::diagnostics::ErrorId;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
@@ -5,12 +8,12 @@ use crate::command::OutputPolicy;
 use crate::metadata::{self, RebuildIntent};
 use crate::testing::host::{FakeSbx, assert_lifecycle};
 use crate::testing::poll::poll;
-use crate::testing::project::{fixture, project_id};
+use crate::testing::project::{Fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
 
 #[test]
 fn only_the_running_targets_are_stopped() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
     let running = format!(
@@ -65,7 +68,7 @@ fn only_the_running_targets_are_stopped() -> Checked {
 
 #[test]
 fn a_project_without_a_sandbox_is_a_no_op_success() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     fixture.register("example-org/example-repo")?;
     let host = FakeSbx::listing("[]");
 
@@ -85,7 +88,7 @@ fn a_project_without_a_sandbox_is_a_no_op_success() -> Checked {
 
 #[test]
 fn a_rebuild_in_progress_stops_nothing_at_all() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
     let mut metadata = second.metadata.clone();
@@ -118,7 +121,7 @@ fn a_rebuild_in_progress_stops_nothing_at_all() -> Checked {
 
 #[test]
 fn an_intent_recorded_after_the_first_check_is_still_seen() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("alpha/alfa")?;
     let listing = format!("[{}]", fixture.entry(&project, "running")?);
     let host = FakeSbx::listing(&listing);
@@ -147,7 +150,7 @@ fn an_intent_recorded_after_the_first_check_is_still_seen() -> Checked {
 
 #[test]
 fn a_failure_leaves_the_remaining_targets_running() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
     let running = format!(
@@ -179,7 +182,7 @@ fn a_failure_leaves_the_remaining_targets_running() -> Checked {
 
 #[test]
 fn a_sandbox_that_stays_running_is_reported_as_failed() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let running = format!("[{}]", fixture.entry(&project, "running")?);
     let host = FakeSbx::listing(&running);
@@ -205,7 +208,7 @@ fn a_sandbox_that_stays_running_is_reported_as_failed() -> Checked {
 
 #[test]
 fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
-    let fixture = fixture()?;
+    let fixture = Fixture::new()?;
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
     let running = format!(

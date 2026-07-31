@@ -1,3 +1,5 @@
+use crate::diagnostics::ErrorId;
+
 use crate::testing::outcome::{Checked, Refused};
 
 use super::*;
@@ -24,7 +26,7 @@ fn worktree_counts_outside_the_allowed_range_are_refused() -> Checked {
         tty(),
     )
     .refused_because("a negative count never reaches the range check")?;
-    assert_eq!(error.exit_code(), crate::error::ExitCode::Failure);
+    assert_eq!(error.exit_code(), crate::diagnostics::ExitCode::Failure);
     assert!(matches!(
         command(
             &["add", "git@github.com:owner/repo.git", "--worktrees", "1"],

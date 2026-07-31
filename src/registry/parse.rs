@@ -5,16 +5,15 @@
 
 use std::path::Path;
 
-use crate::error::{Error, ErrorId, Result};
+use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
 use crate::repository::RepositoryIdentity;
 
-use super::document::RawRegistry;
-use super::{DOCUMENT, Registry, RegistryEntry};
+use super::{DOCUMENT_VERSION, Index, RegistryEntry, document::RawRegistry};
 
 /// registryのtextを検証する。
-pub fn parse(text: &str, path: &Path) -> Result<Registry> {
+pub fn parse(text: &str, path: &Path) -> Result<Index> {
     // 空のdocumentはnullとして読める。keyを1つも持たないmappingと同じ扱いにし、
     // 欠落したfieldをsyntax errorではなく名前で報告する。
     let raw = yaml_serde::from_str::<Option<RawRegistry>>(text)
@@ -51,7 +50,7 @@ pub fn parse(text: &str, path: &Path) -> Result<Registry> {
         )
     };
 
-    DOCUMENT.require(raw.version, &paths::display(path), || {
+    DOCUMENT_VERSION.require(raw.version, &paths::display(path), || {
         missing("version".to_string())
     })?;
 
@@ -82,7 +81,7 @@ pub fn parse(text: &str, path: &Path) -> Result<Registry> {
         entries.push(RegistryEntry::new(Path::new(&project_root), repository)?);
     }
 
-    let mut registry = Registry { entries };
+    let mut registry = Index { entries };
     registry.sort();
     Ok(registry)
 }

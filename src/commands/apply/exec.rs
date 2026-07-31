@@ -1,13 +1,14 @@
 //! `apply`の実行。
 
 use crate::command::RealHost;
-use crate::error::ExitCode;
+use crate::design::Ui;
+use crate::diagnostics::ExitCode;
 use crate::support::sandbox;
-use crate::ui::Ui;
 
-use super::super::{Context, report};
-use super::run::Scope;
-use super::{Args, print};
+use super::{
+    super::{Context, report},
+    Args, Scope, print,
+};
 
 pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
     let (config, locale) = match context.settings() {

@@ -1,12 +1,17 @@
+use crate::commands::apply::Scope;
+use crate::diagnostics::ErrorId;
+use crate::metadata::{self};
+use crate::paths::ProjectPaths;
+use crate::project::SandboxName;
+
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::super::fake::*;
-use super::*;
+use super::{super::fake::*, *};
+use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
 use crate::metadata::RebuildIntent;
 use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::testing::value::DIGEST;
-use crate::ui::SilentProgress;
 use std::os::unix::fs::PermissionsExt;
 
 /// 既存testは宣言fileの配置を確かめる。
