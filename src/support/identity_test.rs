@@ -160,3 +160,76 @@ fn a_sandbox_configured_for_someone_else_is_not_overwritten() {
         );
     }
 }
+
+/// hostの`git config --global --get-all`が返す原文を決め打ちするhost。
+struct FakeGitConfig {
+    answers: HashMap<String, (i32, String)>,
+}
+
+impl FakeGitConfig {
+    fn answering(pairs: &[(&str, i32, &str)]) -> FakeGitConfig {
+        FakeGitConfig {
+            answers: pairs
+                .iter()
+                .map(|(key, code, stdout)| ((*key).to_string(), (*code, (*stdout).to_string())))
+                .collect(),
+        }
+    }
+}
+
+impl HostEnvironment for FakeGitConfig {
+    fn command_exists(&self, _program: &str) -> bool {
+        true
+    }
+
+    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+        let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+        let (code, stdout) = match args.as_slice() {
+            ["config", "--global", "--get-all", key] => self
+                .answers
+                .get(*key)
+                .cloned()
+                .unwrap_or((1, String::new())),
+            _ => (1, String::new()),
+        };
+        Ok(crate::testing::command::outcome(spec, code, &stdout))
+    }
+}
+
+#[test]
+fn the_host_identity_is_read_from_what_git_declares() {
+    let host = FakeGitConfig::answering(&[
+        ("user.name", 0, "Example User\n"),
+        ("user.email", 0, "  user@example.com  \n"),
+    ]);
+    assert_eq!(
+        from_host(&host).expect("the host declares both"),
+        identity()
+    );
+}
+
+#[test]
+fn a_declaration_that_cannot_be_reduced_to_one_value_is_refused() {
+    for (name, email) in [
+        // 未設定。
+        ((1, ""), (0, "user@example.com\n")),
+        ((0, "Example User\n"), (1, "")),
+        // 複数値。空の宣言も1つの宣言であり、落として1件に見せない。
+        ((0, "Example User\nOther User\n"), (0, "user@example.com\n")),
+        ((0, "Example User\n\n"), (0, "user@example.com\n")),
+        ((0, "\nExample User\n"), (0, "user@example.com\n")),
+        // 空、または改行だけの値。
+        ((0, "   \n"), (0, "user@example.com\n")),
+    ] {
+        let host = FakeGitConfig::answering(&[
+            ("user.name", name.0, name.1),
+            ("user.email", email.0, email.1),
+        ]);
+        let error = from_host(&host).expect_err("{name:?} {email:?} must be refused");
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::GitIdentityUnavailable),
+            "{name:?} {email:?} produced the wrong error"
+        );
+    }
+}

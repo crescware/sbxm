@@ -141,9 +141,12 @@ pub fn register(
             require_same_registration(entry, &request.repository)?;
             let paths = ProjectPaths::at(entry.project_root(), &canonical);
             // 保存されたabsolute pathでも、そこにあるものを観測してから使う。
-            // rootがまだ無い中断点からの再開は、作成工程から続ける。
-            if std::fs::symlink_metadata(paths.root()).is_ok() {
-                paths::require_owned_directory(paths.root(), PathScope::ProjectPath)?;
+            // rootがまだ無い中断点からの再開だけが、作成工程から続けられる。
+            match observe(paths.root())? {
+                Presence::Present => {
+                    paths::require_owned_directory(paths.root(), PathScope::ProjectPath)?;
+                }
+                Presence::Absent => {}
             }
             paths
         }
@@ -257,8 +260,10 @@ fn check_new_registration(
             ),
         );
     }
-    if std::fs::symlink_metadata(candidate.root()).is_ok() {
-        return Err(Error::single(
+    // 観測できないことを、空いていることと同一視しない。
+    match observe(candidate.root())? {
+        Presence::Absent => Ok(()),
+        Presence::Present => Err(Error::single(
             Diagnostic::new(
                 ErrorId::ProjectPathCollision,
                 msg!(
@@ -271,9 +276,25 @@ fn check_new_registration(
                 "remediation-project-path-occupied",
                 path = paths::display(candidate.root())
             )),
-        ));
+        )),
     }
-    Ok(())
+}
+
+/// pathに何かがあるか。
+enum Presence {
+    Present,
+    Absent,
+}
+
+/// symlinkを追跡せずにpathの有無を観測する。
+///
+/// 不在と、観測できないことを区別する。読めないpathを空いているものとして扱わない。
+fn observe(path: &std::path::Path) -> Result<Presence> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(Presence::Present),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Presence::Absent),
+        Err(error) => Err(PathScope::ProjectPath.unreadable_error(path, &error.to_string())),
+    }
 }
 
 /// registry entryが、この実行の登録対象と同じ構成を指しているか。

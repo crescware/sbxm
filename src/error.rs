@@ -84,6 +84,7 @@ error_ids! {
     ConfigUnknownVersion => "config-unknown-version",
     ConfigMissingField => "config-missing-field",
     ConfigInvalidValue => "config-invalid-value",
+    ConfigNotRewritable => "config-not-rewritable",
     ConfigPermissionTooOpen => "config-permission-too-open",
     ConfigSymlink => "config-symlink",
     ConfigNotOwned => "config-not-owned",

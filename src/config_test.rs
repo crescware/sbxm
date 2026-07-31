@@ -326,3 +326,21 @@ fn rendering_quotes_values_that_need_escaping() {
         Some("/Users/ex ample/.gitconfig")
     );
 }
+
+#[test]
+fn a_configuration_that_cannot_be_edited_one_line_at_a_time_is_left_alone() {
+    let (_dir, location) = location();
+    // 有効だが行指向ではない書き方。行単位の編集では安全に足せない。
+    write_config(&location, "{version: 1}\n");
+
+    let error = save_language(&location, Locale::Ja)
+        .expect_err("a configuration sbxm cannot edit is never rewritten");
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigNotRewritable));
+    assert_eq!(
+        fs::read_to_string(location.config_file()).unwrap(),
+        "{version: 1}\n",
+        "the user's configuration is untouched"
+    );
+    // 拒否したあとも、そのconfigはそのまま読める。
+    assert_eq!(loaded(&location).language, None);
+}

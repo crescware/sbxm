@@ -760,3 +760,32 @@ fn a_run_interrupted_before_its_artifacts_exist_is_continued_by_the_same_add() {
     let registry = crate::registry::load(&setup.location).expect("the registry stays valid");
     assert_eq!(registry.entries().len(), 1);
 }
+
+#[test]
+fn a_candidate_root_that_cannot_be_observed_is_never_taken_for_a_free_one() {
+    // SAFETY: geteuid(2)は引数を取らず、失敗しない。
+    if unsafe { libc::geteuid() } == 0 {
+        // rootはsearch bitに関わらず観測できるため、この状態を作れない。
+        return;
+    }
+    let setup = setup();
+    // 親directoryのsearch bitを外すと、その下のpathを観測できなくなる。
+    fs::set_permissions(setup.dir.path(), fs::Permissions::from_mode(0o600)).unwrap();
+    let outcome = register(
+        &setup.location,
+        &setup.parent,
+        &request("example-org/example-repo", None, None),
+        &identity(),
+    );
+    fs::set_permissions(setup.dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+
+    let error = outcome.expect_err("an unobservable candidate root is refused");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    assert!(
+        crate::registry::load(&setup.location)
+            .expect("the registry stays valid")
+            .entries()
+            .is_empty(),
+        "nothing is recorded from a path sbxm could not observe"
+    );
+}

@@ -36,18 +36,16 @@ fn read_global(host: &dyn HostEnvironment, key: &str) -> Result<String> {
     if !outcome.success() {
         return Err(unavailable(key, "no value is set"));
     }
+    // 空の宣言も1つの宣言である。落として1件に見せると、gitが解決する値と食い違う。
     let stdout = outcome.stdout_text();
-    let values: Vec<&str> = stdout
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect();
+    let values: Vec<&str> = stdout.lines().collect();
     let [value] = values.as_slice() else {
         let detail = format!("{} values are set", values.len());
         return Err(unavailable(key, &detail));
     };
+    let value = value.trim();
     validate_git_identity_value(value).map_err(|detail| unavailable(key, detail))?;
-    Ok((*value).to_string())
+    Ok(value.to_string())
 }
 
 /// hostのGit identityを、設定するcommandとともに要求する。
