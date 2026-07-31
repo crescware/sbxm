@@ -10,7 +10,9 @@ use crate::msg;
 use crate::paths::{self};
 use crate::repository::RepositoryIdentity;
 
-use super::document::{RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository};
+use super::document::{
+    RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository, RawStartRef,
+};
 use super::{
     CreationMode, DOCUMENT, GitIdentity, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata,
     Provisioning, RebuildIntent, validate_git_identity_value,
@@ -126,11 +128,9 @@ fn parse_provisioning(raw: Option<RawProvisioning>, path: &Path) -> Result<Provi
     })?;
 
     // keyの欠落は記録そのものの欠落、`null`は起点branchが未確定であることを指す。
-    let start_ref = match provisioning
-        .start_ref
-        .ok_or_else(|| missing(path, "provisioning.start_ref"))?
-    {
-        None => {
+    let start_ref = match provisioning.start_ref {
+        RawStartRef::Missing => return Err(missing(path, "provisioning.start_ref")),
+        RawStartRef::Unset => {
             if mode == CreationMode::Detached {
                 return Err(invalid(
                     path,
@@ -140,7 +140,7 @@ fn parse_provisioning(raw: Option<RawProvisioning>, path: &Path) -> Result<Provi
             }
             None
         }
-        Some(value) => {
+        RawStartRef::Named(value) => {
             git::validate_branch_name(&value).map_err(|_| {
                 invalid(
                     path,

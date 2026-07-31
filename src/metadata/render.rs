@@ -1,6 +1,8 @@
 //! `project.yaml`の書き出し。
 
-use super::document::{RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository};
+use super::document::{
+    RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository, RawStartRef,
+};
 use super::{METADATA_VERSION, ProjectMetadata};
 
 /// metadataをYAMLへ描画する。
@@ -19,7 +21,10 @@ pub fn render(metadata: &ProjectMetadata) -> crate::error::Result<String> {
         }),
         provisioning: Some(RawProvisioning {
             mode: Some(provisioning.mode.as_str().to_string()),
-            start_ref: Some(provisioning.start_ref.clone()),
+            start_ref: provisioning
+                .start_ref
+                .clone()
+                .map_or(RawStartRef::Unset, RawStartRef::Named),
             requested_worktrees: Some(i64::from(provisioning.requested_worktrees)),
             dockerfile_sha256: Some(provisioning.dockerfile_sha256.clone()),
         }),
