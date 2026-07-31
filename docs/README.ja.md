@@ -64,7 +64,7 @@ sbxm add https://github.com/owner/repository.git
 ```
 
 `sbxm add`が受理するのはこの2形式だけです。ホスト側のcloneは渡したtransportを
-そのまま使うため、登録後にSSHとHTTPSを入れ替えることはできません。
+そのまま使います。
 
 sbxmは、実行したディレクトリの直下に`repository.project/`を作ります。プロジェクト
 ごとのディレクトリを用意したり、owner名を含む配置規則を揃えたりする必要はありません。

@@ -65,7 +65,7 @@ sbxm add https://github.com/owner/repository.git
 ```
 
 These two forms are the only ones `sbxm add` accepts. The host clone uses the
-transport you pass, so SSH and HTTPS are not interchangeable afterwards.
+transport you pass.
 
 sbxm creates `repository.project/` in the directory you ran it from — you do
 not make a directory per project or follow a naming rule. The first
