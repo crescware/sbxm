@@ -677,39 +677,72 @@ fn a_non_interactive_add_without_an_identity_refuses_before_creating_anything() 
     );
 }
 
-#[test]
-fn half_a_declared_identity_is_refused_before_anything_is_read() {
-    let home = temp_home();
-    let base = home.path().join("Projects");
-    std::fs::create_dir_all(&base).unwrap();
+/// 既定の名義を保存済みのconfigを置く。
+fn write_config_with_identity(home: &Path, name: &str, email: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = home.join(".sbxm");
+    std::fs::create_dir_all(&dir).expect("create ~/.sbxm");
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("mode");
+    let path = dir.join("config.yaml");
+    std::fs::write(
+        &path,
+        format!("version: 1\nlanguage: en\ngit_user_name: {name}\ngit_user_email: {email}\n"),
+    )
+    .expect("write config");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("mode");
+}
 
-    for option in [
-        ("--git-user-name", "Example User"),
-        ("--git-user-email", "user@example.com"),
-    ] {
-        let run = sbxm_with_git(
-            home.path(),
-            &base,
-            &[
-                "--lang",
-                "en",
-                "add",
-                "git@github.com:Example-Org/Example-Repo.git",
+#[test]
+fn half_a_declared_identity_is_refused_whatever_else_could_have_decided_it() {
+    // 片方だけの宣言はCLI parseの段階で止まる。保存済みの既定があっても、残りの半分を
+    // そこから補完しない。
+    for saved in [false, true] {
+        let home = temp_home();
+        let base = home.path().join("Projects");
+        std::fs::create_dir_all(&base).unwrap();
+        if saved {
+            write_config_with_identity(home.path(), "Saved User", "saved@example.com");
+        }
+
+        for option in [
+            ("--git-user-name", "Example User"),
+            ("--git-user-email", "user@example.com"),
+        ] {
+            let run = sbxm_with_git(
+                home.path(),
+                &base,
+                &[
+                    "--lang",
+                    "en",
+                    "add",
+                    "git@github.com:Example-Org/Example-Repo.git",
+                    option.0,
+                    option.1,
+                ],
+            );
+            assert_eq!(run.code, 1, "{}", run.stderr);
+            assert!(
+                run.stderr.contains("git-identity-incomplete"),
+                "{} alone must be refused with a saved default of {saved}: {}",
                 option.0,
-                option.1,
-            ],
-        );
-        assert_eq!(run.code, 1, "{}", run.stderr);
-        assert!(
-            run.stderr.contains("git-identity-incomplete"),
-            "{} alone must be refused: {}",
-            option.0,
-            run.stderr
-        );
-        assert!(
-            !home.path().join(".sbxm").exists(),
-            "nothing is read or created before the declaration is complete"
-        );
+                run.stderr
+            );
+            assert!(
+                !home.path().join(".sbxm").join("registry.yaml").exists(),
+                "nothing is registered before the declaration is complete"
+            );
+            assert!(
+                !base.join("example-repo.project").exists(),
+                "no project directory is created"
+            );
+        }
+
+        if !saved {
+            assert!(
+                !home.path().join(".sbxm").exists(),
+                "with nothing saved, no global state is created either"
+            );
+        }
     }
 }
 
