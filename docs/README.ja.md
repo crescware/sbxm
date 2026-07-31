@@ -56,17 +56,17 @@ git config --global user.email "you@example.com"
 
 ```sh
 cd ~/Projects
-sbxm add git@github.com:owner/repository.git
+sbxm add git@github.com:<owner>/<repository>.git
 ```
 
 ```sh
-sbxm add https://github.com/owner/repository.git
+sbxm add https://github.com/<owner>/<repository>.git
 ```
 
 `sbxm add`が受理するのはこの2形式だけです。ホスト側のcloneは渡したtransportを
 そのまま使います。
 
-sbxmは、実行したディレクトリの直下に`repository.project/`を作ります。プロジェクト
+sbxmは、実行したディレクトリの直下に`<repository>.project/`を作ります。プロジェクト
 ごとのディレクトリを用意したり、owner名を含む配置規則を揃えたりする必要はありません。
 最初の対話実行では、表示言語を一度だけ選び、その結果を`~/.sbxm/config.yaml`へ
 保存します。
@@ -79,7 +79,7 @@ Sandbox名と次に実行する正確なコマンドを表示します。この�
 worktreeを複数用意する場合は、起点となるbranchとdetached modeを指定します。
 
 ```sh
-sbxm add git@github.com:owner/repository.git --detach main --worktrees 3
+sbxm add git@github.com:<owner>/<repository>.git --detach main --worktrees 3
 ```
 
 複数のagentやタスクで作業ディレクトリを分離したい場合に、detached worktreeが役立ちます。
@@ -113,8 +113,8 @@ placeholderだけであり、登録済みのhostへのrequestに限ってproxy�
 ### 4. Sandboxを構築して接続する
 
 ```sh
-sbxm prepare owner/repository
-sbxm open owner/repository
+sbxm prepare <project-id>
+sbxm open <project-id>
 ```
 
 `prepare`はプロジェクトのimageをbuildし、Sandboxを作成して、その中へrepositoryを
@@ -136,14 +136,14 @@ Sandbox内のworktreeは次の場所にあります。
 sbxm ls
 
 # 変更を加えずに1つのプロジェクトを検査する
-sbxm status owner/repository
+sbxm status <project-id>
 
 # プロジェクトへ接続する
-sbxm open owner/repository
+sbxm open <project-id>
 
 # 1つ以上のプロジェクトを削除せずに停止する
-sbxm stop owner/repository
-sbxm stop owner/repository another/project
+sbxm stop <project-id>
+sbxm stop <project-id> ...
 ```
 
 対話端末で実行した場合、`open`、`stop`、`destroy`はプロジェクト引数を省略すると
@@ -157,7 +157,7 @@ sbxm stop owner/repository another/project
 system dependencyを追加するにはこのファイルを編集し、変更を適用します。
 
 ```sh
-sbxm rebuild owner/repository
+sbxm rebuild <project-id>
 ```
 
 rebuildはSandboxを作り直します。作業内容を保護するため、dirty file、pushしていない
@@ -168,7 +168,7 @@ commit、またはunmanaged worktreeがある場合、sbxmは通常のrebuildを
 構築済みのプロジェクトには、rebuildせずにmanaged worktreeを追加できます。
 
 ```sh
-sbxm apply owner/repository --worktrees 4
+sbxm apply <project-id> --worktrees 4
 ```
 
 worktree数は増やすことだけができます。デフォルトのattached modeで登録したプロジェクト
@@ -193,7 +193,7 @@ files:
 `prepare`の実行時に配置されます。あとから加えた変更は明示的に適用します。
 
 ```sh
-sbxm apply owner/repository --files
+sbxm apply <project-id> --files
 ```
 
 `--files`は宣言された配置先を上書きします。token、private keyなどの認証情報は
@@ -202,13 +202,13 @@ sbxm apply owner/repository --files
 2つのapply対象は同時に指定できます。
 
 ```sh
-sbxm apply owner/repository --files --worktrees 4
+sbxm apply <project-id> --files --worktrees 4
 ```
 
 ## プロジェクトを破棄する
 
 ```sh
-sbxm destroy owner/repository
+sbxm destroy <project-id>
 ```
 
 sbxmは何かを削除する前に、削除するものと残すものを表示します。通常のdestroyでは、
@@ -224,7 +224,7 @@ secretは残るため、tokenを再登録すればあとからプロジェクト
 データ保護とactive sessionの検査を意図的に省略する必要がある場合は、次を実行します。
 
 ```sh
-sbxm destroy --force owner/repository
+sbxm destroy --force <project-id>
 ```
 
 Sandbox内に残すべきものがないと別途確認できた場合に限って、`--force`を使用してください。

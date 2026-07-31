@@ -57,17 +57,17 @@ GitHub shows for the repository, unchanged:
 
 ```sh
 cd ~/Projects
-sbxm add git@github.com:owner/repository.git
+sbxm add git@github.com:<owner>/<repository>.git
 ```
 
 ```sh
-sbxm add https://github.com/owner/repository.git
+sbxm add https://github.com/<owner>/<repository>.git
 ```
 
 These two forms are the only ones `sbxm add` accepts. The host clone uses the
 transport you pass.
 
-sbxm creates `repository.project/` in the directory you ran it from — you do
+sbxm creates `<repository>.project/` in the directory you ran it from — you do
 not make a directory per project or follow a naming rule. The first
 interactive `add` also asks once which language sbxm should speak, and
 remembers the answer in `~/.sbxm/config.yaml`.
@@ -79,7 +79,7 @@ By default, the sandbox gets one worktree on the repository's default branch.
 For several independent worktrees, choose a starting branch and detached mode:
 
 ```sh
-sbxm add git@github.com:owner/repository.git --detach main --worktrees 3
+sbxm add git@github.com:<owner>/<repository>.git --detach main --worktrees 3
 ```
 
 Detached worktrees are useful when several agents or tasks need isolated
@@ -113,8 +113,8 @@ hosts.
 ### 4. Build and enter the sandbox
 
 ```sh
-sbxm prepare owner/repository
-sbxm open owner/repository
+sbxm prepare <project-id>
+sbxm open <project-id>
 ```
 
 `prepare` builds the project image, creates the sandbox, clones the repository
@@ -136,14 +136,14 @@ Inside the sandbox, worktrees are located at:
 sbxm ls
 
 # Inspect one project without changing it
-sbxm status owner/repository
+sbxm status <project-id>
 
 # Connect to a project
-sbxm open owner/repository
+sbxm open <project-id>
 
 # Stop one or more projects without deleting them
-sbxm stop owner/repository
-sbxm stop owner/repository another/project
+sbxm stop <project-id>
+sbxm stop <project-id> ...
 ```
 
 When run in an interactive terminal, `open`, `stop`, and `destroy` can prompt
@@ -157,7 +157,7 @@ you to select a project if the project argument is omitted.
 file to add tools or system dependencies, then apply it:
 
 ```sh
-sbxm rebuild owner/repository
+sbxm rebuild <project-id>
 ```
 
 Rebuilding recreates the sandbox. To protect work, sbxm refuses a normal
@@ -169,7 +169,7 @@ worktrees.
 A built project can gain more managed worktrees without a rebuild:
 
 ```sh
-sbxm apply owner/repository --worktrees 4
+sbxm apply <project-id> --worktrees 4
 ```
 
 The count can only increase. For a project registered in the default attached
@@ -195,7 +195,7 @@ The destination is relative to the sandbox user's home directory. Declarations
 are placed during `prepare`; apply later changes explicitly:
 
 ```sh
-sbxm apply owner/repository --files
+sbxm apply <project-id> --files
 ```
 
 `--files` overwrites the declared destinations. Keep tokens, private keys, and
@@ -204,13 +204,13 @@ other credentials out of these files; use Docker Sandboxes secrets for those.
 Both apply scopes may be requested together:
 
 ```sh
-sbxm apply owner/repository --files --worktrees 4
+sbxm apply <project-id> --files --worktrees 4
 ```
 
 ## Tear down a project
 
 ```sh
-sbxm destroy owner/repository
+sbxm destroy <project-id>
 ```
 
 Before deleting anything, sbxm shows what will be removed and what will remain.
@@ -231,7 +231,7 @@ same place means moving them aside first.
 If you intentionally need to bypass data-protection and active-session checks:
 
 ```sh
-sbxm destroy --force owner/repository
+sbxm destroy --force <project-id>
 ```
 
 Use `--force` only when you have independently confirmed that nothing inside
