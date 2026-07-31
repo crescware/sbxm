@@ -139,7 +139,13 @@ pub fn register(
         Some(entry) => {
             // 登録済みなら、実行時の配置規則から新しい候補pathを作らない。
             require_same_registration(entry, &request.repository)?;
-            ProjectPaths::at(entry.project_root(), &canonical)
+            let paths = ProjectPaths::at(entry.project_root(), &canonical);
+            // 保存されたabsolute pathでも、そこにあるものを観測してから使う。
+            // rootがまだ無い中断点からの再開は、作成工程から続ける。
+            if std::fs::symlink_metadata(paths.root()).is_ok() {
+                paths::require_owned_directory(paths.root(), PathScope::ProjectPath)?;
+            }
+            paths
         }
         None => {
             // cwdを使うのは新規canonical project IDの登録時だけである。

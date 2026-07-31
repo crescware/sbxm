@@ -11,7 +11,7 @@ mod project;
 mod scope;
 
 pub use atomic::{atomic_create, atomic_rename_into_place, atomic_replace};
-pub use directory::{ensure_directory, ensure_private_dir};
+pub use directory::{ensure_directory, ensure_private_dir, require_owned_directory};
 pub use inspect::{
     display, is_symlink, lexically_standardize, permission_too_open, real_path, regular_file_exists,
 };

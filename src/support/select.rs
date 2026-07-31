@@ -13,7 +13,7 @@ use crate::config::ConfigLocation;
 use crate::error::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
-use crate::paths::{self, ExclusiveLock, ProjectPaths};
+use crate::paths::{self, ExclusiveLock, PathScope, ProjectPaths};
 use crate::project::ProjectId;
 use crate::registry;
 use crate::repository::{CLONE_URL_PLACEHOLDER, RepositoryIdentity};
@@ -39,6 +39,7 @@ impl Candidate {
     /// 選択時に読んだmetadataは古くなり得るため、preconditionの判定にはこちらを使う。
     /// registry entryと一致しないmetadataは、どちらかを正しいものとして採用しない。
     pub fn reload(&self) -> Result<ProjectMetadata> {
+        self.verify_root()?;
         let Some(metadata) = metadata::load(&self.paths)? else {
             return Err(incomplete_registration(self));
         };
@@ -52,8 +53,17 @@ impl Candidate {
         Ok(metadata)
     }
 
+    /// registryが指すproject rootを、信用する前に観測する。
+    ///
+    /// 保存されたabsolute pathであっても、そこにdirectoryがあり、現在の利用者が
+    /// 所有していることを確かめてから読み書きする。
+    fn verify_root(&self) -> Result<()> {
+        paths::require_owned_directory(self.paths.root(), PathScope::ProjectPath)
+    }
+
     /// project lockを取り、lock後の内容で読み直す。
     pub fn lock(self) -> Result<Locked> {
+        self.verify_root()?;
         let lock = self.paths.acquire_lock()?;
         let metadata = self.reload()?;
         Ok(Locked {

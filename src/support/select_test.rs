@@ -237,3 +237,39 @@ fn an_interrupted_prompt_is_a_cancel_and_any_other_read_failure_is_reported() {
     assert_eq!(unreadable.first_id(), Some(ErrorId::PromptUnreadable));
     assert_ne!(unreadable.exit_code(), ExitCode::Canceled);
 }
+
+#[test]
+fn a_registry_path_is_observed_before_it_is_read_or_written() {
+    let fixture = fixture();
+    let project = fixture.register("example-org/example-repo");
+    let root = project.paths.root().to_path_buf();
+
+    // 保存済みのabsolute pathでも、そこにdirectoryがあることを確かめてから使う。
+    std::fs::remove_dir_all(&root).expect("undo the project root");
+    std::fs::write(&root, b"not a directory").expect("put something else there");
+
+    let candidate = one(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")),
+        msg!("select-open-heading"),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .expect("the entry still names the project");
+    let error = candidate
+        .lock()
+        .expect_err("a path that is not a directory is never worked on");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+
+    // symlinkも追跡しない。指す先は案件directoryの外にあり得る。
+    std::fs::remove_file(&root).unwrap();
+    let elsewhere = fixture.parent.as_path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &root).unwrap();
+
+    let error =
+        crate::support::select::find(&fixture.location, &project_id("example-org/example-repo"))
+            .expect("the entry still names the project")
+            .lock()
+            .expect_err("a symlinked project root is refused");
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+}
