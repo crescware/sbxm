@@ -83,7 +83,8 @@ sbxm add git@github.com:<owner>/<repository>.git --detach main --worktrees 3
 ```
 
 Detached worktrees are useful when several agents or tasks need isolated
-working directories. The supported count is 1–32.
+working directories. The supported count is 1–32. `--worktrees` may be
+shortened to `-t`.
 
 ### 3. Register the GitHub credential
 
@@ -174,7 +175,7 @@ sbxm apply <project-id> --worktrees 4
 
 The count can only increase. For a project registered in the default attached
 mode, the first worktree stays on its tracking branch and additional worktrees
-are detached.
+are detached. Here too, `--worktrees` may be shortened to `-t`.
 
 ### Place configuration files
 

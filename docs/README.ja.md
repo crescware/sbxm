@@ -83,7 +83,7 @@ sbxm add git@github.com:<owner>/<repository>.git --detach main --worktrees 3
 ```
 
 複数のagentやタスクで作業ディレクトリを分離したい場合に、detached worktreeが役立ちます。
-指定できる個数は1〜32です。
+指定できる個数は1〜32です。`--worktrees`は`-t`と短く書けます。
 
 ### 3. GitHubの認証情報を登録する
 
@@ -173,6 +173,7 @@ sbxm apply <project-id> --worktrees 4
 
 worktree数は増やすことだけができます。デフォルトのattached modeで登録したプロジェクト
 では、最初のworktreeはtracking branch上に残り、追加のworktreeはdetachedになります。
+ここでも`--worktrees`は`-t`と短く書けます。
 
 ### 設定ファイルを配置する
 
