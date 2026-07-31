@@ -4,7 +4,7 @@
 //! commandの実装は`commands`が1 command 1 directoryで持ち、本fileはlocale決定、描画条件の
 //! 決定、引き渡しだけを行う。
 //!
-//! 利用者向けの描画はすべて`ui`が行う。本fileはstreamへ直接書かない。
+//! 利用者向けの描画はすべて`design`が行う。本fileはstreamへ直接書かない。
 
 mod archive;
 mod cli;

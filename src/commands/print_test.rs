@@ -1,7 +1,7 @@
 //! command printerが並べる構造。
 //!
 //! 翻訳文の微修正でtestが壊れないよう、文言ではなくblockの順序と役割を確かめる。
-//! どう描かれるかは`src/ui`のinvariant testが持ち、ここは何を並べるかだけを見る。
+//! どう描かれるかは`src/design`のinvariant testが持ち、ここは何を並べるかだけを見る。
 
 use crate::testing::outcome::{Checked, Required, Unmet};
 

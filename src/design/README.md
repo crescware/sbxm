@@ -541,7 +541,7 @@ pub enum Block {
 
 sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれかとする。tableとlistのcellは`Cell`とし、翻訳する項目名と翻訳しない値を型で分ける。混ぜると、状態値まで訳す経路と項目名を原文のまま出す経路の両方が作れてしまう。
 
-具体的なterminal crateの型を`ui` module外へ公開しない。callerは意味型だけを使う。
+具体的なterminal crateの型を`design` module外へ公開しない。callerは意味型だけを使う。
 
 `StyleSpec`はbold、dim、underline、foregroundを表現できるが、italic、背景色、点滅、RGB、256色indexを持たない。dimは補助情報にだけ使い、`Muted`と`TableHeader`以外のroleへは付かない。
 
@@ -564,7 +564,7 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 
 ## 禁止事項
 
-- `ui` module外でANSI escape sequenceを生成する
+- `design` module外でANSI escape sequenceを生成する
 - callerが具体色を指定する
 - `固定RGBや256色indexを標準themeへ追加する`
 - terminal capabilityによってtruecolorへ自動昇格する
@@ -648,9 +648,9 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 
 ### architecture
 
-- 利用者向けの`print!`、`println!`、`eprintln!`が`ui`外にない
-- ANSI literalがrenderer外にない
-- terminal style crateのimportが`ui`外にない
+- 利用者向けの`print!`、`println!`、`eprintln!`が`design`外にない
+- ANSI literalがpainter外にない
+- terminal style crateのimportが`design`外にない
 - 選択promptの生成がprompt component外にない
 - FTL action/remediation messageにliteral commandがない
 - command用でないFTL messageに`$command` placeholderがない
@@ -675,7 +675,7 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 
 ## 完成の定義
 
-このデザインシステムが完成した状態では、すべての利用者向け出力が`ui`の意味型とrendererを通る。
+このデザインシステムが完成した状態では、すべての利用者向け出力が`design`の意味型とpainterを通る。
 
 - command printerは`Document`を生成する
 - warningとdiagnosticは構造化される
