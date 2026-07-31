@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
+use crate::error::{Error, ErrorId, Result, fail};
 use crate::msg;
 use crate::project::CanonicalProjectId;
 
@@ -15,88 +15,54 @@ use super::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
 /// project rootのdirectory名に付ける接尾辞。
 const PROJECT_DIR_SUFFIX: &str = ".project";
 
-/// validation済みのbase path。
+/// 新規project rootを置く親directory。
 ///
-/// absoluteであり、symlink解決後も利用者が指定したrootの配下に収まる。
+/// commandを実行したcurrent directoryそのものであり、sbxmが選ぶ場所ではない。実在する
+/// directoryであることだけを条件とし、存在しないpathを作らない。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AbsoluteBasePath(PathBuf);
+pub struct ProjectParent(PathBuf);
 
-impl AbsoluteBasePath {
-    /// 宣言されたbase pathを検証する。
-    ///
-    /// 存在しないpathも、作成可能であれば受け入れる。存在する部分のsymlink解決結果が
-    /// 宣言pathの外を指す場合はsecurity errorとする。
-    pub fn new(declared: &Path) -> Result<AbsoluteBasePath> {
+impl ProjectParent {
+    /// processのcurrent directoryから決める。
+    pub fn current() -> Result<ProjectParent> {
+        let declared = std::env::current_dir().map_err(|error| {
+            Error::new(
+                ErrorId::WorkingDirectoryUnusable,
+                msg!(
+                    "error-working-directory-unusable",
+                    path = "-",
+                    detail = error
+                ),
+            )
+        })?;
+        ProjectParent::at(&declared)
+    }
+
+    /// 宣言されたdirectoryを検証する。
+    pub fn at(declared: &Path) -> Result<ProjectParent> {
+        let unusable = |detail: &str| {
+            fail(
+                ErrorId::WorkingDirectoryUnusable,
+                msg!(
+                    "error-working-directory-unusable",
+                    path = display(declared),
+                    detail = detail
+                ),
+            )
+        };
         if !declared.is_absolute() {
-            return fail(
-                ErrorId::BasePathNotAbsolute,
-                msg!("error-base-path-not-absolute", path = display(declared)),
-            );
+            return unusable("the directory is not an absolute path");
         }
         let standardized = lexically_standardize(declared);
-
-        // 存在する最も近い祖先まで遡り、そこからsymlinkを解決する。
-        let mut existing = standardized.as_path();
-        let mut trailing: Vec<&std::ffi::OsStr> = Vec::new();
-        let resolved = loop {
-            match fs::canonicalize(existing) {
-                Ok(resolved) => break resolved,
-                Err(_) => match (existing.parent(), existing.file_name()) {
-                    (Some(parent), Some(name)) => {
-                        trailing.push(name);
-                        existing = parent;
-                    }
-                    _ => {
-                        return fail(
-                            ErrorId::BasePathNotDirectory,
-                            msg!("error-base-path-not-directory", path = display(declared)),
-                        );
-                    }
-                },
-            }
-        };
-
-        let mut full_resolved = resolved;
-        for name in trailing.iter().rev() {
-            full_resolved.push(name);
+        match fs::symlink_metadata(&standardized) {
+            Ok(metadata) if metadata.is_dir() => Ok(ProjectParent(standardized)),
+            Ok(_) => unusable("the path is not a directory"),
+            Err(error) => unusable(&error.to_string()),
         }
-        if full_resolved != standardized {
-            return Err(Error::single(
-                Diagnostic::new(
-                    ErrorId::BasePathEscapesRoot,
-                    msg!(
-                        "security-base-path-escape-description",
-                        path = display(&standardized),
-                        resolved = display(&full_resolved)
-                    ),
-                )
-                .remediation(msg!("security-base-path-escape-remediation")),
-            ));
-        }
-
-        if let Ok(metadata) = fs::symlink_metadata(&standardized)
-            && !metadata.is_dir()
-        {
-            return fail(
-                ErrorId::BasePathNotDirectory,
-                msg!(
-                    "error-base-path-not-directory",
-                    path = display(&standardized)
-                ),
-            );
-        }
-
-        Ok(AbsoluteBasePath(standardized))
     }
 
     pub fn as_path(&self) -> &Path {
         &self.0
-    }
-}
-
-impl std::fmt::Display for AbsoluteBasePath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0.display().to_string())
     }
 }
 
@@ -112,7 +78,7 @@ pub struct ProjectPaths {
 }
 
 impl ProjectPaths {
-    pub fn derive(parent: &AbsoluteBasePath, id: &CanonicalProjectId) -> ProjectPaths {
+    pub fn derive(parent: &ProjectParent, id: &CanonicalProjectId) -> ProjectPaths {
         let root = parent
             .as_path()
             .join(format!("{}{PROJECT_DIR_SUFFIX}", id.repository()));

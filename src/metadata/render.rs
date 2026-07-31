@@ -1,6 +1,6 @@
 //! `project.yaml`の書き出し。
 
-use super::document::{RawMetadata, RawProvisioning, RawRebuild, RawRepository};
+use super::document::{RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository};
 use super::{METADATA_VERSION, ProjectMetadata};
 
 /// metadataをYAMLへ描画する。
@@ -22,6 +22,10 @@ pub fn render(metadata: &ProjectMetadata) -> String {
             start_ref: Some(provisioning.start_ref.clone()),
             requested_worktrees: Some(i64::from(provisioning.requested_worktrees)),
             dockerfile_sha256: Some(provisioning.dockerfile_sha256.clone()),
+        }),
+        git_identity: Some(RawGitIdentity {
+            user_name: Some(metadata.git_identity.user_name.clone()),
+            user_email: Some(metadata.git_identity.user_email.clone()),
         }),
         rebuild: metadata.rebuild.as_ref().map(|rebuild| RawRebuild {
             target_dockerfile_sha256: Some(rebuild.target_dockerfile_sha256.clone()),

@@ -19,8 +19,8 @@ fn asking_for_worktrees_leaves_the_declared_files_alone() {
     let source = dir.path().join("declared.yaml");
     std::fs::write(&source, b"declared = true\n").unwrap();
 
-    let (_home, location, config, workspace_root) = setup(vec![declaration(&source)]);
-    let paths = write_metadata(&location, &config, None);
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)]);
+    let paths = write_metadata(&location, &parent, None);
     let host = FakeSbx::listing(&listing(&workspace_root, "running")).holding_repository();
 
     let output = run(
@@ -48,8 +48,8 @@ fn asking_for_worktrees_leaves_the_declared_files_alone() {
 
 #[test]
 fn a_number_below_what_the_project_has_is_refused() {
-    let (_home, location, config, workspace_root) = setup(Vec::new());
-    let paths = write_metadata(&location, &config, None);
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
+    let paths = write_metadata(&location, &parent, None);
     let mut metadata = metadata::load(&paths).unwrap().expect("present");
     metadata.provisioning.requested_worktrees = 3;
     metadata::update(&paths, &metadata).unwrap();
@@ -85,8 +85,8 @@ fn a_running_project_gets_the_declared_files_replaced() {
     std::fs::write(&source, b"declared = true\n").unwrap();
     let _ = sha256_hex(b"declared = true\n");
 
-    let (_home, location, config, workspace_root) = setup(vec![declaration(&source)]);
-    write_metadata(&location, &config, None);
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)]);
+    write_metadata(&location, &parent, None);
     let host = FakeSbx::listing(&listing(&workspace_root, "running"));
 
     let output = run(
@@ -110,8 +110,8 @@ fn the_project_lock_is_held_while_the_files_are_replaced() {
     let source = dir.path().join("declared.yaml");
     std::fs::write(&source, b"declared = true\n").unwrap();
 
-    let (_home, location, config, workspace_root) = setup(vec![declaration(&source)]);
-    let paths = write_metadata(&location, &config, None);
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)]);
+    let paths = write_metadata(&location, &parent, None);
     let host =
         FakeSbx::listing(&listing(&workspace_root, "running")).watching_lock(paths.lock_file());
 
@@ -152,7 +152,7 @@ fn the_project_lock_is_held_while_the_files_are_replaced() {
 
 #[test]
 fn a_project_that_is_not_managed_gets_no_lock_file() {
-    let (_home, location, config, workspace_root) = setup(Vec::new());
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
     let host = FakeSbx::listing("[]");
 
     run(
@@ -166,7 +166,7 @@ fn a_project_that_is_not_managed_gets_no_lock_file() {
     )
     .expect_err("nothing to place");
 
-    let paths = ProjectPaths::derive(&config.base_path, &canonical());
+    let paths = ProjectPaths::derive(&parent, &canonical());
     assert!(
         !paths.lock_file().exists(),
         "an unmanaged project is not given a lock file"
@@ -178,8 +178,8 @@ fn nothing_else_in_the_project_is_touched() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("declared.yaml");
     std::fs::write(&source, b"declared = true\n").unwrap();
-    let (_home, location, config, workspace_root) = setup(vec![declaration(&source)]);
-    let paths = write_metadata(&location, &config, None);
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)]);
+    let paths = write_metadata(&location, &parent, None);
     let before = std::fs::read_to_string(paths.metadata_file()).unwrap();
     let host = FakeSbx::listing(&listing(&workspace_root, "running"));
 
@@ -216,8 +216,8 @@ fn nothing_else_in_the_project_is_touched() {
 
 #[test]
 fn a_stopped_sandbox_is_not_started_and_the_user_is_sent_to_open() {
-    let (_home, location, config, workspace_root) = setup(Vec::new());
-    write_metadata(&location, &config, None);
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
+    write_metadata(&location, &parent, None);
     let host = FakeSbx::listing(&listing(&workspace_root, "stopped"));
 
     let error = run(
@@ -253,7 +253,7 @@ fn a_stopped_sandbox_is_not_started_and_the_user_is_sent_to_open() {
 
 #[test]
 fn a_project_that_is_not_managed_or_not_built_is_refused() {
-    let (_home, location, config, workspace_root) = setup(Vec::new());
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
     let host = FakeSbx::listing("[]");
     let error = run(
         &location,
@@ -267,7 +267,7 @@ fn a_project_that_is_not_managed_or_not_built_is_refused() {
     .expect_err("an unregistered project has nowhere to place files");
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
 
-    write_metadata(&location, &config, None);
+    write_metadata(&location, &parent, None);
     let error = run(
         &location,
         &config,
@@ -283,10 +283,10 @@ fn a_project_that_is_not_managed_or_not_built_is_refused() {
 
 #[test]
 fn a_rebuild_in_progress_places_nothing() {
-    let (_home, location, config, workspace_root) = setup(Vec::new());
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
     write_metadata(
         &location,
-        &config,
+        &parent,
         Some(RebuildIntent {
             target_dockerfile_sha256: "2".repeat(64),
             previous_dockerfile_sha256: DIGEST.into(),
@@ -310,8 +310,8 @@ fn a_rebuild_in_progress_places_nothing() {
 
 #[test]
 fn a_sandbox_that_belongs_to_another_project_is_refused() {
-    let (_home, location, config, workspace_root) = setup(Vec::new());
-    write_metadata(&location, &config, None);
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new());
+    write_metadata(&location, &parent, None);
     let name = SandboxName::derive(&canonical());
     let host = FakeSbx::listing(&format!(
         r#"[{{"name":"{name}","state":"running","workspace":"/tmp/elsewhere","template":"other:1"}}]"#

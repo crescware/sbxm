@@ -13,11 +13,10 @@ mod repository;
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::config::GlobalConfig;
+use crate::config::ConfigLocation;
 use crate::error::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
-use crate::paths::ProjectPaths;
-use crate::project::{ProjectId, SandboxName};
+use crate::project::ProjectId;
 
 use crate::support::select;
 
@@ -137,17 +136,21 @@ impl ProjectStatus {
 }
 /// 1案件を診断する。何も変更しない。
 pub fn diagnose(
-    config: &GlobalConfig,
+    location: &ConfigLocation,
     project: &ProjectId,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
 ) -> Result<ProjectStatus> {
-    let canonical = project.canonical();
-    let paths = ProjectPaths::derive(&config.base_path, &canonical);
-    let Some(metadata) = crate::metadata::load(&paths)? else {
-        return Err(select::not_managed(project));
-    };
-    let name = SandboxName::derive(&canonical);
+    // 案件の場所はregistryだけが持つ。配置規則から再計算しない。
+    let candidate = select::one(
+        location,
+        Some(project),
+        msg!("select-destroy-heading"),
+        &mut select::NoPrompt,
+    )?;
+    let paths = candidate.paths.clone();
+    let metadata = candidate.reload()?;
+    let name = metadata.sandbox_name();
 
     let mut status = ProjectStatus {
         project: metadata.display_id(),

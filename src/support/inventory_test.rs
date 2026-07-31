@@ -124,7 +124,7 @@ fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() {
 
     // 読めないmetadataは、そのentryだけを`inconsistent`として示す。ほかのentryは
     // 一覧から消さない。
-    let broken = fixture.config.base_path.as_path().join("broken.project");
+    let broken = fixture.parent.as_path().join("broken.project");
     std::fs::create_dir_all(broken.join(".sbxm")).unwrap();
     std::fs::write(broken.join(".sbxm").join("project.yaml"), "version: 2\n").unwrap();
     fixture.record(

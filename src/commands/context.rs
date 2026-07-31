@@ -8,11 +8,9 @@
 
 use crate::cli::Interactivity;
 use crate::config::{self, ConfigLocation, ConfigState, GlobalConfig};
-use crate::error::{Diagnostic, Error, ErrorId, ExitCode, Result};
+use crate::error::{Error, ExitCode, Result};
 use crate::i18n::{Locale, shell_locale};
-use crate::msg;
-use crate::paths;
-use crate::ui::{Remediation, Ui};
+use crate::ui::Ui;
 
 /// command固有でない実行の入力。
 pub struct Context<'a> {
@@ -23,39 +21,33 @@ pub struct Context<'a> {
 }
 
 impl Context<'_> {
-    /// 案件を対象とするcommandが必要とするconfigと、宣言された表示言語。
-    pub fn require_config(&self) -> Result<(Box<GlobalConfig>, Locale)> {
-        match config::load(self.location)? {
-            ConfigState::Valid { config, .. } => {
-                let locale = self.lang.unwrap_or(config.language);
-                Ok((config, locale))
-            }
-            ConfigState::Missing => Err(self.missing_config()),
-        }
+    /// 利用者設定と、この実行の表示言語。
+    ///
+    /// configの不在は正常であり、default設定として扱う。表示言語は`--lang`、保存済みの
+    /// `language`、system locale、正本localeの順で決める。
+    pub fn settings(&self) -> Result<(GlobalConfig, Locale)> {
+        let config = config::load(self.location)?.settings();
+        let locale = self.locale_of(config.language);
+        Ok((config, locale))
     }
 
     /// configがなくても続けるcommandの表示言語。
     ///
-    /// `status --global`はconfig不在そのものを診断結果として報告するため、読めない
+    /// `status --global`はconfigの状態そのものを診断結果として報告するため、読めない
     /// configを実行前の失敗として扱わない。
     pub fn tolerant_locale(&self) -> Result<Locale> {
-        match config::load(self.location)? {
-            ConfigState::Valid { config, .. } => Ok(self.lang.unwrap_or(config.language)),
-            ConfigState::Missing => Ok(self.lang.or_else(shell_locale).unwrap_or(Locale::En)),
-        }
+        let declared = match config::load(self.location)? {
+            ConfigState::Valid { config, .. } => config.language,
+            ConfigState::Missing => None,
+        };
+        Ok(self.locale_of(declared))
     }
 
-    fn missing_config(&self) -> Error {
-        Error::single(
-            Diagnostic::new(
-                ErrorId::ConfigMissing,
-                msg!(
-                    "error-config-missing",
-                    path = paths::display(&self.location.config_file())
-                ),
-            )
-            .remediation(Remediation::text(msg!("remediation-run-init")).try_run("sbxm init")),
-        )
+    fn locale_of(&self, declared: Option<Locale>) -> Locale {
+        self.lang
+            .or(declared)
+            .or_else(shell_locale)
+            .unwrap_or(Locale::SOURCE)
     }
 }
 

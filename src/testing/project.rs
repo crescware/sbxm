@@ -1,9 +1,9 @@
 //! 案件が登録された状態のtest環境。
 
-use crate::config::{ConfigLocation, GitIdentity, GlobalConfig};
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::i18n::Locale;
 use crate::metadata::{self, CreationMode, ProjectMetadata, Provisioning};
-use crate::paths::{AbsoluteBasePath, ProjectPaths};
+use crate::paths::{ProjectParent, ProjectPaths};
 use crate::project::{ProjectId, SandboxName};
 use crate::registry::{RegistryEntry, RegistryGuard};
 use crate::repository::RepositoryIdentity;
@@ -35,10 +35,12 @@ pub struct Registered {
     pub sandbox: SandboxName,
 }
 
-/// global state directory、base path、workspace rootを持つtest環境。
+/// global state directory、親directory、workspace rootを持つtest環境。
 pub struct Fixture {
     pub _dir: tempfile::TempDir,
     pub location: ConfigLocation,
+    /// 新規案件を置く親directory。実行時のcwdの代わりとして使う。
+    pub parent: ProjectParent,
     pub config: GlobalConfig,
     pub workspace_root: PathBuf,
 }
@@ -56,16 +58,12 @@ pub fn fixture() -> Fixture {
     )
     .expect("the workspace root belongs to the current user only");
     let config = GlobalConfig {
-        language: Locale::En,
-        base_path: AbsoluteBasePath::new(&base).expect("valid base path"),
-        git: GitIdentity {
-            user_name: "Example User".into(),
-            user_email: "user@example.com".into(),
-        },
+        language: Some(Locale::En),
         files: Vec::new(),
     };
     Fixture {
         location: ConfigLocation::from_home(dir.path().to_path_buf()),
+        parent: ProjectParent::at(&base).expect("valid parent directory"),
         _dir: dir,
         config,
         workspace_root,
@@ -77,7 +75,7 @@ impl Fixture {
     pub fn register(&self, project: &str) -> Registered {
         let repository = ssh_repository(project);
         let canonical = repository.canonical_id().clone();
-        let paths = ProjectPaths::derive(&self.config.base_path, &canonical);
+        let paths = ProjectPaths::derive(&self.parent, &canonical);
         std::fs::create_dir_all(paths.sbxm_dir()).expect("create .sbxm");
         let metadata = ProjectMetadata {
             repository: repository.clone(),
@@ -87,6 +85,7 @@ impl Fixture {
                 requested_worktrees: 1,
                 dockerfile_sha256: DIGEST.into(),
             },
+            git_identity: crate::testing::metadata::git_identity(),
             rebuild: None,
         };
         metadata::create(&paths, &metadata).expect("write the metadata");

@@ -44,7 +44,7 @@ fn an_unregistered_project_gets_no_lock_file() {
     let bench = bench();
     let world = World::new();
     let project = project_id("example-org/example-repo");
-    let paths = ProjectPaths::derive(&bench.config.base_path, &project.canonical());
+    let paths = ProjectPaths::derive(&bench.parent, &project.canonical());
     // lock fileを置ける状態、つまりmetadataのない`.sbxm`だけがある状態で確かめる。
     fs::create_dir_all(paths.sbxm_dir()).expect("the project directory is left behind");
 
@@ -78,14 +78,14 @@ fn a_rebuild_in_progress_builds_nothing() {
     let request = request("Example-Org/Example-Repo", None, None);
     crate::commands::add::run::run(
         &bench.location,
-        &bench.config,
+        &bench.parent,
         &request,
         &world,
         &mut SilentProgress,
     )
     .expect("the project is registered");
 
-    let paths = ProjectPaths::derive(&bench.config.base_path, request.repository.canonical_id());
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
     let mut stored = metadata::load(&paths)
         .expect("read the metadata")
         .expect("present");

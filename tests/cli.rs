@@ -6,8 +6,8 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-const COMMANDS: [&str; 10] = [
-    "init", "add", "apply", "prepare", "rebuild", "open", "stop", "ls", "status", "destroy",
+const COMMANDS: [&str; 9] = [
+    "add", "apply", "prepare", "rebuild", "open", "stop", "ls", "status", "destroy",
 ];
 
 /// 実行結果。
@@ -31,8 +31,17 @@ impl Run {
 ///
 /// 実行のたびにHOMEを差し替えるため、利用者のconfigには触れない。
 fn sbxm(home: &Path, arguments: &[&str]) -> Run {
+    sbxm_in(home, home, arguments)
+}
+
+/// 親directoryを明示してsbxmを実行する。
+///
+/// `add`は実行時のcurrent directoryへproject rootを足す。どこで実行したかがそのまま
+/// 配置先になるため、testもcwdを明示する。
+fn sbxm_in(home: &Path, cwd: &Path, arguments: &[&str]) -> Run {
     let output = Command::new(env!("CARGO_BIN_EXE_sbxm"))
         .args(arguments)
+        .current_dir(cwd)
         .env("HOME", home)
         // locale決定をtest環境のlocaleへ依存させない。
         .env("LC_ALL", "C")
@@ -47,6 +56,45 @@ fn sbxm(home: &Path, arguments: &[&str]) -> Run {
 
 fn temp_home() -> tempfile::TempDir {
     tempfile::tempdir().expect("temporary home")
+}
+
+/// hostのGit identityだけに答える`git`を用意し、そのdirectoryを返す。
+///
+/// `add`は案件を作る前にhostのGit identityを読む。PATHを空にしたままでは、その手前で
+/// 止まって登録の契約を確かめられない。cloneには答えないため、実行はcloneで止まる。
+fn fake_git(home: &Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).expect("create the fake bin directory");
+    let git = bin.join("git");
+    std::fs::write(
+        &git,
+        "#!/bin/sh\n\
+         case \"$1 $2 $3 $4\" in\n\
+         \"config --global --get-all user.name\") echo 'Example User'; exit 0;;\n\
+         \"config --global --get-all user.email\") echo 'user@example.com'; exit 0;;\n\
+         esac\n\
+         exit 1\n",
+    )
+    .expect("write the fake git");
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).expect("mode");
+    bin
+}
+
+/// hostのGit identityだけに答える`git`を置いたPATHでsbxmを実行する。
+fn sbxm_with_git(home: &Path, cwd: &Path, arguments: &[&str]) -> Run {
+    let bin = fake_git(home);
+    let output = Command::new(env!("CARGO_BIN_EXE_sbxm"))
+        .args(arguments)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .env("LC_ALL", "C")
+        .env_remove("LC_MESSAGES")
+        .env_remove("LANG")
+        .env("PATH", &bin)
+        .output()
+        .expect("sbxm runs");
+    Run::from(output)
 }
 
 /// 同梱するresourceのtag。言語を増やしてもtestを編集しない。
@@ -67,20 +115,13 @@ fn locale_tags() -> Vec<String> {
     tags
 }
 
-fn write_config(home: &Path, base_path: &Path, language: &str) {
+fn write_config(home: &Path, language: &str) {
     use std::os::unix::fs::PermissionsExt;
     let dir = home.join(".sbxm");
     std::fs::create_dir_all(&dir).expect("create ~/.sbxm");
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("mode");
     let path = dir.join("config.yaml");
-    std::fs::write(
-        &path,
-        format!(
-            "version: 1\nlanguage: {language}\nbase_path: \"{}\"\n\ngit:\n  user_name: Example User\n  user_email: user@example.com\n",
-            base_path.display()
-        ),
-    )
-    .expect("write config");
+    std::fs::write(&path, format!("version: 1\nlanguage: {language}\n")).expect("write config");
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("mode");
 }
 
@@ -154,8 +195,7 @@ fn version_prints_the_version_and_exits_with_zero() {
 #[test]
 fn the_language_option_is_read_before_the_configuration() {
     let home = temp_home();
-    let base = home.path().join("Projects");
-    write_config(home.path(), &base, "ja");
+    write_config(home.path(), "ja");
 
     // configがjaでも、`--lang en`が優先される。
     let run = sbxm(home.path(), &["--lang", "en", "--help"]);
@@ -227,8 +267,7 @@ fn an_unsupported_language_is_reported_before_any_configuration_error() {
 
     // 読めるconfigがあっても、`--lang`の不正はそのまま失敗する。診断の本文は
     // configが宣言したlocaleで出す。resourceを複製せず、2回の実行の差で見る。
-    let base = home.path().join("Projects");
-    write_config(home.path(), &base, "en");
+    write_config(home.path(), "en");
     let english = sbxm(home.path(), &["--lang", "zz", "ls"]);
     assert_eq!(english.code, 1);
     assert!(
@@ -237,7 +276,7 @@ fn an_unsupported_language_is_reported_before_any_configuration_error() {
         english.stderr
     );
 
-    write_config(home.path(), &base, "ja");
+    write_config(home.path(), "ja");
     let japanese = sbxm(home.path(), &["--lang", "zz", "ls"]);
     assert_eq!(japanese.code, 1);
     assert!(
@@ -264,7 +303,6 @@ fn parser_failures_map_to_exit_code_one() {
         vec!["add", "git@github.com:owner/repo.git", "--worktrees", "2"],
         vec!["status"],
         vec!["status", "--global", "owner/repo"],
-        vec!["init", "--base-path", "/tmp/projects"],
     ] {
         let run = sbxm(home.path(), &arguments);
         assert_eq!(
@@ -295,10 +333,6 @@ fn diagnostics_name_a_stable_error_id() {
         (
             vec!["add", "git@github.com:owner/repo.git", "--worktrees", "2"],
             "worktrees-require-detach",
-        ),
-        (
-            vec!["init", "--base-path", "/tmp/projects"],
-            "init-incomplete-options",
         ),
         (vec!["add", "not-a-project"], "invalid-clone-url"),
         (
@@ -331,12 +365,20 @@ fn a_non_interactive_run_that_omits_the_target_is_a_usage_error() {
 }
 
 #[test]
-fn commands_other_than_init_and_global_status_need_a_configuration() {
+fn a_missing_configuration_is_the_defaults_rather_than_a_reason_to_stop() {
     let home = temp_home();
+    // configが無くても、commandはhost toolまで進む。
     let run = sbxm(home.path(), &["ls"]);
     assert_eq!(run.code, 1);
-    assert!(run.stderr.contains("config-missing"), "{}", run.stderr);
-    assert!(run.stderr.contains("sbxm init"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("external-command-not-found"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        !home.path().join(".sbxm").exists(),
+        "a read-only command must not create the global state directory"
+    );
 }
 
 #[test]
@@ -345,10 +387,11 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
     let home = temp_home();
     let base = home.path().join("Projects");
     std::fs::create_dir_all(&base).unwrap();
-    write_config(home.path(), &base, "en");
+    write_config(home.path(), "en");
 
-    let run = sbxm(
+    let run = sbxm_with_git(
         home.path(),
+        &base,
         &[
             "--lang",
             "en",
@@ -358,8 +401,8 @@ fn add_registers_the_project_before_it_reaches_the_host_tools() {
     );
     assert_eq!(run.code, 1, "{}", run.stderr);
     assert!(
-        run.stderr.contains("external-command-not-found"),
-        "the run stops at the first host tool it needs: {}",
+        run.stderr.contains("external-command-failed"),
+        "the run stops at the clone it cannot make: {}",
         run.stderr
     );
 
@@ -423,7 +466,7 @@ fn ls_needs_the_sandbox_runtime_before_it_can_answer() {
     let home = temp_home();
     let base = home.path().join("Projects");
     std::fs::create_dir_all(&base).unwrap();
-    write_config(home.path(), &base, "en");
+    write_config(home.path(), "en");
 
     // 一覧はSandbox runtimeの状態から作るため、読めなければ何も出さない。
     let run = sbxm(home.path(), &["--lang", "en", "ls"]);
@@ -443,9 +486,9 @@ fn home_with_project(project: &str) -> (tempfile::TempDir, std::path::PathBuf) {
     let home = temp_home();
     let base = home.path().join("Projects");
     std::fs::create_dir_all(&base).unwrap();
-    write_config(home.path(), &base, "en");
+    write_config(home.path(), "en");
     let url = format!("git@github.com:{project}.git");
-    let run = sbxm(home.path(), &["--lang", "en", "add", &url]);
+    let run = sbxm_with_git(home.path(), &base, &["--lang", "en", "add", &url]);
     assert_eq!(run.code, 1, "{}", run.stderr);
     (home, base)
 }
@@ -536,7 +579,7 @@ fn apply_refuses_a_project_that_was_never_added() {
     let home = temp_home();
     let base = home.path().join("Projects");
     std::fs::create_dir_all(&base).unwrap();
-    write_config(home.path(), &base, "en");
+    write_config(home.path(), "en");
 
     let run = sbxm(
         home.path(),
@@ -552,87 +595,42 @@ fn apply_refuses_a_project_that_was_never_added() {
 }
 
 #[test]
-fn option_mode_init_creates_a_private_configuration_without_a_terminal() {
-    use std::os::unix::fs::PermissionsExt;
+fn a_run_that_cannot_prompt_neither_asks_for_a_language_nor_saves_one() {
     let home = temp_home();
     let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).unwrap();
 
-    let run = sbxm(
+    // 非対話の`add`はpromptを出さず、言語を永続化しない。`--lang`も保存しない。
+    let run = sbxm_with_git(
         home.path(),
+        &base,
         &[
             "--lang",
-            "en",
-            "init",
-            "--base-path",
-            base.to_str().unwrap(),
-            "--git-user-name",
-            "Example User",
-            "--git-user-email",
-            "user@example.com",
+            "ja",
+            "add",
+            "git@github.com:Example-Org/Example-Repo.git",
         ],
     );
-
-    assert_eq!(run.code, 0, "{}", run.stderr);
-    assert!(run.stdout.contains("config.yaml"), "{}", run.stdout);
+    assert_eq!(run.code, 1, "{}", run.stderr);
     assert!(
-        run.stdout.contains("sbxm status --global"),
-        "{}",
-        run.stdout
+        !home.path().join(".sbxm").join("config.yaml").exists(),
+        "the display language is the user's to choose, not a side effect of --lang"
     );
-
-    let config = home.path().join(".sbxm").join("config.yaml");
-    assert!(config.is_file());
-    let mode = std::fs::metadata(&config).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o600);
-    assert!(base.is_dir(), "the base path is created");
-
-    let written = std::fs::read_to_string(&config).unwrap();
-    assert!(written.contains("version: 1"), "{written}");
-    assert!(written.contains("language: en"), "{written}");
-    assert!(
-        !written.contains("token") && !written.contains("secret"),
-        "the configuration must not carry credentials: {written}"
-    );
+    // それでも登録は進む。registryは作られる。
+    assert!(home.path().join(".sbxm").join("registry.yaml").is_file());
 }
 
 #[test]
-fn re_running_init_changes_nothing_and_succeeds() {
+fn read_only_commands_never_create_a_configuration() {
     let home = temp_home();
-    let base = home.path().join("Projects");
-    let arguments = [
-        "--lang",
-        "ja",
-        "init",
-        "--base-path",
-        base.to_str().unwrap(),
-        "--git-user-name",
-        "Example User",
-        "--git-user-email",
-        "user@example.com",
-    ];
-
-    let first = sbxm(home.path(), &arguments);
-    assert_eq!(first.code, 0, "{}", first.stderr);
-    let config = home.path().join(".sbxm").join("config.yaml");
-    let before = std::fs::read_to_string(&config).unwrap();
-
-    let second = sbxm(home.path(), &arguments);
-    assert_eq!(second.code, 0, "{}", second.stderr);
-    assert_eq!(std::fs::read_to_string(&config).unwrap(), before);
-    assert!(
-        second.stdout.contains("初期化済み"),
-        "the second run reports that nothing changed: {}",
-        second.stdout
-    );
-}
-
-#[test]
-fn interactive_init_outside_a_terminal_creates_nothing() {
-    let home = temp_home();
-    let run = sbxm(home.path(), &["init"]);
-    assert_eq!(run.code, 1);
-    assert!(run.stderr.contains("init-requires-tty"), "{}", run.stderr);
-    assert!(!home.path().join(".sbxm").join("config.yaml").exists());
+    for arguments in [vec!["ls"], vec!["status", "--global"], vec!["--help"]] {
+        let run = sbxm(home.path(), &arguments);
+        assert!(
+            !home.path().join(".sbxm").join("config.yaml").exists(),
+            "{arguments:?} created a configuration: {}",
+            run.stderr
+        );
+    }
 }
 
 #[test]
@@ -652,12 +650,14 @@ fn global_status_prints_only_the_global_section_and_the_published_columns() {
     assert_eq!(
         items,
         vec![
+            "Global state",
             "Config",
-            "Base path",
+            "Project registry",
             "Platform",
             "Git",
             "SSH",
             "Docker",
+            "Git identity",
             "Docker Sandboxes",
             "Network policy",
             "Daemon",
@@ -676,8 +676,8 @@ fn global_status_reports_every_problem_and_exits_with_one() {
 
     assert_eq!(run.code, 1, "an incomplete host is not healthy");
     // 取得できた行は後続検査が失敗しても省略しない。
-    assert_eq!(run.stdout.lines().count(), 13);
-    for id in ["config-missing", "host-command-missing"] {
+    assert_eq!(run.stdout.lines().count(), 15);
+    for id in ["external-command-not-found", "host-command-missing"] {
         assert!(
             run.stderr.contains(id),
             "{id} is missing from: {}",

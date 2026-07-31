@@ -112,7 +112,7 @@ pub fn run(
     secret::require_placeholder_present(host, &ready.name)?;
 
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
-    identity::ensure(host, &ready.name, &config.git)?;
+    identity::ensure(host, &ready.name, &locked.metadata.git_identity)?;
     tools::sandbox_ready(host, &ready.name)?;
     secret::configure_git_credential(host, &ready.name)?;
 

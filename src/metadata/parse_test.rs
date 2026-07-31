@@ -27,6 +27,10 @@ provisioning:
   requested_worktrees: 2
   dockerfile_sha256: \"1111111111111111111111111111111111111111111111111111111111111111\"
 
+git_identity:
+  user_name: Example User
+  user_email: user@example.com
+
 worktrees:
   managed:
     - path: example-repo.tree-0

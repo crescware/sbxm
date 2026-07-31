@@ -34,41 +34,29 @@ brew install crescware/tap/sbxm
 
 ## Quick start
 
-### 1. Initialize sbxm
+### 1. Verify the host
 
-```sh
-sbxm init
-```
-
-The interactive setup creates `~/.sbxm/config.yaml` and asks for:
-
-- the directory where host-side project clones should live;
-- the Git name and email to use inside sandboxes.
-
-It chooses the display language from your system locale and lets you confirm
-the choice when needed.
-
-For non-interactive setup, provide all three configuration values:
-
-```sh
-sbxm init \
-  --lang en \
-  --base-path "$HOME/Projects" \
-  --git-user-name "Your Name" \
-  --git-user-email "you@example.com"
-```
-
-Then verify the host:
+There is nothing to initialize. Check that the host has what sbxm needs:
 
 ```sh
 sbxm status --global
 ```
 
-### 2. Register a project
-
-Pass the clone URL GitHub shows for the repository, unchanged:
+sbxm reads the Git name and email it will use inside sandboxes from your own
+account, so declare them once if you have not already:
 
 ```sh
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+```
+
+### 2. Register a project
+
+`cd` to the directory that should hold the project, then pass the clone URL
+GitHub shows for the repository, unchanged:
+
+```sh
+cd ~/Projects
 sbxm add git@github.com:owner/repository.git
 ```
 
@@ -78,6 +66,11 @@ sbxm add https://github.com/owner/repository.git
 
 These two forms are the only ones `sbxm add` accepts. The host clone uses the
 transport you pass, so SSH and HTTPS are not interchangeable afterwards.
+
+sbxm creates `repository.project/` in the directory you ran it from — you do
+not make a directory per project or follow a naming rule. The first
+interactive `add` also asks once which language sbxm should speak, and
+remembers the answer in `~/.sbxm/config.yaml`.
 
 This registers the project, creates its host clone and Dockerfile, and prints
 the sandbox name and exact next commands. It does not build the sandbox yet.
@@ -188,6 +181,8 @@ are detached.
 Declare host files in `~/.sbxm/config.yaml`:
 
 ```yaml
+version: 1
+
 files:
   - source: /Users/you/.gitconfig
     destination: .gitconfig
@@ -244,7 +239,6 @@ the sandbox needs to be preserved.
 
 | Command | Purpose |
 |---|---|
-| `sbxm init` | Create the global configuration |
 | `sbxm add <github-clone-url>` | Register a GitHub project and create its host artifacts |
 | `sbxm prepare owner/repository` | Build and provision the project's sandbox |
 | `sbxm open [owner/repository]` | Start the sandbox if needed and connect over SSH |

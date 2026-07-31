@@ -8,22 +8,23 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::command::HostEnvironment;
-use crate::config::{ConfigLocation, GlobalConfig};
+use crate::config::ConfigLocation;
 use crate::error::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::git;
 use crate::hash::sha256_hex;
 use crate::metadata::{
-    self, CreationMode, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata, Provisioning,
+    self, CreationMode, GitIdentity, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata, Provisioning,
 };
 use crate::msg;
 use crate::paths::{
-    self, ExclusiveLock, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths,
+    self, ExclusiveLock, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectParent,
+    ProjectPaths,
 };
 use crate::project::{CanonicalProjectId, SandboxName};
 use crate::registry::{self, Registry, RegistryEntry, RegistryGuard};
 use crate::repository::RepositoryIdentity;
 
-use crate::support::generation;
+use crate::support::{generation, identity};
 
 use super::host_clone;
 use crate::ui::{ProgressSink, Remediation, Warning};
@@ -123,8 +124,9 @@ pub struct Registration {
 /// 長時間かかるhost cloneは、registry lockを解放したあとで`run`が行う。
 pub fn register(
     location: &ConfigLocation,
-    config: &GlobalConfig,
+    parent: &ProjectParent,
     request: &AddRequest,
+    git_identity: &GitIdentity,
 ) -> Result<Registration> {
     let target = TargetConfiguration::from_request(request)?;
     let canonical = request.repository.canonical_id().clone();
@@ -140,7 +142,8 @@ pub fn register(
             ProjectPaths::at(entry.project_root(), &canonical)
         }
         None => {
-            let candidate = ProjectPaths::derive(&config.base_path, &canonical);
+            // cwdを使うのは新規canonical project IDの登録時だけである。
+            let candidate = ProjectPaths::derive(parent, &canonical);
             check_new_registration(guard.registry(), &candidate, &canonical, &sandbox)?;
             guard.insert(RegistryEntry::new(
                 candidate.root(),
@@ -182,6 +185,7 @@ pub fn register(
                     requested_worktrees: target.requested_worktrees,
                     dockerfile_sha256: dockerfile_sha256.clone(),
                 },
+                git_identity: git_identity.clone(),
                 rebuild: None,
             };
             metadata::create(&paths, &metadata)?;
@@ -326,7 +330,7 @@ pub struct AddOutput {
 /// 確定して呼び出し側へ返せる。GitHub tokenの登録先がその名前になる。
 pub fn run(
     location: &ConfigLocation,
-    config: &GlobalConfig,
+    parent: &ProjectParent,
     request: &AddRequest,
     host: &dyn HostEnvironment,
     progress: &mut dyn ProgressSink,
@@ -339,7 +343,9 @@ pub fn run(
         .flatten()
         .is_some();
 
-    let registration = register(location, config, request)?;
+    // Sandbox内で使うidentityは、案件を作る前にhostから確定させる。
+    let git_identity = identity::from_host(host)?;
+    let registration = register(location, parent, request, &git_identity)?;
     // host cloneは、validation済みの入力と同じtransportとclone URLで取る。
     let clone = host_clone::ensure(
         host,

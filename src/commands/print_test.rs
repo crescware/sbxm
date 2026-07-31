@@ -73,10 +73,15 @@ fn add_separates_each_next_step_from_the_command_it_asks_for() {
     assert_eq!(
         shape(&document),
         vec![
-            "summary", "fields", "guidance", "command", "guidance", "command"
+            "summary", "fields", "guidance", "command", "guidance", "command", "guidance",
+            "command"
         ]
     );
-    assert_eq!(commands(&document).last(), Some(&"sbxm prepare owner/repo"));
+    // 案件IDを打ち直させないため、次のcommandはそのままcopyできる形で並べる。
+    assert_eq!(
+        commands(&document)[1..],
+        ["sbxm prepare owner/repo", "sbxm open owner/repo"]
+    );
 }
 
 #[test]

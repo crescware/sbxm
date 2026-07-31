@@ -33,40 +33,29 @@ brew install crescware/tap/sbxm
 
 ## クイックスタート
 
-### 1. sbxmを初期設定する
+### 1. ホスト環境を検証する
 
-```sh
-sbxm init
-```
-
-対話形式のセットアップによって`~/.sbxm/config.yaml`が作成され、次の項目を尋ねられます。
-
-- ホスト側のプロジェクトcloneを置くディレクトリ
-- Sandbox内で使うGitの名前とメールアドレス
-
-表示言語はシステムのlocaleから選ばれ、必要な場合は選択内容の確認を求められます。
-
-非対話形式でセットアップする場合は、3つの設定値をすべて指定します。
-
-```sh
-sbxm init \
-  --lang ja \
-  --base-path "$HOME/Projects" \
-  --git-user-name "Your Name" \
-  --git-user-email "you@example.com"
-```
-
-続いて、ホスト環境を検証します。
+初期化の手順はありません。sbxmが必要とするものが揃っているかを確認します。
 
 ```sh
 sbxm status --global
 ```
 
-### 2. プロジェクトを登録する
-
-GitHubが表示するclone URLを、そのまま渡します。
+Sandbox内で使うGitの名前とメールアドレスは、利用者自身の設定から読み取ります。
+未設定であれば、先に宣言してください。
 
 ```sh
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+```
+
+### 2. プロジェクトを登録する
+
+プロジェクトを置きたいディレクトリへ`cd`し、GitHubが表示するclone URLを
+そのまま渡します。
+
+```sh
+cd ~/Projects
 sbxm add git@github.com:owner/repository.git
 ```
 
@@ -76,6 +65,11 @@ sbxm add https://github.com/owner/repository.git
 
 `sbxm add`が受理するのはこの2形式だけです。ホスト側のcloneは渡したtransportを
 そのまま使うため、登録後にSSHとHTTPSを入れ替えることはできません。
+
+sbxmは、実行したディレクトリの直下に`repository.project/`を作ります。プロジェクト
+ごとのディレクトリを用意したり、owner名を含む配置規則を揃えたりする必要はありません。
+最初の対話実行では、表示言語を一度だけ選び、その結果を`~/.sbxm/config.yaml`へ
+保存します。
 
 このコマンドはプロジェクトを登録し、ホスト側のcloneとDockerfileを作成したうえで、
 Sandbox名と次に実行する正確なコマンドを表示します。この時点ではまだSandboxを
@@ -185,6 +179,8 @@ worktree数は増やすことだけができます。デフォルトのattached 
 ホスト側のファイルを`~/.sbxm/config.yaml`に宣言します。
 
 ```yaml
+version: 1
+
 files:
   - source: /Users/you/.gitconfig
     destination: .gitconfig
@@ -237,7 +233,6 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 
 | コマンド | 用途 |
 |---|---|
-| `sbxm init` | global configを作成する |
 | `sbxm add <github-clone-url>` | GitHubプロジェクトを登録し、ホスト側の成果物を作成する |
 | `sbxm prepare owner/repository` | プロジェクトのSandboxをbuildして構築する |
 | `sbxm open [owner/repository]` | 必要に応じてSandboxを起動し、SSHで接続する |

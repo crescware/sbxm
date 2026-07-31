@@ -4,11 +4,11 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use crate::commands::add::run::AddRequest;
-use crate::config::{ConfigLocation, GitIdentity, GlobalConfig};
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::error::Result;
 use crate::i18n::Locale;
 use crate::metadata::{self, ProjectMetadata};
-use crate::paths::{self, AbsoluteBasePath, PRIVATE_DIR_MODE, ProjectPaths};
+use crate::paths::{self, PRIVATE_DIR_MODE, ProjectParent, ProjectPaths};
 use crate::project::ProjectId;
 
 use super::super::run::{PrepareOutput, run};
@@ -17,6 +17,7 @@ use crate::ui::SilentProgress;
 
 /// 宣言file 1件を持つ、実行時と同じ形の入力一式。
 pub struct Bench {
+    pub parent: ProjectParent,
     pub _base: tempfile::TempDir,
     pub _home: tempfile::TempDir,
     pub workspace_root: tempfile::TempDir,
@@ -38,12 +39,7 @@ pub fn bench() -> Bench {
     fs::write(&source, b"declared = true\n").expect("write the declared file");
 
     let config = GlobalConfig {
-        language: Locale::En,
-        base_path: AbsoluteBasePath::new(base.path()).expect("valid base path"),
-        git: GitIdentity {
-            user_name: "Example User".into(),
-            user_email: "user@example.com".into(),
-        },
+        language: Some(Locale::En),
         files: vec![crate::config::FileDeclaration {
             source: crate::config::HostFileSource::new(&paths::display(&source))
                 .expect("valid source"),
@@ -55,6 +51,7 @@ pub fn bench() -> Bench {
     };
     Bench {
         location: ConfigLocation::from_home(home.path().to_path_buf()),
+        parent: ProjectParent::at(base.path()).expect("valid parent directory"),
         _base: base,
         _home: home,
         workspace_root,
@@ -67,7 +64,7 @@ impl Bench {
     pub fn build(&self, world: &World, request: &AddRequest) -> Result<PrepareOutput> {
         crate::commands::add::run::run(
             &self.location,
-            &self.config,
+            &self.parent,
             request,
             world,
             &mut SilentProgress,
@@ -86,7 +83,7 @@ impl Bench {
 
     pub fn stored(&self, project: &str) -> ProjectMetadata {
         let canonical = ProjectId::parse(project).unwrap().canonical();
-        let paths = ProjectPaths::derive(&self.config.base_path, &canonical);
+        let paths = ProjectPaths::derive(&self.parent, &canonical);
         metadata::load(&paths)
             .expect("read the metadata")
             .expect("present")

@@ -90,10 +90,10 @@ fn a_project_without_a_sandbox_is_listed_as_not_created() {
 #[test]
 fn an_entry_whose_artifacts_are_not_there_is_shown_rather_than_dropped() {
     let fixture = fixture();
-    let missing = fixture.config.base_path.as_path().join("gone.project");
+    let missing = fixture.parent.as_path().join("gone.project");
     fixture.record(&missing, ssh_repository("example-org/gone"));
 
-    let incomplete = fixture.config.base_path.as_path().join("half.project");
+    let incomplete = fixture.parent.as_path().join("half.project");
     std::fs::create_dir_all(&incomplete).unwrap();
     fixture.record(&incomplete, ssh_repository("example-org/half"));
 
@@ -126,13 +126,13 @@ fn a_project_directory_that_names_another_project_is_inconsistent() {
     let project = fixture.register("example-org/example-repo");
     // registryはこのrootをexample-org/example-repoのものとして持っている。
     fixture.record(
-        &fixture.config.base_path.as_path().join("other.project"),
+        &fixture.parent.as_path().join("other.project"),
         ssh_repository("example-org/other"),
     );
-    std::fs::create_dir_all(fixture.config.base_path.as_path().join("other.project")).unwrap();
+    std::fs::create_dir_all(fixture.parent.as_path().join("other.project")).unwrap();
     crate::metadata::create(
         &crate::paths::ProjectPaths::at(
-            &fixture.config.base_path.as_path().join("other.project"),
+            &fixture.parent.as_path().join("other.project"),
             ssh_repository("example-org/other").canonical_id(),
         ),
         &project.metadata,
@@ -140,7 +140,7 @@ fn a_project_directory_that_names_another_project_is_inconsistent() {
     .expect_err("the .sbxm directory is not there yet");
 
     let paths = crate::paths::ProjectPaths::at(
-        &fixture.config.base_path.as_path().join("other.project"),
+        &fixture.parent.as_path().join("other.project"),
         ssh_repository("example-org/other").canonical_id(),
     );
     std::fs::create_dir_all(paths.sbxm_dir()).unwrap();

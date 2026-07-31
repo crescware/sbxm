@@ -507,7 +507,7 @@ fn the_project_lock_is_held_across_the_confirmation() {
     let fixture = fixture();
     let (_host, prepared) = prepared_project(&fixture, false);
     let lock_file = ProjectPaths::derive(
-        &fixture.config.base_path,
+        &fixture.parent,
         &project_id("example-org/example-repo").canonical(),
     )
     .lock_file();

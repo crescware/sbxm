@@ -22,7 +22,7 @@ use crate::ui::Warning;
 use host_commands::check_host_commands;
 use platform::check_platform;
 use sandboxes::check_docker_sandboxes;
-use settings::{check_base_path, check_config};
+use settings::{check_config, check_git_identity, check_registry, check_state_directory};
 
 /// 診断結果。
 pub struct GlobalStatus {
@@ -43,15 +43,19 @@ pub fn diagnose(location: &ConfigLocation, host: &dyn HostEnvironment) -> Global
         warnings: Vec::new(),
     };
 
-    // 1. global configとbase path
-    let config = check_config(location, &mut status);
-    check_base_path(config.as_deref(), &mut status);
+    // 1. global state directory、config、registry
+    check_state_directory(location, &mut status);
+    check_config(location, &mut status);
+    check_registry(location, &mut status);
 
     // 2. platform
     check_platform(host, &mut status);
 
     // 3-4. hostが直接実行するcommandと、Docker Client/Server疎通
     let present = check_host_commands(host, &mut status);
+
+    // 5. 新規登録に使えるGit identity
+    check_git_identity(host, &mut status);
 
     // 5-9. Docker Sandboxes CLIとそのserviceの状態
     check_docker_sandboxes(host, present.contains(&"sbx"), &mut status);

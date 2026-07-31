@@ -26,7 +26,7 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
         .stored("Example-Org/Example-Repo")
         .provisioning
         .dockerfile_sha256;
-    let paths = ProjectPaths::derive(&bench.config.base_path, request.repository.canonical_id());
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
     fs::write(paths.dockerfile(), EDITED_DOCKERFILE).expect("edit the Dockerfile");
 
     let mark = world.mark();
@@ -74,14 +74,14 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
     let request = request("Example-Org/Example-Repo", None, None);
     crate::commands::add::run::run(
         &bench.location,
-        &bench.config,
+        &bench.parent,
         &request,
         &world,
         &mut SilentProgress,
     )
     .expect("the project is registered");
 
-    let paths = ProjectPaths::derive(&bench.config.base_path, request.repository.canonical_id());
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
     fs::write(paths.dockerfile(), EDITED_DOCKERFILE).expect("edit the Dockerfile");
     let edited = sha256_hex(EDITED_DOCKERFILE);
 

@@ -333,7 +333,7 @@ impl HostEnvironment for SavingDocker {
 }
 
 fn project_paths(dir: &Path) -> ProjectPaths {
-    let base = crate::paths::AbsoluteBasePath::new(dir).expect("valid base path");
+    let base = crate::paths::ProjectParent::at(dir).expect("valid parent directory");
     let paths = ProjectPaths::derive(&base, &canonical());
     fs::create_dir_all(paths.cache_dir()).expect("create the cache directory");
     paths

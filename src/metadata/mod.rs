@@ -79,6 +79,27 @@ pub struct RebuildIntent {
     pub target_dockerfile_sha256: String,
     pub previous_dockerfile_sha256: String,
 }
+/// Sandbox内で使用するGit identity。
+///
+/// 新規登録時にhostの`git config --global`から取得し、以後は保存値だけを使う。
+/// host設定が後から変わっても、登録済み案件のidentityを暗黙変更しない。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitIdentity {
+    pub user_name: String,
+    pub user_email: String,
+}
+
+/// Git identityの値として使えるか。
+pub fn validate_git_identity_value(value: &str) -> std::result::Result<(), &'static str> {
+    if value.trim().is_empty() {
+        return Err("the value is empty");
+    }
+    if value.contains('\n') || value.contains('\r') {
+        return Err("the value contains a line break");
+    }
+    Ok(())
+}
+
 /// 1案件のmetadata。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectMetadata {
@@ -87,6 +108,8 @@ pub struct ProjectMetadata {
     /// clone URL文字列から実行時にtransportを推測し直さないよう、解釈済みの構造で持つ。
     pub repository: RepositoryIdentity,
     pub provisioning: Provisioning,
+    /// Sandbox内で使うGit identity。登録時のhost設定のsnapshotである。
+    pub git_identity: GitIdentity,
     pub rebuild: Option<RebuildIntent>,
 }
 impl ProjectMetadata {

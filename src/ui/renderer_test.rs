@@ -286,16 +286,23 @@ fn a_remediation_separates_the_explanation_from_the_command() {
     let drawn = plain(
         &Document::new().diagnostic(
             Diagnostic::new(
-                ErrorId::ConfigMissing,
-                msg!("error-config-missing", path = "/x"),
+                ErrorId::ConfigUnreadable,
+                msg!(
+                    "error-config-unreadable",
+                    path = "/x",
+                    detail = "no such file"
+                ),
             )
-            .remediation(Remediation::text(msg!("remediation-run-init")).try_run("sbxm init")),
+            .remediation(
+                Remediation::text(msg!("remediation-fix-config", path = "/x"))
+                    .try_run("sbxm status --global"),
+            ),
         ),
     );
     let lines: Vec<&str> = drawn.lines().collect();
     let command = lines
         .iter()
-        .position(|line| *line == "sbxm init")
+        .position(|line| *line == "sbxm status --global")
         .expect("the command is its own line");
     assert_eq!(lines[command - 1], "", "{drawn:?}");
     assert!(lines.contains(&"  Try:"), "{drawn:?}");
@@ -354,8 +361,12 @@ fn several_diagnostics_are_separated_by_one_blank_line() {
     let drawn = plain(
         &Document::new()
             .diagnostic(Diagnostic::new(
-                ErrorId::ConfigMissing,
-                msg!("error-config-missing", path = "/x"),
+                ErrorId::ConfigUnreadable,
+                msg!(
+                    "error-config-unreadable",
+                    path = "/x",
+                    detail = "no such file"
+                ),
             ))
             .diagnostic(Diagnostic::new(
                 ErrorId::DockerUnreachable,

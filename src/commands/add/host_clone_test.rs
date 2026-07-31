@@ -1,6 +1,6 @@
 use super::*;
 use crate::command::{CommandOutcome, HostEnvironment};
-use crate::paths::AbsoluteBasePath;
+use crate::paths::ProjectParent;
 use crate::testing::project::{https_repository, ssh_repository};
 use crate::ui::SilentProgress;
 use std::cell::RefCell;
@@ -61,7 +61,7 @@ impl HostEnvironment for FakeGit {
 }
 
 fn project_paths(dir: &Path) -> (ProjectPaths, RepositoryIdentity) {
-    let base = AbsoluteBasePath::new(dir).expect("valid base path");
+    let base = ProjectParent::at(dir).expect("valid parent directory");
     let repository = ssh_repository("Example-Org/Example-Repo");
     let paths = ProjectPaths::derive(&base, repository.canonical_id());
     fs::create_dir_all(paths.root()).expect("create the project root");
@@ -269,7 +269,7 @@ fn a_git_directory_that_points_outside_the_project_is_refused() {
 #[test]
 fn an_https_registration_clones_over_https() {
     let dir = tempfile::tempdir().unwrap();
-    let base = AbsoluteBasePath::new(dir.path()).expect("valid base path");
+    let base = ProjectParent::at(dir.path()).expect("valid parent directory");
     let repository = https_repository("Example-Org/Example-Repo");
     let paths = ProjectPaths::derive(&base, repository.canonical_id());
     fs::create_dir_all(paths.root()).expect("create the project root");

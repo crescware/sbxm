@@ -31,11 +31,7 @@ fn a_named_project_is_read_without_discovering_the_others() {
     fixture.register("example-org/example-repo");
 
     // 無関係な案件のmetadataが壊れていても、完全指定された対象は読める。
-    let broken = fixture
-        .config
-        .base_path
-        .as_path()
-        .join("broken/broken.project/.sbxm");
+    let broken = fixture.parent.as_path().join("broken/broken.project/.sbxm");
     std::fs::create_dir_all(&broken).unwrap();
     std::fs::write(broken.join("project.yaml"), "version: 2\n").unwrap();
 

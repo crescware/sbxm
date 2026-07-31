@@ -10,7 +10,7 @@ use crate::ui::{Document, Inline, Ui};
 use super::super::{Context, report};
 
 pub fn exec(project: Option<&ProjectId>, context: &Context, ui: &mut Ui) -> ExitCode {
-    let (_config, locale) = match context.require_config() {
+    let (_config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };

@@ -1,13 +1,13 @@
 use super::*;
 use crate::metadata::render;
-use crate::paths::AbsoluteBasePath;
+use crate::paths::ProjectParent;
 use crate::testing::metadata::{attached, canonical};
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn metadata_is_written_privately_and_replaced_in_place() {
     let dir = tempfile::tempdir().unwrap();
-    let base = AbsoluteBasePath::new(dir.path()).unwrap();
+    let base = ProjectParent::at(dir.path()).unwrap();
     let metadata = attached("example-org", "example-repo");
     let project = ProjectPaths::derive(&base, metadata.canonical_id());
     fs::create_dir_all(project.sbxm_dir()).unwrap();
@@ -30,7 +30,7 @@ fn metadata_is_written_privately_and_replaced_in_place() {
 #[test]
 fn a_missing_metadata_file_is_not_an_error_but_a_symlinked_one_is() {
     let dir = tempfile::tempdir().unwrap();
-    let base = AbsoluteBasePath::new(dir.path()).unwrap();
+    let base = ProjectParent::at(dir.path()).unwrap();
     let project = ProjectPaths::derive(&base, &canonical("example-org/example-repo"));
     assert_eq!(load(&project).unwrap(), None);
 

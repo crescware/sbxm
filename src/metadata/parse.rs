@@ -12,8 +12,8 @@ use crate::repository::RepositoryIdentity;
 
 use super::document::RawMetadata;
 use super::{
-    CreationMode, DOCUMENT, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata, Provisioning,
-    RebuildIntent,
+    CreationMode, DOCUMENT, GitIdentity, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata,
+    Provisioning, RebuildIntent, validate_git_identity_value,
 };
 
 /// metadataのtextを検証する。
@@ -142,6 +142,22 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
     require_sha256(&dockerfile_sha256)
         .map_err(|detail| invalid("provisioning.dockerfile_sha256", detail))?;
 
+    let declared_identity = raw.git_identity.ok_or_else(|| missing("git_identity"))?;
+    let user_name = declared_identity
+        .user_name
+        .ok_or_else(|| missing("git_identity.user_name"))?;
+    let user_email = declared_identity
+        .user_email
+        .ok_or_else(|| missing("git_identity.user_email"))?;
+    validate_git_identity_value(&user_name)
+        .map_err(|detail| invalid("git_identity.user_name", detail.to_string()))?;
+    validate_git_identity_value(&user_email)
+        .map_err(|detail| invalid("git_identity.user_email", detail.to_string()))?;
+    let git_identity = GitIdentity {
+        user_name,
+        user_email,
+    };
+
     let rebuild = match raw.rebuild {
         Some(rebuild) => {
             let target = rebuild
@@ -170,6 +186,7 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
             requested_worktrees,
             dockerfile_sha256,
         },
+        git_identity,
         rebuild,
     })
 }

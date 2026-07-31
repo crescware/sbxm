@@ -6,6 +6,7 @@ use crate::testing::global_status::{
     FakeHost, items, location_with_config, status_of, valid_config,
 };
 use crate::testing::render::plain;
+use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn every_row_is_shown_in_the_documented_order_even_when_checks_fail() {
@@ -15,12 +16,14 @@ fn every_row_is_shown_in_the_documented_order_even_when_checks_fail() {
     assert_eq!(
         items(&status),
         vec![
+            "status-item-state-directory",
             "status-item-config",
-            "status-item-base-path",
+            "status-item-registry",
             "status-item-platform",
             "status-item-git",
             "status-item-ssh",
             "status-item-docker",
+            "status-item-git-identity",
             "status-item-docker-sandboxes",
             "status-item-network-policy",
             "status-item-daemon",
@@ -31,27 +34,72 @@ fn every_row_is_shown_in_the_documented_order_even_when_checks_fail() {
 }
 
 #[test]
-fn a_missing_configuration_points_at_init_without_stopping_the_other_checks() {
+fn a_missing_configuration_is_the_defaults_rather_than_a_problem() {
     let (_dir, location) = location_with_config(None);
     let status = diagnose(&location, &FakeHost::macos());
 
     assert_eq!(
         status_of(&status, "status-item-config"),
+        StatusValue::Defaults
+    );
+    // 未作成のregistryは登録案件0件であり、errorではない。
+    assert_eq!(
+        status_of(&status, "status-item-registry"),
         StatusValue::Missing
     );
-    assert_eq!(status_of(&status, "status-item-git"), StatusValue::Ready);
-    let diagnostic = status
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.id == ErrorId::ConfigMissing)
-        .expect("the missing configuration is diagnosed");
     assert_eq!(
-        diagnostic
-            .remediation
-            .as_ref()
-            .and_then(|remediation| remediation.explanation.first())
-            .map(|message| message.id),
-        Some("remediation-run-init")
+        status_of(&status, "status-item-state-directory"),
+        StatusValue::Missing
+    );
+    assert!(
+        !status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::GlobalStateUnusable),
+        "{:?}",
+        status.diagnostics
+    );
+}
+
+#[test]
+fn a_registry_that_cannot_be_read_is_diagnosed_without_visiting_any_project() {
+    let (_dir, location) = location_with_config(None);
+    std::fs::create_dir_all(location.dir()).unwrap();
+    std::fs::write(location.registry_file(), "version: 99\nprojects: []\n").unwrap();
+    std::fs::set_permissions(
+        location.registry_file(),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .unwrap();
+
+    let status = diagnose(&location, &FakeHost::macos());
+    assert_eq!(
+        status_of(&status, "status-item-registry"),
+        StatusValue::Error
+    );
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::RegistryUnknownVersion)
+    );
+}
+
+#[test]
+fn a_host_without_a_git_identity_cannot_register_a_new_project() {
+    let (_dir, location) = location_with_config(None);
+    let host = FakeHost::macos().failing("git config --global --get-all user.email", "", 1);
+
+    let status = diagnose(&location, &host);
+    assert_eq!(
+        status_of(&status, "status-item-git-identity"),
+        StatusValue::Missing
+    );
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::GitIdentityUnavailable)
     );
 }
 
@@ -70,30 +118,14 @@ fn an_invalid_configuration_is_diagnosed_rather_than_repaired() {
 }
 
 #[test]
-fn an_existing_base_path_is_ready_and_a_missing_one_is_not_an_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().join("Projects");
-    std::fs::create_dir(&base).unwrap();
-    let (_home, location) = location_with_config(Some(&valid_config(&base)));
+fn an_existing_state_directory_is_ready_and_a_missing_one_is_not_an_error() {
+    let (_home, location) = location_with_config(Some(&valid_config()));
     let status = diagnose(&location, &FakeHost::macos());
     assert_eq!(
-        status_of(&status, "status-item-base-path"),
+        status_of(&status, "status-item-state-directory"),
         StatusValue::Ready
     );
-
-    let absent = dir.path().join("NotYet");
-    let (_home, location) = location_with_config(Some(&valid_config(&absent)));
-    let status = diagnose(&location, &FakeHost::macos());
-    assert_eq!(
-        status_of(&status, "status-item-base-path"),
-        StatusValue::Missing
-    );
-    assert!(
-        !status
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.id == ErrorId::BasePathNotDirectory)
-    );
+    assert_eq!(status_of(&status, "status-item-config"), StatusValue::Ready);
 }
 
 #[test]
@@ -347,7 +379,6 @@ fn several_problems_are_all_reported_at_once() {
         .iter()
         .map(|diagnostic| diagnostic.id)
         .collect();
-    assert!(ids.contains(&ErrorId::ConfigMissing), "{ids:?}");
     assert!(ids.contains(&ErrorId::PlatformUnobservable), "{ids:?}");
     assert!(ids.contains(&ErrorId::HostCommandMissing), "{ids:?}");
     assert!(!status.is_healthy());
@@ -385,19 +416,20 @@ fn the_report_never_touches_the_configuration_directory() {
 }
 
 #[test]
-fn a_base_path_that_is_a_file_is_an_error() {
+fn a_state_directory_that_is_a_file_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("Projects");
-    std::fs::write(&file, b"not a directory").unwrap();
-    // configのvalidationがfileを拒否するため、診断はconfig側に現れる。
-    let (_home, location) = location_with_config(Some(&valid_config(&file)));
-    let status = diagnose(&location, &FakeHost::macos());
+    let location = crate::config::ConfigLocation::from_home(dir.path().to_path_buf());
+    std::fs::write(location.dir(), b"not a directory").unwrap();
 
-    assert_eq!(status_of(&status, "status-item-config"), StatusValue::Error);
+    let status = diagnose(&location, &FakeHost::macos());
+    assert_eq!(
+        status_of(&status, "status-item-state-directory"),
+        StatusValue::Error
+    );
     assert!(
         status
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.id == ErrorId::BasePathNotDirectory)
+            .any(|diagnostic| diagnostic.id == ErrorId::GlobalStateUnusable)
     );
 }

@@ -1,6 +1,6 @@
 //! Project metadataのtestが共有するfixture。
 
-use crate::metadata::{CreationMode, ProjectMetadata, Provisioning};
+use crate::metadata::{CreationMode, GitIdentity, ProjectMetadata, Provisioning};
 use crate::project::{CanonicalProjectId, ProjectId};
 use crate::testing::project::ssh_repository;
 use crate::testing::value::DIGEST;
@@ -14,6 +14,14 @@ pub fn canonical(value: &str) -> CanonicalProjectId {
         .canonical()
 }
 
+/// testが使うhost由来のGit identity。
+pub fn git_identity() -> GitIdentity {
+    GitIdentity {
+        user_name: "Example User".to_string(),
+        user_email: "user@example.com".to_string(),
+    }
+}
+
 /// attached modeの1案件。
 pub fn attached(owner: &str, repository: &str) -> ProjectMetadata {
     ProjectMetadata {
@@ -24,6 +32,7 @@ pub fn attached(owner: &str, repository: &str) -> ProjectMetadata {
             requested_worktrees: 1,
             dockerfile_sha256: DIGEST.to_string(),
         },
+        git_identity: git_identity(),
         rebuild: None,
     }
 }

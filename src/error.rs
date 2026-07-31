@@ -66,7 +66,6 @@ error_ids! {
     UnknownSubcommand => "unknown-subcommand",
     ConflictingArguments => "conflicting-arguments",
     InvalidLang => "invalid-lang",
-    InitIncompleteOptions => "init-incomplete-options",
     WorktreesOutOfRange => "worktrees-out-of-range",
     WorktreesRequireDetach => "worktrees-require-detach",
     WorktreesNotReducible => "worktrees-not-reducible",
@@ -80,7 +79,6 @@ error_ids! {
     InvalidCloneUrl => "invalid-clone-url",
 
     // --- Global config ---
-    ConfigMissing => "config-missing",
     ConfigUnreadable => "config-unreadable",
     ConfigInvalidSyntax => "config-invalid-syntax",
     ConfigUnknownVersion => "config-unknown-version",
@@ -92,10 +90,7 @@ error_ids! {
     ConfigDirPermissionTooOpen => "config-dir-permission-too-open",
     ConfigDirSymlink => "config-dir-symlink",
     ConfigDirNotOwned => "config-dir-not-owned",
-    BasePathNotAbsolute => "base-path-not-absolute",
-    BasePathNotDirectory => "base-path-not-directory",
-    BasePathNotWritable => "base-path-not-writable",
-    BasePathEscapesRoot => "base-path-escapes-root",
+    GlobalStateUnusable => "global-state-unusable",
     FileDeclarationInvalidSource => "file-declaration-invalid-source",
     FileDeclarationInvalidDestination => "file-declaration-invalid-destination",
 
@@ -161,6 +156,7 @@ error_ids! {
 
     // --- 案件のhost path ---
     ProjectPathCollision => "project-path-collision",
+    WorkingDirectoryUnusable => "working-directory-unusable",
     ProjectPathSymlink => "project-path-symlink",
     ProjectPathUnexpectedType => "project-path-unexpected-type",
     ProjectPathUnreadable => "project-path-unreadable",
@@ -196,10 +192,9 @@ error_ids! {
     NetworkPolicyUnobservable => "network-policy-unobservable",
     DaemonUnobservable => "daemon-unobservable",
 
-    // --- init ---
-    InitRequiresTty => "init-requires-tty",
+    // --- 対話 ---
     PromptUnreadable => "prompt-unreadable",
-    GitIdentityInvalid => "git-identity-invalid",
+    GitIdentityUnavailable => "git-identity-unavailable",
 
     // --- 内部 ---
     MessageFormatFailed => "message-format-failed",

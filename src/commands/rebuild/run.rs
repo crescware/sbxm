@@ -253,7 +253,7 @@ impl Switch<'_> {
 
         secret::require_placeholder_present(host, &ready.name)?;
 
-        identity::ensure(host, &ready.name, &config.git)?;
+        identity::ensure(host, &ready.name, &metadata.git_identity)?;
         tools::sandbox_ready(host, &ready.name)?;
         secret::configure_git_credential(host, &ready.name)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)?;

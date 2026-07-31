@@ -184,7 +184,7 @@ fn collect_strings(command: &ClapCommand, path: &str, out: &mut Vec<(String, Opt
 #[test]
 fn each_subcommand_renders_its_own_help() {
     for name in [
-        "init", "add", "apply", "rebuild", "open", "stop", "ls", "status", "destroy",
+        "add", "apply", "rebuild", "open", "stop", "ls", "status", "destroy",
     ] {
         let outcome = parse_argv(&[name, "--help"], tty()).expect("subcommand help renders");
         let Outcome::Help(text) = outcome else {

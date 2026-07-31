@@ -3,7 +3,6 @@
 //! 診断は外部commandの応答から決まるため、応答そのものをtestが組み立てる。
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::commands::status::global::GlobalStatus;
@@ -57,6 +56,11 @@ impl FakeHost {
             .responding("uname -m", "arm64\n")
             .responding("docker version --format {{.Server.Version}}", "27.0.3\n")
             .responding("sbx version", "sbx version 0.37.0\n")
+            .responding("git config --global --get-all user.name", "Example User\n")
+            .responding(
+                "git config --global --get-all user.email",
+                "user@example.com\n",
+            )
     }
 }
 
@@ -112,11 +116,8 @@ pub fn location_with_config(text: Option<&str>) -> (tempfile::TempDir, ConfigLoc
     (dir, location)
 }
 
-pub fn valid_config(base: &Path) -> String {
-    format!(
-        "version: 1\nlanguage: en\nbase_path: \"{}\"\n\ngit:\n  user_name: Example User\n  user_email: user@example.com\n",
-        base.display()
-    )
+pub fn valid_config() -> String {
+    "version: 1\nlanguage: en\n".to_string()
 }
 
 pub fn items(status: &GlobalStatus) -> Vec<&'static str> {

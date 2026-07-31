@@ -112,8 +112,10 @@ fn resolve_display_locale(peeked: &PeekedLang, location: &ConfigLocation) -> Loc
     }
     // configが不在、構文不正、未知version、permission不正、symlink、read失敗のいずれでも
     // help表示自体は妨げず、shell localeへfallbackする。
-    if let Ok(ConfigState::Valid { config, .. }) = config::load(location) {
-        return config.language;
+    if let Ok(ConfigState::Valid { config, .. }) = config::load(location)
+        && let Some(locale) = config.language
+    {
+        return locale;
     }
-    shell_locale().unwrap_or(Locale::En)
+    shell_locale().unwrap_or(Locale::SOURCE)
 }

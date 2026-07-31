@@ -5,6 +5,8 @@
 /// 表示に使う状態値。翻訳しない安定したenum。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StatusValue {
+    /// 宣言が無く、defaultで動作している。
+    Defaults,
     Ready,
     Missing,
     Error,
@@ -17,6 +19,7 @@ impl StatusValue {
         match self {
             StatusValue::Ready => "ready",
             StatusValue::Missing => "missing",
+            StatusValue::Defaults => "defaults",
             StatusValue::Error => "error",
             StatusValue::Running => "running",
             StatusValue::Stopped => "stopped",
@@ -28,6 +31,7 @@ impl StatusValue {
         match self {
             StatusValue::Ready => "legend-ready",
             StatusValue::Missing => "legend-missing",
+            StatusValue::Defaults => "legend-defaults",
             StatusValue::Error => "legend-error",
             StatusValue::Running => "legend-running",
             StatusValue::Stopped => "legend-stopped",

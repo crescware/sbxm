@@ -8,7 +8,6 @@
 pub mod add;
 pub mod apply;
 pub mod destroy;
-pub mod init;
 pub mod ls;
 pub mod open;
 pub mod prepare;
@@ -36,7 +35,6 @@ use crate::ui::Ui;
 /// 実行するcommand。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    Init(init::Mode),
     Add(add::Args),
     Apply(apply::Args),
     Prepare(ProjectId),
@@ -51,7 +49,6 @@ pub enum Command {
 /// parserへ登録するsubcommand。この並び順がhelpの並び順になる。
 pub fn specs(builder: &Builder) -> Result<Vec<ClapCommand>> {
     Ok(vec![
-        init::spec(builder)?,
         add::spec(builder)?,
         apply::spec(builder)?,
         prepare::spec(builder)?,
@@ -71,7 +68,6 @@ pub fn from_matches(
     interactivity: Interactivity,
 ) -> Result<Command> {
     match name {
-        "init" => Ok(Command::Init(init::args(matches)?)),
         "add" => Ok(Command::Add(add::args(matches)?)),
         "apply" => Ok(Command::Apply(apply::args(matches)?)),
         "prepare" => Ok(Command::Prepare(prepare::args(matches)?)),
@@ -93,7 +89,6 @@ pub fn from_matches(
 /// `Ui`はworkflow objectへ広げず、明示的な引数として渡す。
 pub fn dispatch(command: &Command, context: &Context, ui: &mut Ui) -> ExitCode {
     match command {
-        Command::Init(mode) => init::exec(mode, context, ui),
         Command::Add(args) => add::exec(args, context, ui),
         Command::Apply(args) => apply::exec(args, context, ui),
         Command::Prepare(project) => prepare::exec(project, context, ui),

@@ -103,6 +103,22 @@ impl ProjectPrompt for PromptUi {
     }
 }
 
+/// 対象を完全指定するcommandが渡す、決して尋ねないprompt。
+///
+/// 引数がある経路では`one`はpromptへ到達しない。到達したなら、それは候補を組み立てる
+/// 側の誤りである。
+pub struct NoPrompt;
+
+impl ProjectPrompt for NoPrompt {
+    fn select_one(&mut self, _heading: Msg, candidates: &[String]) -> Result<usize> {
+        Err(unresolved(0, candidates.len()))
+    }
+
+    fn select_many(&mut self, _heading: Msg, candidates: &[String]) -> Result<Vec<usize>> {
+        Err(unresolved(0, candidates.len()))
+    }
+}
+
 /// 引数、またはpromptで1件の案件を決める。
 pub fn one(
     location: &ConfigLocation,

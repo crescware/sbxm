@@ -10,7 +10,7 @@ use super::run::Scope;
 use super::{Args, print};
 
 pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
-    let (config, locale) = match context.require_config() {
+    let (config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
