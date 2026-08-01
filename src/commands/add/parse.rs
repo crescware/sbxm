@@ -85,12 +85,10 @@ fn declared_git_identity(matches: &ArgMatches) -> Result<Option<GitIdentity>> {
 fn check_declared_value(field: &str, value: &str) -> Result<()> {
     match validate_git_identity_value(value) {
         Ok(()) => Ok(()),
-        Err(detail) => Err(Error::single(
-            Diagnostic::new(
-                ErrorId::InvalidValue,
-                msg!("error-git-identity-invalid", field = field),
-            )
-            .fact(Fact::reason(detail)),
+        Err(reason) => Err(Error::single(
+            Diagnostic::new(ErrorId::InvalidValue, msg!("error-git-identity-invalid"))
+                .fact(Fact::field(field))
+                .fact(Fact::reason(reason)),
         )),
     }
 }

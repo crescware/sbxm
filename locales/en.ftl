@@ -343,7 +343,7 @@ security-ssh-agent-exposed-remediation = A sandbox keeps whatever the daemon gav
 
 error-git-identity-incomplete = The Git identity is only half declared. { $missing } is missing
 error-git-identity-undecidable = There is no identity to give this project: none is saved as the default, none was declared, and there is nowhere to ask
-error-git-identity-invalid = That is not a usable Git { $field }
+error-git-identity-invalid = The Git identity cannot be used
 
 status-global-section = GLOBAL
 status-column-item = ITEM

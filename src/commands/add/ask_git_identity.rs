@@ -28,12 +28,10 @@ fn accept(field: &str, value: &str) -> Result<String> {
     let value = value.trim();
     match validate_git_identity_value(value) {
         Ok(()) => Ok(value.to_string()),
-        Err(detail) => Err(Error::single(
-            Diagnostic::new(
-                ErrorId::InvalidValue,
-                msg!("error-git-identity-invalid", field = field),
-            )
-            .fact(Fact::reason(detail)),
+        Err(reason) => Err(Error::single(
+            Diagnostic::new(ErrorId::InvalidValue, msg!("error-git-identity-invalid"))
+                .fact(Fact::field(field))
+                .fact(Fact::reason(reason)),
         )),
     }
 }

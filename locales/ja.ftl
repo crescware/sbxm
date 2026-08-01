@@ -343,7 +343,7 @@ security-ssh-agent-exposed-remediation = Sandboxは作成時にdaemonから受�
 
 error-git-identity-incomplete = Git identityの宣言が揃っていません。{ $missing } がありません
 error-git-identity-undecidable = この案件の名義を決められません。保存された既定がなく、宣言もなく、訊くこともできません
-error-git-identity-invalid = Gitの { $field } として使えない値です
+error-git-identity-invalid = このGitの名義は使用できません
 
 status-global-section = GLOBAL
 status-column-item = 項目 (ITEM)

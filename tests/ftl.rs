@@ -272,6 +272,7 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-daemon-unobservable", "detail"),
     ("error-sbx-login-unobservable", "detail"),
     ("error-remote-ssh-unobservable", "detail"),
+    ("error-git-identity-invalid", "field"),
 ];
 
 #[test]
