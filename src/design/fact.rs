@@ -79,6 +79,14 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-image-label"), Inline::important(name))
     }
 
+    /// `Template:`。診断の対象になったTemplate。
+    pub fn template(name: &str) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-template-label"),
+            Inline::important(name),
+        )
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))
