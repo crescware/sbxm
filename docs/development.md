@@ -82,9 +82,9 @@ coverageが数えるのは本番codeだけとする。testとtest支援codeは�
 - `fake/` — 1つのmoduleの中だけで使うtest支援code
 - file名に`_test`を含むcode — unit test
 
-test buildでしか組み立たないcodeは、この4か所のいずれかへ置く。moduleだけでなくitemも
-同じ規約に従う。llvm-covはfile単位でしか母集団を外せないため、`Ui::capture`のような
-test専用の構築関数を本番fileへ書くと、それだけで母集団へ入る。
+test buildでしか組み立たないcodeは、この4か所のいずれかへ置く。moduleだけでなくitemと
+その内部のstatementやexpressionも同じ規約に従う。llvm-covはfile単位でしか母集団を外せない
+ため、`Ui::capture`のようなtest専用の構築関数を本番fileへ書くと、それだけで母集団へ入る。
 
 private fieldへ触れる構築関数も本番fileへ置く理由にはならない。子moduleは親が宣言した
 ものへ届き、inherent implはcrateのどのmoduleにも書けるため、対象の隣の`_test` fileへ
@@ -92,9 +92,9 @@ private fieldへ触れる構築関数も本番fileへ置く理由にはならな
 
 `tests/module_boundaries.rs`が次を確認する。
 
-- 数えるfileに、test buildでしか組み立たないitemが無いこと
-- `test`がitemの有無を1人で決めていること。`#[cfg(not(test))]`は数えられるのにtestが
-  踏めず、`#[cfg(any(test, ...))]`は本番buildに存在するかどうかが決まらない
+- 数えるfileに、test buildでしか組み立たないcodeが無いこと
+- `test`がitemとその内部のcodeの有無を1人で決めていること。`#[cfg(not(test))]`は数えられる
+  のにtestが踏めず、`#[cfg(any(test, ...))]`は本番buildに存在するかどうかが決まらない
 - crate rootから辿って、test buildでしか組み立たないfileだけが外れていること。除外を
   足して本番codeを母集団から外すことも落ちる
 - `mise.toml`が渡す`--ignore-filename-regex`が、この4つだけを綴っていること
