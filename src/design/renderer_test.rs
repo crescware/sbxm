@@ -611,3 +611,54 @@ fn strip_ansi(text: &str) -> String {
     }
     out
 }
+
+#[test]
+fn a_warning_shows_its_facts_under_the_marker_line() -> Checked {
+    // warningは軽い診断ではなく、止まらずに報告する同じ形である。
+    let drawn = plain(&Document::new().warning(
+        msg!("warning-build-context-left-behind"),
+        vec![
+            Fact::path("/tmp/sbxm-build-context-a41f"),
+            Fact::cause("Directory not empty (os error 39)"),
+        ],
+    ))?;
+    let lines: Vec<&str> = drawn.lines().collect();
+    assert!(lines[0].starts_with("! Warning: "), "{drawn:?}");
+    assert_eq!(
+        lines[1], "  Path: /tmp/sbxm-build-context-a41f",
+        "{drawn:?}"
+    );
+    assert_eq!(
+        lines[2], "  Cause: Directory not empty (os error 39)",
+        "{drawn:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_cause_sbxm_observed_itself_is_drawn_in_the_chosen_language() -> Checked {
+    // 外部の原文は訳さないが、sbxm自身の観測は訳す。値の出どころで経路が分かれる。
+    let document = Document::new().diagnostic(
+        Diagnostic::new(
+            ErrorId::MetadataUnreadable,
+            msg!("error-metadata-unreadable"),
+        )
+        .fact(Fact::path("/work/.sbxm/metadata.yaml"))
+        .fact(Fact::reason(msg!("cause-symbolic-link"))),
+    );
+    let mut buffer: Vec<u8> = Vec::new();
+    {
+        let mut renderer = Renderer::new(&mut buffer, StreamPolicy::plain());
+        renderer.write(&Catalog::new(Locale::Ja), &document);
+    }
+    let drawn = String::from_utf8(buffer).required_because("UTF-8")?;
+    assert!(
+        drawn.contains("  原因: pathがsymbolic linkです"),
+        "{drawn:?}"
+    );
+    assert!(
+        drawn.contains("  path: /work/.sbxm/metadata.yaml"),
+        "{drawn:?}"
+    );
+    Ok(())
+}

@@ -92,3 +92,75 @@ fn a_reason_sbxm_observed_itself_stays_a_message() -> Checked {
         ))),
     }
 }
+
+/// 事実の行に使ってよい項目名と、その値が持つ装飾。
+///
+/// 語彙は閉じている。同じ意味の行が呼び出し側ごとに違う項目名や違う装飾で出ると、
+/// 読み手は毎回どれが照合の基準かを判断し直すことになる。
+#[test]
+fn every_row_a_diagnostic_can_show_names_itself_the_same_way() -> Checked {
+    let vocabulary = [
+        (Fact::command("sbx ls"), "diagnostic-command-label", true),
+        (
+            Fact::directory("/work"),
+            "diagnostic-directory-label",
+            false,
+        ),
+        (Fact::path("/work/a.yaml"), "diagnostic-path-label", false),
+        (Fact::field("language"), "diagnostic-field-label", true),
+        (Fact::entry("manifest.json"), "diagnostic-entry-label", true),
+        (
+            Fact::source("/host/.gitconfig"),
+            "diagnostic-source-label",
+            false,
+        ),
+        (
+            Fact::destination(".gitconfig"),
+            "diagnostic-destination-label",
+            false,
+        ),
+        (Fact::value("-delete"), "diagnostic-value-label", true),
+        (Fact::image("sbxm-example"), "diagnostic-image-label", true),
+        (
+            Fact::template("sbxm-example"),
+            "diagnostic-template-label",
+            true,
+        ),
+        (
+            Fact::sandbox("sbxm-example"),
+            "diagnostic-sandbox-label",
+            true,
+        ),
+        (
+            Fact::document("metadata"),
+            "diagnostic-document-label",
+            true,
+        ),
+    ];
+
+    for (fact, label, emphasized) in vocabulary {
+        assert_eq!(fact.label(), &msg!(label));
+        let value = one_line(&fact)?;
+        assert_eq!(
+            matches!(value, Inline::Important(_)),
+            emphasized,
+            "{label} decides its own emphasis: {value:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn the_two_kinds_of_cause_share_one_label() -> Checked {
+    // 外部が書いた原文とsbxm自身の観測は、値の出どころだけが違う。
+    let observed = Fact::cause("No such file or directory (os error 2)");
+    assert_eq!(observed.label(), &msg!("diagnostic-cause-label"));
+    assert_eq!(
+        one_line(&observed)?,
+        &Inline::text("No such file or directory (os error 2)")
+    );
+
+    let stated = Fact::reason(msg!("cause-not-a-directory"));
+    assert_eq!(stated.label(), &msg!("diagnostic-cause-label"));
+    Ok(())
+}
