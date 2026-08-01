@@ -65,7 +65,7 @@ error-invalid-project-id = { $value } is not a valid project ID. A project ID is
 error-reserved-repository-name = { $value } is reserved and cannot be used as a repository name.
 error-invalid-clone-url = { $value } is not a clone URL sbxm accepts. Accepted forms: { $accepted }
 
-error-config-unreadable = The global configuration at { $path } could not be read: { $detail }
+error-config-unreadable = The global configuration could not be read
 error-config-invalid-syntax = The global configuration at { $path } is not valid YAML: { $detail }
 error-config-unknown-version = The global configuration at { $path } declares version { $version }, but this build supports { $supported }.
 error-config-missing-field = The global configuration at { $path } is missing the required field { $field }.
@@ -159,8 +159,11 @@ error-external-command-timeout = The command { $program } did not finish within 
 error-external-output-unparseable = The output could not be interpreted
 warning-external-output-lossy = The { $stream } output of { $program } was not valid UTF-8 and was converted with replacement characters.
 diagnostic-command-label = Command:
+diagnostic-path-label = Path:
 diagnostic-directory-label = Working directory:
 diagnostic-cause-label = Cause:
+cause-home-directory-unknown = the home directory could not be determined
+cause-not-a-regular-file = the path is not a regular file
 external-output-heading = Output of { $program }:
 
 error-sbx-version-unparseable = The Docker Sandboxes CLI version could not be determined from { $observed }.

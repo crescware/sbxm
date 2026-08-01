@@ -11,8 +11,8 @@ fn cause(value: &str) -> Fact {
 fn one_line(fact: &Fact) -> Checked<&Inline> {
     match fact {
         Fact::OneLine { value, .. } => Ok(value),
-        Fact::ManyLines { lines, .. } => Err(Unmet::new(format!(
-            "one row was required, but the value became {lines:?}"
+        other => Err(Unmet::new(format!(
+            "one raw row was required, but got {other:?}"
         ))),
     }
 }
@@ -21,9 +21,8 @@ fn one_line(fact: &Fact) -> Checked<&Inline> {
 fn many_lines(fact: &Fact) -> Checked<&[String]> {
     match fact {
         Fact::ManyLines { lines, .. } => Ok(lines),
-        Fact::OneLine { value, .. } => Err(Unmet::new(format!(
-            "an indented block was required, but {:?} stayed on one row",
-            value.as_str()
+        other => Err(Unmet::new(format!(
+            "an indented block was required, but got {other:?}"
         ))),
     }
 }
@@ -76,4 +75,20 @@ fn trimming_the_value_does_not_change_what_the_value_means() -> Checked {
 fn every_shape_answers_with_the_label_it_was_given() {
     assert_eq!(cause("one").label(), &msg!("diagnostic-cause-label"));
     assert_eq!(cause("one\ntwo").label(), &msg!("diagnostic-cause-label"));
+}
+
+#[test]
+fn a_reason_sbxm_observed_itself_stays_a_message() -> Checked {
+    // 英語の原文を値へ流し込むと、翻訳された文のなかに英語が残る。
+    let fact = Fact::reason(msg!("cause-not-a-regular-file"));
+    match fact {
+        Fact::Translated { label, value } => {
+            assert_eq!(label, msg!("diagnostic-cause-label"));
+            assert_eq!(value, msg!("cause-not-a-regular-file"));
+            Ok(())
+        }
+        other => Err(Unmet::new(format!(
+            "a translated row was required: {other:?}"
+        ))),
+    }
 }

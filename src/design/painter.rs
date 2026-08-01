@@ -319,6 +319,12 @@ impl Painter {
                 }
                 line(out, &format!("{INDENT}{label} {}", self.inline(value)));
             }
+            Fact::Translated { value, .. } => {
+                line(
+                    out,
+                    &format!("{INDENT}{label} {}", Self::format(catalog, value)),
+                );
+            }
             Fact::ManyLines { lines, .. } => {
                 line(out, &format!("{INDENT}{label}"));
                 // 複数行の値は外部が書いた原文である。着色せず、外部outputと同じ字下げで

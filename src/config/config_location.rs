@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 /// `~/.sbxm`配下の固定path。
@@ -19,14 +20,12 @@ impl ConfigLocation {
 
     /// 現在の利用者のhome directoryから構築する。
     pub fn discover() -> Result<ConfigLocation> {
+        // home directoryが分からない時点でpathは1つも組み立てられない。示せる事実は
+        // 読めなかった理由だけである。
         let home = dirs::home_dir().ok_or_else(|| {
-            Error::new(
-                ErrorId::ConfigUnreadable,
-                msg!(
-                    "error-config-unreadable",
-                    path = "~",
-                    detail = "the home directory could not be determined"
-                ),
+            Error::single(
+                Diagnostic::new(ErrorId::ConfigUnreadable, msg!("error-config-unreadable"))
+                    .fact(Fact::reason(msg!("cause-home-directory-unknown"))),
             )
         })?;
         Ok(ConfigLocation { home })

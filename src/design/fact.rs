@@ -20,6 +20,11 @@ pub enum Fact {
     /// 複数行の値は外部が書いた原文であり、外部outputを着色しないという規則に従う。
     /// `Inline`が持っていた装飾はここでは引き継がない。
     ManyLines { label: Msg, lines: Vec<String> },
+    /// 翻訳する値。
+    ///
+    /// sbxm自身が観測したことを述べる値は、原文が英語ではなくmessageである。外部が
+    /// 書いた原文と同じ経路へ流すと、翻訳された文のなかに英語が残る。
+    Translated { label: Msg, value: Msg },
 }
 
 impl Fact {
@@ -36,9 +41,22 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-directory-label"), Inline::path(path))
     }
 
+    /// `Path:`。診断の対象になったhost上のpath。
+    pub fn path(path: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-path-label"), Inline::path(path))
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))
+    }
+
+    /// `Cause:`。sbxm自身が観測したことを、翻訳する文で示す。
+    pub fn reason(detail: Msg) -> Fact {
+        Fact::Translated {
+            label: Msg::new("diagnostic-cause-label"),
+            value: detail,
+        }
     }
 
     /// 事実を1件作る。値の形が表示を決める。
@@ -60,7 +78,9 @@ impl Fact {
     /// 項目名。
     pub fn label(&self) -> &Msg {
         match self {
-            Fact::OneLine { label, .. } | Fact::ManyLines { label, .. } => label,
+            Fact::OneLine { label, .. }
+            | Fact::ManyLines { label, .. }
+            | Fact::Translated { label, .. } => label,
         }
     }
 }

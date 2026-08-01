@@ -65,7 +65,7 @@ error-invalid-project-id = { $value } は案件IDとして正しくありませ�
 error-reserved-repository-name = { $value } は予約語のためrepository名に使用できません。
 error-invalid-clone-url = { $value } はsbxmが受理するclone URLではありません。受理する形式: { $accepted }
 
-error-config-unreadable = { $path } のglobal設定を読み取れません: { $detail }
+error-config-unreadable = global設定を読み取れません
 error-config-invalid-syntax = { $path } のglobal設定がYAMLとして不正です: { $detail }
 error-config-unknown-version = { $path } のglobal設定はversion { $version } ですが、このbuildが対応するのは { $supported } です。
 error-config-missing-field = { $path } のglobal設定に必須項目 { $field } がありません。
@@ -159,8 +159,11 @@ error-external-command-timeout = command { $program } が { $seconds } 秒以内
 error-external-output-unparseable = 出力を解釈できません
 warning-external-output-lossy = { $program } の { $stream } 出力がUTF-8として不正なため、置換文字を含む形へ変換しました。
 diagnostic-command-label = 実行したcommand:
+diagnostic-path-label = path:
 diagnostic-directory-label = 作業directory:
 diagnostic-cause-label = 原因:
+cause-home-directory-unknown = home directoryを判定できません
+cause-not-a-regular-file = pathが通常のfileではありません
 external-output-heading = { $program } の出力:
 
 error-sbx-version-unparseable = { $observed } からDocker Sandboxes CLIのversionを判定できません。

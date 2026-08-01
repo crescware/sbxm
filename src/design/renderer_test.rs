@@ -310,18 +310,12 @@ fn a_diagnostic_keeps_its_id_in_english_behind_a_marker() -> Checked {
 fn a_remediation_separates_the_explanation_from_the_command() -> Checked {
     let drawn = plain(
         &Document::new().diagnostic(
-            Diagnostic::new(
-                ErrorId::ConfigUnreadable,
-                msg!(
-                    "error-config-unreadable",
-                    path = "/x",
-                    detail = "no such file"
+            Diagnostic::new(ErrorId::ConfigUnreadable, msg!("error-config-unreadable"))
+                .fact(Fact::path("/x"))
+                .remediation(
+                    Remediation::text(msg!("remediation-fix-config", path = "/x"))
+                        .try_run("sbxm status --global"),
                 ),
-            )
-            .remediation(
-                Remediation::text(msg!("remediation-fix-config", path = "/x"))
-                    .try_run("sbxm status --global"),
-            ),
         ),
     )?;
     let lines: Vec<&str> = drawn.lines().collect();
@@ -533,11 +527,7 @@ fn several_diagnostics_are_separated_by_one_blank_line() -> Checked {
         &Document::new()
             .diagnostic(Diagnostic::new(
                 ErrorId::ConfigUnreadable,
-                msg!(
-                    "error-config-unreadable",
-                    path = "/x",
-                    detail = "no such file"
-                ),
+                msg!("error-config-unreadable"),
             ))
             .diagnostic(Diagnostic::new(
                 ErrorId::DockerUnreachable,

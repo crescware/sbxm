@@ -196,10 +196,12 @@ fn every_message_uses_the_same_placeholders_in_every_locale() -> Checked {
 /// 診断が事実の行として示す値と、それを示すmessage ID。
 ///
 /// 同じ値を説明文にも置くと、読み手は同じものを二度読むことになる。
-const SHOWN_AS_A_FACT: [(&str, &str); 3] = [
+const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-external-output-unparseable", "program"),
     ("error-external-output-unparseable", "detail"),
     ("error-external-command-failed", "program"),
+    ("error-config-unreadable", "path"),
+    ("error-config-unreadable", "detail"),
 ];
 
 #[test]
@@ -208,10 +210,10 @@ fn a_value_shown_as_a_fact_is_not_repeated_in_the_sentence() -> Checked {
         let placeholders = placeholders(&locale)?;
         for (id, variable) in SHOWN_AS_A_FACT {
             let observed = placeholders
-                .get(id)
+                .get(*id)
                 .required_because(&format!("{locale}.ftl defines {id}"))?;
             assert!(
-                !observed.contains(variable),
+                !observed.contains(*variable),
                 "{locale}.ftl: {id} names ${variable} again, but the diagnostic shows it as a fact"
             );
         }
@@ -316,8 +318,10 @@ fn a_sandbox_state_and_a_host_service_state_are_described_separately() -> Checke
 /// 実装が参照するmessage `IDだと分かるprefix`。
 ///
 /// error IDの安定した表記と紛れないよう、prefixは表示文字列側だけを指すものにする。
-const MESSAGE_PREFIXES: [&str; 10] = [
+const MESSAGE_PREFIXES: [&str; 12] = [
     "error-",
+    "diagnostic-",
+    "cause-",
     "remediation-",
     "security-",
     "legend-",

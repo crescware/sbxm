@@ -148,11 +148,7 @@ fn every_diagnostic_of_one_error_is_reported() -> Checked {
     let error = crate::diagnostics::Error::many(vec![
         Diagnostic::new(
             ErrorId::ConfigUnreadable,
-            crate::msg!(
-                "error-config-unreadable",
-                path = "/x",
-                detail = "no such file"
-            ),
+            crate::msg!("error-config-unreadable"),
         ),
         Diagnostic::new(
             ErrorId::DockerUnreachable,
