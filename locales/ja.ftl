@@ -141,7 +141,7 @@ warning-dockerfile-changed-during-build = { $project } のDockerfileが初回構
 error-project-path-collision = { $path } は既に { $observed } のものであるため、{ $requested } をそこへ登録できません。
 error-project-path-occupied = { $path } は既に存在し、どの案件にも登録されていないため、{ $requested } をそこへ登録できません。
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
-error-project-path-unreadable = 案件のpath { $path } を読み取れません: { $detail }
+error-project-path-unreadable = 案件のpathを読み取れません
 
 error-document-render-failed = { $document } のdocumentを組み立てられませんでした: { $detail }
 error-atomic-write-failed = { $path } への書き込みに失敗しました: { $detail }
@@ -212,6 +212,7 @@ cause-worktree-not-on-branch = worktreeが { $expected } 上にありません
 cause-worktree-on-a-branch = worktreeが { $observed } 上にあり、この案件はdetached headを使います
 cause-worktree-outside-shared-repository = worktreeが共有repositoryの外にあります
 cause-managed-worktree-absent = 案件はこのmanaged worktreeを求めていますが、Gitが持っていません
+cause-dockerfile-absent = この案件のDockerfileが存在しません
 cause-labels-declare-something-else = labelがこの案件とこの世代を宣言していません
 cause-archive-entry-absent = archiveに { $entry } がありません
 cause-archive-entry-not-json = { $entry } がJSONではありません: { $detail }

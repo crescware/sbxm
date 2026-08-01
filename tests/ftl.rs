@@ -254,6 +254,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-prompt-unreadable", "detail"),
     ("warning-lock-file-left-behind", "path"),
     ("warning-lock-file-left-behind", "detail"),
+    ("error-project-path-unreadable", "path"),
+    ("error-project-path-unreadable", "detail"),
 ];
 
 #[test]

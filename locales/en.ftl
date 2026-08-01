@@ -141,7 +141,7 @@ warning-dockerfile-changed-during-build = The Dockerfile of { $project } changed
 error-project-path-collision = { $path } already belongs to { $observed }, so { $requested } cannot be registered there.
 error-project-path-occupied = { $path } already exists and is not registered to any project, so { $requested } cannot be registered there.
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
-error-project-path-unreadable = The project path { $path } could not be read: { $detail }
+error-project-path-unreadable = The project path could not be read
 
 error-document-render-failed = The { $document } document could not be built: { $detail }
 error-atomic-write-failed = Writing { $path } failed: { $detail }
@@ -212,6 +212,7 @@ cause-worktree-not-on-branch = the worktree is not on { $expected }
 cause-worktree-on-a-branch = the worktree is on { $observed }, and this project uses detached heads
 cause-worktree-outside-shared-repository = the worktree is outside the shared repository
 cause-managed-worktree-absent = the project asks for this managed worktree, but Git does not have it
+cause-dockerfile-absent = the Dockerfile of this project is absent
 cause-labels-declare-something-else = the labels do not declare this project and generation
 cause-archive-entry-absent = the archive has no { $entry }
 cause-archive-entry-not-json = { $entry } is not JSON: { $detail }

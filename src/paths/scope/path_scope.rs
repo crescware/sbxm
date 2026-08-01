@@ -114,13 +114,13 @@ impl PathScope {
                     .fact(Fact::path(&display(path)))
                     .fact(Fact::cause(detail)),
             ),
-            PathScope::ProjectPath => Error::new(
-                ErrorId::ProjectPathUnreadable,
-                msg!(
-                    "error-project-path-unreadable",
-                    path = display(path),
-                    detail = detail
-                ),
+            PathScope::ProjectPath => Error::single(
+                Diagnostic::new(
+                    ErrorId::ProjectPathUnreadable,
+                    msg!("error-project-path-unreadable"),
+                )
+                .fact(Fact::path(&display(path)))
+                .fact(Fact::cause(detail)),
             ),
         }
     }

@@ -1,3 +1,4 @@
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::hash::sha256_hex;
 use crate::metadata::ProjectMetadata;
@@ -27,14 +28,14 @@ pub fn check_dockerfile(
             }
             Err(error) => {
                 status.push("status-item-dockerfile", Value::Mismatch);
-                status.diagnostics.push(Diagnostic::new(
-                    ErrorId::ProjectPathUnreadable,
-                    msg!(
-                        "error-project-path-unreadable",
-                        path = paths::display(&path),
-                        detail = error
-                    ),
-                ));
+                status.diagnostics.push(
+                    Diagnostic::new(
+                        ErrorId::ProjectPathUnreadable,
+                        msg!("error-project-path-unreadable"),
+                    )
+                    .fact(Fact::path(&paths::display(&path)))
+                    .fact(Fact::cause(&error.to_string())),
+                );
             }
         },
         Ok(false) => status.push("status-item-dockerfile", Value::Missing),

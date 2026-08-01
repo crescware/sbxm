@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId, Result, fail};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use crate::paths::inspect::{display, is_symlink, unexpected_type};
@@ -29,13 +30,13 @@ pub fn ensure_directory(path: &Path) -> Result<()> {
                     ),
                 )
             }),
-        Err(error) => fail(
-            ErrorId::ProjectPathUnreadable,
-            msg!(
-                "error-project-path-unreadable",
-                path = display(path),
-                detail = error
-            ),
-        ),
+        Err(error) => Err(Error::single(
+            Diagnostic::new(
+                ErrorId::ProjectPathUnreadable,
+                msg!("error-project-path-unreadable"),
+            )
+            .fact(Fact::path(&display(path)))
+            .fact(Fact::cause(&error.to_string())),
+        )),
     }
 }
