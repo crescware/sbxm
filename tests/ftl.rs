@@ -235,6 +235,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-invalid-branch-name", "detail"),
     ("error-host-clone-unusable", "path"),
     ("error-host-clone-unusable", "detail"),
+    ("error-image-collision", "image"),
+    ("error-image-collision", "detail"),
 ];
 
 #[test]

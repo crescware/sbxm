@@ -74,6 +74,11 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-value-label"), Inline::important(value))
     }
 
+    /// `Image:`。診断の対象になったcontainer image。
+    pub fn image(name: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-image-label"), Inline::important(name))
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))

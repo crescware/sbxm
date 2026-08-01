@@ -98,7 +98,7 @@ error-target-configuration-mismatch = { $project } was registered to be built as
 error-rebuild-intent-pending = { $project } is in the middle of a rebuild, so its first build cannot be continued.
 
 error-host-clone-unusable = The clone cannot be used for this project
-error-image-collision = An image named { $image } already exists and declares something else, so this generation cannot take that name. { $detail }
+error-image-collision = An image with this name already exists and declares something else, so this generation cannot take that name
 error-image-unusable = The image { $image } cannot be used for this project: { $detail }
 error-build-context-not-empty = The build context { $path } holds { $observed } entries, but sbxm builds only from an empty one.
 warning-build-context-left-behind = The temporary build context { $path } could not be removed: { $detail }
@@ -163,6 +163,7 @@ diagnostic-path-label = Path:
 diagnostic-field-label = Field:
 diagnostic-entry-label = Entry:
 diagnostic-value-label = Value:
+diagnostic-image-label = Image:
 diagnostic-source-label = Source:
 diagnostic-destination-label = Destination:
 diagnostic-directory-label = Working directory:

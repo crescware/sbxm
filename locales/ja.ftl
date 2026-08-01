@@ -98,7 +98,7 @@ error-target-configuration-mismatch = { $project } は { $stored } として構�
 error-rebuild-intent-pending = { $project } は再構築の途中であるため、初回構築を継続できません。
 
 error-host-clone-unusable = このcloneはこの案件には使用できません
-error-image-collision = image { $image } は既に存在し、別の内容を宣言しているため、この世代はその名前を使えません。{ $detail }
+error-image-collision = 同じ名前のimageが既に存在し、別の内容を宣言しているため、この世代はその名前を使えません
 error-image-unusable = image { $image } はこの案件には使用できません: { $detail }
 error-build-context-not-empty = build context { $path } に { $observed } 件のentryがあります。sbxmは空のcontextからだけbuildします。
 warning-build-context-left-behind = 一時build context { $path } を削除できませんでした: { $detail }
@@ -163,6 +163,7 @@ diagnostic-path-label = path:
 diagnostic-field-label = 項目:
 diagnostic-entry-label = 宣言:
 diagnostic-value-label = 値:
+diagnostic-image-label = image:
 diagnostic-source-label = source:
 diagnostic-destination-label = 配置先:
 diagnostic-directory-label = 作業directory:

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::compatibility::ImageIdentity;
-use crate::design::ProgressSink;
+use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::project::{CanonicalProjectId, SandboxName};
@@ -78,15 +78,10 @@ fn mismatched_labels(name: &str, identity: &ImageIdentity, expected: &[(String, 
 /// 名前だけで同一とみなして上書きすると、利用者の成果物を失う。
 fn collision(name: &str, identity: &ImageIdentity, expected: &[(String, String)]) -> Error {
     Error::single(
-        Diagnostic::new(
-            ErrorId::ImageUnusable,
-            msg!(
-                "error-image-collision",
-                image = name,
-                detail = compare_labels(identity, expected)
-            ),
-        )
-        .remediation(msg!("remediation-image-collision", image = name)),
+        Diagnostic::new(ErrorId::ImageUnusable, msg!("error-image-collision"))
+            .fact(Fact::image(name))
+            .fact(Fact::cause(&compare_labels(identity, expected)))
+            .remediation(msg!("remediation-image-collision", image = name)),
     )
 }
 
