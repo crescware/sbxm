@@ -1,4 +1,5 @@
 use crate::command::HostEnvironment;
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -38,14 +39,16 @@ pub fn check_worktrees(
             continue;
         }
         let Some(relative) = entry.relative_to(&bare_root) else {
-            status.diagnostics.push(Diagnostic::new(
-                ErrorId::SandboxRepositoryUnusable,
-                msg!(
-                    "error-sandbox-repository-unusable",
-                    path = entry.path,
-                    detail = "the worktree is outside the shared repository"
-                ),
-            ));
+            status.diagnostics.push(
+                Diagnostic::new(
+                    ErrorId::SandboxRepositoryUnusable,
+                    msg!("error-sandbox-repository-unusable"),
+                )
+                .fact(Fact::path(&entry.path))
+                .fact(Fact::reason(msg!(
+                    "cause-worktree-outside-shared-repository"
+                ))),
+            );
             value = Value::Mismatch;
             continue;
         };
@@ -71,14 +74,14 @@ pub fn check_worktrees(
 
     for name in &declared {
         if !seen.contains(name) {
-            status.diagnostics.push(Diagnostic::new(
-                ErrorId::SandboxRepositoryUnusable,
-                msg!(
-                    "error-sandbox-repository-unusable",
-                    path = name,
-                    detail = "the project asks for this managed worktree, but Git does not have it"
-                ),
-            ));
+            status.diagnostics.push(
+                Diagnostic::new(
+                    ErrorId::SandboxRepositoryUnusable,
+                    msg!("error-sandbox-repository-unusable"),
+                )
+                .fact(Fact::path(name))
+                .fact(Fact::reason(msg!("cause-managed-worktree-absent"))),
+            );
             status.worktrees.push(WorktreeRow {
                 path: name.clone(),
                 kind: "managed",

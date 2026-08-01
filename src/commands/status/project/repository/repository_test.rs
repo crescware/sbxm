@@ -1,5 +1,6 @@
 //! bare repositoryとmanaged worktreeの診断。
 use crate::commands::status::project::{Value, WorktreeRow};
+use crate::design::Fact;
 use crate::diagnostics::ErrorId;
 use crate::project::SandboxLayout;
 
@@ -86,10 +87,10 @@ fn a_worktree_outside_the_shared_repository_is_not_counted_as_the_projects() -> 
     assert!(
         status.diagnostics.iter().any(|diagnostic| {
             diagnostic.id == ErrorId::SandboxRepositoryUnusable
-                && diagnostic
-                    .description
-                    .args
-                    .contains(&("path", "/work/elsewhere".to_string()))
+                && diagnostic.facts.iter().any(|fact| {
+                    matches!(fact, Fact::OneLine { label, value }
+                        if label.id == "diagnostic-path-label" && value.as_str() == "/work/elsewhere")
+                })
         }),
         "the outside worktree is named: {:?}",
         status.diagnostics

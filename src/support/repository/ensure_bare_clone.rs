@@ -91,10 +91,7 @@ fn verify_bare_clone(
         ],
     )?;
     if bare != "true" {
-        return Err(unusable(
-            git_dir,
-            "the repository is not bare, so it is not the shared repository",
-        ));
+        return Err(unusable(git_dir, msg!("cause-not-bare-repository")));
     }
 
     let urls = sandbox::read(
@@ -116,7 +113,7 @@ fn verify_bare_clone(
     let [url] = urls.as_slice() else {
         return Err(unusable(
             git_dir,
-            &format!("origin has {} URLs, so the remote is ambiguous", urls.len()),
+            msg!("cause-origin-ambiguous", count = urls.len()),
         ));
     };
     let canonical = project.canonical();
@@ -125,13 +122,17 @@ fn verify_bare_clone(
         Some(observed) => {
             return Err(unusable(
                 git_dir,
-                &format!("origin points at {observed}, not at {canonical}"),
+                msg!(
+                    "cause-origin-elsewhere",
+                    observed = observed,
+                    declared = canonical
+                ),
             ));
         }
         None => {
             return Err(unusable(
                 git_dir,
-                &format!("origin URL {url} does not name a GitHub repository"),
+                msg!("cause-origin-not-a-github-repository", observed = url),
             ));
         }
     }
@@ -155,9 +156,10 @@ fn verify_bare_clone(
     if refspecs != [FETCH_REFSPEC] {
         return Err(unusable(
             git_dir,
-            &format!(
-                "the fetch refspec is {}, not {FETCH_REFSPEC}",
-                refspecs.join(", ")
+            msg!(
+                "cause-fetch-refspec-differs",
+                observed = refspecs.join(", "),
+                expected = FETCH_REFSPEC
             ),
         ));
     }
@@ -168,10 +170,7 @@ fn verify_bare_clone(
         &["git", "--git-dir", git_dir, "fsck", "--connectivity-only"],
     )?;
     if !outcome.success() {
-        return Err(unusable(
-            git_dir,
-            "the repository does not pass a connectivity check",
-        ));
+        return Err(unusable(git_dir, msg!("cause-connectivity-check-failed")));
     }
     Ok(())
 }

@@ -1,4 +1,5 @@
 use crate::command::HostEnvironment;
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 use crate::project::{SandboxLayout, SandboxName};
@@ -29,14 +30,14 @@ pub fn check_bare_repository(
         Ok(outcome) => match sandbox::inner_exit_code(&outcome) {
             Some(0) if outcome.stdout_text().trim() == "true" => Value::Ready,
             Some(0) => {
-                status.diagnostics.push(Diagnostic::new(
-                    ErrorId::SandboxRepositoryUnusable,
-                    msg!(
-                        "error-sandbox-repository-unusable",
-                        path = git_dir,
-                        detail = "the shared repository is not bare"
-                    ),
-                ));
+                status.diagnostics.push(
+                    Diagnostic::new(
+                        ErrorId::SandboxRepositoryUnusable,
+                        msg!("error-sandbox-repository-unusable"),
+                    )
+                    .fact(Fact::path(&git_dir))
+                    .fact(Fact::reason(msg!("cause-not-bare-repository"))),
+                );
                 Value::Mismatch
             }
             // `git`がrepositoryとして扱えない場合の終了statusだけを不在とする。
