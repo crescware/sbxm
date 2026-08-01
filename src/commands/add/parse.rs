@@ -1,7 +1,8 @@
 use clap::ArgMatches;
 
 use crate::cli::project_arg::required_clone_url;
-use crate::diagnostics::{ErrorId, Result, fail};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::metadata::{GitIdentity, MAX_WORKTREES, MIN_WORKTREES, validate_git_identity_value};
 use crate::msg;
 
@@ -84,9 +85,12 @@ fn declared_git_identity(matches: &ArgMatches) -> Result<Option<GitIdentity>> {
 fn check_declared_value(field: &str, value: &str) -> Result<()> {
     match validate_git_identity_value(value) {
         Ok(()) => Ok(()),
-        Err(detail) => fail(
-            ErrorId::InvalidValue,
-            msg!("error-git-identity-invalid", field = field, detail = detail),
-        ),
+        Err(detail) => Err(Error::single(
+            Diagnostic::new(
+                ErrorId::InvalidValue,
+                msg!("error-git-identity-invalid", field = field),
+            )
+            .fact(Fact::reason(detail)),
+        )),
     }
 }

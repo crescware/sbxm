@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::git;
 use crate::msg;
 use crate::paths::{self};
@@ -52,13 +53,21 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
 
 /// fieldの値が受け付けられないことを報告する。
 fn invalid(path: &Path, field: &'static str, detail: &str) -> Error {
-    Error::new(
+    Error::single(reported(path, field).fact(Fact::cause(detail)))
+}
+
+/// 受け付けられない理由をmessageで受け取る形。
+fn invalid_because(path: &Path, field: &'static str, reason: Msg) -> Error {
+    Error::single(reported(path, field).fact(Fact::reason(reason)))
+}
+
+fn reported(path: &Path, field: &'static str) -> Diagnostic {
+    Diagnostic::new(
         ErrorId::MetadataInvalidValue,
         msg!(
             "error-metadata-invalid-value",
             path = paths::display(path),
-            field = field,
-            detail = detail
+            field = field
         ),
     )
 }
@@ -176,9 +185,9 @@ fn parse_git_identity(raw: Option<RawGitIdentity>, path: &Path) -> Result<GitIde
         .user_email
         .ok_or_else(|| missing(path, "git_identity.user_email"))?;
     validate_git_identity_value(&user_name)
-        .map_err(|detail| invalid(path, "git_identity.user_name", detail))?;
+        .map_err(|reason| invalid_because(path, "git_identity.user_name", reason))?;
     validate_git_identity_value(&user_email)
-        .map_err(|detail| invalid(path, "git_identity.user_email", detail))?;
+        .map_err(|reason| invalid_because(path, "git_identity.user_email", reason))?;
     Ok(GitIdentity {
         user_name,
         user_email,

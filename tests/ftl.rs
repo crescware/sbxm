@@ -204,6 +204,11 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-config-unreadable", "detail"),
     ("error-config-invalid-syntax", "path"),
     ("error-config-invalid-syntax", "detail"),
+    ("error-config-invalid-value", "path"),
+    ("error-config-invalid-value", "field"),
+    ("error-config-invalid-value", "detail"),
+    ("error-git-identity-invalid", "detail"),
+    ("error-metadata-invalid-value", "detail"),
 ];
 
 #[test]

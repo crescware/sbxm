@@ -47,7 +47,11 @@ pub(super) fn parse(text: &str, path: &Path) -> Result<ConfigState> {
             invalid_value(
                 path,
                 "language",
-                &format!("{value} is not one of {}", supported_language_list()),
+                msg!(
+                    "cause-language-unsupported",
+                    value = value,
+                    supported = supported_language_list()
+                ),
             )
         })?),
         None => None,

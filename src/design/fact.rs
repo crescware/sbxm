@@ -46,6 +46,11 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-path-label"), Inline::path(path))
     }
 
+    /// `Field:`。診断の対象になった宣言fileの項目名。
+    pub fn field(name: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-field-label"), Inline::important(name))
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))
