@@ -4,6 +4,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::diagnostics::ExitCode;
+use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::testing::project::{Fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
@@ -235,6 +236,60 @@ fn a_project_that_disappears_before_the_lock_is_named_as_its_metadata_spelled_it
             .map(crate::design::text::CommandLine::as_str)
             .collect::<Vec<_>>(),
         vec!["sbxm add git@github.com:Example-Org/Example-Repo.git"]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_registration_and_a_metadata_that_name_different_projects_are_not_reconciled() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+
+    // registryが指すproject rootに、別の案件のmetadataが置かれている。どちらが正しいかを
+    // sbxmは決められないため、片方を採用せずに食い違いそのものを報告する。
+    let foreign = ProjectMetadata {
+        repository: crate::testing::project::ssh_repository("other-org/other-repo")?,
+        ..project.metadata.clone()
+    };
+    std::fs::write(
+        project.paths.metadata_file(),
+        crate::metadata::render(&foreign)?,
+    )
+    .required_because("write the metadata of another project")?;
+
+    let candidate = one(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        &msg!("select-open-heading"),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("the entry still names the project")?;
+
+    let error = candidate
+        .lock()
+        .refused_because("a project that disagrees with its registration cannot be worked on")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectInconsistent));
+    let diagnostic = &error.diagnostics()[0];
+    let argument = |key: &str| {
+        diagnostic
+            .description
+            .args
+            .iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, value)| value.as_str().to_string())
+    };
+    // 何と何が食い違っているかを、両方の clone URLで示す。
+    assert_eq!(
+        argument("observed").as_deref(),
+        Some("git@github.com:other-org/other-repo.git")
+    );
+    assert_eq!(
+        argument("expected").as_deref(),
+        Some("git@github.com:example-org/example-repo.git")
+    );
+    assert!(
+        diagnostic.remediation.is_some(),
+        "the user is told how to resolve the disagreement"
     );
     Ok(())
 }

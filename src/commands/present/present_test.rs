@@ -6,7 +6,28 @@ use crate::metadata::CreationMode;
 use crate::support::inventory::ProjectState;
 use crate::support::status::StatusValue;
 
+use crate::testing::outcome::{Checked, Required};
+
 use super::*;
+
+/// project scopeが表に出す状態値のすべて。
+const PROJECT_VALUES: [ProjectValue; 15] = [
+    ProjectValue::Ready,
+    ProjectValue::Missing,
+    ProjectValue::Mismatch,
+    ProjectValue::Changed,
+    ProjectValue::Running,
+    ProjectValue::Stopped,
+    ProjectValue::NotCreated,
+    ProjectValue::Clean,
+    ProjectValue::Dirty,
+    ProjectValue::Attached,
+    ProjectValue::Detached,
+    ProjectValue::NotExposed,
+    ProjectValue::Exposed,
+    ProjectValue::NotApplicable,
+    ProjectValue::NotObservedStopped,
+];
 
 #[test]
 fn the_same_word_means_different_things_in_different_commands() {
@@ -50,25 +71,35 @@ fn a_configuration_choice_carries_no_judgement() {
 
 #[test]
 fn every_project_value_has_a_state_that_does_not_panic() {
-    for value in [
-        ProjectValue::Ready,
-        ProjectValue::Missing,
-        ProjectValue::Mismatch,
-        ProjectValue::Changed,
-        ProjectValue::Running,
-        ProjectValue::Stopped,
-        ProjectValue::NotCreated,
-        ProjectValue::Clean,
-        ProjectValue::Dirty,
-        ProjectValue::Attached,
-        ProjectValue::Detached,
-        ProjectValue::NotExposed,
-        ProjectValue::Exposed,
-        ProjectValue::NotApplicable,
-        ProjectValue::NotObservedStopped,
-    ] {
+    for value in PROJECT_VALUES {
         assert_eq!(project_status(value).as_str(), value.as_str());
     }
+}
+
+#[test]
+fn every_project_value_is_explained_by_a_legend_the_catalog_can_render() -> Checked {
+    // 状態値は翻訳しない。翻訳先で読めるのは凡例だけであり、説明の無い値は残せない。
+    let catalog = crate::i18n::Catalog::new(Locale::Ja);
+    let mut explained = std::collections::BTreeMap::new();
+    for value in PROJECT_VALUES {
+        let description = catalog
+            .text(value.legend_id())
+            .required_because(&format!("{} has a legend", value.as_str()))?;
+        assert!(
+            !description.is_empty(),
+            "{} has an empty legend",
+            value.as_str()
+        );
+        if let Some(previous) = explained.insert(value.as_str(), value.legend_id()) {
+            assert_eq!(
+                previous,
+                value.legend_id(),
+                "{} is explained two different ways",
+                value.as_str()
+            );
+        }
+    }
+    Ok(())
 }
 
 #[test]

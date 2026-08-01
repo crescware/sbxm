@@ -3,3 +3,7 @@
 mod parse_login_status;
 
 pub use parse_login_status::parse_login_status;
+
+#[cfg(test)]
+#[path = "login_test.rs"]
+mod login_test;
