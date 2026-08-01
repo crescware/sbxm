@@ -41,7 +41,7 @@ yaml_serde = "0.10"
 
 [dev-dependencies]
 fluent-syntax = "0.12.0"
-syn = { version = "2.0.0", features = ["full"] }
+syn = { version = "2.0.0", features = ["full", "visit"] }
 
 [lints]
 workspace = true
