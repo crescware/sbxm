@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::compatibility::SandboxEntry;
 use crate::diagnostics::Result;
+use crate::msg;
 use crate::paths::{self};
 use crate::project::SandboxName;
 
@@ -20,10 +21,10 @@ pub(super) fn verify(entry: &SandboxEntry, sandbox: &SandboxName, workspace: &Pa
             if observed != expected {
                 return Err(unusable(
                     sandbox.as_str(),
-                    &format!(
-                        "the sandbox works in {}, not in {}",
-                        paths::display(&observed),
-                        paths::display(&expected)
+                    msg!(
+                        "cause-sandbox-works-elsewhere",
+                        observed = paths::display(&observed),
+                        expected = paths::display(&expected)
                     ),
                 ));
             }
@@ -31,7 +32,7 @@ pub(super) fn verify(entry: &SandboxEntry, sandbox: &SandboxName, workspace: &Pa
         None => {
             return Err(unusable(
                 sandbox.as_str(),
-                "this Docker Sandboxes version does not report the workspace of a sandbox",
+                msg!("cause-sandbox-workspace-unreported"),
             ));
         }
     }

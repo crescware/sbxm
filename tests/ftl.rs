@@ -245,6 +245,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-archive-unusable", "detail"),
     ("error-template-unusable", "template"),
     ("error-template-unusable", "detail"),
+    ("error-sandbox-unusable", "sandbox"),
+    ("error-sandbox-unusable", "detail"),
 ];
 
 #[test]

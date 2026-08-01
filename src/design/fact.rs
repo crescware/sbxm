@@ -87,6 +87,14 @@ impl Fact {
         )
     }
 
+    /// `Sandbox:`。診断の対象になったSandbox。
+    pub fn sandbox(name: &str) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-sandbox-label"),
+            Inline::important(name),
+        )
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))
