@@ -4,7 +4,7 @@ use crate::diagnostics::Result;
 use crate::image_labels::{LabelDefect, labels_from_declared};
 use crate::msg;
 
-use super::{read_entry, read_manifest, unusable};
+use super::{read_entry, read_manifest, unreadable, unusable};
 
 /// archiveが、指定したimageを1件だけ含むことを確認する。
 ///
@@ -61,16 +61,8 @@ fn read_config_labels(
             msg!("cause-archive-entry-absent", entry = config_entry),
         ));
     };
-    let document: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
-        unusable(
-            path,
-            msg!(
-                "cause-archive-entry-not-json",
-                entry = config_entry,
-                detail = error
-            ),
-        )
-    })?;
+    let document: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| unreadable(path, Some(config_entry), &error.to_string()))?;
 
     // image configはOCIとDockerのどちらの表記でも`config`objectの下にlabelを持つ。
     let config = document

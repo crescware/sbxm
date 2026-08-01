@@ -5,14 +5,13 @@ use std::path::Path;
 use crate::diagnostics::Result;
 use crate::msg;
 
-use super::{BLOCK, MAX_ENTRY_BYTES, entry_name, octal, unusable};
+use super::{BLOCK, MAX_ENTRY_BYTES, entry_name, octal, unreadable, unusable};
 
 /// tar archiveから1件のentryを取り出す。
 ///
 /// entry本体を読み飛ばしながらheaderだけを辿るため、archiveの大きさに依存しない。
 pub(super) fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
-    let mut file = File::open(path)
-        .map_err(|error| unusable(path, msg!("cause-archive-unopenable", detail = error)))?;
+    let mut file = File::open(path).map_err(|error| unreadable(path, None, &error.to_string()))?;
 
     loop {
         let mut header = [0_u8; BLOCK];
@@ -21,10 +20,7 @@ pub(super) fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
             // 末尾に達した。要求されたentryは存在しない。
             Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
             Err(error) => {
-                return Err(unusable(
-                    path,
-                    msg!("cause-archive-unreadable", detail = error),
-                ));
+                return Err(unreadable(path, None, &error.to_string()));
             }
         }
         // 終端はNULで埋めたblockが並ぶ。
@@ -63,16 +59,8 @@ pub(super) fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
                 )
             })?;
             let mut data = vec![0_u8; capacity];
-            file.read_exact(&mut data).map_err(|error| {
-                unusable(
-                    path,
-                    msg!(
-                        "cause-archive-entry-unreadable",
-                        entry = name,
-                        detail = error
-                    ),
-                )
-            })?;
+            file.read_exact(&mut data)
+                .map_err(|error| unreadable(path, Some(&name), &error.to_string()))?;
             return Ok(Some(data));
         }
 
@@ -85,6 +73,6 @@ pub(super) fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
             )
         })?;
         file.seek(SeekFrom::Current(padded))
-            .map_err(|error| unusable(path, msg!("cause-archive-unscannable", detail = error)))?;
+            .map_err(|error| unreadable(path, None, &error.to_string()))?;
     }
 }

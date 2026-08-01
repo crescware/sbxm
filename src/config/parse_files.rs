@@ -22,7 +22,7 @@ pub(super) fn parse_files(raw: Vec<RawFile>, path: &Path) -> Result<Vec<FileDecl
                     ErrorId::FileDeclarationInvalidSource,
                     msg!("error-file-declaration-invalid-source"),
                 )
-                .fact(Fact::entry(index))
+                .fact(Fact::entry(&index.to_string()))
                 .fact(Fact::source(&source_value))
                 .fact(Fact::reason(reason)),
             )
@@ -33,7 +33,7 @@ pub(super) fn parse_files(raw: Vec<RawFile>, path: &Path) -> Result<Vec<FileDecl
                     ErrorId::FileDeclarationInvalidDestination,
                     msg!("error-file-declaration-invalid-destination"),
                 )
-                .fact(Fact::entry(index))
+                .fact(Fact::entry(&index.to_string()))
                 .fact(Fact::destination(&destination_value))
                 .fact(Fact::reason(reason)),
             )

@@ -22,12 +22,24 @@ pub(super) fn read_source(source: &Path) -> Result<String> {
         ))
     };
 
+    // OSが書いた原文は言い換えず、そのまま原因として示す。対象は`Source:`の行が示す。
+    let unreadable = |error: &std::io::Error| {
+        Err(Error::single(
+            Diagnostic::new(
+                ErrorId::DeclaredFileUnusable,
+                msg!("error-declared-file-unusable"),
+            )
+            .fact(Fact::source(&paths::display(source)))
+            .fact(Fact::cause(&error.to_string())),
+        ))
+    };
+
     if !source.is_absolute() {
         return invalid(msg!("cause-not-absolute"));
     }
     let metadata = match fs::symlink_metadata(source) {
         Ok(metadata) => metadata,
-        Err(error) => return invalid(msg!("cause-source-unreadable", detail = error)),
+        Err(error) => return unreadable(&error),
     };
     if metadata.file_type().is_symlink() {
         return invalid(msg!("cause-symbolic-link"));
@@ -46,6 +58,6 @@ pub(super) fn read_source(source: &Path) -> Result<String> {
     match fs::read(source) {
         // 内容は診断へ出さず、比較に使うdigestだけを持つ。
         Ok(contents) => Ok(sha256_hex(&contents)),
-        Err(error) => invalid(msg!("cause-source-unreadable", detail = error)),
+        Err(error) => unreadable(&error),
     }
 }

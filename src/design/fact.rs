@@ -51,12 +51,11 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-field-label"), Inline::important(name))
     }
 
-    /// `Entry:`。一覧のなかで問題になった宣言の位置。
-    pub fn entry(index: usize) -> Fact {
-        Fact::new(
-            Msg::new("diagnostic-entry-label"),
-            Inline::important(index.to_string()),
-        )
+    /// `Entry:`。一覧やarchiveのなかで問題になったentry。
+    ///
+    /// 宣言fileは位置で、archiveは名前で指す。どちらも「どれの話か」であり、同じ行で示す。
+    pub fn entry(name: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-entry-label"), Inline::important(name))
     }
 
     /// `Source:`。宣言fileの取得元。

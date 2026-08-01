@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::diagnostics::Result;
 use crate::msg;
 
-use super::{ArchiveManifest, MANIFEST_ENTRY, config_digest, read_entry, unusable};
+use super::{ArchiveManifest, MANIFEST_ENTRY, config_digest, read_entry, unreadable, unusable};
 
 /// archiveのmanifestを読む。
 pub fn read_manifest(path: &Path) -> Result<ArchiveManifest> {
@@ -13,16 +13,8 @@ pub fn read_manifest(path: &Path) -> Result<ArchiveManifest> {
             msg!("cause-archive-entry-absent", entry = MANIFEST_ENTRY),
         ));
     };
-    let document: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
-        unusable(
-            path,
-            msg!(
-                "cause-archive-entry-not-json",
-                entry = MANIFEST_ENTRY,
-                detail = error
-            ),
-        )
-    })?;
+    let document: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| unreadable(path, Some(MANIFEST_ENTRY), &error.to_string()))?;
     let items = document.as_array().ok_or_else(|| {
         unusable(
             path,
