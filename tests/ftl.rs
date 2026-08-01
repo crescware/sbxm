@@ -262,6 +262,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-atomic-write-failed", "detail"),
     ("error-cleanup-failed", "path"),
     ("error-cleanup-failed", "detail"),
+    ("error-lock-unavailable", "path"),
+    ("error-lock-unavailable", "detail"),
 ];
 
 #[test]

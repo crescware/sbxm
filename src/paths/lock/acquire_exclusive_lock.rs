@@ -3,7 +3,8 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result, fail};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use crate::paths::inspect::{FileIdentity, display, is_symlink, require_private_file};
@@ -38,16 +39,7 @@ pub fn acquire_exclusive_lock(
             .truncate(false)
             .mode(mode)
             .open(path)
-            .map_err(|error| {
-                Error::new(
-                    ErrorId::LockUnavailable,
-                    msg!(
-                        "error-lock-unavailable",
-                        path = display(path),
-                        detail = error
-                    ),
-                )
-            })?;
+            .map_err(|error| unavailable(path, &error.to_string()))?;
         require_private_file(&file, path, mode, scope)?;
 
         let acquired = loop {
@@ -60,14 +52,7 @@ pub fn acquire_exclusive_lock(
                     std::thread::sleep(LOCK_POLL_INTERVAL);
                 }
                 Err(TryLockError::Error(error)) => {
-                    return fail(
-                        ErrorId::LockUnavailable,
-                        msg!(
-                            "error-lock-unavailable",
-                            path = display(path),
-                            detail = error
-                        ),
-                    );
+                    return Err(unavailable(path, &error.to_string()));
                 }
             }
         };
@@ -76,16 +61,8 @@ pub fn acquire_exclusive_lock(
             return Err(timed_out(path, timeout));
         }
 
-        let open_identity = FileIdentity::of_open_file(&file).map_err(|error| {
-            Error::new(
-                ErrorId::LockUnavailable,
-                msg!(
-                    "error-lock-unavailable",
-                    path = display(path),
-                    detail = error
-                ),
-            )
-        })?;
+        let open_identity = FileIdentity::of_open_file(&file)
+            .map_err(|error| unavailable(path, &error.to_string()))?;
         match FileIdentity::of_path_without_following(path) {
             Ok(path_identity) if path_identity == open_identity => {
                 return Ok(ExclusiveLock { file });
@@ -100,6 +77,15 @@ pub fn acquire_exclusive_lock(
             }
         }
     }
+}
+
+/// lockそのものを取れなかったことを報告する。原因はいずれもOSが書いた原文である。
+fn unavailable(path: &Path, detail: &str) -> Error {
+    Error::single(
+        Diagnostic::new(ErrorId::LockUnavailable, msg!("error-lock-unavailable"))
+            .fact(Fact::path(&display(path)))
+            .fact(Fact::cause(detail)),
+    )
 }
 
 fn timed_out(path: &Path, timeout: Duration) -> Error {

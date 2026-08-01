@@ -150,7 +150,7 @@ error-temp-file-left-behind = An interrupted run left the temporary file { $path
 error-target-appeared-concurrently = { $path } appeared while it was being created, so nothing was overwritten.
 error-target-changed-concurrently = { $path } was replaced by another file while it was being rewritten, so nothing was overwritten.
 error-lock-timeout = Another sbxm run is holding the lock at { $path }. Waited { $seconds } seconds.
-error-lock-unavailable = The lock at { $path } could not be acquired: { $detail }
+error-lock-unavailable = The lock could not be acquired
 
 error-external-command-not-found = The command { $program } was not found on PATH.
 error-external-command-spawn-failed = The command { $program } could not be started: { $detail }

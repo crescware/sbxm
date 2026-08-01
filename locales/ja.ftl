@@ -150,7 +150,7 @@ error-temp-file-left-behind = 中断した実行の一時file { $path } が残�
 error-target-appeared-concurrently = 作成中に { $path } が出現したため、何も上書きしませんでした。
 error-target-changed-concurrently = 書き換え中に { $path } が別のfileへ差し替わったため、何も上書きしませんでした。
 error-lock-timeout = ほかのsbxmの実行が { $path } のlockを保持しています。{ $seconds } 秒待機しました。
-error-lock-unavailable = { $path } のlockを取得できません: { $detail }
+error-lock-unavailable = lockを取得できません
 
 error-external-command-not-found = command { $program } がPATH上に見つかりません。
 error-external-command-spawn-failed = command { $program } を起動できません: { $detail }
