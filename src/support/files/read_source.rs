@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::hash::sha256_hex;
 use crate::msg;
 use crate::paths;
@@ -10,40 +11,41 @@ use super::MAX_SOURCE_BYTES;
 
 /// sourceを検証し、そのSHA-256を返す。
 pub(super) fn read_source(source: &Path) -> Result<String> {
-    let invalid = |detail: String| {
-        Err(Error::new(
-            ErrorId::DeclaredFileUnusable,
-            msg!(
-                "error-declared-file-unusable",
-                source = paths::display(source),
-                detail = detail
-            ),
+    let invalid = |reason: Msg| {
+        Err(Error::single(
+            Diagnostic::new(
+                ErrorId::DeclaredFileUnusable,
+                msg!("error-declared-file-unusable"),
+            )
+            .fact(Fact::source(&paths::display(source)))
+            .fact(Fact::reason(reason)),
         ))
     };
 
     if !source.is_absolute() {
-        return invalid("the source is not an absolute path".to_string());
+        return invalid(msg!("cause-not-absolute"));
     }
     let metadata = match fs::symlink_metadata(source) {
         Ok(metadata) => metadata,
-        Err(error) => return invalid(format!("the source could not be read: {error}")),
+        Err(error) => return invalid(msg!("cause-source-unreadable", detail = error)),
     };
     if metadata.file_type().is_symlink() {
-        return invalid("the source is a symbolic link".to_string());
+        return invalid(msg!("cause-symbolic-link"));
     }
     if !metadata.is_file() {
-        return invalid("the source is not a regular file".to_string());
+        return invalid(msg!("cause-not-a-regular-file"));
     }
     if metadata.len() > MAX_SOURCE_BYTES {
-        return invalid(format!(
-            "the source is {} bytes, and sbxm places at most {MAX_SOURCE_BYTES}",
-            metadata.len()
+        return invalid(msg!(
+            "cause-larger-than",
+            observed = metadata.len(),
+            maximum = MAX_SOURCE_BYTES
         ));
     }
 
     match fs::read(source) {
         // 内容は診断へ出さず、比較に使うdigestだけを持つ。
         Ok(contents) => Ok(sha256_hex(&contents)),
-        Err(error) => invalid(format!("the source could not be read: {error}")),
+        Err(error) => invalid(msg!("cause-source-unreadable", detail = error)),
     }
 }
