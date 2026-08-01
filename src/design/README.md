@@ -317,7 +317,14 @@ error headingとdescriptionの間は詰める。事実の行もdescriptionへ続
 - 値が1行に収まらない場合は、項目名だけの行に続けて四空白indentで並べる。改行を1行へ潰さない
 - 複数行の値は外部が書いた原文であり、着色せず、行ごとに前後でstyleをresetする
 
-`sbxm`自身が書いた英語の文を`detail`として値へ渡さない。値は外部が示した原文か、翻訳対象のmessageのどちらかである。
+値は次の2つのどちらかであり、混ぜない。
+
+- 外部が書いた原文。OSやparserやgitが返した文字列であり、翻訳しない
+- 翻訳するmessage。sbxm自身が観測したことを述べる文であり、`Fact::reason`で渡す
+
+`sbxm`自身が書いた英語の文を原文として値へ渡さない。翻訳された説明のあとに英語の断片が続く出力になる。
+
+翻訳するmessageの末尾へ、外部が書いた原文をcolonで連結しない。事実の行へ移しても、同じ「どこで区切れるか」を読み手へ押しつけることになる。外部が答えを書いた場合は、それが原因そのものである。sbxmが何をしていたかは、上に並ぶ行が示す。
 
 ## command表示
 
@@ -608,6 +615,7 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 - 実行済みのinvocationを、実行を求めるcommandと同じ独立blockで描く
 - 事実として示す値を説明文にも重ねて置く
 - 事実の値の改行を1行へ潰す
+- 説明文や翻訳messageの末尾へ、外部が書いた原文をcolonで連結する
 - `println!("\n...")`でblock間隔を作る
 - status文字列から色を推測する
 - commandごとにprompt themeを作る
@@ -662,6 +670,7 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 - 項目名がdim、値が`Inline`由来の装飾を持つ
 - 複数行の値の前後でstyleがresetされる
 - localeとcolor modeを変えても行数が変わらない
+- どのmessageも外部由来のdetailを引数に取らない
 
 ### command
 

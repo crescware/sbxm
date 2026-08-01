@@ -193,102 +193,27 @@ fn every_message_uses_the_same_placeholders_in_every_locale() -> Checked {
     Ok(())
 }
 
-/// 診断が事実の行として示す値と、それを示すmessage ID。
+/// 説明文へ連結してはならない引数。
 ///
-/// 同じ値を説明文にも置くと、読み手は同じものを二度読むことになる。
-const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
-    ("error-external-output-unparseable", "program"),
-    ("error-external-output-unparseable", "detail"),
-    ("error-external-command-failed", "program"),
-    ("error-config-unreadable", "path"),
-    ("error-config-unreadable", "detail"),
-    ("error-config-invalid-syntax", "path"),
-    ("error-config-invalid-syntax", "detail"),
-    ("error-config-invalid-value", "path"),
-    ("error-config-invalid-value", "field"),
-    ("error-config-invalid-value", "detail"),
-    ("error-git-identity-invalid", "detail"),
-    ("error-metadata-invalid-value", "detail"),
-    ("error-global-state-unusable", "path"),
-    ("error-global-state-unusable", "detail"),
-    ("error-working-directory-unusable", "path"),
-    ("error-working-directory-unusable", "detail"),
-    ("error-file-declaration-invalid-source", "index"),
-    ("error-file-declaration-invalid-source", "source"),
-    ("error-file-declaration-invalid-source", "detail"),
-    ("error-file-declaration-invalid-destination", "index"),
-    ("error-file-declaration-invalid-destination", "destination"),
-    ("error-file-declaration-invalid-destination", "detail"),
-    ("error-registry-unreadable", "path"),
-    ("error-registry-unreadable", "detail"),
-    ("error-registry-invalid-syntax", "path"),
-    ("error-registry-invalid-syntax", "detail"),
-    ("error-registry-invalid-value", "field"),
-    ("error-registry-invalid-value", "detail"),
-    ("error-metadata-unreadable", "path"),
-    ("error-metadata-unreadable", "detail"),
-    ("error-metadata-invalid-syntax", "path"),
-    ("error-metadata-invalid-syntax", "detail"),
-    ("error-metadata-invalid-value", "path"),
-    ("error-metadata-invalid-value", "field"),
-    ("error-invalid-branch-name", "value"),
-    ("error-invalid-branch-name", "detail"),
-    ("error-host-clone-unusable", "path"),
-    ("error-host-clone-unusable", "detail"),
-    ("error-image-collision", "image"),
-    ("error-image-collision", "detail"),
-    ("error-image-unusable", "image"),
-    ("error-image-unusable", "detail"),
-    ("warning-build-context-left-behind", "path"),
-    ("warning-build-context-left-behind", "detail"),
-    ("error-archive-unusable", "path"),
-    ("error-archive-unusable", "detail"),
-    ("error-template-unusable", "template"),
-    ("error-template-unusable", "detail"),
-    ("error-sandbox-unusable", "sandbox"),
-    ("error-sandbox-unusable", "detail"),
-    ("error-declared-file-unusable", "source"),
-    ("error-declared-file-unusable", "detail"),
-    ("error-sandbox-repository-unusable", "path"),
-    ("error-sandbox-repository-unusable", "detail"),
-    ("error-prompt-unreadable", "detail"),
-    ("warning-lock-file-left-behind", "path"),
-    ("warning-lock-file-left-behind", "detail"),
-    ("error-project-path-unreadable", "path"),
-    ("error-project-path-unreadable", "detail"),
-    ("error-document-render-failed", "document"),
-    ("error-document-render-failed", "detail"),
-    ("error-atomic-write-failed", "path"),
-    ("error-atomic-write-failed", "detail"),
-    ("error-cleanup-failed", "path"),
-    ("error-cleanup-failed", "detail"),
-    ("error-lock-unavailable", "path"),
-    ("error-lock-unavailable", "detail"),
-    ("error-external-command-spawn-failed", "program"),
-    ("error-external-command-spawn-failed", "detail"),
-    ("error-platform-unobservable", "detail"),
-    ("error-docker-unreachable", "detail"),
-    ("error-network-policy-unobservable", "detail"),
-    ("error-daemon-unobservable", "detail"),
-    ("error-sbx-login-unobservable", "detail"),
-    ("error-remote-ssh-unobservable", "detail"),
-    ("error-git-identity-invalid", "field"),
-];
+/// 外部が書いた原文をcolonで文末へつなぐと、読み手はまずどこで区切れるかを探すこと
+/// になる。原因は`Fact`の行として渡し、messageは文だけを持つ。
+const APPENDED_DETAIL: &str = "detail";
 
 #[test]
-fn a_value_shown_as_a_fact_is_not_repeated_in_the_sentence() -> Checked {
+fn no_message_appends_an_untranslated_detail() -> Checked {
+    let mut offenders = Vec::new();
     for locale in locales()? {
-        let placeholders = placeholders(&locale)?;
-        for (id, variable) in SHOWN_AS_A_FACT {
-            let observed = placeholders
-                .get(*id)
-                .required_because(&format!("{locale}.ftl defines {id}"))?;
-            assert!(
-                !observed.contains(*variable),
-                "{locale}.ftl: {id} names ${variable} again, but the diagnostic shows it as a fact"
-            );
+        for (id, variables) in placeholders(&locale)? {
+            if variables.contains(APPENDED_DETAIL) {
+                offenders.push(format!("{locale}.ftl: {id}"));
+            }
         }
     }
+    assert!(
+        offenders.is_empty(),
+        "a cause belongs in a fact row, not at the end of a sentence:\n{}",
+        offenders.join("\n")
+    );
     Ok(())
 }
 
