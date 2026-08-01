@@ -213,6 +213,9 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-global-state-unusable", "detail"),
     ("error-working-directory-unusable", "path"),
     ("error-working-directory-unusable", "detail"),
+    ("error-file-declaration-invalid-source", "index"),
+    ("error-file-declaration-invalid-source", "source"),
+    ("error-file-declaration-invalid-source", "detail"),
 ];
 
 #[test]

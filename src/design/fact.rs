@@ -51,6 +51,19 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-field-label"), Inline::important(name))
     }
 
+    /// `Entry:`。一覧のなかで問題になった宣言の位置。
+    pub fn entry(index: usize) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-entry-label"),
+            Inline::important(index.to_string()),
+        )
+    }
+
+    /// `Source:`。宣言fileの取得元。
+    pub fn source(path: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-source-label"), Inline::path(path))
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))

@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use super::{FileDeclaration, HostFileSource, RawFile, SandboxHomeRelativePath, missing_field};
@@ -15,15 +16,15 @@ pub(super) fn parse_files(raw: Vec<RawFile>, path: &Path) -> Result<Vec<FileDecl
         let destination_value = entry
             .destination
             .ok_or_else(|| missing_field(path, "files.destination"))?;
-        let source = HostFileSource::new(&source_value).map_err(|detail| {
-            Error::new(
-                ErrorId::FileDeclarationInvalidSource,
-                msg!(
-                    "error-file-declaration-invalid-source",
-                    index = index,
-                    source = source_value,
-                    detail = detail
-                ),
+        let source = HostFileSource::new(&source_value).map_err(|reason| {
+            Error::single(
+                Diagnostic::new(
+                    ErrorId::FileDeclarationInvalidSource,
+                    msg!("error-file-declaration-invalid-source"),
+                )
+                .fact(Fact::entry(index))
+                .fact(Fact::source(&source_value))
+                .fact(Fact::reason(reason)),
             )
         })?;
         let destination = SandboxHomeRelativePath::new(&destination_value).map_err(|detail| {
