@@ -52,6 +52,18 @@ fn retrying(attempt: impl Fn() -> Result<CommandOutcome>) -> Result<CommandOutco
     attempt()
 }
 
+/// 診断が持つ事実の項目名。
+fn labels(error: &crate::diagnostics::Error) -> Checked<Vec<String>> {
+    Ok(error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?
+        .facts
+        .iter()
+        .map(|fact| fact.label().id.to_string())
+        .collect())
+}
+
 #[test]
 fn timeout_classes_match_the_documented_defaults() {
     assert_eq!(
@@ -266,6 +278,23 @@ fn a_missing_program_is_distinguished_from_other_spawn_failures() -> Checked {
     let spec = CommandSpec::probe("sbxm-no-such-program-exists", &[]);
     let error = run(&spec).refused_because("missing programs fail")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
+    Ok(())
+}
+
+#[test]
+fn a_spawn_failure_that_is_not_a_missing_program_keeps_what_was_observed() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+
+    // directoryは在るが起動できない。存在しないprogramとは別の失敗である。
+    let spec = CommandSpec::probe(dir.path().to_str().required()?, &[]);
+    let error = run(&spec).refused_because("a directory cannot be started")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    assert_eq!(
+        labels(&error)?,
+        vec!["diagnostic-command-label", "diagnostic-cause-label"],
+        "the invocation and the reason the OS gave are both kept"
+    );
     Ok(())
 }
 
