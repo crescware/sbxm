@@ -3,7 +3,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use crate::config::ConfigLocation;
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope, permission_too_open};
 
@@ -42,12 +43,12 @@ pub fn load(location: &ConfigLocation) -> Result<Index> {
 }
 
 fn unreadable(path: &Path, detail: &str) -> Error {
-    Error::new(
-        ErrorId::RegistryUnreadable,
-        msg!(
-            "error-registry-unreadable",
-            path = paths::display(path),
-            detail = detail
-        ),
+    Error::single(
+        Diagnostic::new(
+            ErrorId::RegistryUnreadable,
+            msg!("error-registry-unreadable"),
+        )
+        .fact(Fact::path(&paths::display(path)))
+        .fact(Fact::cause(detail)),
     )
 }

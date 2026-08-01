@@ -77,7 +77,7 @@ error-file-declaration-invalid-source = 宣言fileのsourceが不正です
 error-file-declaration-invalid-destination = 宣言fileのdestinationが不正です
 warning-config-unknown-key = { $path } の未知のkey { $key } を無視しました。
 
-error-registry-unreadable = { $path } の案件registryを読み取れません: { $detail }
+error-registry-unreadable = 案件registryを読み取れません
 error-registry-invalid-syntax = { $path } の案件registryがYAMLとして不正です: { $detail }
 error-registry-unknown-version = { $path } の案件registryはversion { $version } ですが、このbuildが対応するのは { $supported } です。
 error-registry-missing-field = { $path } の案件registryに必須項目 { $field } がありません。

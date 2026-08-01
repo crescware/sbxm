@@ -219,6 +219,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-file-declaration-invalid-destination", "index"),
     ("error-file-declaration-invalid-destination", "destination"),
     ("error-file-declaration-invalid-destination", "detail"),
+    ("error-registry-unreadable", "path"),
+    ("error-registry-unreadable", "detail"),
 ];
 
 #[test]
