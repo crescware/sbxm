@@ -233,6 +233,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-metadata-invalid-value", "field"),
     ("error-invalid-branch-name", "value"),
     ("error-invalid-branch-name", "detail"),
+    ("error-host-clone-unusable", "path"),
+    ("error-host-clone-unusable", "detail"),
 ];
 
 #[test]

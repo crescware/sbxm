@@ -8,8 +8,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
+use crate::design::Fact;
 use crate::design::ProgressSink;
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::paths::{self, PathScope, ProjectPaths};
 use crate::repository::{RepositoryIdentity, accepted_clone_url_forms};
@@ -90,18 +91,12 @@ fn inspect(
     let metadata = fs::symlink_metadata(target)
         .map_err(|error| PathScope::ProjectPath.unreadable_error(target, &error.to_string()))?;
     if !metadata.is_dir() {
-        return Err(unusable(
-            target,
-            &format!("the clone path is a {}", file_type_name(&metadata)),
-        ));
+        return Err(unusable(target, target, msg!("cause-not-a-directory")));
     }
     require_git_dir_inside_the_project(paths, target)?;
 
     if read_git(host, target, &["rev-parse", "--is-bare-repository"])? != "false" {
-        return Err(unusable(
-            target,
-            "the repository is bare, so it has no working tree",
-        ));
+        return Err(unusable(target, target, msg!("cause-bare-repository")));
     }
 
     let top_level = read_git(host, target, &["rev-parse", "--show-toplevel"])?;
@@ -110,10 +105,11 @@ fn inspect(
     if observed != expected {
         return Err(unusable(
             target,
-            &format!(
-                "the working tree of {} is {}",
-                paths::display(&expected),
-                paths::display(&observed)
+            target,
+            msg!(
+                "cause-working-tree-elsewhere",
+                expected = paths::display(&expected),
+                observed = paths::display(&observed)
             ),
         ));
     }
@@ -126,25 +122,30 @@ fn inspect(
     let [url] = urls.as_slice() else {
         return Err(unusable(
             target,
-            &format!("origin has {} URLs, so the remote is ambiguous", urls.len()),
+            target,
+            msg!("cause-origin-ambiguous", count = urls.len()),
         ));
     };
     // originも登録時と同じ規則でparseする。読めないURLを一致しているとみなさない。
     let Ok(observed) = RepositoryIdentity::parse_clone_url(url) else {
         return Err(unusable(
             target,
-            &format!(
-                "origin URL {url} is not one of {}",
-                accepted_clone_url_forms()
+            target,
+            msg!(
+                "cause-clone-url-unrecognized",
+                observed = url,
+                accepted = accepted_clone_url_forms()
             ),
         ));
     };
     if !observed.same_target(repository) {
         return Err(unusable(
             target,
-            &format!(
-                "origin points at {observed}, not at {}",
-                repository.clone_url()
+            target,
+            msg!(
+                "cause-origin-elsewhere",
+                observed = observed,
+                declared = repository.clone_url()
             ),
         ));
     }
@@ -157,12 +158,22 @@ fn inspect(
 /// 案件の成果物としては扱えない。
 fn require_git_dir_inside_the_project(paths: &ProjectPaths, target: &Path) -> Result<()> {
     let git_path = target.join(".git");
-    let metadata = fs::symlink_metadata(&git_path).map_err(|error| {
-        unusable(
-            target,
-            &format!("{} could not be read: {error}", paths::display(&git_path)),
+    // `.git`側の不備は`.git`を示す。cloneのrootを示しても確かめる先が分からない。
+    let unreadable = |error: &std::io::Error| {
+        Error::single(
+            Diagnostic::new(
+                ErrorId::HostCloneUnusable,
+                msg!("error-host-clone-unusable"),
+            )
+            .fact(Fact::path(&paths::display(&git_path)))
+            .fact(Fact::cause(&error.to_string()))
+            .remediation(msg!(
+                "remediation-host-clone-unusable",
+                path = paths::display(target)
+            )),
         )
-    })?;
+    };
+    let metadata = fs::symlink_metadata(&git_path).map_err(|error| unreadable(&error))?;
 
     if metadata.is_dir() {
         return Ok(());
@@ -170,27 +181,20 @@ fn require_git_dir_inside_the_project(paths: &ProjectPaths, target: &Path) -> Re
     if !metadata.is_file() {
         return Err(unusable(
             target,
-            &format!(
-                "{} is a {}",
-                paths::display(&git_path),
-                file_type_name(&metadata)
-            ),
+            &git_path,
+            msg!("cause-not-a-regular-file"),
         ));
     }
 
-    let contents = fs::read_to_string(&git_path).map_err(|error| {
-        unusable(
-            target,
-            &format!("{} could not be read: {error}", paths::display(&git_path)),
-        )
-    })?;
+    let contents = fs::read_to_string(&git_path).map_err(|error| unreadable(&error))?;
     let Some(declared) = contents
         .lines()
         .find_map(|line| line.trim().strip_prefix("gitdir:"))
     else {
         return Err(unusable(
             target,
-            &format!("{} names no git directory", paths::display(&git_path)),
+            &git_path,
+            msg!("cause-no-git-directory-named"),
         ));
     };
     let declared = declared.trim();
@@ -202,11 +206,11 @@ fn require_git_dir_inside_the_project(paths: &ProjectPaths, target: &Path) -> Re
     if !resolved.starts_with(paths.root()) {
         return Err(unusable(
             target,
-            &format!(
-                "{} points at {}, which is outside {}",
-                paths::display(&git_path),
-                paths::display(&resolved),
-                paths::display(paths.root())
+            &git_path,
+            msg!(
+                "cause-git-directory-outside",
+                observed = paths::display(&resolved),
+                root = paths::display(paths.root())
             ),
         ));
     }
@@ -222,28 +226,18 @@ fn read_git(host: &dyn HostEnvironment, target: &Path, args: &[&str]) -> Result<
     Ok(outcome.stdout_text().trim().to_string())
 }
 
-fn file_type_name(metadata: &fs::Metadata) -> &'static str {
-    let file_type = metadata.file_type();
-    if file_type.is_dir() {
-        "directory"
-    } else if file_type.is_file() {
-        "regular file"
-    } else {
-        "special file"
-    }
-}
-
 /// 既存cloneを自動削除せず、観測した不一致を示して停止する。
-fn unusable(target: &Path, detail: &str) -> Error {
+///
+/// `shown`は読み手が見に行くべきpathであり、`target`は対処が指すcloneそのものである。
+/// `.git`の不備は`.git`を示したほうが確かめやすい。
+fn unusable(target: &Path, shown: &Path, reason: Msg) -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::HostCloneUnusable,
-            msg!(
-                "error-host-clone-unusable",
-                path = paths::display(target),
-                detail = detail
-            ),
+            msg!("error-host-clone-unusable"),
         )
+        .fact(Fact::path(&paths::display(shown)))
+        .fact(Fact::reason(reason))
         .remediation(msg!(
             "remediation-host-clone-unusable",
             path = paths::display(target)
