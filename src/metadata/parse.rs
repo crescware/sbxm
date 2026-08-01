@@ -52,23 +52,17 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
 }
 
 /// fieldの値が受け付けられないことを報告する。
-fn invalid(path: &Path, field: &'static str, detail: &str) -> Error {
-    Error::single(reported(path, field).fact(Fact::cause(detail)))
-}
-
-/// 受け付けられない理由をmessageで受け取る形。
-fn invalid_because(path: &Path, field: &'static str, reason: Msg) -> Error {
-    Error::single(reported(path, field).fact(Fact::reason(reason)))
-}
-
-fn reported(path: &Path, field: &'static str) -> Diagnostic {
-    Diagnostic::new(
-        ErrorId::MetadataInvalidValue,
-        msg!(
-            "error-metadata-invalid-value",
-            path = paths::display(path),
-            field = field
-        ),
+///
+/// 受け付けられない理由はsbxm自身の観測であり、外部の原文ではない。
+fn invalid(path: &Path, field: &'static str, reason: Msg) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::MetadataInvalidValue,
+            msg!("error-metadata-invalid-value"),
+        )
+        .fact(Fact::path(&paths::display(path)))
+        .fact(Fact::field(field))
+        .fact(Fact::reason(reason)),
     )
 }
 
@@ -101,7 +95,7 @@ fn parse_repository(raw: Option<RawRepository>, path: &Path) -> Result<Repositor
         &transport,
         &clone_url,
     )
-    .map_err(|reason| invalid_because(path, "repository", reason))
+    .map_err(|reason| invalid(path, "repository", reason))
 }
 
 /// 構築の指定を読む。
@@ -114,10 +108,11 @@ fn parse_provisioning(raw: Option<RawProvisioning>, path: &Path) -> Result<Provi
         invalid(
             path,
             "provisioning.mode",
-            &format!(
-                "{mode_value} is neither {} nor {}",
-                CreationMode::Attached,
-                CreationMode::Detached
+            msg!(
+                "cause-mode-unknown",
+                observed = mode_value,
+                attached = CreationMode::Attached,
+                detached = CreationMode::Detached
             ),
         )
     })?;
@@ -130,7 +125,7 @@ fn parse_provisioning(raw: Option<RawProvisioning>, path: &Path) -> Result<Provi
                 return Err(invalid(
                     path,
                     "provisioning.start_ref",
-                    &format!("{mode} mode requires an explicit start branch"),
+                    msg!("cause-start-branch-required", mode = mode),
                 ));
             }
             None
@@ -140,7 +135,7 @@ fn parse_provisioning(raw: Option<RawProvisioning>, path: &Path) -> Result<Provi
                 invalid(
                     path,
                     "provisioning.start_ref",
-                    &format!("{value} is not a branch name"),
+                    msg!("cause-not-a-branch-name", observed = value),
                 )
             })?;
             Some(value)
@@ -157,7 +152,12 @@ fn parse_provisioning(raw: Option<RawProvisioning>, path: &Path) -> Result<Provi
             invalid(
                 path,
                 "provisioning.requested_worktrees",
-                &format!("{requested} is outside {MIN_WORKTREES}-{MAX_WORKTREES}"),
+                msg!(
+                    "cause-outside-range",
+                    observed = requested,
+                    minimum = MIN_WORKTREES,
+                    maximum = MAX_WORKTREES
+                ),
             )
         })?;
 
@@ -165,7 +165,7 @@ fn parse_provisioning(raw: Option<RawProvisioning>, path: &Path) -> Result<Provi
         .dockerfile_sha256
         .ok_or_else(|| missing(path, "provisioning.dockerfile_sha256"))?;
     require_sha256(&dockerfile_sha256)
-        .map_err(|detail| invalid(path, "provisioning.dockerfile_sha256", &detail))?;
+        .map_err(|reason| invalid(path, "provisioning.dockerfile_sha256", reason))?;
 
     Ok(Provisioning {
         mode,
@@ -185,9 +185,9 @@ fn parse_git_identity(raw: Option<RawGitIdentity>, path: &Path) -> Result<GitIde
         .user_email
         .ok_or_else(|| missing(path, "git_identity.user_email"))?;
     validate_git_identity_value(&user_name)
-        .map_err(|reason| invalid_because(path, "git_identity.user_name", reason))?;
+        .map_err(|reason| invalid(path, "git_identity.user_name", reason))?;
     validate_git_identity_value(&user_email)
-        .map_err(|reason| invalid_because(path, "git_identity.user_email", reason))?;
+        .map_err(|reason| invalid(path, "git_identity.user_email", reason))?;
     Ok(GitIdentity {
         user_name,
         user_email,
@@ -203,12 +203,12 @@ fn parse_rebuild(raw: Option<RawRebuild>, path: &Path) -> Result<Option<RebuildI
         .target_dockerfile_sha256
         .ok_or_else(|| missing(path, "rebuild.target_dockerfile_sha256"))?;
     require_sha256(&target)
-        .map_err(|detail| invalid(path, "rebuild.target_dockerfile_sha256", &detail))?;
+        .map_err(|reason| invalid(path, "rebuild.target_dockerfile_sha256", reason))?;
     let previous = rebuild
         .previous_dockerfile_sha256
         .ok_or_else(|| missing(path, "rebuild.previous_dockerfile_sha256"))?;
     require_sha256(&previous)
-        .map_err(|detail| invalid(path, "rebuild.previous_dockerfile_sha256", &detail))?;
+        .map_err(|reason| invalid(path, "rebuild.previous_dockerfile_sha256", reason))?;
     Ok(Some(RebuildIntent {
         target_dockerfile_sha256: target,
         previous_dockerfile_sha256: previous,
