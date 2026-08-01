@@ -87,7 +87,7 @@ error-registry-duplicate-root = { $path } が複数の案件に対して登録�
 error-registry-entry-mismatch = { $canonical_id } は既に { $stored } として登録されており、この実行は { $requested } を指定しています。
 
 error-metadata-unreadable = 案件metadataを読み取れません
-error-metadata-invalid-syntax = { $path } の案件metadataがYAMLとして不正です: { $detail }
+error-metadata-invalid-syntax = 案件metadataがYAMLとして不正です
 error-metadata-unknown-version = { $path } の案件metadataはversion { $version } ですが、このbuildが対応するのは { $supported } です。
 error-metadata-missing-field = { $path } の案件metadataに必須項目 { $field } がありません。
 error-metadata-invalid-value = { $path } の項目 { $field } の値が不正です

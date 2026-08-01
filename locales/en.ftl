@@ -87,7 +87,7 @@ error-registry-duplicate-root = { $path } is registered for more than one projec
 error-registry-entry-mismatch = { $canonical_id } is already registered as { $stored }, and this run asks for { $requested }.
 
 error-metadata-unreadable = The project metadata could not be read
-error-metadata-invalid-syntax = The project metadata at { $path } is not valid YAML: { $detail }
+error-metadata-invalid-syntax = The project metadata is not valid YAML
 error-metadata-unknown-version = The project metadata at { $path } declares version { $version }, but this build supports { $supported }.
 error-metadata-missing-field = The project metadata at { $path } is missing the required field { $field }.
 error-metadata-invalid-value = Field { $field } in { $path } is not valid

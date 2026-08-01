@@ -23,13 +23,13 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
     // 欠落したfieldをsyntax errorではなく名前で報告する。
     let raw = yaml_serde::from_str::<Option<RawMetadata>>(text)
         .map_err(|error: yaml_serde::Error| {
-            Error::new(
-                ErrorId::MetadataInvalidSyntax,
-                msg!(
-                    "error-metadata-invalid-syntax",
-                    path = paths::display(path),
-                    detail = error
-                ),
+            Error::single(
+                Diagnostic::new(
+                    ErrorId::MetadataInvalidSyntax,
+                    msg!("error-metadata-invalid-syntax"),
+                )
+                .fact(Fact::path(&paths::display(path)))
+                .fact(Fact::cause(&error.to_string())),
             )
         })?
         .unwrap_or_default();
