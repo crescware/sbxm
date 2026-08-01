@@ -64,6 +64,11 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-source-label"), Inline::path(path))
     }
 
+    /// `Destination:`。宣言fileのSandbox内での配置先。
+    pub fn destination(path: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-destination-label"), Inline::path(path))
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))

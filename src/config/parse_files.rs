@@ -27,15 +27,15 @@ pub(super) fn parse_files(raw: Vec<RawFile>, path: &Path) -> Result<Vec<FileDecl
                 .fact(Fact::reason(reason)),
             )
         })?;
-        let destination = SandboxHomeRelativePath::new(&destination_value).map_err(|detail| {
-            Error::new(
-                ErrorId::FileDeclarationInvalidDestination,
-                msg!(
-                    "error-file-declaration-invalid-destination",
-                    index = index,
-                    destination = destination_value,
-                    detail = detail
-                ),
+        let destination = SandboxHomeRelativePath::new(&destination_value).map_err(|reason| {
+            Error::single(
+                Diagnostic::new(
+                    ErrorId::FileDeclarationInvalidDestination,
+                    msg!("error-file-declaration-invalid-destination"),
+                )
+                .fact(Fact::entry(index))
+                .fact(Fact::destination(&destination_value))
+                .fact(Fact::reason(reason)),
             )
         })?;
         files.push(FileDeclaration {
