@@ -7,7 +7,7 @@ use crate::support::StatusValue;
 
 use crate::commands::status::global::external::{describe, external_of, read_stdout};
 use crate::commands::status::global::{GlobalStatus, push};
-use crate::design::Remediation;
+use crate::design::{Fact, Remediation};
 
 /// Docker Sandboxesへのlogin状態。
 ///
@@ -37,8 +37,9 @@ pub fn check_login(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
             push(status, "status-item-login", StatusValue::Error);
             let mut diagnostic = Diagnostic::new(
                 ErrorId::SbxLoginUnobservable,
-                msg!("error-sbx-login-unobservable", detail = describe(&error)),
-            );
+                msg!("error-sbx-login-unobservable"),
+            )
+            .fact(Fact::cause(&describe(&error)));
             if let Some(external) = external_of(&error) {
                 diagnostic = diagnostic.external(external);
             }
