@@ -1,4 +1,5 @@
 use crate::command::HostEnvironment;
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
@@ -41,22 +42,28 @@ pub fn check_platform(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
                 }
                 None => {
                     push(status, "status-item-platform", StatusValue::Error);
-                    status.diagnostics.push(Diagnostic::new(
-                        ErrorId::PlatformUnobservable,
-                        msg!(
-                            "error-platform-unobservable",
-                            detail = format!("the macOS version {version} could not be read")
-                        ),
-                    ));
+                    status.diagnostics.push(
+                        Diagnostic::new(
+                            ErrorId::PlatformUnobservable,
+                            msg!("error-platform-unobservable"),
+                        )
+                        .fact(Fact::reason(msg!(
+                            "cause-macos-version-unreadable",
+                            observed = version
+                        ))),
+                    );
                 }
             }
         }
         (Err(error), _) | (_, Err(error)) => {
             push(status, "status-item-platform", StatusValue::Error);
-            status.diagnostics.push(Diagnostic::new(
-                ErrorId::PlatformUnobservable,
-                msg!("error-platform-unobservable", detail = describe(&error)),
-            ));
+            status.diagnostics.push(
+                Diagnostic::new(
+                    ErrorId::PlatformUnobservable,
+                    msg!("error-platform-unobservable"),
+                )
+                .fact(Fact::cause(&describe(&error))),
+            );
         }
     }
 }
