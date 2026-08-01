@@ -268,6 +268,7 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-external-command-spawn-failed", "detail"),
     ("error-platform-unobservable", "detail"),
     ("error-docker-unreachable", "detail"),
+    ("error-network-policy-unobservable", "detail"),
 ];
 
 #[test]
