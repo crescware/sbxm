@@ -211,6 +211,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-metadata-invalid-value", "detail"),
     ("error-global-state-unusable", "path"),
     ("error-global-state-unusable", "detail"),
+    ("error-working-directory-unusable", "path"),
+    ("error-working-directory-unusable", "detail"),
 ];
 
 #[test]
