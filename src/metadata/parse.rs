@@ -101,7 +101,7 @@ fn parse_repository(raw: Option<RawRepository>, path: &Path) -> Result<Repositor
         &transport,
         &clone_url,
     )
-    .map_err(|detail| invalid(path, "repository", &detail))
+    .map_err(|reason| invalid_because(path, "repository", reason))
 }
 
 /// 構築の指定を読む。

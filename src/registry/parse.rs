@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use crate::design::Fact;
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::paths;
 use crate::repository::RepositoryIdentity;
@@ -40,14 +40,14 @@ pub fn parse(text: &str, path: &Path) -> Result<Index> {
             ),
         )
     };
-    let invalid = |field: String, detail: String| {
-        Error::new(
-            ErrorId::RegistryInvalidValue,
-            msg!(
-                "error-registry-invalid-value",
-                field = field,
-                detail = detail
-            ),
+    let invalid = |field: String, reason: Msg| {
+        Error::single(
+            Diagnostic::new(
+                ErrorId::RegistryInvalidValue,
+                msg!("error-registry-invalid-value"),
+            )
+            .fact(Fact::field(&field))
+            .fact(Fact::reason(reason)),
         )
     };
 

@@ -69,6 +69,11 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-destination-label"), Inline::path(path))
     }
 
+    /// `Value:`。受け付けられなかった値そのもの。
+    pub fn value(value: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-value-label"), Inline::important(value))
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))
