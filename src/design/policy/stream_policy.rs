@@ -9,32 +9,6 @@ pub struct StreamPolicy {
     pub width: Option<usize>,
 }
 
-impl StreamPolicy {
-    /// `ANSIを一切出さないstream`。
-    #[cfg(test)]
-    pub fn plain() -> StreamPolicy {
-        StreamPolicy {
-            color: false,
-            characters: CharacterSet::Unicode,
-            width: None,
-        }
-    }
-
-    /// 色を出すstream。
-    #[cfg(test)]
-    pub fn colored() -> StreamPolicy {
-        StreamPolicy {
-            color: true,
-            ..StreamPolicy::plain()
-        }
-    }
-
-    /// ASCII glyphだけを使うstream。
-    #[cfg(test)]
-    pub fn ascii() -> StreamPolicy {
-        StreamPolicy {
-            characters: CharacterSet::Ascii,
-            ..StreamPolicy::plain()
-        }
-    }
-}
+#[cfg(test)]
+#[path = "stream_policy_test.rs"]
+mod stream_policy_test;

@@ -23,13 +23,6 @@ impl Table {
         self.rows.push(cells);
     }
 
-    /// 1行を足した自身を返す。
-    #[cfg(test)]
-    pub fn row(mut self, cells: Vec<Cell>) -> Table {
-        self.push(cells);
-        self
-    }
-
     /// 行が1件もないか。空のtableはsectionごと省く判断に使う。
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
@@ -53,3 +46,7 @@ impl Table {
             .unwrap_or(0)
     }
 }
+
+#[cfg(test)]
+#[path = "table_test.rs"]
+mod table_test;

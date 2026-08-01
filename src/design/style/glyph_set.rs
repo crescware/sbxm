@@ -15,18 +15,6 @@ pub struct GlyphSet {
     pub arrow_down: &'static str,
 }
 
-impl GlyphSet {
-    /// 定義した全glyph。testが一覧を取りこぼさないよう、宣言と同じ場所から作る。
-    #[cfg(test)]
-    pub(super) fn all(self) -> [&'static str; 7] {
-        [
-            self.progress,
-            self.success,
-            self.warning,
-            self.error,
-            self.current,
-            self.arrow_up,
-            self.arrow_down,
-        ]
-    }
-}
+#[cfg(test)]
+#[path = "glyph_set_test.rs"]
+mod glyph_set_test;

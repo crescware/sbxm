@@ -13,11 +13,6 @@ pub struct ConfigLocation {
 }
 
 impl ConfigLocation {
-    #[cfg(test)]
-    pub fn from_home(home: PathBuf) -> ConfigLocation {
-        ConfigLocation { home }
-    }
-
     /// 現在の利用者のhome directoryから構築する。
     pub fn discover() -> Result<ConfigLocation> {
         // home directoryが分からない時点でpathは1つも組み立てられない。示せる事実は
@@ -51,3 +46,7 @@ impl ConfigLocation {
         self.dir().join("registry.lock")
     }
 }
+
+#[cfg(test)]
+#[path = "config_location_test.rs"]
+mod config_location_test;

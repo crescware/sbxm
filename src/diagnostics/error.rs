@@ -19,11 +19,6 @@ impl Error {
         Error::Diagnostics(vec![diagnostic])
     }
 
-    #[cfg(test)]
-    pub fn many(diagnostics: Vec<Diagnostic>) -> Self {
-        Error::Diagnostics(diagnostics)
-    }
-
     pub fn exit_code(&self) -> ExitCode {
         match self {
             Error::Diagnostics(_) => ExitCode::Failure,
@@ -44,10 +39,8 @@ impl Error {
             .iter()
             .any(|diagnostic| diagnostic.id == id)
     }
-
-    /// 最初の診断のerror ID。testの検証に使う。
-    #[cfg(test)]
-    pub fn first_id(&self) -> Option<ErrorId> {
-        self.diagnostics().first().map(|d| d.id)
-    }
 }
+
+#[cfg(test)]
+#[path = "error_test.rs"]
+mod error_test;
