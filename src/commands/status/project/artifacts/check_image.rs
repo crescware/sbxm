@@ -1,4 +1,5 @@
 use crate::command::HostEnvironment;
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -27,14 +28,11 @@ pub fn check_image(
             if declares_project && declares_generation {
                 Value::Ready
             } else {
-                status.diagnostics.push(Diagnostic::new(
-                    ErrorId::ImageUnusable,
-                    msg!(
-                        "error-image-unusable",
-                        image = image,
-                        detail = "the labels do not declare this project and generation"
-                    ),
-                ));
+                status.diagnostics.push(
+                    Diagnostic::new(ErrorId::ImageUnusable, msg!("error-image-unusable"))
+                        .fact(Fact::image(&image))
+                        .fact(Fact::reason(msg!("cause-labels-declare-something-else"))),
+                );
                 Value::Mismatch
             }
         }

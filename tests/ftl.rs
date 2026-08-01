@@ -237,6 +237,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-host-clone-unusable", "detail"),
     ("error-image-collision", "image"),
     ("error-image-collision", "detail"),
+    ("error-image-unusable", "image"),
+    ("error-image-unusable", "detail"),
 ];
 
 #[test]

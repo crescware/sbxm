@@ -40,13 +40,10 @@ pub fn ensure(
     let warnings = build(host, &name, &labels, dockerfile, progress)?;
 
     let identity = inspect(host, &name)?.ok_or_else(|| {
-        Error::new(
-            ErrorId::ImageUnusable,
-            msg!(
-                "error-image-unusable",
-                image = name,
-                detail = "the image is absent right after it was built"
-            ),
+        Error::single(
+            Diagnostic::new(ErrorId::ImageUnusable, msg!("error-image-unusable"))
+                .fact(Fact::image(&name))
+                .fact(Fact::reason(msg!("cause-image-absent-after-build"))),
         )
     })?;
     if !labels_match(&identity, &labels) {
@@ -63,14 +60,11 @@ pub fn ensure(
 }
 
 fn mismatched_labels(name: &str, identity: &ImageIdentity, expected: &[(String, String)]) -> Error {
-    Error::single(Diagnostic::new(
-        ErrorId::ImageUnusable,
-        msg!(
-            "error-image-unusable",
-            image = name,
-            detail = compare_labels(identity, expected)
-        ),
-    ))
+    Error::single(
+        Diagnostic::new(ErrorId::ImageUnusable, msg!("error-image-unusable"))
+            .fact(Fact::image(name))
+            .fact(Fact::cause(&compare_labels(identity, expected))),
+    )
 }
 
 /// 同じ世代名を持つ、別の案件または別の世代のimage。
@@ -86,6 +80,9 @@ fn collision(name: &str, identity: &ImageIdentity, expected: &[(String, String)]
 }
 
 /// 期待するlabelと観測したlabelの並び。翻訳しない技術表記。
+///
+/// 1 labelを1行とする。事実の値が複数行になると、rendererが項目名の下へ字下げして
+/// 並べるため、labelごとの差分をそのまま読める。
 fn compare_labels(identity: &ImageIdentity, expected: &[(String, String)]) -> String {
     expected
         .iter()
@@ -94,5 +91,5 @@ fn compare_labels(identity: &ImageIdentity, expected: &[(String, String)]) -> St
             format!("{key}: expected {value}, observed {observed}")
         })
         .collect::<Vec<_>>()
-        .join("; ")
+        .join("\n")
 }

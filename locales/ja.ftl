@@ -99,7 +99,7 @@ error-rebuild-intent-pending = { $project } は再構築の途中であるため
 
 error-host-clone-unusable = このcloneはこの案件には使用できません
 error-image-collision = 同じ名前のimageが既に存在し、別の内容を宣言しているため、この世代はその名前を使えません
-error-image-unusable = image { $image } はこの案件には使用できません: { $detail }
+error-image-unusable = このimageはこの案件には使用できません
 error-build-context-not-empty = build context { $path } に { $observed } 件のentryがあります。sbxmは空のcontextからだけbuildします。
 warning-build-context-left-behind = 一時build context { $path } を削除できませんでした: { $detail }
 error-archive-unusable = Template archive { $path } は使用できません: { $detail }
@@ -190,6 +190,8 @@ cause-working-tree-elsewhere = { $expected } のworking treeは { $observed } �
 cause-origin-ambiguous = originが { $count } 件のURLを持ち、remoteを一意に決められません
 cause-origin-elsewhere = originが指すのは { $declared } ではなく { $observed } です
 cause-no-git-directory-named = このfileはgit directoryを示していません
+cause-image-absent-after-build = build直後にもかかわらずimageが存在しません
+cause-labels-declare-something-else = labelがこの案件とこの世代を宣言していません
 cause-git-directory-outside = { $root } の外にある { $observed } を指しています
 cause-provider-unsupported = { $observed } は対応providerではありません
 cause-clone-transport-unsupported = { $observed } は対応clone transportではありません

@@ -99,7 +99,7 @@ error-rebuild-intent-pending = { $project } is in the middle of a rebuild, so it
 
 error-host-clone-unusable = The clone cannot be used for this project
 error-image-collision = An image with this name already exists and declares something else, so this generation cannot take that name
-error-image-unusable = The image { $image } cannot be used for this project: { $detail }
+error-image-unusable = The image cannot be used for this project
 error-build-context-not-empty = The build context { $path } holds { $observed } entries, but sbxm builds only from an empty one.
 warning-build-context-left-behind = The temporary build context { $path } could not be removed: { $detail }
 error-archive-unusable = The template archive { $path } cannot be used: { $detail }
@@ -190,6 +190,8 @@ cause-working-tree-elsewhere = the working tree of { $expected } is { $observed 
 cause-origin-ambiguous = origin has { $count } URLs, so the remote is ambiguous
 cause-origin-elsewhere = origin points at { $observed }, not at { $declared }
 cause-no-git-directory-named = the file names no git directory
+cause-image-absent-after-build = the image is absent right after it was built
+cause-labels-declare-something-else = the labels do not declare this project and generation
 cause-git-directory-outside = it points at { $observed }, which is outside { $root }
 cause-provider-unsupported = { $observed } is not a supported provider
 cause-clone-transport-unsupported = { $observed } is not a supported clone transport
