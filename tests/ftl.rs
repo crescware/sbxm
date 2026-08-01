@@ -225,6 +225,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-registry-invalid-syntax", "detail"),
     ("error-registry-invalid-value", "field"),
     ("error-registry-invalid-value", "detail"),
+    ("error-metadata-unreadable", "path"),
+    ("error-metadata-unreadable", "detail"),
 ];
 
 #[test]

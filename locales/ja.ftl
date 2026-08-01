@@ -86,7 +86,7 @@ error-registry-duplicate-project = { $canonical_id } が複数回登録されて
 error-registry-duplicate-root = { $path } が複数の案件に対して登録されています: { $projects }
 error-registry-entry-mismatch = { $canonical_id } は既に { $stored } として登録されており、この実行は { $requested } を指定しています。
 
-error-metadata-unreadable = { $path } の案件metadataを読み取れません: { $detail }
+error-metadata-unreadable = 案件metadataを読み取れません
 error-metadata-invalid-syntax = { $path } の案件metadataがYAMLとして不正です: { $detail }
 error-metadata-unknown-version = { $path } の案件metadataはversion { $version } ですが、このbuildが対応するのは { $supported } です。
 error-metadata-missing-field = { $path } の案件metadataに必須項目 { $field } がありません。
@@ -169,6 +169,7 @@ diagnostic-directory-label = 作業directory:
 diagnostic-cause-label = 原因:
 cause-home-directory-unknown = home directoryを判定できません
 cause-not-a-regular-file = pathが通常のfileではありません
+cause-symbolic-link = pathがsymbolic linkです
 cause-not-a-directory = pathがdirectoryではありません
 cause-not-absolute = pathが絶対pathではありません
 cause-unexpectedly-absolute = pathが絶対pathです

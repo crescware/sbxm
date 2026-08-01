@@ -1,3 +1,4 @@
+use crate::design::Fact;
 use crate::diagnostics::ErrorId;
 use crate::paths::ProjectPaths;
 use std::fs;
@@ -62,13 +63,14 @@ fn a_metadata_path_that_is_not_a_regular_file_is_refused_before_it_is_read() -> 
     let error =
         load(&project).refused_because("a metadata path that is not a regular file is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::MetadataUnreadable));
-    let detail = error.diagnostics()[0]
-        .description
-        .args
+    let reason = error.diagnostics()[0]
+        .facts
         .iter()
-        .find(|(key, _)| *key == "detail")
-        .map(|(_, value)| value.as_str())
+        .find_map(|fact| match fact {
+            Fact::Translated { value, .. } => Some(value.id),
+            _ => None,
+        })
         .required_because("the observed reason is named")?;
-    assert_eq!(detail, "the metadata path is not a regular file");
+    assert_eq!(reason, "cause-not-a-regular-file");
     Ok(())
 }

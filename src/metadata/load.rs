@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use crate::diagnostics::{ErrorId, Result, fail};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths::{self, ProjectPaths};
 
@@ -18,52 +19,34 @@ pub fn load(paths: &ProjectPaths) -> Result<Option<ProjectMetadata>> {
 
 /// symlinkを追跡せずにmetadataを読む。
 fn read_optional(path: &Path) -> Result<Option<String>> {
+    let unreadable = |cause: Fact| {
+        Error::single(
+            Diagnostic::new(
+                ErrorId::MetadataUnreadable,
+                msg!("error-metadata-unreadable"),
+            )
+            .fact(Fact::path(&paths::display(path)))
+            .fact(cause),
+        )
+    };
     if paths::is_symlink(path) {
         // symlinkの先は案件directory外にあり得るため、追跡せず不在として扱わない。
-        return fail(
-            ErrorId::MetadataUnreadable,
-            msg!(
-                "error-metadata-unreadable",
-                path = paths::display(path),
-                detail = "the metadata path is a symbolic link"
-            ),
-        );
+        return Err(unreadable(Fact::reason(msg!("cause-symbolic-link"))));
     }
     // 通常fileであることを確かめてから開く。FIFOのような特殊fileを開いて待たない。
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_file() => {}
         Ok(_) => {
-            return fail(
-                ErrorId::MetadataUnreadable,
-                msg!(
-                    "error-metadata-unreadable",
-                    path = paths::display(path),
-                    detail = "the metadata path is not a regular file"
-                ),
-            );
+            return Err(unreadable(Fact::reason(msg!("cause-not-a-regular-file"))));
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
-            return fail(
-                ErrorId::MetadataUnreadable,
-                msg!(
-                    "error-metadata-unreadable",
-                    path = paths::display(path),
-                    detail = error
-                ),
-            );
+            return Err(unreadable(Fact::cause(&error.to_string())));
         }
     }
     match fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => fail(
-            ErrorId::MetadataUnreadable,
-            msg!(
-                "error-metadata-unreadable",
-                path = paths::display(path),
-                detail = error
-            ),
-        ),
+        Err(error) => Err(unreadable(Fact::cause(&error.to_string()))),
     }
 }

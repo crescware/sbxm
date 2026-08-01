@@ -86,7 +86,7 @@ error-registry-duplicate-project = { $canonical_id } is registered more than onc
 error-registry-duplicate-root = { $path } is registered for more than one project: { $projects }
 error-registry-entry-mismatch = { $canonical_id } is already registered as { $stored }, and this run asks for { $requested }.
 
-error-metadata-unreadable = The project metadata at { $path } could not be read: { $detail }
+error-metadata-unreadable = The project metadata could not be read
 error-metadata-invalid-syntax = The project metadata at { $path } is not valid YAML: { $detail }
 error-metadata-unknown-version = The project metadata at { $path } declares version { $version }, but this build supports { $supported }.
 error-metadata-missing-field = The project metadata at { $path } is missing the required field { $field }.
@@ -169,6 +169,7 @@ diagnostic-directory-label = Working directory:
 diagnostic-cause-label = Cause:
 cause-home-directory-unknown = the home directory could not be determined
 cause-not-a-regular-file = the path is not a regular file
+cause-symbolic-link = the path is a symbolic link
 cause-not-a-directory = the path is not a directory
 cause-not-absolute = the path is not an absolute path
 cause-unexpectedly-absolute = the path is an absolute path
