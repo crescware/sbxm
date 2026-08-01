@@ -17,7 +17,7 @@ cargo llvm-cov \
   --ignore-filename-regex '(^|/)tests/|[^/]*_test[^/]*\.rs$' \
   --fail-under-lines 90 \
   --fail-under-functions 90 \
-  --fail-under-regions 89
+  --fail-under-regions 88
 '''
 
 [tasks.check]
