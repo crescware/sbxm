@@ -3,12 +3,11 @@
 //! shellを介さず、secret値をargumentやdebug表示へ渡さない。stdoutとstderrは
 //! それぞれ独立にcaptureし、structured outputのparseと診断表示に使う。
 //!
-//! 1回の実行がどう終わるかは、この module の中で決め切る。成功、timeout、待機の失敗の
-//! どれであっても、pipeを読むthreadは`run_inner`が回収してから返る。回収が必ず終わる
-//! ことは、捕捉するcommandを専用のprocess groupで起動し、timeout時にgroupごと終わらせて
-//! 保証する。書き込み端を握ったprocessが残らなければ、readerはEOFに達する。
+//! 1回の実行がどう終わるかは、この module の中で決め切る。Capture commandのpipeは親thread
+//! がnonblockingで読み、直接の子が終わった時点で読み取り端を閉じるため、子孫がpipeを握った
+//! ままでも実行の外側へreaderが残らない。timeoutまたはCtrl-Cでは、専用のprocess groupを
+//! 終わらせてから返す。
 
-mod collect_reader;
 mod command_outcome;
 mod command_spec;
 mod env_policy;
@@ -20,14 +19,14 @@ mod isolates_process_group;
 mod output_policy;
 mod real_host;
 mod run;
+mod run_capture;
 mod run_inner;
-mod spawn_reader;
+mod signal_guard;
 mod terminate_child;
 mod timeout_class;
 mod wait_poll_interval;
 mod wait_with_limit;
 
-use collect_reader::collect_reader;
 pub use command_outcome::CommandOutcome;
 pub use command_spec::CommandSpec;
 pub use env_policy::EnvPolicy;
@@ -39,8 +38,9 @@ use isolates_process_group::isolates_process_group;
 pub use output_policy::OutputPolicy;
 pub use real_host::RealHost;
 pub use run::run;
+use run_capture::run_capture;
 use run_inner::run_inner;
-use spawn_reader::spawn_reader;
+use signal_guard::SignalGuard;
 use terminate_child::terminate_child;
 pub use timeout_class::TimeoutClass;
 use wait_poll_interval::WAIT_POLL_INTERVAL;
