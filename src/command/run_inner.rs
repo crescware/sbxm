@@ -1,3 +1,4 @@
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -5,7 +6,10 @@ use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-use super::{CommandOutcome, CommandSpec, EnvPolicy, OutputPolicy, spawn_reader, wait_with_limit};
+use super::{
+    CommandOutcome, CommandSpec, EnvPolicy, OutputPolicy, isolates_process_group, spawn_reader,
+    wait_with_limit,
+};
 
 pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<CommandOutcome> {
     let mut command = Command::new(&spec.program);
@@ -34,6 +38,10 @@ pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<C
             command.stdout(Stdio::inherit());
             command.stderr(Stdio::inherit());
         }
+    }
+    if isolates_process_group(spec) {
+        // 打ち切るときに、このcommandが起動したprocessまで一度に終わらせられるようにする。
+        command.process_group(0);
     }
 
     let mut child = command.spawn().map_err(|error| {

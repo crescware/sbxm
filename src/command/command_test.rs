@@ -274,6 +274,35 @@ fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
 }
 
 #[test]
+fn a_timed_out_command_takes_the_processes_it_started_with_it() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let survivor = dir.path().join("survivor");
+    let fake = fake_executable(
+        dir.path(),
+        "fake-tool",
+        &format!(
+            // 背景のprocessは、待ち終えたらfileを残す。stdoutのpipeも握ったままである。
+            r#"(sleep 2; printf 'alive' > "{}") &
+sleep 30"#,
+            survivor.display()
+        ),
+    )?;
+
+    let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
+    let started = Instant::now();
+    let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
+        .refused_because("the command must be terminated")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+
+    std::thread::sleep(Duration::from_secs(3).saturating_sub(started.elapsed()));
+    assert!(
+        !survivor.exists(),
+        "a process the command started must not outlive the command"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_missing_program_is_distinguished_from_other_spawn_failures() -> Checked {
     let spec = CommandSpec::probe("sbxm-no-such-program-exists", &[]);
     let error = run(&spec).refused_because("missing programs fail")?;
