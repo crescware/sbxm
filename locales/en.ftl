@@ -66,7 +66,7 @@ error-reserved-repository-name = { $value } is reserved and cannot be used as a 
 error-invalid-clone-url = { $value } is not a clone URL sbxm accepts. Accepted forms: { $accepted }
 
 error-config-unreadable = The global configuration could not be read
-error-config-invalid-syntax = The global configuration at { $path } is not valid YAML: { $detail }
+error-config-invalid-syntax = The global configuration is not valid YAML
 error-config-unknown-version = The global configuration at { $path } declares version { $version }, but this build supports { $supported }.
 error-config-missing-field = The global configuration at { $path } is missing the required field { $field }.
 error-config-not-rewritable = { $field } could not be added to { $path } without changing how the rest of it is written.

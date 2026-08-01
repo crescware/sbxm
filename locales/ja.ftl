@@ -66,7 +66,7 @@ error-reserved-repository-name = { $value } は予約語のためrepository名�
 error-invalid-clone-url = { $value } はsbxmが受理するclone URLではありません。受理する形式: { $accepted }
 
 error-config-unreadable = global設定を読み取れません
-error-config-invalid-syntax = { $path } のglobal設定がYAMLとして不正です: { $detail }
+error-config-invalid-syntax = global設定がYAMLとして不正です
 error-config-unknown-version = { $path } のglobal設定はversion { $version } ですが、このbuildが対応するのは { $supported } です。
 error-config-missing-field = { $path } のglobal設定に必須項目 { $field } がありません。
 error-config-not-rewritable = { $path } のほかの記述を変えずに { $field } を足すことができませんでした。

@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::i18n::Locale;
 use crate::msg;
 use crate::paths::{self};
@@ -13,13 +14,13 @@ use super::{
 /// configのtextを検証する。filesystemには触れない部分の判定をまとめる。
 pub(super) fn parse(text: &str, path: &Path) -> Result<ConfigState> {
     let syntax_error = |error: yaml_serde::Error| {
-        Error::new(
-            ErrorId::ConfigInvalidSyntax,
-            msg!(
-                "error-config-invalid-syntax",
-                path = paths::display(path),
-                detail = error
-            ),
+        Error::single(
+            Diagnostic::new(
+                ErrorId::ConfigInvalidSyntax,
+                msg!("error-config-invalid-syntax"),
+            )
+            .fact(Fact::path(&paths::display(path)))
+            .fact(Fact::cause(&error.to_string())),
         )
     };
 

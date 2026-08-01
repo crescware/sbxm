@@ -202,6 +202,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-external-command-failed", "program"),
     ("error-config-unreadable", "path"),
     ("error-config-unreadable", "detail"),
+    ("error-config-invalid-syntax", "path"),
+    ("error-config-invalid-syntax", "detail"),
 ];
 
 #[test]
