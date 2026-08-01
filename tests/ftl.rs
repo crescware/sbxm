@@ -252,6 +252,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-sandbox-repository-unusable", "path"),
     ("error-sandbox-repository-unusable", "detail"),
     ("error-prompt-unreadable", "detail"),
+    ("warning-lock-file-left-behind", "path"),
+    ("warning-lock-file-left-behind", "detail"),
 ];
 
 #[test]
