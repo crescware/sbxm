@@ -7,8 +7,8 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use super::{
-    CommandOutcome, CommandSpec, EnvPolicy, OutputPolicy, isolates_process_group, spawn_reader,
-    wait_with_limit,
+    CommandOutcome, CommandSpec, EnvPolicy, OutputPolicy, collect_reader, isolates_process_group,
+    spawn_reader, wait_with_limit,
 };
 
 pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<CommandOutcome> {
@@ -66,14 +66,16 @@ pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<C
     let stdout_reader = child.stdout.take().map(spawn_reader);
     let stderr_reader = child.stderr.take().map(spawn_reader);
 
-    let status = wait_with_limit(&mut child, spec, limit)?;
+    // 子processがどう終わっても、readerはこの関数の中で回収する。先に返ると、pipeを
+    // 読んでいるthreadが実行の外側へ残る。
+    let ended = wait_with_limit(&mut child, spec, limit);
+    let stdout = collect_reader(stdout_reader, spec);
+    let stderr = collect_reader(stderr_reader, spec);
 
-    let stdout = stdout_reader
-        .map(|handle| handle.join().unwrap_or_default())
-        .unwrap_or_default();
-    let stderr = stderr_reader
-        .map(|handle| handle.join().unwrap_or_default())
-        .unwrap_or_default();
+    // 終わり方の異常を先に報告する。出力を読み切れていないのは、その結果でしかない。
+    let status = ended?;
+    let stdout = stdout?;
+    let stderr = stderr?;
     let stderr_lossy = matches!(String::from_utf8_lossy(&stderr), std::borrow::Cow::Owned(_));
 
     Ok(CommandOutcome {

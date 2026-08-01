@@ -3,9 +3,12 @@
 //! shellを介さず、secret値をargumentやdebug表示へ渡さない。stdoutとstderrは
 //! それぞれ独立にcaptureし、structured outputのparseと診断表示に使う。
 //!
-//! 時間で打ち切ったcommandは、そのcommandが起動したprocessごと終わらせる。出力を捕捉する
-//! commandを専用のprocess groupで起動し、group宛のsignalで終わりを確定させる。
+//! 1回の実行がどう終わるかは、この module の中で決め切る。成功、timeout、待機の失敗の
+//! どれであっても、pipeを読むthreadは`run_inner`が回収してから返る。回収が必ず終わる
+//! ことは、捕捉するcommandを専用のprocess groupで起動し、timeout時にgroupごと終わらせて
+//! 保証する。書き込み端を握ったprocessが残らなければ、readerはEOFに達する。
 
+mod collect_reader;
 mod command_outcome;
 mod command_spec;
 mod env_policy;
@@ -24,6 +27,7 @@ mod timeout_class;
 mod wait_poll_interval;
 mod wait_with_limit;
 
+use collect_reader::collect_reader;
 pub use command_outcome::CommandOutcome;
 pub use command_spec::CommandSpec;
 pub use env_policy::EnvPolicy;

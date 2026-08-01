@@ -1,3 +1,4 @@
+use crate::design::Fact;
 use crate::diagnostics::{ErrorId, Result};
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -6,7 +7,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
@@ -50,6 +51,52 @@ fn retrying(attempt: impl Fn() -> Result<CommandOutcome>) -> Result<CommandOutco
         }
     }
     attempt()
+}
+
+/// 読み出し1回分の結果。
+enum Read1 {
+    /// signalに中断された読み出し。
+    Interrupted,
+    Bytes(&'static [u8]),
+    /// pipeそのものが読めなくなった。
+    Failed,
+    /// 読み出しの最中にthreadが落ちた。
+    Crashed,
+}
+
+/// 決めた順に読み出しを返すfake stream。
+///
+/// 実際のpipeでは中断も失敗も起こる時期を選べないため、経路はこのfakeから踏む。
+struct ScriptedPipe {
+    reads: std::vec::IntoIter<Read1>,
+}
+
+impl ScriptedPipe {
+    fn new(reads: Vec<Read1>) -> ScriptedPipe {
+        ScriptedPipe {
+            reads: reads.into_iter(),
+        }
+    }
+}
+
+impl Read for ScriptedPipe {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        match self.reads.next() {
+            Some(Read1::Interrupted) => Err(std::io::ErrorKind::Interrupted.into()),
+            Some(Read1::Bytes(bytes)) => {
+                buffer[..bytes.len()].copy_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            Some(Read1::Failed) => Err(std::io::Error::other("the pipe could not be read")),
+            // threadを落とす。`panic!`はlintが禁じているため、無い要素を読んで落とす。
+            Some(Read1::Crashed) => {
+                let nothing: Vec<usize> = Vec::new();
+                Ok(nothing[0])
+            }
+            // 台本を使い切ったらEOFとする。
+            None => Ok(0),
+        }
+    }
 }
 
 /// 診断が持つ事実の項目名。
@@ -130,6 +177,30 @@ fn passthrough_hands_the_streams_to_the_terminal_instead_of_capturing_them() -> 
         "passthrough output belongs to the terminal, not to a buffer"
     );
     assert!(!outcome.stderr_lossy);
+    Ok(())
+}
+
+#[test]
+fn an_interactive_command_is_handed_the_terminal_and_waited_for_without_a_limit() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let record = dir.path().join("record");
+    let fake = fake_executable(
+        dir.path(),
+        "fake-tool",
+        &format!(r#"printf 'ran' > "{}""#, record.display()),
+    )?;
+
+    let spec = CommandSpec::inherit(fake.to_str().required()?, &[]);
+    // 終える時期を決めるのは利用者であり、sbxmは待ち切る。
+    assert_eq!(spec.timeout.duration(), None);
+    let outcome = run_fake(&spec).required_because("the fake tool runs")?;
+
+    assert_eq!(fs::read_to_string(&record).required()?, "ran");
+    assert!(outcome.success());
+    assert!(
+        outcome.stdout.is_empty() && outcome.stderr.is_empty(),
+        "the terminal was handed over, so there is nothing to capture"
+    );
     Ok(())
 }
 
@@ -293,6 +364,11 @@ sleep 30"#,
     let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
         .refused_because("the command must be terminated")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    // 書き込み端を握るprocessが残っていれば、readerの回収はその分だけ返らない。
+    assert!(
+        started.elapsed() < Duration::from_millis(1500),
+        "no pipe may stay open after the run returns"
+    );
 
     std::thread::sleep(Duration::from_secs(3).saturating_sub(started.elapsed()));
     assert!(
@@ -323,6 +399,86 @@ fn a_spawn_failure_that_is_not_a_missing_program_keeps_what_was_observed() -> Ch
         labels(&error)?,
         vec!["diagnostic-command-label", "diagnostic-cause-label"],
         "the invocation and the reason the OS gave are both kept"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_read_is_resumed_instead_of_ending_the_stream() -> Checked {
+    let pipe = ScriptedPipe::new(vec![
+        Read1::Interrupted,
+        Read1::Bytes(b"out"),
+        Read1::Interrupted,
+        Read1::Bytes(b"put"),
+    ]);
+
+    let collected = spawn_reader(pipe)
+        .join()
+        .required_because("the reader ends")?
+        .required_because("an interrupted read is not a failure")?;
+
+    assert_eq!(collected, b"output");
+    Ok(())
+}
+
+#[test]
+fn a_stream_that_stops_being_readable_reports_it_instead_of_the_bytes_so_far() -> Checked {
+    let pipe = ScriptedPipe::new(vec![Read1::Bytes(b"half"), Read1::Failed]);
+
+    let error = spawn_reader(pipe)
+        .join()
+        .required_because("the reader ends")?
+        .refused_because("the stream could not be read to the end")?;
+
+    assert_eq!(error.kind(), std::io::ErrorKind::Other);
+    Ok(())
+}
+
+#[test]
+fn output_that_could_not_be_read_is_refused_rather_than_taken_as_empty() -> Checked {
+    let spec = CommandSpec::probe("fake-tool", &[]);
+    let reader = std::thread::spawn(|| Err(std::io::Error::other("the pipe could not be read")));
+
+    let error = collect_reader(Some(reader), &spec)
+        .refused_because("a stream that could not be read is not an empty stream")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandOutputUnreadable)
+    );
+    assert_eq!(
+        labels(&error)?,
+        vec!["diagnostic-command-label", "diagnostic-cause-label"]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_reader_that_ends_abnormally_is_refused_the_same_way() -> Checked {
+    let spec = CommandSpec::probe("fake-tool", &[]);
+    let reader = spawn_reader(ScriptedPipe::new(vec![
+        Read1::Bytes(b"half"),
+        Read1::Crashed,
+    ]));
+
+    let error = collect_reader(Some(reader), &spec)
+        .refused_because("a reader that never finished read nothing")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandOutputUnreadable)
+    );
+    // 原因はOSの原文ではなく、sbxm自身が観測したことなので翻訳する。
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?;
+    assert!(
+        diagnostic
+            .facts
+            .iter()
+            .any(|fact| matches!(fact, Fact::Translated { .. })),
+        "the reason sbxm observed is a translated fact"
     );
     Ok(())
 }

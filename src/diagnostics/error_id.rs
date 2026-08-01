@@ -150,6 +150,7 @@ error_ids! {
     ExternalCommandSpawnFailed => "external-command-spawn-failed",
     ExternalCommandFailed => "external-command-failed",
     ExternalCommandTimeout => "external-command-timeout",
+    ExternalCommandOutputUnreadable => "external-command-output-unreadable",
     ExternalOutputUnparseable => "external-output-unparseable",
 
     // --- Docker Sandboxes互換性 ---
