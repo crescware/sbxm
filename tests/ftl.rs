@@ -209,6 +209,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-config-invalid-value", "detail"),
     ("error-git-identity-invalid", "detail"),
     ("error-metadata-invalid-value", "detail"),
+    ("error-global-state-unusable", "path"),
+    ("error-global-state-unusable", "detail"),
 ];
 
 #[test]
