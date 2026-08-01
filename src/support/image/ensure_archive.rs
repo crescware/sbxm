@@ -4,8 +4,9 @@ use std::path::PathBuf;
 use crate::archive;
 
 use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
+use crate::design::Fact;
 use crate::design::ProgressSink;
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::hash::short_hex;
 use crate::msg;
 use crate::paths::{self, PathScope, ProjectPaths};
@@ -31,13 +32,13 @@ pub fn ensure_archive(
     // project lockを保持しているため、残っている一時fileは中断した実行の跡である。
     if paths::regular_file_exists(&temporary, PathScope::ProjectPath)? {
         fs::remove_file(&temporary).map_err(|error| {
-            Error::new(
-                ErrorId::AtomicWriteFailed,
-                msg!(
-                    "error-atomic-write-failed",
-                    path = paths::display(&temporary),
-                    detail = error
-                ),
+            Error::single(
+                Diagnostic::new(
+                    ErrorId::AtomicWriteFailed,
+                    msg!("error-atomic-write-failed"),
+                )
+                .fact(Fact::path(&paths::display(&temporary)))
+                .fact(Fact::cause(&error.to_string())),
             )
         })?;
     }

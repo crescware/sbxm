@@ -2,7 +2,8 @@ use std::fs::{self};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use crate::paths::inspect::{
@@ -16,13 +17,13 @@ pub(super) fn replaceable_identity(target: &Path, mode: u32) -> Result<FileIdent
         return Err(PathScope::ProjectPath.symlink_error(target));
     }
     let metadata = fs::symlink_metadata(target).map_err(|error| {
-        Error::new(
-            ErrorId::AtomicWriteFailed,
-            msg!(
-                "error-atomic-write-failed",
-                path = display(target),
-                detail = error
-            ),
+        Error::single(
+            Diagnostic::new(
+                ErrorId::AtomicWriteFailed,
+                msg!("error-atomic-write-failed"),
+            )
+            .fact(Fact::path(&display(target)))
+            .fact(Fact::cause(&error.to_string())),
         )
     })?;
     if !metadata.is_file() {

@@ -144,7 +144,7 @@ error-project-path-unexpected-type = { $path } は { $observed } ですが、sbx
 error-project-path-unreadable = 案件のpathを読み取れません
 
 error-document-render-failed = documentを組み立てられませんでした
-error-atomic-write-failed = { $path } への書き込みに失敗しました: { $detail }
+error-atomic-write-failed = fileへの書き込みに失敗しました
 error-cleanup-failed = { $path } を削除できませんでした: { $detail }
 error-temp-file-left-behind = 中断した実行の一時file { $path } が残っています。
 error-target-appeared-concurrently = 作成中に { $path } が出現したため、何も上書きしませんでした。
@@ -214,6 +214,8 @@ cause-worktree-on-a-branch = worktreeが { $observed } 上にあり、この案�
 cause-worktree-outside-shared-repository = worktreeが共有repositoryの外にあります
 cause-managed-worktree-absent = 案件はこのmanaged worktreeを求めていますが、Gitが持っていません
 cause-dockerfile-absent = この案件のDockerfileが存在しません
+cause-no-parent-directory = 対象に親directoryがありません
+cause-no-file-name = 対象にfile名がありません
 cause-labels-declare-something-else = labelがこの案件とこの世代を宣言していません
 cause-archive-entry-absent = archiveに { $entry } がありません
 cause-archive-entry-not-json = { $entry } がJSONではありません: { $detail }

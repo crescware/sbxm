@@ -1,7 +1,8 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths::{self, PRIVATE_DIR_MODE, PathScope};
 
@@ -14,13 +15,13 @@ pub(super) fn ephemeral_context() -> Result<tempfile::TempDir> {
         .permissions(std::fs::Permissions::from_mode(PRIVATE_DIR_MODE))
         .tempdir()
         .map_err(|error| {
-            Error::new(
-                ErrorId::AtomicWriteFailed,
-                msg!(
-                    "error-atomic-write-failed",
-                    path = BUILD_CONTEXT_PREFIX,
-                    detail = error
-                ),
+            Error::single(
+                Diagnostic::new(
+                    ErrorId::AtomicWriteFailed,
+                    msg!("error-atomic-write-failed"),
+                )
+                .fact(Fact::path(BUILD_CONTEXT_PREFIX))
+                .fact(Fact::cause(&error.to_string())),
             )
         })?;
 

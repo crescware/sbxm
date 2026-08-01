@@ -258,6 +258,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-project-path-unreadable", "detail"),
     ("error-document-render-failed", "document"),
     ("error-document-render-failed", "detail"),
+    ("error-atomic-write-failed", "path"),
+    ("error-atomic-write-failed", "detail"),
 ];
 
 #[test]

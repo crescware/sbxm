@@ -144,7 +144,7 @@ error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expe
 error-project-path-unreadable = The project path could not be read
 
 error-document-render-failed = The document could not be built
-error-atomic-write-failed = Writing { $path } failed: { $detail }
+error-atomic-write-failed = Writing the file failed
 error-cleanup-failed = { $path } could not be removed: { $detail }
 error-temp-file-left-behind = An interrupted run left the temporary file { $path } behind.
 error-target-appeared-concurrently = { $path } appeared while it was being created, so nothing was overwritten.
@@ -214,6 +214,8 @@ cause-worktree-on-a-branch = the worktree is on { $observed }, and this project 
 cause-worktree-outside-shared-repository = the worktree is outside the shared repository
 cause-managed-worktree-absent = the project asks for this managed worktree, but Git does not have it
 cause-dockerfile-absent = the Dockerfile of this project is absent
+cause-no-parent-directory = the target has no parent directory
+cause-no-file-name = the target has no file name
 cause-labels-declare-something-else = the labels do not declare this project and generation
 cause-archive-entry-absent = the archive has no { $entry }
 cause-archive-entry-not-json = { $entry } is not JSON: { $detail }

@@ -21,13 +21,13 @@ pub fn ensure_directory(path: &Path) -> Result<()> {
         Ok(metadata) => Err(unexpected_type(path, "directory", &metadata)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir_all(path)
             .map_err(|error| {
-                Error::new(
-                    ErrorId::AtomicWriteFailed,
-                    msg!(
-                        "error-atomic-write-failed",
-                        path = display(path),
-                        detail = error
-                    ),
+                Error::single(
+                    Diagnostic::new(
+                        ErrorId::AtomicWriteFailed,
+                        msg!("error-atomic-write-failed"),
+                    )
+                    .fact(Fact::path(&display(path)))
+                    .fact(Fact::cause(&error.to_string())),
                 )
             }),
         Err(error) => Err(Error::single(
