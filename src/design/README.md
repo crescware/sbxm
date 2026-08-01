@@ -289,14 +289,42 @@ commandは説明行へ混ぜず、専用のCommand blockにする。
 
 1. error ID
 2. localized description
-3. remediation explanation
-4. 実行を求めるcommand
-5. 外部invocation metadata
+3. 事実の行
+4. remediation explanation
+5. 実行を求めるcommand
 6. 外部output
 
-error headingとdescriptionの間は詰める。remediation、invocation、external outputは別の小blockとして一行空ける。複数diagnosticの間にも空行一行を置く。
+error headingとdescriptionの間は詰める。事実の行もdescriptionへ続けて詰める。remediationとexternal outputは別の小blockとして一行空ける。複数diagnosticの間にも空行一行を置く。
 
 外部stderrはsbxm自身のdiagnosticと区別できるよう、四空白indentまたは罫線でまとめる。外部stderr全体を着色しない。外部outputの前後ではstyleをresetし、外部byte列がrendererのstyle stateへ侵入しないようにする。
+
+#### 事実の行
+
+診断が示す変数は、説明文へ埋め込まず、項目名を伴う行として並べる。
+
+```text
+× error: external-output-unparseable
+  The output could not be interpreted
+  Command: sbx ls
+  Cause: EOF while parsing an object at line 1 column 1
+```
+
+同じ色の一文へ変数を連結すると、読み手はまず「どこが変数か」「どこで区切れるか」を探すことになる。項目名を左へ置いて行を分ければ、色を1つも足さずに境界が決まる。翻訳messageは値の連結から解放され、翻訳者はcolonの前後を組み立てずに済む。
+
+- 項目名は`Msg`として翻訳する。末尾のcolonはlocale resourceが持つ
+- 項目名はdim、値は`Inline`のvariantが決めた装飾とする
+- 項目名の幅は揃えない。診断ごとに項目が変わるうえ数も少なく、揃えるほど値の左端が遠ざかる
+- 値が1行に収まらない場合は、項目名だけの行に続けて四空白indentで並べる。改行を1行へ潰さない
+- 複数行の値は外部が書いた原文であり、着色せず、行ごとに前後でstyleをresetする
+
+値は次の2つのどちらかであり、混ぜない。
+
+- 外部が書いた原文。OSやparserやgitが返した文字列であり、翻訳しない
+- 翻訳するmessage。sbxm自身が観測したことを述べる文であり、`Fact::reason`で渡す
+
+`sbxm`自身が書いた英語の文を原文として値へ渡さない。翻訳された説明のあとに英語の断片が続く出力になる。
+
+翻訳するmessageの末尾へ、外部が書いた原文をcolonで連結しない。事実の行へ移しても、同じ「どこで区切れるか」を読み手へ押しつけることになる。外部が答えを書いた場合は、それが原因そのものである。sbxmが何をしていたかは、上に並ぶ行が示す。
 
 ## command表示
 
@@ -337,9 +365,10 @@ command行はbold + cyanとする。色なしでも前後の空行によって�
 - `sbxm prepare`などの後続操作
 - error remediation
 - 再登録、復旧、再実行
-- 実行済み外部commandのinvocation表示
 
 翻訳messageへ`$command`を渡し、文章内に埋め込まない。説明は翻訳resource、commandはtyped modelから渡す。
+
+この規則は**利用者に実行を求めるcommand**だけのものである。既に実行して失敗したcommandは実行指示ではないため、独立blockにも前後の空行にもしない。診断のなかで`Command:`の事実の行として示す。行を占有させる理由は「そのまま貼り付けて実行する」ことにあり、実行済みの起動にはその理由がない。二つを同じ形で描くと、読み手はどちらを実行すべきかを区別できなくなる。
 
 ## tableと状態値
 
@@ -375,6 +404,8 @@ pub enum VisualState {
 - error ID
 
 翻訳済み文字列をsubstring検索して部分装飾しない。typed fragmentとして渡せない場合は、無理に部分着色せず文章全体を既定色にする。
+
+部分装飾が必要に見えたときは、まず値を文中から追い出せないかを検討する。値をtyped fragmentとして渡せる場所は、`Field`、`Cell`、そして診断の`Fact`である。いずれも項目名と値が構造として分かれているため、文中を検索せずに装飾を決められる。地の文へ値を混ぜたまま色で救おうとするより、行を分けるほうが色を使わずに解決する。
 
 path、ID、利用者データへANSI sequenceを埋め込まない。
 
@@ -533,9 +564,16 @@ pub enum Block {
     Verbatim(String),
     Rule,
 }
+
+pub enum Fact {
+    OneLine { label: Msg, value: Inline },
+    ManyLines { label: Msg, lines: Vec<String> },
+}
 ```
 
 `Warning`と`Note`は、markerとlocalized labelを伴う一行として同じ規則で描く。severityを色だけに委ねないため、labelは翻訳対象とする。
+
+`Fact`は診断が示す事実1件であり、翻訳する項目名と翻訳しない値を型で分ける。1行に収まるかどうかは`Fact::new`が値から決め、rendererは判断しない。rendererに判断させると、同じ値が呼び出し側ごとに違う形へ落ちる。
 
 `Verbatim`はhelpとversionだけが使う。既に組み立てられた本文をそのまま置き、末尾の改行だけをrendererが揃える。
 
@@ -553,12 +591,13 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 2. 既存のBlockまたはcomponentで表現できるか確認する
 3. localized textを`Msg`として追加する
 4. path、ID、stateをtyped fragmentとして渡す
-5. 実行commandがあれば`CommandLine`として別blockにする
-6. statusには文脈に応じた`VisualState`を明示する
-7. printerは`Document`を返し、直接描画しない
-8. plain outputの構造testを追加する
-9. 必要な場合だけstyled output testを追加する
-10. 色なし、狭いterminal、別localeでも意味が維持されるか確認する
+5. 診断の変数は説明文へ連結せず、`Fact`の行として渡す
+6. 実行commandがあれば`CommandLine`として別blockにする
+7. statusには文脈に応じた`VisualState`を明示する
+8. printerは`Document`を返し、直接描画しない
+9. plain outputの構造testを追加する
+10. 必要な場合だけstyled output testを追加する
+11. 色なし、狭いterminal、別localeでも意味が維持されるか確認する
 
 新しい色、marker、block typeをcommand固有の都合で追加しない。既存componentで不十分なら、デザインシステム全体の語彙として妥当かを先に検討する。
 
@@ -573,6 +612,10 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 - 翻訳済み文字列をsubstring検索して部分styleを適用する
 - 翻訳文へcommandを埋め込む
 - commandを説明、番号、bulletと同じ行に置く
+- 実行済みのinvocationを、実行を求めるcommandと同じ独立blockで描く
+- 事実として示す値を説明文にも重ねて置く
+- 事実の値の改行を1行へ潰す
+- 説明文や翻訳messageの末尾へ、外部が書いた原文をcolonで連結する
 - `println!("\n...")`でblock間隔を作る
 - status文字列から色を推測する
 - commandごとにprompt themeを作る
@@ -617,6 +660,17 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 - 通常の末尾改行が一個
 - section headingと内容の間に空行がない
 - 空sectionの扱い
+
+### fact
+
+- 項目名と値が一行に並ぶ
+- 1行に収まらない値が項目名の下へ字下げされる
+- 末尾だけの改行が形を変えない
+- 値がないときに項目名の後ろへ空白が残らない
+- 項目名がdim、値が`Inline`由来の装飾を持つ
+- 複数行の値の前後でstyleがresetされる
+- localeとcolor modeを変えても行数が変わらない
+- どのmessageも外部由来のdetailを引数に取らない
 
 ### command
 
@@ -664,6 +718,8 @@ promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocale�
 - 色を使いすぎていないか
 - boldの優先順位があるか
 - italicやemojiが混入していないか
+- 説明文へ変数を連結せず、事実の行へ追い出せていないか
+- 実行を求めるcommandと実行済みのinvocationを描き分けているか
 - commandが独立行か
 - commandの前後に空行があるか
 - stdout/stderrの責務が正しいか

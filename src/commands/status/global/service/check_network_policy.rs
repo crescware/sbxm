@@ -1,5 +1,6 @@
 use crate::command::HostEnvironment;
 use crate::compatibility::{EXPECTED_NETWORK_POLICY, parse_network_policy};
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
@@ -37,24 +38,22 @@ pub fn check_network_policy(host: &dyn HostEnvironment, status: &mut GlobalStatu
             }
             Err(error) => {
                 push(status, "status-item-network-policy", StatusValue::Error);
-                status.diagnostics.push(Diagnostic::new(
-                    ErrorId::NetworkPolicyUnobservable,
-                    msg!(
-                        "error-network-policy-unobservable",
-                        detail = describe(&error)
-                    ),
-                ));
+                status.diagnostics.push(
+                    Diagnostic::new(
+                        ErrorId::NetworkPolicyUnobservable,
+                        msg!("error-network-policy-unobservable"),
+                    )
+                    .fact(Fact::cause(&describe(&error))),
+                );
             }
         },
         Err(error) => {
             push(status, "status-item-network-policy", StatusValue::Error);
             let mut diagnostic = Diagnostic::new(
                 ErrorId::NetworkPolicyUnobservable,
-                msg!(
-                    "error-network-policy-unobservable",
-                    detail = describe(&error)
-                ),
-            );
+                msg!("error-network-policy-unobservable"),
+            )
+            .fact(Fact::cause(&describe(&error)));
             if let Some(external) = external_of(&error) {
                 diagnostic = diagnostic.external(external);
             }

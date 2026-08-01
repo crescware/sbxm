@@ -1,5 +1,6 @@
 use crate::command::HostEnvironment;
-use crate::diagnostics::{ErrorId, Result, fail};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{GitIdentity, validate_git_identity_value};
 use crate::msg;
 use crate::support::identity;
@@ -27,9 +28,10 @@ fn accept(field: &str, value: &str) -> Result<String> {
     let value = value.trim();
     match validate_git_identity_value(value) {
         Ok(()) => Ok(value.to_string()),
-        Err(detail) => fail(
-            ErrorId::InvalidValue,
-            msg!("error-git-identity-invalid", field = field, detail = detail),
-        ),
+        Err(reason) => Err(Error::single(
+            Diagnostic::new(ErrorId::InvalidValue, msg!("error-git-identity-invalid"))
+                .fact(Fact::field(field))
+                .fact(Fact::reason(reason)),
+        )),
     }
 }

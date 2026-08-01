@@ -1,5 +1,6 @@
 use crate::command::HostEnvironment;
 use crate::diagnostics::Result;
+use crate::msg;
 
 use crate::support::sandbox;
 
@@ -36,7 +37,11 @@ pub fn adopt_worktree(
     if common != git_dir {
         return Err(unusable(
             path,
-            &format!("the worktree belongs to {common}, not to {git_dir}"),
+            msg!(
+                "cause-worktree-belongs-elsewhere",
+                observed = common,
+                expected = git_dir
+            ),
         ));
     }
     Ok(())

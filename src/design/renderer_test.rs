@@ -13,7 +13,7 @@ use crate::design::Cell;
 use crate::design::diagnostic::Remediation;
 use crate::design::policy::CharacterSet;
 use crate::design::style::VisualState;
-use crate::design::{Field, GuidanceItem, LegendEntry};
+use crate::design::{Fact, Field, GuidanceItem, LegendEntry};
 use crate::diagnostics::{Diagnostic, ErrorId, ExternalFailure};
 use crate::i18n::Locale;
 
@@ -274,7 +274,7 @@ fn an_ascii_stream_swaps_the_glyphs_without_changing_the_meaning() -> Checked {
 
 #[test]
 fn a_warning_names_its_severity_in_words_as_well_as_in_color() -> Checked {
-    let drawn = plain(&Document::new().warning(msg!("destroy-force-notice")))?;
+    let drawn = plain(&Document::new().warning(msg!("destroy-force-notice"), Vec::new()))?;
     assert!(drawn.starts_with("! Warning: "), "{drawn:?}");
     Ok(())
 }
@@ -290,7 +290,7 @@ fn a_note_is_told_apart_from_a_warning_without_color() -> Checked {
 fn a_diagnostic_keeps_its_id_in_english_behind_a_marker() -> Checked {
     let drawn = plain(&Document::new().diagnostic(Diagnostic::new(
         ErrorId::DockerUnreachable,
-        msg!("error-docker-unreachable", detail = "no answer"),
+        msg!("error-docker-unreachable"),
     )))?;
     assert!(
         drawn.starts_with("\u{d7} error: docker-unreachable\n"),
@@ -310,18 +310,12 @@ fn a_diagnostic_keeps_its_id_in_english_behind_a_marker() -> Checked {
 fn a_remediation_separates_the_explanation_from_the_command() -> Checked {
     let drawn = plain(
         &Document::new().diagnostic(
-            Diagnostic::new(
-                ErrorId::ConfigUnreadable,
-                msg!(
-                    "error-config-unreadable",
-                    path = "/x",
-                    detail = "no such file"
+            Diagnostic::new(ErrorId::ConfigUnreadable, msg!("error-config-unreadable"))
+                .fact(Fact::path("/x"))
+                .remediation(
+                    Remediation::text(msg!("remediation-fix-config", path = "/x"))
+                        .try_run("sbxm status --global"),
                 ),
-            )
-            .remediation(
-                Remediation::text(msg!("remediation-fix-config", path = "/x"))
-                    .try_run("sbxm status --global"),
-            ),
         ),
     )?;
     let lines: Vec<&str> = drawn.lines().collect();
@@ -374,14 +368,156 @@ fn external_output_is_bracketed_by_a_reset_when_the_stream_is_colored() -> Check
 }
 
 #[test]
-fn the_invocation_of_a_failed_command_is_its_own_line() -> Checked {
+fn the_invocation_of_a_failed_command_is_a_labelled_row_next_to_the_description() -> Checked {
+    // 実行を求めるcommandではないため、独立blockにも空行にも頼らない。
     let drawn = plain(&Document::new().diagnostic(failed(b"", &["build", "--tag"])))?;
     let lines: Vec<&str> = drawn.lines().collect();
     let index = lines
         .iter()
-        .position(|line| *line == "docker build --tag")
-        .required_because("the invocation is shown as one line")?;
-    assert_eq!(lines[index - 1], "", "{drawn:?}");
+        .position(|line| *line == "  Command: docker build --tag")
+        .required_because("the invocation is one labelled row")?;
+    assert_ne!(lines[index - 1], "", "{drawn:?}");
+    assert!(!drawn.contains("\ndocker build --tag"), "{drawn:?}");
+    Ok(())
+}
+
+#[test]
+fn the_working_directory_follows_the_command_as_another_row() -> Checked {
+    let mut diagnostic = failed(b"", &["build"]);
+    if let Some(external) = diagnostic.external.as_mut() {
+        external.working_dir = Some(std::path::PathBuf::from("/tmp/example"));
+    }
+    let drawn = plain(&Document::new().diagnostic(diagnostic))?;
+    assert!(
+        drawn.contains("  Command: docker build\n  Working directory: /tmp/example\n"),
+        "{drawn:?}"
+    );
+    Ok(())
+}
+
+/// `sbx ls`の出力を読めなかったときの診断。事実だけを持ち、外部stderrは持たない。
+fn unreadable_output(cause: &str) -> Diagnostic {
+    Diagnostic::new(
+        ErrorId::ExternalOutputUnparseable,
+        msg!("error-external-output-unparseable"),
+    )
+    .fact(Fact::new(
+        msg!("diagnostic-command-label"),
+        Inline::important("sbx ls"),
+    ))
+    .fact(Fact::new(
+        msg!("diagnostic-cause-label"),
+        Inline::text(cause),
+    ))
+}
+
+#[test]
+fn a_fact_keeps_the_label_and_the_value_on_one_line_below_the_description() -> Checked {
+    let drawn = plain(&Document::new().diagnostic(unreadable_output(
+        "EOF while parsing an object at line 1 column 1",
+    )))?;
+    assert_eq!(
+        drawn,
+        concat!(
+            "\u{d7} error: external-output-unparseable\n",
+            "  The output could not be interpreted\n",
+            "  Command: sbx ls\n",
+            "  Cause: EOF while parsing an object at line 1 column 1\n",
+        ),
+        "{drawn:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_fact_that_does_not_fit_one_line_is_indented_under_its_label() -> Checked {
+    // 改行を1行へ潰すと、外部が示した位置が失われる。
+    let drawn = plain(&Document::new().diagnostic(unreadable_output("first\nsecond\n")))?;
+    assert!(
+        drawn.contains("  Cause:\n    first\n    second\n"),
+        "{drawn:?}"
+    );
+    assert!(drawn.ends_with("    second\n"), "{drawn:?}");
+    Ok(())
+}
+
+#[test]
+fn a_value_that_only_ends_with_a_newline_stays_on_the_label_line() -> Checked {
+    let drawn = plain(&Document::new().diagnostic(unreadable_output("only one\n")))?;
+    assert!(drawn.contains("  Cause: only one\n"), "{drawn:?}");
+    Ok(())
+}
+
+#[test]
+fn a_fact_without_a_value_leaves_no_trailing_space() -> Checked {
+    let drawn = plain(&Document::new().diagnostic(unreadable_output("")))?;
+    assert!(drawn.contains("  Cause\u{3a}\n"), "{drawn:?}");
+    assert!(!drawn.contains(" \n"), "{drawn:?}");
+    Ok(())
+}
+
+#[test]
+fn a_fact_label_is_muted_and_the_matching_value_is_the_one_that_stands_out() -> Checked {
+    // 色は足さない。dimな項目名とboldな値で境界を作る。
+    let drawn = colored(&Document::new().diagnostic(unreadable_output("unreadable")))?;
+    let command = drawn
+        .lines()
+        .find(|line| line.contains("sbx ls"))
+        .required_because("the command row is drawn")?;
+    assert!(command.starts_with("  \u{1b}[2mCommand:"), "{command:?}");
+    assert!(command.contains("\u{1b}[1msbx ls"), "{command:?}");
+    // 原因は外部の原文であり、強調も着色もしない。
+    let cause = drawn
+        .lines()
+        .find(|line| line.contains("unreadable"))
+        .required_because("the cause row is drawn")?;
+    assert!(cause.ends_with("\u{1b}[0m unreadable"), "{cause:?}");
+    Ok(())
+}
+
+#[test]
+fn a_fact_that_spans_lines_is_bracketed_by_a_reset_when_the_stream_is_colored() -> Checked {
+    // 外部が残したstyleを、sbxm自身の出力へ持ち越さない。
+    let drawn = colored(&Document::new().diagnostic(unreadable_output("\u{1b}[31mred\nplain")))?;
+    assert!(
+        drawn.contains("    \u{1b}[0m\u{1b}[31mred\u{1b}[0m\n"),
+        "{drawn:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_diagnostic_with_facts_keeps_its_shape_in_every_locale_and_policy() -> Checked {
+    let document = Document::new()
+        .diagnostic(unreadable_output("first\nsecond"))
+        .diagnostic(failed(b"boom", &["build"]));
+    let expected = plain(&document)?.lines().count();
+    for locale in Locale::ALL {
+        for policy in [
+            StreamPolicy::plain(),
+            StreamPolicy::colored(),
+            StreamPolicy::ascii(),
+        ] {
+            let mut buffer: Vec<u8> = Vec::new();
+            {
+                let mut renderer = Renderer::new(&mut buffer, policy);
+                renderer.write(&Catalog::new(locale), &document);
+            }
+            let drawn = String::from_utf8(buffer).required_because("UTF-8")?;
+            assert_eq!(
+                drawn.lines().count(),
+                expected,
+                "{locale} {policy:?} changed the shape: {drawn}"
+            );
+            assert!(!drawn.contains("\n\n\n"), "{locale} {policy:?}: {drawn:?}");
+            if !policy.color {
+                assert!(
+                    !drawn.as_bytes().contains(&ESC),
+                    "{locale} {policy:?}: {drawn:?}"
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -391,15 +527,11 @@ fn several_diagnostics_are_separated_by_one_blank_line() -> Checked {
         &Document::new()
             .diagnostic(Diagnostic::new(
                 ErrorId::ConfigUnreadable,
-                msg!(
-                    "error-config-unreadable",
-                    path = "/x",
-                    detail = "no such file"
-                ),
+                msg!("error-config-unreadable"),
             ))
             .diagnostic(Diagnostic::new(
                 ErrorId::DockerUnreachable,
-                msg!("error-docker-unreachable", detail = "no answer"),
+                msg!("error-docker-unreachable"),
             )),
     )?;
     assert!(!drawn.contains("\n\n\n"), "{drawn:?}");
@@ -478,4 +610,55 @@ fn strip_ansi(text: &str) -> String {
         }
     }
     out
+}
+
+#[test]
+fn a_warning_shows_its_facts_under_the_marker_line() -> Checked {
+    // warningは軽い診断ではなく、止まらずに報告する同じ形である。
+    let drawn = plain(&Document::new().warning(
+        msg!("warning-build-context-left-behind"),
+        vec![
+            Fact::path("/tmp/sbxm-build-context-a41f"),
+            Fact::cause("Directory not empty (os error 39)"),
+        ],
+    ))?;
+    let lines: Vec<&str> = drawn.lines().collect();
+    assert!(lines[0].starts_with("! Warning: "), "{drawn:?}");
+    assert_eq!(
+        lines[1], "  Path: /tmp/sbxm-build-context-a41f",
+        "{drawn:?}"
+    );
+    assert_eq!(
+        lines[2], "  Cause: Directory not empty (os error 39)",
+        "{drawn:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_cause_sbxm_observed_itself_is_drawn_in_the_chosen_language() -> Checked {
+    // 外部の原文は訳さないが、sbxm自身の観測は訳す。値の出どころで経路が分かれる。
+    let document = Document::new().diagnostic(
+        Diagnostic::new(
+            ErrorId::MetadataUnreadable,
+            msg!("error-metadata-unreadable"),
+        )
+        .fact(Fact::path("/work/.sbxm/metadata.yaml"))
+        .fact(Fact::reason(msg!("cause-symbolic-link"))),
+    );
+    let mut buffer: Vec<u8> = Vec::new();
+    {
+        let mut renderer = Renderer::new(&mut buffer, StreamPolicy::plain());
+        renderer.write(&Catalog::new(Locale::Ja), &document);
+    }
+    let drawn = String::from_utf8(buffer).required_because("UTF-8")?;
+    assert!(
+        drawn.contains("  原因: pathがsymbolic linkです"),
+        "{drawn:?}"
+    );
+    assert!(
+        drawn.contains("  path: /work/.sbxm/metadata.yaml"),
+        "{drawn:?}"
+    );
+    Ok(())
 }

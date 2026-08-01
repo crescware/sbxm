@@ -1,6 +1,7 @@
 use crate::command::HostEnvironment;
 use crate::diagnostics::Result;
 use crate::metadata::CreationMode;
+use crate::msg;
 
 use crate::support::sandbox;
 
@@ -26,7 +27,7 @@ pub fn verify_mode(
             if !outcome.success() || observed != expected {
                 return Err(unusable(
                     path,
-                    &format!("the worktree is not on {expected}"),
+                    msg!("cause-worktree-not-on-branch", expected = expected),
                 ));
             }
         }
@@ -34,7 +35,7 @@ pub fn verify_mode(
             if outcome.success() {
                 return Err(unusable(
                     path,
-                    &format!("the worktree is on {observed}, and this project uses detached heads"),
+                    msg!("cause-worktree-on-a-branch", observed = observed),
                 ));
             }
         }

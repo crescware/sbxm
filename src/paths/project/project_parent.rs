@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::diagnostics::{Error, ErrorId, Result, fail};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 
 use crate::paths::inspect::{display, lexically_standardize};
@@ -16,14 +17,14 @@ pub struct ProjectParent(PathBuf);
 impl ProjectParent {
     /// processのcurrent directoryから決める。
     pub fn current() -> Result<ProjectParent> {
+        // current directoryを読めなかった時点で、示せるpathは1つもない。
         let declared = std::env::current_dir().map_err(|error| {
-            Error::new(
-                ErrorId::WorkingDirectoryUnusable,
-                msg!(
-                    "error-working-directory-unusable",
-                    path = "-",
-                    detail = error
-                ),
+            Error::single(
+                Diagnostic::new(
+                    ErrorId::WorkingDirectoryUnusable,
+                    msg!("error-working-directory-unusable"),
+                )
+                .fact(Fact::cause(&error.to_string())),
             )
         })?;
         ProjectParent::at(&declared)
@@ -31,24 +32,25 @@ impl ProjectParent {
 
     /// 宣言されたdirectoryを検証する。
     pub fn at(declared: &Path) -> Result<ProjectParent> {
-        let unusable = |detail: &str| {
-            fail(
-                ErrorId::WorkingDirectoryUnusable,
-                msg!(
-                    "error-working-directory-unusable",
-                    path = display(declared),
-                    detail = detail
-                ),
-            )
+        let unusable = |cause: Fact| {
+            Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::WorkingDirectoryUnusable,
+                    msg!("error-working-directory-unusable"),
+                )
+                .fact(Fact::path(&display(declared)))
+                .fact(cause),
+            ))
         };
+        let observed = |reason: Msg| unusable(Fact::reason(reason));
         if !declared.is_absolute() {
-            return unusable("the directory is not an absolute path");
+            return observed(msg!("cause-not-absolute"));
         }
         let standardized = lexically_standardize(declared);
         match fs::symlink_metadata(&standardized) {
             Ok(metadata) if metadata.is_dir() => Ok(ProjectParent(standardized)),
-            Ok(_) => unusable("the path is not a directory"),
-            Err(error) => unusable(&error.to_string()),
+            Ok(_) => observed(msg!("cause-not-a-directory")),
+            Err(error) => unusable(Fact::cause(&error.to_string())),
         }
     }
 

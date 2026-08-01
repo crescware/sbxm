@@ -1,5 +1,5 @@
 use crate::design::Remediation;
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::project::CanonicalProjectId;
 
@@ -48,13 +48,14 @@ impl RepositoryIdentity {
         canonical_id: &str,
         transport: &str,
         clone_url: &str,
-    ) -> std::result::Result<RepositoryIdentity, String> {
+    ) -> std::result::Result<RepositoryIdentity, Msg> {
         let identity =
             RepositoryIdentity::from_index_parts(provider, canonical_id, transport, clone_url)?;
         if identity.owner != owner || identity.name != name {
-            return Err(format!(
-                "the clone URL names {}/{}, not {owner}/{name}",
-                identity.owner, identity.name
+            return Err(msg!(
+                "cause-clone-url-name-mismatch",
+                observed = format!("{}/{}", identity.owner, identity.name),
+                declared = format!("{owner}/{name}")
             ));
         }
         Ok(identity)
@@ -69,30 +70,38 @@ impl RepositoryIdentity {
         canonical_id: &str,
         transport: &str,
         clone_url: &str,
-    ) -> std::result::Result<RepositoryIdentity, String> {
+    ) -> std::result::Result<RepositoryIdentity, Msg> {
         let declared_provider = Provider::parse(provider)
-            .ok_or_else(|| format!("{provider} is not a supported provider"))?;
+            .ok_or_else(|| msg!("cause-provider-unsupported", observed = provider))?;
         let declared_transport = CloneTransport::parse(transport)
-            .ok_or_else(|| format!("{transport} is not a supported clone transport"))?;
-        let identity = interpret(clone_url)
-            .map_err(|_| format!("{clone_url} is not one of {}", accepted_clone_url_forms()))?;
+            .ok_or_else(|| msg!("cause-clone-transport-unsupported", observed = transport))?;
+        let identity = interpret(clone_url).map_err(|_| {
+            msg!(
+                "cause-clone-url-unrecognized",
+                observed = clone_url,
+                accepted = accepted_clone_url_forms()
+            )
+        })?;
 
         if identity.provider != declared_provider {
-            return Err(format!(
-                "the clone URL names provider {}, not {declared_provider}",
-                identity.provider
+            return Err(msg!(
+                "cause-clone-url-provider-mismatch",
+                observed = identity.provider,
+                declared = declared_provider
             ));
         }
         if identity.transport != declared_transport {
-            return Err(format!(
-                "the clone URL uses the {} transport, not {declared_transport}",
-                identity.transport
+            return Err(msg!(
+                "cause-clone-url-transport-mismatch",
+                observed = identity.transport,
+                declared = declared_transport
             ));
         }
         if identity.canonical_id.as_str() != canonical_id {
-            return Err(format!(
-                "the clone URL folds to {}, not {canonical_id}",
-                identity.canonical_id
+            return Err(msg!(
+                "cause-clone-url-identity-mismatch",
+                observed = identity.canonical_id,
+                declared = canonical_id
             ));
         }
         Ok(identity)

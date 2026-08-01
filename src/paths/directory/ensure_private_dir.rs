@@ -2,7 +2,8 @@ use std::fs;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use crate::paths::inspect::{
@@ -35,13 +36,13 @@ pub fn ensure_private_dir(path: &Path, mode: u32, scope: PathScope) -> Result<()
             // permissionはmkdirの時点で決める。作ってから絞ると、そのあいだに別のprocess
             // が広いmodeのdirectoryを観測し、自分のものではないとして拒否してしまう。
             let failed = |error: std::io::Error| {
-                Error::new(
-                    ErrorId::AtomicWriteFailed,
-                    msg!(
-                        "error-atomic-write-failed",
-                        path = display(path),
-                        detail = error
-                    ),
+                Error::single(
+                    Diagnostic::new(
+                        ErrorId::AtomicWriteFailed,
+                        msg!("error-atomic-write-failed"),
+                    )
+                    .fact(Fact::path(&display(path)))
+                    .fact(Fact::cause(&error.to_string())),
                 )
             };
             fs::DirBuilder::new()

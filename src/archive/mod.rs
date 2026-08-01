@@ -15,7 +15,9 @@ mod max_entry_bytes;
 mod octal;
 mod read_entry;
 mod read_manifest;
+mod reported;
 mod trimmed;
+mod unreadable;
 mod unusable;
 mod verify_holds_image;
 
@@ -30,7 +32,9 @@ use max_entry_bytes::MAX_ENTRY_BYTES;
 use octal::octal;
 use read_entry::read_entry;
 pub use read_manifest::read_manifest;
+use reported::reported;
 use trimmed::trimmed;
+use unreadable::unreadable;
 use unusable::unusable;
 pub use verify_holds_image::verify_holds_image;
 

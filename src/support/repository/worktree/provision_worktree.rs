@@ -1,6 +1,7 @@
 use crate::command::HostEnvironment;
 use crate::diagnostics::Result;
 use crate::metadata::CreationMode;
+use crate::msg;
 
 use crate::support::sandbox;
 
@@ -28,7 +29,11 @@ pub fn provision_worktree(
     if head != expected_commit {
         return Err(unusable(
             path,
-            &format!("HEAD is {head}, and this project starts from {expected_commit}"),
+            msg!(
+                "cause-head-differs",
+                observed = head,
+                expected = expected_commit
+            ),
         ));
     }
     verify_mode(host, sandbox, path, branch, mode)

@@ -1,6 +1,6 @@
-use crate::diagnostics::Result;
+use crate::diagnostics::{Result, unparseable};
 
-use super::{json_documents, unparseable};
+use super::json_documents;
 
 /// 一覧を`key`で包んだ出力を読む。
 ///

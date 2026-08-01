@@ -49,11 +49,8 @@ impl CommandOutcome {
         Err(Error::single(
             crate::diagnostics::Diagnostic::new(
                 ErrorId::ExternalCommandFailed,
-                msg!(
-                    "error-external-command-failed",
-                    program = self.program,
-                    exit_status = self.status
-                ),
+                // programは事実の行が示すため、説明文へは繰り返さない。
+                msg!("error-external-command-failed", exit_status = self.status),
             )
             .external(failure),
         ))

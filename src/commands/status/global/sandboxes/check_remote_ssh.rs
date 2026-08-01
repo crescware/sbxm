@@ -1,4 +1,5 @@
 use crate::command::HostEnvironment;
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
@@ -36,8 +37,9 @@ pub fn check_remote_ssh(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
             push(status, "status-item-remote-ssh", StatusValue::Error);
             let mut diagnostic = Diagnostic::new(
                 ErrorId::RemoteSshUnobservable,
-                msg!("error-remote-ssh-unobservable", detail = describe(&error)),
-            );
+                msg!("error-remote-ssh-unobservable"),
+            )
+            .fact(Fact::cause(&describe(&error)));
             if let Some(external) = external_of(&error) {
                 diagnostic = diagnostic.external(external);
             }

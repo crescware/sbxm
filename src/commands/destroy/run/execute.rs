@@ -6,7 +6,7 @@ use crate::msg;
 use crate::paths::{self, PathScope};
 use crate::project::SandboxName;
 
-use crate::design::{ProgressSink, Warning};
+use crate::design::{Fact, ProgressSink, Warning};
 use crate::support::daemon;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::secret;
@@ -60,11 +60,11 @@ pub fn execute(
     if lock_file.exists()
         && let Err(error) = std::fs::remove_file(&lock_file)
     {
-        warnings.push(Warning::text(msg!(
-            "warning-lock-file-left-behind",
-            path = paths::display(&lock_file),
-            detail = error
-        )));
+        warnings.push(
+            Warning::text(msg!("warning-lock-file-left-behind"))
+                .fact(Fact::path(&paths::display(&lock_file)))
+                .fact(Fact::cause(&error.to_string())),
+        );
     }
 
     Ok(DestroyOutcome {
@@ -85,17 +85,12 @@ fn require_absent(host: &dyn HostEnvironment, name: &SandboxName) -> Result<()> 
 /// 管理情報の削除に失敗した。残ったpathを示す。
 fn cleanup_failed(path: &Path, error: &std::io::Error) -> Error {
     Error::single(
-        Diagnostic::new(
-            ErrorId::CleanupFailed,
-            msg!(
-                "error-cleanup-failed",
-                path = paths::display(path),
-                detail = error
-            ),
-        )
-        .remediation(msg!(
-            "remediation-cleanup-failed",
-            path = paths::display(path)
-        )),
+        Diagnostic::new(ErrorId::CleanupFailed, msg!("error-cleanup-failed"))
+            .fact(Fact::path(&paths::display(path)))
+            .fact(Fact::cause(&error.to_string()))
+            .remediation(msg!(
+                "remediation-cleanup-failed",
+                path = paths::display(path)
+            )),
     )
 }

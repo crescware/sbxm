@@ -1,7 +1,7 @@
 use crate::diagnostics::{Diagnostic, Error, ErrorId};
 use crate::msg;
 
-use crate::design::Remediation;
+use crate::design::{Fact, Remediation};
 
 /// 端末が読めなかったことを報告する。
 ///
@@ -11,10 +11,8 @@ pub fn unreadable(error: &std::io::Error) -> Error {
         return Error::Canceled;
     }
     Error::single(
-        Diagnostic::new(
-            ErrorId::PromptUnreadable,
-            msg!("error-prompt-unreadable", detail = error),
-        )
-        .remediation(Remediation::text(msg!("remediation-prompt-unreadable"))),
+        Diagnostic::new(ErrorId::PromptUnreadable, msg!("error-prompt-unreadable"))
+            .fact(Fact::cause(&error.to_string()))
+            .remediation(Remediation::text(msg!("remediation-prompt-unreadable"))),
     )
 }

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use crate::diagnostics::{ErrorId, Result, fail};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::paths::{self};
 use crate::project::{CanonicalProjectId, SandboxName};
@@ -46,30 +47,26 @@ impl RegistryEntry {
 
 /// project rootとして保存してよいpathか。
 fn require_absolute_root(declared: &Path) -> Result<PathBuf> {
+    let rejected = |reason: Msg| {
+        Err(Error::single(
+            Diagnostic::new(
+                ErrorId::RegistryInvalidValue,
+                msg!("error-registry-invalid-value"),
+            )
+            .fact(Fact::field("project_root"))
+            .fact(Fact::value(&paths::display(declared)))
+            .fact(Fact::reason(reason)),
+        ))
+    };
     if !declared.is_absolute() {
-        return fail(
-            ErrorId::RegistryInvalidValue,
-            msg!(
-                "error-registry-invalid-value",
-                field = "project_root",
-                detail = format!("{} is not an absolute path", paths::display(declared))
-            ),
-        );
+        return rejected(msg!("cause-not-absolute"));
     }
     let standardized = paths::lexically_standardize(declared);
     if standardized != declared {
-        return fail(
-            ErrorId::RegistryInvalidValue,
-            msg!(
-                "error-registry-invalid-value",
-                field = "project_root",
-                detail = format!(
-                    "{} holds a relative component and resolves to {}",
-                    paths::display(declared),
-                    paths::display(&standardized)
-                )
-            ),
-        );
+        return rejected(msg!(
+            "cause-relative-component",
+            standardized = paths::display(&standardized)
+        ));
     }
     Ok(standardized)
 }

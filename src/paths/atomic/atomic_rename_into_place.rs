@@ -1,7 +1,8 @@
 use std::fs::{self, File};
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use crate::paths::inspect::{display, is_symlink, unexpected_type};
@@ -25,13 +26,13 @@ pub fn atomic_rename_into_place(temp: &Path, target: &Path) -> Result<()> {
     }
 
     fs::rename(temp, target).map_err(|error| {
-        Error::new(
-            ErrorId::AtomicWriteFailed,
-            msg!(
-                "error-atomic-write-failed",
-                path = display(target),
-                detail = error
-            ),
+        Error::single(
+            Diagnostic::new(
+                ErrorId::AtomicWriteFailed,
+                msg!("error-atomic-write-failed"),
+            )
+            .fact(Fact::path(&display(target)))
+            .fact(Fact::cause(&error.to_string())),
         )
     })?;
     if let Some(parent) = target.parent()

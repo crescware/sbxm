@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
 
@@ -24,13 +25,16 @@ pub(super) fn require_no_symlink_in_sandbox(
         current.push('/');
         current.push_str(part);
         if sandbox::exec(host, sandbox, &["test", "-h", &current])?.success() {
-            return Err(Error::new(
-                ErrorId::DeclaredFileUnusable,
-                msg!(
-                    "error-declared-file-unusable",
-                    source = paths::display(source),
-                    detail = format!("{current} is a symbolic link inside the sandbox")
-                ),
+            return Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::DeclaredFileUnusable,
+                    msg!("error-declared-file-unusable"),
+                )
+                .fact(Fact::source(&paths::display(source)))
+                .fact(Fact::reason(msg!(
+                    "cause-symbolic-link-in-sandbox",
+                    observed = current
+                ))),
             ));
         }
     }

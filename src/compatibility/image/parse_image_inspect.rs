@@ -1,7 +1,7 @@
-use crate::diagnostics::Result;
+use crate::diagnostics::{Result, unparseable};
 use crate::image_labels::{LabelDefect, labels_from_declared};
 
-use crate::compatibility::json::{string_field, unparseable};
+use crate::compatibility::json::string_field;
 
 use super::ImageIdentity;
 

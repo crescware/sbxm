@@ -5,7 +5,7 @@ use crate::design::table::Table;
 use crate::design::Cell;
 use crate::design::text::CommandLine;
 
-use super::{Block, Field, Guidance, GuidanceItem, LegendEntry, Section, SectionBody};
+use super::{Block, Fact, Field, Guidance, GuidanceItem, LegendEntry, Section, SectionBody};
 
 /// 1回の出力。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -94,8 +94,8 @@ impl Document {
     /// 結果を隠さずに伝える注意。
     ///
     /// 成功を打ち消さないよう、summaryとは別blockのまま両方を残す。
-    pub fn warning(self, message: Msg) -> Document {
-        self.push(Block::Warning(message))
+    pub fn warning(self, message: Msg, facts: Vec<Fact>) -> Document {
+        self.push(Block::Warning { message, facts })
     }
 
     /// 本文から切り離して読ませる注記。

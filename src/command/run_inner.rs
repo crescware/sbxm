@@ -1,7 +1,8 @@
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use super::{CommandOutcome, CommandSpec, EnvPolicy, OutputPolicy, spawn_reader, wait_with_limit};
@@ -42,13 +43,13 @@ pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<C
                 msg!("error-external-command-not-found", program = spec.program),
             )
         } else {
-            Error::new(
-                ErrorId::ExternalCommandSpawnFailed,
-                msg!(
-                    "error-external-command-spawn-failed",
-                    program = spec.program,
-                    detail = error
-                ),
+            Error::single(
+                Diagnostic::new(
+                    ErrorId::ExternalCommandSpawnFailed,
+                    msg!("error-external-command-spawn-failed"),
+                )
+                .fact(Fact::command(&spec.program))
+                .fact(Fact::cause(&error.to_string())),
             )
         }
     })?;

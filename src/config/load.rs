@@ -1,7 +1,8 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use crate::diagnostics::{Error, ErrorId, Result, fail};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope, permission_too_open};
 
@@ -24,26 +25,20 @@ pub fn load(location: &ConfigLocation) -> Result<ConfigState> {
             return Ok(ConfigState::Missing);
         }
         Err(error) => {
-            return fail(
-                ErrorId::ConfigUnreadable,
-                msg!(
-                    "error-config-unreadable",
-                    path = paths::display(&path),
-                    detail = error
-                ),
-            );
+            return Err(Error::single(
+                Diagnostic::new(ErrorId::ConfigUnreadable, msg!("error-config-unreadable"))
+                    .fact(Fact::path(&paths::display(&path)))
+                    .fact(Fact::cause(&error.to_string())),
+            ));
         }
     };
 
     if !metadata.is_file() {
-        return fail(
-            ErrorId::ConfigUnreadable,
-            msg!(
-                "error-config-unreadable",
-                path = paths::display(&path),
-                detail = "the configuration path is not a regular file"
-            ),
-        );
+        return Err(Error::single(
+            Diagnostic::new(ErrorId::ConfigUnreadable, msg!("error-config-unreadable"))
+                .fact(Fact::path(&paths::display(&path)))
+                .fact(Fact::reason(msg!("cause-not-a-regular-file"))),
+        ));
     }
 
     let mode = metadata.permissions().mode();
@@ -52,13 +47,10 @@ pub fn load(location: &ConfigLocation) -> Result<ConfigState> {
     }
 
     let text = fs::read_to_string(&path).map_err(|error| {
-        Error::new(
-            ErrorId::ConfigUnreadable,
-            msg!(
-                "error-config-unreadable",
-                path = paths::display(&path),
-                detail = error
-            ),
+        Error::single(
+            Diagnostic::new(ErrorId::ConfigUnreadable, msg!("error-config-unreadable"))
+                .fact(Fact::path(&paths::display(&path)))
+                .fact(Fact::cause(&error.to_string())),
         )
     })?;
 

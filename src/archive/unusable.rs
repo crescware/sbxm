@@ -1,16 +1,13 @@
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId};
-use crate::msg;
-use crate::paths;
+use crate::design::Fact;
+use crate::diagnostics::{Error, Msg};
 
-pub(super) fn unusable(path: &Path, detail: &str) -> Error {
-    Error::new(
-        ErrorId::ArchiveUnusable,
-        msg!(
-            "error-archive-unusable",
-            path = paths::display(path),
-            detail = detail
-        ),
-    )
+use super::reported;
+
+/// archiveを受け付けられないことを報告する。
+///
+/// archiveの中身をどう読めなかったかはsbxm自身の観測であり、外部の原文ではない。
+pub(super) fn unusable(path: &Path, reason: Msg) -> Error {
+    Error::single(reported(path).fact(Fact::reason(reason)))
 }

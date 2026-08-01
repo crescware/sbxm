@@ -5,6 +5,7 @@ mod block;
 mod cell;
 pub mod diagnostic;
 pub mod document;
+mod fact;
 #[cfg(test)]
 mod fake;
 mod field;
@@ -36,6 +37,7 @@ pub use block::Block;
 pub use cell::Cell;
 pub use diagnostic::{Remediation, Warning};
 pub use document::Document;
+pub use fact::Fact;
 #[cfg(test)]
 pub use fake::SilentProgress;
 pub use field::Field;

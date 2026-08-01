@@ -1,6 +1,4 @@
-use crate::diagnostics::Result;
-
-use crate::compatibility::json::unparseable;
+use crate::diagnostics::{Result, unparseable};
 
 use super::DaemonState;
 

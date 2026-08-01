@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId};
 use crate::msg;
 
@@ -108,21 +109,18 @@ impl PathScope {
 
     pub fn unreadable_error(self, path: &Path, detail: &str) -> Error {
         match self {
-            PathScope::ConfigFile | PathScope::ConfigDir => Error::new(
-                ErrorId::ConfigUnreadable,
-                msg!(
-                    "error-config-unreadable",
-                    path = display(path),
-                    detail = detail
-                ),
+            PathScope::ConfigFile | PathScope::ConfigDir => Error::single(
+                Diagnostic::new(ErrorId::ConfigUnreadable, msg!("error-config-unreadable"))
+                    .fact(Fact::path(&display(path)))
+                    .fact(Fact::cause(detail)),
             ),
-            PathScope::ProjectPath => Error::new(
-                ErrorId::ProjectPathUnreadable,
-                msg!(
-                    "error-project-path-unreadable",
-                    path = display(path),
-                    detail = detail
-                ),
+            PathScope::ProjectPath => Error::single(
+                Diagnostic::new(
+                    ErrorId::ProjectPathUnreadable,
+                    msg!("error-project-path-unreadable"),
+                )
+                .fact(Fact::path(&display(path)))
+                .fact(Fact::cause(detail)),
             ),
         }
     }

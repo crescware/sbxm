@@ -56,7 +56,7 @@ pub fn ensure(
     let Some(entry) = find(host, sandbox)? else {
         return Err(unusable(
             sandbox.as_str(),
-            "the sandbox is absent right after it was created",
+            msg!("cause-sandbox-absent-after-create"),
         ));
     };
     verify(&entry, sandbox, &workspace)?;

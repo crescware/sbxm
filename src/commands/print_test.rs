@@ -36,7 +36,7 @@ fn shape(document: &Document) -> Vec<&'static str> {
                 SectionBody::Empty(_) => "empty",
             },
             Block::Guidance(_) => "guidance",
-            Block::Warning(_) => "warning",
+            Block::Warning { .. } => "warning",
             Block::Note(_) => "note",
             Block::Command(_) => "command",
             Block::Diagnostic(_) => "diagnostic",

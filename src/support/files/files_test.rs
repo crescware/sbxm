@@ -4,6 +4,7 @@ use crate::diagnostics::{ErrorId, Result};
 use crate::hash::sha256_hex;
 use crate::paths;
 use std::fs;
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -382,5 +383,66 @@ fn the_content_of_a_declared_file_never_reaches_a_diagnostic() -> Checked {
             "the content never reaches an argument: {args:?}"
         );
     }
+    Ok(())
+}
+
+/// 配置先として拒否された理由のmessage ID。
+fn refused_reason(destination: &str) -> Checked<String> {
+    let error =
+        destination_path(Path::new(destination)).refused_because("the destination is refused")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::DeclaredFileUnusable);
+    diagnostic
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            crate::design::Fact::Translated { value, .. } => Some(value.id.to_string()),
+            _ => None,
+        })
+        .required_because("the observed reason is named")
+}
+
+#[test]
+fn a_destination_that_stays_under_the_agent_home_is_joined_with_slashes() -> Checked {
+    assert_eq!(
+        destination_path(Path::new(".config/example/settings.yaml")).required()?,
+        ".config/example/settings.yaml"
+    );
+    // `./`は位置を変えないため、部品として残さない。
+    assert_eq!(
+        destination_path(Path::new("./.gitconfig")).required()?,
+        ".gitconfig"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_destination_that_leaves_the_agent_home_is_refused_by_its_own_reason() -> Checked {
+    assert_eq!(
+        refused_reason("/etc/passwd")?,
+        "cause-unexpectedly-absolute"
+    );
+    assert_eq!(refused_reason("../outside")?, "cause-leaves-agent-home");
+    assert_eq!(refused_reason(".")?, "cause-value-empty");
+    Ok(())
+}
+
+#[test]
+fn a_destination_that_is_not_utf8_is_refused_rather_than_placed() -> Checked {
+    // Sandbox内のpathは文字列として渡すため、UTF-8で表せない値は配置できない。
+    let raw = PathBuf::from(std::ffi::OsString::from_vec(b"\xff\xfe".to_vec()));
+    let error = destination_path(&raw).refused_because("a name that is not UTF-8")?;
+    let reason = error.diagnostics()[0]
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            crate::design::Fact::Translated { value, .. } => Some(value.id),
+            _ => None,
+        })
+        .required_because("the observed reason is named")?;
+    assert_eq!(reason, "cause-not-valid-utf8");
     Ok(())
 }

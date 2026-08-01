@@ -37,7 +37,7 @@ pub fn ensure(
     if find(host, &image.name)?.is_none() {
         return Err(unusable(
             &image.name,
-            "the template is absent right after it was loaded",
+            msg!("cause-template-absent-after-load"),
         ));
     }
 

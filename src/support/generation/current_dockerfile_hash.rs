@@ -1,4 +1,5 @@
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::hash::sha256_hex;
 use crate::msg;
 use crate::paths::{self, PathScope, ProjectPaths};
@@ -7,13 +8,13 @@ use crate::paths::{self, PathScope, ProjectPaths};
 pub fn current_dockerfile_hash(paths: &ProjectPaths) -> Result<String> {
     let path = paths.dockerfile();
     if !paths::regular_file_exists(&path, PathScope::ProjectPath)? {
-        return Err(Error::new(
-            ErrorId::ProjectPathUnreadable,
-            msg!(
-                "error-project-path-unreadable",
-                path = paths::display(&path),
-                detail = "the Dockerfile of this project is absent"
-            ),
+        return Err(Error::single(
+            Diagnostic::new(
+                ErrorId::ProjectPathUnreadable,
+                msg!("error-project-path-unreadable"),
+            )
+            .fact(Fact::path(&paths::display(&path)))
+            .fact(Fact::reason(msg!("cause-dockerfile-absent"))),
         ));
     }
     let contents = std::fs::read(&path)

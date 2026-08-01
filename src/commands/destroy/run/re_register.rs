@@ -1,4 +1,5 @@
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{CreationMode, ProjectMetadata};
 use crate::msg;
 use crate::paths::{self, ProjectPaths};
@@ -19,14 +20,17 @@ pub(super) fn re_register(paths: &ProjectPaths, metadata: &ProjectMetadata) -> R
         CreationMode::Attached => Ok(command),
         CreationMode::Detached => match provisioning.start_ref.as_deref() {
             Some(branch) => Ok(format!("{command} --detach {branch}")),
-            None => Err(Error::new(
-                ErrorId::MetadataInvalidValue,
-                msg!(
-                    "error-metadata-invalid-value",
-                    path = paths::display(&paths.metadata_file()),
-                    field = "provisioning.start_ref",
-                    detail = "detached mode requires an explicit start branch"
-                ),
+            None => Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::MetadataInvalidValue,
+                    msg!("error-metadata-invalid-value"),
+                )
+                .fact(Fact::path(&paths::display(&paths.metadata_file())))
+                .fact(Fact::field("provisioning.start_ref"))
+                .fact(Fact::reason(msg!(
+                    "cause-start-branch-required",
+                    mode = CreationMode::Detached
+                ))),
             )),
         },
     }

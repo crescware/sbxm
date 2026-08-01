@@ -46,7 +46,7 @@ fn results_go_to_stdout_and_everything_else_to_stderr() -> Checked {
         ui.warning(&Warning::text(crate::msg!("destroy-force-notice")));
         ui.error(&crate::diagnostics::Error::new(
             ErrorId::DockerUnreachable,
-            crate::msg!("error-docker-unreachable", detail = "no answer"),
+            crate::msg!("error-docker-unreachable"),
         ));
         ui.stdout(&summary());
     });
@@ -148,15 +148,11 @@ fn every_diagnostic_of_one_error_is_reported() -> Checked {
     let error = crate::diagnostics::Error::many(vec![
         Diagnostic::new(
             ErrorId::ConfigUnreadable,
-            crate::msg!(
-                "error-config-unreadable",
-                path = "/x",
-                detail = "no such file"
-            ),
+            crate::msg!("error-config-unreadable"),
         ),
         Diagnostic::new(
             ErrorId::DockerUnreachable,
-            crate::msg!("error-docker-unreachable", detail = "no answer"),
+            crate::msg!("error-docker-unreachable"),
         ),
     ]);
     let streams = Streams::capture(OutputPolicy::plain(), |ui| ui.error(&error));

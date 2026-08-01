@@ -193,6 +193,30 @@ fn every_message_uses_the_same_placeholders_in_every_locale() -> Checked {
     Ok(())
 }
 
+/// 説明文へ連結してはならない引数。
+///
+/// 外部が書いた原文をcolonで文末へつなぐと、読み手はまずどこで区切れるかを探すこと
+/// になる。原因は`Fact`の行として渡し、messageは文だけを持つ。
+const APPENDED_DETAIL: &str = "detail";
+
+#[test]
+fn no_message_appends_an_untranslated_detail() -> Checked {
+    let mut offenders = Vec::new();
+    for locale in locales()? {
+        for (id, variables) in placeholders(&locale)? {
+            if variables.contains(APPENDED_DETAIL) {
+                offenders.push(format!("{locale}.ftl: {id}"));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a cause belongs in a fact row, not at the end of a sentence:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
 #[test]
 fn security_messages_provide_a_description_and_a_remediation() -> Checked {
     for locale in locales()? {
@@ -290,8 +314,10 @@ fn a_sandbox_state_and_a_host_service_state_are_described_separately() -> Checke
 /// 実装が参照するmessage `IDだと分かるprefix`。
 ///
 /// error IDの安定した表記と紛れないよう、prefixは表示文字列側だけを指すものにする。
-const MESSAGE_PREFIXES: [&str; 10] = [
+const MESSAGE_PREFIXES: [&str; 12] = [
     "error-",
+    "diagnostic-",
+    "cause-",
     "remediation-",
     "security-",
     "legend-",

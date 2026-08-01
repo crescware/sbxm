@@ -1,5 +1,4 @@
-use crate::diagnostics::{Error, ErrorId, Result};
-use crate::msg;
+use crate::diagnostics::{Result, unparseable};
 
 use super::Entry;
 
@@ -41,13 +40,9 @@ pub fn parse_list(output: &str) -> Result<Vec<Entry>> {
                     }
                 }
                 None => {
-                    return Err(Error::new(
-                        ErrorId::ExternalOutputUnparseable,
-                        msg!(
-                            "error-external-output-unparseable",
-                            program = "git worktree list",
-                            detail = format!("{key} appears before any worktree")
-                        ),
+                    return Err(unparseable(
+                        "git worktree list",
+                        &format!("{key} appears before any worktree"),
                     ));
                 }
             },

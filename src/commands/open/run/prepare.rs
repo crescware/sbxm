@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::command::{CommandSpec, HostEnvironment};
 use crate::config::ConfigLocation;
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -74,14 +75,9 @@ fn require_docker(host: &dyn HostEnvironment) -> Result<()> {
         return Ok(());
     }
     Err(Error::single(
-        Diagnostic::new(
-            ErrorId::DockerUnreachable,
-            msg!(
-                "error-docker-unreachable",
-                detail = "the server version could not be read"
-            ),
-        )
-        .remediation(msg!("remediation-start-docker")),
+        Diagnostic::new(ErrorId::DockerUnreachable, msg!("error-docker-unreachable"))
+            .fact(Fact::reason(msg!("cause-server-version-unreadable")))
+            .remediation(msg!("remediation-start-docker")),
     ))
 }
 
@@ -106,13 +102,10 @@ fn verify_worktrees(
             return Err(Error::single(
                 Diagnostic::new(
                     ErrorId::SandboxRepositoryUnusable,
-                    msg!(
-                        "error-sandbox-repository-unusable",
-                        path = path,
-                        detail =
-                            "the project asks for this managed worktree, but Git does not have it"
-                    ),
+                    msg!("error-sandbox-repository-unusable"),
                 )
+                .fact(Fact::path(&path))
+                .fact(Fact::reason(msg!("cause-managed-worktree-absent")))
                 .remediation(msg!("remediation-sandbox-repository-unusable", path = path)),
             ));
         }

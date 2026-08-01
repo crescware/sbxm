@@ -1,5 +1,6 @@
 use crate::command::HostEnvironment;
-use crate::diagnostics::{ErrorId, Result, fail};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use crate::support::sandbox;
@@ -17,12 +18,12 @@ pub fn require_branch_name(host: &dyn HostEnvironment, sandbox: &str, branch: &s
     if outcome.success() {
         return Ok(());
     }
-    fail(
-        ErrorId::InvalidBranchName,
-        msg!(
-            "error-invalid-branch-name",
-            value = branch,
-            detail = "git in the sandbox does not accept this as a branch name"
-        ),
-    )
+    Err(Error::single(
+        Diagnostic::new(
+            ErrorId::InvalidBranchName,
+            msg!("error-invalid-branch-name"),
+        )
+        .fact(Fact::value(branch))
+        .fact(Fact::reason(msg!("cause-refused-by-git"))),
+    ))
 }

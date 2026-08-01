@@ -3,6 +3,7 @@ use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
@@ -26,13 +27,13 @@ pub(super) fn atomic_write_with_precondition(
 ) -> Result<()> {
     let temp = temp_path_for(target)?;
     let write_failed = |detail: String| {
-        Error::new(
-            ErrorId::AtomicWriteFailed,
-            msg!(
-                "error-atomic-write-failed",
-                path = display(target),
-                detail = detail
-            ),
+        Error::single(
+            Diagnostic::new(
+                ErrorId::AtomicWriteFailed,
+                msg!("error-atomic-write-failed"),
+            )
+            .fact(Fact::path(&display(target)))
+            .fact(Fact::cause(&detail)),
         )
     };
 

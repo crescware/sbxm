@@ -1,5 +1,6 @@
 use crate::diagnostics::Msg;
 
+use crate::design::Fact;
 use crate::design::text::CommandLine;
 
 /// 結果を隠さずに伝える注意。
@@ -9,6 +10,8 @@ use crate::design::text::CommandLine;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Warning {
     pub description: Msg,
+    /// 説明文から追い出した事実。診断と同じ規則で項目名付きの行にする。
+    pub facts: Vec<Fact>,
     pub guidance: Vec<Msg>,
     pub commands: Vec<CommandLine>,
 }
@@ -18,9 +21,16 @@ impl Warning {
     pub fn text(description: Msg) -> Warning {
         Warning {
             description,
+            facts: Vec::new(),
             guidance: Vec::new(),
             commands: Vec::new(),
         }
+    }
+
+    /// 事実を1件足す。rendererが説明文の直後へ並べる。
+    pub fn fact(mut self, fact: Fact) -> Warning {
+        self.facts.push(fact);
+        self
     }
 
     /// 補足を足す。

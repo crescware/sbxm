@@ -145,9 +145,9 @@ fn formatting_does_not_insert_isolation_marks() -> Checked {
     let catalog = Catalog::new(Locale::En);
     let rendered = catalog
         .format(&msg!(
-            "error-config-unreadable",
+            "error-lock-timeout",
             path = "/home/example/.sbxm/config.yaml",
-            detail = "no such file"
+            seconds = 5
         ))
         .required_because("built-in message must format")?;
     assert!(

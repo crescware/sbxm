@@ -11,7 +11,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::{fake::*, *};
 use crate::command::{CommandOutcome, OutputPolicy};
-use crate::design::SilentProgress;
+use crate::design::{Fact, SilentProgress};
 use crate::testing::archive::image_archive_bytes;
 use crate::testing::value::{DIGEST, IMAGE_ID};
 
@@ -128,10 +128,14 @@ fn a_context_that_cannot_be_removed_is_a_warning_not_a_failed_build() -> Checked
     );
 
     let path = image.warnings[0]
-        .description
-        .args
+        .facts
         .iter()
-        .find_map(|(key, value)| (*key == "path").then_some(value))
+        .find_map(|fact| match fact {
+            Fact::OneLine { label, value } if label.id == "diagnostic-path-label" => {
+                Some(value.as_str())
+            }
+            _ => None,
+        })
         .required_because("the leftover directory is named")?;
     assert!(
         Path::new(path)
@@ -350,9 +354,12 @@ impl HostEnvironment for SavingDocker {
             && spec.args.get(1).is_some_and(|arg| arg == "save")
         {
             save_archive(&self.inner, &self.image_name, &self.image_id).map_err(|unmet| {
-                crate::diagnostics::Error::new(
-                    ErrorId::ArchiveUnusable,
-                    msg!("error-archive-unusable", path = "-", detail = unmet),
+                crate::diagnostics::Error::single(
+                    crate::diagnostics::Diagnostic::new(
+                        ErrorId::ArchiveUnusable,
+                        msg!("error-archive-unusable"),
+                    )
+                    .fact(Fact::cause(&unmet.to_string())),
                 )
             })?;
         }

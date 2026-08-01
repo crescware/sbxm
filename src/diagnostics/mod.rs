@@ -12,6 +12,7 @@ mod external_failure;
 mod fail;
 mod msg;
 mod result;
+mod unparseable;
 
 pub use diagnostic::Diagnostic;
 pub use document_version::DocumentVersion;
@@ -22,6 +23,7 @@ pub use external_failure::ExternalFailure;
 pub use fail::fail;
 pub use msg::Msg;
 pub use result::Result;
+pub use unparseable::unparseable;
 
 #[cfg(test)]
 #[path = "diagnostics_test.rs"]
