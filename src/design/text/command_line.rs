@@ -7,6 +7,9 @@ use super::InvalidCommandLine;
 ///
 /// secretを含まないことは生成時点の責務であり、この型はsanitizerではない。redactは
 /// `support::secret`のように値を組み立てる側が行う。
+///
+/// `Display`を実装しない。文へ埋め込む手段を型が持てば、独立したblockとして描くという
+/// 不変条件をrendererの外から破れる。描くのは`as_str`を受け取るpainterだけとする。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandLine {
     value: String,
@@ -37,11 +40,5 @@ impl CommandLine {
 
     pub fn as_str(&self) -> &str {
         &self.value
-    }
-}
-
-impl std::fmt::Display for CommandLine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.value)
     }
 }
