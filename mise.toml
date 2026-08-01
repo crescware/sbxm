@@ -1,11 +1,25 @@
 [tools]
 rust = "1.89.0"
 zig = "0.16.0"
+"github:taiki-e/cargo-llvm-cov" = "0.8.7"
 
 [tasks.fmt]
 description = "sourceを整形する"
 run = "cargo fmt --all"
 
+[tasks.coverage]
+description = "testを実行してcoverageの最低基準を確認する"
+run = '''
+cargo llvm-cov \
+  --workspace \
+  --all-features \
+  --summary-only \
+  --ignore-filename-regex '(^|/)tests/|[^/]*_test[^/]*\.rs$' \
+  --fail-under-lines 90 \
+  --fail-under-functions 90 \
+  --fail-under-regions 87
+'''
+
 [tasks.check]
-description = "整形・lint・testをすべて確認する"
-run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features"
+description = "整形・lint・test・coverageをすべて確認する"
+run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && mise run coverage"

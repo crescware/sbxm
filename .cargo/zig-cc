@@ -1,3 +1,17 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # cargoはlinkerに単一の実行ファイルしか渡せないため、`zig cc`をここで束ねる。
-exec zig cc "$@"
+# `-u symbol`はzig 0.16では入力ファイルと解釈されるため、linkerへ直接渡す形式に揃える。
+set -euo pipefail
+
+args=()
+while (($#)); do
+  if [[ $1 == -u && $# -ge 2 ]]; then
+    args+=("-Wl,-u,$2")
+    shift 2
+  else
+    args+=("$1")
+    shift
+  fi
+done
+
+exec zig cc "${args[@]}"
