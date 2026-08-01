@@ -264,6 +264,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-cleanup-failed", "detail"),
     ("error-lock-unavailable", "path"),
     ("error-lock-unavailable", "detail"),
+    ("error-external-command-spawn-failed", "program"),
+    ("error-external-command-spawn-failed", "detail"),
 ];
 
 #[test]

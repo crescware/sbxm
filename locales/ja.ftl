@@ -153,7 +153,7 @@ error-lock-timeout = ほかのsbxmの実行が { $path } のlockを保持して�
 error-lock-unavailable = lockを取得できません
 
 error-external-command-not-found = command { $program } がPATH上に見つかりません。
-error-external-command-spawn-failed = command { $program } を起動できません: { $detail }
+error-external-command-spawn-failed = commandを起動できません
 error-external-command-failed = commandが { $exit_status } で失敗しました。
 error-external-command-timeout = command { $program } が { $seconds } 秒以内に終了しなかったため停止しました。
 error-external-output-unparseable = 出力を解釈できません

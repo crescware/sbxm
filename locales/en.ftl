@@ -153,7 +153,7 @@ error-lock-timeout = Another sbxm run is holding the lock at { $path }. Waited {
 error-lock-unavailable = The lock could not be acquired
 
 error-external-command-not-found = The command { $program } was not found on PATH.
-error-external-command-spawn-failed = The command { $program } could not be started: { $detail }
+error-external-command-spawn-failed = The command could not be started
 error-external-command-failed = The command failed with { $exit_status }.
 error-external-command-timeout = The command { $program } did not finish within { $seconds } seconds and was terminated.
 error-external-output-unparseable = The output could not be interpreted
