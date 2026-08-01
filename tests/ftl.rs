@@ -251,6 +251,7 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-declared-file-unusable", "detail"),
     ("error-sandbox-repository-unusable", "path"),
     ("error-sandbox-repository-unusable", "detail"),
+    ("error-prompt-unreadable", "detail"),
 ];
 
 #[test]
