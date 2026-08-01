@@ -145,7 +145,7 @@ error-project-path-unreadable = 案件のpathを読み取れません
 
 error-document-render-failed = documentを組み立てられませんでした
 error-atomic-write-failed = fileへの書き込みに失敗しました
-error-cleanup-failed = { $path } を削除できませんでした: { $detail }
+error-cleanup-failed = 管理情報を削除できませんでした
 error-temp-file-left-behind = 中断した実行の一時file { $path } が残っています。
 error-target-appeared-concurrently = 作成中に { $path } が出現したため、何も上書きしませんでした。
 error-target-changed-concurrently = 書き換え中に { $path } が別のfileへ差し替わったため、何も上書きしませんでした。

@@ -145,7 +145,7 @@ error-project-path-unreadable = The project path could not be read
 
 error-document-render-failed = The document could not be built
 error-atomic-write-failed = Writing the file failed
-error-cleanup-failed = { $path } could not be removed: { $detail }
+error-cleanup-failed = The management data could not be removed
 error-temp-file-left-behind = An interrupted run left the temporary file { $path } behind.
 error-target-appeared-concurrently = { $path } appeared while it was being created, so nothing was overwritten.
 error-target-changed-concurrently = { $path } was replaced by another file while it was being rewritten, so nothing was overwritten.

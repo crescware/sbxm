@@ -85,17 +85,12 @@ fn require_absent(host: &dyn HostEnvironment, name: &SandboxName) -> Result<()> 
 /// 管理情報の削除に失敗した。残ったpathを示す。
 fn cleanup_failed(path: &Path, error: &std::io::Error) -> Error {
     Error::single(
-        Diagnostic::new(
-            ErrorId::CleanupFailed,
-            msg!(
-                "error-cleanup-failed",
-                path = paths::display(path),
-                detail = error
-            ),
-        )
-        .remediation(msg!(
-            "remediation-cleanup-failed",
-            path = paths::display(path)
-        )),
+        Diagnostic::new(ErrorId::CleanupFailed, msg!("error-cleanup-failed"))
+            .fact(Fact::path(&paths::display(path)))
+            .fact(Fact::cause(&error.to_string()))
+            .remediation(msg!(
+                "remediation-cleanup-failed",
+                path = paths::display(path)
+            )),
     )
 }
