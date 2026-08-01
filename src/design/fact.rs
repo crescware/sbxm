@@ -23,6 +23,24 @@ pub enum Fact {
 }
 
 impl Fact {
+    /// `Command:`。失敗した外部commandの起動。
+    pub fn command(invocation: &str) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-command-label"),
+            Inline::important(invocation),
+        )
+    }
+
+    /// `Working directory:`。外部commandを起動したdirectory。
+    pub fn directory(path: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-directory-label"), Inline::path(path))
+    }
+
+    /// `Cause:`。外部が書いた原文をそのまま示す。
+    pub fn cause(detail: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))
+    }
+
     /// 事実を1件作る。値の形が表示を決める。
     pub fn new(label: Msg, value: Inline) -> Fact {
         // 末尾の改行は値の一部ではない。残すと1行の値まで複数行として扱ってしまう。

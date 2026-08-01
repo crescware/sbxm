@@ -1,4 +1,4 @@
-use crate::design::{Fact, Inline};
+use crate::design::Fact;
 use crate::msg;
 
 use super::{Diagnostic, Error, ErrorId};
@@ -15,13 +15,7 @@ pub fn unparseable(program: &str, detail: &str) -> Error {
             ErrorId::ExternalOutputUnparseable,
             msg!("error-external-output-unparseable"),
         )
-        .fact(Fact::new(
-            msg!("diagnostic-command-label"),
-            Inline::important(program),
-        ))
-        .fact(Fact::new(
-            msg!("diagnostic-cause-label"),
-            Inline::text(detail),
-        )),
+        .fact(Fact::command(program))
+        .fact(Fact::cause(detail)),
     )
 }

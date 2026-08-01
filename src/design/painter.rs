@@ -337,21 +337,11 @@ impl Painter {
     /// 「何を実行した結果か」であり、それは項目名付きの一行で足りる。
     fn external_facts(&self, catalog: &Catalog, external: &ExternalFailure, out: &mut Vec<u8>) {
         let invocation = format!("{} {}", external.program, external.safe_args.join(" "));
-        self.fact(
-            catalog,
-            &Fact::new(
-                msg!("diagnostic-command-label"),
-                Inline::important(invocation.trim_end()),
-            ),
-            out,
-        );
+        self.fact(catalog, &Fact::command(invocation.trim_end()), out);
         if let Some(directory) = &external.working_dir {
             self.fact(
                 catalog,
-                &Fact::new(
-                    msg!("diagnostic-directory-label"),
-                    Inline::path(crate::paths::display(directory)),
-                ),
+                &Fact::directory(&crate::paths::display(directory)),
                 out,
             );
         }
