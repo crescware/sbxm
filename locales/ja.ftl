@@ -143,7 +143,7 @@ error-project-path-occupied = { $path } は既に存在し、どの案件にも�
 error-project-path-unexpected-type = { $path } は { $observed } ですが、sbxmはそこに { $expected } を必要とします。
 error-project-path-unreadable = 案件のpathを読み取れません
 
-error-document-render-failed = { $document } のdocumentを組み立てられませんでした: { $detail }
+error-document-render-failed = documentを組み立てられませんでした
 error-atomic-write-failed = { $path } への書き込みに失敗しました: { $detail }
 error-cleanup-failed = { $path } を削除できませんでした: { $detail }
 error-temp-file-left-behind = 中断した実行の一時file { $path } が残っています。
@@ -166,6 +166,7 @@ diagnostic-value-label = 値:
 diagnostic-image-label = image:
 diagnostic-template-label = Template:
 diagnostic-sandbox-label = Sandbox:
+diagnostic-document-label = document:
 diagnostic-source-label = source:
 diagnostic-destination-label = 配置先:
 diagnostic-directory-label = 作業directory:

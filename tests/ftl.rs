@@ -256,6 +256,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("warning-lock-file-left-behind", "detail"),
     ("error-project-path-unreadable", "path"),
     ("error-project-path-unreadable", "detail"),
+    ("error-document-render-failed", "document"),
+    ("error-document-render-failed", "detail"),
 ];
 
 #[test]

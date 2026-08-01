@@ -143,7 +143,7 @@ error-project-path-occupied = { $path } already exists and is not registered to 
 error-project-path-unexpected-type = { $path } is a { $observed }, but sbxm expects a { $expected } there.
 error-project-path-unreadable = The project path could not be read
 
-error-document-render-failed = The { $document } document could not be built: { $detail }
+error-document-render-failed = The document could not be built
 error-atomic-write-failed = Writing { $path } failed: { $detail }
 error-cleanup-failed = { $path } could not be removed: { $detail }
 error-temp-file-left-behind = An interrupted run left the temporary file { $path } behind.
@@ -166,6 +166,7 @@ diagnostic-value-label = Value:
 diagnostic-image-label = Image:
 diagnostic-template-label = Template:
 diagnostic-sandbox-label = Sandbox:
+diagnostic-document-label = Document:
 diagnostic-source-label = Source:
 diagnostic-destination-label = Destination:
 diagnostic-directory-label = Working directory:

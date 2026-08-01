@@ -95,6 +95,14 @@ impl Fact {
         )
     }
 
+    /// `Document:`。組み立てに失敗した記録の種別。
+    pub fn document(name: &str) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-document-label"),
+            Inline::important(name),
+        )
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))
