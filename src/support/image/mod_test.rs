@@ -354,9 +354,12 @@ impl HostEnvironment for SavingDocker {
             && spec.args.get(1).is_some_and(|arg| arg == "save")
         {
             save_archive(&self.inner, &self.image_name, &self.image_id).map_err(|unmet| {
-                crate::diagnostics::Error::new(
-                    ErrorId::ArchiveUnusable,
-                    msg!("error-archive-unusable", path = "-", detail = unmet),
+                crate::diagnostics::Error::single(
+                    crate::diagnostics::Diagnostic::new(
+                        ErrorId::ArchiveUnusable,
+                        msg!("error-archive-unusable"),
+                    )
+                    .fact(Fact::cause(&unmet.to_string())),
                 )
             })?;
         }

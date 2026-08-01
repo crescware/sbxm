@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::diagnostics::Result;
 use crate::image_labels::{LabelDefect, labels_from_declared};
+use crate::msg;
 
 use super::{read_entry, read_manifest, unusable};
 
@@ -19,9 +20,10 @@ pub fn verify_holds_image(
     if !manifest.repo_tags.iter().any(|tag| tag == image_name) {
         return Err(unusable(
             path,
-            &format!(
-                "the archive holds {}, not {image_name}",
-                manifest.repo_tags.join(", ")
+            msg!(
+                "cause-archive-holds-another-image",
+                observed = manifest.repo_tags.join(", "),
+                declared = image_name
             ),
         ));
     }
@@ -33,9 +35,11 @@ pub fn verify_holds_image(
             observed => {
                 return Err(unusable(
                     path,
-                    &format!(
-                        "the image in the archive declares {key}: {}, expected {expected}",
-                        observed.map_or("<absent>", String::as_str)
+                    msg!(
+                        "cause-archive-label-differs",
+                        key = key,
+                        observed = observed.map_or("<absent>", String::as_str),
+                        expected = expected
                     ),
                 ));
             }
@@ -54,28 +58,45 @@ fn read_config_labels(
     let Some(bytes) = read_entry(path, config_entry)? else {
         return Err(unusable(
             path,
-            &format!("the archive has no {config_entry}"),
+            msg!("cause-archive-entry-absent", entry = config_entry),
         ));
     };
-    let document: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|error| unusable(path, &format!("{config_entry} is not JSON: {error}")))?;
+    let document: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+        unusable(
+            path,
+            msg!(
+                "cause-archive-entry-not-json",
+                entry = config_entry,
+                detail = error
+            ),
+        )
+    })?;
 
     // image configはOCIとDockerのどちらの表記でも`config`objectの下にlabelを持つ。
     let config = document
         .get("config")
         .or_else(|| document.get("Config"))
         .and_then(|value| value.as_object())
-        .ok_or_else(|| unusable(path, &format!("{config_entry} has no image configuration")))?;
+        .ok_or_else(|| {
+            unusable(
+                path,
+                msg!("cause-archive-entry-has-no-config", entry = config_entry),
+            )
+        })?;
 
     let declared = config.get("Labels").or_else(|| config.get("labels"));
     labels_from_declared(declared).map_err(|defect| match defect {
         LabelDefect::NotAnObject => unusable(
             path,
-            &format!("{config_entry} declares labels that are not an object"),
+            msg!("cause-archive-labels-not-an-object", entry = config_entry),
         ),
         LabelDefect::ValueNotAString(key) => unusable(
             path,
-            &format!("label {key} in {config_entry} is not a string"),
+            msg!(
+                "cause-archive-label-not-a-string",
+                key = key,
+                entry = config_entry
+            ),
         ),
     })
 }

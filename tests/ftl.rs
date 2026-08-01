@@ -241,6 +241,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-image-unusable", "detail"),
     ("warning-build-context-left-behind", "path"),
     ("warning-build-context-left-behind", "detail"),
+    ("error-archive-unusable", "path"),
+    ("error-archive-unusable", "detail"),
 ];
 
 #[test]
