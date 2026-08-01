@@ -5,6 +5,8 @@ mod block;
 mod cell;
 pub mod diagnostic;
 pub mod document;
+#[cfg(test)]
+mod fake;
 mod field;
 mod guidance;
 mod guidance_item;
@@ -22,8 +24,6 @@ pub mod renderer;
 mod row;
 mod section;
 mod section_body;
-#[cfg(test)]
-mod silent_progress;
 pub mod style;
 pub mod table;
 pub mod text;
@@ -36,6 +36,8 @@ pub use block::Block;
 pub use cell::Cell;
 pub use diagnostic::{Remediation, Warning};
 pub use document::Document;
+#[cfg(test)]
+pub use fake::SilentProgress;
 pub use field::Field;
 pub use guidance::Guidance;
 pub use guidance_item::GuidanceItem;
@@ -49,8 +51,6 @@ pub use prompt::PromptUi;
 use row::row;
 pub use section::Section;
 pub use section_body::SectionBody;
-#[cfg(test)]
-pub use silent_progress::SilentProgress;
 pub use style::VisualState;
 pub use table::Table;
 pub use text::{CommandLine, Inline};

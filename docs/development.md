@@ -51,12 +51,13 @@ macOSはこの指定の対象にしない。zigでmacOS向けにリンクする�
 mise run check
 ```
 
-このtaskは整形・lint・testを順に確認し、1つでも満たさなければそこで止まる。満たすべき状態は
-次のとおり。
+このtaskは整形・lint・test・coverageを順に確認し、1つでも満たさなければそこで止まる。満たす
+べき状態は次のとおり。
 
 - `cargo fmt --all -- --check`が差分を報告しない
 - clippyのwarningが0件である
 - testが全件成功する
+- coverageが最低基準を下回らない
 
 整形だけを当てる場合は次を実行する。
 
@@ -67,3 +68,38 @@ mise run fmt
 CLIの公開契約を変えた場合は`tests/snapshots/cli-surface.txt`が差分として現れる。意図した
 変更であることを確認したうえで、`SBXM_UPDATE_SNAPSHOTS=1`で記録を更新し、その差分をreviewに
 含める。
+
+## coverageの母集団
+
+coverageが数えるのは本番codeだけとする。testとtest支援codeは経路を踏ませるために書いたもの
+であり、必ず高いcoverageを示す。本番codeと同じ母集団へ入れると、本番codeの不足を相殺して
+最低基準を通してしまう。
+
+数えないのは次の4か所とする。
+
+- `tests/` — 統合test
+- `src/testing/` — moduleを跨いで使うfixture
+- `fake/` — 1つのmoduleの中だけで使うtest支援code
+- file名に`_test`を含むcode — unit test
+
+`#[cfg(test)]`でしか組み立たないmoduleは、この4か所のいずれかへ置く。外へ置くと
+`tests/module_boundaries.rs`が落ちる。`mise.toml`が渡す`--ignore-filename-regex`が同じ4つ
+を綴っていることも、同じfileが確認する。
+
+本番fileの中に`#[cfg(test)]`で囲んだtest専用の構築関数が12か所残る。`Ui::capture`や
+`StreamPolicy::plain`のように、対象のprivate fieldへ触れるため置き場所を動かせないもので
+ある。llvm-covはfile単位でしか母集団を外せないため、これらは数え続ける。
+
+## 最低基準
+
+母集団を本番codeへ揃えたときの実測は次のとおり。
+
+- 行 — 90.14%、未到達983行 / 9,974行、基準90%
+- 関数 — 90.74%、未到達100 / 1,080、基準90%
+- Region — 88.29%、未到達1,773 / 15,138、基準88%
+
+基準の90/90/88は、今ある未到達分を当面は落とさずに置くための下限であり、testを書かなくてよい
+範囲を示すものではない。本番codeを足すときは、その経路を踏むtestを同じ変更で足す。
+
+割合を下限にする限り、新しく足した未到達codeは、同じ変更で足した到達済みcodeが押し上げた分に
+隠れる。母集団からtest支援codeを外しても、この相殺そのものは消えていない。
