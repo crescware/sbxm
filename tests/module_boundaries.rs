@@ -4,6 +4,10 @@
 //! 非privateなitemを1つに制限する。公開関数を置くファイルは、関数名とfile stemも一致
 //! させる。`mod.rs`はmoduleの入口なので名前の一致は求めないが、実装itemを置かず、
 //! moduleの組み立てとre-exportに限定するため、同じ1公開itemの規則を適用する。
+//!
+//! 境界はcoverageの母集団も決める。`#[cfg(test)]`でしか組み立たないmoduleは本番codeでは
+//! ないため、coverageが数えるpathへ置かない。置き場所の規約と、coverageが実際に外すpath
+//! が食い違うと、test支援codeの高いcoverageが本番codeの不足を相殺する。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -32,11 +36,7 @@ fn source_files_have_one_named_public_subject() -> Result<(), Box<dyn std::error
 
     let mut violations = Vec::new();
     for path in paths {
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|error| format!("{} is outside the repository: {error}", path.display()))?
-            .to_string_lossy()
-            .replace(std::path::MAIN_SEPARATOR, "/");
+        let relative = relative_to(root, &path)?;
         let text = fs::read_to_string(&path)?;
         let syntax = syn::parse_file(&text)?;
         let source = Source {
@@ -255,6 +255,155 @@ fn file_stem(path: &Path) -> &str {
     path.file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or("")
+}
+
+fn relative_to(root: &Path, path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(path
+        .strip_prefix(root)
+        .map_err(|error| format!("{} is outside the repository: {error}", path.display()))?
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/"))
+}
+
+/// coverageが数えない置き場所の規約。
+///
+/// `mise.toml`の`--ignore-filename-regex`が同じ規約を綴る。左が本testの判定、右が
+/// coverage taskへ渡す正規表現の一部であり、両方を書き換えなければ規約は動かせない。
+const OUTSIDE_THE_COVERAGE_POPULATION: [(&str, &str); 4] = [
+    ("tests/", "(^|/)tests/"),
+    ("src/testing/", "(^|/)src/testing/"),
+    ("fake/", "(^|/)fake/"),
+    ("_test", "[^/]*_test[^/]*\\.rs$"),
+];
+
+/// coverageが数えないpathか。
+///
+/// `src`を歩く本testはrepository rootの`tests/`へ到達しないため、残る3つだけを見る。
+fn outside_the_coverage_population(relative: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    relative.starts_with("src/testing/") || relative.contains("/fake/") || name.contains("_test")
+}
+
+/// `#[cfg(test)]`が付いているか。
+fn gated_by_test(attributes: &[syn::Attribute]) -> bool {
+    attributes.iter().any(|attribute| {
+        attribute.path().is_ident("cfg")
+            && attribute
+                .parse_args::<syn::Path>()
+                .is_ok_and(|path| path.is_ident("test"))
+    })
+}
+
+/// `#[path = "..."]`が指すfile名。
+fn path_attribute(declaration: &syn::ItemMod) -> Option<String> {
+    declaration.attrs.iter().find_map(|attribute| {
+        let syn::Meta::NameValue(meta) = &attribute.meta else {
+            return None;
+        };
+        if !meta.path.is_ident("path") {
+            return None;
+        }
+        let syn::Expr::Lit(expression) = &meta.value else {
+            return None;
+        };
+        let syn::Lit::Str(literal) = &expression.lit else {
+            return None;
+        };
+        Some(literal.value())
+    })
+}
+
+/// module宣言が読み込むfile。
+///
+/// `#[path]`はそれを書いたfileのdirectoryから解決する。`#[path]`が無い場合、`mod.rs`と
+/// crate rootは同じdirectory、それ以外のfileはfile stemと同じ名前のdirectoryを探す。
+fn declared_file(declaring: &Path, declaration: &syn::ItemMod) -> Option<PathBuf> {
+    // 中身を持つmoduleは、宣言したfileそのものへ置かれる。
+    if declaration.content.is_some() {
+        return Some(declaring.to_path_buf());
+    }
+    let directory = declaring.parent()?;
+    if let Some(named) = path_attribute(declaration) {
+        return Some(directory.join(named));
+    }
+    let stem = file_stem(declaring);
+    let module_directory = if stem == "mod" || stem == "main" {
+        directory.to_path_buf()
+    } else {
+        directory.join(stem)
+    };
+    let name = declaration.ident.to_string();
+    let file = module_directory.join(format!("{name}.rs"));
+    if file.is_file() {
+        return Some(file);
+    }
+    Some(module_directory.join(name).join("mod.rs"))
+}
+
+#[test]
+fn test_only_modules_are_outside_the_coverage_population() -> Result<(), Box<dyn std::error::Error>>
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut paths = Vec::new();
+    collect_sources(&root.join("src"), &mut paths)?;
+    paths.sort();
+
+    let mut violations = Vec::new();
+    for path in paths {
+        let text = fs::read_to_string(&path)?;
+        let syntax = syn::parse_file(&text)?;
+        for item in &syntax.items {
+            let Item::Mod(declaration) = item else {
+                continue;
+            };
+            if !gated_by_test(&declaration.attrs) {
+                continue;
+            }
+            let declared = declared_file(&path, declaration)
+                .ok_or_else(|| format!("{}: the module has no directory", path.display()))?;
+            let declared = relative_to(root, &declared)?;
+            if !outside_the_coverage_population(&declared) {
+                violations.push(format!(
+                    "{}: `{}` builds only for tests, but {declared} is counted",
+                    relative_to(root, &path)?,
+                    declaration.ident
+                ));
+            }
+        }
+    }
+
+    let places = OUTSIDE_THE_COVERAGE_POPULATION
+        .map(|(place, _)| place)
+        .join(", ");
+    assert!(
+        violations.is_empty(),
+        "test support belongs to {places}:\n{}",
+        violations.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn the_coverage_task_leaves_out_the_same_places() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("mise.toml"))?;
+    let declared = manifest
+        .lines()
+        .find(|line| line.contains("--ignore-filename-regex"))
+        .ok_or("mise.toml leaves out no path from coverage")?;
+
+    let mut missing = Vec::new();
+    for (place, pattern) in OUTSIDE_THE_COVERAGE_POPULATION {
+        if !declared.contains(pattern) {
+            missing.push(format!("{place} ({pattern})"));
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "the coverage task must leave out every place test support may live; missing {}",
+        missing.join(", ")
+    );
+    Ok(())
 }
 
 /// item名をfile stemへ写す。
