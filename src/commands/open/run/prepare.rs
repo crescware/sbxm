@@ -75,14 +75,9 @@ fn require_docker(host: &dyn HostEnvironment) -> Result<()> {
         return Ok(());
     }
     Err(Error::single(
-        Diagnostic::new(
-            ErrorId::DockerUnreachable,
-            msg!(
-                "error-docker-unreachable",
-                detail = "the server version could not be read"
-            ),
-        )
-        .remediation(msg!("remediation-start-docker")),
+        Diagnostic::new(ErrorId::DockerUnreachable, msg!("error-docker-unreachable"))
+            .fact(Fact::reason(msg!("cause-server-version-unreadable")))
+            .remediation(msg!("remediation-start-docker")),
     ))
 }
 

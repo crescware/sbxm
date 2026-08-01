@@ -1,4 +1,5 @@
 use crate::command::HostEnvironment;
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
@@ -66,23 +67,17 @@ pub fn check_host_commands(
         Ok(_) => {
             push(status, "status-item-docker", StatusValue::Error);
             status.diagnostics.push(
-                Diagnostic::new(
-                    ErrorId::DockerUnreachable,
-                    msg!(
-                        "error-docker-unreachable",
-                        detail = "the server version was empty"
-                    ),
-                )
-                .remediation(msg!("remediation-start-docker")),
+                Diagnostic::new(ErrorId::DockerUnreachable, msg!("error-docker-unreachable"))
+                    .fact(Fact::reason(msg!("cause-server-version-empty")))
+                    .remediation(msg!("remediation-start-docker")),
             );
         }
         Err(error) => {
             push(status, "status-item-docker", StatusValue::Error);
-            let mut diagnostic = Diagnostic::new(
-                ErrorId::DockerUnreachable,
-                msg!("error-docker-unreachable", detail = describe(&error)),
-            )
-            .remediation(msg!("remediation-start-docker"));
+            let mut diagnostic =
+                Diagnostic::new(ErrorId::DockerUnreachable, msg!("error-docker-unreachable"))
+                    .fact(Fact::cause(&describe(&error)))
+                    .remediation(msg!("remediation-start-docker"));
             if let Some(external) = external_of(&error) {
                 diagnostic = diagnostic.external(external);
             }

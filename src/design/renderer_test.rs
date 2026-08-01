@@ -290,7 +290,7 @@ fn a_note_is_told_apart_from_a_warning_without_color() -> Checked {
 fn a_diagnostic_keeps_its_id_in_english_behind_a_marker() -> Checked {
     let drawn = plain(&Document::new().diagnostic(Diagnostic::new(
         ErrorId::DockerUnreachable,
-        msg!("error-docker-unreachable", detail = "no answer"),
+        msg!("error-docker-unreachable"),
     )))?;
     assert!(
         drawn.starts_with("\u{d7} error: docker-unreachable\n"),
@@ -531,7 +531,7 @@ fn several_diagnostics_are_separated_by_one_blank_line() -> Checked {
             ))
             .diagnostic(Diagnostic::new(
                 ErrorId::DockerUnreachable,
-                msg!("error-docker-unreachable", detail = "no answer"),
+                msg!("error-docker-unreachable"),
             )),
     )?;
     assert!(!drawn.contains("\n\n\n"), "{drawn:?}");
