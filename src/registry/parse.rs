@@ -5,7 +5,8 @@
 
 use std::path::Path;
 
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
 use crate::repository::RepositoryIdentity;
@@ -18,13 +19,13 @@ pub fn parse(text: &str, path: &Path) -> Result<Index> {
     // 欠落したfieldをsyntax errorではなく名前で報告する。
     let raw = yaml_serde::from_str::<Option<RawRegistry>>(text)
         .map_err(|error: yaml_serde::Error| {
-            Error::new(
-                ErrorId::RegistryInvalidSyntax,
-                msg!(
-                    "error-registry-invalid-syntax",
-                    path = paths::display(path),
-                    detail = error
-                ),
+            Error::single(
+                Diagnostic::new(
+                    ErrorId::RegistryInvalidSyntax,
+                    msg!("error-registry-invalid-syntax"),
+                )
+                .fact(Fact::path(&paths::display(path)))
+                .fact(Fact::cause(&error.to_string())),
             )
         })?
         .unwrap_or_default();

@@ -78,7 +78,7 @@ error-file-declaration-invalid-destination = A declared file has an invalid dest
 warning-config-unknown-key = Unknown key { $key } in { $path } was ignored.
 
 error-registry-unreadable = The project registry could not be read
-error-registry-invalid-syntax = The project registry at { $path } is not valid YAML: { $detail }
+error-registry-invalid-syntax = The project registry is not valid YAML
 error-registry-unknown-version = The project registry at { $path } declares version { $version }, but this build supports { $supported }.
 error-registry-missing-field = The project registry at { $path } is missing the required field { $field }.
 error-registry-invalid-value = Registry field { $field } is not valid: { $detail }
