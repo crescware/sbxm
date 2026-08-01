@@ -36,6 +36,19 @@ impl Inline {
         }
     }
 
+    /// 装飾はそのままに、文字列だけを差し替える。
+    ///
+    /// 値を整えたあとも「これは何か」は変わらない。呼び出し側が装飾を選び直すと、
+    /// 同じ意味の値が場所によって違う見え方になる。
+    pub fn with_text(self, text: &str) -> Inline {
+        match self {
+            Inline::Text(_) => Inline::text(text),
+            Inline::Important(_) => Inline::important(text),
+            Inline::Path(_) => Inline::path(text),
+            Inline::State { state, .. } => Inline::state(text, state),
+        }
+    }
+
     /// 装飾を除いた元の文字列。列幅はこの値から数える。
     pub fn as_str(&self) -> &str {
         match self {

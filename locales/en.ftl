@@ -154,12 +154,13 @@ error-lock-unavailable = The lock at { $path } could not be acquired: { $detail 
 
 error-external-command-not-found = The command { $program } was not found on PATH.
 error-external-command-spawn-failed = The command { $program } could not be started: { $detail }
-error-external-command-failed = The command { $program } failed with { $exit_status }.
+error-external-command-failed = The command failed with { $exit_status }.
 error-external-command-timeout = The command { $program } did not finish within { $seconds } seconds and was terminated.
-error-external-output-unparseable = The output of { $program } could not be interpreted: { $detail }
+error-external-output-unparseable = The output could not be interpreted
 warning-external-output-lossy = The { $stream } output of { $program } was not valid UTF-8 and was converted with replacement characters.
-external-invocation-heading = Command:
-external-directory-heading = Working directory:
+diagnostic-command-label = Command:
+diagnostic-directory-label = Working directory:
+diagnostic-cause-label = Cause:
 external-output-heading = Output of { $program }:
 
 error-sbx-version-unparseable = The Docker Sandboxes CLI version could not be determined from { $observed }.

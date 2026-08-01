@@ -1,6 +1,4 @@
-use crate::diagnostics::Result;
-
-use super::unparseable;
+use crate::diagnostics::{Result, unparseable};
 
 /// 一覧形式と1行1件のJSON形式のどちらでも読む。
 pub fn json_documents(program: &str, output: &str) -> Result<Vec<serde_json::Value>> {

@@ -1,6 +1,5 @@
 use crate::command::HostEnvironment;
-use crate::diagnostics::{Error, ErrorId, Result};
-use crate::msg;
+use crate::diagnostics::{Result, unparseable};
 
 use crate::support::sandbox;
 
@@ -19,13 +18,9 @@ pub(super) fn digest_in_sandbox(
     let text = outcome.stdout_text();
     let digest = text.split_whitespace().next().unwrap_or_default();
     if digest.len() != 64 {
-        return Err(Error::new(
-            ErrorId::ExternalOutputUnparseable,
-            msg!(
-                "error-external-output-unparseable",
-                program = "sha256sum",
-                detail = format!("no digest was reported for {destination}")
-            ),
+        return Err(unparseable(
+            "sha256sum",
+            &format!("no digest was reported for {destination}"),
         ));
     }
     Ok(Some(digest.to_string()))

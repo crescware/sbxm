@@ -1,7 +1,6 @@
 use crate::command::HostEnvironment;
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::diagnostics::{Result, unparseable};
 use crate::git;
-use crate::msg;
 
 use crate::support::sandbox;
 
@@ -39,12 +38,8 @@ pub fn remote_default_branch(
         }
     }
 
-    Err(Error::new(
-        ErrorId::ExternalOutputUnparseable,
-        msg!(
-            "error-external-output-unparseable",
-            program = "git ls-remote --symref",
-            detail = "no branch was reported for HEAD"
-        ),
+    Err(unparseable(
+        "git ls-remote --symref",
+        "no branch was reported for HEAD",
     ))
 }

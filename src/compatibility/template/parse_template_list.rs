@@ -1,6 +1,6 @@
-use crate::diagnostics::Result;
+use crate::diagnostics::{Result, unparseable};
 
-use crate::compatibility::json::{string_field, unparseable, wrapped_documents};
+use crate::compatibility::json::{string_field, wrapped_documents};
 
 use super::TemplateEntry;
 

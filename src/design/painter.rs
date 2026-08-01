@@ -8,7 +8,7 @@ use crate::design::style::{self, GlyphSet, Role, StyleSpec, VisualState};
 use crate::design::table::Table;
 use crate::design::text::{CommandLine, Inline};
 use crate::design::width::{display_width, padding};
-use crate::design::{Block, Field, GuidanceItem, LegendEntry, Section, SectionBody};
+use crate::design::{Block, Fact, Field, GuidanceItem, LegendEntry, Section, SectionBody};
 
 use super::{Trailing, blank, line, paint, row};
 
@@ -258,6 +258,15 @@ impl Painter {
             &format!("{INDENT}{}", Self::format(catalog, &diagnostic.description)),
         );
 
+        // 説明と事実のあいだに空行を置かない。事実は説明から追い出した変数であり、
+        // 別の話題ではない。どのcommandの話かを先に置くため、外部起動を先頭にする。
+        if let Some(external) = &diagnostic.external {
+            self.external_facts(catalog, external, out);
+        }
+        for fact in &diagnostic.facts {
+            self.fact(catalog, fact, out);
+        }
+
         let mut trailing = Trailing::Normal;
         if let Some(remediation) = &diagnostic.remediation {
             if !remediation.explanation.is_empty() {
@@ -287,37 +296,78 @@ impl Painter {
             }
         }
 
-        if let Some(external) = &diagnostic.external {
-            self.external(catalog, external, out);
+        if let Some(external) = &diagnostic.external
+            && self.external_output(catalog, external, out)
+        {
             trailing = Trailing::Normal;
         }
         trailing
     }
 
-    fn external(&self, catalog: &Catalog, external: &ExternalFailure, out: &mut Vec<u8>) {
-        blank(out);
-        line(
-            out,
-            &self.small_heading(catalog, "external-invocation-heading"),
-        );
-        blank(out);
-        // 失敗した工程を同じ形で読めるよう、起動そのものを一行で示す。実行指示ではないが、
-        // 診断のなかでは同じ視認性を持たせる。
-        let invocation = format!("{} {}", external.program, external.safe_args.join(" "));
-        line(out, &self.role(invocation.trim_end(), Role::Command));
+    /// 事実1件。項目名はdim、値は`Inline`が決めた装飾とする。
+    ///
+    /// 項目名の幅は揃えない。診断ごとに項目が変わるうえ数も少なく、揃えるほど値の左端が
+    /// 遠ざかる。項目名末尾のcolonはlocale resourceが持つ。
+    fn fact(&self, catalog: &Catalog, fact: &Fact, out: &mut Vec<u8>) {
+        let label = self.role(&Self::format(catalog, fact.label()), Role::Muted);
+        match fact {
+            Fact::OneLine { value, .. } => {
+                if value.as_str().is_empty() {
+                    // 値がないときに項目名の後ろへ空白を残さない。
+                    line(out, &format!("{INDENT}{label}"));
+                    return;
+                }
+                line(out, &format!("{INDENT}{label} {}", self.inline(value)));
+            }
+            Fact::ManyLines { lines, .. } => {
+                line(out, &format!("{INDENT}{label}"));
+                // 複数行の値は外部が書いた原文である。着色せず、外部outputと同じ字下げで
+                // 並べ、行ごとに前後でstyleを打ち切る。
+                let reset = self.reset();
+                for text in lines {
+                    line(out, &format!("{EXTERNAL_INDENT}{reset}{text}{reset}"));
+                }
+            }
+        }
+    }
 
+    /// 失敗した外部commandの起動を、事実の行として示す。
+    ///
+    /// 実行を求めるcommandではないため独立blockにはしない。読み手が知りたいのは
+    /// 「何を実行した結果か」であり、それは項目名付きの一行で足りる。
+    fn external_facts(&self, catalog: &Catalog, external: &ExternalFailure, out: &mut Vec<u8>) {
+        let invocation = format!("{} {}", external.program, external.safe_args.join(" "));
+        self.fact(
+            catalog,
+            &Fact::new(
+                msg!("diagnostic-command-label"),
+                Inline::important(invocation.trim_end()),
+            ),
+            out,
+        );
         if let Some(directory) = &external.working_dir {
-            blank(out);
-            line(
+            self.fact(
+                catalog,
+                &Fact::new(
+                    msg!("diagnostic-directory-label"),
+                    Inline::path(crate::paths::display(directory)),
+                ),
                 out,
-                &self.small_heading(catalog, "external-directory-heading"),
-            );
-            line(
-                out,
-                &format!("{EXTERNAL_INDENT}{}", crate::paths::display(directory)),
             );
         }
+    }
 
+    /// 外部が書いたstderrと、その読み取りについての注意。
+    ///
+    /// 何も書かなかった場合は`false`を返す。直前のcommand blockが確保した空行を、
+    /// 空のblockで打ち消さないためである。
+    fn external_output(
+        &self,
+        catalog: &Catalog,
+        external: &ExternalFailure,
+        out: &mut Vec<u8>,
+    ) -> bool {
+        let mut written = false;
         if external.stderr_lossy {
             blank(out);
             line(
@@ -332,10 +382,11 @@ impl Painter {
                     "warning-label",
                 ),
             );
+            written = true;
         }
 
         if external.stderr.is_empty() {
-            return;
+            return written;
         }
         blank(out);
         let heading = Self::format(
@@ -348,16 +399,16 @@ impl Painter {
         );
         // 外部byte列は翻訳も着色もせず、字下げだけを足して原文のまま出す。原文に残っていた
         // escape sequenceがrendererのstyleへ侵入しないよう、行ごとに前後で打ち切る。
-        // 色を出さないstreamはescape byteを一切書かないため、打ち切りも行わない。
-        let reset = if self.policy.color { RESET } else { "" };
-        indented_bytes(out, &external.stderr, EXTERNAL_INDENT, reset);
+        indented_bytes(out, &external.stderr, EXTERNAL_INDENT, self.reset());
+        true
     }
 
-    fn small_heading(&self, catalog: &Catalog, id: &'static str) -> String {
-        format!(
-            "{INDENT}{}",
-            self.role(&Self::format(catalog, &msg!(id)), Role::Heading)
-        )
+    /// 外部由来の文字列を挟むためのreset。
+    ///
+    /// `色を出さないstreamはANSI` byteを一切生成しないという契約を優先するため、色を出す
+    /// streamにだけ書く。
+    fn reset(&self) -> &'static str {
+        if self.policy.color { RESET } else { "" }
     }
 }
 

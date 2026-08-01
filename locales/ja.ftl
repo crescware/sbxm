@@ -154,12 +154,13 @@ error-lock-unavailable = { $path } のlockを取得できません: { $detail }
 
 error-external-command-not-found = command { $program } がPATH上に見つかりません。
 error-external-command-spawn-failed = command { $program } を起動できません: { $detail }
-error-external-command-failed = command { $program } が { $exit_status } で失敗しました。
+error-external-command-failed = commandが { $exit_status } で失敗しました。
 error-external-command-timeout = command { $program } が { $seconds } 秒以内に終了しなかったため停止しました。
-error-external-output-unparseable = { $program } の出力を解釈できません: { $detail }
+error-external-output-unparseable = 出力を解釈できません
 warning-external-output-lossy = { $program } の { $stream } 出力がUTF-8として不正なため、置換文字を含む形へ変換しました。
-external-invocation-heading = 実行したcommand:
-external-directory-heading = 作業directory:
+diagnostic-command-label = 実行したcommand:
+diagnostic-directory-label = 作業directory:
+diagnostic-cause-label = 原因:
 external-output-heading = { $program } の出力:
 
 error-sbx-version-unparseable = { $observed } からDocker Sandboxes CLIのversionを判定できません。

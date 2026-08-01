@@ -193,6 +193,32 @@ fn every_message_uses_the_same_placeholders_in_every_locale() -> Checked {
     Ok(())
 }
 
+/// 診断が事実の行として示す値と、それを示すmessage ID。
+///
+/// 同じ値を説明文にも置くと、読み手は同じものを二度読むことになる。
+const SHOWN_AS_A_FACT: [(&str, &str); 3] = [
+    ("error-external-output-unparseable", "program"),
+    ("error-external-output-unparseable", "detail"),
+    ("error-external-command-failed", "program"),
+];
+
+#[test]
+fn a_value_shown_as_a_fact_is_not_repeated_in_the_sentence() -> Checked {
+    for locale in locales()? {
+        let placeholders = placeholders(&locale)?;
+        for (id, variable) in SHOWN_AS_A_FACT {
+            let observed = placeholders
+                .get(id)
+                .required_because(&format!("{locale}.ftl defines {id}"))?;
+            assert!(
+                !observed.contains(variable),
+                "{locale}.ftl: {id} names ${variable} again, but the diagnostic shows it as a fact"
+            );
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn security_messages_provide_a_description_and_a_remediation() -> Checked {
     for locale in locales()? {
