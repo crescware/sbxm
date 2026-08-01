@@ -269,6 +269,7 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-platform-unobservable", "detail"),
     ("error-docker-unreachable", "detail"),
     ("error-network-policy-unobservable", "detail"),
+    ("error-daemon-unobservable", "detail"),
 ];
 
 #[test]

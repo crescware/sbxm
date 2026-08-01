@@ -1,5 +1,6 @@
 use crate::command::HostEnvironment;
 use crate::compatibility::parse_daemon_status;
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
@@ -20,18 +21,22 @@ pub fn check_daemon(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
             }
             Err(error) => {
                 push(status, "status-item-daemon", StatusValue::Error);
-                status.diagnostics.push(Diagnostic::new(
-                    ErrorId::DaemonUnobservable,
-                    msg!("error-daemon-unobservable", detail = describe(&error)),
-                ));
+                status.diagnostics.push(
+                    Diagnostic::new(
+                        ErrorId::DaemonUnobservable,
+                        msg!("error-daemon-unobservable"),
+                    )
+                    .fact(Fact::cause(&describe(&error))),
+                );
             }
         },
         Err(error) => {
             push(status, "status-item-daemon", StatusValue::Error);
             let mut diagnostic = Diagnostic::new(
                 ErrorId::DaemonUnobservable,
-                msg!("error-daemon-unobservable", detail = describe(&error)),
-            );
+                msg!("error-daemon-unobservable"),
+            )
+            .fact(Fact::cause(&describe(&error)));
             if let Some(external) = external_of(&error) {
                 diagnostic = diagnostic.external(external);
             }
