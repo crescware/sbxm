@@ -1,3 +1,4 @@
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -5,7 +6,10 @@ use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-use super::{CommandOutcome, CommandSpec, EnvPolicy, OutputPolicy, spawn_reader, wait_with_limit};
+use super::{
+    CommandOutcome, CommandSpec, EnvPolicy, OutputPolicy, SignalGuard, isolates_process_group,
+    run_capture, wait_with_limit,
+};
 
 pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<CommandOutcome> {
     let mut command = Command::new(&spec.program);
@@ -35,6 +39,25 @@ pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<C
             command.stderr(Stdio::inherit());
         }
     }
+    if isolates_process_group(spec) {
+        // 打ち切るときに、このcommandが起動したprocessまで一度に終わらせられるようにする。
+        command.process_group(0);
+    }
+
+    let signal = if isolates_process_group(spec) {
+        Some(SignalGuard::new().map_err(|error| {
+            Error::single(
+                Diagnostic::new(
+                    ErrorId::ExternalCommandSpawnFailed,
+                    msg!("error-external-command-spawn-failed"),
+                )
+                .fact(Fact::command(&spec.program))
+                .fact(Fact::cause(&error.to_string())),
+            )
+        })?)
+    } else {
+        None
+    };
 
     let mut child = command.spawn().map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -54,18 +77,25 @@ pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<C
         }
     })?;
 
-    // pipeが埋まって子processが止まらないよう、両streamを並行に読む。
-    let stdout_reader = child.stdout.take().map(spawn_reader);
-    let stderr_reader = child.stderr.take().map(spawn_reader);
+    if let Some(signal) = signal.as_ref() {
+        let captured = run_capture(&mut child, spec, limit, signal);
+        let (status, stdout, stderr) = captured?;
+        let stderr_lossy = matches!(String::from_utf8_lossy(&stderr), std::borrow::Cow::Owned(_));
+
+        return Ok(CommandOutcome {
+            program: spec.program.clone(),
+            args: spec.args.clone(),
+            working_dir: spec.working_dir.clone(),
+            status,
+            stdout,
+            stderr,
+            stderr_lossy,
+        });
+    }
 
     let status = wait_with_limit(&mut child, spec, limit)?;
-
-    let stdout = stdout_reader
-        .map(|handle| handle.join().unwrap_or_default())
-        .unwrap_or_default();
-    let stderr = stderr_reader
-        .map(|handle| handle.join().unwrap_or_default())
-        .unwrap_or_default();
+    let stdout = Vec::new();
+    let stderr = Vec::new();
     let stderr_lossy = matches!(String::from_utf8_lossy(&stderr), std::borrow::Cow::Owned(_));
 
     Ok(CommandOutcome {

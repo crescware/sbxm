@@ -52,6 +52,18 @@ fn retrying(attempt: impl Fn() -> Result<CommandOutcome>) -> Result<CommandOutco
     attempt()
 }
 
+/// 診断が持つ事実の項目名。
+fn labels(error: &crate::diagnostics::Error) -> Checked<Vec<String>> {
+    Ok(error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?
+        .facts
+        .iter()
+        .map(|fact| fact.label().id.to_string())
+        .collect())
+}
+
 #[test]
 fn timeout_classes_match_the_documented_defaults() {
     assert_eq!(
@@ -118,6 +130,30 @@ fn passthrough_hands_the_streams_to_the_terminal_instead_of_capturing_them() -> 
         "passthrough output belongs to the terminal, not to a buffer"
     );
     assert!(!outcome.stderr_lossy);
+    Ok(())
+}
+
+#[test]
+fn an_interactive_command_is_handed_the_terminal_and_waited_for_without_a_limit() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let record = dir.path().join("record");
+    let fake = fake_executable(
+        dir.path(),
+        "fake-tool",
+        &format!(r#"printf 'ran' > "{}""#, record.display()),
+    )?;
+
+    let spec = CommandSpec::inherit(fake.to_str().required()?, &[]);
+    // 終える時期を決めるのは利用者であり、sbxmは待ち切る。
+    assert_eq!(spec.timeout.duration(), None);
+    let outcome = run_fake(&spec).required_because("the fake tool runs")?;
+
+    assert_eq!(fs::read_to_string(&record).required()?, "ran");
+    assert!(outcome.success());
+    assert!(
+        outcome.stdout.is_empty() && outcome.stderr.is_empty(),
+        "the terminal was handed over, so there is nothing to capture"
+    );
     Ok(())
 }
 
@@ -262,10 +298,89 @@ fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
 }
 
 #[test]
+fn a_timed_out_command_takes_the_processes_it_started_with_it() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let survivor = dir.path().join("survivor");
+    let fake = fake_executable(
+        dir.path(),
+        "fake-tool",
+        &format!(
+            // 背景のprocessは、待ち終えたらfileを残す。stdoutのpipeも握ったままである。
+            r#"(sleep 2; printf 'alive' > "{}") &
+sleep 30"#,
+            survivor.display()
+        ),
+    )?;
+
+    let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
+    let started = Instant::now();
+    let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
+        .refused_because("the command must be terminated")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    // 書き込み端を握るprocessが残っていれば、readerの回収はその分だけ返らない。
+    assert!(
+        started.elapsed() < Duration::from_millis(1500),
+        "no pipe may stay open after the run returns"
+    );
+
+    std::thread::sleep(Duration::from_secs(3).saturating_sub(started.elapsed()));
+    assert!(
+        !survivor.exists(),
+        "a process the command started must not outlive the command"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_escaped_descendant_cannot_hold_capture_open_after_timeout() -> Checked {
+    // macOS does not ship `setsid` as a command, while Linux does. The process-group behavior is
+    // covered where the helper exists; the implementation itself is compiled for both platforms.
+    if !exists_on_path("setsid") {
+        return Ok(());
+    }
+
+    let dir = tempfile::tempdir().required()?;
+    let fake = fake_executable(
+        dir.path(),
+        "fake-tool",
+        // The detached sleep keeps the pipe open after the original group is killed.
+        "setsid sh -c 'sleep 2' &\nsleep 30",
+    )?;
+
+    let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
+    let started = Instant::now();
+    let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
+        .refused_because("the command must be terminated")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        started.elapsed() < Duration::from_millis(1500),
+        "the reader must not wait for a process outside the command group"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_missing_program_is_distinguished_from_other_spawn_failures() -> Checked {
     let spec = CommandSpec::probe("sbxm-no-such-program-exists", &[]);
     let error = run(&spec).refused_because("missing programs fail")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
+    Ok(())
+}
+
+#[test]
+fn a_spawn_failure_that_is_not_a_missing_program_keeps_what_was_observed() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+
+    // directoryは在るが起動できない。存在しないprogramとは別の失敗である。
+    let spec = CommandSpec::probe(dir.path().to_str().required()?, &[]);
+    let error = run(&spec).refused_because("a directory cannot be started")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    assert_eq!(
+        labels(&error)?,
+        vec!["diagnostic-command-label", "diagnostic-cause-label"],
+        "the invocation and the reason the OS gave are both kept"
+    );
     Ok(())
 }
 
