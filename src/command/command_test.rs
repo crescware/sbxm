@@ -29,6 +29,13 @@ fn run_fake(spec: &CommandSpec) -> Result<CommandOutcome> {
     retrying(|| run(spec))
 }
 
+/// timeout classの既定値ではない待ち時間で実行する。
+///
+/// 最短のclassでも10秒あるため、deadlineに達する側の分岐はtestからしか踏めない。
+fn run_with_limit(spec: &CommandSpec, limit: Duration) -> Result<CommandOutcome> {
+    run_inner(spec, Some(limit))
+}
+
 /// spawnに失敗した試行だけをやり直す。
 ///
 /// 別threadのtestがforkしている最中は、書き込み直後のfileが`ETXTBSY`で起動できない

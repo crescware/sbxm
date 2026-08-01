@@ -14,8 +14,6 @@ mod output_policy;
 mod real_host;
 mod run;
 mod run_inner;
-#[cfg(test)]
-mod run_with_limit;
 mod spawn_reader;
 mod timeout_class;
 mod wait_poll_interval;
@@ -32,8 +30,6 @@ pub use output_policy::OutputPolicy;
 pub use real_host::RealHost;
 pub use run::run;
 use run_inner::run_inner;
-#[cfg(test)]
-pub use run_with_limit::run_with_limit;
 use spawn_reader::spawn_reader;
 pub use timeout_class::TimeoutClass;
 use wait_poll_interval::WAIT_POLL_INTERVAL;

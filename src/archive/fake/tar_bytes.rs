@@ -1,9 +1,8 @@
-use super::BLOCK;
+use crate::archive::BLOCK;
 
 /// 検証したい形のarchiveを組み立てる、最小限のtar writer。
 ///
 /// 外部commandが書くarchiveを、testの中で再現するために使う。
-#[cfg(test)]
 pub fn tar_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out = Vec::new();
     for (name, data) in entries {
