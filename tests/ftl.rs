@@ -231,6 +231,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-metadata-invalid-syntax", "detail"),
     ("error-metadata-invalid-value", "path"),
     ("error-metadata-invalid-value", "field"),
+    ("error-invalid-branch-name", "value"),
+    ("error-invalid-branch-name", "detail"),
 ];
 
 #[test]
