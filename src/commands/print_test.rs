@@ -16,6 +16,7 @@ use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::{PlacedFile, Placement};
 use crate::support::inventory::{Observed, ProjectState};
+use crate::support::protection::{Kind, Mode, Remote, WorktreeReport};
 use crate::support::status::{Row, StatusValue};
 use crate::testing::plain;
 
@@ -431,6 +432,112 @@ fn the_deletion_plan_never_paints_anything_green() -> Checked {
         !colored.contains("\u{1b}[32m"),
         "green belongs to success, not to a deletion plan: {colored:?}"
     );
+    Ok(())
+}
+
+/// 通常modeで観測した2件のworktreeを持つ計画。
+///
+/// 状態値の組み合わせをすべて1度ずつ通し、列に置く値が対応する種別から来ることを見る。
+fn destroy_plan_with_worktrees() -> super::destroy::run::DestroyPlan {
+    super::destroy::run::DestroyPlan {
+        worktrees: vec![
+            WorktreeReport {
+                relative: "repo.tree-0".to_string(),
+                kind: Kind::Managed,
+                mode: Mode::Attached,
+                head: "a1b2c3d".to_string(),
+                branch: Some("main".to_string()),
+                remote: Remote::Pushed,
+            },
+            WorktreeReport {
+                relative: "repo.scratch".to_string(),
+                kind: Kind::Unmanaged,
+                mode: Mode::Detached,
+                head: "d4e5f6a".to_string(),
+                branch: None,
+                remote: Remote::Reachable,
+            },
+        ],
+        ..destroy_plan(false)
+    }
+}
+
+/// documentが持つ`index`番目のtable。
+fn table_at(document: &Document, index: usize) -> Checked<&crate::design::Table> {
+    let Some(Block::Section(section)) = document.blocks().get(index) else {
+        return Err(Unmet::new("a section".to_string()));
+    };
+    let SectionBody::Table(table) = &section.body else {
+        return Err(Unmet::new("a table".to_string()));
+    };
+    Ok(table)
+}
+
+#[test]
+fn the_deletion_plan_shows_what_each_worktree_holds_before_it_goes() -> Checked {
+    let document = super::destroy::print::plan_document(&destroy_plan_with_worktrees(), Locale::En);
+    assert_eq!(
+        shape(&document),
+        vec!["fields", "table", "lines", "lines", "guidance", "command"]
+    );
+
+    let rows = table_at(&document, 1)?.rows();
+    assert_eq!(
+        rows[0],
+        vec![
+            Inline::path("repo.tree-0").into(),
+            Inline::text("managed").into(),
+            Inline::text("attached").into(),
+            Inline::text("main").into(),
+            Inline::text("a1b2c3d").into(),
+            Inline::text("pushed").into(),
+        ]
+    );
+    // detachedなworktreeにbranchはない。列を詰めず、値がないことを見せる。
+    assert_eq!(
+        rows[1],
+        vec![
+            Inline::path("repo.scratch").into(),
+            Inline::text("unmanaged").into(),
+            Inline::text("detached").into(),
+            Inline::text("-").into(),
+            Inline::text("d4e5f6a").into(),
+            Inline::text("reachable").into(),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn every_worktree_value_the_plan_showed_gets_an_explanation() -> Checked {
+    // 状態値は翻訳しない。正本locale以外では、出現した値だけを凡例で説明する。
+    let japanese = super::destroy::print::plan_document(&destroy_plan_with_worktrees(), Locale::Ja);
+    let Some(Block::Section(section)) = japanese.blocks().last() else {
+        return Err(Unmet::new("a section".to_string()));
+    };
+    let SectionBody::Legend(entries) = &section.body else {
+        return Err(Unmet::new("a legend".to_string()));
+    };
+    let explained: Vec<(&str, &str)> = entries
+        .iter()
+        .map(|entry| (entry.value.as_str(), entry.description.id))
+        .collect();
+    assert_eq!(
+        explained,
+        vec![
+            ("attached", "legend-attached"),
+            ("detached", "legend-detached"),
+            ("managed", "legend-managed"),
+            ("pushed", "legend-pushed"),
+            ("reachable", "legend-reachable"),
+            ("running", "legend-sandbox-running"),
+            ("unmanaged", "legend-unmanaged"),
+        ]
+    );
+
+    // 正本localeでは値がそのまま読めるため、凡例そのものを置かない。
+    let english = super::destroy::print::plan_document(&destroy_plan_with_worktrees(), Locale::En);
+    assert!(!shape(&english).contains(&"legend"));
     Ok(())
 }
 

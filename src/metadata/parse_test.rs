@@ -25,6 +25,169 @@ fn round_trip(metadata: &ProjectMetadata) -> Checked<ProjectMetadata> {
         .required_because("the rendered form parses")
 }
 
+/// top-level sectionを、その配下ごと落とす。
+///
+/// 入れ子のkeyを1つ消すのと、sectionそのものが無いのは別の記録である。後者を作る。
+fn without_section(text: &str, section: &str) -> String {
+    let heading = format!("{section}:");
+    let mut dropping = false;
+    let mut kept = Vec::new();
+    for line in text.lines() {
+        if !line.starts_with(' ') && !line.trim().is_empty() {
+            dropping = line.starts_with(&heading);
+        }
+        if !dropping {
+            kept.push(line);
+        }
+    }
+    let dropped = joined_lines(kept.into_iter());
+    assert_ne!(dropped, text, "{section} was not part of the document");
+    dropped
+}
+
+/// 1つのfieldを別の値へ置き換える。
+fn replaced(text: &str, from: &str, to: &str) -> String {
+    let changed = text.replace(from, to);
+    assert_ne!(changed, text, "the replacement {from} did not apply");
+    changed
+}
+
+/// 拒否されることを前提に、error IDを取り出す。
+fn refusal(text: &str) -> Checked<Option<ErrorId>> {
+    let error = parse(text, Path::new("/tmp/project.yaml"))
+        .refused_because("the document is not usable")?;
+    Ok(error.first_id())
+}
+
+#[test]
+fn a_document_that_is_not_a_mapping_is_reported_as_syntax() -> Checked {
+    // 読めない記録は、欠けているfieldの名前ではなく、記録そのものの問題として報告する。
+    for text in [
+        "- version: 1\n",
+        "version: 1\n\tindented with a tab\n",
+        "@\n",
+    ] {
+        assert_eq!(
+            refusal(text)?,
+            Some(ErrorId::MetadataInvalidSyntax),
+            "{text:?} produced the wrong error"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_document_without_a_version_is_missing_a_field_rather_than_unreadable() -> Checked {
+    // 空のfileはnullとして読める。keyを1つも持たないmappingと同じ扱いにする。
+    assert_eq!(refusal("")?, Some(ErrorId::MetadataMissingField));
+
+    let full = render(&attached("example-org", "example-repo")?)?;
+    assert_eq!(
+        refusal(&without_section(&full, "version"))?,
+        Some(ErrorId::MetadataMissingField)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_section_that_is_absent_altogether_is_named_the_same_way_a_field_is() -> Checked {
+    let full = render(&attached("example-org", "example-repo")?)?;
+    for section in ["repository", "provisioning", "git_identity"] {
+        assert_eq!(
+            refusal(&without_section(&full, section))?,
+            Some(ErrorId::MetadataMissingField),
+            "{section} produced the wrong error"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_start_branch_that_git_would_not_accept_is_refused() -> Checked {
+    let full = render(&attached("example-org", "example-repo")?)?;
+    // 先頭の`-`は外部commandのoptionに読める。改行と空の値は記録として成立しない。
+    for branch in ["-leading-dash", "", "main\\nmore"] {
+        assert_eq!(
+            refusal(&replaced(
+                &full,
+                "start_ref: main",
+                &format!("start_ref: \"{branch}\"")
+            ))?,
+            Some(ErrorId::MetadataInvalidValue),
+            "{branch} produced the wrong error"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_recorded_identity_must_be_usable_as_the_name_git_will_write() -> Checked {
+    let full = render(&attached("example-org", "example-repo")?)?;
+    for field in ["user_name", "user_email"] {
+        let text = joined_lines(
+            full.lines()
+                .filter(|line| !line.trim_start().starts_with(&format!("{field}:"))),
+        );
+        assert_eq!(
+            refusal(&text)?,
+            Some(ErrorId::MetadataMissingField),
+            "a document without git_identity.{field} produced the wrong error"
+        );
+    }
+
+    // 空欄と改行は、そのままcommitの署名になってしまう値である。
+    for (from, to) in [
+        ("user_name: Example User", "user_name: \"   \""),
+        ("user_name: Example User", "user_name: \"Example\\nUser\""),
+        ("user_email: user@example.com", "user_email: \"\""),
+        (
+            "user_email: user@example.com",
+            "user_email: \"user@example.com\\r\"",
+        ),
+    ] {
+        assert_eq!(
+            refusal(&replaced(&full, from, to))?,
+            Some(ErrorId::MetadataInvalidValue),
+            "{to} produced the wrong error"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_half_written_rebuild_record_is_refused_rather_than_resumed() -> Checked {
+    let switching = ProjectMetadata {
+        rebuild: Some(RebuildIntent {
+            target_dockerfile_sha256: OTHER_DIGEST.to_string(),
+            previous_dockerfile_sha256: DIGEST.to_string(),
+        }),
+        ..attached("example-org", "example-repo")?
+    };
+    let full = render(&switching)?;
+
+    // 世代交代の途中で止まった記録は、片側だけを信じて続きを進めない。
+    for field in ["target_dockerfile_sha256", "previous_dockerfile_sha256"] {
+        let text = joined_lines(
+            full.lines()
+                .filter(|line| !line.trim_start().starts_with(&format!("{field}:"))),
+        );
+        assert_eq!(
+            refusal(&text)?,
+            Some(ErrorId::MetadataMissingField),
+            "{field} produced the wrong error"
+        );
+    }
+
+    for from in [OTHER_DIGEST, DIGEST] {
+        assert_eq!(
+            refusal(&replaced(&full, from, "not-a-digest"))?,
+            Some(ErrorId::MetadataInvalidValue),
+            "{from} produced the wrong error"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn metadata_written_before_worktrees_stopped_being_recorded_still_parses() -> Checked {
     // 記録していた時期のfile。managed worktreeは本数から導けるため読む必要がなく、

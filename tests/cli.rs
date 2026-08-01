@@ -650,6 +650,63 @@ fn apply_refuses_a_project_that_was_never_added() -> Checked {
     Ok(())
 }
 
+/// 案件を引数で指定するcommand。`apply`は指定の形が違うため別に確かめる。
+const PROJECT_COMMANDS: [&str; 5] = ["prepare", "rebuild", "open", "stop", "destroy"];
+
+#[test]
+fn every_command_that_targets_a_project_refuses_one_that_was_never_added() -> Checked {
+    let home = temp_home()?;
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
+    write_config(home.path(), "en")?;
+
+    // 対象が決まる前にhostの状態へ触れない。host toolが1つも無い環境でも、
+    // 未登録であることだけを理由として断る。
+    for command in PROJECT_COMMANDS {
+        let run = sbxm(home.path(), &["--lang", "en", command, "owner/repo"])?;
+        assert_eq!(run.code, 1, "{command}: {}", run.stderr);
+        assert!(
+            run.stdout.is_empty(),
+            "{command} wrote a result for a project it refused: {}",
+            run.stdout
+        );
+        assert!(
+            run.stderr.contains("project-not-managed"),
+            "{command}: {}",
+            run.stderr
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_registered_project_still_needs_the_sandbox_runtime() -> Checked {
+    let (home, _base) = home_with_project("owner/repo")?;
+
+    // 登録は済んでいるため対象は決まる。その先はhost toolに届かず、どのcommandも
+    // 結果を出さずに止まる。
+    for command in PROJECT_COMMANDS {
+        let run = sbxm(home.path(), &["--lang", "en", command, "owner/repo"])?;
+        assert_eq!(run.code, 1, "{command}: {}", run.stderr);
+        assert!(
+            run.stdout.is_empty(),
+            "{command} wrote a result it could not observe: {}",
+            run.stdout
+        );
+        assert!(
+            !run.stderr.contains("project-not-managed"),
+            "{command} reached the project it was given: {}",
+            run.stderr
+        );
+        assert!(
+            run.stderr.contains("external-command-not-found"),
+            "{command}: {}",
+            run.stderr
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn a_run_that_cannot_prompt_neither_asks_for_a_language_nor_saves_one() -> Checked {
     let home = temp_home()?;
