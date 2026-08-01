@@ -2,7 +2,7 @@ use crate::diagnostics::{Diagnostic, Msg};
 
 use crate::design::text::CommandLine;
 
-use super::{Guidance, Section};
+use super::{Fact, Guidance, Section};
 
 /// 出力の1単位。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,8 +15,8 @@ pub enum Block {
     Section(Section),
     /// 補足と次の行動。commandは含まない。
     Guidance(Guidance),
-    /// 結果を隠さずに伝える注意。
-    Warning(Msg),
+    /// 結果を隠さずに伝える注意と、その説明から追い出した事実。
+    Warning { message: Msg, facts: Vec<Fact> },
     /// 本文から切り離して読ませる注記。
     Note(Msg),
     /// 利用者が実行する一行。

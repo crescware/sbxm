@@ -97,8 +97,11 @@ impl Painter {
                 }
                 Trailing::Normal
             }
-            Block::Warning(message) => {
+            Block::Warning { message, facts } => {
                 line(out, &self.labelled(catalog, message, "warning-label"));
+                for fact in facts {
+                    self.fact(catalog, fact, out);
+                }
                 Trailing::Normal
             }
             Block::Note(message) => {

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
-use crate::design::{ProgressSink, Warning};
+use crate::design::{Fact, ProgressSink, Warning};
 use crate::diagnostics::Result;
 use crate::msg;
 use crate::paths::{self};
@@ -42,11 +42,11 @@ pub(super) fn build(
     let leftover = paths::display(context.path());
     let mut warnings = Vec::new();
     if let Err(error) = context.close() {
-        warnings.push(Warning::text(msg!(
-            "warning-build-context-left-behind",
-            path = leftover,
-            detail = error
-        )));
+        warnings.push(
+            Warning::text(msg!("warning-build-context-left-behind"))
+                .fact(Fact::path(&leftover))
+                .fact(Fact::cause(&error.to_string())),
+        );
     }
     result?;
     Ok(warnings)

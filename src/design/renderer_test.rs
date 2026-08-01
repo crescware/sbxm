@@ -274,7 +274,7 @@ fn an_ascii_stream_swaps_the_glyphs_without_changing_the_meaning() -> Checked {
 
 #[test]
 fn a_warning_names_its_severity_in_words_as_well_as_in_color() -> Checked {
-    let drawn = plain(&Document::new().warning(msg!("destroy-force-notice")))?;
+    let drawn = plain(&Document::new().warning(msg!("destroy-force-notice"), Vec::new()))?;
     assert!(drawn.starts_with("! Warning: "), "{drawn:?}");
     Ok(())
 }

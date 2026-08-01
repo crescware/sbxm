@@ -239,6 +239,8 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-image-collision", "detail"),
     ("error-image-unusable", "image"),
     ("error-image-unusable", "detail"),
+    ("warning-build-context-left-behind", "path"),
+    ("warning-build-context-left-behind", "detail"),
 ];
 
 #[test]

@@ -123,7 +123,7 @@ impl ProgressSink for Ui<'_> {
 
 /// warningを、説明・補足・commandのblockへ分ける。
 fn warning_document(warning: &Warning) -> Document {
-    let mut document = Document::new().warning(warning.description.clone());
+    let mut document = Document::new().warning(warning.description.clone(), warning.facts.clone());
     if !warning.guidance.is_empty() {
         document = document.guidance(
             None,
