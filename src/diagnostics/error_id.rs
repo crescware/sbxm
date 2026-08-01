@@ -20,10 +20,16 @@ macro_rules! error_ids {
                     $(ErrorId::$variant => $text),+
                 }
             }
+        }
 
-            /// 全variant。宣言から組み立てるため、追加し忘れが起きない。
-            #[cfg(test)]
-            pub const ALL: &'static [ErrorId] = &[$(ErrorId::$variant),+];
+        /// 宣言した全variant。testが`ErrorId::ALL`を組み立てるために使う。
+        ///
+        /// 一覧そのものを本番fileへ置くとcoverageが数える母集団へ入るため、宣言から
+        /// 組み立てる手段だけをここへ残す。`#[macro_export]`はcrate外へ出すためではなく、
+        /// 本番buildで未使用のmacroが警告にならないようにするために付ける。
+        #[macro_export]
+        macro_rules! declared_error_ids {
+            () => { &[$(ErrorId::$variant),+] };
         }
     };
 }
@@ -183,3 +189,7 @@ impl std::fmt::Display for ErrorId {
         f.write_str(self.as_str())
     }
 }
+
+#[cfg(test)]
+#[path = "error_id_test.rs"]
+mod error_id_test;

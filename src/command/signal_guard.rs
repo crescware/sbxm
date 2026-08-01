@@ -26,13 +26,6 @@ impl SignalGuard {
     pub(super) fn interrupted(&self) -> bool {
         self.interrupted.load(Ordering::SeqCst)
     }
-
-    #[cfg(test)]
-    pub(super) fn interrupted_for_test() -> std::io::Result<SignalGuard> {
-        let guard = SignalGuard::new()?;
-        guard.interrupted.store(true, Ordering::SeqCst);
-        Ok(guard)
-    }
 }
 
 impl Drop for SignalGuard {
@@ -40,3 +33,7 @@ impl Drop for SignalGuard {
         let _ = signal_hook::low_level::unregister(self.registration);
     }
 }
+
+#[cfg(test)]
+#[path = "signal_guard_test.rs"]
+mod signal_guard_test;

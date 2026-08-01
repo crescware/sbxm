@@ -5,14 +5,21 @@
 //! させる。`mod.rs`はmoduleの入口なので名前の一致は求めないが、実装itemを置かず、
 //! moduleの組み立てとre-exportに限定するため、同じ1公開itemの規則を適用する。
 //!
-//! 境界はcoverageの母集団も決める。`#[cfg(test)]`でしか組み立たないmoduleは本番codeでは
+//! 境界はcoverageの母集団も決める。`#[cfg(test)]`でしか組み立たないcodeは本番codeでは
 //! ないため、coverageが数えるpathへ置かない。置き場所の規約と、coverageが実際に外すpath
 //! が食い違うと、test支援codeの高いcoverageが本番codeの不足を相殺する。
+//!
+//! llvm-covはfile単位でしか母集団を外せない。moduleだけでなくitemも同じ規約に従わせ、
+//! 母集団は両方向から固定する。数えるfileにtest支援codeが混じることも、除外を足して
+//! 本番codeを母集団から外すことも、どちらも落とす。
 
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use syn::{File, Item, Visibility};
+use proc_macro2::{Delimiter, TokenTree};
+use syn::visit::Visit;
+use syn::{Expr, File, Item, Visibility};
 
 struct Source {
     relative: String,
@@ -278,20 +285,140 @@ const OUTSIDE_THE_COVERAGE_POPULATION: [(&str, &str); 4] = [
 
 /// coverageが数えないpathか。
 ///
-/// `src`を歩く本testはrepository rootの`tests/`へ到達しないため、残る3つだけを見る。
+/// 上の表の左側を、正規表現と同じ順で綴る。
 fn outside_the_coverage_population(relative: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
-    relative.starts_with("src/testing/") || relative.contains("/fake/") || name.contains("_test")
+    on_the_path(relative, "tests/")
+        || on_the_path(relative, "src/testing/")
+        || on_the_path(relative, "fake/")
+        || name.contains("_test")
 }
 
-/// `#[cfg(test)]`が付いているか。
-fn gated_by_test(attributes: &[syn::Attribute]) -> bool {
-    attributes.iter().any(|attribute| {
-        attribute.path().is_ident("cfg")
-            && attribute
-                .parse_args::<syn::Path>()
-                .is_ok_and(|path| path.is_ident("test"))
-    })
+/// pathがその区切りから始まるか、途中にその区切りを含むか。`(^|/)`と同じ判定。
+fn on_the_path(relative: &str, place: &str) -> bool {
+    relative.starts_with(place) || relative.contains(&format!("/{place}"))
+}
+
+/// cfg predicateの真偽。
+///
+/// `test`以外のatomは、同じsourceでもtargetや環境によって両方の値を取る。判定できない
+/// ことを`Unknown`として残し、綴りではなく意味でitemの有無を決める。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Truth {
+    Yes,
+    No,
+    Unknown,
+}
+
+fn not(value: Truth) -> Truth {
+    match value {
+        Truth::Yes => Truth::No,
+        Truth::No => Truth::Yes,
+        Truth::Unknown => Truth::Unknown,
+    }
+}
+
+fn and(left: Truth, right: Truth) -> Truth {
+    match (left, right) {
+        (Truth::No, _) | (_, Truth::No) => Truth::No,
+        (Truth::Unknown, _) | (_, Truth::Unknown) => Truth::Unknown,
+        (Truth::Yes, Truth::Yes) => Truth::Yes,
+    }
+}
+
+fn or(left: Truth, right: Truth) -> Truth {
+    match (left, right) {
+        (Truth::Yes, _) | (_, Truth::Yes) => Truth::Yes,
+        (Truth::Unknown, _) | (_, Truth::Unknown) => Truth::Unknown,
+        (Truth::No, Truth::No) => Truth::No,
+    }
+}
+
+/// `test`をこの値へ固定してcfg predicateを評価する。
+fn evaluate(predicate: &syn::Meta, test: bool) -> Truth {
+    match predicate {
+        syn::Meta::Path(path) if path.is_ident("test") => {
+            if test {
+                Truth::Yes
+            } else {
+                Truth::No
+            }
+        }
+        // `unix`や`target_os = "macos"`など、test buildかどうかとは無関係のatom。
+        syn::Meta::Path(_) | syn::Meta::NameValue(_) => Truth::Unknown,
+        syn::Meta::List(list) => {
+            let Ok(inner) = list.parse_args_with(
+                syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+            ) else {
+                return Truth::Unknown;
+            };
+            let values = inner.iter().map(|meta| evaluate(meta, test));
+            if list.path.is_ident("not") {
+                values.map(not).fold(Truth::Yes, and)
+            } else if list.path.is_ident("all") {
+                values.fold(Truth::Yes, and)
+            } else if list.path.is_ident("any") {
+                values.fold(Truth::No, or)
+            } else {
+                Truth::Unknown
+            }
+        }
+    }
+}
+
+/// itemがどのbuildに存在するか。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Gate {
+    /// cfgが無いか、cfgが`test`を見ない。どちらのbuildにも同じように存在する。
+    Unconditional,
+    /// test buildでしか存在しない。
+    TestOnly,
+    /// 本番buildでしか存在しない。
+    ProductionOnly,
+    /// test buildには必ず存在し、本番buildにも別の条件しだいで存在する。
+    Undecidable,
+}
+
+/// itemに付いた`#[cfg]`から、そのitemが存在するbuildを決める。
+///
+/// 同じitemへ複数の`#[cfg]`を付けるとrustcはANDとして扱うため、ここでも畳み込む。
+fn gate(attributes: &[syn::Attribute]) -> Gate {
+    let mut in_test = Truth::Yes;
+    let mut in_production = Truth::Yes;
+    for attribute in attributes.iter().filter(|a| a.path().is_ident("cfg")) {
+        let Ok(predicate) = attribute.parse_args::<syn::Meta>() else {
+            continue;
+        };
+        in_test = and(in_test, evaluate(&predicate, true));
+        in_production = and(in_production, evaluate(&predicate, false));
+    }
+    if in_production == Truth::No {
+        Gate::TestOnly
+    } else if in_test == Truth::No {
+        Gate::ProductionOnly
+    } else if in_test == in_production {
+        Gate::Unconditional
+    } else {
+        Gate::Undecidable
+    }
+}
+
+/// `#[cfg_attr]`がtest buildでだけ属性を足すか。
+///
+/// itemそのものは両方のbuildに存在しても、test buildでだけ`derive`が増えれば、そこで
+/// 生まれるimplはtestしか持たないcodeである。
+fn attribute_follows_the_test_build(attribute: &syn::Attribute) -> bool {
+    if !attribute.path().is_ident("cfg_attr") {
+        return false;
+    }
+    let Ok(arguments) = attribute.parse_args_with(
+        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+    ) else {
+        return false;
+    };
+    arguments
+        .first()
+        .is_some_and(|predicate| evaluate(predicate, true) != evaluate(predicate, false))
 }
 
 /// `#[path = "..."]`が指すfile名。
@@ -340,9 +467,34 @@ fn declared_file(declaring: &Path, declaration: &syn::ItemMod) -> Option<PathBuf
     Some(module_directory.join(name).join("mod.rs"))
 }
 
+/// fileが宣言するmodule。
+///
+/// 中身を持つmoduleは自身のfileへ残るため、その中の宣言まで降りる。囲むmoduleが
+/// test buildのものなら、中の宣言も同じbuildのものである。
+fn module_declarations<'a>(
+    items: &'a [Item],
+    gated: bool,
+    found: &mut Vec<(&'a syn::ItemMod, bool)>,
+) {
+    for item in items {
+        let Item::Mod(declaration) = item else {
+            continue;
+        };
+        let gated = gated || gate(&declaration.attrs) == Gate::TestOnly;
+        match &declaration.content {
+            Some((_, inner)) => module_declarations(inner, gated, found),
+            None => found.push((declaration, gated)),
+        }
+    }
+}
+
+/// coverageが数えるfileへ、test buildでしか組み立たないcodeを置いていないか。
+///
+/// llvm-covはfile単位でしか母集団を外せない。同じfileの中へ`#[cfg(test)]`のitemや
+/// statementを書くと、そのcodeはtestが必ず踏むため、本番codeの不足をそのまま相殺する。
+/// `use`とmodule宣言はitemであってもcodeを生まないため、置き場所を指すためだけに残す。
 #[test]
-fn test_only_modules_are_outside_the_coverage_population() -> Result<(), Box<dyn std::error::Error>>
-{
+fn test_only_items_are_outside_the_coverage_population() -> Result<(), Box<dyn std::error::Error>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut paths = Vec::new();
     collect_sources(&root.join("src"), &mut paths)?;
@@ -350,26 +502,19 @@ fn test_only_modules_are_outside_the_coverage_population() -> Result<(), Box<dyn
 
     let mut violations = Vec::new();
     for path in paths {
-        let text = fs::read_to_string(&path)?;
-        let syntax = syn::parse_file(&text)?;
-        for item in &syntax.items {
-            let Item::Mod(declaration) = item else {
-                continue;
-            };
-            if !gated_by_test(&declaration.attrs) {
-                continue;
-            }
-            let declared = declared_file(&path, declaration)
-                .ok_or_else(|| format!("{}: the module has no directory", path.display()))?;
-            let declared = relative_to(root, &declared)?;
-            if !outside_the_coverage_population(&declared) {
-                violations.push(format!(
-                    "{}: `{}` builds only for tests, but {declared} is counted",
-                    relative_to(root, &path)?,
-                    declaration.ident
-                ));
-            }
+        let relative = relative_to(root, &path)?;
+        if outside_the_coverage_population(&relative) {
+            continue;
         }
+        let syntax = syn::parse_file(&fs::read_to_string(&path)?)?;
+        let mut counted = CountedFile {
+            relative: &relative,
+            violations: Vec::new(),
+            context: "an item".to_string(),
+            policy: AttributePolicy::CountedCode,
+        };
+        counted.visit_file(&syntax);
+        violations.append(&mut counted.violations);
     }
 
     let places = OUTSIDE_THE_COVERAGE_POPULATION
@@ -383,25 +528,552 @@ fn test_only_modules_are_outside_the_coverage_population() -> Result<(), Box<dyn
     Ok(())
 }
 
-#[test]
-fn the_coverage_task_leaves_out_the_same_places() -> Result<(), Box<dyn std::error::Error>> {
-    let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("mise.toml"))?;
-    let declared = manifest
-        .lines()
-        .find(|line| line.contains("--ignore-filename-regex"))
-        .ok_or("mise.toml leaves out no path from coverage")?;
+/// coverageが数えるfileの中で、test buildだけのcodeを集める。
+struct CountedFile<'a> {
+    relative: &'a str,
+    violations: Vec<String>,
+    context: String,
+    policy: AttributePolicy,
+}
 
-    let mut missing = Vec::new();
-    for (place, pattern) in OUTSIDE_THE_COVERAGE_POPULATION {
-        if !declared.contains(pattern) {
-            missing.push(format!("{place} ({pattern})"));
+/// test専用の条件を許す構文上の位置。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AttributePolicy {
+    /// test専用でも、本番fileに置いてよい。module宣言やuseが該当する。
+    AllowTestOnly,
+    /// test専用のcodeを置いてはいけない。
+    CountedCode,
+}
+
+impl CountedFile<'_> {
+    /// 属性1つを、現在の構文上の位置に対して検査する。
+    fn check_attribute(&mut self, attribute: &syn::Attribute) {
+        let attributes = std::slice::from_ref(attribute);
+        if gate(attributes) == Gate::TestOnly && self.policy == AttributePolicy::CountedCode {
+            self.violations.push(format!(
+                "{}: {} builds only for tests; move it beside its subject in a _test file",
+                self.relative, self.context
+            ));
+        }
+        if attribute_follows_the_test_build(attribute) {
+            self.violations.push(format!(
+                "{}: {} takes an attribute only in test builds",
+                self.relative, self.context
+            ));
+        }
+    }
+
+    fn check_macro(&mut self, invocation: &syn::Macro) {
+        if macro_has_test_condition(invocation) {
+            self.violations.push(format!(
+                "{}: {} macro has a condition that depends on `test`",
+                self.relative, self.context
+            ));
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for CountedFile<'_> {
+    fn visit_item(&mut self, item: &'ast Item) {
+        // module宣言は置き場所を指すだけで、codeはその先のfileにある。指した先が母集団の
+        // 外かどうかは、crate rootから辿るtestが見る。
+        let policy = match item {
+            Item::Mod(declaration) => declaration.content.is_none(),
+            Item::Use(_) | Item::ExternCrate(_) => true,
+            _ => false,
+        };
+        let policy = if policy {
+            AttributePolicy::AllowTestOnly
+        } else {
+            AttributePolicy::CountedCode
+        };
+        let item_context = match item {
+            Item::Macro(item) => format!("macro `{}`", macro_display_name(item)),
+            _ => item_name(item),
+        };
+        let previous_context = std::mem::replace(&mut self.context, item_context);
+        let previous_policy = std::mem::replace(&mut self.policy, policy);
+        if let Item::Macro(item) = item {
+            self.check_macro(&item.mac);
+        }
+        syn::visit::visit_item(self, item);
+        self.context = previous_context;
+        self.policy = previous_policy;
+    }
+
+    fn visit_impl_item(&mut self, item: &'ast syn::ImplItem) {
+        let previous_context =
+            std::mem::replace(&mut self.context, "an associated item".to_string());
+        let previous_policy = std::mem::replace(&mut self.policy, AttributePolicy::CountedCode);
+        if let syn::ImplItem::Macro(item) = item {
+            self.check_macro(&item.mac);
+        }
+        syn::visit::visit_impl_item(self, item);
+        self.context = previous_context;
+        self.policy = previous_policy;
+    }
+
+    fn visit_trait_item(&mut self, item: &'ast syn::TraitItem) {
+        let previous_context = std::mem::replace(&mut self.context, "a trait item".to_string());
+        let previous_policy = std::mem::replace(&mut self.policy, AttributePolicy::CountedCode);
+        if let syn::TraitItem::Macro(item) = item {
+            self.check_macro(&item.mac);
+        }
+        syn::visit::visit_trait_item(self, item);
+        self.context = previous_context;
+        self.policy = previous_policy;
+    }
+
+    fn visit_foreign_item(&mut self, item: &'ast syn::ForeignItem) {
+        let previous_context = std::mem::replace(&mut self.context, "an extern item".to_string());
+        let previous_policy = std::mem::replace(&mut self.policy, AttributePolicy::CountedCode);
+        if let syn::ForeignItem::Macro(item) = item {
+            self.check_macro(&item.mac);
+        }
+        syn::visit::visit_foreign_item(self, item);
+        self.context = previous_context;
+        self.policy = previous_policy;
+    }
+
+    fn visit_variant(&mut self, variant: &'ast syn::Variant) {
+        let previous_context = std::mem::replace(&mut self.context, "an enum variant".to_string());
+        let previous_policy = std::mem::replace(&mut self.policy, AttributePolicy::CountedCode);
+        syn::visit::visit_variant(self, variant);
+        self.context = previous_context;
+        self.policy = previous_policy;
+    }
+
+    fn visit_field(&mut self, field: &'ast syn::Field) {
+        let previous_context = std::mem::replace(&mut self.context, "a field".to_string());
+        let previous_policy = std::mem::replace(&mut self.policy, AttributePolicy::CountedCode);
+        syn::visit::visit_field(self, field);
+        self.context = previous_context;
+        self.policy = previous_policy;
+    }
+
+    fn visit_local(&mut self, local: &'ast syn::Local) {
+        let previous_context = std::mem::replace(&mut self.context, "a binding".to_string());
+        let previous_policy = std::mem::replace(&mut self.policy, AttributePolicy::CountedCode);
+        syn::visit::visit_local(self, local);
+        self.context = previous_context;
+        self.policy = previous_policy;
+    }
+
+    fn visit_attribute(&mut self, attribute: &'ast syn::Attribute) {
+        self.check_attribute(attribute);
+    }
+
+    fn visit_stmt_macro(&mut self, statement: &'ast syn::StmtMacro) {
+        let previous_context =
+            std::mem::replace(&mut self.context, "a statement macro".to_string());
+        self.check_macro(&statement.mac);
+        syn::visit::visit_stmt_macro(self, statement);
+        self.context = previous_context;
+    }
+
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        if let Expr::Macro(expression) = expression {
+            let previous_context =
+                std::mem::replace(&mut self.context, "an expression macro".to_string());
+            self.check_macro(&expression.mac);
+            self.context = previous_context;
+        }
+        syn::visit::visit_expr(self, expression);
+    }
+}
+
+/// macro bodyに`test`で変わる`cfg`または`cfg_attr`があるか。
+///
+/// `syn`はmacroを展開しないため、token treeの属性だけを取り出してpredicateを評価する。
+/// predicateが構文上解釈できない場合も、test条件を隠せるため安全側に倒して落とす。
+fn macro_has_test_condition(invocation: &syn::Macro) -> bool {
+    token_stream_has_test_condition(invocation.tokens.clone())
+}
+
+fn macro_display_name(item: &syn::ItemMacro) -> String {
+    item.ident
+        .as_ref()
+        .map_or_else(|| macro_name(item), std::string::ToString::to_string)
+}
+
+fn token_stream_has_test_condition(tokens: proc_macro2::TokenStream) -> bool {
+    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+    let mut index = 0;
+    while index < tokens.len() {
+        if matches!(&tokens[index], TokenTree::Punct(punct) if punct.as_char() == '#')
+            && let Some(TokenTree::Group(group)) = tokens.get(index + 1)
+            && group.delimiter() == Delimiter::Bracket
+            && attribute_meta_has_test_condition(&group.stream())
+        {
+            return true;
+        }
+
+        if let TokenTree::Group(group) = &tokens[index]
+            && token_stream_has_test_condition(group.stream())
+        {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+fn attribute_meta_has_test_condition(tokens: &proc_macro2::TokenStream) -> bool {
+    let Ok(meta) = syn::parse2::<syn::Meta>(tokens.clone()) else {
+        return false;
+    };
+    let syn::Meta::List(list) = &meta else {
+        return false;
+    };
+    if list.path.is_ident("cfg") {
+        let Ok(predicate) = list.parse_args::<syn::Meta>() else {
+            return true;
+        };
+        return evaluate(&predicate, true) != evaluate(&predicate, false);
+    }
+    if list.path.is_ident("cfg_attr") {
+        let Ok(arguments) = list.parse_args_with(
+            syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+        ) else {
+            return true;
+        };
+        return arguments
+            .first()
+            .is_some_and(|predicate| evaluate(predicate, true) != evaluate(predicate, false));
+    }
+    false
+}
+
+fn item_attributes(item: &Item) -> &[syn::Attribute] {
+    match item {
+        Item::Const(item) => &item.attrs,
+        Item::Enum(item) => &item.attrs,
+        Item::ExternCrate(item) => &item.attrs,
+        Item::Fn(item) => &item.attrs,
+        Item::ForeignMod(item) => &item.attrs,
+        Item::Impl(item) => &item.attrs,
+        Item::Macro(item) => &item.attrs,
+        Item::Mod(item) => &item.attrs,
+        Item::Static(item) => &item.attrs,
+        Item::Struct(item) => &item.attrs,
+        Item::Trait(item) => &item.attrs,
+        Item::TraitAlias(item) => &item.attrs,
+        Item::Type(item) => &item.attrs,
+        Item::Union(item) => &item.attrs,
+        Item::Use(item) => &item.attrs,
+        _ => &[],
+    }
+}
+
+/// `test`がitemとその内部のcodeの有無を1人で決めているか。
+///
+/// `#[cfg(not(test))]`のitemは母集団へ入るが、testからは決して踏めない。
+/// `#[cfg(any(test, ...))]`のitemは、本番buildに存在するかどうかがsourceだけでは決まらず、
+/// 数えるべきか外すべきかも決まらない。どちらも置かせない。
+#[test]
+fn the_test_build_decides_an_item_on_its_own() -> Result<(), Box<dyn std::error::Error>> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut paths = Vec::new();
+    collect_sources(&root.join("src"), &mut paths)?;
+    paths.sort();
+
+    let mut violations = Vec::new();
+    for path in paths {
+        let relative = relative_to(root, &path)?;
+        let syntax = syn::parse_file(&fs::read_to_string(&path)?)?;
+        let mut sharing = SharedDecision {
+            relative: &relative,
+            violations: Vec::new(),
+            context: "an item".to_string(),
+        };
+        sharing.visit_file(&syntax);
+        violations.append(&mut sharing.violations);
+    }
+
+    assert!(
+        violations.is_empty(),
+        "`test` must decide an item by itself:\n{}",
+        violations.join("\n")
+    );
+    Ok(())
+}
+
+/// `test`以外の条件と一緒にitemやその内部のcodeの有無を決めている箇所を集める。
+struct SharedDecision<'a> {
+    relative: &'a str,
+    violations: Vec<String>,
+    context: String,
+}
+
+impl<'ast> Visit<'ast> for SharedDecision<'_> {
+    fn visit_item(&mut self, item: &'ast Item) {
+        let item_context = match item {
+            Item::Macro(item) => format!("macro `{}`", macro_display_name(item)),
+            _ => item_name(item),
+        };
+        let previous_context = std::mem::replace(&mut self.context, item_context);
+        if let Item::Macro(item) = item {
+            self.check_macro(&item.mac);
+        }
+        syn::visit::visit_item(self, item);
+        self.context = previous_context;
+    }
+
+    fn visit_impl_item(&mut self, item: &'ast syn::ImplItem) {
+        let previous_context =
+            std::mem::replace(&mut self.context, "an associated item".to_string());
+        if let syn::ImplItem::Macro(item) = item {
+            self.check_macro(&item.mac);
+        }
+        syn::visit::visit_impl_item(self, item);
+        self.context = previous_context;
+    }
+
+    fn visit_trait_item(&mut self, item: &'ast syn::TraitItem) {
+        let previous_context = std::mem::replace(&mut self.context, "a trait item".to_string());
+        if let syn::TraitItem::Macro(item) = item {
+            self.check_macro(&item.mac);
+        }
+        syn::visit::visit_trait_item(self, item);
+        self.context = previous_context;
+    }
+
+    fn visit_foreign_item(&mut self, item: &'ast syn::ForeignItem) {
+        let previous_context = std::mem::replace(&mut self.context, "an extern item".to_string());
+        if let syn::ForeignItem::Macro(item) = item {
+            self.check_macro(&item.mac);
+        }
+        syn::visit::visit_foreign_item(self, item);
+        self.context = previous_context;
+    }
+
+    fn visit_variant(&mut self, variant: &'ast syn::Variant) {
+        let previous_context = std::mem::replace(&mut self.context, "an enum variant".to_string());
+        syn::visit::visit_variant(self, variant);
+        self.context = previous_context;
+    }
+
+    fn visit_field(&mut self, field: &'ast syn::Field) {
+        let previous_context = std::mem::replace(&mut self.context, "a field".to_string());
+        syn::visit::visit_field(self, field);
+        self.context = previous_context;
+    }
+
+    fn visit_local(&mut self, local: &'ast syn::Local) {
+        let previous_context = std::mem::replace(&mut self.context, "a binding".to_string());
+        syn::visit::visit_local(self, local);
+        self.context = previous_context;
+    }
+
+    fn visit_attribute(&mut self, attribute: &'ast syn::Attribute) {
+        let attributes = std::slice::from_ref(attribute);
+        match gate(attributes) {
+            Gate::ProductionOnly => self.violations.push(format!(
+                "{}: {} is left out of the test build",
+                self.relative, self.context
+            )),
+            Gate::Undecidable => self.violations.push(format!(
+                "{}: {} shares its condition with `test`",
+                self.relative, self.context
+            )),
+            Gate::TestOnly | Gate::Unconditional => {}
+        }
+        if attribute_follows_the_test_build(attribute) {
+            self.violations.push(format!(
+                "{}: {} takes an attribute only in test builds",
+                self.relative, self.context
+            ));
+        }
+    }
+
+    fn visit_stmt_macro(&mut self, statement: &'ast syn::StmtMacro) {
+        let previous_context =
+            std::mem::replace(&mut self.context, "a statement macro".to_string());
+        self.check_macro(&statement.mac);
+        syn::visit::visit_stmt_macro(self, statement);
+        self.context = previous_context;
+    }
+
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        if let Expr::Macro(expression) = expression {
+            let previous_context =
+                std::mem::replace(&mut self.context, "an expression macro".to_string());
+            self.check_macro(&expression.mac);
+            self.context = previous_context;
+        }
+        syn::visit::visit_expr(self, expression);
+    }
+}
+
+impl SharedDecision<'_> {
+    fn check_macro(&mut self, invocation: &syn::Macro) {
+        if macro_has_test_condition(invocation) {
+            self.violations.push(format!(
+                "{}: {} macro has a condition that depends on `test`",
+                self.relative, self.context
+            ));
+        }
+    }
+}
+
+/// coverageが数えるfileと、本番buildが組み立てるfileが一致するか。
+///
+/// 置き場所の規約はtest支援codeを母集団へ入れないためにある。同じ規約は、除外を足して
+/// 本番codeを母集団から外すことも禁じなければならない。片側だけを見ると、`fake/`を1つ
+/// 足すだけで、testの無い本番codeを数えられなくできる。
+///
+/// crate rootから`mod`宣言を辿り、test buildでしか組み立たないfileを求めて、規約が外す
+/// fileと突き合わせる。module宣言はmodule levelにあるものだけを読む。
+#[test]
+fn the_coverage_population_is_what_the_crate_builds_without_tests()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut violations = Vec::new();
+
+    let mut reached: BTreeSet<(PathBuf, bool)> = BTreeSet::new();
+    let mut queue: VecDeque<(PathBuf, bool)> = VecDeque::new();
+    let entry = root.join("src").join("main.rs");
+    reached.insert((entry.clone(), false));
+    queue.push_back((entry, false));
+    while let Some((file, gated)) = queue.pop_front() {
+        let syntax = syn::parse_file(&fs::read_to_string(&file)?)?;
+        let mut declarations = Vec::new();
+        module_declarations(&syntax.items, false, &mut declarations);
+        for (declaration, inner_gate) in declarations {
+            let declared = declared_file(&file, declaration)
+                .ok_or_else(|| format!("{}: the module has no directory", file.display()))?;
+            if !declared.is_file() {
+                violations.push(format!(
+                    "{}: `{}` declares a file that is not there",
+                    relative_to(root, &file)?,
+                    declaration.ident
+                ));
+                continue;
+            }
+            let gated = gated || inner_gate || gate(&declaration.attrs) == Gate::TestOnly;
+            if reached.insert((declared.clone(), gated)) {
+                queue.push_back((declared, gated));
+            }
+        }
+    }
+
+    // 1つでも本番buildから辿れるなら、そのfileは本番codeである。
+    let mut population: BTreeMap<PathBuf, bool> = BTreeMap::new();
+    for (file, gated) in reached {
+        population
+            .entry(file)
+            .and_modify(|test_only| *test_only &= gated)
+            .or_insert(gated);
+    }
+
+    let mut paths = Vec::new();
+    collect_sources(&root.join("src"), &mut paths)?;
+    paths.sort();
+    for path in paths {
+        let relative = relative_to(root, &path)?;
+        let counted = !outside_the_coverage_population(&relative);
+        match population.get(&path) {
+            None => violations.push(format!("{relative}: no module declaration reaches it")),
+            Some(true) if counted => {
+                violations.push(format!("{relative}: builds only for tests, but is counted"));
+            }
+            Some(false) if !counted => {
+                violations.push(format!(
+                    "{relative}: builds for production, but is left out"
+                ));
+            }
+            Some(_) => {}
         }
     }
 
     assert!(
-        missing.is_empty(),
-        "the coverage task must leave out every place test support may live; missing {}",
-        missing.join(", ")
+        violations.is_empty(),
+        "the coverage population and the production build must hold the same files:\n{}",
+        violations.join("\n")
+    );
+    Ok(())
+}
+
+/// coverage taskが外すpathの正規表現。
+fn ignore_filename_regex(manifest: &str) -> Result<&str, String> {
+    let declared = manifest
+        .lines()
+        .find(|line| line.contains("--ignore-filename-regex"))
+        .ok_or_else(|| "mise.toml leaves out no path from coverage".to_string())?;
+    // 正規表現は`'`を含まないため、行はちょうど3つに割れる。割れ方が変わったなら、
+    // 引用の形が変わっている。
+    let quoted: Vec<&str> = declared.split('\'').collect();
+    match quoted.as_slice() {
+        [_, pattern, _] => Ok(pattern),
+        _ => Err(format!(
+            "--ignore-filename-regex must carry one quoted pattern: {declared}"
+        )),
+    }
+}
+
+/// 正規表現をtop-levelの`|`で割る。
+///
+/// `(^|/)`の`|`は選択肢の区切りではない。group、文字class、escapeの中では割らない。
+fn alternatives(pattern: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0usize;
+    let mut in_class = false;
+    let mut escaped = false;
+    for character in pattern.chars() {
+        if escaped {
+            current.push(character);
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => {
+                current.push(character);
+                escaped = true;
+            }
+            '[' if !in_class => {
+                in_class = true;
+                current.push(character);
+            }
+            ']' if in_class => {
+                in_class = false;
+                current.push(character);
+            }
+            '(' if !in_class => {
+                depth += 1;
+                current.push(character);
+            }
+            ')' if !in_class => {
+                depth = depth.saturating_sub(1);
+                current.push(character);
+            }
+            '|' if !in_class && depth == 0 => parts.push(std::mem::take(&mut current)),
+            _ => current.push(character),
+        }
+    }
+    parts.push(current);
+    parts
+}
+
+/// coverage taskが外すのは、規約が定めた4か所だけか。
+///
+/// 足りないほうだけを見ると、除外を1つ足して本番codeを母集団から外せる。数も綴りも
+/// 一致することを求める。
+#[test]
+fn the_coverage_task_leaves_out_the_same_places() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("mise.toml"))?;
+
+    let mut declared = alternatives(ignore_filename_regex(&manifest)?);
+    declared.sort();
+    let mut expected: Vec<String> = OUTSIDE_THE_COVERAGE_POPULATION
+        .iter()
+        .map(|(_, pattern)| (*pattern).to_string())
+        .collect();
+    expected.sort();
+
+    assert_eq!(
+        declared, expected,
+        "the coverage task must leave out exactly the places test support may live"
     );
     Ok(())
 }
@@ -503,4 +1175,238 @@ fn an_unknown_public_macro_is_not_silently_ignored() -> Result<(), syn::Error> {
     assert_eq!(violations.len(), 1);
     assert!(violations[0].contains("make_public"));
     Ok(())
+}
+
+#[test]
+fn a_compound_condition_that_needs_the_test_build_is_test_only() -> Result<(), syn::Error> {
+    let syntax = syn::parse_file(
+        r#"
+        #[cfg(all(test, unix))]
+        fn only_on_unix_tests() {}
+        #[cfg(test)]
+        #[cfg(target_os = "macos")]
+        fn only_on_macos_tests() {}
+        "#,
+    )?;
+
+    for item in &syntax.items {
+        assert_eq!(gate(item_attributes(item)), Gate::TestOnly);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_condition_the_test_build_only_shares_decides_nothing() -> Result<(), syn::Error> {
+    let syntax = syn::parse_file(
+        r"
+        #[cfg(any(test, unix))]
+        fn also_on_unix() {}
+        #[cfg(not(test))]
+        fn never_in_tests() {}
+        #[cfg(unix)]
+        fn no_word_about_tests() {}
+        ",
+    )?;
+    let gates: Vec<Gate> = syntax
+        .items
+        .iter()
+        .map(|i| gate(item_attributes(i)))
+        .collect();
+
+    assert_eq!(
+        gates,
+        [Gate::Undecidable, Gate::ProductionOnly, Gate::Unconditional]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_test_only_item_beside_its_subject_is_reported() -> Result<(), syn::Error> {
+    let syntax = syn::parse_file(
+        r"
+        pub struct Ui;
+        impl Ui {
+            #[cfg(test)]
+            pub fn capture() -> Ui { Ui }
+        }
+        #[cfg(test)]
+        #[path = 'ui_test.rs']
+        mod ui_test;
+        "
+        .replace('\'', "\"")
+        .as_str(),
+    )?;
+    let mut counted = CountedFile {
+        relative: "src/design/ui.rs",
+        violations: Vec::new(),
+        context: "an item".to_string(),
+        policy: AttributePolicy::CountedCode,
+    };
+
+    counted.visit_file(&syntax);
+
+    assert_eq!(counted.violations.len(), 1);
+    assert!(counted.violations[0].contains("an associated item"));
+    Ok(())
+}
+
+#[test]
+fn a_macro_that_builds_test_only_items_is_reported() -> Result<(), syn::Error> {
+    let syntax = syn::parse_file(
+        r"
+        macro_rules! error_ids {
+            () => {
+                impl ErrorId {
+                    #[cfg(test)]
+                    pub const ALL: &'static [ErrorId] = &[];
+                }
+            };
+        }
+        ",
+    )?;
+    let mut counted = CountedFile {
+        relative: "src/diagnostics/error_id.rs",
+        violations: Vec::new(),
+        context: "an item".to_string(),
+        policy: AttributePolicy::CountedCode,
+    };
+
+    counted.visit_file(&syntax);
+
+    assert_eq!(counted.violations.len(), 1);
+    assert!(counted.violations[0].contains("error_ids"));
+    Ok(())
+}
+
+#[test]
+fn a_production_only_associated_item_is_reported() -> Result<(), syn::Error> {
+    let syntax = syn::parse_file(
+        r"
+        pub struct Request;
+        impl Request {
+            #[cfg(not(test))]
+            pub fn production_only(&self) {}
+        }
+        ",
+    )?;
+    let mut sharing = SharedDecision {
+        relative: "src/request.rs",
+        violations: Vec::new(),
+        context: "an item".to_string(),
+    };
+
+    sharing.visit_file(&syntax);
+
+    assert_eq!(sharing.violations.len(), 1);
+    assert!(sharing.violations[0].contains("associated item"));
+    Ok(())
+}
+
+#[test]
+fn a_compound_condition_in_a_macro_is_reported() -> Result<(), syn::Error> {
+    let syntax = syn::parse_file(
+        r"
+        macro_rules! test_helper {
+            () => {
+                #[cfg(all(test, unix))]
+                pub fn helper() {}
+            };
+        }
+        impl Request {
+            test_helper!();
+        }
+        ",
+    )?;
+    let mut counted = CountedFile {
+        relative: "src/request.rs",
+        violations: Vec::new(),
+        context: "an item".to_string(),
+        policy: AttributePolicy::CountedCode,
+    };
+
+    counted.visit_file(&syntax);
+
+    assert_eq!(counted.violations.len(), 1);
+    assert!(counted.violations[0].contains("test_helper"));
+    Ok(())
+}
+
+#[test]
+fn a_test_only_cfg_attr_in_a_macro_is_reported() -> Result<(), syn::Error> {
+    let syntax = syn::parse_file(
+        r"
+        macro_rules! test_helper {
+            () => {
+                #[cfg_attr(test, derive(Default))]
+                pub struct Request;
+            };
+        }
+        ",
+    )?;
+    let mut counted = CountedFile {
+        relative: "src/request.rs",
+        violations: Vec::new(),
+        context: "an item".to_string(),
+        policy: AttributePolicy::CountedCode,
+    };
+
+    counted.visit_file(&syntax);
+
+    assert_eq!(counted.violations.len(), 1);
+    assert!(counted.violations[0].contains("test_helper"));
+    Ok(())
+}
+
+#[test]
+fn a_test_only_expression_is_reported() -> Result<(), syn::Error> {
+    let syntax = syn::parse_file(
+        r"
+        fn production_function() {
+            #[cfg(test)]
+            std::hint::black_box(());
+        }
+        ",
+    )?;
+    let mut counted = CountedFile {
+        relative: "src/request.rs",
+        violations: Vec::new(),
+        context: "an item".to_string(),
+        policy: AttributePolicy::CountedCode,
+    };
+
+    counted.visit_file(&syntax);
+
+    assert_eq!(counted.violations.len(), 1);
+    assert!(counted.violations[0].contains("fn production_function"));
+    Ok(())
+}
+
+#[test]
+fn an_attribute_that_only_test_builds_apply_is_reported() -> Result<(), syn::Error> {
+    let syntax = syn::parse_file(
+        r"
+        #[cfg_attr(test, derive(Default))]
+        pub struct Request;
+        ",
+    )?;
+    let mut counted = CountedFile {
+        relative: "src/commands/add/request.rs",
+        violations: Vec::new(),
+        context: "an item".to_string(),
+        policy: AttributePolicy::CountedCode,
+    };
+
+    counted.visit_file(&syntax);
+
+    assert_eq!(counted.violations.len(), 1);
+    assert!(counted.violations[0].contains("only in test builds"));
+    Ok(())
+}
+
+#[test]
+fn a_group_does_not_end_an_alternative() {
+    assert_eq!(
+        alternatives("(^|/)tests/|[^/]*_test[^/]*\\.rs$"),
+        ["(^|/)tests/", "[^/]*_test[^/]*\\.rs$"]
+    );
 }

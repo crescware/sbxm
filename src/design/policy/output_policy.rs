@@ -40,15 +40,6 @@ impl OutputPolicy {
             },
         }
     }
-
-    /// ANSIを一切出さない条件。
-    #[cfg(test)]
-    pub fn plain() -> OutputPolicy {
-        OutputPolicy {
-            stdout: StreamPolicy::plain(),
-            stderr: StreamPolicy::plain(),
-        }
-    }
 }
 
 /// 1 streamの色可否。
@@ -78,3 +69,7 @@ fn color_for(mode: ColorMode, environment: &Environment, is_tty: bool) -> bool {
 fn is_dumb(environment: &Environment) -> bool {
     environment.term.as_deref() == Some("dumb")
 }
+
+#[cfg(test)]
+#[path = "output_policy_test.rs"]
+mod output_policy_test;

@@ -375,6 +375,7 @@ dependencies = [
  "dirs",
  "fluent-bundle",
  "fluent-syntax",
+ "proc-macro2",
  "rustix",
  "serde",
  "serde_json",
