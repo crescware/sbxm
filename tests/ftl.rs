@@ -271,6 +271,7 @@ const SHOWN_AS_A_FACT: &[(&str, &str)] = &[
     ("error-network-policy-unobservable", "detail"),
     ("error-daemon-unobservable", "detail"),
     ("error-sbx-login-unobservable", "detail"),
+    ("error-remote-ssh-unobservable", "detail"),
 ];
 
 #[test]
