@@ -17,3 +17,7 @@ pub fn required_clone_url(matches: &ArgMatches) -> Result<RepositoryIdentity> {
     })?;
     RepositoryIdentity::parse_clone_url(value)
 }
+
+#[cfg(test)]
+#[path = "required_clone_url_test.rs"]
+mod required_clone_url_test;

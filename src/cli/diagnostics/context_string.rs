@@ -15,3 +15,7 @@ pub(super) fn context_string(error: &clap::Error, kind: ContextKind) -> Option<S
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "context_string_test.rs"]
+mod context_string_test;
