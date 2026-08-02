@@ -23,3 +23,7 @@ pub fn report(ui: &mut Ui, stopped: &StopReport) -> ExitCode {
         ExitCode::Failure
     }
 }
+
+#[cfg(test)]
+#[path = "report_test.rs"]
+mod report_test;
