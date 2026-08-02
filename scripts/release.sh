@@ -55,125 +55,125 @@ usage() {
 }
 
 check_clean_worktree() {
-  log "working treeがcleanか確認する"
+  log "checking that the working tree is clean"
   [ -z "$(git status --porcelain)" ] \
-    || fail "working treeがcleanではない。commitまたはstashしてから実行すること"
+    || fail "working tree is not clean; commit or stash before running this"
 }
 
 check_tag_exists() {
   local tag="$1"
-  log "tag ${tag} の存在を確認する"
+  log "checking that tag ${tag} exists"
   git rev-parse -q --verify "refs/tags/${tag}" >/dev/null \
-    || fail "tag ${tag} が存在しない"
+    || fail "tag ${tag} does not exist"
 }
 
 check_tag_matches_head() {
   local tag="$1"
-  log "tag ${tag} がHEADと一致するか確認する"
+  log "checking that tag ${tag} matches HEAD"
   local tag_commit head_commit
   tag_commit="$(git rev-list -n 1 "${tag}")"
   head_commit="$(git rev-parse HEAD)"
   [ "$tag_commit" = "$head_commit" ] \
-    || fail "tag ${tag} (${tag_commit}) がHEAD (${head_commit}) と一致しない"
+    || fail "tag ${tag} (${tag_commit}) does not match HEAD (${head_commit})"
 }
 
 check_no_existing_release() {
   local tag="$1"
-  log "GitHub Release ${tag} が存在しないか確認する"
+  log "checking that GitHub Release ${tag} does not already exist"
   gh release view "${tag}" >/dev/null 2>&1 \
-    && fail "GitHub Release ${tag} は既に存在する"
+    && fail "GitHub Release ${tag} already exists"
   return 0
 }
 
 check_cargo_version_matches() {
   local expected="$1"
-  log "Cargo.tomlのversionとtagが一致するか確認する"
+  log "checking that Cargo.toml's version matches the tag"
   local actual
   actual="$(awk -F'"' '
     /^\[/ { in_package = ($0 == "[package]") }
     in_package && /^version[[:space:]]*=/ { print $2; exit }
   ' Cargo.toml)"
-  [ -n "$actual" ] || fail "Cargo.tomlから[package] versionを読めなかった"
+  [ -n "$actual" ] || fail "could not read [package] version from Cargo.toml"
   [ "$actual" = "$expected" ] \
-    || fail "Cargo.tomlのversion (${actual}) がtagのversion (${expected}) と一致しない"
+    || fail "Cargo.toml's version (${actual}) does not match the tag's version (${expected})"
 }
 
 check_no_build_affecting_env_vars() {
-  log "build結果へ影響するenv varが設定されていないか確認する"
+  log "checking that no build-affecting env vars are set"
   local var set_vars=()
   for var in "${BUILD_AFFECTING_ENV_VARS[@]}"; do
     [ -n "${!var:-}" ] && set_vars+=("$var")
   done
   [ "${#set_vars[@]}" -eq 0 ] \
-    || fail "build結果へ影響するenv varが設定されている: ${set_vars[*]}"
+    || fail "build-affecting env vars are set: ${set_vars[*]}"
 }
 
 check_host_is_arm64() {
-  log "hostのarchitectureを確認する"
+  log "checking the host architecture"
   local machine
   machine="$(uname -m)"
-  [ "$machine" = "arm64" ] || fail "hostがarm64ではない (uname -m: ${machine})"
+  [ "$machine" = "arm64" ] || fail "host is not arm64 (uname -m: ${machine})"
 }
 
 check_rustc_host_is_apple_silicon() {
-  log "rustcのhost tripleを確認する"
+  log "checking rustc's host triple"
   local host
   host="$(rustc -vV | sed -n 's/^host: //p')"
   [ "$host" = "$TARGET_TRIPLE" ] \
-    || fail "rustcのhostが${TARGET_TRIPLE}ではない (host: ${host})"
+    || fail "rustc's host is not ${TARGET_TRIPLE} (host: ${host})"
 }
 
 build_release_binary() {
-  log "cargo build --release --locked を実行する"
+  log "running cargo build --release --locked"
   cargo build --release --locked
 }
 
 sign_binary() {
   local bin_path="$1"
-  log "ad-hoc署名を付ける"
+  log "applying an ad-hoc signature"
   codesign --force --sign - "$bin_path"
 }
 
 verify_signature() {
   local bin_path="$1"
-  log "署名をcodesign --verifyで検証する"
+  log "verifying the signature with codesign --verify"
   codesign --verify --strict --verbose=2 "$bin_path"
 }
 
 verify_adhoc_signature() {
   local bin_path="$1"
-  log "codesign -dvでad-hoc署名であることを確認する"
+  log "confirming an ad-hoc signature with codesign -dv"
   local info
   info="$(codesign -dv "$bin_path" 2>&1)"
   printf '%s\n' "$info" >&2
   printf '%s\n' "$info" | grep -q '^Signature=adhoc$' \
-    || fail "ad-hoc署名ではない"
+    || fail "signature is not ad-hoc"
 }
 
 verify_binary_arch() {
   local bin_path="$1"
-  log "fileでarm64のMach-Oか確認する"
+  log "confirming an arm64 Mach-O binary with file"
   local info
   info="$(file "$bin_path")"
   printf '%s\n' "$info" >&2
   printf '%s\n' "$info" | grep -q 'Mach-O.*arm64' \
-    || fail "arm64のMach-Oではない: ${info}"
+    || fail "not an arm64 Mach-O binary: ${info}"
 }
 
 verify_binary_version() {
   local bin_path="$1" version="$2"
-  log "sbxm --versionの出力を確認する"
+  log "checking the sbxm --version output"
   local actual expected
   actual="$("$bin_path" --version)"
   expected="${BIN_NAME} ${version}"
   [ "$actual" = "$expected" ] \
-    || fail "sbxm --versionの出力 (${actual}) がrelease version (${expected}) と一致しない"
+    || fail "sbxm --version output (${actual}) does not match the release version (${expected})"
 }
 
 package_archive() {
   local bin_path="$1"
   local archive_path="${DIST_DIR}/${ARCHIVE_NAME}"
-  log "release assetを作成する: ${archive_path}"
+  log "creating the release asset: ${archive_path}"
   local stage_dir="${WORK_DIR}/stage"
   mkdir -p "$stage_dir" "$DIST_DIR"
   cp "$bin_path" "${stage_dir}/${BIN_NAME}"
@@ -186,11 +186,11 @@ package_archive() {
 
 verify_archive_contents() {
   local archive="$1"
-  log "archive直下に${BIN_NAME}だけが含まれているか確認する"
+  log "checking that the archive contains only ${BIN_NAME} at its root"
   local listing
   listing="$(tar -tzf "$archive")"
   [ "$listing" = "$BIN_NAME" ] \
-    || fail "archiveの内容が${BIN_NAME}だけではない: $(printf '%s' "$listing" | tr '\n' ' ')"
+    || fail "archive contains more than just ${BIN_NAME}: $(printf '%s' "$listing" | tr '\n' ' ')"
 }
 
 record_provenance() {
@@ -209,14 +209,14 @@ record_provenance() {
   # 同じ階層へ置くだけで済むようにする。
   checksum="$(cd "$archive_dir" && shasum -a 256 "$archive_base")"
 
-  log "Git commit SHAを記録する: ${commit_sha}"
-  log "rustc -vV を記録する"
+  log "recording the Git commit SHA: ${commit_sha}"
+  log "recording rustc -vV"
   printf '%s\n' "$rustc_version" >&2
-  log "cargo -V を記録する"
+  log "recording cargo -V"
   printf '%s\n' "$cargo_version_str" >&2
-  log "sw_vers を記録する"
+  log "recording sw_vers"
   printf '%s\n' "$sw_vers_output" >&2
-  log "shasum -a 256 を出力する"
+  log "outputting shasum -a 256"
   printf '%s\n' "$checksum" >&2
 
   {
@@ -234,7 +234,7 @@ record_provenance() {
 
 create_github_release() {
   local tag="$1" archive="$2" notes_file="$3"
-  log "GitHub Release ${tag} を作成する"
+  log "creating GitHub Release ${tag}"
   # --verify-tag: remoteに同名tagが無ければ失敗させる。tagのpushはこのscriptの
   # 責務外とし、ここではpush済みのtagだけを対象にする。
   # --prerelease、--clobberはどちらも付けない。正式版のみを対象にし、既存asset
@@ -248,7 +248,7 @@ create_github_release() {
 main() {
   if [ "$#" -ne 1 ]; then
     usage
-    fail "tagを1つ指定すること (例: v0.0.1)"
+    fail "expected exactly one tag argument (e.g. v0.0.1)"
   fi
   local tag="$1"
 
@@ -263,7 +263,7 @@ main() {
   check_no_existing_release "$tag"
 
   local version="${tag#v}"
-  [ "$version" != "$tag" ] || fail "tagはvから始まること (例: v0.0.1): ${tag}"
+  [ "$version" != "$tag" ] || fail "tag must start with v (e.g. v0.0.1): ${tag}"
 
   check_cargo_version_matches "$version"
   check_no_build_affecting_env_vars
@@ -288,7 +288,7 @@ main() {
 
   create_github_release "$tag" "$archive_path" "$notes_file"
 
-  log "release ${tag} を作成した"
+  log "created release ${tag}"
 }
 
 main "$@"
