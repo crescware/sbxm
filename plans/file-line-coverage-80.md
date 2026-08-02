@@ -64,8 +64,7 @@ PR #48のhead `c04da7d`で、固定済みの`cargo-llvm-cov 0.8.7`を使って�
 5. `mise run check`が同一commitで3回連続して成功し、各fileの対象行数・到達行数が一致する。
 6. 追加したtestが行を踏むことだけでなく、戻り値、diagnostic、error伝播、mutation後の状態の
    いずれかを仕様として検査している。
-7. 通常checkがCIのrequired checkとして実行され、localで任意に実行するだけのgateではない。
-8. baseline用の一時的なratchetを導入した場合、80% gateと役割が重複する部分を削除する。
+7. baseline用の一時的なratchetを導入した場合、80% gateと役割が重複する部分を削除する。
 
 ## 測定方法
 
@@ -104,7 +103,7 @@ process lifecycleを先に修正する。
 ### 3. 返済中の逆戻りを止める
 
 全52 fileを直すまでは80% gateを有効にできない。その期間に不足を増やさないため、一時的な
-baseline ratchetをCIへ置く。
+baseline ratchetを通常checkへ置く。
 
 - baseline時点で80%以上のfileは80%未満へ落とせない。
 - baseline時点で80%未満のfileは、covered / executableの比率を下げられない。
@@ -188,10 +187,9 @@ directory、atomic replace、lock、project pathを扱う。
 
 1. PR #48をmergeする。
 2. coverage非決定性が残っていないことを3回計測で確認する。
-3. `mise run check`をCI required checkにする。未導入なら、coverage返済より先に別PRで行う。
-4. baselineを取り直し、80%未満fileの確定一覧を作る。
+3. baselineを取り直し、80%未満fileの確定一覧を作る。
 
-完了条件: 同一commitの3 reportが一致し、CIが通常checkを強制している。
+完了条件: 同一commitの3 reportが一致する。
 
 ### 手順1. 一時ratchetを入れる
 
@@ -272,7 +270,7 @@ cargo llvm-cov \
 2. 新規・変更fileのno-regressionに引き続き価値がある部分は残す。
 3. 最終分布と、90%へ上げるためのbacklogを記録する。
 
-完了条件: 一時的な二重管理がなく、80% floorと全体90/90/88がCIで強制される。
+完了条件: 一時的な二重管理がなく、80% floorと全体90/90/88が通常checkで強制される。
 
 ## 参考backlog
 
