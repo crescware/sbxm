@@ -8,8 +8,8 @@ use super::InvalidCommandLine;
 /// secretを含まないことは生成時点の責務であり、この型はsanitizerではない。redactは
 /// `support::secret`のように値を組み立てる側が行う。
 ///
-/// `Display`を実装しない。文へ埋め込む手段を型が持てば、独立したblockとして描くという
-/// 不変条件をrendererの外から破れる。描くのは`as_str`を受け取るpainterだけとする。
+/// `Display`を実装しない。`format!`などの暗黙の文字列化で、rendererを通らない文への
+/// 埋め込みを容易にしないためである。描画は`as_str`を受け取るpainterが担当する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandLine {
     value: String,
