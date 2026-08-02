@@ -7,6 +7,9 @@ use crate::msg;
 
 use super::{BLOCK, MAX_ENTRY_BYTES, entry_name, octal, unreadable, unusable};
 
+// `SeekFrom::Current`へ渡すsignedなblock幅。tarのblock幅は固定512 byte。
+const BLOCK_OFFSET: i64 = 512;
+
 /// tar archiveから1件のentryを取り出す。
 ///
 /// entry本体を読み飛ばしながらheaderだけを辿るため、archiveの大きさに依存しない。
@@ -61,8 +64,8 @@ pub(super) fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
         }
 
         // entry本体は512 byte単位で詰められている。
-        let block = BLOCK as i64;
-        let padded = (size / block + i64::from(u8::from(size % block != 0))) * block;
+        let padded =
+            (size / BLOCK_OFFSET + i64::from(u8::from(size % BLOCK_OFFSET != 0))) * BLOCK_OFFSET;
         file.seek(SeekFrom::Current(padded))
             .map_err(|error| unreadable(path, None, &error.to_string()))?;
     }

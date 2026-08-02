@@ -55,7 +55,7 @@ fn slugify(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
         let mapped = match byte {
-            b'a'..=b'z' | b'0'..=b'9' => byte as char,
+            b'a'..=b'z' | b'0'..=b'9' => char::from(byte),
             _ => '-',
         };
         if mapped == '-' && out.ends_with('-') {

@@ -61,6 +61,7 @@ all = { level = "deny", priority = -1 }
 
 # より厳格で、多少の誤検知を許容するLint
 pedantic = { level = "deny", priority = -1 }
+as_conversions = "forbid"
 
 # AIが安易に生成しやすい処理を個別に禁止
 unwrap_used = "deny"

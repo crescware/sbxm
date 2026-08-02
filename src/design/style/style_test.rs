@@ -124,7 +124,7 @@ fn no_built_in_glyph_can_be_drawn_as_a_multi_color_pictograph() {
     for set in [CharacterSet::Unicode, CharacterSet::Ascii] {
         for glyph in glyphs(set).all() {
             for character in glyph.chars() {
-                let point = character as u32;
+                let point = u32::from(character);
                 assert_ne!(point, 0xFE0F, "{glyph:?} carries an emoji presentation");
                 assert_ne!(
                     point, 0xFE0E,
