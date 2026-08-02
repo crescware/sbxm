@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::design::width::display_width;
+
 use super::super::Screen;
 
 /// 書かれた内容を行として保つscreen。
@@ -107,8 +109,12 @@ impl Screen for RecordedScreen {
     fn clear_chars(&mut self, count: usize) -> std::io::Result<()> {
         self.writable()?;
         self.current(|current| {
-            for _ in 0..count {
-                current.pop();
+            let mut cleared = 0usize;
+            while cleared < count {
+                let Some(character) = current.pop() else {
+                    break;
+                };
+                cleared = cleared.saturating_add(display_width(&character.to_string()));
             }
         });
         Ok(())

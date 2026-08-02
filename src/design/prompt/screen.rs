@@ -9,7 +9,7 @@ pub trait Screen {
     /// 一行を書いて改行する。
     fn write_line(&mut self, line: &str) -> std::io::Result<()>;
 
-    /// 現在行の末尾から`count`文字ぶんを消す。
+    /// 現在行の末尾から`count`表示列ぶんを消す。
     fn clear_chars(&mut self, count: usize) -> std::io::Result<()>;
 
     /// 現在行の前に書いた`count`行を消す。

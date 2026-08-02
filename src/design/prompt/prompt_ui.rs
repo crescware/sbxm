@@ -27,6 +27,8 @@ impl PromptUi {
     /// 実端末へ出すprompt。
     ///
     /// 出す先はstderrとする。正常結果はstdoutへ残るため、描き直しと混ざらない。
+    /// composition rootから使う組み立てhelperであり、通常のprompt処理が端末へ触れるのは
+    /// `new`へ渡された`Keys`と`Screen`だけである。
     pub fn terminal(locale: Locale, policy: StreamPolicy) -> PromptUi {
         let term = Term::stderr();
         PromptUi::new(

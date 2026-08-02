@@ -585,7 +585,7 @@ sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれ
 
 promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`とは別に組み立てて渡す。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
 
-`PromptUi`は打鍵の供給元と描画先を`Keys`と`Screen`として受け取る。実端末に触れるのは、その2つを満たすadapter 1つだけとする。選択と入力の進み方はfakeで確かめられ、実端末が要るのは端末操作そのものだけになる。実体を選ぶのは組み立てる側であり、commandは受け取った`PromptUi`を使う。
+`PromptUi`は打鍵の供給元と描画先を`Keys`と`Screen`として受け取る。実端末の操作を担うのは、その2つを満たす`RealTerminal` adapterである。`PromptUi::terminal`はcomposition rootから使う組み立てhelperとして`Term`を2つのadapterへ渡し、選択と入力の進み方はfakeで確かめられる。実体を選ぶのは組み立てる側であり、commandは受け取った`PromptUi`を使う。
 
 ## 新しい出力を追加する手順
 

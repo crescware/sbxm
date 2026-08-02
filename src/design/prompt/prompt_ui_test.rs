@@ -185,6 +185,23 @@ fn the_candidate_can_be_typed_over() -> Checked {
 }
 
 #[test]
+fn backspace_clears_one_wide_character_from_the_screen() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [Key::Char('a'), Key::Char('界'), Key::Backspace, Key::Enter];
+    let typed = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .exact(&msg!("destroy-confirm-prompt"))
+        .required_because("the wide character is removed")?;
+
+    assert_eq!(typed, "a");
+    assert_eq!(
+        screen.lines().last().map(String::as_str),
+        Some("a"),
+        "display width is not confused with the number of Rust chars"
+    );
+    Ok(())
+}
+
+#[test]
 fn an_exact_answer_starts_from_an_empty_field() -> Checked {
     let screen = RecordedScreen::new();
     let typed = prompt(ScriptedKeys::typing("owner-repo"), &screen)
