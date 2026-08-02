@@ -32,3 +32,7 @@ fn locale_name(locale: Locale) -> String {
         .text("locale-name")
         .unwrap_or_else(|failure| failure.to_string())
 }
+
+#[cfg(test)]
+#[path = "ask_language_test.rs"]
+mod ask_language_test;
