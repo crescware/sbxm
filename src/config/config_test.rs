@@ -1,4 +1,4 @@
-use crate::diagnostics::ErrorId;
+use crate::diagnostics::{Diagnostic, Error, ErrorId};
 use crate::i18n::Locale;
 use crate::metadata::GitIdentity;
 use crate::paths::{PRIVATE_DIR_MODE, PRIVATE_FILE_MODE};
@@ -21,15 +21,56 @@ fn valid_config_text() -> String {
 }
 
 fn write_config(location: &ConfigLocation, text: &str) -> Checked {
+    write_config_bytes(location, text.as_bytes())
+}
+
+/// 文字列として表せない中身も含めて、configの原文をそのまま置く。
+fn write_config_bytes(location: &ConfigLocation, bytes: &[u8]) -> Checked {
     let dir = location.dir();
     fs::create_dir_all(&dir).required_because("create config dir")?;
     fs::set_permissions(&dir, fs::Permissions::from_mode(PRIVATE_DIR_MODE))
         .required_because("mode")?;
     let path = location.config_file();
-    fs::write(&path, text).required_because("write config")?;
+    fs::write(&path, bytes).required_because("write config")?;
     fs::set_permissions(&path, fs::Permissions::from_mode(PRIVATE_FILE_MODE))
         .required_because("mode")?;
     Ok(())
+}
+
+/// 診断が持つ、その項目名の事実。
+fn fact_value(diagnostic: &Diagnostic, label: &str) -> Checked<String> {
+    diagnostic
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            crate::design::Fact::OneLine { label: name, value } if name.id == label => {
+                Some(value.as_str().to_string())
+            }
+            _ => None,
+        })
+        .required_because("the diagnostic states this fact")
+}
+
+/// 診断が示した、sbxm自身が観測した理由のmessage ID。
+fn reason_id(diagnostic: &Diagnostic) -> Checked<&'static str> {
+    diagnostic
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            crate::design::Fact::Translated { value, .. } => Some(value.id),
+            _ => None,
+        })
+        .required_because("the observed reason is named")
+}
+
+/// 1件だけの診断。
+fn only_diagnostic(error: &Error) -> Checked<Diagnostic> {
+    assert_eq!(error.diagnostics().len(), 1);
+    Ok(error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?
+        .clone())
 }
 
 fn loaded(location: &ConfigLocation) -> Checked<GlobalConfig> {
@@ -231,6 +272,84 @@ fn an_over_permissive_configuration_is_refused_and_not_repaired() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ConfigPermissionTooOpen));
     let mode = fs::metadata(&path).required()?.permissions().mode() & 0o777;
     assert_eq!(mode, 0o644, "sbxm must not repair permissions on its own");
+    Ok(())
+}
+
+#[test]
+fn a_configuration_path_that_is_not_a_regular_file_is_refused_by_its_own_reason() -> Checked {
+    let (_dir, location) = location()?;
+    // 同じ名前のdirectory。読み出せる原文が無く、defaultへ落とせる不在とも違う。
+    fs::create_dir_all(location.config_file()).required()?;
+
+    let error = load(&location).refused_because("a directory is not a configuration")?;
+    let diagnostic = only_diagnostic(&error)?;
+    assert_eq!(diagnostic.id, ErrorId::ConfigUnreadable);
+    assert_eq!(
+        fact_value(&diagnostic, "diagnostic-path-label")?,
+        crate::paths::display(&location.config_file())
+    );
+    // 読み取りが失敗したのではなく、種別が違う。外部の原文ではなく自分の観測を述べる。
+    assert_eq!(reason_id(&diagnostic)?, "cause-not-a-regular-file");
+    assert!(
+        fs::symlink_metadata(location.config_file())
+            .required()?
+            .is_dir(),
+        "sbxm must not remove what it refused to read"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_configuration_that_is_not_text_is_refused_with_the_cause_that_was_reported() -> Checked {
+    let (_dir, location) = location()?;
+    // 有効なUTF-8にならないbyte列。fileは在るが原文としては読めない。
+    let original: &[u8] = b"version: 1\nlanguage: \xff\n";
+    write_config_bytes(&location, original)?;
+
+    let error = load(&location).refused_because("bytes that are not text cannot be read")?;
+    let diagnostic = only_diagnostic(&error)?;
+    assert_eq!(diagnostic.id, ErrorId::ConfigUnreadable);
+    assert_eq!(diagnostic.description.id, "error-config-unreadable");
+    assert_eq!(
+        fact_value(&diagnostic, "diagnostic-path-label")?,
+        crate::paths::display(&location.config_file())
+    );
+    // 原因はOSが述べた原文であり、sbxmが言い換えない。
+    assert!(
+        fact_value(&diagnostic, "diagnostic-cause-label")?
+            .to_lowercase()
+            .contains("utf-8"),
+        "the reported cause is kept: {:?}",
+        diagnostic.facts
+    );
+    assert_eq!(
+        fs::read(location.config_file()).required()?,
+        original,
+        "a configuration that could not be read is not rewritten"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_configuration_that_cannot_be_read_is_never_rewritten() -> Checked {
+    let (_dir, location) = location()?;
+    let original: &[u8] = b"version: 1\nlanguage: \xff\n";
+    write_config_bytes(&location, original)?;
+
+    // 原文を読めないまま行を足すと、読めなかった部分を捨てて書き直すことになる。
+    let error = save_language(&location, Locale::Ja)
+        .refused_because("a configuration that cannot be read is not edited")?;
+    let diagnostic = only_diagnostic(&error)?;
+    assert_eq!(diagnostic.id, ErrorId::ConfigUnreadable);
+    assert_eq!(
+        fact_value(&diagnostic, "diagnostic-path-label")?,
+        crate::paths::display(&location.config_file())
+    );
+    assert_eq!(
+        fs::read(location.config_file()).required()?,
+        original,
+        "the user's configuration is untouched"
+    );
     Ok(())
 }
 
@@ -482,6 +601,57 @@ fn saving_the_identity_creates_a_private_configuration_when_there_is_none() -> C
         None,
         "choosing an identity does not choose a language"
     );
+    Ok(())
+}
+
+#[test]
+fn an_identity_that_cannot_be_added_line_by_line_leaves_the_configuration_alone() -> Checked {
+    let (_dir, location) = location()?;
+    // 有効だが行指向ではない書き方。2行を足しても意図した設定にならない。
+    write_config(&location, "{version: 1}\n")?;
+
+    let error = save_git_identity(&location, &example_identity())
+        .refused_because("a configuration sbxm cannot edit is never rewritten")?;
+    let diagnostic = only_diagnostic(&error)?;
+    assert_eq!(diagnostic.id, ErrorId::ConfigNotRewritable);
+    // 名義は2つで1つの意図であるため、片方だけを名指さない。
+    assert!(
+        diagnostic
+            .description
+            .args
+            .iter()
+            .any(|(key, value)| { *key == "field" && value == "git_user_name, git_user_email" }),
+        "the error names both halves of the identity: {:?}",
+        diagnostic.description.args
+    );
+
+    // 書けないと分かった以上、利用者が手で書き足せる2行をそのまま渡す。
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .required_because("what to write by hand")?;
+    let explanation = remediation
+        .explanation
+        .first()
+        .required_because("one explanation")?;
+    assert_eq!(explanation.id, "remediation-config-not-rewritable");
+    let declaration = explanation
+        .args
+        .iter()
+        .find_map(|(key, value)| (*key == "declaration").then(|| value.clone()))
+        .required_because("the lines to add")?;
+    assert_eq!(
+        declaration,
+        "git_user_name: Example User\ngit_user_email: user@example.com"
+    );
+
+    assert_eq!(
+        fs::read_to_string(location.config_file()).required()?,
+        "{version: 1}\n",
+        "the user's configuration is untouched"
+    );
+    // 拒否したあとも、そのconfigはそのまま読める。名義は保存されていない。
+    assert_eq!(loaded(&location)?.git_identity, None);
     Ok(())
 }
 
