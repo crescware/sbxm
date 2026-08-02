@@ -11,10 +11,61 @@ use crate::support::image::{self, LABEL_CANONICAL_ID, LABEL_DOCKERFILE_SHA256};
 
 use crate::testing::outcome::{Checked, Required};
 
+use super::check_directory;
 use super::{super::diagnose, super::fake::*};
 use crate::testing::host::FakeSbx;
 use crate::testing::project::{Fixture, project_id};
 use crate::testing::value::IMAGE_ID;
+
+#[test]
+fn a_host_clone_is_ready_only_once_it_holds_a_git_directory() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+
+    let mut status = bare_status();
+    check_directory(&project.paths, &mut status);
+    assert_eq!(value_of(&status, "status-item-project-root")?, Value::Ready);
+    assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Missing);
+
+    // cloneが済んだことは`.git`の有無でだけ言える。空のdirectoryでは作業できない。
+    std::fs::create_dir_all(project.paths.host_clone()).required()?;
+    let mut status = bare_status();
+    check_directory(&project.paths, &mut status);
+    assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Missing);
+
+    std::fs::create_dir_all(project.paths.host_clone().join(".git")).required()?;
+    let mut status = bare_status();
+    check_directory(&project.paths, &mut status);
+    assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Ready);
+    assert!(
+        status.is_healthy(),
+        "reading what is there is never a failure: {:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
+fn a_project_root_that_is_not_there_is_reported_as_missing_rather_than_failing() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    // 登録は残ったまま案件directoryだけが消えた状態も、診断は答えを返して続ける。
+    std::fs::remove_dir_all(project.paths.root()).required()?;
+
+    let mut status = bare_status();
+    check_directory(&project.paths, &mut status);
+    assert_eq!(
+        value_of(&status, "status-item-project-root")?,
+        Value::Missing
+    );
+    assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Missing);
+    assert!(
+        status.is_healthy(),
+        "a project root that is not there is not an error: {:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
 
 #[test]
 fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() -> Checked {
@@ -322,6 +373,16 @@ fn an_image_whose_labels_declare_something_else_is_unusable_rather_than_ready() 
         );
     }
     Ok(())
+}
+
+/// 項目を1件も持たないstatus。1つの検査だけを見るために使う。
+fn bare_status() -> ProjectStatus {
+    ProjectStatus {
+        project: "example-org/example-repo".to_string(),
+        items: Vec::new(),
+        worktrees: Vec::new(),
+        diagnostics: Vec::new(),
+    }
 }
 
 /// `docker image inspect`が1件のimageについて返す出力。

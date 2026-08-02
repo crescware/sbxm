@@ -105,6 +105,34 @@ fn sbxm_with_git(home: &Path, cwd: &Path, arguments: &[&str]) -> Checked<Run> {
     Run::from(&output)
 }
 
+/// `PATH`という変数そのものを持たない環境でsbxmを実行する。
+///
+/// 値が空の`PATH`は「どこも探さない`PATH`」であり、変数が無い状態とは別の入力である。
+/// 後者でしか通らない経路があるため、環境を書き換えずに子processの側で外す。
+fn sbxm_without_path(home: &Path, arguments: &[&str]) -> Checked<Run> {
+    let output = Command::new(env!("CARGO_BIN_EXE_sbxm"))
+        .args(arguments)
+        .current_dir(home)
+        .env("HOME", home)
+        .env("LC_ALL", "C")
+        .env_remove("LC_MESSAGES")
+        .env_remove("LANG")
+        .env_remove("PATH")
+        .output()
+        .required_because("sbxm runs")?;
+    Run::from(&output)
+}
+
+/// 表の`ITEM`と`STATUS`の対。
+fn status_rows(stdout: &str) -> Vec<(&str, &str)> {
+    stdout
+        .lines()
+        .skip(2)
+        .filter_map(|line| line.split_once("  "))
+        .map(|(item, status)| (item.trim(), status.trim()))
+        .collect()
+}
+
 /// 同梱するresourceのtag。言語を増やしてもtestを編集しない。
 fn locale_tags() -> Checked<Vec<String>> {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
@@ -1079,6 +1107,39 @@ fn global_status_reports_every_problem_and_exits_with_one() -> Checked {
     }
     // 詳細は表の列を増やさず、stderrの診断として出す。
     assert!(!run.stdout.contains("error:"), "{}", run.stdout);
+    Ok(())
+}
+
+#[test]
+fn a_host_that_carries_no_path_at_all_finds_no_tool_and_reports_each_one() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm_without_path(home.path(), &["--lang", "en", "status", "--global"])?;
+
+    let rows = status_rows(&run.stdout);
+    for item in ["Git", "SSH", "Docker"] {
+        let status = rows
+            .iter()
+            .find(|(name, _)| *name == item)
+            .required_because("the row for the tool is shown")?
+            .1;
+        assert_eq!(status, "missing", "{item} in: {}", run.stdout);
+    }
+    // 見つからなかったことは黙って引き受けず、tool名を挙げて診断に出す。
+    assert_eq!(
+        run.stderr.matches("host-command-missing").count(),
+        4,
+        "every probed tool is named: {}",
+        run.stderr
+    );
+    for tool in ["git", "ssh", "docker", "sbx"] {
+        assert!(
+            run.stderr
+                .contains(&format!("The command {tool} was not found")),
+            "{tool} is named: {}",
+            run.stderr
+        );
+    }
+    assert_eq!(run.code, 1, "an unusable host is not reported as healthy");
     Ok(())
 }
 
