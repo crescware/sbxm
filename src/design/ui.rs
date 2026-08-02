@@ -51,7 +51,7 @@ impl Ui<'_> {
     /// localeと描画条件の写しを渡し、`Ui`自身は借りたままにしない。同じworkflowが
     /// 進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
     pub fn prompt(&self) -> PromptUi {
-        PromptUi::new(self.catalog.locale(), self.stderr.policy())
+        PromptUi::terminal(self.catalog.locale(), self.stderr.policy())
     }
 
     /// promptがrendererを経由せずstderrへ書いたことを知らせる。
