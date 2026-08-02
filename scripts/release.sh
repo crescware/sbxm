@@ -8,9 +8,14 @@
 #   scripts/release.sh --dry-run v0.0.1
 #   scripts/release.sh v0.0.1
 #
-# --dry-runは、検査・build・署名・package・provenanceの記録までを本番と同じ手順で
-# 実行し、GitHub Releaseの作成だけを行わない。remoteへ影響する書き込みはこの1つだけ
-# なので、本物のrepositoryに対してそのまま実行できる。
+# --dry-runは、build・署名・package・provenanceの記録までを本番と同じ手順で実行し、
+# GitHub Releaseの作成だけを行わない。remoteへ影響する書き込みはこの1つだけなので、
+# 本物のrepositoryに対してそのまま実行できる。
+#
+# publishの前提条件 (tagの有無、originへのpush、clean tree、gh認証、既存Release) は、
+# dry runでは即座に落とさず、警告として記録して最後にまとめて報告する。tagを作る前に
+# 予行できなければ、予行の意味がない。build結果の正しさに関わる検査は、dry runでも
+# 本番と同じく即座に落とす。
 #
 # 実行にはmacOS (Apple Silicon)、Xcode Command Line Tools、gh CLI (認証済み) を要する。
 
@@ -45,6 +50,8 @@ BUILD_AFFECTING_ENV_VARS=(
 
 WORK_DIR=""
 DRY_RUN=0
+BLOCKERS=""
+BLOCKER_COUNT=0
 
 log() {
   # stderrへ書く。package_archiveとrecord_provenanceは`$(...)`で戻り値を
@@ -57,55 +64,73 @@ fail() {
   exit 1
 }
 
+# publishの前提条件が満たされていないときに呼ぶ。本番では即座に落とす。dry runでは
+# 記録して続け、残りの工程も最後まで見せる。
+record_blocker() {
+  local message="$1"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    fail "$message"
+  fi
+  printf 'warning: %s\n' "$message" >&2
+  BLOCKERS="${BLOCKERS}  - ${message}"$'\n'
+  BLOCKER_COUNT=$((BLOCKER_COUNT + 1))
+  return 0
+}
+
 usage() {
   printf 'usage: %s [--dry-run] <tag>\n' "$(basename "$0")" >&2
 }
 
 check_clean_worktree() {
   log "checking that the working tree is clean"
-  [ -z "$(git status --porcelain)" ] \
-    || fail "working tree is not clean; commit or stash before running this"
+  if [ -n "$(git status --porcelain)" ]; then
+    record_blocker "working tree is not clean; commit or stash before releasing"
+  fi
+  return 0
 }
 
-check_tag_exists() {
+check_tag_state() {
   local tag="$1"
+
   log "checking that tag ${tag} exists"
-  git rev-parse -q --verify "refs/tags/${tag}" >/dev/null \
-    || fail "tag ${tag} does not exist"
-}
+  if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+    # 残る2つはこのtagを前提にするため、まとめて1つの指示として出す。
+    record_blocker "tag ${tag} does not exist; create and push it with: git tag ${tag} && git push origin ${tag}"
+    return 0
+  fi
 
-check_tag_matches_head() {
-  local tag="$1"
   log "checking that tag ${tag} matches HEAD"
   local tag_commit head_commit
   tag_commit="$(git rev-list -n 1 "${tag}")"
   head_commit="$(git rev-parse HEAD)"
-  [ "$tag_commit" = "$head_commit" ] \
-    || fail "tag ${tag} (${tag_commit}) does not match HEAD (${head_commit})"
-}
+  if [ "$tag_commit" != "$head_commit" ]; then
+    record_blocker "tag ${tag} (${tag_commit}) does not match HEAD (${head_commit})"
+  fi
 
-check_tag_is_pushed() {
-  local tag="$1"
   log "checking that tag ${tag} is pushed to origin"
   # gh release createの--verify-tagが要求する状態を、buildの前に確かめる。長い
   # buildを終えた最後の一手で落ちるより早い。
-  [ -n "$(git ls-remote --tags origin "refs/tags/${tag}")" ] \
-    || fail "tag ${tag} is not on origin; run: git push origin ${tag}"
+  if [ -z "$(git ls-remote --tags origin "refs/tags/${tag}")" ]; then
+    record_blocker "tag ${tag} is not on origin; push it with: git push origin ${tag}"
+  fi
+  return 0
 }
 
-check_gh_authenticated() {
+check_release_absent() {
+  local tag="$1"
+
   log "checking that gh is authenticated"
   # 認証切れのままだとgh release viewが失敗し、それが「Releaseは無い」と区別
-  # できない。先にここで落とす。
-  gh auth status >/dev/null 2>&1 \
-    || fail "gh is not authenticated; run: gh auth login"
-}
+  # できない。既存Releaseの検査はここで打ち切る。
+  if ! gh auth status >/dev/null 2>&1; then
+    record_blocker "gh is not authenticated; run: gh auth login"
+    return 0
+  fi
 
-check_no_existing_release() {
-  local tag="$1"
   log "checking that GitHub Release ${tag} does not already exist"
-  gh release view "${tag}" >/dev/null 2>&1 \
-    && fail "GitHub Release ${tag} already exists"
+  if gh release view "${tag}" >/dev/null 2>&1; then
+    record_blocker "GitHub Release ${tag} already exists"
+  fi
   return 0
 }
 
@@ -285,14 +310,29 @@ create_github_release() {
     --verify-tag
 }
 
-report_dry_run_artifacts() {
+report_dry_run() {
   local archive="$1" notes_file="$2"
   log "dry run finished; nothing was published"
   {
     printf 'inspect the artifacts it would have uploaded:\n'
-    printf '  asset:        %s\n' "$archive"
+    printf '  asset:         %s\n' "$archive"
     printf '  release notes: %s\n' "$notes_file"
   } >&2
+
+  if [ "$BLOCKER_COUNT" -eq 0 ]; then
+    log "no blockers; the real release would proceed"
+    return 0
+  fi
+
+  # buildは通っているので、落とすのはpublishの前提条件だけであることを明示する。
+  local noun="things"
+  [ "$BLOCKER_COUNT" -eq 1 ] && noun="thing"
+  {
+    printf '\n%d %s would block the real release:\n' "$BLOCKER_COUNT" "$noun"
+    printf '%s' "$BLOCKERS"
+    printf 'the build itself succeeded; only these preconditions are unmet.\n'
+  } >&2
+  exit 1
 }
 
 main() {
@@ -340,11 +380,8 @@ main() {
   [ "$DRY_RUN" -eq 1 ] && log "dry run: no GitHub Release will be created"
 
   check_clean_worktree
-  check_tag_exists "$tag"
-  check_tag_matches_head "$tag"
-  check_tag_is_pushed "$tag"
-  check_gh_authenticated
-  check_no_existing_release "$tag"
+  check_tag_state "$tag"
+  check_release_absent "$tag"
 
   local version="${tag#v}"
   [ "$version" != "$tag" ] || fail "tag must start with v (e.g. v0.0.1): ${tag}"
@@ -373,7 +410,7 @@ main() {
   create_github_release "$tag" "$archive_path" "$notes_file"
 
   if [ "$DRY_RUN" -eq 1 ]; then
-    report_dry_run_artifacts "$archive_path" "$notes_file"
+    report_dry_run "$archive_path" "$notes_file"
   else
     log "created release ${tag}"
   fi
