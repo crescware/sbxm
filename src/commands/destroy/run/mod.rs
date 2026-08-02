@@ -11,10 +11,10 @@ mod execute;
 mod keeps;
 mod prepare;
 mod prepared;
+mod prompt_ui;
 mod re_register;
 mod removes;
 mod target;
-mod terminal_confirm_prompt;
 mod unregister;
 mod unregistration;
 
@@ -29,7 +29,6 @@ pub use prepared::Prepared;
 use re_register::re_register;
 use removes::removes;
 pub use target::Target;
-pub use terminal_confirm_prompt::TerminalConfirmPrompt;
 pub use unregister::unregister;
 pub use unregistration::Unregistration;
 

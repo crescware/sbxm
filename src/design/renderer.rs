@@ -29,10 +29,6 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    pub(super) fn policy(&self) -> StreamPolicy {
-        self.painter.policy
-    }
-
     /// promptのように、rendererを経由せず同じstreamへ書いたことを知らせる。
     ///
     /// 次のblockが空行から始まるようにするためだけに使う。

@@ -233,3 +233,19 @@ fn a_cancelled_input_returns_nothing_that_could_be_taken_as_an_answer() -> Check
     }
     Ok(())
 }
+
+#[test]
+fn the_language_the_prompt_asks_in_follows_the_one_that_was_settled_on() -> Checked {
+    let screen = RecordedScreen::new();
+    let mut prompt = prompt(ScriptedKeys::confirming(), &screen);
+    prompt.set_locale(Locale::Ja);
+    prompt
+        .exact(&msg!("destroy-confirm-prompt"))
+        .required_because("the answer is confirmed")?;
+
+    assert_eq!(
+        screen.lines().first().map(String::as_str),
+        Some("削除を確認するため、Sandbox名を入力してください")
+    );
+    Ok(())
+}

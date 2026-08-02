@@ -3,7 +3,7 @@ use crate::i18n::{Catalog, Locale};
 
 use crate::design::renderer::Renderer;
 
-use super::{Document, GuidanceItem, OutputPolicy, ProgressSink, PromptUi, Warning};
+use super::{Document, GuidanceItem, OutputPolicy, ProgressSink, Warning};
 
 /// 1実行ぶんの利用者interface。
 ///
@@ -44,14 +44,6 @@ impl Ui<'_> {
     /// 既に組み立てられたhelpを書く。
     pub fn help(&mut self, text: &str) {
         self.stdout(&Document::new().verbatim(text));
-    }
-
-    /// promptの入口。
-    ///
-    /// localeと描画条件の写しを渡し、`Ui`自身は借りたままにしない。同じworkflowが
-    /// 進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
-    pub fn prompt(&self) -> PromptUi {
-        PromptUi::terminal(self.catalog.locale(), self.stderr.policy())
     }
 
     /// promptがrendererを経由せずstderrへ書いたことを知らせる。

@@ -30,9 +30,10 @@ mod testing;
 use std::process::ExitCode as ProcessExitCode;
 
 use cli::{Interactivity, Outcome, PeekedLang};
+use command::RealHost;
 use commands::Context;
 use config::{ConfigLocation, ConfigState};
-use design::{Document, Environment, OutputPolicy, Terminals, Ui};
+use design::{Document, Environment, OutputPolicy, PromptUi, Terminals, Ui};
 use diagnostics::ExitCode;
 use i18n::{Locale, shell_locale};
 
@@ -91,7 +92,9 @@ fn run(argv: &[String]) -> ExitCode {
                 },
                 interactivity,
             };
-            commands::dispatch(&command, &context, &mut ui)
+            // 実hostと実端末を選ぶのはここだけとする。commandは受け取ったものだけを使う。
+            let mut prompt = PromptUi::terminal(display_locale, policy.stderr);
+            commands::dispatch(&command, &context, &mut ui, &RealHost, &mut prompt)
         }
         Err(error) => {
             ui.error(&error);

@@ -1,6 +1,6 @@
 //! `ls`の実行。
 
-use crate::command::RealHost;
+use crate::command::HostEnvironment;
 use crate::design::Ui;
 use crate::diagnostics::ExitCode;
 use crate::support::sandbox;
@@ -10,7 +10,7 @@ use super::{
     print,
 };
 
-pub fn exec(context: &Context, ui: &mut Ui) -> ExitCode {
+pub fn exec(context: &Context, ui: &mut Ui, host: &dyn HostEnvironment) -> ExitCode {
     let (_config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
@@ -18,7 +18,7 @@ pub fn exec(context: &Context, ui: &mut Ui) -> ExitCode {
     ui.set_locale(locale);
     match super::run::run(
         context.location,
-        &RealHost,
+        host,
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
     ) {
         Ok(listing) => {

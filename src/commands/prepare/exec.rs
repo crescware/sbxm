@@ -1,6 +1,6 @@
 //! `prepare`の実行。
 
-use crate::command::RealHost;
+use crate::command::HostEnvironment;
 use crate::design::Ui;
 use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;
@@ -11,7 +11,12 @@ use super::{
     print,
 };
 
-pub fn exec(project: &ProjectId, context: &Context, ui: &mut Ui) -> ExitCode {
+pub fn exec(
+    project: &ProjectId,
+    context: &Context,
+    ui: &mut Ui,
+    host: &dyn HostEnvironment,
+) -> ExitCode {
     let (config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
@@ -21,7 +26,7 @@ pub fn exec(project: &ProjectId, context: &Context, ui: &mut Ui) -> ExitCode {
         context.location,
         &config,
         project,
-        &RealHost,
+        host,
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
         ui,
     ) {

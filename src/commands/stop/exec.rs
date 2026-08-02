@@ -1,7 +1,7 @@
 //! `stop`の実行。
 
-use crate::command::RealHost;
-use crate::design::Ui;
+use crate::command::HostEnvironment;
+use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;
 use crate::support::{inventory, sandbox};
@@ -11,18 +11,24 @@ use super::{
     print,
 };
 
-pub fn exec(projects: &[ProjectId], context: &Context, ui: &mut Ui) -> ExitCode {
+pub fn exec(
+    projects: &[ProjectId],
+    context: &Context,
+    ui: &mut Ui,
+    host: &dyn HostEnvironment,
+    prompt: &mut PromptUi,
+) -> ExitCode {
     let (_config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    let mut prompt = ui.prompt();
+    prompt.set_locale(locale);
     match super::run::run(
         context.location,
         projects,
-        &RealHost,
-        &mut prompt,
+        host,
+        prompt,
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
         inventory::Poll::default(),
     ) {

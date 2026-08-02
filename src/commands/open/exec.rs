@@ -1,7 +1,7 @@
 //! `open`の実行と出力。
 
-use crate::command::RealHost;
-use crate::design::{Document, Inline, Ui};
+use crate::command::HostEnvironment;
+use crate::design::{Document, Inline, PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::msg;
 use crate::project::ProjectId;
@@ -9,18 +9,24 @@ use crate::support::{inventory, sandbox};
 
 use super::super::{Context, report};
 
-pub fn exec(project: Option<&ProjectId>, context: &Context, ui: &mut Ui) -> ExitCode {
+pub fn exec(
+    project: Option<&ProjectId>,
+    context: &Context,
+    ui: &mut Ui,
+    host: &dyn HostEnvironment,
+    prompt: &mut PromptUi,
+) -> ExitCode {
     let (_config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    let mut prompt = ui.prompt();
+    prompt.set_locale(locale);
     let prepared = match super::run::prepare(
         context.location,
         project,
-        &RealHost,
-        &mut prompt,
+        host,
+        prompt,
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
         inventory::Poll::default(),
         ui,
@@ -48,7 +54,7 @@ pub fn exec(project: Option<&ProjectId>, context: &Context, ui: &mut Ui) -> Exit
             ),
     );
 
-    match super::run::connect(&RealHost, &prepared) {
+    match super::run::connect(host, &prepared) {
         Ok(()) => ExitCode::Success,
         Err(error) => report(ui, &error),
     }

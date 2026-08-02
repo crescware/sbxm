@@ -54,6 +54,16 @@ impl PromptUi {
         }
     }
 
+    /// 表示言語を差し替える。
+    ///
+    /// 訊く言語は結果を書く言語と同じでなければならない。`Ui::set_locale`と同じ時点で
+    /// 呼ぶ。
+    pub fn set_locale(&mut self, locale: Locale) {
+        if self.painter.catalog.locale() != locale {
+            self.painter.catalog = Catalog::new(locale);
+        }
+    }
+
     /// 候補から1件を選ぶ。
     pub fn select_one(&mut self, heading: &Msg, labels: &[String]) -> Result<usize> {
         let selected = self.select(heading, labels, false)?;

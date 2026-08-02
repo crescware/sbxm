@@ -181,14 +181,3 @@ fn a_progress_sink_that_reports_nothing_is_still_a_valid_sink() {
     let mut silent = SilentProgress;
     silent.step(crate::msg!("progress-creating-sandbox"));
 }
-
-#[test]
-fn the_prompt_inherits_the_stderr_policy_without_borrowing_the_ui() {
-    // 同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しない。
-    let mut stdout: Vec<u8> = Vec::new();
-    let mut stderr: Vec<u8> = Vec::new();
-    let mut ui = Ui::capture(Locale::En, OutputPolicy::plain(), &mut stdout, &mut stderr);
-    let mut prompt = ui.prompt();
-    ui.step(crate::msg!("progress-creating-sandbox"));
-    let _ = &mut prompt;
-}
