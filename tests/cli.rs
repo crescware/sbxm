@@ -293,6 +293,79 @@ fn a_broken_configuration_does_not_stop_help_from_being_shown() -> Checked {
     Ok(())
 }
 
+/// sbxmが読めないconfigを置く。
+fn write_unreadable_config(home: &Path) -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = home.join(".sbxm");
+    std::fs::create_dir_all(&dir).required_because("the fixture directory is created")?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+        .required_because("the fixture permissions are applied")?;
+    // このbuildが知らないversionは、既定へ丸めずconfigの不正として扱う。
+    std::fs::write(dir.join("config.yaml"), "version: 99\n")
+        .required_because("the fixture file is written")?;
+    std::fs::set_permissions(
+        dir.join("config.yaml"),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .required_because("the fixture permissions are applied")
+}
+
+/// 案件を引数で取り、設定を読んでから動くcommand。
+const CONFIGURED_COMMANDS: [&str; 3] = ["prepare", "rebuild", "open"];
+
+#[test]
+fn a_configuration_this_build_cannot_read_stops_a_command_before_it_touches_anything() -> Checked {
+    let home = temp_home()?;
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
+    write_unreadable_config(home.path())?;
+
+    // 設定は工程の入口であり、読めないまま既定で進めない。案件が登録済みかどうかを
+    // 調べる前に、configの不正だけを理由として止まる。
+    for command in CONFIGURED_COMMANDS {
+        let run = sbxm_in(home.path(), &base, &[command, "owner/repo"])?;
+        assert_eq!(run.code, 1, "{command}: {}", run.stderr);
+        assert!(
+            run.stderr.contains("config-unknown-version"),
+            "{command}: {}",
+            run.stderr
+        );
+        assert!(
+            !run.stderr.contains("project-not-managed"),
+            "{command} looked for the project before reading the configuration: {}",
+            run.stderr
+        );
+        assert!(run.stdout.is_empty(), "{command}: {}", run.stdout);
+    }
+
+    // `add`も同じ順序で止まる。名義も置き場所も決める前であるため、何も作らない。
+    let run = sbxm_in(
+        home.path(),
+        &base,
+        &["add", "git@github.com:Example-Org/Example-Repo.git"],
+    )?;
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    assert!(
+        run.stderr.contains("config-unknown-version"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        !run.stderr.contains("git-identity-undecidable"),
+        "the identity is decided after the configuration is read: {}",
+        run.stderr
+    );
+    assert!(
+        !base.join("example-repo.project").exists(),
+        "a refused configuration creates no project directory"
+    );
+    assert!(
+        !home.path().join(".sbxm").join("registry.yaml").exists(),
+        "a refused configuration registers nothing"
+    );
+    Ok(())
+}
+
 #[test]
 fn an_unsupported_language_is_reported_before_any_configuration_error() -> Checked {
     use std::os::unix::fs::PermissionsExt;
