@@ -2,10 +2,15 @@
 # Apple Silicon macOS向けにsbxmをbuildし、GitHub Releaseを作成する。
 #
 # 使い方:
-#   scripts/release.sh <tag>
+#   scripts/release.sh [--dry-run] <tag>
 #
 # 例:
+#   scripts/release.sh --dry-run v0.0.1
 #   scripts/release.sh v0.0.1
+#
+# --dry-runは、検査・build・署名・package・provenanceの記録までを本番と同じ手順で
+# 実行し、GitHub Releaseの作成だけを行わない。remoteへ影響する書き込みはこの1つだけ
+# なので、本物のrepositoryに対してそのまま実行できる。
 #
 # 実行にはmacOS (Apple Silicon)、Xcode Command Line Tools、gh CLI (認証済み) を要する。
 
@@ -17,6 +22,7 @@ ARCHIVE_NAME="${BIN_NAME}-${TARGET_TRIPLE}.tar.gz"
 # repository直下ではなくdist/へ置く。working treeをcleanなまま保ち、次回実行の
 # check_clean_worktreeが前回の生成物を誤検知しないようにする (dist/はgitignore対象)。
 DIST_DIR="dist"
+NOTES_NAME="release-notes.md"
 
 # build結果を左右しうるenv var。再現性のないbinaryを出荷しないよう、releaseは常に
 # 素のtoolchain設定で行う。
@@ -38,6 +44,7 @@ BUILD_AFFECTING_ENV_VARS=(
 )
 
 WORK_DIR=""
+DRY_RUN=0
 
 log() {
   # stderrへ書く。package_archiveとrecord_provenanceは`$(...)`で戻り値を
@@ -51,7 +58,7 @@ fail() {
 }
 
 usage() {
-  printf 'usage: %s <tag>\n' "$(basename "$0")" >&2
+  printf 'usage: %s [--dry-run] <tag>\n' "$(basename "$0")" >&2
 }
 
 check_clean_worktree() {
@@ -77,6 +84,23 @@ check_tag_matches_head() {
     || fail "tag ${tag} (${tag_commit}) does not match HEAD (${head_commit})"
 }
 
+check_tag_is_pushed() {
+  local tag="$1"
+  log "checking that tag ${tag} is pushed to origin"
+  # gh release createの--verify-tagが要求する状態を、buildの前に確かめる。長い
+  # buildを終えた最後の一手で落ちるより早い。
+  [ -n "$(git ls-remote --tags origin "refs/tags/${tag}")" ] \
+    || fail "tag ${tag} is not on origin; run: git push origin ${tag}"
+}
+
+check_gh_authenticated() {
+  log "checking that gh is authenticated"
+  # 認証切れのままだとgh release viewが失敗し、それが「Releaseは無い」と区別
+  # できない。先にここで落とす。
+  gh auth status >/dev/null 2>&1 \
+    || fail "gh is not authenticated; run: gh auth login"
+}
+
 check_no_existing_release() {
   local tag="$1"
   log "checking that GitHub Release ${tag} does not already exist"
@@ -100,12 +124,14 @@ check_cargo_version_matches() {
 
 check_no_build_affecting_env_vars() {
   log "checking that no build-affecting env vars are set"
-  local var set_vars=()
+  # macOSが同梱するbash 3.2は、set -uのもとで空arrayの展開を未定義変数として
+  # 扱う。arrayを溜めず、空文字列を初期値にできる文字列で数える。
+  local var set_vars=""
   for var in "${BUILD_AFFECTING_ENV_VARS[@]}"; do
-    [ -n "${!var:-}" ] && set_vars+=("$var")
+    [ -n "${!var:-}" ] && set_vars="${set_vars}${set_vars:+ }${var}"
   done
-  [ "${#set_vars[@]}" -eq 0 ] \
-    || fail "build-affecting env vars are set: ${set_vars[*]}"
+  [ -z "$set_vars" ] \
+    || fail "build-affecting env vars are set: ${set_vars}"
 }
 
 check_host_is_arm64() {
@@ -198,7 +224,8 @@ record_provenance() {
   local archive_dir archive_base
   archive_dir="$(dirname "$archive")"
   archive_base="$(basename "$archive")"
-  local notes_file="${WORK_DIR}/release-notes.md"
+  # dry runで中身を確かめられるよう、WORK_DIRではなくdist/へ残す。
+  local notes_file="${DIST_DIR}/${NOTES_NAME}"
 
   local commit_sha rustc_version cargo_version_str sw_vers_output checksum
   commit_sha="$(git rev-parse HEAD)"
@@ -234,32 +261,89 @@ record_provenance() {
 
 create_github_release() {
   local tag="$1" archive="$2" notes_file="$3"
-  log "creating GitHub Release ${tag}"
+
   # --verify-tag: remoteに同名tagが無ければ失敗させる。tagのpushはこのscriptの
   # 責務外とし、ここではpush済みのtagだけを対象にする。
   # --prerelease、--clobberはどちらも付けない。正式版のみを対象にし、既存asset
   # を誤って上書きしない。
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "dry run: not creating GitHub Release ${tag}"
+    {
+      printf 'would run:\n'
+      printf '  gh release create %q %q \\\n' "$tag" "$archive"
+      printf '    --title %q \\\n' "$tag"
+      printf '    --notes-file %q \\\n' "$notes_file"
+      printf '    --verify-tag\n'
+    } >&2
+    return 0
+  fi
+
+  log "creating GitHub Release ${tag}"
   gh release create "$tag" "$archive" \
     --title "$tag" \
     --notes-file "$notes_file" \
     --verify-tag
 }
 
+report_dry_run_artifacts() {
+  local archive="$1" notes_file="$2"
+  log "dry run finished; nothing was published"
+  {
+    printf 'inspect the artifacts it would have uploaded:\n'
+    printf '  asset:        %s\n' "$archive"
+    printf '  release notes: %s\n' "$notes_file"
+  } >&2
+}
+
 main() {
-  if [ "$#" -ne 1 ]; then
+  # optionはtagの前後どちらでも受ける。`release.sh v0.0.1 --dry-run`と書いた人が
+  # 本番releaseを作ってしまう余地を残さない。
+  # bash 3.2ではset -uのもとで空arrayを展開できないため、arrayを使わず数える。
+  local tag="" tag_count=0
+  local end_of_options=0
+  local arg
+  for arg in "$@"; do
+    if [ "$end_of_options" -eq 0 ]; then
+      case "$arg" in
+        --dry-run)
+          DRY_RUN=1
+          continue
+          ;;
+        -h | --help)
+          usage
+          exit 0
+          ;;
+        --)
+          end_of_options=1
+          continue
+          ;;
+        -*)
+          usage
+          fail "unknown option: ${arg}"
+          ;;
+      esac
+    fi
+    tag="$arg"
+    tag_count=$((tag_count + 1))
+  done
+
+  if [ "$tag_count" -ne 1 ]; then
     usage
     fail "expected exactly one tag argument (e.g. v0.0.1)"
   fi
-  local tag="$1"
 
   cd "$(git rev-parse --show-toplevel)"
 
   WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sbxm-release.XXXXXX")"
   trap 'rm -rf "$WORK_DIR"' EXIT
 
+  [ "$DRY_RUN" -eq 1 ] && log "dry run: no GitHub Release will be created"
+
   check_clean_worktree
   check_tag_exists "$tag"
   check_tag_matches_head "$tag"
+  check_tag_is_pushed "$tag"
+  check_gh_authenticated
   check_no_existing_release "$tag"
 
   local version="${tag#v}"
@@ -288,7 +372,11 @@ main() {
 
   create_github_release "$tag" "$archive_path" "$notes_file"
 
-  log "created release ${tag}"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    report_dry_run_artifacts "$archive_path" "$notes_file"
+  else
+    log "created release ${tag}"
+  fi
 }
 
 main "$@"
