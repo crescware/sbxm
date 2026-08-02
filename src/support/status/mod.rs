@@ -7,3 +7,7 @@ mod status_value;
 
 pub use row::Row;
 pub use status_value::StatusValue;
+
+#[cfg(test)]
+#[path = "status_test.rs"]
+mod status_test;

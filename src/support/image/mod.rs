@@ -6,6 +6,7 @@
 mod build;
 mod build_context_prefix;
 mod built_image;
+mod empty_private_context;
 mod ensure;
 mod ensure_archive;
 mod ephemeral_context;
@@ -27,6 +28,7 @@ mod mod_test;
 use build::build;
 use build_context_prefix::BUILD_CONTEXT_PREFIX;
 pub use built_image::BuiltImage;
+use empty_private_context::empty_private_context;
 pub use ensure::ensure;
 pub use ensure_archive::ensure_archive;
 use ephemeral_context::ephemeral_context;

@@ -489,3 +489,203 @@ fn the_ephemeral_context_is_private_and_empty() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_leftover_temporary_archive_that_cannot_be_removed_stops_the_save() -> Checked {
+    if rustix::process::geteuid().is_root() {
+        // rootはmodeに関わらず消せるため、この状態を作れない。
+        return Ok(());
+    }
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let image = built_image()?;
+    let temporary = paths.template_archive_temp(short_hex(DIGEST));
+    fs::write(&temporary, b"a partial archive from an interrupted run").required()?;
+    // 消す権利はfile自身ではなく、それを載せているdirectoryが持つ。
+    fs::set_permissions(paths.cache_dir(), fs::Permissions::from_mode(0o500)).required()?;
+
+    let host = saving_host(&image);
+    let outcome = ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress);
+    fs::set_permissions(paths.cache_dir(), fs::Permissions::from_mode(0o700)).required()?;
+
+    let error = outcome.refused_because("a leftover archive is removed, not written over")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::AtomicWriteFailed);
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::OneLine { label, value }
+                if label.id == "diagnostic-path-label"
+                    && value.as_str() == paths::display(&temporary)
+        )),
+        "the temporary that could not be removed is named: {:?}",
+        diagnostic.facts
+    );
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::OneLine { label, .. } if label.id == "diagnostic-cause-label"
+        )),
+        "the operating system's own reason is passed on: {:?}",
+        diagnostic.facts
+    );
+    assert!(
+        host.inner.calls().is_empty(),
+        "nothing is saved onto a path that still holds an interrupted run: {:?}",
+        host.inner.calls()
+    );
+    assert_eq!(
+        fs::read(&temporary).required()?,
+        b"a partial archive from an interrupted run".to_vec(),
+        "the leftover is left as it is rather than half removed"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_context_that_could_not_be_created_is_refused_before_anything_is_built() -> Checked {
+    let refusal = std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "no room for a context",
+    );
+
+    let error = empty_private_context(Err(refusal))
+        .refused_because("a build never starts without a context of its own")?;
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::AtomicWriteFailed);
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::OneLine { label, value }
+                if label.id == "diagnostic-path-label" && value.as_str() == BUILD_CONTEXT_PREFIX
+        )),
+        "the context that was asked for is named: {:?}",
+        diagnostic.facts
+    );
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::OneLine { label, value }
+                if label.id == "diagnostic-cause-label"
+                    && value.as_str().contains("no room for a context")
+        )),
+        "the operating system's own reason is passed on: {:?}",
+        diagnostic.facts
+    );
+    Ok(())
+}
+
+#[test]
+fn a_context_that_holds_a_file_is_refused_rather_than_sent_to_the_build() -> Checked {
+    // build contextへ入ったfileはimageへ入りうる。空であることは、buildを始めてよい
+    // 条件そのものである。
+    let context = tempfile::tempdir().required()?;
+    fs::write(context.path().join("secret.env"), "TOKEN=1").required()?;
+
+    let error = empty_private_context(Ok(context))
+        .refused_because("a context that is not empty is never handed to the build")?;
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::BuildContextNotEmpty);
+    assert_eq!(
+        diagnostic.description.id, "error-build-context-not-empty",
+        "{:?}",
+        diagnostic.description
+    );
+    assert!(
+        diagnostic
+            .description
+            .args
+            .contains(&("observed", "1".to_string())),
+        "the number of entries that were found is stated: {:?}",
+        diagnostic.description.args
+    );
+    Ok(())
+}
+
+#[test]
+fn a_context_that_vanished_before_it_could_be_read_is_refused() -> Checked {
+    let context = tempfile::tempdir().required()?;
+    let path = context.path().to_path_buf();
+    fs::remove_dir_all(&path).required_because("remove the directory behind the context")?;
+
+    let error = empty_private_context(Ok(context))
+        .refused_because("a context that cannot be observed is not assumed to be empty")?;
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::ProjectPathUnreadable);
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::OneLine { label, value }
+                if label.id == "diagnostic-path-label" && value.as_str() == paths::display(&path)
+        )),
+        "the context that could not be read is named: {:?}",
+        diagnostic.facts
+    );
+    Ok(())
+}
+
+#[test]
+fn a_context_whose_entries_cannot_be_listed_is_refused() -> Checked {
+    if rustix::process::geteuid().is_root() {
+        // rootはmodeに関わらず一覧できるため、この状態を作れない。
+        return Ok(());
+    }
+    let context = tempfile::tempdir().required()?;
+    let path = context.path().to_path_buf();
+    // 通り抜けられるが読めないdirectoryは、空かどうかを答えない。
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o100)).required()?;
+
+    let outcome = empty_private_context(Ok(context));
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).required()?;
+
+    let error = outcome.refused_because("an unlistable context is not assumed to be empty")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::ProjectPathUnreadable);
+    Ok(())
+}
+
+#[test]
+fn a_context_that_was_swapped_for_a_symlink_is_refused() -> Checked {
+    // 作成と検査の間にdirectoryをsymlinkへ差し替えられると、buildはlinkの先を読む。
+    // 空であることの検査もそこへ流れるため、symlinkはその時点で拒否する。
+    let elsewhere = tempfile::tempdir().required()?;
+    let context = tempfile::tempdir().required()?;
+    let path = context.path().to_path_buf();
+    fs::remove_dir(&path).required_because("remove the directory that was created")?;
+    std::os::unix::fs::symlink(elsewhere.path(), &path)
+        .required_because("put a symlink where the context was")?;
+
+    let error = empty_private_context(Ok(context))
+        .refused_because("a build context is never followed through a symlink")?;
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::ProjectPathSymlink);
+    assert!(
+        !fs::read_dir(elsewhere.path())
+            .required()?
+            .any(|entry| entry.is_ok()),
+        "what the symlink pointed at is left untouched"
+    );
+    Ok(())
+}
