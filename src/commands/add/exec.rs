@@ -1,5 +1,5 @@
-use crate::command::RealHost;
-use crate::design::Ui;
+use crate::command::HostEnvironment;
+use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::paths::ProjectParent;
 
@@ -9,25 +9,31 @@ use crate::commands::{Context, report};
 
 use super::{choose_git_identity, choose_language};
 
-pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
+pub fn exec(
+    args: &Args,
+    context: &Context,
+    ui: &mut Ui,
+    host: &dyn HostEnvironment,
+    prompt: &mut PromptUi,
+) -> ExitCode {
     let (config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
 
-    let locale = match choose_language(context, &config, locale, &mut ui.prompt()) {
+    let locale = match choose_language(context, &config, locale, prompt) {
         Ok(chosen) => chosen,
         Err(error) => return report(ui, &error),
     };
     ui.note_prompt_output();
     ui.set_locale(locale);
+    prompt.set_locale(locale);
 
     // 名義は、この実行が何かを作る前に決める。訊くなら選んだ言語で訊く。
-    let git_identity =
-        match choose_git_identity(context, &config, args, &RealHost, &mut ui.prompt()) {
-            Ok(chosen) => chosen,
-            Err(error) => return report(ui, &error),
-        };
+    let git_identity = match choose_git_identity(context, &config, args, host, prompt) {
+        Ok(chosen) => chosen,
+        Err(error) => return report(ui, &error),
+    };
     ui.note_prompt_output();
 
     // cwdはsbxmが選ぶ場所ではない。project rootを足す親directoryとして受け取る。
@@ -46,7 +52,7 @@ pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
         &parent,
         &request,
         &git_identity,
-        &RealHost,
+        host,
         ui,
     ) {
         Ok(output) => {

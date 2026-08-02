@@ -13,3 +13,7 @@ impl IdentityPrompt for PromptUi {
         self.input(&msg!("prompt-git-user-email"), candidate)
     }
 }
+
+#[cfg(test)]
+#[path = "prompt_ui_test.rs"]
+mod prompt_ui_test;

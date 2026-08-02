@@ -7,22 +7,62 @@ use crate::msg;
 use crate::design::policy::StreamPolicy;
 use crate::design::width::display_width;
 
-use super::{Painter, Selection, Transition, action_for, unreadable, viewport};
+use super::{
+    Keys, Painter, RealTerminal, Screen, Selection, Transition, action_for, unreadable, viewport,
+};
 
 /// 対話の入口。
 ///
 /// project選択と`init`の言語選択が別々のthemeを持たないよう、すべてここを通す。
+///
+/// 打鍵の供給元と描画先は受け取る。実端末を選ぶのは組み立てる側であり、選択と入力の
+/// 進み方はここだけで決まる。
 pub struct PromptUi {
     painter: Painter,
+    keys: Box<dyn Keys>,
+    screen: Box<dyn Screen>,
 }
 
 impl PromptUi {
-    pub fn new(locale: Locale, policy: StreamPolicy) -> PromptUi {
+    /// 実端末へ出すprompt。
+    ///
+    /// 出す先はstderrとする。正常結果はstdoutへ残るため、描き直しと混ざらない。
+    /// composition rootから使う組み立てhelperであり、通常のprompt処理が端末へ触れるのは
+    /// `new`へ渡された`Keys`と`Screen`だけである。
+    pub fn terminal(locale: Locale, policy: StreamPolicy) -> PromptUi {
+        let term = Term::stderr();
+        PromptUi::new(
+            locale,
+            policy,
+            Box::new(RealTerminal::new(term.clone())),
+            Box::new(RealTerminal::new(term)),
+        )
+    }
+
+    /// 打鍵の供給元と描画先を決めて組み立てる。
+    pub fn new(
+        locale: Locale,
+        policy: StreamPolicy,
+        keys: Box<dyn Keys>,
+        screen: Box<dyn Screen>,
+    ) -> PromptUi {
         PromptUi {
             painter: Painter {
                 catalog: Catalog::new(locale),
                 policy,
             },
+            keys,
+            screen,
+        }
+    }
+
+    /// 表示言語を差し替える。
+    ///
+    /// 訊く言語は結果を書く言語と同じでなければならない。`Ui::set_locale`と同じ時点で
+    /// 呼ぶ。
+    pub fn set_locale(&mut self, locale: Locale) {
+        if self.painter.catalog.locale() != locale {
+            self.painter.catalog = Catalog::new(locale);
         }
     }
 
@@ -44,21 +84,20 @@ impl PromptUi {
         if labels.is_empty() {
             return Err(unresolved(0, 0));
         }
-        let term = Term::stderr();
         let mut selection = Selection::new(labels.len(), multi, true);
 
-        let _ = term.hide_cursor();
+        let _ = self.screen.hide_cursor();
         let mut drawn = 0usize;
         let outcome = loop {
-            let frame = self
-                .painter
-                .frame(heading, labels, &selection, viewport(&term));
-            if let Err(error) = redraw(&term, drawn, &frame) {
+            let frame =
+                self.painter
+                    .frame(heading, labels, &selection, viewport(self.screen.rows()));
+            if let Err(error) = redraw(self.screen.as_mut(), drawn, &frame) {
                 break Err(unreadable(&error));
             }
             drawn = frame.len();
 
-            match term.read_key() {
+            match self.keys.read_key() {
                 Ok(key) => match selection.apply(action_for(&key)) {
                     Transition::Continue => {}
                     Transition::Done(indexes) => break Ok(indexes),
@@ -67,8 +106,8 @@ impl PromptUi {
                 Err(error) => break Err(unreadable(&error)),
             }
         };
-        let _ = term.show_cursor();
-        let _ = term.clear_last_lines(drawn);
+        let _ = self.screen.show_cursor();
+        let _ = self.screen.clear_last_lines(drawn);
 
         let indexes = outcome?;
         // 選んだ値は一行の結果として残す。promptと答えを一行へ潰さない。
@@ -76,7 +115,8 @@ impl PromptUi {
             .iter()
             .filter_map(|index| labels.get(*index).map(String::as_str))
             .collect();
-        let _ = term.write_line(&self.painter.selected(&chosen.join(", ")));
+        let selected = self.painter.selected(&chosen.join(", "));
+        let _ = self.screen.write_line(&selected);
         Ok(indexes)
     }
 
@@ -93,34 +133,41 @@ impl PromptUi {
     }
 
     fn read_line(&mut self, heading: &Msg, initial: &str) -> Result<String> {
-        let term = Term::stderr();
-        term.write_line(&self.painter.heading(heading))
+        let heading = self.painter.heading(heading);
+        self.screen
+            .write_line(&heading)
             .map_err(|error| unreadable(&error))?;
 
         let mut typed = String::from(initial);
         if !typed.is_empty() {
-            term.write_str(&typed).map_err(|error| unreadable(&error))?;
+            self.screen
+                .write_str(&typed)
+                .map_err(|error| unreadable(&error))?;
         }
         loop {
-            match term.read_key().map_err(|error| unreadable(&error))? {
+            match self.keys.read_key().map_err(|error| unreadable(&error))? {
                 Key::Enter => break,
                 Key::Escape | Key::CtrlC => return Err(Error::Canceled),
                 Key::Backspace => {
                     if let Some(removed) = typed.pop() {
-                        term.clear_chars(display_width(&removed.to_string()))
+                        self.screen
+                            .clear_chars(display_width(&removed.to_string()))
                             .map_err(|error| unreadable(&error))?;
                     }
                 }
                 Key::Char(character) => {
                     typed.push(character);
-                    term.write_str(&character.to_string())
+                    self.screen
+                        .write_str(&character.to_string())
                         .map_err(|error| unreadable(&error))?;
                 }
                 // 行編集は提供しない。入力に必要な打鍵だけを受け取る。
                 _ => {}
             }
         }
-        term.write_line("").map_err(|error| unreadable(&error))?;
+        self.screen
+            .write_line("")
+            .map_err(|error| unreadable(&error))?;
         Ok(typed)
     }
 }
@@ -134,12 +181,16 @@ fn unresolved(index: usize, count: usize) -> Error {
 }
 
 /// 前回描いた行を消してから描き直す。
-fn redraw(term: &Term, drawn: usize, frame: &[String]) -> std::io::Result<()> {
+fn redraw(screen: &mut dyn Screen, drawn: usize, frame: &[String]) -> std::io::Result<()> {
     if drawn > 0 {
-        term.clear_last_lines(drawn)?;
+        screen.clear_last_lines(drawn)?;
     }
     for line in frame {
-        term.write_line(line)?;
+        screen.write_line(line)?;
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "prompt_ui_test.rs"]
+mod prompt_ui_test;

@@ -583,7 +583,9 @@ sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれ
 
 `StyleSpec`はbold、dim、underline、foregroundを表現できるが、italic、背景色、点滅、RGB、256色indexを持たない。dimは補助情報にだけ使い、`Muted`と`TableHeader`以外のroleへは付かない。
 
-promptは`Ui::prompt()`が返す`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`を借りたままにしない。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
+promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`とは別に組み立てて渡す。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
+
+`PromptUi`は打鍵の供給元と描画先を`Keys`と`Screen`として受け取る。実端末の操作を担うのは、その2つを満たす`RealTerminal` adapterである。`PromptUi::terminal`はcomposition rootから使う組み立てhelperとして`Term`を2つのadapterへ渡し、選択と入力の進み方はfakeで確かめられる。実体を選ぶのは組み立てる側であり、commandは受け取った`PromptUi`を使う。
 
 ## 新しい出力を追加する手順
 

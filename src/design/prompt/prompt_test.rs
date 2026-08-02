@@ -2,7 +2,7 @@ use crate::design::policy::StreamPolicy;
 use crate::diagnostics::ErrorId;
 use crate::i18n::{Catalog, Locale};
 use crate::msg;
-use console::Key;
+use console::{Key, Term};
 
 use crate::testing::outcome::{Checked, Required};
 
@@ -250,6 +250,50 @@ fn the_viewport_keeps_the_current_row_visible() {
     assert_eq!(window(10, 9, Some(3)), 7..10, "it stops at the end");
     assert_eq!(window(2, 1, Some(5)), 0..2, "a short list is not padded");
     assert_eq!(window(10, 4, None), 0..10, "an unknown height shows all");
+}
+
+#[test]
+fn a_height_that_cannot_be_read_is_not_a_limit_on_the_list() {
+    assert_eq!(viewport(None), None, "an unknown height shows every row");
+    // heading、操作説明、選択数、空行、結果の一行ぶんを残す。
+    assert_eq!(viewport(Some(24)), Some(18));
+    assert_eq!(viewport(Some(7)), Some(1));
+    assert_eq!(
+        viewport(Some(2)),
+        Some(1),
+        "a screen too short for the frame still shows one candidate"
+    );
+}
+
+#[test]
+fn a_screen_that_is_not_a_terminal_reports_no_height_and_no_keys() -> Checked {
+    // 端末でない先へ書くこと自体は妨げない。読めないのは高さと打鍵である。
+    let directory = tempfile::tempdir().required_because("a temporary directory")?;
+    let path = directory.path().join("screen");
+    let write = std::fs::File::create(&path).required_because("a writable screen")?;
+    let read = std::fs::File::open(&path).required_because("a readable screen")?;
+    let mut terminal = RealTerminal::new(Term::read_write_pair(read, write));
+
+    assert_eq!(
+        terminal.rows(),
+        None,
+        "the default size is not an observed one"
+    );
+    assert_eq!(
+        terminal.read_key().required_because("a key")?,
+        Key::Unknown,
+        "nobody is there to press anything"
+    );
+
+    terminal.write_line("alpha").required_because("a line")?;
+    terminal
+        .write_str("brav")
+        .required_because("part of a line")?;
+    assert_eq!(
+        std::fs::read_to_string(&path).required_because("what was written")?,
+        "alpha\nbrav"
+    );
+    Ok(())
 }
 
 #[test]

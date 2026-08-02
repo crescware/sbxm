@@ -12,3 +12,7 @@ impl ProjectPrompt for PromptUi {
         PromptUi::select_many(self, heading, candidates)
     }
 }
+
+#[cfg(test)]
+#[path = "prompt_ui_test.rs"]
+mod prompt_ui_test;
