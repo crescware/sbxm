@@ -18,3 +18,7 @@ pub fn serialized<T: serde::Serialize>(raw: &T, document: &str) -> Result<String
         )
     })
 }
+
+#[cfg(test)]
+#[path = "serialized_test.rs"]
+mod serialized_test;

@@ -13,3 +13,7 @@ pub fn required_project(matches: &ArgMatches) -> Result<ProjectId> {
     })?;
     ProjectId::parse(value)
 }
+
+#[cfg(test)]
+#[path = "required_project_test.rs"]
+mod required_project_test;

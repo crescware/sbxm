@@ -2,7 +2,7 @@ use crate::commands::apply::Scope;
 use crate::diagnostics::ErrorId;
 use crate::metadata::{self};
 use crate::paths::ProjectPaths;
-use crate::project::SandboxName;
+use crate::project::{SandboxLayout, SandboxName};
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -53,6 +53,107 @@ fn asking_for_worktrees_leaves_the_declared_files_alone() -> Checked {
         .required()?
         .required_because("present")?;
     assert_eq!(stored.provisioning.requested_worktrees, 3);
+    Ok(())
+}
+
+#[test]
+fn asking_for_the_number_the_project_already_targets_rewrites_nothing() -> Checked {
+    // 目標が変わらない指定はmetadataを書き換えない。同じ値の書き戻しでも、
+    // 保存済みの宣言に触れる理由にはならない。
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    let paths = write_metadata(&location, &parent, None)?;
+    let before = std::fs::read_to_string(paths.metadata_file()).required()?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?).holding_repository()?;
+
+    let scope = Scope {
+        files: false,
+        worktrees: Some(1),
+    };
+    let output = run(
+        &location,
+        &config,
+        &project()?,
+        scope,
+        &host,
+        &workspace_root,
+        &mut SilentProgress,
+    )
+    .required_because("the target is already what was asked for")?;
+
+    assert_eq!(output.worktrees, Some(1));
+    assert_eq!(
+        std::fs::read_to_string(paths.metadata_file()).required()?,
+        before,
+        "an unchanged target leaves the stored declaration untouched"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_start_ref_the_sandbox_cannot_resolve_stops_the_run_before_any_worktree_is_made() -> Checked {
+    // 起点はSandboxの中のGit自身に確かめさせる。解決できない起点のまま、
+    // どこから生えたか分からないworktreeを作らない。
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    write_metadata(&location, &parent, None)?;
+    let git_dir = SandboxLayout::new(&canonical()?).bare_git_dir();
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?)
+        .holding_repository()?
+        .failing(&format!(
+            "git --git-dir {git_dir} show-ref --verify --quiet refs/remotes/origin/main"
+        ));
+
+    let error = run(
+        &location,
+        &config,
+        &project()?,
+        WORKTREES_ONLY,
+        &host,
+        &workspace_root,
+        &mut SilentProgress,
+    )
+    .refused_because("the start ref is not resolvable inside the sandbox")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::StartRefUnresolved));
+    assert!(
+        !host.ran("worktree add"),
+        "no worktree is created from an unresolved start ref: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_failure_while_making_the_worktrees_keeps_the_raised_target() -> Checked {
+    // 目標本数の引き上げは作業の前にcommitする。途中で失敗した実行は成功を報告せず、
+    // 同じcommandでやり直せる状態を残す。
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    let paths = write_metadata(&location, &parent, None)?;
+    let git_dir = SandboxLayout::new(&canonical()?).bare_git_dir();
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?)
+        .holding_repository()?
+        .failing(&format!(
+            "git --git-dir {git_dir} rev-parse refs/remotes/origin/main"
+        ));
+
+    let error = run(
+        &location,
+        &config,
+        &project()?,
+        WORKTREES_ONLY,
+        &host,
+        &workspace_root,
+        &mut SilentProgress,
+    )
+    .refused_because("the commit the worktrees start from cannot be read")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    let stored = metadata::load(&paths)
+        .required()?
+        .required_because("present")?;
+    assert_eq!(
+        stored.provisioning.requested_worktrees, 3,
+        "the raised target stays so the run can be repeated"
+    );
     Ok(())
 }
 

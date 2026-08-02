@@ -81,6 +81,85 @@ fn a_head_that_points_at_something_other_than_a_branch_is_not_a_start_point() ->
 }
 
 #[test]
+fn a_symref_line_that_names_no_reference_does_not_end_the_search() -> Checked {
+    // `ref:`だけの行はrefを示していない。そこで打ち切ると、続く行が答えを持って
+    // いても「HEADがbranchを示さない」と告げることになる。
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let git_dir = layout()?.bare_git_dir();
+    let host = InnerCommandSandbox::new().answering(
+        &format!("git --git-dir {git_dir} ls-remote --symref origin HEAD"),
+        "ref:\nref: refs/heads/main\tHEAD\n9f5b1c\tHEAD\n",
+    );
+
+    let mut project = metadata(CreationMode::Attached, None, 1)?;
+    metadata::create(&paths, &project).required_because("write the metadata")?;
+
+    let branch = resolve_start_ref(&host, "sbxm-example", &layout()?, &paths, &mut project)
+        .required_because("resolve")?;
+    assert_eq!(branch, "main");
+    Ok(())
+}
+
+#[test]
+fn a_question_the_host_could_not_ask_is_not_read_as_an_answer_about_the_branch() -> Checked {
+    // 起点の決定は3つの問い合わせから成る。どれも「届かなかった」ことを「そう
+    // 答えられた」に読み替えると、branch名やrefについて観測していない断定をする。
+    let git_dir = layout()?.bare_git_dir();
+    let cases = [
+        (
+            CreationMode::Attached,
+            None,
+            format!("git --git-dir {git_dir} ls-remote --symref origin HEAD"),
+        ),
+        (
+            CreationMode::Detached,
+            Some("develop"),
+            "git check-ref-format --branch develop".to_string(),
+        ),
+        (
+            CreationMode::Detached,
+            Some("develop"),
+            format!(
+                "git --git-dir {git_dir} show-ref --verify --quiet refs/remotes/origin/develop"
+            ),
+        ),
+    ];
+
+    for (mode, declared, step) in cases {
+        let dir = tempfile::tempdir().required()?;
+        let paths = project_paths(dir.path())?;
+        let host = InnerCommandSandbox::new()
+            .answering(
+                &format!("git --git-dir {git_dir} ls-remote --symref origin HEAD"),
+                "ref: refs/heads/develop\tHEAD\n",
+            )
+            .timing_out(&step);
+
+        let mut project = metadata(mode, declared, 1)?;
+        metadata::create(&paths, &project).required_because("write the metadata")?;
+
+        let error = resolve_start_ref(&host, "sbxm-example", &layout()?, &paths, &mut project)
+            .refused_because("a question that went unanswered stops the run")?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandTimeout),
+            "{step} was reported as something other than the host failure it was"
+        );
+
+        let recorded = metadata::load(&paths)
+            .required()?
+            .required_because("present")?;
+        assert_eq!(
+            recorded.provisioning.start_ref.as_deref(),
+            declared,
+            "the target configuration keeps the branch it declared, if any"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn the_start_branch_is_judged_again_by_git_inside_the_sandbox() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let paths = project_paths(dir.path())?;

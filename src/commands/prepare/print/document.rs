@@ -73,3 +73,7 @@ pub fn document(output: &PrepareOutput, locale: Locale) -> Document {
         .concat(notes(&output.notes))
         .legend(Legend::heading(), legend.entries())
 }
+
+#[cfg(test)]
+#[path = "document_test.rs"]
+mod document_test;

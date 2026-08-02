@@ -42,6 +42,11 @@ yaml_serde = "0.10"
 [dev-dependencies]
 fluent-syntax = "0.12.0"
 proc-macro2 = "1.0.107"
+# 端末を要するpromptをtestから動かすためのPTY。出荷するbinaryはこのfeatureを持たない。
+rustix = { version = "1.1.4", default-features = false, features = [
+  "pty",
+  "termios",
+] }
 syn = { version = "2.0.0", features = ["full", "visit"] }
 
 [lints]
@@ -56,6 +61,7 @@ all = { level = "deny", priority = -1 }
 
 # より厳格で、多少の誤検知を許容するLint
 pedantic = { level = "deny", priority = -1 }
+as_conversions = "forbid"
 
 # AIが安易に生成しやすい処理を個別に禁止
 unwrap_used = "deny"

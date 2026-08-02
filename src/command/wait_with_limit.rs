@@ -1,11 +1,10 @@
 use std::process::{Child, ExitStatus};
 use std::time::{Duration, Instant};
 
-use crate::design::Fact;
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result, fail};
+use crate::diagnostics::{Error, ErrorId, Result, fail};
 use crate::msg;
 
-use super::{CommandSpec, WAIT_POLL_INTERVAL, terminate_child};
+use super::{CommandSpec, WAIT_POLL_INTERVAL, spawn_failure, terminate_child};
 
 pub(super) fn wait_with_limit(
     child: &mut Child,
@@ -51,12 +50,5 @@ pub(super) fn wait_with_limit(
 /// 報告より先に、こちらから終わらせる。原因はOSが書いた原文である。
 fn unwaitable(child: &mut Child, spec: &CommandSpec, error: &std::io::Error) -> Error {
     terminate_child(child, spec);
-    Error::single(
-        Diagnostic::new(
-            ErrorId::ExternalCommandSpawnFailed,
-            msg!("error-external-command-spawn-failed"),
-        )
-        .fact(Fact::command(&spec.program))
-        .fact(Fact::cause(&error.to_string())),
-    )
+    spawn_failure(spec, error)
 }

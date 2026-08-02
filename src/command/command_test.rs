@@ -52,6 +52,31 @@ fn retrying(attempt: impl Fn() -> Result<CommandOutcome>) -> Result<CommandOutco
     attempt()
 }
 
+/// 待つ相手だけを用意する。
+///
+/// `wait_with_limit`はpipeもprocess groupも前提にしないため、待機と打ち切りだけを
+/// 見るtestは、直接の子を1つ起動して渡す。`sleep`は書き込み直後のfileではないため、
+/// `ETXTBSY`でやり直す必要もない。
+fn sleeping_child(seconds: &str) -> Checked<std::process::Child> {
+    std::process::Command::new("sleep")
+        .arg(seconds)
+        .stdin(std::process::Stdio::null())
+        .spawn()
+        .required_because("a child to wait for")
+}
+
+/// 子processを`Child`の外で回収し、待てない状態を作る。
+///
+/// 他のlibraryやsignal handlerが先にwaitした場合と同じで、以後この子は待てない。
+fn reaped_outside_the_handle(child: &std::process::Child) -> Checked {
+    rustix::process::waitpid(
+        Some(rustix::process::Pid::from_child(child)),
+        rustix::process::WaitOptions::empty(),
+    )
+    .required_because("the child is collected outside the handle")?;
+    Ok(())
+}
+
 /// 診断が持つ事実の項目名。
 fn labels(error: &crate::diagnostics::Error) -> Checked<Vec<String>> {
     Ok(error
@@ -77,6 +102,10 @@ fn timeout_classes_match_the_documented_defaults() {
     // 長い工程ほど、途中で切ると成果物が中途半端に残る。
     assert!(TimeoutClass::SandboxLifecycle.duration() > TimeoutClass::LocalFilesystem.duration());
     assert!(TimeoutClass::ImageBuild.duration() > TimeoutClass::SandboxLifecycle.duration());
+    // 転送にかかる時間はrepositoryの大きさが決める。Sandboxを起動する時間では測れない。
+    assert!(
+        TimeoutClass::RepositoryTransfer.duration() > TimeoutClass::SandboxLifecycle.duration()
+    );
     // 対話接続を終える時期を決めるのは利用者である。
     assert_eq!(TimeoutClass::Interactive.duration(), None);
 }
@@ -355,6 +384,81 @@ fn an_escaped_descendant_cannot_hold_capture_open_after_timeout() -> Checked {
     assert!(
         started.elapsed() < Duration::from_millis(1500),
         "the reader must not wait for a process outside the command group"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> Checked {
+    // 端末へ出すcommandはprocess groupを分けないため、打ち切りは直接の子だけに届く。
+    let spec = CommandSpec::passthrough("sleep", &["30"]);
+    let mut child = sleeping_child("30")?;
+    let pid = rustix::process::Pid::from_child(&child);
+
+    let started = Instant::now();
+    let error = wait_with_limit(&mut child, &spec, Some(Duration::from_millis(200)))
+        .refused_because("the limit must end the wait")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the wait must not outlive the limit it was given"
+    );
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?;
+    assert!(
+        diagnostic
+            .description
+            .args
+            .contains(&("program", "sleep".to_string())),
+        "the report names the command that was cut off: {:?}",
+        diagnostic.description
+    );
+    // 報告より先に終わらせるため、返った時点でzombieも実行中のprocessも残らない。
+    assert_eq!(
+        rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG).err(),
+        Some(rustix::io::Errno::CHILD),
+        "the child must already be collected when the timeout is reported"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_child_that_cannot_be_waited_for_is_ended_and_reported_with_what_the_os_said() -> Checked {
+    // 対話commandに上限は無い。待てなくなったことだけが、待機を終える理由になる。
+    let spec = CommandSpec::inherit("sleep", &[]);
+    let mut child = sleeping_child("0")?;
+    reaped_outside_the_handle(&child)?;
+
+    let error = wait_with_limit(&mut child, &spec, None)
+        .refused_because("a child that cannot be waited for must not be waited for forever")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    assert_eq!(
+        labels(&error)?,
+        vec!["diagnostic-command-label", "diagnostic-cause-label"],
+        "the invocation and the reason the OS gave are both kept"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_limited_wait_reports_the_same_failure_when_the_child_can_no_longer_be_observed() -> Checked {
+    // 期限付きの待機でも、待てなくなった相手は期限まで数え続けずに報告する。
+    let spec = CommandSpec::passthrough("sleep", &[]);
+    let mut child = sleeping_child("0")?;
+    reaped_outside_the_handle(&child)?;
+
+    let started = Instant::now();
+    let error = wait_with_limit(&mut child, &spec, Some(Duration::from_secs(30)))
+        .refused_because("a child that cannot be waited for is not waited for")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the failure must be reported without waiting for the limit"
     );
     Ok(())
 }

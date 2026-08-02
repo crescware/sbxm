@@ -1,0 +1,101 @@
+//! project scopeの`status`の出力。
+//!
+//! 表と診断は行き先が別であり、入れ替わってもexit codeでは気付けない。2つのstreamを
+//! 別々に受け取り、どちらに何が出たかを確かめる。
+
+use crate::design::OutputPolicy;
+use crate::diagnostics::{Diagnostic, ErrorId};
+use crate::i18n::Locale;
+
+use crate::commands::status::project::{Item, Value, WorktreeRow};
+
+use crate::testing::outcome::{Checked, Required};
+
+use super::*;
+
+struct Printed {
+    code: ExitCode,
+    stdout: String,
+    stderr: String,
+}
+
+fn print(status: &ProjectStatus) -> Checked<Printed> {
+    let mut stdout: Vec<u8> = Vec::new();
+    let mut stderr: Vec<u8> = Vec::new();
+    let code = {
+        let mut ui = Ui::capture(Locale::En, OutputPolicy::plain(), &mut stdout, &mut stderr);
+        project(&mut ui, status)
+    };
+    Ok(Printed {
+        code,
+        stdout: String::from_utf8(stdout).required_because("UTF-8")?,
+        stderr: String::from_utf8(stderr).required_because("UTF-8")?,
+    })
+}
+
+/// 問題を1件も持たない診断結果。
+fn healthy() -> ProjectStatus {
+    ProjectStatus {
+        project: "example-org/example-repo".to_string(),
+        items: vec![Item {
+            item: "status-item-bare-repository",
+            value: Value::Ready,
+        }],
+        worktrees: vec![WorktreeRow {
+            path: "example-repo.tree-0".to_string(),
+            kind: "managed",
+            mode: Value::Attached,
+            state: Value::Clean,
+        }],
+        diagnostics: Vec::new(),
+    }
+}
+
+fn unusable_repository() -> Diagnostic {
+    Diagnostic::new(
+        ErrorId::SandboxRepositoryUnusable,
+        crate::msg!("error-sandbox-repository-unusable"),
+    )
+}
+
+#[test]
+fn a_project_without_a_problem_succeeds_and_leaves_stderr_untouched() -> Checked {
+    let printed = print(&healthy())?;
+
+    assert_eq!(printed.code, ExitCode::Success);
+    assert!(printed.stderr.is_empty(), "{:?}", printed.stderr);
+    // 表そのものが結論であるため、健全な案件でも行は出る。
+    assert!(printed.stdout.contains("PROJECT"), "{:?}", printed.stdout);
+    assert!(
+        printed.stdout.contains("example-org/example-repo"),
+        "{:?}",
+        printed.stdout
+    );
+    assert!(
+        printed.stdout.contains(Value::Clean.as_str()),
+        "{:?}",
+        printed.stdout
+    );
+    Ok(())
+}
+
+#[test]
+fn a_diagnosed_project_fails_and_every_diagnostic_is_written_on_its_own() -> Checked {
+    let mut status = healthy();
+    status.diagnostics.push(unusable_repository());
+    status.diagnostics.push(unusable_repository());
+
+    let printed = print(&status)?;
+
+    assert_eq!(printed.code, ExitCode::Failure);
+    assert_eq!(
+        printed.stderr.matches("\u{d7} error:").count(),
+        2,
+        "{:?}",
+        printed.stderr
+    );
+    // 診断が出ても、読めた項目の表は隠れない。
+    assert!(printed.stdout.contains("PROJECT"), "{:?}", printed.stdout);
+    assert!(!printed.stdout.contains("error:"), "{:?}", printed.stdout);
+    Ok(())
+}

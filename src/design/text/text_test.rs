@@ -60,6 +60,25 @@ fn every_inline_fragment_exposes_the_plain_value_widths_are_measured_from() {
 }
 
 #[test]
+fn rewriting_the_text_of_a_fragment_never_rewrites_what_the_value_is() {
+    // 値を整えるのは組み立て側であり、整えたあとも「これは何か」は変わらない。
+    assert_eq!(Inline::text("a\n").with_text("a"), Inline::text("a"));
+    assert_eq!(
+        Inline::important("owner/repo\n").with_text("owner/repo"),
+        Inline::important("owner/repo")
+    );
+    assert_eq!(
+        Inline::path("/tmp/x\n").with_text("/tmp/x"),
+        Inline::path("/tmp/x")
+    );
+    assert_eq!(
+        Inline::state("running\n", VisualState::Positive).with_text("running"),
+        Inline::state("running", VisualState::Positive),
+        "the semantic state is what decides the color, and it survives the rewrite"
+    );
+}
+
+#[test]
 fn the_same_value_can_carry_different_states_in_different_contexts() {
     // `stopped`は停止結果ならpositive、稼働要件ならattentionである。
     let finished = Inline::state("stopped", VisualState::Positive);

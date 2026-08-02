@@ -37,3 +37,7 @@ pub fn from_matches(
         ),
     }
 }
+
+#[cfg(test)]
+#[path = "from_matches_test.rs"]
+mod from_matches_test;

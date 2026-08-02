@@ -1,7 +1,7 @@
 use std::fs;
 
 use crate::config::ConfigLocation;
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result, fail};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::hash::sha256_hex;
 use crate::metadata::{self, CreationMode, GitIdentity, ProjectMetadata, Provisioning};
 use crate::msg;
@@ -25,7 +25,7 @@ use super::{AddRequest, BUNDLED_DOCKERFILE, Presence, Registration, TargetConfig
 /// 3. 登録意図を持つentryをregistryへatomic recordする
 /// 4. registry lockを保持したままproject rootを作り、project lockを取得する
 /// 5. Dockerfileとproject metadataをatomic createする
-/// 6. entryとproject metadataを再検証する
+/// 6. registryの記録とproject metadataを突き合わせる
 /// 7. registry lockだけを解放する
 ///
 /// 長時間かかるhost cloneは、registry lockを解放したあとで`run`が行う。
@@ -42,9 +42,13 @@ pub fn register(
     // registryが不正なら、一部entryだけを信用せずここで停止する。
     let mut guard = RegistryGuard::acquire(location)?;
 
-    let paths = if let Some(entry) = guard.registry().find(&canonical) {
+    // registryが記録したrepositoryは、この先metadataと突き合わせる正本になる。project
+    // rootはentryそのものか、entryとして記録した候補そのものであり、registry lockを
+    // 保持しているあいだに他から書き換わることはない。
+    let (paths, registered) = if let Some(entry) = guard.registry().find(&canonical) {
         // 登録済みなら、実行時の配置規則から新しい候補pathを作らない。
-        require_same_registration(entry, &request.repository)?;
+        require_same_registration(entry.repository(), &request.repository)?;
+        let registered = entry.repository().clone();
         let paths = ProjectPaths::at(entry.project_root(), &canonical);
         // 保存されたabsolute pathでも、そこにあるものを観測してから使う。
         // rootがまだ無い中断点からの再開だけが、作成工程から続けられる。
@@ -54,16 +58,16 @@ pub fn register(
             }
             Presence::Absent => {}
         }
-        paths
+        (paths, registered)
     } else {
         // cwdを使うのは新規canonical project IDの登録時だけである。
         let candidate = ProjectPaths::derive(parent, &canonical);
-        check_new_registration(guard.registry(), &candidate, &canonical, &sandbox)?;
+        check_new_registration(guard.registry(), &candidate, &canonical)?;
         guard.insert(RegistryEntry::new(
             candidate.root(),
             request.repository.clone(),
         )?)?;
-        candidate
+        (candidate, request.repository.clone())
     };
 
     paths::ensure_directory(paths.root())?;
@@ -105,19 +109,8 @@ pub fn register(
         metadata
     };
 
-    // entryとmetadataが同じ案件を指していることを、registry lockを手放す前に確かめる。
-    let entry = guard
-        .registry()
-        .find(&canonical)
-        .ok_or_else(|| missing_entry(&canonical))?;
-    if entry.project_root() != paths.root() {
-        return Err(path_collision(
-            paths.root(),
-            entry.canonical_id(),
-            &canonical,
-        ));
-    }
-    require_same_registration(entry, &metadata.repository)?;
+    // registryとmetadataが同じ案件を指していることを、registry lockを手放す前に確かめる。
+    require_same_registration(&registered, &metadata.repository)?;
     drop(guard);
 
     Ok(Registration {
@@ -132,11 +125,13 @@ pub fn register(
 ///
 /// registry entryのない既存成果物のownershipは`add`では確定できない。名前が一致する
 /// だけのdirectoryをadoptせず、path collisionとして拒否する。
+///
+/// Sandbox名の衝突はregistry全体の不変条件であり、`RegistryGuard::insert`が記録前に
+/// 全entryを突き合わせて判定する。同じ判定をここで先回りしない。
 fn check_new_registration(
     registry: &Index,
     candidate: &ProjectPaths,
     canonical: &CanonicalProjectId,
-    sandbox: &SandboxName,
 ) -> Result<()> {
     if let Some(other) = registry
         .entries()
@@ -148,20 +143,6 @@ fn check_new_registration(
             other.canonical_id(),
             canonical,
         ));
-    }
-    if let Some(other) = registry
-        .entries()
-        .iter()
-        .find(|entry| entry.sandbox_name() == *sandbox)
-    {
-        return fail(
-            ErrorId::SandboxNameCollision,
-            msg!(
-                "error-sandbox-name-collision",
-                sandbox = sandbox,
-                projects = format!("{}, {}", canonical, other.canonical_id())
-            ),
-        );
     }
     // 観測できないことを、空いていることと同一視しない。
     match observe(candidate.root())? {
@@ -183,9 +164,12 @@ fn check_new_registration(
     }
 }
 
-/// registry entryが、この実行の登録対象と同じ構成を指しているか。
-fn require_same_registration(entry: &RegistryEntry, requested: &RepositoryIdentity) -> Result<()> {
-    if entry.repository().same_target(requested) {
+/// registryが記録したrepositoryが、この実行の登録対象と同じ構成を指しているか。
+fn require_same_registration(
+    registered: &RepositoryIdentity,
+    requested: &RepositoryIdentity,
+) -> Result<()> {
+    if registered.same_target(requested) {
         return Ok(());
     }
     Err(Error::single(
@@ -193,29 +177,17 @@ fn require_same_registration(entry: &RegistryEntry, requested: &RepositoryIdenti
             ErrorId::TargetConfigurationMismatch,
             msg!(
                 "error-target-configuration-mismatch",
-                project = entry.repository().display_id(),
+                project = registered.display_id(),
                 requested = requested.clone_url(),
-                stored = entry.repository().clone_url()
+                stored = registered.clone_url()
             ),
         )
         .remediation(
             Remediation::text(msg!("remediation-target-configuration-mismatch"))
-                .try_run(format!("sbxm add {}", entry.repository().clone_url())),
+                // 保存済みの綴りをそのまま示す。再実行で登録内容を書き換えさせない。
+                .try_run(format!("sbxm add {}", registered.clone_url())),
         ),
     ))
-}
-
-/// 記録したはずのentryが、lockを保持したまま読み直したregistryにない。
-fn missing_entry(canonical: &CanonicalProjectId) -> Error {
-    Error::new(
-        ErrorId::RegistryEntryMismatch,
-        msg!(
-            "error-registry-entry-mismatch",
-            canonical_id = canonical,
-            stored = "-",
-            requested = canonical
-        ),
-    )
 }
 
 /// 保存済みmetadataを持つ案件で、この`add`が構築を続けてよいかを判定する。
@@ -312,3 +284,7 @@ fn adopt_dockerfile(paths: &ProjectPaths) -> Result<String> {
     paths::atomic_create(&path, BUNDLED_DOCKERFILE, PRIVATE_FILE_MODE)?;
     Ok(sha256_hex(BUNDLED_DOCKERFILE.as_bytes()))
 }
+
+#[cfg(test)]
+#[path = "register_test.rs"]
+mod register_test;

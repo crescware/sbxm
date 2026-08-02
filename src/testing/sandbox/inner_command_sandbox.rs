@@ -1,7 +1,8 @@
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
-use crate::diagnostics::Result;
+use crate::diagnostics::{Error, ErrorId, Result};
+use crate::msg;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// `--`より後ろのinner commandをkeyにして答えるhost。
 ///
@@ -14,6 +15,8 @@ pub struct InnerCommandSandbox {
     present: RefCell<Vec<String>>,
     /// 特定のinner commandに対する応答。
     answers: HashMap<String, (i32, String)>,
+    /// 応答そのものが返らないinner command。
+    timeouts: HashSet<String>,
     calls: RefCell<Vec<Vec<String>>>,
 }
 
@@ -38,6 +41,15 @@ impl InnerCommandSandbox {
         self
     }
 
+    /// commandが終了statusを返さないSandbox。
+    ///
+    /// `failing`が「実行できて失敗した」を作るのに対し、こちらは実行そのものが
+    /// 成立しなかった場合を作る。observationが1件も得られていない状態である。
+    pub fn timing_out(mut self, command: &str) -> InnerCommandSandbox {
+        self.timeouts.insert(command.to_string());
+        self
+    }
+
     pub fn calls(&self) -> Vec<Vec<String>> {
         self.calls.borrow().clone()
     }
@@ -58,6 +70,17 @@ impl HostEnvironment for InnerCommandSandbox {
         self.calls.borrow_mut().push(spec.args.clone());
         let inner = crate::testing::command::inner_args(spec);
         let key = inner.join(" ");
+
+        if self.timeouts.contains(&key) {
+            return Err(Error::new(
+                ErrorId::ExternalCommandTimeout,
+                msg!(
+                    "error-external-command-timeout",
+                    program = spec.program,
+                    seconds = 10
+                ),
+            ));
+        }
 
         let (code, stdout) = if inner.first().is_some_and(|arg| *arg == "test") {
             let target = inner.last().copied().unwrap_or_default();

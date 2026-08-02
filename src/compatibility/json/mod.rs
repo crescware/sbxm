@@ -9,3 +9,7 @@ mod wrapped_documents;
 pub(super) use json_documents::json_documents;
 pub(super) use string_field::string_field;
 pub(super) use wrapped_documents::wrapped_documents;
+
+#[cfg(test)]
+#[path = "json_test.rs"]
+mod json_test;

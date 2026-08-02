@@ -1078,6 +1078,97 @@ fn the_coverage_task_leaves_out_the_same_places() -> Result<(), Box<dyn std::err
     Ok(())
 }
 
+/// coverage taskがcargo-llvm-covへ渡す語。
+///
+/// `run`の中身は行末の`\`で続く1つのcommandである。語へ割ってから読むことで、
+/// `--fail-under-lines`と`--fail-under-file-lines`のように互いに似た綴りを取り違えない。
+fn coverage_task_words(manifest: &str) -> Result<Vec<String>, String> {
+    let declared = manifest
+        .split_once("[tasks.coverage]")
+        .ok_or_else(|| "mise.toml declares no coverage task".to_string())?
+        .1;
+    let opened = declared
+        .split_once("'''")
+        .ok_or_else(|| "the coverage task has no run block".to_string())?
+        .1;
+    let body = opened
+        .split_once("'''")
+        .ok_or_else(|| "the run block of the coverage task does not end".to_string())?
+        .0;
+    Ok(body
+        .split_whitespace()
+        .filter(|word| *word != "\\")
+        .map(str::to_string)
+        .collect())
+}
+
+/// optionがちょうど1度渡され、その値が下限を下回らないか。
+///
+/// cargo-llvm-covは同じoptionを2度渡すと後ろを採る。綴りが在ることだけを見ると、後ろへ
+/// 緩い値を足して基準を無効にできる。回数と値の両方を求める。
+fn a_floor_of(words: &[String], option: &str, least: f64) -> Result<(), String> {
+    let passed: Vec<&String> = words
+        .iter()
+        .enumerate()
+        .filter(|(_, word)| word.as_str() == option)
+        .filter_map(|(index, _)| words.get(index + 1))
+        .collect();
+    match passed.as_slice() {
+        [] => Err(format!("the coverage task must pass {option}")),
+        [value] => {
+            let observed: f64 = value
+                .parse()
+                .map_err(|_| format!("{option} takes a percentage, not {value}"))?;
+            if observed < least {
+                return Err(format!(
+                    "{option} must not fall below {least}; it passes {observed}"
+                ));
+            }
+            Ok(())
+        }
+        many => Err(format!(
+            "{option} is passed {} times; only the last one would decide",
+            many.len()
+        )),
+    }
+}
+
+/// coverage taskが1 fileずつに求める行coverage。
+///
+/// 全体比率は、よくtestされたfileの行で別fileの未到達行を相殺できる。file別floorはその
+/// 相殺を止めるために在り、90未満へ下げれば止まらなくなる。値の引き下げも、同じoptionを後ろへ
+/// 書いての上書きも落とす。母集団から外してよいpathは
+/// `the_coverage_task_leaves_out_the_same_places`が別に固定する。
+#[test]
+fn every_counted_file_answers_for_ninety_percent_of_its_own_lines()
+-> Result<(), Box<dyn std::error::Error>> {
+    let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("mise.toml"))?;
+    a_floor_of(
+        &coverage_task_words(&manifest)?,
+        "--fail-under-file-lines",
+        90.0,
+    )?;
+    Ok(())
+}
+
+/// 全体の最低基準は、file別floorを入れても下げない。
+///
+/// file別floorは相殺を止めるだけで、90%を超えたfileの劣化までは止めない。全体には
+/// 行97%、関数97%、region95%を課す。
+#[test]
+fn the_overall_floors_stay_where_they_are() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("mise.toml"))?;
+    let words = coverage_task_words(&manifest)?;
+    for (option, least) in [
+        ("--fail-under-lines", 97.0),
+        ("--fail-under-functions", 97.0),
+        ("--fail-under-regions", 95.0),
+    ] {
+        a_floor_of(&words, option, least)?;
+    }
+    Ok(())
+}
+
 /// item名をfile stemへ写す。
 ///
 /// `CamelCase`と`SCREAMING_SNAKE_CASE`の両方を同じ規則で扱う。語の境界は、小文字か

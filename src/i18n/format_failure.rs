@@ -15,7 +15,6 @@ impl std::fmt::Display for FormatFailure {
         let reason = match &self.reason {
             FormatFailureReason::UnknownMessage => "message is not defined".to_string(),
             FormatFailureReason::MissingValue => "message has no value".to_string(),
-            FormatFailureReason::MissingAttribute => "attribute is not defined".to_string(),
             FormatFailureReason::Format(detail) => detail.clone(),
         };
         write!(

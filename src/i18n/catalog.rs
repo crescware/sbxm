@@ -38,25 +38,17 @@ impl Catalog {
         for (key, value) in &message.args {
             args.set(*key, FluentValue::from(value.as_str()));
         }
-        self.format_pattern(message.id, None, Some(&args))
+        self.format_pattern(message.id, Some(&args))
     }
 
     /// 引数のないmessageを取り出す。
     pub fn text(&self, id: &str) -> FormatResult<String> {
-        self.format_pattern(id, None, None)
+        self.format_pattern(id, None)
     }
 
-    fn format_pattern(
-        &self,
-        id: &str,
-        attribute: Option<&str>,
-        args: Option<&FluentArgs>,
-    ) -> FormatResult<String> {
+    fn format_pattern(&self, id: &str, args: Option<&FluentArgs>) -> FormatResult<String> {
         let failure = |reason: FormatFailureReason| FormatFailure {
-            message_id: match attribute {
-                Some(attribute) => format!("{id}.{attribute}"),
-                None => id.to_string(),
-            },
+            message_id: id.to_string(),
             locale: self.locale,
             reason,
         };
@@ -66,15 +58,9 @@ impl Catalog {
             .get_message(id)
             .ok_or_else(|| failure(FormatFailureReason::UnknownMessage))?;
 
-        let pattern = match attribute {
-            Some(attribute) => message
-                .get_attribute(attribute)
-                .map(|attribute| attribute.value())
-                .ok_or_else(|| failure(FormatFailureReason::MissingAttribute))?,
-            None => message
-                .value()
-                .ok_or_else(|| failure(FormatFailureReason::MissingValue))?,
-        };
+        let pattern = message
+            .value()
+            .ok_or_else(|| failure(FormatFailureReason::MissingValue))?;
 
         let mut errors = Vec::new();
         let formatted = self.bundle.format_pattern(pattern, args, &mut errors);

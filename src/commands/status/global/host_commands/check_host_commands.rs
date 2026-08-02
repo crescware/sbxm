@@ -21,14 +21,12 @@ pub fn check_host_commands(
         if exists {
             present.push(program);
         }
-        // Dockerとsbxは、存在確認より後の検査結果とまとめて1行にする。
-        if program == "docker" || program == "sbx" {
-            continue;
-        }
         let item = match program {
             "git" => "status-item-git",
             "ssh" => "status-item-ssh",
-            _ => unreachable!("unexpected required command {program}"),
+            // REQUIRED_COMMANDSの残りはdockerとsbxである。どちらも存在確認より後の
+            // 検査結果とまとめて1行にするため、ここでは行を作らない。
+            _ => continue,
         };
         if exists {
             push(status, item, StatusValue::Ready);

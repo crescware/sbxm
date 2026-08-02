@@ -11,6 +11,21 @@ use crate::paths::ProjectParent;
 use crate::testing::metadata::{attached, canonical};
 use std::os::unix::fs::PermissionsExt;
 
+/// 診断が持つ、外部が述べた原因。
+fn cause(error: &crate::diagnostics::Error) -> Checked<String> {
+    error
+        .diagnostics()
+        .iter()
+        .flat_map(|diagnostic| &diagnostic.facts)
+        .find_map(|fact| match fact {
+            Fact::OneLine { label, value } if label.id == "diagnostic-cause-label" => {
+                Some(value.as_str().to_string())
+            }
+            _ => None,
+        })
+        .required_because("the diagnostic carries the reported cause")
+}
+
 #[test]
 fn metadata_is_written_privately_and_replaced_in_place() -> Checked {
     let dir = tempfile::tempdir().required()?;
@@ -49,6 +64,50 @@ fn a_missing_metadata_file_is_not_an_error_but_a_symlinked_one_is() -> Checked {
 
     let error = load(&project).refused_because("a symlinked metadata file is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::MetadataUnreadable));
+    Ok(())
+}
+
+#[test]
+fn a_metadata_directory_that_is_not_a_directory_is_reported_with_the_cause_the_os_gave() -> Checked
+{
+    let dir = tempfile::tempdir().required()?;
+    let base = ProjectParent::at(dir.path()).required()?;
+    let project = ProjectPaths::derive(&base, &canonical("example-org/example-repo")?);
+    // `.sbxm`がfileであるproject root。metadataは不在ではなく、観測できない。
+    fs::create_dir_all(project.root()).required()?;
+    fs::write(project.sbxm_dir(), b"").required()?;
+
+    let error = load(&project).refused_because("the metadata path cannot be observed")?;
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataUnreadable));
+    // 述べるのはOSが返した原文であり、sbxmの言い換えでも「不在」でもない。
+    let reported = fs::symlink_metadata(project.metadata_file())
+        .err()
+        .required_because("the same observation fails in the test")?;
+    assert_eq!(cause(&error)?, reported.to_string());
+    Ok(())
+}
+
+#[test]
+fn metadata_that_is_not_text_is_refused_rather_than_read_as_absent() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let base = ProjectParent::at(dir.path()).required()?;
+    let project = ProjectPaths::derive(&base, &canonical("example-org/example-repo")?);
+    fs::create_dir_all(project.sbxm_dir()).required()?;
+    // 有効なUTF-8にならないbyte列。fileは在るが原文としては読めない。
+    let original: &[u8] = b"version: 1\nrepository: \xff\n";
+    fs::write(project.metadata_file(), original).required()?;
+
+    let error = load(&project).refused_because("bytes that are not text cannot be read")?;
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataUnreadable));
+    let reported = fs::read_to_string(project.metadata_file())
+        .err()
+        .required_because("the same read fails in the test")?;
+    assert_eq!(cause(&error)?, reported.to_string());
+    assert_eq!(
+        fs::read(project.metadata_file()).required()?,
+        original,
+        "metadata that could not be read is not rewritten"
+    );
     Ok(())
 }
 

@@ -15,7 +15,7 @@ impl Terminals {
         Terminals {
             stdout_is_tty: std::io::stdout().is_terminal(),
             stderr_is_tty: std::io::stderr().is_terminal(),
-            width: terminal.is_term().then(|| terminal.size().1 as usize),
+            width: terminal.is_term().then(|| usize::from(terminal.size().1)),
         }
     }
 }

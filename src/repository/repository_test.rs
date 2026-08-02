@@ -141,6 +141,19 @@ fn owner_and_repository_still_obey_the_project_identifier_rules() -> Checked {
 }
 
 #[test]
+fn a_provider_is_written_the_same_way_wherever_it_appears() {
+    // 表示した綴りをそのまま保存し、保存した綴りをそのまま読み直せる。
+    assert_eq!(Provider::Github.to_string(), "github");
+    assert_eq!(Provider::Github.to_string(), Provider::Github.as_str());
+    assert_eq!(
+        Provider::parse(&Provider::Github.to_string()),
+        Some(Provider::Github)
+    );
+    // 未知のproviderは推測しない。
+    assert_eq!(Provider::parse("gitlab"), None);
+}
+
+#[test]
 fn the_same_repository_over_a_different_transport_is_a_different_target() -> Checked {
     let ssh = parsed("git@github.com:Example-Org/Example-Repo.git")?;
     let https = parsed("https://github.com/Example-Org/Example-Repo.git")?;

@@ -245,6 +245,31 @@ fn an_archive_that_stops_before_its_own_end_holds_nothing_more() -> Checked {
 }
 
 #[test]
+fn a_path_that_cannot_be_read_is_refused_instead_of_being_read_as_an_end() -> Checked {
+    // directoryはopenできてもreadできない。末尾に達したのではないread失敗を、要求した
+    // entryが無いことと取り違えない。
+    let dir = tempfile::tempdir().required()?;
+    let error = read_manifest(dir.path()).refused_because("a directory is not an archive")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?;
+    let cause = diagnostic
+        .facts
+        .last()
+        .required_because("the reason is kept")?;
+    assert_eq!(cause.label().id, "diagnostic-cause-label");
+    // 読めなかった理由はOSが書いた原文であり、sbxmが言い換えた観測ではない。
+    assert!(
+        !matches!(cause, crate::design::Fact::Translated { .. }),
+        "what the operating system wrote is kept as it is: {cause:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_header_that_cannot_be_read_stops_the_scan() -> Checked {
     let readable_size = format!("{:011o}", 4_u64);
     let cases: Vec<Vec<u8>> = vec![

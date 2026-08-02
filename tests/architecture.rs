@@ -335,7 +335,7 @@ fn no_resource_carries_an_emoji() -> Checked {
     for (name, text) in resources()? {
         for (index, line) in text.lines().enumerate() {
             for character in line.chars() {
-                let point = character as u32;
+                let point = u32::from(character);
                 let pictograph = (0x1F000..=0x1FAFF).contains(&point)
                     || (0x2600..=0x27BF).contains(&point)
                     || point == 0xFE0F

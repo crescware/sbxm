@@ -1,3 +1,4 @@
+use crate::design::Fact;
 use crate::diagnostics::ErrorId;
 use crate::paths::scope::PathScope;
 use std::fs::{self, File};
@@ -21,6 +22,7 @@ fn standardization_removes_dot_and_parent_components() {
         lexically_standardize(Path::new("/a/b/../../c")),
         PathBuf::from("/c")
     );
+    assert_eq!(lexically_standardize(Path::new(".")), PathBuf::new());
 }
 
 #[test]
@@ -52,6 +54,132 @@ fn permission_check_rejects_group_and_other_bits() {
     assert!(permission_too_open(0o755));
     assert_eq!(format_mode(0o600), "0600");
     assert_eq!(format_mode(0o40700), "0700");
+}
+
+#[test]
+fn a_directory_is_refused_instead_of_being_answered_as_a_regular_file() -> Checked {
+    let dir = temp_dir()?;
+    let file = dir.path().join("regular");
+    fs::write(&file, b"").required_because("write the file")?;
+    assert!(regular_file_exists(&file, PathScope::ProjectPath).required()?);
+    assert!(
+        !regular_file_exists(&dir.path().join("absent"), PathScope::ProjectPath).required()?,
+        "a path that is simply not there is not a failure"
+    );
+
+    let directory = dir.path().join("a-directory");
+    fs::create_dir(&directory).required_because("create the directory")?;
+    let error = regular_file_exists(&directory, PathScope::ProjectPath)
+        .refused_because("a directory is not a regular file")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    // 何を期待し何を観測したかを示さないと、利用者はどのpathを直せばよいか決められない。
+    let args = &error.diagnostics()[0].description.args;
+    assert!(
+        args.iter()
+            .any(|(key, value)| *key == "expected" && value == "regular file"),
+        "the expected type is named: {args:?}"
+    );
+    assert!(
+        args.iter()
+            .any(|(key, value)| *key == "observed" && value == "directory"),
+        "the observed type is named: {args:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_directory_opened_as_a_file_is_refused_by_the_private_file_check() -> Checked {
+    let dir = temp_dir()?;
+    let file = File::open(dir.path()).required_because("open the directory")?;
+    let error = require_private_file(
+        &file,
+        dir.path(),
+        crate::paths::PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .refused_because("a directory is not a private regular file")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    Ok(())
+}
+
+#[test]
+fn unexpected_types_name_symbolic_links_and_special_files() -> Checked {
+    let dir = temp_dir()?;
+    let target = dir.path().join("target");
+    fs::write(&target, b"").required_because("write the target")?;
+    let link = dir.path().join("link");
+    std::os::unix::fs::symlink(&target, &link).required_because("create the link")?;
+
+    let link_error = unexpected_type(
+        &link,
+        "regular file",
+        &fs::symlink_metadata(&link).required_because("inspect the link")?,
+    );
+    assert!(
+        link_error.diagnostics()[0]
+            .description
+            .args
+            .iter()
+            .any(|(key, value)| *key == "observed" && value == "symbolic link")
+    );
+
+    let device = Path::new("/dev/null");
+    let special_error = unexpected_type(
+        device,
+        "regular file",
+        &fs::metadata(device).required_because("inspect the null device")?,
+    );
+    assert!(
+        special_error.diagnostics()[0]
+            .description
+            .args
+            .iter()
+            .any(|(key, value)| *key == "observed" && value == "special file")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_path_that_cannot_be_read_is_refused_rather_than_reported_as_absent() -> Checked {
+    let dir = temp_dir()?;
+    let closed = dir.path().join("closed");
+    fs::create_dir(&closed).required_because("create the directory")?;
+    let target = closed.join("settings.yaml");
+    fs::write(&target, b"").required_because("write the file")?;
+    // 親directoryを辿れない間は、fileが在るかどうかそのものを観測できない。
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o000))
+        .required_because("close the directory")?;
+
+    let project = regular_file_exists(&target, PathScope::ProjectPath);
+    let config = regular_file_exists(&target, PathScope::ConfigFile);
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o700))
+        .required_because("reopen the directory")?;
+
+    // 同じ観測でも、案件の成果物とglobal設定では利用者の対処が変わる。
+    for (observed, expected) in [
+        (project, ErrorId::ProjectPathUnreadable),
+        (config, ErrorId::ConfigUnreadable),
+    ] {
+        let error =
+            observed.refused_because("a path that cannot be read is never called absent")?;
+        assert_eq!(error.first_id(), Some(expected));
+        let facts = &error.diagnostics()[0].facts;
+        assert!(
+            facts
+                .iter()
+                .any(|fact| matches!(fact, Fact::OneLine { label, value }
+                if label.id == "diagnostic-path-label" && value.as_str() == display(&target))),
+            "the path that could not be read is named: {facts:?}"
+        );
+        assert!(
+            facts
+                .iter()
+                .any(|fact| matches!(fact, Fact::OneLine { label, .. }
+                if label.id == "diagnostic-cause-label")),
+            "the reason the lookup failed is carried with the diagnostic: {facts:?}"
+        );
+    }
+    Ok(())
 }
 
 #[test]

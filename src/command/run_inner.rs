@@ -2,13 +2,12 @@ use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use crate::design::Fact;
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 
 use super::{
     CommandOutcome, CommandSpec, EnvPolicy, OutputPolicy, SignalGuard, isolates_process_group,
-    run_capture, wait_with_limit,
+    run_capture, spawn_failure, wait_with_limit,
 };
 
 pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<CommandOutcome> {
@@ -44,17 +43,11 @@ pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<C
         command.process_group(0);
     }
 
+    // SIGINTはsigactionが拒むsignalではなく、既に手当てされたsignalへ2つ目のactionを足す
+    // ときはsyscallも呼ばない。それでも失敗を握り潰さない。Ctrl-Cを記録できないまま専用の
+    // process groupへ子を置けば、利用者が中断したあとに子だけが残る。
     let signal = if isolates_process_group(spec) {
-        Some(SignalGuard::new().map_err(|error| {
-            Error::single(
-                Diagnostic::new(
-                    ErrorId::ExternalCommandSpawnFailed,
-                    msg!("error-external-command-spawn-failed"),
-                )
-                .fact(Fact::command(&spec.program))
-                .fact(Fact::cause(&error.to_string())),
-            )
-        })?)
+        Some(SignalGuard::new().map_err(|error| spawn_failure(spec, &error))?)
     } else {
         None
     };
@@ -66,14 +59,7 @@ pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<C
                 msg!("error-external-command-not-found", program = spec.program),
             )
         } else {
-            Error::single(
-                Diagnostic::new(
-                    ErrorId::ExternalCommandSpawnFailed,
-                    msg!("error-external-command-spawn-failed"),
-                )
-                .fact(Fact::command(&spec.program))
-                .fact(Fact::cause(&error.to_string())),
-            )
+            spawn_failure(spec, &error)
         }
     })?;
 

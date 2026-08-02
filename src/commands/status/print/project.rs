@@ -18,3 +18,7 @@ pub fn project(ui: &mut Ui, status: &ProjectStatus) -> ExitCode {
         ExitCode::Failure
     }
 }
+
+#[cfg(test)]
+#[path = "project_test.rs"]
+mod project_test;

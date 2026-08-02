@@ -31,12 +31,12 @@ impl SandboxName {
             slug.pop();
         }
 
-        let value = if slug.is_empty() {
-            format!("{SANDBOX_NAME_PREFIX}{hash}")
-        } else {
-            format!("{SANDBOX_NAME_PREFIX}{slug}-{hash}")
-        };
-        SandboxName { value }
+        // slugが空になる場合を分けない。canonical project IDは[`ProjectId`]だけが作り、
+        // その規則はownerの先頭を英数字に限る。slugの先頭は常にその1文字であり、
+        // 切り詰めでも末尾の`-`の除去でも消えない。
+        SandboxName {
+            value: format!("{SANDBOX_NAME_PREFIX}{slug}-{hash}"),
+        }
     }
 
     pub fn as_str(&self) -> &str {
@@ -55,7 +55,7 @@ fn slugify(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
         let mapped = match byte {
-            b'a'..=b'z' | b'0'..=b'9' => byte as char,
+            b'a'..=b'z' | b'0'..=b'9' => char::from(byte),
             _ => '-',
         };
         if mapped == '-' && out.ends_with('-') {

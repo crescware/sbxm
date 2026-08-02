@@ -187,6 +187,67 @@ fn every_state_stays_readable_without_color() {
 }
 
 #[test]
+fn an_empty_selection_has_nowhere_to_move_and_confirms_nothing() {
+    // `PromptUi`は候補ゼロで開かない。`Selection`は端末を持たない状態機械として単体で
+    // 成立するため、候補ゼロもこの型自身が受け止める。
+    let mut selection = Selection::new(0, true, true);
+    assert_eq!(selection.apply(Action::Next), Transition::Continue);
+    assert_eq!(selection.apply(Action::Previous), Transition::Continue);
+    assert_eq!(selection.current(), 0, "there is no row to move onto");
+    assert_eq!(selection.selected_count(), 0);
+    assert_eq!(
+        selection.apply(Action::Confirm),
+        Transition::Continue,
+        "an empty confirmation is refused rather than answered with nothing"
+    );
+    assert!(selection.warns_about_empty());
+}
+
+#[test]
+fn color_marks_focus_and_selection_without_changing_a_single_word() {
+    let mut selection = multi();
+    selection.apply(Action::Next);
+    selection.apply(Action::Toggle);
+    let plain = frame(&selection, StreamPolicy::plain());
+    let colored = frame(&selection, StreamPolicy::colored());
+
+    assert_eq!(colored.len(), plain.len(), "color adds no line");
+    let stripped: Vec<String> = colored.iter().map(|line| strip_ansi(line)).collect();
+    assert_eq!(stripped, plain, "color adds decoration, never text");
+
+    // focusのある行はcyanのbold、選択済みのcheckboxはgreenで示す。glyphと色の両方を出し、
+    // どちらか一方だけでも状態が読めるようにする。
+    let rows = &colored[colored.len() - 3..];
+    assert!(
+        rows[1].starts_with("\u{1b}[36m\u{1b}[1m\u{203a}"),
+        "{rows:?}"
+    );
+    assert!(rows[1].contains("\u{1b}[32m[x]"), "{rows:?}");
+    assert!(
+        !rows[0].contains('\u{1b}') && !rows[2].contains('\u{1b}'),
+        "rows that are neither focused nor selected stay undecorated: {rows:?}"
+    );
+}
+
+/// ANSI sequenceを取り除く。色の有無で文字が変わらないことの比較にだけ使う。
+fn strip_ansi(text: &str) -> String {
+    let mut out = String::new();
+    let mut characters = text.chars();
+    while let Some(character) = characters.next() {
+        if character != '\u{1b}' {
+            out.push(character);
+            continue;
+        }
+        for inner in characters.by_ref() {
+            if inner.is_ascii_alphabetic() {
+                break;
+            }
+        }
+    }
+    out
+}
+
+#[test]
 fn the_operation_guide_pairs_every_key_with_what_it_does() {
     let single = painter(StreamPolicy::plain()).keys(false);
     assert!(single.contains("Enter Confirm"), "{single}");

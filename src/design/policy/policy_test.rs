@@ -134,3 +134,18 @@ fn every_color_mode_round_trips_through_its_stable_spelling() {
 fn the_default_color_mode_is_auto() {
     assert_eq!(ColorMode::default(), ColorMode::Auto);
 }
+
+#[test]
+fn a_displayed_color_mode_is_a_value_the_option_accepts_back() {
+    // helpの一覧も診断もDisplayを通る。`as_str`と離れると、画面に出た語をそのまま
+    // `--color`へ渡しても拒否される。
+    for mode in ColorMode::ALL {
+        assert_eq!(mode.to_string(), mode.as_str());
+        assert_eq!(ColorMode::parse_exact(&mode.to_string()), Some(mode));
+    }
+    assert_eq!(
+        ColorMode::ALL.map(|mode| mode.to_string()).join(", "),
+        "auto, always, never"
+    );
+    assert_eq!(ColorMode::default().to_string(), "auto");
+}

@@ -1,5 +1,5 @@
 pub(super) fn is_wide(character: char) -> bool {
-    matches!(character as u32,
+    matches!(u32::from(character),
         0x1100..=0x115F
             | 0x2E80..=0x303E
             | 0x3041..=0x33FF

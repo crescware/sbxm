@@ -10,3 +10,7 @@ pub(super) fn format(catalog: &Catalog, message: &Msg) -> Result<String> {
         )
     })
 }
+
+#[cfg(test)]
+#[path = "format_test.rs"]
+mod format_test;

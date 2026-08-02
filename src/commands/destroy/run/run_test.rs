@@ -612,6 +612,135 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() -> C
     Ok(())
 }
 
+/// 診断が示したpath。
+fn reported_path(error: &Error) -> Option<String> {
+    error.diagnostics()[0]
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            crate::design::Fact::OneLine { label, value }
+                if label.id == "diagnostic-path-label" =>
+            {
+                Some(value.as_str().to_string())
+            }
+            _ => None,
+        })
+}
+
+#[test]
+fn a_cache_that_cannot_be_removed_names_the_cache_and_keeps_the_project_managed() -> Checked {
+    // 後片付けの失敗はcommit pointの手前で起こる。どのpathが残ったかを示さなければ、
+    // 利用者はやり直す前に何を直せばよいか分からない。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    std::fs::create_dir_all(project.paths.cache_dir()).required()?;
+    let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
+    host.listing.borrow_mut().insert(0, "[]".to_string());
+
+    let prepared = prepare(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .required_because("prepare")?;
+
+    let sealed = seal(&project.paths)?;
+    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
+        .refused_because("the cache directory cannot be removed")?;
+    assert_eq!(error.first_id(), Some(ErrorId::CleanupFailed));
+    assert_eq!(
+        reported_path(&error),
+        Some(paths::display(&project.paths.cache_dir())),
+        "the diagnostic names the path that is still there"
+    );
+    assert!(
+        project.paths.metadata_file().exists(),
+        "the project stays managed so destroy can be run again"
+    );
+    unseal(&sealed)?;
+    Ok(())
+}
+
+#[test]
+fn a_metadata_file_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> Checked {
+    // 管理解除のcommit pointであっても、symlinkの先は消さない。link自体を消して
+    // 管理を解いたことにもしない。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
+    host.listing.borrow_mut().insert(0, "[]".to_string());
+
+    let prepared = prepare(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .required_because("prepare")?;
+
+    // metadataを読んだあとで、その位置がほかのfileへのlinkへ差し替えられた。
+    let elsewhere = fixture.dir.path().join("elsewhere.yaml");
+    std::fs::write(&elsewhere, b"not ours\n").required()?;
+    std::fs::remove_file(project.paths.metadata_file()).required()?;
+    std::os::unix::fs::symlink(&elsewhere, project.paths.metadata_file()).required()?;
+
+    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
+        .refused_because("a symlinked metadata path is refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    assert!(
+        elsewhere.exists(),
+        "what the link pointed at is left where it was"
+    );
+    assert!(
+        project.paths.lock_file().exists(),
+        "the run stops before it clears the lock file"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() -> Checked {
+    // 計画時に不在だったからといって、削除commandを省いた実行を成功にはできない。
+    // 消し損ねたSandboxを残したまま管理情報だけを消さない。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let host = no_secrets(
+        FakeSbx::listings(&["[]", &running]),
+        project.sandbox.as_str(),
+    );
+
+    let prepared = prepare(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .required_because("prepare")?;
+    assert_eq!(prepared.plan.state, ProjectState::NotCreated);
+
+    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
+        .refused_because("the sandbox is listed after all")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxStillPresent));
+    assert!(
+        !host.ran("rm "),
+        "the plan said there was nothing to remove: {:?}",
+        host.calls()
+    );
+    assert!(
+        project.paths.metadata_file().exists(),
+        "the project stays managed so destroy can be run again"
+    );
+    Ok(())
+}
+
 #[test]
 fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged() -> Checked {
     let fixture = Fixture::new()?;
@@ -713,6 +842,87 @@ fn unregistering_removes_the_entry_of_that_project_and_no_other() -> Checked {
     );
     // 利用者の成果物は残す。registryから外れたあとは未登録のhost artifactとして扱う。
     assert!(target.paths.root().is_dir());
+    Ok(())
+}
+
+#[test]
+fn an_entry_that_is_already_gone_is_not_an_error_to_remove_again() -> Checked {
+    // registry entryの削除まで終えた直後に中断した実行は、同じcommandでやり直される。
+    // 外すものが無い状態は、失敗ではなく何もしないことである。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let unregistration = unregistration_of(&project);
+    std::fs::remove_file(project.paths.metadata_file()).required_because("remove the metadata")?;
+    let mut guard =
+        RegistryGuard::acquire(&fixture.location).required_because("acquire the registry lock")?;
+    guard
+        .remove(project.metadata.canonical_id())
+        .required_because("remove the entry")?;
+    drop(guard);
+
+    assert!(
+        unregister(&fixture.location, &unregistration)
+            .required_because("an entry that is not there needs no removal")?
+            .is_none(),
+        "nothing is reported for an entry that was already removed"
+    );
+    let registry =
+        crate::registry::load(&fixture.location).required_because("the registry stays valid")?;
+    assert!(registry.entries().is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_project_root_that_is_gone_entirely_loses_its_entry() -> Checked {
+    // rootごと消えていれば、その場所へ登録し直された案件はない。observeできない状態
+    // ではなく、管理が解かれたことを確かめられた状態である。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let unregistration = unregistration_of(&project);
+    std::fs::remove_dir_all(project.paths.root()).required_because("remove the project root")?;
+
+    assert!(
+        unregister(&fixture.location, &unregistration)
+            .required_because("unregister")?
+            .is_none(),
+        "a root that is gone is not reported as a re-registration"
+    );
+    let registry =
+        crate::registry::load(&fixture.location).required_because("the registry stays valid")?;
+    assert!(
+        registry.find(project.metadata.canonical_id()).is_none(),
+        "the entry of a project that no longer exists is removed"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_root_whose_place_cannot_even_be_looked_at_keeps_the_entry() -> Checked {
+    // rootの不在とrootを見られないことは違う。読めなかった実行は、entryを消して
+    // 案件を発見不能にするより、読めなかったことを述べて止まる。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let unregistration = unregistration_of(&project);
+    let parent = project
+        .paths
+        .root()
+        .parent()
+        .required_because("the project root has a parent")?
+        .to_path_buf();
+    std::fs::remove_dir_all(project.paths.root()).required_because("remove the project root")?;
+    std::fs::remove_dir(&parent).required_because("remove the parent directory")?;
+    // 親がdirectoryでなくなり、rootの位置はもう辿れない。
+    std::fs::write(&parent, b"not a directory\n").required_because("put a file in its place")?;
+
+    let error = unregister(&fixture.location, &unregistration)
+        .refused_because("the place the root would be cannot be read")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    let registry =
+        crate::registry::load(&fixture.location).required_because("the registry stays valid")?;
+    assert!(
+        registry.find(project.metadata.canonical_id()).is_some(),
+        "the entry stays until the state can be observed"
+    );
     Ok(())
 }
 

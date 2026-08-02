@@ -66,7 +66,6 @@ fn add_output() -> super::add::AddOutput {
         requested_worktrees: 1,
         host_clone: PathBuf::from("/tmp/owner-repo"),
         already_registered: false,
-        warnings: Vec::new(),
     }
 }
 

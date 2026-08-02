@@ -1,5 +1,5 @@
 use crate::config::ConfigLocation;
-use crate::diagnostics::ErrorId;
+use crate::diagnostics::{Error, ErrorId};
 use crate::paths::{PRIVATE_FILE_MODE, PathScope, acquire_exclusive_lock};
 use std::path::Path;
 
@@ -17,13 +17,18 @@ fn home() -> Checked<(tempfile::TempDir, ConfigLocation)> {
 }
 
 fn write_registry(location: &ConfigLocation, text: &str) -> Checked {
+    write_registry_bytes(location, text.as_bytes())
+}
+
+/// 文字列として表せない中身も含めて、registryの原文をそのまま置く。
+fn write_registry_bytes(location: &ConfigLocation, bytes: &[u8]) -> Checked {
     std::fs::create_dir_all(location.dir()).required_because("create ~/.sbxm")?;
     std::fs::set_permissions(location.dir(), std::fs::Permissions::from_mode(0o700))
         .required_because("mode")?;
-    std::fs::write(location.registry_file(), text).required_because("write the registry")?;
+    std::fs::write(location.registry_file(), bytes).required_because("write the registry")?;
     std::fs::set_permissions(
         location.registry_file(),
-        std::fs::Permissions::from_mode(0o600),
+        std::fs::Permissions::from_mode(PRIVATE_FILE_MODE),
     )
     .required_because("mode")?;
     Ok(())
@@ -32,6 +37,44 @@ fn write_registry(location: &ConfigLocation, text: &str) -> Checked {
 fn entry_for(project: &str, root: &str) -> Checked<RegistryEntry> {
     RegistryEntry::new(Path::new(root), ssh_repository(project)?).required_because("a valid entry")
 }
+
+/// 診断が持つ、その項目名の事実。
+fn fact_value(error: &Error, label: &str) -> Checked<String> {
+    error
+        .diagnostics()
+        .iter()
+        .flat_map(|diagnostic| &diagnostic.facts)
+        .find_map(|fact| match fact {
+            crate::design::Fact::OneLine { label: name, value } if name.id == label => {
+                Some(value.as_str().to_string())
+            }
+            _ => None,
+        })
+        .required_because("the diagnostic states this fact")
+}
+
+/// 診断の説明文が持つ引数。
+fn argument(error: &Error, key: &str) -> Checked<String> {
+    error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?
+        .description
+        .args
+        .iter()
+        .find_map(|(name, value)| (*name == key).then(|| value.clone()))
+        .required_because("the description names this value")
+}
+
+/// 導出したSandbox名が一致する2件のcanonical project ID。
+///
+/// slugは45 byteで切られるため、45 byte目までが同じこの2件は同じslugを持つ。残る差は
+/// `SHA-256`の先頭12桁だけであり、それも一致する組を探索して選んである。
+/// 実際に衝突する値であることは、使う側のtestがderiveで確かめる。
+const COLLIDING_IDS: [&str; 2] = [
+    "example-org/sandbox-name-collision-truncated-aevzqe",
+    "example-org/sandbox-name-collision-truncated-aqxiij",
+];
 
 #[test]
 fn a_registry_that_was_never_written_holds_no_project() -> Checked {
@@ -222,6 +265,114 @@ fn a_document_that_breaks_an_invariant_is_refused_at_load() -> Checked {
         Some(ErrorId::RegistryDuplicateProject),
         "{error:?}"
     );
+    Ok(())
+}
+
+#[test]
+fn two_projects_whose_sandbox_names_collide_are_refused_instead_of_sharing_one_sandbox() -> Checked
+{
+    let (_dir, location) = home()?;
+    let first = entry_for(COLLIDING_IDS[0], "/home/user/Projects/first.project")?;
+    let second = entry_for(COLLIDING_IDS[1], "/home/user/Projects/second.project")?;
+    assert_ne!(first.canonical_id(), second.canonical_id());
+    assert_eq!(
+        first.sandbox_name(),
+        second.sandbox_name(),
+        "the two project IDs must really derive one Sandbox name"
+    );
+
+    let mut guard = RegistryGuard::acquire(&location).required_because("acquire")?;
+    guard.insert(first.clone()).required_because("record")?;
+    let before = std::fs::read_to_string(location.registry_file()).required()?;
+
+    let error = guard
+        .insert(second.clone())
+        .refused_because("one Sandbox name belongs to one project")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    // どのSandboxがどの2案件から導かれたのかを、診断がそのまま名指しする。
+    assert_eq!(
+        argument(&error, "sandbox")?,
+        first.sandbox_name().to_string()
+    );
+    assert_eq!(
+        argument(&error, "projects")?,
+        format!("{}, {}", first.canonical_id(), second.canonical_id())
+    );
+
+    // 衝突を見つけた側は、documentへ触れずに止まる。
+    assert_eq!(
+        std::fs::read_to_string(location.registry_file()).required()?,
+        before
+    );
+    assert_eq!(guard.registry().entries(), [first]);
+    Ok(())
+}
+
+#[test]
+fn a_registry_path_that_is_not_a_regular_file_is_refused_by_its_own_reason() -> Checked {
+    let (_dir, location) = home()?;
+    // 同じ名前のdirectory。読み出せる原文が無く、0件として扱える不在とも違う。
+    std::fs::create_dir_all(location.registry_file()).required()?;
+
+    let error = load(&location).refused_because("a directory is not a registry")?;
+    assert_eq!(error.first_id(), Some(ErrorId::RegistryUnreadable));
+    assert_eq!(
+        fact_value(&error, "diagnostic-path-label")?,
+        crate::paths::display(&location.registry_file())
+    );
+    assert!(
+        std::fs::symlink_metadata(location.registry_file())
+            .required()?
+            .is_dir(),
+        "sbxm must not remove what it refused to read"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_registry_that_is_not_text_is_refused_with_the_cause_that_was_reported() -> Checked {
+    let (_dir, location) = home()?;
+    // 有効なUTF-8にならないbyte列。fileは在るが原文としては読めない。
+    let original: &[u8] = b"version: 1\nprojects: \xff\n";
+    write_registry_bytes(&location, original)?;
+
+    let error = load(&location).refused_because("bytes that are not text cannot be read")?;
+    assert_eq!(error.first_id(), Some(ErrorId::RegistryUnreadable));
+    // 原因はOSが述べた原文であり、sbxmが言い換えない。
+    assert!(
+        fact_value(&error, "diagnostic-cause-label")?
+            .to_lowercase()
+            .contains("utf-8"),
+        "the reported cause is kept: {error:?}"
+    );
+    assert_eq!(
+        std::fs::read(location.registry_file()).required()?,
+        original,
+        "a registry that could not be read is not rewritten"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_symlinked_registry_lock_stops_the_mutation_before_the_document_is_read() -> Checked {
+    let (dir, location) = home()?;
+    std::fs::create_dir_all(location.dir()).required()?;
+    std::fs::set_permissions(location.dir(), std::fs::Permissions::from_mode(0o700))
+        .required_because("mode")?;
+    // lock fileはまだ無い経路を指すsymlink。辿って作れば、この位置に書いたことになる。
+    let elsewhere = dir.path().join("elsewhere.lock");
+    std::os::unix::fs::symlink(&elsewhere, location.registry_lock()).required()?;
+
+    let error = RegistryGuard::acquire(&location)
+        .refused_because("a lock that is a symlink protects nothing")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigSymlink));
+    assert_eq!(
+        argument(&error, "path")?,
+        crate::paths::display(&location.registry_lock())
+    );
+    assert!(!elsewhere.exists(), "the link is never followed");
+    // lockを取れないまま読み書きへ進まない。
+    assert!(!location.registry_file().exists());
     Ok(())
 }
 

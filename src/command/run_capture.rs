@@ -1,13 +1,13 @@
 use std::io::{Read, Result as IoResult};
 use std::os::fd::AsFd;
-use std::process::{Child, ChildStderr, ChildStdout, ExitStatus};
+use std::process::{Child, ExitStatus};
 use std::time::{Duration, Instant};
 
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-use super::{CommandSpec, SignalGuard, WAIT_POLL_INTERVAL, terminate_child};
+use super::{CommandSpec, SignalGuard, WAIT_POLL_INTERVAL, spawn_failure, terminate_child};
 
 /// Capture commandのprocessと2つのpipeを、親threadだけで回収する。
 ///
@@ -33,6 +33,23 @@ pub(super) fn run_capture(
         terminate_child(child, spec);
         return Err(unreadable(spec, &error.to_string()));
     }
+    collect_until_exit(child, spec, limit, signal, stdout, stderr)
+}
+
+/// 直接の子が終わるまで、2本のstreamをnonblockingで読み続ける。
+///
+/// このloopが相手に求めるのは、pollできてreadできることだけである。読めなくなった相手を
+/// どうするか——まだ動いている子は終わらせてから報告し、既に終わった子の残りは諦める——も、
+/// 相手がchildのpipeであるかどうかでは変わらない。読む相手を型で受け取り、pipeの生死を
+/// OSに委ねずに決められるようにする。
+fn collect_until_exit<O: Read + AsFd, E: Read + AsFd>(
+    child: &mut Child,
+    spec: &CommandSpec,
+    limit: Option<Duration>,
+    signal: &SignalGuard,
+    stdout: O,
+    stderr: E,
+) -> Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
     let mut stdout = Some(stdout);
     let mut stderr = Some(stderr);
 
@@ -65,6 +82,8 @@ pub(super) fn run_capture(
             })?;
         }
 
+        // 読んでいる間に届いたCtrl-Cは、子を待ち始める前に効かせる。ここで気付けないと、
+        // 待機はこの子の終わりまで戻らない。
         if signal.interrupted() {
             terminate_child(child, spec);
             return Err(Error::Canceled);
@@ -85,14 +104,7 @@ pub(super) fn run_capture(
             Ok(None) => {}
             Err(error) => {
                 terminate_child(child, spec);
-                return Err(Error::single(
-                    Diagnostic::new(
-                        ErrorId::ExternalCommandSpawnFailed,
-                        msg!("error-external-command-spawn-failed"),
-                    )
-                    .fact(Fact::command(&spec.program))
-                    .fact(Fact::cause(&error.to_string())),
-                ));
+                return Err(spawn_failure(spec, &error));
             }
         }
 
@@ -137,10 +149,7 @@ fn drain_pipe<P: Read>(pipe: &mut Option<P>, collected: &mut Vec<u8>) -> IoResul
     }
 }
 
-fn poll_pipes(
-    stdout: Option<&ChildStdout>,
-    stderr: Option<&ChildStderr>,
-) -> IoResult<(bool, bool)> {
+fn poll_pipes<O: AsFd, E: AsFd>(stdout: Option<&O>, stderr: Option<&E>) -> IoResult<(bool, bool)> {
     let mut poll_fds = Vec::new();
     let mut stdout_index = None;
     let mut stderr_index = None;

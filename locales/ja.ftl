@@ -239,7 +239,6 @@ cause-git-directory-outside = { $root } の外にある { $observed } を指し�
 cause-provider-unsupported = { $observed } は対応providerではありません
 cause-clone-transport-unsupported = { $observed } は対応clone transportではありません
 cause-clone-url-unrecognized = { $observed } は { $accepted } のいずれでもありません
-cause-clone-url-provider-mismatch = clone URLが示すproviderは { $declared } ではなく { $observed } です
 cause-clone-url-transport-mismatch = clone URLが使うtransportは { $declared } ではなく { $observed } です
 cause-clone-url-identity-mismatch = clone URLは { $declared } ではなく { $observed } へ畳み込まれます
 cause-clone-url-name-mismatch = clone URLが示すのは { $declared } ではなく { $observed } です

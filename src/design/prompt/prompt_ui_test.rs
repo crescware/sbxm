@@ -1,10 +1,13 @@
 use console::Key;
 
+use crate::design::policy::StreamPolicy;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
-use crate::diagnostics::ExitCode;
+use crate::diagnostics::{ErrorId, ExitCode, Msg};
+use crate::i18n::{Catalog, Locale};
+use crate::msg;
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::*;
+use super::PromptUi;
 
 fn labels() -> Vec<String> {
     ["owner/alpha", "owner/bravo", "owner/charlie"]
@@ -84,7 +87,17 @@ fn an_empty_candidate_list_is_unresolved_rather_than_an_empty_prompt() -> Checke
         .refused_because("there is nothing to choose")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
+    assert_ne!(error.exit_code(), ExitCode::Canceled);
     assert!(screen.drawn().is_empty(), "nothing is drawn");
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal is reported")?;
+    let described = Catalog::new(Locale::En)
+        .format(&diagnostic.description)
+        .required_because("the report is readable")?;
+    assert!(described.contains(" 0 candidates"), "{described}");
     Ok(())
 }
 

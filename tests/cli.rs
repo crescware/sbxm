@@ -105,6 +105,34 @@ fn sbxm_with_git(home: &Path, cwd: &Path, arguments: &[&str]) -> Checked<Run> {
     Run::from(&output)
 }
 
+/// `PATH`という変数そのものを持たない環境でsbxmを実行する。
+///
+/// 値が空の`PATH`は「どこも探さない`PATH`」であり、変数が無い状態とは別の入力である。
+/// 後者でしか通らない経路があるため、環境を書き換えずに子processの側で外す。
+fn sbxm_without_path(home: &Path, arguments: &[&str]) -> Checked<Run> {
+    let output = Command::new(env!("CARGO_BIN_EXE_sbxm"))
+        .args(arguments)
+        .current_dir(home)
+        .env("HOME", home)
+        .env("LC_ALL", "C")
+        .env_remove("LC_MESSAGES")
+        .env_remove("LANG")
+        .env_remove("PATH")
+        .output()
+        .required_because("sbxm runs")?;
+    Run::from(&output)
+}
+
+/// 表の`ITEM`と`STATUS`の対。
+fn status_rows(stdout: &str) -> Vec<(&str, &str)> {
+    stdout
+        .lines()
+        .skip(2)
+        .filter_map(|line| line.split_once("  "))
+        .map(|(item, status)| (item.trim(), status.trim()))
+        .collect()
+}
+
 /// 同梱するresourceのtag。言語を増やしてもtestを編集しない。
 fn locale_tags() -> Checked<Vec<String>> {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
@@ -209,6 +237,44 @@ fn version_prints_the_version_and_exits_with_zero() -> Checked {
     Ok(())
 }
 
+/// shell localeだけを差し替えてsbxmを実行する。
+///
+/// `LC_ALL`を唯一の手がかりにするため、後ろの2つは取り除いた状態で渡す。
+fn sbxm_with_shell_locale(home: &Path, lc_all: &str, arguments: &[&str]) -> Checked<Run> {
+    let output = Command::new(env!("CARGO_BIN_EXE_sbxm"))
+        .args(arguments)
+        .current_dir(home)
+        .env("HOME", home)
+        .env("LC_ALL", lc_all)
+        .env_remove("LC_MESSAGES")
+        .env_remove("LANG")
+        .env("PATH", "")
+        .output()
+        .required_because("sbxm runs")?;
+    Run::from(&output)
+}
+
+#[test]
+fn a_shell_locale_that_names_no_shipped_language_leaves_the_output_in_the_source_language()
+-> Checked {
+    let home = temp_home()?;
+
+    // 実在しないtagを使う。将来どの言語を足してもこのtestは意味を保つ。
+    let unknown = sbxm_with_shell_locale(home.path(), "zz_ZZ.UTF-8", &["--help"])?;
+    assert_eq!(unknown.code, 0, "{}", unknown.stderr);
+    assert!(unknown.stdout.contains("Usage:"), "{}", unknown.stdout);
+
+    // 同じ実行が、読めるtagならその言語を選ぶ。shell localeを見ていること自体は、
+    // 2回の実行の差が示す。
+    let japanese = sbxm_with_shell_locale(home.path(), "ja_JP.UTF-8", &["--help"])?;
+    assert!(
+        japanese.stdout.contains("使い方 (Usage):"),
+        "{}",
+        japanese.stdout
+    );
+    Ok(())
+}
+
 #[test]
 fn the_language_option_is_read_before_the_configuration() -> Checked {
     let home = temp_home()?;
@@ -251,6 +317,79 @@ fn a_broken_configuration_does_not_stop_help_from_being_shown() -> Checked {
         run.stderr.contains("config-unknown-version"),
         "{}",
         run.stderr
+    );
+    Ok(())
+}
+
+/// sbxmが読めないconfigを置く。
+fn write_unreadable_config(home: &Path) -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = home.join(".sbxm");
+    std::fs::create_dir_all(&dir).required_because("the fixture directory is created")?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+        .required_because("the fixture permissions are applied")?;
+    // このbuildが知らないversionは、既定へ丸めずconfigの不正として扱う。
+    std::fs::write(dir.join("config.yaml"), "version: 99\n")
+        .required_because("the fixture file is written")?;
+    std::fs::set_permissions(
+        dir.join("config.yaml"),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .required_because("the fixture permissions are applied")
+}
+
+/// 案件を引数で取り、設定を読んでから動くcommand。
+const CONFIGURED_COMMANDS: [&str; 3] = ["prepare", "rebuild", "open"];
+
+#[test]
+fn a_configuration_this_build_cannot_read_stops_a_command_before_it_touches_anything() -> Checked {
+    let home = temp_home()?;
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
+    write_unreadable_config(home.path())?;
+
+    // 設定は工程の入口であり、読めないまま既定で進めない。案件が登録済みかどうかを
+    // 調べる前に、configの不正だけを理由として止まる。
+    for command in CONFIGURED_COMMANDS {
+        let run = sbxm_in(home.path(), &base, &[command, "owner/repo"])?;
+        assert_eq!(run.code, 1, "{command}: {}", run.stderr);
+        assert!(
+            run.stderr.contains("config-unknown-version"),
+            "{command}: {}",
+            run.stderr
+        );
+        assert!(
+            !run.stderr.contains("project-not-managed"),
+            "{command} looked for the project before reading the configuration: {}",
+            run.stderr
+        );
+        assert!(run.stdout.is_empty(), "{command}: {}", run.stdout);
+    }
+
+    // `add`も同じ順序で止まる。名義も置き場所も決める前であるため、何も作らない。
+    let run = sbxm_in(
+        home.path(),
+        &base,
+        &["add", "git@github.com:Example-Org/Example-Repo.git"],
+    )?;
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    assert!(
+        run.stderr.contains("config-unknown-version"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        !run.stderr.contains("git-identity-undecidable"),
+        "the identity is decided after the configuration is read: {}",
+        run.stderr
+    );
+    assert!(
+        !base.join("example-repo.project").exists(),
+        "a refused configuration creates no project directory"
+    );
+    assert!(
+        !home.path().join(".sbxm").join("registry.yaml").exists(),
+        "a refused configuration registers nothing"
     );
     Ok(())
 }
@@ -968,6 +1107,39 @@ fn global_status_reports_every_problem_and_exits_with_one() -> Checked {
     }
     // 詳細は表の列を増やさず、stderrの診断として出す。
     assert!(!run.stdout.contains("error:"), "{}", run.stdout);
+    Ok(())
+}
+
+#[test]
+fn a_host_that_carries_no_path_at_all_finds_no_tool_and_reports_each_one() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm_without_path(home.path(), &["--lang", "en", "status", "--global"])?;
+
+    let rows = status_rows(&run.stdout);
+    for item in ["Git", "SSH", "Docker"] {
+        let status = rows
+            .iter()
+            .find(|(name, _)| *name == item)
+            .required_because("the row for the tool is shown")?
+            .1;
+        assert_eq!(status, "missing", "{item} in: {}", run.stdout);
+    }
+    // 見つからなかったことは黙って引き受けず、tool名を挙げて診断に出す。
+    assert_eq!(
+        run.stderr.matches("host-command-missing").count(),
+        4,
+        "every probed tool is named: {}",
+        run.stderr
+    );
+    for tool in ["git", "ssh", "docker", "sbx"] {
+        assert!(
+            run.stderr
+                .contains(&format!("The command {tool} was not found")),
+            "{tool} is named: {}",
+            run.stderr
+        );
+    }
+    assert_eq!(run.code, 1, "an unusable host is not reported as healthy");
     Ok(())
 }
 

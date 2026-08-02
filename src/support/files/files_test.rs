@@ -22,6 +22,8 @@ struct FakeSbx {
     symlinks: Vec<String>,
     /// 非zeroで答えるinner command。
     failing: Option<String>,
+    /// `sha256sum`が返す出力そのもの。digestを含まない答えを与えるために使う。
+    reported: Option<String>,
     calls: RefCell<Vec<Vec<String>>>,
 }
 
@@ -31,6 +33,7 @@ impl FakeSbx {
             files: HashMap::new(),
             symlinks: Vec::new(),
             failing: None,
+            reported: None,
             calls: RefCell::new(Vec::new()),
         }
     }
@@ -42,6 +45,20 @@ impl FakeSbx {
             files,
             symlinks: Vec::new(),
             failing: None,
+            reported: None,
+            calls: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// destinationは在るが、`sha256sum`が指定の出力で答えるhost。
+    fn reporting(destination: &str, output: &str) -> FakeSbx {
+        let mut files = HashMap::new();
+        files.insert(destination.to_string(), String::new());
+        FakeSbx {
+            files,
+            symlinks: Vec::new(),
+            failing: None,
+            reported: Some(output.to_string()),
             calls: RefCell::new(Vec::new()),
         }
     }
@@ -91,9 +108,10 @@ impl HostEnvironment for FakeSbx {
             }
             Some("sha256sum") => {
                 let target = inner.last().copied().unwrap_or_default();
-                match self.files.get(target) {
-                    Some(digest) => stdout = format!("{digest}  {target}\n"),
-                    None => code = 1,
+                match (self.reported.as_deref(), self.files.get(target)) {
+                    (Some(output), _) => stdout = output.to_string(),
+                    (None, Some(digest)) => stdout = format!("{digest}  {target}\n"),
+                    (None, None) => code = 1,
                 }
             }
             _ => {}
@@ -383,6 +401,78 @@ fn the_content_of_a_declared_file_never_reaches_a_diagnostic() -> Checked {
             "the content never reaches an argument: {args:?}"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn the_two_placement_results_keep_two_distinct_untranslated_spellings() {
+    // 表示層はこの語をそのまま出す。訳語ではなく値であるため、ここで固定する。
+    assert_eq!(Placement::Placed.as_str(), "placed");
+    assert_eq!(Placement::Unchanged.as_str(), "unchanged");
+    assert_ne!(
+        Placement::Placed.as_str(),
+        Placement::Unchanged.as_str(),
+        "何もしなかった配置を、置いた配置と読み違えられてはならない"
+    );
+}
+
+#[test]
+fn an_answer_from_sha256sum_without_a_digest_is_refused_rather_than_read_as_one() -> Checked {
+    let destination = "/home/agent/.config/example/settings.yaml";
+    // 空でも、短くても、digestを含まない行でも、それはdigestではない。
+    for reported in [
+        "",
+        "d41d8cd98f00b204  /home/agent/.config/example/settings.yaml\n",
+        "sha256sum: standard input: Input/output error\n",
+    ] {
+        let host = FakeSbx::reporting(destination, reported);
+        let error = digest_in_sandbox(&host, "sbxm-example", destination)
+            .refused_because("an answer that carries no digest is not a digest")?;
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+
+        let facts = &error.diagnostics()[0].facts;
+        assert!(
+            facts.iter().any(
+                |fact| matches!(fact, crate::design::Fact::OneLine { label, value }
+                if label.id == "diagnostic-command-label" && value.as_str() == "sha256sum")
+            ),
+            "the tool whose answer could not be read is named: {facts:?}"
+        );
+        assert!(
+            facts.iter().any(
+                |fact| matches!(fact, crate::design::Fact::OneLine { label, value }
+                if label.id == "diagnostic-cause-label" && value.as_str().contains(destination))
+            ),
+            "the destination that was asked about is named: {facts:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_destination_that_is_not_in_the_sandbox_has_no_digest_rather_than_an_error() -> Checked {
+    let destination = "/home/agent/.config/example/settings.yaml";
+    let contents = b"declared = true\n";
+
+    let host = FakeSbx::holding(destination, contents);
+    assert_eq!(
+        digest_in_sandbox(&host, "sbxm-example", destination)
+            .required_because("the digest of a file that is there")?,
+        Some(sha256_hex(contents))
+    );
+
+    // 無いfileは「無い」と答える。読めないことと無いことを同じ答えにしない。
+    let host = FakeSbx::empty();
+    assert_eq!(
+        digest_in_sandbox(&host, "sbxm-example", destination)
+            .required_because("a destination that is not there")?,
+        None
+    );
+    assert!(
+        !host.ran("sha256sum"),
+        "a destination that is not there is never read: {:?}",
+        host.calls()
+    );
     Ok(())
 }
 

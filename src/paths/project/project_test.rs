@@ -1,3 +1,4 @@
+use crate::design::Fact;
 use crate::diagnostics::ErrorId;
 use crate::project::CanonicalProjectId;
 use std::fs;
@@ -6,6 +7,7 @@ use std::path::Path;
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
+use crate::paths::lexically_standardize;
 use crate::testing::fs::temp_dir;
 
 fn project_id(value: &str) -> Checked<CanonicalProjectId> {
@@ -90,6 +92,45 @@ fn the_same_repository_name_under_two_owners_wants_the_same_directory() -> Check
     assert_eq!(
         ProjectPaths::derive(&parent, &project_id("example-org/alpha")?).root(),
         ProjectPaths::derive(&parent, &project_id("other-org/alpha")?).root()
+    );
+    Ok(())
+}
+
+#[test]
+fn the_parent_of_a_new_project_is_the_directory_the_command_ran_in() -> Checked {
+    // 置き場所はsbxmが選ばない。commandを実行したcurrent directoryをそのまま受け取る。
+    let running_in =
+        std::env::current_dir().required_because("the test process has a current directory")?;
+    let parent =
+        ProjectParent::current().required_because("the current directory can hold a project")?;
+    assert_eq!(parent.as_path(), lexically_standardize(&running_in));
+    Ok(())
+}
+
+#[test]
+fn a_working_directory_that_cannot_be_read_is_reported_without_a_path() -> Checked {
+    // 読めなかったのはcurrent directory自身である。指させるpathが無いため、
+    // 診断はOSが書いた原因だけを持つ。
+    let refused = std::io::Error::from_raw_os_error(2);
+    let error = working_directory_unusable(refused);
+
+    assert_eq!(error.first_id(), Some(ErrorId::WorkingDirectoryUnusable));
+    let facts = &error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?
+        .facts;
+    let quoted: Vec<&str> = facts
+        .iter()
+        .map(|fact| match fact {
+            Fact::OneLine { value, .. } => value.as_str(),
+            _ => "",
+        })
+        .collect();
+    assert_eq!(
+        quoted,
+        vec![std::io::Error::from_raw_os_error(2).to_string().as_str()],
+        "the only fact is what the operating system said"
     );
     Ok(())
 }

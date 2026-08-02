@@ -1,14 +1,15 @@
-//! `rebuild`の実行と出力。
+//! `rebuild`の実行。
 
 use crate::command::HostEnvironment;
-use crate::design::{Document, Ui};
+use crate::design::Ui;
 use crate::diagnostics::ExitCode;
-use crate::hash::short_hex;
-use crate::msg;
 use crate::project::ProjectId;
 use crate::support::{inventory, sandbox};
 
-use super::super::{Context, report};
+use super::{
+    super::{Context, report},
+    print,
+};
 
 pub fn exec(
     project: &ProjectId,
@@ -21,7 +22,7 @@ pub fn exec(
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    let output = match super::run::run(
+    match super::run::run(
         context.location,
         &config,
         project,
@@ -30,20 +31,7 @@ pub fn exec(
         inventory::Poll::default(),
         ui,
     ) {
-        Ok(output) => output,
-        Err(error) => return report(ui, &error),
-    };
-
-    // warningは結果を隠さない。成功と注意の両方を別blockとして残す。
-    for warning in &output.warnings {
-        ui.warning(warning);
+        Ok(output) => print::report(ui, &output),
+        Err(error) => report(ui, &error),
     }
-    let summary = msg!(
-        "rebuild-applied",
-        project = output.project,
-        sandbox = output.sandbox,
-        generation = short_hex(&output.applied)
-    );
-    ui.stdout(&Document::new().summary(summary));
-    ExitCode::Success
 }

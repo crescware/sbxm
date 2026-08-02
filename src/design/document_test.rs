@@ -57,6 +57,16 @@ fn a_command_that_cannot_be_built_leaves_no_block_behind() {
 }
 
 #[test]
+fn guidance_with_neither_a_heading_nor_an_item_leaves_no_block_behind() {
+    // 見出しだけの案内は成立する。省くのは、書くことが何も残らなかった場合だけである。
+    assert!(Document::new().guidance(None, Vec::new()).is_empty());
+
+    let heading_only = Document::new().guidance(Some(msg!("add-next-heading")), Vec::new());
+    assert_eq!(heading_only.blocks().len(), 1);
+    assert!(matches!(heading_only.blocks()[0], Block::Guidance(_)));
+}
+
+#[test]
 fn a_table_section_keeps_the_cells_it_was_given() -> Checked {
     let table = Table::new(vec![msg!("column-project"), msg!("column-state")]).row(vec![
         Inline::text("owner/repository").into(),

@@ -8,3 +8,7 @@ mod require_no_rebuild;
 
 pub use current_dockerfile_hash::current_dockerfile_hash;
 pub use require_no_rebuild::require_no_rebuild;
+
+#[cfg(test)]
+#[path = "generation_test.rs"]
+mod generation_test;

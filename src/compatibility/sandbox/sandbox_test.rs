@@ -2,7 +2,27 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::compatibility::parse_template_list;
+use crate::design::Fact;
 use crate::diagnostics::ErrorId;
+
+/// 拒否が`Cause:`として示した原文。
+///
+/// 同じerror IDで拒む道が何本もあるため、どれを通ったかはこの行でしか区別できない。
+fn refusal_cause(error: &crate::diagnostics::Error) -> Checked<String> {
+    error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            Fact::OneLine { label, value } if label.id == "diagnostic-cause-label" => {
+                Some(value.as_str().to_string())
+            }
+            _ => None,
+        })
+        .required_because("the refusal states what could not be read")
+}
 
 #[test]
 fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() -> Checked {
@@ -118,20 +138,49 @@ fn a_sandbox_with_more_than_one_workspace_is_not_guessed_at() -> Checked {
 }
 
 #[test]
-fn a_sandbox_listing_that_cannot_be_read_is_refused() -> Checked {
-    for output in [
-        r#"[{"state":"running"}]"#,
-        r#"[{"name":"sbxm-a"}]"#,
-        r#"[{"name":"sbxm-a","state":"pausing"}]"#,
-        r#"["sbxm-a"]"#,
-        "true",
+fn a_workspace_field_that_is_not_a_list_of_paths_is_not_guessed_at() -> Checked {
+    // workspaceはこの案件の成果物かどうかの判定に使う。示し方が変わった一覧から
+    // pathらしき値を拾うと、無関係のSandboxを案件のものとして片付けにかける。
+    let absent = r#"{"sandboxes":[{"name":"sbxm-a","status":"running","workspaces":null}]}"#;
+    let entries =
+        parse_sandbox_list(absent).required_because("a null list is an observable absence")?;
+    assert_eq!(entries[0].workspace, None);
+
+    for (output, cause) in [
+        (
+            r#"{"sandboxes":[{"name":"sbxm-a","status":"running","workspaces":"/tmp/a"}]}"#,
+            "workspaces is not a list",
+        ),
+        (
+            r#"{"sandboxes":[{"name":"sbxm-a","status":"running","workspaces":[7]}]}"#,
+            "a workspace is not a string",
+        ),
     ] {
-        let error = parse_sandbox_list(output).refused_because("{output} must be refused")?;
-        assert_eq!(
-            error.first_id(),
-            Some(ErrorId::ExternalOutputUnparseable),
-            "output {output} produced the wrong error"
-        );
+        let error = parse_sandbox_list(output).refused_because("a workspace that is not a path")?;
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+        assert_eq!(refusal_cause(&error)?, cause, "output {output}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_listing_that_cannot_be_read_states_which_reading_failed() -> Checked {
+    // state不明のSandboxを止まっているものとして扱うと、動いているSandboxを消す。
+    // どこで読めなくなったかを、拒否ごとに分けて示す。
+    for (output, cause) in [
+        (r#"["sbxm-a"]"#, "an entry is not an object"),
+        (r#"[{"state":"running"}]"#, "an entry has no name"),
+        (r#"[{"name":"","state":"running"}]"#, "an entry has no name"),
+        (r#"[{"name":"sbxm-a"}]"#, "sandbox sbxm-a has no state"),
+        (
+            r#"[{"name":"sbxm-a","state":"pausing"}]"#,
+            "state pausing has no defined meaning in this build",
+        ),
+        ("true", "the document is neither an array nor an object"),
+    ] {
+        let error = parse_sandbox_list(output).refused_because("a listing that cannot be read")?;
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+        assert_eq!(refusal_cause(&error)?, cause, "output {output}");
     }
     Ok(())
 }

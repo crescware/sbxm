@@ -72,3 +72,7 @@ pub(super) fn map(error: &clap::Error) -> Error {
         .try_run("sbxm --help");
     Error::single(Diagnostic::new(id, description).remediation(remediation))
 }
+
+#[cfg(test)]
+#[path = "map_test.rs"]
+mod map_test;
