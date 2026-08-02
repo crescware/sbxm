@@ -22,3 +22,7 @@ pub fn global(ui: &mut Ui, status: &GlobalStatus) -> ExitCode {
         ExitCode::Failure
     }
 }
+
+#[cfg(test)]
+#[path = "global_test.rs"]
+mod global_test;
