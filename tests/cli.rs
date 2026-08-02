@@ -209,6 +209,44 @@ fn version_prints_the_version_and_exits_with_zero() -> Checked {
     Ok(())
 }
 
+/// shell localeだけを差し替えてsbxmを実行する。
+///
+/// `LC_ALL`を唯一の手がかりにするため、後ろの2つは取り除いた状態で渡す。
+fn sbxm_with_shell_locale(home: &Path, lc_all: &str, arguments: &[&str]) -> Checked<Run> {
+    let output = Command::new(env!("CARGO_BIN_EXE_sbxm"))
+        .args(arguments)
+        .current_dir(home)
+        .env("HOME", home)
+        .env("LC_ALL", lc_all)
+        .env_remove("LC_MESSAGES")
+        .env_remove("LANG")
+        .env("PATH", "")
+        .output()
+        .required_because("sbxm runs")?;
+    Run::from(&output)
+}
+
+#[test]
+fn a_shell_locale_that_names_no_shipped_language_leaves_the_output_in_the_source_language()
+-> Checked {
+    let home = temp_home()?;
+
+    // 実在しないtagを使う。将来どの言語を足してもこのtestは意味を保つ。
+    let unknown = sbxm_with_shell_locale(home.path(), "zz_ZZ.UTF-8", &["--help"])?;
+    assert_eq!(unknown.code, 0, "{}", unknown.stderr);
+    assert!(unknown.stdout.contains("Usage:"), "{}", unknown.stdout);
+
+    // 同じ実行が、読めるtagならその言語を選ぶ。shell localeを見ていること自体は、
+    // 2回の実行の差が示す。
+    let japanese = sbxm_with_shell_locale(home.path(), "ja_JP.UTF-8", &["--help"])?;
+    assert!(
+        japanese.stdout.contains("使い方 (Usage):"),
+        "{}",
+        japanese.stdout
+    );
+    Ok(())
+}
+
 #[test]
 fn the_language_option_is_read_before_the_configuration() -> Checked {
     let home = temp_home()?;

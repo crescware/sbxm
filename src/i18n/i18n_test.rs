@@ -141,6 +141,38 @@ fn unknown_message_ids_fail_with_the_id_and_locale() -> Checked {
 }
 
 #[test]
+fn every_format_failure_names_the_message_id_the_locale_and_why_it_failed() {
+    // 利用者向けの文字列を作れない状態であるため、表示localeに関わらず英語で示す。
+    for (reason, stated) in [
+        (
+            FormatFailureReason::UnknownMessage,
+            "message is not defined",
+        ),
+        (FormatFailureReason::MissingValue, "message has no value"),
+        (
+            FormatFailureReason::MissingAttribute,
+            "attribute is not defined",
+        ),
+        (
+            FormatFailureReason::Format("argument is not a number".to_string()),
+            "argument is not a number",
+        ),
+    ] {
+        let failure = FormatFailure {
+            message_id: "error-lock-timeout".to_string(),
+            locale: Locale::Ja,
+            reason,
+        };
+        assert_eq!(
+            failure.to_string(),
+            format!(
+                "message-format-failed: message-id=error-lock-timeout locale=ja reason={stated}"
+            )
+        );
+    }
+}
+
+#[test]
 fn formatting_does_not_insert_isolation_marks() -> Checked {
     let catalog = Catalog::new(Locale::En);
     let rendered = catalog

@@ -38,26 +38,22 @@ pub(super) fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
         })?;
 
         if name == wanted {
-            if size > MAX_ENTRY_BYTES {
-                return Err(unusable(
-                    path,
-                    msg!(
-                        "cause-archive-entry-too-large",
-                        entry = name,
-                        observed = size
-                    ),
-                ));
-            }
-            let capacity = usize::try_from(size).map_err(|_| {
-                unusable(
-                    path,
-                    msg!(
-                        "cause-archive-entry-too-large",
-                        entry = name,
-                        observed = size
-                    ),
-                )
-            })?;
+            // metadataとして読める大きさは、宣言した上限とこの環境で確保できる大きさの
+            // 両方へ収まるものである。2つの判定へ分けると、同じ報告を2度書いたうえで、
+            // 上限を先に確かめる限り後の分岐は起こらなくなる。
+            let capacity = match usize::try_from(size) {
+                Ok(capacity) if size <= MAX_ENTRY_BYTES => capacity,
+                _ => {
+                    return Err(unusable(
+                        path,
+                        msg!(
+                            "cause-archive-entry-too-large",
+                            entry = name,
+                            observed = size
+                        ),
+                    ));
+                }
+            };
             let mut data = vec![0_u8; capacity];
             file.read_exact(&mut data)
                 .map_err(|error| unreadable(path, Some(&name), &error.to_string()))?;

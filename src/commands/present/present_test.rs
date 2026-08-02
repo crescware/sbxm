@@ -3,7 +3,7 @@ use crate::commands::stop::StopResult;
 use crate::design::{Inline, VisualState};
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;
-use crate::support::inventory::ProjectState;
+use crate::support::inventory::{Observed, ProjectState};
 use crate::support::status::StatusValue;
 
 use crate::testing::outcome::{Checked, Required};
@@ -66,6 +66,28 @@ fn a_configuration_choice_carries_no_judgement() {
     assert_eq!(
         creation_mode(CreationMode::Attached),
         Inline::state("attached", VisualState::Neutral)
+    );
+}
+
+#[test]
+fn an_entry_that_disagrees_with_its_artifacts_is_a_failure_and_not_a_warning() {
+    // 続きを実行すれば済む中断は注意にとどめ、registryと成果物の食い違いは失敗として示す。
+    assert_eq!(
+        observed(&Observed::Incomplete),
+        Inline::state("incomplete", VisualState::Attention)
+    );
+    for value in [Observed::Missing, Observed::Inconsistent] {
+        assert_eq!(
+            observed(&value),
+            Inline::state(value.as_str(), VisualState::Negative),
+            "{} is not a warning",
+            value.as_str()
+        );
+    }
+    // 登録が済んだ案件だけは、Sandboxの状態そのものを示す。
+    assert_eq!(
+        observed(&Observed::Registered(ProjectState::Running)),
+        project_state(ProjectState::Running)
     );
 }
 
