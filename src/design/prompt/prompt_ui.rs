@@ -143,3 +143,7 @@ fn redraw(term: &Term, drawn: usize, frame: &[String]) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "prompt_ui_test.rs"]
+mod prompt_ui_test;

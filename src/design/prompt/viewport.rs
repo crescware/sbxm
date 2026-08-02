@@ -9,3 +9,7 @@ pub(super) fn viewport(term: &Term) -> Option<usize> {
     // heading、操作説明、選択数、空行、結果の一行ぶんを残す。
     Some((rows as usize).saturating_sub(6).max(1))
 }
+
+#[cfg(test)]
+#[path = "viewport_test.rs"]
+mod viewport_test;

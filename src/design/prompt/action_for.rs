@@ -15,3 +15,7 @@ pub fn action_for(key: &Key) -> Action {
         _ => Action::Ignore,
     }
 }
+
+#[cfg(test)]
+#[path = "action_for_test.rs"]
+mod action_for_test;
