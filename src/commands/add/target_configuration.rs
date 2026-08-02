@@ -56,3 +56,7 @@ impl TargetConfiguration {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "target_configuration_test.rs"]
+mod target_configuration_test;

@@ -575,3 +575,41 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
     );
     Ok(())
 }
+
+#[test]
+fn a_sandbox_that_cannot_be_started_is_not_rebuilt_over() -> Checked {
+    // 停止中のSandboxは、保存されていない作業を読むためにsbxmが起動する。その起動が
+    // 通らない実行は、中を見ないまま作り直す工程へ進まない。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
+    let name = project.sandbox.as_str();
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
+    let host = FakeSbx::listing(&stopped).answering(&format!("exec {name} -- /bin/true"), 1, "");
+
+    let error = run(
+        &fixture.location,
+        &fixture.config,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .refused_because("the sandbox will not start")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(
+        !host.ran("build") && !host.ran("rm ") && !host.ran("worktree list"),
+        "nothing is inspected or built before the sandbox answers: {:?}",
+        host.calls()
+    );
+    let stored = metadata::load(&project.paths)
+        .required()?
+        .required_because("present")?;
+    assert!(
+        stored.rebuild.is_none(),
+        "no generation is fixed before the sandbox could be read"
+    );
+    Ok(())
+}

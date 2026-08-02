@@ -63,6 +63,19 @@ fn reason_id(diagnostic: &Diagnostic) -> Checked<&'static str> {
         .required_because("the observed reason is named")
 }
 
+/// 診断の説明文が持つ引数。
+fn argument(error: &Error, key: &str) -> Checked<String> {
+    error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?
+        .description
+        .args
+        .iter()
+        .find_map(|(name, value)| (*name == key).then(|| value.clone()))
+        .required_because("the description names this value")
+}
+
 /// 1件だけの診断。
 fn only_diagnostic(error: &Error) -> Checked<Diagnostic> {
     assert_eq!(error.diagnostics().len(), 1);
@@ -405,6 +418,91 @@ fn declared_file_destinations_must_stay_under_the_sandbox_home() -> Checked {
             "destination {destination} produced the wrong error"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn a_declared_file_states_which_of_its_two_fields_is_missing() -> Checked {
+    let (_dir, location) = location()?;
+    for (declaration, field) in [
+        ("  - destination: .gitconfig\n", "files.source"),
+        (
+            "  - source: /Users/example/.gitconfig\n",
+            "files.destination",
+        ),
+    ] {
+        let mut text = valid_config_text();
+        text.push_str("\nfiles:\n");
+        text.push_str(declaration);
+        write_config(&location, &text)?;
+
+        let error = load(&location).refused_because("an incomplete declaration is refused")?;
+        assert_eq!(error.first_id(), Some(ErrorId::ConfigMissingField));
+        // どちらのfieldが無いのかを、位置ではなく名前で述べる。
+        assert_eq!(argument(&error, "field")?, field);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_declared_file_cannot_leave_its_source_or_destination_empty() -> Checked {
+    let (_dir, location) = location()?;
+    for (declaration, expected) in [
+        (
+            "  - source: \"\"\n    destination: .gitconfig\n",
+            ErrorId::FileDeclarationInvalidSource,
+        ),
+        (
+            "  - source: /Users/example/.gitconfig\n    destination: \"\"\n",
+            ErrorId::FileDeclarationInvalidDestination,
+        ),
+    ] {
+        let mut text = valid_config_text();
+        text.push_str("\nfiles:\n");
+        text.push_str(declaration);
+        write_config(&location, &text)?;
+
+        let error = load(&location).refused_because("an empty path names nothing")?;
+        let diagnostic = only_diagnostic(&error)?;
+        assert_eq!(diagnostic.id, expected);
+        // 空であることは、絶対pathでないことや親を辿ることとは別の理由である。
+        assert_eq!(reason_id(&diagnostic)?, "cause-value-empty");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_document_that_is_not_a_mapping_has_no_key_to_call_unknown() -> Checked {
+    // top-levelがsequenceの文書。keyが1つも無く、未知のkeyとして数えるものもない。
+    let path = Path::new("/Users/example/.sbxm/config.yaml");
+    let document: yaml_serde::Value =
+        yaml_serde::from_str("- version: 1\n").required_because("a sequence is valid YAML")?;
+    assert!(unknown_key_warnings(&document, path).is_empty());
+
+    // 文書としては読めるが、設定としては読めない。警告は残らず拒否だけが残る。
+    let error =
+        parse("- version: 1\n", path).refused_because("a sequence is not a configuration")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigInvalidSyntax));
+    Ok(())
+}
+
+#[test]
+fn an_unknown_key_that_is_not_text_is_reported_as_it_was_written() -> Checked {
+    // 既知のkeyはすべて文字列である。文字列でないkeyは、そのYAML上の表記で名指しする。
+    let path = Path::new("/Users/example/.sbxm/config.yaml");
+    let document: yaml_serde::Value =
+        yaml_serde::from_str("1: true\n").required_because("a number is a valid YAML key")?;
+
+    let warnings = unknown_key_warnings(&document, path);
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].description.id, "warning-config-unknown-key");
+    let key = warnings[0]
+        .description
+        .args
+        .iter()
+        .find_map(|(name, value)| (*name == "key").then(|| value.clone()))
+        .required_because("the warning names the key")?;
+    assert_eq!(key, "Number(1)");
     Ok(())
 }
 

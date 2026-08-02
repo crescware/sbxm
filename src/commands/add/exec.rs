@@ -50,9 +50,6 @@ pub fn exec(args: &Args, context: &Context, ui: &mut Ui) -> ExitCode {
         ui,
     ) {
         Ok(output) => {
-            for warning in &output.warnings {
-                ui.warning(warning);
-            }
             ui.stdout(&print::document(&output));
             ExitCode::Success
         }

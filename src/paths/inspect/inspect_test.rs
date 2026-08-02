@@ -22,6 +22,7 @@ fn standardization_removes_dot_and_parent_components() {
         lexically_standardize(Path::new("/a/b/../../c")),
         PathBuf::from("/c")
     );
+    assert_eq!(lexically_standardize(Path::new(".")), PathBuf::new());
 }
 
 #[test]
@@ -82,6 +83,58 @@ fn a_directory_is_refused_instead_of_being_answered_as_a_regular_file() -> Check
         args.iter()
             .any(|(key, value)| *key == "observed" && value == "directory"),
         "the observed type is named: {args:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_directory_opened_as_a_file_is_refused_by_the_private_file_check() -> Checked {
+    let dir = temp_dir()?;
+    let file = File::open(dir.path()).required_because("open the directory")?;
+    let error = require_private_file(
+        &file,
+        dir.path(),
+        crate::paths::PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .refused_because("a directory is not a private regular file")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    Ok(())
+}
+
+#[test]
+fn unexpected_types_name_symbolic_links_and_special_files() -> Checked {
+    let dir = temp_dir()?;
+    let target = dir.path().join("target");
+    fs::write(&target, b"").required_because("write the target")?;
+    let link = dir.path().join("link");
+    std::os::unix::fs::symlink(&target, &link).required_because("create the link")?;
+
+    let link_error = unexpected_type(
+        &link,
+        "regular file",
+        &fs::symlink_metadata(&link).required_because("inspect the link")?,
+    );
+    assert!(
+        link_error.diagnostics()[0]
+            .description
+            .args
+            .iter()
+            .any(|(key, value)| *key == "observed" && value == "symbolic link")
+    );
+
+    let device = Path::new("/dev/null");
+    let special_error = unexpected_type(
+        device,
+        "regular file",
+        &fs::metadata(device).required_because("inspect the null device")?,
+    );
+    assert!(
+        special_error.diagnostics()[0]
+            .description
+            .args
+            .iter()
+            .any(|(key, value)| *key == "observed" && value == "special file")
     );
     Ok(())
 }

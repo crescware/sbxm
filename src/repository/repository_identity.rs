@@ -65,13 +65,17 @@ impl RepositoryIdentity {
     ///
     /// 表示上の綴りはclone URLから読み直す。索引は表示用のownerとrepositoryを二重に
     /// 保存しない。
+    ///
+    /// 保存されたproviderは綴りだけを検査する。[`Provider`]の変種は1つであり、
+    /// [`interpret`]が返す値も常にそれである以上、読み直した結果と食い違うことは
+    /// ない。突き合わせが要るのは、providerが2つ以上になったときである。
     pub fn from_index_parts(
         provider: &str,
         canonical_id: &str,
         transport: &str,
         clone_url: &str,
     ) -> std::result::Result<RepositoryIdentity, Msg> {
-        let declared_provider = Provider::parse(provider)
+        Provider::parse(provider)
             .ok_or_else(|| msg!("cause-provider-unsupported", observed = provider))?;
         let declared_transport = CloneTransport::parse(transport)
             .ok_or_else(|| msg!("cause-clone-transport-unsupported", observed = transport))?;
@@ -83,13 +87,6 @@ impl RepositoryIdentity {
             )
         })?;
 
-        if identity.provider != declared_provider {
-            return Err(msg!(
-                "cause-clone-url-provider-mismatch",
-                observed = identity.provider,
-                declared = declared_provider
-            ));
-        }
         if identity.transport != declared_transport {
             return Err(msg!(
                 "cause-clone-url-transport-mismatch",

@@ -94,6 +94,44 @@ fn a_registry_that_cannot_be_read_is_diagnosed_without_visiting_any_project() ->
 }
 
 #[test]
+fn a_registry_that_holds_entries_is_ready_without_reading_any_of_them() -> Checked {
+    use crate::testing::registry::{Entry, document};
+
+    let (_dir, location) = location_with_config(None)?;
+    std::fs::create_dir_all(location.dir()).required()?;
+    std::fs::write(
+        location.registry_file(),
+        document(&[Entry::of(
+            "example-org/example-repo",
+            "/home/example/Projects/example-repo.project",
+            "ssh",
+        )]),
+    )
+    .required()?;
+    std::fs::set_permissions(
+        location.registry_file(),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .required()?;
+
+    let status = diagnose(&location, &FakeHost::macos());
+    assert_eq!(
+        status_of(&status, "status-item-registry")?,
+        StatusValue::Ready
+    );
+    // 登録案件のproject rootはこのhostに無い。案件へ触れないからこそReadyになる。
+    assert!(
+        !status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id.as_str().starts_with("registry-")),
+        "{:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
 fn an_unchosen_git_identity_is_reported_as_missing_rather_than_as_a_fault() -> Checked {
     // hostが何を宣言していようと、既定を選ぶのは利用者である。まだ選んでいないことは
     // 診断すべき異常ではなく、対話的な`add`がまだ一度も訊いていないだけである。
@@ -284,6 +322,33 @@ fn a_docker_engine_that_does_not_answer_is_an_error_with_the_original_stderr() -
 }
 
 #[test]
+fn a_docker_client_that_answers_without_a_server_version_is_not_read_as_ready() -> Checked {
+    // clientだけが答えた場合、`docker version`は成功したままserver版を空で返す。
+    // 成功したことをengineが動いている証拠として読まない。
+    let (_dir, location) = location_with_config(None)?;
+    for observed in ["", "\n", "   \n"] {
+        let host =
+            FakeHost::macos().responding("docker version --format {{.Server.Version}}", observed);
+        let status = diagnose(&location, &host);
+
+        assert_eq!(
+            status_of(&status, "status-item-docker")?,
+            StatusValue::Error,
+            "{observed:?} is not a server version"
+        );
+        let diagnostic = diagnosed(&status, ErrorId::DockerUnreachable)?;
+        assert_eq!(reason(diagnostic)?.id, "cause-server-version-empty");
+        assert_eq!(
+            remediation_ids(diagnostic),
+            vec!["remediation-start-docker"]
+        );
+        // 失敗していない実行にはexternalが無い。無い事実を作らない。
+        assert!(diagnostic.external.is_none(), "{:?}", diagnostic.external);
+    }
+    Ok(())
+}
+
+#[test]
 fn a_probe_timeout_is_an_error_rather_than_an_assumed_state() -> Checked {
     let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos().timing_out("docker version --format {{.Server.Version}}");
@@ -408,6 +473,45 @@ fn a_version_that_cannot_be_parsed_stops_the_dependent_checks() -> Checked {
             .iter()
             .any(|diagnostic| diagnostic.id == ErrorId::SbxVersionUnparseable)
     );
+    Ok(())
+}
+
+#[test]
+fn a_sandboxes_cli_that_refuses_to_report_its_version_keeps_the_original_stderr() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
+    let host = FakeHost::macos().failing("sbx version", "sbx: unknown command \"version\"", 1);
+    let status = diagnose(&location, &host);
+
+    assert_eq!(
+        status_of(&status, "status-item-docker-sandboxes")?,
+        StatusValue::Error
+    );
+    let diagnostic = diagnosed(&status, ErrorId::SbxVersionUnparseable)?;
+    // 版が読めなかった理由は、sbxm自身の言葉ではなくsbxが書いた通りに残す。
+    let external = diagnostic
+        .external
+        .as_ref()
+        .required_because("the original stderr is preserved")?;
+    assert!(
+        external.stderr_text().contains("unknown command"),
+        "{:?}",
+        external.stderr_text()
+    );
+    assert!(
+        diagnostic.description.args.contains(&(
+            "observed",
+            ErrorId::ExternalCommandFailed.as_str().to_string()
+        )),
+        "{:?}",
+        diagnostic.description.args
+    );
+    for item in ["status-item-daemon", "status-item-remote-ssh"] {
+        assert_eq!(
+            status_of(&status, item)?,
+            StatusValue::Error,
+            "{item} must not be observed through a CLI that did not answer"
+        );
+    }
     Ok(())
 }
 

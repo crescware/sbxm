@@ -3,6 +3,5 @@
 pub enum FormatFailureReason {
     UnknownMessage,
     MissingValue,
-    MissingAttribute,
     Format(String),
 }

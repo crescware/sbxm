@@ -7,6 +7,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::command::{CommandOutcome, CommandSpec};
+use crate::testing::sandbox::InnerCommandSandbox;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -120,6 +121,38 @@ fn a_protocol_that_was_changed_by_hand_stops_the_run() -> Checked {
     let error = ensure_git_protocol(&host, "sbxm-example")
         .refused_because("a different value is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
+    Ok(())
+}
+
+#[test]
+fn a_protocol_that_could_not_be_asked_about_is_not_written_over() -> Checked {
+    // 問い合わせが届かなかったことを「未設定」と読むと、`ssh`のまま残ったSandboxを
+    // 書き換えたつもりで先へ進む。observationが無いことは空の設定ではない。
+    let host = InnerCommandSandbox::new()
+        .timing_out(&format!("gh config get git_protocol --host {GITHUB_HOST}"));
+
+    let error = ensure_git_protocol(&host, "sbxm-example")
+        .refused_because("a question that went unanswered is not an answer")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        !host.ran("config set"),
+        "nothing is written after a question that went unanswered: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_protocol_that_could_not_be_written_stops_the_run() -> Checked {
+    // 書き込めたことを確かめずに進むと、HTTPSを設定したという前提のまま
+    // cloneへ入る。
+    let host = InnerCommandSandbox::new().timing_out(&format!(
+        "gh config set git_protocol {GIT_PROTOCOL} --host {GITHUB_HOST}"
+    ));
+
+    let error = ensure_git_protocol(&host, "sbxm-example")
+        .refused_because("a setting that was not written is not a setting")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     Ok(())
 }
 

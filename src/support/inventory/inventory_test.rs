@@ -181,3 +181,48 @@ fn one_project_is_resolved_without_the_rest_of_the_listing_being_sound() -> Chec
     );
     Ok(())
 }
+
+#[test]
+fn observed_states_keep_their_spelling_legend_and_settled_meaning() {
+    for (observed, spelling, legend) in [
+        (Observed::Missing, "missing", "legend-missing"),
+        (Observed::Incomplete, "incomplete", "legend-incomplete"),
+        (
+            Observed::Inconsistent,
+            "inconsistent",
+            "legend-inconsistent",
+        ),
+    ] {
+        assert_eq!(observed.as_str(), spelling);
+        assert_eq!(observed.legend_id(), legend);
+        assert!(!observed.is_settled());
+    }
+
+    let registered = Observed::Registered(ProjectState::Running);
+    assert_eq!(registered.as_str(), "running");
+    assert_eq!(registered.legend_id(), "legend-sandbox-running");
+    assert!(registered.is_settled());
+}
+
+#[test]
+fn single_refuses_two_entries_with_the_requested_name() -> Checked {
+    let entries = vec![
+        crate::compatibility::SandboxEntry {
+            name: "sbxm-example".to_string(),
+            state: crate::compatibility::SandboxState::Running,
+            raw_state: "running".to_string(),
+            workspace: None,
+        },
+        crate::compatibility::SandboxEntry {
+            name: "sbxm-example".to_string(),
+            state: crate::compatibility::SandboxState::Stopped,
+            raw_state: "stopped".to_string(),
+            workspace: None,
+        },
+    ];
+
+    let error =
+        single(&entries, "sbxm-example").refused_because("two matching sandboxes are ambiguous")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    Ok(())
+}

@@ -1136,32 +1136,33 @@ fn a_floor_of(words: &[String], option: &str, least: f64) -> Result<(), String> 
 /// coverage taskが1 fileずつに求める行coverage。
 ///
 /// 全体比率は、よくtestされたfileの行で別fileの未到達行を相殺できる。file別floorはその
-/// 相殺を止めるために在り、下げれば止まらなくなる。値の引き下げも、同じoptionを後ろへ
+/// 相殺を止めるために在り、90未満へ下げれば止まらなくなる。値の引き下げも、同じoptionを後ろへ
 /// 書いての上書きも落とす。母集団から外してよいpathは
 /// `the_coverage_task_leaves_out_the_same_places`が別に固定する。
 #[test]
-fn every_counted_file_answers_for_eighty_percent_of_its_own_lines()
+fn every_counted_file_answers_for_ninety_percent_of_its_own_lines()
 -> Result<(), Box<dyn std::error::Error>> {
     let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("mise.toml"))?;
     a_floor_of(
         &coverage_task_words(&manifest)?,
         "--fail-under-file-lines",
-        80.0,
+        90.0,
     )?;
     Ok(())
 }
 
 /// 全体の最低基準は、file別floorを入れても下げない。
 ///
-/// file別floorは相殺を止めるだけで、80%を超えたfileの劣化までは止めない。両方を課す。
+/// file別floorは相殺を止めるだけで、90%を超えたfileの劣化までは止めない。全体には
+/// 行97%、関数97%、region95%を課す。
 #[test]
 fn the_overall_floors_stay_where_they_are() -> Result<(), Box<dyn std::error::Error>> {
     let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("mise.toml"))?;
     let words = coverage_task_words(&manifest)?;
     for (option, least) in [
-        ("--fail-under-lines", 90.0),
-        ("--fail-under-functions", 90.0),
-        ("--fail-under-regions", 88.0),
+        ("--fail-under-lines", 97.0),
+        ("--fail-under-functions", 97.0),
+        ("--fail-under-regions", 95.0),
     ] {
         a_floor_of(&words, option, least)?;
     }

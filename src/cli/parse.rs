@@ -12,6 +12,9 @@ pub fn parse(argv: &[String], catalog: &Catalog, interactivity: Interactivity) -
         Ok(matches) => matches,
         Err(error) => return crate::cli::diagnostics::interpret(&error),
     };
+    // parserは`subcommand_required`であり、subcommandの無いargvはclapが先に拒否する。
+    // ここへ届いたmatchesは必ずsubcommandを持つため、この拒否は`Option`が要求する
+    // 分岐として在る。利用者が見るのは、同じ`ErrorId`を持つclap側の診断である。
     let (name, sub) = matches
         .subcommand()
         .ok_or_else(|| Error::new(ErrorId::MissingSubcommand, msg!("error-missing-subcommand")))?;

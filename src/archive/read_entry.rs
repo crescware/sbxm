@@ -61,13 +61,8 @@ pub(super) fn read_entry(path: &Path, wanted: &str) -> Result<Option<Vec<u8>>> {
         }
 
         // entry本体は512 byte単位で詰められている。
-        let padded = size.div_ceil(BLOCK as u64) * BLOCK as u64;
-        let padded = i64::try_from(padded).map_err(|_| {
-            unusable(
-                path,
-                msg!("cause-archive-entry-size-unreadable", entry = name),
-            )
-        })?;
+        let block = BLOCK as i64;
+        let padded = (size / block + i64::from(u8::from(size % block != 0))) * block;
         file.seek(SeekFrom::Current(padded))
             .map_err(|error| unreadable(path, None, &error.to_string()))?;
     }

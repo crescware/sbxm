@@ -153,6 +153,95 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() -> Checked {
 }
 
 #[test]
+fn a_repository_check_the_host_could_not_start_stays_the_hosts_own_failure() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    // hostがcommandを起動できなかったことは、repositoryについて何も語らない。
+    let host = UnrunnableCommand {
+        inner: looking_inside(&fixture, &project, &three_entries(&project))?,
+        needle: "rev-parse --is-bare-repository".to_string(),
+    };
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert_eq!(
+        value_of(&status, "status-item-bare-repository")?,
+        Value::Mismatch
+    );
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::ExternalCommandTimeout),
+        "the host's own failure is reported as itself: {:?}",
+        status.diagnostics
+    );
+    // 観測できなかったことを、repositoryが壊れているという結論へ言い換えない。
+    assert!(
+        !status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::SandboxRepositoryUnusable),
+        "{:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
+fn a_worktree_listing_that_failed_leaves_no_worktree_row_behind() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    // 一覧が読めなかったことと、worktreeが1本も無いことは別である。
+    let host = looking_inside(&fixture, &project, &three_entries(&project))?.answering(
+        &format!(
+            "exec {} -- git --git-dir {} worktree list --porcelain -z",
+            project.sandbox,
+            layout.bare_git_dir()
+        ),
+        128,
+        "",
+    );
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Mismatch);
+    assert!(
+        status.worktrees.is_empty(),
+        "an unread listing invents no row: {:?}",
+        status.worktrees
+    );
+    let diagnostic = status
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.id == ErrorId::ExternalCommandFailed)
+        .required_because("the failed listing is diagnosed")?;
+    let external = diagnostic
+        .external
+        .as_ref()
+        .required_because("the original exit status is preserved")?;
+    assert!(
+        external.exit_status.contains("128"),
+        "{:?}",
+        external.exit_status
+    );
+    Ok(())
+}
+
+#[test]
 fn a_worktree_whose_status_did_not_answer_is_not_reported_as_clean() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;

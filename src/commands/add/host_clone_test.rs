@@ -66,6 +66,62 @@ impl HostEnvironment for FakeGit {
     }
 }
 
+/// 拒否が示した`Cause:`のうち、sbxm自身が観測したことを述べるmessage ID。
+fn reason_of(error: &Error) -> Checked<&'static str> {
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    diagnostic
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            Fact::Translated { value, .. } => Some(value.id),
+            _ => None,
+        })
+        .required_because("the refusal names what it observed")
+}
+
+/// 拒否が示した`Path:`。読み手が見に行くべきpathである。
+fn shown_path(error: &Error) -> Checked<String> {
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    diagnostic
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            Fact::OneLine { label, value } if label.id == "diagnostic-path-label" => {
+                Some(value.as_str().to_string())
+            }
+            _ => None,
+        })
+        .required_because("the refusal names the path it looked at")
+}
+
+/// 対処が指すpath。
+fn remediation_path(error: &Error) -> Checked<String> {
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .required_because("the refusal says what to do")?;
+    let explanation = remediation
+        .explanation
+        .first()
+        .required_because("the remediation is explained")?;
+    explanation
+        .args
+        .iter()
+        .find(|(key, _)| *key == "path")
+        .map(|(_, value)| value.clone())
+        .required_because("the remediation names a path")
+}
+
 fn project_paths(dir: &Path) -> Checked<(ProjectPaths, RepositoryIdentity)> {
     let base = ProjectParent::at(dir).required_because("valid parent directory")?;
     let repository = ssh_repository("Example-Org/Example-Repo")?;
@@ -358,6 +414,186 @@ fn an_origin_that_is_not_one_of_the_accepted_forms_is_refused() -> Checked {
             .refused_because("an origin sbxm cannot read is never assumed to match")?;
         assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
     }
+    Ok(())
+}
+
+#[test]
+fn a_symlink_where_the_clone_belongs_is_refused_rather_than_followed() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    let elsewhere = dir.path().join("elsewhere");
+    fs::create_dir_all(elsewhere.join(".git")).required()?;
+    std::os::unix::fs::symlink(&elsewhere, paths.host_clone()).required()?;
+
+    let host = healthy(&paths.host_clone());
+    let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
+        .refused_because("a symlinked clone path is refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    assert!(
+        host.args_of_calls().is_empty(),
+        "git never runs through a link that leaves the project: {:?}",
+        host.args_of_calls()
+    );
+    assert!(
+        paths.host_clone().is_symlink(),
+        "a refusal removes nothing, not even the link"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_file_where_the_clone_belongs_is_refused_instead_of_being_cloned_over() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::write(paths.host_clone(), b"not a clone\n").required()?;
+
+    let host = healthy(&paths.host_clone());
+    let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
+        .refused_because("a regular file is not a working tree")?;
+    assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
+    assert_eq!(reason_of(&error)?, "cause-not-a-directory");
+    assert_eq!(
+        fs::read_to_string(paths.host_clone()).required()?,
+        "not a clone\n",
+        "what sbxm did not create, it does not delete"
+    );
+    assert!(host.args_of_calls().is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_directory_holding_no_git_directory_names_the_git_path_it_could_not_read() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone()).required()?;
+
+    let error = HostClone::ensure(
+        &healthy(&paths.host_clone()),
+        &paths,
+        &repository,
+        &mut SilentProgress,
+    )
+    .refused_because("a directory without a git directory is not a clone")?;
+    assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
+
+    // `.git`側の不備は`.git`を示し、対処はcloneのrootを示す。
+    assert_eq!(
+        shown_path(&error)?,
+        paths::display(&paths.host_clone().join(".git"))
+    );
+    assert_eq!(
+        remediation_path(&error)?,
+        paths::display(&paths.host_clone())
+    );
+    // 読めなかった理由はOSが書いた原文であり、言い換えない。
+    let diagnostic = &error.diagnostics()[0];
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::OneLine { label, value }
+                if label.id == "diagnostic-cause-label" && value.as_str().contains("os error")
+        )),
+        "the operating system's own wording is carried through: {:?}",
+        diagnostic.facts
+    );
+    Ok(())
+}
+
+#[test]
+fn a_git_entry_that_is_neither_a_directory_nor_a_regular_file_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone()).required()?;
+    let elsewhere = dir.path().join("elsewhere.git");
+    fs::create_dir_all(&elsewhere).required()?;
+    // symlinkは追跡せず、`.git`そのものの種別で判断する。
+    std::os::unix::fs::symlink(&elsewhere, paths.host_clone().join(".git")).required()?;
+
+    let error = HostClone::ensure(
+        &healthy(&paths.host_clone()),
+        &paths,
+        &repository,
+        &mut SilentProgress,
+    )
+    .refused_because("a linked git entry is not a worktree file")?;
+    assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
+    assert_eq!(reason_of(&error)?, "cause-not-a-regular-file");
+    assert_eq!(
+        shown_path(&error)?,
+        paths::display(&paths.host_clone().join(".git"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_git_file_that_names_no_git_directory_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone()).required()?;
+    fs::write(paths.host_clone().join(".git"), "gitdir\nnothing here\n").required()?;
+
+    let error = HostClone::ensure(
+        &healthy(&paths.host_clone()),
+        &paths,
+        &repository,
+        &mut SilentProgress,
+    )
+    .refused_because("a worktree file has to name a git directory")?;
+    assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
+    assert_eq!(reason_of(&error)?, "cause-no-git-directory-named");
+    Ok(())
+}
+
+#[test]
+fn a_relative_git_directory_is_resolved_against_the_clone() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone()).required()?;
+
+    // 案件directoryの中へ降りる相対pathは、案件の成果物として受け入れる。
+    fs::write(
+        paths.host_clone().join(".git"),
+        "gitdir: ../.sbxm/worktree.git\n",
+    )
+    .required()?;
+    let clone = HostClone::ensure(
+        &healthy(&paths.host_clone()),
+        &paths,
+        &repository,
+        &mut SilentProgress,
+    )
+    .required_because("a relative git directory inside the project is part of it")?;
+    assert!(!clone.created, "the existing clone is reused");
+
+    // 案件directoryを抜ける相対pathは、抜けた先を示して拒否する。
+    fs::write(
+        paths.host_clone().join(".git"),
+        "gitdir: ../../elsewhere.git\n",
+    )
+    .required()?;
+    let error = HostClone::ensure(
+        &healthy(&paths.host_clone()),
+        &paths,
+        &repository,
+        &mut SilentProgress,
+    )
+    .refused_because("a relative git directory that leaves the project is refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
+    let diagnostic = &error.diagnostics()[0];
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::Translated { value, .. }
+                if value.id == "cause-git-directory-outside"
+                    && value.args.contains(&(
+                        "observed",
+                        paths::display(&dir.path().join("elsewhere.git"))
+                    ))
+                    && value.args.contains(&("root", paths::display(paths.root())))
+        )),
+        "the resolved path and the root it left are both named: {:?}",
+        diagnostic.facts
+    );
     Ok(())
 }
 

@@ -157,3 +157,46 @@ fn a_lock_path_that_cannot_be_opened_reports_what_the_operating_system_said() ->
     assert!(path.is_dir(), "the path that was in the way is untouched");
     Ok(())
 }
+
+#[test]
+fn a_lock_replaced_while_waiting_is_reopened_before_returning() -> Checked {
+    let dir = temp_dir()?;
+    let path = dir.path().join("project.lock");
+    let held = acquire_exclusive_lock(
+        &path,
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("hold the original lock")?;
+
+    let waiter_path = path.clone();
+    let waiter = thread::spawn(move || {
+        acquire_exclusive_lock(
+            &waiter_path,
+            Duration::from_secs(2),
+            PRIVATE_FILE_MODE,
+            PathScope::ProjectPath,
+        )
+    });
+    thread::sleep(Duration::from_millis(100));
+
+    let replacement_path = dir.path().join("replacement.lock");
+    let replacement = acquire_exclusive_lock(
+        &replacement_path,
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("hold the replacement inode")?;
+    fs::rename(&replacement_path, &path).required_because("replace the lock path")?;
+    drop(held);
+    thread::sleep(Duration::from_millis(100));
+    drop(replacement);
+
+    waiter
+        .join()
+        .required_because("the waiter joins")?
+        .required_because("the waiter acquires the replacement lock")?;
+    Ok(())
+}

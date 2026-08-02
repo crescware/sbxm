@@ -102,6 +102,10 @@ fn timeout_classes_match_the_documented_defaults() {
     // 長い工程ほど、途中で切ると成果物が中途半端に残る。
     assert!(TimeoutClass::SandboxLifecycle.duration() > TimeoutClass::LocalFilesystem.duration());
     assert!(TimeoutClass::ImageBuild.duration() > TimeoutClass::SandboxLifecycle.duration());
+    // 転送にかかる時間はrepositoryの大きさが決める。Sandboxを起動する時間では測れない。
+    assert!(
+        TimeoutClass::RepositoryTransfer.duration() > TimeoutClass::SandboxLifecycle.duration()
+    );
     // 対話接続を終える時期を決めるのは利用者である。
     assert_eq!(TimeoutClass::Interactive.duration(), None);
 }

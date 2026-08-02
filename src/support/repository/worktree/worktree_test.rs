@@ -394,6 +394,46 @@ fn a_worktree_left_by_an_interrupted_creation_is_taken_over_rather_than_made_aga
     Ok(())
 }
 
+#[test]
+fn a_question_the_host_could_not_ask_is_not_read_as_a_worktree_that_belongs_elsewhere() -> Checked {
+    // 起点commitの読み出しも、worktreeの帰属の確認も、答えが返らなければ何も観測
+    // していない。それを不一致として扱うと、無事なworktreeを使えないものと告げる。
+    let git_dir = layout()?.bare_git_dir();
+    let path = layout()?.worktree(0);
+    let steps = [
+        format!("git --git-dir {git_dir} rev-parse refs/remotes/origin/develop"),
+        format!("git -C {path} rev-parse --path-format=absolute --git-common-dir"),
+    ];
+
+    for step in steps {
+        let host = worktree_host(CreationMode::Detached, 1)?
+            .holding(&[&path])
+            .timing_out(&step);
+        let project = metadata(CreationMode::Detached, Some("develop"), 1)?;
+
+        let error = ensure_worktrees(
+            &host,
+            "sbxm-example",
+            &layout()?,
+            &project,
+            "develop",
+            &mut SilentProgress,
+        )
+        .refused_because("a question that went unanswered stops the run")?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandTimeout),
+            "{step} was reported as something other than the host failure it was"
+        );
+        assert!(
+            !host.ran("worktree add"),
+            "nothing is remade while the observation is missing: {:?}",
+            host.calls()
+        );
+    }
+    Ok(())
+}
+
 /// modeの問い合わせだけがhostへ届かないsandbox。
 struct UnobservableMode {
     inner: InnerCommandSandbox,

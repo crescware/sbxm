@@ -139,6 +139,22 @@ fn long_identifiers_stay_within_the_sandbox_name_limit() -> Checked {
 }
 
 #[test]
+fn a_slug_cut_exactly_at_a_separator_leaves_no_separator_before_the_digest() -> Checked {
+    // slugの45文字目が`-`になる案件ID。45 byteで切ると、末尾がそのまま`-`になる。
+    let owner = "o".repeat(39);
+    let id = format!("{owner}/abcd_efgh");
+    assert_eq!(
+        sandbox_name(&id)?,
+        format!(
+            "sbxm-{owner}-abcd-{}",
+            &crate::hash::sha256_hex(id.as_bytes())[..12]
+        ),
+        "the separator the cut exposed is dropped, not doubled"
+    );
+    Ok(())
+}
+
+#[test]
 fn different_projects_get_different_sandbox_names_even_when_the_slug_matches() -> Checked {
     // slugは同じでも、canonical IDが異なればhashで区別される。
     let first = sandbox_name("owner/repo-name")?;

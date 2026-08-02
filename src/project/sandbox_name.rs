@@ -31,12 +31,12 @@ impl SandboxName {
             slug.pop();
         }
 
-        let value = if slug.is_empty() {
-            format!("{SANDBOX_NAME_PREFIX}{hash}")
-        } else {
-            format!("{SANDBOX_NAME_PREFIX}{slug}-{hash}")
-        };
-        SandboxName { value }
+        // slugが空になる場合を分けない。canonical project IDは[`ProjectId`]だけが作り、
+        // その規則はownerの先頭を英数字に限る。slugの先頭は常にその1文字であり、
+        // 切り詰めでも末尾の`-`の除去でも消えない。
+        SandboxName {
+            value: format!("{SANDBOX_NAME_PREFIX}{slug}-{hash}"),
+        }
     }
 
     pub fn as_str(&self) -> &str {

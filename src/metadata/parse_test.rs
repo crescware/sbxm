@@ -52,6 +52,26 @@ fn replaced(text: &str, from: &str, to: &str) -> String {
     changed
 }
 
+/// `DIGEST`とも`OTHER_DIGEST`とも異なる、3つ目の世代を指す固定値。
+const PREVIOUS_DIGEST: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+
+/// 診断が名指しした宣言fileのfield。
+fn field_of(error: &crate::diagnostics::Error) -> Checked<String> {
+    error
+        .diagnostics()
+        .iter()
+        .flat_map(|diagnostic| &diagnostic.facts)
+        .find_map(|fact| match fact {
+            crate::design::Fact::OneLine { label, value }
+                if label.id == "diagnostic-field-label" =>
+            {
+                Some(value.as_str().to_string())
+            }
+            _ => None,
+        })
+        .required_because("the diagnostic names the field")
+}
+
 /// 拒否されることを前提に、error IDを取り出す。
 fn refusal(text: &str) -> Checked<Option<ErrorId>> {
     let error = parse(text, Path::new("/tmp/project.yaml"))
@@ -156,10 +176,12 @@ fn a_recorded_identity_must_be_usable_as_the_name_git_will_write() -> Checked {
 
 #[test]
 fn a_half_written_rebuild_record_is_refused_rather_than_resumed() -> Checked {
+    // 3つのdigestをすべて別の値にする。1つを置き換えたとき、どのfieldが拒否を
+    // 出したのかが値だけで決まる。
     let switching = ProjectMetadata {
         rebuild: Some(RebuildIntent {
             target_dockerfile_sha256: OTHER_DIGEST.to_string(),
-            previous_dockerfile_sha256: DIGEST.to_string(),
+            previous_dockerfile_sha256: PREVIOUS_DIGEST.to_string(),
         }),
         ..attached("example-org", "example-repo")?
     };
@@ -178,12 +200,18 @@ fn a_half_written_rebuild_record_is_refused_rather_than_resumed() -> Checked {
         );
     }
 
-    for from in [OTHER_DIGEST, DIGEST] {
-        assert_eq!(
-            refusal(&replaced(&full, from, "not-a-digest"))?,
-            Some(ErrorId::MetadataInvalidValue),
-            "{from} produced the wrong error"
-        );
+    for (from, field) in [
+        (OTHER_DIGEST, "rebuild.target_dockerfile_sha256"),
+        (PREVIOUS_DIGEST, "rebuild.previous_dockerfile_sha256"),
+    ] {
+        let error = parse(
+            &replaced(&full, from, "not-a-digest"),
+            Path::new("/tmp/project.yaml"),
+        )
+        .refused_because("a value that is not a digest names no generation")?;
+        assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidValue));
+        // どちらの世代の値が読めなかったのかを、診断がfield名で述べる。
+        assert_eq!(field_of(&error)?, field, "{from} produced the wrong field");
     }
     Ok(())
 }

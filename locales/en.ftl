@@ -239,7 +239,6 @@ cause-git-directory-outside = it points at { $observed }, which is outside { $ro
 cause-provider-unsupported = { $observed } is not a supported provider
 cause-clone-transport-unsupported = { $observed } is not a supported clone transport
 cause-clone-url-unrecognized = { $observed } is not one of { $accepted }
-cause-clone-url-provider-mismatch = the clone URL names provider { $observed }, not { $declared }
 cause-clone-url-transport-mismatch = the clone URL uses the { $observed } transport, not { $declared }
 cause-clone-url-identity-mismatch = the clone URL folds to { $observed }, not { $declared }
 cause-clone-url-name-mismatch = the clone URL names { $observed }, not { $declared }

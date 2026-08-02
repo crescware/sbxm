@@ -42,7 +42,6 @@ pub fn run(
         requested_worktrees: provisioning.requested_worktrees,
         host_clone: clone.path,
         already_registered,
-        warnings: Vec::new(),
     })
 }
 

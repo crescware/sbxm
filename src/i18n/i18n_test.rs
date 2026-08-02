@@ -52,6 +52,16 @@ fn built_in_locales_parse_and_load() {
 }
 
 #[test]
+fn a_missing_argument_is_reported_as_a_format_failure() -> Checked {
+    let failure = Catalog::new(Locale::En)
+        .format(&msg!("error-lock-timeout"))
+        .refused_because("a message with missing arguments cannot be rendered")?;
+    assert_eq!(failure.message_id, "error-lock-timeout");
+    assert!(matches!(failure.reason, FormatFailureReason::Format(_)));
+    Ok(())
+}
+
+#[test]
 fn every_locale_is_defined_exactly_once_and_round_trips_through_its_tag() {
     assert_eq!(
         Locale::ALL.len(),
@@ -149,10 +159,6 @@ fn every_format_failure_names_the_message_id_the_locale_and_why_it_failed() {
             "message is not defined",
         ),
         (FormatFailureReason::MissingValue, "message has no value"),
-        (
-            FormatFailureReason::MissingAttribute,
-            "attribute is not defined",
-        ),
         (
             FormatFailureReason::Format("argument is not a number".to_string()),
             "argument is not a number",

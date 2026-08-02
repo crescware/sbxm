@@ -9,3 +9,7 @@ mod warning;
 
 pub use remediation::Remediation;
 pub use warning::Warning;
+
+#[cfg(test)]
+#[path = "diagnostic_test.rs"]
+mod diagnostic_test;

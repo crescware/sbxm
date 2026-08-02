@@ -328,6 +328,29 @@ fn a_remediation_separates_the_explanation_from_the_command() -> Checked {
     Ok(())
 }
 
+#[test]
+fn a_remediation_that_is_only_a_command_gets_no_heading_above_it() -> Checked {
+    // `Try:`は説明のための見出しである。説明が無いのに見出しだけを出すと、読み手は
+    // 抜け落ちた文を探すことになる。
+    let drawn = plain(
+        &Document::new().diagnostic(
+            Diagnostic::new(ErrorId::ConfigUnreadable, msg!("error-config-unreadable"))
+                .remediation(Remediation::new().try_run("sbxm status --global")),
+        ),
+    )?;
+    assert!(!drawn.contains("Try:"), "{drawn:?}");
+
+    // 見出しが無くなっても、commandは空行で挟んだ独立blockのままである。
+    let lines: Vec<&str> = drawn.lines().collect();
+    let command = lines
+        .iter()
+        .position(|line| *line == "sbxm status --global")
+        .required_because("the command is its own line")?;
+    assert_eq!(lines[command - 1], "", "{drawn:?}");
+    assert!(drawn.ends_with("sbxm status --global\n\n"), "{drawn:?}");
+    Ok(())
+}
+
 fn failed(stderr: &[u8], args: &[&str]) -> Diagnostic {
     Diagnostic::new(
         ErrorId::ExternalCommandFailed,
@@ -364,6 +387,66 @@ fn external_output_is_bracketed_by_a_reset_when_the_stream_is_colored() -> Check
         drawn.contains("    \u{1b}[0m\u{1b}[31mred\u{1b}[0m\n"),
         "{drawn:?}"
     );
+    Ok(())
+}
+
+/// 描いたbyte列。原文が有効なUTF-8でない場合も、変換せずに数えられるようにする。
+fn drawn_bytes(document: &Document, policy: StreamPolicy) -> Vec<u8> {
+    let mut buffer: Vec<u8> = Vec::new();
+    {
+        let mut renderer = Renderer::new(&mut buffer, policy);
+        renderer.write(&Catalog::new(Locale::En), document);
+    }
+    buffer
+}
+
+#[test]
+fn output_that_was_not_valid_utf8_says_so_and_still_shows_the_original_bytes() -> Checked {
+    // 読めなかったのはsbxmであり、外部が書いたbyteではない。原文は加工せずに出し、
+    // 読み取りについての注意を別の行で述べる。
+    let mut diagnostic = failed(b"boom \xff\n", &["build"]);
+    if let Some(external) = diagnostic.external.as_mut() {
+        external.stderr_lossy = true;
+    }
+    let buffer = drawn_bytes(
+        &Document::new().diagnostic(diagnostic),
+        StreamPolicy::plain(),
+    );
+    assert!(
+        buffer.windows(10).any(|window| window == b"    boom \xff"),
+        "the original bytes are passed through: {buffer:?}"
+    );
+
+    let drawn = String::from_utf8_lossy(&buffer).into_owned();
+    let lines: Vec<&str> = drawn.lines().collect();
+    let notice = lines
+        .iter()
+        .position(|line| line.starts_with("! Warning: "))
+        .required_because("the lossy conversion is reported as a warning")?;
+    // どのcommandのどのstreamが読めなかったかを、注意そのものが持つ。
+    assert!(lines[notice].contains("stderr"), "{drawn:?}");
+    assert!(lines[notice].contains("docker"), "{drawn:?}");
+    // 注意は引用の前に置く。読んだあとで読み方を知らされても遅い。
+    let heading = lines
+        .iter()
+        .position(|line| *line == "  Output of docker:")
+        .required_because("the quoted output keeps its heading")?;
+    assert!(notice < heading, "{drawn:?}");
+    Ok(())
+}
+
+#[test]
+fn a_lossy_read_is_reported_even_when_the_command_wrote_nothing_readable() -> Checked {
+    // 何も引用できなくても、読み取りに失敗したことは伝える。
+    let mut diagnostic = failed(b"", &["build"]);
+    if let Some(external) = diagnostic.external.as_mut() {
+        external.stderr_lossy = true;
+    }
+    let drawn = plain(&Document::new().diagnostic(diagnostic))?;
+    assert!(drawn.contains("! Warning: "), "{drawn:?}");
+    assert!(!drawn.contains("Output of docker:"), "{drawn:?}");
+    // 空のblockが末尾の空行を増やさない。
+    assert!(!drawn.ends_with("\n\n"), "{drawn:?}");
     Ok(())
 }
 

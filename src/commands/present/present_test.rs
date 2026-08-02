@@ -1,8 +1,10 @@
 use crate::commands::status::project::Value as ProjectValue;
 use crate::commands::stop::StopResult;
+use crate::compatibility::SandboxState;
 use crate::design::{Inline, VisualState};
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;
+use crate::support::files::Placement;
 use crate::support::inventory::{Observed, ProjectState};
 use crate::support::status::StatusValue;
 
@@ -147,6 +149,98 @@ fn the_same_value_is_listed_once() {
     legend.add("running", "legend-sandbox-running");
     legend.add("running", "legend-sandbox-running");
     assert_eq!(legend.entries().len(), 1);
+}
+
+#[test]
+fn a_sandbox_that_exists_but_is_not_running_is_not_a_finished_state() {
+    // 構築の結果として見せるstoppedは、そこから先へ進むために起動が要る状態である。
+    // 停止commandの完了結果と同じ語だが、判断は逆になる。
+    assert_eq!(
+        sandbox_state(SandboxState::Running),
+        Inline::state("running", VisualState::Positive)
+    );
+    assert_eq!(
+        sandbox_state(SandboxState::Stopped),
+        Inline::state("stopped", VisualState::Attention)
+    );
+    assert_eq!(
+        sandbox_state(SandboxState::Stopped).as_str(),
+        stop_result(StopResult::Stopped).as_str(),
+        "the same word carries the opposite judgement"
+    );
+}
+
+#[test]
+fn a_project_whose_sandbox_is_not_running_is_not_settled() {
+    // 一覧のrunningだけが手を入れずに使える状態である。停止中も未作成も、
+    // 作業を始めるには何かをしなければならない。
+    assert_eq!(
+        project_state(ProjectState::Running),
+        Inline::state("running", VisualState::Positive)
+    );
+    for state in [ProjectState::Stopped, ProjectState::NotCreated] {
+        assert_eq!(
+            project_state(state),
+            Inline::state(state.as_str(), VisualState::Attention),
+            "{} is not a settled state",
+            state.as_str()
+        );
+    }
+}
+
+#[test]
+fn a_file_the_sandbox_already_held_is_not_reported_as_a_change() {
+    // 書き込んだ配置だけを成果として示す。同じ内容だった配置は、良し悪しの判断を
+    // 持たない事実である。
+    assert_eq!(
+        placement(Placement::Placed),
+        Inline::state("placed", VisualState::Positive)
+    );
+    assert_eq!(
+        placement(Placement::Unchanged),
+        Inline::state("unchanged", VisualState::Neutral)
+    );
+}
+
+#[test]
+fn every_sandbox_state_mode_and_placement_carries_its_own_explanation() -> Checked {
+    // 状態値は翻訳しない。翻訳先で読めるのは凡例だけであり、表へ出した値には
+    // その値を説明するmessageが要る。Sandboxの状態はhost serviceの説明を流用しない。
+    let catalog = crate::i18n::Catalog::new(Locale::Ja);
+    let mut legend = Legend::new(Locale::Ja);
+    for state in [SandboxState::Running, SandboxState::Stopped] {
+        assert_eq!(legend.sandbox_state(state), sandbox_state(state));
+    }
+    for mode in [CreationMode::Attached, CreationMode::Detached] {
+        assert_eq!(legend.creation_mode(mode), creation_mode(mode));
+    }
+    for value in [Placement::Placed, Placement::Unchanged] {
+        assert_eq!(legend.placement(value), placement(value));
+    }
+
+    let entries = legend.entries();
+    let described: Vec<(&str, &str)> = entries
+        .iter()
+        .map(|entry| (entry.value.as_str(), entry.description.id))
+        .collect();
+    assert_eq!(
+        described,
+        vec![
+            ("attached", "legend-attached"),
+            ("detached", "legend-detached"),
+            ("placed", "legend-placed"),
+            ("running", "legend-sandbox-running"),
+            ("stopped", "legend-sandbox-stopped"),
+            ("unchanged", "legend-unchanged"),
+        ]
+    );
+    for entry in &entries {
+        let text = catalog
+            .text(entry.description.id)
+            .required_because(&format!("{} has a legend", entry.value))?;
+        assert!(!text.is_empty(), "{} has an empty legend", entry.value);
+    }
+    Ok(())
 }
 
 #[test]
