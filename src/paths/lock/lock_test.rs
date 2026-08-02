@@ -1,4 +1,5 @@
-use crate::diagnostics::ErrorId;
+use crate::design::Fact;
+use crate::diagnostics::{Error, ErrorId};
 use crate::paths::scope::PathScope;
 use std::time::Duration;
 
@@ -11,6 +12,23 @@ use std::thread;
 
 use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
 use crate::testing::fs::temp_dir;
+
+/// 診断が挙げた事実のうち、OSが書いた原文。
+fn cause_of(error: &Error) -> Checked<String> {
+    error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            Fact::OneLine { label, value } if label.id == "diagnostic-cause-label" => {
+                Some(value.as_str().to_string())
+            }
+            _ => None,
+        })
+        .required_because("the cause is quoted from the operating system")
+}
 
 #[test]
 fn an_exclusive_lock_serializes_concurrent_holders() -> Checked {
@@ -114,5 +132,28 @@ fn a_lock_file_survives_the_workflow_that_created_it() -> Checked {
         path.exists(),
         "the lock file is not deleted when the workflow ends"
     );
+    Ok(())
+}
+
+#[test]
+fn a_lock_path_that_cannot_be_opened_reports_what_the_operating_system_said() -> Checked {
+    let dir = temp_dir()?;
+    // directoryはlock fileとして開けない。取れなかった理由をOSの原文のまま示す。
+    let path = dir.path().join("project.lock");
+    fs::create_dir(&path).required_because("create a directory in the lock's place")?;
+
+    let error = acquire_exclusive_lock(
+        &path,
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .refused_because("a lock file that cannot be opened is not waited for")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LockUnavailable));
+    assert!(
+        !cause_of(&error)?.is_empty(),
+        "the operating system said why"
+    );
+    assert!(path.is_dir(), "the path that was in the way is untouched");
     Ok(())
 }

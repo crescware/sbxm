@@ -7,6 +7,8 @@ use crate::msg;
 
 use crate::paths::inspect::{display, lexically_standardize};
 
+use super::working_directory_unusable;
+
 /// 新規project rootを置く親directory。
 ///
 /// commandを実行したcurrent directoryそのものであり、sbxmが選ぶ場所ではない。実在する
@@ -18,15 +20,7 @@ impl ProjectParent {
     /// processのcurrent directoryから決める。
     pub fn current() -> Result<ProjectParent> {
         // current directoryを読めなかった時点で、示せるpathは1つもない。
-        let declared = std::env::current_dir().map_err(|error| {
-            Error::single(
-                Diagnostic::new(
-                    ErrorId::WorkingDirectoryUnusable,
-                    msg!("error-working-directory-unusable"),
-                )
-                .fact(Fact::cause(&error.to_string())),
-            )
-        })?;
+        let declared = std::env::current_dir().map_err(working_directory_unusable)?;
         ProjectParent::at(&declared)
     }
 

@@ -9,6 +9,7 @@ mod atomic_replace;
 mod atomic_write_with_precondition;
 mod replaceable_identity;
 mod temp_path_for;
+mod unchanged_identity;
 
 pub use atomic_create::atomic_create;
 pub use atomic_rename_into_place::atomic_rename_into_place;
@@ -16,6 +17,7 @@ pub use atomic_replace::atomic_replace;
 use atomic_write_with_precondition::atomic_write_with_precondition;
 use replaceable_identity::replaceable_identity;
 use temp_path_for::temp_path_for;
+use unchanged_identity::unchanged_identity;
 
 #[cfg(test)]
 #[path = "atomic_test.rs"]

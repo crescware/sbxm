@@ -1,11 +1,8 @@
 use std::path::Path;
 
-use crate::diagnostics::{ErrorId, Result, fail};
-use crate::msg;
+use crate::diagnostics::Result;
 
-use crate::paths::inspect::display;
-
-use super::{atomic_write_with_precondition, replaceable_identity};
+use super::{atomic_write_with_precondition, replaceable_identity, unchanged_identity};
 
 /// 既存fileをatomicに置き換える。
 ///
@@ -15,13 +12,6 @@ use super::{atomic_write_with_precondition, replaceable_identity};
 pub fn atomic_replace(target: &Path, contents: &str, mode: u32) -> Result<()> {
     let expected = replaceable_identity(target, mode)?;
     atomic_write_with_precondition(target, contents, mode, move |target| {
-        let observed = replaceable_identity(target, mode)?;
-        if observed != expected {
-            return fail(
-                ErrorId::TargetChangedConcurrently,
-                msg!("error-target-changed-concurrently", path = display(target)),
-            );
-        }
-        Ok(())
+        unchanged_identity(target, mode, expected)
     })
 }
