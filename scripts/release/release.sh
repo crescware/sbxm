@@ -2,11 +2,14 @@
 # Apple Silicon macOS向けにsbxmをbuildし、tagを打ってGitHub Releaseを作成する。
 #
 # 使い方:
-#   scripts/release/release.sh [--dry-run] <tag>
+#   scripts/release/release.sh [--dry-run] [--prerelease | --stable] <tag>
 #
 # 例:
 #   scripts/release/release.sh --dry-run v0.0.1
 #   scripts/release/release.sh v0.0.1
+#
+# prereleaseかどうかは既定でversionから決める。major 0 (0.x.y) とsemverのprerelease
+# 識別子を持つもの (1.0.0-rc.1) をprereleaseとする。--prereleaseと--stableで上書きする。
 #
 # 手順と背景はscripts/release/README.mdに置く。
 #
@@ -56,6 +59,9 @@ DRY_RUN=0
 BLOCKERS=""
 BLOCKER_COUNT=0
 CREATED_LOCAL_TAG=0
+# auto: versionから決める。yes/no: --prerelease/--stableで明示された。
+PRERELEASE_MODE="auto"
+PRERELEASE=0
 
 log() {
   # stderrへ書く。package_archiveとrecord_provenanceは`$(...)`で戻り値を
@@ -69,7 +75,16 @@ fail() {
 }
 
 usage() {
-  printf 'usage: %s [--dry-run] <tag>\n' "$(basename "$0")" >&2
+  {
+    printf 'usage: %s [--dry-run] [--prerelease | --stable] <tag>\n' "$(basename "$0")"
+    printf '\n'
+    printf '  --dry-run     run everything but the writes (no tag, no push, no Release)\n'
+    printf '  --prerelease  mark the Release as a prerelease\n'
+    printf '  --stable      mark the Release as a full release\n'
+    printf '\n'
+    printf 'Without either flag the version decides: anything below 1.0.0, or\n'
+    printf 'carrying a prerelease identifier such as 1.0.0-rc.1, is a prerelease.\n'
+  } >&2
 }
 
 # publishの前提条件が満たされていないときに呼ぶ。本番では即座に落とす。dry runでは
@@ -151,6 +166,45 @@ check_release_absent() {
     record_blocker "GitHub Release ${tag} already exists"
   fi
   return 0
+}
+
+# versionだけからprereleaseかどうかを決める。次の2つをprereleaseとする。
+#   - semverのprerelease識別子を持つもの (1.0.0-rc.1)
+#   - major versionが0のもの (0.x.y)。semverはこの範囲を初期開発とし、互換性を
+#     約束しない。0.0.1を正式版として出さないための既定とする。
+# この判定が実態と合わない場合は--prereleaseと--stableで上書きする。
+version_is_prerelease() {
+  local version="$1"
+  case "$version" in
+    *-*) return 0 ;;
+  esac
+  [ "${version%%.*}" = "0" ]
+}
+
+resolve_prerelease() {
+  local version="$1"
+  case "$PRERELEASE_MODE" in
+    yes)
+      PRERELEASE=1
+      log "publishing as a prerelease (--prerelease)"
+      ;;
+    no)
+      PRERELEASE=0
+      log "publishing as a stable release (--stable)"
+      ;;
+    *)
+      if version_is_prerelease "$version"; then
+        PRERELEASE=1
+        case "$version" in
+          *-*) log "publishing as a prerelease (${version} has a prerelease identifier)" ;;
+          *) log "publishing as a prerelease (${version} is below 1.0.0)" ;;
+        esac
+      else
+        PRERELEASE=0
+        log "publishing as a stable release (${version} is 1.0.0 or later)"
+      fi
+      ;;
+  esac
 }
 
 check_cargo_version_matches() {
@@ -334,12 +388,11 @@ create_github_release() {
   log "creating GitHub Release ${tag}"
   # --verify-tag: remoteに同名tagが無ければ失敗させる。直前にpushしているので
   # 通るはずだが、取り違えの最後の歯止めとして残す。
-  # --prerelease、--clobberはどちらも付けない。正式版のみを対象にし、既存asset
-  # を誤って上書きしない。
-  if gh release create "$tag" "$archive" \
-    --title "$tag" \
-    --notes-file "$notes_file" \
-    --verify-tag; then
+  # --clobberは付けない。既存assetを誤って上書きしない。
+  # 空arrayはbash 3.2のset -uで展開できないが、この配列は必ず要素を持つ。
+  local args=("$tag" "$archive" --title "$tag" --notes-file "$notes_file" --verify-tag)
+  [ "$PRERELEASE" -eq 1 ] && args+=(--prerelease)
+  if gh release create "${args[@]}"; then
     return 0
   fi
   # tagはpush済みで、Releaseだけが無い状態になる。remoteのtagを黙って消しに
@@ -365,7 +418,12 @@ publish() {
       printf '  gh release create %q %q \\\n' "$tag" "$archive"
       printf '    --title %q \\\n' "$tag"
       printf '    --notes-file %q \\\n' "$notes_file"
-      printf '    --verify-tag\n'
+      if [ "$PRERELEASE" -eq 1 ]; then
+        printf '    --verify-tag \\\n'
+        printf '    --prerelease\n'
+      else
+        printf '    --verify-tag\n'
+      fi
     } >&2
     return 0
   fi
@@ -414,6 +472,16 @@ main() {
           DRY_RUN=1
           continue
           ;;
+        --prerelease)
+          [ "$PRERELEASE_MODE" = "no" ] && fail "--prerelease and --stable contradict each other"
+          PRERELEASE_MODE="yes"
+          continue
+          ;;
+        --stable)
+          [ "$PRERELEASE_MODE" = "yes" ] && fail "--prerelease and --stable contradict each other"
+          PRERELEASE_MODE="no"
+          continue
+          ;;
         -h | --help)
           usage
           exit 0
@@ -446,6 +514,8 @@ main() {
 
   local version="${tag#v}"
   [ "$version" != "$tag" ] || fail "tag must start with v (e.g. v0.0.1): ${tag}"
+
+  resolve_prerelease "$version"
 
   check_clean_worktree
   check_tag_available "$tag"

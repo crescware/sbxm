@@ -35,6 +35,9 @@ scripts/release/release.sh v0.0.1
 
 tagは事前に用意しない。scriptがHEADへ打ってoriginへpushする。
 
+`v0.0.1`のようなmajor 0のversionは、既定でprereleaseとして公開する。判定の詳細は
+[prereleaseかどうか](#prereleaseかどうか)に書く。
+
 optionはtagの前後どちらでも受ける。`release.sh v0.0.1 --dry-run`と書いてもdry runになる。
 optionが黙って無視されて本番releaseが作られることはない。
 
@@ -184,9 +187,33 @@ repositoryがpublicであるため、fork先に対してこのscriptを実行す
 write権限を持つ者を増やすときは、その全員がtagを打ってReleaseを作れるようになる。tagの作成
 者を絞るなら、collaboratorを追加する前にtag protectionのrulesetを入れる。
 
+## prereleaseかどうか
+
+既定ではversionから決める。次のいずれかに当たるものをprereleaseとし、`--prerelease`を
+付けて公開する。
+
+- semverのprerelease識別子を持つもの — `v1.0.0-rc.1`、`v2.0.0-alpha`
+- major versionが0のもの — `v0.0.1`、`v0.9.9`
+
+semverはmajor 0を初期開発の期間と定め、この範囲では互換性を約束しない。`v0.0.1`を正式版
+として出さないための既定とする。`v1.0.0`以降は正式版として公開する。
+
+判定が実態と合わない場合は明示する。両方を同時に渡すと落ちる。
+
+```sh
+scripts/release/release.sh --stable v0.2.0       # 0.xを正式版として出す
+scripts/release/release.sh --prerelease v2.0.0   # 1.x以降をprereleaseとして出す
+```
+
+どちらの経路を選んだかは実行時に表示する。dry runでも表示し、`gh release create`へ
+`--prerelease`が付くかどうかをそのまま確認できる。
+
+```
+==> publishing as a prerelease (0.0.1 is below 1.0.0)
+```
+
 ## 付けないoption
 
-- `--prerelease` — 正式版だけを対象にする
 - `--clobber` — 既存assetを誤って上書きしない
 
 `gh release create`には`--verify-tag`を付ける。直前にpushしているため通るが、取り違えの
