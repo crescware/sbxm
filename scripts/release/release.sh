@@ -2,14 +2,14 @@
 # Apple Silicon macOS向けにsbxmをbuildし、tagを打ってGitHub Releaseを作成する。
 #
 # 使い方:
-#   scripts/release/release.sh [--dry-run] [--prerelease | --stable] <tag>
+#   scripts/release/release.sh [--dry-run] (--prerelease | --stable) <tag>
 #
 # 例:
-#   scripts/release/release.sh --dry-run v0.0.1
-#   scripts/release/release.sh v0.0.1
+#   scripts/release/release.sh --dry-run --prerelease v0.0.1
+#   scripts/release/release.sh --prerelease v0.0.1
 #
-# prereleaseかどうかは既定でversionから決める。major 0 (0.x.y) とsemverのprerelease
-# 識別子を持つもの (1.0.0-rc.1) をprereleaseとする。--prereleaseと--stableで上書きする。
+# prereleaseかどうかはversionから推測せず、必ず指定させる。docs/design-principles.md
+# の「曖昧さは危険側に倒す」に従い、指定が無ければ何も書かずに拒否する。
 #
 # 手順と背景はscripts/release/README.mdに置く。
 #
@@ -76,14 +76,15 @@ fail() {
 
 usage() {
   {
-    printf 'usage: %s [--dry-run] [--prerelease | --stable] <tag>\n' "$(basename "$0")"
+    printf 'usage: %s [--dry-run] (--prerelease | --stable) <tag>\n' "$(basename "$0")"
     printf '\n'
     printf '  --dry-run     run everything but the writes (no tag, no push, no Release)\n'
     printf '  --prerelease  mark the Release as a prerelease\n'
     printf '  --stable      mark the Release as a full release\n'
     printf '\n'
-    printf 'Without either flag the version decides: anything below 1.0.0, or\n'
-    printf 'carrying a prerelease identifier such as 1.0.0-rc.1, is a prerelease.\n'
+    printf 'One of --prerelease or --stable is required. The version is not read\n'
+    printf 'as an answer: 0.0.1 hints that a release is unfinished, but a hint is\n'
+    printf 'not a statement, and this decides how the release is presented.\n'
   } >&2
 }
 
@@ -171,10 +172,17 @@ check_release_absent() {
   local tag="$1"
 
   log "checking that gh is authenticated"
-  # 認証切れのままだとgh release viewが失敗し、それが「Releaseは無い」と区別
-  # できない。既存Releaseの検査はここで打ち切る。
   if ! gh auth status >/dev/null 2>&1; then
     record_blocker "gh is not authenticated; run: gh auth login"
+    return 0
+  fi
+
+  # `gh release view`は、Releaseが無いときも、APIへ届かないときも失敗する。observe
+  # できないことをReleaseが無いことと同一視しないため、先に届くことを確かめる。
+  # 届かないなら、既存Releaseの有無はこの実行では判断しない。
+  log "checking that GitHub is reachable"
+  if ! gh repo view --json name >/dev/null 2>&1; then
+    record_blocker "cannot reach GitHub; whether Release ${tag} exists could not be observed"
     return 0
   fi
 
@@ -185,21 +193,10 @@ check_release_absent() {
   return 0
 }
 
-# versionだけからprereleaseかどうかを決める。次の2つをprereleaseとする。
-#   - semverのprerelease識別子を持つもの (1.0.0-rc.1)
-#   - major versionが0のもの (0.x.y)。semverはこの範囲を初期開発とし、互換性を
-#     約束しない。0.0.1を正式版として出さないための既定とする。
-# この判定が実態と合わない場合は--prereleaseと--stableで上書きする。
-version_is_prerelease() {
-  local version="$1"
-  case "$version" in
-    *-*) return 0 ;;
-  esac
-  [ "${version%%.*}" = "0" ]
-}
-
+# releaseが完成品かどうかは、指定された者だけが知っている。versionから推測しない。
+# `0.0.1`という並びは初期開発を示唆するが、示唆であって宣言ではない。docs/design-
+# principles.mdが禁じる「類似した値からの推測」に当たる。
 resolve_prerelease() {
-  local version="$1"
   case "$PRERELEASE_MODE" in
     yes)
       PRERELEASE=1
@@ -210,16 +207,8 @@ resolve_prerelease() {
       log "publishing as a stable release (--stable)"
       ;;
     *)
-      if version_is_prerelease "$version"; then
-        PRERELEASE=1
-        case "$version" in
-          *-*) log "publishing as a prerelease (${version} has a prerelease identifier)" ;;
-          *) log "publishing as a prerelease (${version} is below 1.0.0)" ;;
-        esac
-      else
-        PRERELEASE=0
-        log "publishing as a stable release (${version} is 1.0.0 or later)"
-      fi
+      usage
+      fail "pass --prerelease or --stable; the version is not read as an answer"
       ;;
   esac
 }
@@ -530,6 +519,9 @@ main() {
     fail "expected exactly one tag argument (e.g. v0.0.1)"
   fi
 
+  # 副作用より前に決める。指定が無ければ、dist/へ触れる前に拒否する。
+  resolve_prerelease
+
   cd "$(git rev-parse --show-toplevel)"
 
   WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sbxm-release.XXXXXX")"
@@ -543,8 +535,6 @@ main() {
 
   local version="${tag#v}"
   [ "$version" != "$tag" ] || fail "tag must start with v (e.g. v0.0.1): ${tag}"
-
-  resolve_prerelease "$version"
 
   check_clean_worktree
   check_tag_available "$tag"

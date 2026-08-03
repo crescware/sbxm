@@ -27,15 +27,15 @@ $EDITOR Cargo.toml
 git commit -am "Release 0.0.1"
 
 # 2. 何も書き込まずに最後まで通して見る
-scripts/release/release.sh --dry-run v0.0.1
+scripts/release/release.sh --dry-run --prerelease v0.0.1
 
 # 3. tagを打ち、pushし、Releaseを作る
-scripts/release/release.sh v0.0.1
+scripts/release/release.sh --prerelease v0.0.1
 ```
 
 tagは事前に用意しない。scriptがHEADへ打ってoriginへpushする。
 
-`v0.0.1`のようなmajor 0のversionは、既定でprereleaseとして公開する。判定の詳細は
+`--prerelease`か`--stable`は必ず渡す。versionからは推測しない。詳細は
 [prereleaseかどうか](#prereleaseかどうか)に書く。
 
 optionはtagの前後どちらでも受ける。`release.sh v0.0.1 --dry-run`と書いてもdry runになる。
@@ -106,9 +106,15 @@ the build itself succeeded; only these preconditions are unmet.
 - ghが認証済みであること
 - 同名のGitHub Releaseが無いこと
 
-originへ到達できないことを、tagが無いことと同じには扱わない。同じ扱いにすると、networkが
-切れているだけの状態を「衝突は無い」と読み、pushできないtreeに対してdry runが「本番も通る」
-と答えてしまう。
+observeできないことを、無いことと同一視しない。[設計原則](../../docs/design-principles.md)
+が「外部状態を観測できないことを、存在しない、一致する、または安全であることと同一視しない」
+と定めるとおり、次の2つは別の答えとして扱う。
+
+- `git ls-remote`は、tagが無いときも、originへ届かないときも空を返す
+- `gh release view`は、Releaseが無いときも、APIへ届かないときも失敗する
+
+どちらも、届かないことを「無い」と読めば、networkが切れているだけの状態を「衝突は無い」と
+答えてしまう。届くことを先に確かめ、確かめられなければその旨をblockerとする。
 
 生成物が正しいかどうかを決める検査は、dry runでも本番と同じく即座に落とす。`Cargo.toml`と
 tagのversion一致、build-affecting env varの不在、host architecture、`rustc`のhost triple、
@@ -197,27 +203,30 @@ write権限を持つ者を増やすときは、その全員がtagを打ってRel
 
 ## prereleaseかどうか
 
-既定ではversionから決める。次のいずれかに当たるものをprereleaseとし、`--prerelease`を
-付けて公開する。
-
-- semverのprerelease識別子を持つもの — `v1.0.0-rc.1`、`v2.0.0-alpha`
-- major versionが0のもの — `v0.0.1`、`v0.9.9`
-
-semverはmajor 0を初期開発の期間と定め、この範囲では互換性を約束しない。`v0.0.1`を正式版
-として出さないための既定とする。`v1.0.0`以降は正式版として公開する。
-
-判定が実態と合わない場合は明示する。両方を同時に渡すと落ちる。
+`--prerelease`か`--stable`のどちらかを必ず渡す。省略すると、何も書かずに拒否する。
 
 ```sh
-scripts/release/release.sh --stable v0.2.0       # 0.xを正式版として出す
-scripts/release/release.sh --prerelease v2.0.0   # 1.x以降をprereleaseとして出す
+scripts/release/release.sh --prerelease v0.0.1
+scripts/release/release.sh --stable v1.0.0
 ```
 
-どちらの経路を選んだかは実行時に表示する。dry runでも表示し、`gh release create`へ
-`--prerelease`が付くかどうかをそのまま確認できる。
+versionからは推測しない。`0.0.1`という並びは未完成を示唆するが、示唆であって宣言ではない。
+[設計原則](../../docs/design-principles.md)は「複数の解釈が成立する入力や状態を、名前、
+path、cwd、類似した値から推測して補完しない」と定める。versionは類似した値であり、この判断
+の正本ではない。
+
+推測を既定にすると、間違えたときに黙って通る。releaseが完成品かどうかは、GitHubが「Latest」
+として指すかどうかを決め、`/releases/latest`が答えるかどうかを決める。取り違えたまま公開
+すると、未完成のものが最新の正式版として案内される。この判断は、それを知っている者が明示的
+に述べるものとする。
+
+両方を同時に渡すと落ちる。どちらか一方に解釈せず、矛盾として扱う。
+
+どちらを選んだかは実行時に表示する。dry runでも表示し、`gh release create`へ`--prerelease`
+が付くかどうかをそのまま確認できる。
 
 ```
-==> publishing as a prerelease (0.0.1 is below 1.0.0)
+==> publishing as a prerelease (--prerelease)
 ```
 
 ## 付けないoption
