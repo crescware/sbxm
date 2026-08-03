@@ -118,6 +118,72 @@ tagのversion一致、build-affecting env varの不在、host architecture、`ru
 archiveは`COPYFILE_DISABLE=1`のもとで作る。macOSがAppleDouble file (`._*`) やresource
 forkをarchiveへ混ぜないようにする。
 
+## 署名をad-hocとする理由
+
+現状はad-hoc署名 (`codesign --sign -`) とする。これは省略できる工程ではない。Apple Silicon
+はsignatureを持たないbinaryを実行しないため、配布するbinaryには最低限どれかの署名が要る。
+
+ad-hoc署名は「誰が署名したか」を持たない。そのためGatekeeperの「開発元を確認できません」
+は消えない。これを消すにはApple Developer Program (年間$99 USD) への加入が要り、加入して
+初めて次の2つが手に入る。片方だけでは足りない。
+
+- Developer ID Application証明書 — 氏名とTeam IDが入った、身元付きの署名証明書
+- Notarizationサービス — 署名済みbinaryをAppleへ送り、malware検査済みのticketを受け取る
+
+無料のApple IDで取れるのは手元の実機で動かす開発用証明書であり、App Store外への配布には
+使えない。
+
+### それでもad-hocで足りると判断した根拠
+
+Gatekeeperの警告が出るのは、fileに`com.apple.quarantine`が付いている場合だけとする。この
+属性を付けるのはbrowser、mail、AirDropであり、`curl`、`wget`、Homebrewは付けない。
+
+| 入手方法 | 警告 |
+| --- | --- |
+| `brew install` | 出ない |
+| Releasesページからbrowserで直接download | 出る |
+
+配布はHomebrew tapを想定している。その経路の利用者はGatekeeperの警告に触れないため、
+Developer IDへ移っても利用者の体験は変わらない。年$99と実装の手間に対して得るものが無い。
+
+### 見直す条件
+
+時期ではなく、Releasesページからbinaryを直接downloadする利用者が主になったときとする。
+その層にはHomebrewの経路が効かないため、そこで初めて費用に見合う。
+
+移行は後からで構わない。過去のReleaseへ手を入れる必要はなく、ad-hoc署名のversionを使って
+いる利用者が公証済みのversionへ上がるときも、特別な操作は要らない。年会費であるため、必要
+になってから加入した方が総額も少ない。
+
+### 移行するときに変わるもの
+
+```sh
+# 署名 — 身元付きにする。hardened runtimeとtimestampは公証の必須条件
+codesign --force --sign "Developer ID Application: ... (TEAMID)" \
+  --options runtime --timestamp "$bin_path"
+
+# 公証 — Appleへ送って結果を待つ
+xcrun notarytool submit "$archive" --apple-id ... --team-id ... --password ... --wait
+```
+
+このとき、配布形式そのものを見直す必要が出る。`xcrun stapler`はticketを`.app`、`.dmg`、
+`.pkg`にしか貼れず、tar.gzの中の裸の実行fileには貼れない。貼れない場合、Gatekeeperは初回
+実行時にAppleへonlineで問い合わせる。offlineでも通るようにするなら`.pkg`か`.dmg`へ変える。
+
+## 誰がreleaseできるか
+
+このscriptは権限を持たない。実行者の資格情報で`git`と`gh`を呼ぶだけとする。
+
+tagのpushと`gh release create`は、どちらもrepositoryへのwrite権限を要する。権限を持たない
+者がこのscriptを実行しても、その2箇所で止まる。誰がreleaseできるかはGitHub側の設定が決める
+のであり、このscriptが決めるのではない。
+
+repositoryがpublicであるため、fork先に対してこのscriptを実行することは誰にでもできる。その
+場合の成果物はfork先のReleaseとして出るのであり、上流には影響しない。
+
+write権限を持つ者を増やすときは、その全員がtagを打ってReleaseを作れるようになる。tagの作成
+者を絞るなら、collaboratorを追加する前にtag protectionのrulesetを入れる。
+
 ## 付けないoption
 
 - `--prerelease` — 正式版だけを対象にする
