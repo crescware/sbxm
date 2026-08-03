@@ -2,11 +2,13 @@
 # Apple Silicon macOS向けにsbxmをbuildし、tagを打ってGitHub Releaseを作成する。
 #
 # 使い方:
-#   scripts/release.sh [--dry-run] <tag>
+#   scripts/release/release.sh [--dry-run] <tag>
 #
 # 例:
-#   scripts/release.sh --dry-run v0.0.1
-#   scripts/release.sh v0.0.1
+#   scripts/release/release.sh --dry-run v0.0.1
+#   scripts/release/release.sh v0.0.1
+#
+# 手順と背景はscripts/release/README.mdに置く。
 #
 # tagは事前に用意しない。このscriptがHEADへ打ち、originへpushする。ただしそれを行う
 # のは、検査・build・署名・package・provenanceの記録がすべて通った後とする。buildが
