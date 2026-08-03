@@ -4,8 +4,10 @@
 //! 公開契約へ透過しない。helpとusageは選択したlocaleで生成する。
 
 mod outcome;
+mod temp_home;
 
 use outcome::{Checked, Required};
+use temp_home::{TempHome, temp_home};
 
 use std::path::Path;
 use std::process::{Command, Output};
@@ -59,10 +61,6 @@ fn sbxm_in(home: &Path, cwd: &Path, arguments: &[&str]) -> Checked<Run> {
         .output()
         .required_because("sbxm runs")?;
     Run::from(&output)
-}
-
-fn temp_home() -> Checked<tempfile::TempDir> {
-    tempfile::tempdir().required_because("temporary home")
 }
 
 /// hostのGit identityだけに答える`git`を用意し、そのdirectoryを返す。
@@ -661,7 +659,7 @@ fn ls_needs_the_sandbox_runtime_before_it_can_answer() -> Checked {
 /// 案件を登録した状態のHOMEを作る。
 ///
 /// `add`はhost toolに到達した時点で止まるが、登録そのものは終わっている。
-fn home_with_project(project: &str) -> Checked<(tempfile::TempDir, std::path::PathBuf)> {
+fn home_with_project(project: &str) -> Checked<(TempHome, std::path::PathBuf)> {
     let home = temp_home()?;
     let base = home.path().join("Projects");
     std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;

@@ -14,8 +14,10 @@
 //! 子processを終わらせて失敗とする。
 
 mod outcome;
+mod temp_home;
 
 use outcome::{Checked, Required, Unmet};
+use temp_home::temp_home;
 
 use std::fs::File;
 use std::io::{Read, Write};
@@ -264,10 +266,6 @@ fn visible(raw: &str) -> Vec<String> {
         .split(['\r', '\n'])
         .map(|line| line.trim_end().to_string())
         .collect()
-}
-
-fn temp_home() -> Checked<tempfile::TempDir> {
-    tempfile::tempdir().required_because("temporary home")
 }
 
 /// 案件を置く親directory。

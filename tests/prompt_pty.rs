@@ -14,8 +14,10 @@
 //! 子processがsignalで終わり、exit codeもcoverageも残らない。
 
 mod outcome;
+mod temp_home;
 
 use outcome::{Checked, Required, Unmet};
+use temp_home::{TempHome, temp_home};
 
 use std::fs::File;
 use std::io::{Read, Write};
@@ -256,10 +258,6 @@ fn visible(raw: &str) -> Vec<String> {
         .collect()
 }
 
-fn temp_home() -> Checked<tempfile::TempDir> {
-    tempfile::tempdir().required_because("temporary home")
-}
-
 /// 案件を置く親directory。
 fn projects(home: &Path) -> Checked<PathBuf> {
     let base = home.join("Projects");
@@ -330,7 +328,7 @@ fn without_sandboxes(bin: &Path) -> Checked<()> {
 ///
 /// `add`はcloneで止まるが、登録そのものは終わっている。端末を要さないため、
 /// 打鍵ではなく宣言で名義を渡す。
-fn home_with_project() -> Checked<(tempfile::TempDir, PathBuf, PathBuf)> {
+fn home_with_project() -> Checked<(TempHome, PathBuf, PathBuf)> {
     let home = temp_home()?;
     let base = projects(home.path())?;
     let bin = host_tools(home.path())?;

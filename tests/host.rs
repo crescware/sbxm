@@ -9,8 +9,10 @@
 //! 案件の親directory、hostの答えを作り直すため、testの順序にも並列実行にも依らない。
 
 mod outcome;
+mod temp_home;
 
 use outcome::{Checked, Required};
+use temp_home::{TempHome, temp_home};
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -155,7 +157,7 @@ impl Run {
 
 /// 答えるhostを持つ1実行分の環境。
 struct Host {
-    home: tempfile::TempDir,
+    home: TempHome,
     /// 案件を置く親directory。`add`はここをcurrent directoryとして実行する。
     base: PathBuf,
     bin: PathBuf,
@@ -165,7 +167,7 @@ struct Host {
 
 impl Host {
     fn new() -> Checked<Host> {
-        let home = tempfile::tempdir().required_because("temporary home")?;
+        let home = temp_home()?;
         let base = home.path().join("Projects");
         let bin = home.path().join("bin");
         let fake = home.path().join("fake");
