@@ -24,10 +24,6 @@ environment.
 
 ## Installation
 
-> [!WARNING]
-> Installation is not available yet. This section describes the planned
-> Homebrew interface and is included as a draft.
-
 ```sh
 brew install crescware/tap/sbxm
 ```
