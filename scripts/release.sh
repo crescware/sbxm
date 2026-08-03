@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apple Silicon macOS向けにsbxmをbuildし、GitHub Releaseを作成する。
+# Apple Silicon macOS向けにsbxmをbuildし、tagを打ってGitHub Releaseを作成する。
 #
 # 使い方:
 #   scripts/release.sh [--dry-run] <tag>
@@ -8,14 +8,14 @@
 #   scripts/release.sh --dry-run v0.0.1
 #   scripts/release.sh v0.0.1
 #
-# --dry-runは、build・署名・package・provenanceの記録までを本番と同じ手順で実行し、
-# GitHub Releaseの作成だけを行わない。remoteへ影響する書き込みはこの1つだけなので、
-# 本物のrepositoryに対してそのまま実行できる。
+# tagは事前に用意しない。このscriptがHEADへ打ち、originへpushする。ただしそれを行う
+# のは、検査・build・署名・package・provenanceの記録がすべて通った後とする。buildが
+# 落ちたときにoriginへtagだけが残る状態を作らない。
 #
-# publishの前提条件 (tagの有無、originへのpush、clean tree、gh認証、既存Release) は、
-# dry runでは即座に落とさず、警告として記録して最後にまとめて報告する。tagを作る前に
-# 予行できなければ、予行の意味がない。build結果の正しさに関わる検査は、dry runでも
-# 本番と同じく即座に落とす。
+# --dry-runは、書き込みだけを行わない。tagを打たず、pushせず、Releaseも作らない。
+# publishの前提条件 (clean tree、tagの衝突、gh認証、既存Release) は即座に落とさず、
+# 警告として記録して最後にまとめて報告する。build結果の正しさに関わる検査は、dry run
+# でも本番と同じく即座に落とす。
 #
 # 実行にはmacOS (Apple Silicon)、Xcode Command Line Tools、gh CLI (認証済み) を要する。
 
@@ -28,6 +28,7 @@ ARCHIVE_NAME="${BIN_NAME}-${TARGET_TRIPLE}.tar.gz"
 # check_clean_worktreeが前回の生成物を誤検知しないようにする (dist/はgitignore対象)。
 DIST_DIR="dist"
 NOTES_NAME="release-notes.md"
+REMOTE="origin"
 
 # build結果を左右しうるenv var。再現性のないbinaryを出荷しないよう、releaseは常に
 # 素のtoolchain設定で行う。
@@ -52,6 +53,7 @@ WORK_DIR=""
 DRY_RUN=0
 BLOCKERS=""
 BLOCKER_COUNT=0
+CREATED_LOCAL_TAG=0
 
 log() {
   # stderrへ書く。package_archiveとrecord_provenanceは`$(...)`で戻り値を
@@ -62,6 +64,10 @@ log() {
 fail() {
   printf 'error: %s\n' "$1" >&2
   exit 1
+}
+
+usage() {
+  printf 'usage: %s [--dry-run] <tag>\n' "$(basename "$0")" >&2
 }
 
 # publishの前提条件が満たされていないときに呼ぶ。本番では即座に落とす。dry runでは
@@ -77,10 +83,6 @@ record_blocker() {
   return 0
 }
 
-usage() {
-  printf 'usage: %s [--dry-run] <tag>\n' "$(basename "$0")" >&2
-}
-
 check_clean_worktree() {
   log "checking that the working tree is clean"
   if [ -n "$(git status --porcelain)" ]; then
@@ -89,29 +91,44 @@ check_clean_worktree() {
   return 0
 }
 
-check_tag_state() {
+# tagが指すcommitをremoteから読む。annotated tagは`refs/tags/x`がtag objectを、
+# `refs/tags/x^{}`がcommitを指すため、peeled行があればそちらを採る。
+remote_tag_commit() {
+  local tag="$1" output
+  output="$(git ls-remote --tags "$REMOTE" "refs/tags/${tag}" "refs/tags/${tag}^{}")"
+  [ -n "$output" ] || return 1
+  printf '%s\n' "$output" | awk '
+    $2 ~ /\^\{\}$/ { peeled = $1; next }
+    { plain = $1 }
+    END { print (peeled != "" ? peeled : plain) }
+  '
+}
+
+# tagをHEADへ打てる状態か確かめる。既にHEADを指しているなら、それを使い回す。
+check_tag_available() {
   local tag="$1"
-
-  log "checking that tag ${tag} exists"
-  if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-    # 残る2つはこのtagを前提にするため、まとめて1つの指示として出す。
-    record_blocker "tag ${tag} does not exist; create and push it with: git tag ${tag} && git push origin ${tag}"
-    return 0
-  fi
-
-  log "checking that tag ${tag} matches HEAD"
-  local tag_commit head_commit
-  tag_commit="$(git rev-list -n 1 "${tag}")"
+  local head_commit
   head_commit="$(git rev-parse HEAD)"
-  if [ "$tag_commit" != "$head_commit" ]; then
-    record_blocker "tag ${tag} (${tag_commit}) does not match HEAD (${head_commit})"
+
+  log "checking that tag ${tag} can be placed at HEAD"
+  if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+    local local_commit
+    local_commit="$(git rev-list -n 1 "${tag}")"
+    if [ "$local_commit" != "$head_commit" ]; then
+      record_blocker "tag ${tag} already exists locally at ${local_commit}, not HEAD (${head_commit}); delete it with: git tag -d ${tag}"
+    else
+      log "tag ${tag} already exists at HEAD; it will be reused"
+    fi
   fi
 
-  log "checking that tag ${tag} is pushed to origin"
-  # gh release createの--verify-tagが要求する状態を、buildの前に確かめる。長い
-  # buildを終えた最後の一手で落ちるより早い。
-  if [ -z "$(git ls-remote --tags origin "refs/tags/${tag}")" ]; then
-    record_blocker "tag ${tag} is not on origin; push it with: git push origin ${tag}"
+  log "checking tag ${tag} on ${REMOTE}"
+  local remote_commit
+  if remote_commit="$(remote_tag_commit "$tag")"; then
+    if [ "$remote_commit" != "$head_commit" ]; then
+      record_blocker "tag ${tag} on ${REMOTE} points at ${remote_commit}, not HEAD (${head_commit}); releasing would need a different tag"
+    else
+      log "tag ${tag} is already on ${REMOTE} at HEAD; it will be reused"
+    fi
   fi
   return 0
 }
@@ -284,17 +301,65 @@ record_provenance() {
   printf '%s' "$notes_file"
 }
 
+create_tag() {
+  local tag="$1"
+  if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+    log "tag ${tag} already exists at HEAD"
+    return 0
+  fi
+  log "tagging HEAD as ${tag}"
+  # annotated tagにする。releaseを指すtagには打ち手と日時を残す。
+  git tag -a "$tag" -m "$tag"
+  CREATED_LOCAL_TAG=1
+}
+
+push_tag() {
+  local tag="$1"
+  log "pushing tag ${tag} to ${REMOTE}"
+  if git push "$REMOTE" "refs/tags/${tag}"; then
+    return 0
+  fi
+  # pushが通らなければ、このscriptが作った分だけを畳んで元へ戻す。
+  if [ "$CREATED_LOCAL_TAG" -eq 1 ]; then
+    git tag -d "$tag" >/dev/null
+    log "removed the local tag ${tag} again"
+  fi
+  fail "could not push tag ${tag} to ${REMOTE}"
+}
+
 create_github_release() {
   local tag="$1" archive="$2" notes_file="$3"
-
-  # --verify-tag: remoteに同名tagが無ければ失敗させる。tagのpushはこのscriptの
-  # 責務外とし、ここではpush済みのtagだけを対象にする。
+  log "creating GitHub Release ${tag}"
+  # --verify-tag: remoteに同名tagが無ければ失敗させる。直前にpushしているので
+  # 通るはずだが、取り違えの最後の歯止めとして残す。
   # --prerelease、--clobberはどちらも付けない。正式版のみを対象にし、既存asset
   # を誤って上書きしない。
+  if gh release create "$tag" "$archive" \
+    --title "$tag" \
+    --notes-file "$notes_file" \
+    --verify-tag; then
+    return 0
+  fi
+  # tagはpush済みで、Releaseだけが無い状態になる。remoteのtagを黙って消しに
+  # いかず、戻し方を示して止まる。
+  {
+    printf 'error: creating GitHub Release %s failed; the tag is already on %s\n' "$tag" "$REMOTE"
+    printf 'undo the tag with:\n'
+    printf '  git push %s :refs/tags/%s\n' "$REMOTE" "$tag"
+    printf '  git tag -d %s\n' "$tag"
+  } >&2
+  exit 1
+}
+
+publish() {
+  local tag="$1" archive="$2" notes_file="$3"
+
   if [ "$DRY_RUN" -eq 1 ]; then
-    log "dry run: not creating GitHub Release ${tag}"
+    log "dry run: not tagging, not pushing, not creating a Release"
     {
       printf 'would run:\n'
+      printf '  git tag -a %q -m %q\n' "$tag" "$tag"
+      printf '  git push %q refs/tags/%q\n' "$REMOTE" "$tag"
       printf '  gh release create %q %q \\\n' "$tag" "$archive"
       printf '    --title %q \\\n' "$tag"
       printf '    --notes-file %q \\\n' "$notes_file"
@@ -303,16 +368,14 @@ create_github_release() {
     return 0
   fi
 
-  log "creating GitHub Release ${tag}"
-  gh release create "$tag" "$archive" \
-    --title "$tag" \
-    --notes-file "$notes_file" \
-    --verify-tag
+  create_tag "$tag"
+  push_tag "$tag"
+  create_github_release "$tag" "$archive" "$notes_file"
 }
 
 report_dry_run() {
   local archive="$1" notes_file="$2"
-  log "dry run finished; nothing was published"
+  log "dry run finished; nothing was written"
   {
     printf 'inspect the artifacts it would have uploaded:\n'
     printf '  asset:         %s\n' "$archive"
@@ -377,15 +440,14 @@ main() {
   WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sbxm-release.XXXXXX")"
   trap 'rm -rf "$WORK_DIR"' EXIT
 
-  [ "$DRY_RUN" -eq 1 ] && log "dry run: no GitHub Release will be created"
-
-  check_clean_worktree
-  check_tag_state "$tag"
-  check_release_absent "$tag"
+  [ "$DRY_RUN" -eq 1 ] && log "dry run: nothing will be tagged, pushed, or published"
 
   local version="${tag#v}"
   [ "$version" != "$tag" ] || fail "tag must start with v (e.g. v0.0.1): ${tag}"
 
+  check_clean_worktree
+  check_tag_available "$tag"
+  check_release_absent "$tag"
   check_cargo_version_matches "$version"
   check_no_build_affecting_env_vars
   check_host_is_arm64
@@ -407,7 +469,7 @@ main() {
   local notes_file
   notes_file="$(record_provenance "$archive_path")"
 
-  create_github_release "$tag" "$archive_path" "$notes_file"
+  publish "$tag" "$archive_path" "$notes_file"
 
   if [ "$DRY_RUN" -eq 1 ]; then
     report_dry_run "$archive_path" "$notes_file"
