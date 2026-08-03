@@ -101,6 +101,36 @@ record_blocker() {
   return 0
 }
 
+# releaseは既定branchに入っているcommitからだけ切る。featureブランチのcommitへtagを
+# 打つと、そのbranchをsquash mergeやrebaseした後、tagはどのbranchからも辿れないcommit
+# を指したまま残る。「このversionのsourceはどれか」に答えられなくなる。
+check_head_is_on_default_branch() {
+  log "checking that HEAD is on ${REMOTE}'s default branch"
+
+  local symref
+  if ! symref="$(git ls-remote --symref "$REMOTE" HEAD 2>/dev/null)"; then
+    record_blocker "cannot reach ${REMOTE}; whether HEAD is on the default branch could not be observed"
+    return 0
+  fi
+
+  local default_branch
+  default_branch="$(printf '%s\n' "$symref" | awk '
+    $1 == "ref:" { sub("refs/heads/", "", $2); print $2; exit }
+  ')"
+  [ -n "$default_branch" ] || default_branch="the default branch"
+
+  # 既定branchの先端をlocalへ取り寄せる。FETCH_HEADへ書くだけで、remoteへは書かない。
+  if ! git fetch --quiet "$REMOTE" HEAD 2>/dev/null; then
+    record_blocker "could not fetch ${REMOTE}'s default branch; whether HEAD is on it could not be observed"
+    return 0
+  fi
+
+  if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
+    record_blocker "HEAD is not on ${default_branch}; merge it there first, or the tag will point at a commit no branch reaches"
+  fi
+  return 0
+}
+
 check_clean_worktree() {
   log "checking that the working tree is clean"
   if [ -n "$(git status --porcelain)" ]; then
@@ -537,6 +567,7 @@ main() {
   [ "$version" != "$tag" ] || fail "tag must start with v (e.g. v0.0.1): ${tag}"
 
   check_clean_worktree
+  check_head_is_on_default_branch
   check_tag_available "$tag"
   check_release_absent "$tag"
   check_cargo_version_matches "$version"

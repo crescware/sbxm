@@ -45,8 +45,9 @@ optionが黙って無視されて本番releaseが作られることはない。
 
 書き込みは最後にまとめる。remoteから見える操作は、それ以外がすべて通ってから行う。
 
-1. 検査 — clean tree、tagをHEADへ打てるか、ghの認証、同名Releaseの不在、`Cargo.toml`の
-   versionとtagの一致、build結果へ影響するenv varの不在、host architecture、`rustc`のhost
+1. 検査 — clean tree、HEADが既定branchに入っているか、tagをHEADへ打てるか、ghの認証、
+   GitHubへの到達、同名Releaseの不在、`Cargo.toml`のversionとtagの一致、build結果へ影響する
+   env varの不在、host architecture、`rustc`のhost
 2. build — `cargo build --release --locked`
 3. 署名 — ad-hoc署名を付け、`codesign --verify`と`codesign -dv`で検証する
 4. 検証 — `file`でarm64のMach-Oか、`sbxm --version`がrelease versionと一致するか
@@ -57,6 +58,18 @@ optionが黙って無視されて本番releaseが作られることはない。
 
 tagを最後に打つのは、releaseを名付ける操作を、それを検証する工程の後ろへ置くためである。
 先にtagを打つと、buildを一度も通していないcommitに対してtagがoriginへ出てしまう。
+
+## releaseは既定branchから切る
+
+HEADが既定branch (`main`) に入っていなければ拒否する。入っているかは、`origin`のHEADが指す
+branchの先端をfetchし、そこからHEADへ辿れるかで判定する。
+
+featureブランチのcommitへtagを打つと、そのbranchをsquash mergeまたはrebaseした後、tagは
+どのbranchからも辿れないcommitを指したまま残る。tagが指す限りそのcommitは消えないため、
+「このversionのsourceはどれか」がhistoryのどこからも答えられない状態になる。
+
+merge前に試したい場合は`--dry-run`を使う。dry runはこれをblockerとして報告するが、build
+から署名、packageまでは最後まで通すため、merge前でも成果物を確認できる。
 
 ## 失敗したときに何が残るか
 
@@ -98,12 +111,13 @@ the build itself succeeded; only these preconditions are unmet.
 ```
 
 前提条件が1つでも欠けていればexit codeは非0になる。それぞれに解消するcommandを添える。
-まとめて報告する対象は次の5つとする。
+まとめて報告する対象は次の6つとする。
 
 - working treeがcleanであること
+- HEADが既定branchに入っていること
 - tagがHEAD以外を指していないこと (localとorigin)
 - originへ到達できること
-- ghが認証済みであること
+- ghが認証済みであること、GitHubへ到達できること
 - 同名のGitHub Releaseが無いこと
 
 observeできないことを、無いことと同一視しない。[設計原則](../../docs/design-principles.md)
