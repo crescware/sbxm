@@ -1,5 +1,15 @@
 # sbxm
 
+<p align="center">
+  <a href="https://crescware.github.io/sbxm/">
+    <img src="website/src/assets/sbxm-logo-color.svg" alt="sbxm" width="180">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://crescware.github.io/sbxm/">Visit the official sbxm website</a>
+</p>
+
 `sbxm` gives each GitHub project its own Docker Sandbox and a predictable set
 of Git worktrees. It handles the host clone, sandbox image, repository setup,
 day-to-day connections, diagnostics, rebuilds, and teardown.
