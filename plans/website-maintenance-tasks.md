@@ -3,8 +3,8 @@
 ## 位置づけ
 
 この文書は、`website/`のホームページと利用者向けドキュメントが完成した後に、別の保守ブランチで
-検討するタスクだけをまとめる。現在のwebsite実装に専用の検証script、CI workflow、外部link監視を
-追加することは、この文書の作成時点では行わない。
+検討するタスクだけをまとめる。deploy workflowは`.github/workflows/deploy-website.yml`に実装済みで
+あり、専用の検証script、追加のCI検査、外部link監視はこの文書の保守ブランチで扱う。
 
 サイト本体の構成、英語content、Tailwind、Astro build、将来の日本語localeは
 [`website-technical-plan.md`](./website-technical-plan.md)で扱う。
@@ -66,18 +66,17 @@ production buildのartifactを対象に、次を確認する。
 - build artifactにsecret patternやabsolute workspace pathが残っていない
 - external script、tracking pixel、remote fontが意図せず追加されていない
 
-### 6. CI / deployment integration
+### 6. Additional CI checks
 
-ownerがworkflow追加を承認した後に、次を別PRで実装する。
+deploy workflowとは独立した追加検査を、ownerが保守ブランチのscopeとして承認した後に別PRで実装する。
 
 1. `website/`でmiseのNode/pnpmを用意する
 2. frozen lockfileでdependencyをinstallする
 3. `mise exec -- pnpm build`を実行する
 4. 必要なlink、accessibility、secret検査を独立jobとして追加する
-5. deploy jobだけにPagesとOIDC permissionを与える
 
-Rustの`mise run check`とは独立したjob名にする。GitHub Pagesのdeploy workflowを追加するまでは、
-website実装は静的buildまでに留める。
+Rustの`mise run check`とは独立したjob名にする。Pages deployのpermissionは
+`.github/workflows/deploy-website.yml`だけに持たせる。
 
 ## 着手条件
 

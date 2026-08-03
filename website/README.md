@@ -24,3 +24,10 @@ mise exec -- pnpm preview
 
 The production build defaults to the GitHub Pages project path `/sbxm`. Use
 `PUBLIC_SITE_URL` and `PUBLIC_BASE_PATH` when previewing another origin or base path.
+
+## Deployment
+
+The repository-root `.github/workflows/deploy-website.yml` builds this directory with the
+website-local mise toolchain and deploys it to GitHub Pages on pushes to `main`. In the repository
+Settings, set Pages → Build and deployment → Source to **GitHub Actions** once before the first
+deployment.

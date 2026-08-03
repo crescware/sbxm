@@ -1,0 +1,67 @@
+name: Deploy website
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/deploy-website.yml
+      - website/**
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  ASTRO_TELEMETRY_DISABLED: "1"
+  PUBLIC_SITE_URL: https://crescware.github.io
+  PUBLIC_BASE_PATH: /sbxm
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up website toolchain
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4
+        with:
+          working_directory: website
+          install: true
+          cache: true
+
+      - name: Install website dependencies
+        working-directory: website
+        run: mise exec -- pnpm install --frozen-lockfile
+
+      - name: Build website
+        working-directory: website
+        run: mise exec -- pnpm build
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: website/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

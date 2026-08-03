@@ -4,7 +4,7 @@
 
 この文書は、`website-requirements.md`と`website-information-architecture.md`をAstro Starlightで
 実現するためのrepository構成、build、deployment、段階的な実装順を定める。これは実装
-指示書であり、この文書の作成時点では`website/`やworkflowを作らない。
+指示書であり、website本体とrepository rootのdeployment workflowの責務を分けて定める。
 
 ## Architecture
 
@@ -230,9 +230,9 @@ ActionsでGitHub Pagesへdeployするworkflowを案内している。repository 
 
 ### Workflow boundary
 
-GitHub Pages workflowはGitHubの仕様上repository rootの`.github/workflows/`に必要であり、
-`website/`の外側になる。website実装を`website/**/*`だけに限定する場合はbuildまでとし、deploy
-workflowは別途明示的に追加する。
+GitHub Pages workflowはGitHubの仕様上repository rootの`.github/workflows/`に置く。
+website本体は`website/`に閉じ、deploy workflowはその外側でartifactを受け取る。現在の実装では
+`.github/workflows/deploy-website.yml`がこの役割を担う。
 
 workflow要件は次のとおり。
 
@@ -313,7 +313,7 @@ historyを取得するか、表示を無効にする。誤った日付を表示�
 ### Phase 5: Handoff and release
 
 - production originを確定する
-- deployment workflowをowner承認のscopeで追加する
+- `.github/workflows/deploy-website.yml`でdeploymentを行い、Pagesのsource設定をownerが承認する
 - root READMEをwebsiteへの入口へ短縮する別変更を準備する
 
 完了条件: `website-requirements.md`の完了条件をすべて満たす。
