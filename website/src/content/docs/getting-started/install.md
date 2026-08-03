@@ -20,6 +20,6 @@ The first command prints the installed sbxm version. The second checks the host 
 
 ## Next step
 
-Once the global status is healthy, follow [Create your first sandbox](./quickstart/).
+Once the global status is healthy, follow [Create your first sandbox](../quickstart/).
 
 Release archives and checksums are published on [GitHub Releases](https://github.com/crescware/sbxm/releases). Homebrew is the supported installation path for the CLI.

@@ -33,4 +33,4 @@ If only the number of managed worktrees changes, use:
 sbxm apply <project-id> --worktrees 4
 ```
 
-Use [managed worktrees](./worktrees/) for the count and attached/detached behavior.
+Use [managed worktrees](../worktrees/) for the count and attached/detached behavior.
