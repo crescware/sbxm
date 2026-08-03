@@ -9,7 +9,7 @@
 
 - macOS 14以降のApple Silicon機
 - Xcode Command Line Tools — `codesign`と`file`を使う
-- mise — toolchainは`mise install`で揃う
+- mise — toolchainは`mise install`で揃う。`mise run check`の実行にも使う
 - gh CLI — 認証済みであること (`gh auth login`)
 
 このscriptはmacOSでしか完走しない。arm64であること、`rustc`のhostが
@@ -48,16 +48,28 @@ optionが黙って無視されて本番releaseが作られることはない。
 1. 検査 — clean tree、HEADが既定branchに入っているか、tagをHEADへ打てるか、ghの認証、
    GitHubへの到達、同名Releaseの不在、`Cargo.toml`のversionとtagの一致、build結果へ影響する
    env varの不在、host architecture、`rustc`のhost
-2. build — `cargo build --release --locked`
-3. 署名 — ad-hoc署名を付け、`codesign --verify`と`codesign -dv`で検証する
-4. 検証 — `file`でarm64のMach-Oか、`sbxm --version`がrelease versionと一致するか
-5. package — `dist/sbxm-aarch64-apple-darwin.tar.gz`を作り、直下が`sbxm`だけか確認する
-6. 記録 — Git commit SHA、`rustc -vV`、`cargo -V`、`sw_vers`、`shasum -a 256`をrelease
+2. `mise run check` — fmt、lint、test、coverage
+3. build — `cargo build --release --locked`
+4. 署名 — ad-hoc署名を付け、`codesign --verify`と`codesign -dv`で検証する
+5. 検証 — `file`でarm64のMach-Oか、`sbxm --version`がrelease versionと一致するか
+6. package — `dist/sbxm-aarch64-apple-darwin.tar.gz`を作り、直下が`sbxm`だけか確認する
+7. 記録 — Git commit SHA、`rustc -vV`、`cargo -V`、`sw_vers`、`shasum -a 256`をrelease
    notesへ書く
-7. publish — annotated tagをHEADへ打ち、originへpushし、`gh release create`する
+8. publish — annotated tagをHEADへ打ち、originへpushし、`gh release create`する
+
+安い検査を先に置き、時間のかかる`mise run check`をその後にする。tagの綴りを間違えただけの
+実行を、testの完走まで待たせない。
 
 tagを最後に打つのは、releaseを名付ける操作を、それを検証する工程の後ろへ置くためである。
 先にtagを打つと、buildを一度も通していないcommitに対してtagがoriginへ出てしまう。
+
+## 出荷するtreeは自分で検査する
+
+buildの前に`mise run check`を通す。通らなければそこで止まり、tagもbuildもRelease作成も
+行わない。dry runでも同じく止まる。
+
+検査を他所の結果に委ねない。どこかで検査が通ったかどうかはこのscriptから観測できず、通った
+はずだという推測にしかならない。何を出荷してよいかの判断を推測の上に置かない。
 
 ## releaseは既定branchから切る
 
@@ -120,9 +132,7 @@ the build itself succeeded; only these preconditions are unmet.
 - ghが認証済みであること、GitHubへ到達できること
 - 同名のGitHub Releaseが無いこと
 
-observeできないことを、無いことと同一視しない。[設計原則](../../docs/design-principles.md)
-が「外部状態を観測できないことを、存在しない、一致する、または安全であることと同一視しない」
-と定めるとおり、次の2つは別の答えとして扱う。
+observeできないことを、無いことと同一視しない。次の2つは別の答えとして扱う。
 
 - `git ls-remote`は、tagが無いときも、originへ届かないときも空を返す
 - `gh release view`は、Releaseが無いときも、APIへ届かないときも失敗する
@@ -224,10 +234,8 @@ scripts/release/release.sh --prerelease v0.0.1
 scripts/release/release.sh --stable v1.0.0
 ```
 
-versionからは推測しない。`0.0.1`という並びは未完成を示唆するが、示唆であって宣言ではない。
-[設計原則](../../docs/design-principles.md)は「複数の解釈が成立する入力や状態を、名前、
-path、cwd、類似した値から推測して補完しない」と定める。versionは類似した値であり、この判断
-の正本ではない。
+versionからは推測しない。`0.0.1`という並びは未完成を示唆するが、示唆は宣言ではない。version
+はこの判断の正本ではなく、たまたま似た形をした別の値である。
 
 推測を既定にすると、間違えたときに黙って通る。releaseが完成品かどうかは、GitHubが「Latest」
 として指すかどうかを決め、`/releases/latest`が答えるかどうかを決める。取り違えたまま公開

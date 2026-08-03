@@ -8,8 +8,8 @@
 #   scripts/release/release.sh --dry-run --prerelease v0.0.1
 #   scripts/release/release.sh --prerelease v0.0.1
 #
-# prereleaseかどうかはversionから推測せず、必ず指定させる。docs/design-principles.md
-# の「曖昧さは危険側に倒す」に従い、指定が無ければ何も書かずに拒否する。
+# prereleaseかどうかはversionから推測せず、必ず指定させる。指定が無ければ何も書かずに
+# 拒否する。
 #
 # 手順と背景はscripts/release/README.mdに置く。
 #
@@ -22,7 +22,10 @@
 # 警告として記録して最後にまとめて報告する。build結果の正しさに関わる検査は、dry run
 # でも本番と同じく即座に落とす。
 #
-# 実行にはmacOS (Apple Silicon)、Xcode Command Line Tools、gh CLI (認証済み) を要する。
+# buildの前に`mise run check`を通す。通らないtreeからはreleaseを作らない。
+#
+# 実行にはmacOS (Apple Silicon)、Xcode Command Line Tools、mise、gh CLI (認証済み) を
+# 要する。
 
 set -euo pipefail
 
@@ -223,9 +226,8 @@ check_release_absent() {
   return 0
 }
 
-# releaseが完成品かどうかは、指定された者だけが知っている。versionから推測しない。
-# `0.0.1`という並びは初期開発を示唆するが、示唆であって宣言ではない。docs/design-
-# principles.mdが禁じる「類似した値からの推測」に当たる。
+# releaseが完成品かどうかは、指定した者だけが知っている。versionから推測しない。
+# `0.0.1`という並びは初期開発を示唆するが、示唆は宣言ではない。
 resolve_prerelease() {
   case "$PRERELEASE_MODE" in
     yes)
@@ -289,6 +291,17 @@ reset_dist() {
   [ -e "$DIST_DIR" ] || return 0
   log "clearing ${DIST_DIR}/"
   rm -rf "$DIST_DIR"
+}
+
+# 出荷するtreeがfmt・lint・test・coverageを通ることを、releaseする側が自分で確かめる。
+# 他所の検査結果には委ねない。それが通ったかどうかはここから観測できず、通ったはずだと
+# いう推測にしかならない。何を出荷してよいかの判断を推測の上に置かない。
+# 出力は流したままにする。落ちたときに何が落ちたかを見るためにここに居る。
+run_repository_checks() {
+  log "running mise run check (fmt, lint, test, coverage)"
+  command -v mise >/dev/null 2>&1 || fail "mise is not installed"
+  mise run check \
+    || fail "mise run check did not pass; this tree is not in a releasable state"
 }
 
 build_release_binary() {
@@ -574,6 +587,9 @@ main() {
   check_no_build_affecting_env_vars
   check_host_is_arm64
   check_rustc_host_is_apple_silicon
+
+  # 安いものを先に落としてから、時間のかかる検査へ入る。
+  run_repository_checks
 
   build_release_binary
 
