@@ -18,17 +18,26 @@
 - machine-readableなsourceを正本とし、website全体の文章を生成しない
 - networkへ依存する検査と、ローカルで再現できる検査を分離する
 
-## 候補タスク
+## 保守タスク
 
-### 1. CLI reference drift
+### 1. CLI order and reference drift（必須）
 
-`tests/snapshots/cli-surface.txt`とwebsiteのreferenceを照合する小さな`.mts` taskを検討する。
+`sbxm --help` の `Commands:` blockを正本として、websiteのCLI referenceを照合する`.mts` taskを必ず
+実装する。Rust側では [`src/commands/specs.rs`](../src/commands/specs.rs) のvector順がhelpの表示順を
+決めているため、sourceと生成されたhelpの不一致も同じ保守taskで報告する。
 
-- 全subcommandに対応するpageがある
+このtaskは次のすべてを確認し、不一致時は非zeroで終了してmergeを止める。
+
+- `sbxm --help` のsubcommand集合と順番が `website/src/config/sidebar.ts` のCLI項目と一致する
+- `src/commands/specs.rs` の順番と `sbxm --help` の順番が一致する
+- 全subcommandに対応するreference pageがある
 - reference indexに全subcommandへのlinkがある
 - synopsisのrequired/optional引数、short option、value nameが一致する
-- websiteだけに存在する未知のcommand/optionを検出する
-- commandの説明、example、安全上の注意は自動生成せず、人がreviewする
+- websiteだけに存在する未知のcommand/optionがない
+
+失敗時はCLI側の順番、sidebar側の順番、最初の差分を表示する。commandの説明、example、安全上の
+注意は自動生成せず、人がreviewする。CLI追加・削除・並び替え、reference追加、sidebar変更を含む
+pull requestでは、このtaskを必須jobとして実行する。
 
 ### 2. Source value drift
 
@@ -81,5 +90,6 @@ website実装は静的buildまでに留める。
 
 - 保守taskはwebsite本体から独立してreview、rollbackできる
 - `.mts` taskの失敗時に対象page、source、差分が分かる
+- CLI order and reference drift taskが、help・Rust source・sidebarの不一致をmerge前に検出する
 - network検査の不安定性がPRのbuild結果を隠さない
 - Japanese locale追加後もEnglish route、検索、metadataの扱いが明確である
