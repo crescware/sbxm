@@ -22,7 +22,7 @@
 # 警告として記録して最後にまとめて報告する。build結果の正しさに関わる検査は、dry run
 # でも本番と同じく即座に落とす。
 #
-# buildの前に`mise run check`を通す。通らないtreeからはreleaseを作らない。
+# buildの前に`mise run check`を通す。通らないtreeからはリリースを作らない。
 #
 # 実行にはmacOS (Apple Silicon)、Xcode Command Line Tools、mise、gh CLI (認証済み) を
 # 要する。
@@ -38,7 +38,7 @@ DIST_DIR="dist"
 NOTES_NAME="release-notes.md"
 REMOTE="origin"
 
-# build結果を左右しうるenv var。再現性のないbinaryを出荷しないよう、releaseは常に
+# build結果を左右しうるenv var。再現性のないbinaryを出荷しないよう、リリースは常に
 # 素のtoolchain設定で行う。
 BUILD_AFFECTING_ENV_VARS=(
   RUSTFLAGS
@@ -104,7 +104,7 @@ record_blocker() {
   return 0
 }
 
-# releaseは既定branchに入っているcommitからだけ切る。featureブランチのcommitへtagを
+# リリースは既定branchに入っているcommitからだけ切る。featureブランチのcommitへtagを
 # 打つと、そのbranchをsquash mergeやrebaseした後、tagはどのbranchからも辿れないcommit
 # を指したまま残る。「このversionのsourceはどれか」に答えられなくなる。
 check_head_is_on_default_branch() {
@@ -226,7 +226,7 @@ check_release_absent() {
   return 0
 }
 
-# releaseが完成品かどうかは、指定した者だけが知っている。versionから推測しない。
+# リリースが完成品かどうかは、指定した者だけが知っている。versionから推測しない。
 # `0.0.1`という並びは初期開発を示唆するが、示唆は宣言ではない。
 resolve_prerelease() {
   case "$PRERELEASE_MODE" in
@@ -293,7 +293,7 @@ reset_dist() {
   rm -rf "$DIST_DIR"
 }
 
-# 出荷するtreeがfmt・lint・test・coverageを通ることを、releaseする側が自分で確かめる。
+# リリースするtreeがfmt・lint・test・coverageを通ることを、リリースする側が自分で確かめる。
 # 他所の検査結果には委ねない。それが通ったかどうかはここから観測できず、通ったはずだと
 # いう推測にしかならない。何を出荷してよいかの判断を推測の上に置かない。
 # 出力は流したままにする。落ちたときに何が落ちたかを見るためにここに居る。
@@ -421,7 +421,7 @@ create_tag() {
     return 0
   fi
   log "tagging HEAD as ${tag}"
-  # annotated tagにする。releaseを指すtagには打ち手と日時を残す。
+  # annotated tagにする。リリースを指すtagには打ち手と日時を残す。
   git tag -a "$tag" -m "$tag"
   CREATED_LOCAL_TAG=1
 }
@@ -517,7 +517,7 @@ report_dry_run() {
 
 main() {
   # optionはtagの前後どちらでも受ける。`release.sh v0.0.1 --dry-run`と書いた人が
-  # 本番releaseを作ってしまう余地を残さない。
+  # 本番のリリースを作ってしまう余地を残さない。
   # bash 3.2ではset -uのもとで空arrayを展開できないため、arrayを使わず数える。
   local tag="" tag_count=0
   local end_of_options=0

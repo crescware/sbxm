@@ -1,5 +1,7 @@
 [tools]
-rust = "1.89.0"
+# sbxmが動くのはmacOSだけだが、開発はLinuxでも行う。macOS向けにcompileできることを
+# Linuxからも確かめられるよう、targetをtoolchainへ含める。
+rust = { version = "1.89.0", targets = "aarch64-apple-darwin" }
 zig = "0.16.0"
 "github:taiki-e/cargo-llvm-cov" = "0.8.7"
 
@@ -21,6 +23,10 @@ cargo llvm-cov \
   --fail-under-file-lines 90
 '''
 
+[tasks.check-macos]
+description = "macOS向けにcompileできることを確認する"
+run = "cargo check --workspace --all-targets --all-features --target aarch64-apple-darwin"
+
 [tasks.check]
-description = "整形・lint・test・coverageをすべて確認する"
-run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && mise run coverage"
+description = "整形・lint・macOS向けcompile・test・coverageをすべて確認する"
+run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && mise run check-macos && mise run coverage"
