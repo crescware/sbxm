@@ -1,6 +1,6 @@
 ---
 title: '`sbxm status`'
-description: Diagnose the host environment or one project without changing it.
+description: Show the status of the host environment or one project without changing it.
 ---
 
 ```text

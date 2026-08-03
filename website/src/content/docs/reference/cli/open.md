@@ -1,6 +1,6 @@
 ---
 title: '`sbxm open`'
-description: Start a project sandbox when necessary and connect over SSH.
+description: Open an SSH session to a project sandbox, starting it if needed.
 ---
 
 ```text

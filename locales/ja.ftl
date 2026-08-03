@@ -1,6 +1,6 @@
 locale-name = 日本語 / Japanese
 
-cli-about = 案件ごとのDocker Sandboxを構築、接続、診断、破棄します。
+cli-about = 案件ごとのDocker Sandboxを、登録から破棄まで管理します。
 cli-heading-usage = 使い方 (Usage):
 cli-heading-commands = command (Commands):
 cli-heading-options = option (Options):
@@ -10,39 +10,39 @@ cli-help-help = helpを表示する
 cli-version-help = versionを表示する
 
 
-cli-add-about = GitHub repositoryを管理対象へ登録し、host上へcloneします
-cli-add-repository-help = 登録するrepositoryのGitHub clone URL
-cli-add-worktrees-help = 作成するmanaged worktreeの数 (1〜32)
-cli-add-detach-help = detached modeで全managed worktreeの起点にするremote branch
-cli-add-git-user-name-help = この案件のcommitに使う名前。--git-user-emailと同時に指定します
-cli-add-git-user-email-help = この案件のcommitに使うmail address。--git-user-nameと同時に指定します
+cli-add-about = GitHub repositoryをsbxmへ追加し、このhostへcloneします
+cli-add-repository-help = 追加するrepositoryのGitHub SSHまたはHTTPS clone URL
+cli-add-worktrees-help = Sandboxに用意するmanaged worktreeの目標本数 (1〜32)
+cli-add-detach-help = 全managed worktreeをdetachedで開始する起点のremote branch
+cli-add-git-user-name-help = この案件のGit commitに使う名前。--git-user-emailと同時指定します
+cli-add-git-user-email-help = この案件のGit commitに使うemail。--git-user-nameと同時指定します
 
-cli-apply-about = 構築済み案件へ、Sandboxを作り直さずに反映できる変更を適用します
-cli-apply-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
-cli-apply-files-help = global設定で宣言したfileを、既存の内容を上書きして再配置します
-cli-apply-worktrees-help = この案件が持つmanaged worktreeの本数 (1〜32)
+cli-apply-about = Sandboxを再構築せず、宣言fileの再配置またはmanaged worktreeの追加を適用します
+cli-apply-project-help = 適用先案件のowner/repository形式の登録ID
+cli-apply-files-help = global設定で宣言したfileを再配置し、配置先を上書きします
+cli-apply-worktrees-help = 追加後のmanaged worktree総数 (1〜32、現在より減らせません)
 
-cli-prepare-about = 登録済み案件のSandboxを構築し、作業できる状態にします
-cli-prepare-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
+cli-prepare-about = 登録済み案件のSandboxを構築し、作業できる状態に準備します
+cli-prepare-project-help = 準備する案件のowner/repository形式の登録ID
 
-cli-rebuild-about = 編集したDockerfileをSandbox再作成によって適用します
-cli-rebuild-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
+cli-rebuild-about = 編集したDockerfileから案件のSandboxを再構築します
+cli-rebuild-project-help = 再構築する案件のowner/repository形式の登録ID
 
-cli-open-about = 必要ならSandboxを起動し、SSHで接続します
-cli-open-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
+cli-open-about = 案件のSandboxへのSSH接続を開き、必要なら先に起動します
+cli-open-project-help = SSH接続する案件のowner/repository形式の登録ID
 
-cli-stop-about = 起動中のSandboxを停止します
-cli-stop-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
+cli-stop-about = 1件以上の案件のSandboxを、削除せず停止します
+cli-stop-project-help = 停止する案件のowner/repository形式の登録ID（複数指定可）
 
-cli-ls-about = 管理案件とSandboxの状態を一覧します
+cli-ls-about = 管理案件と管理外Sandboxを、その状態とともに一覧します
 
-cli-status-about = host環境または1案件をread-onlyで診断します
-cli-status-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
-cli-status-global-help = 案件ではなくhostとglobal環境を診断します
+cli-status-about = host環境または1案件の状態を、変更せずに診断します
+cli-status-project-help = 状態を診断する案件のowner/repository形式の登録ID
+cli-status-global-help = 案件ではなくhost環境の状態を診断します
 
-cli-destroy-about = 対象案件のSandboxとsbxmの管理情報を破棄します
-cli-destroy-project-help = 対象案件を、登録されているowner/repository形式のIDで指定します
-cli-destroy-force-help = データ保護検査とactive session検査を省略して削除します
+cli-destroy-about = Sandboxを破棄して案件を管理対象から外し、host cloneとDockerfileは残します
+cli-destroy-project-help = sbxmの管理対象から外す案件のowner/repository形式の登録ID
+cli-destroy-force-help = データ保護・active session検査と確認promptを省略します。案件IDの指定が必要です
 
 error-invalid-arguments = 引数を解釈できませんでした。
 error-unknown-argument = 未知の引数です: { $argument }

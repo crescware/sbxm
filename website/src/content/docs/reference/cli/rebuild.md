@@ -1,6 +1,6 @@
 ---
 title: '`sbxm rebuild`'
-description: Recreate a sandbox from the project’s edited Dockerfile.
+description: Rebuild a project’s sandbox from its edited Dockerfile.
 ---
 
 ```text

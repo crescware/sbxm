@@ -238,7 +238,8 @@ secretは削除されます。登録が残ると、同じプロジェクトに�
 プロジェクトのDockerfile、build済みimage、load済みtemplate、それ以外を対象に登録した
 secretは残るため、tokenを再登録すればあとからプロジェクトを再登録できます。
 
-データ保護とactive sessionの検査を意図的に省略する必要がある場合は、次を実行します。
+データ保護とactive sessionの検査、および確認promptを意図的に省略する必要がある場合は、
+次を実行します。
 
 ```sh
 sbxm destroy --force <project-id>
@@ -265,16 +266,16 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 
 | コマンド | 用途 |
 |---|---|
-| `sbxm add <github-clone-url>` | GitHubプロジェクトを登録し、ホスト側の成果物を作成する |
-| `sbxm prepare <project-id>` | プロジェクトのSandboxをbuildして構築する |
-| `sbxm open [<project-id>]` | 必要に応じてSandboxを起動し、SSHで接続する |
-| `sbxm stop [<project-id> ...]` | 1つ以上のSandboxを停止する |
-| `sbxm ls` | 管理対象のプロジェクトとSandboxの状態を一覧表示する |
-| `sbxm status --global` | ホストとDocker Sandboxes環境を診断する |
-| `sbxm status <project-id>` | 変更を加えずにプロジェクトを診断する |
+| `sbxm add <github-clone-url>` | GitHub repositoryをsbxmへ追加し、このhostへcloneする |
+| `sbxm prepare <project-id>` | 登録済み案件のSandboxを構築し、作業できる状態に準備する |
+| `sbxm open [<project-id>]` | SandboxへのSSH接続を開き、必要なら先に起動する |
+| `sbxm stop [<project-id> ...]` | 1件以上の案件のSandboxを、削除せず停止する |
+| `sbxm ls` | 管理案件と管理外Sandboxを、その状態とともに一覧する |
+| `sbxm status --global` | hostとDocker Sandboxes環境の状態を変更せずに診断する |
+| `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
 | `sbxm apply <project-id> ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
-| `sbxm rebuild <project-id>` | 編集したDockerfileからSandboxを作り直す |
-| `sbxm destroy [<project-id>]` | Sandboxを削除し、プロジェクトの管理を終了する |
+| `sbxm rebuild <project-id>` | 編集したDockerfileから案件のSandboxを再構築する |
+| `sbxm destroy [<project-id>]` | Sandboxを破棄して案件を管理対象から外し、host cloneとDockerfileは残す |
 
 完全なCLI referenceは、`sbxm --help`または`sbxm <command> --help`で確認できます。
 

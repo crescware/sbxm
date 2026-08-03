@@ -12,6 +12,6 @@ At least one scope is required.
 | Option | Meaning |
 | --- | --- |
 | `--files` | Re-place files declared in the global configuration, overwriting destinations |
-| `--worktrees`, `-t` `N` | Set the project’s managed worktree count, from 1–32 |
+| `--worktrees`, `-t` `N` | Set the desired managed worktree count to 1–32 without lowering it |
 
 The worktree count can increase but not decrease. Removing a worktree is not performed as a side effect because its contents may need preservation.

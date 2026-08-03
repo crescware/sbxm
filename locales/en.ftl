@@ -1,6 +1,6 @@
 locale-name = English
 
-cli-about = Manage Docker Sandboxes per project: set up, connect, inspect and tear down.
+cli-about = Manage per-project Docker Sandboxes from registration through teardown.
 cli-heading-usage = Usage:
 cli-heading-commands = Commands:
 cli-heading-options = Options:
@@ -10,39 +10,39 @@ cli-help-help = Print help
 cli-version-help = Print version
 
 
-cli-add-about = Register a GitHub repository and clone it onto this host
-cli-add-repository-help = GitHub clone URL of the repository to register
-cli-add-worktrees-help = Number of managed worktrees to create (1-32)
-cli-add-detach-help = Remote branch every managed worktree starts from, in detached mode
-cli-add-git-user-name-help = Name this project's commits are made under; give it together with --git-user-email
-cli-add-git-user-email-help = Email address this project's commits are made under; give it together with --git-user-name
+cli-add-about = Add a GitHub repository to sbxm and clone it onto this host
+cli-add-repository-help = GitHub SSH or HTTPS clone URL of the repository to add
+cli-add-worktrees-help = Target number of managed worktrees for the sandbox (1-32)
+cli-add-detach-help = Remote branch to use as the detached start point for every managed worktree
+cli-add-git-user-name-help = Git user name for this project's commits; requires --git-user-email
+cli-add-git-user-email-help = Git user email for this project's commits; requires --git-user-name
 
-cli-apply-about = Apply a change to a built project without rebuilding its sandbox
-cli-apply-project-help = Target project, by the owner/repository ID it is registered under
-cli-apply-files-help = Re-place the files declared in the global configuration, overwriting what is there
-cli-apply-worktrees-help = Number of managed worktrees the project should have (1-32)
+cli-apply-about = Apply declared files or add managed worktrees without rebuilding the sandbox
+cli-apply-project-help = Registered owner/repository ID of the project to update
+cli-apply-files-help = Place the globally declared files again, overwriting their destinations
+cli-apply-worktrees-help = Desired number of managed worktrees (1-32; cannot be lower than the current count)
 
-cli-prepare-about = Build the sandbox of a registered project and make it ready to work in
-cli-prepare-project-help = Target project, by the owner/repository ID it is registered under
+cli-prepare-about = Prepare a registered project for work by building and provisioning its sandbox
+cli-prepare-project-help = Registered owner/repository ID of the project to prepare
 
-cli-rebuild-about = Apply the edited Dockerfile by recreating the sandbox
-cli-rebuild-project-help = Target project, by the owner/repository ID it is registered under
+cli-rebuild-about = Rebuild a project's sandbox from its edited Dockerfile
+cli-rebuild-project-help = Registered owner/repository ID of the project to rebuild
 
-cli-open-about = Start the sandbox if needed and connect to it over SSH
-cli-open-project-help = Target project, by the owner/repository ID it is registered under
+cli-open-about = Open an SSH session to a project's sandbox, starting the sandbox if needed
+cli-open-project-help = Registered owner/repository ID of the project to open
 
-cli-stop-about = Stop running sandboxes
-cli-stop-project-help = Target projects, by the owner/repository IDs they are registered under
+cli-stop-about = Stop one or more project sandboxes without deleting them
+cli-stop-project-help = Registered owner/repository IDs of the projects to stop
 
-cli-ls-about = List managed projects and their sandbox state
+cli-ls-about = List managed projects and unmanaged sandboxes with their states
 
-cli-status-about = Diagnose the host environment or a single project, read-only
-cli-status-project-help = Target project, by the owner/repository ID it is registered under
-cli-status-global-help = Diagnose the host and global environment instead of a project
+cli-status-about = Show status for the host environment or one project without making changes
+cli-status-project-help = Registered owner/repository ID of the project to inspect
+cli-status-global-help = Show status for the host environment instead of a project
 
-cli-destroy-about = Delete the sandbox and drop sbxm management data for a project
-cli-destroy-project-help = Target project, by the owner/repository ID it is registered under
-cli-destroy-force-help = Skip data-protection and active-session checks, then delete
+cli-destroy-about = Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile
+cli-destroy-project-help = Registered owner/repository ID of the project to remove from sbxm
+cli-destroy-force-help = Skip data-protection and active-session checks and the confirmation prompt; requires a project ID
 
 error-invalid-arguments = The arguments could not be interpreted.
 error-unknown-argument = Unknown argument: { $argument }
