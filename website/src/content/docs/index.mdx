@@ -1,0 +1,79 @@
+---
+title: sbxm
+description: A Docker Sandbox and predictable Git worktrees for every GitHub project.
+template: splash
+hero:
+  title: A Docker Sandbox for every GitHub project.
+  tagline: sbxm prepares an isolated Docker Sandbox, a host clone, and predictable Git worktrees so each project has a guarded place to work.
+  actions:
+    - text: Get started
+      link: ./getting-started/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/crescware/sbxm
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<div class="mx-auto mt-10 max-w-5xl">
+	<div class="grid gap-5 md:grid-cols-2">
+		<div class="rounded-2xl border border-gray-200 bg-gray-50 p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+			<p class="mb-2 font-mono text-sm font-semibold uppercase tracking-widest text-accent-700 dark:text-accent-300">Install</p>
+			<pre class="m-0 overflow-x-auto rounded-lg bg-gray-950 p-4 text-sm text-cyan-100"><code>brew install crescware/tap/sbxm</code></pre>
+		</div>
+		<div class="rounded-2xl border border-gray-200 bg-gray-50 p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+			<p class="mb-2 font-mono text-sm font-semibold uppercase tracking-widest text-accent-700 dark:text-accent-300">Start</p>
+			<pre class="m-0 overflow-x-auto rounded-lg bg-gray-950 p-4 text-sm text-cyan-100"><code>sbxm status --global
+sbxm add git@github.com:&lt;owner&gt;/&lt;repository&gt;.git</code></pre>
+		</div>
+	</div>
+</div>
+
+## A guarded project workflow
+
+<CardGrid stagger>
+	<Card title="One project, one sandbox" icon="rocket">
+		sbxm gives every registered GitHub project its own Docker Sandbox and keeps the host clone and project metadata together.
+	</Card>
+	<Card title="Predictable worktrees" icon="open-book">
+		Use an attached worktree or create up to 32 detached worktrees for independent agents and tasks.
+	</Card>
+	<Card title="Credentials stay outside" icon="lock-closed">
+		GitHub credentials use Docker Sandboxes’ secret proxy. The real token is not copied into the sandbox.
+	</Card>
+	<Card title="A guarded lifecycle" icon="setting">
+		Register, prepare, open, inspect, rebuild, stop, and destroy projects with explicit safety checks.
+	</Card>
+</CardGrid>
+
+## What sbxm keeps separate
+
+<div class="my-8 grid gap-4 rounded-2xl border border-accent-200 bg-accent-50 p-6 text-sm dark:border-accent-800 dark:bg-accent-950/30 md:grid-cols-3">
+	<div>
+		<strong class="block text-accent-800 dark:text-accent-200">Host</strong>
+		<span>Clone, Dockerfile, metadata, and registry remain on the host.</span>
+	</div>
+	<div>
+		<strong class="block text-accent-800 dark:text-accent-200">Sandbox</strong>
+		<span>Repository setup and managed worktrees live inside the Docker Sandbox.</span>
+	</div>
+	<div>
+		<strong class="block text-accent-800 dark:text-accent-200">Proxy</strong>
+		<span>The secret proxy supplies GitHub credentials only to registered hosts.</span>
+	</div>
+</div>
+
+## Built for the supported host
+
+sbxm currently targets macOS 14 or later on Apple silicon with Docker Desktop, Docker Sandboxes CLI 0.37.0 or later, Git, SSH, and a repository-scoped GitHub personal access token.
+
+<div class="mt-6 grid gap-4 sm:grid-cols-2">
+	<LinkCard title="Read the requirements" href="./getting-started/requirements/" description="Confirm the host, Docker, Git, SSH, and GitHub prerequisites." />
+	<LinkCard title="Follow the quick start" href="./getting-started/quickstart/" description="Register a project, set its credential, prepare it, and open the sandbox." />
+</div>
+
+## Keep the source close
+
+sbxm is open source under the MIT License. Read the [README on GitHub](https://github.com/crescware/sbxm), browse the [source](https://github.com/crescware/sbxm), or see the [latest releases](https://github.com/crescware/sbxm/releases).

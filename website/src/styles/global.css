@@ -1,0 +1,48 @@
+@layer base, starlight, theme, components, utilities;
+
+@import '@astrojs/starlight-tailwind';
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@theme {
+	--font-sans: ui-sans-serif, system-ui, sans-serif;
+	--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+	--color-accent-50: var(--color-cyan-50);
+	--color-accent-100: var(--color-cyan-100);
+	--color-accent-200: var(--color-cyan-200);
+	--color-accent-300: var(--color-cyan-300);
+	--color-accent-400: var(--color-cyan-400);
+	--color-accent-500: var(--color-cyan-500);
+	--color-accent-600: var(--color-cyan-600);
+	--color-accent-700: var(--color-cyan-700);
+	--color-accent-800: var(--color-cyan-800);
+	--color-accent-900: var(--color-cyan-900);
+	--color-accent-950: var(--color-cyan-950);
+
+	--color-gray-50: var(--color-zinc-50);
+	--color-gray-100: var(--color-zinc-100);
+	--color-gray-200: var(--color-zinc-200);
+	--color-gray-300: var(--color-zinc-300);
+	--color-gray-400: var(--color-zinc-400);
+	--color-gray-500: var(--color-zinc-500);
+	--color-gray-600: var(--color-zinc-600);
+	--color-gray-700: var(--color-zinc-700);
+	--color-gray-800: var(--color-zinc-800);
+	--color-gray-900: var(--color-zinc-900);
+	--color-gray-950: var(--color-zinc-950);
+}
+
+:root {
+	--sl-content-width: 52rem;
+}
+
+@layer components {
+	.sbxm-flow {
+		@apply grid gap-3 border-l-2 border-accent-400 pl-5;
+	}
+
+	.sbxm-flow > strong {
+		@apply text-accent-700 dark:text-accent-300;
+	}
+}

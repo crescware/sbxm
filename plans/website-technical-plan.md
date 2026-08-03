@@ -3,7 +3,7 @@
 ## 目的
 
 この文書は、`website-requirements.md`と`website-information-architecture.md`をAstro Starlightで
-実現するためのrepository構成、build、test、deployment、段階的な実装順を定める。これは実装
+実現するためのrepository構成、build、deployment、段階的な実装順を定める。これは実装
 指示書であり、この文書の作成時点では`website/`やworkflowを作らない。
 
 ## Architecture
@@ -21,10 +21,10 @@
 websiteはRust crateと同じrepositoryに置くが、独立したNode packageとする。
 
 - package manifestとlockfileは`website/`が持つ
-- dependency install、dev server、type check、build、previewは`website/`をworking directoryにする
+- dependency install、dev server、build、previewは`website/`をworking directoryにする
 - root Rust workspaceへNode-specific設定を混ぜない
 - generated `website/dist/`、`.astro/`、Pagefind artifact、dependency directoryはcommitしない
-- package managerはpnpmとし、`packageManager` fieldとCorepackでversionを固定する
+- package managerはpnpmとし、`packageManager` fieldと`website/mise.toml`でversionを固定する
 - Node.jsはAstroのcurrent requirementを満たす24 LTSを`website/mise.toml`で固定する
 
 ## 想定directory構成
@@ -40,11 +40,7 @@ website/
 ├── public/
 │   ├── favicon.svg
 │   ├── robots.txt
-│   └── social-card.png
-├── scripts/
-│   ├── check-cli-reference.mjs
-│   ├── check-routes.mjs
-│   └── check-source-values.mjs
+│   └── social-card.svg
 └── src/
     ├── assets/
     │   └── brand/
@@ -85,8 +81,6 @@ Astro/Starlight標準の構成が上記と変わった場合、初回実装時�
 ### 条件付き
 
 - `@astrojs/sitemap`: Starlight/Astroのcurrent templateでsitemapが自動提供されない場合
-- link checker: build artifactをlocalに検査できる小さなtool
-- accessibility checker: static HTMLまたはpreviewへCIから実行できるtool
 
 ### 初回に追加しないもの
 
@@ -200,10 +194,9 @@ frameworkやclient hydrationを追加しない。追加のUI technologyは必要
 ### Reuseとduplication
 
 利用者が読むworkflowをbuild時にrepository rootのREADMEからincludeしない。includeは編集contextを
-分断し、translation対応とlink解決を複雑にするためである。website contentはsite上の文脈で書き、
-CIでmachine-readableな事実だけをsourceと照合する。
+分断し、translation対応とlink解決を複雑にするためである。website contentはsite上の文脈で書く。
 
-次は重複を許容するが検査対象にする。
+次の短い事実は、contentを編集する際にsourceと照合して一貫した表記にする。
 
 - subcommand名とoption
 - macOS minimum
@@ -211,76 +204,21 @@ CIでmachine-readableな事実だけをsourceと照合する。
 - worktree range
 - package install command
 
-長いbehavior説明は自動比較せず、code reviewでsource/testと照合する。
-
-## Repository整合検査
-
-### CLI reference inventory
-
-`check-cli-reference.mjs`は`../tests/snapshots/cli-surface.txt`を読み、次を検査する。
-
-- rootに現れる全subcommandのpageがある
-- reference indexに全subcommandへのlinkがある
-- documented synopsisにrequired/optional、short option、value nameが反映される
-- documentだけに存在する未知のcommand/optionがない
-
-全文をsnapshotから生成しない。説明、example、safety noteはhuman-authored contentとしてreviewする。
-
-### Source values
-
-`check-source-values.mjs`はproduction sourceから最低要件を読み、requirements pageで使うstructured
-dataと一致することを検査する。Rust sourceを脆い正規表現で全面parseせず、対象を小さな定数に
-限定する。より安定したinterfaceが必要なら、将来Rust側にread-onlyなmetadata exportを別計画で
-追加する。
-
-### Routes
-
-`check-routes.mjs`はこの計画のexpected route listをdataとして保持し、build artifactにpageが
-存在することを検査する。English route listをsnapshot化し、Japanese locale追加によって
-`/en/`へ移動するregressionを防ぐ。
+長いbehavior説明は自動生成せず、siteの文脈に合わせたhuman-authored contentとして管理する。
 
 ## Local command contract
 
-package scriptは少なくとも次を提供する。実際のpackage managerをprefixに付けても意味は同じにする。
+ホームページを開発・公開するための最小限のpackage scriptだけを提供する。実際のpackage managerを
+prefixに付けても意味は同じにする。
 
 | Script | 役割 |
 | --- | --- |
 | `dev` | local development server |
-| `check` | Astro type/content schema checkとrepository整合検査 |
 | `build` | production static buildとPagefind index生成 |
 | `preview` | production artifactのlocal preview |
-| `test:links` | internal link、anchor、asset reference検査 |
-| `test:a11y` | representative routeのautomated accessibility検査 |
-| `test` | check、build、link、accessibilityをまとめて実行 |
 
-`website/README.md`にはfresh cloneからinstall、dev、test、buildまでを記載する。rootの
+`website/README.md`にはfresh cloneからinstall、dev、build、previewまでを記載する。rootの
 `docs/development.md`へNode toolchainを混ぜ込む変更はwebsite実装と別にreviewできるようにする。
-
-## CI計画
-
-### Pull request check
-
-website関連file、CLI snapshot、documented constant、READMEが変わるpull requestで次を実行する。
-
-1. pinned Node runtimeとpackage managerを用意する
-2. frozen lockfileでdependencyをinstallする
-3. `check`
-4. `build`
-5. internal link/anchor検査
-6. representative pageのaccessibility smoke test
-7. build artifact内のsecret patternとabsolute workspace pathを検査する
-
-Rustの既存`mise run check`は変更せず、website checkと独立jobにする。一方が失敗しても、どの
-domainのfailureか分かるjob名にする。
-
-### External link
-
-external link検査はnetworkへ依存するため、PRのdeterministic buildとは分離する。
-
-- scheduledまたはmanual jobで実行する
-- rate limit、DNS failure、timeoutとHTTP 404/410を区別する
-- transient failure一回でcontentを自動変更しない
-- failure reportにsource pageとlinkを示す
 
 ## Deployment計画
 
@@ -303,7 +241,7 @@ workflow要件は次のとおり。
 - actionへwebsite root pathを明示する
 - build jobはread-only contents permissionを使う
 - deploy jobだけがPagesとOIDCのpermissionを持つ
-- pull requestではdeployせずbuild/testだけ行う
+- pull requestではdeployせずbuildだけ行う
 - GitHub Pages environment protectionがあれば尊重する
 - concurrent deploymentは新しいmain buildを優先し、途中artifactを公開しない
 
@@ -325,24 +263,9 @@ historyを取得するか、表示を無効にする。誤った日付を表示�
 - Astro `site`決定後にsitemapを生成する
 - default social cardはlocal asset一枚とし、textを詰め込みすぎない
 - page固有social card生成は初回scope外
-- canonicalとalternate locale linkはStarlight/Astroの生成結果をbuilt HTMLでtestする
+- canonicalとalternate locale linkはStarlight/Astroの生成結果を公開前に確認する
 - production robotsはindex許可、previewはindex拒否とする
 - 404 pageはStarlight標準をbrandに合わせ、searchとgetting startedへのlinkを持たせる
-
-## Verification matrix
-
-| Category | Representative routes | 検証内容 |
-| --- | --- | --- |
-| Landing | `/` | hero CTA、requirements概要、mobile、social metadata |
-| Tutorial | `/getting-started/quickstart/` | steps、code copy、credential warning、next link |
-| Guide | `/guides/worktrees/` | table/code/aside、search result |
-| Reference | `/reference/cli/destroy/` | synopsis、delete/keep matrix、danger content |
-| Troubleshooting | `/troubleshooting/host/` | decision flow、cross-links |
-| Error | unknown route | 404、search、home link |
-| Future locale fixture | test-only Japanese page | `/ja/` routing、`lang`、alternate link、English URL維持 |
-
-future locale fixtureはproduction contentとして公開せず、test fixtureまたは一時build configurationで
-多言語化可能性を検証する。空のJapanese siteを公開して要件を満たしたことにしない。
 
 ## 実装phase
 
@@ -353,10 +276,10 @@ future locale fixtureはproduction contentとして公開せず、test fixture�
 - Tailwind CSS v4、Vite plugin、Starlight compatibility layerとtheme tokenを設定する
 - root English localeを明示する
 - sidebar、content schema、base URL strategyを設定する
-- check/build/test scriptの骨格を作る
+- dev/build/preview scriptを用意する
 - default Starlight pageを削除する
 
-完了条件: placeholder一枚ではなく、空の正規route構造がcheck/buildできる。
+完了条件: placeholder一枚ではなく、正規route構造がproduction buildできる。
 
 ### Phase 2: Core journey
 
@@ -374,9 +297,8 @@ future locale fixtureはproduction contentとして公開せず、test fixture�
 - 残りguide
 - 全9 command page
 - global option、configuration、filesystem、output reference
-- repository整合script
 
-完了条件: CLI inventory testが通り、READMEの利用者向け情報がsiteで欠落しない。
+完了条件: CLI referenceが揃い、READMEの利用者向け情報がsiteで欠落しない。
 
 ### Phase 4: Troubleshooting and project docs
 
@@ -388,11 +310,8 @@ future locale fixtureはproduction contentとして公開せず、test fixture�
 
 完了条件: major error categoryから安全な次の観測行動へ辿れる。
 
-### Phase 5: Quality and release
+### Phase 5: Handoff and release
 
-- responsive、keyboard、screen reader smoke review
-- light/dark contrast
-- link、route、metadata、Pagefind、404、secret scan
 - production originを確定する
 - deployment workflowをowner承認のscopeで追加する
 - root READMEをwebsiteへの入口へ短縮する別変更を準備する
@@ -411,20 +330,17 @@ future locale fixtureはproduction contentとして公開せず、test fixture�
 
 | Risk | 対策 |
 | --- | --- |
-| README、CLI、websiteがdriftする | machine-readableなCLI/value検査とcontent owner reviewを置く |
 | Japanese追加でEnglish URLが`/en/`へ移る | 初回からroot localeを明示しroute snapshotを持つ |
 | custom designでStarlight updateが困難になる | component overrideを最小化しCSS token中心にする |
 | GitHub Pages subpathでassetが壊れる | base-aware linkとproject-page preview testを使う |
 | `lastUpdated`がshallow cloneで誤る | full historyを取得するか表示を無効化する |
-| external link failureでPRが不安定になる | scheduled checkへ分離しfailure typeを区別する |
-| exampleへcredentialが混入する | placeholder policy、secret scan、human reviewを組み合わせる |
-| Pagefindがdevでは動かず見逃す | production buildとpreviewをacceptance testにする |
+| exampleへcredentialが混入する | placeholderを使い、content reviewで確認する |
 
 ## 実装開始前の確認gate
 
 次を確認したらPhase 1を開始できる。
 
-- この3つのplan documentがpage scopeとEnglish-first/Japanese-ready方針を正しく表している
+- 要件、情報設計、技術計画の3つのsite planがpage scopeとEnglish-first/Japanese-ready方針を正しく表している
 
 production originはPhase 5まで保留できる。custom domainの未決定をlocal content実装のblockerにしない。
 
