@@ -34,4 +34,4 @@ sbxm apply <project-id> --files --worktrees 4
 
 ## Keep credentials out
 
-Do not put tokens, private keys, or other credentials in declared files. Use Docker Sandboxes custom secrets so the real credential stays outside the sandbox. See [Create your first sandbox](/getting-started/quickstart/) for the GitHub token flow.
+Do not put tokens, private keys, or other credentials in declared files. Use Docker Sandboxes custom secrets so the real credential stays outside the sandbox. See [Create your first sandbox](../../getting-started/quickstart/) for the GitHub token flow.

@@ -11,4 +11,4 @@ Normal destroy checks dirty worktrees, unpushed commits, active sessions, and ow
 
 `--force`, or `-f`, skips data-protection and active-session checks. It does not make data recoverable. Use it only when you have independently confirmed that the sandbox contains nothing to preserve.
 
-See [Tear down safely](/guides/teardown/) for the deletion and retention matrix.
+See [Tear down safely](../../../guides/teardown/) for the deletion and retention matrix.

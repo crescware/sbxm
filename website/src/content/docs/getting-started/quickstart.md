@@ -82,4 +82,4 @@ Managed worktrees are located at paths like:
 
 ## More control
 
-Use [managed worktrees](/guides/worktrees/) for independent tasks, [customize the sandbox image](/guides/custom-image/) when the generated Dockerfile needs tools, and [tear down safely](/guides/teardown/) when a project is no longer managed.
+Use [managed worktrees](../../guides/worktrees/) for independent tasks, [customize the sandbox image](../../guides/custom-image/) when the generated Dockerfile needs tools, and [tear down safely](../../guides/teardown/) when a project is no longer managed.

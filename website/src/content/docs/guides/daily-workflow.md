@@ -47,4 +47,4 @@ sbxm apply <project-id> --worktrees 4
 sbxm apply <project-id> --files
 ```
 
-See [managed worktrees](./worktrees/) and [configuration files](./configuration-files/) for their safety rules.
+See [managed worktrees](../worktrees/) and [configuration files](../configuration-files/) for their safety rules.

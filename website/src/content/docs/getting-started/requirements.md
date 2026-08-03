@@ -25,7 +25,7 @@ The global status command is read-only. It reports missing commands, an unavaila
 
 For a fine-grained token, grant **Contents: read and write** and **Metadata: read** for the repository. A classic token needs the `repo` scope.
 
-The token is registered with Docker Sandboxes’ secret proxy. It is not copied into the sandbox or written into a project configuration file. See [Create your first sandbox](./quickstart/) for the registration command.
+The token is registered with Docker Sandboxes’ secret proxy. It is not copied into the sandbox or written into a project configuration file. See [Create your first sandbox](../quickstart/) for the registration command.
 
 ## Platform scope
 
