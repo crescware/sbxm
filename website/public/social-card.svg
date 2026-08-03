@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">sbxm</title>
+  <desc id="desc">A Docker Sandbox and predictable Git worktrees for every GitHub project.</desc>
+  <rect width="1200" height="630" fill="#082f49"/>
+  <path d="M0 520h1200" stroke="#155e75" stroke-width="2"/>
+  <text x="90" y="235" fill="#67e8f9" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="96" font-weight="700">sbxm</text>
+  <text x="94" y="330" fill="#f0f9ff" font-family="ui-sans-serif, system-ui, sans-serif" font-size="42">A Docker Sandbox for every GitHub project.</text>
+  <text x="94" y="420" fill="#bae6fd" font-family="ui-sans-serif, system-ui, sans-serif" font-size="28">Predictable Git worktrees. Guarded credentials.</text>
+</svg>

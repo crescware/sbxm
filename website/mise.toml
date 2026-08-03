@@ -1,0 +1,5 @@
+# Website toolchain. The Rust CLI keeps its own toolchain in the repository-root
+# mise.toml; this file keeps the Node toolchain local to the Astro project.
+[tools]
+node = "24"
+pnpm = "10"
