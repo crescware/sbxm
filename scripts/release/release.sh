@@ -110,9 +110,16 @@ check_clean_worktree() {
 
 # tagが指すcommitをremoteから読む。annotated tagは`refs/tags/x`がtag objectを、
 # `refs/tags/x^{}`がcommitを指すため、peeled行があればそちらを採る。
+# 「tagが無い」と「remoteへ到達できない」を区別する。同じ扱いにすると、networkが
+# 切れているだけの状態を「衝突なし」と読み、pushできないtreeを通してしまう。
+#   0 — tagがある。commitをstdoutへ出す
+#   1 — remoteは見えたが、tagは無い
+#   2 — remoteへ到達できない
 remote_tag_commit() {
   local tag="$1" output
-  output="$(git ls-remote --tags "$REMOTE" "refs/tags/${tag}" "refs/tags/${tag}^{}")"
+  if ! output="$(git ls-remote --tags "$REMOTE" "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>/dev/null)"; then
+    return 2
+  fi
   [ -n "$output" ] || return 1
   printf '%s\n' "$output" | awk '
     $2 ~ /\^\{\}$/ { peeled = $1; next }
@@ -139,14 +146,24 @@ check_tag_available() {
   fi
 
   log "checking tag ${tag} on ${REMOTE}"
-  local remote_commit
-  if remote_commit="$(remote_tag_commit "$tag")"; then
-    if [ "$remote_commit" != "$head_commit" ]; then
-      record_blocker "tag ${tag} on ${REMOTE} points at ${remote_commit}, not HEAD (${head_commit}); releasing would need a different tag"
-    else
-      log "tag ${tag} is already on ${REMOTE} at HEAD; it will be reused"
-    fi
-  fi
+  local remote_commit=""
+  local status=0
+  remote_commit="$(remote_tag_commit "$tag")" || status=$?
+  case "$status" in
+    0)
+      if [ "$remote_commit" != "$head_commit" ]; then
+        record_blocker "tag ${tag} on ${REMOTE} points at ${remote_commit}, not HEAD (${head_commit}); releasing would need a different tag"
+      else
+        log "tag ${tag} is already on ${REMOTE} at HEAD; it will be reused"
+      fi
+      ;;
+    1)
+      # remoteにtagが無い。これから打つのだから、これが通常の状態とする。
+      ;;
+    *)
+      record_blocker "cannot reach ${REMOTE}; the tag could not be checked and could not be pushed"
+      ;;
+  esac
   return 0
 }
 
@@ -245,6 +262,14 @@ check_rustc_host_is_apple_silicon() {
   host="$(rustc -vV | sed -n 's/^host: //p')"
   [ "$host" = "$TARGET_TRIPLE" ] \
     || fail "rustc's host is not ${TARGET_TRIPLE} (host: ${host})"
+}
+
+# dist/には今回の実行の成果物だけを置く。前回の生成物が残っていると、失敗した実行の
+# 後にdist/を覗いた人が、古いversionのarchiveとnotesを今回のものと読む。
+reset_dist() {
+  [ -e "$DIST_DIR" ] || return 0
+  log "clearing ${DIST_DIR}/"
+  rm -rf "$DIST_DIR"
 }
 
 build_release_binary() {
@@ -511,6 +536,10 @@ main() {
   trap 'rm -rf "$WORK_DIR"' EXIT
 
   [ "$DRY_RUN" -eq 1 ] && log "dry run: nothing will be tagged, pushed, or published"
+
+  # 検査より前に消す。どこで落ちても、dist/には今回の実行が作ったものしか無い状態に
+  # する。途中で落ちた実行の後に前回の生成物が残っていると、それを今回のものと読む。
+  reset_dist
 
   local version="${tag#v}"
   [ "$version" != "$tag" ] || fail "tag must start with v (e.g. v0.0.1): ${tag}"

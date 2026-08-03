@@ -98,12 +98,17 @@ the build itself succeeded; only these preconditions are unmet.
 ```
 
 前提条件が1つでも欠けていればexit codeは非0になる。それぞれに解消するcommandを添える。
-まとめて報告する対象は次の4つとする。
+まとめて報告する対象は次の5つとする。
 
 - working treeがcleanであること
 - tagがHEAD以外を指していないこと (localとorigin)
+- originへ到達できること
 - ghが認証済みであること
 - 同名のGitHub Releaseが無いこと
+
+originへ到達できないことを、tagが無いことと同じには扱わない。同じ扱いにすると、networkが
+切れているだけの状態を「衝突は無い」と読み、pushできないtreeに対してdry runが「本番も通る」
+と答えてしまう。
 
 生成物が正しいかどうかを決める検査は、dry runでも本番と同じく即座に落とす。`Cargo.toml`と
 tagのversion一致、build-affecting env varの不在、host architecture、`rustc`のhost triple、
@@ -114,6 +119,9 @@ tagのversion一致、build-affecting env varの不在、host architecture、`ru
 
 `dist/`へ置く。repository直下へ置くと、次回実行のclean tree検査が前回の生成物を誤検知する。
 `dist/`は`.gitignore`の対象とする。
+
+実行の冒頭で`dist/`を消す。どこで落ちても、`dist/`には今回の実行が作ったものしか無い状態を
+保つ。途中で落ちた実行の後に前回の生成物が残っていると、それを今回のものと読んでしまう。
 
 - `dist/sbxm-aarch64-apple-darwin.tar.gz` — release asset。直下に`sbxm`だけを含む
 - `dist/release-notes.md` — Releaseの本文。checksumとbuild provenanceを書く
