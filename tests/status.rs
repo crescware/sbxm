@@ -6,8 +6,10 @@
 //! `PATH`を空にしたまま実行できる。
 
 mod outcome;
+mod temp_home;
 
 use outcome::{Checked, Required};
+use temp_home::temp_home;
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -43,10 +45,6 @@ fn sbxm(home: &Path, arguments: &[&str]) -> Checked<Run> {
             .code()
             .required_because("the process exits normally")?,
     })
-}
-
-fn temp_home() -> Checked<tempfile::TempDir> {
-    tempfile::tempdir().required_because("temporary home")
 }
 
 /// `~/.sbxm/config.yaml`を、指定したmodeで書く。
