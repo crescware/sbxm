@@ -15,6 +15,10 @@ export default defineConfig({
 		starlight({
 			title: 'sbxm',
 			description: 'A Docker Sandbox and predictable Git worktrees for every GitHub project.',
+			logo: {
+				src: './src/assets/sbxm-logo-color.svg',
+				alt: 'sbxm',
+			},
 			locales: {
 				root: { label: 'English', lang: 'en' },
 			},
