@@ -25,6 +25,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use rustix::fs::{Mode, OFlags, fcntl_getfl, fcntl_setfl};
+use rustix::io::{FdFlags, fcntl_setfd};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{OptionalActions, Winsize, tcgetattr, tcsetattr, tcsetwinsize};
 
@@ -51,11 +52,17 @@ struct Pty {
 
 /// PTYを1つ開く。
 ///
-/// 両端をCLOEXECで開く。testは並行に走り、閉じたはずの端末を別のtestの子processが
+/// 両端をCLOEXECにする。testは並行に走り、閉じたはずの端末を別のtestの子processが
 /// 受け継いでいると、端末は閉じたことにならない。
+///
+/// 親側はopenptの引数では指定しない。`posix_openpt`はCLOEXECを受け取らず、rustixが
+/// 引数として通すのはLinuxとFreeBSDとNetBSDだけである。macOSにその値は存在しない。
+/// 開いてからfcntlで立てれば、どのplatformでも同じ結果になる。
 fn open_pty() -> Checked<Pty> {
-    let controller = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC)
+    let controller = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)
         .required_because("a pseudo terminal is available")?;
+    fcntl_setfd(&controller, FdFlags::CLOEXEC)
+        .required_because("the controller is not inherited")?;
     grantpt(&controller).required_because("the terminal side is usable")?;
     unlockpt(&controller).required_because("the terminal side is unlocked")?;
     let name = ptsname(&controller, Vec::new()).required_because("the terminal has a name")?;
