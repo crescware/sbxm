@@ -23,10 +23,6 @@ English: [README.md](../README.md)
 
 ## インストール
 
-> [!WARNING]
-> インストール手段はまだ提供していません。この節は、予定しているHomebrewでの
-> インストール方法を示すドラフトです。
-
 ```sh
 brew install crescware/tap/sbxm
 ```
