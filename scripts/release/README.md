@@ -17,9 +17,9 @@
 
 ## 使い方
 
-releaseするversionを`Cargo.toml`へ入れてcommitしておく。scriptは`Cargo.toml`の
+リリースするversionを`Cargo.toml`へ入れてcommitしておく。scriptは`Cargo.toml`の
 `version`とtagのversionが一致することを要求する。working treeがcleanであることも要求する
-ため、この変更はrelease前にcommitしておく。
+ため、この変更はリリース前にcommitしておく。
 
 ```sh
 # 1. versionを上げてcommitする
@@ -39,7 +39,7 @@ tagは事前に用意しない。scriptがHEADへ打ってoriginへpushする。
 [prereleaseかどうか](#prereleaseかどうか)に書く。
 
 optionはtagの前後どちらでも受ける。`release.sh v0.0.1 --dry-run`と書いてもdry runになる。
-optionが黙って無視されて本番releaseが作られることはない。
+optionが黙って無視されて本番のリリースが作られることはない。
 
 ## 実行順
 
@@ -48,30 +48,33 @@ optionが黙って無視されて本番releaseが作られることはない。
 1. 検査 — clean tree、HEADが既定branchに入っているか、tagをHEADへ打てるか、ghの認証、
    GitHubへの到達、同名Releaseの不在、`Cargo.toml`のversionとtagの一致、build結果へ影響する
    env varの不在、host architecture、`rustc`のhost
-2. `mise run check` — fmt、lint、test、coverage
+2. `mise run check` — fmt、lint、macOS向けcompile、test、coverage
 3. build — `cargo build --release --locked`
 4. 署名 — ad-hoc署名を付け、`codesign --verify`と`codesign -dv`で検証する
-5. 検証 — `file`でarm64のMach-Oか、`sbxm --version`がrelease versionと一致するか
+5. 検証 — `file`でarm64のMach-Oか、`sbxm --version`がリリースするversionと一致するか
 6. package — `dist/sbxm-aarch64-apple-darwin.tar.gz`を作り、直下が`sbxm`だけか確認する
-7. 記録 — Git commit SHA、`rustc -vV`、`cargo -V`、`sw_vers`、`shasum -a 256`をrelease
-   notesへ書く
+7. 記録 — Git commit SHA、`rustc -vV`、`cargo -V`、`sw_vers`、`shasum -a 256`を
+   リリースノートへ書く
 8. publish — annotated tagをHEADへ打ち、originへpushし、`gh release create`する
 
 安い検査を先に置き、時間のかかる`mise run check`をその後にする。tagの綴りを間違えただけの
 実行を、testの完走まで待たせない。
 
-tagを最後に打つのは、releaseを名付ける操作を、それを検証する工程の後ろへ置くためである。
+tagを最後に打つのは、リリースを名付ける操作を、それを検証する工程の後ろへ置くためである。
 先にtagを打つと、buildを一度も通していないcommitに対してtagがoriginへ出てしまう。
 
-## 出荷するtreeは自分で検査する
+## リリースするtreeを自分で検査する
 
 buildの前に`mise run check`を通す。通らなければそこで止まり、tagもbuildもRelease作成も
 行わない。dry runでも同じく止まる。
 
 検査を他所の結果に委ねない。どこかで検査が通ったかどうかはこのscriptから観測できず、通った
-はずだという推測にしかならない。何を出荷してよいかの判断を推測の上に置かない。
+はずだという推測にしかならない。何をリリースしてよいかの判断を推測の上に置かない。
 
-## releaseは既定branchから切る
+`mise run check`はmacOS向けにcompileできることも確かめる。Linuxで書いてLinuxで検査した
+変更が、macOSでだけ通らないという状態を、releaseまで持ち越さないためである。
+
+## リリースは既定branchから切る
 
 HEADが既定branch (`main`) に入っていなければ拒否する。入っているかは、`origin`のHEADが指す
 branchの先端をfetchし、そこからHEADへ辿れるかで判定する。
@@ -109,7 +112,7 @@ git tag -d v0.0.1
 以外はすべて本番と同じ手順で走る。使い捨てのrepositoryを用意する必要はなく、本物の
 repositoryに対してそのまま実行できる。
 
-- uploadするはずだったassetとrelease notesを`dist/`へ残すため、中身を確認できる
+- uploadするはずだったassetとリリースノートを`dist/`へ残すため、中身を確認できる
 - 実行するはずだった`git tag`、`git push`、`gh release create`をそのまま表示する
 
 publishの前提条件は、dry runでは即座に落とさず、警告として記録して最後にまとめて報告する。
@@ -142,8 +145,9 @@ observeできないことを、無いことと同一視しない。次の2つは
 
 生成物が正しいかどうかを決める検査は、dry runでも本番と同じく即座に落とす。`Cargo.toml`と
 tagのversion一致、build-affecting env varの不在、host architecture、`rustc`のhost triple、
-署名、arm64 Mach-O、`sbxm --version`、archiveの中身がこれにあたる。前提条件は「出してよいか」
-を決め、これらは「出すものが正しいか」を決める。後者が崩れているtreeは、予行としても通さない。
+署名、arm64 Mach-O、`sbxm --version`、archiveの中身がこれにあたる。前提条件は「出して
+よいか」を決め、これらは「出すものが正しいか」を決める。後者が崩れているtreeは、予行と
+しても通さない。
 
 ## 生成物
 
@@ -153,7 +157,7 @@ tagのversion一致、build-affecting env varの不在、host architecture、`ru
 実行の冒頭で`dist/`を消す。どこで落ちても、`dist/`には今回の実行が作ったものしか無い状態を
 保つ。途中で落ちた実行の後に前回の生成物が残っていると、それを今回のものと読んでしまう。
 
-- `dist/sbxm-aarch64-apple-darwin.tar.gz` — release asset。直下に`sbxm`だけを含む
+- `dist/sbxm-aarch64-apple-darwin.tar.gz` — リリース資産。直下に`sbxm`だけを含む
 - `dist/release-notes.md` — Releaseの本文。checksumとbuild provenanceを書く
 
 archiveは`COPYFILE_DISABLE=1`のもとで作る。macOSがAppleDouble file (`._*`) やresource
@@ -211,13 +215,13 @@ xcrun notarytool submit "$archive" --apple-id ... --team-id ... --password ... -
 `.pkg`にしか貼れず、tar.gzの中の裸の実行fileには貼れない。貼れない場合、Gatekeeperは初回
 実行時にAppleへonlineで問い合わせる。offlineでも通るようにするなら`.pkg`か`.dmg`へ変える。
 
-## 誰がreleaseできるか
+## 誰がリリースできるか
 
 このscriptは権限を持たない。実行者の資格情報で`git`と`gh`を呼ぶだけとする。
 
 tagのpushと`gh release create`は、どちらもrepositoryへのwrite権限を要する。権限を持たない
-者がこのscriptを実行しても、その2箇所で止まる。誰がreleaseできるかはGitHub側の設定が決める
-のであり、このscriptが決めるのではない。
+者がこのscriptを実行しても、その2箇所で止まる。誰がリリースできるかはGitHub側の設定が
+決めるのであり、このscriptが決めるのではない。
 
 repositoryがpublicであるため、fork先に対してこのscriptを実行することは誰にでもできる。その
 場合の成果物はfork先のReleaseとして出るのであり、上流には影響しない。
@@ -237,10 +241,10 @@ scripts/release/release.sh --stable v1.0.0
 versionからは推測しない。`0.0.1`という並びは未完成を示唆するが、示唆は宣言ではない。version
 はこの判断の正本ではなく、たまたま似た形をした別の値である。
 
-推測を既定にすると、間違えたときに黙って通る。releaseが完成品かどうかは、GitHubが「Latest」
-として指すかどうかを決め、`/releases/latest`が答えるかどうかを決める。取り違えたまま公開
-すると、未完成のものが最新の正式版として案内される。この判断は、それを知っている者が明示的
-に述べるものとする。
+推測を既定にすると、間違えたときに黙って通る。リリースが完成品かどうかは、GitHubが
+「Latest」として指すかどうかを決め、`/releases/latest`が答えるかどうかを決める。取り違えた
+まま公開すると、未完成のものが最新の正式版として案内される。この判断は、それを知っている
+者が明示的に述べるものとする。
 
 両方を同時に渡すと落ちる。どちらか一方に解釈せず、矛盾として扱う。
 
@@ -260,7 +264,7 @@ versionからは推測しない。`0.0.1`という並びは未完成を示唆す
 
 ## build結果へ影響するenv var
 
-次のいずれかが設定されていれば止まる。再現性のないbinaryを出荷しないよう、releaseは常に
+次のいずれかが設定されていれば止まる。再現性のないbinaryを出荷しないよう、リリースは常に
 素のtoolchain設定で行う。
 
 `RUSTFLAGS`、`CARGO_ENCODED_RUSTFLAGS`、`CARGO_BUILD_RUSTFLAGS`、`CARGO_BUILD_TARGET`、
