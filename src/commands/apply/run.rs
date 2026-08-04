@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::compatibility::SandboxState;
-use crate::config::{ConfigLocation, GlobalConfig};
+use crate::config::GlobalConfig;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
@@ -13,18 +13,9 @@ use crate::design::ProgressSink;
 use crate::design::Remediation;
 use crate::project::SandboxLayout;
 use crate::support::files::{self};
-use crate::support::select::ProjectPrompt;
 use crate::support::{daemon, generation, inventory, repository, sandbox, select, tools};
 
-use super::{ApplyOutput, Scope};
-
-/// `select::one`が対象を解決するために要るものをまとめる。argument数を抑えるためだけの
-/// 集約であり、解決より後の工程では使わない。
-pub struct Target<'a> {
-    pub location: &'a ConfigLocation,
-    pub requested: Option<&'a ProjectId>,
-    pub prompt: &'a mut dyn ProjectPrompt,
-}
+use super::{ApplyOutput, Scope, Target};
 
 /// 対象を引数またはpromptで解決し、構築済みの案件へ変更を適用する。
 ///

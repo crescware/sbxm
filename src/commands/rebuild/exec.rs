@@ -8,8 +8,7 @@ use crate::support::{inventory, sandbox};
 
 use super::{
     super::{Context, report},
-    print,
-    run::Target,
+    Target, print,
 };
 
 pub fn exec(

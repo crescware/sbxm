@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::config::{ConfigLocation, GlobalConfig};
+use crate::config::GlobalConfig;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata, RebuildIntent};
 use crate::msg;
@@ -12,18 +12,9 @@ use crate::design::{ProgressSink, Remediation, Warning};
 use crate::support::image;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, Unmanaged};
-use crate::support::select::ProjectPrompt;
 use crate::support::{daemon, generation, select, template};
 
-use super::{RebuildOutput, Switch, start_to_read_saved_state};
-
-/// `select::one`が対象を解決するために要るものをまとめる。argument数を抑えるためだけの
-/// 集約であり、解決より後の工程では使わない。
-pub struct Target<'a> {
-    pub location: &'a ConfigLocation,
-    pub requested: Option<&'a ProjectId>,
-    pub prompt: &'a mut dyn ProjectPrompt,
-}
+use super::{RebuildOutput, Switch, Target, start_to_read_saved_state};
 
 /// 対象を引数またはpromptで解決し、保存されていない作業がないことを確かめてから、
 /// Sandboxを作り直す。

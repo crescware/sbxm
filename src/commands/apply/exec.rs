@@ -7,8 +7,7 @@ use crate::support::sandbox;
 
 use super::{
     super::{Context, report},
-    Args, Scope, print,
-    run::Target,
+    Args, Scope, Target, print,
 };
 
 pub fn exec(
