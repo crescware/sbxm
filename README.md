@@ -179,6 +179,8 @@ sbxm stop <project-id> ...
 When run in an interactive terminal, `prepare`, `apply`, `rebuild`, `open`,
 `stop`, and `destroy` can prompt you to select a project if the project
 argument is omitted.
+In a non-interactive terminal, these commands require an explicit project
+argument.
 
 ## Customize a project
 
@@ -290,14 +292,14 @@ rather than sbxm guessing at the new location.
 | Command | Purpose |
 |---|---|
 | `sbxm add <github-clone-url>` | Add a GitHub repository to sbxm and clone it onto this host |
-| `sbxm prepare <project-id>` | Prepare a registered project by building and provisioning its sandbox |
+| `sbxm prepare [<project-id>]` | Prepare a registered project by building and provisioning its sandbox |
 | `sbxm open [<project-id>]` | Open an SSH session to a project sandbox, starting it if needed |
 | `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
 | `sbxm ls` | List managed projects and unmanaged sandboxes with their states |
 | `sbxm status --global` | Show the host and Docker Sandboxes environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
-| `sbxm apply <project-id> ...` | Apply declared files or add managed worktrees |
-| `sbxm rebuild <project-id>` | Rebuild a project's sandbox from its edited Dockerfile |
+| `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees |
+| `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its edited Dockerfile |
 | `sbxm destroy [<project-id>]` | Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile |
 
 Use `sbxm --help` or `sbxm <command> --help` for the complete CLI reference.

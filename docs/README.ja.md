@@ -164,6 +164,7 @@ sbxm stop <project-id> ...
 
 対話端末で実行した場合、`prepare`、`apply`、`rebuild`、`open`、`stop`、`destroy`は
 プロジェクト引数を省略すると対象を選択するpromptを表示できます。
+非対話端末では、これらのcommandにプロジェクト引数を明示する必要があります。
 
 ## プロジェクトをカスタマイズする
 
@@ -267,14 +268,14 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | コマンド | 用途 |
 |---|---|
 | `sbxm add <github-clone-url>` | GitHub repositoryをsbxmへ追加し、このhostへcloneする |
-| `sbxm prepare <project-id>` | 登録済み案件のSandboxを構築し、作業できる状態に準備する |
+| `sbxm prepare [<project-id>]` | 登録済み案件のSandboxを構築し、作業できる状態に準備する |
 | `sbxm open [<project-id>]` | SandboxへのSSH接続を開き、必要なら先に起動する |
 | `sbxm stop [<project-id> ...]` | 1件以上の案件のSandboxを、削除せず停止する |
 | `sbxm ls` | 管理案件と管理外Sandboxを、その状態とともに一覧する |
 | `sbxm status --global` | hostとDocker Sandboxes環境の状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
-| `sbxm apply <project-id> ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
-| `sbxm rebuild <project-id>` | 編集したDockerfileから案件のSandboxを再構築する |
+| `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
+| `sbxm rebuild [<project-id>]` | 編集したDockerfileから案件のSandboxを再構築する |
 | `sbxm destroy [<project-id>]` | Sandboxを破棄して案件を管理対象から外し、host cloneとDockerfileは残す |
 
 完全なCLI referenceは、`sbxm --help`または`sbxm <command> --help`で確認できます。
