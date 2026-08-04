@@ -274,7 +274,9 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm open [<project-id>]` | SandboxへのSSH接続を開き、必要なら先に起動する |
 | `sbxm stop [<project-id> ...]` | 1件以上の案件のSandboxを、削除せず停止する |
 | `sbxm ls` | 管理案件と管理外Sandboxを、その状態とともに一覧する |
-| `sbxm status [<project-id>]` | hostまたは案件の状態を変更せずに診断する。対話端末では`global`を先頭にpromptを表示する |
+| `sbxm status` | 対話端末でhostまたは案件を選択して診断する。`global`を先頭にpromptを表示する |
+| `sbxm status --global` | hostの状態を変更せずに診断する |
+| `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
 | `sbxm rebuild [<project-id>]` | 編集したDockerfileから案件のSandboxを再構築する |
 | `sbxm destroy [<project-id>]` | Sandboxを破棄して案件を管理対象から外し、host cloneとDockerfileは残す |

@@ -297,7 +297,9 @@ rather than sbxm guessing at the new location.
 | `sbxm open [<project-id>]` | Open an SSH session to a project sandbox, starting it if needed |
 | `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
 | `sbxm ls` | List managed projects and unmanaged sandboxes with their states |
-| `sbxm status [<project-id>]` | Show the host or a project's status without changing it; interactive omission prompts with `global` first |
+| `sbxm status` | Select and show the host or a project's status interactively; `global` is first |
+| `sbxm status --global` | Show the host environment status without changing it |
+| `sbxm status <project-id>` | Show a project's status without changing it |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees |
 | `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its edited Dockerfile |
 | `sbxm destroy [<project-id>]` | Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile |
