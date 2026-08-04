@@ -27,6 +27,10 @@ cargo llvm-cov \
 description = "macOS向けにcompileできることを確認する"
 run = "cargo check --workspace --all-targets --all-features --target aarch64-apple-darwin"
 
+[tasks.release-test]
+description = "scripts/release/release.shのend-to-end testを実行する"
+run = "scripts/release/release_test.sh"
+
 [tasks.check]
-description = "整形・lint・macOS向けcompile・test・coverageをすべて確認する"
-run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && mise run check-macos && mise run coverage"
+description = "整形・lint・macOS向けcompile・test・coverage・release scriptのtestをすべて確認する"
+run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && mise run check-macos && mise run coverage && mise run release-test"
