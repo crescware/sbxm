@@ -12,6 +12,7 @@ use super::{
 use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
 use crate::testing::add_request::{project_of, request};
+use crate::testing::prompt::ScriptedPrompt;
 use std::fs;
 
 /// 編集後のDockerfileの内容。世代が変わったことだけが要る。
@@ -42,9 +43,10 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
     let output = run(
         &bench.location,
         &bench.config,
-        &project_of(&request)?,
+        Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
     .required_because("the interrupted run finishes")?;
@@ -99,9 +101,10 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
     let output = run(
         &bench.location,
         &bench.config,
-        &project_of(&request)?,
+        Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
     .required_because("the build runs on the Dockerfile that is there")?;

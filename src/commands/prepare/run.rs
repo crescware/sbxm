@@ -9,26 +9,31 @@ use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use crate::design::{ProgressSink, Warning};
+use crate::support::select::ProjectPrompt;
 use crate::support::{
     files, generation, identity, image, repository, sandbox, secret, select, template, tools,
 };
 
 use super::{PrepareOutput, already_built, observed_worktrees};
 
-/// 登録済み案件のSandboxを構築する。
+/// 対象を引数またはpromptで解決し、登録済み案件のSandboxを構築する。
 pub fn run(
     location: &ConfigLocation,
     config: &GlobalConfig,
-    project: &ProjectId,
+    requested: Option<&ProjectId>,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    prompt: &mut dyn ProjectPrompt,
     progress: &mut dyn ProgressSink,
 ) -> Result<PrepareOutput> {
-    let canonical = project.canonical();
-    let name = SandboxName::derive(&canonical);
-
-    let mut locked = select::Locked::acquire(location, project)?;
+    // 対象が決まる前にhostの状態へ触れない。
+    let mut locked =
+        select::one(location, requested, &msg!("select-prepare-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
+
+    let canonical = locked.metadata.canonical_id().clone();
+    let name = SandboxName::derive(&canonical);
+    let project = ProjectId::parse(&locked.metadata.display_id())?;
 
     let layout = SandboxLayout::new(&canonical);
     let mut warnings = Vec::new();
@@ -80,7 +85,7 @@ pub fn run(
     tools::SandboxReady::announce(host, &ready.name)?;
     secret::configure_git_credential(host, &ready.name)?;
 
-    repository::ensure_bare_clone(host, &ready.name, project, &layout, progress)?;
+    repository::ensure_bare_clone(host, &ready.name, &project, &layout, progress)?;
     let branch = repository::resolve_start_ref(
         host,
         &ready.name,

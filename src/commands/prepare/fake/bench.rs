@@ -17,6 +17,7 @@ use super::super::run::run;
 
 use super::{super::PrepareOutput, World};
 use crate::design::SilentProgress;
+use crate::testing::prompt::ScriptedPrompt;
 
 /// 宣言file 1件を持つ、実行時と同じ形の入力一式。
 pub struct Bench {
@@ -78,9 +79,10 @@ impl Bench {
         run(
             &self.location,
             &self.config,
-            &project,
+            Some(&project),
             world,
             self.workspace_root.path(),
+            &mut ScriptedPrompt::choosing(0),
             &mut SilentProgress,
         )
     }

@@ -5,7 +5,7 @@ use crate::project::ProjectId;
 pub enum Command {
     Add(crate::commands::add::Args),
     Apply(crate::commands::apply::Args),
-    Prepare(ProjectId),
+    Prepare(Option<ProjectId>),
     Rebuild(ProjectId),
     Open(Option<ProjectId>),
     Stop(Vec<ProjectId>),
