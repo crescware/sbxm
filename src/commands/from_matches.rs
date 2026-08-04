@@ -14,7 +14,10 @@ pub fn from_matches(
 ) -> Result<Command> {
     match name {
         "add" => Ok(Command::Add(crate::commands::add::parse(matches)?)),
-        "apply" => Ok(Command::Apply(crate::commands::apply::parse(matches)?)),
+        "apply" => Ok(Command::Apply(crate::commands::apply::parse(
+            matches,
+            interactivity,
+        )?)),
         "prepare" => Ok(Command::Prepare(crate::commands::prepare::parse(
             matches,
             interactivity,

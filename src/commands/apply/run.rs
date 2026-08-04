@@ -13,27 +13,42 @@ use crate::design::ProgressSink;
 use crate::design::Remediation;
 use crate::project::SandboxLayout;
 use crate::support::files::{self};
+use crate::support::select::ProjectPrompt;
 use crate::support::{daemon, generation, inventory, repository, sandbox, select, tools};
 
 use super::{ApplyOutput, Scope};
 
-/// 構築済みの案件へ変更を適用する。
+/// `select::one`が対象を解決するために要るものをまとめる。argument数を抑えるためだけの
+/// 集約であり、解決より後の工程では使わない。
+pub struct Target<'a> {
+    pub location: &'a ConfigLocation,
+    pub requested: Option<&'a ProjectId>,
+    pub prompt: &'a mut dyn ProjectPrompt,
+}
+
+/// 対象を引数またはpromptで解決し、構築済みの案件へ変更を適用する。
 ///
 /// Sandboxの中身を変えるmutationであるため、対象を確かめた後にproject lockを取得し、
 /// lock取得後のmetadataでpreconditionを判定し直してから適用する。
 pub fn run(
-    location: &ConfigLocation,
+    target: Target,
     config: &GlobalConfig,
-    project: &ProjectId,
     scope: Scope,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<ApplyOutput> {
-    let canonical = project.canonical();
-    let mut locked = select::Locked::acquire(location, project)?;
+    let Target {
+        location,
+        requested,
+        prompt,
+    } = target;
+    // 対象が決まる前にhostの状態へ触れない。
+    let mut locked =
+        select::one(location, requested, &msg!("select-apply-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
 
+    let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
     let entry = daemon::list(host)?
         .into_iter()
@@ -69,7 +84,8 @@ pub fn run(
     if let Some(count) = scope.worktrees {
         raise_worktrees(&locked.paths, &mut locked.metadata, count)?;
         let layout = SandboxLayout::new(&canonical);
-        repository::ensure_bare_clone(host, &entry.name, project, &layout, progress)?;
+        let project = ProjectId::parse(&locked.metadata.display_id())?;
+        repository::ensure_bare_clone(host, &entry.name, &project, &layout, progress)?;
         let branch = repository::resolve_start_ref(
             host,
             &entry.name,

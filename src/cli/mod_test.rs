@@ -214,7 +214,7 @@ fn each_subcommand_renders_its_own_help() -> Checked {
 
 #[test]
 fn commands_that_always_need_a_project_refuse_to_prompt() -> Checked {
-    for name in ["add", "apply", "rebuild"] {
+    for name in ["add", "rebuild"] {
         let error = parse_argv(&[name], tty()).refused_because("{name} requires a project")?;
         assert_eq!(
             error.first_id(),
@@ -227,7 +227,13 @@ fn commands_that_always_need_a_project_refuse_to_prompt() -> Checked {
 
 #[test]
 fn omitting_the_target_outside_a_terminal_is_a_usage_error() -> Checked {
-    for arguments in [vec!["prepare"], vec!["open"], vec!["stop"], vec!["destroy"]] {
+    for arguments in [
+        vec!["prepare"],
+        vec!["apply", "--files"],
+        vec!["open"],
+        vec!["stop"],
+        vec!["destroy"],
+    ] {
         let error = parse_argv(&arguments, non_tty())
             .refused_because("a non-interactive run needs an explicit target")?;
         assert_eq!(
@@ -242,6 +248,14 @@ fn omitting_the_target_outside_a_terminal_is_a_usage_error() -> Checked {
 #[test]
 fn omitting_the_target_on_a_terminal_defers_to_the_selection_prompt() -> Checked {
     assert_eq!(command(&["prepare"], tty())?, Command::Prepare(None));
+    assert_eq!(
+        command(&["apply", "--files"], tty())?,
+        Command::Apply(commands::apply::Args {
+            project: None,
+            files: true,
+            worktrees: None,
+        })
+    );
     assert_eq!(command(&["open"], tty())?, Command::Open(None));
     assert_eq!(command(&["stop"], tty())?, Command::Stop(Vec::new()));
     assert_eq!(

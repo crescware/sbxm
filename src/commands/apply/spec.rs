@@ -9,7 +9,6 @@ pub fn spec(builder: &Builder) -> Result<ClapCommand> {
         .positional("apply", "cli-apply-about")?
         .arg(
             Arg::new("project")
-                .required(true)
                 .value_name(PROJECT_VALUE_NAME)
                 .help(builder.text("cli-apply-project-help")?),
         )

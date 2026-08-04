@@ -17,7 +17,7 @@ pub fn dispatch(
 ) -> ExitCode {
     match command {
         Command::Add(args) => crate::commands::add::exec(args, context, ui, host, prompt),
-        Command::Apply(args) => crate::commands::apply::exec(args, context, ui, host),
+        Command::Apply(args) => crate::commands::apply::exec(args, context, ui, host, prompt),
         Command::Prepare(project) => {
             crate::commands::prepare::exec(project.as_ref(), context, ui, host, prompt)
         }

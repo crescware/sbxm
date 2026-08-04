@@ -11,6 +11,7 @@ use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
 use crate::metadata::RebuildIntent;
 use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
+use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::value::DIGEST;
 use std::os::unix::fs::PermissionsExt;
 
@@ -31,9 +32,12 @@ fn asking_for_worktrees_leaves_the_declared_files_alone() -> Checked {
     let host = FakeSbx::listing(&listing(&workspace_root, "running")?).holding_repository()?;
 
     let output = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         WORKTREES_ONLY,
         &host,
         &workspace_root,
@@ -70,9 +74,12 @@ fn asking_for_the_number_the_project_already_targets_rewrites_nothing() -> Check
         worktrees: Some(1),
     };
     let output = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         scope,
         &host,
         &workspace_root,
@@ -103,9 +110,12 @@ fn a_start_ref_the_sandbox_cannot_resolve_stops_the_run_before_any_worktree_is_m
         ));
 
     let error = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         WORKTREES_ONLY,
         &host,
         &workspace_root,
@@ -136,9 +146,12 @@ fn a_failure_while_making_the_worktrees_keeps_the_raised_target() -> Checked {
         ));
 
     let error = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         WORKTREES_ONLY,
         &host,
         &workspace_root,
@@ -173,9 +186,12 @@ fn a_number_below_what_the_project_has_is_refused() -> Checked {
         worktrees: Some(2),
     };
     let error = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         scope,
         &host,
         &workspace_root,
@@ -206,9 +222,12 @@ fn a_running_project_gets_the_declared_files_replaced() -> Checked {
     let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
 
     let output = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
@@ -233,9 +252,12 @@ fn the_project_lock_is_held_while_the_files_are_replaced() -> Checked {
         FakeSbx::listing(&listing(&workspace_root, "running")?).watching_lock(paths.lock_file());
 
     run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
@@ -274,9 +296,12 @@ fn a_project_that_is_not_managed_gets_no_lock_file() -> Checked {
     let host = FakeSbx::listing("[]");
 
     run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
@@ -303,9 +328,12 @@ fn nothing_else_in_the_project_is_touched() -> Checked {
     let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
 
     run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
@@ -341,9 +369,12 @@ fn a_stopped_sandbox_is_not_started_and_the_user_is_sent_to_open() -> Checked {
     let host = FakeSbx::listing(&listing(&workspace_root, "stopped")?);
 
     let error = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
@@ -377,9 +408,12 @@ fn a_project_that_is_not_managed_or_not_built_is_refused() -> Checked {
     let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
     let host = FakeSbx::listing("[]");
     let error = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
@@ -390,9 +424,12 @@ fn a_project_that_is_not_managed_or_not_built_is_refused() -> Checked {
 
     write_metadata(&location, &parent, None)?;
     let error = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
@@ -417,9 +454,12 @@ fn a_rebuild_in_progress_places_nothing() -> Checked {
     let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
 
     let error = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
@@ -441,9 +481,12 @@ fn a_sandbox_that_belongs_to_another_project_is_refused() -> Checked {
     ));
 
     let error = run(
-        &location,
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &config,
-        &project()?,
         FILES_ONLY,
         &host,
         &workspace_root,
