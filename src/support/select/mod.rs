@@ -25,7 +25,7 @@ mod prompt_ui;
 mod unresolved;
 
 pub use candidate::Candidate;
-use candidates::candidates;
+pub use candidates::candidates;
 pub use find::find;
 pub use incomplete_registration::incomplete_registration;
 pub use inconsistent_registration::inconsistent_registration;
@@ -36,7 +36,7 @@ use no_managed_projects::no_managed_projects;
 pub use not_managed::not_managed;
 pub use one::one;
 pub use project_prompt::ProjectPrompt;
-use unresolved::unresolved;
+pub use unresolved::unresolved;
 
 #[cfg(test)]
 #[path = "select_test.rs"]

@@ -144,7 +144,7 @@ referenceへ隔離しない。必要なら将来`/guides/github-credentials/`へ
 | `/reference/cli/open/` | `sbxm open` | optional project prompt、start、SSH接続 |
 | `/reference/cli/stop/` | `sbxm stop` | zero-or-more project argument、interactive selection |
 | `/reference/cli/ls/` | `sbxm ls` | global project/sandbox state、missing表示 |
-| `/reference/cli/status/` | `sbxm status` | `--global`とproject scope、read-only contract |
+| `/reference/cli/status/` | `sbxm status` | `--global`、global-first project prompt、read-only contract |
 | `/reference/cli/destroy/` | `sbxm destroy` | prompt、checks、`--force`、delete/keep matrix |
 | `/reference/cli/global-options/` | Global options | `--lang`、`--color`、`--help`、`--version` |
 | `/reference/configuration/` | Configuration file | version 1、identity/default、files declaration、validation |

@@ -418,6 +418,7 @@ rebuild-applied = { $project } を再構築しました。{ $sandbox } は世代
 
 select-open-heading = どの案件を開きますか?
 select-stop-heading = どの案件を停止しますか?
+select-status-heading = どのstatusを表示しますか?
 select-prepare-heading = どの案件を準備しますか?
 select-apply-heading = どの案件へ変更を適用しますか?
 select-rebuild-heading = どの案件を再構築しますか?

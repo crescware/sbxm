@@ -5,4 +5,5 @@ use crate::project::ProjectId;
 pub enum Scope {
     Global,
     Project(ProjectId),
+    Prompt,
 }
