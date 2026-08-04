@@ -21,7 +21,9 @@ pub fn dispatch(
         Command::Prepare(project) => {
             crate::commands::prepare::exec(project.as_ref(), context, ui, host, prompt)
         }
-        Command::Rebuild(project) => crate::commands::rebuild::exec(project, context, ui, host),
+        Command::Rebuild(project) => {
+            crate::commands::rebuild::exec(project.as_ref(), context, ui, host, prompt)
+        }
         Command::Open(project) => {
             crate::commands::open::exec(project.as_ref(), context, ui, host, prompt)
         }

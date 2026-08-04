@@ -213,15 +213,10 @@ fn each_subcommand_renders_its_own_help() -> Checked {
 }
 
 #[test]
-fn commands_that_always_need_a_project_refuse_to_prompt() -> Checked {
-    for name in ["add", "rebuild"] {
-        let error = parse_argv(&[name], tty()).refused_because("{name} requires a project")?;
-        assert_eq!(
-            error.first_id(),
-            Some(ErrorId::MissingRequiredArgument),
-            "{name} produced the wrong error"
-        );
-    }
+fn a_command_that_always_needs_a_project_refuses_to_prompt() -> Checked {
+    // `add`は未登録のprojectを対象とするため、選ぶ候補が存在しない。
+    let error = parse_argv(&["add"], tty()).refused_because("add requires a project")?;
+    assert_eq!(error.first_id(), Some(ErrorId::MissingRequiredArgument));
     Ok(())
 }
 
@@ -230,6 +225,7 @@ fn omitting_the_target_outside_a_terminal_is_a_usage_error() -> Checked {
     for arguments in [
         vec!["prepare"],
         vec!["apply", "--files"],
+        vec!["rebuild"],
         vec!["open"],
         vec!["stop"],
         vec!["destroy"],
@@ -256,6 +252,7 @@ fn omitting_the_target_on_a_terminal_defers_to_the_selection_prompt() -> Checked
             worktrees: None,
         })
     );
+    assert_eq!(command(&["rebuild"], tty())?, Command::Rebuild(None));
     assert_eq!(command(&["open"], tty())?, Command::Open(None));
     assert_eq!(command(&["stop"], tty())?, Command::Stop(Vec::new()));
     assert_eq!(

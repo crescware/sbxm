@@ -22,7 +22,10 @@ pub fn from_matches(
             matches,
             interactivity,
         )?)),
-        "rebuild" => Ok(Command::Rebuild(crate::commands::rebuild::parse(matches)?)),
+        "rebuild" => Ok(Command::Rebuild(crate::commands::rebuild::parse(
+            matches,
+            interactivity,
+        )?)),
         "open" => Ok(Command::Open(crate::commands::open::parse(
             matches,
             interactivity,

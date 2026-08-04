@@ -1035,9 +1035,9 @@ fn an_entry_left_behind_by_a_crash_after_the_commit_point_is_tolerated() -> Chec
         crate::registry::load(&fixture.location).required_because("the registry stays valid")?;
     assert_eq!(registry.entries().len(), 1);
 
-    let error =
-        select::Locked::acquire(&fixture.location, &project_id("example-org/example-repo")?)
-            .refused_because("the project cannot be worked on")?;
+    let error = select::find(&fixture.location, &project_id("example-org/example-repo")?)
+        .and_then(select::Candidate::lock)
+        .refused_because("the project cannot be worked on")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectIncomplete));
     Ok(())
 }

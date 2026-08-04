@@ -420,6 +420,7 @@ select-open-heading = Which project do you want to open?
 select-stop-heading = Which projects do you want to stop?
 select-prepare-heading = Which project do you want to prepare?
 select-apply-heading = Which project do you want to apply changes to?
+select-rebuild-heading = Which project do you want to rebuild?
 
 legend-stopped-now = the sandbox was stopped by this run
 legend-not-stopped = not stopped by this run: it was already stopped, has no sandbox, or was left alone after an earlier failure

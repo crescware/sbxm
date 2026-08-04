@@ -12,24 +12,40 @@ use crate::design::{ProgressSink, Remediation, Warning};
 use crate::support::image;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, Unmanaged};
+use crate::support::select::ProjectPrompt;
 use crate::support::{daemon, generation, select, template};
 
 use super::{RebuildOutput, Switch, start_to_read_saved_state};
 
-/// 保存されていない作業がないことを確かめてから、Sandboxを作り直す。
+/// `select::one`が対象を解決するために要るものをまとめる。argument数を抑えるためだけの
+/// 集約であり、解決より後の工程では使わない。
+pub struct Target<'a> {
+    pub location: &'a ConfigLocation,
+    pub requested: Option<&'a ProjectId>,
+    pub prompt: &'a mut dyn ProjectPrompt,
+}
+
+/// 対象を引数またはpromptで解決し、保存されていない作業がないことを確かめてから、
+/// Sandboxを作り直す。
 pub fn run(
-    location: &ConfigLocation,
+    selection: Target,
     config: &GlobalConfig,
-    project: &ProjectId,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     poll: Poll,
     progress: &mut dyn ProgressSink,
 ) -> Result<RebuildOutput> {
-    let canonical = project.canonical();
+    let Target {
+        location,
+        requested,
+        prompt,
+    } = selection;
+    // 対象が決まる前にhostの状態へ触れない。
+    let mut locked =
+        select::one(location, requested, &msg!("select-rebuild-heading"), prompt)?.lock()?;
+    let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
 
-    let mut locked = select::Locked::acquire(location, project)?;
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。
     let entries = daemon::list(host)?;
@@ -90,10 +106,11 @@ pub fn run(
         );
     }
 
+    let project = ProjectId::parse(&locked.metadata.display_id())?;
     let context = Switch {
         config,
         paths: &locked.paths,
-        project,
+        project: &project,
         workspace_root,
         poll,
     };

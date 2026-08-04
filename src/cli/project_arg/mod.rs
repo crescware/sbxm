@@ -7,11 +7,9 @@ mod optional_project;
 mod project_value_name;
 mod require_prompt_capability;
 mod required_clone_url;
-mod required_project;
 
 pub use clone_url_value_name::CLONE_URL_VALUE_NAME;
 pub use optional_project::optional_project;
 pub use project_value_name::PROJECT_VALUE_NAME;
 pub use require_prompt_capability::require_prompt_capability;
 pub use required_clone_url::required_clone_url;
-pub use required_project::required_project;

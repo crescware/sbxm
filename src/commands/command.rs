@@ -6,7 +6,7 @@ pub enum Command {
     Add(crate::commands::add::Args),
     Apply(crate::commands::apply::Args),
     Prepare(Option<ProjectId>),
-    Rebuild(ProjectId),
+    Rebuild(Option<ProjectId>),
     Open(Option<ProjectId>),
     Stop(Vec<ProjectId>),
     Ls,
