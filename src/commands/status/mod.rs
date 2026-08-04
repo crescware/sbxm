@@ -1,7 +1,8 @@
 //! `sbxm status`。
 //!
-//! host環境を診断するglobal scopeと、1案件を診断するproject scopeを持つ。どちらの
-//! scopeもread-onlyで、状態を変えない。
+//! host環境を診断するglobal scopeと、1案件を診断するproject scopeを持つ。引数を省略した
+//! 対話端末では、globalを先頭に置いた選択promptでscopeを決める。どのscopeもread-onlyで、
+//! 状態を変えない。
 
 mod exec;
 pub mod global;

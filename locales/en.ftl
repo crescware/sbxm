@@ -418,6 +418,7 @@ rebuild-applied = { $project } was rebuilt: { $sandbox } now runs generation { $
 
 select-open-heading = Which project do you want to open?
 select-stop-heading = Which projects do you want to stop?
+select-status-heading = Which status do you want to inspect?
 select-prepare-heading = Which project do you want to prepare?
 select-apply-heading = Which project do you want to apply changes to?
 select-rebuild-heading = Which project do you want to rebuild?

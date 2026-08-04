@@ -177,10 +177,11 @@ sbxm stop <project-id> ...
 ```
 
 When run in an interactive terminal, `prepare`, `apply`, `rebuild`, `open`,
-`stop`, and `destroy` can prompt you to select a project if the project
-argument is omitted.
-In a non-interactive terminal, these commands require an explicit project
-argument.
+`stop`, `destroy`, and `status` can prompt you to select a target if the
+project argument is omitted. For `status`, the first choice is `global`,
+followed by registered project IDs.
+In a non-interactive terminal, provide an explicit project argument for these
+commands; `status` accepts either a project ID or `--global`.
 
 ## Customize a project
 
@@ -296,8 +297,7 @@ rather than sbxm guessing at the new location.
 | `sbxm open [<project-id>]` | Open an SSH session to a project sandbox, starting it if needed |
 | `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
 | `sbxm ls` | List managed projects and unmanaged sandboxes with their states |
-| `sbxm status --global` | Show the host and Docker Sandboxes environment status without changing it |
-| `sbxm status <project-id>` | Show a project's status without changing it |
+| `sbxm status [<project-id>]` | Show the host or a project's status without changing it; interactive omission prompts with `global` first |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees |
 | `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its edited Dockerfile |
 | `sbxm destroy [<project-id>]` | Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile |

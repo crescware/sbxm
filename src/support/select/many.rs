@@ -2,7 +2,7 @@ use crate::config::ConfigLocation;
 use crate::diagnostics::{Msg, Result};
 use crate::project::ProjectId;
 
-use super::{Candidate, ProjectPrompt, candidates, find, labels, unresolved};
+use super::{Candidate, ProjectPrompt, candidates, find, labels, no_managed_projects, unresolved};
 
 /// 引数、またはpromptで1件以上の案件を決める。
 ///
@@ -35,6 +35,9 @@ pub fn many(
     }
 
     let candidates = candidates(location)?;
+    if candidates.is_empty() {
+        return Err(no_managed_projects());
+    }
     let indexes = prompt.select_many(heading, &labels(&candidates))?;
     // 未選択の確定は受け付けない。操作せず終える場合はEscまたはCtrl-Cを使う。
     if indexes.is_empty() {

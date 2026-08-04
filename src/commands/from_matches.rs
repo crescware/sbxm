@@ -35,7 +35,10 @@ pub fn from_matches(
             interactivity,
         )?)),
         "ls" => Ok(Command::Ls),
-        "status" => Ok(Command::Status(crate::commands::status::parse(matches)?)),
+        "status" => Ok(Command::Status(crate::commands::status::parse(
+            matches,
+            interactivity,
+        )?)),
         "destroy" => Ok(Command::Destroy(crate::commands::destroy::parse(
             matches,
             interactivity,

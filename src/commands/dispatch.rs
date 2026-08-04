@@ -29,7 +29,7 @@ pub fn dispatch(
         }
         Command::Stop(projects) => crate::commands::stop::exec(projects, context, ui, host, prompt),
         Command::Ls => crate::commands::ls::exec(context, ui, host),
-        Command::Status(scope) => crate::commands::status::exec(scope, context, ui, host),
+        Command::Status(scope) => crate::commands::status::exec(scope, context, ui, host, prompt),
         Command::Destroy(args) => crate::commands::destroy::exec(args, context, ui, host, prompt),
     }
 }
