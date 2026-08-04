@@ -176,8 +176,9 @@ sbxm stop <project-id>
 sbxm stop <project-id> ...
 ```
 
-When run in an interactive terminal, `open`, `stop`, and `destroy` can prompt
-you to select a project if the project argument is omitted.
+When run in an interactive terminal, `prepare`, `apply`, `rebuild`, `open`,
+`stop`, and `destroy` can prompt you to select a project if the project
+argument is omitted.
 
 ## Customize a project
 

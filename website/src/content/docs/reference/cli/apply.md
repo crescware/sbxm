@@ -4,10 +4,10 @@ description: Apply declared files or add managed worktrees without rebuilding a 
 ---
 
 ```text
-sbxm apply <project-id> [--files] [--worktrees N]
+sbxm apply [<project-id>] [--files] [--worktrees N]
 ```
 
-At least one scope is required.
+At least one scope is required. In an interactive terminal, omit the project ID to choose a managed project. In a non-interactive terminal, an explicit project ID is required.
 
 | Option | Meaning |
 | --- | --- |

@@ -162,8 +162,8 @@ sbxm stop <project-id>
 sbxm stop <project-id> ...
 ```
 
-対話端末で実行した場合、`open`、`stop`、`destroy`はプロジェクト引数を省略すると
-対象を選択するpromptを表示できます。
+対話端末で実行した場合、`prepare`、`apply`、`rebuild`、`open`、`stop`、`destroy`は
+プロジェクト引数を省略すると対象を選択するpromptを表示できます。
 
 ## プロジェクトをカスタマイズする
 
