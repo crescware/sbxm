@@ -5,8 +5,8 @@ use crate::project::ProjectId;
 pub enum Command {
     Add(crate::commands::add::Args),
     Apply(crate::commands::apply::Args),
-    Prepare(ProjectId),
-    Rebuild(ProjectId),
+    Prepare(Option<ProjectId>),
+    Rebuild(Option<ProjectId>),
     Open(Option<ProjectId>),
     Stop(Vec<ProjectId>),
     Ls,

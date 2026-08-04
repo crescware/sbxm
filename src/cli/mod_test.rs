@@ -199,7 +199,7 @@ fn collect_strings(command: &ClapCommand, path: &str, out: &mut Vec<(String, Opt
 #[test]
 fn each_subcommand_renders_its_own_help() -> Checked {
     for name in [
-        "add", "apply", "rebuild", "open", "stop", "ls", "status", "destroy",
+        "add", "prepare", "apply", "rebuild", "open", "stop", "ls", "status", "destroy",
     ] {
         let outcome =
             parse_argv(&[name, "--help"], tty()).required_because("subcommand help renders")?;
@@ -213,21 +213,23 @@ fn each_subcommand_renders_its_own_help() -> Checked {
 }
 
 #[test]
-fn commands_that_always_need_a_project_refuse_to_prompt() -> Checked {
-    for name in ["add", "apply", "rebuild"] {
-        let error = parse_argv(&[name], tty()).refused_because("{name} requires a project")?;
-        assert_eq!(
-            error.first_id(),
-            Some(ErrorId::MissingRequiredArgument),
-            "{name} produced the wrong error"
-        );
-    }
+fn a_command_that_always_needs_a_project_refuses_to_prompt() -> Checked {
+    // `add`は未登録のprojectを対象とするため、選ぶ候補が存在しない。
+    let error = parse_argv(&["add"], tty()).refused_because("add requires a project")?;
+    assert_eq!(error.first_id(), Some(ErrorId::MissingRequiredArgument));
     Ok(())
 }
 
 #[test]
 fn omitting_the_target_outside_a_terminal_is_a_usage_error() -> Checked {
-    for arguments in [vec!["open"], vec!["stop"], vec!["destroy"]] {
+    for arguments in [
+        vec!["prepare"],
+        vec!["apply", "--files"],
+        vec!["rebuild"],
+        vec!["open"],
+        vec!["stop"],
+        vec!["destroy"],
+    ] {
         let error = parse_argv(&arguments, non_tty())
             .refused_because("a non-interactive run needs an explicit target")?;
         assert_eq!(
@@ -241,6 +243,16 @@ fn omitting_the_target_outside_a_terminal_is_a_usage_error() -> Checked {
 
 #[test]
 fn omitting_the_target_on_a_terminal_defers_to_the_selection_prompt() -> Checked {
+    assert_eq!(command(&["prepare"], tty())?, Command::Prepare(None));
+    assert_eq!(
+        command(&["apply", "--files"], tty())?,
+        Command::Apply(commands::apply::Args {
+            project: None,
+            files: true,
+            worktrees: None,
+        })
+    );
+    assert_eq!(command(&["rebuild"], tty())?, Command::Rebuild(None));
     assert_eq!(command(&["open"], tty())?, Command::Open(None));
     assert_eq!(command(&["stop"], tty())?, Command::Stop(Vec::new()));
     assert_eq!(
@@ -275,6 +287,7 @@ fn a_prompt_needs_both_stdin_and_stderr_to_be_a_terminal() -> Checked {
 #[test]
 fn an_invalid_project_identifier_is_refused_by_every_command_that_takes_one() -> Checked {
     for arguments in [
+        vec!["prepare", "owner/repo/extra"],
         vec!["apply", "--files", "owner/repo/extra"],
         vec!["rebuild", "/repo"],
         vec!["open", "owner/"],

@@ -1,13 +1,14 @@
 use clap::ArgMatches;
 
-use crate::cli::project_arg::required_project;
+use crate::cli::Interactivity;
+use crate::cli::project_arg::optional_project;
 use crate::diagnostics::{ErrorId, Result, fail};
 use crate::msg;
 
 use super::Args;
 
 /// 省略した対象へは触れないため、何も指定しない実行は何をするか決まらない。
-pub fn parse(matches: &ArgMatches) -> Result<Args> {
+pub fn parse(matches: &ArgMatches, interactivity: Interactivity) -> Result<Args> {
     let files = matches.get_flag("files");
     let worktrees = matches.get_one::<u32>("worktrees").copied();
     if !files && worktrees.is_none() {
@@ -17,7 +18,7 @@ pub fn parse(matches: &ArgMatches) -> Result<Args> {
         );
     }
     Ok(Args {
-        project: required_project(matches)?,
+        project: optional_project(matches, interactivity, "sbxm apply")?,
         files,
         worktrees,
     })

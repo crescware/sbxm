@@ -9,6 +9,7 @@ use super::{
 };
 use crate::design::SilentProgress;
 use crate::testing::add_request::{project_of, request};
+use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::value::COMMIT;
 
 #[test]
@@ -26,9 +27,10 @@ fn a_head_that_cannot_be_read_is_left_unknown() -> Checked {
     let output = run(
         &bench.location,
         &bench.config,
-        &project_of(&request)?,
+        Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
     .required_because("a project that is built stays built")?;
@@ -61,9 +63,10 @@ fn a_head_that_reads_back_empty_is_left_unknown() -> Checked {
     let output = run(
         &bench.location,
         &bench.config,
-        &project_of(&request)?,
+        Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
     .required_because("a project that is built stays built")?;

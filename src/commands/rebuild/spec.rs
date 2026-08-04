@@ -7,7 +7,6 @@ use crate::diagnostics::Result;
 pub fn spec(builder: &Builder) -> Result<ClapCommand> {
     Ok(builder.positional("rebuild", "cli-rebuild-about")?.arg(
         Arg::new("project")
-            .required(true)
             .value_name(PROJECT_VALUE_NAME)
             .help(builder.text("cli-rebuild-project-help")?),
     ))

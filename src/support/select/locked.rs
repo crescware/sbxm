@@ -1,10 +1,5 @@
-use crate::config::ConfigLocation;
-use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
 use crate::paths::{ExclusiveLock, ProjectPaths};
-use crate::project::ProjectId;
-
-use super::find;
 
 /// project lockを保持したまま読み直した1案件。
 ///
@@ -22,14 +17,4 @@ pub struct Locked {
     pub paths: ProjectPaths,
     pub metadata: ProjectMetadata,
     pub(super) _lock: ExclusiveLock,
-}
-
-impl Locked {
-    /// 完全指定された案件をlockし、lock後のmetadataとともに返す。
-    ///
-    /// promptを持たないcommandの入口。`load`が先に存在を確かめるため、管理対象でない
-    /// 案件にはlock fileを作らない。
-    pub fn acquire(location: &ConfigLocation, project: &ProjectId) -> Result<Locked> {
-        find(location, project)?.lock()
-    }
 }

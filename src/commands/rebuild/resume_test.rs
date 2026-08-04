@@ -16,6 +16,7 @@ use crate::testing::host::FakeSbx;
 use crate::testing::image::template_listing;
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
+use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::value::{COMMIT, IMAGE_ID};
 use std::os::unix::fs::PermissionsExt;
 
@@ -130,9 +131,12 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() -> Checked {
     let host = continuing(&fixture, &project, &target)?;
 
     let output = run(
-        &fixture.location,
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &fixture.config,
-        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
         poll(),
@@ -186,9 +190,12 @@ fn an_edit_made_after_the_generation_was_fixed_is_left_for_the_next_rebuild() ->
 
     let host = continuing(&fixture, &project, &target)?;
     let output = run(
-        &fixture.location,
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &fixture.config,
-        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
         poll(),
@@ -248,9 +255,12 @@ fn a_failure_after_the_switch_leaves_the_intent_in_place() -> Checked {
     );
 
     let error = run(
-        &fixture.location,
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &fixture.config,
-        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
         poll(),
@@ -299,9 +309,12 @@ fn a_stopped_sandbox_that_will_not_start_is_left_where_it_is() -> Checked {
     let host = host.answering(&format!("exec {} -- /bin/true", project.sandbox), 1, "");
 
     let error = run(
-        &fixture.location,
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &fixture.config,
-        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
         poll(),
@@ -402,9 +415,12 @@ fn the_first_rebuild_of_a_generation_exports_its_archive_and_loads_the_template(
     };
 
     let output = run(
-        &fixture.location,
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         &fixture.config,
-        &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
         poll(),

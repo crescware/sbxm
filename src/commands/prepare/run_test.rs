@@ -12,6 +12,7 @@ use crate::diagnostics::ErrorId;
 use crate::hash::sha256_hex;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::project::project_id;
+use crate::testing::prompt::ScriptedPrompt;
 use std::fs;
 
 #[test]
@@ -22,9 +23,10 @@ fn a_project_that_is_not_registered_is_sent_to_add() -> Checked {
     let error = run(
         &bench.location,
         &bench.config,
-        &project_id("example-org/example-repo")?,
+        Some(&project_id("example-org/example-repo")?),
         &world,
         bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
     .refused_because("there is nothing to build yet")?;
@@ -60,9 +62,10 @@ fn an_unregistered_project_gets_no_lock_file() -> Checked {
     run(
         &bench.location,
         &bench.config,
-        &project,
+        Some(&project),
         &world,
         bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
     .refused_because("there is nothing to build yet")?;
@@ -110,9 +113,10 @@ fn a_rebuild_in_progress_builds_nothing() -> Checked {
     let error = run(
         &bench.location,
         &bench.config,
-        &project_of(&request)?,
+        Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
     .refused_because("a half-switched project is not built on")?;
@@ -160,9 +164,10 @@ fn a_sandbox_that_is_not_this_projects_stops_prepare_instead_of_counting_as_buil
     let error = run(
         &bench.location,
         &bench.config,
-        &project_of(&request)?,
+        Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
     .refused_because("a sandbox that cannot be identified is not the project's")?;
@@ -204,9 +209,10 @@ fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Che
     let error = run(
         &bench.location,
         &bench.config,
-        &project_of(&request)?,
+        Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
     .refused_because("the stored generation cannot be observed")?;

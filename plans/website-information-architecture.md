@@ -138,9 +138,9 @@ referenceへ隔離しない。必要なら将来`/guides/github-credentials/`へ
 | --- | --- | --- |
 | `/reference/cli/` | CLI reference | lifecycle順のcommand一覧、syntax規約、project ID |
 | `/reference/cli/add/` | `sbxm add` | accepted clone URL、identity、worktree/detach option、mutation |
-| `/reference/cli/apply/` | `sbxm apply` | required scope、files/worktrees、overwriteと増加のみ |
-| `/reference/cli/prepare/` | `sbxm prepare` | build/provision、credential前提、成果物 |
-| `/reference/cli/rebuild/` | `sbxm rebuild` | recreation、安全check、rebuild intent |
+| `/reference/cli/apply/` | `sbxm apply` | required scope、files/worktrees、overwriteと増加のみ、optional project prompt |
+| `/reference/cli/prepare/` | `sbxm prepare` | build/provision、credential前提、成果物、optional project prompt |
+| `/reference/cli/rebuild/` | `sbxm rebuild` | recreation、安全check、rebuild intent、optional project prompt |
 | `/reference/cli/open/` | `sbxm open` | optional project prompt、start、SSH接続 |
 | `/reference/cli/stop/` | `sbxm stop` | zero-or-more project argument、interactive selection |
 | `/reference/cli/ls/` | `sbxm ls` | global project/sandbox state、missing表示 |

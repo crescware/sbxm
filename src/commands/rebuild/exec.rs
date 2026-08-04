@@ -1,31 +1,37 @@
 //! `rebuild`の実行。
 
 use crate::command::HostEnvironment;
-use crate::design::Ui;
+use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;
 use crate::support::{inventory, sandbox};
 
 use super::{
     super::{Context, report},
-    print,
+    Target, print,
 };
 
 pub fn exec(
-    project: &ProjectId,
+    project: Option<&ProjectId>,
     context: &Context,
     ui: &mut Ui,
     host: &dyn HostEnvironment,
+    prompt: &mut PromptUi,
 ) -> ExitCode {
     let (config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
+    prompt.set_locale(locale);
+    let target = Target {
+        location: context.location,
+        requested: project,
+        prompt,
+    };
     match super::run::run(
-        context.location,
+        target,
         &config,
-        project,
         host,
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
         inventory::Poll::default(),

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::config::{ConfigLocation, GlobalConfig};
+use crate::config::GlobalConfig;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata, RebuildIntent};
 use crate::msg;
@@ -14,22 +14,29 @@ use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, Unmanaged};
 use crate::support::{daemon, generation, select, template};
 
-use super::{RebuildOutput, Switch, start_to_read_saved_state};
+use super::{RebuildOutput, Switch, Target, start_to_read_saved_state};
 
-/// 保存されていない作業がないことを確かめてから、Sandboxを作り直す。
+/// 対象を引数またはpromptで解決し、保存されていない作業がないことを確かめてから、
+/// Sandboxを作り直す。
 pub fn run(
-    location: &ConfigLocation,
+    selection: Target,
     config: &GlobalConfig,
-    project: &ProjectId,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     poll: Poll,
     progress: &mut dyn ProgressSink,
 ) -> Result<RebuildOutput> {
-    let canonical = project.canonical();
+    let Target {
+        location,
+        requested,
+        prompt,
+    } = selection;
+    // 対象が決まる前にhostの状態へ触れない。
+    let mut locked =
+        select::one(location, requested, &msg!("select-rebuild-heading"), prompt)?.lock()?;
+    let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
 
-    let mut locked = select::Locked::acquire(location, project)?;
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。
     let entries = daemon::list(host)?;
@@ -90,10 +97,11 @@ pub fn run(
         );
     }
 
+    let project = ProjectId::parse(&locked.metadata.display_id())?;
     let context = Switch {
         config,
         paths: &locked.paths,
-        project,
+        project: &project,
         workspace_root,
         poll,
     };
