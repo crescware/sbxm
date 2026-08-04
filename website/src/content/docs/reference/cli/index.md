@@ -9,14 +9,14 @@ sbxm manages a project from registration through teardown. The command surface i
 
 | Command | Purpose |
 | --- | --- |
-| [`add`](./add/) | Register a GitHub repository and create host artifacts |
-| [`prepare`](./prepare/) | Build and provision its Docker Sandbox |
-| [`open`](./open/) | Start the sandbox and connect over SSH |
-| [`ls`](./ls/) | List managed projects and sandbox state |
-| [`status`](./status/) | Diagnose the host or one project, read-only |
+| [`add`](./add/) | Add a GitHub repository to sbxm and clone it onto this host |
+| [`prepare`](./prepare/) | Prepare a registered project by building and provisioning its sandbox |
+| [`open`](./open/) | Open an SSH session to a project sandbox, starting it if needed |
+| [`ls`](./ls/) | List managed projects and unmanaged sandboxes with their states |
+| [`status`](./status/) | Show host or project status without changing it |
 | [`apply`](./apply/) | Apply declared files or add managed worktrees |
-| [`rebuild`](./rebuild/) | Recreate a sandbox from its Dockerfile |
-| [`stop`](./stop/) | Stop one or more sandboxes |
-| [`destroy`](./destroy/) | Delete a sandbox and end management |
+| [`rebuild`](./rebuild/) | Rebuild a project sandbox from its edited Dockerfile |
+| [`stop`](./stop/) | Stop one or more project sandboxes without deleting them |
+| [`destroy`](./destroy/) | Destroy a project sandbox and stop managing the project |
 
 Global options are documented in [Global options](./global-options/). A project ID is the `owner/repository` identifier sbxm stores when a repository is registered.

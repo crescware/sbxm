@@ -1,6 +1,6 @@
 ---
 title: '`sbxm add`'
-description: Register a GitHub repository and create its host-side sbxm artifacts.
+description: Add a GitHub repository to sbxm and clone it onto this host.
 ---
 
 ```text
@@ -13,7 +13,7 @@ Accepted repository URLs are the SSH and HTTPS GitHub clone URLs shown by GitHub
 
 | Option | Meaning |
 | --- | --- |
-| `--worktrees`, `-t` `N` | Create 1–32 managed worktrees |
+| `--worktrees`, `-t` `N` | Set a target of 1–32 managed worktrees for the sandbox |
 | `--detach` `BRANCH` | Start managed worktrees detached from a remote branch |
 | `--git-user-name` `NAME` | Set the project commit name; provide it with email |
 | `--git-user-email` `EMAIL` | Set the project commit email; provide it with name |

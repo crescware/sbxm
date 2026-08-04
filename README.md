@@ -258,7 +258,8 @@ token registered anew. Because those artifacts stay behind and sbxm never
 adopts a directory it did not register, registering the project again in the
 same place means moving them aside first.
 
-If you intentionally need to bypass data-protection and active-session checks:
+If you intentionally need to bypass data-protection and active-session checks
+and the confirmation prompt:
 
 ```sh
 sbxm destroy --force <project-id>
@@ -287,16 +288,16 @@ rather than sbxm guessing at the new location.
 
 | Command | Purpose |
 |---|---|
-| `sbxm add <github-clone-url>` | Register a GitHub project and create its host artifacts |
-| `sbxm prepare <project-id>` | Build and provision the project's sandbox |
-| `sbxm open [<project-id>]` | Start the sandbox if needed and connect over SSH |
-| `sbxm stop [<project-id> ...]` | Stop one or more sandboxes |
-| `sbxm ls` | List managed projects and sandbox states |
-| `sbxm status --global` | Diagnose the host and Docker Sandboxes environment |
-| `sbxm status <project-id>` | Diagnose a project without changing it |
+| `sbxm add <github-clone-url>` | Add a GitHub repository to sbxm and clone it onto this host |
+| `sbxm prepare <project-id>` | Prepare a registered project by building and provisioning its sandbox |
+| `sbxm open [<project-id>]` | Open an SSH session to a project sandbox, starting it if needed |
+| `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
+| `sbxm ls` | List managed projects and unmanaged sandboxes with their states |
+| `sbxm status --global` | Show the host and Docker Sandboxes environment status without changing it |
+| `sbxm status <project-id>` | Show a project's status without changing it |
 | `sbxm apply <project-id> ...` | Apply declared files or add managed worktrees |
-| `sbxm rebuild <project-id>` | Recreate a sandbox from its edited Dockerfile |
-| `sbxm destroy [<project-id>]` | Delete a sandbox and stop managing the project |
+| `sbxm rebuild <project-id>` | Rebuild a project's sandbox from its edited Dockerfile |
+| `sbxm destroy [<project-id>]` | Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile |
 
 Use `sbxm --help` or `sbxm <command> --help` for the complete CLI reference.
 

@@ -35,4 +35,4 @@ Because sbxm never adopts an unregistered directory, registering the project aga
 sbxm destroy --force <project-id>
 ```
 
-`--force` skips data-protection and active-session checks. Use it only after independently confirming that nothing inside the sandbox needs to be preserved.
+`--force` skips data-protection and active-session checks and does not prompt for confirmation. Use it only after independently confirming that nothing inside the sandbox needs to be preserved.

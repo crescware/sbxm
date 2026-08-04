@@ -1,6 +1,6 @@
 ---
 title: '`sbxm prepare`'
-description: Build and provision a registered project’s Docker Sandbox.
+description: Prepare a registered project by building and provisioning its Docker Sandbox.
 ---
 
 ```text
