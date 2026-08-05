@@ -43,6 +43,26 @@ zigはclangに加えてglibc向けの起動用objectとheaderを同梱するた�
 macOSはこの指定の対象にしない。zigでmacOS向けにリンクするにはmacOS SDKを別途要するため、
 既存のC toolchainをそのまま使う。
 
+## buildとローカル実行
+
+toolchainを導入したrepository rootで、release binaryをbuildする。
+
+```sh
+cargo build --release
+./target/release/sbxm --help
+```
+
+sourceから直接実行する場合は`cargo run --`の後ろにsbxmの引数を渡す。
+hostの要件とDocker Sandboxes環境を変更せずに診断するには、次を実行する。
+
+```sh
+cargo run -- status --global
+```
+
+`status --global`、`prepare`、`open`などの実環境を使う操作は、READMEに記載したmacOS 14以降、
+Docker Desktop、Docker Sandboxes CLIが揃ったhostで実行する。Linuxではcompileとtestを実行できるが、
+Sandboxへの接続はできない。
+
 ## 検証
 
 変更を提案する前に、次を通す。
