@@ -130,17 +130,40 @@ fn prepare_keeps_the_security_note_off_the_end_of_the_table() {
     let document = super::prepare::print::document(&prepare_output(), Locale::En);
     assert_eq!(
         shape(&document),
-        vec!["summary", "fields", "table", "table", "note"]
+        vec![
+            "summary", "fields", "table", "table", "note", "guidance", "command"
+        ]
     );
 }
 
 #[test]
-fn prepare_adds_a_legend_only_where_the_values_are_not_the_source_language() {
+fn prepare_closes_with_the_command_that_opens_what_it_just_built() {
+    // 構築の次はSSHで入ることであり、`add`もその順で案内する。ここで案内しないと、
+    // 利用者は`add`の案内を遡って読み直すことになる。
+    let document = super::prepare::print::document(&prepare_output(), Locale::En);
+    assert_eq!(commands(&document), vec!["sbxm open owner/repo"]);
+    assert_eq!(shape(&document).last(), Some(&"command"));
+}
+
+#[test]
+fn prepare_adds_a_legend_only_where_the_values_are_not_the_source_language() -> Checked {
     let english = super::prepare::print::document(&prepare_output(), Locale::En);
     assert!(!shape(&english).contains(&"legend"));
 
-    let japanese = super::prepare::print::document(&prepare_output(), Locale::Ja);
-    assert_eq!(shape(&japanese).last(), Some(&"legend"));
+    let japanese = shape(&super::prepare::print::document(
+        &prepare_output(),
+        Locale::Ja,
+    ));
+    let legend = japanese
+        .iter()
+        .position(|block| *block == "legend")
+        .required_because("the legend describes the values above it")?;
+    assert_eq!(
+        japanese[legend + 1..],
+        ["guidance", "command"],
+        "the next step stays last: {japanese:?}"
+    );
+    Ok(())
 }
 
 #[test]
@@ -150,7 +173,7 @@ fn prepare_leaves_out_a_table_it_has_no_rows_for() {
     output.files.clear();
     assert_eq!(
         shape(&super::prepare::print::document(&output, Locale::En)),
-        vec!["summary", "fields"]
+        vec!["summary", "fields", "guidance", "command"]
     );
 }
 
