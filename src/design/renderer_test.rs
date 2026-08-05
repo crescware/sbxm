@@ -150,7 +150,7 @@ fn a_command_line_owns_its_line_with_a_blank_line_on_each_side() -> Checked {
     let lines: Vec<&str> = drawn.lines().collect();
     let index = lines
         .iter()
-        .position(|line| *line == "sbxm prepare owner/alpha")
+        .position(|line| *line == "  sbxm prepare owner/alpha")
         .required_because("the command occupies a line of its own")?;
     assert_eq!(lines[index - 1], "", "{drawn:?}");
     assert_eq!(lines[index + 1], "", "{drawn:?}");
@@ -160,20 +160,54 @@ fn a_command_line_owns_its_line_with_a_blank_line_on_each_side() -> Checked {
 #[test]
 fn a_trailing_command_still_closes_with_a_blank_line() -> Checked {
     let drawn = plain(&Document::new().try_command("sbxm prepare owner/alpha"))?;
-    assert_eq!(drawn, "sbxm prepare owner/alpha\n\n");
+    assert_eq!(drawn, "  sbxm prepare owner/alpha\n\n");
     Ok(())
 }
 
 #[test]
 fn a_command_line_carries_nothing_the_user_did_not_type() -> Checked {
     let drawn = plain(&Document::new().try_command("sbxm prepare owner/alpha"))?;
-    let command = drawn.lines().next().required_because("a command line")?;
-    for decoration in ["$", "`", "1.", "- ", "  "] {
+    let line = drawn.lines().next().required_because("a command line")?;
+    // 字下げは説明と左端を揃えるためのものであり、行の中には何も足さない。
+    let command = line
+        .strip_prefix("  ")
+        .required_because("the command lines up with the text that asked for it")?;
+    for decoration in ["$", "`", "1.", "- "] {
         assert!(
             !command.contains(decoration),
             "{decoration:?} is not part of what gets pasted: {command:?}"
         );
     }
+    assert_eq!(command, "sbxm prepare owner/alpha");
+    Ok(())
+}
+
+#[test]
+fn a_command_lines_up_with_the_step_that_asked_for_it() -> Checked {
+    // 番号付きの手順とその手順で打つcommandが、同じ左端から始まる。
+    let drawn = plain(
+        &Document::new()
+            .guidance(
+                Some(msg!("add-next-heading")),
+                vec![GuidanceItem::Ordered {
+                    number: 2,
+                    text: msg!("add-next-prepare"),
+                }],
+            )
+            .try_command("sbxm prepare owner/alpha"),
+    )?;
+
+    let indent = |line: &str| line.len() - line.trim_start().len();
+    let lines: Vec<&str> = drawn.lines().collect();
+    let step = lines
+        .iter()
+        .find(|line| line.contains("2. "))
+        .required_because("the numbered step")?;
+    let command = lines
+        .iter()
+        .find(|line| line.contains("sbxm prepare"))
+        .required_because("the command")?;
+    assert_eq!(indent(step), indent(command), "{drawn:?}");
     Ok(())
 }
 
@@ -321,7 +355,7 @@ fn a_remediation_separates_the_explanation_from_the_command() -> Checked {
     let lines: Vec<&str> = drawn.lines().collect();
     let command = lines
         .iter()
-        .position(|line| *line == "sbxm status --global")
+        .position(|line| *line == "  sbxm status --global")
         .required_because("the command is its own line")?;
     assert_eq!(lines[command - 1], "", "{drawn:?}");
     assert!(lines.contains(&"  Try:"), "{drawn:?}");
@@ -344,10 +378,10 @@ fn a_remediation_that_is_only_a_command_gets_no_heading_above_it() -> Checked {
     let lines: Vec<&str> = drawn.lines().collect();
     let command = lines
         .iter()
-        .position(|line| *line == "sbxm status --global")
+        .position(|line| *line == "  sbxm status --global")
         .required_because("the command is its own line")?;
     assert_eq!(lines[command - 1], "", "{drawn:?}");
-    assert!(drawn.ends_with("sbxm status --global\n\n"), "{drawn:?}");
+    assert!(drawn.ends_with("  sbxm status --global\n\n"), "{drawn:?}");
     Ok(())
 }
 

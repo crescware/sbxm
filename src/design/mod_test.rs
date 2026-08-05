@@ -125,7 +125,7 @@ fn a_warning_with_a_follow_up_keeps_the_command_on_its_own_line() -> Checked {
     let lines: Vec<&str> = err.lines().collect();
     let index = lines
         .iter()
-        .position(|line| *line == "sbxm rebuild owner/alpha")
+        .position(|line| *line == "  sbxm rebuild owner/alpha")
         .required_because("the follow-up is its own line")?;
     assert_eq!(lines[index - 1], "", "{err:?}");
     assert!(lines[0].starts_with("! Warning: "), "{err:?}");

@@ -131,8 +131,12 @@ impl Painter {
         format!("{marker} {label} {}", Self::format(catalog, message))
     }
 
+    /// 利用者がそのまま実行する1行。
+    ///
+    /// 字下げは、そのcommandを求めた説明と揃える。左端が揃っていないと、commandが説明の
+    /// 続きなのか別の話なのかが、行の位置からは分からない。
     fn command(&self, command: &CommandLine) -> String {
-        self.role(command.as_str(), Role::Command)
+        format!("{INDENT}{}", self.role(command.as_str(), Role::Command))
     }
 
     fn guidance_item(catalog: &Catalog, item: &GuidanceItem) -> String {
