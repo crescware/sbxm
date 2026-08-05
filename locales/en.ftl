@@ -32,6 +32,7 @@ cli-open-about = Open an SSH session to a project's sandbox, starting the sandbo
 cli-open-project-help = Registered owner/repository ID of the project to open
 cli-open-index-help = Start in the Nth managed worktree instead of the repository root (zero-based)
 warning-open-worktree-not-found = Managed worktree { $index } was not found; opening the repository root instead.
+warning-open-worktree-index-clamped = This project has no managed worktree { $requested }; opening managed worktree { $index } instead.
 
 cli-stop-about = Stop one or more project sandboxes without deleting them
 cli-stop-project-help = Registered owner/repository IDs of the projects to stop

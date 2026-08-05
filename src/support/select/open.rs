@@ -2,7 +2,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::config::ConfigLocation;
 use crate::diagnostics::{Msg, Result};
-use crate::metadata::maximum_worktree_index;
+use crate::metadata::last_worktree_index;
 
 use super::{Candidate, ProjectPrompt, candidates, labels, no_managed_projects, unresolved};
 
@@ -11,21 +11,23 @@ use super::{Candidate, ProjectPrompt, candidates, labels, no_managed_projects, u
 /// prompt表示をmetadata読み込みで止めないため、案件が初めて表示対象になった時点で
 /// threadへ処理を渡す。計算結果はpromptの各描画前にpollされ、未完了の案件は引き続き
 /// 設定上限を使う。threadはprompt終了後も現在の読み込みだけを完了して自然に終了する。
-struct MetadataMaximums {
-    candidates: Vec<Candidate>,
+///
+/// 候補は借りるだけにする。表示されない案件のcloneを先に作らない。
+struct MetadataMaximums<'a> {
+    candidates: &'a [Candidate],
     started: Vec<bool>,
     maximums: Vec<Option<u32>>,
     sender: Sender<(usize, Option<u32>)>,
     receiver: Receiver<(usize, Option<u32>)>,
 }
 
-impl MetadataMaximums {
-    fn new(candidates: &[Candidate]) -> MetadataMaximums {
+impl<'a> MetadataMaximums<'a> {
+    fn new(candidates: &'a [Candidate]) -> MetadataMaximums<'a> {
         let (sender, receiver) = mpsc::channel();
         MetadataMaximums {
-            candidates: candidates.to_vec(),
             started: vec![false; candidates.len()],
             maximums: vec![None; candidates.len()],
+            candidates,
             sender,
             receiver,
         }
@@ -48,7 +50,7 @@ impl MetadataMaximums {
                 .name("sbxm-open-maximum".to_owned())
                 .spawn(move || {
                     let maximum = candidate.reload().ok().map(|metadata| {
-                        maximum_worktree_index(metadata.provisioning.requested_worktrees)
+                        last_worktree_index(metadata.provisioning.requested_worktrees)
                     });
                     let _ = sender.send((project, maximum));
                 });
@@ -62,7 +64,7 @@ impl MetadataMaximums {
 ///
 /// promptにはregistryの表示情報だけを渡す。metadataの最大値を読むとprompt表示が遅れる
 /// ため、indexは呼び出し側が渡す楽観的な上限で受け付け、計算結果を裏から反映する。
-/// 確定後にもlock済みmetadataでclampする。
+/// 確定後にもlock済みmetadataでclampし、下げた場合は接続前にその差を見せる。
 pub fn open(
     location: &ConfigLocation,
     heading: &Msg,
@@ -74,10 +76,11 @@ pub fn open(
         return Err(no_managed_projects());
     }
     let labels = labels(&candidates);
-    let mut metadata_maximums = MetadataMaximums::new(&candidates);
-    let mut maximums = |project| metadata_maximums.poll(project);
-    let (project, index) =
-        prompt.select_open_with_maximums(heading, &labels, maximum_index, &mut maximums)?;
+    let (project, index) = {
+        let mut metadata_maximums = MetadataMaximums::new(&candidates);
+        let mut maximums = |project| metadata_maximums.poll(project);
+        prompt.select_open(heading, &labels, maximum_index, &mut maximums)?
+    };
     if project >= candidates.len() {
         return Err(unresolved(project, candidates.len()));
     }

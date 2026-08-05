@@ -43,6 +43,15 @@ pub fn exec(
         )));
     }
 
+    // promptで選べた値と接続先が食い違う場合は、接続先を見せる前にその差を述べる。
+    if let Some(clamped) = prepared.clamped_worktree_index {
+        ui.warning(&Warning::text(msg!(
+            "warning-open-worktree-index-clamped",
+            requested = clamped.requested,
+            index = clamped.opened
+        )));
+    }
+
     // 接続先はterminalを引き渡す前に見せる。
     ui.stderr(
         &Document::new()

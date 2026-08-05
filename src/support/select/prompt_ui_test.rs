@@ -45,6 +45,7 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
     .required_because("two projects are chosen")?;
     assert_eq!(chosen, vec![1, 2]);
 
+    let mut no_maximums = |_project| None;
     let chosen = ProjectPrompt::select_open(
         &mut prompt(ScriptedKeys::pressing(&[
             console::Key::ArrowDown,
@@ -54,12 +55,13 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
         &msg!("select-open-heading"),
         &candidates(),
         MAX_WORKTREE_INDEX,
+        &mut no_maximums,
     )
     .required_because("a project and worktree index are chosen")?;
     assert_eq!(chosen, (1, 1));
 
     let mut maximums = |_project| Some(1);
-    let chosen = ProjectPrompt::select_open_with_maximums(
+    let chosen = ProjectPrompt::select_open(
         &mut prompt(ScriptedKeys::pressing(&[
             console::Key::ArrowRight,
             console::Key::ArrowRight,

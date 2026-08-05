@@ -1,5 +1,5 @@
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::metadata;
 use crate::testing::outcome::{Checked, Required};
@@ -24,11 +24,14 @@ fn a_metadata_maximum_arrives_after_the_prompt_can_start() -> Checked {
         None,
         "the initial poll starts without waiting"
     );
-    for _ in 0..100 {
+    // 到着そのものを確かめる。負荷のかかったmachineでも打ち切らないよう、
+    // 回数ではなく経過時間で待つ。
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
         if maximums.poll(0) == Some(4) {
             return Ok(());
         }
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(Duration::from_millis(5));
     }
     Err(crate::testing::outcome::Unmet::new(
         "the background metadata calculation did not arrive",

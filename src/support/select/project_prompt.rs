@@ -9,26 +9,16 @@ pub trait ProjectPrompt {
     fn select_one(&mut self, heading: &Msg, candidates: &[String]) -> Result<usize>;
     /// 1件以上を選ぶ。未選択の確定は受け付けない。
     fn select_many(&mut self, heading: &Msg, candidates: &[String]) -> Result<Vec<usize>>;
-    /// 案件とworktree indexを1画面で選ぶ。maximumはmetadata未読時の楽観的な上限。
+    /// 案件とworktree indexを1画面で選ぶ。
+    ///
+    /// `maximum_index`はmetadata未読時の楽観的な上限であり、案件を問わない。実端末の
+    /// promptは`maximums`を各描画前に呼び、バックグラウンド計算が返した案件ごとの
+    /// 最大値へ切り替える。上限の入口をここ1つに保ち、静的な上限だけを渡す経路を残さない。
     fn select_open(
         &mut self,
         heading: &Msg,
         candidates: &[String],
         maximum_index: u32,
-    ) -> Result<(usize, u32)>;
-
-    /// metadata計算の完了をpromptへ反映しながら案件とindexを選ぶ。
-    ///
-    /// 既存のfake promptは静的な`select_open`だけを実装すればよい。実端末のpromptは
-    /// callbackを各描画前に呼び、バックグラウンド計算が返した案件ごとの最大値を使う。
-    fn select_open_with_maximums(
-        &mut self,
-        heading: &Msg,
-        candidates: &[String],
-        maximum_index: u32,
         maximums: &mut dyn FnMut(usize) -> Option<u32>,
-    ) -> Result<(usize, u32)> {
-        let _ = maximums;
-        self.select_open(heading, candidates, maximum_index)
-    }
+    ) -> Result<(usize, u32)>;
 }

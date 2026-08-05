@@ -9,7 +9,7 @@ use crate::design::width::display_width;
 
 use super::{
     Keys, OpenSelection, Painter, RealTerminal, Screen, Selection, Transition, action_for,
-    unreadable, viewport,
+    open_viewport, unreadable, viewport,
 };
 
 /// 対話の入口。
@@ -77,18 +77,10 @@ impl PromptUi {
     }
 
     /// `open`の案件とworktree indexを上下・左右キーで同時に選ぶ。
+    ///
+    /// `maximum_index`はmetadataを読む前の楽観的な上限。`maximums`は各描画前に呼ばれ、
+    /// 計算が終わった案件だけ実際の最大値へ切り替える。
     pub fn select_open(
-        &mut self,
-        heading: &Msg,
-        labels: &[String],
-        maximum_index: u32,
-    ) -> Result<(usize, u32)> {
-        let mut no_maximums = |_project: usize| None;
-        self.select_open_with_maximums(heading, labels, maximum_index, &mut no_maximums)
-    }
-
-    /// metadata計算の完了を反映しながら、案件とworktree indexを同時に選ぶ。
-    pub fn select_open_with_maximums(
         &mut self,
         heading: &Msg,
         labels: &[String],
@@ -244,11 +236,6 @@ fn unresolved(index: usize, count: usize) -> Error {
         ErrorId::SelectionUnresolved,
         msg!("error-selection-unresolved", index = index, count = count),
     )
-}
-
-/// `open`一覧に使える行数。index表示の一行ぶんを追加で残す。
-fn open_viewport(rows: Option<u16>) -> Option<usize> {
-    rows.map(|rows| usize::from(rows).saturating_sub(7).max(1))
 }
 
 /// 前回描いた行を消してから描き直す。

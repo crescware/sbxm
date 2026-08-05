@@ -106,6 +106,8 @@ impl Painter {
     }
 
     /// `open`の案件とworktree indexを同時に選ぶ1画面を組み立てる。
+    ///
+    /// 候補以外の行数は[`OPEN_FRAME_FIXED_ROWS`]と一致させる。
     pub(crate) fn open_frame(
         &self,
         heading: &Msg,

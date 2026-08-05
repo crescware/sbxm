@@ -4,7 +4,7 @@ use crate::command::{CommandSpec, HostEnvironment};
 use crate::config::ConfigLocation;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
-use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata, maximum_worktree_index};
+use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata, last_worktree_index};
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
 
@@ -13,7 +13,7 @@ use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{daemon, generation, sandbox, worktree};
 
-use super::Prepared;
+use super::{ClampedIndex, Prepared};
 
 /// `SSHへ引き渡せる状態までSandboxを整える`。
 ///
@@ -41,7 +41,8 @@ pub fn prepare(
     let interactive_index = requested.is_none() && index.is_none();
     // 対象が決まる前にhostの状態へ触れない。metadataもprompt表示前には待たないため、
     // interactiveなindexは設定上限相当の楽観的な値まで受け付ける。promptの裏で計算が終われば
-    // 表示中の最大値へ反映し、最後はlock済みmetadataでclampする。
+    // 表示中の最大値へ反映し、最後はlock済みmetadataでclampする。clampした事実は
+    // `Prepared`へ載せ、接続前に見せる。
     let (candidate, index) = if interactive_index {
         let (candidate, index) = select::open(
             location,
@@ -57,11 +58,10 @@ pub fn prepare(
         )
     };
     let locked = candidate.lock()?;
-    let index = if interactive_index {
-        let maximum = maximum_worktree_index(locked.metadata.provisioning.requested_worktrees);
-        index.map(|index| index.min(maximum))
+    let (index, clamped_worktree_index) = if interactive_index {
+        clamp_to_metadata(index, &locked.metadata)
     } else {
-        index
+        (index, None)
     };
 
     let metadata = &locked.metadata;
@@ -91,8 +91,32 @@ pub fn prepare(
         ssh_host: format!("{name}.sbx"),
         working_directory,
         missing_worktree_index,
+        clamped_worktree_index,
         worktrees,
     })
+}
+
+/// promptの楽観的な上限で確定したindexを、lock済みmetadataの範囲へ収める。
+///
+/// 収めた場合は、その内訳も返す。呼び出し側は接続前にそれを見せる。
+fn clamp_to_metadata(
+    index: Option<u32>,
+    metadata: &ProjectMetadata,
+) -> (Option<u32>, Option<ClampedIndex>) {
+    let maximum = last_worktree_index(metadata.provisioning.requested_worktrees);
+    let Some(requested) = index else {
+        return (None, None);
+    };
+    if requested <= maximum {
+        return (Some(requested), None);
+    }
+    (
+        Some(maximum),
+        Some(ClampedIndex {
+            requested,
+            opened: maximum,
+        }),
+    )
 }
 
 /// indexなし、または見つからないindexはrepository rootへ接続する。

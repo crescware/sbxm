@@ -30,6 +30,11 @@ fn prompt(keys: ScriptedKeys, screen: &RecordedScreen) -> PromptUi {
     )
 }
 
+/// metadataの計算がまだ届いていない状態。楽観的な上限だけで描く。
+fn no_maximums() -> impl FnMut(usize) -> Option<u32> {
+    |_project| None
+}
+
 fn heading() -> Msg {
     msg!("select-open-heading")
 }
@@ -39,7 +44,7 @@ fn a_project_and_worktree_index_are_confirmed_from_one_prompt() -> Checked {
     let screen = RecordedScreen::new();
     let keys = [Key::ArrowDown, Key::ArrowRight, Key::ArrowRight, Key::Enter];
     let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_open(&heading(), &labels(), 4)
+        .select_open(&heading(), &labels(), 4, &mut no_maximums())
         .required_because("the project and index are confirmed together")?;
 
     assert_eq!(chosen, (1, 2));
@@ -55,7 +60,12 @@ fn an_open_prompt_accepts_the_optimistic_index_bound() -> Checked {
     let screen = RecordedScreen::new();
     let keys = [Key::ArrowRight, Key::ArrowRight, Key::Enter];
     let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_open(&heading(), &labels(), MAX_WORKTREE_INDEX)
+        .select_open(
+            &heading(),
+            &labels(),
+            MAX_WORKTREE_INDEX,
+            &mut no_maximums(),
+        )
         .required_because("the prompt is ready without metadata")?;
 
     assert_eq!(chosen, (0, 2));
@@ -85,7 +95,7 @@ fn a_calculated_maximum_reduces_the_bound_while_the_prompt_is_open() -> Checked 
         (polls >= 2).then_some(1)
     };
     let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_open_with_maximums(&heading(), &labels(), MAX_WORKTREE_INDEX, &mut maximums)
+        .select_open(&heading(), &labels(), MAX_WORKTREE_INDEX, &mut maximums)
         .required_because("the calculated maximum is applied before confirmation")?;
 
     assert_eq!(chosen, (0, 1));

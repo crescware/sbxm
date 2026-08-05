@@ -21,7 +21,9 @@ mod action_for;
 #[cfg(test)]
 mod fake;
 mod keys;
+mod open_frame_fixed_rows;
 mod open_selection;
+mod open_viewport;
 mod painter;
 mod prompt_ui;
 mod real_terminal;
@@ -37,7 +39,9 @@ pub use action_for::action_for;
 #[cfg(test)]
 pub use fake::{RecordedScreen, ScriptedKeys};
 pub use keys::Keys;
+use open_frame_fixed_rows::OPEN_FRAME_FIXED_ROWS;
 pub use open_selection::OpenSelection;
+use open_viewport::open_viewport;
 use painter::Painter;
 pub use prompt_ui::PromptUi;
 use real_terminal::RealTerminal;
