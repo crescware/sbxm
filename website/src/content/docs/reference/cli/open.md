@@ -9,7 +9,7 @@ sbxm open [<project-id>] [--index N]
 
 If the sandbox is stopped, `open` starts it and then connects over SSH. In an interactive terminal, omit the project ID to choose a managed project and then a worktree index. Use the left and right cursor keys to adjust that index; it starts at `0` and stops at the selected project's maximum. In a non-interactive terminal, an explicit project ID is required.
 
-By default, the SSH session starts in `/home/agent/work/<repository>`. Use `--index`, or `-i`, with a zero-based managed worktree index to start in that worktree instead. If the index does not exist, sbxm warns and starts in the repository root.
+When a project ID is supplied without `--index`, the SSH session starts in `/home/agent/work/<repository>`. Use `--index`, or `-i`, with a zero-based managed worktree index to start in that worktree instead. If the index does not exist, sbxm warns and starts in the repository root.
 
 | Option | Meaning |
 | --- | --- |
