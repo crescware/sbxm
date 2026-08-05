@@ -7,7 +7,17 @@ use super::Prepared;
 ///
 /// `SSHのexit` statusが0なら成功とし、非ゼロは理由を推測せず外部command失敗とする。
 pub fn connect(host: &dyn HostEnvironment, prepared: &Prepared) -> Result<()> {
-    let spec = CommandSpec::inherit("ssh", &[&prepared.ssh_host]);
+    let remote_command = format!(
+        "cd {} && exec \"${{SHELL:-/bin/sh}}\" -l",
+        shell_quote(&prepared.working_directory)
+    );
+    let args = ["-t", prepared.ssh_host.as_str(), remote_command.as_str()];
+    let spec = CommandSpec::inherit("ssh", &args);
     host.run(&spec)?.require_success()?;
     Ok(())
+}
+
+/// Sandbox内で評価するcommandへpathを安全に埋め込む。
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }

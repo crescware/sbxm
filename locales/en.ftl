@@ -30,6 +30,8 @@ cli-rebuild-project-help = Registered owner/repository ID of the project to rebu
 
 cli-open-about = Open an SSH session to a project's sandbox, starting the sandbox if needed
 cli-open-project-help = Registered owner/repository ID of the project to open
+cli-open-index-help = Start in the Nth managed worktree instead of the repository root (zero-based)
+warning-open-worktree-not-found = Managed worktree { $index } was not found; opening the repository root instead.
 
 cli-stop-about = Stop one or more project sandboxes without deleting them
 cli-stop-project-help = Registered owner/repository IDs of the projects to stop
@@ -486,14 +488,18 @@ guidance-apply-current-dockerfile = Apply the current Dockerfile.
 prompt-language-heading = 表示言語を選択してください / Choose a display language
 prompt-git-user-name = Enter the name this project's commits are made under
 prompt-git-user-email = Enter the email address this project's commits are made under
+select-open-worktree-heading = Which managed worktree do you want to open?
 prompt-current = current
 prompt-selected = Selected { $value }
+prompt-selected-worktree-index = Selected worktree index { $index }
 prompt-selected-count = Selected: { $count }
 prompt-select-at-least-one = Select at least one, or press Esc to cancel.
 prompt-key-move = Move
+prompt-key-adjust-index = Change index
 prompt-key-toggle = Toggle
 prompt-key-confirm = Confirm
 prompt-key-cancel = Cancel
+prompt-worktree-index = Worktree index: { $index } (0-{ $maximum })
 destroy-recovery-heading = Recovery
 open-worktrees-heading = Managed worktrees in this sandbox
 status-no-worktrees = No managed worktree was observed.

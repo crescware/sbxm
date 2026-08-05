@@ -10,6 +10,8 @@ const UNICODE: GlyphSet = GlyphSet {
     current: "\u{203a}",
     arrow_up: "\u{2191}",
     arrow_down: "\u{2193}",
+    arrow_left: "\u{2190}",
+    arrow_right: "\u{2192}",
 };
 
 /// 文字集合に対応するglyph。どちらでも意味は変わらない。

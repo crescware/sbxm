@@ -17,7 +17,7 @@ use super::Prepared;
 
 /// `SSHへ引き渡せる状態までSandboxを整える`。
 ///
-/// 1. 対象を引数またはpromptで解決する
+/// 1. 対象を引数またはpromptで解決し、必要ならindexをpromptで選ぶ
 /// 2. project lockを取得する
 /// 3. Docker Engineへの疎通を確認する
 /// 4. 1回の一覧取得からSandbox identityとstateを検証する
@@ -27,9 +27,11 @@ use super::Prepared;
 ///
 /// lockはこの関数のあいだだけ保持する。SSH sessionそのものはsbxmのmutationではなく、
 /// 接続中に別terminalの`stop`が待たされる状態を作らない。
+#[allow(clippy::too_many_arguments)]
 pub fn prepare(
     location: &ConfigLocation,
     requested: Option<&ProjectId>,
+    index: Option<u32>,
     host: &dyn HostEnvironment,
     prompt: &mut dyn ProjectPrompt,
     workspace_root: &Path,
@@ -37,7 +39,28 @@ pub fn prepare(
     progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let locked = select::one(location, requested, &msg!("select-open-heading"), prompt)?.lock()?;
+    let candidate = select::one(location, requested, &msg!("select-open-heading"), prompt)?;
+    // projectをpromptで選んだときだけ、metadataが宣言する範囲からindexを選ぶ。
+    // 明示的なprojectとindexなしの組み合わせは、従来どおりrepository rootを使う。
+    let interactive_index = requested.is_none() && index.is_none();
+    let index = if interactive_index {
+        let metadata = candidate.reload()?;
+        let maximum = metadata.provisioning.requested_worktrees.saturating_sub(1);
+        Some(prompt.select_index(&msg!("select-open-worktree-heading"), maximum)?)
+    } else {
+        index
+    };
+    let locked = candidate.lock()?;
+    let index = if interactive_index {
+        let maximum = locked
+            .metadata
+            .provisioning
+            .requested_worktrees
+            .saturating_sub(1);
+        index.map(|index| index.min(maximum))
+    } else {
+        index
+    };
 
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
@@ -58,13 +81,34 @@ pub fn prepare(
 
     let layout = SandboxLayout::new(metadata.canonical_id());
     let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
+    let (working_directory, missing_worktree_index) = working_directory(&layout, &worktrees, index);
 
     Ok(Prepared {
         project: metadata.display_id(),
         sandbox: name.as_str().to_string(),
         ssh_host: format!("{name}.sbx"),
+        working_directory,
+        missing_worktree_index,
         worktrees,
     })
+}
+
+/// indexなし、または見つからないindexはrepository rootへ接続する。
+fn working_directory(
+    layout: &SandboxLayout,
+    worktrees: &[String],
+    index: Option<u32>,
+) -> (String, Option<u32>) {
+    let Some(requested) = index else {
+        return (layout.bare_root(), None);
+    };
+    let Some(index) = usize::try_from(requested).ok() else {
+        return (layout.bare_root(), Some(requested));
+    };
+    match worktrees.get(index) {
+        Some(path) => (path.clone(), None),
+        None => (layout.bare_root(), Some(requested)),
+    }
 }
 
 /// Docker Engineへ疎通できることを確認する。

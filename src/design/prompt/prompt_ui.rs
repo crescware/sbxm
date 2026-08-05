@@ -8,7 +8,8 @@ use crate::design::policy::StreamPolicy;
 use crate::design::width::display_width;
 
 use super::{
-    Keys, Painter, RealTerminal, Screen, Selection, Transition, action_for, unreadable, viewport,
+    IndexSelection, Keys, Painter, RealTerminal, Screen, Selection, Transition, action_for,
+    unreadable, viewport,
 };
 
 /// 対話の入口。
@@ -75,6 +76,40 @@ impl PromptUi {
             .ok_or_else(|| unresolved(0, labels.len()))
     }
 
+    /// `open`のworktree indexを左右キーで選ぶ。
+    pub fn select_index(&mut self, heading: &Msg, maximum: u32) -> Result<u32> {
+        let mut selection = IndexSelection::new(maximum);
+
+        let _ = self.screen.hide_cursor();
+        let mut drawn = 0usize;
+        let outcome = loop {
+            let frame = self
+                .painter
+                .index_frame(heading, selection.current(), selection.maximum());
+            if let Err(error) = redraw(self.screen.as_mut(), drawn, &frame) {
+                break Err(unreadable(&error));
+            }
+            drawn = frame.len();
+
+            match self.keys.read_key() {
+                Ok(key) => match selection.apply(action_for(&key)) {
+                    Transition::Continue => {}
+                    Transition::DoneIndex(index) => break Ok(index),
+                    Transition::Done(_) => break Err(unresolved(0, 0)),
+                    Transition::Canceled => break Err(Error::Canceled),
+                },
+                Err(error) => break Err(unreadable(&error)),
+            }
+        };
+        let _ = self.screen.show_cursor();
+        let _ = self.screen.clear_last_lines(drawn);
+
+        let index = outcome?;
+        let selected = self.painter.selected_index(index);
+        let _ = self.screen.write_line(&selected);
+        Ok(index)
+    }
+
     /// 候補から1件以上を選ぶ。未選択の確定は受け付けない。
     pub fn select_many(&mut self, heading: &Msg, labels: &[String]) -> Result<Vec<usize>> {
         self.select(heading, labels, true)
@@ -101,6 +136,7 @@ impl PromptUi {
                 Ok(key) => match selection.apply(action_for(&key)) {
                     Transition::Continue => {}
                     Transition::Done(indexes) => break Ok(indexes),
+                    Transition::DoneIndex(_) => break Err(unresolved(0, labels.len())),
                     Transition::Canceled => break Err(Error::Canceled),
                 },
                 Err(error) => break Err(unreadable(&error)),

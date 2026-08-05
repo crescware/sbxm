@@ -43,5 +43,17 @@ fn the_selection_reaches_the_command_as_the_index_that_was_stopped_on() -> Check
     )
     .required_because("two projects are chosen")?;
     assert_eq!(chosen, vec![1, 2]);
+
+    let chosen = ProjectPrompt::select_index(
+        &mut prompt(ScriptedKeys::pressing(&[
+            console::Key::ArrowRight,
+            console::Key::ArrowRight,
+            console::Key::Enter,
+        ])),
+        &msg!("select-open-worktree-heading"),
+        4,
+    )
+    .required_because("a worktree index is chosen")?;
+    assert_eq!(chosen, 2);
     Ok(())
 }

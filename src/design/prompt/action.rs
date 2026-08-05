@@ -3,6 +3,8 @@
 pub enum Action {
     Previous,
     Next,
+    DecreaseIndex,
+    IncreaseIndex,
     Toggle,
     Confirm,
     Cancel,

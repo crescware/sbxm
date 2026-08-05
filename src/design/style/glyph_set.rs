@@ -13,6 +13,9 @@ pub struct GlyphSet {
     /// promptの操作説明が指す上下キー。key名は翻訳しない。
     pub arrow_up: &'static str,
     pub arrow_down: &'static str,
+    /// index promptの操作説明が指す左右キー。key名は翻訳しない。
+    pub arrow_left: &'static str,
+    pub arrow_right: &'static str,
 }
 
 #[cfg(test)]

@@ -53,6 +53,15 @@ impl Painter {
         )
     }
 
+    /// 確定したworktree indexを一行の結果として残す。
+    pub(crate) fn selected_index(&self, index: u32) -> String {
+        format!(
+            "{} {}",
+            self.paint(self.glyphs().success, Role::SuccessMarker),
+            self.format(&msg!("prompt-selected-worktree-index", index = index))
+        )
+    }
+
     /// 使えるkeyと動作を必ず対で示す。key名は翻訳せず、動作だけを訳す。
     pub(crate) fn keys(&self, multi: bool) -> String {
         let glyphs = self.glyphs();
@@ -68,6 +77,40 @@ impl Painter {
         pairs.push(format!("Enter {}", self.text("prompt-key-confirm")));
         pairs.push(format!("Esc {}", self.text("prompt-key-cancel")));
         pairs.join("   ")
+    }
+
+    /// worktree index promptで使えるkeyと動作を対で示す。
+    pub(crate) fn index_keys(&self) -> String {
+        let glyphs = self.glyphs();
+        [
+            format!(
+                "{}/{} {}",
+                glyphs.arrow_left,
+                glyphs.arrow_right,
+                self.text("prompt-key-adjust-index")
+            ),
+            format!("Enter {}", self.text("prompt-key-confirm")),
+            format!("Esc {}", self.text("prompt-key-cancel")),
+        ]
+        .join("   ")
+    }
+
+    /// worktree index promptの1画面を組み立てる。
+    pub(crate) fn index_frame(&self, heading: &Msg, current: u32, maximum: u32) -> Vec<String> {
+        vec![
+            self.heading(heading),
+            String::new(),
+            format!("  {}", self.muted(&self.index_keys())),
+            String::new(),
+            format!(
+                "  {}",
+                self.format(&msg!(
+                    "prompt-worktree-index",
+                    index = current,
+                    maximum = maximum
+                ))
+            ),
+        ]
     }
 
     pub(crate) fn frame(

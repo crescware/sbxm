@@ -151,6 +151,14 @@ sbxm open <project-id>
 inside it, and creates the managed worktrees. `open` starts a stopped sandbox
 when necessary and connects over SSH.
 
+The session starts in `/home/agent/work/<repository>`. To start in a managed
+worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
+
+When the project ID is omitted in an interactive terminal, sbxm first asks you
+to choose a project and then asks for a managed worktree index. The index starts
+at `0`; use the left and right cursor keys to adjust it within that project's
+available worktrees.
+
 Inside the sandbox, worktrees are located at:
 
 ```text
@@ -294,7 +302,7 @@ rather than sbxm guessing at the new location.
 |---|---|
 | `sbxm add <github-clone-url>` | Add a GitHub repository to sbxm and clone it onto this host |
 | `sbxm prepare [<project-id>]` | Prepare a registered project by building and provisioning its sandbox |
-| `sbxm open [<project-id>]` | Open an SSH session to a project sandbox, starting it if needed |
+| `sbxm open [<project-id>] [--index N]` | Open an SSH session to a project sandbox, starting it if needed; `N` selects a zero-based managed worktree |
 | `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
 | `sbxm ls` | List managed projects and unmanaged sandboxes with their states |
 | `sbxm status` | Select and show the host or a project's status interactively; `global` is first |

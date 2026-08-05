@@ -5,6 +5,7 @@ use crate::support::select::ProjectPrompt;
 pub struct ScriptedPrompt {
     pub one: usize,
     pub many: Vec<usize>,
+    pub index: u32,
     pub canceled: bool,
     pub asked: std::cell::RefCell<Vec<Vec<String>>>,
     /// 訊かれた見出し。commandが何を訊いたかをtestが確かめる。
@@ -16,16 +17,25 @@ impl ScriptedPrompt {
         ScriptedPrompt {
             one,
             many: Vec::new(),
+            index: 0,
             canceled: false,
             asked: std::cell::RefCell::new(Vec::new()),
             headings: std::cell::RefCell::new(Vec::new()),
         }
     }
 
+    /// 案件は先頭から選び、worktree indexは指定値で確定する。
+    pub fn choosing_worktree(index: u32) -> ScriptedPrompt {
+        let mut prompt = Self::choosing(0);
+        prompt.index = index;
+        prompt
+    }
+
     pub fn choosing_many(many: &[usize]) -> ScriptedPrompt {
         ScriptedPrompt {
             one: 0,
             many: many.to_vec(),
+            index: 0,
             canceled: false,
             asked: std::cell::RefCell::new(Vec::new()),
             headings: std::cell::RefCell::new(Vec::new()),
@@ -36,6 +46,7 @@ impl ScriptedPrompt {
         ScriptedPrompt {
             one: 0,
             many: Vec::new(),
+            index: 0,
             canceled: true,
             asked: std::cell::RefCell::new(Vec::new()),
             headings: std::cell::RefCell::new(Vec::new()),
@@ -58,6 +69,14 @@ impl ProjectPrompt for ScriptedPrompt {
             return Err(Error::Canceled);
         }
         Ok(self.many.clone())
+    }
+
+    fn select_index(&mut self, heading: &Msg, maximum: u32) -> Result<u32> {
+        self.record(heading, &[]);
+        if self.canceled {
+            return Err(Error::Canceled);
+        }
+        Ok(self.index.min(maximum))
     }
 }
 

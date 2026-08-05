@@ -74,7 +74,7 @@ impl Selection {
             }
             Action::Confirm => self.confirm(),
             Action::Cancel => Transition::Canceled,
-            Action::Ignore => Transition::Continue,
+            Action::DecreaseIndex | Action::IncreaseIndex | Action::Ignore => Transition::Continue,
         }
     }
 

@@ -11,6 +11,10 @@ impl ProjectPrompt for PromptUi {
     fn select_many(&mut self, heading: &Msg, candidates: &[String]) -> Result<Vec<usize>> {
         PromptUi::select_many(self, heading, candidates)
     }
+
+    fn select_index(&mut self, heading: &Msg, maximum: u32) -> Result<u32> {
+        PromptUi::select_index(self, heading, maximum)
+    }
 }
 
 #[cfg(test)]
