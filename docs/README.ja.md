@@ -141,10 +141,11 @@ SSHで接続します。
 0始まりのindexを指定します。たとえば`sbxm open <project-id> -i 0`です。
 
 対話端末でproject IDを省略すると、1つのpromptで上下キーから案件、左右キーから
-0始まりのmanaged worktree indexを選び、Enter 1回で両方を確定します。promptはprojectの
-metadataを読む前、楽観的にindex `0`〜`31`を受け付けてすぐ表示されます。metadataは裏で計算し、
-選択中の案件の結果が届いたら表示中の最大値を更新して、実際のworktree数に合わせてindexをclampします。
-確定時にもproject lockのmetadataで再確認します。
+0始まりのmanaged worktree indexを選び、Enter 1回で両方を確定します。promptはすぐ表示するため、
+projectのmetadataを読まずに開き、指定できるworktree数の上限までのindexを楽観的に受け付けます。
+metadataは裏で計算し、選択中の案件の結果が届いたらその案件自身の最大値へ切り替えて、
+indexをその範囲内に収めます。受け付けている範囲は常にprompt上に表示されます。
+確定時にもproject lockのmetadataで再確認し、下げた場合は接続前に警告します。
 
 Sandbox内のworktreeは次の場所にあります。
 
