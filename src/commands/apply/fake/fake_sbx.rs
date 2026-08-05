@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::diagnostics::Result;
+use crate::metadata::MAX_WORKTREES;
 use crate::paths::{PRIVATE_FILE_MODE, PathScope};
 use crate::project::SandboxLayout;
 use crate::testing::sandbox::InnerCommandSandbox;
@@ -67,7 +68,7 @@ impl FakeSbx {
                 &format!("{COMMIT}\n"),
             );
         let mut host = host;
-        for index in 0..32 {
+        for index in 0..MAX_WORKTREES {
             let path = layout.worktree(index);
             host = host.answering(
                 &format!("git -C {path} rev-parse HEAD"),

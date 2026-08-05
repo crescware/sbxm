@@ -4,6 +4,7 @@ use crate::testing::outcome::{Checked, Refused};
 
 use super::*;
 use crate::commands::Command;
+use crate::metadata::MAX_WORKTREES;
 use crate::testing::cli::{command, parse_argv, tty};
 
 #[test]
@@ -43,14 +44,14 @@ fn worktree_counts_outside_the_allowed_range_are_refused() -> Checked {
                 "add",
                 "git@github.com:owner/repo.git",
                 "--worktrees",
-                "32",
+                &MAX_WORKTREES.to_string(),
                 "--detach",
                 "develop"
             ],
             tty()
         )?,
         Command::Add(Args {
-            worktrees: Some(32),
+            worktrees: Some(MAX_WORKTREES),
             ..
         })
     ));

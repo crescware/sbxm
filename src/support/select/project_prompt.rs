@@ -9,6 +9,16 @@ pub trait ProjectPrompt {
     fn select_one(&mut self, heading: &Msg, candidates: &[String]) -> Result<usize>;
     /// 1件以上を選ぶ。未選択の確定は受け付けない。
     fn select_many(&mut self, heading: &Msg, candidates: &[String]) -> Result<Vec<usize>>;
-    /// 指定された最大値の範囲からworktree indexを1件選ぶ。
-    fn select_index(&mut self, heading: &Msg, maximum: u32) -> Result<u32>;
+    /// 案件とworktree indexを1画面で選ぶ。
+    ///
+    /// `ceiling`は案件の最大値が届くまで動かせる上限であり、案件の答えではない。実端末の
+    /// promptは`maximums`を各描画前に呼び、バックグラウンド計算が返した案件ごとの
+    /// 最大値へ切り替える。上限の入口をここ1つに保ち、静的な上限だけを渡す経路を残さない。
+    fn select_open(
+        &mut self,
+        heading: &Msg,
+        candidates: &[String],
+        ceiling: u32,
+        maximums: &mut dyn FnMut(usize) -> Option<u32>,
+    ) -> Result<(usize, u32)>;
 }

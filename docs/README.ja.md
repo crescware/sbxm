@@ -140,8 +140,12 @@ SSHで接続します。
 接続時の起点は`/home/agent/work/<repository>`です。managed worktreeを起点にする場合は
 0始まりのindexを指定します。たとえば`sbxm open <project-id> -i 0`です。
 
-対話端末でproject IDを省略すると、案件を選んだあとmanaged worktreeのindexを選びます。
-indexは`0`から始まり、左右のカーソルキーでその案件に存在する範囲内を移動できます。
+対話端末でproject IDを省略すると、1つのpromptで上下キーから案件、左右キーから
+0始まりのmanaged worktree indexを選び、Enter 1回で両方を確定します。promptはすぐ表示するため、
+projectのmetadataを読まずに開きます。結果が届くまでのindex行は`(計算中)`と述べるだけで、
+まだ分からない範囲を数として示しません。そのあいだもindexは動かせます。metadataは裏で計算し、
+選択中の案件の結果が届いたらその案件自身の範囲を表示して、indexをその中に収めます。
+確定時にもproject lockのmetadataで再確認し、下げた場合は接続前に警告します。
 
 Sandbox内のworktreeは次の場所にあります。
 

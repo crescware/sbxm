@@ -4,6 +4,7 @@ use crate::design::policy::StreamPolicy;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::diagnostics::{ErrorId, ExitCode, Msg};
 use crate::i18n::{Catalog, Locale};
+use crate::metadata::MAX_WORKTREE_INDEX;
 use crate::msg;
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -29,8 +30,92 @@ fn prompt(keys: ScriptedKeys, screen: &RecordedScreen) -> PromptUi {
     )
 }
 
+/// metadataの計算がまだ届いていない状態。楽観的な上限だけで描く。
+fn no_maximums() -> impl FnMut(usize) -> Option<u32> {
+    |_project| None
+}
+
 fn heading() -> Msg {
     msg!("select-open-heading")
+}
+
+#[test]
+fn a_project_and_worktree_index_are_confirmed_from_one_prompt() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [Key::ArrowDown, Key::ArrowRight, Key::ArrowRight, Key::Enter];
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_open(&heading(), &labels(), 4, &mut no_maximums())
+        .required_because("the project and index are confirmed together")?;
+
+    assert_eq!(chosen, (1, 2));
+    assert_eq!(
+        screen.lines(),
+        vec!["✓ Selected owner/bravo, worktree index 2".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
+fn an_open_prompt_states_no_range_until_the_maximum_is_calculated() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [Key::ArrowRight, Key::ArrowRight, Key::Enter];
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_open(
+            &heading(),
+            &labels(),
+            MAX_WORKTREE_INDEX,
+            &mut no_maximums(),
+        )
+        .required_because("the prompt is ready without metadata")?;
+
+    assert_eq!(chosen, (0, 2), "the index still moves while it is unknown");
+    assert!(
+        screen
+            .drawn()
+            .iter()
+            .any(|line| line.contains("Worktree index: 2 (calculating)")),
+        "the wait is named rather than filled in with the ceiling: {:?}",
+        screen.drawn()
+    );
+    assert!(
+        !screen
+            .drawn()
+            .iter()
+            .any(|line| line.contains(&format!("0-{MAX_WORKTREE_INDEX}"))),
+        "the ceiling is not this project's range and is never shown as one: {:?}",
+        screen.drawn()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_calculated_maximum_reduces_the_bound_while_the_prompt_is_open() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [
+        Key::ArrowRight,
+        Key::ArrowRight,
+        Key::ArrowRight,
+        Key::Enter,
+    ];
+    let mut polls = 0;
+    let mut maximums = |_project| {
+        polls += 1;
+        (polls >= 2).then_some(1)
+    };
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_open(&heading(), &labels(), MAX_WORKTREE_INDEX, &mut maximums)
+        .required_because("the calculated maximum is applied before confirmation")?;
+
+    assert_eq!(chosen, (0, 1));
+    assert!(
+        screen
+            .drawn()
+            .iter()
+            .any(|line| line.contains("Worktree index: 1 (0-1)")),
+        "the calculated maximum is rendered: {:?}",
+        screen.drawn()
+    );
+    Ok(())
 }
 
 #[test]
@@ -47,49 +132,6 @@ fn only_the_confirmed_value_is_left_where_the_list_was() -> Checked {
         "the list is taken back down and the answer stays"
     );
     assert!(screen.cursor_is_visible(), "the cursor is handed back");
-    Ok(())
-}
-
-#[test]
-fn a_worktree_index_is_changed_by_left_and_right_and_then_left_visible() -> Checked {
-    let screen = RecordedScreen::new();
-    let keys = [
-        Key::ArrowRight,
-        Key::ArrowRight,
-        Key::ArrowRight,
-        Key::ArrowRight,
-        Key::ArrowRight,
-        Key::ArrowLeft,
-        Key::Enter,
-    ];
-    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_index(&msg!("select-open-worktree-heading"), 4)
-        .required_because("the index is confirmed")?;
-
-    assert_eq!(chosen, 3, "the final left key decrements the index");
-    assert_eq!(
-        screen.lines(),
-        vec!["\u{2713} Selected worktree index 3".to_string()]
-    );
-    Ok(())
-}
-
-#[test]
-fn a_worktree_index_prompt_stops_at_both_bounds() -> Checked {
-    let screen = RecordedScreen::new();
-    let keys = [Key::ArrowLeft, Key::ArrowRight, Key::ArrowRight, Key::Enter];
-    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_index(&msg!("select-open-worktree-heading"), 1)
-        .required_because("the bounded index is confirmed")?;
-
-    assert_eq!(chosen, 1);
-    let drawn = screen.drawn();
-    assert!(
-        drawn
-            .iter()
-            .any(|line| line.contains("Worktree index: 1 (0-1)")),
-        "the current and maximum index are visible: {drawn:?}"
-    );
     Ok(())
 }
 

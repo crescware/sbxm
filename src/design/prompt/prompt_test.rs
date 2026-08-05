@@ -372,3 +372,21 @@ fn the_confirmed_value_is_left_as_its_own_line() {
     let line = painter(StreamPolicy::plain()).selected("owner/bravo");
     assert_eq!(line, "\u{2713} Selected owner/bravo");
 }
+
+#[test]
+fn the_open_frame_reserves_exactly_the_rows_the_viewport_subtracts() {
+    let labels = labels();
+    let selection = OpenSelection::new(labels.len(), 4);
+    let drawn = painter(StreamPolicy::plain()).open_frame(
+        &msg!("select-open-heading"),
+        &labels,
+        &selection,
+        None,
+    );
+
+    assert_eq!(
+        drawn.len() - labels.len(),
+        OPEN_FRAME_FIXED_ROWS,
+        "the list height is computed from this count: {drawn:?}"
+    );
+}

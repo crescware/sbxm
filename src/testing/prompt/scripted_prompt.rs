@@ -71,12 +71,20 @@ impl ProjectPrompt for ScriptedPrompt {
         Ok(self.many.clone())
     }
 
-    fn select_index(&mut self, heading: &Msg, maximum: u32) -> Result<u32> {
-        self.record(heading, &[]);
+    fn select_open(
+        &mut self,
+        heading: &Msg,
+        candidates: &[String],
+        ceiling: u32,
+        maximums: &mut dyn FnMut(usize) -> Option<u32>,
+    ) -> Result<(usize, u32)> {
+        // 決め打ちのpromptは描画しないため、案件ごとの計算結果は使わない。
+        let _ = maximums;
+        self.record(heading, candidates);
         if self.canceled {
             return Err(Error::Canceled);
         }
-        Ok(self.index.min(maximum))
+        Ok((self.one, self.index.min(ceiling)))
     }
 }
 

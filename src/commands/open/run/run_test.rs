@@ -6,7 +6,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use super::*;
 use crate::command::{OutputPolicy, TimeoutClass};
 use crate::design::SilentProgress;
-use crate::metadata::{self, RebuildIntent};
+use crate::metadata::{self, MAX_WORKTREE_INDEX, RebuildIntent};
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};
 use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent};
 use crate::testing::poll::poll;
@@ -141,9 +141,50 @@ fn an_interactive_index_is_bounded_by_the_selected_projects_worktrees() -> Check
 
     assert_eq!(
         prepared.working_directory, "/home/agent/work/example-repo/example-repo.tree-4",
-        "the prompt fake follows the same maximum bound as the terminal prompt"
+        "the optimistic index the prompt accepted is brought down to what the metadata declares"
+    );
+    assert_eq!(
+        prepared.clamped_worktree_index,
+        Some(ClampedIndex {
+            requested: MAX_WORKTREE_INDEX,
+            opened: 4,
+        }),
+        "the difference between the confirmed value and the connection is not swallowed"
     );
     assert_eq!(prepared.missing_worktree_index, None);
+    Ok(())
+}
+
+#[test]
+fn an_interactive_index_inside_the_metadata_is_opened_without_a_warning() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    project.metadata.provisioning.requested_worktrees = 5;
+    metadata::update(&project.paths, &project.metadata)
+        .required_because("record five managed worktrees")?;
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let host = ready(FakeSbx::listing(&running), &project);
+
+    let prepared = prepare(
+        &fixture.location,
+        None,
+        None,
+        &host,
+        &mut ScriptedPrompt::choosing_worktree(2),
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .required_because("prepare the selected worktree")?;
+
+    assert_eq!(
+        prepared.working_directory,
+        "/home/agent/work/example-repo/example-repo.tree-2"
+    );
+    assert_eq!(
+        prepared.clamped_worktree_index, None,
+        "a value the project can satisfy is not reported as an adjustment"
+    );
     Ok(())
 }
 

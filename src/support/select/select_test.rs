@@ -4,7 +4,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::diagnostics::ExitCode;
-use crate::metadata::ProjectMetadata;
+use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata};
 use crate::msg;
 use crate::testing::project::{Fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
@@ -75,6 +75,56 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
         ],
         "candidates are listed in canonical order"
     );
+    Ok(())
+}
+
+#[test]
+fn open_selects_a_project_and_index_without_reading_metadata() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    fixture.register("other/other-repo")?;
+
+    let (chosen, index) = open(
+        &fixture.location,
+        &msg!("select-open-heading"),
+        &mut ScriptedPrompt::choosing_worktree(MAX_WORKTREE_INDEX),
+        MAX_WORKTREE_INDEX,
+    )
+    .required_because("the combined open prompt returns both values")?;
+    assert_eq!(chosen.display_id(), "example-org/example-repo");
+    assert_eq!(index, MAX_WORKTREE_INDEX);
+    Ok(())
+}
+
+#[test]
+fn open_rejects_an_index_that_is_not_in_the_candidate_list() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+
+    let error = open(
+        &fixture.location,
+        &msg!("select-open-heading"),
+        &mut ScriptedPrompt::choosing(7),
+        MAX_WORKTREE_INDEX,
+    )
+    .refused_because("an invalid project selection is not opened")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
+    Ok(())
+}
+
+#[test]
+fn open_has_no_prompt_when_no_projects_are_registered() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut prompt = ScriptedPrompt::choosing(0);
+    let error = open(
+        &fixture.location,
+        &msg!("select-open-heading"),
+        &mut prompt,
+        MAX_WORKTREE_INDEX,
+    )
+    .refused_because("there is no project to open")?;
+    assert_eq!(error.first_id(), Some(ErrorId::NoManagedProjects));
+    assert!(prompt.asked.borrow().is_empty());
     Ok(())
 }
 

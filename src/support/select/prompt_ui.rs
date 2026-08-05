@@ -12,8 +12,14 @@ impl ProjectPrompt for PromptUi {
         PromptUi::select_many(self, heading, candidates)
     }
 
-    fn select_index(&mut self, heading: &Msg, maximum: u32) -> Result<u32> {
-        PromptUi::select_index(self, heading, maximum)
+    fn select_open(
+        &mut self,
+        heading: &Msg,
+        candidates: &[String],
+        ceiling: u32,
+        maximums: &mut dyn FnMut(usize) -> Option<u32>,
+    ) -> Result<(usize, u32)> {
+        PromptUi::select_open(self, heading, candidates, ceiling, maximums)
     }
 }
 

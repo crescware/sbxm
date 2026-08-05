@@ -2,6 +2,7 @@ use crate::design::PromptUi;
 use crate::design::policy::StreamPolicy;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::i18n::Locale;
+use crate::metadata::MAX_WORKTREE_INDEX;
 use crate::msg;
 
 use crate::testing::outcome::{Checked, Required};
@@ -27,7 +28,7 @@ fn candidates() -> Vec<String> {
 /// 案件の選択はtraitを通る。commandが見ているのはこちらであり、同名のinherent
 /// methodではない。
 #[test]
-fn the_selection_reaches_the_command_as_the_index_that_was_stopped_on() -> Checked {
+fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -> Checked {
     let chosen = ProjectPrompt::select_one(
         &mut prompt(ScriptedKeys::choosing(2)),
         &msg!("select-open-heading"),
@@ -44,16 +45,34 @@ fn the_selection_reaches_the_command_as_the_index_that_was_stopped_on() -> Check
     .required_because("two projects are chosen")?;
     assert_eq!(chosen, vec![1, 2]);
 
-    let chosen = ProjectPrompt::select_index(
+    let mut no_maximums = |_project| None;
+    let chosen = ProjectPrompt::select_open(
+        &mut prompt(ScriptedKeys::pressing(&[
+            console::Key::ArrowDown,
+            console::Key::ArrowRight,
+            console::Key::Enter,
+        ])),
+        &msg!("select-open-heading"),
+        &candidates(),
+        MAX_WORKTREE_INDEX,
+        &mut no_maximums,
+    )
+    .required_because("a project and worktree index are chosen")?;
+    assert_eq!(chosen, (1, 1));
+
+    let mut maximums = |_project| Some(1);
+    let chosen = ProjectPrompt::select_open(
         &mut prompt(ScriptedKeys::pressing(&[
             console::Key::ArrowRight,
             console::Key::ArrowRight,
             console::Key::Enter,
         ])),
-        &msg!("select-open-worktree-heading"),
-        4,
+        &msg!("select-open-heading"),
+        &candidates(),
+        MAX_WORKTREE_INDEX,
+        &mut maximums,
     )
-    .required_because("a worktree index is chosen")?;
-    assert_eq!(chosen, 2);
+    .required_because("a calculated maximum is passed into the prompt")?;
+    assert_eq!(chosen, (0, 1));
     Ok(())
 }
