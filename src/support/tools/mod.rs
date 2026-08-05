@@ -15,11 +15,9 @@ mod codex;
 mod gh;
 mod installed;
 mod mise;
-mod note;
 mod probe;
 mod sandbox_ready;
 mod tool;
-mod worktrees_ready;
 
 pub use all::ALL;
 pub use claude::Claude;
@@ -27,11 +25,9 @@ pub use codex::Codex;
 pub use gh::Gh;
 pub use installed::Installed;
 pub use mise::Mise;
-pub use note::Note;
 pub use probe::probe;
 pub use sandbox_ready::SandboxReady;
 pub use tool::Tool;
-pub use worktrees_ready::WorktreesReady;
 
 #[cfg(test)]
 #[path = "tools_test.rs"]

@@ -165,9 +165,9 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() -> Checked {
     );
 
     // 判定に使う出力はsbxmが読む。
-    assert_eq!(host.spec("ls --json")?.output, OutputPolicy::Capture);
+    assert_eq!(host.spec("ls --json")?.output(), OutputPolicy::Capture);
     assert_eq!(
-        host.spec("template ls --json")?.output,
+        host.spec("template ls --json")?.output(),
         OutputPolicy::Capture
     );
     Ok(())

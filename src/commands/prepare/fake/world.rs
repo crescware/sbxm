@@ -126,7 +126,7 @@ impl World {
             .borrow()
             .iter()
             .find(|spec| format!("{} {}", spec.program, spec.args.join(" ")).contains(needle))
-            .map(|spec| (spec.output, spec.timeout))
+            .map(|spec| (spec.output(), spec.timeout))
     }
 
     pub fn outcome(spec: &crate::command::CommandSpec, code: i32, stdout: &str) -> CommandOutcome {

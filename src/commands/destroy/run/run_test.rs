@@ -126,9 +126,9 @@ fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() -> Checked {
 
     // 判定に使う出力はsbxmが読む。
     let listing = host.spec("ls --json")?;
-    assert_eq!(listing.output, OutputPolicy::Capture);
+    assert_eq!(listing.output(), OutputPolicy::Capture);
     let inspection = host.spec("worktree list --porcelain -z")?;
-    assert_eq!(inspection.output, OutputPolicy::Capture);
+    assert_eq!(inspection.output(), OutputPolicy::Capture);
     assert_eq!(inspection.env, EnvPolicy::InheritWithoutSshAgent);
     Ok(())
 }

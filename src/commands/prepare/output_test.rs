@@ -19,14 +19,20 @@ fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() -> Ch
     for (needle, timeout) in [
         ("docker build", TimeoutClass::ImageBuild),
         ("docker image save", TimeoutClass::ImageBuild),
-        ("git clone git@github.com", TimeoutClass::RepositoryTransfer),
+        (
+            "git clone --progress git@github.com",
+            TimeoutClass::RepositoryTransfer,
+        ),
         ("sbx template load", TimeoutClass::SandboxLifecycle),
         ("sbx create", TimeoutClass::SandboxLifecycle),
-        ("fetch --prune origin", TimeoutClass::RepositoryTransfer),
+        (
+            "fetch --prune --progress origin",
+            TimeoutClass::RepositoryTransfer,
+        ),
     ] {
         assert_eq!(
             world.policy_of(needle),
-            Some((OutputPolicy::Passthrough, timeout)),
+            Some((OutputPolicy::Relay, timeout)),
             "{needle} shows its progress while it runs"
         );
     }

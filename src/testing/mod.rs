@@ -18,6 +18,7 @@ pub mod poll;
 pub mod project;
 pub mod prompt;
 pub mod protection;
+pub mod recorded_output;
 pub mod registry;
 pub mod render;
 pub mod repository;

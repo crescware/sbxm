@@ -67,7 +67,17 @@ pub fn ensure_bare_clone(
     sandbox::exec_with_progress(
         host,
         sandbox,
-        &["git", "--git-dir", &git_dir, "fetch", "--prune", "origin"],
+        &[
+            "git",
+            "--git-dir",
+            &git_dir,
+            "fetch",
+            "--prune",
+            // pipe越しでもgitが進捗を出すよう明示する。
+            "--progress",
+            "origin",
+        ],
+        progress,
     )?
     .require_success()?;
     Ok(())

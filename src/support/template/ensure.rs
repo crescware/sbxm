@@ -1,12 +1,13 @@
 use std::path::Path;
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::msg;
 use crate::paths;
 
 use crate::design::ProgressSink;
 use crate::support::image::BuiltImage;
+use crate::support::sandbox;
 
 use super::{LoadedTemplate, find, unusable};
 
@@ -29,10 +30,10 @@ pub fn ensure(
     }
 
     progress.step(msg!("progress-loading-template"));
-    let spec = CommandSpec::passthrough("sbx", &["template", "load", &paths::display(archive)])
-        .env(EnvPolicy::InheritWithoutSshAgent)
+    let command = sandbox::relayed(&["template", "load", &paths::display(archive)])
         .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&spec)?.require_success()?;
+    host.run_with_terminal(&command, progress)?
+        .require_success()?;
 
     if find(host, &image.name)?.is_none() {
         return Err(unusable(

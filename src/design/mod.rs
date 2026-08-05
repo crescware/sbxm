@@ -5,6 +5,7 @@ mod block;
 mod cell;
 pub mod diagnostic;
 pub mod document;
+mod external_output;
 mod fact;
 #[cfg(test)]
 mod fake;
@@ -37,6 +38,7 @@ pub use block::Block;
 pub use cell::Cell;
 pub use diagnostic::{Remediation, Warning};
 pub use document::Document;
+pub use external_output::ExternalOutput;
 pub use fact::Fact;
 #[cfg(test)]
 pub use fake::SilentProgress;
@@ -55,6 +57,6 @@ pub use section::Section;
 pub use section_body::SectionBody;
 pub use style::VisualState;
 pub use table::Table;
-pub use text::{CommandLine, Inline};
+pub use text::Inline;
 use trailing::Trailing;
 pub use ui::Ui;

@@ -1,12 +1,14 @@
 use std::time::Instant;
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::msg;
 use crate::project::SandboxName;
 
 use crate::design::ProgressSink;
+
 use crate::support::daemon;
+use crate::support::sandbox;
 
 use super::{Poll, single, still_present};
 
@@ -25,10 +27,9 @@ pub fn remove(
     // promptに答える手段がなく、対話実行でも二度訊くことになる。
     progress.step(msg!("progress-removing-sandbox"));
     let args = ["rm", "--force", name.as_str()];
-    let spec = CommandSpec::passthrough("sbx", &args)
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&spec)?.require_success()?;
+    let command = sandbox::relayed(&args).timeout(TimeoutClass::SandboxLifecycle);
+    host.run_with_terminal(&command, progress)?
+        .require_success()?;
 
     let deadline = Instant::now() + poll.limit;
     loop {

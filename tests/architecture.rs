@@ -18,6 +18,15 @@ const DESIGN: &str = "src/design";
 /// ANSI escape sequenceを生成してよい唯一のfile。
 const RENDERER: &str = "src/design/painter.rs";
 
+/// 子processへ端末のstreamを直接渡してよい唯一のfile。
+const CONFIGURE: &str = "src/command/configure.rs";
+
+/// `sbx`の出力を端末へ出す起動を組み立ててよい唯一のfile。
+const SBX_RELAY: &str = "src/support/sandbox/relayed.rs";
+
+/// 外部toolのbyteを運ぶmodule。
+const RELAY: &str = "src/command";
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
@@ -178,6 +187,79 @@ fn no_command_writes_its_own_block_spacing() -> Checked {
     assert!(
         offenders.is_empty(),
         "block spacing belongs to the renderer:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_child_process_is_pointed_at_the_terminal_in_one_file_only() -> Checked {
+    // 子processへ端末をそのまま渡せる場所が増えると、sbxmの行と外部toolの行のあいだに
+    // 空行を置かない経路ができる。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path == CONFIGURE || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("Stdio::inherit") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "external output reaches the terminal through ExternalOutput, not through {CONFIGURE}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn what_sbx_says_reaches_the_terminal_through_one_place() -> Checked {
+    // `sbx`は自分への入り方を案内する。sbxmの案内と食い違う行を落とす判断を、subcommand
+    // ごとに書き分けると、書き忘れた1つが利用者を別の入り方へ連れて行く。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path == SBX_RELAY || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("TerminalCommand::relayed(\"sbx\"") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a relayed sbx command is built in {SBX_RELAY}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn no_command_grows_its_own_receiver_for_external_output() -> Checked {
+    // 境界の空行を置くのは`src/design`、外部toolのbyteを運ぶのは`src/command`である。
+    // commandや工程が自前の受け口を持てば、そのcommandだけ見え方が分かれる。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        let allowed = !outside_design(&path)
+            || path.starts_with(RELAY)
+            || path.starts_with("src/testing")
+            || path.ends_with("_test.rs");
+        if allowed {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("impl ExternalOutput for") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "external output is received by {DESIGN} and carried by {RELAY}:\n{}",
         offenders.join("\n")
     );
     Ok(())

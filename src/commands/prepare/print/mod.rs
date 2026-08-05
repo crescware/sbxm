@@ -5,8 +5,6 @@
 
 mod document;
 mod files;
-mod notes;
 
 pub use document::document;
 pub use files::files;
-pub use notes::notes;

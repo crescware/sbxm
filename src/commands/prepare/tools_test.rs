@@ -1,38 +1,20 @@
-//! Sandboxに入っているtoolが返した案内。
+//! Sandboxに入っているtoolに応じた設定。
 
 use crate::testing::outcome::{Checked, Required};
 
 use super::super::fake::{Bench, World};
 use crate::testing::add_request::request;
 
-/// managed worktreeが持ち込んだ`mise.toml`のpath。
-const DECLARED_MISE: &str = "/home/agent/work/example-repo/example-repo.tree-0/mise.toml";
-
 #[test]
-fn what_the_tools_answer_reaches_the_output() -> Checked {
+fn a_worktree_that_declares_mise_is_never_looked_for() -> Checked {
+    // 中で何を動かすかは案件の話であり、sbxmは持たない。宣言fileを探しにも行かない。
     let bench = Bench::new()?;
     let world = World::new();
-    world.carrying(DECLARED_MISE);
+    world.carrying("/home/agent/work/example-repo/example-repo.tree-0/mise.toml");
 
-    let output = bench
+    bench
         .build(&world, &request("Example-Org/Example-Repo", None, None)?)
         .required_because("build")?;
-    assert_eq!(output.notes.len(), 1, "{:?}", output.notes);
-    assert_eq!(output.notes[0].items, vec![DECLARED_MISE.to_string()]);
-    Ok(())
-}
-
-#[test]
-fn a_tool_the_sandbox_lacks_never_reaches_the_output() -> Checked {
-    let bench = Bench::new()?;
-    let world = World::new();
-    world.without("mise");
-    world.carrying(DECLARED_MISE);
-
-    let output = bench
-        .build(&world, &request("Example-Org/Example-Repo", None, None)?)
-        .required_because("build")?;
-    assert!(output.notes.is_empty(), "{:?}", output.notes);
     assert!(
         !world.ran("mise.toml"),
         "the declared files are not even looked for: {:?}",

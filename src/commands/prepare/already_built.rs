@@ -56,7 +56,6 @@ pub(super) fn already_built(
         sandbox_state: entry.state,
         worktrees,
         files: Vec::new(),
-        notes: Vec::new(),
         already_built: true,
         warnings: Vec::new(),
     }))

@@ -71,7 +71,7 @@ pub fn exec(
             ),
     );
 
-    match super::run::connect(host, &prepared) {
+    match super::run::connect(host, &prepared, ui) {
         Ok(()) => ExitCode::Success,
         Err(error) => report(ui, &error),
     }

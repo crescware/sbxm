@@ -3,7 +3,7 @@ use crate::i18n::{Catalog, Locale};
 
 use crate::design::renderer::Renderer;
 
-use super::{Document, GuidanceItem, OutputPolicy, ProgressSink, Warning};
+use super::{Document, ExternalOutput, GuidanceItem, OutputPolicy, ProgressSink, Warning};
 
 /// 1実行ぶんの利用者interface。
 ///
@@ -13,6 +13,8 @@ pub struct Ui<'a> {
     catalog: Catalog,
     stdout: Renderer<'a>,
     stderr: Renderer<'a>,
+    /// 外部toolの出力が続いている最中か。
+    external: bool,
 }
 
 impl Ui<'static> {
@@ -22,6 +24,7 @@ impl Ui<'static> {
             catalog: Catalog::new(locale),
             stdout: Renderer::new(std::io::stdout(), policy.stdout),
             stderr: Renderer::new(std::io::stderr(), policy.stderr),
+            external: false,
         }
     }
 }
@@ -91,6 +94,48 @@ impl Ui<'_> {
 impl ProgressSink for Ui<'_> {
     fn step(&mut self, message: Msg) {
         self.progress(message);
+    }
+}
+
+impl ExternalOutput for Ui<'_> {
+    fn relay(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        self.open_boundary();
+        self.stderr.write_external(bytes);
+    }
+
+    fn hand_over(&mut self) {
+        self.open_boundary();
+    }
+
+    fn finished(&mut self) {
+        // 何も出さなかった外部toolのために境界を作らない。
+        if !self.external {
+            return;
+        }
+        self.external = false;
+        self.stderr.end_external();
+        self.stdout.note_external_write();
+    }
+}
+
+impl Ui<'_> {
+    /// sbxmの出力と外部toolの出力の境界に、空行を1つだけ置く。
+    ///
+    /// 端末では2つのstreamが同じ場所へ出る。両方が空行を負っていても、利用者が見る
+    /// 境界は1つである。
+    fn open_boundary(&mut self) {
+        if self.external {
+            return;
+        }
+        self.external = true;
+        let stdout_owed = self.stdout.take_owed_blank();
+        let stderr_owed = self.stderr.take_owed_blank();
+        if stdout_owed || stderr_owed {
+            self.stderr.write_blank();
+        }
     }
 }
 

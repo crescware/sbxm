@@ -1,11 +1,11 @@
-use crate::design::{Document, Field, Inline, Table};
+use crate::design::{Document, Field, GuidanceItem, Inline, Table};
 use crate::i18n::Locale;
 use crate::msg;
 
 use crate::commands::prepare::PrepareOutput;
 use crate::commands::present::Legend;
 
-use super::{files, notes};
+use super::files;
 
 /// `prepare`が並べるもの。
 pub fn document(output: &PrepareOutput, locale: Locale) -> Document {
@@ -70,8 +70,13 @@ pub fn document(output: &PrepareOutput, locale: Locale) -> Document {
     document
         .table(Some(msg!("status-worktrees-section")), worktrees)
         .concat(files(&output.files, &mut legend))
-        .concat(notes(&output.notes))
         .legend(Legend::heading(), legend.entries())
+        // 案件IDを打ち直させない。次のcommandはそのままcopyできる形で出す。
+        .guidance(
+            Some(msg!("add-next-heading")),
+            vec![GuidanceItem::Plain(msg!("add-next-open"))],
+        )
+        .try_command(format!("sbxm open {}", output.project))
 }
 
 #[cfg(test)]

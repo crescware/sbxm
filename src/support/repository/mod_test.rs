@@ -25,7 +25,7 @@ fn a_missing_repository_is_cloned_bare_over_https_and_then_verified() -> Checked
     );
     assert!(host.ran("remote add origin https://github.com/Example-Org/Example-Repo.git"));
     assert!(host.ran(&format!("config remote.origin.fetch {FETCH_REFSPEC}")));
-    assert!(host.ran("fetch --prune origin"));
+    assert!(host.ran("fetch --prune --progress origin"));
     assert!(
         host.ran("mkdir -p /home/agent/work/example-repo"),
         "the bare repository lives below the work directory"
@@ -50,7 +50,7 @@ fn an_existing_repository_of_the_same_project_is_reused() -> Checked {
         !host.ran("git clone"),
         "an existing repository is not recloned"
     );
-    assert!(host.ran("fetch --prune origin"));
+    assert!(host.ran("fetch --prune --progress origin"));
     Ok(())
 }
 
@@ -192,7 +192,7 @@ fn a_step_the_host_could_not_run_is_not_read_as_a_repository_that_must_be_replac
         format!("git --git-dir {git_dir} config --get-all remote.origin.url"),
         format!("git --git-dir {git_dir} config --get-all remote.origin.fetch"),
         format!("git --git-dir {git_dir} fsck --connectivity-only"),
-        format!("git --git-dir {git_dir} fetch --prune origin"),
+        format!("git --git-dir {git_dir} fetch --prune --progress origin"),
     ];
 
     for step in steps {

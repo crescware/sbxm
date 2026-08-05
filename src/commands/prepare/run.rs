@@ -93,7 +93,7 @@ pub fn run(
         &locked.paths,
         &mut locked.metadata,
     )?;
-    let managed = repository::ensure_worktrees(
+    repository::ensure_worktrees(
         host,
         &ready.name,
         &layout,
@@ -103,7 +103,6 @@ pub fn run(
     )?;
 
     let worktrees = observed_worktrees(host, &ready.name, &layout, &locked.metadata)?;
-    let notes = tools::WorktreesReady::announce(host, &ready.name, &layout, managed.len())?;
 
     Ok(PrepareOutput {
         project: locked.metadata.display_id(),
@@ -113,7 +112,6 @@ pub fn run(
         sandbox_state: ready.state,
         worktrees,
         files,
-        notes,
         already_built: false,
         warnings,
     })
