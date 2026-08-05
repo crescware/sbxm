@@ -69,31 +69,40 @@ fn parse(locale: &str) -> Checked<ast::Resource<String>> {
         .map_err(|(_, errors)| Unmet::new(format!("{locale}.ftl failed to parse: {errors:?}")))
 }
 
-/// message IDと、そのmessageが参照するplaceholderの集合。
-fn placeholders(locale: &str) -> Checked<BTreeMap<String, BTreeSet<String>>> {
+/// 1つのmessageが参照しているもの。
+#[derive(Default)]
+struct Referenced {
+    /// `{ $name }`で差し込む引数。
+    variables: BTreeSet<String>,
+    /// `{ other-message }`で差し込む別のmessage。
+    messages: BTreeSet<String>,
+}
+
+/// message IDと、そのmessageが参照するものの集合。
+fn entries(locale: &str) -> Checked<BTreeMap<String, Referenced>> {
     let resource = parse(locale)?;
-    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut out: BTreeMap<String, Referenced> = BTreeMap::new();
 
     for entry in &resource.body {
         let ast::Entry::Message(message) = entry else {
             continue;
         };
         let id = message.id.name.clone();
-        let mut variables = BTreeSet::new();
+        let mut referenced = Referenced::default();
         if let Some(pattern) = &message.value {
-            collect_pattern(pattern, &mut variables);
+            collect_pattern(pattern, &mut referenced);
         }
         assert!(
-            out.insert(id.clone(), variables).is_none(),
+            out.insert(id.clone(), referenced).is_none(),
             "{locale}.ftl defines {id} more than once"
         );
 
         for attribute in &message.attributes {
             let attribute_id = format!("{}.{}", message.id.name, attribute.id.name);
-            let mut variables = BTreeSet::new();
-            collect_pattern(&attribute.value, &mut variables);
+            let mut referenced = Referenced::default();
+            collect_pattern(&attribute.value, &mut referenced);
             assert!(
-                out.insert(attribute_id.clone(), variables).is_none(),
+                out.insert(attribute_id.clone(), referenced).is_none(),
                 "{locale}.ftl defines {attribute_id} more than once"
             );
         }
@@ -101,7 +110,26 @@ fn placeholders(locale: &str) -> Checked<BTreeMap<String, BTreeSet<String>>> {
     Ok(out)
 }
 
-fn collect_pattern(pattern: &ast::Pattern<String>, out: &mut BTreeSet<String>) {
+/// message IDと、そのmessageが参照するplaceholderの集合。
+fn placeholders(locale: &str) -> Checked<BTreeMap<String, BTreeSet<String>>> {
+    Ok(entries(locale)?
+        .into_iter()
+        .map(|(id, referenced)| (id, referenced.variables))
+        .collect())
+}
+
+/// resourceの中から参照されているmessage ID。
+///
+/// 共有する定義は実装が名前で引かず、別のmessageの中から差し込まれる。実装が呼ばない
+/// ことだけを見て消すと、差し込んでいた側の文が壊れる。
+fn referenced_messages(locale: &str) -> Checked<BTreeSet<String>> {
+    Ok(entries(locale)?
+        .into_values()
+        .flat_map(|referenced| referenced.messages)
+        .collect())
+}
+
+fn collect_pattern(pattern: &ast::Pattern<String>, out: &mut Referenced) {
     for element in &pattern.elements {
         if let ast::PatternElement::Placeable { expression } = element {
             collect_expression(expression, out);
@@ -109,7 +137,7 @@ fn collect_pattern(pattern: &ast::Pattern<String>, out: &mut BTreeSet<String>) {
     }
 }
 
-fn collect_expression(expression: &ast::Expression<String>, out: &mut BTreeSet<String>) {
+fn collect_expression(expression: &ast::Expression<String>, out: &mut Referenced) {
     match expression {
         ast::Expression::Inline(inline) => collect_inline(inline, out),
         ast::Expression::Select { selector, variants } => {
@@ -121,10 +149,17 @@ fn collect_expression(expression: &ast::Expression<String>, out: &mut BTreeSet<S
     }
 }
 
-fn collect_inline(inline: &ast::InlineExpression<String>, out: &mut BTreeSet<String>) {
+fn collect_inline(inline: &ast::InlineExpression<String>, out: &mut Referenced) {
     match inline {
         ast::InlineExpression::VariableReference { id } => {
-            out.insert(id.name.clone());
+            out.variables.insert(id.name.clone());
+        }
+        ast::InlineExpression::MessageReference { id, attribute } => {
+            let name = match attribute {
+                Some(attribute) => format!("{}.{}", id.name, attribute.name),
+                None => id.name.clone(),
+            };
+            out.messages.insert(name);
         }
         ast::InlineExpression::Placeable { expression } => collect_expression(expression, out),
         ast::InlineExpression::FunctionReference { arguments, .. } => {
@@ -316,15 +351,10 @@ fn every_message_id_the_implementation_asks_for_exists() -> Checked {
     let defined: BTreeSet<String> = placeholders(SOURCE)?.keys().cloned().collect();
     let mut missing: BTreeSet<String> = BTreeSet::new();
 
-    for path in rust_sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"))? {
-        // testは、定義の無いIDを渡したときの振る舞いそのものを確かめる。
-        if path.to_string_lossy().ends_with("_test.rs") {
-            continue;
-        }
-        let text = std::fs::read_to_string(&path).required_because("the source is readable")?;
-        for id in requested_ids(&text) {
+    for (path, text) in production_sources()? {
+        for id in requested_ids(&text).into_iter().chain(looked_up_ids(&text)) {
             if !defined.contains(&id) {
-                missing.insert(format!("{}: {id}", path.display()));
+                missing.insert(format!("{path}: {id}"));
             }
         }
     }
@@ -334,6 +364,72 @@ fn every_message_id_the_implementation_asks_for_exists() -> Checked {
         "the implementation asks for message IDs that {SOURCE}.ftl does not define: {missing:?}"
     );
     Ok(())
+}
+
+#[test]
+fn every_message_the_resources_define_is_asked_for_somewhere() -> Checked {
+    // 誰も引かないmessageは、翻訳も見直しも受け続けながら誰の目にも触れない。実装が
+    // 引くのをやめた時点で消す。
+    let mut unused: BTreeSet<String> = placeholders(SOURCE)?.keys().cloned().collect();
+
+    for locale in locales()? {
+        for id in referenced_messages(&locale)? {
+            unused.remove(&id);
+        }
+    }
+    for (_, text) in production_sources()? {
+        // IDは`msg!`や`text`の引数のほか、そのまま値として渡されることもある。綴りが
+        // 現れるかどうかだけを見て、生きているIDを死んだと言わないようにする。
+        for literal in string_literals(&text) {
+            unused.remove(&literal);
+        }
+    }
+
+    assert!(
+        unused.is_empty(),
+        "nothing asks for these messages, so the resources can drop them: {unused:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn every_locale_defines_the_same_number_of_messages() -> Checked {
+    let mut counted = Vec::new();
+    for locale in locales()? {
+        counted.push((locale.clone(), placeholders(&locale)?.len()));
+    }
+
+    let expected = counted
+        .first()
+        .required_because("at least one resource ships")?
+        .1;
+    assert!(
+        counted.iter().all(|(_, count)| *count == expected),
+        "the resources hold a different number of messages: {counted:?}"
+    );
+    Ok(())
+}
+
+/// 本番の実装が載っているRust source。
+///
+/// testは定義の無いIDを渡したときの振る舞いそのものを確かめ、fixtureは表示値としての
+/// 文字列を持つ。どちらもIDの生き死にの根拠にしない。
+fn production_sources() -> Checked<Vec<(String, String)>> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut found = Vec::new();
+    for path in rust_sources(&root.join("src"))? {
+        let relative = path
+            .strip_prefix(root)
+            .required_because("inside the repository")?
+            .to_string_lossy()
+            .into_owned();
+        if relative.ends_with("_test.rs") || relative.starts_with("src/testing") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).required_because("the source is readable")?;
+        found.push((relative, text));
+    }
+    Ok(found)
 }
 
 fn rust_sources(root: &std::path::Path) -> Checked<Vec<std::path::PathBuf>> {
@@ -377,6 +473,58 @@ fn requested_ids(text: &str) -> Vec<String> {
         };
         found.push(after[..close].to_string());
         rest = &after[close + 1..];
+    }
+    found
+}
+
+/// catalogから直接引くmessage ID。
+///
+/// helpとpromptは`msg!`を経ず`text`で引く。`Inline::text`のような表示値のconstructorと
+/// 紛れないよう、型名に続く呼び出しは見ない。
+fn looked_up_ids(text: &str) -> Vec<String> {
+    let source = without_line_comments(text);
+    let mut found = Vec::new();
+    let mut consumed = 0;
+    while let Some(call) = source[consumed..].find("text(") {
+        let start = consumed + call;
+        consumed = start + "text(".len();
+        let before = &source[..start];
+        if before
+            .chars()
+            .last()
+            .is_some_and(|last| last.is_alphanumeric() || last == '_' || last == ':')
+        {
+            continue;
+        }
+        let Some(end) = source[consumed..].find(')') else {
+            break;
+        };
+        found.extend(string_literals(&source[consumed..consumed + end]));
+        consumed += end;
+    }
+    found
+}
+
+/// sourceに書かれた文字列literalを、escapeを飛ばして取り出す。
+fn string_literals(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character != '"' {
+            continue;
+        }
+        let mut literal = String::new();
+        while let Some(inner) = characters.next() {
+            match inner {
+                '\\' => {
+                    characters.next();
+                    literal.push('?');
+                }
+                '"' => break,
+                other => literal.push(other),
+            }
+        }
+        found.push(literal);
     }
     found
 }

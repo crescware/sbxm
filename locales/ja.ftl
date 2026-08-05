@@ -175,7 +175,6 @@ diagnostic-source-label = source:
 diagnostic-destination-label = 配置先:
 diagnostic-directory-label = 作業directory:
 diagnostic-cause-label = 原因:
-cause-output-reader-ended = streamより先に、streamを読むthreadが終わりました
 cause-home-directory-unknown = home directoryを判定できません
 cause-not-a-regular-file = pathが通常のfileではありません
 cause-symbolic-link = pathがsymbolic linkです
