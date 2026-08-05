@@ -42,11 +42,42 @@ fn a_calculated_maximum_clamps_the_current_index_without_affecting_other_project
     selection.set_maximum(0, 1);
 
     assert_eq!(selection.current_index(), 1);
-    assert_eq!(selection.maximum_index(), 1);
+    assert_eq!(selection.maximum_index(), Some(1));
 
     selection.apply(Action::Next);
     assert_eq!(selection.current_index(), 1);
-    assert_eq!(selection.maximum_index(), MAX_WORKTREE_INDEX);
+    assert_eq!(
+        selection.maximum_index(),
+        None,
+        "the other project is still uncalculated; the ceiling is not its answer"
+    );
+}
+
+#[test]
+fn an_index_moves_up_to_the_ceiling_while_the_maximum_is_unknown() {
+    let mut selection = OpenSelection::new(1, 2);
+
+    assert_eq!(
+        selection.maximum_index(),
+        None,
+        "a prompt that has not read metadata states no range"
+    );
+    for _ in 0..5 {
+        selection.apply(Action::IncreaseIndex);
+    }
+    assert_eq!(
+        selection.current_index(),
+        2,
+        "the ceiling still bounds the value it does not describe"
+    );
+
+    selection.set_maximum(0, 0);
+    assert_eq!(
+        selection.current_index(),
+        0,
+        "the answer wins over the ceiling"
+    );
+    assert_eq!(selection.maximum_index(), Some(0));
 }
 
 #[test]

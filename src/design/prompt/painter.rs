@@ -119,14 +119,20 @@ impl Painter {
         let mut lines = vec![self.heading(heading), String::new()];
         lines.push(format!("  {}", self.muted(&self.open_keys())));
         lines.push(String::new());
-        lines.push(format!(
-            "  {}",
-            self.format(&msg!(
+        // 案件の最大値が届くまでは範囲を述べない。天井は案件の答えではないため、
+        // 具体的な数として見せると一度嘘をついて訂正することになる。
+        let index = match selection.maximum_index() {
+            Some(maximum) => msg!(
                 "prompt-worktree-index",
                 index = selection.current_index(),
-                maximum = selection.maximum_index()
-            ))
-        ));
+                maximum = maximum
+            ),
+            None => msg!(
+                "prompt-worktree-index-calculating",
+                index = selection.current_index()
+            ),
+        };
+        lines.push(format!("  {}", self.format(&index)));
         lines.push(String::new());
 
         for index in window(labels.len(), selection.current_project(), viewport) {

@@ -56,7 +56,7 @@ fn a_project_and_worktree_index_are_confirmed_from_one_prompt() -> Checked {
 }
 
 #[test]
-fn an_open_prompt_accepts_the_optimistic_index_bound() -> Checked {
+fn an_open_prompt_states_no_range_until_the_maximum_is_calculated() -> Checked {
     let screen = RecordedScreen::new();
     let keys = [Key::ArrowRight, Key::ArrowRight, Key::Enter];
     let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
@@ -68,13 +68,21 @@ fn an_open_prompt_accepts_the_optimistic_index_bound() -> Checked {
         )
         .required_because("the prompt is ready without metadata")?;
 
-    assert_eq!(chosen, (0, 2));
+    assert_eq!(chosen, (0, 2), "the index still moves while it is unknown");
     assert!(
         screen
             .drawn()
             .iter()
-            .any(|line| line.contains(&format!("Worktree index: 2 (0-{MAX_WORKTREE_INDEX})"))),
-        "the optimistic maximum is visible immediately: {:?}",
+            .any(|line| line.contains("Worktree index: 2 (calculating)")),
+        "the wait is named rather than filled in with the ceiling: {:?}",
+        screen.drawn()
+    );
+    assert!(
+        !screen
+            .drawn()
+            .iter()
+            .any(|line| line.contains(&format!("0-{MAX_WORKTREE_INDEX}"))),
+        "the ceiling is not this project's range and is never shown as one: {:?}",
         screen.drawn()
     );
     Ok(())

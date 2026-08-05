@@ -501,6 +501,7 @@ prompt-key-toggle = Toggle
 prompt-key-confirm = Confirm
 prompt-key-cancel = Cancel
 prompt-worktree-index = Worktree index: { $index } (0-{ $maximum })
+prompt-worktree-index-calculating = Worktree index: { $index } (calculating)
 destroy-recovery-heading = Recovery
 open-worktrees-heading = Managed worktrees in this sandbox
 status-no-worktrees = No managed worktree was observed.

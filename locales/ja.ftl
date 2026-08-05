@@ -501,6 +501,7 @@ prompt-key-toggle = 選択
 prompt-key-confirm = 確定
 prompt-key-cancel = 取消
 prompt-worktree-index = worktree index: { $index } (0-{ $maximum })
+prompt-worktree-index-calculating = worktree index: { $index } (計算中)
 destroy-recovery-heading = 復旧 (Recovery)
 open-worktrees-heading = このSandboxのmanaged worktree
 status-no-worktrees = managed worktreeは観測されませんでした。

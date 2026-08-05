@@ -158,12 +158,12 @@ When the project ID is omitted in an interactive terminal, sbxm shows one
 prompt. Use the up and down cursor keys to choose a project, the left and right
 cursor keys to adjust its zero-based managed worktree index, and press Enter
 once to confirm both. So that it appears immediately, the prompt opens without
-reading project metadata and optimistically accepts any index the supported
-worktree count allows. Metadata is calculated in the background; when the
-selected project's result arrives, the prompt shows that project's own maximum
-and holds the index within it. The prompt always displays the range it currently
-accepts. Confirmation rechecks the value under the project lock, and sbxm warns
-before connecting if the confirmed index had to be brought down.
+reading project metadata. Until that project's result arrives, the index line
+reads `(calculating)` rather than naming a range sbxm cannot yet know; the index
+still moves in the meantime. Metadata is calculated in the background, and when
+the result arrives the prompt shows that project's own range and holds the index
+within it. Confirmation rechecks the value under the project lock, and sbxm
+warns before connecting if the confirmed index had to be brought down.
 
 Inside the sandbox, worktrees are located at:
 

@@ -16,10 +16,10 @@ impl ProjectPrompt for PromptUi {
         &mut self,
         heading: &Msg,
         candidates: &[String],
-        maximum_index: u32,
+        ceiling: u32,
         maximums: &mut dyn FnMut(usize) -> Option<u32>,
     ) -> Result<(usize, u32)> {
-        PromptUi::select_open(self, heading, candidates, maximum_index, maximums)
+        PromptUi::select_open(self, heading, candidates, ceiling, maximums)
     }
 }
 

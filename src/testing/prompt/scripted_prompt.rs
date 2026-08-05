@@ -75,7 +75,7 @@ impl ProjectPrompt for ScriptedPrompt {
         &mut self,
         heading: &Msg,
         candidates: &[String],
-        maximum_index: u32,
+        ceiling: u32,
         maximums: &mut dyn FnMut(usize) -> Option<u32>,
     ) -> Result<(usize, u32)> {
         // 決め打ちのpromptは描画しないため、案件ごとの計算結果は使わない。
@@ -84,7 +84,7 @@ impl ProjectPrompt for ScriptedPrompt {
         if self.canceled {
             return Err(Error::Canceled);
         }
-        Ok((self.one, self.index.min(maximum_index)))
+        Ok((self.one, self.index.min(ceiling)))
     }
 }
 

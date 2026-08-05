@@ -142,9 +142,9 @@ SSHで接続します。
 
 対話端末でproject IDを省略すると、1つのpromptで上下キーから案件、左右キーから
 0始まりのmanaged worktree indexを選び、Enter 1回で両方を確定します。promptはすぐ表示するため、
-projectのmetadataを読まずに開き、指定できるworktree数の上限までのindexを楽観的に受け付けます。
-metadataは裏で計算し、選択中の案件の結果が届いたらその案件自身の最大値へ切り替えて、
-indexをその範囲内に収めます。受け付けている範囲は常にprompt上に表示されます。
+projectのmetadataを読まずに開きます。結果が届くまでのindex行は`(計算中)`と述べるだけで、
+まだ分からない範囲を数として示しません。そのあいだもindexは動かせます。metadataは裏で計算し、
+選択中の案件の結果が届いたらその案件自身の範囲を表示して、indexをその中に収めます。
 確定時にもproject lockのmetadataで再確認し、下げた場合は接続前に警告します。
 
 Sandbox内のworktreeは次の場所にあります。

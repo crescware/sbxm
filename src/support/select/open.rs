@@ -69,7 +69,7 @@ pub fn open(
     location: &ConfigLocation,
     heading: &Msg,
     prompt: &mut dyn ProjectPrompt,
-    maximum_index: u32,
+    ceiling: u32,
 ) -> Result<(Candidate, u32)> {
     let mut candidates = candidates(location)?;
     if candidates.is_empty() {
@@ -79,7 +79,7 @@ pub fn open(
     let (project, index) = {
         let mut metadata_maximums = MetadataMaximums::new(&candidates);
         let mut maximums = |project| metadata_maximums.poll(project);
-        prompt.select_open(heading, &labels, maximum_index, &mut maximums)?
+        prompt.select_open(heading, &labels, ceiling, &mut maximums)?
     };
     if project >= candidates.len() {
         return Err(unresolved(project, candidates.len()));

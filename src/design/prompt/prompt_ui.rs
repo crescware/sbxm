@@ -78,19 +78,19 @@ impl PromptUi {
 
     /// `open`の案件とworktree indexを上下・左右キーで同時に選ぶ。
     ///
-    /// `maximum_index`はmetadataを読む前の楽観的な上限。`maximums`は各描画前に呼ばれ、
-    /// 計算が終わった案件だけ実際の最大値へ切り替える。
+    /// `ceiling`は案件の最大値が届くまで動かせる上限。`maximums`は各描画前に呼ばれ、
+    /// 計算が終わった案件だけ実際の最大値へ切り替える。届くまでは範囲を数として見せない。
     pub fn select_open(
         &mut self,
         heading: &Msg,
         labels: &[String],
-        maximum_index: u32,
+        ceiling: u32,
         maximums: &mut dyn FnMut(usize) -> Option<u32>,
     ) -> Result<(usize, u32)> {
         if labels.is_empty() {
             return Err(unresolved(0, 0));
         }
-        let mut selection = OpenSelection::new(labels.len(), maximum_index);
+        let mut selection = OpenSelection::new(labels.len(), ceiling);
 
         let _ = self.screen.hide_cursor();
         let mut drawn = 0usize;
