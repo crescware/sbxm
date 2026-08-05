@@ -27,9 +27,11 @@ use super::Prepared;
 ///
 /// lockはこの関数のあいだだけ保持する。SSH sessionそのものはsbxmのmutationではなく、
 /// 接続中に別terminalの`stop`が待たされる状態を作らない。
+#[allow(clippy::too_many_arguments)]
 pub fn prepare(
     location: &ConfigLocation,
     requested: Option<&ProjectId>,
+    index: Option<u32>,
     host: &dyn HostEnvironment,
     prompt: &mut dyn ProjectPrompt,
     workspace_root: &Path,
@@ -58,13 +60,34 @@ pub fn prepare(
 
     let layout = SandboxLayout::new(metadata.canonical_id());
     let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
+    let (working_directory, missing_worktree_index) = working_directory(&layout, &worktrees, index);
 
     Ok(Prepared {
         project: metadata.display_id(),
         sandbox: name.as_str().to_string(),
         ssh_host: format!("{name}.sbx"),
+        working_directory,
+        missing_worktree_index,
         worktrees,
     })
+}
+
+/// indexなし、または見つからないindexはrepository rootへ接続する。
+fn working_directory(
+    layout: &SandboxLayout,
+    worktrees: &[String],
+    index: Option<u32>,
+) -> (String, Option<u32>) {
+    let Some(requested) = index else {
+        return (layout.bare_root(), None);
+    };
+    let Some(index) = usize::try_from(requested).ok() else {
+        return (layout.bare_root(), Some(requested));
+    };
+    match worktrees.get(index) {
+        Some(path) => (path.clone(), None),
+        None => (layout.bare_root(), Some(requested)),
+    }
 }
 
 /// Docker Engineへ疎通できることを確認する。

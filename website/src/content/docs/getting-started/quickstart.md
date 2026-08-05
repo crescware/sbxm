@@ -73,6 +73,8 @@ sbxm open <project-id>
 
 `prepare` builds the project image, creates the sandbox, clones the repository inside it, and creates the managed worktrees. `open` starts a stopped sandbox when necessary and connects over SSH.
 
+The session starts in `/home/agent/work/<repository>`. To start in a managed worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
+
 Managed worktrees are located at paths like:
 
 ```text

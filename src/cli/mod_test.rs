@@ -253,13 +253,32 @@ fn omitting_the_target_on_a_terminal_defers_to_the_selection_prompt() -> Checked
         })
     );
     assert_eq!(command(&["rebuild"], tty())?, Command::Rebuild(None));
-    assert_eq!(command(&["open"], tty())?, Command::Open(None));
+    assert_eq!(
+        command(&["open"], tty())?,
+        Command::Open(commands::open::Args {
+            project: None,
+            index: None,
+        })
+    );
     assert_eq!(command(&["stop"], tty())?, Command::Stop(Vec::new()));
     assert_eq!(
         command(&["destroy"], tty())?,
         Command::Destroy(commands::destroy::Args {
             project: None,
             force: false
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn open_accepts_a_zero_based_worktree_index() -> Checked {
+    let project = crate::project::ProjectId::parse("crescware/sbxm")?;
+    assert_eq!(
+        command(&["open", "crescware/sbxm", "-i", "0"], tty())?,
+        Command::Open(commands::open::Args {
+            project: Some(project),
+            index: Some(0),
         })
     );
     Ok(())

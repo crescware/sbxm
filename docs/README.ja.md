@@ -137,6 +137,9 @@ sbxm open <project-id>
 cloneし、managed worktreeを作成します。`open`は必要に応じて停止中のSandboxを起動し、
 SSHで接続します。
 
+接続時の起点は`/home/agent/work/<repository>`です。managed worktreeを起点にする場合は
+0始まりのindexを指定します。たとえば`sbxm open <project-id> -i 0`です。
+
 Sandbox内のworktreeは次の場所にあります。
 
 ```text
@@ -271,7 +274,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 |---|---|
 | `sbxm add <github-clone-url>` | GitHub repositoryをsbxmへ追加し、このhostへcloneする |
 | `sbxm prepare [<project-id>]` | 登録済み案件のSandboxを構築し、作業できる状態に準備する |
-| `sbxm open [<project-id>]` | SandboxへのSSH接続を開き、必要なら先に起動する |
+| `sbxm open [<project-id>] [--index N]` | SandboxへのSSH接続を開き、必要なら先に起動する。`N`は0始まりのmanaged worktree index |
 | `sbxm stop [<project-id> ...]` | 1件以上の案件のSandboxを、削除せず停止する |
 | `sbxm ls` | 管理案件と管理外Sandboxを、その状態とともに一覧する |
 | `sbxm status` | 対話端末でhostまたは案件を選択して診断する。`global`を先頭にpromptを表示する |

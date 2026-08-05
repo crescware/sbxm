@@ -30,6 +30,8 @@ cli-rebuild-project-help = 再構築する案件のowner/repository形式の登�
 
 cli-open-about = 案件のSandboxへのSSH接続を開き、必要なら先に起動します
 cli-open-project-help = SSH接続する案件のowner/repository形式の登録ID
+cli-open-index-help = repository rootではなくN番目のmanaged worktreeを起点にします（0始まり）
+warning-open-worktree-not-found = managed worktree { $index } が見つからないため、repository rootを開きます。
 
 cli-stop-about = 1件以上の案件のSandboxを、削除せず停止します
 cli-stop-project-help = 停止する案件のowner/repository形式の登録ID（複数指定可）

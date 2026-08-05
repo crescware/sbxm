@@ -1,16 +1,16 @@
 //! `open`の実行と出力。
 
 use crate::command::HostEnvironment;
-use crate::design::{Document, Inline, PromptUi, Ui};
+use crate::design::{Document, Inline, PromptUi, Ui, Warning};
 use crate::diagnostics::ExitCode;
 use crate::msg;
-use crate::project::ProjectId;
 use crate::support::{inventory, sandbox};
 
 use super::super::{Context, report};
+use super::Args;
 
 pub fn exec(
-    project: Option<&ProjectId>,
+    args: &Args,
     context: &Context,
     ui: &mut Ui,
     host: &dyn HostEnvironment,
@@ -24,7 +24,8 @@ pub fn exec(
     prompt.set_locale(locale);
     let prepared = match super::run::prepare(
         context.location,
-        project,
+        args.project.as_ref(),
+        args.index,
         host,
         prompt,
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
@@ -34,6 +35,13 @@ pub fn exec(
         Ok(prepared) => prepared,
         Err(error) => return report(ui, &error),
     };
+
+    if let Some(index) = prepared.missing_worktree_index {
+        ui.warning(&Warning::text(msg!(
+            "warning-open-worktree-not-found",
+            index = index
+        )));
+    }
 
     // 接続先はterminalを引き渡す前に見せる。
     ui.stderr(

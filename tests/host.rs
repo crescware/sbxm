@@ -526,7 +526,58 @@ fn open_names_the_sandbox_and_its_worktrees_before_it_hands_over_the_terminal() 
 
     // 引き渡した先は、案件のSandboxのSSH hostである。
     let asked = host.invocations()?;
-    assert!(asked.contains(&format!("ssh {sandbox}.sbx\n")), "{asked}");
+    assert!(
+        asked.contains(&format!(
+            "ssh -t {sandbox}.sbx cd '/home/agent/work/example-repo' && exec \"${{SHELL:-/bin/sh}}\" -l\n"
+        )),
+        "{asked}"
+    );
+    Ok(())
+}
+
+#[test]
+fn open_can_start_in_a_selected_worktree() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+
+    let run = host.run(&["--lang", "en", "open", PROJECT, "-i", "0"])?;
+
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    let asked = host.invocations()?;
+    assert!(
+        asked.contains(&format!(
+            "ssh -t {sandbox}.sbx cd '{WORKTREE}' && exec \"${{SHELL:-/bin/sh}}\" -l\n"
+        )),
+        "{asked}"
+    );
+    Ok(())
+}
+
+#[test]
+fn open_warns_and_uses_the_repository_root_for_a_missing_worktree_index() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+
+    let run = host.run(&["--lang", "en", "open", PROJECT, "-i", "1"])?;
+
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert!(
+        run.stderr
+            .contains("Managed worktree 1 was not found; opening the repository root instead."),
+        "{}",
+        run.stderr
+    );
+    let asked = host.invocations()?;
+    assert!(
+        asked.contains(&format!(
+            "ssh -t {sandbox}.sbx cd '/home/agent/work/example-repo' && exec \"${{SHELL:-/bin/sh}}\" -l\n"
+        )),
+        "{asked}"
+    );
     Ok(())
 }
 
