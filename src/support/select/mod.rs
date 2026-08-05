@@ -20,6 +20,7 @@ mod many;
 mod no_managed_projects;
 mod not_managed;
 mod one;
+mod open;
 mod project_prompt;
 mod prompt_ui;
 mod unresolved;
@@ -35,6 +36,7 @@ pub use many::many;
 use no_managed_projects::no_managed_projects;
 pub use not_managed::not_managed;
 pub use one::one;
+pub use open::open;
 pub use project_prompt::ProjectPrompt;
 pub use unresolved::unresolved;
 

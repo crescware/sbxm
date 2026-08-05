@@ -79,6 +79,56 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
 }
 
 #[test]
+fn open_selects_a_project_and_index_without_reading_metadata() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    fixture.register("other/other-repo")?;
+
+    let (chosen, index) = open(
+        &fixture.location,
+        &msg!("select-open-heading"),
+        &mut ScriptedPrompt::choosing_worktree(31),
+        31,
+    )
+    .required_because("the combined open prompt returns both values")?;
+    assert_eq!(chosen.display_id(), "example-org/example-repo");
+    assert_eq!(index, 31);
+    Ok(())
+}
+
+#[test]
+fn open_rejects_an_index_that_is_not_in_the_candidate_list() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+
+    let error = open(
+        &fixture.location,
+        &msg!("select-open-heading"),
+        &mut ScriptedPrompt::choosing(7),
+        31,
+    )
+    .refused_because("an invalid project selection is not opened")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
+    Ok(())
+}
+
+#[test]
+fn open_has_no_prompt_when_no_projects_are_registered() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut prompt = ScriptedPrompt::choosing(0);
+    let error = open(
+        &fixture.location,
+        &msg!("select-open-heading"),
+        &mut prompt,
+        31,
+    )
+    .refused_because("there is no project to open")?;
+    assert_eq!(error.first_id(), Some(ErrorId::NoManagedProjects));
+    assert!(prompt.asked.borrow().is_empty());
+    Ok(())
+}
+
+#[test]
 fn cancelling_the_prompt_changes_nothing() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("example-org/example-repo")?;

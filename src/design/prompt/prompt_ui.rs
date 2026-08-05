@@ -8,7 +8,7 @@ use crate::design::policy::StreamPolicy;
 use crate::design::width::display_width;
 
 use super::{
-    IndexSelection, Keys, Painter, RealTerminal, Screen, Selection, Transition, action_for,
+    Keys, OpenSelection, Painter, RealTerminal, Screen, Selection, Transition, action_for,
     unreadable, viewport,
 };
 
@@ -76,16 +76,27 @@ impl PromptUi {
             .ok_or_else(|| unresolved(0, labels.len()))
     }
 
-    /// `open`のworktree indexを左右キーで選ぶ。
-    pub fn select_index(&mut self, heading: &Msg, maximum: u32) -> Result<u32> {
-        let mut selection = IndexSelection::new(maximum);
+    /// `open`の案件とworktree indexを上下・左右キーで同時に選ぶ。
+    pub fn select_open(
+        &mut self,
+        heading: &Msg,
+        labels: &[String],
+        maximum_index: u32,
+    ) -> Result<(usize, u32)> {
+        if labels.is_empty() {
+            return Err(unresolved(0, 0));
+        }
+        let mut selection = OpenSelection::new(labels.len(), maximum_index);
 
         let _ = self.screen.hide_cursor();
         let mut drawn = 0usize;
         let outcome = loop {
-            let frame = self
-                .painter
-                .index_frame(heading, selection.current(), selection.maximum());
+            let frame = self.painter.open_frame(
+                heading,
+                labels,
+                &selection,
+                open_viewport(self.screen.rows()),
+            );
             if let Err(error) = redraw(self.screen.as_mut(), drawn, &frame) {
                 break Err(unreadable(&error));
             }
@@ -94,8 +105,10 @@ impl PromptUi {
             match self.keys.read_key() {
                 Ok(key) => match selection.apply(action_for(&key)) {
                     Transition::Continue => {}
-                    Transition::DoneIndex(index) => break Ok(index),
-                    Transition::Done(_) => break Err(unresolved(0, 0)),
+                    Transition::DoneOpen { project, index } => break Ok((project, index)),
+                    Transition::Done(_) => {
+                        break Err(unresolved(0, labels.len()));
+                    }
                     Transition::Canceled => break Err(Error::Canceled),
                 },
                 Err(error) => break Err(unreadable(&error)),
@@ -104,10 +117,10 @@ impl PromptUi {
         let _ = self.screen.show_cursor();
         let _ = self.screen.clear_last_lines(drawn);
 
-        let index = outcome?;
-        let selected = self.painter.selected_index(index);
+        let (project, index) = outcome?;
+        let selected = self.painter.selected_open(&labels[project], index);
         let _ = self.screen.write_line(&selected);
-        Ok(index)
+        Ok((project, index))
     }
 
     /// 候補から1件以上を選ぶ。未選択の確定は受け付けない。
@@ -136,7 +149,9 @@ impl PromptUi {
                 Ok(key) => match selection.apply(action_for(&key)) {
                     Transition::Continue => {}
                     Transition::Done(indexes) => break Ok(indexes),
-                    Transition::DoneIndex(_) => break Err(unresolved(0, labels.len())),
+                    Transition::DoneOpen { .. } => {
+                        break Err(unresolved(0, labels.len()));
+                    }
                     Transition::Canceled => break Err(Error::Canceled),
                 },
                 Err(error) => break Err(unreadable(&error)),
@@ -214,6 +229,11 @@ fn unresolved(index: usize, count: usize) -> Error {
         ErrorId::SelectionUnresolved,
         msg!("error-selection-unresolved", index = index, count = count),
     )
+}
+
+/// `open`一覧に使える行数。index表示の一行ぶんを追加で残す。
+fn open_viewport(rows: Option<u16>) -> Option<usize> {
+    rows.map(|rows| usize::from(rows).saturating_sub(7).max(1))
 }
 
 /// 前回描いた行を消してから描き直す。

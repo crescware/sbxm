@@ -154,10 +154,13 @@ when necessary and connects over SSH.
 The session starts in `/home/agent/work/<repository>`. To start in a managed
 worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
 
-When the project ID is omitted in an interactive terminal, sbxm first asks you
-to choose a project and then asks for a managed worktree index. The index starts
-at `0`; use the left and right cursor keys to adjust it within that project's
-available worktrees.
+When the project ID is omitted in an interactive terminal, sbxm shows one
+prompt. Use the up and down cursor keys to choose a project, the left and right
+cursor keys to adjust its zero-based managed worktree index, and press Enter
+once to confirm both. The prompt initially accepts indices `0`–`31` without
+reading project metadata, so it appears immediately; after the selected
+project's metadata is loaded, sbxm clamps the index to that project's actual
+worktree count.
 
 Inside the sandbox, worktrees are located at:
 

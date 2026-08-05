@@ -20,8 +20,8 @@ mod action;
 mod action_for;
 #[cfg(test)]
 mod fake;
-mod index_selection;
 mod keys;
+mod open_selection;
 mod painter;
 mod prompt_ui;
 mod real_terminal;
@@ -36,8 +36,8 @@ pub use action::Action;
 pub use action_for::action_for;
 #[cfg(test)]
 pub use fake::{RecordedScreen, ScriptedKeys};
-pub use index_selection::IndexSelection;
 pub use keys::Keys;
+pub use open_selection::OpenSelection;
 use painter::Painter;
 pub use prompt_ui::PromptUi;
 use real_terminal::RealTerminal;

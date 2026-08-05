@@ -34,6 +34,42 @@ fn heading() -> Msg {
 }
 
 #[test]
+fn a_project_and_worktree_index_are_confirmed_from_one_prompt() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [Key::ArrowDown, Key::ArrowRight, Key::ArrowRight, Key::Enter];
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_open(&heading(), &labels(), 4)
+        .required_because("the project and index are confirmed together")?;
+
+    assert_eq!(chosen, (1, 2));
+    assert_eq!(
+        screen.lines(),
+        vec!["✓ Selected owner/bravo, worktree index 2".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
+fn an_open_prompt_accepts_the_optimistic_index_bound() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [Key::ArrowRight, Key::ArrowRight, Key::Enter];
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_open(&heading(), &labels(), 31)
+        .required_because("the prompt is ready without metadata")?;
+
+    assert_eq!(chosen, (0, 2));
+    assert!(
+        screen
+            .drawn()
+            .iter()
+            .any(|line| line.contains("Worktree index: 2 (0-31)")),
+        "the optimistic maximum is visible immediately: {:?}",
+        screen.drawn()
+    );
+    Ok(())
+}
+
+#[test]
 fn only_the_confirmed_value_is_left_where_the_list_was() -> Checked {
     let screen = RecordedScreen::new();
     let chosen = prompt(ScriptedKeys::choosing(1), &screen)
@@ -47,49 +83,6 @@ fn only_the_confirmed_value_is_left_where_the_list_was() -> Checked {
         "the list is taken back down and the answer stays"
     );
     assert!(screen.cursor_is_visible(), "the cursor is handed back");
-    Ok(())
-}
-
-#[test]
-fn a_worktree_index_is_changed_by_left_and_right_and_then_left_visible() -> Checked {
-    let screen = RecordedScreen::new();
-    let keys = [
-        Key::ArrowRight,
-        Key::ArrowRight,
-        Key::ArrowRight,
-        Key::ArrowRight,
-        Key::ArrowRight,
-        Key::ArrowLeft,
-        Key::Enter,
-    ];
-    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_index(&msg!("select-open-worktree-heading"), 4)
-        .required_because("the index is confirmed")?;
-
-    assert_eq!(chosen, 3, "the final left key decrements the index");
-    assert_eq!(
-        screen.lines(),
-        vec!["\u{2713} Selected worktree index 3".to_string()]
-    );
-    Ok(())
-}
-
-#[test]
-fn a_worktree_index_prompt_stops_at_both_bounds() -> Checked {
-    let screen = RecordedScreen::new();
-    let keys = [Key::ArrowLeft, Key::ArrowRight, Key::ArrowRight, Key::Enter];
-    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_index(&msg!("select-open-worktree-heading"), 1)
-        .required_because("the bounded index is confirmed")?;
-
-    assert_eq!(chosen, 1);
-    let drawn = screen.drawn();
-    assert!(
-        drawn
-            .iter()
-            .any(|line| line.contains("Worktree index: 1 (0-1)")),
-        "the current and maximum index are visible: {drawn:?}"
-    );
     Ok(())
 }
 

@@ -6,7 +6,7 @@ use crate::design::policy::StreamPolicy;
 use crate::design::style::{self, GlyphSet, Role};
 use crate::design::width::{display_width, truncate};
 
-use super::{Selection, window};
+use super::{OpenSelection, Selection, window};
 
 /// promptの1画面を組み立てる。
 pub(super) struct Painter {
@@ -53,12 +53,16 @@ impl Painter {
         )
     }
 
-    /// 確定したworktree indexを一行の結果として残す。
-    pub(crate) fn selected_index(&self, index: u32) -> String {
+    /// `open`で確定した案件とworktree indexを一行の結果として残す。
+    pub(crate) fn selected_open(&self, project: &str, index: u32) -> String {
         format!(
             "{} {}",
             self.paint(self.glyphs().success, Role::SuccessMarker),
-            self.format(&msg!("prompt-selected-worktree-index", index = index))
+            self.format(&msg!(
+                "prompt-selected-open",
+                project = project,
+                index = index
+            ))
         )
     }
 
@@ -79,10 +83,16 @@ impl Painter {
         pairs.join("   ")
     }
 
-    /// worktree index promptで使えるkeyと動作を対で示す。
-    pub(crate) fn index_keys(&self) -> String {
+    /// `open`の案件とworktree index promptで使えるkeyと動作を対で示す。
+    fn open_keys(&self) -> String {
         let glyphs = self.glyphs();
         [
+            format!(
+                "{}/{} {}",
+                glyphs.arrow_up,
+                glyphs.arrow_down,
+                self.text("prompt-key-move-project")
+            ),
             format!(
                 "{}/{} {}",
                 glyphs.arrow_left,
@@ -95,22 +105,37 @@ impl Painter {
         .join("   ")
     }
 
-    /// worktree index promptの1画面を組み立てる。
-    pub(crate) fn index_frame(&self, heading: &Msg, current: u32, maximum: u32) -> Vec<String> {
-        vec![
-            self.heading(heading),
-            String::new(),
-            format!("  {}", self.muted(&self.index_keys())),
-            String::new(),
-            format!(
-                "  {}",
-                self.format(&msg!(
-                    "prompt-worktree-index",
-                    index = current,
-                    maximum = maximum
-                ))
-            ),
-        ]
+    /// `open`の案件とworktree indexを同時に選ぶ1画面を組み立てる。
+    pub(crate) fn open_frame(
+        &self,
+        heading: &Msg,
+        labels: &[String],
+        selection: &OpenSelection,
+        viewport: Option<usize>,
+    ) -> Vec<String> {
+        let current_label = format!("({})", self.text("prompt-current"));
+        let mut lines = vec![self.heading(heading), String::new()];
+        lines.push(format!("  {}", self.muted(&self.open_keys())));
+        lines.push(String::new());
+        lines.push(format!(
+            "  {}",
+            self.format(&msg!(
+                "prompt-worktree-index",
+                index = selection.current_index(),
+                maximum = selection.maximum_index()
+            ))
+        ));
+        lines.push(String::new());
+
+        for index in window(labels.len(), selection.current_project(), viewport) {
+            lines.push(self.candidate(
+                &labels[index],
+                index == selection.current_project(),
+                None,
+                &current_label,
+            ));
+        }
+        lines
     }
 
     pub(crate) fn frame(

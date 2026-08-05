@@ -27,7 +27,7 @@ fn candidates() -> Vec<String> {
 /// 案件の選択はtraitを通る。commandが見ているのはこちらであり、同名のinherent
 /// methodではない。
 #[test]
-fn the_selection_reaches_the_command_as_the_index_that_was_stopped_on() -> Checked {
+fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -> Checked {
     let chosen = ProjectPrompt::select_one(
         &mut prompt(ScriptedKeys::choosing(2)),
         &msg!("select-open-heading"),
@@ -44,16 +44,17 @@ fn the_selection_reaches_the_command_as_the_index_that_was_stopped_on() -> Check
     .required_because("two projects are chosen")?;
     assert_eq!(chosen, vec![1, 2]);
 
-    let chosen = ProjectPrompt::select_index(
+    let chosen = ProjectPrompt::select_open(
         &mut prompt(ScriptedKeys::pressing(&[
-            console::Key::ArrowRight,
+            console::Key::ArrowDown,
             console::Key::ArrowRight,
             console::Key::Enter,
         ])),
-        &msg!("select-open-worktree-heading"),
-        4,
+        &msg!("select-open-heading"),
+        &candidates(),
+        31,
     )
-    .required_because("a worktree index is chosen")?;
-    assert_eq!(chosen, 2);
+    .required_because("a project and worktree index are chosen")?;
+    assert_eq!(chosen, (1, 1));
     Ok(())
 }

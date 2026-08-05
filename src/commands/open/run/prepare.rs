@@ -4,7 +4,7 @@ use crate::command::{CommandSpec, HostEnvironment};
 use crate::config::ConfigLocation;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
-use crate::metadata::ProjectMetadata;
+use crate::metadata::{MAX_WORKTREES, ProjectMetadata};
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
 
@@ -17,7 +17,7 @@ use super::Prepared;
 
 /// `SSHへ引き渡せる状態までSandboxを整える`。
 ///
-/// 1. 対象を引数またはpromptで解決し、必要ならindexをpromptで選ぶ
+/// 1. 対象を引数またはpromptで解決し、必要なら案件とindexを1画面で選ぶ
 /// 2. project lockを取得する
 /// 3. Docker Engineへの疎通を確認する
 /// 4. 1回の一覧取得からSandbox identityとstateを検証する
@@ -38,17 +38,22 @@ pub fn prepare(
     poll: Poll,
     progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
-    // 対象が決まる前にhostの状態へ触れない。
-    let candidate = select::one(location, requested, &msg!("select-open-heading"), prompt)?;
-    // projectをpromptで選んだときだけ、metadataが宣言する範囲からindexを選ぶ。
-    // 明示的なprojectとindexなしの組み合わせは、従来どおりrepository rootを使う。
     let interactive_index = requested.is_none() && index.is_none();
-    let index = if interactive_index {
-        let metadata = candidate.reload()?;
-        let maximum = metadata.provisioning.requested_worktrees.saturating_sub(1);
-        Some(prompt.select_index(&msg!("select-open-worktree-heading"), maximum)?)
+    // 対象が決まる前にhostの状態へ触れない。metadataもprompt表示前には読まないため、
+    // interactiveなindexは設定上限まで楽観的に受け付け、確定後のlock済みmetadataでclampする。
+    let (candidate, index) = if interactive_index {
+        let (candidate, index) = select::open(
+            location,
+            &msg!("select-open-heading"),
+            prompt,
+            MAX_WORKTREES.saturating_sub(1),
+        )?;
+        (candidate, Some(index))
     } else {
-        index
+        (
+            select::one(location, requested, &msg!("select-open-heading"), prompt)?,
+            index,
+        )
     };
     let locked = candidate.lock()?;
     let index = if interactive_index {
