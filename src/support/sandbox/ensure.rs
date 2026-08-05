@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::{EnvPolicy, HostEnvironment, TerminalCommand, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::msg;
 use crate::paths::{self, PRIVATE_DIR_MODE, PathScope};
@@ -37,7 +37,7 @@ pub fn ensure(
     }
 
     progress.step(msg!("progress-creating-sandbox"));
-    let spec = CommandSpec::passthrough(
+    let command = TerminalCommand::relayed(
         "sbx",
         &[
             "create",
@@ -51,7 +51,8 @@ pub fn ensure(
     )
     .env(EnvPolicy::InheritWithoutSshAgent)
     .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&spec)?.require_success()?;
+    host.run_with_terminal(&command, progress)?
+        .require_success()?;
 
     let Some(entry) = find(host, sandbox)? else {
         return Err(unusable(

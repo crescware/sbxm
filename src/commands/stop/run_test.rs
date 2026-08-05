@@ -2,6 +2,7 @@ use crate::commands::stop::StopResult;
 use crate::diagnostics::ErrorId;
 
 use crate::testing::outcome::{Checked, Refused, Required};
+use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
 use crate::command::OutputPolicy;
@@ -35,6 +36,7 @@ fn only_the_running_targets_are_stopped() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
+        &mut RecordedOutput::new(),
     )
     .required_because("stop")?;
 
@@ -59,7 +61,7 @@ fn only_the_running_targets_are_stopped() -> Checked {
 
     assert_lifecycle(&host, &format!("stop {}", first.sandbox))?;
     assert_eq!(
-        host.spec("ls --json")?.output,
+        host.spec("ls --json")?.output(),
         OutputPolicy::Capture,
         "the state is read from structured output"
     );
@@ -79,6 +81,7 @@ fn a_project_without_a_sandbox_is_a_no_op_success() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
+        &mut RecordedOutput::new(),
     )
     .required_because("stop")?;
     assert_eq!(report.outcomes[0].result, StopResult::Unchanged);
@@ -112,6 +115,7 @@ fn a_rebuild_in_progress_stops_nothing_at_all() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
+        &mut RecordedOutput::new(),
     )
     .refused_because("one target that cannot be stopped stops the whole run")?;
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
@@ -141,6 +145,7 @@ fn an_intent_recorded_after_the_first_check_is_still_seen() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
+        &mut RecordedOutput::new(),
     )
     .refused_because("the metadata on disk decides after the lock is held")?;
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
@@ -167,6 +172,7 @@ fn a_failure_leaves_the_remaining_targets_running() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
+        &mut RecordedOutput::new(),
     )
     .required_because("the report is produced even when a target fails")?;
 
@@ -194,6 +200,7 @@ fn a_sandbox_that_stays_running_is_reported_as_failed() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
+        &mut RecordedOutput::new(),
     )
     .required_because("report")?;
     assert_eq!(report.outcomes[0].result, StopResult::Failed);
@@ -230,6 +237,7 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
         &mut ScriptedPrompt::choosing_many(&[0]),
         &fixture.workspace_root,
         poll(),
+        &mut RecordedOutput::new(),
     )
     .required_because("stop")?;
     assert_eq!(report.outcomes.len(), 1);

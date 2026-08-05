@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
+use crate::command::{CommandSpec, HostEnvironment, TerminalCommand, TimeoutClass};
 use crate::design::Fact;
 use crate::design::ProgressSink;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
@@ -69,12 +69,19 @@ fn clone(
     progress.step(msg!("progress-cloning-host"));
     // 進捗はgitが出したまま転送する。sbxmは実況を重ねない。clone URLはshellを介さず、
     // validation済みのargumentとして渡す。
-    let spec = CommandSpec::passthrough(
+    let command = TerminalCommand::relayed(
         "git",
-        &["clone", repository.clone_url(), &paths::display(target)],
+        &[
+            "clone",
+            // pipe越しでもgitが進捗を出すよう明示する。
+            "--progress",
+            repository.clone_url(),
+            &paths::display(target),
+        ],
     )
     .timeout(TimeoutClass::RepositoryTransfer);
-    host.run(&spec)?.require_success()?;
+    host.run_with_terminal(&command, progress)?
+        .require_success()?;
     Ok(())
 }
 

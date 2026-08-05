@@ -160,6 +160,7 @@ fn a_missing_clone_is_created_from_the_ssh_remote_and_then_verified() -> Checked
         calls[0],
         vec![
             "clone".to_string(),
+            "--progress".to_string(),
             "git@github.com:Example-Org/Example-Repo.git".to_string(),
             paths::display(&paths.host_clone()),
         ],
@@ -182,14 +183,14 @@ fn the_clone_forwards_its_progress_while_the_checks_capture_their_output() -> Ch
 
     let calls = host.calls.borrow();
     let clone = &calls[0];
-    assert_eq!(clone.output, crate::command::OutputPolicy::Passthrough);
+    assert_eq!(clone.output(), crate::command::OutputPolicy::Relay);
     assert_eq!(clone.timeout, TimeoutClass::RepositoryTransfer);
     assert_eq!(
         clone.working_dir, None,
         "the clone creates its own directory"
     );
     for inspection in calls.iter().skip(1) {
-        assert_eq!(inspection.output, crate::command::OutputPolicy::Capture);
+        assert_eq!(inspection.output(), crate::command::OutputPolicy::Capture);
         assert_eq!(
             inspection.working_dir.as_deref(),
             Some(paths.host_clone().as_path()),
@@ -358,6 +359,7 @@ fn an_https_registration_clones_over_https() -> Checked {
         host.args_of_calls()[0],
         vec![
             "clone".to_string(),
+            "--progress".to_string(),
             "https://github.com/Example-Org/Example-Repo.git".to_string(),
             paths::display(&paths.host_clone()),
         ],

@@ -301,11 +301,11 @@ fn the_build_forwards_its_progress() -> Checked {
     let calls = host.calls.borrow();
     for spec in calls.iter() {
         let expected = if spec.args.first().is_some_and(|arg| arg == "build") {
-            (OutputPolicy::Passthrough, TimeoutClass::ImageBuild)
+            (OutputPolicy::Relay, TimeoutClass::ImageBuild)
         } else {
             (OutputPolicy::Capture, TimeoutClass::LocalFilesystem)
         };
-        assert_eq!((spec.output, spec.timeout), expected, "{:?}", spec.args);
+        assert_eq!((spec.output(), spec.timeout), expected, "{:?}", spec.args);
     }
     Ok(())
 }

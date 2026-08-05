@@ -3,13 +3,18 @@ use std::path::{Path, PathBuf};
 use super::{EnvPolicy, OutputPolicy, TimeoutClass};
 
 /// 1回の外部command実行の指定。
+///
+/// 公開constructorはどれも出力をcaptureする。端末まで届く指定は[`TerminalCommand`]だけが
+/// 作れる。
+///
+/// [`TerminalCommand`]: super::TerminalCommand
 #[derive(Debug, Clone)]
 pub struct CommandSpec {
     pub program: String,
     pub args: Vec<String>,
     pub env: EnvPolicy,
     pub timeout: TimeoutClass,
-    pub output: OutputPolicy,
+    pub(super) output: OutputPolicy,
     /// 作業directory。指定しない場合は現在processのcurrent directoryを継承する。
     pub working_dir: Option<PathBuf>,
 }
@@ -32,21 +37,9 @@ impl CommandSpec {
         }
     }
 
-    /// 進捗をそのまま見せるcommand。
-    pub fn passthrough(program: &str, args: &[&str]) -> CommandSpec {
-        CommandSpec {
-            output: OutputPolicy::Passthrough,
-            ..CommandSpec::capture(program, args)
-        }
-    }
-
-    /// terminalを引き渡す対話command。
-    pub fn inherit(program: &str, args: &[&str]) -> CommandSpec {
-        CommandSpec {
-            output: OutputPolicy::Inherit,
-            timeout: TimeoutClass::Interactive,
-            ..CommandSpec::capture(program, args)
-        }
+    /// 子processの出力の扱い。
+    pub fn output(&self) -> OutputPolicy {
+        self.output
     }
 
     pub fn env(mut self, policy: EnvPolicy) -> CommandSpec {

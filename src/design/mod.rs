@@ -5,6 +5,7 @@ mod block;
 mod cell;
 pub mod diagnostic;
 pub mod document;
+mod external_output;
 mod fact;
 #[cfg(test)]
 mod fake;
@@ -37,6 +38,7 @@ pub use block::Block;
 pub use cell::Cell;
 pub use diagnostic::{Remediation, Warning};
 pub use document::Document;
+pub use external_output::ExternalOutput;
 pub use fact::Fact;
 #[cfg(test)]
 pub use fake::SilentProgress;

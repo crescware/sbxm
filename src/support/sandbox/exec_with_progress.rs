@@ -1,4 +1,5 @@
-use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::{CommandOutcome, EnvPolicy, HostEnvironment, TerminalCommand, TimeoutClass};
+use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 
 use super::exec_arguments;
@@ -10,11 +11,12 @@ pub fn exec_with_progress(
     host: &dyn HostEnvironment,
     sandbox: &str,
     args: &[&str],
+    progress: &mut dyn ProgressSink,
 ) -> Result<CommandOutcome> {
     let full = exec_arguments(sandbox, None, args);
     let borrowed: Vec<&str> = full.iter().map(String::as_str).collect();
-    let spec = CommandSpec::passthrough("sbx", &borrowed)
+    let command = TerminalCommand::relayed("sbx", &borrowed)
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::RepositoryTransfer);
-    host.run(&spec)
+    host.run_with_terminal(&command, progress)
 }

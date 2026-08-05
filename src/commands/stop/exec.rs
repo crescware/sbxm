@@ -31,6 +31,7 @@ pub fn exec(
         prompt,
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
         inventory::Poll::default(),
+        ui,
     ) {
         Ok(stopped) => print::report(ui, &stopped),
         Err(error) => report(ui, &error),

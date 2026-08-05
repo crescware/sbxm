@@ -2,6 +2,7 @@ use crate::diagnostics::{ErrorId, Result};
 use crate::project::{ProjectId, SandboxLayout};
 
 use crate::testing::outcome::{Checked, Refused, Required};
+use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
 use crate::command::{OutputPolicy, TimeoutClass};
@@ -420,7 +421,7 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
     let host = ready(FakeSbx::listing(&running), &project);
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 
-    connect(&host, &prepared).required_because("connect")?;
+    connect(&host, &prepared, &mut RecordedOutput::new()).required_because("connect")?;
     let ssh = host.spec(&format!("{}.sbx", project.sandbox))?;
     assert_eq!(ssh.program, "ssh");
     assert_eq!(
@@ -432,8 +433,8 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
         ]
     );
     assert_eq!(
-        ssh.output,
-        OutputPolicy::Inherit,
+        ssh.output(),
+        OutputPolicy::HandOver,
         "the terminal itself is handed over"
     );
     assert_eq!(

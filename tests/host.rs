@@ -46,9 +46,12 @@ docker)
 git)
 	case "$1" in
 	clone)
+		# 進捗の指定を読み飛ばし、残りをURLと宛先として読む。
+		shift
+		[ "$1" = "--progress" ] && shift
 		# cloneが成功したときだけworking treeができる。作れなければcloneの失敗である。
-		mkdir -p "$3/.git" || exit 128
-		printf '%s\n' "$2" >"$3/.sbxm-origin"
+		mkdir -p "$2/.git" || exit 128
+		printf '%s\n' "$1" >"$2/.sbxm-origin"
 		exit 0
 		;;
 	esac

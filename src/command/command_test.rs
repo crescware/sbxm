@@ -3,6 +3,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use crate::testing::outcome::{Checked, Refused, Required};
+use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
 use std::fs;
@@ -40,7 +41,7 @@ fn run_with_limit(spec: &CommandSpec, limit: Duration) -> Result<CommandOutcome>
 ///
 /// 別threadのtestがforkしている最中は、書き込み直後のfileが`ETXTBSY`で起動できない
 /// ことがある。実装ではなくtest環境の競合なので、短い間だけ繰り返す。
-fn retrying(attempt: impl Fn() -> Result<CommandOutcome>) -> Result<CommandOutcome> {
+fn retrying(mut attempt: impl FnMut() -> Result<CommandOutcome>) -> Result<CommandOutcome> {
     for _ in 0..50 {
         match attempt() {
             Err(error) if error.contains_id(ErrorId::ExternalCommandSpawnFailed) => {
@@ -134,7 +135,7 @@ fn a_command_runs_in_the_working_directory_it_was_given() -> Checked {
 }
 
 #[test]
-fn passthrough_hands_the_streams_to_the_terminal_instead_of_capturing_them() -> Checked {
+fn a_relayed_command_sends_both_streams_to_the_external_output_instead_of_a_buffer() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
     let fake = fake_executable(
@@ -146,19 +147,48 @@ fn passthrough_hands_the_streams_to_the_terminal_instead_of_capturing_them() -> 
         ),
     )?;
 
-    let spec = CommandSpec::passthrough(fake.to_str().required()?, &[]);
-    let outcome = run_fake(&spec).required_because("the fake tool runs")?;
+    let command = TerminalCommand::relayed(fake.to_str().required()?, &[]);
+    let mut output = RecordedOutput::new();
+    let outcome = retrying(|| run_with_terminal(&command, &mut output))
+        .required_because("the fake tool runs")?;
 
     assert_eq!(
         fs::read_to_string(&record).required()?,
         "ran",
         "the command still runs"
     );
+    let relayed = output.text();
+    assert!(
+        relayed.contains("progress") && relayed.contains("warning"),
+        "both streams reach the terminal through the renderer: {relayed:?}"
+    );
+    assert_eq!(
+        output.finished, 1,
+        "the end of the external output is announced once"
+    );
+    assert_eq!(
+        output.handed_over, 0,
+        "the terminal itself was not handed over"
+    );
     assert!(
         outcome.stdout.is_empty() && outcome.stderr.is_empty(),
-        "passthrough output belongs to the terminal, not to a buffer"
+        "relayed output belongs to the terminal, not to a buffer"
     );
     assert!(!outcome.stderr_lossy);
+    Ok(())
+}
+
+#[test]
+fn a_relayed_command_that_says_nothing_does_not_announce_any_external_output() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let fake = fake_executable(dir.path(), "fake-tool", "exit 0")?;
+
+    let command = TerminalCommand::relayed(fake.to_str().required()?, &[]);
+    let mut output = RecordedOutput::new();
+    retrying(|| run_with_terminal(&command, &mut output)).required_because("the fake tool runs")?;
+
+    // 空のbyte列は届くことがある。境界を置くかどうかは描画側が中身で決める。
+    assert!(output.relayed.is_empty(), "nothing was written");
     Ok(())
 }
 
@@ -172,13 +202,20 @@ fn an_interactive_command_is_handed_the_terminal_and_waited_for_without_a_limit(
         &format!(r#"printf 'ran' > "{}""#, record.display()),
     )?;
 
-    let spec = CommandSpec::inherit(fake.to_str().required()?, &[]);
+    let command = TerminalCommand::handed_over(fake.to_str().required()?, &[]);
     // 終える時期を決めるのは利用者であり、sbxmは待ち切る。
-    assert_eq!(spec.timeout.duration(), None);
-    let outcome = run_fake(&spec).required_because("the fake tool runs")?;
+    assert_eq!(command.spec().timeout.duration(), None);
+    let mut output = RecordedOutput::new();
+    let outcome = retrying(|| run_with_terminal(&command, &mut output))
+        .required_because("the fake tool runs")?;
 
     assert_eq!(fs::read_to_string(&record).required()?, "ran");
     assert!(outcome.success());
+    assert_eq!(
+        (output.handed_over, output.finished),
+        (1, 1),
+        "the terminal is announced before it is given away and after it comes back"
+    );
     assert!(
         outcome.stdout.is_empty() && outcome.stderr.is_empty(),
         "the terminal was handed over, so there is nothing to capture"
@@ -391,12 +428,13 @@ fn an_escaped_descendant_cannot_hold_capture_open_after_timeout() -> Checked {
 #[test]
 fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> Checked {
     // 端末へ出すcommandはprocess groupを分けないため、打ち切りは直接の子だけに届く。
-    let spec = CommandSpec::passthrough("sleep", &["30"]);
+    let relayed = TerminalCommand::relayed("sleep", &["30"]);
+    let spec = relayed.spec();
     let mut child = sleeping_child("30")?;
     let pid = rustix::process::Pid::from_child(&child);
 
     let started = Instant::now();
-    let error = wait_with_limit(&mut child, &spec, Some(Duration::from_millis(200)))
+    let error = wait_with_limit(&mut child, spec, Some(Duration::from_millis(200)))
         .refused_because("the limit must end the wait")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
@@ -428,11 +466,12 @@ fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> 
 #[test]
 fn a_child_that_cannot_be_waited_for_is_ended_and_reported_with_what_the_os_said() -> Checked {
     // 対話commandに上限は無い。待てなくなったことだけが、待機を終える理由になる。
-    let spec = CommandSpec::inherit("sleep", &[]);
+    let handed_over = TerminalCommand::handed_over("sleep", &[]);
+    let spec = handed_over.spec();
     let mut child = sleeping_child("0")?;
     reaped_outside_the_handle(&child)?;
 
-    let error = wait_with_limit(&mut child, &spec, None)
+    let error = wait_with_limit(&mut child, spec, None)
         .refused_because("a child that cannot be waited for must not be waited for forever")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
@@ -447,12 +486,13 @@ fn a_child_that_cannot_be_waited_for_is_ended_and_reported_with_what_the_os_said
 #[test]
 fn a_limited_wait_reports_the_same_failure_when_the_child_can_no_longer_be_observed() -> Checked {
     // 期限付きの待機でも、待てなくなった相手は期限まで数え続けずに報告する。
-    let spec = CommandSpec::passthrough("sleep", &[]);
+    let relayed = TerminalCommand::relayed("sleep", &[]);
+    let spec = relayed.spec();
     let mut child = sleeping_child("0")?;
     reaped_outside_the_handle(&child)?;
 
     let started = Instant::now();
-    let error = wait_with_limit(&mut child, &spec, Some(Duration::from_secs(30)))
+    let error = wait_with_limit(&mut child, spec, Some(Duration::from_secs(30)))
         .refused_because("a child that cannot be waited for is not waited for")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));

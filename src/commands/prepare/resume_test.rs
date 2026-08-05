@@ -12,7 +12,10 @@ use crate::testing::value::COMMIT;
 
 /// `add`と`prepare`が外部工程を呼ぶ順に並べた、失敗させる工程とその診断。
 const STEPS: [(&str, ErrorId); 11] = [
-    ("git clone git@github.com", ErrorId::ExternalCommandFailed),
+    (
+        "git clone --progress git@github.com",
+        ErrorId::ExternalCommandFailed,
+    ),
     ("docker build", ErrorId::ExternalCommandFailed),
     ("docker image save", ErrorId::ExternalCommandFailed),
     ("sbx template load", ErrorId::ExternalCommandFailed),
@@ -67,7 +70,7 @@ fn an_interruption_at_any_step_is_continued_by_the_same_prepare() -> Checked {
 
     // 成功済みの成果物は作り直さない。
     for done in [
-        "git clone git@github.com",
+        "git clone --progress git@github.com",
         "docker build",
         "sbx template load",
         "sbx create",

@@ -23,7 +23,8 @@ fn git_is_given_the_placeholder_before_it_reaches_github() -> Checked {
             .required_because(&format!("no command matched {needle}: {calls:?}"))
     };
     assert!(
-        position("credential.https://github.com.helper")? < position("fetch --prune origin")?,
+        position("credential.https://github.com.helper")?
+            < position("fetch --prune --progress origin")?,
         "a fetch without the credential asks for a username and never finishes"
     );
     Ok(())

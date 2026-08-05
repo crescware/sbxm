@@ -1,4 +1,5 @@
-use crate::command::{CommandSpec, HostEnvironment};
+use crate::command::{HostEnvironment, TerminalCommand};
+use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
 use super::Prepared;
@@ -6,14 +7,19 @@ use super::Prepared;
 /// terminalをSSHへ引き渡す。
 ///
 /// `SSHのexit` statusが0なら成功とし、非ゼロは理由を推測せず外部command失敗とする。
-pub fn connect(host: &dyn HostEnvironment, prepared: &Prepared) -> Result<()> {
+pub fn connect(
+    host: &dyn HostEnvironment,
+    prepared: &Prepared,
+    output: &mut dyn ExternalOutput,
+) -> Result<()> {
     let remote_command = format!(
         "cd {} && exec \"${{SHELL:-/bin/sh}}\" -l",
         shell_quote(&prepared.working_directory)
     );
     let args = ["-t", prepared.ssh_host.as_str(), remote_command.as_str()];
-    let spec = CommandSpec::inherit("ssh", &args);
-    host.run(&spec)?.require_success()?;
+    let command = TerminalCommand::handed_over("ssh", &args);
+    host.run_with_terminal(&command, output)?
+        .require_success()?;
     Ok(())
 }
 

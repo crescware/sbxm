@@ -1,4 +1,4 @@
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::{EnvPolicy, HostEnvironment, TerminalCommand, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::msg;
 
@@ -11,9 +11,10 @@ pub fn start(
     progress: &mut dyn ProgressSink,
 ) -> Result<()> {
     progress.step(msg!("progress-starting-sandbox"));
-    let spec = CommandSpec::passthrough("sbx", &["exec", sandbox, "--", "/bin/true"])
+    let command = TerminalCommand::relayed("sbx", &["exec", sandbox, "--", "/bin/true"])
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&spec)?.require_success()?;
+    host.run_with_terminal(&command, progress)?
+        .require_success()?;
     Ok(())
 }

@@ -18,6 +18,9 @@ const DESIGN: &str = "src/design";
 /// ANSI escape sequenceを生成してよい唯一のfile。
 const RENDERER: &str = "src/design/painter.rs";
 
+/// 子processへ端末のstreamを直接渡してよい唯一のfile。
+const CONFIGURE: &str = "src/command/configure.rs";
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
@@ -178,6 +181,52 @@ fn no_command_writes_its_own_block_spacing() -> Checked {
     assert!(
         offenders.is_empty(),
         "block spacing belongs to the renderer:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_child_process_is_pointed_at_the_terminal_in_one_file_only() -> Checked {
+    // 子processへ端末をそのまま渡せる場所が増えると、sbxmの行と外部toolの行のあいだに
+    // 空行を置かない経路ができる。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path == CONFIGURE || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("Stdio::inherit") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "external output reaches the terminal through ExternalOutput, not through {CONFIGURE}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn the_boundary_around_external_output_is_decided_in_the_design_system() -> Checked {
+    // 境界の空行をどこへ置くかは1箇所が決める。commandごとに実装を持てば、commandごとに
+    // 見え方が分かれる。testのfakeは何も表示しないため、境界の判断も持たない。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if !outside_design(&path) || path.starts_with("src/testing") || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("impl ExternalOutput for") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "the blank line between sbxm and an external tool belongs to {DESIGN}:\n{}",
         offenders.join("\n")
     );
     Ok(())

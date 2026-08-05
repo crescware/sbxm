@@ -1,8 +1,9 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::command::{EnvPolicy, HostEnvironment, TerminalCommand, TimeoutClass};
 use crate::config::ConfigLocation;
+use crate::design::ExternalOutput;
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -26,6 +27,7 @@ pub fn run(
     prompt: &mut dyn ProjectPrompt,
     workspace_root: &Path,
     poll: Poll,
+    output: &mut dyn ExternalOutput,
 ) -> Result<StopReport> {
     // 1. 全対象のmetadataを解決する。canonical ID昇順で返る。
     let selected = select::many(location, requested, &msg!("select-stop-heading"), prompt)?;
@@ -61,7 +63,7 @@ pub fn run(
     for target in &targets {
         // 失敗した時点で、後続の対象は停止せずそのままにする。
         if failures.is_empty() && target.state == ProjectState::Running {
-            match stop_one(host, &target.sandbox, poll) {
+            match stop_one(host, &target.sandbox, poll, output) {
                 Ok(()) => outcomes.push(target.outcome(StopResult::Stopped)),
                 Err(error) => {
                     failures.extend(error.diagnostics().iter().cloned());
@@ -88,11 +90,17 @@ fn validate(
 }
 
 /// 1件を停止し、stoppedになるまで待つ。
-fn stop_one(host: &dyn HostEnvironment, sandbox: &SandboxName, poll: Poll) -> Result<()> {
-    let spec = CommandSpec::passthrough("sbx", &["stop", sandbox.as_str()])
+fn stop_one(
+    host: &dyn HostEnvironment,
+    sandbox: &SandboxName,
+    poll: Poll,
+    output: &mut dyn ExternalOutput,
+) -> Result<()> {
+    let command = TerminalCommand::relayed("sbx", &["stop", sandbox.as_str()])
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);
-    host.run(&spec)?.require_success()?;
+    host.run_with_terminal(&command, output)?
+        .require_success()?;
 
     let deadline = Instant::now() + poll.limit;
     loop {

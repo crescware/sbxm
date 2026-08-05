@@ -10,8 +10,8 @@ use super::FakeSbx;
 pub fn assert_lifecycle(host: &FakeSbx, needle: &str) -> Checked {
     let spec = host.spec(needle)?;
     assert_eq!(
-        spec.output,
-        OutputPolicy::Passthrough,
+        spec.output(),
+        OutputPolicy::Relay,
         "{needle} shows the external tool's own progress"
     );
     assert_eq!(

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::archive;
 
-use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
+use crate::command::{HostEnvironment, TerminalCommand, TimeoutClass};
 use crate::design::Fact;
 use crate::design::ProgressSink;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -44,7 +44,7 @@ pub fn ensure_archive(
     }
 
     progress.step(msg!("progress-saving-archive"));
-    let spec = CommandSpec::passthrough(
+    let command = TerminalCommand::relayed(
         "docker",
         &[
             "image",
@@ -55,7 +55,8 @@ pub fn ensure_archive(
         ],
     )
     .timeout(TimeoutClass::ImageBuild);
-    host.run(&spec)?.require_success()?;
+    host.run_with_terminal(&command, progress)?
+        .require_success()?;
 
     archive::verify_holds_image(&temporary, &image.name, &image.labels)?;
     paths::atomic_rename_into_place(&temporary, &target)?;

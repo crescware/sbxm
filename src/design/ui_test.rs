@@ -14,6 +14,7 @@ impl<'a> Ui<'a> {
             catalog: Catalog::new(locale),
             stdout: Renderer::new(stdout, policy.stdout),
             stderr: Renderer::new(stderr, policy.stderr),
+            external: false,
         }
     }
 }

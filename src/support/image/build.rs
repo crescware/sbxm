@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
+use crate::command::{HostEnvironment, TerminalCommand, TimeoutClass};
 use crate::design::{Fact, ProgressSink, Warning};
 use crate::diagnostics::Result;
 use crate::msg;
@@ -32,10 +32,10 @@ pub(super) fn build(
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     // buildの進捗はdockerが出したまま転送する。
     progress.step(msg!("progress-building-image"));
-    let spec = CommandSpec::passthrough("docker", &[&["build"], borrowed.as_slice()].concat())
+    let command = TerminalCommand::relayed("docker", &[&["build"], borrowed.as_slice()].concat())
         .timeout(TimeoutClass::ImageBuild);
     let result = host
-        .run(&spec)
+        .run_with_terminal(&command, progress)
         .and_then(crate::command::CommandOutcome::require_success);
 
     // 成功・失敗にかかわらず、この実行が作った一時directoryを削除する。
