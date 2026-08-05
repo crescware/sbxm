@@ -1,3 +1,4 @@
+use crate::command::HostEnvironment;
 use crate::diagnostics::{ErrorId, Result};
 use crate::project::SandboxLayout;
 
@@ -7,17 +8,17 @@ use super::*;
 use crate::testing::host::FakeSbx;
 use crate::testing::project::{Fixture, Registered};
 use crate::testing::protection::clean_host;
+use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::COMMIT;
 
-fn inspect_with(host: &FakeSbx, project: &Registered, unmanaged: Unmanaged) -> Result<Report> {
+fn assess(
+    host: &dyn HostEnvironment,
+    project: &Registered,
+    operation: DestructiveOperation,
+) -> Result<ProtectionAssessment> {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
-    inspect(
-        host,
-        project.sandbox.as_str(),
-        &layout,
-        &project.metadata,
-        unmanaged,
-    )
+    let request = ProtectionRequest::new(operation, &project.sandbox, &layout, &project.metadata);
+    gate::assess(host, request)
 }
 
 #[test]
@@ -26,11 +27,11 @@ fn a_clean_managed_worktree_passes_and_is_reported() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     let host = clean_host(&fixture, &project)?;
 
-    let protection = inspect_with(&host, &project, Unmanaged::Refused)
+    let assessment = assess(&host, &project, DestructiveOperation::Rebuild)
         .required_because("a clean worktree passes")?;
     assert_eq!(
-        protection.worktrees,
-        vec![WorktreeReport {
+        assessment.worktrees(),
+        [WorktreeReport {
             relative: "example-repo.tree-0".to_string(),
             kind: Kind::Managed,
             mode: Mode::Attached,
@@ -39,18 +40,25 @@ fn a_clean_managed_worktree_passes_and_is_reported() -> Checked {
             remote: Remote::Pushed,
         }]
     );
+    assert!(assessment.blockers().is_empty());
+    gate::authorize(assessment).required_because("no blocker means a permit is issued")?;
     Ok(())
 }
 
 #[test]
-fn work_that_is_not_committed_or_not_pushed_stops_the_run() -> Checked {
+fn each_kind_of_unsaved_work_produces_its_own_blocker_and_stops_the_run() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
 
-    let dirty = clean_host(&fixture, &project)?.answering(
+    let tracked = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+        0,
+        "1 .M N... 100644 100644 100644 abc abc file.txt\0",
+    );
+    let untracked = clean_host(&fixture, &project)?.answering(
         &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
         0,
         "? untracked.txt\0",
@@ -73,11 +81,46 @@ fn work_that_is_not_committed_or_not_pushed_stops_the_run() -> Checked {
         "",
     );
 
-    for host in [dirty, unpushed, no_upstream, in_progress] {
-        let error = inspect_with(&host, &project, Unmanaged::Refused)
-            .refused_because("unsaved work is never destroyed")?;
-        assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
+    let cases: [(FakeSbx, ErrorId); 5] = [
+        (tracked, ErrorId::WorktreeTrackedChanges),
+        (untracked, ErrorId::WorktreeUntrackedPaths),
+        (unpushed, ErrorId::OriginCommitUnpushed),
+        (no_upstream, ErrorId::OriginUpstreamMissing),
+        (in_progress, ErrorId::GitOperationInProgress),
+    ];
+    for (host, expected) in cases {
+        let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+            .required_because("assess collects the blocker instead of failing outright")?;
+        let error =
+            gate::authorize(assessment).refused_because("unsaved work is never destroyed")?;
+        assert_eq!(error.first_id(), Some(expected));
     }
+    Ok(())
+}
+
+#[test]
+fn untracked_paths_are_listed_in_full() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+        0,
+        "? one.txt\0? two.txt\0",
+    );
+
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("assess collects the blocker")?;
+    assert_eq!(
+        assessment.blockers(),
+        [ProtectionBlocker::UntrackedPaths {
+            worktree: "example-repo.tree-0".to_string(),
+            paths: vec!["one.txt".to_string(), "two.txt".to_string()],
+        }]
+    );
     Ok(())
 }
 
@@ -107,41 +150,37 @@ fn a_check_that_could_not_run_is_never_read_as_a_pass() -> Checked {
             125,
             "",
         );
+    let status = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+        126,
+        "",
+    );
+    let inventory = clean_host(&fixture, &project)?.answering(
+        &format!(
+            "exec {name} -- git --git-dir {} worktree list --porcelain -z",
+            layout.bare_git_dir()
+        ),
+        126,
+        "",
+    );
 
     let cases = [
-        (marker, format!("{managed}/.git/MERGE_HEAD"), 126),
-        (head, "HEAD".to_string(), 127),
-        (upstream, "@{upstream}".to_string(), 125),
+        (marker, ErrorId::GitOperationUnobservable),
+        (head, ErrorId::LocalRefsUnobservable),
+        (upstream, ErrorId::LocalRefsUnobservable),
+        (status, ErrorId::WorktreeStatusUnobservable),
+        (inventory, ErrorId::WorktreeInventoryUnobservable),
     ];
-    for (host, subject, code) in cases {
-        let error = inspect_with(&host, &project, Unmanaged::Allowed)
+    for (host, expected) in cases {
+        let error = assess(&host, &project, DestructiveOperation::Destroy)
             .refused_because("a check that did not answer never means the worktree is safe")?;
-        assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
-        let diagnostic = &error.diagnostics()[0];
-        assert_eq!(
-            diagnostic.description.id,
-            "error-sandbox-check-unobservable"
-        );
-        assert_eq!(
-            diagnostic.description.args,
-            vec![
-                ("subject", subject),
-                ("exit_status", format!("exit status: {code}"))
-            ],
-            "the diagnostic names the check that did not answer"
-        );
-        let external = diagnostic
-            .external
-            .as_ref()
-            .required_because("the runtime's own failure is kept with the diagnostic")?;
-        assert_eq!(external.program, "sbx");
-        assert_eq!(external.exit_status, format!("exit status: {code}"));
+        assert_eq!(error.first_id(), Some(expected));
     }
     Ok(())
 }
 
 #[test]
-fn an_unmanaged_worktree_is_refused_for_rebuild_and_examined_for_destroy() -> Checked {
+fn an_unmanaged_worktree_is_refused_for_rebuild_and_confirmable_for_destroy() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let layout = SandboxLayout::new(project.metadata.canonical_id());
@@ -193,15 +232,25 @@ fn an_unmanaged_worktree_is_refused_for_rebuild_and_examined_for_destroy() -> Ch
             .answering(&format!("exec {name} -- test -e {extra}/.git/rebase-merge"), 1, "")
             .answering(&format!("exec {name} -- test -e {extra}/.git/rebase-apply"), 1, "");
 
-    let error = inspect_with(&host, &project, Unmanaged::Refused)
+    let assessment = assess(&host, &project, DestructiveOperation::Rebuild)
+        .required_because("assess still succeeds; the blocker is collected")?;
+    assert_eq!(
+        assessment.blockers(),
+        [ProtectionBlocker::UnmanagedWorktree {
+            worktree: "agent-scratch".to_string()
+        }]
+    );
+    let error = gate::authorize(assessment)
         .refused_because("rebuild cannot recreate a worktree it does not know about")?;
     assert_eq!(error.first_id(), Some(ErrorId::UnmanagedWorktreePresent));
 
-    let protection = inspect_with(&host, &project, Unmanaged::Allowed)
-        .required_because("destroy examines it under the same rules")?;
-    assert_eq!(protection.worktrees.len(), 2);
-    assert_eq!(protection.worktrees[1].kind, Kind::Unmanaged);
-    assert_eq!(protection.worktrees[1].remote, Remote::Reachable);
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("destroy examines it under the same content rules")?;
+    assert!(assessment.blockers().is_empty());
+    assert_eq!(assessment.worktrees().len(), 2);
+    assert_eq!(assessment.worktrees()[1].kind, Kind::Unmanaged);
+    assert_eq!(assessment.worktrees()[1].remote, Remote::Reachable);
+    gate::authorize(assessment).required_because("no blocker means destroy may still proceed")?;
     Ok(())
 }
 
@@ -225,7 +274,7 @@ fn a_worktree_that_is_not_an_artifact_of_this_project_is_not_reported_as_unsaved
             layout.bare_root()
         ),
     );
-    let error = inspect_with(&outside, &project, Unmanaged::Allowed)
+    let error = assess(&outside, &project, DestructiveOperation::Destroy)
         .refused_because("a path outside the repository is a security refusal")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeOutsideRepository));
     Ok(())
@@ -249,9 +298,9 @@ fn a_sandbox_whose_git_lists_no_worktree_has_nothing_to_lose() -> Checked {
         0,
         &format!("worktree {}\0bare\0\0", layout.bare_root()),
     );
-    let protection = inspect_with(&empty, &project, Unmanaged::Refused)
+    let assessment = assess(&empty, &project, DestructiveOperation::Rebuild)
         .required_because("a sandbox holding no worktree can be replaced")?;
-    assert!(protection.worktrees.is_empty());
+    assert!(assessment.worktrees().is_empty());
     Ok(())
 }
 
@@ -277,9 +326,19 @@ fn a_detached_head_that_no_remote_reaches_stops_the_run() -> Checked {
             "3\n",
         );
 
-    let error = inspect_with(&host, &project, Unmanaged::Allowed)
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("assess collects the blocker instead of failing outright")?;
+    assert_eq!(
+        assessment.blockers(),
+        [ProtectionBlocker::OriginRecoveryNotProven {
+            reference: "HEAD".to_string(),
+            commit: COMMIT.to_string(),
+            reason: OriginRecoveryFailure::UnreachableFromOrigin,
+        }]
+    );
+    let error = gate::authorize(assessment)
         .refused_because("commits no remote holds are not thrown away")?;
-    assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
+    assert_eq!(error.first_id(), Some(ErrorId::OriginCommitUnreachable));
     Ok(())
 }
 
@@ -297,8 +356,258 @@ fn a_sandbox_without_the_shared_repository_has_nothing_to_lose() -> Checked {
         "",
     );
 
-    let protection = inspect_with(&host, &project, Unmanaged::Refused)
+    let assessment = assess(&host, &project, DestructiveOperation::Rebuild)
         .required_because("a sandbox that holds no repository can be replaced")?;
-    assert!(protection.worktrees.is_empty());
+    assert!(assessment.worktrees().is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_git_directory_that_cannot_be_read_stops_before_the_markers_are_checked() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} rev-parse --git-dir"),
+        1,
+        "",
+    );
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("the git directory could not be resolved")?;
+    assert_eq!(error.first_id(), Some(ErrorId::GitOperationUnobservable));
+    Ok(())
+}
+
+#[test]
+fn a_head_commit_that_cannot_be_read_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} rev-parse HEAD"),
+        1,
+        "",
+    );
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("HEAD could not be resolved")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
+    Ok(())
+}
+
+#[test]
+fn an_ahead_count_that_cannot_be_read_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} rev-list --count origin/main..HEAD"),
+        1,
+        "",
+    );
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("the ahead count could not be read")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
+    Ok(())
+}
+
+#[test]
+fn an_ahead_count_that_is_not_a_number_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} rev-list --count origin/main..HEAD"),
+        0,
+        "not-a-number\n",
+    );
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("an unparseable count is never read as zero")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
+    Ok(())
+}
+
+#[test]
+fn an_unreachable_count_that_cannot_be_read_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?
+        .answering(
+            &format!("exec {name} -- git -C {managed} symbolic-ref --quiet --short HEAD"),
+            1,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git -C {managed} rev-list --count HEAD --not --remotes=origin"
+            ),
+            1,
+            "",
+        );
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("the unreachable count could not be read")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
+    Ok(())
+}
+
+#[test]
+fn an_unreachable_count_that_is_not_a_number_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?
+        .answering(
+            &format!("exec {name} -- git -C {managed} symbolic-ref --quiet --short HEAD"),
+            1,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git -C {managed} rev-list --count HEAD --not --remotes=origin"
+            ),
+            0,
+            "not-a-number\n",
+        );
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("an unparseable count is never read as zero")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
+    Ok(())
+}
+
+#[test]
+fn a_rename_entry_counts_as_a_tracked_change_and_consumes_its_original_path_field() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+        0,
+        "2 R. N... 100644 100644 100644 abc abc R100 new.txt\0old.txt\0! ignored.txt\0",
+    );
+
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("assess collects the blocker")?;
+    assert_eq!(
+        assessment.blockers(),
+        [ProtectionBlocker::TrackedChanges {
+            worktree: "example-repo.tree-0".to_string(),
+        }]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_whose_existence_cannot_be_observed_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let host = InnerCommandSandbox::new().timing_out(&format!("test -e {}", layout.bare_git_dir()));
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("existence that could not be observed is never read as absent")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    Ok(())
+}
+
+#[test]
+fn whether_head_is_attached_cannot_be_observed_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let bare_git_dir = layout.bare_git_dir();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = InnerCommandSandbox::new()
+        .holding(&[bare_git_dir.as_str()])
+        .answering(
+            &format!("git --git-dir {bare_git_dir} worktree list --porcelain -z"),
+            &format!(
+                "worktree {}\0bare\0\0worktree {managed}\0branch refs/heads/main\0\0",
+                layout.bare_root()
+            ),
+        )
+        .answering(
+            &format!("git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+            "",
+        )
+        .answering(
+            &format!("git -C {managed} rev-parse --git-dir"),
+            &format!("{managed}/.git"),
+        )
+        .answering(&format!("git -C {managed} rev-parse HEAD"), COMMIT)
+        .timing_out(&format!(
+            "git -C {managed} symbolic-ref --quiet --short HEAD"
+        ));
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("whether HEAD is attached could not be observed")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
+    Ok(())
+}
+
+#[test]
+fn whether_an_upstream_is_configured_cannot_be_observed_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let bare_git_dir = layout.bare_git_dir();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = InnerCommandSandbox::new()
+        .holding(&[bare_git_dir.as_str()])
+        .answering(
+            &format!("git --git-dir {bare_git_dir} worktree list --porcelain -z"),
+            &format!(
+                "worktree {}\0bare\0\0worktree {managed}\0branch refs/heads/main\0\0",
+                layout.bare_root()
+            ),
+        )
+        .answering(
+            &format!("git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+            "",
+        )
+        .answering(
+            &format!("git -C {managed} rev-parse --git-dir"),
+            &format!("{managed}/.git"),
+        )
+        .answering(&format!("git -C {managed} rev-parse HEAD"), COMMIT)
+        .answering(
+            &format!("git -C {managed} symbolic-ref --quiet --short HEAD"),
+            "main",
+        )
+        .timing_out(&format!(
+            "git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
+        ));
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("whether an upstream is configured could not be observed")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
     Ok(())
 }

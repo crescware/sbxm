@@ -272,7 +272,7 @@ fn unsaved_work_stops_the_rebuild_before_anything_is_built() -> Checked {
         &mut SilentProgress,
     )
     .refused_because("a dirty worktree is not recreated")?;
-    assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
+    assert_eq!(error.first_id(), Some(ErrorId::WorktreeUntrackedPaths));
     assert!(
         !host.ran("build"),
         "the existing sandbox is untouched: {:?}",

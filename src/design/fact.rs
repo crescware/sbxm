@@ -102,6 +102,14 @@ impl Fact {
         )
     }
 
+    /// `Paths:`。複数件の対象pathを1件の事実としてまとめて示す。
+    pub fn paths(paths: &[String]) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-paths-label"),
+            Inline::text(paths.join("\n")),
+        )
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))

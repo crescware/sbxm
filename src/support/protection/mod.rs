@@ -1,24 +1,34 @@
-//! 共通のデータ保護検査。
+//! rebuild / destroyの全ての通常経路が通る、共通の破壊前保護ゲート。
 //!
-//! runningなSandboxを削除する通常modeの`rebuild`と`destroy`は、同じ列挙と判定規則で
-//! 保存されていない作業がないことを確かめる。判定できない場合は削除しない。
+//! `gate::assess`が層Aの観測を固定順序で行い、`gate::authorize`が層Aの通過だけを
+//! 確認して`ProtectionPermit`を発行する。`inspect`はgate配下だけが呼ぶprivate
+//! collectorであり、productionから直接公開しない。`force_bypass::force_destroy`は
+//! `destroy --force`の分岐だけが使う、意図的な迂回である。
 
-mod answered;
+mod destructive_operation;
+mod force_bypass;
+pub mod gate;
 mod inspect;
 mod kind;
 mod mode;
+mod origin_recovery_failure;
+mod protection_assessment;
+mod protection_blocker;
+mod protection_permit;
+mod protection_request;
 mod remote;
-mod report;
-mod unmanaged;
 mod worktree_report;
 
-use answered::answered;
-pub use inspect::inspect;
+pub use destructive_operation::DestructiveOperation;
+pub use force_bypass::ForceBypass;
 pub use kind::Kind;
 pub use mode::Mode;
+pub use origin_recovery_failure::OriginRecoveryFailure;
+pub use protection_assessment::ProtectionAssessment;
+pub use protection_blocker::ProtectionBlocker;
+pub use protection_permit::ProtectionPermit;
+pub use protection_request::ProtectionRequest;
 pub use remote::Remote;
-pub use report::Report;
-pub use unmanaged::Unmanaged;
 pub use worktree_report::WorktreeReport;
 
 #[cfg(test)]

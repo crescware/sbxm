@@ -11,7 +11,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::design::{ProgressSink, Remediation, Warning};
 use crate::support::image;
 use crate::support::inventory::{self, Poll, ProjectState};
-use crate::support::protection::{self, Unmanaged};
+use crate::support::protection::{self, DestructiveOperation, ProtectionRequest};
 use crate::support::{daemon, generation, select, template};
 
 use super::{RebuildOutput, Switch, Target, start_to_read_saved_state};
@@ -57,13 +57,15 @@ pub fn run(
             progress,
         )?;
         let layout = SandboxLayout::new(&canonical);
-        protection::inspect(
-            host,
-            name.as_str(),
+        let request = ProtectionRequest::new(
+            DestructiveOperation::Rebuild,
+            &name,
             &layout,
             &locked.metadata,
-            Unmanaged::Refused,
-        )?;
+        );
+        let assessment = protection::gate::assess(host, request)?;
+        // 早期拒否のための評価であり、許可証はここでは保持しない。
+        protection::gate::authorize(assessment)?;
         current.clone()
     };
 
