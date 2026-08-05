@@ -54,7 +54,7 @@ fn an_open_prompt_accepts_the_optimistic_index_bound() -> Checked {
     let screen = RecordedScreen::new();
     let keys = [Key::ArrowRight, Key::ArrowRight, Key::Enter];
     let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_open(&heading(), &labels(), 31)
+        .select_open(&heading(), &labels(), 32)
         .required_because("the prompt is ready without metadata")?;
 
     assert_eq!(chosen, (0, 2));
@@ -62,8 +62,38 @@ fn an_open_prompt_accepts_the_optimistic_index_bound() -> Checked {
         screen
             .drawn()
             .iter()
-            .any(|line| line.contains("Worktree index: 2 (0-31)")),
+            .any(|line| line.contains("Worktree index: 2 (0-32)")),
         "the optimistic maximum is visible immediately: {:?}",
+        screen.drawn()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_calculated_maximum_reduces_the_bound_while_the_prompt_is_open() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [
+        Key::ArrowRight,
+        Key::ArrowRight,
+        Key::ArrowRight,
+        Key::Enter,
+    ];
+    let mut polls = 0;
+    let mut maximums = |_project| {
+        polls += 1;
+        (polls >= 2).then_some(1)
+    };
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_open_with_maximums(&heading(), &labels(), 31, &mut maximums)
+        .required_because("the calculated maximum is applied before confirmation")?;
+
+    assert_eq!(chosen, (0, 1));
+    assert!(
+        screen
+            .drawn()
+            .iter()
+            .any(|line| line.contains("Worktree index: 1 (0-1)")),
+        "the calculated maximum is rendered: {:?}",
         screen.drawn()
     );
     Ok(())

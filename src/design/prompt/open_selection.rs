@@ -2,15 +2,15 @@ use super::{Action, Transition};
 
 /// `open`で案件とmanaged worktree indexを同時に選ぶ状態。
 ///
-/// 上下キーは案件、左右キーはindexへ割り当てる。metadataはpromptを表示する前に
-/// 読まないため、最大値は呼び出し側が渡す楽観的な値から始める。確定後にlock済み
-/// metadataの最大値へclampする。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 上下キーは案件、左右キーはindexへ割り当てる。metadataはprompt表示を待たせないため、
+/// 最大値は呼び出し側が渡す楽観的な値から始め、計算結果が届いた案件だけ更新する。
+/// 確定後にもlock済みmetadataの最大値へclampする。
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenSelection {
     project_count: usize,
     current_project: usize,
     current_index: u32,
-    maximum_index: u32,
+    maximum_indexes: Vec<u32>,
 }
 
 impl OpenSelection {
@@ -19,20 +19,34 @@ impl OpenSelection {
             project_count,
             current_project: 0,
             current_index: 0,
-            maximum_index,
+            maximum_indexes: vec![maximum_index; project_count],
         }
     }
 
-    pub fn current_project(self) -> usize {
+    pub fn current_project(&self) -> usize {
         self.current_project
     }
 
-    pub fn current_index(self) -> u32 {
+    pub fn current_index(&self) -> u32 {
         self.current_index
     }
 
-    pub fn maximum_index(self) -> u32 {
-        self.maximum_index
+    pub fn maximum_index(&self) -> u32 {
+        self.maximum_indexes
+            .get(self.current_project)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// metadataの計算結果で、指定案件の最大indexを更新する。
+    pub fn set_maximum(&mut self, project: usize, maximum: u32) {
+        let Some(maximum_index) = self.maximum_indexes.get_mut(project) else {
+            return;
+        };
+        *maximum_index = maximum;
+        if self.current_project == project {
+            self.current_index = self.current_index.min(maximum);
+        }
     }
 
     /// 打鍵を案件またはindexの状態へ反映する。
@@ -51,7 +65,10 @@ impl OpenSelection {
                 Transition::Continue
             }
             Action::IncreaseIndex => {
-                self.current_index = self.current_index.saturating_add(1).min(self.maximum_index);
+                self.current_index = self
+                    .current_index
+                    .saturating_add(1)
+                    .min(self.maximum_index());
                 Transition::Continue
             }
             Action::Confirm => Transition::DoneOpen {
@@ -68,6 +85,7 @@ impl OpenSelection {
             return;
         }
         self.current_project = (self.current_project + offset) % self.project_count;
+        self.current_index = self.current_index.min(self.maximum_index());
     }
 }
 

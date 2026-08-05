@@ -16,4 +16,19 @@ pub trait ProjectPrompt {
         candidates: &[String],
         maximum_index: u32,
     ) -> Result<(usize, u32)>;
+
+    /// metadata計算の完了をpromptへ反映しながら案件とindexを選ぶ。
+    ///
+    /// 既存のfake promptは静的な`select_open`だけを実装すればよい。実端末のpromptは
+    /// callbackを各描画前に呼び、バックグラウンド計算が返した案件ごとの最大値を使う。
+    fn select_open_with_maximums(
+        &mut self,
+        heading: &Msg,
+        candidates: &[String],
+        maximum_index: u32,
+        maximums: &mut dyn FnMut(usize) -> Option<u32>,
+    ) -> Result<(usize, u32)> {
+        let _ = maximums;
+        self.select_open(heading, candidates, maximum_index)
+    }
 }

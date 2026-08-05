@@ -56,5 +56,20 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
     )
     .required_because("a project and worktree index are chosen")?;
     assert_eq!(chosen, (1, 1));
+
+    let mut maximums = |_project| Some(1);
+    let chosen = ProjectPrompt::select_open_with_maximums(
+        &mut prompt(ScriptedKeys::pressing(&[
+            console::Key::ArrowRight,
+            console::Key::ArrowRight,
+            console::Key::Enter,
+        ])),
+        &msg!("select-open-heading"),
+        &candidates(),
+        31,
+        &mut maximums,
+    )
+    .required_because("a calculated maximum is passed into the prompt")?;
+    assert_eq!(chosen, (0, 1));
     Ok(())
 }

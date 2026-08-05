@@ -20,6 +20,16 @@ impl ProjectPrompt for PromptUi {
     ) -> Result<(usize, u32)> {
         PromptUi::select_open(self, heading, candidates, maximum_index)
     }
+
+    fn select_open_with_maximums(
+        &mut self,
+        heading: &Msg,
+        candidates: &[String],
+        maximum_index: u32,
+        maximums: &mut dyn FnMut(usize) -> Option<u32>,
+    ) -> Result<(usize, u32)> {
+        PromptUi::select_open_with_maximums(self, heading, candidates, maximum_index, maximums)
+    }
 }
 
 #[cfg(test)]

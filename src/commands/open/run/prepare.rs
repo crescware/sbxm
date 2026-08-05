@@ -39,14 +39,15 @@ pub fn prepare(
     progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
     let interactive_index = requested.is_none() && index.is_none();
-    // 対象が決まる前にhostの状態へ触れない。metadataもprompt表示前には読まないため、
-    // interactiveなindexは設定上限まで楽観的に受け付け、確定後のlock済みmetadataでclampする。
+    // 対象が決まる前にhostの状態へ触れない。metadataもprompt表示前には待たないため、
+    // interactiveなindexは設定上限相当の楽観的な値まで受け付ける。promptの裏で計算が終われば
+    // 表示中の最大値へ反映し、最後はlock済みmetadataでclampする。
     let (candidate, index) = if interactive_index {
         let (candidate, index) = select::open(
             location,
             &msg!("select-open-heading"),
             prompt,
-            MAX_WORKTREES.saturating_sub(1),
+            MAX_WORKTREES,
         )?;
         (candidate, Some(index))
     } else {

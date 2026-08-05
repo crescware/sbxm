@@ -83,6 +83,18 @@ impl PromptUi {
         labels: &[String],
         maximum_index: u32,
     ) -> Result<(usize, u32)> {
+        let mut no_maximums = |_project: usize| None;
+        self.select_open_with_maximums(heading, labels, maximum_index, &mut no_maximums)
+    }
+
+    /// metadata計算の完了を反映しながら、案件とworktree indexを同時に選ぶ。
+    pub fn select_open_with_maximums(
+        &mut self,
+        heading: &Msg,
+        labels: &[String],
+        maximum_index: u32,
+        maximums: &mut dyn FnMut(usize) -> Option<u32>,
+    ) -> Result<(usize, u32)> {
         if labels.is_empty() {
             return Err(unresolved(0, 0));
         }
@@ -91,6 +103,9 @@ impl PromptUi {
         let _ = self.screen.hide_cursor();
         let mut drawn = 0usize;
         let outcome = loop {
+            if let Some(maximum) = maximums(selection.current_project()) {
+                selection.set_maximum(selection.current_project(), maximum);
+            }
             let frame = self.painter.open_frame(
                 heading,
                 labels,

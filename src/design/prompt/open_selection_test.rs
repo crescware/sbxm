@@ -33,6 +33,21 @@ fn both_axes_are_clamped_or_wrapped_by_their_own_rules() {
 }
 
 #[test]
+fn a_calculated_maximum_clamps_the_current_index_without_affecting_other_projects() {
+    let mut selection = OpenSelection::new(2, 31);
+    selection.apply(Action::IncreaseIndex);
+    selection.apply(Action::IncreaseIndex);
+    selection.set_maximum(0, 1);
+
+    assert_eq!(selection.current_index(), 1);
+    assert_eq!(selection.maximum_index(), 1);
+
+    selection.apply(Action::Next);
+    assert_eq!(selection.current_index(), 1);
+    assert_eq!(selection.maximum_index(), 31);
+}
+
+#[test]
 fn enter_confirms_both_current_values() {
     let mut selection = OpenSelection::new(3, 31);
     selection.apply(action_for(&Key::ArrowDown));
