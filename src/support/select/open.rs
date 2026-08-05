@@ -1,4 +1,4 @@
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver};
 
 use crate::config::ConfigLocation;
 use crate::diagnostics::{Msg, Result};
@@ -8,27 +8,38 @@ use super::{Candidate, ProjectPrompt, candidates, labels, no_managed_projects, u
 
 /// 案件ごとのmetadata最大値をpromptの裏で読む。
 ///
-/// prompt表示をmetadata読み込みで止めないため、案件が初めて表示対象になった時点で
-/// threadへ処理を渡す。計算結果はpromptの各描画前にpollされ、未完了の案件は引き続き
-/// 設定上限を使う。threadはprompt終了後も現在の読み込みだけを完了して自然に終了する。
+/// prompt表示をmetadata読み込みで止めないため、読み込みはthreadへ渡す。カーソルが
+/// 当たるのを待たず、promptを開いた時点で全案件を先頭から順に読む。案件が多くても、
+/// カーソルが届く前に結果が揃っていく。
 ///
-/// 候補は借りるだけにする。表示されない案件のcloneを先に作らない。
-struct MetadataMaximums<'a> {
-    candidates: &'a [Candidate],
-    started: Vec<bool>,
+/// 計算結果はpromptの各描画前にpollされ、未着の案件は範囲を持たないまま扱う。
+/// promptが閉じて受け手が消えたら、残りは読まずに終える。
+struct MetadataMaximums {
     maximums: Vec<Option<u32>>,
-    sender: Sender<(usize, Option<u32>)>,
     receiver: Receiver<(usize, Option<u32>)>,
 }
 
-impl<'a> MetadataMaximums<'a> {
-    fn new(candidates: &'a [Candidate]) -> MetadataMaximums<'a> {
+impl MetadataMaximums {
+    fn new(candidates: &[Candidate]) -> MetadataMaximums {
         let (sender, receiver) = mpsc::channel();
+        // 全件を読むので、ここでのcloneは表示されない案件のぶんを先に作る無駄にならない。
+        let queue = candidates.to_vec();
+        let _ = std::thread::Builder::new()
+            .name("sbxm-open-maximum".to_owned())
+            .spawn(move || {
+                for (project, candidate) in queue.into_iter().enumerate() {
+                    let maximum = candidate.reload().ok().map(|metadata| {
+                        last_worktree_index(metadata.provisioning.requested_worktrees)
+                    });
+                    // promptが閉じれば受け手はいない。残りは読まずに終える。
+                    if sender.send((project, maximum)).is_err() {
+                        return;
+                    }
+                }
+            });
+
         MetadataMaximums {
-            started: vec![false; candidates.len()],
             maximums: vec![None; candidates.len()],
-            candidates,
-            sender,
             receiver,
         }
     }
@@ -40,22 +51,6 @@ impl<'a> MetadataMaximums<'a> {
             }
         }
 
-        if let Some(started) = self.started.get_mut(project)
-            && !*started
-        {
-            *started = true;
-            let candidate = self.candidates[project].clone();
-            let sender = self.sender.clone();
-            let _ = std::thread::Builder::new()
-                .name("sbxm-open-maximum".to_owned())
-                .spawn(move || {
-                    let maximum = candidate.reload().ok().map(|metadata| {
-                        last_worktree_index(metadata.provisioning.requested_worktrees)
-                    });
-                    let _ = sender.send((project, maximum));
-                });
-        }
-
         self.maximums.get(project).copied().flatten()
     }
 }
@@ -63,7 +58,7 @@ impl<'a> MetadataMaximums<'a> {
 /// 案件とworktree indexを1画面で選ぶ。
 ///
 /// promptにはregistryの表示情報だけを渡す。metadataの最大値を読むとprompt表示が遅れる
-/// ため、indexは呼び出し側が渡す楽観的な上限で受け付け、計算結果を裏から反映する。
+/// ため、indexは呼び出し側が渡す天井まで受け付け、計算結果を裏から反映する。
 /// 確定後にもlock済みmetadataでclampし、下げた場合は接続前にその差を見せる。
 pub fn open(
     location: &ConfigLocation,
@@ -76,11 +71,9 @@ pub fn open(
         return Err(no_managed_projects());
     }
     let labels = labels(&candidates);
-    let (project, index) = {
-        let mut metadata_maximums = MetadataMaximums::new(&candidates);
-        let mut maximums = |project| metadata_maximums.poll(project);
-        prompt.select_open(heading, &labels, ceiling, &mut maximums)?
-    };
+    let mut metadata_maximums = MetadataMaximums::new(&candidates);
+    let mut maximums = |project| metadata_maximums.poll(project);
+    let (project, index) = prompt.select_open(heading, &labels, ceiling, &mut maximums)?;
     if project >= candidates.len() {
         return Err(unresolved(project, candidates.len()));
     }
