@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::{EnvPolicy, HostEnvironment, TerminalCommand, TimeoutClass};
+use crate::command::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::msg;
 use crate::paths::{self, PRIVATE_DIR_MODE, PathScope};
@@ -9,7 +9,7 @@ use crate::project::SandboxName;
 use crate::design::ProgressSink;
 use crate::support::template::LoadedTemplate;
 
-use super::{AGENT_KIT, ReadySandbox, find, unusable, verify, workspace_path};
+use super::{AGENT_KIT, ReadySandbox, find, relayed, unusable, verify, workspace_path};
 
 /// Sandboxを用意する。
 ///
@@ -37,19 +37,15 @@ pub fn ensure(
     }
 
     progress.step(msg!("progress-creating-sandbox"));
-    let command = TerminalCommand::relayed(
-        "sbx",
-        &[
-            "create",
-            "--name",
-            sandbox.as_str(),
-            "--template",
-            &template.name,
-            AGENT_KIT,
-            &paths::display(&workspace),
-        ],
-    )
-    .env(EnvPolicy::InheritWithoutSshAgent)
+    let command = relayed(&[
+        "create",
+        "--name",
+        sandbox.as_str(),
+        "--template",
+        &template.name,
+        AGENT_KIT,
+        &paths::display(&workspace),
+    ])
     .timeout(TimeoutClass::SandboxLifecycle);
     host.run_with_terminal(&command, progress)?
         .require_success()?;

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::command::{EnvPolicy, HostEnvironment, TerminalCommand, TimeoutClass};
+use crate::command::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
 use crate::design::ExternalOutput;
 use crate::diagnostics::{Error, ErrorId, Result};
@@ -12,7 +12,7 @@ use crate::project::{ProjectId, SandboxName};
 
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{daemon, generation};
+use crate::support::{daemon, generation, sandbox};
 
 use super::{StopReport, StopResult, Target};
 
@@ -96,9 +96,8 @@ fn stop_one(
     poll: Poll,
     output: &mut dyn ExternalOutput,
 ) -> Result<()> {
-    let command = TerminalCommand::relayed("sbx", &["stop", sandbox.as_str()])
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::SandboxLifecycle);
+    let command =
+        sandbox::relayed(&["stop", sandbox.as_str()]).timeout(TimeoutClass::SandboxLifecycle);
     host.run_with_terminal(&command, output)?
         .require_success()?;
 

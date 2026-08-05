@@ -21,6 +21,12 @@ const RENDERER: &str = "src/design/painter.rs";
 /// 子processへ端末のstreamを直接渡してよい唯一のfile。
 const CONFIGURE: &str = "src/command/configure.rs";
 
+/// `sbx`の出力を端末へ出す起動を組み立ててよい唯一のfile。
+const SBX_RELAY: &str = "src/support/sandbox/relayed.rs";
+
+/// 外部toolのbyteを運ぶmodule。
+const RELAY: &str = "src/command";
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
@@ -210,12 +216,39 @@ fn a_child_process_is_pointed_at_the_terminal_in_one_file_only() -> Checked {
 }
 
 #[test]
-fn the_boundary_around_external_output_is_decided_in_the_design_system() -> Checked {
-    // 境界の空行をどこへ置くかは1箇所が決める。commandごとに実装を持てば、commandごとに
-    // 見え方が分かれる。testのfakeは何も表示しないため、境界の判断も持たない。
+fn what_sbx_says_reaches_the_terminal_through_one_place() -> Checked {
+    // `sbx`は自分への入り方を案内する。sbxmの案内と食い違う行を落とす判断を、subcommand
+    // ごとに書き分けると、書き忘れた1つが利用者を別の入り方へ連れて行く。
     let mut offenders = Vec::new();
     for (path, text) in sources()? {
-        if !outside_design(&path) || path.starts_with("src/testing") || path.ends_with("_test.rs") {
+        if path == SBX_RELAY || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("TerminalCommand::relayed(\"sbx\"") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a relayed sbx command is built in {SBX_RELAY}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn no_command_grows_its_own_receiver_for_external_output() -> Checked {
+    // 境界の空行を置くのは`src/design`、外部toolのbyteを運ぶのは`src/command`である。
+    // commandや工程が自前の受け口を持てば、そのcommandだけ見え方が分かれる。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        let allowed = !outside_design(&path)
+            || path.starts_with(RELAY)
+            || path.starts_with("src/testing")
+            || path.ends_with("_test.rs");
+        if allowed {
             continue;
         }
         for (index, line) in text.lines().enumerate() {
@@ -226,7 +259,7 @@ fn the_boundary_around_external_output_is_decided_in_the_design_system() -> Chec
     }
     assert!(
         offenders.is_empty(),
-        "the blank line between sbxm and an external tool belongs to {DESIGN}:\n{}",
+        "external output is received by {DESIGN} and carried by {RELAY}:\n{}",
         offenders.join("\n")
     );
     Ok(())

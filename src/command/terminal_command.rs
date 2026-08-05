@@ -10,6 +10,7 @@ use super::{CommandSpec, EnvPolicy, OutputPolicy, TimeoutClass};
 #[derive(Debug, Clone)]
 pub struct TerminalCommand {
     spec: CommandSpec,
+    hidden: &'static [&'static str],
 }
 
 impl TerminalCommand {
@@ -22,6 +23,7 @@ impl TerminalCommand {
                 output: OutputPolicy::Relay,
                 ..CommandSpec::capture(program, args)
             },
+            hidden: &[],
         }
     }
 
@@ -35,6 +37,7 @@ impl TerminalCommand {
                 timeout: TimeoutClass::Interactive,
                 ..CommandSpec::capture(program, args)
             },
+            hidden: &[],
         }
     }
 
@@ -48,7 +51,20 @@ impl TerminalCommand {
         self
     }
 
+    /// この語を含む行は見せない。
+    ///
+    /// 外部toolの案内がsbxm自身の案内と食い違うときに使う。
+    pub fn hiding(mut self, phrases: &'static [&'static str]) -> TerminalCommand {
+        self.hidden = phrases;
+        self
+    }
+
     pub fn spec(&self) -> &CommandSpec {
         &self.spec
+    }
+
+    /// 見せない行を選ぶ語。
+    pub fn hidden(&self) -> &'static [&'static str] {
+        self.hidden
     }
 }

@@ -2,8 +2,8 @@ use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
 use super::{
-    CommandOutcome, OutputPolicy, TerminalCommand, configure, outcome, run_relay, spawn,
-    wait_with_limit,
+    CommandOutcome, HidingLines, OutputPolicy, TerminalCommand, configure, outcome, run_relay,
+    spawn, wait_with_limit,
 };
 
 /// 出力が端末まで届くcommandを実行する。
@@ -30,8 +30,9 @@ pub(super) fn run_terminal_inner(
         }
         OutputPolicy::Capture | OutputPolicy::Relay => {
             let mut child = spawn(&mut process, spec)?;
-            let status = run_relay(&mut child, spec, limit, output);
-            output.finished();
+            let mut hiding = HidingLines::new(output, command.hidden());
+            let status = run_relay(&mut child, spec, limit, &mut hiding);
+            hiding.finished();
             Ok(outcome(spec, status?, Vec::new(), Vec::new()))
         }
     }

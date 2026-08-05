@@ -1,8 +1,8 @@
-use crate::command::{CommandOutcome, EnvPolicy, HostEnvironment, TerminalCommand, TimeoutClass};
+use crate::command::{CommandOutcome, HostEnvironment, TimeoutClass};
 use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 
-use super::exec_arguments;
+use super::{exec_arguments, relayed};
 
 /// Sandbox内で、進捗をそのまま見せるcommandを実行する。
 ///
@@ -15,8 +15,6 @@ pub fn exec_with_progress(
 ) -> Result<CommandOutcome> {
     let full = exec_arguments(sandbox, None, args);
     let borrowed: Vec<&str> = full.iter().map(String::as_str).collect();
-    let command = TerminalCommand::relayed("sbx", &borrowed)
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::RepositoryTransfer);
+    let command = relayed(&borrowed).timeout(TimeoutClass::RepositoryTransfer);
     host.run_with_terminal(&command, progress)
 }
