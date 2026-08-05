@@ -385,6 +385,7 @@ add-next-token = { github-token-scopes }
 add-next-secret = Register the secret that carries the GitHub token.
 add-next-prepare = Build its sandbox.
 add-next-open = Connect to it over SSH.
+prepare-done = { $project } is built, and { $sandbox } is ready to use.
 prepare-already-built = { $project } is already built, so nothing was changed.
 files-secret-hint = Declared files carry configuration, not credentials. Keep tokens, secrets and private keys out of them and hand those to the sandbox with the secret feature of Docker Sandboxes instead.
 apply-files-done = { $count } declared files of { $project } were placed into { $sandbox }.

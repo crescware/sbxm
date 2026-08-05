@@ -311,40 +311,20 @@ fn a_sandbox_state_and_a_host_service_state_are_described_separately() -> Checke
     Ok(())
 }
 
-/// 実装が参照するmessage `IDだと分かるprefix`。
-///
-/// error IDの安定した表記と紛れないよう、prefixは表示文字列側だけを指すものにする。
-const MESSAGE_PREFIXES: [&str; 12] = [
-    "error-",
-    "diagnostic-",
-    "cause-",
-    "remediation-",
-    "security-",
-    "legend-",
-    "status-item-",
-    "status-column-",
-    "status-project-",
-    "status-worktrees-",
-    "column-",
-    "select-",
-];
-
 #[test]
 fn every_message_id_the_implementation_asks_for_exists() -> Checked {
     let defined: BTreeSet<String> = placeholders(SOURCE)?.keys().cloned().collect();
     let mut missing: BTreeSet<String> = BTreeSet::new();
 
     for path in rust_sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"))? {
+        // testは、定義の無いIDを渡したときの振る舞いそのものを確かめる。
+        if path.to_string_lossy().ends_with("_test.rs") {
+            continue;
+        }
         let text = std::fs::read_to_string(&path).required_because("the source is readable")?;
-        for literal in string_literals(&text) {
-            let looks_like_id = MESSAGE_PREFIXES
-                .iter()
-                .any(|prefix| literal.starts_with(prefix))
-                && literal
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
-            if looks_like_id && !defined.contains(&literal) {
-                missing.insert(format!("{}: {literal}", path.display()));
+        for id in requested_ids(&text) {
+            if !defined.contains(&id) {
+                missing.insert(format!("{}: {id}", path.display()));
             }
         }
     }
@@ -371,28 +351,42 @@ fn rust_sources(root: &std::path::Path) -> Checked<Vec<std::path::PathBuf>> {
     Ok(found)
 }
 
-/// sourceに書かれた文字列literalを、escapeを飛ばして取り出す。
-fn string_literals(text: &str) -> Vec<String> {
+/// 実装が求めるmessage ID。
+///
+/// `msg!`の第1引数だけを見る。IDらしいprefixの一覧で見分けると、一覧に載っていない
+/// prefixのIDは検査を素通りする。素通りしたIDは、利用者の目の前で内部異常の文字列に
+/// なって現れるまで誰も気付けない。
+///
+/// 第1引数がliteralでない呼び出しは、IDをこの場で決めていないため対象にしない。
+fn requested_ids(text: &str) -> Vec<String> {
+    let source = without_line_comments(text);
     let mut found = Vec::new();
-    let mut characters = text.chars().peekable();
-    while let Some(character) = characters.next() {
-        if character != '"' {
+    let mut rest = source.as_str();
+    while let Some(call) = rest.find("msg!(") {
+        rest = &rest[call + "msg!(".len()..];
+        let Some(open) = rest.find('"') else {
+            break;
+        };
+        let before = &rest[..open];
+        if before.contains(')') || before.contains(',') {
             continue;
         }
-        let mut literal = String::new();
-        while let Some(inner) = characters.next() {
-            match inner {
-                '\\' => {
-                    characters.next();
-                    literal.push('?');
-                }
-                '"' => break,
-                other => literal.push(other),
-            }
-        }
-        found.push(literal);
+        let after = &rest[open + 1..];
+        let Some(close) = after.find('"') else {
+            break;
+        };
+        found.push(after[..close].to_string());
+        rest = &after[close + 1..];
     }
     found
+}
+
+/// 行commentを落とす。doc commentが挙げる用例は、実装が求めるIDではない。
+fn without_line_comments(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<&str>>()
+        .join("\n")
 }
 
 #[test]
