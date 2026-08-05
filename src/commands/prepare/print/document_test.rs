@@ -70,3 +70,24 @@ fn a_head_that_could_not_be_read_is_shown_as_unknown_rather_than_left_blank() ->
     );
     Ok(())
 }
+
+#[test]
+fn the_completed_run_says_what_it_built_instead_of_naming_a_missing_message() -> Checked {
+    // messageを引けなかった行はrendererが内部異常の文字列へ置き換える。それが成功marker
+    // の後ろに並ぶと、構築は済んでいるのに壊れた実行に見える。
+    for locale in Locale::ALL {
+        let drawn = plain(&document(&output(Some(COMMIT)), locale), locale)?;
+        let summary = drawn.lines().next().required_because("the summary")?;
+
+        assert!(
+            !summary.contains("message-format-failed"),
+            "{locale:?}: {summary}"
+        );
+        assert!(
+            summary.contains("Example-Org/Example-Repo")
+                && summary.contains("sbxm-example-org-example-repo-99a40327a69b"),
+            "the summary names the project and the sandbox it built, {locale:?}: {summary}"
+        );
+    }
+    Ok(())
+}
