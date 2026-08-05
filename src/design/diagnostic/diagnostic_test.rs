@@ -27,7 +27,7 @@ fn a_remediation_takes_the_command_it_can_build() {
     let commands: Vec<&str> = remediation
         .commands
         .iter()
-        .map(crate::design::CommandLine::as_str)
+        .map(crate::design::text::CommandLine::as_str)
         .collect();
     assert_eq!(commands, vec!["sbxm --help"]);
 }
@@ -62,7 +62,7 @@ fn a_warning_takes_the_command_it_can_build() {
     let commands: Vec<&str> = warning
         .commands
         .iter()
-        .map(crate::design::CommandLine::as_str)
+        .map(crate::design::text::CommandLine::as_str)
         .collect();
     assert_eq!(commands, vec!["rm -rf /tmp/sbxm-build-context-a41f"]);
     assert_eq!(warning.guidance, vec![msg!("files-secret-hint")]);

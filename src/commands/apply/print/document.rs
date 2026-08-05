@@ -3,7 +3,7 @@ use crate::i18n::Locale;
 use crate::msg;
 
 use crate::commands::apply::ApplyOutput;
-use crate::commands::prepare::print::{files, notes};
+use crate::commands::prepare::print::files;
 use crate::commands::present::Legend;
 
 /// `apply`が並べるもの。
@@ -30,7 +30,6 @@ pub fn document(output: &ApplyOutput, locale: Locale) -> Document {
     }
 
     document
-        .concat(notes(&output.notes))
         .concat(files(&output.files, &mut legend))
         .legend(Legend::heading(), legend.entries())
 }

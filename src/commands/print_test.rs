@@ -120,7 +120,6 @@ fn prepare_output() -> super::prepare::PrepareOutput {
             mode: CreationMode::Attached,
         }],
         files: placed(),
-        notes: Vec::new(),
         already_built: false,
         warnings: Vec::new(),
     }
@@ -155,33 +154,12 @@ fn prepare_leaves_out_a_table_it_has_no_rows_for() {
     );
 }
 
-#[test]
-fn a_tool_note_puts_what_the_user_must_run_on_its_own_line() -> Checked {
-    let notes = vec![crate::support::tools::Note {
-        heading: msg!("add-mise-heading"),
-        items: vec!["/workspace/mise.toml".to_string()],
-        hint: msg!("add-mise-hint"),
-        commands: vec![
-            crate::design::CommandLine::new("mise trust").required_because("one line")?,
-            crate::design::CommandLine::new("mise install").required_because("one line")?,
-        ],
-    }];
-    let document = super::prepare::print::notes(&notes);
-    assert_eq!(
-        shape(&document),
-        vec!["lines", "guidance", "command", "command"]
-    );
-    assert_eq!(commands(&document), vec!["mise trust", "mise install"]);
-    Ok(())
-}
-
 fn apply_output(worktrees: Option<u32>, files: Vec<PlacedFile>) -> super::apply::ApplyOutput {
     super::apply::ApplyOutput {
         project: "owner/repo".to_string(),
         sandbox: "owner-repo".to_string(),
         files,
         worktrees,
-        notes: Vec::new(),
     }
 }
 

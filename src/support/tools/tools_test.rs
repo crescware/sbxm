@@ -1,6 +1,5 @@
 use crate::command::HostEnvironment;
 use crate::diagnostics::Result;
-use crate::project::SandboxLayout;
 
 use std::fmt::Write as _;
 
@@ -13,7 +12,6 @@ use std::cell::RefCell;
 /// probeへ決め打ちで答え、それ以外の起動を成功として扱うhost。
 struct FakeSbx {
     named: String,
-    present: Vec<String>,
     calls: RefCell<Vec<Vec<String>>>,
 }
 
@@ -25,15 +23,8 @@ impl FakeSbx {
                 let _ = writeln!(out, "{name}");
                 out
             }),
-            present: Vec::new(),
             calls: RefCell::new(Vec::new()),
         }
-    }
-
-    /// Sandbox内に存在するfile。
-    fn holding(mut self, paths: &[&str]) -> FakeSbx {
-        self.present = paths.iter().map(|path| (*path).to_string()).collect();
-        self
     }
 
     fn calls(&self) -> Vec<Vec<String>> {
@@ -58,26 +49,11 @@ impl HostEnvironment for FakeSbx {
 
         let (code, stdout) = match inner.as_slice() {
             ["sh", "-c", script] if *script == probe() => (0, self.named.clone()),
-            ["test", "-f", path] => {
-                if self.present.iter().any(|known| known == path) {
-                    (0, String::new())
-                } else {
-                    (1, String::new())
-                }
-            }
             _ => (0, String::new()),
         };
 
         Ok(crate::testing::command::outcome(spec, code, &stdout))
     }
-}
-
-fn layout() -> Checked<SandboxLayout> {
-    Ok(SandboxLayout::new(
-        &crate::project::ProjectId::parse("example-org/example-repo")
-            .required_because("valid project id")?
-            .canonical(),
-    ))
 }
 
 #[test]
@@ -151,47 +127,5 @@ fn only_the_tools_that_are_there_are_told_what_happened() -> Checked {
     let host = FakeSbx::naming(&["gh"]);
     SandboxReady::announce(&host, "sbxm-example").required_because("configure gh")?;
     assert!(host.ran("git_protocol"), "{:?}", host.calls());
-    Ok(())
-}
-
-#[test]
-fn mise_names_the_worktrees_that_declare_it() -> Checked {
-    let declared = "/home/agent/work/example-repo/example-repo.tree-0/mise.toml";
-    let host = FakeSbx::naming(&["gh", "mise", "claude", "codex"]).holding(&[declared]);
-
-    let notes = WorktreesReady::announce(&host, "sbxm-example", &layout()?, 1)
-        .required_because("raise the event")?;
-    assert_eq!(notes.len(), 1);
-    assert_eq!(notes[0].items, vec![declared.to_string()]);
-    assert_eq!(notes[0].heading.id, "add-mise-heading");
-    assert_eq!(notes[0].hint.id, "add-mise-hint");
-    Ok(())
-}
-
-#[test]
-fn a_sandbox_without_mise_is_never_told_to_run_mise() -> Checked {
-    let declared = "/home/agent/work/example-repo/example-repo.tree-0/mise.toml";
-    let host = FakeSbx::naming(&["gh", "claude", "codex"]).holding(&[declared]);
-
-    let notes = WorktreesReady::announce(&host, "sbxm-example", &layout()?, 1)
-        .required_because("raise the event")?;
-    assert!(
-        notes.is_empty(),
-        "the hint tells the user to run mise, which this sandbox does not carry: {notes:?}"
-    );
-    assert!(
-        !host.ran("mise.toml"),
-        "the declared files are not even looked for: {:?}",
-        host.calls()
-    );
-    Ok(())
-}
-
-#[test]
-fn a_worktree_without_a_declaration_produces_no_note() -> Checked {
-    let host = FakeSbx::naming(&["mise"]);
-    let notes = WorktreesReady::announce(&host, "sbxm-example", &layout()?, 1)
-        .required_because("raise the event")?;
-    assert!(notes.is_empty(), "{notes:?}");
     Ok(())
 }

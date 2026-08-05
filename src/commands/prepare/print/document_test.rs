@@ -27,7 +27,6 @@ fn output(head: Option<&str>) -> PrepareOutput {
             mode: CreationMode::Attached,
         }],
         files: Vec::new(),
-        notes: Vec::new(),
         already_built: false,
         warnings: Vec::new(),
     }

@@ -5,7 +5,7 @@ use crate::msg;
 use crate::commands::prepare::PrepareOutput;
 use crate::commands::present::Legend;
 
-use super::{files, notes};
+use super::files;
 
 /// `prepare`が並べるもの。
 pub fn document(output: &PrepareOutput, locale: Locale) -> Document {
@@ -70,7 +70,6 @@ pub fn document(output: &PrepareOutput, locale: Locale) -> Document {
     document
         .table(Some(msg!("status-worktrees-section")), worktrees)
         .concat(files(&output.files, &mut legend))
-        .concat(notes(&output.notes))
         .legend(Legend::heading(), legend.entries())
 }
 

@@ -13,7 +13,7 @@ use crate::design::ProgressSink;
 use crate::design::Remediation;
 use crate::project::SandboxLayout;
 use crate::support::files::{self};
-use crate::support::{daemon, generation, inventory, repository, sandbox, select, tools};
+use crate::support::{daemon, generation, inventory, repository, sandbox, select};
 
 use super::{ApplyOutput, Scope, Target};
 
@@ -71,7 +71,6 @@ pub fn run(
     }
 
     let mut worktrees = None;
-    let mut notes = Vec::new();
     if let Some(count) = scope.worktrees {
         raise_worktrees(&locked.paths, &mut locked.metadata, count)?;
         let layout = SandboxLayout::new(&canonical);
@@ -84,7 +83,7 @@ pub fn run(
             &locked.paths,
             &mut locked.metadata,
         )?;
-        let managed = repository::ensure_worktrees(
+        repository::ensure_worktrees(
             host,
             &entry.name,
             &layout,
@@ -93,7 +92,6 @@ pub fn run(
             progress,
         )?;
         worktrees = Some(locked.metadata.provisioning.requested_worktrees);
-        notes = tools::WorktreesReady::announce(host, &entry.name, &layout, managed.len())?;
     }
 
     Ok(ApplyOutput {
@@ -101,7 +99,6 @@ pub fn run(
         sandbox: entry.name,
         files,
         worktrees,
-        notes,
     })
 }
 

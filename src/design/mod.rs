@@ -57,6 +57,6 @@ pub use section::Section;
 pub use section_body::SectionBody;
 pub use style::VisualState;
 pub use table::Table;
-pub use text::{CommandLine, Inline};
+pub use text::Inline;
 use trailing::Trailing;
 pub use ui::Ui;
