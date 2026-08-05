@@ -175,7 +175,6 @@ diagnostic-source-label = Source:
 diagnostic-destination-label = Destination:
 diagnostic-directory-label = Working directory:
 diagnostic-cause-label = Cause:
-cause-output-reader-ended = the thread reading the stream ended before the stream did
 cause-home-directory-unknown = the home directory could not be determined
 cause-not-a-regular-file = the path is not a regular file
 cause-symbolic-link = the path is a symbolic link
