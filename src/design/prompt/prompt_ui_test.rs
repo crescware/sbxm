@@ -51,6 +51,49 @@ fn only_the_confirmed_value_is_left_where_the_list_was() -> Checked {
 }
 
 #[test]
+fn a_worktree_index_is_changed_by_left_and_right_and_then_left_visible() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [
+        Key::ArrowRight,
+        Key::ArrowRight,
+        Key::ArrowRight,
+        Key::ArrowRight,
+        Key::ArrowRight,
+        Key::ArrowLeft,
+        Key::Enter,
+    ];
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_index(&msg!("select-open-worktree-heading"), 4)
+        .required_because("the index is confirmed")?;
+
+    assert_eq!(chosen, 3, "the final left key decrements the index");
+    assert_eq!(
+        screen.lines(),
+        vec!["\u{2713} Selected worktree index 3".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_worktree_index_prompt_stops_at_both_bounds() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [Key::ArrowLeft, Key::ArrowRight, Key::ArrowRight, Key::Enter];
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_index(&msg!("select-open-worktree-heading"), 1)
+        .required_because("the bounded index is confirmed")?;
+
+    assert_eq!(chosen, 1);
+    let drawn = screen.drawn();
+    assert!(
+        drawn
+            .iter()
+            .any(|line| line.contains("Worktree index: 1 (0-1)")),
+        "the current and maximum index are visible: {drawn:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn every_checked_row_is_confirmed_together() -> Checked {
     let screen = RecordedScreen::new();
     let chosen = prompt(ScriptedKeys::checking(&[0, 2]), &screen)

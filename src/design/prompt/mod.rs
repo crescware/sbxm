@@ -20,6 +20,7 @@ mod action;
 mod action_for;
 #[cfg(test)]
 mod fake;
+mod index_selection;
 mod keys;
 mod painter;
 mod prompt_ui;
@@ -35,6 +36,7 @@ pub use action::Action;
 pub use action_for::action_for;
 #[cfg(test)]
 pub use fake::{RecordedScreen, ScriptedKeys};
+pub use index_selection::IndexSelection;
 pub use keys::Keys;
 use painter::Painter;
 pub use prompt_ui::PromptUi;

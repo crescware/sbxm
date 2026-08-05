@@ -8,4 +8,6 @@ pub(super) const ASCII: GlyphSet = GlyphSet {
     current: ">",
     arrow_up: "^",
     arrow_down: "v",
+    arrow_left: "<",
+    arrow_right: ">",
 };

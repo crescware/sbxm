@@ -17,7 +17,7 @@ use super::Prepared;
 
 /// `SSHへ引き渡せる状態までSandboxを整える`。
 ///
-/// 1. 対象を引数またはpromptで解決する
+/// 1. 対象を引数またはpromptで解決し、必要ならindexをpromptで選ぶ
 /// 2. project lockを取得する
 /// 3. Docker Engineへの疎通を確認する
 /// 4. 1回の一覧取得からSandbox identityとstateを検証する
@@ -39,7 +39,28 @@ pub fn prepare(
     progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
     // 対象が決まる前にhostの状態へ触れない。
-    let locked = select::one(location, requested, &msg!("select-open-heading"), prompt)?.lock()?;
+    let candidate = select::one(location, requested, &msg!("select-open-heading"), prompt)?;
+    // projectをpromptで選んだときだけ、metadataが宣言する範囲からindexを選ぶ。
+    // 明示的なprojectとindexなしの組み合わせは、従来どおりrepository rootを使う。
+    let interactive_index = requested.is_none() && index.is_none();
+    let index = if interactive_index {
+        let metadata = candidate.reload()?;
+        let maximum = metadata.provisioning.requested_worktrees.saturating_sub(1);
+        Some(prompt.select_index(&msg!("select-open-worktree-heading"), maximum)?)
+    } else {
+        index
+    };
+    let locked = candidate.lock()?;
+    let index = if interactive_index {
+        let maximum = locked
+            .metadata
+            .provisioning
+            .requested_worktrees
+            .saturating_sub(1);
+        index.map(|index| index.min(maximum))
+    } else {
+        index
+    };
 
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();

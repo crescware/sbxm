@@ -9,4 +9,6 @@ pub trait ProjectPrompt {
     fn select_one(&mut self, heading: &Msg, candidates: &[String]) -> Result<usize>;
     /// 1件以上を選ぶ。未選択の確定は受け付けない。
     fn select_many(&mut self, heading: &Msg, candidates: &[String]) -> Result<Vec<usize>>;
+    /// 指定された最大値の範囲からworktree indexを1件選ぶ。
+    fn select_index(&mut self, heading: &Msg, maximum: u32) -> Result<u32>;
 }

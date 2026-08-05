@@ -9,6 +9,8 @@ pub fn action_for(key: &Key) -> Action {
     match key {
         Key::ArrowUp => Action::Previous,
         Key::ArrowDown => Action::Next,
+        Key::ArrowLeft => Action::DecreaseIndex,
+        Key::ArrowRight => Action::IncreaseIndex,
         Key::Char(' ') => Action::Toggle,
         Key::Enter => Action::Confirm,
         Key::Escape | Key::CtrlC => Action::Cancel,

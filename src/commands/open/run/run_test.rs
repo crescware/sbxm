@@ -12,17 +12,21 @@ use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::prompt::ScriptedPrompt;
+use std::fmt::Write as _;
 use std::time::Duration;
 
 /// Docker疎通とworktree一覧に応答するhost。
 fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
-    let listing = format!(
-        "worktree {}\0bare\0\0worktree {}/{}\0branch refs/heads/main\0\0",
-        layout.bare_root(),
-        layout.bare_root(),
-        layout.worktree_name(0)
-    );
+    let mut listing = format!("worktree {}\0bare\0\0", layout.bare_root());
+    for index in 0..project.metadata.provisioning.requested_worktrees {
+        let _ = write!(
+            listing,
+            "worktree {}/{}\0branch refs/heads/main\0\0",
+            layout.bare_root(),
+            layout.worktree_name(index)
+        );
+    }
     let host = isolated_agent(
         host.answering("version --format {{.Server.Version}}", 0, "27.0.3\n"),
         project.sandbox.as_str(),
@@ -74,7 +78,10 @@ fn a_running_project_is_opened_without_touching_the_daemon() -> Checked {
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 
     assert_eq!(prepared.ssh_host, format!("{}.sbx", project.sandbox));
-    assert_eq!(prepared.working_directory, "/home/agent/work/example-repo");
+    assert_eq!(
+        prepared.working_directory,
+        "/home/agent/work/example-repo/example-repo.tree-0"
+    );
     assert_eq!(prepared.missing_worktree_index, None);
     // daemonを止めるには動作中のSandboxを止める必要があり、接続のたびに
     // ほかの作業を巻き込むことになる。sbxmはdaemonを操作しない。
@@ -104,6 +111,37 @@ fn a_selected_worktree_becomes_the_ssh_starting_directory() -> Checked {
     assert_eq!(
         prepared.working_directory,
         "/home/agent/work/example-repo/example-repo.tree-0"
+    );
+    assert_eq!(prepared.missing_worktree_index, None);
+    Ok(())
+}
+
+#[test]
+fn an_interactive_index_is_bounded_by_the_selected_projects_worktrees() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    project.metadata.provisioning.requested_worktrees = 5;
+    metadata::update(&project.paths, &project.metadata)
+        .required_because("record five managed worktrees")?;
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let host = ready(FakeSbx::listing(&running), &project);
+    let mut prompt = ScriptedPrompt::choosing_worktree(99);
+
+    let prepared = prepare(
+        &fixture.location,
+        None,
+        None,
+        &host,
+        &mut prompt,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .required_because("prepare the selected worktree")?;
+
+    assert_eq!(
+        prepared.working_directory, "/home/agent/work/example-repo/example-repo.tree-4",
+        "the prompt fake follows the same maximum bound as the terminal prompt"
     );
     assert_eq!(prepared.missing_worktree_index, None);
     Ok(())
@@ -349,7 +387,7 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
         vec![
             "-t".to_string(),
             format!("{}.sbx", project.sandbox),
-            "cd '/home/agent/work/example-repo' && exec \"${SHELL:-/bin/sh}\" -l".to_string(),
+            "cd '/home/agent/work/example-repo/example-repo.tree-0' && exec \"${SHELL:-/bin/sh}\" -l".to_string(),
         ]
     );
     assert_eq!(

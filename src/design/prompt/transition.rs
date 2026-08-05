@@ -5,6 +5,8 @@ pub enum Transition {
     Continue,
     /// 確定した候補のindex。
     Done(Vec<usize>),
+    /// 確定したworktree index。
+    DoneIndex(u32),
     /// 何も変更せず終える。
     Canceled,
 }
