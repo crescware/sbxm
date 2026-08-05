@@ -2,6 +2,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::config::ConfigLocation;
 use crate::diagnostics::{Msg, Result};
+use crate::metadata::maximum_worktree_index;
 
 use super::{Candidate, ProjectPrompt, candidates, labels, no_managed_projects, unresolved};
 
@@ -47,7 +48,7 @@ impl MetadataMaximums {
                 .name("sbxm-open-maximum".to_owned())
                 .spawn(move || {
                     let maximum = candidate.reload().ok().map(|metadata| {
-                        metadata.provisioning.requested_worktrees.saturating_sub(1)
+                        maximum_worktree_index(metadata.provisioning.requested_worktrees)
                     });
                     let _ = sender.send((project, maximum));
                 });

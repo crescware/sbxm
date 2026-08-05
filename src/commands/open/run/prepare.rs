@@ -4,7 +4,7 @@ use crate::command::{CommandSpec, HostEnvironment};
 use crate::config::ConfigLocation;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
-use crate::metadata::{MAX_WORKTREES, ProjectMetadata};
+use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata, maximum_worktree_index};
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
 
@@ -47,7 +47,7 @@ pub fn prepare(
             location,
             &msg!("select-open-heading"),
             prompt,
-            MAX_WORKTREES,
+            MAX_WORKTREE_INDEX,
         )?;
         (candidate, Some(index))
     } else {
@@ -58,11 +58,7 @@ pub fn prepare(
     };
     let locked = candidate.lock()?;
     let index = if interactive_index {
-        let maximum = locked
-            .metadata
-            .provisioning
-            .requested_worktrees
-            .saturating_sub(1);
+        let maximum = maximum_worktree_index(locked.metadata.provisioning.requested_worktrees);
         index.map(|index| index.min(maximum))
     } else {
         index

@@ -2,6 +2,7 @@ use crate::design::PromptUi;
 use crate::design::policy::StreamPolicy;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::i18n::Locale;
+use crate::metadata::MAX_WORKTREE_INDEX;
 use crate::msg;
 
 use crate::testing::outcome::{Checked, Required};
@@ -52,7 +53,7 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
         ])),
         &msg!("select-open-heading"),
         &candidates(),
-        31,
+        MAX_WORKTREE_INDEX,
     )
     .required_because("a project and worktree index are chosen")?;
     assert_eq!(chosen, (1, 1));
@@ -66,7 +67,7 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
         ])),
         &msg!("select-open-heading"),
         &candidates(),
-        31,
+        MAX_WORKTREE_INDEX,
         &mut maximums,
     )
     .required_because("a calculated maximum is passed into the prompt")?;

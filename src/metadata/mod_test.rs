@@ -11,6 +11,13 @@ use crate::paths::ProjectParent;
 use crate::testing::metadata::{attached, canonical};
 use std::os::unix::fs::PermissionsExt;
 
+#[test]
+fn a_worktree_count_is_converted_to_a_zero_based_index() {
+    assert_eq!(maximum_worktree_index(MIN_WORKTREES), 0);
+    assert_eq!(maximum_worktree_index(MIN_WORKTREES + 1), 1);
+    assert_eq!(maximum_worktree_index(MAX_WORKTREES), MAX_WORKTREE_INDEX);
+}
+
 /// 診断が持つ、外部が述べた原因。
 fn cause(error: &crate::diagnostics::Error) -> Checked<String> {
     error

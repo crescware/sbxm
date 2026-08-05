@@ -4,7 +4,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::diagnostics::ExitCode;
-use crate::metadata::ProjectMetadata;
+use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata};
 use crate::msg;
 use crate::testing::project::{Fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
@@ -87,12 +87,12 @@ fn open_selects_a_project_and_index_without_reading_metadata() -> Checked {
     let (chosen, index) = open(
         &fixture.location,
         &msg!("select-open-heading"),
-        &mut ScriptedPrompt::choosing_worktree(31),
-        31,
+        &mut ScriptedPrompt::choosing_worktree(MAX_WORKTREE_INDEX),
+        MAX_WORKTREE_INDEX,
     )
     .required_because("the combined open prompt returns both values")?;
     assert_eq!(chosen.display_id(), "example-org/example-repo");
-    assert_eq!(index, 31);
+    assert_eq!(index, MAX_WORKTREE_INDEX);
     Ok(())
 }
 
@@ -105,7 +105,7 @@ fn open_rejects_an_index_that_is_not_in_the_candidate_list() -> Checked {
         &fixture.location,
         &msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(7),
-        31,
+        MAX_WORKTREE_INDEX,
     )
     .refused_because("an invalid project selection is not opened")?;
     assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
@@ -120,7 +120,7 @@ fn open_has_no_prompt_when_no_projects_are_registered() -> Checked {
         &fixture.location,
         &msg!("select-open-heading"),
         &mut prompt,
-        31,
+        MAX_WORKTREE_INDEX,
     )
     .refused_because("there is no project to open")?;
     assert_eq!(error.first_id(), Some(ErrorId::NoManagedProjects));
