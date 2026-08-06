@@ -4,7 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 use crate::commands::status::project::{ProjectStatus, Value};
 use crate::design::Fact;
 use crate::diagnostics::ErrorId;
-use crate::hash::{sha256_hex, short_hex};
+use crate::hash::sha256_hex;
 use crate::metadata;
 use crate::paths::{self};
 use crate::support::image::{self, LABEL_CANONICAL_ID, LABEL_DOCKERFILE_SHA256};
@@ -226,66 +226,6 @@ fn a_dockerfile_that_is_a_symlink_is_refused_instead_of_followed() -> Checked {
             &paths::display(&dockerfile)
         ),
         "the symlink is refused by path, not followed: {:?}",
-        status.diagnostics
-    );
-    Ok(())
-}
-
-#[test]
-fn an_archive_of_the_recorded_generation_is_ready() -> Checked {
-    let fixture = Fixture::new()?;
-    let project = fixture.register("example-org/example-repo")?;
-    std::fs::create_dir_all(project.paths.cache_dir()).required()?;
-    let archive = project
-        .paths
-        .template_archive(short_hex(&project.metadata.provisioning.dockerfile_sha256));
-    std::fs::write(&archive, b"a template archive").required()?;
-
-    let status = diagnose(
-        &fixture.location,
-        &project_id("example-org/example-repo")?,
-        &without_image(FakeSbx::listing("[]"), &project),
-        &fixture.workspace_root,
-    )
-    .required_because("diagnose")?;
-    assert_eq!(
-        value_of(&status, "status-item-template-archive")?,
-        Value::Ready
-    );
-    assert!(status.is_healthy(), "{:?}", status.diagnostics);
-    Ok(())
-}
-
-#[test]
-fn an_archive_path_that_cannot_be_inspected_is_not_reported_as_absent() -> Checked {
-    let fixture = Fixture::new()?;
-    let project = fixture.register("example-org/example-repo")?;
-    std::fs::create_dir_all(project.paths.cache_dir()).required()?;
-    let archive = project
-        .paths
-        .template_archive(short_hex(&project.metadata.provisioning.dockerfile_sha256));
-    // 世代のarchiveが指す先を別のfileへ差し替えられる状態は、有るとも無いとも言えない。
-    std::os::unix::fs::symlink(fixture.dir.path().join("elsewhere.tar"), &archive)
-        .required_because("place a symlink where the archive belongs")?;
-
-    let status = diagnose(
-        &fixture.location,
-        &project_id("example-org/example-repo")?,
-        &without_image(FakeSbx::listing("[]"), &project),
-        &fixture.workspace_root,
-    )
-    .required_because("diagnose")?;
-    assert_eq!(
-        value_of(&status, "status-item-template-archive")?,
-        Value::Mismatch
-    );
-    assert!(
-        names_path(
-            &status,
-            ErrorId::ProjectPathSymlink,
-            &paths::display(&archive)
-        ),
-        "the archive path that could not be inspected is named: {:?}",
         status.diagnostics
     );
     Ok(())

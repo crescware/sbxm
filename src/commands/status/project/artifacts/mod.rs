@@ -1,11 +1,9 @@
 //! 案件directoryと、世代ごとの成果物の診断。
 
-mod check_archive;
 mod check_directory;
 mod check_dockerfile;
 mod check_image;
 
-pub(super) use check_archive::check_archive;
 pub(super) use check_directory::check_directory;
 pub(super) use check_dockerfile::check_dockerfile;
 pub(super) use check_image::check_image;

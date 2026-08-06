@@ -68,10 +68,12 @@ fn an_interruption_at_any_step_is_continued_by_the_same_prepare() -> Checked {
     let stored = bench.stored("Example-Org/Example-Repo")?;
     assert_eq!(stored.provisioning.start_ref.as_deref(), Some("main"));
 
-    // 成功済みの成果物は作り直さない。
+    // 成功済みの成果物は作り直さない。既にloadされたtemplateがあるため、archiveも
+    // 作り直さない。
     for done in [
         "git clone --progress git@github.com",
         "docker build",
+        "docker image save",
         "sbx template load",
         "sbx create",
         "git init --bare",
@@ -88,8 +90,6 @@ fn an_interruption_at_any_step_is_continued_by_the_same_prepare() -> Checked {
         1,
         "the run continues with the step that had failed: {tail:?}"
     );
-    // archiveは工程へ到達するたびに作り直す。
-    assert!(tail.iter().any(|call| call.contains("docker image save")));
     Ok(())
 }
 
