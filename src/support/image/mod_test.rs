@@ -227,6 +227,56 @@ fn an_image_that_exists_but_cannot_be_inspected_stops_the_run() -> Checked {
     )
     .refused_because("an image that cannot be read is not rebuilt over")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert!(
+        !diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::Translated { value, .. }
+                if value.id == "cause-docker-daemon-also-unreachable"
+        )),
+        "a daemon that answers is not blamed for malformed inspect output: {:?}",
+        diagnostic.facts
+    );
+    assert!(
+        diagnostic.remediation.is_none(),
+        "no daemon remediation is invented while the probe succeeds"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_unparseable_inspect_response_names_the_daemon_when_it_stays_unreachable() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let dockerfile = dir.path().join("Dockerfile");
+    fs::write(&dockerfile, "FROM scratch\n").required()?;
+    let host = FakeDocker::new(vec![Some("not json")]).with_daemon_unreachable();
+
+    let error = ensure(
+        &host,
+        &sandbox()?,
+        &canonical()?,
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .refused_because("an unparseable response is a failed image observation")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::Translated { value, .. }
+                if value.id == "cause-docker-daemon-also-unreachable"
+        )),
+        "the daemon is named after an inspect response cannot be parsed: {:?}",
+        diagnostic.facts
+    );
     Ok(())
 }
 
