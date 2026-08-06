@@ -1,9 +1,22 @@
-//! rebuild / destroyの全ての通常経路が通る、共通の破壊前保護ゲート。
+//! rebuild / destroyの全ての通常経路が通る、共通の破壊前保護ゲート。呼び出し側は
+//! 個別の検査を選ばない。
+//!
+//! 保護は回復可能性に基づく二層で構成する。
+//!
+//! - 層A（拒否）: 追跡対象ファイルの未commit変更、無視対象でない未追跡file、進行中の
+//!   Git操作、管理外worktree（rebuildのみ）、originから回収できると証明できないcommit
+//!   のいずれか1件でもあれば、確認を求めず削除しない。原因ごとに[`ProtectionBlocker`]の
+//!   variantと固有の`ErrorId`を持ち、共通のIDへ丸めない。状態を観測できない場合も、
+//!   安全と推測せず層Aと同様に拒否する。
+//! - 層B（明示確認）: commit自体は失わないが自動復元できない情報（無視対象のpath、
+//!   destroy対象の管理外worktreeの存在など）は、削除計画へ全件示し、対象sandbox名の
+//!   完全一致入力を得た場合だけ削除を許可する。
 //!
 //! `gate::assess`が層Aの観測を固定順序で行い、`gate::authorize`が層Aの通過だけを
-//! 確認して`ProtectionPermit`を発行する。`inspect`はgate配下だけが呼ぶprivate
+//! 確認して[`ProtectionPermit`]を発行する。`inspect`はgate配下だけが呼ぶprivate
 //! collectorであり、productionから直接公開しない。`force_bypass::force_destroy`は
-//! `destroy --force`の分岐だけが使う、意図的な迂回である。
+//! `destroy --force`の分岐だけが使う、意図的な迂回であり、architecture testが
+//! 唯一の呼び出し箇所であることを確認する。
 
 mod destructive_operation;
 mod force_bypass;
