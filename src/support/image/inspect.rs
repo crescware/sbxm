@@ -12,5 +12,7 @@ pub fn inspect(host: &dyn HostEnvironment, name: &str) -> Result<Option<ImageIde
         return Ok(None);
     }
     let outcome = docker::inspect(host, name)?;
-    parse_image_inspect(&outcome.stdout_text()).map(Some)
+    parse_image_inspect(&outcome.stdout_text())
+        .map(Some)
+        .map_err(|error| docker::diagnose_failure(host, error))
 }
