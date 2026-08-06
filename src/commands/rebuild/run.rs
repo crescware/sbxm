@@ -34,6 +34,7 @@ pub fn run(
     // 対象が決まる前にhostの状態へ触れない。
     let mut locked =
         select::one(location, requested, &msg!("select-rebuild-heading"), prompt)?.lock()?;
+    image::cleanup_stale_archives(&locked.paths);
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
 
@@ -174,17 +175,17 @@ fn prepare_generation(
         target,
         progress,
     )?;
+    let mut warnings = Vec::new();
     // 中断した再構築を続ける場合、成功済みの工程はinspectしてskipする。
     let template = if let Some(template) = template::existing(host, &built)? {
         template
     } else {
         let archive = image::ensure_archive(host, paths, &built, target, progress)?;
-        template::ensure(host, &archive, &built, progress)?
+        let outcome = template::ensure(host, archive.path(), &built, progress);
+        archive.cleanup_after(outcome, &mut warnings)?
     };
-    Ok(Generation {
-        template,
-        warnings: built.warnings,
-    })
+    warnings.extend(built.warnings);
+    Ok(Generation { template, warnings })
 }
 
 /// `rebuild`は、Sandboxを持つ案件だけを対象とする。

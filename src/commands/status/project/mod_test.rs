@@ -47,7 +47,6 @@ fn the_items_are_reported_in_the_documented_order() -> Checked {
             "status-item-host-clone",
             "status-item-dockerfile",
             "status-item-image",
-            "status-item-template-archive",
             "status-item-sandbox",
             "status-item-workspace",
             "status-item-secret",

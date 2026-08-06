@@ -235,8 +235,10 @@ A few things this does *not* do:
 - The requested size is not reserved up front. It raises the ceiling each
   sandbox can grow into; actual usage across all of a host's sandboxes still
   adds up against the host's real disk.
-- Image and template caches live outside each sandbox's root filesystem and
-  consume host space of their own, independent of this setting.
+- Built images and loaded templates live outside each sandbox's root
+  filesystem and consume host space of their own, independent of this
+  setting. The archive sbxm exports in between is a transient file removed
+  once the load finishes; it does not accumulate.
 
 Check the host has headroom for the size you request before running either
 command.

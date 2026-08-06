@@ -227,6 +227,37 @@ fn switched_sandbox() -> Checked<(Fixture, crate::testing::project::Registered, 
 }
 
 #[test]
+fn a_stale_archive_left_by_an_earlier_crash_is_swept_before_rebuilding() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    std::fs::create_dir_all(project.paths.cache_dir()).required()?;
+    let leftover = project
+        .paths
+        .cache_dir()
+        .join("template-000000000000.tar.tmp");
+    std::fs::write(&leftover, b"left behind by an earlier crash").required()?;
+
+    run(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .required_because("rebuild still succeeds")?;
+
+    assert!(
+        !leftover.exists(),
+        "a stale archive from an earlier crash is swept while the lock is held"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_bare_repository_fetch_failure_carries_the_disk_state_at_that_moment() -> Checked {
     let (fixture, project, host) = switched_sandbox()?;
     let layout = SandboxLayout::new(project.metadata.canonical_id());

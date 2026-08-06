@@ -435,9 +435,12 @@ fn the_first_rebuild_of_a_generation_exports_its_archive_and_loads_the_template(
         "the archive is exported and loaded: {:?}",
         host.inner.calls()
     );
-    // 検証を終えたarchiveだけが正式な位置へ移る。
+    // archiveはloadの短命consumerでしかなく、成功後は残らない。
     let archive = project.paths.template_archive(short_hex(&target));
-    assert!(archive.is_file(), "the archive of the generation is kept");
+    assert!(
+        !archive.exists(),
+        "the archive does not survive a successful load"
+    );
     assert!(
         !project
             .paths

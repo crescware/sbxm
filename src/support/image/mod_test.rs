@@ -531,8 +531,8 @@ fn the_archive_is_written_to_a_temporary_path_and_then_moved_into_place() -> Che
 
     let archive = ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress)
         .required_because("save")?;
-    assert_eq!(archive, paths.template_archive(short_hex(DIGEST)));
-    assert!(archive.is_file());
+    assert_eq!(archive.path(), paths.template_archive(short_hex(DIGEST)));
+    assert!(archive.path().is_file());
     assert!(
         !paths.template_archive_temp(short_hex(DIGEST)).exists(),
         "the temporary archive does not survive a successful save"
@@ -550,6 +550,27 @@ fn the_archive_is_written_to_a_temporary_path_and_then_moved_into_place() -> Che
 }
 
 #[test]
+fn a_cache_directory_removed_after_registration_is_recreated_before_the_save() -> Checked {
+    // #91の障害調査中、手動削除で`.cache`が無い状態になったあとのprepareが
+    // `--output`の親directory不在で失敗した。書き込みの前に自己修復する。
+    let dir = tempfile::tempdir().required()?;
+    let base =
+        crate::paths::ProjectParent::at(dir.path()).required_because("valid parent directory")?;
+    let paths = ProjectPaths::derive(&base, &canonical()?);
+    assert!(
+        !paths.cache_dir().exists(),
+        "the cache directory starts out absent"
+    );
+    let image = built_image()?;
+    let host = saving_host(&image);
+
+    let archive = ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress)
+        .required_because("save")?;
+    assert!(archive.path().is_file());
+    Ok(())
+}
+
+#[test]
 fn an_interrupted_temporary_archive_is_replaced_rather_than_reused() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let paths = project_paths(dir.path())?;
@@ -557,7 +578,8 @@ fn an_interrupted_temporary_archive_is_replaced_rather_than_reused() -> Checked 
     let temporary = paths.template_archive_temp(short_hex(DIGEST));
     fs::write(&temporary, b"a partial archive from an interrupted run").required()?;
 
-    ensure_archive(
+    // 戻り値はarchiveがscopeを抜けるまで生かし、検証より前にDropで消させない。
+    let _archive = ensure_archive(
         &saving_host(&image),
         &paths,
         &image,
