@@ -73,6 +73,11 @@ impl World {
     /// Sandbox内のfileを見る、または動かす起動。
     fn filesystem(&self, inner: &[&str]) -> Option<(i32, String)> {
         match inner {
+            ["df", "-Pk", "/"] => Some((
+                0,
+                "Filesystem     1024-blocks      Used Available Capacity Mounted on\noverlay          20466256  14502976   4898320       75% /\n"
+                    .to_string(),
+            )),
             ["test", flag, path] => {
                 // 模したSandboxにsymlinkは存在しない。
                 let known = *flag != "-h" && self.present.borrow().contains(*path);
