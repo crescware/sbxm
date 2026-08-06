@@ -44,6 +44,7 @@ impl World {
     pub fn docker(&self, spec: &CommandSpec) -> (i32, String) {
         let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
         match args.as_slice() {
+            ["version", "--format", "{{.Server.Version}}"] => (0, "27.0.3\n".to_string()),
             ["build", rest @ ..] => {
                 let mut labels = Vec::new();
                 let mut tag = String::new();
