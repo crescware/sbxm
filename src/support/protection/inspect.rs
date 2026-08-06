@@ -9,8 +9,9 @@ use crate::support::sandbox;
 use crate::support::worktree;
 
 use super::{
-    ConfirmableLoss, DestructiveOperation, Kind, Mode, OriginRecoveryFailure, ProtectionAssessment,
-    ProtectionBlocker, ProtectionRequest, Remote, WorktreeReport,
+    CommitCandidate, ConfirmableLoss, DestructiveOperation, Kind, Mode, OriginObservation,
+    ProtectionAssessment, ProtectionBlocker, ProtectionRequest, Reachability, WorktreeReport,
+    observe_for_mutation,
 };
 
 /// 進行中のGit操作を示すfile。1つでもあれば削除しない。
@@ -27,7 +28,8 @@ const IN_PROGRESS_MARKERS: [&str; 6] = [
 /// 対象に含めない。
 const LOCAL_REF_NAMESPACES: [&str; 4] = ["refs/heads/", "refs/tags/", "refs/notes/", "refs/stash"];
 
-/// worktree、Git操作、origin回収可能性、確認すれば削除してよい対象を固定順序で評価する。
+/// worktree、Git操作、確認すれば削除してよい対象を固定順序で評価し、origin回収可能性
+/// だけは全worktree分をまとめて1回observeする。
 ///
 /// 観測そのものに失敗した場合は`Err`とする。既知のblockerと確認対象は打ち切らずに集め、
 /// `ProtectionAssessment`へ収める。`gate::assess`だけがこの関数を呼ぶ。
@@ -66,9 +68,10 @@ pub fn inspect(
         .into_iter()
         .collect();
 
-    let mut worktrees = Vec::new();
+    let mut pending_worktrees = Vec::new();
     let mut blockers = Vec::new();
     let mut confirmable_losses = Vec::new();
+    let mut candidates: Vec<CommitCandidate> = Vec::new();
 
     for entry in entries {
         if entry.bare {
@@ -106,21 +109,32 @@ pub fn inspect(
             }
         }
 
-        let report = examine(
+        let pending = examine(
             host,
             sandbox_name,
             &entry,
             &relative,
             managed,
-            &mut blockers,
-            &mut confirmable_losses,
+            Collected {
+                blockers: &mut blockers,
+                confirmable_losses: &mut confirmable_losses,
+                candidates: &mut candidates,
+            },
         )?;
-        worktrees.push(report);
+        pending_worktrees.push(pending);
     }
 
     // sandboxの書き込み層は、削除するたびに必ず失われる。存在の有無を観測する対象では
     // なく、Sandboxがある限り常に成り立つ確認対象として1件だけ載せる。
     confirmable_losses.push(ConfirmableLoss::SandboxWritableLayer);
+
+    let observation = observe_for_mutation(host, request.sandbox, layout, &candidates)?;
+    let worktrees = finalize_worktrees(
+        pending_worktrees,
+        &observation,
+        &mut blockers,
+        &mut confirmable_losses,
+    );
 
     Ok(ProtectionAssessment::new(
         request.operation,
@@ -128,7 +142,93 @@ pub fn inspect(
         worktrees,
         blockers,
         confirmable_losses,
+        Some(observation),
     ))
+}
+
+/// origin観測に基づき、まだ確定していないworktree 1件の情報。
+struct PendingWorktree {
+    relative: String,
+    kind: Kind,
+    mode: Mode,
+    head: String,
+    branch: Option<String>,
+    /// HEAD、またはcheckout中のbranchを指すcandidate。
+    primary: CommitCandidate,
+    /// HEAD以外のローカル所有ref。到達可能なら確認対象、そうでなければ拒否理由になる。
+    local_refs: Vec<PendingLocalRef>,
+}
+
+/// origin観測に基づき、まだ確定していないローカル所有ref 1件の情報。
+struct PendingLocalRef {
+    candidate: CommitCandidate,
+    /// 到達可能だった場合に載せる確認対象。
+    loss: ConfirmableLoss,
+    /// 到達可能だった場合に、branchのupstream追跡も合わせて確認対象へ載せる。
+    branch_upstream: Option<ConfirmableLoss>,
+}
+
+/// `examine`が集める、既知のblocker・確認対象・origin candidateの集約先。
+struct Collected<'a> {
+    blockers: &'a mut Vec<ProtectionBlocker>,
+    confirmable_losses: &'a mut Vec<ConfirmableLoss>,
+    candidates: &'a mut Vec<CommitCandidate>,
+}
+
+/// 全worktree分のorigin観測が揃ってから、各worktreeの`Reachability`と、それに伴う
+/// blocker・確認対象を確定する。
+fn finalize_worktrees(
+    pending_worktrees: Vec<PendingWorktree>,
+    observation: &OriginObservation,
+    blockers: &mut Vec<ProtectionBlocker>,
+    confirmable_losses: &mut Vec<ConfirmableLoss>,
+) -> Vec<WorktreeReport> {
+    let mut worktrees = Vec::with_capacity(pending_worktrees.len());
+    for pending in pending_worktrees {
+        let reachability = Reachability::classify(&pending.primary, observation);
+        if let Some(blocker) = origin_blocker(&pending.primary, &reachability) {
+            blockers.push(blocker);
+        }
+        for local_ref in pending.local_refs {
+            let candidate_reachability = Reachability::classify(&local_ref.candidate, observation);
+            if let Some(blocker) = origin_blocker(&local_ref.candidate, &candidate_reachability) {
+                blockers.push(blocker);
+            } else {
+                confirmable_losses.push(local_ref.loss);
+                if let Some(branch_upstream) = local_ref.branch_upstream {
+                    confirmable_losses.push(branch_upstream);
+                }
+            }
+        }
+        worktrees.push(WorktreeReport {
+            relative: pending.relative,
+            kind: pending.kind,
+            mode: pending.mode,
+            head: pending.head,
+            branch: pending.branch,
+            reachability,
+        });
+    }
+    worktrees
+}
+
+/// 分類結果を、拒否理由へ変換する。安全な結果（`Pushed`/`Reachable`）は`None`とする。
+fn origin_blocker(
+    candidate: &CommitCandidate,
+    reachability: &Reachability,
+) -> Option<ProtectionBlocker> {
+    match reachability {
+        Reachability::Unreachable => Some(ProtectionBlocker::OriginUnreachable {
+            reference: candidate.reference().to_string(),
+            commit: candidate.commit().to_string(),
+        }),
+        Reachability::Unobservable { reason } => Some(ProtectionBlocker::OriginUnobservable {
+            reference: candidate.reference().to_string(),
+            commit: candidate.commit().to_string(),
+            reason: *reason,
+        }),
+        Reachability::Pushed { .. } | Reachability::Reachable { .. } => None,
+    }
 }
 
 /// 1件のworktreeを検査し、既知のblockerと確認対象を集めながら観測結果を組み立てる。
@@ -138,9 +238,13 @@ fn examine(
     entry: &worktree::Entry,
     relative: &str,
     managed: bool,
-    blockers: &mut Vec<ProtectionBlocker>,
-    confirmable_losses: &mut Vec<ConfirmableLoss>,
-) -> Result<WorktreeReport> {
+    collected: Collected<'_>,
+) -> Result<PendingWorktree> {
+    let Collected {
+        blockers,
+        confirmable_losses,
+        candidates,
+    } = collected;
     let path = entry.path.as_str();
 
     check_tree_status(host, sandbox_name, path, relative, blockers)?;
@@ -175,42 +279,26 @@ fn examine(
         _ => return Err(local_refs_unobservable(&branch_outcome, relative)),
     };
 
-    let (mode, branch, remote) = if attached {
+    let (mode, branch, primary) = if attached {
         let branch = branch_outcome.stdout_text().trim().to_string();
-        if let Some(reason) = check_pushed(host, sandbox_name, path, relative)? {
-            blockers.push(ProtectionBlocker::OriginRecoveryNotProven {
-                reference: branch.clone(),
-                commit: head.clone(),
-                reason,
-            });
-        }
-        (Mode::Attached, Some(branch), Remote::Pushed)
+        let upstream = read_upstream(host, sandbox_name, path, relative)?;
+        let candidate =
+            CommitCandidate::new(format!("refs/heads/{branch}"), head.clone(), upstream);
+        (Mode::Attached, Some(branch), candidate)
     } else {
-        if let Some(reason) =
-            check_reachable_from_origin(host, sandbox_name, path, relative, "HEAD")?
-        {
-            blockers.push(ProtectionBlocker::OriginRecoveryNotProven {
-                reference: "HEAD".to_string(),
-                commit: head.clone(),
-                reason,
-            });
-        }
-        (Mode::Detached, None, Remote::Reachable)
+        let candidate = CommitCandidate::new("HEAD".to_string(), head.clone(), None);
+        (Mode::Detached, None, candidate)
     };
+    candidates.push(primary.clone());
 
-    collect_local_refs(
-        host,
-        sandbox_name,
-        path,
-        relative,
-        branch.as_deref(),
-        blockers,
-        confirmable_losses,
-    )?;
+    let local_refs = collect_local_refs(host, sandbox_name, path, relative, branch.as_deref())?;
+    for local_ref in &local_refs {
+        candidates.push(local_ref.candidate.clone());
+    }
     collect_additional_remotes(host, sandbox_name, path, relative, confirmable_losses)?;
     collect_reflog_only_commits(host, sandbox_name, path, relative, confirmable_losses)?;
 
-    Ok(WorktreeReport {
+    Ok(PendingWorktree {
         relative: relative.to_string(),
         kind: if managed {
             Kind::Managed
@@ -220,7 +308,8 @@ fn examine(
         mode,
         head,
         branch,
-        remote,
+        primary,
+        local_refs,
     })
 }
 
@@ -384,16 +473,16 @@ fn check_operation_in_progress(
     Ok(())
 }
 
-/// upstreamがあり、そこへ載っていないcommitを持たないことを確かめる。
+/// checkout中のbranchのupstream追跡先を読む。完全なref名で返す。
 ///
-/// 満たさない場合は理由を返す。観測できない場合だけ`Err`とする。
-fn check_pushed(
+/// upstream未設定はgitが非ゼロで示す。commandを起動できなかったことと区別する。
+fn read_upstream(
     host: &dyn HostEnvironment,
     sandbox_name: &str,
     path: &str,
     relative: &str,
-) -> Result<Option<OriginRecoveryFailure>> {
-    let upstream = sandbox::exec(
+) -> Result<Option<String>> {
+    let outcome = sandbox::exec(
         host,
         sandbox_name,
         &[
@@ -401,108 +490,30 @@ fn check_pushed(
             "-C",
             path,
             "rev-parse",
-            "--abbrev-ref",
             "--symbolic-full-name",
             "@{upstream}",
         ],
     )
     .map_err(|error| reclassify_local_refs(&error, relative))?;
 
-    // upstream未設定はgitが非ゼロで示す。commandを起動できなかったことと区別する。
-    match sandbox::inner_exit_code(&upstream) {
-        Some(0) => {}
-        Some(_) => return Ok(Some(OriginRecoveryFailure::NoUpstream)),
-        None => return Err(local_refs_unobservable(&upstream, relative)),
-    }
-    let upstream = upstream.stdout_text().trim().to_string();
-    let ahead = run(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "-C",
-            path,
-            "rev-list",
-            "--count",
-            &format!("{upstream}..HEAD"),
-        ],
-    )
-    .map_err(|error| reclassify_local_refs(&error, relative))?
-    .stdout_text();
-    let count: u64 = ahead
-        .trim()
-        .parse()
-        .map_err(|_| local_refs_unparseable(relative, &ahead))?;
-    if count == 0 {
-        return Ok(None);
-    }
-    Ok(Some(OriginRecoveryFailure::AheadOfUpstream {
-        upstream,
-        count,
-    }))
-}
-
-/// `commit`が、originのいずれかのremote-tracking refから到達できることを確かめる。
-fn check_reachable_from_origin(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
-    path: &str,
-    relative: &str,
-    commit: &str,
-) -> Result<Option<OriginRecoveryFailure>> {
-    if reachable_from_origin(host, sandbox_name, path, relative, commit)? {
-        Ok(None)
-    } else {
-        Ok(Some(OriginRecoveryFailure::UnreachableFromOrigin))
+    match sandbox::inner_exit_code(&outcome) {
+        Some(0) => Ok(Some(outcome.stdout_text().trim().to_string())),
+        Some(_) => Ok(None),
+        None => Err(local_refs_unobservable(&outcome, relative)),
     }
 }
 
-/// `commit`が、originのいずれかのremote-tracking refから到達できるか。
-fn reachable_from_origin(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
-    path: &str,
-    relative: &str,
-    commit: &str,
-) -> Result<bool> {
-    let unreachable = run(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "-C",
-            path,
-            "rev-list",
-            "--count",
-            commit,
-            "--not",
-            "--remotes=origin",
-        ],
-    )
-    .map_err(|error| reclassify_local_refs(&error, relative))?
-    .stdout_text();
-    let count: u64 = unreachable
-        .trim()
-        .parse()
-        .map_err(|_| local_refs_unparseable(relative, &unreachable))?;
-    Ok(count == 0)
-}
-
-/// HEAD以外のローカル所有ref（branch、tag、notes、stash）を確認対象へ分ける。
+/// HEAD以外のローカル所有ref（branch、tag、notes、stash）を集める。
 ///
-/// 指すcommitがoriginから回収できるrefは、名前の消失を`ConfirmableLoss`（確認すれば
-/// 削除してよい対象）として集める。回収できないrefは`ProtectionBlocker`（拒否理由）
-/// として集め、確認を求めずに拒否する。現在checkout中のbranchは、project metadataの
-/// start refから再現できるため対象外とする。
+/// 現在checkout中のbranchは、project metadataの start refから再現できるため対象外と
+/// する。到達可能かどうかは、全worktree分の観測をまとめたあとで判定する。
 fn collect_local_refs(
     host: &dyn HostEnvironment,
     sandbox_name: &str,
     path: &str,
     relative: &str,
     current_branch: Option<&str>,
-    blockers: &mut Vec<ProtectionBlocker>,
-    confirmable_losses: &mut Vec<ConfirmableLoss>,
-) -> Result<()> {
+) -> Result<Vec<PendingLocalRef>> {
     let outcome = run(
         host,
         sandbox_name,
@@ -520,6 +531,7 @@ fn collect_local_refs(
     )
     .map_err(|error| reclassify_local_refs(&error, relative))?;
 
+    let mut pending = Vec::new();
     for line in outcome.stdout_text().lines() {
         let mut fields = line.split('\t');
         let Some(reference) = fields.next().filter(|value| !value.is_empty()) else {
@@ -535,36 +547,37 @@ fn collect_local_refs(
             continue;
         }
 
-        if !reachable_from_origin(host, sandbox_name, path, relative, commit)? {
-            blockers.push(ProtectionBlocker::OriginRecoveryNotProven {
-                reference: reference.to_string(),
-                commit: commit.to_string(),
-                reason: OriginRecoveryFailure::UnreachableFromOrigin,
-            });
-            continue;
-        }
-
-        if let Some(name) = reference.strip_prefix("refs/tags/") {
-            confirmable_losses.push(ConfirmableLoss::Tag {
+        let loss = if let Some(name) = reference.strip_prefix("refs/tags/") {
+            ConfirmableLoss::Tag {
                 worktree: relative.to_string(),
                 name: name.to_string(),
-            });
+            }
         } else {
-            confirmable_losses.push(ConfirmableLoss::LocalRef {
+            ConfirmableLoss::LocalRef {
                 worktree: relative.to_string(),
                 reference: reference.to_string(),
-            });
-        }
-
-        if let (Some(branch), Some(upstream)) = (branch_name, upstream) {
-            confirmable_losses.push(ConfirmableLoss::BranchUpstream {
+            }
+        };
+        let branch_upstream = match (branch_name, upstream) {
+            (Some(branch), Some(upstream)) => Some(ConfirmableLoss::BranchUpstream {
                 worktree: relative.to_string(),
                 branch: branch.to_string(),
                 upstream: upstream.to_string(),
-            });
-        }
+            }),
+            _ => None,
+        };
+
+        pending.push(PendingLocalRef {
+            candidate: CommitCandidate::new(
+                reference.to_string(),
+                commit.to_string(),
+                upstream.map(str::to_string),
+            ),
+            loss,
+            branch_upstream,
+        });
     }
-    Ok(())
+    Ok(pending)
 }
 
 /// originとは別の、追加のremote名を集める。remote URLは読まない。
@@ -664,7 +677,7 @@ fn reclassify_git_operation(error: &Error, relative: &str) -> Error {
     )
 }
 
-/// HEAD、branch、upstream、到達可能性、ローカルrefの観測が失敗した場合の共通の写像。
+/// HEAD、branch、upstream、ローカルrefの観測が失敗した場合の共通の写像。
 fn reclassify_local_refs(error: &Error, relative: &str) -> Error {
     reclassify(
         error,
@@ -693,17 +706,5 @@ fn local_refs_unobservable(outcome: &CommandOutcome, relative: &str) -> Error {
         )
         .remediation(msg!("remediation-local-refs-unobservable"))
         .external(outcome.failure()),
-    )
-}
-
-/// commandは成功したが、出力を数値として解釈できない場合。
-fn local_refs_unparseable(relative: &str, detail: &str) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::LocalRefsUnobservable,
-            msg!("error-local-refs-unobservable", worktree = relative),
-        )
-        .fact(Fact::cause(detail))
-        .remediation(msg!("remediation-local-refs-unobservable")),
     )
 }

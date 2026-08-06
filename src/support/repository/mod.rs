@@ -8,12 +8,14 @@ mod fetch_refspec;
 #[cfg(test)]
 #[path = "mod_test.rs"]
 mod mod_test;
+mod refresh_origin;
 mod start_ref;
 mod unusable;
 mod worktree;
 
 pub use ensure_bare_clone::ensure_bare_clone;
 pub(crate) use fetch_refspec::FETCH_REFSPEC;
+pub use refresh_origin::refresh_origin;
 pub use start_ref::resolve_start_ref;
 use unusable::unusable;
 pub use worktree::ensure_worktrees;

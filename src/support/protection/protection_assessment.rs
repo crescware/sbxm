@@ -1,6 +1,8 @@
 use crate::project::SandboxName;
 
-use super::{ConfirmableLoss, DestructiveOperation, ProtectionBlocker, WorktreeReport};
+use super::{
+    ConfirmableLoss, DestructiveOperation, OriginObservation, ProtectionBlocker, WorktreeReport,
+};
 
 /// 保護ゲートが観測した結果。
 ///
@@ -12,12 +14,14 @@ pub struct ProtectionAssessment {
     worktrees: Vec<WorktreeReport>,
     blockers: Vec<ProtectionBlocker>,
     confirmable_losses: Vec<ConfirmableLoss>,
+    /// origin観測結果。何も観測しなかった`empty`では`None`。
+    origin: Option<OriginObservation>,
 }
 
 impl ProtectionAssessment {
     /// 何も観測しなかった結果。未作成、またはcloneしたrepositoryをまだ持たないsandboxで使う。
     pub fn empty(operation: DestructiveOperation, sandbox: SandboxName) -> ProtectionAssessment {
-        ProtectionAssessment::new(operation, sandbox, Vec::new(), Vec::new(), Vec::new())
+        ProtectionAssessment::new(operation, sandbox, Vec::new(), Vec::new(), Vec::new(), None)
     }
 
     pub(super) fn new(
@@ -26,6 +30,7 @@ impl ProtectionAssessment {
         worktrees: Vec<WorktreeReport>,
         blockers: Vec<ProtectionBlocker>,
         confirmable_losses: Vec<ConfirmableLoss>,
+        origin: Option<OriginObservation>,
     ) -> ProtectionAssessment {
         ProtectionAssessment {
             operation,
@@ -33,6 +38,7 @@ impl ProtectionAssessment {
             worktrees,
             blockers,
             confirmable_losses,
+            origin,
         }
     }
 
@@ -57,5 +63,10 @@ impl ProtectionAssessment {
     /// ことを確かめる。
     pub fn confirmable_losses(&self) -> &[ConfirmableLoss] {
         &self.confirmable_losses
+    }
+
+    /// origin観測結果。fingerprintが確認後のorigin側の変化を検出するために読む。
+    pub fn origin_observation(&self) -> Option<&OriginObservation> {
+        self.origin.as_ref()
     }
 }

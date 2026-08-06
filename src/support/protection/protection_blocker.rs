@@ -2,7 +2,7 @@ use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
-use super::OriginRecoveryFailure;
+use super::UnobservableReason;
 
 /// 観測済みの拒否理由。1件でもあれば、確認を求めずrebuild/destroyを拒否する。
 ///
@@ -23,11 +23,13 @@ pub enum ProtectionBlocker {
     GitOperationInProgress { worktree: String, operation: String },
     /// rebuild対象に、metadataから配置を再現できない作業ツリーがある。
     UnmanagedWorktree { worktree: String },
-    /// commitをoriginから回収できると証明できない。
-    OriginRecoveryNotProven {
+    /// refresh済みoriginのどのrefからもcommitへ到達できない。
+    OriginUnreachable { reference: String, commit: String },
+    /// originを権威ある状態として観測できない。
+    OriginUnobservable {
         reference: String,
         commit: String,
-        reason: OriginRecoveryFailure,
+        reason: UnobservableReason,
     },
 }
 
@@ -67,44 +69,61 @@ impl ProtectionBlocker {
                 msg!("error-unmanaged-worktree-present", path = worktree),
             )
             .remediation(msg!("remediation-unmanaged-worktree-present")),
-            ProtectionBlocker::OriginRecoveryNotProven {
+            ProtectionBlocker::OriginUnreachable { reference, commit } => Diagnostic::new(
+                ErrorId::OriginCommitUnreachable,
+                msg!(
+                    "error-origin-commit-unreachable",
+                    reference = reference,
+                    commit = commit
+                ),
+            )
+            .remediation(msg!("remediation-origin-commit-unreachable")),
+            ProtectionBlocker::OriginUnobservable {
                 reference,
                 commit,
                 reason,
-            } => origin_recovery_diagnostic(reference, commit, reason),
+            } => origin_unobservable_diagnostic(reference, commit, *reason),
         }
     }
 }
 
-fn origin_recovery_diagnostic(
+fn origin_unobservable_diagnostic(
     reference: &str,
     commit: &str,
-    reason: &OriginRecoveryFailure,
+    reason: UnobservableReason,
 ) -> Diagnostic {
     match reason {
-        OriginRecoveryFailure::NoUpstream => Diagnostic::new(
-            ErrorId::OriginUpstreamMissing,
-            msg!("error-origin-upstream-missing", reference = reference),
+        UnobservableReason::OriginMissing => Diagnostic::new(
+            ErrorId::OriginMissing,
+            msg!("error-origin-missing", reference = reference),
         )
-        .remediation(msg!("remediation-origin-upstream-missing")),
-        OriginRecoveryFailure::AheadOfUpstream { upstream, count } => Diagnostic::new(
-            ErrorId::OriginCommitUnpushed,
+        .remediation(msg!("remediation-origin-missing")),
+        UnobservableReason::RefreshFailed => Diagnostic::new(
+            ErrorId::OriginRefreshFailed,
             msg!(
-                "error-origin-commit-unpushed",
-                reference = reference,
-                upstream = upstream,
-                count = count
-            ),
-        )
-        .remediation(msg!("remediation-origin-commit-unpushed")),
-        OriginRecoveryFailure::UnreachableFromOrigin => Diagnostic::new(
-            ErrorId::OriginCommitUnreachable,
-            msg!(
-                "error-origin-commit-unreachable",
+                "error-origin-refresh-failed",
                 reference = reference,
                 commit = commit
             ),
         )
-        .remediation(msg!("remediation-origin-commit-unreachable")),
+        .remediation(msg!("remediation-origin-refresh-failed")),
+        UnobservableReason::AdvertisementInvalid => Diagnostic::new(
+            ErrorId::OriginAdvertisementInvalid,
+            msg!(
+                "error-origin-advertisement-invalid",
+                reference = reference,
+                commit = commit
+            ),
+        )
+        .remediation(msg!("remediation-origin-advertisement-invalid")),
+        UnobservableReason::ObjectMissing => Diagnostic::new(
+            ErrorId::OriginObjectMissing,
+            msg!(
+                "error-origin-object-missing",
+                reference = reference,
+                commit = commit
+            ),
+        )
+        .remediation(msg!("remediation-origin-object-missing")),
     }
 }
