@@ -313,6 +313,18 @@ fn security_sensitive_runs_drop_the_ssh_agent_socket() -> Checked {
 }
 
 #[test]
+fn security_sensitive_runs_touch_no_environment_variable_other_than_the_ssh_agent_socket() {
+    // `configure`が`SSH_AUTH_SOCK`以外へ`env`/`env_remove`/`env_clear`を呼べば、
+    // ここへ現れる。`DOCKER_SANDBOXES_ROOT_SIZE`のような他の変数は、実際のprocess
+    // environmentを動かさずとも、この一覧が`SSH_AUTH_SOCK`の除去だけであることで
+    // 素通りすると示せる。
+    let spec = CommandSpec::probe("true", &[]).env(EnvPolicy::InheritWithoutSshAgent);
+    let command = configure(&spec);
+    let envs: Vec<(&std::ffi::OsStr, Option<&std::ffi::OsStr>)> = command.get_envs().collect();
+    assert_eq!(envs, [(std::ffi::OsStr::new("SSH_AUTH_SOCK"), None)]);
+}
+
+#[test]
 fn capture_keeps_both_streams_separately() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let fake = fake_executable(

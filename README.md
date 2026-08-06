@@ -212,6 +212,35 @@ Rebuilding recreates the sandbox. To protect work, sbxm refuses a normal
 rebuild when worktrees contain dirty files, unpushed commits, or unmanaged
 worktrees.
 
+### Choose the sandbox root size
+
+Docker Sandboxes reads `DOCKER_SANDBOXES_ROOT_SIZE` from the environment of the
+process that creates a sandbox. sbxm does not interpret or rewrite this
+variable; it passes through whatever is set when it runs `sbx create`:
+
+```sh
+# First creation
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm prepare <project-id>
+
+# Re-creation, after the sandbox already exists
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
+```
+
+A few things this does *not* do:
+
+- The variable only takes effect on the sandbox being created. It is not an
+  in-place resize of an existing sandbox's filesystem; changing the size
+  requires recreating the sandbox, so `rebuild` still goes through the same
+  data-protection checks as any other rebuild.
+- The requested size is not reserved up front. It raises the ceiling each
+  sandbox can grow into; actual usage across all of a host's sandboxes still
+  adds up against the host's real disk.
+- Image and template caches live outside each sandbox's root filesystem and
+  consume host space of their own, independent of this setting.
+
+Check the host has headroom for the size you request before running either
+command.
+
 ### Add managed worktrees
 
 A built project can gain more managed worktrees without a rebuild:
