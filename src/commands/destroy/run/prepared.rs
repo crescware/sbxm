@@ -2,6 +2,7 @@ use crate::paths::{ExclusiveLock, ProjectPaths};
 use crate::project::SandboxName;
 
 use crate::support::inventory::ProjectState;
+use crate::support::protection::ProtectionSnapshot;
 use crate::support::select::{self};
 
 use super::{DestroyPlan, Unregistration};
@@ -13,8 +14,12 @@ pub struct Prepared {
     pub(super) paths: ProjectPaths,
     pub(super) name: SandboxName,
     pub(super) state: ProjectState,
-    pub(super) force: bool,
     pub(super) locked: select::Locked,
+    /// 最初に観測した状態指紋。`confirm`が明示確認と引き換えに`take`で消費する。
+    ///
+    /// force mode、またはSandboxがそもそも無い場合は`None`のままであり、`confirm`は
+    /// 確認を求めない。
+    pub(super) snapshot: Option<ProtectionSnapshot>,
     /// 最終protection inspectからsandbox remove完了まで保持するexclusive session lease。
     ///
     /// `--force`は保護ゲートと同様にこのleaseも意図的に迂回するため`None`になる。

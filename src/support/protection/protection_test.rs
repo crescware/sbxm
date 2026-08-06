@@ -21,6 +21,18 @@ fn assess(
     gate::assess(host, request)
 }
 
+/// この観測結果自身へ明示確認し、状態が変わっていないものとして許可証を求める。
+///
+/// snapshot、confirmation、`gate::authorize`はどれもこのfileの外から直接組み立てられ
+/// ないため、`gate::authorize`単体の挙動（blockerの有無、fingerprint一致）を確かめる
+/// testはここを経由する。
+fn authorize(assessment: ProtectionAssessment) -> Result<ProtectionPermit> {
+    let sandbox = assessment.sandbox().as_str().to_string();
+    let confirmation =
+        confirmation::confirm(ProtectionSnapshot::new(assessment.clone()), &sandbox)?;
+    gate::authorize(confirmation, ProtectionSnapshot::new(assessment))
+}
+
 #[test]
 fn a_clean_managed_worktree_passes_and_is_reported() -> Checked {
     let fixture = Fixture::new()?;
@@ -41,7 +53,7 @@ fn a_clean_managed_worktree_passes_and_is_reported() -> Checked {
         }]
     );
     assert!(assessment.blockers().is_empty());
-    gate::authorize(assessment).required_because("no blocker means a permit is issued")?;
+    authorize(assessment).required_because("no blocker means a permit is issued")?;
     Ok(())
 }
 
@@ -91,8 +103,7 @@ fn each_kind_of_unsaved_work_produces_its_own_blocker_and_stops_the_run() -> Che
     for (host, expected) in cases {
         let assessment = assess(&host, &project, DestructiveOperation::Destroy)
             .required_because("assess collects the blocker instead of failing outright")?;
-        let error =
-            gate::authorize(assessment).refused_because("unsaved work is never destroyed")?;
+        let error = authorize(assessment).refused_because("unsaved work is never destroyed")?;
         assert_eq!(error.first_id(), Some(expected));
     }
     Ok(())
@@ -240,7 +251,7 @@ fn an_unmanaged_worktree_is_refused_for_rebuild_and_confirmable_for_destroy() ->
             worktree: "agent-scratch".to_string()
         }]
     );
-    let error = gate::authorize(assessment)
+    let error = authorize(assessment)
         .refused_because("rebuild cannot recreate a worktree it does not know about")?;
     assert_eq!(error.first_id(), Some(ErrorId::UnmanagedWorktreePresent));
 
@@ -250,7 +261,7 @@ fn an_unmanaged_worktree_is_refused_for_rebuild_and_confirmable_for_destroy() ->
     assert_eq!(assessment.worktrees().len(), 2);
     assert_eq!(assessment.worktrees()[1].kind, Kind::Unmanaged);
     assert_eq!(assessment.worktrees()[1].remote, Remote::Reachable);
-    gate::authorize(assessment).required_because("no blocker means destroy may still proceed")?;
+    authorize(assessment).required_because("no blocker means destroy may still proceed")?;
     Ok(())
 }
 
@@ -336,8 +347,8 @@ fn a_detached_head_that_no_remote_reaches_stops_the_run() -> Checked {
             reason: OriginRecoveryFailure::UnreachableFromOrigin,
         }]
     );
-    let error = gate::authorize(assessment)
-        .refused_because("commits no remote holds are not thrown away")?;
+    let error =
+        authorize(assessment).refused_because("commits no remote holds are not thrown away")?;
     assert_eq!(error.first_id(), Some(ErrorId::OriginCommitUnreachable));
     Ok(())
 }

@@ -1,23 +1,36 @@
 //! rebuild / destroyの全ての通常経路が通る、共通の破壊前保護ゲート。呼び出し側は
 //! 個別の検査を選ばない。
 //!
-//! 保護は回復可能性に基づく二層で構成する。
+//! 保護は回復可能性に基づく2種類の結果で構成する。
 //!
-//! - 層A（拒否）: 追跡対象ファイルの未commit変更、無視対象でない未追跡file、進行中の
-//!   Git操作、管理外worktree（rebuildのみ）、originから回収できると証明できないcommit
-//!   のいずれか1件でもあれば、確認を求めず削除しない。原因ごとに[`ProtectionBlocker`]の
-//!   variantと固有の`ErrorId`を持ち、共通のIDへ丸めない。状態を観測できない場合も、
-//!   安全と推測せず層Aと同様に拒否する。
-//! - 層B（明示確認）: commit自体は失わないが自動復元できない情報（無視対象のpath、
-//!   destroy対象の管理外worktreeの存在など）は、削除計画へ全件示し、対象sandbox名の
-//!   完全一致入力を得た場合だけ削除を許可する。
+//! - [`ProtectionBlocker`]（拒否理由）: 追跡対象ファイルの未commit変更、無視対象で
+//!   ない未追跡file、進行中のGit操作、管理外worktree（rebuildのみ）、originから
+//!   回収できると証明できないcommitのいずれか1件でもあれば、確認を求めず削除しない。
+//!   原因ごとに固有の`ErrorId`を持ち、共通のIDへ丸めない。状態を観測できない場合も、
+//!   安全と推測せずこれと同様に拒否する。
+//! - [`ConfirmableLoss`]（確認すれば削除してよい対象）: 指すcommit自体は
+//!   `ProtectionBlocker`の検査でoriginから回収できると確認済みだが、削除後は自動復元
+//!   できない付随情報（無視対象のpath、ref名、branchのupstream追跡、tag、追加remote名、
+//!   reflogにだけ残るcommit、destroy対象の管理外worktree、sandboxの書き込み層）は、
+//!   削除計画へ全件示し、対象sandbox名の完全一致入力を得た場合だけ削除を許可する。
 //!
-//! `gate::assess`が層Aの観測を固定順序で行い、`gate::authorize`が層Aの通過だけを
-//! 確認して[`ProtectionPermit`]を発行する。`inspect`はgate配下だけが呼ぶprivate
-//! collectorであり、productionから直接公開しない。`force_bypass::force_destroy`は
-//! `destroy --force`の分岐だけが使う、意図的な迂回であり、architecture testが
-//! 唯一の呼び出し箇所であることを確認する。
+//! `gate::assess`がこの2種類の観測を固定順序で行い、[`ProtectionSnapshot`]（観測結果と
+//! その正規化fingerprintの組）を作る。`ProtectionBlocker`が1件も無い`ProtectionSnapshot`
+//! だけを[`confirmation::confirm`]へ渡すと、sandbox名の完全一致を条件に
+//! [`ProtectionConfirmation`]を得られる。`gate::authorize`は、そのconfirmationの
+//! sandbox名・操作種別・fingerprintが**remove直前に取り直した**現在の`ProtectionSnapshot`
+//! と完全一致し、かつ現在`ProtectionBlocker`が1件も無い場合だけ[`ProtectionPermit`]を
+//! 発行する。確認から実際の削除までのあいだに状態が変わればfingerprintが変わり、permitは
+//! 発行されない。`ProtectionConfirmation`と`ProtectionPermit`はどちらも`Clone`/`Copy`に
+//! せず、別run・別sandbox・別状態での使い回しを型で防ぐ。
+//!
+//! `inspect`はgate配下だけが呼ぶprivate collectorであり、productionから直接公開しない。
+//! `force_bypass::force_destroy`は`destroy --force`の分岐だけが使う、意図的な迂回であり、
+//! architecture testが唯一の呼び出し箇所であることを確認する。
 
+mod confirm_prompt;
+mod confirmable_loss;
+pub mod confirmation;
 mod destructive_operation;
 mod force_bypass;
 pub mod gate;
@@ -25,13 +38,19 @@ mod inspect;
 mod kind;
 mod mode;
 mod origin_recovery_failure;
+mod prompt_ui;
 mod protection_assessment;
 mod protection_blocker;
+mod protection_confirmation;
+mod protection_fingerprint;
 mod protection_permit;
 mod protection_request;
+mod protection_snapshot;
 mod remote;
 mod worktree_report;
 
+pub use confirm_prompt::ConfirmPrompt;
+pub use confirmable_loss::ConfirmableLoss;
 pub use destructive_operation::DestructiveOperation;
 pub use force_bypass::ForceBypass;
 pub use kind::Kind;
@@ -39,8 +58,11 @@ pub use mode::Mode;
 pub use origin_recovery_failure::OriginRecoveryFailure;
 pub use protection_assessment::ProtectionAssessment;
 pub use protection_blocker::ProtectionBlocker;
+pub use protection_confirmation::ProtectionConfirmation;
+pub use protection_fingerprint::ProtectionFingerprint;
 pub use protection_permit::ProtectionPermit;
 pub use protection_request::ProtectionRequest;
+pub use protection_snapshot::ProtectionSnapshot;
 pub use remote::Remote;
 pub use worktree_report::WorktreeReport;
 

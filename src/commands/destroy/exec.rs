@@ -26,7 +26,7 @@ pub fn exec(
     };
     ui.set_locale(locale);
     prompt.set_locale(locale);
-    let prepared = match super::run::prepare(
+    let mut prepared = match super::run::prepare(
         context.location,
         args.project.as_ref(),
         args.force,
@@ -43,12 +43,24 @@ pub fn exec(
         ui.warning(&print::force_notice());
     }
 
-    if let Err(error) = super::run::confirm(&prepared, context.interactivity.can_prompt(), prompt) {
-        return report(ui, &error);
-    }
+    let confirmation =
+        match super::run::confirm(&mut prepared, context.interactivity.can_prompt(), prompt) {
+            Ok(confirmation) => confirmation,
+            Err(error) => return report(ui, &error),
+        };
     ui.note_prompt_output();
 
-    let mut outcome = match super::run::execute(host, &prepared, inventory::Poll::default(), ui) {
+    let executed = match confirmation {
+        Some(confirmation) => super::run::execute_confirmed(
+            host,
+            &prepared,
+            confirmation,
+            inventory::Poll::default(),
+            ui,
+        ),
+        None => super::run::execute_bypassed(host, &prepared, inventory::Poll::default(), ui),
+    };
+    let mut outcome = match executed {
         Ok(outcome) => outcome,
         Err(error) => return report(ui, &error),
     };

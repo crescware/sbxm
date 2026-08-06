@@ -17,7 +17,7 @@ use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
 use crate::testing::host::{FakeSbx, custom_secret_listing, no_custom_secrets, no_secrets};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
-use crate::testing::prompt::ScriptedPrompt;
+use crate::testing::prompt::{ScriptedConfirm, ScriptedPrompt};
 use crate::testing::protection::clean_host;
 use std::os::unix::fs::PermissionsExt;
 
@@ -44,6 +44,25 @@ fn position(host: &FakeSbx, needle: &str) -> Checked<usize> {
         .required_because(&format!("no command matched {needle}"))
 }
 
+/// 削除が最後まで進む状況を作る。prepareの観測とremove直前の再評価までは対象が
+/// 存在すると観測し、削除後の一覧では消えている。
+fn expect_successful_removal(host: &FakeSbx) {
+    let present = host.listing.borrow()[0].clone();
+    *host.listing.borrow_mut() = vec!["[]".to_string(), present.clone(), present];
+}
+
+/// `exec`を模した、確認込みの実行。通常modeは常に正しいSandbox名で確認する。
+fn destroy(host: &FakeSbx, prepared: &mut Prepared) -> Result<DestroyOutcome> {
+    let sandbox = prepared.plan.sandbox.clone();
+    let confirmation = confirm(prepared, true, &mut ScriptedConfirm::typing(&sandbox))?;
+    match confirmation {
+        Some(confirmation) => {
+            execute_confirmed(host, prepared, confirmation, poll(), &mut SilentProgress)
+        }
+        None => execute_bypassed(host, prepared, poll(), &mut SilentProgress),
+    }
+}
+
 #[test]
 fn a_clean_running_project_is_planned_then_removed() -> Checked {
     let fixture = Fixture::new()?;
@@ -52,9 +71,9 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
     std::fs::create_dir_all(project.paths.cache_dir()).required()?;
     // 削除後の一覧では対象が消えている。
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    expect_successful_removal(&host);
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("Example-Org/Example-Repo")?),
         false,
@@ -85,8 +104,7 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
         "sbxm add git@github.com:Example-Org/Example-Repo.git --worktrees 1"
     );
 
-    let outcome =
-        execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
+    let outcome = destroy(&host, &mut prepared).required_because("destroy")?;
     assert!(outcome.warnings.is_empty());
     assert!(host.ran(&format!("rm {}", project.sandbox)));
     assert!(
@@ -112,9 +130,9 @@ fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> 
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    expect_successful_removal(&host);
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -123,7 +141,7 @@ fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> 
         &fixture.workspace_root,
     )
     .required_because("prepare")?;
-    execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
+    destroy(&host, &mut prepared).required_because("destroy")?;
 
     // sbxmは既に自前の確認を済ませている。sbx自身の確認prompt/答えを利用者へ
     // 二重に見せない。
@@ -157,7 +175,7 @@ fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -
         "sandbox is in use",
     );
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -172,7 +190,7 @@ fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -
         .filter(|args| args.first().map(String::as_str) == Some("ls"))
         .count();
 
-    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
+    let error = destroy(&host, &mut prepared)
         .refused_because("a runtime refusal is a removal failure, not something to retry")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
 
@@ -181,9 +199,11 @@ fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -
         .iter()
         .filter(|args| args.first().map(String::as_str) == Some("ls"))
         .count();
+    // +1は、removeの直前に取り直す再評価用の1回だけである。それより増えていれば、
+    // 拒否されたremovalのあとに不在を待つpollへ進んでしまっている。
     assert_eq!(
         ls_calls_after_execute,
-        ls_calls_after_prepare,
+        ls_calls_after_prepare + 1,
         "the listing is not polled again after a refused removal: {:?}",
         host.calls()
     );
@@ -213,7 +233,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> C
         FakeSbx::listings(&[&stopped, "[]"]),
         project.sandbox.as_str(),
     );
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         true,
@@ -225,7 +245,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> C
     assert!(prepared.plan.force);
     assert!(prepared.plan.worktrees.is_empty());
 
-    execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
+    destroy(&host, &mut prepared).required_because("destroy")?;
     // `--force`は、sbxm自身のデータ保護検査だけでなく、runtimeの確認prompt・
     // active-session検査も省く。通常経路とは別の`remove_forced`を通る。
     assert!(host.ran(&format!("rm --force {}", project.sandbox)));
@@ -353,7 +373,7 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(FakeSbx::listing("[]"), project.sandbox.as_str());
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -364,7 +384,7 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
     .required_because("prepare")?;
     assert_eq!(prepared.plan.state, ProjectState::NotCreated);
 
-    execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
+    destroy(&host, &mut prepared).required_because("destroy")?;
     assert!(!host.ran("rm "), "there is no sandbox to remove");
     assert!(!project.paths.metadata_file().exists());
     Ok(())
@@ -384,9 +404,9 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
             (0, &no_custom_secrets(sandbox)),
         ],
     );
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    expect_successful_removal(&host);
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -398,7 +418,7 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
     // 消す前に、tokenの登録も消えることを見せる。
     assert!(describes(&prepared.plan, "destroy-target-secret"));
 
-    execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
+    destroy(&host, &mut prepared).required_because("destroy")?;
     assert!(
         host.ran(&format!(
             "secret rm {sandbox} --placeholder sbx-cs-example --force"
@@ -427,9 +447,9 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
         0,
         &custom_secret_listing(sandbox, "sbx-cs-example"),
     );
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    expect_successful_removal(&host);
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -439,8 +459,8 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
     )
     .required_because("prepare")?;
 
-    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
-        .refused_because("the registration is still listed")?;
+    let error =
+        destroy(&host, &mut prepared).refused_because("the registration is still listed")?;
     assert_eq!(error.first_id(), Some(ErrorId::SecretStillRegistered));
     let remediation = error.diagnostics()[0]
         .remediation
@@ -469,9 +489,9 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() -> Che
         0,
         &custom_secret_listing("global", "sbx-cs-elsewhere"),
     );
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    expect_successful_removal(&host);
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -481,7 +501,7 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() -> Che
     )
     .required_because("prepare")?;
 
-    execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
+    destroy(&host, &mut prepared).required_because("destroy")?;
     assert!(
         !host.ran("secret rm"),
         "a registration this project did not own is untouched: {:?}",
@@ -530,8 +550,8 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> 
     std::os::unix::fs::symlink(&elsewhere, project.paths.cache_dir()).required()?;
 
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
-    let prepared = prepare(
+    expect_successful_removal(&host);
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -541,8 +561,7 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> 
     )
     .required_because("prepare")?;
 
-    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
-        .refused_because("a symlinked cache is refused")?;
+    let error = destroy(&host, &mut prepared).refused_because("a symlinked cache is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
     assert!(
         elsewhere.join("keep.txt").exists(),
@@ -553,38 +572,6 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> 
         "the project stays managed so the state can be settled"
     );
     Ok(())
-}
-
-/// 入力を決め打ちする確認prompt。`None`はEscまたはCtrl-C。
-struct ScriptedConfirm {
-    typed: Option<String>,
-    asked: usize,
-}
-
-impl ScriptedConfirm {
-    fn typing(value: &str) -> ScriptedConfirm {
-        ScriptedConfirm {
-            typed: Some(value.to_string()),
-            asked: 0,
-        }
-    }
-
-    fn canceling() -> ScriptedConfirm {
-        ScriptedConfirm {
-            typed: None,
-            asked: 0,
-        }
-    }
-}
-
-impl ConfirmPrompt for ScriptedConfirm {
-    fn confirm_sandbox_name(&mut self, expected: &str) -> Result<bool> {
-        self.asked += 1;
-        match &self.typed {
-            Some(typed) => Ok(typed == expected),
-            None => Err(Error::Canceled),
-        }
-    }
 }
 
 /// 削除して良い状態の案件を1件用意する。
@@ -607,19 +594,24 @@ fn prepared_project(fixture: &Fixture, force: bool) -> Checked<(FakeSbx, Prepare
 #[test]
 fn only_the_exact_sandbox_name_confirms_an_interactive_deletion() -> Checked {
     let fixture = Fixture::new()?;
-    let (_host, prepared) = prepared_project(&fixture, false)?;
+    let (_host, mut prepared) = prepared_project(&fixture, false)?;
     let sandbox = prepared.plan.sandbox.clone();
 
     let mut exact = ScriptedConfirm::typing(&sandbox);
-    confirm(&prepared, true, &mut exact).required_because("the name matched")?;
-    assert_eq!(exact.asked, 1);
+    let confirmation =
+        confirm(&mut prepared, true, &mut exact).required_because("the name matched")?;
+    assert!(confirmation.is_some());
+    assert_eq!(exact.asked(), 1);
 
-    // yesでは削除しない。名前以外の入力はすべて不一致とする。
+    // yesでは削除しない。名前以外の入力はすべて不一致とする。confirmationは1回の
+    // snapshotだけを消費するため、それぞれ新しいpreparedで試す。
     for answer in ["yes", "", &sandbox[..sandbox.len() - 1]] {
+        let fixture = Fixture::new()?;
+        let (_host, mut prepared) = prepared_project(&fixture, false)?;
         let mut typed = ScriptedConfirm::typing(answer);
-        let error = confirm(&prepared, true, &mut typed)
+        let error = confirm(&mut prepared, true, &mut typed)
             .refused_because("only the sandbox name confirms a deletion")?;
-        assert_eq!(error.first_id(), Some(ErrorId::DestroyNotConfirmed));
+        assert_eq!(error.first_id(), Some(ErrorId::ProtectionNotConfirmed));
     }
     Ok(())
 }
@@ -627,30 +619,42 @@ fn only_the_exact_sandbox_name_confirms_an_interactive_deletion() -> Checked {
 #[test]
 fn canceling_the_confirmation_changes_nothing_and_exits_130() -> Checked {
     let fixture = Fixture::new()?;
-    let (host, prepared) = prepared_project(&fixture, false)?;
+    let (host, mut prepared) = prepared_project(&fixture, false)?;
 
     let mut canceled = ScriptedConfirm::canceling();
-    let error = confirm(&prepared, true, &mut canceled).refused_because("Esc and Ctrl-C leave")?;
+    let error =
+        confirm(&mut prepared, true, &mut canceled).refused_because("Esc and Ctrl-C leave")?;
     assert_eq!(error.exit_code(), ExitCode::Canceled);
     assert!(!host.ran("rm "), "nothing is removed");
     Ok(())
 }
 
 #[test]
-fn force_mode_and_a_non_interactive_run_are_not_asked_to_confirm() -> Checked {
+fn force_mode_needs_no_confirmation() -> Checked {
     let fixture = Fixture::new()?;
-    let (_host, normal) = prepared_project(&fixture, false)?;
-    let mut without_terminal = ScriptedConfirm::canceling();
-    confirm(&normal, false, &mut without_terminal)
-        .required_because("a fully specified project needs no prompt")?;
-    assert_eq!(without_terminal.asked, 0);
-
-    let forced_fixture = crate::testing::project::Fixture::new()?;
-    let (_host, forced) = prepared_project(&forced_fixture, true)?;
+    let (_host, mut forced) = prepared_project(&fixture, true)?;
     let mut with_terminal = ScriptedConfirm::canceling();
-    confirm(&forced, true, &mut with_terminal)
+    let confirmation = confirm(&mut forced, true, &mut with_terminal)
         .required_because("force mode skips the confirmation")?;
-    assert_eq!(with_terminal.asked, 0);
+    assert!(confirmation.is_none());
+    assert_eq!(with_terminal.asked(), 0);
+    Ok(())
+}
+
+#[test]
+fn a_non_interactive_run_without_force_is_refused_rather_than_skipped() -> Checked {
+    // 非対話環境は、確認できないことを理由に拒否する。forceと同列に黙って進めない。
+    let fixture = Fixture::new()?;
+    let (_host, mut normal) = prepared_project(&fixture, false)?;
+    let mut without_terminal = ScriptedConfirm::canceling();
+    let error = confirm(&mut normal, false, &mut without_terminal)
+        .refused_because("a non-interactive run cannot confirm a deletion")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProtectionNotConfirmed));
+    assert_eq!(
+        without_terminal.asked(),
+        0,
+        "no prompt is attempted without a terminal"
+    );
     Ok(())
 }
 
@@ -743,9 +747,9 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() -> C
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    expect_successful_removal(&host);
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -756,8 +760,7 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() -> C
     .required_because("prepare")?;
 
     let sealed = seal(&project.paths)?;
-    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
-        .refused_because("the metadata cannot be removed")?;
+    let error = destroy(&host, &mut prepared).refused_because("the metadata cannot be removed")?;
     assert_eq!(error.first_id(), Some(ErrorId::CleanupFailed));
     assert!(
         project.paths.metadata_file().exists(),
@@ -790,9 +793,9 @@ fn a_cache_that_cannot_be_removed_names_the_cache_and_keeps_the_project_managed(
     let project = fixture.register("example-org/example-repo")?;
     std::fs::create_dir_all(project.paths.cache_dir()).required()?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    expect_successful_removal(&host);
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -803,8 +806,8 @@ fn a_cache_that_cannot_be_removed_names_the_cache_and_keeps_the_project_managed(
     .required_because("prepare")?;
 
     let sealed = seal(&project.paths)?;
-    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
-        .refused_because("the cache directory cannot be removed")?;
+    let error =
+        destroy(&host, &mut prepared).refused_because("the cache directory cannot be removed")?;
     assert_eq!(error.first_id(), Some(ErrorId::CleanupFailed));
     assert_eq!(
         reported_path(&error),
@@ -826,9 +829,9 @@ fn a_metadata_file_that_is_a_symlink_is_not_followed_and_the_project_stays_manag
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    expect_successful_removal(&host);
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -844,8 +847,8 @@ fn a_metadata_file_that_is_a_symlink_is_not_followed_and_the_project_stays_manag
     std::fs::remove_file(project.paths.metadata_file()).required()?;
     std::os::unix::fs::symlink(&elsewhere, project.paths.metadata_file()).required()?;
 
-    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
-        .refused_because("a symlinked metadata path is refused")?;
+    let error =
+        destroy(&host, &mut prepared).refused_because("a symlinked metadata path is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
     assert!(
         elsewhere.exists(),
@@ -861,7 +864,8 @@ fn a_metadata_file_that_is_a_symlink_is_not_followed_and_the_project_stays_manag
 #[test]
 fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() -> Checked {
     // 計画時に不在だったからといって、削除commandを省いた実行を成功にはできない。
-    // 消し損ねたSandboxを残したまま管理情報だけを消さない。
+    // confirmationは不在という観測へ結び付いており、remove直前の再評価でSandboxが
+    // 現れていれば、fingerprintの不一致として拒否する。
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let running = format!("[{}]", fixture.entry(&project, "running")?);
@@ -870,7 +874,7 @@ fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() 
         project.sandbox.as_str(),
     );
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -881,9 +885,8 @@ fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() 
     .required_because("prepare")?;
     assert_eq!(prepared.plan.state, ProjectState::NotCreated);
 
-    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
-        .refused_because("the sandbox is listed after all")?;
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxStillPresent));
+    let error = destroy(&host, &mut prepared).refused_because("the sandbox is listed after all")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProtectionStateChanged));
     assert!(
         !host.ran("rm "),
         "the plan said there was nothing to remove: {:?}",
@@ -901,9 +904,9 @@ fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    expect_successful_removal(&host);
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -917,8 +920,8 @@ fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged
     std::fs::remove_file(project.paths.metadata_file()).required()?;
     let sealed = seal(&project.paths)?;
 
-    let outcome = execute(&host, &prepared, poll(), &mut SilentProgress)
-        .required_because("the project is unmanaged already")?;
+    let outcome =
+        destroy(&host, &mut prepared).required_because("the project is unmanaged already")?;
     assert_eq!(outcome.warnings.len(), 1, "the leftover is reported once");
     assert!(
         project.paths.lock_file().exists(),
@@ -935,7 +938,7 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() -> Checked {
     // 削除後の一覧にも対象が残り続ける。
     let host = clean_host(&fixture, &project)?;
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -945,8 +948,7 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() -> Checked {
     )
     .required_because("prepare")?;
 
-    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
-        .refused_because("the sandbox is still there")?;
+    let error = destroy(&host, &mut prepared).refused_because("the sandbox is still there")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxStillPresent));
     assert!(
         !host.ran("secret rm"),
@@ -1088,8 +1090,8 @@ fn a_project_registered_again_during_the_removal_keeps_its_entry() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
-    let prepared = prepare(
+    expect_successful_removal(&host);
+    let mut prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
         false,
@@ -1100,7 +1102,7 @@ fn a_project_registered_again_during_the_removal_keeps_its_entry() -> Checked {
     .required_because("prepare")?;
 
     let unregistration = prepared.unregistration();
-    execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
+    destroy(&host, &mut prepared).required_because("destroy")?;
     drop(prepared);
 
     // project lockが空いているあいだに、別の実行のaddがmetadataを作り直した。
