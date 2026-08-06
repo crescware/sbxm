@@ -144,6 +144,9 @@ error_ids! {
     GitOperationUnobservable => "git-operation-unobservable",
     LocalRefsUnobservable => "local-refs-unobservable",
 
+    // --- sessionのhost lease（#80） ---
+    OpenSessionActive => "open-session-active",
+
     // --- 案件のhost path ---
     ProjectPathCollision => "project-path-collision",
     WorkingDirectoryUnusable => "working-directory-unusable",

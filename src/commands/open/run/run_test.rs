@@ -463,3 +463,34 @@ fn the_project_lock_is_released_before_the_terminal_is_handed_over() -> Checked 
     .required_because("the lock covers the mutation, not the session")?;
     Ok(())
 }
+
+#[test]
+fn the_session_lease_stays_held_until_the_terminal_session_ends() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let host = ready(FakeSbx::listing(&running), &project);
+
+    let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
+
+    // project lockは外れても、SSH sessionの生存中はshared session leaseを持ち続ける。
+    // 通常rebuild/destroyが取るexclusive leaseはここで拒否される。
+    paths::acquire_exclusive_lock(
+        &project.paths.session_lease_file(),
+        Duration::from_millis(50),
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .refused_because("an active sbxm open session blocks a new exclusive session lease")?;
+
+    // sessionが終わる（`Prepared`が破棄される）と、exclusive leaseを取得できる。
+    drop(prepared);
+    paths::acquire_exclusive_lock(
+        &project.paths.session_lease_file(),
+        Duration::from_millis(50),
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("the session lease releases once the session ends")?;
+    Ok(())
+}

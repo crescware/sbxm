@@ -132,6 +132,7 @@ error-worktree-inventory-unobservable = { $sandbox } のworktree一覧を読み�
 error-worktree-status-unobservable = { $worktree } にcommitされていない変更や未追跡fileがあるかを判定できませんでした。
 error-git-operation-unobservable = { $worktree } がGit操作の途中かどうかを判定できませんでした。
 error-local-refs-unobservable = { $worktree } のHEAD、branch、upstreamを解決できなかったため、commitをoriginから回収できるかを判定できません。
+error-open-session-active = { $project } には接続中のremote sessionがあるため、この破壊操作を進められません。
 error-sandbox-still-present = Sandbox { $sandbox } は削除後も一覧に残っています。
 error-rebuild-generation-missing = { $project } の再構築は世代 { $target } に固定されていますが、その成果物も一致するDockerfileもありません。現在のDockerfileは { $observed } です。
 error-destroy-not-confirmed = Sandbox名が { $sandbox } と完全一致しなかったため、何も削除しませんでした。
@@ -322,6 +323,7 @@ remediation-install-command = { $program } を導入し、PATH上に置いてく
 remediation-start-docker = Docker Desktopを起動し、engineがrunningになるまで待ってください。
 remediation-network-policy = 続行する前にDocker Sandboxesのnetwork policyを { $expected } に設定してください。
 remediation-wait-for-lock = ほかのsbxmの実行が終わるのを待ってから、もう一度実行してください。
+remediation-open-session-active = 接続中のremote sessionが終わるのを待ってから、もう一度実行してください。lease fileを手動で削除してもsessionは終わりません。
 security-config-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。この機械上のほかのaccountが読み書きできる設定fileをsbxmは使用しません。
 security-config-permission-remediation = { $path } の所有者が自分であることを確認し、modeを { $expected } に制限してほかのaccountからの権限を外してください。
 

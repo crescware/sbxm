@@ -33,13 +33,13 @@ pub fn prepare(
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, metadata, workspace_root)?;
 
-    let worktrees = if force {
-        // 保護ゲートを意図的に迂回する。通常経路のProtectionPermitとは別の型であり、
-        // architecture testがこの呼び出しの唯一性を確認する。
+    let (worktrees, session_lease) = if force {
+        // 保護ゲートとsession leaseを意図的に迂回する。通常経路のProtectionPermitとは
+        // 別の型であり、architecture testがこの呼び出しの唯一性を確認する。
         let _bypass = ForceBypass::force_destroy();
-        Vec::new()
+        (Vec::new(), None)
     } else if state == ProjectState::NotCreated {
-        Vec::new()
+        (Vec::new(), None)
     } else {
         if state == ProjectState::Stopped {
             // 停止中のSandboxは内部を観測できないため、通常modeでは削除しない。
@@ -58,6 +58,11 @@ pub fn prepare(
                 ),
             ));
         }
+        // project lockを保持している間にexclusive session leaseを取り、最終protection
+        // inspectからsandbox remove完了までこの`Prepared`が保持し続ける。この時点で
+        // project lockは自分が排他的に保持しているため、取得できない原因は開いている
+        // sessionのshared leaseだけである。
+        let session_lease = locked.acquire_exclusive_session_lease()?;
         let layout = SandboxLayout::new(metadata.canonical_id());
         let request =
             ProtectionRequest::new(DestructiveOperation::Destroy, &name, &layout, metadata);
@@ -65,7 +70,7 @@ pub fn prepare(
         let worktrees = assessment.worktrees().to_vec();
         // 通常経路のProtectionPermit。Step 1時点ではremove APIがまだこれを要求しない。
         protection::gate::authorize(assessment)?;
-        worktrees
+        (worktrees, Some(session_lease))
     };
 
     let plan = DestroyPlan {
@@ -86,5 +91,6 @@ pub fn prepare(
         state,
         force,
         locked,
+        _session_lease: session_lease,
     })
 }

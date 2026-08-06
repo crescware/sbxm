@@ -132,6 +132,7 @@ error-worktree-inventory-unobservable = The worktree inventory of { $sandbox } c
 error-worktree-status-unobservable = Whether { $worktree } holds uncommitted or untracked changes could not be determined.
 error-git-operation-unobservable = Whether { $worktree } is in the middle of a Git operation could not be determined.
 error-local-refs-unobservable = The HEAD, branch, and upstream of { $worktree } could not be resolved, so whether its commits can be recovered from the origin is unknown.
+error-open-session-active = { $project } has an active remote session, so this destructive operation cannot proceed.
 error-sandbox-still-present = The sandbox { $sandbox } was still listed after it was removed.
 error-rebuild-generation-missing = The rebuild of { $project } is fixed on generation { $target }, and neither its artifacts nor a matching Dockerfile is present. The Dockerfile now holds { $observed }.
 error-destroy-not-confirmed = The sandbox name was not entered exactly as { $sandbox }, so nothing was deleted.
@@ -322,6 +323,7 @@ remediation-install-command = Install { $program } and make sure it is on PATH.
 remediation-start-docker = Start Docker Desktop and wait until the engine reports it is running.
 remediation-network-policy = Set the Docker Sandboxes network policy to { $expected } before continuing.
 remediation-wait-for-lock = Wait for the other sbxm run to finish, then run the command again.
+remediation-open-session-active = Wait for the remote session to end, then run the command again. Deleting the lease file by hand does not end the session.
 security-config-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a configuration that other accounts on this machine can read or change.
 security-config-permission-remediation = Confirm that you own { $path }, then take the access away from every other account by restricting its mode to { $expected }.
 

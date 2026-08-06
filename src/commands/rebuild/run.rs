@@ -34,6 +34,11 @@ pub fn run(
     // 対象が決まる前にhostの状態へ触れない。
     let mut locked =
         select::one(location, requested, &msg!("select-rebuild-heading"), prompt)?.lock()?;
+    // project lockを保持している間にexclusive session leaseを取る。開いている
+    // `sbxm open` sessionがあれば、生成に時間のかかる工程へ進む前にここで拒否する。
+    // この時点でproject lockは自分が排他的に保持しているため、取得できない原因は
+    // 開いているsessionのshared leaseだけである。
+    let _session_lease = locked.acquire_exclusive_session_lease()?;
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
 
