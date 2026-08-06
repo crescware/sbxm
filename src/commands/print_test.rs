@@ -309,6 +309,7 @@ fn project_status(
             value: super::status::project::Value::Ready,
         }],
         worktrees,
+        disk: crate::support::disk::DiskObservation::NotObservedMismatch,
         diagnostics: vec![Diagnostic::new(
             ErrorId::GlobalScopeUnobservable,
             msg!("error-global-scope-unobservable"),
@@ -323,7 +324,7 @@ fn project_status_says_that_no_worktree_was_observed() {
             &project_status(Vec::new()),
             Locale::En
         )),
-        vec!["fields", "empty"]
+        vec!["fields", "empty", "empty"]
     );
 }
 
@@ -340,7 +341,7 @@ fn project_status_lists_the_worktrees_it_did_observe() {
             &project_status(worktrees),
             Locale::En
         )),
-        vec!["fields", "table"]
+        vec!["fields", "table", "empty"]
     );
 }
 
