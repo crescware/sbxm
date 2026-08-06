@@ -59,6 +59,12 @@ fn project_paths_follow_the_documented_layout() -> Checked {
     assert_eq!(paths.host_clone(), root.join("example-repo"));
     assert_eq!(paths.metadata_file(), root.join(".sbxm/project.yaml"));
     assert_eq!(paths.lock_file(), root.join(".sbxm/project.lock"));
+    assert_eq!(paths.session_lease_file(), root.join(".sbxm/session.lock"));
+    assert_ne!(
+        paths.lock_file(),
+        paths.session_lease_file(),
+        "the session lease is a distinct file from the project lock"
+    );
     assert_eq!(paths.dockerfile(), root.join(".sbxm/Dockerfile"));
     assert_eq!(paths.cache_dir(), root.join(".sbxm/.cache"));
     assert_eq!(

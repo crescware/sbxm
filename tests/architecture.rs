@@ -30,6 +30,13 @@ const RELAY: &str = "src/command";
 /// 破壊前保護ゲートを意図的に迂回してよい唯一の場所。
 const FORCE_BYPASS_CALLER: &str = "src/commands/destroy/run/prepare.rs";
 
+/// session leaseのpathへ触れてよい唯一の場所。
+///
+/// `Locked`のmethodだけがこのpathへlockを取ることで、project lockを保持した
+/// `Locked`を経由しない限りsession leaseを取得できないという、lock順序を
+/// project lock→session leaseに固定する制約を型で保証する。
+const SESSION_LEASE_ACQUIRER: &str = "src/support/select/locked.rs";
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
@@ -259,6 +266,31 @@ fn the_protection_gate_is_bypassed_in_one_place_only() -> Checked {
     assert!(
         offenders.is_empty(),
         "the protection gate is bypassed only in {FORCE_BYPASS_CALLER}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn the_session_lease_is_acquired_only_while_holding_the_project_lock() -> Checked {
+    // `session_lease_file`は`Locked`のmethod以外から呼べない。session lease自体を
+    // 直接構築する経路が増えると、project lockを取らずにsession leaseだけを取得する
+    // 逆順が生まれてしまう。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path == SESSION_LEASE_ACQUIRER || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            // `.`付きの呼び出し形にすることで、`ProjectPaths`自身の定義行を誤検出しない。
+            if line.contains(".session_lease_file(") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "the session lease path is touched only from {SESSION_LEASE_ACQUIRER}, always behind the project lock:\n{}",
         offenders.join("\n")
     );
     Ok(())

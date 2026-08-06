@@ -58,6 +58,11 @@ pub fn prepare(
         )
     };
     let locked = candidate.lock()?;
+    // project lockを保持している間にshared session leaseを取る。lock順序を
+    // project lock→session leaseに固定し、`locked`が外れたあともこのleaseは
+    // `Prepared`が保持し続けるため、SSH sessionの生存中は通常rebuild/destroyの
+    // exclusive session leaseと排他し続ける。
+    let session_lease = locked.acquire_shared_session_lease()?;
     let (index, clamped_worktree_index) = if interactive_index {
         clamp_to_metadata(index, &locked.metadata)
     } else {
@@ -93,6 +98,7 @@ pub fn prepare(
         missing_worktree_index,
         clamped_worktree_index,
         worktrees,
+        _session_lease: session_lease,
     })
 }
 
