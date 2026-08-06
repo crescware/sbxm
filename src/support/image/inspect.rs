@@ -11,6 +11,6 @@ pub fn inspect(host: &dyn HostEnvironment, name: &str) -> Result<Option<ImageIde
     if !docker::exists(host, name)? {
         return Ok(None);
     }
-    let outcome = docker::inspect(host, name)?.require_success()?;
+    let outcome = docker::inspect(host, name)?;
     parse_image_inspect(&outcome.stdout_text()).map(Some)
 }

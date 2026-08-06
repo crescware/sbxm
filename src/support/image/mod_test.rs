@@ -283,6 +283,86 @@ fn a_failed_build_removes_its_context_and_stops_the_workflow() -> Checked {
 }
 
 #[test]
+fn a_failed_build_names_the_daemon_as_a_suspect_when_it_stays_unreachable() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let dockerfile = dir.path().join("Dockerfile");
+    fs::write(&dockerfile, "FROM scratch\n").required()?;
+    let host = FakeDocker::new(vec![None])
+        .failing_build()
+        .with_daemon_unreachable();
+
+    let error = ensure(
+        &host,
+        &sandbox()?,
+        &canonical()?,
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .refused_because("a failed build is a failed step")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::Translated { value, .. } if value.id == "cause-docker-daemon-also-unreachable"
+        )),
+        "the daemon is named as a suspect right after the failure: {:?}",
+        diagnostic.facts
+    );
+    assert_eq!(
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
+        Some("remediation-start-docker")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_failed_build_is_not_blamed_on_a_daemon_that_answers_right_after() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let dockerfile = dir.path().join("Dockerfile");
+    fs::write(&dockerfile, "FROM scratch\n").required()?;
+    // 既定でdaemonは応答する。失敗の原因はbuild自体にあり、daemonではない。
+    let host = FakeDocker::new(vec![None]).failing_build();
+
+    let error = ensure(
+        &host,
+        &sandbox()?,
+        &canonical()?,
+        &dockerfile,
+        DIGEST,
+        &mut SilentProgress,
+    )
+    .refused_because("a failed build is a failed step")?;
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert!(
+        !diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::Translated { value, .. } if value.id == "cause-docker-daemon-also-unreachable"
+        )),
+        "a daemon that answers is not blamed without evidence: {:?}",
+        diagnostic.facts
+    );
+    assert!(
+        diagnostic.remediation.is_none(),
+        "no remediation is invented for a build failure the daemon did not cause"
+    );
+    Ok(())
+}
+
+#[test]
 fn the_build_forwards_its_progress() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let dockerfile = dir.path().join("Dockerfile");
@@ -466,6 +546,37 @@ fn an_archive_that_holds_another_image_leaves_the_official_one_untouched() -> Ch
         fs::read(&archive).required()?,
         b"the archive from an earlier run".to_vec(),
         "the verified archive of an earlier generation stays as it is"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_archive_that_holds_another_image_names_the_daemon_as_a_suspect_when_it_stays_unreachable()
+-> Checked {
+    // `docker image save`はexit 0のまま、期待と違うimageを書いた。事故当時と同じ形。
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let image = built_image()?;
+
+    let host = SavingDocker {
+        image_name: "sbxm-other-template:222222222222".to_string(),
+        image_id: image.id.clone(),
+        inner: FakeDocker::new(Vec::new()).with_daemon_unreachable(),
+    };
+    let error = ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress)
+        .refused_because("an archive of another image is not promoted")?;
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(
+            fact,
+            Fact::Translated { value, .. } if value.id == "cause-docker-daemon-also-unreachable"
+        )),
+        "an archive that is wrong right after a daemon went quiet names it as a suspect: {:?}",
+        diagnostic.facts
     );
     Ok(())
 }

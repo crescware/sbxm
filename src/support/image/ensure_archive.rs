@@ -45,9 +45,10 @@ pub fn ensure_archive(
     }
 
     progress.step(msg!("progress-saving-archive"));
-    docker::save(host, &image.name, &temporary, progress)?.require_success()?;
+    docker::save(host, &image.name, &temporary, progress)?;
 
-    archive::verify_holds_image(&temporary, &image.name, &image.labels)?;
+    archive::verify_holds_image(&temporary, &image.name, &image.labels)
+        .map_err(|error| docker::diagnose_failure(host, error))?;
     paths::atomic_rename_into_place(&temporary, &target)?;
     Ok(target)
 }

@@ -32,8 +32,7 @@ pub(super) fn build(
 
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     progress.step(msg!("progress-building-image"));
-    let result = docker::build(host, &borrowed, progress)
-        .and_then(crate::command::CommandOutcome::require_success);
+    let result = docker::build(host, &borrowed, progress);
 
     // 成功・失敗にかかわらず、この実行が作った一時directoryを削除する。
     let leftover = paths::display(context.path());
