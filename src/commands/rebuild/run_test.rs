@@ -145,7 +145,8 @@ fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_docker
     project.metadata.provisioning.dockerfile_sha256 = sha256_hex(b"unchanged\n");
     metadata::update(&project.paths, &project.metadata).required()?;
 
-    let host = FakeSbx::listing("[]");
+    let host =
+        FakeSbx::listing("[]").answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
     let error = run(
         Target {
             location: &fixture.location,
@@ -195,7 +196,11 @@ fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() -> Checked
 
     let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
     let running = format!("[{}]", fixture.entry(&project, "running")?);
-    let host = FakeSbx::listings(&[&stopped, &running]);
+    let host = FakeSbx::listings(&[&stopped, &running]).answering(
+        "version --format {{.Server.Version}}",
+        0,
+        "27.0.3\n",
+    );
 
     // 起動の先で止まってよい。ここで見たいのは、停止を理由に拒否しないことである。
     let _ = run(
@@ -225,7 +230,8 @@ fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() -> Check
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
 
-    let absent = FakeSbx::listing("[]");
+    let absent =
+        FakeSbx::listing("[]").answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
     let error = run(
         Target {
             location: &fixture.location,
@@ -616,7 +622,9 @@ fn a_sandbox_that_cannot_be_started_is_not_rebuilt_over() -> Checked {
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let name = project.sandbox.as_str();
     let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
-    let host = FakeSbx::listing(&stopped).answering(&format!("exec {name} -- /bin/true"), 1, "");
+    let host = FakeSbx::listing(&stopped)
+        .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
+        .answering(&format!("exec {name} -- /bin/true"), 1, "");
 
     let error = run(
         Target {
@@ -644,6 +652,38 @@ fn a_sandbox_that_cannot_be_started_is_not_rebuilt_over() -> Checked {
     assert!(
         stored.rebuild.is_none(),
         "no generation is fixed before the sandbox could be read"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_engine_that_does_not_answer_stops_the_rebuild_before_anything_is_read() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
+
+    let host =
+        clean_host(&fixture, &project)?.answering("version --format {{.Server.Version}}", 1, "");
+
+    let error = run(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .refused_because("without the engine there is nothing to rebuild")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
+    assert!(
+        !host.ran("ls --json") && !host.ran("worktree list"),
+        "nothing is listed before the engine is confirmed reachable: {:?}",
+        host.calls()
     );
     Ok(())
 }

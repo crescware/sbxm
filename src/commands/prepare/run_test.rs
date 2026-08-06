@@ -233,3 +233,42 @@ fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Che
     );
     Ok(())
 }
+
+#[test]
+fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    world.failing("version --format");
+    let mark = world.mark();
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("without the engine there is nothing to prepare")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
+    assert!(
+        !world.since(mark).iter().any(|call| call.contains("build")
+            || call.contains("image")
+            || call.contains("create --name")),
+        "nothing is built before the engine is confirmed reachable: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
