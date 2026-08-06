@@ -4,6 +4,7 @@
 //! moduleだけとする。他のmoduleはここが公開する操作を通してのみdockerを使う。
 
 mod build;
+mod diagnose_failure;
 mod exists;
 mod inspect;
 mod read_server_version;
@@ -12,6 +13,7 @@ mod save;
 mod version_probe;
 
 pub use build::build;
+pub use diagnose_failure::diagnose_failure;
 pub use exists::exists;
 pub use inspect::inspect;
 pub use read_server_version::read_server_version;
