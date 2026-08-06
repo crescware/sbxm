@@ -27,7 +27,16 @@
 //! `inspect`はgate配下だけが呼ぶprivate collectorであり、productionから直接公開しない。
 //! `force_bypass::force_destroy`は`destroy --force`の分岐だけが使う、意図的な迂回であり、
 //! architecture testが唯一の呼び出し箇所であることを確認する。
+//!
+//! originからの回収可能性は、観測（`observe_for_mutation`）と分類（[`Reachability::classify`]）
+//! を分離して求める。`inspect`は1回のfetchで全worktree分の[`CommitCandidate`]をまとめて
+//! [`OriginObservation`]へ観測し、その結果だけから各candidateの[`Reachability`]を副作用
+//! なく決める。origin自体を観測できない場合は[`UnobservableReason`]が理由を持ち、
+//! `Reachability::Unreachable`/`Unobservable`はどちらも[`ProtectionBlocker`]の層Aとして
+//! 確認を求めずに拒否する。checkout中のbranchだけでなく、HEAD以外の全ローカル所有ref
+//! （branch、tag、notes、stash）にも同じ観測結果を適用する。
 
+mod commit_candidate;
 mod confirm_prompt;
 mod confirmable_loss;
 pub mod confirmation;
@@ -37,7 +46,8 @@ pub mod gate;
 mod inspect;
 mod kind;
 mod mode;
-mod origin_recovery_failure;
+mod observe_for_mutation;
+mod origin_observation;
 mod prompt_ui;
 mod protection_assessment;
 mod protection_blocker;
@@ -46,16 +56,19 @@ mod protection_fingerprint;
 mod protection_permit;
 mod protection_request;
 mod protection_snapshot;
-mod remote;
+mod reachability;
+mod unobservable_reason;
 mod worktree_report;
 
+pub use commit_candidate::CommitCandidate;
 pub use confirm_prompt::ConfirmPrompt;
 pub use confirmable_loss::ConfirmableLoss;
 pub use destructive_operation::DestructiveOperation;
 pub use force_bypass::ForceBypass;
 pub use kind::Kind;
 pub use mode::Mode;
-pub use origin_recovery_failure::OriginRecoveryFailure;
+pub use observe_for_mutation::observe_for_mutation;
+pub use origin_observation::OriginObservation;
 pub use protection_assessment::ProtectionAssessment;
 pub use protection_blocker::ProtectionBlocker;
 pub use protection_confirmation::ProtectionConfirmation;
@@ -63,7 +76,8 @@ pub use protection_fingerprint::ProtectionFingerprint;
 pub use protection_permit::ProtectionPermit;
 pub use protection_request::ProtectionRequest;
 pub use protection_snapshot::ProtectionSnapshot;
-pub use remote::Remote;
+pub use reachability::Reachability;
+pub use unobservable_reason::UnobservableReason;
 pub use worktree_report::WorktreeReport;
 
 #[cfg(test)]

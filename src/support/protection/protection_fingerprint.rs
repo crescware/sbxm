@@ -5,7 +5,7 @@ use crate::hash::sha256_hex;
 use super::ProtectionAssessment;
 
 /// fingerprint入力形の版識別子。入力に含める項目を変えたら値を上げる。
-const FINGERPRINT_VERSION: &str = "sbxm-protection-v1";
+const FINGERPRINT_VERSION: &str = "sbxm-protection-v2";
 
 /// 確認対象の状態を表すSHA-256値。
 ///
@@ -33,7 +33,7 @@ impl ProtectionFingerprint {
                 mode: report.mode.as_str(),
                 head: report.head.clone(),
                 branch: report.branch.clone(),
-                remote: report.remote.as_str(),
+                reachability: format!("{:?}", report.reachability),
             })
             .collect();
         worktrees.sort_by(|a, b| a.relative.cmp(&b.relative));
@@ -52,6 +52,10 @@ impl ProtectionFingerprint {
             .collect();
         confirmable_losses.sort();
 
+        let origin_observation = assessment
+            .origin_observation()
+            .map(|observation| format!("{observation:?}"));
+
         let input = FingerprintInput {
             version: FINGERPRINT_VERSION,
             operation: assessment.operation().as_str(),
@@ -59,6 +63,7 @@ impl ProtectionFingerprint {
             worktrees,
             blockers,
             confirmable_losses,
+            origin_observation,
         };
         let bytes = serde_json::to_vec(&input).unwrap_or_default();
         ProtectionFingerprint {
@@ -76,6 +81,8 @@ struct FingerprintInput {
     worktrees: Vec<WorktreeInput>,
     blockers: Vec<String>,
     confirmable_losses: Vec<String>,
+    /// origin観測結果。確認後のorigin側の変化を古いpermitで越えられないようにする。
+    origin_observation: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -85,7 +92,7 @@ struct WorktreeInput {
     mode: &'static str,
     head: String,
     branch: Option<String>,
-    remote: &'static str,
+    reachability: String,
 }
 
 #[cfg(test)]

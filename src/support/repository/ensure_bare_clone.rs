@@ -64,22 +64,7 @@ pub fn ensure_bare_clone(
 
     // remote-tracking refを現在の状態にしてから、起点refを解決する。
     progress.step(msg!("progress-fetching-repository"));
-    sandbox::exec_with_progress(
-        host,
-        sandbox,
-        &[
-            "git",
-            "--git-dir",
-            &git_dir,
-            "fetch",
-            "--prune",
-            // pipe越しでもgitが進捗を出すよう明示する。
-            "--progress",
-            "origin",
-        ],
-        progress,
-    )?
-    .require_success()?;
+    super::refresh_origin(host, sandbox, &git_dir, Some(progress))?.require_success()?;
     Ok(())
 }
 
