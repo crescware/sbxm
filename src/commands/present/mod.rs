@@ -9,6 +9,7 @@
 //! 1回の呼び出しにまとめる。
 
 mod creation_mode;
+mod disk_section;
 mod global_status;
 mod legend;
 mod observed;
@@ -19,6 +20,7 @@ mod sandbox_state;
 mod stop_result;
 
 pub use creation_mode::creation_mode;
+pub use disk_section::disk_section;
 pub use global_status::global_status;
 pub use legend::Legend;
 pub use observed::observed;

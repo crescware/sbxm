@@ -1,3 +1,5 @@
+use crate::support::disk::DiskObservation;
+
 use super::ClampedIndex;
 
 /// 接続先と、接続前に見せる情報。
@@ -14,4 +16,6 @@ pub struct Prepared {
     /// promptで確定したindexを、lock済みmetadataの範囲まで下げた場合のその内訳。
     pub clamped_worktree_index: Option<ClampedIndex>,
     pub worktrees: Vec<String>,
+    /// SSH接続前に観測した、root filesystemの使用量。
+    pub disk: DiskObservation,
 }

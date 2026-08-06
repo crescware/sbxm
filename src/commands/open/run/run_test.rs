@@ -1,5 +1,7 @@
+use crate::compatibility::RootDiskUsage;
 use crate::diagnostics::{ErrorId, Result};
 use crate::project::{ProjectId, SandboxLayout};
+use crate::support::disk::DiskObservation;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::recorded_output::RecordedOutput;
@@ -32,7 +34,7 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
         host.answering("version --format {{.Server.Version}}", 0, "27.0.3\n"),
         project.sandbox.as_str(),
     );
-    host.answering(
+    let host = host.answering(
         &format!(
             "exec {} -- git --git-dir {} worktree list --porcelain -z",
             project.sandbox,
@@ -40,6 +42,11 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
         ),
         0,
         &listing,
+    );
+    host.answering(
+        &format!("exec {} -- df -Pk /", project.sandbox),
+        0,
+        "Filesystem     1024-blocks      Used Available Capacity Mounted on\noverlay          20466256  14502976   4898320       75% /\n",
     )
 }
 
@@ -96,6 +103,51 @@ fn a_running_project_is_opened_without_touching_the_daemon() -> Checked {
         "a running sandbox is not started again: {:?}",
         host.calls()
     );
+    assert_eq!(
+        prepared.disk,
+        DiskObservation::Observed(RootDiskUsage {
+            free_kib: 4_898_320,
+            usable_kib: 19_401_296,
+            capacity_percent: 75,
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn disk_usage_is_observed_exactly_once_after_the_sandbox_is_confirmed_running() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("Example-Org/Example-Repo")?;
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let host = ready(FakeSbx::listing(&running), &project);
+
+    prepare_for(&fixture, &host).required_because("prepare")?;
+
+    let df_calls = host
+        .calls()
+        .iter()
+        .filter(|call| call.contains(&"df".to_string()))
+        .count();
+    assert_eq!(df_calls, 1, "{:?}", host.calls());
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_missing_df_still_hands_over_the_terminal_with_a_reason_instead_of_a_value() -> Checked
+{
+    let fixture = Fixture::new()?;
+    let project = fixture.register("Example-Org/Example-Repo")?;
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let host = ready(FakeSbx::listing(&running), &project).answering(
+        &format!("exec {} -- df -Pk /", project.sandbox),
+        127,
+        "",
+    );
+
+    let prepared = prepare_for(&fixture, &host)
+        .required_because("a command sbx could not launch never stops opening")?;
+
+    assert_eq!(prepared.disk, DiskObservation::CommandMissing);
     Ok(())
 }
 
