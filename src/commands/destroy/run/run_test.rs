@@ -9,14 +9,12 @@ use crate::support::select::{self};
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::command::{EnvPolicy, OutputPolicy};
+use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::design::SilentProgress;
 use crate::diagnostics::{ErrorId, ExitCode};
 use crate::metadata;
 use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
-use crate::testing::host::{
-    FakeSbx, assert_lifecycle, custom_secret_listing, no_custom_secrets, no_secrets,
-};
+use crate::testing::host::{FakeSbx, custom_secret_listing, no_custom_secrets, no_secrets};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::prompt::ScriptedPrompt;
@@ -90,7 +88,12 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
     let outcome =
         execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
     assert!(outcome.warnings.is_empty());
-    assert!(host.ran(&format!("rm --force {}", project.sandbox)));
+    assert!(host.ran(&format!("rm {}", project.sandbox)));
+    assert!(
+        !host.ran("--force"),
+        "the normal path never forces the removal: {:?}",
+        host.calls()
+    );
     assert!(
         !project.paths.metadata_file().exists(),
         "the project is unmanaged now"
@@ -105,7 +108,7 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
 }
 
 #[test]
-fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() -> Checked {
+fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
@@ -122,7 +125,16 @@ fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() -> Checked {
     .required_because("prepare")?;
     execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
 
-    assert_lifecycle(&host, &format!("rm --force {}", project.sandbox))?;
+    // sbxmは既に自前の確認を済ませている。sbx自身の確認prompt/答えを利用者へ
+    // 二重に見せない。
+    let removal = host.spec(&format!("rm {}", project.sandbox))?;
+    assert_eq!(
+        removal.output(),
+        OutputPolicy::Capture,
+        "the runtime's own confirmation is answered internally, not shown to the user"
+    );
+    assert_eq!(removal.env, EnvPolicy::InheritWithoutSshAgent);
+    assert_eq!(removal.timeout, TimeoutClass::SandboxLifecycle);
 
     // 判定に使う出力はsbxmが読む。
     let listing = host.spec("ls --json")?;
@@ -130,6 +142,52 @@ fn the_removal_shows_its_progress_and_the_listing_is_read_by_sbxm() -> Checked {
     let inspection = host.spec("worktree list --porcelain -z")?;
     assert_eq!(inspection.output(), OutputPolicy::Capture);
     assert_eq!(inspection.env, EnvPolicy::InheritWithoutSshAgent);
+    Ok(())
+}
+
+#[test]
+fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -> Checked {
+    // runtimeがactive sessionを理由に拒否した場合、exit statusが失われてはならず、
+    // 一覧を再取得して不在を待つ工程（poll）へ進んではならない。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str()).answering(
+        &format!("rm {}", project.sandbox),
+        1,
+        "sandbox is in use",
+    );
+
+    let prepared = prepare(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .required_because("prepare")?;
+    let ls_calls_after_prepare = host
+        .calls()
+        .iter()
+        .filter(|args| args.first().map(String::as_str) == Some("ls"))
+        .count();
+
+    let error = execute(&host, &prepared, poll(), &mut SilentProgress)
+        .refused_because("a runtime refusal is a removal failure, not something to retry")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+
+    let ls_calls_after_execute = host
+        .calls()
+        .iter()
+        .filter(|args| args.first().map(String::as_str) == Some("ls"))
+        .count();
+    assert_eq!(
+        ls_calls_after_execute,
+        ls_calls_after_prepare,
+        "the listing is not polled again after a refused removal: {:?}",
+        host.calls()
+    );
+    assert!(project.paths.metadata_file().exists());
     Ok(())
 }
 
@@ -168,8 +226,8 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> C
     assert!(prepared.plan.worktrees.is_empty());
 
     execute(&host, &prepared, poll(), &mut SilentProgress).required_because("destroy")?;
-    // `--force`は`sbx`の確認promptを省くためのもので、常に付ける。sbxm側の
-    // `--force`はsbxm自身のデータ保護検査を省くことを指す。
+    // `--force`は、sbxm自身のデータ保護検査だけでなく、runtimeの確認prompt・
+    // active-session検査も省く。通常経路とは別の`remove_forced`を通る。
     assert!(host.ran(&format!("rm --force {}", project.sandbox)));
     assert!(!project.paths.metadata_file().exists());
     Ok(())
@@ -350,7 +408,7 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
     );
     // 消し損ねたSandboxがplaceholderを持ったまま残る順序にしない。
     assert!(
-        position(&host, &format!("rm --force {sandbox}"))? < position(&host, "secret rm")?,
+        position(&host, &format!("rm {sandbox}"))? < position(&host, "secret rm")?,
         "the sandbox goes first, then the token it was given"
     );
     assert!(!project.paths.metadata_file().exists());

@@ -68,7 +68,8 @@ impl Switch<'_> {
             let assessment = protection::gate::assess(host, request)?;
             // remove直前の再評価。Step 1時点ではremove APIがまだ許可証を要求しない。
             protection::gate::authorize(assessment)?;
-            inventory::remove(host, name, poll, progress)?;
+            // rebuildに`--force`は無く、常にsbx自身の確認とactive-session検査を経る。
+            inventory::remove_protected(host, name, poll, progress)?;
         }
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは

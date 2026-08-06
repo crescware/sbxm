@@ -29,7 +29,7 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> Checked<
     std::fs::create_dir_all(&workspace).required()?;
     std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
     let created = format!(
-        r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
+        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         project.sandbox,
         workspace.display()
     );

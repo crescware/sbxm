@@ -24,6 +24,9 @@ const CONFIGURE: &str = "src/command/configure.rs";
 /// `sbx`の出力を端末へ出す起動を組み立ててよい唯一のfile。
 const SBX_RELAY: &str = "src/support/sandbox/relayed.rs";
 
+/// 確認promptにだけ答える`sbx`起動を組み立ててよい唯一のfile。
+const SBX_PTY_CONFIRM: &str = "src/support/sandbox/remove_confirmed.rs";
+
 /// 外部toolのbyteを運ぶmodule。
 const RELAY: &str = "src/command";
 
@@ -243,6 +246,29 @@ fn what_sbx_says_reaches_the_terminal_through_one_place() -> Checked {
     assert!(
         offenders.is_empty(),
         "a relayed sbx command is built in {SBX_RELAY}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn sbx_is_run_with_a_confirmation_prompt_in_one_place_only() -> Checked {
+    // 期待するpromptと答えの組はここでしか決めない。呼び出し箇所が増えると、
+    // どのpromptに何を答えるかがcommandごとに分かれ、固定protocolでなくなる。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path == SBX_PTY_CONFIRM || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("PtyConfirmedCommand::new(") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a PTY-confirmed sbx command is built only in {SBX_PTY_CONFIRM}:\n{}",
         offenders.join("\n")
     );
     Ok(())

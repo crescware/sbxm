@@ -1,7 +1,7 @@
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
-use super::{CommandOutcome, CommandSpec, TerminalCommand};
+use super::{CommandOutcome, CommandSpec, PtyConfirmedCommand, TerminalCommand};
 
 /// hostに対する外部commandの実行。testでは差し替える。
 pub trait HostEnvironment {
@@ -24,5 +24,13 @@ pub trait HostEnvironment {
         output.relay(&outcome.stderr);
         output.finished();
         Ok(outcome)
+    }
+
+    /// 確認promptにだけ答える、PTYの上でのcommand実行。利用者へ何も中継しない。
+    ///
+    /// 既定は`run`へ委ね、答えたものとして進める。本物のPTYで期待するpromptを確認
+    /// してから答えるのは、実際のhostだけである。
+    fn run_pty_confirmed(&self, command: &PtyConfirmedCommand) -> Result<CommandOutcome> {
+        self.run(&command.as_capture_spec())
     }
 }
