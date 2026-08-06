@@ -1,9 +1,11 @@
-//! Docker Sandboxes CLIの出力を解釈する。
+//! 外部commandの出力を解釈する。Docker Sandboxes CLIが大半を占めるが、`df`のような
+//! POSIX commandの出力も同じ境界へ置く。
 //!
 //! 解釈できない出力から状態を推測しない。parseできない出力はerrorとして扱う。
 //! 1 moduleが1 commandの出力を担当し、structured outputの共通部分だけを`json`が持つ。
 
 mod daemon;
+mod disk;
 mod image;
 mod json;
 mod login;
@@ -14,6 +16,7 @@ mod template;
 mod version;
 
 pub use daemon::{DaemonState, parse_daemon_status};
+pub use disk::{RootDiskUsage, parse_df};
 pub use image::{ImageIdentity, parse_image_inspect};
 pub use login::parse_login_status;
 pub use policy::{EXPECTED_NETWORK_POLICY, parse_network_policy};
