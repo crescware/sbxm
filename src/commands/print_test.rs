@@ -386,6 +386,7 @@ fn destroy_plan(force: bool) -> super::destroy::run::DestroyPlan {
         state: ProjectState::Running,
         force,
         worktrees: Vec::new(),
+        confirmable_losses: Vec::new(),
         removes: vec![super::destroy::run::Target::Described(msg!(
             "destroy-target-sandbox",
             sandbox = "owner-repo"

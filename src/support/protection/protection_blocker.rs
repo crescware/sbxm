@@ -4,8 +4,10 @@ use crate::msg;
 
 use super::OriginRecoveryFailure;
 
-/// 層Aの観測済み拒否理由。
+/// 観測済みの拒否理由。1件でもあれば、確認を求めずrebuild/destroyを拒否する。
 ///
+/// `ConfirmableLoss`と違い、ここに挙げる原因は削除計画にも明示確認にも進めない。
+/// 変更や未pushのcommitのように、確認しても安全に削除できるとは言えないためである。
 /// variantごとに固有の`ErrorId`へ一対一で変換する。原因ごとに異なるIDを出すため、
 /// 共通の`UnsavedWork`のようなIDへまとめない。
 #[derive(Debug, Clone, PartialEq, Eq)]

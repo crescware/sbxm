@@ -58,6 +58,14 @@ pub fn plan_document(plan: &DestroyPlan, locale: Locale) -> Document {
     }
     document = document.table(Some(msg!("status-worktrees-section")), worktrees);
 
+    document = document.lines(
+        Some(msg!("confirmable-losses-heading")),
+        plan.confirmable_losses
+            .iter()
+            .map(crate::commands::present::confirmable_loss)
+            .collect(),
+    );
+
     document = document
         .lines(
             Some(msg!("destroy-removes")),

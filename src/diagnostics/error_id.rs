@@ -121,7 +121,6 @@ error_ids! {
     SandboxStillRunning => "sandbox-still-running",
     SandboxStillPresent => "sandbox-still-present",
     RebuildGenerationMissing => "rebuild-generation-missing",
-    DestroyNotConfirmed => "destroy-not-confirmed",
     SandboxCheckUnobservable => "sandbox-check-unobservable",
     GlobalScopeUnobservable => "global-scope-unobservable",
     SshAgentExposed => "ssh-agent-exposed",
@@ -143,6 +142,13 @@ error_ids! {
     WorktreeStatusUnobservable => "worktree-status-unobservable",
     GitOperationUnobservable => "git-operation-unobservable",
     LocalRefsUnobservable => "local-refs-unobservable",
+
+    // --- 破壊前保護ゲート・確認対象の収集（#82） ---
+    IgnoredPathsUnobservable => "ignored-paths-unobservable",
+    ReflogUnobservable => "reflog-unobservable",
+    RemoteConfigurationUnobservable => "remote-configuration-unobservable",
+    ProtectionNotConfirmed => "protection-not-confirmed",
+    ProtectionStateChanged => "protection-state-changed",
 
     // --- sessionのhost lease（#80） ---
     OpenSessionActive => "open-session-active",
