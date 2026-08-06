@@ -11,8 +11,8 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::design::{ProgressSink, Warning};
 use crate::support::select::ProjectPrompt;
 use crate::support::{
-    docker, files, generation, identity, image, repository, sandbox, secret, select, template,
-    tools,
+    disk, docker, files, generation, identity, image, repository, sandbox, secret, select,
+    template, tools,
 };
 
 use super::{PrepareOutput, already_built, observed_worktrees};
@@ -83,12 +83,18 @@ pub fn run(
     sandbox::require_credentials_isolated(host, &ready.name)?;
     secret::require_placeholder_present(host, &ready.name)?;
 
-    let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)?;
-    identity::ensure(host, &ready.name, &locked.metadata.git_identity)?;
-    tools::SandboxReady::announce(host, &ready.name)?;
-    secret::configure_git_credential(host, &ready.name)?;
+    // sbxm自身がSandbox内を変更する工程が失敗した場合だけ、失敗直後の空き容量を
+    // 追加のfactとして載せる。平常時はcommandを1つも増やさない。
+    let decorate = |error| disk::attach_on_failure(host, &ready.name, ready.state, error);
 
-    repository::ensure_bare_clone(host, &ready.name, &project, &layout, progress)?;
+    let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)
+        .map_err(decorate)?;
+    identity::ensure(host, &ready.name, &locked.metadata.git_identity).map_err(decorate)?;
+    tools::SandboxReady::announce(host, &ready.name)?;
+    secret::configure_git_credential(host, &ready.name).map_err(decorate)?;
+
+    repository::ensure_bare_clone(host, &ready.name, &project, &layout, progress)
+        .map_err(decorate)?;
     let branch = repository::resolve_start_ref(
         host,
         &ready.name,
@@ -103,7 +109,8 @@ pub fn run(
         &locked.metadata,
         &branch,
         progress,
-    )?;
+    )
+    .map_err(decorate)?;
 
     let worktrees = observed_worktrees(host, &ready.name, &layout, &locked.metadata)?;
 

@@ -132,6 +132,135 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
         "an unchanged Dockerfile still recreates the sandbox: {:?}",
         host.calls()
     );
+    assert!(
+        !host.ran("df -Pk"),
+        "a successful rebuild never checks disk usage: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+/// [`a_dockerfile_that_did_not_change_still_recreates_the_sandbox`]と同じ、新しい
+/// Sandboxを最後まで組み立てられる fixture。
+fn switched_sandbox() -> Checked<(Fixture, crate::testing::project::Registered, FakeSbx)> {
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
+    let target = sha256_hex(b"unchanged\n");
+    project.metadata.provisioning.dockerfile_sha256 = target.clone();
+    metadata::update(&project.paths, &project.metadata).required()?;
+
+    let image = image::image_name(&project.sandbox, &target);
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    std::fs::create_dir_all(&workspace).required()?;
+    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
+
+    let host = clean_host(&fixture, &project)?
+        .answering(&format!("image ls --quiet {image}"), 0, "sha256:existing\n")
+        .answering(
+            &format!("image inspect {image}"),
+            0,
+            &format!(
+                r#"[{{"Id":"sha256:existing","Config":{{"Labels":{{"io.crescware.sbxm.canonical-id":"example-org/example-repo","io.crescware.sbxm.dockerfile-sha256":"{target}","io.crescware.sbxm.metadata-version":"1"}}}}}}]"#
+            ),
+        )
+        .answering("template ls --json", 0, &template_listing(&image)?);
+
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let git_dir = layout.bare_git_dir();
+    let worktree = layout.worktree(0);
+    let name = project.sandbox.as_str();
+    let host = verified(host, name)
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} rev-parse --is-bare-repository"),
+            0,
+            "true\n",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.url"),
+            0,
+            "https://github.com/example-org/example-repo.git\n",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.fetch"),
+            0,
+            "+refs/heads/*:refs/remotes/origin/*\n",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} rev-parse refs/remotes/origin/main"),
+            0,
+            &format!("{COMMIT}\n"),
+        )
+        .answering(
+            &format!("exec {name} -- git -C {worktree} rev-parse HEAD"),
+            0,
+            &format!("{COMMIT}\n"),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git -C {worktree} rev-parse --path-format=absolute --git-common-dir"
+            ),
+            0,
+            &format!("{git_dir}\n"),
+        )
+        .answering(
+            &format!("exec {name} -- git -C {worktree} symbolic-ref -q HEAD"),
+            0,
+            "refs/heads/main\n",
+        );
+
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let created = format!(
+        r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
+        project.sandbox,
+        workspace.display()
+    );
+    *host.listing.borrow_mut() = vec![
+        created,
+        "[]".to_string(),
+        "[]".to_string(),
+        running.clone(),
+        running,
+    ];
+
+    Ok((fixture, project, host))
+}
+
+#[test]
+fn a_bare_repository_fetch_failure_carries_the_disk_state_at_that_moment() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let git_dir = layout.bare_git_dir();
+    let name = project.sandbox.as_str();
+    let host = host
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --progress origin"),
+            128,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- df -Pk /"),
+            0,
+            "Filesystem     1024-blocks      Used Available Capacity Mounted on\noverlay          20466256  14502976   4898320       75% /\n",
+        );
+
+    let error = run(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .refused_because("the bare repository cannot be refreshed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    let facts = &error.diagnostics()[0].facts;
+    assert_eq!(facts.len(), 3, "{facts:?}");
     Ok(())
 }
 
