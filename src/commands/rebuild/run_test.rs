@@ -89,7 +89,7 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
 
     let running = format!("[{}]", fixture.entry(&project, "running")?);
     let created = format!(
-        r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
+        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         project.sandbox,
         workspace.display()
     );
@@ -357,7 +357,7 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() -> Check
     // 対象Sandboxが手作業で消された状況を作る。
     let running = format!("[{}]", fixture.entry(&project, "running")?);
     let created = format!(
-        r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
+        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         project.sandbox,
         workspace.display()
     );
@@ -549,7 +549,7 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
     let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
     let running = format!("[{}]", fixture.entry(&project, "running")?);
     let created = format!(
-        r#"[{{"name":"{}","state":"running","workspace":"{}","template":"{image}","active_sessions":0}}]"#,
+        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         project.sandbox,
         workspace.display()
     );

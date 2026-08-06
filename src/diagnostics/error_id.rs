@@ -171,6 +171,7 @@ error_ids! {
     ExternalCommandFailed => "external-command-failed",
     ExternalCommandTimeout => "external-command-timeout",
     ExternalCommandOutputUnreadable => "external-command-output-unreadable",
+    ExternalCommandNotConfirmed => "external-command-not-confirmed",
     ExternalOutputUnparseable => "external-output-unparseable",
 
     // --- Docker Sandboxes互換性 ---

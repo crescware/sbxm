@@ -166,6 +166,7 @@ error-external-command-spawn-failed = The command could not be started
 error-external-command-failed = The command failed with { $exit_status }.
 error-external-command-timeout = The command { $program } did not finish within { $seconds } seconds and was terminated.
 error-external-command-output-unreadable = The output of the command could not be read to the end
+error-external-command-not-confirmed = { $subject } could not be confirmed safely.
 error-external-output-unparseable = The output could not be interpreted
 warning-external-output-lossy = The { $stream } output of { $program } was not valid UTF-8 and was converted with replacement characters.
 diagnostic-command-label = Command:
@@ -324,6 +325,7 @@ remediation-start-docker = Start Docker Desktop and wait until the engine report
 remediation-network-policy = Set the Docker Sandboxes network policy to { $expected } before continuing.
 remediation-wait-for-lock = Wait for the other sbxm run to finish, then run the command again.
 remediation-open-session-active = Wait for the remote session to end, then run the command again. Deleting the lease file by hand does not end the session.
+remediation-external-command-not-confirmed = Look at what the command printed below, make sure nothing else is currently attached to the target, and run the command again.
 security-config-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a configuration that other accounts on this machine can read or change.
 security-config-permission-remediation = Confirm that you own { $path }, then take the access away from every other account by restricting its mode to { $expected }.
 

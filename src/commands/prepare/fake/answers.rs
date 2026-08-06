@@ -113,13 +113,13 @@ impl World {
                     .iter()
                     .map(|row| {
                         format!(
-                            r#"{{"name":"{}","state":"running","workspace":"{}","template":"{}","active_sessions":0}}"#,
-                            row.name, row.workspace, row.template
+                            r#"{{"name":"{}","status":"running","workspaces":["{}"]}}"#,
+                            row.name, row.workspace
                         )
                     })
                     .collect::<Vec<_>>()
                     .join(",");
-                (0, format!("[{rendered}]"))
+                (0, format!(r#"{{"sandboxes":[{rendered}]}}"#))
             }
             ["template", "ls", "--json"] => {
                 // runtimeのimage storeはrepositoryとtagで示し、prefixを補う。
@@ -152,7 +152,7 @@ impl World {
                 "--name",
                 name,
                 "--template",
-                template,
+                _template,
                 _kit,
                 workspace,
             ] => {
@@ -164,7 +164,6 @@ impl World {
                 self.sandboxes.borrow_mut().push(SandboxRow {
                     name: (*name).to_string(),
                     workspace: (*workspace).to_string(),
-                    template: (*template).to_string(),
                     placeholder: registered,
                 });
                 (0, String::new())
