@@ -66,7 +66,8 @@ pub fn run(
             &locked.metadata,
         );
         let assessment = protection::gate::assess(host, request)?;
-        // 早期拒否のための評価であり、許可証はここでは保持しない。
+        // 早期拒否のための評価。remove境界の証拠は、実際のremove APIを導入する後続Stepで
+        // 追加する。
         protection::gate::authorize(assessment)?;
         current.clone()
     };

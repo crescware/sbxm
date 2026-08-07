@@ -9,7 +9,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::Remediation;
 use crate::support::daemon;
 use crate::support::inventory::{self, ProjectState};
-use crate::support::protection::{self, DestructiveOperation, ForceBypass, ProtectionRequest};
+use crate::support::protection::{self, DestructiveOperation, ProtectionRequest};
 use crate::support::select::{self, ProjectPrompt};
 
 use super::{DestroyPlan, Prepared, keeps, re_register, removes};
@@ -34,9 +34,8 @@ pub fn prepare(
     let state = inventory::state_of(&entries, metadata, workspace_root)?;
 
     let worktrees = if force {
-        // 保護ゲートを意図的に迂回する。通常経路のProtectionPermitとは別の型であり、
-        // architecture testがこの呼び出しの唯一性を確認する。
-        let _bypass = ForceBypass::force_destroy();
+        // `--force`は保護ゲートを意図的に迂回する別操作である。protected remove境界と
+        // そのopaqueな証拠は、実際のremove APIを導入する後続Stepで追加する。
         Vec::new()
     } else if state == ProjectState::NotCreated {
         Vec::new()
@@ -63,7 +62,6 @@ pub fn prepare(
             ProtectionRequest::new(DestructiveOperation::Destroy, &name, &layout, metadata);
         let assessment = protection::gate::assess(host, request)?;
         let worktrees = assessment.worktrees().to_vec();
-        // 通常経路のProtectionPermit。Step 1時点ではremove APIがまだこれを要求しない。
         protection::gate::authorize(assessment)?;
         worktrees
     };

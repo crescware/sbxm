@@ -13,13 +13,12 @@
 //!   完全一致入力を得た場合だけ削除を許可する。
 //!
 //! `gate::assess`が層Aの観測を固定順序で行い、`gate::authorize`が層Aの通過だけを
-//! 確認して[`ProtectionPermit`]を発行する。`inspect`はgate配下だけが呼ぶprivate
-//! collectorであり、productionから直接公開しない。`force_bypass::force_destroy`は
-//! `destroy --force`の分岐だけが使う、意図的な迂回であり、architecture testが
-//! 唯一の呼び出し箇所であることを確認する。
+//! 確認する。`inspect`はgate配下だけが呼ぶprivate collectorであり、productionから
+//! 直接公開しない。`destroy --force`は保護を意図的に迂回する別操作であり、通常経路の
+//! remediationには案内しない。protected remove境界と、そこへ渡すopaqueな証拠は後続
+//! Stepで実consumerと同時に導入する。
 
 mod destructive_operation;
-mod force_bypass;
 pub mod gate;
 mod inspect;
 mod kind;
@@ -27,19 +26,16 @@ mod mode;
 mod origin_recovery_failure;
 mod protection_assessment;
 mod protection_blocker;
-mod protection_permit;
 mod protection_request;
 mod remote;
 mod worktree_report;
 
 pub use destructive_operation::DestructiveOperation;
-pub use force_bypass::ForceBypass;
 pub use kind::Kind;
 pub use mode::Mode;
 pub use origin_recovery_failure::OriginRecoveryFailure;
 pub use protection_assessment::ProtectionAssessment;
 pub use protection_blocker::ProtectionBlocker;
-pub use protection_permit::ProtectionPermit;
 pub use protection_request::ProtectionRequest;
 pub use remote::Remote;
 pub use worktree_report::WorktreeReport;

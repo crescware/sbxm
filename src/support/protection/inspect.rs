@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::command::{CommandOutcome, HostEnvironment};
-use crate::design::Fact;
+use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 
@@ -34,23 +34,38 @@ pub fn inspect(
     let layout = request.layout;
     let sandbox_name = request.sandbox.as_str();
     let bare_root = layout.bare_root();
+    let project = request.metadata.display_id();
 
     // 共有repositoryのないSandboxは、この案件の作業を1つも持たない。構築が途中で
     // 終わったSandboxがこれにあたり、worktreeが観測できないことを失うものがある
     // 徴候として読まない。
-    if !sandbox::path_exists(host, sandbox_name, &layout.bare_git_dir())? {
-        return Ok(ProtectionAssessment::new(Vec::new(), Vec::new()));
+    let repository_exists = sandbox::path_exists(host, sandbox_name, &layout.bare_git_dir())
+        .map_err(|error| {
+            reclassify(
+                &error,
+                ErrorId::WorktreeInventoryUnobservable,
+                msg!("error-worktree-inventory-unobservable"),
+                status_remediation(
+                    &project,
+                    msg!("remediation-worktree-inventory-unobservable"),
+                ),
+                Fact::sandbox(sandbox_name),
+            )
+        })?;
+    if !repository_exists {
+        return Ok(ProtectionAssessment::new(project, Vec::new(), Vec::new()));
     }
 
     let entries = worktree::list(host, sandbox_name, layout).map_err(|error| {
         reclassify(
             &error,
             ErrorId::WorktreeInventoryUnobservable,
-            msg!(
-                "error-worktree-inventory-unobservable",
-                sandbox = sandbox_name
+            msg!("error-worktree-inventory-unobservable"),
+            status_remediation(
+                &project,
+                msg!("remediation-worktree-inventory-unobservable"),
             ),
-            msg!("remediation-worktree-inventory-unobservable"),
+            Fact::sandbox(sandbox_name),
         )
     })?;
 
@@ -72,13 +87,14 @@ pub fn inspect(
             return Err(Error::single(
                 Diagnostic::new(
                     ErrorId::WorktreeOutsideRepository,
-                    msg!(
-                        "error-worktree-outside-repository",
-                        path = entry.path,
-                        root = bare_root
-                    ),
+                    msg!("error-worktree-outside-repository"),
                 )
-                .remediation(msg!("remediation-worktree-outside-repository")),
+                .fact(Fact::path(&entry.path))
+                .fact(Fact::root(&bare_root))
+                .remediation(status_remediation(
+                    &project,
+                    msg!("remediation-worktree-outside-repository"),
+                )),
             ));
         };
         let managed = declared.contains(&relative);
@@ -96,13 +112,14 @@ pub fn inspect(
             sandbox_name,
             &entry,
             &relative,
+            &project,
             managed,
             &mut blockers,
         )?;
         worktrees.push(report);
     }
 
-    Ok(ProtectionAssessment::new(worktrees, blockers))
+    Ok(ProtectionAssessment::new(project, worktrees, blockers))
 }
 
 /// 1件のworktreeを検査し、既知のblockerを集めながら観測結果を組み立てる。
@@ -111,20 +128,21 @@ fn examine(
     sandbox_name: &str,
     entry: &worktree::Entry,
     relative: &str,
+    project: &str,
     managed: bool,
     blockers: &mut Vec<ProtectionBlocker>,
 ) -> Result<WorktreeReport> {
     let path = entry.path.as_str();
 
-    check_tree_status(host, sandbox_name, path, relative, blockers)?;
-    check_operation_in_progress(host, sandbox_name, path, relative, blockers)?;
+    check_tree_status(host, sandbox_name, path, relative, project, blockers)?;
+    check_operation_in_progress(host, sandbox_name, path, relative, project, blockers)?;
 
     let head = sandbox::read(
         host,
         sandbox_name,
         &["git", "-C", path, "rev-parse", "HEAD"],
     )
-    .map_err(|error| reclassify_local_refs(&error, relative))?;
+    .map_err(|error| reclassify_local_refs(&error, project, relative))?;
     let branch_outcome = sandbox::exec(
         host,
         sandbox_name,
@@ -138,18 +156,18 @@ fn examine(
             "HEAD",
         ],
     )
-    .map_err(|error| reclassify_local_refs(&error, relative))?;
+    .map_err(|error| reclassify_local_refs(&error, project, relative))?;
 
     // `symbolic-ref --quiet`はdetached HEADを`1`で示す。それ以外の終了statusは判定しない。
     let attached = match sandbox::inner_exit_code(&branch_outcome) {
         Some(0) => true,
         Some(1) => false,
-        _ => return Err(local_refs_unobservable(&branch_outcome, relative)),
+        _ => return Err(local_refs_unobservable(&branch_outcome, project, relative)),
     };
 
     let (mode, branch, remote) = if attached {
         let branch = branch_outcome.stdout_text().trim().to_string();
-        if let Some(reason) = check_pushed(host, sandbox_name, path, relative)? {
+        if let Some(reason) = check_pushed(host, sandbox_name, path, relative, project)? {
             blockers.push(ProtectionBlocker::OriginRecoveryNotProven {
                 reference: branch.clone(),
                 commit: head.clone(),
@@ -158,7 +176,9 @@ fn examine(
         }
         (Mode::Attached, Some(branch), Remote::Pushed)
     } else {
-        if let Some(reason) = check_reachable_from_origin(host, sandbox_name, path, relative)? {
+        if let Some(reason) =
+            check_reachable_from_origin(host, sandbox_name, path, relative, project)?
+        {
             blockers.push(ProtectionBlocker::OriginRecoveryNotProven {
                 reference: "HEAD".to_string(),
                 commit: head.clone(),
@@ -188,6 +208,7 @@ fn check_tree_status(
     sandbox_name: &str,
     path: &str,
     relative: &str,
+    project: &str,
     blockers: &mut Vec<ProtectionBlocker>,
 ) -> Result<()> {
     let outcome = run(
@@ -207,12 +228,14 @@ fn check_tree_status(
         reclassify(
             &error,
             ErrorId::WorktreeStatusUnobservable,
-            msg!("error-worktree-status-unobservable", worktree = relative),
-            msg!("remediation-worktree-status-unobservable"),
+            msg!("error-worktree-status-unobservable"),
+            open_remediation(project, msg!("remediation-worktree-status-unobservable")),
+            Fact::worktree(relative),
         )
     })?;
 
-    let (tracked_changes, untracked) = parse_status(&outcome.stdout_text());
+    let (tracked_changes, untracked) = parse_status(&outcome.stdout_text())
+        .ok_or_else(|| status_unobservable(project, relative))?;
     if tracked_changes {
         blockers.push(ProtectionBlocker::TrackedChanges {
             worktree: relative.to_string(),
@@ -229,29 +252,58 @@ fn check_tree_status(
 
 /// `git status --porcelain=v2 -z`の出力を、追跡対象の変更の有無と未追跡pathへ分ける。
 ///
-/// rename/copy entry（種別`2`）だけが2つ目のNUL区切りfield（原path）を持つ。
-fn parse_status(output: &str) -> (bool, Vec<String>) {
+/// rename/copy entry（種別`2`）だけが2つ目のNUL区切りfield（原path）を持つ。Gitが
+/// 成功を返しても、未知または不完全なrecordはcleanとして扱わず`None`にする。
+fn parse_status(output: &str) -> Option<(bool, Vec<String>)> {
+    if output.is_empty() {
+        return Some((false, Vec::new()));
+    }
+    if !output.ends_with('\0') {
+        return None;
+    }
+
+    let mut fields: Vec<&str> = output.split('\0').collect();
+    fields.pop();
+    if fields.is_empty() || fields.iter().any(|field| field.is_empty()) {
+        return None;
+    }
+
     let mut tracked_changes = false;
     let mut untracked = Vec::new();
-    let mut fields = output.split('\0').filter(|field| !field.is_empty());
+    let mut fields = fields.into_iter();
 
     while let Some(field) = fields.next() {
-        let kind = field.split(' ').next().unwrap_or("");
+        let (kind, rest) = field.split_once(' ')?;
         match kind {
-            "1" | "u" => tracked_changes = true,
+            "1" if valid_status_record(rest, 8) => tracked_changes = true,
+            "u" if valid_status_record(rest, 10) => tracked_changes = true,
             "2" => {
+                if !valid_status_record(rest, 9) {
+                    return None;
+                }
                 tracked_changes = true;
-                fields.next(); // 原path。値としては使わない。
-            }
-            "?" => {
-                if let Some(path) = field.strip_prefix("? ") {
-                    untracked.push(path.to_string());
+                let original_path = fields.next()?;
+                if original_path.is_empty() {
+                    return None;
                 }
             }
-            _ => {}
+            "?" => {
+                if rest.is_empty() {
+                    return None;
+                }
+                untracked.push(rest.to_string());
+            }
+            "!" if !rest.is_empty() => {}
+            _ => return None,
         }
     }
-    (tracked_changes, untracked)
+    Some((tracked_changes, untracked))
+}
+
+/// 固定長のstatus recordを検証する。最後のfieldはpathなので、そこだけ空白を含められる。
+fn valid_status_record(rest: &str, fields: usize) -> bool {
+    let values: Vec<&str> = rest.splitn(fields, ' ').collect();
+    values.len() == fields && values.iter().all(|value| !value.is_empty())
 }
 
 /// merge、rebase、cherry-pickのような操作が途中で止まっていないことを確かめる。
@@ -260,6 +312,7 @@ fn check_operation_in_progress(
     sandbox_name: &str,
     path: &str,
     relative: &str,
+    project: &str,
     blockers: &mut Vec<ProtectionBlocker>,
 ) -> Result<()> {
     let git_dir = sandbox::read(
@@ -267,12 +320,12 @@ fn check_operation_in_progress(
         sandbox_name,
         &["git", "-C", path, "rev-parse", "--git-dir"],
     )
-    .map_err(|error| reclassify_git_operation(&error, relative))?;
+    .map_err(|error| reclassify_git_operation(&error, project, relative))?;
 
     for marker in IN_PROGRESS_MARKERS {
         let candidate = format!("{git_dir}/{marker}");
         let probe = sandbox::exec(host, sandbox_name, &["test", "-e", &candidate])
-            .map_err(|error| reclassify_git_operation(&error, relative))?;
+            .map_err(|error| reclassify_git_operation(&error, project, relative))?;
         // `test`はfileの不在を`1`で示す。commandを起動できなかったことを不在として読まない。
         match sandbox::inner_exit_code(&probe) {
             Some(0) => blockers.push(ProtectionBlocker::GitOperationInProgress {
@@ -284,10 +337,14 @@ fn check_operation_in_progress(
                 return Err(Error::single(
                     Diagnostic::new(
                         ErrorId::GitOperationUnobservable,
-                        msg!("error-git-operation-unobservable", worktree = relative),
+                        msg!("error-git-operation-unobservable"),
                     )
+                    .fact(Fact::worktree(relative))
                     .fact(Fact::field(marker))
-                    .remediation(msg!("remediation-git-operation-unobservable"))
+                    .remediation(open_remediation(
+                        project,
+                        msg!("remediation-git-operation-unobservable"),
+                    ))
                     .external(probe.failure()),
                 ));
             }
@@ -304,6 +361,7 @@ fn check_pushed(
     sandbox_name: &str,
     path: &str,
     relative: &str,
+    project: &str,
 ) -> Result<Option<OriginRecoveryFailure>> {
     let upstream = sandbox::exec(
         host,
@@ -318,13 +376,13 @@ fn check_pushed(
             "@{upstream}",
         ],
     )
-    .map_err(|error| reclassify_local_refs(&error, relative))?;
+    .map_err(|error| reclassify_local_refs(&error, project, relative))?;
 
     // upstream未設定はgitが非ゼロで示す。commandを起動できなかったことと区別する。
     match sandbox::inner_exit_code(&upstream) {
         Some(0) => {}
         Some(_) => return Ok(Some(OriginRecoveryFailure::NoUpstream)),
-        None => return Err(local_refs_unobservable(&upstream, relative)),
+        None => return Err(local_refs_unobservable(&upstream, project, relative)),
     }
     let upstream = upstream.stdout_text().trim().to_string();
     let ahead = run(
@@ -339,12 +397,12 @@ fn check_pushed(
             &format!("{upstream}..HEAD"),
         ],
     )
-    .map_err(|error| reclassify_local_refs(&error, relative))?
+    .map_err(|error| reclassify_local_refs(&error, project, relative))?
     .stdout_text();
     let count: u64 = ahead
         .trim()
         .parse()
-        .map_err(|_| local_refs_unparseable(relative, &ahead))?;
+        .map_err(|_| local_refs_unparseable(project, relative, &ahead))?;
     if count == 0 {
         return Ok(None);
     }
@@ -360,6 +418,7 @@ fn check_reachable_from_origin(
     sandbox_name: &str,
     path: &str,
     relative: &str,
+    project: &str,
 ) -> Result<Option<OriginRecoveryFailure>> {
     let unreachable = run(
         host,
@@ -375,12 +434,12 @@ fn check_reachable_from_origin(
             "--remotes=origin",
         ],
     )
-    .map_err(|error| reclassify_local_refs(&error, relative))?
+    .map_err(|error| reclassify_local_refs(&error, project, relative))?
     .stdout_text();
     let count: u64 = unreachable
         .trim()
         .parse()
-        .map_err(|_| local_refs_unparseable(relative, &unreachable))?;
+        .map_err(|_| local_refs_unparseable(project, relative, &unreachable))?;
     if count == 0 {
         return Ok(None);
     }
@@ -395,55 +454,94 @@ fn run(host: &dyn HostEnvironment, sandbox_name: &str, args: &[&str]) -> Result<
 /// 検査段階の失敗を、その段階固有のErrorIdへ翻訳する。
 ///
 /// 元のdiagnosticが持つfactとexternal causeは、原因の説明として保持する。
-fn reclassify(error: &Error, id: ErrorId, description: Msg, remediation: Msg) -> Error {
+fn reclassify(
+    error: &Error,
+    id: ErrorId,
+    description: Msg,
+    remediation: Remediation,
+    fact: Fact,
+) -> Error {
     let mut diagnostic = Diagnostic::new(id, description).remediation(remediation);
     if let Some(source) = error.diagnostics().first() {
         diagnostic.facts.clone_from(&source.facts);
         diagnostic.external.clone_from(&source.external);
     }
+    diagnostic.facts.push(fact);
     Error::single(diagnostic)
 }
 
 /// Git directoryまたは進行中操作のmarkerの観測が失敗した場合の共通の写像。
-fn reclassify_git_operation(error: &Error, relative: &str) -> Error {
+fn reclassify_git_operation(error: &Error, project: &str, relative: &str) -> Error {
     reclassify(
         error,
         ErrorId::GitOperationUnobservable,
-        msg!("error-git-operation-unobservable", worktree = relative),
-        msg!("remediation-git-operation-unobservable"),
+        msg!("error-git-operation-unobservable"),
+        open_remediation(project, msg!("remediation-git-operation-unobservable")),
+        Fact::worktree(relative),
     )
 }
 
 /// HEAD、branch、upstream、到達可能性の観測が失敗した場合の共通の写像。
-fn reclassify_local_refs(error: &Error, relative: &str) -> Error {
+fn reclassify_local_refs(error: &Error, project: &str, relative: &str) -> Error {
     reclassify(
         error,
         ErrorId::LocalRefsUnobservable,
-        msg!("error-local-refs-unobservable", worktree = relative),
-        msg!("remediation-local-refs-unobservable"),
+        msg!("error-local-refs-unobservable"),
+        open_remediation(project, msg!("remediation-local-refs-unobservable")),
+        Fact::worktree(relative),
     )
 }
 
 /// commandは起動できたが、終了statusが判定対象の2値のどちらでもない場合。
-fn local_refs_unobservable(outcome: &CommandOutcome, relative: &str) -> Error {
+fn local_refs_unobservable(outcome: &CommandOutcome, project: &str, relative: &str) -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::LocalRefsUnobservable,
-            msg!("error-local-refs-unobservable", worktree = relative),
+            msg!("error-local-refs-unobservable"),
         )
-        .remediation(msg!("remediation-local-refs-unobservable"))
+        .fact(Fact::worktree(relative))
+        .remediation(open_remediation(
+            project,
+            msg!("remediation-local-refs-unobservable"),
+        ))
         .external(outcome.failure()),
     )
 }
 
 /// commandは成功したが、出力を数値として解釈できない場合。
-fn local_refs_unparseable(relative: &str, detail: &str) -> Error {
+fn local_refs_unparseable(project: &str, relative: &str, detail: &str) -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::LocalRefsUnobservable,
-            msg!("error-local-refs-unobservable", worktree = relative),
+            msg!("error-local-refs-unobservable"),
         )
+        .fact(Fact::worktree(relative))
         .fact(Fact::cause(detail))
-        .remediation(msg!("remediation-local-refs-unobservable")),
+        .remediation(open_remediation(
+            project,
+            msg!("remediation-local-refs-unobservable"),
+        )),
     )
+}
+
+fn status_unobservable(project: &str, relative: &str) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::WorktreeStatusUnobservable,
+            msg!("error-worktree-status-unobservable"),
+        )
+        .fact(Fact::worktree(relative))
+        .remediation(open_remediation(
+            project,
+            msg!("remediation-worktree-status-unobservable"),
+        )),
+    )
+}
+
+fn open_remediation(project: &str, explanation: Msg) -> Remediation {
+    Remediation::text(explanation).try_run(format!("sbxm open {project}"))
+}
+
+fn status_remediation(project: &str, explanation: Msg) -> Remediation {
+    Remediation::text(explanation).try_run(format!("sbxm status {project}"))
 }

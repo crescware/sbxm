@@ -1,5 +1,9 @@
 use crate::command::HostEnvironment;
+use crate::design::Document;
+use crate::design::policy::StreamPolicy;
+use crate::design::renderer::Renderer;
 use crate::diagnostics::{ErrorId, Result};
+use crate::i18n::{Catalog, Locale};
 use crate::project::SandboxLayout;
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -19,6 +23,155 @@ fn assess(
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let request = ProtectionRequest::new(operation, &project.sandbox, &layout, &project.metadata);
     gate::assess(host, request)
+}
+
+fn render_diagnostic(
+    diagnostic: &crate::diagnostics::Diagnostic,
+    locale: Locale,
+) -> Checked<String> {
+    let mut bytes = Vec::new();
+    let document = Document::new().diagnostic(diagnostic.clone());
+    {
+        let mut renderer = Renderer::new(&mut bytes, StreamPolicy::plain());
+        renderer.write(&Catalog::new(locale), &document);
+    }
+    String::from_utf8(bytes).required_because("the diagnostic renderer writes UTF-8")
+}
+
+fn blocker_diagnostic(blocker: ProtectionBlocker) -> Checked<crate::diagnostics::Diagnostic> {
+    let assessment = ProtectionAssessment::new(
+        "example-org/example-repo".to_string(),
+        Vec::new(),
+        vec![blocker],
+    );
+    let error = gate::authorize(assessment).refused_because("the blocker is rendered")?;
+    error
+        .diagnostics()
+        .first()
+        .cloned()
+        .required_because("one blocker produces one diagnostic")
+}
+
+fn assert_protection_diagnostic(
+    blocker: ProtectionBlocker,
+    id: ErrorId,
+    command: &str,
+    labels: &[&str],
+) -> Checked {
+    let diagnostic = blocker_diagnostic(blocker)?;
+    assert_eq!(diagnostic.id, id);
+    assert!(
+        diagnostic.description.args.is_empty(),
+        "diagnostic values belong in named facts: {diagnostic:?}"
+    );
+    let fact_labels: Vec<&str> = diagnostic
+        .facts
+        .iter()
+        .map(|fact| fact.label().id)
+        .collect();
+    for label in labels {
+        assert!(
+            fact_labels.contains(label),
+            "missing {label}: {diagnostic:?}"
+        );
+    }
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .required_because("every layer A blocker has remediation")?;
+    assert_eq!(
+        remediation
+            .commands
+            .iter()
+            .map(crate::design::text::CommandLine::as_str)
+            .collect::<Vec<_>>(),
+        vec![command]
+    );
+    for locale in [Locale::En, Locale::Ja] {
+        let drawn = render_diagnostic(&diagnostic, locale)?;
+        assert!(drawn.contains(command), "{locale:?}: {drawn:?}");
+        assert!(!drawn.contains("destroy --force"), "{drawn:?}");
+        assert!(!drawn.contains("git clean"), "{drawn:?}");
+        assert!(!drawn.contains("git reset --hard"), "{drawn:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales() -> Checked {
+    assert_protection_diagnostic(
+        ProtectionBlocker::TrackedChanges {
+            worktree: "example-repo.tree-0".to_string(),
+        },
+        ErrorId::WorktreeTrackedChanges,
+        "sbxm open example-org/example-repo",
+        &["diagnostic-worktree-label"],
+    )?;
+    assert_protection_diagnostic(
+        ProtectionBlocker::UntrackedPaths {
+            worktree: "example-repo.tree-0".to_string(),
+            paths: vec!["one.txt".to_string(), "two.txt".to_string()],
+        },
+        ErrorId::WorktreeUntrackedPaths,
+        "sbxm open example-org/example-repo",
+        &["diagnostic-worktree-label", "diagnostic-paths-label"],
+    )?;
+    assert_protection_diagnostic(
+        ProtectionBlocker::GitOperationInProgress {
+            worktree: "example-repo.tree-0".to_string(),
+            operation: "MERGE_HEAD".to_string(),
+        },
+        ErrorId::GitOperationInProgress,
+        "sbxm open example-org/example-repo",
+        &["diagnostic-worktree-label", "diagnostic-operation-label"],
+    )?;
+    assert_protection_diagnostic(
+        ProtectionBlocker::UnmanagedWorktree {
+            worktree: "agent-scratch".to_string(),
+        },
+        ErrorId::UnmanagedWorktreePresent,
+        "sbxm status example-org/example-repo",
+        &["diagnostic-worktree-label"],
+    )?;
+    assert_protection_diagnostic(
+        ProtectionBlocker::OriginRecoveryNotProven {
+            reference: "main".to_string(),
+            commit: COMMIT.to_string(),
+            reason: OriginRecoveryFailure::NoUpstream,
+        },
+        ErrorId::OriginUpstreamMissing,
+        "sbxm open example-org/example-repo",
+        &["diagnostic-reference-label", "diagnostic-commit-label"],
+    )?;
+    assert_protection_diagnostic(
+        ProtectionBlocker::OriginRecoveryNotProven {
+            reference: "main".to_string(),
+            commit: COMMIT.to_string(),
+            reason: OriginRecoveryFailure::AheadOfUpstream {
+                upstream: "origin/main".to_string(),
+                count: 2,
+            },
+        },
+        ErrorId::OriginCommitUnpushed,
+        "sbxm open example-org/example-repo",
+        &[
+            "diagnostic-reference-label",
+            "diagnostic-commit-label",
+            "diagnostic-upstream-label",
+            "diagnostic-count-label",
+        ],
+    )?;
+    assert_protection_diagnostic(
+        ProtectionBlocker::OriginRecoveryNotProven {
+            reference: "HEAD".to_string(),
+            commit: COMMIT.to_string(),
+            reason: OriginRecoveryFailure::UnreachableFromOrigin,
+        },
+        ErrorId::OriginCommitUnreachable,
+        "sbxm open example-org/example-repo",
+        &["diagnostic-reference-label", "diagnostic-commit-label"],
+    )?;
+    Ok(())
 }
 
 #[test]
@@ -41,7 +194,7 @@ fn a_clean_managed_worktree_passes_and_is_reported() -> Checked {
         }]
     );
     assert!(assessment.blockers().is_empty());
-    gate::authorize(assessment).required_because("no blocker means a permit is issued")?;
+    gate::authorize(assessment).required_because("no blocker means the gate passes")?;
     Ok(())
 }
 
@@ -120,6 +273,113 @@ fn untracked_paths_are_listed_in_full() -> Checked {
             worktree: "example-repo.tree-0".to_string(),
             paths: vec!["one.txt".to_string(), "two.txt".to_string()],
         }]
+    );
+    Ok(())
+}
+
+#[test]
+fn an_unknown_status_record_is_never_read_as_clean() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+        0,
+        "x unexpected-record\0",
+    );
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("an unknown status record is not evidence of a clean worktree")?;
+    assert_eq!(error.first_id(), Some(ErrorId::WorktreeStatusUnobservable));
+    Ok(())
+}
+
+#[test]
+fn an_incomplete_status_record_is_never_read_as_clean() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+        0,
+        "2 R. N... 100644 100644 100644 abc abc R100 new.txt\0",
+    );
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("a rename without its original path is not a valid status record")?;
+    assert_eq!(error.first_id(), Some(ErrorId::WorktreeStatusUnobservable));
+    Ok(())
+}
+
+#[test]
+fn multiple_blockers_are_collected_in_stable_observation_order() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?
+        .answering(
+            &format!(
+                "exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"
+            ),
+            0,
+            "1 .M N... 100644 100644 100644 abc abc tracked.txt\0? loose.txt\0",
+        )
+        .answering(&format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"), 0, "")
+        .answering(
+            &format!(
+                "exec {name} -- git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
+            ),
+            1,
+            "",
+        );
+
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("all known blockers are collected")?;
+    assert_eq!(
+        assessment.blockers(),
+        [
+            ProtectionBlocker::TrackedChanges {
+                worktree: "example-repo.tree-0".to_string(),
+            },
+            ProtectionBlocker::UntrackedPaths {
+                worktree: "example-repo.tree-0".to_string(),
+                paths: vec!["loose.txt".to_string()],
+            },
+            ProtectionBlocker::GitOperationInProgress {
+                worktree: "example-repo.tree-0".to_string(),
+                operation: "MERGE_HEAD".to_string(),
+            },
+            ProtectionBlocker::OriginRecoveryNotProven {
+                reference: "main".to_string(),
+                commit: COMMIT.to_string(),
+                reason: OriginRecoveryFailure::NoUpstream,
+            },
+        ]
+    );
+
+    let error =
+        gate::authorize(assessment).refused_because("multiple blockers are reported together")?;
+    assert_eq!(
+        error
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.id)
+            .collect::<Vec<_>>(),
+        vec![
+            ErrorId::WorktreeTrackedChanges,
+            ErrorId::WorktreeUntrackedPaths,
+            ErrorId::GitOperationInProgress,
+            ErrorId::OriginUpstreamMissing,
+        ]
     );
     Ok(())
 }
@@ -532,7 +792,10 @@ fn a_sandbox_whose_existence_cannot_be_observed_stops_the_run() -> Checked {
 
     let error = assess(&host, &project, DestructiveOperation::Destroy)
         .refused_because("existence that could not be observed is never read as absent")?;
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::WorktreeInventoryUnobservable)
+    );
     Ok(())
 }
 

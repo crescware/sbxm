@@ -66,7 +66,8 @@ impl Switch<'_> {
             let request =
                 ProtectionRequest::new(DestructiveOperation::Rebuild, name, &layout, metadata);
             let assessment = protection::gate::assess(host, request)?;
-            // remove直前の再評価。Step 1時点ではremove APIがまだ許可証を要求しない。
+            // remove直前の再評価。remove境界の証拠は、実際のremove APIを導入する後続Stepで
+            // 追加する。
             protection::gate::authorize(assessment)?;
             inventory::remove(host, name, poll, progress)?;
         }

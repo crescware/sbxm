@@ -5,19 +5,26 @@ use super::{ProtectionBlocker, WorktreeReport};
 /// fieldはすべて非公開とし、表示用のread-only accessorだけを公開する。
 #[derive(Debug, Clone)]
 pub struct ProtectionAssessment {
+    project: String,
     worktrees: Vec<WorktreeReport>,
     blockers: Vec<ProtectionBlocker>,
 }
 
 impl ProtectionAssessment {
     pub(super) fn new(
+        project: String,
         worktrees: Vec<WorktreeReport>,
         blockers: Vec<ProtectionBlocker>,
     ) -> ProtectionAssessment {
         ProtectionAssessment {
+            project,
             worktrees,
             blockers,
         }
+    }
+
+    pub(super) fn project(&self) -> &str {
+        &self.project
     }
 
     pub fn worktrees(&self) -> &[WorktreeReport] {

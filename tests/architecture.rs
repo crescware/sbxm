@@ -30,9 +30,6 @@ const DOCKER_SUPPORT: &str = "src/support/docker/";
 /// 外部toolのbyteを運ぶmodule。
 const RELAY: &str = "src/command";
 
-/// 破壊前保護ゲートを意図的に迂回してよい唯一の場所。
-const FORCE_BYPASS_CALLER: &str = "src/commands/destroy/run/prepare.rs";
-
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
@@ -239,29 +236,6 @@ fn what_sbx_says_reaches_the_terminal_through_one_place() -> Checked {
     assert!(
         offenders.is_empty(),
         "a relayed sbx command is built in {SBX_RELAY}:\n{}",
-        offenders.join("\n")
-    );
-    Ok(())
-}
-
-#[test]
-fn the_protection_gate_is_bypassed_in_one_place_only() -> Checked {
-    // `ForceBypass`は保護ゲートを意図的に迂回する。呼び出し箇所が増えると、通常経路の
-    // `gate::authorize`を通さずに削除へ進む道がsandbox --force以外にも生まれてしまう。
-    let mut offenders = Vec::new();
-    for (path, text) in sources()? {
-        if path == FORCE_BYPASS_CALLER || path.ends_with("_test.rs") {
-            continue;
-        }
-        for (index, line) in text.lines().enumerate() {
-            if line.contains("ForceBypass::force_destroy(") {
-                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
-            }
-        }
-    }
-    assert!(
-        offenders.is_empty(),
-        "the protection gate is bypassed only in {FORCE_BYPASS_CALLER}:\n{}",
         offenders.join("\n")
     );
     Ok(())
