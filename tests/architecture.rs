@@ -24,6 +24,9 @@ const CONFIGURE: &str = "src/command/configure.rs";
 /// `sbx`の出力を端末へ出す起動を組み立ててよい唯一のfile。
 const SBX_RELAY: &str = "src/support/sandbox/relayed.rs";
 
+/// Dockerのprocessを組み立ててよい唯一のmodule。
+const DOCKER_SUPPORT: &str = "src/support/docker/";
+
 /// 外部toolのbyteを運ぶmodule。
 const RELAY: &str = "src/command";
 
@@ -259,6 +262,39 @@ fn the_protection_gate_is_bypassed_in_one_place_only() -> Checked {
     assert!(
         offenders.is_empty(),
         "the protection gate is bypassed only in {FORCE_BYPASS_CALLER}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn docker_commands_are_constructed_in_one_module() -> Checked {
+    // CommandSpecのconstructorは任意のprogram名を受け取るため、Rustのmodule privacy
+    // だけではdockerの境界を強制できない。実行を表す明確なconstructor呼び出しをここで
+    // 検査し、新しいdocker経路の追加時に集約を忘れたままmergeされないようにする。
+    let constructors = [
+        "CommandSpec::capture(\"docker\"",
+        "CommandSpec::probe(\"docker\"",
+        "TerminalCommand::relayed(\"docker\"",
+        "TerminalCommand::handed_over(\"docker\"",
+    ];
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path.starts_with(DOCKER_SUPPORT) {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if constructors
+                .iter()
+                .any(|constructor| line.contains(constructor))
+            {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "docker commands must be built through {DOCKER_SUPPORT}:\n{}",
         offenders.join("\n")
     );
     Ok(())

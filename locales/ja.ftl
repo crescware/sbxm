@@ -228,6 +228,7 @@ cause-no-file-name = 対象にfile名がありません
 cause-macos-version-unreadable = macOSのversion { $observed } を読み取れません
 cause-server-version-unreadable = serverのversionを読み取れません
 cause-server-version-empty = serverのversionが空でした
+cause-docker-daemon-also-unreachable = この失敗の直後、Docker daemonへの疎通も失われています
 cause-labels-declare-something-else = labelがこの案件とこの世代を宣言していません
 cause-archive-entry-absent = archiveに { $entry } がありません
 cause-archive-entry-not-an-array = { $entry } が配列ではありません

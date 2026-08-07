@@ -12,7 +12,7 @@ use crate::design::{ProgressSink, Remediation, Warning};
 use crate::support::image;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, DestructiveOperation, ProtectionRequest};
-use crate::support::{daemon, generation, select, template};
+use crate::support::{daemon, docker, generation, select, template};
 
 use super::{RebuildOutput, Switch, Target, start_to_read_saved_state};
 
@@ -36,6 +36,8 @@ pub fn run(
         select::one(location, requested, &msg!("select-rebuild-heading"), prompt)?.lock()?;
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
+
+    docker::require_reachable(host)?;
 
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。

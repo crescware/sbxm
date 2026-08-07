@@ -228,6 +228,7 @@ cause-no-file-name = the target has no file name
 cause-macos-version-unreadable = the macOS version { $observed } could not be read
 cause-server-version-unreadable = the server version could not be read
 cause-server-version-empty = the server version was empty
+cause-docker-daemon-also-unreachable = the Docker daemon also stopped answering right after this failure
 cause-labels-declare-something-else = the labels do not declare this project and generation
 cause-archive-entry-absent = the archive has no { $entry }
 cause-archive-entry-not-an-array = { $entry } is not an array

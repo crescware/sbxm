@@ -10,7 +10,6 @@ mod empty_private_context;
 mod ensure;
 mod ensure_archive;
 mod ephemeral_context;
-mod exists;
 mod expected_labels;
 #[cfg(test)]
 mod fake;
@@ -32,7 +31,6 @@ use empty_private_context::empty_private_context;
 pub use ensure::ensure;
 pub use ensure_archive::ensure_archive;
 use ephemeral_context::ephemeral_context;
-use exists::exists;
 pub use expected_labels::expected_labels;
 pub use generation_is_built::generation_is_built;
 pub use image_name::image_name;
