@@ -197,7 +197,7 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() -> Checked {
         &fixture.workspace_root,
     )
     .refused_because("work that only exists here is not deleted")?;
-    assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
+    assert_eq!(error.first_id(), Some(ErrorId::WorktreeTrackedChanges));
     assert!(!host.ran("rm "), "nothing is removed");
     assert!(project.paths.metadata_file().exists());
     Ok(())

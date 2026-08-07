@@ -72,6 +72,20 @@ fn trimming_the_value_does_not_change_what_the_value_means() -> Checked {
 }
 
 #[test]
+fn paths_joins_every_entry_as_its_own_line() -> Checked {
+    let single = Fact::paths(&["one.txt".to_string()]);
+    assert_eq!(single.label(), &msg!("diagnostic-paths-label"));
+    assert_eq!(one_line(&single)?.as_str(), "one.txt");
+
+    let many = Fact::paths(&["one.txt".to_string(), "two.txt".to_string()]);
+    assert_eq!(
+        many_lines(&many)?,
+        ["one.txt".to_string(), "two.txt".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
 fn every_shape_answers_with_the_label_it_was_given() {
     assert_eq!(cause("one").label(), &msg!("diagnostic-cause-label"));
     assert_eq!(cause("one\ntwo").label(), &msg!("diagnostic-cause-label"));
