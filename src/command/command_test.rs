@@ -364,53 +364,13 @@ fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
 }
 
 #[test]
-fn a_timed_out_command_takes_the_processes_it_started_with_it() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let survivor = dir.path().join("survivor");
-    let fake = fake_executable(
-        dir.path(),
-        "fake-tool",
-        &format!(
-            // 背景のprocessは、待ち終えたらfileを残す。stdoutのpipeも握ったままである。
-            r#"(sleep 2; printf 'alive' > "{}") &
-sleep 30"#,
-            survivor.display()
-        ),
-    )?;
-
-    let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
-    let started = Instant::now();
-    let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
-        .refused_because("the command must be terminated")?;
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
-    // 書き込み端を握るprocessが残っていれば、readerの回収はその分だけ返らない。
-    assert!(
-        started.elapsed() < Duration::from_millis(1500),
-        "no pipe may stay open after the run returns"
-    );
-
-    std::thread::sleep(Duration::from_secs(3).saturating_sub(started.elapsed()));
-    assert!(
-        !survivor.exists(),
-        "a process the command started must not outlive the command"
-    );
-    Ok(())
-}
-
-#[test]
-fn an_escaped_descendant_cannot_hold_capture_open_after_timeout() -> Checked {
-    // macOS does not ship `setsid` as a command, while Linux does. The process-group behavior is
-    // covered where the helper exists; the implementation itself is compiled for both platforms.
-    if !exists_on_path("setsid") {
-        return Ok(());
-    }
-
+fn a_descendant_outliving_the_direct_child_cannot_hold_capture_open_after_timeout() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let fake = fake_executable(
         dir.path(),
         "fake-tool",
-        // The detached sleep keeps the pipe open after the original group is killed.
-        "setsid sh -c 'sleep 2' &\nsleep 30",
+        // The detached sleep keeps the pipe open after the direct child exits.
+        "sh -c 'sleep 2' &\nsleep 30",
     )?;
 
     let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
@@ -420,14 +380,14 @@ fn an_escaped_descendant_cannot_hold_capture_open_after_timeout() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     assert!(
         started.elapsed() < Duration::from_millis(1500),
-        "the reader must not wait for a process outside the command group"
+        "the reader must not wait for a descendant that outlives the direct child"
     );
     Ok(())
 }
 
 #[test]
 fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> Checked {
-    // 端末へ出すcommandはprocess groupを分けないため、打ち切りは直接の子だけに届く。
+    // 打ち切りが届くのは直接の子だけである。
     let relayed = TerminalCommand::relayed("sleep", &["30"]);
     let spec = relayed.spec();
     let mut child = sleeping_child("30")?;

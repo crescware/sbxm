@@ -5,8 +5,8 @@
 //!
 //! 1回の実行がどう終わるかは、この module の中で決め切る。Capture commandのpipeは親thread
 //! がnonblockingで読み、直接の子が終わった時点で読み取り端を閉じるため、子孫がpipeを握った
-//! ままでも実行の外側へreaderが残らない。timeoutまたはCtrl-Cでは、専用のprocess groupを
-//! 終わらせてから返す。
+//! ままでも実行の外側へreaderが残らない。timeoutまたはCtrl-Cでは、直接の子を終わらせてから
+//! 返す。
 
 mod command_outcome;
 mod command_spec;
@@ -18,7 +18,6 @@ mod exists_on_path;
 mod hiding_lines;
 mod host_environment;
 mod is_executable;
-mod isolates_process_group;
 mod outcome;
 mod output_policy;
 mod poll_pipes;
@@ -51,7 +50,6 @@ pub use exists_on_path::exists_on_path;
 use hiding_lines::HidingLines;
 pub use host_environment::HostEnvironment;
 use is_executable::is_executable;
-use isolates_process_group::isolates_process_group;
 use outcome::outcome;
 pub use output_policy::OutputPolicy;
 use poll_pipes::poll_pipes;

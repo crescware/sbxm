@@ -5,9 +5,8 @@ use signal_hook::consts::SIGINT;
 
 /// Capture commandの実行中だけCtrl-Cを記録する。
 ///
-/// Capture commandは専用のprocess groupへ置くため、親processへ届いたSIGINTをOSの既定動作
-/// へ任せると、子processだけが残る。flagへ変換して実行loopへ渡し、子groupを先に終わらせて
-///から`Error::Canceled`を返す。
+/// SIGINTをOSの既定動作へ任せると、子の後始末より先にsbxm自身が終わる。flagへ変換して
+/// 実行loopへ渡し、子を先に終わらせてから`Error::Canceled`を返す。
 pub(super) struct SignalGuard {
     interrupted: Arc<AtomicBool>,
     registration: signal_hook::SigId,
