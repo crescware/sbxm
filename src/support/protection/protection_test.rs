@@ -19,10 +19,10 @@ fn assess(
     host: &dyn HostEnvironment,
     project: &Registered,
     operation: DestructiveOperation,
-) -> Result<ProtectionAssessment> {
+) -> Result<Assessment> {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
-    let request = ProtectionRequest::new(operation, &project.sandbox, &layout, &project.metadata);
-    gate::assess(host, request)
+    let request = Request::new(operation, &project.sandbox, &layout, &project.metadata);
+    gate::assess(host, &request)
 }
 
 fn render_diagnostic(
@@ -38,8 +38,8 @@ fn render_diagnostic(
     String::from_utf8(bytes).required_because("the diagnostic renderer writes UTF-8")
 }
 
-fn blocker_diagnostic(blocker: ProtectionBlocker) -> Checked<crate::diagnostics::Diagnostic> {
-    let assessment = ProtectionAssessment::new(
+fn blocker_diagnostic(blocker: Blocker) -> Checked<crate::diagnostics::Diagnostic> {
+    let assessment = Assessment::new(
         "example-org/example-repo".to_string(),
         Vec::new(),
         vec![blocker],
@@ -53,7 +53,7 @@ fn blocker_diagnostic(blocker: ProtectionBlocker) -> Checked<crate::diagnostics:
 }
 
 fn assert_protection_diagnostic(
-    blocker: ProtectionBlocker,
+    blocker: Blocker,
     id: ErrorId,
     command: &str,
     labels: &[&str],
@@ -78,7 +78,7 @@ fn assert_protection_diagnostic(
     let remediation = diagnostic
         .remediation
         .as_ref()
-        .required_because("every layer A blocker has remediation")?;
+        .required_because("every blocker has remediation")?;
     assert_eq!(
         remediation
             .commands
@@ -100,7 +100,7 @@ fn assert_protection_diagnostic(
 #[test]
 fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales() -> Checked {
     assert_protection_diagnostic(
-        ProtectionBlocker::TrackedChanges {
+        Blocker::TrackedChanges {
             worktree: "example-repo.tree-0".to_string(),
         },
         ErrorId::WorktreeTrackedChanges,
@@ -108,7 +108,7 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         &["diagnostic-worktree-label"],
     )?;
     assert_protection_diagnostic(
-        ProtectionBlocker::UntrackedPaths {
+        Blocker::UntrackedPaths {
             worktree: "example-repo.tree-0".to_string(),
             paths: vec!["one.txt".to_string(), "two.txt".to_string()],
         },
@@ -117,7 +117,7 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         &["diagnostic-worktree-label", "diagnostic-paths-label"],
     )?;
     assert_protection_diagnostic(
-        ProtectionBlocker::GitOperationInProgress {
+        Blocker::GitOperationInProgress {
             worktree: "example-repo.tree-0".to_string(),
             operation: "MERGE_HEAD".to_string(),
         },
@@ -126,7 +126,7 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         &["diagnostic-worktree-label", "diagnostic-operation-label"],
     )?;
     assert_protection_diagnostic(
-        ProtectionBlocker::UnmanagedWorktree {
+        Blocker::UnmanagedWorktree {
             worktree: "agent-scratch".to_string(),
         },
         ErrorId::UnmanagedWorktreePresent,
@@ -134,7 +134,16 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         &["diagnostic-worktree-label"],
     )?;
     assert_protection_diagnostic(
-        ProtectionBlocker::OriginRecoveryNotProven {
+        Blocker::WorktreeOutsideRepository {
+            path: "/home/agent/elsewhere".to_string(),
+            root: "/home/agent/work/example-org/example-repo".to_string(),
+        },
+        ErrorId::WorktreeOutsideRepository,
+        "sbxm status example-org/example-repo",
+        &["diagnostic-path-label", "diagnostic-root-label"],
+    )?;
+    assert_protection_diagnostic(
+        Blocker::OriginRecoveryNotProven {
             reference: "main".to_string(),
             commit: COMMIT.to_string(),
             reason: OriginRecoveryFailure::NoUpstream,
@@ -144,7 +153,7 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         &["diagnostic-reference-label", "diagnostic-commit-label"],
     )?;
     assert_protection_diagnostic(
-        ProtectionBlocker::OriginRecoveryNotProven {
+        Blocker::OriginRecoveryNotProven {
             reference: "main".to_string(),
             commit: COMMIT.to_string(),
             reason: OriginRecoveryFailure::AheadOfUpstream {
@@ -162,7 +171,7 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         ],
     )?;
     assert_protection_diagnostic(
-        ProtectionBlocker::OriginRecoveryNotProven {
+        Blocker::OriginRecoveryNotProven {
             reference: "HEAD".to_string(),
             commit: COMMIT.to_string(),
             reason: OriginRecoveryFailure::UnreachableFromOrigin,
@@ -269,7 +278,7 @@ fn untracked_paths_are_listed_in_full() -> Checked {
         .required_because("assess collects the blocker")?;
     assert_eq!(
         assessment.blockers(),
-        [ProtectionBlocker::UntrackedPaths {
+        [Blocker::UntrackedPaths {
             worktree: "example-repo.tree-0".to_string(),
             paths: vec!["one.txt".to_string(), "two.txt".to_string()],
         }]
@@ -294,6 +303,16 @@ fn an_unknown_status_record_is_never_read_as_clean() -> Checked {
     let error = assess(&host, &project, DestructiveOperation::Destroy)
         .refused_because("an unknown status record is not evidence of a clean worktree")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeStatusUnobservable));
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .cloned()
+        .required_because("the refusal carries one diagnostic")?;
+    let drawn = render_diagnostic(&diagnostic, Locale::En)?;
+    assert!(
+        drawn.contains("x unexpected-record"),
+        "the offending record is shown as a cause: {drawn:?}"
+    );
     Ok(())
 }
 
@@ -314,6 +333,55 @@ fn an_incomplete_status_record_is_never_read_as_clean() -> Checked {
     let error = assess(&host, &project, DestructiveOperation::Destroy)
         .refused_because("a rename without its original path is not a valid status record")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeStatusUnobservable));
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .cloned()
+        .required_because("the refusal carries one diagnostic")?;
+    let drawn = render_diagnostic(&diagnostic, Locale::En)?;
+    assert!(
+        drawn.contains("R100 new.txt"),
+        "the offending record is shown as a cause: {drawn:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_ignored_path_record_is_never_read_as_clean() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    // `--ignored`を渡していないため、実際のgitはこの種別のrecordを出さない。それでも
+    // 既知の無害なrecordとして素通りさせないことを固定する。
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+        0,
+        "! ignored.txt\0",
+    );
+
+    let error = assess(&host, &project, DestructiveOperation::Destroy)
+        .refused_because("an ignored-path record is not evidence of a clean worktree")?;
+    assert_eq!(error.first_id(), Some(ErrorId::WorktreeStatusUnobservable));
+    Ok(())
+}
+
+#[test]
+fn untracked_paths_beyond_the_display_cap_are_summarized_by_count() -> Checked {
+    let paths: Vec<String> = (0..25)
+        .map(|index| format!("generated-{index}.txt"))
+        .collect();
+    let diagnostic = blocker_diagnostic(Blocker::UntrackedPaths {
+        worktree: "example-repo.tree-0".to_string(),
+        paths: paths.clone(),
+    })?;
+    let drawn = render_diagnostic(&diagnostic, Locale::En)?;
+    assert!(drawn.contains(&paths[0]), "{drawn:?}");
+    assert!(drawn.contains(&paths[19]), "{drawn:?}");
+    assert!(!drawn.contains(&paths[20]), "{drawn:?}");
+    assert!(drawn.contains("25"), "the total count is shown: {drawn:?}");
     Ok(())
 }
 
@@ -347,18 +415,18 @@ fn multiple_blockers_are_collected_in_stable_observation_order() -> Checked {
     assert_eq!(
         assessment.blockers(),
         [
-            ProtectionBlocker::TrackedChanges {
+            Blocker::TrackedChanges {
                 worktree: "example-repo.tree-0".to_string(),
             },
-            ProtectionBlocker::UntrackedPaths {
+            Blocker::UntrackedPaths {
                 worktree: "example-repo.tree-0".to_string(),
                 paths: vec!["loose.txt".to_string()],
             },
-            ProtectionBlocker::GitOperationInProgress {
+            Blocker::GitOperationInProgress {
                 worktree: "example-repo.tree-0".to_string(),
                 operation: "MERGE_HEAD".to_string(),
             },
-            ProtectionBlocker::OriginRecoveryNotProven {
+            Blocker::OriginRecoveryNotProven {
                 reference: "main".to_string(),
                 commit: COMMIT.to_string(),
                 reason: OriginRecoveryFailure::NoUpstream,
@@ -496,7 +564,7 @@ fn an_unmanaged_worktree_is_refused_for_rebuild_and_confirmable_for_destroy() ->
         .required_because("assess still succeeds; the blocker is collected")?;
     assert_eq!(
         assessment.blockers(),
-        [ProtectionBlocker::UnmanagedWorktree {
+        [Blocker::UnmanagedWorktree {
             worktree: "agent-scratch".to_string()
         }]
     );
@@ -534,9 +602,76 @@ fn a_worktree_that_is_not_an_artifact_of_this_project_is_not_reported_as_unsaved
             layout.bare_root()
         ),
     );
-    let error = assess(&outside, &project, DestructiveOperation::Destroy)
+    let assessment = assess(&outside, &project, DestructiveOperation::Destroy)
+        .required_because("assess collects the blocker instead of failing outright")?;
+    assert_eq!(
+        assessment.blockers(),
+        [Blocker::WorktreeOutsideRepository {
+            path: "/home/agent/elsewhere".to_string(),
+            root: layout.bare_root(),
+        }]
+    );
+    let error = gate::authorize(assessment)
         .refused_because("a path outside the repository is a security refusal")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeOutsideRepository));
+    Ok(())
+}
+
+#[test]
+fn a_worktree_outside_the_repository_is_collected_alongside_other_blockers() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {} worktree list --porcelain -z",
+                layout.bare_git_dir()
+            ),
+            0,
+            &format!(
+                "worktree {}\0bare\0\0worktree /home/agent/elsewhere\0branch refs/heads/main\0\0worktree {managed}\0branch refs/heads/main\0\0",
+                layout.bare_root()
+            ),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"
+            ),
+            0,
+            "1 .M N... 100644 100644 100644 abc abc file.txt\0",
+        );
+
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("a boundary refusal does not stop other worktrees from being examined")?;
+    assert_eq!(
+        assessment.blockers(),
+        [
+            Blocker::WorktreeOutsideRepository {
+                path: "/home/agent/elsewhere".to_string(),
+                root: layout.bare_root(),
+            },
+            Blocker::TrackedChanges {
+                worktree: "example-repo.tree-0".to_string(),
+            },
+        ]
+    );
+    let error =
+        gate::authorize(assessment).refused_because("both blockers are reported together")?;
+    assert_eq!(
+        error
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.id)
+            .collect::<Vec<_>>(),
+        vec![
+            ErrorId::WorktreeOutsideRepository,
+            ErrorId::WorktreeTrackedChanges,
+        ]
+    );
     Ok(())
 }
 
@@ -590,7 +725,7 @@ fn a_detached_head_that_no_remote_reaches_stops_the_run() -> Checked {
         .required_because("assess collects the blocker instead of failing outright")?;
     assert_eq!(
         assessment.blockers(),
-        [ProtectionBlocker::OriginRecoveryNotProven {
+        [Blocker::OriginRecoveryNotProven {
             reference: "HEAD".to_string(),
             commit: COMMIT.to_string(),
             reason: OriginRecoveryFailure::UnreachableFromOrigin,
@@ -769,14 +904,14 @@ fn a_rename_entry_counts_as_a_tracked_change_and_consumes_its_original_path_fiel
     let host = clean_host(&fixture, &project)?.answering(
         &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
         0,
-        "2 R. N... 100644 100644 100644 abc abc R100 new.txt\0old.txt\0! ignored.txt\0",
+        "2 R. N... 100644 100644 100644 abc abc R100 new.txt\0old.txt\0",
     );
 
     let assessment = assess(&host, &project, DestructiveOperation::Destroy)
         .required_because("assess collects the blocker")?;
     assert_eq!(
         assessment.blockers(),
-        [ProtectionBlocker::TrackedChanges {
+        [Blocker::TrackedChanges {
             worktree: "example-repo.tree-0".to_string(),
         }]
     );

@@ -11,7 +11,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::design::{ProgressSink, Remediation, Warning};
 use crate::support::image;
 use crate::support::inventory::{self, Poll, ProjectState};
-use crate::support::protection::{self, DestructiveOperation, ProtectionRequest};
+use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::{daemon, docker, generation, select, template};
 
 use super::{RebuildOutput, Switch, Target, start_to_read_saved_state};
@@ -59,15 +59,14 @@ pub fn run(
             progress,
         )?;
         let layout = SandboxLayout::new(&canonical);
-        let request = ProtectionRequest::new(
+        let request = Request::new(
             DestructiveOperation::Rebuild,
             &name,
             &layout,
             &locked.metadata,
         );
-        let assessment = protection::gate::assess(host, request)?;
-        // 早期拒否のための評価。remove境界の証拠は、実際のremove APIを導入する後続Stepで
-        // 追加する。
+        let assessment = protection::gate::assess(host, &request)?;
+        // switchの直前にも改めて評価するため、ここでの拒否は早期リターンでしかない。
         protection::gate::authorize(assessment)?;
         current.clone()
     };

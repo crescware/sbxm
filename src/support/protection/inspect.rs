@@ -9,8 +9,8 @@ use crate::support::sandbox;
 use crate::support::worktree;
 
 use super::{
-    DestructiveOperation, Kind, Mode, OriginRecoveryFailure, ProtectionAssessment,
-    ProtectionBlocker, ProtectionRequest, Remote, WorktreeReport,
+    Assessment, Blocker, DestructiveOperation, Kind, Mode, OriginRecoveryFailure, Remote, Request,
+    WorktreeReport,
 };
 
 /// 進行中のGit操作を示すfile。1つでもあれば削除しない。
@@ -26,11 +26,8 @@ const IN_PROGRESS_MARKERS: [&str; 6] = [
 /// worktree、Git操作、origin回収可能性を固定順序で評価する。
 ///
 /// 観測そのものに失敗した場合は`Err`とする。既知のblockerは打ち切らずに集め、
-/// `ProtectionAssessment`へ収める。`gate::assess`だけがこの関数を呼ぶ。
-pub fn inspect(
-    host: &dyn HostEnvironment,
-    request: &ProtectionRequest<'_>,
-) -> Result<ProtectionAssessment> {
+/// `Assessment`へ収める。`gate::assess`だけがこの関数を呼ぶ。
+pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Result<Assessment> {
     let layout = request.layout;
     let sandbox_name = request.sandbox.as_str();
     let bare_root = layout.bare_root();
@@ -53,7 +50,7 @@ pub fn inspect(
             )
         })?;
     if !repository_exists {
-        return Ok(ProtectionAssessment::new(project, Vec::new(), Vec::new()));
+        return Ok(Assessment::new(project, Vec::new(), Vec::new()));
     }
 
     let entries = worktree::list(host, sandbox_name, layout).map_err(|error| {
@@ -82,27 +79,20 @@ pub fn inspect(
             continue;
         }
         let Some(relative) = entry.relative_to(&bare_root) else {
-            // bare root外のworktreeは、案件の成果物として扱えない。保存状態とは別の
-            // 拒否であり、他のblockerと同列には集めない。
-            return Err(Error::single(
-                Diagnostic::new(
-                    ErrorId::WorktreeOutsideRepository,
-                    msg!("error-worktree-outside-repository"),
-                )
-                .fact(Fact::path(&entry.path))
-                .fact(Fact::root(&bare_root))
-                .remediation(status_remediation(
-                    &project,
-                    msg!("remediation-worktree-outside-repository"),
-                )),
-            ));
+            // bare root外のworktreeは、案件の成果物として扱えない。relativeが無いため
+            // 他の検査は行えないが、拒否そのものは他のblockerと同列に集める。
+            blockers.push(Blocker::WorktreeOutsideRepository {
+                path: entry.path.clone(),
+                root: bare_root.clone(),
+            });
+            continue;
         };
         let managed = declared.contains(&relative);
 
         // rebuildは同じ配置を再作成できないため、管理外の存在自体を拒否する。destroyは
         // 内容を他の検査と同列に確かめ、存在自体は`WorktreeReport::kind`が示す。
         if !managed && request.operation == DestructiveOperation::Rebuild {
-            blockers.push(ProtectionBlocker::UnmanagedWorktree {
+            blockers.push(Blocker::UnmanagedWorktree {
                 worktree: relative.clone(),
             });
         }
@@ -119,7 +109,7 @@ pub fn inspect(
         worktrees.push(report);
     }
 
-    Ok(ProtectionAssessment::new(project, worktrees, blockers))
+    Ok(Assessment::new(project, worktrees, blockers))
 }
 
 /// 1件のworktreeを検査し、既知のblockerを集めながら観測結果を組み立てる。
@@ -130,7 +120,7 @@ fn examine(
     relative: &str,
     project: &str,
     managed: bool,
-    blockers: &mut Vec<ProtectionBlocker>,
+    blockers: &mut Vec<Blocker>,
 ) -> Result<WorktreeReport> {
     let path = entry.path.as_str();
 
@@ -168,7 +158,7 @@ fn examine(
     let (mode, branch, remote) = if attached {
         let branch = branch_outcome.stdout_text().trim().to_string();
         if let Some(reason) = check_pushed(host, sandbox_name, path, relative, project)? {
-            blockers.push(ProtectionBlocker::OriginRecoveryNotProven {
+            blockers.push(Blocker::OriginRecoveryNotProven {
                 reference: branch.clone(),
                 commit: head.clone(),
                 reason,
@@ -179,7 +169,7 @@ fn examine(
         if let Some(reason) =
             check_reachable_from_origin(host, sandbox_name, path, relative, project)?
         {
-            blockers.push(ProtectionBlocker::OriginRecoveryNotProven {
+            blockers.push(Blocker::OriginRecoveryNotProven {
                 reference: "HEAD".to_string(),
                 commit: head.clone(),
                 reason,
@@ -209,7 +199,7 @@ fn check_tree_status(
     path: &str,
     relative: &str,
     project: &str,
-    blockers: &mut Vec<ProtectionBlocker>,
+    blockers: &mut Vec<Blocker>,
 ) -> Result<()> {
     let outcome = run(
         host,
@@ -235,14 +225,14 @@ fn check_tree_status(
     })?;
 
     let (tracked_changes, untracked) = parse_status(&outcome.stdout_text())
-        .ok_or_else(|| status_unobservable(project, relative))?;
+        .map_err(|detail| status_unobservable(project, relative, &detail))?;
     if tracked_changes {
-        blockers.push(ProtectionBlocker::TrackedChanges {
+        blockers.push(Blocker::TrackedChanges {
             worktree: relative.to_string(),
         });
     }
     if !untracked.is_empty() {
-        blockers.push(ProtectionBlocker::UntrackedPaths {
+        blockers.push(Blocker::UntrackedPaths {
             worktree: relative.to_string(),
             paths: untracked,
         });
@@ -253,19 +243,22 @@ fn check_tree_status(
 /// `git status --porcelain=v2 -z`の出力を、追跡対象の変更の有無と未追跡pathへ分ける。
 ///
 /// rename/copy entry（種別`2`）だけが2つ目のNUL区切りfield（原path）を持つ。Gitが
-/// 成功を返しても、未知または不完全なrecordはcleanとして扱わず`None`にする。
-fn parse_status(output: &str) -> Option<(bool, Vec<String>)> {
+/// 成功を返しても、未知または不完全なrecordはcleanとして扱わず、その原因となった
+/// fragmentを`Err`で返す。`--ignored`を渡していないため、ignore済みpathを示す
+/// 種別`!`のrecordは正常な出力に現れない。現れた場合も既知の種別として素通りさせず、
+/// 未知recordと同様に拒否する。
+fn parse_status(output: &str) -> std::result::Result<(bool, Vec<String>), String> {
     if output.is_empty() {
-        return Some((false, Vec::new()));
+        return Ok((false, Vec::new()));
     }
     if !output.ends_with('\0') {
-        return None;
+        return Err(bounded(output));
     }
 
     let mut fields: Vec<&str> = output.split('\0').collect();
     fields.pop();
     if fields.is_empty() || fields.iter().any(|field| field.is_empty()) {
-        return None;
+        return Err(bounded(output));
     }
 
     let mut tracked_changes = false;
@@ -273,31 +266,44 @@ fn parse_status(output: &str) -> Option<(bool, Vec<String>)> {
     let mut fields = fields.into_iter();
 
     while let Some(field) = fields.next() {
-        let (kind, rest) = field.split_once(' ')?;
+        let Some((kind, rest)) = field.split_once(' ') else {
+            return Err(bounded(field));
+        };
         match kind {
             "1" if valid_status_record(rest, 8) => tracked_changes = true,
             "u" if valid_status_record(rest, 10) => tracked_changes = true,
             "2" => {
                 if !valid_status_record(rest, 9) {
-                    return None;
+                    return Err(bounded(field));
                 }
                 tracked_changes = true;
-                let original_path = fields.next()?;
+                let Some(original_path) = fields.next() else {
+                    return Err(bounded(field));
+                };
                 if original_path.is_empty() {
-                    return None;
+                    return Err(bounded(field));
                 }
             }
             "?" => {
                 if rest.is_empty() {
-                    return None;
+                    return Err(bounded(field));
                 }
                 untracked.push(rest.to_string());
             }
-            "!" if !rest.is_empty() => {}
-            _ => return None,
+            _ => return Err(bounded(field)),
         }
     }
-    Some((tracked_changes, untracked))
+    Ok((tracked_changes, untracked))
+}
+
+/// 診断へ載せる長さを抑える。observedな出力は攻撃者が選べるfile名を含みうる。
+fn bounded(detail: &str) -> String {
+    const MAX_CHARS: usize = 200;
+    let mut truncated: String = detail.chars().take(MAX_CHARS).collect();
+    if detail.chars().count() > MAX_CHARS {
+        truncated.push('…');
+    }
+    truncated
 }
 
 /// 固定長のstatus recordを検証する。最後のfieldはpathなので、そこだけ空白を含められる。
@@ -313,7 +319,7 @@ fn check_operation_in_progress(
     path: &str,
     relative: &str,
     project: &str,
-    blockers: &mut Vec<ProtectionBlocker>,
+    blockers: &mut Vec<Blocker>,
 ) -> Result<()> {
     let git_dir = sandbox::read(
         host,
@@ -328,7 +334,7 @@ fn check_operation_in_progress(
             .map_err(|error| reclassify_git_operation(&error, project, relative))?;
         // `test`はfileの不在を`1`で示す。commandを起動できなかったことを不在として読まない。
         match sandbox::inner_exit_code(&probe) {
-            Some(0) => blockers.push(ProtectionBlocker::GitOperationInProgress {
+            Some(0) => blockers.push(Blocker::GitOperationInProgress {
                 worktree: relative.to_string(),
                 operation: marker.to_string(),
             }),
@@ -524,13 +530,14 @@ fn local_refs_unparseable(project: &str, relative: &str, detail: &str) -> Error 
     )
 }
 
-fn status_unobservable(project: &str, relative: &str) -> Error {
+fn status_unobservable(project: &str, relative: &str, detail: &str) -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::WorktreeStatusUnobservable,
             msg!("error-worktree-status-unobservable"),
         )
         .fact(Fact::worktree(relative))
+        .fact(Fact::cause(detail))
         .remediation(open_remediation(
             project,
             msg!("remediation-worktree-status-unobservable"),

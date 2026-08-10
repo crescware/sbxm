@@ -9,7 +9,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::Remediation;
 use crate::support::daemon;
 use crate::support::inventory::{self, ProjectState};
-use crate::support::protection::{self, DestructiveOperation, ProtectionRequest};
+use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::select::{self, ProjectPrompt};
 
 use super::{DestroyPlan, Prepared, keeps, re_register, removes};
@@ -34,8 +34,7 @@ pub fn prepare(
     let state = inventory::state_of(&entries, metadata, workspace_root)?;
 
     let worktrees = if force {
-        // `--force`は保護ゲートを意図的に迂回する別操作である。protected remove境界と
-        // そのopaqueな証拠は、実際のremove APIを導入する後続Stepで追加する。
+        // `--force`は保護ゲートを意図的に迂回する別操作であり、通常経路の観測は行わない。
         Vec::new()
     } else if state == ProjectState::NotCreated {
         Vec::new()
@@ -58,9 +57,8 @@ pub fn prepare(
             ));
         }
         let layout = SandboxLayout::new(metadata.canonical_id());
-        let request =
-            ProtectionRequest::new(DestructiveOperation::Destroy, &name, &layout, metadata);
-        let assessment = protection::gate::assess(host, request)?;
+        let request = Request::new(DestructiveOperation::Destroy, &name, &layout, metadata);
+        let assessment = protection::gate::assess(host, &request)?;
         let worktrees = assessment.worktrees().to_vec();
         protection::gate::authorize(assessment)?;
         worktrees

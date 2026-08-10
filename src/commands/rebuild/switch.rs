@@ -11,7 +11,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::design::ProgressSink;
 use crate::support::files::{self, Conflict};
 use crate::support::inventory::{self, Poll};
-use crate::support::protection::{self, DestructiveOperation, ProtectionRequest};
+use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::{daemon, identity, repository, sandbox, secret, template, tools};
 
 use super::start_to_read_saved_state;
@@ -63,11 +63,9 @@ impl Switch<'_> {
                 poll,
                 progress,
             )?;
-            let request =
-                ProtectionRequest::new(DestructiveOperation::Rebuild, name, &layout, metadata);
-            let assessment = protection::gate::assess(host, request)?;
-            // remove直前の再評価。remove境界の証拠は、実際のremove APIを導入する後続Stepで
-            // 追加する。
+            let request = Request::new(DestructiveOperation::Rebuild, name, &layout, metadata);
+            let assessment = protection::gate::assess(host, &request)?;
+            // removeの直前に改めて評価する。
             protection::gate::authorize(assessment)?;
             inventory::remove(host, name, poll, progress)?;
         }
