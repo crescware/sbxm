@@ -11,7 +11,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::design::{ProgressSink, Remediation, Warning};
 use crate::support::image;
 use crate::support::inventory::{self, Poll, ProjectState};
-use crate::support::protection::{self, Unmanaged};
+use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::{daemon, docker, generation, select, template};
 
 use super::{RebuildOutput, Switch, Target, start_to_read_saved_state};
@@ -59,13 +59,15 @@ pub fn run(
             progress,
         )?;
         let layout = SandboxLayout::new(&canonical);
-        protection::inspect(
-            host,
-            name.as_str(),
+        let request = Request::new(
+            DestructiveOperation::Rebuild,
+            &name,
             &layout,
             &locked.metadata,
-            Unmanaged::Refused,
-        )?;
+        );
+        let assessment = protection::gate::assess(host, &request)?;
+        // switchの直前にも改めて評価するため、ここでの拒否は早期リターンでしかない。
+        protection::gate::authorize(assessment)?;
         current.clone()
     };
 

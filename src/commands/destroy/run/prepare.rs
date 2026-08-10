@@ -9,7 +9,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::Remediation;
 use crate::support::daemon;
 use crate::support::inventory::{self, ProjectState};
-use crate::support::protection::{self, Unmanaged};
+use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::select::{self, ProjectPrompt};
 
 use super::{DestroyPlan, Prepared, keeps, re_register, removes};
@@ -33,7 +33,10 @@ pub fn prepare(
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, metadata, workspace_root)?;
 
-    let worktrees = if force || state == ProjectState::NotCreated {
+    let worktrees = if force {
+        // `--force`は保護ゲートを意図的に迂回する別操作であり、通常経路の観測は行わない。
+        Vec::new()
+    } else if state == ProjectState::NotCreated {
         Vec::new()
     } else {
         if state == ProjectState::Stopped {
@@ -48,13 +51,17 @@ pub fn prepare(
                     ),
                 )
                 .remediation(
-                    Remediation::text(msg!("remediation-destroy-force"))
-                        .try_run(format!("sbxm destroy --force {}", metadata.display_id())),
+                    Remediation::text(msg!("remediation-destroy-stopped"))
+                        .try_run(format!("sbxm open {}", metadata.display_id())),
                 ),
             ));
         }
         let layout = SandboxLayout::new(metadata.canonical_id());
-        protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Allowed)?.worktrees
+        let request = Request::new(DestructiveOperation::Destroy, &name, &layout, metadata);
+        let assessment = protection::gate::assess(host, &request)?;
+        let worktrees = assessment.worktrees().to_vec();
+        protection::gate::authorize(assessment)?;
+        worktrees
     };
 
     let plan = DestroyPlan {
