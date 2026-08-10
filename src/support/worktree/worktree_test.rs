@@ -29,51 +29,44 @@ fn the_porcelain_listing_is_read_field_by_field() -> Checked {
             },
         ]
     );
-    assert!(
-        parse_list("")
-            .required_because("an empty listing")?
-            .is_empty()
-    );
+    assert!(parse_list("").is_err(), "an empty listing is unobservable");
     assert!(parse_list("detached\0\0").is_err());
     Ok(())
 }
 
 #[test]
-fn a_record_that_no_separator_closes_is_still_counted() -> Checked {
-    // 区切りはrecordの終わりを示すものであって、recordの存在条件ではない。出力が
-    // 区切りで終わっていない場合も、最後のworktreeを落とさない。
-    let entries = parse_list("worktree /home/agent/work/repo/repo.tree-0\0HEAD abc")
-        .required_because("the listing parses")?;
-    assert_eq!(
-        entries,
-        vec![Entry {
-            path: "/home/agent/work/repo/repo.tree-0".to_string(),
-            bare: false,
-            detached: false,
-        }]
+fn an_incomplete_record_is_rejected() {
+    assert!(
+        parse_list("worktree /home/agent/work/repo/repo.tree-0\0HEAD abc").is_err(),
+        "a record without its final separator is unobservable"
     );
+    assert!(
+        parse_list(
+            "worktree /home/agent/work/repo\0worktree /home/agent/work/repo/repo.tree-0\0\0"
+        )
+        .is_err(),
+        "a new record cannot begin before the previous record closes"
+    );
+}
 
-    // 次のrecordが区切りを挟まずに始まった場合も、前のrecordはそこで閉じる。
-    let entries = parse_list(
-        "worktree /home/agent/work/repo\0worktree /home/agent/work/repo/repo.tree-0\0\0",
-    )
-    .required_because("the listing parses")?;
-    assert_eq!(
-        entries,
-        vec![
-            Entry {
-                path: "/home/agent/work/repo".to_string(),
-                bare: false,
-                detached: false,
-            },
-            Entry {
-                path: "/home/agent/work/repo/repo.tree-0".to_string(),
-                bare: false,
-                detached: false,
-            },
-        ]
+#[test]
+fn unknown_and_malformed_records_are_rejected() {
+    assert!(parse_list("unexpected value\0\0").is_err());
+    assert!(parse_list("worktree \0\0").is_err());
+    assert!(parse_list("worktree /home/agent/work/repo\0unknown\0\0").is_err());
+    assert!(parse_list("worktree /home/agent/work/repo\0\0").is_err());
+    assert!(parse_list("worktree /home/agent/work/repo\0bare value\0\0").is_err());
+    assert!(parse_list("worktree /home/agent/work/repo\0bare\0HEAD abc\0\0").is_err());
+    assert!(parse_list("worktree /home/agent/work/repo\0HEAD abc def\0\0").is_err());
+    assert!(
+        parse_list("worktree /home/agent/work/repo\0branch refs/heads/main extra\0\0").is_err()
     );
-    Ok(())
+    assert!(
+        parse_list(
+            "worktree /home/agent/work/repo\0branch refs/heads/main\0branch refs/heads/dev\0\0"
+        )
+        .is_err()
+    );
 }
 
 #[test]

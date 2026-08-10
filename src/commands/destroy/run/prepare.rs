@@ -51,8 +51,8 @@ pub fn prepare(
                     ),
                 )
                 .remediation(
-                    Remediation::text(msg!("remediation-destroy-force"))
-                        .try_run(format!("sbxm destroy --force {}", metadata.display_id())),
+                    Remediation::text(msg!("remediation-destroy-stopped"))
+                        .try_run(format!("sbxm open {}", metadata.display_id())),
                 ),
             ));
         }

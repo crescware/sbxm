@@ -300,7 +300,9 @@ fn an_unknown_status_record_is_never_read_as_clean() -> Checked {
         "x unexpected-record\0",
     );
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("an unknown status record is retained as an observation blocker")?;
+    let error = gate::authorize(assessment)
         .refused_because("an unknown status record is not evidence of a clean worktree")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeStatusUnobservable));
     let diagnostic = error
@@ -330,7 +332,9 @@ fn an_incomplete_status_record_is_never_read_as_clean() -> Checked {
         "2 R. N... 100644 100644 100644 abc abc R100 new.txt\0",
     );
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("an incomplete status record is retained as an observation blocker")?;
+    let error = gate::authorize(assessment)
         .refused_because("a rename without its original path is not a valid status record")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeStatusUnobservable));
     let diagnostic = error
@@ -362,7 +366,9 @@ fn an_ignored_path_record_is_never_read_as_clean() -> Checked {
         "! ignored.txt\0",
     );
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("an ignored-path record is retained as an observation blocker")?;
+    let error = gate::authorize(assessment)
         .refused_because("an ignored-path record is not evidence of a clean worktree")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeStatusUnobservable));
     Ok(())
@@ -453,6 +459,54 @@ fn multiple_blockers_are_collected_in_stable_observation_order() -> Checked {
 }
 
 #[test]
+fn an_observation_failure_does_not_hide_later_blockers() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    // statusで既知の変更を収集した後、最初のmarker検査だけが起動不能になる。
+    // それでも残りのmarkerとorigin検査を続け、結果を観測順にすべて保持する。
+    let host = clean_host(&fixture, &project)?
+        .answering(
+            &format!(
+                "exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"
+            ),
+            0,
+            "1 .M N... 100644 100644 100644 abc abc tracked.txt\0",
+        )
+        .answering(&format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"), 126, "")
+        .answering(
+            &format!(
+                "exec {name} -- git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
+            ),
+            1,
+            "",
+        );
+
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("all independent checks contribute to the assessment")?;
+    let error = gate::authorize(assessment)
+        .refused_because("observed and unobservable blockers are reported together")?;
+    let ids = error
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| diagnostic.id)
+        .collect::<Vec<_>>();
+    assert_eq!(ids.len(), 3);
+    assert_eq!(
+        ids,
+        vec![
+            ErrorId::WorktreeTrackedChanges,
+            ErrorId::GitOperationUnobservable,
+            ErrorId::OriginUpstreamMissing,
+        ]
+    );
+    Ok(())
+}
+
+#[test]
 fn a_check_that_could_not_run_is_never_read_as_a_pass() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
@@ -500,7 +554,9 @@ fn a_check_that_could_not_run_is_never_read_as_a_pass() -> Checked {
         (inventory, ErrorId::WorktreeInventoryUnobservable),
     ];
     for (host, expected) in cases {
-        let error = assess(&host, &project, DestructiveOperation::Destroy)
+        let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+            .required_because("an unanswered check is retained as an observation blocker")?;
+        let error = gate::authorize(assessment)
             .refused_because("a check that did not answer never means the worktree is safe")?;
         assert_eq!(error.first_id(), Some(expected));
     }
@@ -771,8 +827,10 @@ fn a_git_directory_that_cannot_be_read_stops_before_the_markers_are_checked() ->
         "",
     );
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
-        .refused_because("the git directory could not be resolved")?;
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("the unreadable git directory is retained as a blocker")?;
+    let error =
+        gate::authorize(assessment).refused_because("the git directory could not be resolved")?;
     assert_eq!(error.first_id(), Some(ErrorId::GitOperationUnobservable));
     Ok(())
 }
@@ -791,8 +849,9 @@ fn a_head_commit_that_cannot_be_read_stops_the_run() -> Checked {
         "",
     );
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
-        .refused_because("HEAD could not be resolved")?;
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("the unreadable HEAD is retained as a blocker")?;
+    let error = gate::authorize(assessment).refused_because("HEAD could not be resolved")?;
     assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
     Ok(())
 }
@@ -811,8 +870,9 @@ fn an_ahead_count_that_cannot_be_read_stops_the_run() -> Checked {
         "",
     );
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
-        .refused_because("the ahead count could not be read")?;
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("the unreadable ahead count is retained as a blocker")?;
+    let error = gate::authorize(assessment).refused_because("the ahead count could not be read")?;
     assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
     Ok(())
 }
@@ -831,7 +891,9 @@ fn an_ahead_count_that_is_not_a_number_stops_the_run() -> Checked {
         "not-a-number\n",
     );
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("an unparseable ahead count is retained as a blocker")?;
+    let error = gate::authorize(assessment)
         .refused_because("an unparseable count is never read as zero")?;
     assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
     Ok(())
@@ -859,8 +921,10 @@ fn an_unreachable_count_that_cannot_be_read_stops_the_run() -> Checked {
             "",
         );
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
-        .refused_because("the unreachable count could not be read")?;
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("the unreadable unreachable count is retained as a blocker")?;
+    let error =
+        gate::authorize(assessment).refused_because("the unreachable count could not be read")?;
     assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
     Ok(())
 }
@@ -887,7 +951,9 @@ fn an_unreachable_count_that_is_not_a_number_stops_the_run() -> Checked {
             "not-a-number\n",
         );
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("an unparseable unreachable count is retained as a blocker")?;
+    let error = gate::authorize(assessment)
         .refused_because("an unparseable count is never read as zero")?;
     assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
     Ok(())
@@ -925,8 +991,33 @@ fn a_sandbox_whose_existence_cannot_be_observed_stops_the_run() -> Checked {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let host = InnerCommandSandbox::new().timing_out(&format!("test -e {}", layout.bare_git_dir()));
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("unobserved existence is retained as an inventory blocker")?;
+    let error = gate::authorize(assessment)
         .refused_because("existence that could not be observed is never read as absent")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::WorktreeInventoryUnobservable)
+    );
+    Ok(())
+}
+
+#[test]
+fn an_existence_probe_that_cannot_start_is_not_read_as_absent() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- test -e {}", layout.bare_git_dir()),
+        126,
+        "",
+    );
+
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("an unstartable existence probe is retained as a blocker")?;
+    let error = gate::authorize(assessment)
+        .refused_because("an unstartable existence probe is not absence")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::WorktreeInventoryUnobservable)
@@ -964,7 +1055,9 @@ fn whether_head_is_attached_cannot_be_observed_stops_the_run() -> Checked {
             "git -C {managed} symbolic-ref --quiet --short HEAD"
         ));
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("unobserved HEAD attachment is retained as a blocker")?;
+    let error = gate::authorize(assessment)
         .refused_because("whether HEAD is attached could not be observed")?;
     assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
     Ok(())
@@ -1004,7 +1097,9 @@ fn whether_an_upstream_is_configured_cannot_be_observed_stops_the_run() -> Check
             "git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
         ));
 
-    let error = assess(&host, &project, DestructiveOperation::Destroy)
+    let assessment = assess(&host, &project, DestructiveOperation::Destroy)
+        .required_because("unobserved upstream state is retained as a blocker")?;
+    let error = gate::authorize(assessment)
         .refused_because("whether an upstream is configured could not be observed")?;
     assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
     Ok(())

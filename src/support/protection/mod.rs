@@ -4,8 +4,9 @@
 //! `gate::assess`が、worktreeの追跡対象変更・未追跡path、進行中のGit操作、管理外
 //! worktree（rebuildのみ）、originから回収できると証明できないcommitを固定順序で
 //! 観測し、[`Blocker`]へ集める。1件でもあれば`gate::authorize`が確認を求めず拒否
-//! する。状態を観測できない場合も、安全と推測せず同様に拒否する。原因ごとに
-//! `Blocker`のvariantと固有の`ErrorId`を持ち、共通のIDへ丸めない。
+//! する。状態を観測できない場合も、安全と推測せず同様に拒否する。原因ごとの
+//! `Blocker`と固有の`ErrorId`を持ち、共通のIDへ丸めない。観測不能の
+//! diagnosticも、観測段階が付けたIDのまま保持する。
 //!
 //! `inspect`はgate配下だけが呼ぶprivate collectorであり、productionから直接公開
 //! しない。`destroy --force`は保護を意図的に迂回する別操作であり、通常経路の

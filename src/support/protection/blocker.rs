@@ -10,12 +10,14 @@ use super::OriginRecoveryFailure;
 /// diagnosticが数万行になる。
 const MAX_LISTED_PATHS: usize = 20;
 
-/// 利用者へ確認を求めずに削除を拒否する、観測済みの危険状態。
+/// 利用者へ確認を求めずに削除を拒否する、観測済みの危険状態または観測不能。
 ///
-/// variantごとに固有の`ErrorId`へ一対一で変換する。原因ごとに異なるIDを出すため、
-/// 共通の`UnsavedWork`のようなIDへまとめない。
+/// 観測済みの原因ごとに異なる`ErrorId`を出し、観測不能の場合は検査段階が作った
+/// diagnosticをそのまま保持する。共通の`UnsavedWork`のようなIDへまとめない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Blocker {
+    /// 必要な観測が成立せず、安全を証明できない。
+    Unobservable { diagnostic: Diagnostic },
     /// 追跡対象ファイルに未コミットの変更がある。
     TrackedChanges { worktree: String },
     /// 無視対象ではない未追跡ファイルがある。
@@ -41,6 +43,7 @@ impl Blocker {
     /// 利用者へ表示する診断へ変換する。
     pub(super) fn diagnostic(&self, project: &str) -> Diagnostic {
         match self {
+            Blocker::Unobservable { diagnostic } => diagnostic.clone(),
             Blocker::TrackedChanges { worktree } => Diagnostic::new(
                 ErrorId::WorktreeTrackedChanges,
                 msg!("error-worktree-tracked-changes"),
@@ -85,6 +88,11 @@ impl Blocker {
                 reason,
             } => origin_recovery_diagnostic(project, reference, commit, reason),
         }
+    }
+
+    /// 観測不能の診断を、他のblockerと同じ安定順序で保持する。
+    pub(super) fn unobservable(diagnostic: Diagnostic) -> Blocker {
+        Blocker::Unobservable { diagnostic }
     }
 }
 
