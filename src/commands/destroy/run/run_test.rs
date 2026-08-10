@@ -150,6 +150,18 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> C
     )
     .refused_because("a stopped sandbox cannot be inspected")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .required_because("a stopped sandbox has a safe recovery command")?;
+    assert_eq!(
+        remediation
+            .commands
+            .iter()
+            .map(crate::design::text::CommandLine::as_str)
+            .collect::<Vec<_>>(),
+        vec!["sbxm open example-org/example-repo"]
+    );
 
     let host = no_secrets(
         FakeSbx::listings(&[&stopped, "[]"]),

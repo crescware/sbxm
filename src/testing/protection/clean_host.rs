@@ -10,6 +10,7 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
     Ok(FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")?))
+        .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         .answering(
             &format!(
                 "exec {name} -- git --git-dir {} worktree list --porcelain -z",

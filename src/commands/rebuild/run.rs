@@ -11,8 +11,8 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::design::{ProgressSink, Remediation, Warning};
 use crate::support::image;
 use crate::support::inventory::{self, Poll, ProjectState};
-use crate::support::protection::{self, DestructiveOperation, ProtectionRequest};
-use crate::support::{daemon, generation, select, template};
+use crate::support::protection::{self, DestructiveOperation, Request};
+use crate::support::{daemon, docker, generation, select, template};
 
 use super::{RebuildOutput, Switch, Target, start_to_read_saved_state};
 
@@ -42,6 +42,8 @@ pub fn run(
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
 
+    docker::require_reachable(host)?;
+
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     // この案件のstateだけを、1回の一覧取得から決める。
     let entries = daemon::list(host)?;
@@ -62,14 +64,14 @@ pub fn run(
             progress,
         )?;
         let layout = SandboxLayout::new(&canonical);
-        let request = ProtectionRequest::new(
+        let request = Request::new(
             DestructiveOperation::Rebuild,
             &name,
             &layout,
             &locked.metadata,
         );
-        let assessment = protection::gate::assess(host, request)?;
-        // 早期拒否のための評価であり、許可証はここでは保持しない。
+        let assessment = protection::gate::assess(host, &request)?;
+        // switchの直前にも改めて評価するため、ここでの拒否は早期リターンでしかない。
         protection::gate::authorize(assessment)?;
         current.clone()
     };
