@@ -33,11 +33,11 @@ pub fn prepare(
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, metadata, workspace_root)?;
 
-    let worktrees = if force {
-        // `--force`は保護ゲートを意図的に迂回する別操作であり、通常経路の観測は行わない。
-        Vec::new()
+    let (worktrees, session_lease) = if force {
+        // `--force`は保護ゲートとsession leaseを意図的に迂回する別操作であり、通常経路の観測は行わない。
+        (Vec::new(), None)
     } else if state == ProjectState::NotCreated {
-        Vec::new()
+        (Vec::new(), None)
     } else {
         if state == ProjectState::Stopped {
             // 停止中のSandboxは内部を観測できないため、通常modeでは削除しない。
@@ -56,12 +56,17 @@ pub fn prepare(
                 ),
             ));
         }
+        // project lockを保持している間にexclusive session leaseを取り、最終protection
+        // inspectからsandbox remove完了までこの`Prepared`が保持し続ける。この時点で
+        // project lockは自分が排他的に保持しているため、取得できない原因は開いている
+        // sessionのshared leaseだけである。
+        let session_lease = locked.acquire_exclusive_session_lease()?;
         let layout = SandboxLayout::new(metadata.canonical_id());
         let request = Request::new(DestructiveOperation::Destroy, &name, &layout, metadata);
         let assessment = protection::gate::assess(host, &request)?;
         let worktrees = assessment.worktrees().to_vec();
         protection::gate::authorize(assessment)?;
-        worktrees
+        (worktrees, Some(session_lease))
     };
 
     let plan = DestroyPlan {
@@ -82,5 +87,6 @@ pub fn prepare(
         state,
         force,
         locked,
+        _session_lease: session_lease,
     })
 }

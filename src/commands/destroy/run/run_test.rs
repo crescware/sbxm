@@ -13,7 +13,7 @@ use crate::command::{EnvPolicy, OutputPolicy};
 use crate::design::SilentProgress;
 use crate::diagnostics::{ErrorId, ExitCode};
 use crate::metadata;
-use crate::paths::PRIVATE_FILE_MODE;
+use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
 use crate::testing::host::{
     FakeSbx, assert_lifecycle, custom_secret_listing, no_custom_secrets, no_secrets,
 };
@@ -212,6 +212,69 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeTrackedChanges));
     assert!(!host.ran("rm "), "nothing is removed");
     assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn an_open_session_stops_the_normal_destroy_before_anything_is_inspected() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = clean_host(&fixture, &project)?;
+    let session = paths::acquire_shared_lock(
+        &project.paths.session_lease_file(),
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("simulate an active sbxm open session")?;
+
+    let error = prepare(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .refused_because("a normal destroy must not run while a session is open")?;
+    assert_eq!(error.first_id(), Some(ErrorId::OpenSessionActive));
+    assert!(
+        !host.ran("git"),
+        "the protection gate is never reached while a session is open: {:?}",
+        host.calls()
+    );
+    assert!(!host.ran("rm "), "nothing is removed");
+    assert!(project.paths.metadata_file().exists());
+
+    drop(session);
+    Ok(())
+}
+
+#[test]
+fn force_bypasses_the_session_lease_even_while_a_session_is_open() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
+    host.listing.borrow_mut().insert(0, "[]".to_string());
+    let session = paths::acquire_shared_lock(
+        &project.paths.session_lease_file(),
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("simulate an active sbxm open session")?;
+
+    prepare(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        true,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .required_because("--force bypasses the session lease just like the protection gate")?;
+
+    drop(session);
     Ok(())
 }
 
@@ -574,6 +637,40 @@ fn the_project_lock_is_held_across_the_confirmation() -> Checked {
         PathScope::ProjectPath,
     )
     .required_because("the lock is released with Prepared")?;
+    Ok(())
+}
+
+#[test]
+fn the_session_lease_is_held_across_the_confirmation() -> Checked {
+    let fixture = Fixture::new()?;
+    let (_host, prepared) = prepared_project(&fixture, false)?;
+    let lease_file = ProjectPaths::derive(
+        &fixture.parent,
+        &project_id("example-org/example-repo")?.canonical(),
+    )
+    .session_lease_file();
+
+    // 確認を待つあいだも、通常rebuild/destroyのexclusive session leaseはここへ入れない。
+    let waiting = std::time::Duration::from_millis(200);
+    paths::acquire_exclusive_lock(
+        &lease_file,
+        waiting,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .refused_because(
+        "another normal destroy/rebuild cannot proceed while the confirmation is pending",
+    )?;
+
+    // leaseはPreparedとともに解放される。
+    drop(prepared);
+    paths::acquire_exclusive_lock(
+        &lease_file,
+        waiting,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("the session lease is released with Prepared")?;
     Ok(())
 }
 

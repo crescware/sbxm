@@ -392,3 +392,90 @@ fn a_registry_path_is_observed_before_it_is_read_or_written() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
     Ok(())
 }
+
+fn locked_for(fixture: &Fixture) -> Checked<Locked> {
+    one(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        &msg!("select-open-heading"),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("the project is managed")?
+    .lock()
+    .required_because("the project lock is free")
+}
+
+#[test]
+fn shared_session_leases_are_held_by_more_than_one_open_at_once() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    let locked = locked_for(&fixture)?;
+
+    let first = locked
+        .acquire_shared_session_lease()
+        .required_because("the first sbxm open holds a shared lease")?;
+    let second = locked
+        .acquire_shared_session_lease()
+        .required_because("a second sbxm open does not wait behind the first")?;
+    drop(first);
+    drop(second);
+    Ok(())
+}
+
+#[test]
+fn an_exclusive_session_lease_is_refused_while_a_session_is_open() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let locked = locked_for(&fixture)?;
+
+    let session = locked
+        .acquire_shared_session_lease()
+        .required_because("an sbxm open session is active")?;
+
+    let error = locked
+        .acquire_exclusive_session_lease()
+        .refused_because("a normal rebuild/destroy must not run while a session is open")?;
+    assert_eq!(error.first_id(), Some(ErrorId::OpenSessionActive));
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(
+        diagnostic
+            .description
+            .args
+            .iter()
+            .find(|(key, _)| *key == "project")
+            .map(|(_, value)| value.as_str()),
+        Some(project.metadata.display_id().as_str()),
+        "the project the open session belongs to is named"
+    );
+    assert!(
+        diagnostic.remediation.is_some(),
+        "the user is told to wait, not to delete the lease file"
+    );
+
+    drop(session);
+    locked
+        .acquire_exclusive_session_lease()
+        .required_because("once the session closes, rebuild/destroy can proceed")?;
+    Ok(())
+}
+
+#[test]
+fn a_stale_session_lease_file_alone_does_not_count_as_an_open_session() -> Checked {
+    // fileの存在ではなく、OS lockの成否だけが根拠になる。
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    let locked = locked_for(&fixture)?;
+    let lease_file = locked.paths.session_lease_file();
+    std::fs::write(&lease_file, b"stale")
+        .required_because("leave a stale file behind, held by nobody")?;
+    std::fs::set_permissions(
+        &lease_file,
+        std::os::unix::fs::PermissionsExt::from_mode(crate::paths::PRIVATE_FILE_MODE),
+    )
+    .required_because("match the mode a real lock file would have")?;
+
+    locked
+        .acquire_exclusive_session_lease()
+        .required_because("a stale file with no OS lock held blocks nothing")?;
+    Ok(())
+}
