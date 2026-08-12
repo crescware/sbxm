@@ -25,9 +25,12 @@ pub fn execute(
     if prepared.state == ProjectState::NotCreated {
         // 削除commandを実行しない場合だけ、一覧で不在を1回確かめる。
         require_absent(host, &prepared.name)?;
+    } else if prepared.force {
+        // データ保護検査と同じく、sbx自身の確認とactive-session検査も意図的に迂回する。
+        inventory::remove_forced(host, &prepared.name, poll, progress)?;
     } else {
         // 削除は、一覧から消えたことを確かめるまで完了しない。
-        inventory::remove(host, &prepared.name, poll, progress)?;
+        inventory::remove_protected(host, &prepared.name, poll, progress)?;
     }
 
     // tokenの登録はSandboxを消しても残る。Sandboxが消えたあとに解くのは、消し損ねた

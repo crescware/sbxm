@@ -87,11 +87,14 @@ impl Fixture {
     }
 
     /// 案件に対応するSandboxの一覧行。
+    ///
+    /// sbx v0.37.0が実際に返す形（`status`、`workspaces`は配列）に合わせる。呼び出し側は
+    /// これを`{"sandboxes": [...]}`で包んで`sbx ls --json`の応答とする。
     pub fn entry(&self, project: &Registered, state: &str) -> Checked<String> {
         let workspace = self.workspace_root.join(project.sandbox.as_str());
         std::fs::create_dir_all(&workspace).required_because("create the workspace")?;
         Ok(format!(
-            r#"{{"name":"{}","state":"{state}","workspace":"{}"}}"#,
+            r#"{{"name":"{}","status":"{state}","workspaces":["{}"]}}"#,
             project.sandbox,
             workspace.display()
         ))

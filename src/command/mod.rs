@@ -5,8 +5,8 @@
 //!
 //! 1回の実行がどう終わるかは、この module の中で決め切る。Capture commandのpipeは親thread
 //! がnonblockingで読み、直接の子が終わった時点で読み取り端を閉じるため、子孫がpipeを握った
-//! ままでも実行の外側へreaderが残らない。timeoutまたはCtrl-Cでは、専用のprocess groupを
-//! 終わらせてから返す。
+//! ままでも実行の外側へreaderが残らない。Capture commandは専用のprocess groupに置くが、
+//! timeoutまたはCtrl-Cで終わらせるのは直接の子だけである。
 
 mod command_outcome;
 mod command_spec;
@@ -18,14 +18,15 @@ mod exists_on_path;
 mod hiding_lines;
 mod host_environment;
 mod is_executable;
-mod isolates_process_group;
 mod outcome;
 mod output_policy;
 mod poll_pipes;
+mod pty_confirmed_command;
 mod pump_until_exit;
 mod real_host;
 mod run;
 mod run_inner;
+mod run_pty_confirmed;
 mod run_relay;
 mod run_terminal_inner;
 mod run_with_terminal;
@@ -51,14 +52,15 @@ pub use exists_on_path::exists_on_path;
 use hiding_lines::HidingLines;
 pub use host_environment::HostEnvironment;
 use is_executable::is_executable;
-use isolates_process_group::isolates_process_group;
 use outcome::outcome;
 pub use output_policy::OutputPolicy;
 use poll_pipes::poll_pipes;
+pub use pty_confirmed_command::PtyConfirmedCommand;
 use pump_until_exit::pump_until_exit;
 pub use real_host::RealHost;
 pub use run::run;
 use run_inner::run_inner;
+use run_pty_confirmed::run_pty_confirmed;
 use run_relay::run_relay;
 use run_terminal_inner::run_terminal_inner;
 pub use run_with_terminal::run_with_terminal;

@@ -10,13 +10,15 @@ mod observe;
 mod observed;
 mod poll;
 mod project_state;
-mod remove;
+mod remove_forced;
+mod remove_protected;
 mod single;
 mod snapshot;
 mod start;
 mod state_of;
 mod still_present;
 mod take;
+mod wait_until_absent;
 mod wait_until_running;
 
 use duplicated::duplicated;
@@ -26,13 +28,15 @@ use observe::observe;
 pub use observed::Observed;
 pub use poll::Poll;
 pub use project_state::ProjectState;
-pub use remove::remove;
+pub use remove_forced::remove_forced;
+pub use remove_protected::remove_protected;
 pub use single::single;
 pub use snapshot::Snapshot;
 pub use start::start;
 pub use state_of::state_of;
 pub use still_present::still_present;
 pub use take::take;
+use wait_until_absent::wait_until_absent;
 pub use wait_until_running::wait_until_running;
 
 #[cfg(test)]
