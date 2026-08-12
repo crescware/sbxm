@@ -192,6 +192,34 @@ sbxm rebuild <project-id>
 rebuildはSandboxを作り直します。作業内容を保護するため、dirty file、pushしていない
 commit、またはunmanaged worktreeがある場合、sbxmは通常のrebuildを拒否します。
 
+### Sandboxのroot sizeを選ぶ
+
+Docker Sandboxesは、Sandboxを作成するprocessのenvironmentから`DOCKER_SANDBOXES_ROOT_SIZE`
+を読み取ります。sbxmはこの変数を解釈も書き換えもせず、`sbx create`を実行する時点で
+設定されている値をそのまま渡します。
+
+```sh
+# 初回作成
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm prepare <project-id>
+
+# 既存Sandboxの作り直し
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
+```
+
+この設定が*しないこと*もいくつかあります。
+
+- この変数は、これから作られるSandboxにだけ効きます。既存Sandboxのfilesystemを
+  in-place resizeするものではないため、sizeを変えるにはSandboxの作り直しが必要です。
+  `rebuild`はこの場合も他のrebuildと同じdata保護検査を通ります。
+- requested sizeは作成時にその場で予約される量ではありません。各Sandboxが書き込める
+  上限を引き上げるだけで、host上の複数Sandboxの実使用量は引き続きhostの実容量に対して
+  合算されます。
+- imageとtemplateのcacheは各Sandboxのroot filesystemとは別にhost容量を消費し、この
+  設定とは独立しています。
+
+どちらのcommandを実行する前にも、要求するsizeに対してhostに十分な空き容量があるか
+確認してください。
+
 ### managed worktreeを追加する
 
 構築済みのプロジェクトには、rebuildせずにmanaged worktreeを追加できます。
