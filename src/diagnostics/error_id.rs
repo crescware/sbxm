@@ -125,13 +125,27 @@ error_ids! {
     SandboxCheckUnobservable => "sandbox-check-unobservable",
     GlobalScopeUnobservable => "global-scope-unobservable",
     SshAgentExposed => "ssh-agent-exposed",
-    UnsavedWork => "unsaved-work",
     WorktreeOutsideRepository => "worktree-outside-repository",
     UnmanagedWorktreePresent => "unmanaged-worktree-present",
     SbxLoginMissing => "sbx-login-missing",
     SbxLoginUnobservable => "sbx-login-unobservable",
     RemoteSshUnconfigured => "remote-ssh-unconfigured",
     RemoteSshUnobservable => "remote-ssh-unobservable",
+
+    // --- 破壊前保護ゲート ---
+    WorktreeTrackedChanges => "worktree-tracked-changes",
+    WorktreeUntrackedPaths => "worktree-untracked-paths",
+    GitOperationInProgress => "git-operation-in-progress",
+    OriginUpstreamMissing => "origin-upstream-missing",
+    OriginCommitUnpushed => "origin-commit-unpushed",
+    OriginCommitUnreachable => "origin-commit-unreachable",
+    WorktreeInventoryUnobservable => "worktree-inventory-unobservable",
+    WorktreeStatusUnobservable => "worktree-status-unobservable",
+    GitOperationUnobservable => "git-operation-unobservable",
+    LocalRefsUnobservable => "local-refs-unobservable",
+
+    // --- sessionのhost lease（#80） ---
+    OpenSessionActive => "open-session-active",
 
     // --- 案件のhost path ---
     ProjectPathCollision => "project-path-collision",

@@ -8,6 +8,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use super::{super::fake::verified, *};
 use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
+use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::testing::host::{FakeSbx, assert_lifecycle};
 use crate::testing::image::template_listing;
 use crate::testing::poll::poll;
@@ -132,6 +133,51 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
         "an unchanged Dockerfile still recreates the sandbox: {:?}",
         host.calls()
     );
+    // exclusive session leaseは、rebuildが終わったあとは保持されたままにならない。
+    paths::acquire_exclusive_lock(
+        &project.paths.session_lease_file(),
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("the exclusive session lease releases once the rebuild finishes")?;
+    Ok(())
+}
+
+#[test]
+fn an_open_session_stops_the_rebuild_before_anything_is_touched() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let session = paths::acquire_shared_lock(
+        &project.paths.session_lease_file(),
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("simulate an active sbxm open session")?;
+
+    let host = FakeSbx::listing("[]");
+    let error = run(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .refused_because("a normal rebuild must not run while a session is open")?;
+    assert_eq!(error.first_id(), Some(ErrorId::OpenSessionActive));
+    assert!(
+        host.calls().is_empty(),
+        "the rebuild is refused before the host is touched at all: {:?}",
+        host.calls()
+    );
+
+    drop(session);
     Ok(())
 }
 
@@ -278,7 +324,7 @@ fn unsaved_work_stops_the_rebuild_before_anything_is_built() -> Checked {
         &mut SilentProgress,
     )
     .refused_because("a dirty worktree is not recreated")?;
-    assert_eq!(error.first_id(), Some(ErrorId::UnsavedWork));
+    assert_eq!(error.first_id(), Some(ErrorId::WorktreeUntrackedPaths));
     assert!(
         !host.ran("build"),
         "the existing sandbox is untouched: {:?}",

@@ -11,7 +11,7 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::design::ProgressSink;
 use crate::support::files::{self, Conflict};
 use crate::support::inventory::{self, Poll};
-use crate::support::protection::{self, Unmanaged};
+use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::{daemon, identity, repository, sandbox, secret, template, tools};
 
 use super::start_to_read_saved_state;
@@ -63,8 +63,10 @@ impl Switch<'_> {
                 poll,
                 progress,
             )?;
-            protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
-            // データ保護検査は上で済ませている。
+            let request = Request::new(DestructiveOperation::Rebuild, name, &layout, metadata);
+            let assessment = protection::gate::assess(host, &request)?;
+            // removeの直前に改めて評価する。
+            protection::gate::authorize(assessment)?;
             inventory::remove(host, name, poll, progress)?;
         }
 

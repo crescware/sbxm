@@ -1,3 +1,5 @@
+use crate::paths::SharedLock;
+
 use super::ClampedIndex;
 
 /// 接続先と、接続前に見せる情報。
@@ -14,4 +16,9 @@ pub struct Prepared {
     /// promptで確定したindexを、lock済みmetadataの範囲まで下げた場合のその内訳。
     pub clamped_worktree_index: Option<ClampedIndex>,
     pub worktrees: Vec<String>,
+    /// project lockが外れたあともSSH sessionの生存中だけ保持するshared session lease。
+    ///
+    /// 通常rebuild/destroyのexclusive session leaseと排他する。読まれることはなく、
+    /// `connect`がSSH childの終了結果を受け取って戻るときにdropされる。
+    pub(super) _session_lease: SharedLock,
 }
