@@ -95,7 +95,7 @@ case "$1" in
 ls)
 	printf '{"sandboxes":['
 	awk -F'\t' '{
-		printf "%s{\"name\":\"%s\",\"state\":\"%s\",\"workspace\":\"%s\"}", (NR > 1 ? "," : ""), $1, $2, $3
+		printf "%s{\"name\":\"%s\",\"status\":\"%s\",\"workspaces\":[\"%s\"]}", (NR > 1 ? "," : ""), $1, $2, $3
 	}' "$fake/sandboxes"
 	printf ']}'
 	exit 0

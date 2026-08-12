@@ -35,7 +35,7 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> Checked<
     );
 
     // 一覧は、run、Switch、作成前の確認、作成後の確認の順に読まれる。
-    let host = FakeSbx::listings(&["[]", "[]", "[]", &created])
+    let host = FakeSbx::listings(&[r#"{"sandboxes":[]}"#, r#"{"sandboxes":[]}"#, r#"{"sandboxes":[]}"#, &created])
             .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
             // 固定した世代のimageは既にbuild済みである。
             .answering(&format!("image ls --quiet {image}"), 0, "sha256:new\n")
@@ -306,7 +306,10 @@ fn a_stopped_sandbox_that_will_not_start_is_left_where_it_is() -> Checked {
 
     // 切り替える対象は停止しており、起動commandが通らない。
     let host = continuing(&fixture, &project, &target)?;
-    *host.listing.borrow_mut() = vec![format!("[{}]", fixture.entry(&project, "stopped")?)];
+    *host.listing.borrow_mut() = vec![format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    )];
     let host = host.answering(&format!("exec {} -- /bin/true", project.sandbox), 1, "");
 
     let error = run(

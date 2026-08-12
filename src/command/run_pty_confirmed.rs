@@ -4,7 +4,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 use rustix::fs::{Mode, OFlags, fcntl_getfl, fcntl_setfl};
-use rustix::io::{FdFlags, fcntl_setfd};
+use rustix::io::{Errno, FdFlags, fcntl_setfd};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{OptionalActions, Winsize, tcgetattr, tcsetattr, tcsetwinsize};
 
@@ -14,6 +14,7 @@ use crate::msg;
 
 use super::{
     CommandOutcome, EnvPolicy, PtyConfirmedCommand, spawn, spawn_failure, terminate_child,
+    unreadable,
 };
 
 /// promptを読む間隔。
@@ -119,7 +120,7 @@ fn drive(
         }
 
         if !answered {
-            if valid_utf8_prefix(&buffer).contains(command.expected_prompt.as_str()) {
+            if prompt_is_ready(&buffer, &command.expected_prompt) {
                 if let Err(error) = controller
                     .write_all(command.answer.as_bytes())
                     .and_then(|()| controller.flush())
@@ -144,9 +145,7 @@ fn drive(
 
         match child.try_wait() {
             Ok(Some(status)) => {
-                if let Ok(size) = controller.read(&mut chunk) {
-                    buffer.extend_from_slice(&chunk[..size]);
-                }
+                drain_after_exit(&mut controller, &mut buffer, command)?;
                 return finish(command, status, buffer, answered);
             }
             Ok(None) => {}
@@ -160,6 +159,34 @@ fn drive(
         }
 
         std::thread::sleep(POLL_INTERVAL);
+    }
+}
+
+/// processが終わった後、PTYに残った出力を読み切る。
+///
+/// masterのnonblocking readは、slave側が閉じて他に読む物がなくなると、`WouldBlock`ではなく
+/// `EIO`を返す（pipeのように`0`にはならない）。これを読み切りの終わりとして扱い、それ以外の
+/// 読み取り失敗は、runtimeの原文を失いかけたこととして外へ返す。
+fn drain_after_exit(
+    controller: &mut File,
+    buffer: &mut Vec<u8>,
+    command: &PtyConfirmedCommand,
+) -> Result<()> {
+    let mut chunk = [0u8; 4096];
+    loop {
+        match controller.read(&mut chunk) {
+            Ok(0) => return Ok(()),
+            Ok(size) => buffer.extend_from_slice(&chunk[..size]),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.raw_os_error() == Some(Errno::IO.raw_os_error()) =>
+            {
+                return Ok(());
+            }
+            Err(error) => {
+                return Err(unreadable(&command.as_capture_spec(), &error.to_string()));
+            }
+        }
     }
 }
 
@@ -190,10 +217,23 @@ fn finish(
     })
 }
 
+/// これまでに読めたbyte列が、答えるべき確認promptそのものであるかを決める。
+///
+/// 部分一致では、期待文字列の直後に不正byteが続く出力や、期待文字列を前置きとして
+/// 別の質問へ続く出力まで一致に見せかけてしまう。観測済みの全byteが有効なUTF-8として
+/// 確定し、末尾の空白を除けば期待するprompt文字列とちょうど一致するときだけ答える。
+/// 末尾の空白（入力を待つ位置を示す1つの空白）だけは許すが、それ以外の食い違いは
+/// 大小どちらの向きにも一致とみなさない。有効な列の末尾が複数byte文字の途中で切れて
+/// いる場合は`Err`（`error_len`が`None`）になるため、続きを待つ側として扱われ、答えを
+/// 早まらせない。
+fn prompt_is_ready(buffer: &[u8], expected_prompt: &str) -> bool {
+    matches!(std::str::from_utf8(buffer), Ok(text) if text.trim_end() == expected_prompt)
+}
+
 /// 有効なUTF-8として読める先頭部分。
 ///
-/// 途中で切れたmulti-byte文字を無効と誤認しないよう、無効になった位置までを使う。
-/// 破損したbyte列をpromptの一致に見せかけないため、lossy変換はしない。
+/// promptの一致判定には使わない。診断へ載せる原文を組み立てるためだけに、途中で
+/// 切れたmulti-byte文字や不正byteより手前までを取り出す。
 fn valid_utf8_prefix(buffer: &[u8]) -> &str {
     match std::str::from_utf8(buffer) {
         Ok(text) => text,

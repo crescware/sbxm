@@ -145,7 +145,10 @@ fn a_declared_worktree_that_is_missing_is_reported_as_unusable() -> Checked {
 fn a_repository_check_that_could_not_run_is_not_read_as_missing() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let listing = format!("[{}]", fixture.entry(&project, "running")?);
+    let listing = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let host = FakeSbx::listing(&listing).answering(
         &format!(

@@ -87,7 +87,10 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
             "refs/heads/main\n",
         );
 
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let created = format!(
         r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         project.sandbox,
@@ -97,8 +100,8 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
     // 確認までは稼働中のSandboxが対象と観測し、作成後は新しいSandboxを観測する。
     *host.listing.borrow_mut() = vec![
         created,
-        "[]".to_string(),
-        "[]".to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
         running.clone(),
         running,
     ];
@@ -156,7 +159,7 @@ fn an_open_session_stops_the_rebuild_before_anything_is_touched() -> Checked {
     )
     .required_because("simulate an active sbxm open session")?;
 
-    let host = FakeSbx::listing("[]");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
     let error = run(
         Target {
             location: &fixture.location,
@@ -191,8 +194,11 @@ fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_docker
     project.metadata.provisioning.dockerfile_sha256 = sha256_hex(b"unchanged\n");
     metadata::update(&project.paths, &project.metadata).required()?;
 
-    let host =
-        FakeSbx::listing("[]").answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+        "version --format {{.Server.Version}}",
+        0,
+        "27.0.3\n",
+    );
     let error = run(
         Target {
             location: &fixture.location,
@@ -213,7 +219,7 @@ fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_docker
 #[test]
 fn a_project_that_is_not_managed_cannot_be_rebuilt() -> Checked {
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing("[]");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
     let error = run(
         Target {
             location: &fixture.location,
@@ -240,8 +246,14 @@ fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() -> Checked
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let name = project.sandbox.as_str();
 
-    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = FakeSbx::listings(&[&stopped, &running]).answering(
         "version --format {{.Server.Version}}",
         0,
@@ -276,8 +288,11 @@ fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() -> Check
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
 
-    let absent =
-        FakeSbx::listing("[]").answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
+    let absent = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+        "version --format {{.Server.Version}}",
+        0,
+        "27.0.3\n",
+    );
     let error = run(
         Target {
             location: &fixture.location,
@@ -361,7 +376,10 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() -> Check
 
     // 一覧は末尾から取り出される。世代の準備が終わるまでのあいだに、
     // 対象Sandboxが手作業で消された状況を作る。
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let created = format!(
         r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         project.sandbox,
@@ -369,7 +387,12 @@ fn the_sandbox_to_switch_is_decided_after_the_new_generation_is_ready() -> Check
     );
     // 一覧は末尾から取り出される。世代の準備が終わったあとの観測で、対象Sandboxが
     // 手作業で消えている状況になる。
-    *host.listing.borrow_mut() = vec![created, "[]".to_string(), "[]".to_string(), running];
+    *host.listing.borrow_mut() = vec![
+        created,
+        r#"{"sandboxes":[]}"#.to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
+        running,
+    ];
 
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let git_dir = layout.bare_git_dir();
@@ -552,8 +575,14 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
     std::fs::create_dir_all(&workspace).required()?;
     std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
 
-    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let created = format!(
         r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         project.sandbox,
@@ -621,8 +650,8 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
     // 一覧は末尾から取り出される。停止中のprevious世代を起動し、検査してから消す。
     *host.listing.borrow_mut() = vec![
         created,
-        "[]".to_string(),
-        "[]".to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
         running.clone(),
         running,
         stopped.clone(),
@@ -667,7 +696,10 @@ fn a_sandbox_that_cannot_be_started_is_not_rebuilt_over() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let name = project.sandbox.as_str();
-    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
     let host = FakeSbx::listing(&stopped)
         .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         .answering(&format!("exec {name} -- /bin/true"), 1, "");

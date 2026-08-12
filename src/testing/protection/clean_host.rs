@@ -9,7 +9,7 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
-    Ok(FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")?))
+    Ok(FakeSbx::listing(&format!(r#"{{"sandboxes":[{}]}}"#, fixture.entry(project, "running")?))
         .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         .answering(
             &format!(

@@ -52,7 +52,9 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
     std::fs::create_dir_all(project.paths.cache_dir()).required()?;
     // 削除後の一覧では対象が消えている。
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
 
     let prepared = prepare(
         &fixture.location,
@@ -112,7 +114,9 @@ fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> 
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
 
     let prepared = prepare(
         &fixture.location,
@@ -195,7 +199,10 @@ fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -
 fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
 
     let host = FakeSbx::listing(&stopped);
     let error = prepare(
@@ -222,7 +229,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> C
     );
 
     let host = no_secrets(
-        FakeSbx::listings(&[&stopped, "[]"]),
+        FakeSbx::listings(&[&stopped, r#"{"sandboxes":[]}"#]),
         project.sandbox.as_str(),
     );
     let prepared = prepare(
@@ -313,7 +320,9 @@ fn force_bypasses_the_session_lease_even_while_a_session_is_open() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
     let session = paths::acquire_shared_lock(
         &project.paths.session_lease_file(),
         LOCK_TIMEOUT,
@@ -339,7 +348,7 @@ fn force_bypasses_the_session_lease_even_while_a_session_is_open() -> Checked {
 #[test]
 fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing("[]");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
 
     let error = prepare(
         &fixture.location,
@@ -363,7 +372,10 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
 fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let host = no_secrets(FakeSbx::listing("[]"), project.sandbox.as_str());
+    let host = no_secrets(
+        FakeSbx::listing(r#"{"sandboxes":[]}"#),
+        project.sandbox.as_str(),
+    );
 
     let prepared = prepare(
         &fixture.location,
@@ -396,7 +408,9 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
             (0, &no_custom_secrets(sandbox)),
         ],
     );
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
 
     let prepared = prepare(
         &fixture.location,
@@ -439,7 +453,9 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
         0,
         &custom_secret_listing(sandbox, "sbx-cs-example"),
     );
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
 
     let prepared = prepare(
         &fixture.location,
@@ -481,7 +497,9 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() -> Che
         0,
         &custom_secret_listing("global", "sbx-cs-elsewhere"),
     );
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
 
     let prepared = prepare(
         &fixture.location,
@@ -542,7 +560,9 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> 
     std::os::unix::fs::symlink(&elsewhere, project.paths.cache_dir()).required()?;
 
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
     let prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
@@ -603,7 +623,9 @@ impl ConfirmPrompt for ScriptedConfirm {
 fn prepared_project(fixture: &Fixture, force: bool) -> Checked<(FakeSbx, Prepared)> {
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
     let prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
@@ -755,7 +777,9 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() -> C
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
 
     let prepared = prepare(
         &fixture.location,
@@ -802,7 +826,9 @@ fn a_cache_that_cannot_be_removed_names_the_cache_and_keeps_the_project_managed(
     let project = fixture.register("example-org/example-repo")?;
     std::fs::create_dir_all(project.paths.cache_dir()).required()?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
 
     let prepared = prepare(
         &fixture.location,
@@ -838,7 +864,9 @@ fn a_metadata_file_that_is_a_symlink_is_not_followed_and_the_project_stays_manag
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
 
     let prepared = prepare(
         &fixture.location,
@@ -876,9 +904,12 @@ fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() 
     // 消し損ねたSandboxを残したまま管理情報だけを消さない。
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = no_secrets(
-        FakeSbx::listings(&["[]", &running]),
+        FakeSbx::listings(&[r#"{"sandboxes":[]}"#, &running]),
         project.sandbox.as_str(),
     );
 
@@ -913,7 +944,9 @@ fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
 
     let prepared = prepare(
         &fixture.location,
@@ -1100,7 +1133,9 @@ fn a_project_registered_again_during_the_removal_keeps_its_entry() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing.borrow_mut().insert(0, "[]".to_string());
+    host.listing
+        .borrow_mut()
+        .insert(0, r#"{"sandboxes":[]}"#.to_string());
     let prepared = prepare(
         &fixture.location,
         Some(&project_id("example-org/example-repo")?),
