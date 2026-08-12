@@ -366,11 +366,17 @@ fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
 #[test]
 fn a_descendant_outliving_the_direct_child_cannot_hold_capture_open_after_timeout() -> Checked {
     let dir = tempfile::tempdir().required()?;
+    let survivor = dir.path().join("survivor");
     let fake = fake_executable(
         dir.path(),
         "fake-tool",
-        // The detached sleep keeps the pipe open after the direct child exits.
-        "sh -c 'sleep 2' &\nsleep 30",
+        &format!(
+            // 背景のprocessは直接の子が終わったあとにmarkerを残す。stdoutのpipeも握ったままに
+            // するため、readerがEOFを待つ実装へ戻るとこのtestもtimeoutする。
+            r#"(sleep 1; printf 'alive' > "{}") &
+sleep 30"#,
+            survivor.display()
+        ),
     )?;
 
     let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
@@ -381,6 +387,17 @@ fn a_descendant_outliving_the_direct_child_cannot_hold_capture_open_after_timeou
     assert!(
         started.elapsed() < Duration::from_millis(1500),
         "the reader must not wait for a descendant that outlives the direct child"
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !survivor.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        fs::read_to_string(&survivor)
+            .required_because("the descendant outlives its direct child")?,
+        "alive",
+        "timeout must not terminate the descendant"
     );
     Ok(())
 }

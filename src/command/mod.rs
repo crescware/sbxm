@@ -5,8 +5,8 @@
 //!
 //! 1回の実行がどう終わるかは、この module の中で決め切る。Capture commandのpipeは親thread
 //! がnonblockingで読み、直接の子が終わった時点で読み取り端を閉じるため、子孫がpipeを握った
-//! ままでも実行の外側へreaderが残らない。timeoutまたはCtrl-Cでは、直接の子を終わらせてから
-//! 返す。
+//! ままでも実行の外側へreaderが残らない。Capture commandは専用のprocess groupに置くが、
+//! timeoutまたはCtrl-Cで終わらせるのは直接の子だけである。
 
 mod command_outcome;
 mod command_spec;

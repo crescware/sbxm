@@ -1,3 +1,4 @@
+use std::os::unix::process::CommandExt;
 use std::process::{Child, ExitStatus};
 use std::time::Duration;
 
@@ -13,6 +14,11 @@ use super::{
 /// 捕捉した出力を読むのはsbxmだけなので、利用者の端末はこの実行の影響を受けない。
 pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<CommandOutcome> {
     let mut command = configure(spec);
+
+    // Capture commandを専用のprocess groupへ置く。ただし打ち切りでgroupへsignalは送らず、
+    // `terminate_child`は直接の子だけを終わらせる。専用groupの目的は、端末からforeground
+    // groupへ届くCtrl-Cが、このcommandの子孫（daemonを含みうる）へ到達するのを防ぐこと。
+    command.process_group(0);
 
     // SIGINTはsigactionが拒むsignalではなく、既に手当てされたsignalへ2つ目のactionを足す
     // ときはsyscallも呼ばない。それでも失敗を握り潰さない。
