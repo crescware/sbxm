@@ -1,5 +1,10 @@
+use crate::cli::Interactivity;
+use crate::commands::{Context, open::Args};
 use crate::compatibility::RootDiskUsage;
-use crate::diagnostics::{ErrorId, Result};
+use crate::design::prompt::{RecordedScreen, ScriptedKeys};
+use crate::design::{OutputPolicy, PromptUi, Ui};
+use crate::diagnostics::{ErrorId, ExitCode, Result};
+use crate::i18n::Locale;
 use crate::project::{ProjectId, SandboxLayout};
 use crate::support::disk::DiskObservation;
 
@@ -7,7 +12,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
-use crate::command::{OutputPolicy, TimeoutClass};
+use crate::command::{OutputPolicy as CommandOutputPolicy, TimeoutClass};
 use crate::design::SilentProgress;
 use crate::metadata::{self, MAX_WORKTREE_INDEX, RebuildIntent};
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};
@@ -139,13 +144,14 @@ fn disk_usage_is_observed_exactly_once_after_the_sandbox_is_confirmed_running() 
 }
 
 #[test]
-fn a_sandbox_missing_df_still_hands_over_the_terminal_with_a_reason_instead_of_a_value() -> Checked
-{
+fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
     let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
+        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}/{}"]}}]}}"#,
+        project.sandbox,
+        crate::support::sandbox::WORKSPACE_ROOT,
+        project.sandbox,
     );
     let host = ready(FakeSbx::listing(&running), &project).answering(
         &format!("exec {} -- df -Pk /", project.sandbox),
@@ -153,10 +159,65 @@ fn a_sandbox_missing_df_still_hands_over_the_terminal_with_a_reason_instead_of_a
         "",
     );
 
-    let prepared = prepare_for(&fixture, &host)
-        .required_because("a command sbx could not launch never stops opening")?;
+    let (code, stderr) = {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = {
+            let policy = OutputPolicy::plain();
+            let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
+            let mut prompt = PromptUi::new(
+                Locale::En,
+                policy.stderr,
+                Box::new(ScriptedKeys::confirming()),
+                Box::new(RecordedScreen::new()),
+            );
+            let context = Context {
+                location: &fixture.location,
+                lang: Some(Locale::En),
+                interactivity: Interactivity {
+                    stdin_is_tty: false,
+                    stderr_is_tty: false,
+                },
+            };
+            crate::commands::open::exec(
+                &Args {
+                    project: Some(project_id("example-org/example-repo")?),
+                    index: None,
+                },
+                &context,
+                &mut ui,
+                &host,
+                &mut prompt,
+            )
+        };
+        (
+            code,
+            String::from_utf8(stderr).required_because("open stderr is UTF-8")?,
+        )
+    };
 
-    assert_eq!(prepared.disk, DiskObservation::CommandMissing);
+    assert_eq!(code, ExitCode::Success);
+    assert!(stderr.contains("DISK"), "{stderr:?}");
+    assert!(stderr.contains("is not available"), "{stderr:?}");
+
+    let ssh = host.spec(&format!("{}.sbx", project.sandbox))?;
+    assert_eq!(ssh.program, "ssh");
+    assert_eq!(
+        ssh.args,
+        vec![
+            "-t".to_string(),
+            format!("{}.sbx", project.sandbox),
+            format!(
+                "cd '{}' && exec \"${{SHELL:-/bin/sh}}\" -l",
+                SandboxLayout::new(project.metadata.canonical_id()).bare_root()
+            ),
+        ]
+    );
+    assert_eq!(
+        ssh.output(),
+        CommandOutputPolicy::HandOver,
+        "the terminal is handed over even when disk observation is unavailable"
+    );
     Ok(())
 }
 
@@ -535,7 +596,7 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
     );
     assert_eq!(
         ssh.output(),
-        OutputPolicy::HandOver,
+        CommandOutputPolicy::HandOver,
         "the terminal itself is handed over"
     );
     assert_eq!(
