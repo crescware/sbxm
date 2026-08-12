@@ -1,4 +1,4 @@
-use crate::paths::ProjectPaths;
+use crate::paths::{ExclusiveLock, ProjectPaths};
 use crate::project::SandboxName;
 
 use crate::support::inventory::ProjectState;
@@ -15,6 +15,11 @@ pub struct Prepared {
     pub(super) state: ProjectState,
     pub(super) force: bool,
     pub(super) locked: select::Locked,
+    /// 最終protection inspectからsandbox remove完了まで保持するexclusive session lease。
+    ///
+    /// `--force`は保護ゲートと同様にこのleaseも意図的に迂回するため`None`になる。
+    /// 読まれることはなく、`Prepared`が破棄されるときのdropだけが意味を持つ。
+    pub(super) _session_lease: Option<ExclusiveLock>,
 }
 
 impl Prepared {
