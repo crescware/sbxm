@@ -88,6 +88,67 @@ fn a_directory_is_refused_instead_of_being_answered_as_a_regular_file() -> Check
 }
 
 #[test]
+fn a_directory_that_is_not_there_is_answered_without_a_failure() -> Checked {
+    let dir = temp_dir()?;
+    let present = dir.path().join("present");
+    fs::create_dir(&present).required_because("create the directory")?;
+    assert!(directory_exists(&present, PathScope::ProjectPath).required()?);
+    assert!(
+        !directory_exists(&dir.path().join("absent"), PathScope::ProjectPath).required()?,
+        "a directory that is simply not there is not a failure"
+    );
+    assert!(
+        !directory_exists(&dir.path().join("absent/deeper"), PathScope::ProjectPath).required()?,
+        "a path under a directory that is not there is absent as well"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_path_that_is_not_a_directory_is_refused_instead_of_being_answered() -> Checked {
+    let dir = temp_dir()?;
+    let file = dir.path().join("regular");
+    fs::write(&file, b"").required_because("write the file")?;
+    let error = directory_exists(&file, PathScope::ProjectPath)
+        .refused_because("a regular file is not a directory")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    let args = &error.diagnostics()[0].description.args;
+    assert!(
+        args.iter()
+            .any(|(key, value)| *key == "expected" && value == "directory"),
+        "the expected type is named: {args:?}"
+    );
+
+    // 辿った先がdirectoryでも、symlink自体をそのdirectoryとして扱わない。
+    let link = dir.path().join("link");
+    std::os::unix::fs::symlink(dir.path(), &link).required_because("create the symlink")?;
+    let error = directory_exists(&link, PathScope::ProjectPath)
+        .refused_because("a symlink is never followed to answer for the path itself")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    Ok(())
+}
+
+#[test]
+fn a_directory_that_cannot_be_observed_is_never_answered_as_absent() -> Checked {
+    let dir = temp_dir()?;
+    let closed = dir.path().join("closed");
+    fs::create_dir(&closed).required_because("create the parent")?;
+    let target = closed.join("workspace");
+    fs::create_dir(&target).required_because("create the directory")?;
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o000))
+        .required_because("close the parent")?;
+
+    let observed = directory_exists(&target, PathScope::ProjectPath);
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o700))
+        .required_because("reopen the parent")?;
+
+    let error =
+        observed.refused_because("a directory that cannot be read is never called absent")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    Ok(())
+}
+
+#[test]
 fn a_directory_opened_as_a_file_is_refused_by_the_private_file_check() -> Checked {
     let dir = temp_dir()?;
     let file = File::open(dir.path()).required_because("open the directory")?;

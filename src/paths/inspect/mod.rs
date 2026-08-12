@@ -4,6 +4,7 @@
 //! filesystemを変更しない。
 
 mod current_user;
+mod directory_exists;
 mod display;
 mod file_identity;
 mod format_mode;
@@ -17,6 +18,7 @@ mod require_private_file;
 mod unexpected_type;
 
 pub(super) use current_user::current_user;
+pub use directory_exists::directory_exists;
 pub use display::display;
 pub use file_identity::FileIdentity;
 pub use format_mode::format_mode;
