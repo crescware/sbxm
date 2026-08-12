@@ -1,4 +1,6 @@
 //! Sandboxと、その中で見える状態の診断。
+use std::os::unix::fs::PermissionsExt;
+
 use crate::commands::status::project::Value;
 use crate::diagnostics::ErrorId;
 
@@ -44,6 +46,105 @@ fn a_stopped_sandbox_is_not_started_to_look_inside_it() -> Checked {
         status.is_healthy(),
         "not observing on purpose is not a failure"
     );
+    Ok(())
+}
+
+#[test]
+fn the_workspace_a_stopped_sandbox_declares_is_confirmed_on_the_host() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    // `entry`はrecordと同時に、そのrecordが指すdirectoryをhostへ作る。
+    let host = without_image(
+        FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "stopped")?)),
+        &project,
+    );
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert_eq!(value_of(&status, "status-item-sandbox")?, Value::Stopped);
+    assert_eq!(value_of(&status, "status-item-workspace")?, Value::Ready);
+    Ok(())
+}
+
+#[test]
+fn a_workspace_that_is_gone_is_not_reported_as_ready() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let listing = format!("[{}]", fixture.entry(&project, "stopped")?);
+    // runtimeのrecordは残ったまま、hostのdirectoryだけが消える。停止中のworkspaceは
+    // 誰も触らないため、`/tmp`の掃除でこの形になる。
+    std::fs::remove_dir_all(fixture.workspace_root.join(project.sandbox.as_str()))
+        .required_because("remove the workspace")?;
+    let host = without_image(FakeSbx::listing(&listing), &project);
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert_eq!(
+        value_of(&status, "status-item-sandbox")?,
+        Value::Stopped,
+        "the runtime still has the record, and that is what this item reports"
+    );
+    assert_eq!(
+        value_of(&status, "status-item-workspace")?,
+        Value::Missing,
+        "a directory that is not on the host is never available as expected"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_that_cannot_be_observed_is_not_read_as_present_or_absent() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let listing = format!("[{}]", fixture.entry(&project, "stopped")?);
+    let host = without_image(FakeSbx::listing(&listing), &project);
+    // 親を辿れない間は、workspaceが在るかどうかそのものを観測できない。
+    std::fs::set_permissions(
+        &fixture.workspace_root,
+        std::fs::Permissions::from_mode(0o000),
+    )
+    .required_because("close the workspace root")?;
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    );
+
+    std::fs::set_permissions(
+        &fixture.workspace_root,
+        std::fs::Permissions::from_mode(crate::paths::PRIVATE_DIR_MODE),
+    )
+    .required_because("reopen the workspace root")?;
+    let status = status.required_because("diagnose")?;
+
+    assert_eq!(
+        value_of(&status, "status-item-workspace")?,
+        Value::Mismatch,
+        "not being able to look is not the same as looking and finding nothing"
+    );
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::ProjectPathUnreadable),
+        "the reason the workspace could not be observed is named: {:?}",
+        status.diagnostics
+    );
+    assert!(!status.is_healthy(), "an unobservable item is not a pass");
     Ok(())
 }
 
