@@ -2,6 +2,7 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId};
 use crate::msg;
 
 use crate::design::Remediation;
+use crate::support::disk::DiskObservation;
 
 use super::{Item, Value, WorktreeRow};
 
@@ -11,6 +12,9 @@ pub struct ProjectStatus {
     pub project: String,
     pub items: Vec<Item>,
     pub worktrees: Vec<WorktreeRow>,
+    /// root filesystemの使用量。`items`とは別に持ち、payloadを持てない`Value`には
+    /// 押し込まない。
+    pub disk: DiskObservation,
     pub diagnostics: Vec<Diagnostic>,
 }
 

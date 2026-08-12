@@ -220,6 +220,27 @@ DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
 どちらのcommandを実行する前にも、要求するsizeに対してhostに十分な空き容量があるか
 確認してください。
 
+### Sandboxのディスクを何が埋めるかを理解する
+
+`sbxm status <project-id>`は、Sandboxの現在の空き容量・実効天井・使用率を示すDISK
+sectionを表示します。この数値が何を反映しているかを理解するための事実です。
+
+- `/home`、`/tmp`を含むSandbox内のすべては、1枚のroot filesystemを共有します。上の
+  `DOCKER_SANDBOXES_ROOT_SIZE`でsizeを決めるのと同じfilesystemであり、build成果物や
+  一時fileのための別volumeはありません。
+- `/tmp`はSandboxを停止して再度開いて（`sbxm open`）も消えません。中でperiodicな
+  掃除を行うinit systemが無いため、置いたfileはSandbox自体を破棄または作り直すまで
+  残り続けます。
+- Sandbox内でfileを削除すると、その場で空き容量が戻ります。root filesystemは通常の
+  書き込み可能な層であり、作り直したときだけ空きが戻るsnapshotではありません。
+- managed worktreeはそれぞれ独立してbuildするため、`--worktrees N`はbuild成果物
+  （例えばRustの`target/`）をworktree数だけ増やします。
+- 共有build cache directoryをサポートする言語・toolであれば（例えばRustの
+  `CARGO_TARGET_DIR`）、下の「設定ファイルを配置する」で宣言するfile経由で全worktree
+  を同じdirectoryへ向けられ、この増加を避けられます。ただし1つのdirectoryを共有すると、
+  本来は並行にできるworktreeごとのbuildが直列化されるため、既定にはせず明示的な
+  trade-offとして選んでください。
+
 ### managed worktreeを追加する
 
 構築済みのプロジェクトには、rebuildせずにmanaged worktreeを追加できます。

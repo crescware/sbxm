@@ -7,6 +7,9 @@ use crate::design::OutputPolicy;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::i18n::Locale;
 
+use crate::compatibility::RootDiskUsage;
+use crate::support::disk::DiskObservation;
+
 use crate::commands::status::project::{Item, Value, WorktreeRow};
 
 use crate::testing::outcome::{Checked, Required};
@@ -47,6 +50,11 @@ fn healthy() -> ProjectStatus {
             mode: Value::Attached,
             state: Value::Clean,
         }],
+        disk: DiskObservation::Observed(RootDiskUsage {
+            free_kib: 4_898_320,
+            usable_kib: 19_401_296,
+            capacity_percent: 75,
+        }),
         diagnostics: Vec::new(),
     }
 }
@@ -76,6 +84,40 @@ fn a_project_without_a_problem_succeeds_and_leaves_stderr_untouched() -> Checked
         "{:?}",
         printed.stdout
     );
+    Ok(())
+}
+
+#[test]
+fn the_disk_section_always_appears_observed_or_not() -> Checked {
+    let observed = print(&healthy())?;
+    assert!(observed.stdout.contains("DISK"), "{:?}", observed.stdout);
+    assert!(observed.stdout.contains("75"), "{:?}", observed.stdout);
+
+    for (disk, reason) in [
+        (DiskObservation::NotObservedStopped, "did not start it"),
+        (DiskObservation::NotObservedNotCreated, "does not exist yet"),
+        (
+            DiskObservation::NotObservedMismatch,
+            "could not be determined",
+        ),
+        (DiskObservation::CommandMissing, "is not available"),
+        (DiskObservation::ParseFailed, "could not be read"),
+    ] {
+        let mut status = healthy();
+        status.disk = disk;
+        let printed = print(&status)?;
+        assert_eq!(printed.code, ExitCode::Success, "{disk:?} stays healthy");
+        assert!(
+            printed.stdout.contains("DISK"),
+            "{disk:?}: {:?}",
+            printed.stdout
+        );
+        assert!(
+            printed.stdout.contains(reason),
+            "{disk:?}: {:?}",
+            printed.stdout
+        );
+    }
     Ok(())
 }
 
