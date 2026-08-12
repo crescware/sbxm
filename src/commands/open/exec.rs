@@ -6,6 +6,8 @@ use crate::diagnostics::ExitCode;
 use crate::msg;
 use crate::support::{inventory, sandbox};
 
+use crate::commands::present;
+
 use super::super::{Context, report};
 use super::Args;
 
@@ -53,23 +55,22 @@ pub fn exec(
     }
 
     // 接続先はterminalを引き渡す前に見せる。
-    ui.stderr(
-        &Document::new()
-            .summary(msg!(
-                "open-connecting",
-                project = prepared.project,
-                sandbox = prepared.sandbox
-            ))
-            .lines(
-                Some(msg!("open-worktrees-heading")),
-                prepared
-                    .worktrees
-                    .iter()
-                    .map(Inline::path)
-                    .map(Into::into)
-                    .collect(),
-            ),
-    );
+    let connecting = Document::new()
+        .summary(msg!(
+            "open-connecting",
+            project = prepared.project,
+            sandbox = prepared.sandbox
+        ))
+        .lines(
+            Some(msg!("open-worktrees-heading")),
+            prepared
+                .worktrees
+                .iter()
+                .map(Inline::path)
+                .map(Into::into)
+                .collect(),
+        );
+    ui.stderr(&present::disk_section(connecting, &prepared.disk));
 
     match super::run::connect(host, prepared, ui) {
         Ok(()) => ExitCode::Success,

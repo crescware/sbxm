@@ -5,7 +5,7 @@ use crate::config::ConfigLocation;
 use crate::diagnostics::Result;
 use crate::project::ProjectId;
 
-use crate::support::select;
+use crate::support::{disk, select};
 
 use crate::commands::status::project::artifacts::{
     check_archive, check_directory, check_dockerfile, check_image,
@@ -31,6 +31,7 @@ pub fn diagnose(
         project: metadata.display_id(),
         items: Vec::new(),
         worktrees: Vec::new(),
+        disk: disk::DiskObservation::NotObservedMismatch,
         diagnostics: Vec::new(),
     };
 
@@ -50,6 +51,9 @@ pub fn diagnose(
 
     // 6-10. Sandbox内部の検査
     check_inside(host, &name, &metadata, state, &mut status);
+
+    // root filesystemの使用量。running中だけ観測のためにcommandを実行する。
+    status.disk = disk::observe(host, name.as_str(), state);
 
     Ok(status)
 }

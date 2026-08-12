@@ -2,7 +2,7 @@ use crate::design::{Document, Field, Inline, Table};
 use crate::i18n::Locale;
 use crate::msg;
 
-use crate::commands::present::Legend;
+use crate::commands::present::{self, Legend};
 use crate::commands::status::project::ProjectStatus;
 
 /// project scopeの`status`が並べるもの。
@@ -45,5 +45,6 @@ pub fn project_document(status: &ProjectStatus, locale: Locale) -> Document {
     } else {
         document.table(Some(heading), worktrees)
     };
+    let document = present::disk_section(document, &status.disk);
     document.legend(Legend::heading(), legend.entries())
 }
