@@ -178,6 +178,10 @@ sbxm stop <project-id> ...
 非対話端末では、これらのcommandにプロジェクト引数を明示してください。`status`だけは
 project IDまたは`--global`をscopeとして指定できます。
 
+ただし`rebuild`と`destroy`は、引数を明示しても非対話端末では実行できません。どちらも
+削除計画を表示し、対象Sandbox名の完全一致入力を得た場合にだけ進むためです。`destroy`
+には確認を省略する`--force`がありますが、`rebuild`にはありません。
+
 ## プロジェクトをカスタマイズする
 
 ### Sandbox imageを編集する
@@ -191,6 +195,12 @@ sbxm rebuild <project-id>
 
 rebuildはSandboxを作り直します。作業内容を保護するため、dirty file、pushしていない
 commit、またはunmanaged worktreeがある場合、sbxmは通常のrebuildを拒否します。
+
+拒否しない場合も、作り直しで何が失われるかを先に表示します。無視対象のpath、
+checkoutしていないbranchやtagの名前、追加remote、reflogにだけ残るcommit、Sandboxの
+書き込み層が対象です。表示のあと、対象Sandbox名の完全一致入力を得た場合にだけ進みます。
+`rebuild`に確認を省略する方法はないため、非対話端末では実行できません。表示した状態が
+入力から実際の作り直しまでのあいだに変わった場合は、何も削除せずに中止します。
 
 ### Sandboxのroot sizeを選ぶ
 

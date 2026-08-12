@@ -17,8 +17,8 @@ pub struct Prepared {
     pub(super) locked: select::Locked,
     /// 最初に観測した状態指紋。`confirm`が明示確認と引き換えに`take`で消費する。
     ///
-    /// force mode、またはSandboxがそもそも無い場合は`None`のままであり、`confirm`は
-    /// 確認を求めない。
+    /// `--force`の場合だけ`None`のままであり、`confirm`は確認を求めない。Sandboxが
+    /// そもそも無い場合も、その「不在」を観測した`ProtectionSnapshot`を持つ。
     pub(super) snapshot: Option<ProtectionSnapshot>,
     /// 最終protection inspectからsandbox remove完了まで保持するexclusive session lease。
     ///

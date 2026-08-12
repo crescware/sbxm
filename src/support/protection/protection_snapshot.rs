@@ -5,6 +5,10 @@ use super::{Assessment, ProtectionFingerprint};
 ///
 /// `new`だけがfingerprintを生成する。field は非公開とし、表示用のread-only
 /// accessorだけを公開する。
+///
+/// `new`は`gate`だけが呼ぶ。commandが任意の`Assessment`からsnapshotを作れると、同じ
+/// 観測結果から作った2つのsnapshotを`confirm`と`authorize`へ渡すだけで、状態を1回も
+/// 観測せずにpermitを得られてしまう。
 #[derive(Debug)]
 pub struct ProtectionSnapshot {
     pub(super) assessment: Assessment,
@@ -12,7 +16,7 @@ pub struct ProtectionSnapshot {
 }
 
 impl ProtectionSnapshot {
-    pub fn new(assessment: Assessment) -> ProtectionSnapshot {
+    pub(super) fn new(assessment: Assessment) -> ProtectionSnapshot {
         let fingerprint = ProtectionFingerprint::of(&assessment);
         ProtectionSnapshot {
             assessment,

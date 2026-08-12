@@ -5,9 +5,7 @@ use crate::project::SandboxLayout;
 use crate::design::ProgressSink;
 use crate::support::daemon;
 use crate::support::inventory::{self, Poll};
-use crate::support::protection::{
-    self, Assessment, DestructiveOperation, ProtectionConfirmation, ProtectionSnapshot, Request,
-};
+use crate::support::protection::{self, DestructiveOperation, ProtectionConfirmation, Request};
 
 use super::{DestroyOutcome, Prepared, finish_removal};
 
@@ -33,18 +31,18 @@ pub fn execute_confirmed(
             &layout,
             metadata,
         );
-        ProtectionSnapshot::new(protection::gate::assess(host, &request)?)
+        protection::gate::assess(host, &request)?
     } else {
-        ProtectionSnapshot::new(Assessment::empty(
+        protection::gate::assess_absent(
             DestructiveOperation::Destroy,
             metadata.display_id(),
-            prepared.name.clone(),
-        ))
+            &prepared.name,
+        )
     };
     let permit = protection::gate::authorize(confirmation, current)?;
 
     if present {
-        inventory::remove_protected(host, &prepared.name, permit, poll, progress)?;
+        inventory::remove_protected(host, permit, poll, progress)?;
     }
     finish_removal(host, prepared)
 }

@@ -52,7 +52,8 @@ impl Switch<'_> {
 
         if existed {
             // rebuildに`--force`は無く、常にsbx自身の確認とactive-session検査を経る。
-            inventory::remove_protected(host, name, permit, poll, progress)?;
+            // 削除する対象は許可証が持つ。`name`は再作成の側だけが使う。
+            inventory::remove_protected(host, permit, poll, progress)?;
         }
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは

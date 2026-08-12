@@ -16,8 +16,11 @@ pub struct Assessment {
 }
 
 impl Assessment {
-    /// 何も観測しなかった結果。未作成、またはcloneしたrepositoryをまだ持たないsandboxで使う。
-    pub fn empty(
+    /// 何も観測しなかった結果。Sandboxがそもそも無い案件で使う。
+    ///
+    /// `gate::assess_absent`だけが呼ぶ。commandがここから`Assessment`を組み立てられると、
+    /// 観測を1回も経ずに一致するsnapshotの組を作れてしまう。
+    pub(super) fn empty(
         operation: DestructiveOperation,
         project: String,
         sandbox: SandboxName,

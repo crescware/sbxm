@@ -450,11 +450,11 @@ destroy-re-register = Register it again when you need it.
 
 confirmable-losses-heading = What would be lost, but can be confirmed
 confirmable-loss-ignored-paths = { $worktree } has { $count } ignored paths that Git does not track.
-confirmable-loss-local-ref = { $worktree } would lose the name { $reference }.
-confirmable-loss-branch-upstream = { $worktree } would lose the upstream tracking of { $branch } ({ $upstream }).
-confirmable-loss-tag = { $worktree } would lose the tag { $name }.
-confirmable-loss-additional-remote = { $worktree } would lose the remote { $name }.
-confirmable-loss-reflog-only-commits = { $worktree } has { $count } commits that only its reflog remembers.
+confirmable-loss-local-ref = The repository would lose the name { $reference }.
+confirmable-loss-branch-upstream = The repository would lose the upstream tracking of { $branch } ({ $upstream }).
+confirmable-loss-tag = The repository would lose the tag { $name }.
+confirmable-loss-additional-remote = The repository would lose the remote { $name }.
+confirmable-loss-reflog-only-commits = The repository has { $count } commits that only its reflog remembers.
 confirmable-loss-unmanaged-worktree = The worktree { $worktree } is not part of the target configuration, and nothing recreates it.
 confirmable-loss-sandbox-writable-layer = Everything written inside the sandbox outside its Git worktrees.
 

@@ -62,11 +62,9 @@ fn collection_order_alone_does_not_change_the_fingerprint() -> Checked {
         ],
         vec![
             ConfirmableLoss::Tag {
-                worktree: "a".to_string(),
                 name: "v1".to_string(),
             },
             ConfirmableLoss::AdditionalRemote {
-                worktree: "b".to_string(),
                 name: "upstream".to_string(),
             },
         ],
@@ -84,11 +82,9 @@ fn collection_order_alone_does_not_change_the_fingerprint() -> Checked {
         ],
         vec![
             ConfirmableLoss::AdditionalRemote {
-                worktree: "b".to_string(),
                 name: "upstream".to_string(),
             },
             ConfirmableLoss::Tag {
-                worktree: "a".to_string(),
                 name: "v1".to_string(),
             },
         ],

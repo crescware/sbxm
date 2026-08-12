@@ -27,7 +27,7 @@ pub fn authorize(
             confirmation.sandbox.as_str(),
         ));
     }
-    Ok(ProtectionPermit::issue())
+    Ok(ProtectionPermit::issue(confirmation.sandbox))
 }
 
 /// 確認した瞬間から現在までのあいだに、対象・種別・観測結果のいずれかが変わった。

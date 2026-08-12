@@ -21,6 +21,13 @@ use super::{Prepared, RebuildPlan, observe_protection};
 /// 対象とする。Sandboxが無く`RebuildIntent`も無い場合は拒否する。返す`ProtectionSnapshot`
 /// は、この削除計画の元になった最初の観測であり、`confirm`が明示確認と引き換えに
 /// 消費する。
+///
+/// 停止しているSandboxの起動だけは、明示確認より前に行う唯一のhost状態の変更である。
+/// 保存されていない作業は起動しなければ読めず、読めないまま削除計画を見せると、層Aも
+/// 層Bも空の計画を「失うものは無い」と示すことになる。ここでcancelしてもSandboxは
+/// 起動したまま残るが、image、template、metadata、`RebuildIntent`はどれも変えない。
+/// destroyは同じ状況を`SandboxNotRunning`で拒否する。これから作り直す対象を起動する
+/// rebuildと、利用者の判断を仰ぐdestroyの違いによる。
 pub fn prepare(
     selection: Target,
     host: &dyn HostEnvironment,

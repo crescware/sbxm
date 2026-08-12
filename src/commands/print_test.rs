@@ -16,7 +16,7 @@ use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::{PlacedFile, Placement};
 use crate::support::inventory::{Observed, ProjectState};
-use crate::support::protection::{Kind, Mode, Remote, WorktreeReport};
+use crate::support::protection::{ConfirmableLoss, Kind, Mode, Remote, WorktreeReport};
 use crate::support::status::{Row, StatusValue};
 use crate::testing::plain;
 
@@ -461,6 +461,143 @@ fn destroy_plan_with_worktrees() -> super::destroy::run::DestroyPlan {
         ],
         ..destroy_plan(false)
     }
+}
+
+/// 層Bの確認対象を1 variantずつ並べた一覧。
+///
+/// 削除計画は観測した損失を1件も落とさずに見せる。variantを足したときに説明のない行が
+/// 出ないよう、全variantをここへ置いて表示まで通す。
+fn every_confirmable_loss() -> Vec<ConfirmableLoss> {
+    vec![
+        ConfirmableLoss::IgnoredPaths {
+            worktree: "repo.tree-0".to_string(),
+            paths: vec!["node_modules/".to_string(), "target/".to_string()],
+        },
+        ConfirmableLoss::LocalRef {
+            reference: "refs/stash".to_string(),
+        },
+        ConfirmableLoss::BranchUpstream {
+            branch: "topic".to_string(),
+            upstream: "origin/topic".to_string(),
+        },
+        ConfirmableLoss::Tag {
+            name: "v1".to_string(),
+        },
+        ConfirmableLoss::AdditionalRemote {
+            name: "fork".to_string(),
+        },
+        ConfirmableLoss::ReflogOnlyCommits { count: 3 },
+        ConfirmableLoss::UnmanagedWorktree {
+            worktree: "repo.scratch".to_string(),
+        },
+        ConfirmableLoss::SandboxWritableLayer,
+    ]
+}
+
+/// documentが持つ`index`番目のsectionの行。
+fn lines_at(document: &Document, index: usize) -> Checked<&Vec<crate::design::Cell>> {
+    let Some(Block::Section(section)) = document.blocks().get(index) else {
+        return Err(Unmet::new("a section".to_string()));
+    };
+    let SectionBody::Lines(lines) = &section.body else {
+        return Err(Unmet::new("lines".to_string()));
+    };
+    Ok(lines)
+}
+
+/// 行が持つmessage IDの並び。
+fn line_ids(lines: &[crate::design::Cell]) -> Vec<&'static str> {
+    lines
+        .iter()
+        .map(|cell| match cell {
+            crate::design::Cell::Label(message) => message.id,
+            crate::design::Cell::Value(_) => "value",
+        })
+        .collect()
+}
+
+#[test]
+fn the_deletion_plan_explains_every_kind_of_loss_it_observed() -> Checked {
+    // 層Bの損失は、確認を求める前に1件残らず見せる。説明を持たないvariantがあると、
+    // 利用者は何を失うのかを知らないまま名前を入力することになる。
+    let plan = super::destroy::run::DestroyPlan {
+        confirmable_losses: every_confirmable_loss(),
+        ..destroy_plan_with_worktrees()
+    };
+    let document = super::destroy::print::plan_document(&plan, Locale::En);
+    assert_eq!(
+        shape(&document),
+        vec![
+            "fields", "table", "lines", "lines", "lines", "guidance", "command"
+        ]
+    );
+    assert_eq!(
+        line_ids(lines_at(&document, 2)?),
+        vec![
+            "confirmable-loss-ignored-paths",
+            "confirmable-loss-local-ref",
+            "confirmable-loss-branch-upstream",
+            "confirmable-loss-tag",
+            "confirmable-loss-additional-remote",
+            "confirmable-loss-reflog-only-commits",
+            "confirmable-loss-unmanaged-worktree",
+            "confirmable-loss-sandbox-writable-layer",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn the_rebuild_plan_shows_both_generations_and_what_the_rebuild_loses() -> Checked {
+    // rebuildもdestroyと同じ層Bの一覧を見せる。世代のhashは、どちらへ動くのかが
+    // 読めるよう現在と適用先を並べる。
+    let plan = super::rebuild::run::RebuildPlan {
+        project: "owner/repo".to_string(),
+        sandbox: "sbxm-owner-repo-0123456789ab".to_string(),
+        current_generation: "a".repeat(64),
+        target_generation: "b".repeat(64),
+        confirmable_losses: every_confirmable_loss(),
+    };
+    let document = super::rebuild::print::plan_document(&plan);
+    assert_eq!(shape(&document), vec!["fields", "lines"]);
+
+    let Some(Block::Section(section)) = document.blocks().first() else {
+        return Err(Unmet::new("a section".to_string()));
+    };
+    let SectionBody::Fields(fields) = &section.body else {
+        return Err(Unmet::new("fields".to_string()));
+    };
+    assert_eq!(
+        fields
+            .iter()
+            .map(|field| field.label.id)
+            .collect::<Vec<&str>>(),
+        vec![
+            "add-field-project",
+            "add-field-sandbox",
+            "rebuild-plan-current-generation",
+            "rebuild-plan-target-generation",
+        ]
+    );
+    assert_eq!(
+        line_ids(lines_at(&document, 1)?).len(),
+        every_confirmable_loss().len(),
+        "the rebuild plan drops none of the losses it observed"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_plan_without_a_single_loss_shows_no_empty_section() {
+    // 失うものが1件も無いことと、見出しだけがあることは別である。
+    let document = super::rebuild::print::plan_document(&super::rebuild::run::RebuildPlan {
+        project: "owner/repo".to_string(),
+        sandbox: "sbxm-owner-repo-0123456789ab".to_string(),
+        current_generation: "a".repeat(64),
+        target_generation: "a".repeat(64),
+        confirmable_losses: Vec::new(),
+    });
+    assert_eq!(shape(&document), vec!["fields"]);
 }
 
 /// documentが持つ`index`番目のtable。

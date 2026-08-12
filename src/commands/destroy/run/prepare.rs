@@ -9,9 +9,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::Remediation;
 use crate::support::daemon;
 use crate::support::inventory::{self, ProjectState};
-use crate::support::protection::{
-    self, Assessment, DestructiveOperation, ProtectionSnapshot, Request,
-};
+use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::select::{self, ProjectPrompt};
 
 use super::{DestroyPlan, Prepared, keeps, re_register, removes};
@@ -66,18 +64,17 @@ pub fn prepare(
         } else {
             Some(locked.acquire_exclusive_session_lease()?)
         };
-        let assessment = if state == ProjectState::NotCreated {
-            Assessment::empty(
+        let snapshot = if state == ProjectState::NotCreated {
+            protection::gate::assess_absent(
                 DestructiveOperation::Destroy,
                 metadata.display_id(),
-                name.clone(),
+                &name,
             )
         } else {
             let layout = SandboxLayout::new(metadata.canonical_id());
             let request = Request::new(DestructiveOperation::Destroy, &name, &layout, metadata);
             protection::gate::assess(host, &request)?
         };
-        let snapshot = ProtectionSnapshot::new(assessment);
         // Blockerが1件でもあれば、削除計画を見せず明示確認も求めずにここで拒否する。
         protection::gate::require_no_blockers(snapshot.assessment())?;
         let worktrees = snapshot.assessment().worktrees().to_vec();
