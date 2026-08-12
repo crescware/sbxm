@@ -25,7 +25,7 @@ pub(super) fn wait_with_limit(
             Ok(None) => {
                 if Instant::now() >= deadline {
                     // 期限を過ぎたcommandは、報告より先に終わらせる。
-                    terminate_child(child, spec);
+                    terminate_child(child);
                     return fail(
                         ErrorId::ExternalCommandTimeout,
                         msg!(
@@ -49,6 +49,6 @@ pub(super) fn wait_with_limit(
 /// 終わりを確かめられない相手をそのままにすると、出力を読むthreadはEOFに達しない。
 /// 報告より先に、こちらから終わらせる。原因はOSが書いた原文である。
 fn unwaitable(child: &mut Child, spec: &CommandSpec, error: &std::io::Error) -> Error {
-    terminate_child(child, spec);
+    terminate_child(child);
     spawn_failure(spec, error)
 }
