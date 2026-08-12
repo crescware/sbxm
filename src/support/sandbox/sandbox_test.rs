@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment};
 use crate::compatibility::SandboxState;
 use crate::diagnostics::{ErrorId, Result};
 use crate::paths::{self, PRIVATE_DIR_MODE};
@@ -221,6 +221,11 @@ fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() -> Ch
             AGENT_KIT.to_string(),
             paths::display(&workspace),
         ]
+    );
+    assert_eq!(
+        host.calls.borrow()[1].env,
+        EnvPolicy::InheritWithoutSshAgent,
+        "environment such as DOCKER_SANDBOXES_ROOT_SIZE must reach `sbx create` unfiltered"
     );
     Ok(())
 }
