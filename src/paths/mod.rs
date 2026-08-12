@@ -18,7 +18,7 @@ pub use directory::{ensure_directory, ensure_private_dir, require_owned_director
 pub use inspect::{
     display, is_symlink, lexically_standardize, permission_too_open, real_path, regular_file_exists,
 };
-pub use lock::{ExclusiveLock, acquire_exclusive_lock};
+pub use lock::{ExclusiveLock, SharedLock, acquire_exclusive_lock, acquire_shared_lock};
 pub use lock_timeout::LOCK_TIMEOUT;
 pub use private_dir_mode::PRIVATE_DIR_MODE;
 pub use private_file_mode::PRIVATE_FILE_MODE;
