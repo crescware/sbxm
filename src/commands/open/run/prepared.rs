@@ -19,6 +19,6 @@ pub struct Prepared {
     /// project lockが外れたあともSSH sessionの生存中だけ保持するshared session lease。
     ///
     /// 通常rebuild/destroyのexclusive session leaseと排他する。読まれることはなく、
-    /// `Prepared`が破棄される（`connect`が戻る）ときにdropだけが意味を持つ。
+    /// `connect`がSSH childの終了結果を受け取って戻るときにdropされる。
     pub(super) _session_lease: SharedLock,
 }

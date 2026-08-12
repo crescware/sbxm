@@ -132,7 +132,7 @@ error_ids! {
     RemoteSshUnconfigured => "remote-ssh-unconfigured",
     RemoteSshUnobservable => "remote-ssh-unobservable",
 
-    // --- 破壊前保護ゲート（#79） ---
+    // --- 破壊前保護ゲート ---
     WorktreeTrackedChanges => "worktree-tracked-changes",
     WorktreeUntrackedPaths => "worktree-untracked-paths",
     GitOperationInProgress => "git-operation-in-progress",

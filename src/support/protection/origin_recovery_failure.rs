@@ -1,7 +1,8 @@
-/// Step 1時点の判定で、commitをoriginから回収できると証明できなかった理由。
+/// commitをoriginから回収できると証明できなかった理由。
 ///
-/// `refs/remotes/origin/*`の直接観測に基づく現行互換の判定であり、Step 5（#83）が
-/// 権威あるorigin観測へ置き換える。
+/// checkout中branchのupstreamと、detached HEADから`refs/remotes/origin/*`への
+/// 到達性だけを見る。stash、tag、notes、未checkoutのbranch、権威あるorigin観測は
+/// この判定の対象外である。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OriginRecoveryFailure {
     /// checkout中のbranchにupstreamが設定されていない。

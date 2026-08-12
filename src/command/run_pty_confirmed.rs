@@ -52,7 +52,7 @@ pub(super) fn run_pty_confirmed(command: &PtyConfirmedCommand) -> Result<Command
     match drive(&mut child, controller, command) {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
-            terminate_child(&mut child, &spec);
+            terminate_child(&mut child);
             Err(error)
         }
     }

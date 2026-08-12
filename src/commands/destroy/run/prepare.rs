@@ -9,7 +9,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::Remediation;
 use crate::support::daemon;
 use crate::support::inventory::{self, ProjectState};
-use crate::support::protection::{self, DestructiveOperation, ForceBypass, ProtectionRequest};
+use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::select::{self, ProjectPrompt};
 
 use super::{DestroyPlan, Prepared, keeps, re_register, removes};
@@ -34,9 +34,7 @@ pub fn prepare(
     let state = inventory::state_of(&entries, metadata, workspace_root)?;
 
     let (worktrees, session_lease) = if force {
-        // 保護ゲートとsession leaseを意図的に迂回する。通常経路のProtectionPermitとは
-        // 別の型であり、architecture testがこの呼び出しの唯一性を確認する。
-        let _bypass = ForceBypass::force_destroy();
+        // `--force`は保護ゲートとsession leaseを意図的に迂回する別操作であり、通常経路の観測は行わない。
         (Vec::new(), None)
     } else if state == ProjectState::NotCreated {
         (Vec::new(), None)
@@ -53,8 +51,8 @@ pub fn prepare(
                     ),
                 )
                 .remediation(
-                    Remediation::text(msg!("remediation-destroy-force"))
-                        .try_run(format!("sbxm destroy --force {}", metadata.display_id())),
+                    Remediation::text(msg!("remediation-destroy-stopped"))
+                        .try_run(format!("sbxm open {}", metadata.display_id())),
                 ),
             ));
         }
@@ -64,11 +62,9 @@ pub fn prepare(
         // sessionのshared leaseだけである。
         let session_lease = locked.acquire_exclusive_session_lease()?;
         let layout = SandboxLayout::new(metadata.canonical_id());
-        let request =
-            ProtectionRequest::new(DestructiveOperation::Destroy, &name, &layout, metadata);
-        let assessment = protection::gate::assess(host, request)?;
+        let request = Request::new(DestructiveOperation::Destroy, &name, &layout, metadata);
+        let assessment = protection::gate::assess(host, &request)?;
         let worktrees = assessment.worktrees().to_vec();
-        // 通常経路のProtectionPermit。Step 1時点ではremove APIがまだこれを要求しない。
         protection::gate::authorize(assessment)?;
         (worktrees, Some(session_lease))
     };

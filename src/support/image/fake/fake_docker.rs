@@ -5,6 +5,8 @@ use std::cell::RefCell;
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::diagnostics::Result;
 
+/// 4種の状態はどれも独立で、組み合わせて使うbuilderであるため束ねない。
+#[allow(clippy::struct_excessive_bools)]
 pub struct FakeDocker {
     /// `docker image inspect`が返す出力。`None`はimageが存在しない状態。
     pub inspect: RefCell<Vec<Option<String>>>,
@@ -14,6 +16,8 @@ pub struct FakeDocker {
     pub listing_fails: bool,
     /// buildの途中でbuild contextを消してしまう外部tool。
     pub removes_context: bool,
+    /// `docker version --format ...`(疎通の再probe)が答えるか。
+    pub daemon_answers: bool,
 }
 
 impl FakeDocker {
@@ -29,6 +33,7 @@ impl FakeDocker {
             build_fails: false,
             listing_fails: false,
             removes_context: false,
+            daemon_answers: true,
         }
     }
 
@@ -39,6 +44,12 @@ impl FakeDocker {
 
     pub fn losing_its_context(mut self) -> FakeDocker {
         self.removes_context = true;
+        self
+    }
+
+    /// 失敗直後の再probeでも、daemonが応答しない状態。
+    pub fn with_daemon_unreachable(mut self) -> FakeDocker {
+        self.daemon_answers = false;
         self
     }
 
@@ -66,10 +77,17 @@ impl HostEnvironment for FakeDocker {
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let sub = |index: usize, name: &str| spec.args.get(index).is_some_and(|arg| arg == name);
+        let checking_version = sub(0, "version") && sub(1, "--format");
         let building = sub(0, "build");
         let saving = sub(0, "image") && sub(1, "save");
         let listing = sub(0, "image") && sub(1, "ls");
-        let (code, stdout) = if building {
+        let (code, stdout) = if checking_version {
+            if self.daemon_answers {
+                (0, "27.0.3\n".to_string())
+            } else {
+                (1, String::new())
+            }
+        } else if building {
             if self.removes_context
                 && let Some(context) = spec.args.last()
             {

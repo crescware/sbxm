@@ -421,7 +421,7 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
     let host = ready(FakeSbx::listing(&running), &project);
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 
-    connect(&host, &prepared, &mut RecordedOutput::new()).required_because("connect")?;
+    connect(&host, prepared, &mut RecordedOutput::new()).required_because("connect")?;
     let ssh = host.spec(&format!("{}.sbx", project.sandbox))?;
     assert_eq!(ssh.program, "ssh");
     assert_eq!(
@@ -442,6 +442,33 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
         TimeoutClass::Interactive,
         "the user decides when an interactive session ends"
     );
+    Ok(())
+}
+
+#[test]
+fn the_session_lease_is_released_before_a_connection_error_is_reported() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let host = ready(FakeSbx::listing(&running), &project).answering(
+        &format!(
+            "-t {}.sbx cd '/home/agent/work/example-repo/example-repo.tree-0' && exec \"${{SHELL:-/bin/sh}}\" -l",
+            project.sandbox
+        ),
+        3,
+        "",
+    );
+    let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
+
+    connect(&host, prepared, &mut RecordedOutput::new())
+        .refused_because("a failed SSH child is reported")?;
+    paths::acquire_exclusive_lock(
+        &project.paths.session_lease_file(),
+        Duration::from_millis(50),
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("the session lease is released before the error report")?;
     Ok(())
 }
 

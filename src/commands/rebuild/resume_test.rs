@@ -36,6 +36,7 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> Checked<
 
     // 一覧は、run、Switch、作成前の確認、作成後の確認の順に読まれる。
     let host = FakeSbx::listings(&["[]", "[]", "[]", &created])
+            .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
             // 固定した世代のimageは既にbuild済みである。
             .answering(&format!("image ls --quiet {image}"), 0, "sha256:new\n")
             .answering(

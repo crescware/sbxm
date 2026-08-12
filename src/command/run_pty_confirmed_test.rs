@@ -42,10 +42,10 @@ fn a_matched_prompt_is_answered_exactly_once() -> Checked {
          printf \"Sandbox 'x' removed\\n\"\n",
     )?;
 
-    let outcome = run_pty_confirmed(&command(
-        &script,
-        "Remove sandbox 'x'? This cannot be undone. (y/N):",
-    ))
+    let outcome = run_pty_confirmed(
+        &command(&script, "Remove sandbox 'x'? This cannot be undone. (y/N):")
+            .env(EnvPolicy::InheritWithoutSshAgent),
+    )
     .required_because("the expected prompt is answered")?;
     assert!(outcome.success(), "{}", outcome.stdout_text());
     assert!(
@@ -144,4 +144,14 @@ fn a_program_that_cannot_be_found_is_reported_without_opening_a_pty_forever() ->
     .refused_because("a missing program is a spawn failure, not a confirmation failure")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
     Ok(())
+}
+
+#[test]
+fn a_timeout_diagnostic_names_the_external_command() {
+    let error = timed_out(&command(
+        Path::new("sbx"),
+        "Remove sandbox 'x'? This cannot be undone. (y/N):",
+    ));
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
 }

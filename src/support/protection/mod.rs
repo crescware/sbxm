@@ -1,47 +1,41 @@
 //! rebuild / destroyの全ての通常経路が通る、共通の破壊前保護ゲート。呼び出し側は
 //! 個別の検査を選ばない。
 //!
-//! 保護は回復可能性に基づく二層で構成する。
+//! `gate::assess`が、worktreeの追跡対象変更・未追跡path、進行中のGit操作、管理外
+//! worktree（rebuildのみ）、originから回収できると証明できないcommitを固定順序で
+//! 観測し、[`Blocker`]へ集める。1件でもあれば`gate::authorize`が確認を求めず拒否
+//! する。状態を観測できない場合も、安全と推測せず同様に拒否する。原因ごとの
+//! `Blocker`と固有の`ErrorId`を持ち、共通のIDへ丸めない。観測不能の
+//! diagnosticも、観測段階が付けたIDのまま保持する。
 //!
-//! - 層A（拒否）: 追跡対象ファイルの未commit変更、無視対象でない未追跡file、進行中の
-//!   Git操作、管理外worktree（rebuildのみ）、originから回収できると証明できないcommit
-//!   のいずれか1件でもあれば、確認を求めず削除しない。原因ごとに[`ProtectionBlocker`]の
-//!   variantと固有の`ErrorId`を持ち、共通のIDへ丸めない。状態を観測できない場合も、
-//!   安全と推測せず層Aと同様に拒否する。
-//! - 層B（明示確認）: commit自体は失わないが自動復元できない情報（無視対象のpath、
-//!   destroy対象の管理外worktreeの存在など）は、削除計画へ全件示し、対象sandbox名の
-//!   完全一致入力を得た場合だけ削除を許可する。
+//! `inspect`はgate配下だけが呼ぶprivate collectorであり、productionから直接公開
+//! しない。`destroy --force`は保護を意図的に迂回する別操作であり、通常経路の
+//! remediationには案内しない。
 //!
-//! `gate::assess`が層Aの観測を固定順序で行い、`gate::authorize`が層Aの通過だけを
-//! 確認して[`ProtectionPermit`]を発行する。`inspect`はgate配下だけが呼ぶprivate
-//! collectorであり、productionから直接公開しない。`force_bypass::force_destroy`は
-//! `destroy --force`の分岐だけが使う、意図的な迂回であり、architecture testが
-//! 唯一の呼び出し箇所であることを確認する。
+//! commitを失わないが自動復元できない情報の明示確認や、削除を許可する証拠の型は、
+//! 実際にそれを使うconsumerと同時に導入する。破壊前保護の方針そのもの（拒否と
+//! 確認の二層構成、fail-closed、forceの扱い）は`docs/design-principles.md`が定める。
 
+mod assessment;
+mod blocker;
 mod destructive_operation;
-mod force_bypass;
 pub mod gate;
 mod inspect;
 mod kind;
 mod mode;
 mod origin_recovery_failure;
-mod protection_assessment;
-mod protection_blocker;
-mod protection_permit;
-mod protection_request;
 mod remote;
+mod request;
 mod worktree_report;
 
+pub use assessment::Assessment;
+pub use blocker::Blocker;
 pub use destructive_operation::DestructiveOperation;
-pub use force_bypass::ForceBypass;
 pub use kind::Kind;
 pub use mode::Mode;
 pub use origin_recovery_failure::OriginRecoveryFailure;
-pub use protection_assessment::ProtectionAssessment;
-pub use protection_blocker::ProtectionBlocker;
-pub use protection_permit::ProtectionPermit;
-pub use protection_request::ProtectionRequest;
 pub use remote::Remote;
+pub use request::Request;
 pub use worktree_report::WorktreeReport;
 
 #[cfg(test)]
