@@ -15,7 +15,7 @@ use super::{
 ///
 /// pipeを読むthreadを残すと、子孫がpipeの書き込み端を引き継いだときにjoinが終わらない。
 /// pipeをnonblockingにして子processの待機と同じloopで読むことで、子processが終わった時点で
-/// 読み取り端を閉じられる。元のprocess groupから逃げた子孫の出力は、その時点で捨てる。
+/// 読み取り端を閉じられる。直接の子より長生きする子孫の出力は、その時点で捨てる。
 ///
 /// 読んだbyteを溜めるか端末へ流すかは呼び出し側が決める。どちらであっても、読めなくなった
 /// 相手をどう扱うか——まだ動いている子は終わらせてから報告し、既に終わった子の残りは
@@ -34,11 +34,11 @@ pub(super) fn pump_until_exit(
 /// 子の読み取り端を引き取り、待たずに読める状態にする。
 fn take_pipes(child: &mut Child, spec: &CommandSpec) -> Result<(ChildStdout, ChildStderr)> {
     let Some((stdout, stderr)) = child.stdout.take().zip(child.stderr.take()) else {
-        terminate_child(child, spec);
+        terminate_child(child);
         return Err(unreadable(spec, "the output pipes were not created"));
     };
     if let Err(error) = set_nonblocking(&stdout).and_then(|()| set_nonblocking(&stderr)) {
-        terminate_child(child, spec);
+        terminate_child(child);
         return Err(unreadable(spec, &error.to_string()));
     }
     Ok((stdout, stderr))
@@ -61,29 +61,29 @@ fn pump<O: Read + AsFd, E: Read + AsFd>(
 
     loop {
         if interrupted() {
-            terminate_child(child, spec);
+            terminate_child(child);
             return Err(Error::Canceled);
         }
 
         let (stdout_ready, stderr_ready) =
             poll_pipes(stdout.as_ref(), stderr.as_ref()).map_err(|error| {
-                terminate_child(child, spec);
+                terminate_child(child);
                 unreadable(spec, &error.to_string())
             })?;
 
         if stdout_ready && let Err(error) = read(&mut stdout, Stream::Stdout, receive) {
-            terminate_child(child, spec);
+            terminate_child(child);
             return Err(unreadable(spec, &error.to_string()));
         }
         if stderr_ready && let Err(error) = read(&mut stderr, Stream::Stderr, receive) {
-            terminate_child(child, spec);
+            terminate_child(child);
             return Err(unreadable(spec, &error.to_string()));
         }
 
         // 読んでいる間に届いたCtrl-Cは、子を待ち始める前に効かせる。ここで気付けないと、
         // 待機はこの子の終わりまで戻らない。
         if interrupted() {
-            terminate_child(child, spec);
+            terminate_child(child);
             return Err(Error::Canceled);
         }
 
@@ -99,13 +99,13 @@ fn pump<O: Read + AsFd, E: Read + AsFd>(
             }
             Ok(None) => {}
             Err(error) => {
-                terminate_child(child, spec);
+                terminate_child(child);
                 return Err(spawn_failure(spec, &error));
             }
         }
 
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            terminate_child(child, spec);
+            terminate_child(child);
             return Err(Error::new(
                 ErrorId::ExternalCommandTimeout,
                 msg!(

@@ -9,7 +9,7 @@ use crate::project::SandboxName;
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, ProtectionSnapshot};
-use crate::support::{daemon, generation, select};
+use crate::support::{daemon, docker, generation, select};
 
 use crate::commands::rebuild::Target;
 
@@ -42,6 +42,8 @@ pub fn prepare(
     // sessionのshared leaseだけである。
     let session_lease = locked.acquire_exclusive_session_lease()?;
 
+    docker::require_reachable(host)?;
+
     let name = SandboxName::derive(locked.metadata.canonical_id());
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     let entries = daemon::list(host)?;
@@ -63,7 +65,7 @@ pub fn prepare(
         poll,
         progress,
     )?;
-    // ProtectionBlockerが1件でもあれば、削除計画を見せず明示確認も求めずにここで拒否する。
+    // Blockerが1件でもあれば、削除計画を見せず明示確認も求めずにここで拒否する。
     protection::gate::require_no_blockers(snapshot.assessment())?;
 
     let plan = RebuildPlan {

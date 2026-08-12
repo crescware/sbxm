@@ -1,34 +1,48 @@
 use crate::project::SandboxName;
 
-use super::{ConfirmableLoss, DestructiveOperation, ProtectionBlocker, WorktreeReport};
+use super::{Blocker, ConfirmableLoss, DestructiveOperation, WorktreeReport};
 
 /// 保護ゲートが観測した結果。
 ///
 /// fieldはすべて非公開とし、表示用のread-only accessorだけを公開する。
 #[derive(Debug, Clone)]
-pub struct ProtectionAssessment {
+pub struct Assessment {
     operation: DestructiveOperation,
+    project: String,
     sandbox: SandboxName,
     worktrees: Vec<WorktreeReport>,
-    blockers: Vec<ProtectionBlocker>,
+    blockers: Vec<Blocker>,
     confirmable_losses: Vec<ConfirmableLoss>,
 }
 
-impl ProtectionAssessment {
+impl Assessment {
     /// 何も観測しなかった結果。未作成、またはcloneしたrepositoryをまだ持たないsandboxで使う。
-    pub fn empty(operation: DestructiveOperation, sandbox: SandboxName) -> ProtectionAssessment {
-        ProtectionAssessment::new(operation, sandbox, Vec::new(), Vec::new(), Vec::new())
+    pub fn empty(
+        operation: DestructiveOperation,
+        project: String,
+        sandbox: SandboxName,
+    ) -> Assessment {
+        Assessment::new(
+            operation,
+            project,
+            sandbox,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
     }
 
     pub(super) fn new(
         operation: DestructiveOperation,
+        project: String,
         sandbox: SandboxName,
         worktrees: Vec<WorktreeReport>,
-        blockers: Vec<ProtectionBlocker>,
+        blockers: Vec<Blocker>,
         confirmable_losses: Vec<ConfirmableLoss>,
-    ) -> ProtectionAssessment {
-        ProtectionAssessment {
+    ) -> Assessment {
+        Assessment {
             operation,
+            project,
             sandbox,
             worktrees,
             blockers,
@@ -40,6 +54,10 @@ impl ProtectionAssessment {
         self.operation
     }
 
+    pub(super) fn project(&self) -> &str {
+        &self.project
+    }
+
     pub fn sandbox(&self) -> &SandboxName {
         &self.sandbox
     }
@@ -48,7 +66,7 @@ impl ProtectionAssessment {
         &self.worktrees
     }
 
-    pub fn blockers(&self) -> &[ProtectionBlocker] {
+    pub fn blockers(&self) -> &[Blocker] {
         &self.blockers
     }
 

@@ -6,8 +6,7 @@ use crate::design::ProgressSink;
 use crate::support::daemon;
 use crate::support::inventory::{self, Poll};
 use crate::support::protection::{
-    self, DestructiveOperation, ProtectionAssessment, ProtectionConfirmation, ProtectionRequest,
-    ProtectionSnapshot,
+    self, Assessment, DestructiveOperation, ProtectionConfirmation, ProtectionSnapshot, Request,
 };
 
 use super::{DestroyOutcome, Prepared, finish_removal};
@@ -28,16 +27,17 @@ pub fn execute_confirmed(
     let present = inventory::single(&daemon::list(host)?, prepared.name.as_str())?.is_some();
     let current = if present {
         let layout = SandboxLayout::new(metadata.canonical_id());
-        let request = ProtectionRequest::new(
+        let request = Request::new(
             DestructiveOperation::Destroy,
             &prepared.name,
             &layout,
             metadata,
         );
-        ProtectionSnapshot::new(protection::gate::assess(host, request)?)
+        ProtectionSnapshot::new(protection::gate::assess(host, &request)?)
     } else {
-        ProtectionSnapshot::new(ProtectionAssessment::empty(
+        ProtectionSnapshot::new(Assessment::empty(
             DestructiveOperation::Destroy,
+            metadata.display_id(),
             prepared.name.clone(),
         ))
     };

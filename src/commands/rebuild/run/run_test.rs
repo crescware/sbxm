@@ -121,7 +121,10 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
     let name = project.sandbox.as_str();
     let host = ready_to_switch(host, name, &git_dir, &worktree);
 
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let created = format!(
         r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         project.sandbox,
@@ -131,8 +134,8 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
     // 確認までは稼働中のSandboxが対象と観測し、作成後は新しいSandboxを観測する。
     *host.listing.borrow_mut() = vec![
         created,
-        "[]".to_string(),
-        "[]".to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
         running.clone(),
         running,
     ];
@@ -188,7 +191,7 @@ fn an_open_session_stops_the_rebuild_before_anything_is_touched() -> Checked {
     )
     .required_because("simulate an active sbxm open session")?;
 
-    let host = FakeSbx::listing("[]");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
     let error = prepare(
         Target {
             location: &fixture.location,
@@ -222,7 +225,11 @@ fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_docker
     project.metadata.provisioning.dockerfile_sha256 = sha256_hex(b"unchanged\n");
     metadata::update(&project.paths, &project.metadata).required()?;
 
-    let host = FakeSbx::listing("[]");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+        "version --format {{.Server.Version}}",
+        0,
+        "27.0.3\n",
+    );
     let error = prepare(
         Target {
             location: &fixture.location,
@@ -242,7 +249,7 @@ fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_docker
 #[test]
 fn a_project_that_is_not_managed_cannot_be_rebuilt() -> Checked {
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing("[]");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
     let error = prepare(
         Target {
             location: &fixture.location,
@@ -268,9 +275,19 @@ fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() -> Checked
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let name = project.sandbox.as_str();
 
-    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
-    let host = FakeSbx::listings(&[&stopped, &running]);
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = FakeSbx::listings(&[&stopped, &running]).answering(
+        "version --format {{.Server.Version}}",
+        0,
+        "27.0.3\n",
+    );
 
     // 起動の先で止まってよい。ここで見たいのは、停止を理由に拒否しないことである。
     let _ = prepare(
@@ -299,7 +316,11 @@ fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() -> Check
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
 
-    let absent = FakeSbx::listing("[]");
+    let absent = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+        "version --format {{.Server.Version}}",
+        0,
+        "27.0.3\n",
+    );
     let error = prepare(
         Target {
             location: &fixture.location,
@@ -495,10 +516,13 @@ fn a_sandbox_that_disappears_while_the_new_generation_is_prepared_fails_closed()
         )
         .answering("template ls --json", 0, &template_listing(&image)?);
 
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     // 一覧は末尾から取り出される。prepareの観測後、生成準備のあいだに対象Sandboxが
     // 手作業で消えている状況になる。
-    *host.listing.borrow_mut() = vec!["[]".to_string(), running];
+    *host.listing.borrow_mut() = vec![r#"{"sandboxes":[]}"#.to_string(), running];
 
     let error = rebuild(
         Target {
@@ -628,7 +652,9 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> Checked<
     );
 
     // 一覧は、prepare、execute再評価、作成前の確認、作成後の確認の順に読まれる。
-    let host = FakeSbx::listings(&["[]", "[]", "[]", &created])
+    let empty = r#"{"sandboxes":[]}"#;
+    let host = FakeSbx::listings(&[empty, empty, empty, &created])
+        .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         // 固定した世代のimageは既にbuild済みである。
         .answering(&format!("image ls --quiet {image}"), 0, "sha256:new\n")
         .answering(
@@ -840,8 +866,14 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
     std::fs::create_dir_all(&workspace).required()?;
     std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
 
-    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let created = format!(
         r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         project.sandbox,
@@ -867,8 +899,8 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
     // 一覧は末尾から取り出される。停止中のprevious世代を起動し、検査してから消す。
     *host.listing.borrow_mut() = vec![
         created,
-        "[]".to_string(),
-        "[]".to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
         running.clone(),
         running,
         stopped.clone(),
@@ -911,8 +943,13 @@ fn a_sandbox_that_cannot_be_started_is_not_rebuilt_over() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let name = project.sandbox.as_str();
-    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
-    let host = FakeSbx::listing(&stopped).answering(&format!("exec {name} -- /bin/true"), 1, "");
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let host = FakeSbx::listing(&stopped)
+        .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
+        .answering(&format!("exec {name} -- /bin/true"), 1, "");
 
     let error = rebuild(
         Target {
@@ -1048,5 +1085,36 @@ fn the_first_rebuild_of_a_generation_exports_its_archive_and_loads_the_template(
         .required_because("present")?;
     assert_eq!(stored.provisioning.dockerfile_sha256, target);
     assert!(stored.rebuild.is_none());
+    Ok(())
+}
+
+#[test]
+fn an_engine_that_does_not_answer_stops_the_rebuild_before_anything_is_read() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
+
+    let host =
+        clean_host(&fixture, &project)?.answering("version --format {{.Server.Version}}", 1, "");
+
+    let error = prepare(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .refused_because("without the engine there is nothing to rebuild")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
+    assert!(
+        !host.ran("ls --json") && !host.ran("worktree list"),
+        "nothing is listed before the engine is confirmed reachable: {:?}",
+        host.calls()
+    );
     Ok(())
 }

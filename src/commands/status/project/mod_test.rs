@@ -9,7 +9,7 @@ use crate::testing::project::{Fixture, project_id};
 #[test]
 fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing("[]");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
     let error = diagnose(
         &fixture.location,
         &project_id("example-org/example-repo")?,
@@ -25,7 +25,7 @@ fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
 fn the_items_are_reported_in_the_documented_order() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let host = without_image(FakeSbx::listing("[]"), &project);
+    let host = without_image(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project);
 
     let status = diagnose(
         &fixture.location,
@@ -63,7 +63,7 @@ fn the_items_are_reported_in_the_documented_order() -> Checked {
 fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
-    let host = without_image(FakeSbx::listing("[]"), &project);
+    let host = without_image(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project);
 
     let status = diagnose(
         &fixture.location,

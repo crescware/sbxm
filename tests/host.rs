@@ -11,12 +11,13 @@
 mod outcome;
 mod temp_home;
 
-use outcome::{Checked, Required};
+use outcome::{Checked, Required, Unmet};
 use temp_home::{TempHome, temp_home};
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 /// 実hostのtoolの代わりに答えるscript。呼ばれた名前でどのtoolかを決める。
 ///
@@ -35,8 +36,24 @@ COMMIT=1111111111111111111111111111111111111111
 
 case "$program" in
 ssh)
-	# terminalを引き渡した先の終了status。
-	exit "$(cat "$fake/ssh-exit")"
+	# terminalを引き渡した先の終了status。通常の数値のほか、lifecycle test用に
+	# 自分自身のsignal終了と、親sbxmの終了まで待つ動作を受け付ける。
+	mode=$(cat "$fake/ssh-exit")
+	case "$mode" in
+	hold)
+		: >"$fake/ssh-started"
+		while [ ! -e "$fake/ssh-release" ]; do sleep 0.01; done
+		: >"$fake/ssh-finished"
+		exit 0
+		;;
+	signal)
+		: >"$fake/ssh-started"
+		kill -TERM "$$"
+		;;
+	*)
+		exit "$mode"
+		;;
+	esac
 	;;
 docker)
 	[ "$1 $2" = "version --format" ] || exit 1
@@ -78,7 +95,7 @@ case "$1" in
 ls)
 	printf '{"sandboxes":['
 	awk -F'\t' '{
-		printf "%s{\"name\":\"%s\",\"state\":\"%s\",\"workspace\":\"%s\"}", (NR > 1 ? "," : ""), $1, $2, $3
+		printf "%s{\"name\":\"%s\",\"status\":\"%s\",\"workspaces\":[\"%s\"]}", (NR > 1 ? "," : ""), $1, $2, $3
 	}' "$fake/sandboxes"
 	printf ']}'
 	exit 0
@@ -243,6 +260,26 @@ impl Host {
         Run::from(&output)
     }
 
+    /// 終了をtest側で制御するため、sbxmを待たずに起動する。
+    fn spawn(&self, arguments: &[&str]) -> Checked<Child> {
+        Command::new(env!("CARGO_BIN_EXE_sbxm"))
+            .args(arguments)
+            .current_dir(&self.base)
+            .env("HOME", self.home.path())
+            .env("LC_ALL", "C")
+            .env_remove("LC_MESSAGES")
+            .env_remove("LANG")
+            .env("PATH", &self.bin)
+            .env("SBXM_FAKE", &self.fake)
+            .env("NO_COLOR", "1")
+            .env_remove("TERM")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .required_because("sbxm runs")
+    }
+
     /// 案件を1件登録し、表示されたSandbox名を返す。
     ///
     /// `--detach`を使うのは、起点branchが登録の時点で決まる構成にするためである。
@@ -268,6 +305,28 @@ impl Host {
         self.base.join("example-repo.project")
     }
 
+    /// `sbxm open`が保持するsession leaseのpath。
+    fn session_lease(&self) -> PathBuf {
+        self.project_root().join(".sbxm/session.lock")
+    }
+
+    /// 別processのexclusive leaseが取れるかを、fileを削除せずに確かめる。
+    fn exclusive_session_lease_available(&self) -> Checked<bool> {
+        let path = self.session_lease();
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .required_because("the session lease file exists")?;
+        match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(false),
+            Err(error) => Err(Unmet::new(format!(
+                "the session lease probe failed: {error}"
+            ))),
+        }
+    }
+
     /// この案件のSandboxが動いていることにする。
     fn sandbox_is_running(&self, name: &str) -> Checked<()> {
         self.answer(
@@ -281,6 +340,21 @@ impl Host {
         self.answer("present", &format!("{WORKTREE}\n"))?;
         self.answer("worktrees", &format!("{WORKTREE}\n"))
     }
+}
+
+/// lifecycle testがchildの実行開始を待つ。
+fn wait_for_file(path: &Path) -> Checked<()> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !path.exists() {
+        if Instant::now() >= deadline {
+            return Err(Unmet::new(format!(
+                "{} was not created in time",
+                path.display()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
 }
 
 /// 表示されたSandbox名。
@@ -539,6 +613,23 @@ fn open_names_the_sandbox_and_its_worktrees_before_it_hands_over_the_terminal() 
 }
 
 #[test]
+fn a_successful_ssh_session_releases_the_lease_when_the_command_exits() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+
+    let run = host.run(&["--lang", "en", "open", PROJECT])?;
+
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert!(
+        host.exclusive_session_lease_available()?,
+        "the successful SSH child releases the session lease"
+    );
+    Ok(())
+}
+
+#[test]
 fn open_can_start_in_a_selected_worktree() -> Checked {
     let host = Host::new()?;
     let sandbox = host.registered()?;
@@ -607,6 +698,65 @@ fn a_connection_that_ends_in_failure_is_reported_without_taking_back_what_was_sh
             .contains(&format!("Connecting to {sandbox} for {PROJECT}")),
         "{}",
         run.stderr
+    );
+    assert!(
+        host.exclusive_session_lease_available()?,
+        "a non-zero SSH child releases the session lease"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_ssh_session_ended_by_signal_releases_the_lease() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+    host.answer("ssh-exit", "signal")?;
+
+    let run = host.run(&["--lang", "en", "open", PROJECT])?;
+
+    assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
+    assert!(
+        run.stderr.contains("external-command-failed"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        host.exclusive_session_lease_available()?,
+        "a signal-ended SSH child releases the session lease"
+    );
+    Ok(())
+}
+
+#[test]
+fn terminating_the_sbxm_process_releases_the_lease_without_deleting_the_file() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+    host.answer("ssh-exit", "hold")?;
+
+    let mut child = host.spawn(&["--lang", "en", "open", PROJECT])?;
+    let started = host.fake.join("ssh-started");
+    wait_for_file(&started)?;
+    assert!(
+        !host.exclusive_session_lease_available()?,
+        "the running SSH child holds the session lease"
+    );
+
+    child.kill().required_because("terminate sbxm")?;
+    let status = child
+        .wait()
+        .required_because("the sbxm process is reaped")?;
+    assert!(!status.success(), "the process was terminated by the test");
+
+    // sbxm processが消えたあと、孤立したfake SSHを終わらせる。lease file自体は触らない。
+    host.answer("ssh-release", "done")?;
+    wait_for_file(&host.fake.join("ssh-finished"))?;
+    assert!(
+        host.exclusive_session_lease_available()?,
+        "the OS releases the session lease when sbxm exits"
     );
     Ok(())
 }

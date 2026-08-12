@@ -112,6 +112,21 @@ fn timeout_classes_match_the_documented_defaults() {
 }
 
 #[test]
+fn the_real_host_uses_the_pty_runner() -> Checked {
+    let error = RealHost
+        .run_pty_confirmed(&PtyConfirmedCommand::new(
+            "/does/not/exist/sbx",
+            &[],
+            "the sandbox",
+            "confirmation",
+        ))
+        .refused_because("the real host delegates PTY execution")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
+    Ok(())
+}
+
+#[test]
 fn a_command_runs_in_the_working_directory_it_was_given() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let workspace = dir.path().join("workspace");
@@ -313,6 +328,18 @@ fn security_sensitive_runs_drop_the_ssh_agent_socket() -> Checked {
 }
 
 #[test]
+fn security_sensitive_runs_touch_no_environment_variable_other_than_the_ssh_agent_socket() {
+    // `env` / `env_remove`による明示的な変更は`get_envs()`に現れ、
+    // `env_clear`を呼んだ場合もこのassertionの結果が変わる。
+    // `DOCKER_SANDBOXES_ROOT_SIZE`のような他の変数は、実際のprocess environmentを
+    // 動かさずとも、この一覧が`SSH_AUTH_SOCK`の除去だけであることで素通りすると示せる。
+    let spec = CommandSpec::probe("true", &[]).env(EnvPolicy::InheritWithoutSshAgent);
+    let command = configure(&spec);
+    let envs: Vec<(&std::ffi::OsStr, Option<&std::ffi::OsStr>)> = command.get_envs().collect();
+    assert_eq!(envs, [(std::ffi::OsStr::new("SSH_AUTH_SOCK"), None)]);
+}
+
+#[test]
 fn capture_keeps_both_streams_separately() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let fake = fake_executable(
@@ -364,15 +391,16 @@ fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
 }
 
 #[test]
-fn a_timed_out_command_takes_the_processes_it_started_with_it() -> Checked {
+fn a_descendant_outliving_the_direct_child_cannot_hold_capture_open_after_timeout() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let survivor = dir.path().join("survivor");
     let fake = fake_executable(
         dir.path(),
         "fake-tool",
         &format!(
-            // 背景のprocessは、待ち終えたらfileを残す。stdoutのpipeも握ったままである。
-            r#"(sleep 2; printf 'alive' > "{}") &
+            // 背景のprocessは直接の子が終わったあとにmarkerを残す。stdoutのpipeも握ったままに
+            // するため、readerがEOFを待つ実装へ戻るとこのtestもtimeoutする。
+            r#"(sleep 1; printf 'alive' > "{}") &
 sleep 30"#,
             survivor.display()
         ),
@@ -383,51 +411,27 @@ sleep 30"#,
     let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
         .refused_because("the command must be terminated")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
-    // 書き込み端を握るprocessが残っていれば、readerの回収はその分だけ返らない。
     assert!(
         started.elapsed() < Duration::from_millis(1500),
-        "no pipe may stay open after the run returns"
+        "the reader must not wait for a descendant that outlives the direct child"
     );
 
-    std::thread::sleep(Duration::from_secs(3).saturating_sub(started.elapsed()));
-    assert!(
-        !survivor.exists(),
-        "a process the command started must not outlive the command"
-    );
-    Ok(())
-}
-
-#[test]
-fn an_escaped_descendant_cannot_hold_capture_open_after_timeout() -> Checked {
-    // macOS does not ship `setsid` as a command, while Linux does. The process-group behavior is
-    // covered where the helper exists; the implementation itself is compiled for both platforms.
-    if !exists_on_path("setsid") {
-        return Ok(());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !survivor.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
     }
-
-    let dir = tempfile::tempdir().required()?;
-    let fake = fake_executable(
-        dir.path(),
-        "fake-tool",
-        // The detached sleep keeps the pipe open after the original group is killed.
-        "setsid sh -c 'sleep 2' &\nsleep 30",
-    )?;
-
-    let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
-    let started = Instant::now();
-    let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
-        .refused_because("the command must be terminated")?;
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
-    assert!(
-        started.elapsed() < Duration::from_millis(1500),
-        "the reader must not wait for a process outside the command group"
+    assert_eq!(
+        fs::read_to_string(&survivor)
+            .required_because("the descendant outlives its direct child")?,
+        "alive",
+        "timeout must not terminate the descendant"
     );
     Ok(())
 }
 
 #[test]
 fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> Checked {
-    // 端末へ出すcommandはprocess groupを分けないため、打ち切りは直接の子だけに届く。
+    // 打ち切りが届くのは直接の子だけである。
     let relayed = TerminalCommand::relayed("sleep", &["30"]);
     let spec = relayed.spec();
     let mut child = sleeping_child("30")?;

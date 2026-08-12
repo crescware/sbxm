@@ -1,6 +1,6 @@
 /// 確認すれば削除してよい、と利用者に判断してもらう対象。
 ///
-/// ここに挙げる情報が指すcommit自体は、`ProtectionBlocker`の検査でoriginから回収できると
+/// ここに挙げる情報が指すcommit自体は、`Blocker`の検査でoriginから回収できると
 /// 確認済みであり、削除しても失わない。失うのは、削除後に自動では復元できない付随情報
 /// （無視対象のpath、ref名、追加remote名、reflogだけに残るcommitの存在、管理外worktreeの
 /// 存在、sandboxの書き込み層）だけである。remote URL、Git config値、file内容、credential、

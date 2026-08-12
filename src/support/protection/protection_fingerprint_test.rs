@@ -3,8 +3,7 @@ use crate::testing::outcome::Checked;
 use crate::testing::project::project_id;
 
 use super::super::{
-    ConfirmableLoss, DestructiveOperation, Kind, Mode, ProtectionAssessment, ProtectionBlocker,
-    Remote, WorktreeReport,
+    Assessment, Blocker, ConfirmableLoss, DestructiveOperation, Kind, Mode, Remote, WorktreeReport,
 };
 use super::ProtectionFingerprint;
 
@@ -35,11 +34,12 @@ fn worktree(relative: &str) -> WorktreeReport {
 
 fn assessment(
     worktrees: Vec<WorktreeReport>,
-    blockers: Vec<ProtectionBlocker>,
+    blockers: Vec<Blocker>,
     confirmable_losses: Vec<ConfirmableLoss>,
-) -> Checked<ProtectionAssessment> {
-    Ok(ProtectionAssessment::new(
+) -> Checked<Assessment> {
+    Ok(Assessment::new(
         DestructiveOperation::Destroy,
+        "example-org/example-repo".to_string(),
         sandbox()?,
         worktrees,
         blockers,
@@ -52,10 +52,10 @@ fn collection_order_alone_does_not_change_the_fingerprint() -> Checked {
     let forward = assessment(
         vec![worktree("a"), worktree("b")],
         vec![
-            ProtectionBlocker::TrackedChanges {
+            Blocker::TrackedChanges {
                 worktree: "a".to_string(),
             },
-            ProtectionBlocker::UntrackedPaths {
+            Blocker::UntrackedPaths {
                 worktree: "b".to_string(),
                 paths: vec!["scratch.txt".to_string()],
             },
@@ -74,11 +74,11 @@ fn collection_order_alone_does_not_change_the_fingerprint() -> Checked {
     let reversed = assessment(
         vec![worktree("b"), worktree("a")],
         vec![
-            ProtectionBlocker::UntrackedPaths {
+            Blocker::UntrackedPaths {
                 worktree: "b".to_string(),
                 paths: vec!["scratch.txt".to_string()],
             },
-            ProtectionBlocker::TrackedChanges {
+            Blocker::TrackedChanges {
                 worktree: "a".to_string(),
             },
         ],

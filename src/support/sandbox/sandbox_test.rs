@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment};
 use crate::compatibility::SandboxState;
 use crate::diagnostics::{ErrorId, Result};
 use crate::paths::{self, PRIVATE_DIR_MODE};
@@ -182,7 +182,7 @@ fn template() -> LoadedTemplate {
 
 fn listing(workspace: &Path, state: &str) -> Checked<String> {
     Ok(format!(
-        r#"[{{"name":"{}","state":"{state}","workspace":"{}"}}]"#,
+        r#"{{"sandboxes":[{{"name":"{}","status":"{state}","workspaces":["{}"]}}]}}"#,
         sandbox()?,
         workspace.display()
     ))
@@ -192,7 +192,7 @@ fn listing(workspace: &Path, state: &str) -> Checked<String> {
 fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() -> Checked {
     let root = workspace_root()?;
     let workspace = workspace_path(root.path(), &sandbox()?);
-    let host = FakeSbx::listing(&["[]", &listing(&workspace, "running")?]);
+    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#, &listing(&workspace, "running")?]);
 
     let ready = ensure(
         &host,
@@ -221,6 +221,11 @@ fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() -> Ch
             AGENT_KIT.to_string(),
             paths::display(&workspace),
         ]
+    );
+    assert_eq!(
+        host.calls.borrow()[1].env,
+        EnvPolicy::InheritWithoutSshAgent,
+        "environment such as DOCKER_SANDBOXES_ROOT_SIZE must reach `sbx create` unfiltered"
     );
     Ok(())
 }
@@ -285,9 +290,8 @@ fn a_runtime_that_hides_the_workspace_is_not_guessed_at() -> Checked {
     let root = workspace_root()?;
     // workspaceが分からない一覧からは、この案件のSandboxだと言えない。
     let listing = format!(
-        r#"[{{"name":"{}","state":"running","template":"{}"}}]"#,
-        sandbox()?,
-        template().name
+        r#"{{"sandboxes":[{{"name":"{}","status":"running"}}]}}"#,
+        sandbox()?
     );
     let host = FakeSbx::listing(&[&listing]);
     let error = ensure(
@@ -307,7 +311,7 @@ fn the_listing_of_the_target_version_identifies_the_sandbox() -> Checked {
     let root = workspace_root()?;
     // 対象versionの一覧はTemplateを持たない。名前とworkspaceの実pathで対応を判定する。
     let listing = format!(
-        r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
+        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
         sandbox()?,
         workspace_path(root.path(), &sandbox()?).display()
     );
@@ -340,7 +344,7 @@ fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() -> Chec
     fs::create_dir_all(&real).required()?;
     std::os::unix::fs::symlink(&real, workspace_path(root.path(), &sandbox()?)).required()?;
 
-    let host = FakeSbx::listing(&["[]"]);
+    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#]);
     let error = ensure(
         &host,
         &sandbox()?,

@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::hash::sha256_hex;
 
-use super::ProtectionAssessment;
+use super::Assessment;
 
 /// fingerprint入力形の版識別子。入力に含める項目を変えたら値を上げる。
 const FINGERPRINT_VERSION: &str = "sbxm-protection-v1";
@@ -19,11 +19,11 @@ pub struct ProtectionFingerprint {
 impl ProtectionFingerprint {
     /// `assessment`から正規化した入力を作り、そのSHA-256を求める。
     ///
-    /// 収集順に依存しないよう、worktree・拒否理由（`ProtectionBlocker`）・確認対象
+    /// 収集順に依存しないよう、worktree・拒否理由（`Blocker`）・確認対象
     /// （`ConfirmableLoss`）をそれぞれ安定した文字列表現へ写してから昇順に並べ替える。
     /// 表示文、翻訳済み文字列、remote URL、credential、file内容は入力に含めない
-    /// （そもそも`ProtectionBlocker`/`ConfirmableLoss`はこれらを保持しない）。
-    pub(super) fn of(assessment: &ProtectionAssessment) -> ProtectionFingerprint {
+    /// （そもそも`Blocker`/`ConfirmableLoss`はこれらを保持しない）。
+    pub(super) fn of(assessment: &Assessment) -> ProtectionFingerprint {
         let mut worktrees: Vec<WorktreeInput> = assessment
             .worktrees()
             .iter()
