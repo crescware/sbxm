@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
-use crate::compatibility::SandboxState;
 use crate::config::GlobalConfig;
 use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
@@ -11,10 +10,8 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::design::ProgressSink;
 use crate::support::files::{self, Conflict};
 use crate::support::inventory::{self, Poll};
-use crate::support::protection::{self, DestructiveOperation, Request};
-use crate::support::{daemon, identity, repository, sandbox, secret, template, tools};
-
-use super::start_to_read_saved_state;
+use crate::support::protection::ProtectionPermit;
+use crate::support::{identity, repository, sandbox, secret, template, tools};
 
 /// Sandboxの切り替えが最初から最後まで使う文脈。
 ///
@@ -29,12 +26,19 @@ pub(super) struct Switch<'a> {
 
 impl Switch<'_> {
     /// Sandboxを新世代へ切り替える。
+    ///
+    /// `permit`は呼び出し側の`gate::authorize`が発行した、この1回のremoveだけに使う
+    /// 許可証である。`existed`が示す通り、そもそも削除するSandboxが無い場合は使わず
+    /// 破棄する。
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn run(
         &self,
         host: &dyn HostEnvironment,
         name: &SandboxName,
         metadata: &mut ProjectMetadata,
         template: &template::LoadedTemplate,
+        existed: bool,
+        permit: ProtectionPermit,
         progress: &mut dyn ProgressSink,
     ) -> Result<()> {
         let Switch {
@@ -46,29 +50,10 @@ impl Switch<'_> {
         } = *self;
         let layout = SandboxLayout::new(metadata.canonical_id());
 
-        // 新世代の準備には時間がかかる。切り替える対象は、その後の観測から決める。
-        let entries = daemon::list(host)?;
-        // Sandboxが不在の中断点からは、作成工程から続ける。
-        //
-        // 既にあるSandboxがどちらの世代のものかは問わない。一覧はTemplateを示さず、
-        // 世代を観測する手段がないためである。既存のSandboxは、保存されていない作業が
-        // ないことを確かめてから必ず作り直す。
-        if let Some(entry) = inventory::single(&entries, name.as_str())? {
-            start_to_read_saved_state(
-                host,
-                metadata,
-                name,
-                entry.state == SandboxState::Stopped,
-                workspace_root,
-                poll,
-                progress,
-            )?;
-            let request = Request::new(DestructiveOperation::Rebuild, name, &layout, metadata);
-            let assessment = protection::gate::assess(host, &request)?;
-            // removeの直前に改めて評価する。
-            protection::gate::authorize(assessment)?;
+        if existed {
             // rebuildに`--force`は無く、常にsbx自身の確認とactive-session検査を経る。
-            inventory::remove_protected(host, name, poll, progress)?;
+            // 削除する対象は許可証が持つ。`name`は再作成の側だけが使う。
+            inventory::remove_protected(host, permit, poll, progress)?;
         }
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは

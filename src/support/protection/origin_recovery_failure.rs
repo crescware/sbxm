@@ -12,3 +12,16 @@ pub enum OriginRecoveryFailure {
     /// detached HEADが、originのどのremote-trackingからも到達できない。
     UnreachableFromOrigin,
 }
+
+impl OriginRecoveryFailure {
+    /// fingerprintの入力に使う、翻訳しない安定表記。
+    pub(super) fn fingerprint_key(&self) -> String {
+        match self {
+            OriginRecoveryFailure::NoUpstream => "no-upstream".to_string(),
+            OriginRecoveryFailure::AheadOfUpstream { upstream, count } => {
+                format!("ahead-of-upstream\u{1e}{upstream}\u{1e}{count}")
+            }
+            OriginRecoveryFailure::UnreachableFromOrigin => "unreachable-from-origin".to_string(),
+        }
+    }
+}

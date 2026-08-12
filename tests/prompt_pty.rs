@@ -546,7 +546,7 @@ fn a_name_that_is_not_the_sandbox_name_destroys_nothing() -> Checked {
 
     assert_eq!(ended.code, 1, "{}", ended.text());
     assert!(
-        ended.text().contains("destroy-not-confirmed"),
+        ended.text().contains("protection-not-confirmed"),
         "{}",
         ended.text()
     );

@@ -27,6 +27,39 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
             0,
             "",
         )
+        // 無視対象pathも、ローカル所有refも、追加remoteも、reflogだけのcommitも無い。
+        // 層Bのcollectorが読むcommandは、素通りに見えないよう空の応答を明示する。
+        .answering(
+            &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --ignored=traditional"),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/heads/ refs/tags/ refs/notes/ refs/stash",
+                layout.bare_git_dir()
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {} remote", layout.bare_git_dir()),
+            0,
+            "origin\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {} rev-list --walk-reflogs --all",
+                layout.bare_git_dir()
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {} rev-list --all", layout.bare_git_dir()),
+            0,
+            "",
+        )
         .answering(
             &format!("exec {name} -- git -C {managed} rev-parse --git-dir"),
             0,
