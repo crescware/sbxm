@@ -20,8 +20,11 @@ pub fn connect(
     );
     let args = ["-t", prepared.ssh_host.as_str(), remote_command.as_str()];
     let command = TerminalCommand::handed_over("ssh", &args);
-    host.run_with_terminal(&command, output)?
-        .require_success()?;
+    let outcome = host.run_with_terminal(&command, output);
+    // SSHの直接の子processが終了した時点でleaseを解放し、statusの検査や呼び出し側の
+    // 表示より前に`Prepared`を消費する。
+    drop(prepared);
+    outcome?.require_success()?;
     Ok(())
 }
 

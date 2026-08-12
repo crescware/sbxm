@@ -166,6 +166,7 @@ error-external-command-spawn-failed = commandを起動できません
 error-external-command-failed = commandが { $exit_status } で失敗しました。
 error-external-command-timeout = command { $program } が { $seconds } 秒以内に終了しなかったため停止しました。
 error-external-command-output-unreadable = commandの出力を最後まで読めません
+error-external-command-not-confirmed = { $subject } を安全に確認できません。
 error-external-output-unparseable = 出力を解釈できません
 warning-external-output-lossy = { $program } の { $stream } 出力がUTF-8として不正なため、置換文字を含む形へ変換しました。
 diagnostic-command-label = 実行したcommand:
@@ -332,6 +333,7 @@ remediation-start-docker = Docker Desktopを起動し、engineがrunningにな�
 remediation-network-policy = 続行する前にDocker Sandboxesのnetwork policyを { $expected } に設定してください。
 remediation-wait-for-lock = ほかのsbxmの実行が終わるのを待ってから、もう一度実行してください。
 remediation-open-session-active = 接続中のremote sessionが終わるのを待ってから、もう一度実行してください。lease fileを手動で削除してもsessionは終わりません。
+remediation-external-command-not-confirmed = 下に示したcommandの出力を確認し、対象へほかに何も接続していないことを確かめてから、もう一度実行してください。
 security-config-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。この機械上のほかのaccountが読み書きできる設定fileをsbxmは使用しません。
 security-config-permission-remediation = { $path } の所有者が自分であることを確認し、modeを { $expected } に制限してほかのaccountからの権限を外してください。
 

@@ -112,6 +112,21 @@ fn timeout_classes_match_the_documented_defaults() {
 }
 
 #[test]
+fn the_real_host_uses_the_pty_runner() -> Checked {
+    let error = RealHost
+        .run_pty_confirmed(&PtyConfirmedCommand::new(
+            "/does/not/exist/sbx",
+            &[],
+            "the sandbox",
+            "confirmation",
+        ))
+        .refused_because("the real host delegates PTY execution")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
+    Ok(())
+}
+
+#[test]
 fn a_command_runs_in_the_working_directory_it_was_given() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let workspace = dir.path().join("workspace");

@@ -51,12 +51,19 @@ fn an_incomplete_record_is_rejected() {
 
 #[test]
 fn unknown_and_malformed_records_are_rejected() {
+    assert!(parse_list("\0\0").is_err());
     assert!(parse_list("unexpected value\0\0").is_err());
+    assert!(parse_list("worktree /home/agent/work/repo\0\0\0\0").is_err());
     assert!(parse_list("worktree \0\0").is_err());
     assert!(parse_list("worktree /home/agent/work/repo\0unknown\0\0").is_err());
     assert!(parse_list("worktree /home/agent/work/repo\0\0").is_err());
     assert!(parse_list("worktree /home/agent/work/repo\0bare value\0\0").is_err());
     assert!(parse_list("worktree /home/agent/work/repo\0bare\0HEAD abc\0\0").is_err());
+    assert!(parse_list("worktree /home/agent/work/repo\0detached value\0\0").is_err());
+    assert!(parse_list("worktree /home/agent/work/repo\0branch main\0locked\0locked\0\0").is_err());
+    assert!(
+        parse_list("worktree /home/agent/work/repo\0branch main\0prunable\0prunable\0\0").is_err()
+    );
     assert!(parse_list("worktree /home/agent/work/repo\0HEAD abc def\0\0").is_err());
     assert!(
         parse_list("worktree /home/agent/work/repo\0branch refs/heads/main extra\0\0").is_err()

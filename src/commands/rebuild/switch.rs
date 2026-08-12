@@ -67,7 +67,8 @@ impl Switch<'_> {
             let assessment = protection::gate::assess(host, &request)?;
             // removeの直前に改めて評価する。
             protection::gate::authorize(assessment)?;
-            inventory::remove(host, name, poll, progress)?;
+            // rebuildに`--force`は無く、常にsbx自身の確認とactive-session検査を経る。
+            inventory::remove_protected(host, name, poll, progress)?;
         }
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは
