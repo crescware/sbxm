@@ -270,8 +270,10 @@ sbxm destroy <project-id>
 ```
 
 sbxmは何かを削除する前に、削除するものと残すものを表示します。通常のdestroyでは、
-dirty worktree、pushしていないcommit、active sessionを検査します。対話端末では、
-続いてSandbox名の入力を求めます。
+dirty worktree、pushしていないcommit、active sbxm sessionを検査します。対話端末
+では、続いてSandbox名の入力を求めます。Sandbox自体の削除では、Docker Sandboxes
+自身のruntimeが行うactive-session検査（sbxmが開始していないsession）も尊重します。
+この確認はsbxmが内部で答えるため、利用者に二重には尋ねません。
 
 Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに登録した`GH_TOKEN`のcustom
 secretは削除されます。登録が残ると、同じプロジェクトに対する次の`sbx secret set-custom`
@@ -279,8 +281,8 @@ secretは削除されます。登録が残ると、同じプロジェクトに�
 プロジェクトのDockerfile、build済みimage、load済みtemplate、それ以外を対象に登録した
 secretは残るため、tokenを再登録すればあとからプロジェクトを再登録できます。
 
-データ保護とactive sessionの検査、および確認promptを意図的に省略する必要がある場合は、
-次を実行します。
+データ保護・active session・runtimeのin-use検査、および確認promptを意図的に省略する
+必要がある場合は、次を実行します。
 
 ```sh
 sbxm destroy --force <project-id>

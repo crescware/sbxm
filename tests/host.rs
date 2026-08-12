@@ -95,7 +95,7 @@ case "$1" in
 ls)
 	printf '{"sandboxes":['
 	awk -F'\t' '{
-		printf "%s{\"name\":\"%s\",\"state\":\"%s\",\"workspace\":\"%s\"}", (NR > 1 ? "," : ""), $1, $2, $3
+		printf "%s{\"name\":\"%s\",\"status\":\"%s\",\"workspaces\":[\"%s\"]}", (NR > 1 ? "," : ""), $1, $2, $3
 	}' "$fake/sandboxes"
 	printf ']}'
 	exit 0
@@ -347,7 +347,10 @@ fn wait_for_file(path: &Path) -> Checked<()> {
     let deadline = Instant::now() + Duration::from_secs(2);
     while !path.exists() {
         if Instant::now() >= deadline {
-            return Err(Unmet::new(format!("{path:?} was not created in time")));
+            return Err(Unmet::new(format!(
+                "{} was not created in time",
+                path.display()
+            )));
         }
         std::thread::sleep(Duration::from_millis(10));
     }

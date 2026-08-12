@@ -292,8 +292,10 @@ sbxm destroy <project-id>
 
 Before deleting anything, sbxm shows what will be removed and what will remain.
 Normal teardown checks for dirty worktrees, unpushed commits, and active
-sessions. In an interactive terminal, it then asks you to type the sandbox
-name.
+sbxm sessions. In an interactive terminal, it then asks you to type the sandbox
+name. Removing the sandbox itself also respects Docker Sandboxes' own runtime
+check for anything still attached to it (a session sbxm did not start) —
+sbxm answers that confirmation internally, so you are not asked twice.
 
 The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
 registered for that sandbox are deleted. A registration left behind would make
@@ -305,8 +307,8 @@ token registered anew. Because those artifacts stay behind and sbxm never
 adopts a directory it did not register, registering the project again in the
 same place means moving them aside first.
 
-If you intentionally need to bypass data-protection and active-session checks
-and the confirmation prompt:
+If you intentionally need to bypass data-protection, active-session, and
+runtime in-use checks, and the confirmation prompt:
 
 ```sh
 sbxm destroy --force <project-id>
