@@ -7,9 +7,11 @@ use super::Prepared;
 /// terminalをSSHへ引き渡す。
 ///
 /// `SSHのexit` statusが0なら成功とし、非ゼロは理由を推測せず外部command失敗とする。
+/// `Prepared`を所有することで、SSHの直接の子processが終了した直後にsession leaseを
+/// 解放し、呼び出し側が結果を表示するときまで保持しない。
 pub fn connect(
     host: &dyn HostEnvironment,
-    prepared: &Prepared,
+    prepared: Prepared,
     output: &mut dyn ExternalOutput,
 ) -> Result<()> {
     let remote_command = format!(
