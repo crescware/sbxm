@@ -23,7 +23,7 @@ pub fn check_secret(host: &dyn HostEnvironment, name: &SandboxName, status: &mut
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
-            Value::Mismatch
+            Value::NotObserved
         }
     };
     status.push("status-item-secret", value);

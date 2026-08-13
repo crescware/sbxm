@@ -13,6 +13,11 @@ use super::unusable;
 /// 誰が作成したかは条件にしない。案件との対応は、canonical project IDから導出した
 /// 名前と、その案件だけが使う中立Workspaceの実pathで判定する。由来Templateは一覧に
 /// 現れないため、同一性の根拠にしない。
+///
+/// 確認するのは同一性だけであり、workspace directoryの実在は含まない。pathの比較は
+/// `paths::real_path`を通すが、canonicalizeできない場合は宣言されたpathのまま比較する
+/// ため、一致したことをdirectoryが在ることの根拠には使えない。実在は`workspace_exists`
+/// が別の事実として観測する。
 pub(super) fn verify(entry: &SandboxEntry, sandbox: &SandboxName, workspace: &Path) -> Result<()> {
     match &entry.workspace {
         Some(observed) => {

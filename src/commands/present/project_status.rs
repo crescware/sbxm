@@ -11,6 +11,7 @@ pub fn project_status(value: ProjectValue) -> Inline {
         | ProjectValue::NotExposed => VisualState::Positive,
         ProjectValue::Missing
         | ProjectValue::Mismatch
+        | ProjectValue::NotObserved
         | ProjectValue::Changed
         | ProjectValue::Stopped
         | ProjectValue::NotCreated

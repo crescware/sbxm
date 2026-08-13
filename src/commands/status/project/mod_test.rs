@@ -77,6 +77,8 @@ fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() -> Ch
     assert_eq!(value_of(&status, "status-item-metadata")?, Value::Ready);
     assert_eq!(value_of(&status, "status-item-sandbox")?, Value::NotCreated);
     for item in [
+        // Sandboxが無い案件には、mount元のworkspaceも、中で見る対象も無い。
+        "status-item-workspace",
         "status-item-secret",
         "status-item-bare-repository",
         "status-item-worktrees",

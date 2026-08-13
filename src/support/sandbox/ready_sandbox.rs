@@ -10,4 +10,8 @@ pub struct ReadySandbox {
     pub state: SandboxState,
     /// この実行で作成したか。
     pub created: bool,
+    /// 既にあるSandboxのworkspace directoryが消えていて、この実行で作り直したか。
+    ///
+    /// 作り直したのは中立なmount点であり、Sandboxの中にあるrepositoryではない。
+    pub workspace_restored: bool,
 }

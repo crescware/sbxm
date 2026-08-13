@@ -104,7 +104,7 @@ fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() -> Checked {
         &fixture.workspace_root,
     )
     .required_because("diagnose")?;
-    assert_eq!(value_of(&status, "status-item-image")?, Value::Mismatch);
+    assert_eq!(value_of(&status, "status-item-image")?, Value::NotObserved);
     assert!(
         status
             .diagnostics
@@ -178,7 +178,7 @@ fn a_dockerfile_that_cannot_be_read_is_neither_absent_nor_a_new_generation() -> 
 
     assert_eq!(
         value_of(&status, "status-item-dockerfile")?,
-        Value::Mismatch
+        Value::NotObserved
     );
     assert!(
         names_path(
@@ -221,7 +221,7 @@ fn a_dockerfile_that_is_a_symlink_is_refused_instead_of_followed() -> Checked {
     .required_because("diagnose")?;
     assert_eq!(
         value_of(&status, "status-item-dockerfile")?,
-        Value::Mismatch
+        Value::NotObserved
     );
     assert!(
         names_path(
@@ -281,7 +281,7 @@ fn an_archive_path_that_cannot_be_inspected_is_not_reported_as_absent() -> Check
     .required_because("diagnose")?;
     assert_eq!(
         value_of(&status, "status-item-template-archive")?,
-        Value::Mismatch
+        Value::NotObserved
     );
     assert!(
         names_path(

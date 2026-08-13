@@ -1,6 +1,7 @@
 use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
+use crate::support::protection::BARE_GIT_DIR_PROBE;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -87,6 +88,13 @@ impl HostEnvironment for InnerCommandSandbox {
             (
                 i32::from(!self.present.borrow().iter().any(|known| known == target)),
                 String::new(),
+            )
+        } else if key.starts_with(&format!("sh -c {BARE_GIT_DIR_PROBE} ")) {
+            // 内側のshellが実際に走ったSandbox。印をstdoutへ書いてから`test`が答える。
+            let target = inner.last().copied().unwrap_or_default();
+            (
+                i32::from(!self.present.borrow().iter().any(|known| known == target)),
+                "probed".to_string(),
             )
         } else if key.contains("worktree add") {
             // 作成に成功したworktreeは、以後存在するものとして扱う。

@@ -28,6 +28,7 @@ pub fn execute_confirmed(
         let request = Request::new(
             DestructiveOperation::Destroy,
             &prepared.name,
+            &prepared.workspace_root,
             &layout,
             metadata,
         );

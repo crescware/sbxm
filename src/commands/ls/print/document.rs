@@ -6,6 +6,10 @@ use crate::commands::ls::Listing;
 use crate::commands::present::Legend;
 
 /// `ls`が並べるもの。
+///
+/// `STATE`と`WORKSPACE`は別の事実を示す。前者はruntimeが持つrecordの状態であり、
+/// 後者はそのrecordがmount元として宣言するdirectoryがhostに在るかである。どちらの列も、
+/// 管理案件ではsbxmの語彙へ写した値を示し、管理外Sandboxではruntimeの原値を示す。
 pub fn document(listing: &Listing, locale: Locale) -> Document {
     let mut legend = Legend::new(locale);
 
@@ -14,6 +18,7 @@ pub fn document(listing: &Listing, locale: Locale) -> Document {
         msg!("column-project-root"),
         msg!("column-sandbox"),
         msg!("column-state"),
+        msg!("column-workspace"),
     ]);
     for row in &listing.projects {
         projects.push(vec![
@@ -21,6 +26,7 @@ pub fn document(listing: &Listing, locale: Locale) -> Document {
             Inline::path(row.root.clone()).into(),
             Inline::text(row.sandbox.clone()).into(),
             legend.observed(&row.observed).into(),
+            legend.workspace_state(row.workspace).into(),
         ]);
     }
 

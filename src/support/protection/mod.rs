@@ -28,7 +28,9 @@
 //! `destroy --force`は保護を意図的に迂回する別操作であり、通常経路のremediationには
 //! 案内しない。
 
+mod answered;
 mod assessment;
+mod bare_git_dir_probe;
 mod blocker;
 mod confirm_prompt;
 mod confirmable_loss;
@@ -48,7 +50,9 @@ mod remote;
 mod request;
 mod worktree_report;
 
+use answered::answered;
 pub use assessment::Assessment;
+pub(crate) use bare_git_dir_probe::BARE_GIT_DIR_PROBE;
 pub use blocker::Blocker;
 pub use confirm_prompt::ConfirmPrompt;
 pub use confirmable_loss::ConfirmableLoss;

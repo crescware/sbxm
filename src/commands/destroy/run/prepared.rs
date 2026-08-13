@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::paths::{ExclusiveLock, ProjectPaths};
 use crate::project::SandboxName;
 
@@ -14,6 +16,11 @@ pub struct Prepared {
     pub(super) paths: ProjectPaths,
     pub(super) name: SandboxName,
     pub(super) state: ProjectState,
+    /// 中立workspace directoryを置くhost側のroot。
+    ///
+    /// 削除直前の観測は、`prepare`が最初に観測したときと同じrootを見る必要がある。
+    /// 両者が別のrootを見ると、同じ状態でもfingerprintが食い違いうる。
+    pub(super) workspace_root: PathBuf,
     pub(super) locked: select::Locked,
     /// 最初に観測した状態指紋。`confirm`が明示確認と引き換えに`take`で消費する。
     ///

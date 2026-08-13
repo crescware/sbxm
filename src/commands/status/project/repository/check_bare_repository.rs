@@ -49,14 +49,14 @@ pub fn check_bare_repository(
                         .iter()
                         .cloned(),
                 );
-                Value::Mismatch
+                Value::NotObserved
             }
         },
         Err(error) => {
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
-            Value::Mismatch
+            Value::NotObserved
         }
     };
     status.push("status-item-bare-repository", value);
