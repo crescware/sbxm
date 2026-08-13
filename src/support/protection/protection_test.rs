@@ -308,9 +308,12 @@ fn a_sandbox_without_the_shared_repository_has_nothing_to_lose() -> Checked {
     let name = project.sandbox.as_str();
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let host = clean_host(&fixture, &project)?.answering(
-        &format!("exec {name} -- test -e {}", layout.bare_git_dir()),
+        &format!(
+            "exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {}",
+            layout.bare_git_dir()
+        ),
         1,
-        "",
+        "probed",
     );
 
     let protection = inspect_with(&host, &project, Unmanaged::Refused, &fixture.workspace_root)
@@ -353,14 +356,17 @@ fn a_workspace_directory_that_cannot_be_observed_is_never_treated_as_no_reposito
 
 #[test]
 fn a_bare_repository_check_that_could_not_run_is_never_read_as_no_repository() -> Checked {
-    // `inspect`の入口が読む`test -e`は、隣の`require_no_operation_in_progress`と同じく
-    // 3値で扱う。起動できなかったことも、`test`自身が0でも1でもない終了statusで終わる
-    // ことも、内側のcommandが答えた「不在」として読まない。
+    // `BARE_GIT_DIR_PROBE`は、内側のshellが実際に走った場合だけstdoutへ印を書く。
+    // stdoutが空のまま終わった場合、終了statusが何であれ、内側のcommandが答えた
+    // 「不在」として読まない。
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let name = project.sandbox.as_str();
     let layout = SandboxLayout::new(project.metadata.canonical_id());
-    let command = format!("exec {name} -- test -e {}", layout.bare_git_dir());
+    let command = format!(
+        "exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {}",
+        layout.bare_git_dir()
+    );
 
     for code in [126, 2] {
         let host = clean_host(&fixture, &project)?.answering(&command, code, "");
@@ -371,5 +377,31 @@ fn a_bare_repository_check_that_could_not_run_is_never_read_as_no_repository() -
             )?;
         assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
     }
+    Ok(())
+}
+
+#[test]
+fn a_workspace_that_vanishes_between_the_host_check_and_the_repository_probe_is_never_treated_as_no_repository()
+-> Checked {
+    // hostのworkspace_existsが真を返した直後、次の`sbx exec`までの間にもmount元は
+    // 消えうる。その`sbx exec`は内側のshellを起動できないまま終了status `1`だけを
+    // 返し、これは`test -e`が答える「不在」の終了statusと同じ値である。終了statusの
+    // 3値化だけでは、この2つを区別できない。stdoutに印が無ければ、「repositoryが
+    // 無い」ではなく観測できなかったこととして拒否する。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let name = project.sandbox.as_str();
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let command = format!(
+        "exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {}",
+        layout.bare_git_dir()
+    );
+    let host = clean_host(&fixture, &project)?.answering(&command, 1, "");
+
+    let error = inspect_with(&host, &project, Unmanaged::Refused, &fixture.workspace_root)
+        .refused_because(
+            "a workspace that disappeared between the host check and the probe is never read as an empty repository",
+        )?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
     Ok(())
 }

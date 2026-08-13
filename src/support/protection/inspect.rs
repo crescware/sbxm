@@ -12,7 +12,7 @@ use crate::project::{SandboxLayout, SandboxName};
 use crate::support::sandbox;
 use crate::support::worktree;
 
-use super::{Kind, Mode, Remote, Report, Unmanaged, WorktreeReport, answered};
+use super::{BARE_GIT_DIR_PROBE, Kind, Mode, Remote, Report, Unmanaged, WorktreeReport, answered};
 
 /// 進行中のGit操作を示すfile。1つでもあれば削除しない。
 const IN_PROGRESS_MARKERS: [&str; 6] = [
@@ -47,10 +47,22 @@ pub fn inspect(
 
     // 共有repositoryのないSandboxは、この案件の作業を1つも持たない。worktreeが観測
     // できないことを、失うものがある徴候として読まない。構築が途中で終わったSandboxが
-    // これにあたる。mount元がhostに在ることを確かめたあとの終了statusは、内側の
-    // commandが答えたものとして信頼できる。
+    // これにあたる。
+    //
+    // ただし、直前のhost側確認とこの`sbx exec`の間にもworkspace directoryが消えうる。
+    // その場合`sbx exec`は内側のshellを起動できないまま終了statusだけを返し、その値は
+    // `test -e`が答える`0`/`1`と重なるため、終了statusだけでは区別できない
+    // (詳細は`BARE_GIT_DIR_PROBE`)。内側のshellが実際に走った場合だけstdoutへ書かれる
+    // 印が無ければ、終了statusを`test`の答えとして読まない。
     let bare_git_dir = layout.bare_git_dir();
-    let probe = sandbox::exec(host, sandbox_name, &["test", "-e", &bare_git_dir])?;
+    let probe = sandbox::exec(
+        host,
+        sandbox_name,
+        &["sh", "-c", BARE_GIT_DIR_PROBE, "sh", &bare_git_dir],
+    )?;
+    if probe.stdout_text().is_empty() {
+        return Err(sandbox::unobservable(&probe, &bare_git_dir));
+    }
     match answered(&probe, &bare_git_dir)? {
         0 => {}
         1 => {
