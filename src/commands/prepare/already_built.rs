@@ -38,13 +38,17 @@ pub(super) fn already_built(
 
     sandbox::verify_identity(&entry, name, workspace_root)?;
 
+    // no-opとして返す前に、hostのworkspace directoryを実測する。停止中のSandboxは
+    // runtimeが消えたmount元を持つものを起動しないため、この規則へ自然に落ちるが、
+    // runningのまま消えた場合はlive mountにより中を見るcommandが一時的に成功しうる。
+    // その場合でもhost側は消えたままなので、実測で通常の構築経路へ落とし、作り直しは
+    // `sandbox::ensure`に任せる。
+    if !sandbox::workspace_exists(workspace_root, name)? {
+        return Ok(None);
+    }
+
     // 要求した本数が揃っているかは、Sandboxの中を見て決める。中を見られない場合は
     // 揃っているとは言えないため、通常の構築経路を通す。
-    //
-    // mount元のworkspace directoryが消えている案件も、この規則でそこへ落ちる。中を
-    // 見に行くには起動が要り、runtimeは消えたmount元を持つSandboxを起動しないためで
-    // ある。実在の観測とmount点の作り直しは`sandbox::ensure`が行い、作り直した事実は
-    // そこから報告される。
     for name in layout.worktree_names(provisioning.requested_worktrees) {
         let path = format!("{}/{name}", layout.bare_root());
         if !sandbox::path_exists(host, &entry.name, &path)? {
@@ -65,3 +69,7 @@ pub(super) fn already_built(
         warnings: Vec::new(),
     }))
 }
+
+#[cfg(test)]
+#[path = "already_built_test.rs"]
+mod already_built_test;

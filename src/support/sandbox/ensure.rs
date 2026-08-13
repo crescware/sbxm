@@ -30,12 +30,15 @@ pub fn ensure(
     let workspace = workspace_path(workspace_root, sandbox);
     // 作る前に観測する。作ってから見ると、消えていたという事実はもう残っていない。
     let present = workspace_exists(workspace_root, sandbox)?;
-    // rootを別accountが所有していると、その下のworkspaceを入れ替えられる。
-    paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
-    paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
 
     if let Some(entry) = find(host, sandbox)? {
+        // 対応関係を確認できていないexpected pathを、確認より前に作らない。同名の
+        // 既存Sandboxが別workspaceを指している場合、mismatchで失敗させ、hostには
+        // まだ触れない。
         verify(&entry, sandbox, &workspace)?;
+        // rootを別accountが所有していると、その下のworkspaceを入れ替えられる。
+        paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
+        paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
         return Ok(ReadySandbox {
             name: entry.name,
             workspace,
@@ -45,6 +48,10 @@ pub fn ensure(
             workspace_restored: !present,
         });
     }
+
+    // recordが無い場合だけ、新規作成用のdirectoryを作る。
+    paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
+    paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
 
     progress.step(msg!("progress-creating-sandbox"));
     let command = relayed(&[

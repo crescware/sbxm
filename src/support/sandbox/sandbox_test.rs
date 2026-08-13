@@ -332,6 +332,10 @@ fn a_sandbox_with_another_workspace_stops_the_run() -> Checked {
     )
     .refused_because("a sandbox that works elsewhere is not this project's")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+    assert!(
+        !workspace_path(root.path(), &sandbox()?).exists(),
+        "an unconfirmed correspondence must not create anything on the host"
+    );
     Ok(())
 }
 

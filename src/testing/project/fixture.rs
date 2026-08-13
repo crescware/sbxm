@@ -8,6 +8,7 @@ use crate::project::SandboxName;
 use crate::registry::{RegistryEntry, RegistryGuard};
 use crate::repository::RepositoryIdentity;
 use crate::testing::value::DIGEST;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use super::{Registered, ssh_repository};
@@ -90,6 +91,12 @@ impl Fixture {
     pub fn entry(&self, project: &Registered, state: &str) -> Checked<String> {
         let workspace = self.workspace_root.join(project.sandbox.as_str());
         std::fs::create_dir_all(&workspace).required_because("create the workspace")?;
+        // 実環境と同じく、workspaceは自分だけが辿れるdirectoryとして作る。
+        std::fs::set_permissions(
+            &workspace,
+            std::fs::Permissions::from_mode(crate::paths::PRIVATE_DIR_MODE),
+        )
+        .required_because("the workspace belongs to the current user only")?;
         Ok(self.declared_entry(project, state))
     }
 
