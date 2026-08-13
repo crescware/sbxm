@@ -133,7 +133,7 @@ fn a_workspace_that_cannot_be_observed_is_not_read_as_present_or_absent() -> Che
 
     assert_eq!(
         value_of(&status, "status-item-workspace")?,
-        Value::Mismatch,
+        Value::NotObserved,
         "not being able to look is not the same as looking and finding nothing"
     );
     assert!(
@@ -164,7 +164,10 @@ fn a_sandbox_state_that_cannot_be_read_is_not_reported_as_a_missing_sandbox() ->
     .required_because("diagnose")?;
 
     assert_eq!(value_of(&status, "status-item-metadata")?, Value::Ready);
-    assert_eq!(value_of(&status, "status-item-sandbox")?, Value::Mismatch);
+    assert_eq!(
+        value_of(&status, "status-item-sandbox")?,
+        Value::NotObserved
+    );
     for item in [
         "status-item-secret",
         "status-item-bare-repository",
@@ -173,7 +176,7 @@ fn a_sandbox_state_that_cannot_be_read_is_not_reported_as_a_missing_sandbox() ->
     ] {
         assert_eq!(
             value_of(&status, item)?,
-            Value::Mismatch,
+            Value::NotObserved,
             "{item} is not observed, which is not the same as absent"
         );
     }
@@ -186,6 +189,49 @@ fn a_sandbox_state_that_cannot_be_read_is_not_reported_as_a_missing_sandbox() ->
         status.diagnostics
     );
     assert!(!host.ran("exec"), "nothing runs inside an unknown sandbox");
+    Ok(())
+}
+
+#[test]
+fn colliding_sandbox_names_are_not_reported_as_a_mismatch() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let entry = fixture.entry(&project, "running")?;
+    let host = without_image(FakeSbx::listing(&format!("[{entry},{entry}]")), &project);
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert_eq!(
+        value_of(&status, "status-item-sandbox")?,
+        Value::NotObserved
+    );
+    assert_eq!(
+        value_of(&status, "status-item-workspace")?,
+        Value::NotObserved
+    );
+    for item in [
+        "status-item-secret",
+        "status-item-bare-repository",
+        "status-item-worktrees",
+        "status-item-ssh-agent",
+    ] {
+        assert_eq!(value_of(&status, item)?, Value::NotObserved, "{item}");
+    }
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::SandboxNameCollision),
+        "the colliding sandbox names are diagnosed: {:?}",
+        status.diagnostics
+    );
+    assert!(!host.ran("exec"), "nothing runs in an ambiguous sandbox");
     Ok(())
 }
 
@@ -291,7 +337,10 @@ fn a_check_that_could_not_run_is_not_read_as_not_exposed() -> Checked {
         &fixture.workspace_root,
     )
     .required_because("diagnose")?;
-    assert_eq!(value_of(&status, "status-item-ssh-agent")?, Value::Mismatch);
+    assert_eq!(
+        value_of(&status, "status-item-ssh-agent")?,
+        Value::NotObserved
+    );
     assert!(
         status
             .diagnostics
@@ -340,7 +389,7 @@ fn a_token_that_was_never_registered_is_missing_rather_than_unusable() -> Checke
         &fixture.workspace_root,
     )
     .required_because("diagnose")?;
-    assert_eq!(value_of(&status, "status-item-secret")?, Value::Mismatch);
+    assert_eq!(value_of(&status, "status-item-secret")?, Value::NotObserved);
     assert!(
         status
             .diagnostics
@@ -400,7 +449,7 @@ fn a_sandbox_that_works_somewhere_else_is_not_taken_for_this_projects() -> Check
     ] {
         assert_eq!(
             value_of(&status, item)?,
-            Value::Mismatch,
+            Value::NotObserved,
             "{item} was not observed, which is not the same as absent"
         );
     }

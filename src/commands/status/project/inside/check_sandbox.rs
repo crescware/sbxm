@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::command::HostEnvironment;
+use crate::diagnostics::ErrorId;
 use crate::metadata::ProjectMetadata;
 use crate::paths::{self, PathScope};
 
@@ -29,8 +30,8 @@ pub fn check_sandbox(
         Ok(entries) => inventory::state_of(&entries, metadata, workspace_root),
         Err(error) => {
             // 一覧そのものを読めないのはglobal環境の問題である。
-            status.push("status-item-sandbox", Value::Mismatch);
-            status.push("status-item-workspace", Value::Mismatch);
+            status.push("status-item-sandbox", Value::NotObserved);
+            status.push("status-item-workspace", Value::NotObserved);
             status.global_scope_failure(&error);
             return None;
         }
@@ -55,8 +56,13 @@ pub fn check_sandbox(
             Some(state)
         }
         Err(error) => {
-            status.push("status-item-sandbox", Value::Mismatch);
-            status.push("status-item-workspace", Value::Mismatch);
+            let value = if error.contains_id(ErrorId::SandboxNameCollision) {
+                Value::NotObserved
+            } else {
+                Value::Mismatch
+            };
+            status.push("status-item-sandbox", value);
+            status.push("status-item-workspace", value);
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
@@ -82,7 +88,7 @@ fn observe_workspace(
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
-            Value::Mismatch
+            Value::NotObserved
         }
     }
 }

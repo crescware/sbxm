@@ -36,7 +36,7 @@ pub fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
-            Value::Mismatch
+            Value::NotObserved
         }
     };
     status.push("status-item-ssh-agent", value);

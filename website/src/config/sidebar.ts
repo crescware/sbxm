@@ -32,6 +32,7 @@ export const sidebar = [
 			{ slug: 'reference/cli/status', label: 'status' },
 			{ slug: 'reference/cli/destroy', label: 'destroy' },
 			{ slug: 'reference/cli/global-options' },
+			{ slug: 'reference/status-values' },
 			{ slug: 'reference/configuration' },
 			{ slug: 'reference/filesystem' },
 			{ slug: 'reference/output' },

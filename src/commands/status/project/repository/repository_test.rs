@@ -125,7 +125,7 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() -> Checked {
     .required_because("diagnose")?;
     assert_eq!(
         value_of(&status, "status-item-bare-repository")?,
-        Value::Mismatch
+        Value::NotObserved
     );
 
     // repositoryとして扱えないことは、gitが答えた結果なので不在とする。
@@ -172,7 +172,7 @@ fn a_repository_check_the_host_could_not_start_stays_the_hosts_own_failure() -> 
 
     assert_eq!(
         value_of(&status, "status-item-bare-repository")?,
-        Value::Mismatch
+        Value::NotObserved
     );
     assert!(
         status
@@ -218,7 +218,10 @@ fn a_worktree_listing_that_failed_leaves_no_worktree_row_behind() -> Checked {
     )
     .required_because("diagnose")?;
 
-    assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Mismatch);
+    assert_eq!(
+        value_of(&status, "status-item-worktrees")?,
+        Value::NotObserved
+    );
     assert!(
         status.worktrees.is_empty(),
         "an unread listing invents no row: {:?}",
@@ -265,13 +268,19 @@ fn a_worktree_whose_status_did_not_answer_is_not_reported_as_clean() -> Checked 
     )
     .required_because("diagnose")?;
 
-    assert_eq!(state_of(&status, "example-repo.tree-0")?, Value::Mismatch);
+    assert_eq!(
+        state_of(&status, "example-repo.tree-0")?,
+        Value::NotObserved
+    );
     assert_eq!(
         state_of(&status, "agent-scratch")?,
         Value::Dirty,
         "the worktree that did answer keeps its own state"
     );
-    assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Mismatch);
+    assert_eq!(
+        value_of(&status, "status-item-worktrees")?,
+        Value::NotObserved
+    );
     assert!(
         status
             .diagnostics
@@ -303,8 +312,14 @@ fn a_status_command_that_could_not_be_run_leaves_the_worktree_unobserved() -> Ch
     )
     .required_because("diagnose")?;
 
-    assert_eq!(state_of(&status, "example-repo.tree-0")?, Value::Mismatch);
-    assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Mismatch);
+    assert_eq!(
+        state_of(&status, "example-repo.tree-0")?,
+        Value::NotObserved
+    );
+    assert_eq!(
+        value_of(&status, "status-item-worktrees")?,
+        Value::NotObserved
+    );
     assert!(
         status
             .diagnostics

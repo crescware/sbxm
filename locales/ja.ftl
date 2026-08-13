@@ -446,6 +446,7 @@ status-item-project = 案件 (Project)
 column-path = path (PATH)
 column-kind = 種別 (KIND)
 legend-mismatch = 観測した状態が案件の宣言と一致しません
+legend-not-observed = 状態を観測できませんでした
 legend-changed = 適用後に変更されており、次の rebuild で反映されます
 legend-clean = commitしていない変更はありません
 legend-dirty = 変更があります
