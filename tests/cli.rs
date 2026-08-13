@@ -760,7 +760,7 @@ fn the_japanese_project_status_translates_the_labels_and_keeps_the_values() -> C
     assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
     // section名と項目名は訳し、状態値は訳さない。
     assert!(run.stdout.contains("案件 (PROJECT)"), "{}", run.stdout);
-    assert!(run.stdout.contains("mismatch"), "{}", run.stdout);
+    assert!(run.stdout.contains("not-observed"), "{}", run.stdout);
     // 凡例はSandboxの状態を説明し、host serviceの説明を流用しない。
     assert!(!run.stdout.contains("service"), "{}", run.stdout);
     Ok(())

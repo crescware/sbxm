@@ -43,13 +43,13 @@ pub fn worktree_state(
                     .iter()
                     .cloned(),
             );
-            Value::Mismatch
+            Value::NotObserved
         }
         Err(error) => {
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
-            Value::Mismatch
+            Value::NotObserved
         }
     }
 }

@@ -13,10 +13,11 @@ use crate::testing::outcome::{Checked, Required};
 use super::*;
 
 /// project scopeが表に出す状態値のすべて。
-const PROJECT_VALUES: [ProjectValue; 15] = [
+const PROJECT_VALUES: [ProjectValue; 16] = [
     ProjectValue::Ready,
     ProjectValue::Missing,
     ProjectValue::Mismatch,
+    ProjectValue::NotObserved,
     ProjectValue::Changed,
     ProjectValue::Running,
     ProjectValue::Stopped,

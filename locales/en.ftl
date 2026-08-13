@@ -446,6 +446,7 @@ status-item-project = Project
 column-path = PATH
 column-kind = KIND
 legend-mismatch = the observed state does not match what the project declares
+legend-not-observed = the state could not be observed
 legend-changed = the file changed since it was applied, so the next rebuild will pick it up
 legend-clean = the working tree has no change to commit
 legend-dirty = the working tree has changes
