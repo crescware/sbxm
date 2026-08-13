@@ -15,6 +15,10 @@ use crate::support::select::{self, ProjectPrompt};
 use super::{DestroyPlan, Prepared, keeps, re_register, removes};
 
 /// 対象を特定し、削除して良い状態であることを確かめる。
+///
+/// 中立workspace directoryの実在は条件にしない。削除はrecordを消すだけでdirectoryを
+/// 必要とせず、実在の有無で拒否の理由も変わらないためである。停止中のSandboxを通常
+/// modeで断るのは、中を観測できないからであり、これはdirectoryが在っても同じである。
 pub fn prepare(
     location: &ConfigLocation,
     requested: Option<&ProjectId>,

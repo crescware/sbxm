@@ -241,6 +241,59 @@ fn a_stopped_project_is_started_without_a_terminal_and_waited_for() -> Checked {
 }
 
 #[test]
+fn a_stopped_project_whose_workspace_is_gone_is_refused_instead_of_started() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("Example-Org/Example-Repo")?;
+    // runtimeのrecordは残っているが、mount元のdirectoryはhostから消えている。
+    let stopped = format!("[{}]", fixture.declared_entry(&project, "stopped"));
+    let host = ready(FakeSbx::listing(&stopped), &project);
+
+    let error = prepare_for(&fixture, &host)
+        .refused_because("a sandbox the runtime cannot start is not asked to start")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxWorkspaceMissing));
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(diagnostic.description.id, "error-sandbox-workspace-missing");
+    assert!(
+        !host.ran("/bin/true"),
+        "the refusal comes before the start: {:?}",
+        host.calls()
+    );
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .required_because("the user is told how to restore it")?;
+    assert!(
+        remediation
+            .commands
+            .iter()
+            .any(|command| command.as_str() == "sbxm prepare Example-Org/Example-Repo"),
+        "the remediation names a command that can be run: {remediation:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_running_project_is_opened_even_though_its_workspace_is_not_observed() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    // 動いているSandboxは起動し直さない。hostのdirectoryが消えていても、動いている
+    // mountが壊れているかは観測しておらず、推測で接続を拒まない。
+    let running = format!("[{}]", fixture.declared_entry(&project, "running"));
+    let host = ready(FakeSbx::listing(&running), &project);
+
+    let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
+
+    assert_eq!(prepared.ssh_host, format!("{}.sbx", project.sandbox));
+    assert!(
+        !host.ran("/bin/true"),
+        "a running sandbox is not started again: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
 fn a_project_without_a_sandbox_is_sent_back_to_add() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;

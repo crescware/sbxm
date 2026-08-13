@@ -226,3 +226,62 @@ fn single_refuses_two_entries_with_the_requested_name() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
     Ok(())
 }
+
+#[test]
+fn a_stopped_sandbox_whose_workspace_is_gone_is_not_asked_to_start() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    // runtimeのrecordは残っているが、mount元のdirectoryはhostから消えている。
+    let host = FakeSbx::listing(&format!(
+        "[{}]",
+        fixture.declared_entry(&project, "stopped")
+    ));
+
+    let error = start(
+        &host,
+        &project.metadata,
+        &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
+    )
+    .refused_because("the runtime refuses to start a sandbox whose workspace is gone")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxWorkspaceMissing));
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
+        Some("remediation-sandbox-workspace-missing"),
+        "the refusal names how to restore the directory"
+    );
+    assert!(
+        !host.ran("/bin/true"),
+        "the start is refused before the runtime is asked: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_that_is_present_lets_the_start_go_through() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "stopped")?));
+
+    start(
+        &host,
+        &project.metadata,
+        &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
+    )
+    .required_because("start")?;
+
+    assert!(
+        host.ran("/bin/true"),
+        "the sandbox is started once its workspace is observed: {:?}",
+        host.calls()
+    );
+    Ok(())
+}

@@ -10,12 +10,17 @@ use crate::registry::{self};
 
 use crate::support::daemon;
 
-use super::{ManagedProject, Observed, ProjectState, Snapshot, duplicated, observe};
+use super::{
+    ManagedProject, Observed, ProjectState, Snapshot, duplicated, observe, observe_workspace,
+};
 
 /// 現在のinventoryを1回の一覧取得から組み立てる。
 ///
 /// registryが読めない、Sandbox名が重複、対応が矛盾する場合は、部分的に正しそうな
 /// 結果を返さずerrorとする。個々の案件の観測結果は、entryを黙って落とさずそのまま返す。
+///
+/// workspace directoryの実在は、runtime stateとは別の事実として1案件ずつ観測する。
+/// 観測できない案件があってもerrorにしない。1案件の破損で一覧全体を失わせない。
 pub fn take(
     location: &ConfigLocation,
     host: &dyn HostEnvironment,
@@ -41,6 +46,7 @@ pub fn take(
             display_id: entry.repository().display_id(),
             project_root: entry.project_root().to_path_buf(),
             sandbox: name.as_str().to_string(),
+            workspace: observe_workspace(&name, workspace_root, &observed),
             observed,
         });
     }

@@ -90,10 +90,26 @@ impl Fixture {
     pub fn entry(&self, project: &Registered, state: &str) -> Checked<String> {
         let workspace = self.workspace_root.join(project.sandbox.as_str());
         std::fs::create_dir_all(&workspace).required_because("create the workspace")?;
-        Ok(format!(
+        Ok(self.declared_entry(project, state))
+    }
+
+    /// 案件に対応するSandboxの一覧行。hostのworkspace directoryは作らない。
+    ///
+    /// runtimeがrecordを持ちながら、mount元のdirectoryがhostから消えている状態を表す。
+    pub fn declared_entry(&self, project: &Registered, state: &str) -> String {
+        format!(
             r#"{{"name":"{}","state":"{state}","workspace":"{}"}}"#,
             project.sandbox,
-            workspace.display()
-        ))
+            self.workspace_root.join(project.sandbox.as_str()).display()
+        )
+    }
+
+    /// 案件のworkspace pathを、directory以外のものが占めている状態にする。
+    ///
+    /// 実在を観測できない状態を作る。不在とは別の答えになる。
+    pub fn workspace_is_unobservable(&self, project: &Registered) -> Checked {
+        std::fs::write(self.workspace_root.join(project.sandbox.as_str()), b"")
+            .required_because("occupy the workspace path with a file")?;
+        Ok(())
     }
 }

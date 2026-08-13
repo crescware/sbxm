@@ -5,7 +5,7 @@ use crate::design::{Inline, VisualState};
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::support::files::Placement;
-use crate::support::inventory::{Observed, ProjectState};
+use crate::support::inventory::{Observed, ProjectState, WorkspaceState};
 use crate::support::status::StatusValue;
 
 use crate::testing::outcome::{Checked, Required};
@@ -187,6 +187,52 @@ fn a_project_whose_sandbox_is_not_running_is_not_settled() {
             state.as_str()
         );
     }
+}
+
+#[test]
+fn a_workspace_that_is_gone_is_a_missing_start_up_condition_and_not_a_lost_artifact() {
+    // 中立workspaceは空のmount点である。消えていても案件の成果物は失われていないため、
+    // registryとの食い違いと同じ失敗としては示さない。
+    assert_eq!(
+        workspace_state(WorkspaceState::Ready),
+        Inline::state("ready", VisualState::Positive)
+    );
+    for state in [WorkspaceState::Missing, WorkspaceState::NotObserved] {
+        assert_eq!(
+            workspace_state(state),
+            Inline::state(state.as_str(), VisualState::Attention),
+            "{} needs attention rather than reading as a failure",
+            state.as_str()
+        );
+    }
+    // 見に行く対象が無いことは、良し悪しではない。
+    assert_eq!(
+        workspace_state(WorkspaceState::NotApplicable),
+        Inline::state("not-applicable", VisualState::Neutral)
+    );
+}
+
+#[test]
+fn every_workspace_state_is_explained_by_a_legend_the_catalog_can_render() -> Checked {
+    // `ls`のWORKSPACE列は`status`の`status-item-workspace`と同じ語彙で示す。翻訳先で
+    // 読めるのは凡例だけであり、説明の無い値は残せない。
+    let catalog = crate::i18n::Catalog::new(Locale::Ja);
+    for state in [
+        WorkspaceState::Ready,
+        WorkspaceState::Missing,
+        WorkspaceState::NotObserved,
+        WorkspaceState::NotApplicable,
+    ] {
+        let description = catalog
+            .text(state.legend_id())
+            .required_because(&format!("{} has a legend", state.as_str()))?;
+        assert!(
+            !description.is_empty(),
+            "{} has an empty legend",
+            state.as_str()
+        );
+    }
+    Ok(())
 }
 
 #[test]

@@ -203,6 +203,10 @@ fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() -> Ch
     )
     .required_because("create")?;
     assert!(ready.created);
+    assert!(
+        !ready.workspace_restored,
+        "the mount point of a new sandbox is not a restored one"
+    );
     assert_eq!(ready.state, SandboxState::Running);
     assert_eq!(ready.workspace, workspace);
     assert_eq!(
@@ -259,6 +263,57 @@ fn a_sandbox_that_matches_the_expected_state_is_reused_whoever_made_it() -> Chec
             .any(|args| args.first().is_some_and(|arg| arg == "create")),
         "an existing sandbox is never created over"
     );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_that_was_gone_is_created_again_and_reported() -> Checked {
+    let root = workspace_root()?;
+    let workspace = workspace_path(root.path(), &sandbox()?);
+    // recordは残っているが、mount元のdirectoryはhostから消えている。
+    let host = FakeSbx::listing(&[&listing(&workspace, "stopped")?]);
+
+    let ready = ensure(
+        &host,
+        &sandbox()?,
+        &template(),
+        root.path(),
+        &mut SilentProgress,
+    )
+    .required_because("the existing sandbox is kept and its mount point is made again")?;
+
+    assert!(!ready.created, "the sandbox itself is not created again");
+    assert!(
+        ready.workspace_restored,
+        "restoring the mount point is not folded into a silent success"
+    );
+    assert!(workspace.is_dir(), "the directory is there again");
+    assert_eq!(
+        fs::metadata(&workspace).required()?.permissions().mode() & 0o777,
+        PRIVATE_DIR_MODE
+    );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_that_is_already_there_is_not_reported_as_restored() -> Checked {
+    let root = workspace_root()?;
+    let workspace = workspace_path(root.path(), &sandbox()?);
+    fs::create_dir_all(&workspace).required()?;
+    fs::set_permissions(&workspace, fs::Permissions::from_mode(PRIVATE_DIR_MODE))
+        .required_because("the workspace belongs to the current user only")?;
+    let host = FakeSbx::listing(&[&listing(&workspace, "stopped")?]);
+
+    let ready = ensure(
+        &host,
+        &sandbox()?,
+        &template(),
+        root.path(),
+        &mut SilentProgress,
+    )
+    .required_because("reuse")?;
+
+    assert!(!ready.workspace_restored);
     Ok(())
 }
 

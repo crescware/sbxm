@@ -3,7 +3,6 @@ use std::path::Path;
 use crate::command::HostEnvironment;
 use crate::diagnostics::ErrorId;
 use crate::metadata::ProjectMetadata;
-use crate::paths::{self, PathScope};
 
 use crate::support::daemon;
 use crate::support::inventory::{self, ProjectState};
@@ -80,8 +79,7 @@ fn observe_workspace(
     workspace_root: &Path,
     status: &mut ProjectStatus,
 ) -> Value {
-    let workspace = sandbox::workspace_path(workspace_root, &metadata.sandbox_name());
-    match paths::directory_exists(&workspace, PathScope::ProjectPath) {
+    match sandbox::workspace_exists(workspace_root, &metadata.sandbox_name()) {
         Ok(true) => Value::Ready,
         Ok(false) => Value::Missing,
         Err(error) => {
