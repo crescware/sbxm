@@ -1,15 +1,18 @@
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use crate::command::HostEnvironment;
+use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
-use crate::project::SandboxLayout;
+use crate::paths;
+use crate::project::{SandboxLayout, SandboxName};
 
 use crate::support::sandbox;
 use crate::support::worktree;
 
-use super::{Kind, Mode, Remote, Report, Unmanaged, WorktreeReport, answered};
+use super::{BARE_GIT_DIR_PROBE, Kind, Mode, Remote, Report, Unmanaged, WorktreeReport, answered};
 
 /// 進行中のGit操作を示すfile。1つでもあれば削除しない。
 const IN_PROGRESS_MARKERS: [&str; 6] = [
@@ -26,19 +29,48 @@ const IN_PROGRESS_MARKERS: [&str; 6] = [
 /// 1件でも条件を満たさない場合は、対象を示して拒否する。
 pub fn inspect(
     host: &dyn HostEnvironment,
-    sandbox_name: &str,
+    sandbox: &SandboxName,
+    workspace_root: &Path,
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
     unmanaged: Unmanaged,
 ) -> Result<Report> {
+    let sandbox_name = sandbox.as_str();
     let bare_root = layout.bare_root();
+
+    // mount元が無いSandboxへの`sbx exec`は、内側のcommandを起動できないまま終了status
+    // だけを返す。その終了statusは、内側のcommandが答えた「不在」と区別できない
+    // (詳細は`workspace_missing`)。sbx execの答えへ頼る前に、mount元をhostで直接見る。
+    if !sandbox::workspace_exists(workspace_root, sandbox)? {
+        return Err(workspace_missing(metadata, sandbox, workspace_root));
+    }
+
     // 共有repositoryのないSandboxは、この案件の作業を1つも持たない。worktreeが観測
     // できないことを、失うものがある徴候として読まない。構築が途中で終わったSandboxが
     // これにあたる。
-    if !sandbox::path_exists(host, sandbox_name, &layout.bare_git_dir())? {
-        return Ok(Report {
-            worktrees: Vec::new(),
-        });
+    //
+    // ただし、直前のhost側確認とこの`sbx exec`の間にもworkspace directoryが消えうる。
+    // その場合`sbx exec`は内側のshellを起動できないまま終了statusだけを返し、その値は
+    // `test -e`が答える`0`/`1`と重なるため、終了statusだけでは区別できない
+    // (詳細は`BARE_GIT_DIR_PROBE`)。内側のshellが実際に走った場合だけstdoutへ書かれる
+    // 印が無ければ、終了statusを`test`の答えとして読まない。
+    let bare_git_dir = layout.bare_git_dir();
+    let probe = sandbox::exec(
+        host,
+        sandbox_name,
+        &["sh", "-c", BARE_GIT_DIR_PROBE, "sh", &bare_git_dir],
+    )?;
+    if probe.stdout_text().is_empty() {
+        return Err(sandbox::unobservable(&probe, &bare_git_dir));
+    }
+    match answered(&probe, &bare_git_dir)? {
+        0 => {}
+        1 => {
+            return Ok(Report {
+                worktrees: Vec::new(),
+            });
+        }
+        _ => return Err(sandbox::unobservable(&probe, &bare_git_dir)),
     }
     let entries = worktree::list(host, sandbox_name, layout)?;
     let declared: BTreeSet<String> = layout
@@ -299,5 +331,35 @@ fn require_reachable_from_origin(
 fn refuse(reason: Msg) -> Error {
     Error::single(
         Diagnostic::new(ErrorId::UnsavedWork, reason).remediation(msg!("remediation-unsaved-work")),
+    )
+}
+
+/// hostのworkspace directoryが消えているSandboxを、共有repositoryのないSandboxと
+/// 同一視せず拒否する。
+///
+/// 実機では、runningのままworkspace directoryだけが消えたSandboxへの`sbx exec`が
+/// `422`を終了status `1`で示す。内側の`test`が「不在」を示す終了statusも`1`であり、
+/// 終了statusだけではこの2つを区別できない。区別できない答えを安全側に丸めず、
+/// host側を直接見て確かめられなかった場合は削除も再作成も行わない。
+fn workspace_missing(
+    metadata: &ProjectMetadata,
+    sandbox: &SandboxName,
+    workspace_root: &Path,
+) -> Error {
+    let path = sandbox::workspace_path(workspace_root, sandbox);
+    Error::single(
+        Diagnostic::new(
+            ErrorId::SandboxWorkspaceMissing,
+            msg!(
+                "error-protection-workspace-missing",
+                project = metadata.display_id(),
+                sandbox = sandbox.as_str()
+            ),
+        )
+        .fact(Fact::path(&paths::display(&path)))
+        .remediation(
+            Remediation::text(msg!("remediation-sandbox-workspace-missing"))
+                .try_run(format!("sbxm prepare {}", metadata.display_id())),
+        ),
     )
 }

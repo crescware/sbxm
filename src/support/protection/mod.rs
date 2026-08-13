@@ -4,6 +4,7 @@
 //! 保存されていない作業がないことを確かめる。判定できない場合は削除しない。
 
 mod answered;
+mod bare_git_dir_probe;
 mod inspect;
 mod kind;
 mod mode;
@@ -13,6 +14,7 @@ mod unmanaged;
 mod worktree_report;
 
 use answered::answered;
+pub(crate) use bare_git_dir_probe::BARE_GIT_DIR_PROBE;
 pub use inspect::inspect;
 pub use kind::Kind;
 pub use mode::Mode;

@@ -60,7 +60,8 @@ pub fn run(
         let layout = SandboxLayout::new(&canonical);
         protection::inspect(
             host,
-            name.as_str(),
+            &name,
+            workspace_root,
             &layout,
             &locked.metadata,
             Unmanaged::Refused,

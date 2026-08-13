@@ -16,9 +16,10 @@ use super::{DestroyPlan, Prepared, keeps, re_register, removes};
 
 /// 対象を特定し、削除して良い状態であることを確かめる。
 ///
-/// 中立workspace directoryの実在は条件にしない。削除はrecordを消すだけでdirectoryを
-/// 必要とせず、実在の有無で拒否の理由も変わらないためである。停止中のSandboxを通常
-/// modeで断るのは、中を観測できないからであり、これはdirectoryが在っても同じである。
+/// 削除そのものはrecordを消すだけであり、中立workspace directoryを必要としない。
+/// 停止中のSandboxを通常modeで断るのは、中を観測できないからであり、これはdirectory
+/// が在っても同じである。runningのSandboxは、データ保護検査の入口でdirectoryの実在を
+/// 確かめる。mount元が無いままでは、中を見るcommandの答えを信頼できないためである。
 pub fn prepare(
     location: &ConfigLocation,
     requested: Option<&ProjectId>,
@@ -58,7 +59,15 @@ pub fn prepare(
             ));
         }
         let layout = SandboxLayout::new(metadata.canonical_id());
-        protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Allowed)?.worktrees
+        protection::inspect(
+            host,
+            &name,
+            workspace_root,
+            &layout,
+            metadata,
+            Unmanaged::Allowed,
+        )?
+        .worktrees
     };
 
     let plan = DestroyPlan {
