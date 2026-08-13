@@ -52,7 +52,6 @@ pub fn run(
         start_to_read_saved_state(
             host,
             &locked.metadata,
-            &name,
             state == ProjectState::Stopped,
             workspace_root,
             poll,

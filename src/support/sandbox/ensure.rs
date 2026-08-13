@@ -9,11 +9,17 @@ use crate::project::SandboxName;
 use crate::design::ProgressSink;
 use crate::support::template::LoadedTemplate;
 
-use super::{AGENT_KIT, ReadySandbox, find, relayed, unusable, verify, workspace_path};
+use super::{
+    AGENT_KIT, ReadySandbox, find, relayed, unusable, verify, workspace_exists, workspace_path,
+};
 
 /// Sandboxを用意する。
 ///
 /// 呼び出し側はdaemonの安全性を確認した区間で呼ぶ。
+///
+/// 既にrecordがある案件でworkspace directoryが消えている場合は、この関数がそれを
+/// 作り直す。作り直した事実は`ReadySandbox`へ載せ、呼び出し側が成功のなかへ黙って
+/// 混ぜずに告げられるようにする。
 pub fn ensure(
     host: &dyn HostEnvironment,
     sandbox: &SandboxName,
@@ -21,20 +27,31 @@ pub fn ensure(
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<ReadySandbox> {
-    // rootを別accountが所有していると、その下のworkspaceを入れ替えられる。
-    paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
     let workspace = workspace_path(workspace_root, sandbox);
-    paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
+    // 作る前に観測する。作ってから見ると、消えていたという事実はもう残っていない。
+    let present = workspace_exists(workspace_root, sandbox)?;
 
     if let Some(entry) = find(host, sandbox)? {
+        // 対応関係を確認できていないexpected pathを、確認より前に作らない。同名の
+        // 既存Sandboxが別workspaceを指している場合、mismatchで失敗させ、hostには
+        // まだ触れない。
         verify(&entry, sandbox, &workspace)?;
+        // rootを別accountが所有していると、その下のworkspaceを入れ替えられる。
+        paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
+        paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
         return Ok(ReadySandbox {
             name: entry.name,
             workspace,
             state: entry.state,
             created: false,
+            // recordが在るのにmount元が無かった場合だけ、作り直しとして扱う。
+            workspace_restored: !present,
         });
     }
+
+    // recordが無い場合だけ、新規作成用のdirectoryを作る。
+    paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
+    paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
 
     progress.step(msg!("progress-creating-sandbox"));
     let command = relayed(&[
@@ -63,5 +80,7 @@ pub fn ensure(
         workspace,
         state: entry.state,
         created: true,
+        // 新しく作るSandboxのmount点であり、消えたものの作り直しではない。
+        workspace_restored: false,
     })
 }

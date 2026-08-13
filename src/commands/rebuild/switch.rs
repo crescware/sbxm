@@ -57,7 +57,6 @@ impl Switch<'_> {
             start_to_read_saved_state(
                 host,
                 metadata,
-                name,
                 entry.state == SandboxState::Stopped,
                 workspace_root,
                 poll,

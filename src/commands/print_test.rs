@@ -15,7 +15,7 @@ use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::{PlacedFile, Placement};
-use crate::support::inventory::{Observed, ProjectState};
+use crate::support::inventory::{Observed, ProjectState, WorkspaceState};
 use crate::support::protection::{Kind, Mode, Remote, WorktreeReport};
 use crate::support::status::{Row, StatusValue};
 use crate::testing::plain;
@@ -211,6 +211,7 @@ fn listing() -> super::ls::Listing {
             root: "/home/user/Projects/repo.project".to_string(),
             sandbox: "owner-repo".to_string(),
             observed: Observed::Registered(ProjectState::Running),
+            workspace: WorkspaceState::Ready,
         }],
         unmanaged: Vec::new(),
         settled: true,
