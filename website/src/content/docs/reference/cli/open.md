@@ -15,4 +15,6 @@ When a project ID is supplied without `--index`, the SSH session starts in `/hom
 | --- | --- |
 | `--index`, `-i` `N` | Start in managed worktree `N` (zero-based) |
 
+Starting a stopped sandbox requires the [neutral workspace directory](../../filesystem/#neutral-workspace) its record names. `open` observes that directory before it asks the runtime to start, and refuses when the directory is absent or cannot be observed, naming the path and how to restore it. A sandbox that is already running is not started again and is not held back by that observation.
+
 The project must already be prepared and the Docker Sandboxes Remote SSH integration must be configured on the host.

@@ -5,10 +5,10 @@ use crate::config::{ConfigLocation, GlobalConfig};
 use crate::diagnostics::Result;
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
-use crate::paths::ProjectPaths;
+use crate::paths::{self, ProjectPaths};
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
-use crate::design::{ProgressSink, Warning};
+use crate::design::{Fact, ProgressSink, Warning};
 use crate::support::select::ProjectPrompt;
 use crate::support::{
     disk, docker, files, generation, identity, image, repository, sandbox, secret, select,
@@ -79,6 +79,18 @@ pub fn run(
     let loaded = template::ensure(host, &archive, &built, progress)?;
 
     let ready = sandbox::ensure(host, &name, &loaded, workspace_root, progress)?;
+    if ready.workspace_restored {
+        // 消えていたmount点を作り直したことを、成功のなかへ黙って混ぜない。対象のpathと
+        // 変更範囲を示し、Sandboxの中には触れていないことまで告げる。
+        warnings.push(
+            Warning::text(msg!(
+                "warning-workspace-restored",
+                sandbox = ready.name.clone()
+            ))
+            .fact(Fact::path(&paths::display(&ready.workspace)))
+            .explain(msg!("guidance-workspace-restored")),
+        );
+    }
     // hostのSSH Agentが届かないことを、daemonの起動条件から推定せず中から確かめる。
     sandbox::require_credentials_isolated(host, &ready.name)?;
     secret::require_placeholder_present(host, &ready.name)?;

@@ -1,4 +1,5 @@
 use crate::project::SandboxLayout;
+use crate::support::protection::BARE_GIT_DIR_PROBE;
 use crate::testing::host::FakeSbx;
 use crate::testing::outcome::Checked;
 use crate::testing::project::{Fixture, Registered};
@@ -13,6 +14,14 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
         .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         .answering(
             &format!(
+                "exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {}",
+                layout.bare_git_dir()
+            ),
+            0,
+            "probed",
+        )
+        .answering(
+            &format!(
                 "exec {name} -- git --git-dir {} worktree list --porcelain -z",
                 layout.bare_git_dir()
             ),
@@ -24,6 +33,39 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
         )
         .answering(
             &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+            0,
+            "",
+        )
+        // 無視対象pathも、ローカル所有refも、追加remoteも、reflogだけのcommitも無い。
+        // 層Bのcollectorが読むcommandは、素通りに見えないよう空の応答を明示する。
+        .answering(
+            &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --ignored=traditional"),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/heads/ refs/tags/ refs/notes/ refs/stash",
+                layout.bare_git_dir()
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {} remote", layout.bare_git_dir()),
+            0,
+            "origin\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {} rev-list --walk-reflogs --all",
+                layout.bare_git_dir()
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {} rev-list --all", layout.bare_git_dir()),
             0,
             "",
         )

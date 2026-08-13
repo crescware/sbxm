@@ -14,7 +14,7 @@ pub fn check_archive(paths: &ProjectPaths, metadata: &ProjectMetadata, status: &
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
-            Value::Mismatch
+            Value::NotObserved
         }
     };
     status.push("status-item-template-archive", value);

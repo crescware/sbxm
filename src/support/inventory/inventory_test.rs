@@ -1,3 +1,5 @@
+use std::os::unix::fs::PermissionsExt;
+
 use crate::diagnostics::ErrorId;
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -219,5 +221,102 @@ fn single_refuses_two_entries_with_the_requested_name() -> Checked {
     let error =
         single(&entries, "sbxm-example").refused_because("two matching sandboxes are ambiguous")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_whose_workspace_is_gone_is_not_asked_to_start() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    // runtimeのrecordは残っているが、mount元のdirectoryはhostから消えている。
+    let host = FakeSbx::listing(&format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.declared_entry(&project, "stopped")
+    ));
+
+    let error = start(
+        &host,
+        &project.metadata,
+        &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
+    )
+    .refused_because("the runtime refuses to start a sandbox whose workspace is gone")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxWorkspaceMissing));
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
+        Some("remediation-sandbox-workspace-missing"),
+        "the refusal names how to restore the directory"
+    );
+    assert!(
+        !host.ran("/bin/true"),
+        "the start is refused before the runtime is asked: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_that_is_present_lets_the_start_go_through() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = FakeSbx::listing(&format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    ));
+
+    start(
+        &host,
+        &project.metadata,
+        &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
+    )
+    .required_because("start")?;
+
+    assert!(
+        host.ran("/bin/true"),
+        "the sandbox is started once its workspace is observed: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_that_another_account_could_write_to_is_not_trusted_for_a_start() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = FakeSbx::listing(&format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    ));
+
+    // 実在はするが、他accountも書き込めるpermissionのままになっている。cleanupの
+    // あとで別accountが用意した可能性を、実在の確認だけでは除けない。
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o777))
+        .required_because("widen the permission")?;
+
+    let error = start(
+        &host,
+        &project.metadata,
+        &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
+    )
+    .refused_because("an open workspace is not trusted before the start is asked")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert!(
+        !host.ran("/bin/true"),
+        "the start is refused before the runtime is asked: {:?}",
+        host.calls()
+    );
     Ok(())
 }

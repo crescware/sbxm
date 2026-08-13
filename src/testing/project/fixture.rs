@@ -8,6 +8,7 @@ use crate::project::SandboxName;
 use crate::registry::{RegistryEntry, RegistryGuard};
 use crate::repository::RepositoryIdentity;
 use crate::testing::value::DIGEST;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use super::{Registered, ssh_repository};
@@ -86,17 +87,46 @@ impl Fixture {
         Ok(())
     }
 
-    /// 案件に対応するSandboxの一覧行。
-    ///
-    /// sbx v0.37.0が実際に返す形（`status`、`workspaces`は配列）に合わせる。呼び出し側は
-    /// これを`{"sandboxes": [...]}`で包んで`sbx ls --json`の応答とする。
+    /// 案件に対応するSandboxの一覧行。hostのworkspace directoryも作る。
     pub fn entry(&self, project: &Registered, state: &str) -> Checked<String> {
+        self.create_workspace(project)?;
+        Ok(self.declared_entry(project, state))
+    }
+
+    /// 案件のworkspace directoryをhostに作る。
+    ///
+    /// 一覧を組み立てないtestが、mount元だけを実在させるために使う。
+    pub fn create_workspace(&self, project: &Registered) -> Checked {
         let workspace = self.workspace_root.join(project.sandbox.as_str());
         std::fs::create_dir_all(&workspace).required_because("create the workspace")?;
-        Ok(format!(
+        // 実環境と同じく、workspaceは自分だけが辿れるdirectoryとして作る。
+        std::fs::set_permissions(
+            &workspace,
+            std::fs::Permissions::from_mode(crate::paths::PRIVATE_DIR_MODE),
+        )
+        .required_because("the workspace belongs to the current user only")?;
+        Ok(())
+    }
+
+    /// 案件に対応するSandboxの一覧行。hostのworkspace directoryは作らない。
+    ///
+    /// runtimeがrecordを持ちながら、mount元のdirectoryがhostから消えている状態を表す。
+    /// sbx v0.37.0が実際に返す形（`status`、`workspaces`は配列）に合わせる。呼び出し側は
+    /// これを`{"sandboxes": [...]}`で包んで`sbx ls --json`の応答とする。
+    pub fn declared_entry(&self, project: &Registered, state: &str) -> String {
+        format!(
             r#"{{"name":"{}","status":"{state}","workspaces":["{}"]}}"#,
             project.sandbox,
-            workspace.display()
-        ))
+            self.workspace_root.join(project.sandbox.as_str()).display()
+        )
+    }
+
+    /// 案件のworkspace pathを、directory以外のものが占めている状態にする。
+    ///
+    /// 実在を観測できない状態を作る。不在とは別の答えになる。
+    pub fn workspace_is_unobservable(&self, project: &Registered) -> Checked {
+        std::fs::write(self.workspace_root.join(project.sandbox.as_str()), b"")
+            .required_because("occupy the workspace path with a file")?;
+        Ok(())
     }
 }

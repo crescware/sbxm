@@ -94,6 +94,47 @@ impl Blocker {
     pub(super) fn unobservable(diagnostic: Diagnostic) -> Blocker {
         Blocker::Unobservable { diagnostic }
     }
+
+    /// fingerprintの入力に使う、翻訳しない安定表記。
+    ///
+    /// `Unobservable`は`ErrorId`だけを写す。保持する`Diagnostic`は外部commandのstderrと
+    /// 表示用messageを含み、どちらもfingerprintの入力に含めないと決めているためである。
+    /// 同じ`ErrorId`の観測不能が複数あっても件数は保たれ、blockerが1件でもあれば
+    /// `require_no_blockers`が先に拒否するため、この粒度で足りる。
+    pub(super) fn fingerprint_key(&self) -> String {
+        match self {
+            Blocker::Unobservable { diagnostic } => {
+                format!("unobservable\u{1f}{}", diagnostic.id.as_str())
+            }
+            Blocker::TrackedChanges { worktree } => format!("tracked-changes\u{1f}{worktree}"),
+            Blocker::UntrackedPaths { worktree, paths } => {
+                let mut sorted = paths.clone();
+                sorted.sort();
+                format!(
+                    "untracked-paths\u{1f}{worktree}\u{1f}{}",
+                    sorted.join("\u{1e}")
+                )
+            }
+            Blocker::GitOperationInProgress {
+                worktree,
+                operation,
+            } => format!("git-operation-in-progress\u{1f}{worktree}\u{1f}{operation}"),
+            Blocker::UnmanagedWorktree { worktree } => {
+                format!("unmanaged-worktree\u{1f}{worktree}")
+            }
+            Blocker::WorktreeOutsideRepository { path, root } => {
+                format!("worktree-outside-repository\u{1f}{path}\u{1f}{root}")
+            }
+            Blocker::OriginRecoveryNotProven {
+                reference,
+                commit,
+                reason,
+            } => format!(
+                "origin-recovery-not-proven\u{1f}{reference}\u{1f}{commit}\u{1f}{}",
+                reason.fingerprint_key()
+            ),
+        }
+    }
 }
 
 /// 未追跡pathの一覧を`MAX_LISTED_PATHS`件までに絞り、総数を別のFactで示す。

@@ -40,6 +40,13 @@ const RELAY: &str = "src/command";
 /// project lock→session leaseに固定する制約を型で保証する。
 const SESSION_LEASE_ACQUIRER: &str = "src/support/select/locked.rs";
 
+/// sandbox名の完全一致入力を`ProtectionConfirmation`へ変えてよい唯一の場所。
+///
+/// `confirmation::confirm`はsnapshotをconsumeする低水準APIである。呼び出し箇所が
+/// 増えると、rebuild / destroyがそれぞれ独自の確認判定を持ち、共通gateを経ない
+/// `ProtectionConfirmation`が生まれ得る。
+const PROTECTION_CONFIRMER: &str = "src/support/protection/confirmation/confirm_interactively.rs";
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
@@ -327,6 +334,30 @@ fn the_session_lease_is_acquired_only_while_holding_the_project_lock() -> Checke
     assert!(
         offenders.is_empty(),
         "the session lease path is touched only from {SESSION_LEASE_ACQUIRER}, always behind the project lock:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_protection_confirmation_is_built_in_one_place_only() -> Checked {
+    // `confirmation::confirm`はsandbox名の完全一致だけを合図に`ProtectionConfirmation`
+    // を作る低水準APIである。呼び出し箇所が増えると、rebuild / destroyがそれぞれ別の
+    // 確認判定を持ち、共通gateを経ない`ProtectionConfirmation`を作れてしまう。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path == PROTECTION_CONFIRMER || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("confirmation::confirm(") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a ProtectionConfirmation is built only from {PROTECTION_CONFIRMER}:\n{}",
         offenders.join("\n")
     );
     Ok(())

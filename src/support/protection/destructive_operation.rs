@@ -4,7 +4,17 @@ pub enum DestructiveOperation {
     /// 管理外の作業ツリーは`Blocker::UnmanagedWorktree`で拒否する。rebuildは同じ
     /// 配置を再作成できない。
     Rebuild,
-    /// 管理外の作業ツリーは内容を他のworktreeと同列に検査し、存在自体は拒否しない。
-    /// `WorktreeReport::kind`が管理外であることを示す。
+    /// 管理外の作業ツリーは内容を他の検査と同列に確かめたうえで、存在自体を
+    /// `ConfirmableLoss`として明示確認の対象に載せる。
     Destroy,
+}
+
+impl DestructiveOperation {
+    /// 翻訳しない安定した表記。fingerprintの入力に使う。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DestructiveOperation::Rebuild => "rebuild",
+            DestructiveOperation::Destroy => "destroy",
+        }
+    }
 }

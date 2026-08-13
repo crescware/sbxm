@@ -322,3 +322,58 @@ fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_workspace_that_had_to_be_created_again_is_told_rather_than_hidden() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    // worktreeを揃える工程で止め、Sandboxだけができている状態を作る。
+    world.failing("worktree add");
+    bench
+        .build(&world, &request)
+        .refused_because("the run stops at the step that failed")?;
+    world.nothing_fails();
+
+    // 続きを実行する前に、hostのworkspace directoryだけが消える。
+    let sandbox = world.sandboxes.borrow()[0].name.clone();
+    let workspace = bench.workspace_root.path().join(&sandbox);
+    fs::remove_dir_all(&workspace).required_because("the workspace directory is removed")?;
+
+    let mark = world.mark();
+    let output = bench
+        .build(&world, &request)
+        .required_because("the same prepare finishes")?;
+
+    assert!(
+        workspace.is_dir(),
+        "the mount point is there again: {}",
+        workspace.display()
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("sbx create")),
+        "the sandbox itself is kept: {:?}",
+        world.since(mark)
+    );
+    let restored = output
+        .warnings
+        .iter()
+        .find(|warning| warning.description.id == "warning-workspace-restored")
+        .required_because("creating the directory again is reported")?;
+    assert_eq!(
+        restored
+            .facts
+            .iter()
+            .filter_map(|fact| match fact {
+                crate::design::Fact::OneLine { value, .. } => Some(value.as_str().to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![crate::paths::display(&workspace)],
+        "the report names the directory it created"
+    );
+    Ok(())
+}

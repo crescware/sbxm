@@ -77,8 +77,11 @@ pub fn prepare(
 
     let entries = daemon::list(host)?;
     match inventory::state_of(&entries, metadata, workspace_root)? {
+        // 既に動いているSandboxを起動し直さない。hostのworkspace directoryが消えていても、
+        // 動いているmountが壊れているかどうかは観測しておらず、推測で接続を拒まない。
         ProjectState::Running => {}
-        ProjectState::Stopped => inventory::start(host, name.as_str(), progress)?,
+        // 起動には中立workspace directoryの実在が要る。`start`が起動前に実測する。
+        ProjectState::Stopped => inventory::start(host, metadata, workspace_root, progress)?,
         ProjectState::NotCreated => return Err(inventory::not_created(metadata, name.as_str())),
     }
     inventory::wait_until_running(host, metadata, workspace_root, poll)?;

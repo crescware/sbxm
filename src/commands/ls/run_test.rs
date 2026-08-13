@@ -1,5 +1,5 @@
 use crate::commands::ls::{ProjectRow, UnmanagedRow};
-use crate::support::inventory::Observed;
+use crate::support::inventory::{Observed, WorkspaceState};
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -31,12 +31,14 @@ fn managed_projects_and_unmanaged_sandboxes_are_listed_separately() -> Checked {
                 root: display(first.paths.root()),
                 sandbox: first.sandbox.as_str().to_string(),
                 observed: Observed::Registered(ProjectState::Running),
+                workspace: WorkspaceState::Ready,
             },
             ProjectRow {
                 project: "other/repo".to_string(),
                 root: display(second.paths.root()),
                 sandbox: second.sandbox.as_str().to_string(),
                 observed: Observed::Registered(ProjectState::Stopped),
+                workspace: WorkspaceState::Ready,
             },
         ]
     );
@@ -199,5 +201,85 @@ fn a_listing_that_cannot_be_trusted_produces_no_rows() -> Checked {
     let error = run(&fixture.location, &host, &fixture.workspace_root)
         .refused_because("an unknown state stops the listing")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    Ok(())
+}
+
+#[test]
+fn a_project_whose_workspace_is_gone_is_shown_as_missing_rather_than_stopped_alone() -> Checked {
+    let fixture = Fixture::new()?;
+    let running = fixture.register("example-org/running")?;
+    let stopped = fixture.register("example-org/stopped")?;
+    // 停止中の案件だけ、runtimeのrecordが残ったままhostのdirectoryが消えている。
+    let host = FakeSbx::listing(&format!(
+        r#"{{"sandboxes":[{},{}]}}"#,
+        fixture.entry(&running, "running")?,
+        fixture.declared_entry(&stopped, "stopped"),
+    ));
+
+    let listing =
+        run(&fixture.location, &host, &fixture.workspace_root).required_because("list")?;
+    assert_eq!(
+        listing
+            .projects
+            .iter()
+            .map(|row| (row.observed.as_str(), row.workspace.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("running", "ready"), ("stopped", "missing")],
+        "the runtime state and the workspace are shown as separate facts"
+    );
+    assert!(
+        listing.settled,
+        "a missing start-up condition is not a mismatch between the registry and its artifacts"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_that_cannot_be_observed_is_not_reported_as_absent() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    fixture.workspace_is_unobservable(&project)?;
+    let host = FakeSbx::listing(&format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.declared_entry(&project, "stopped")
+    ));
+
+    let listing =
+        run(&fixture.location, &host, &fixture.workspace_root).required_because("list")?;
+    assert_eq!(listing.projects[0].workspace, WorkspaceState::NotObserved);
+    Ok(())
+}
+
+#[test]
+fn a_project_without_a_sandbox_has_no_workspace_to_ask_about() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    let listing = run(
+        &fixture.location,
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
+        &fixture.workspace_root,
+    )
+    .required_because("list")?;
+    assert_eq!(listing.projects[0].workspace, WorkspaceState::NotApplicable);
+    Ok(())
+}
+
+#[test]
+fn an_entry_that_needs_recovery_is_not_asked_about_its_workspace() -> Checked {
+    let fixture = Fixture::new()?;
+    // project rootが失われた案件は、どのSandboxのrecordを見るべきかも決まらない。
+    fixture.record(
+        &fixture.parent.as_path().join("gone.project"),
+        ssh_repository("example-org/gone")?,
+    )?;
+
+    let listing = run(
+        &fixture.location,
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
+        &fixture.workspace_root,
+    )
+    .required_because("list")?;
+    assert_eq!(listing.projects[0].observed.as_str(), "missing");
+    assert_eq!(listing.projects[0].workspace, WorkspaceState::NotApplicable);
     Ok(())
 }

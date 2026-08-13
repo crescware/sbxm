@@ -144,12 +144,12 @@ esac
 exit 1
 "#;
 
-/// Sandbox内のgitが答えるcommit。`HOST_TOOL`が返す値と同じである。
-const COMMIT: &str = "1111111111111111111111111111111111111111";
-
 /// 登録に使うclone URLと、そこから決まる表示ID。
 const CLONE_URL: &str = "git@github.com:Example-Org/Example-Repo.git";
 const PROJECT: &str = "Example-Org/Example-Repo";
+
+/// Sandboxが持つ中立Workspaceのroot。sbxmが固定で使う位置である。
+const WORKSPACE_ROOT: &str = "/tmp/docker-sandboxes";
 
 /// Sandboxの中で案件が使うbare rootと、1本目のmanaged worktree。
 const BARE_ROOT: &str = "/home/agent/work/example-repo";
@@ -331,7 +331,7 @@ impl Host {
     fn sandbox_is_running(&self, name: &str) -> Checked<()> {
         self.answer(
             "sandboxes",
-            &format!("{name}\trunning\t/tmp/docker-sandboxes/{name}\n"),
+            &format!("{name}\trunning\t{WORKSPACE_ROOT}/{name}\n"),
         )
     }
 
@@ -520,6 +520,8 @@ fn ls_exits_with_zero_when_every_registered_project_is_settled() -> Checked {
     let listed = row(&run.stdout, PROJECT)?;
     assert!(listed.contains(&sandbox), "{listed}");
     assert!(listed.contains("not-created"), "{listed}");
+    // Sandboxのrecordが無い案件には、実在を問うmount元も無い。
+    assert!(listed.contains("not-applicable"), "{listed}");
 
     // 管理外のSandboxは、sbxmの管理状態ではなくruntimeが返した原値で並べる。
     let unmanaged = row(&run.stdout, "sbxm-elsewhere")?;
@@ -552,32 +554,61 @@ fn ls_shows_what_it_observed_and_still_fails_when_a_project_is_not_settled() -> 
 }
 
 #[test]
-fn prepare_reports_a_sandbox_that_already_meets_the_target_without_changing_anything() -> Checked {
+fn ls_separates_a_sandbox_that_is_stopped_from_one_that_cannot_start() -> Checked {
     let host = Host::new()?;
     let sandbox = host.registered()?;
+    // recordはmount元のdirectoryを指しているが、hostにそのdirectoryは無い。workspace
+    // rootの位置はsbxmが固定で持つため、testはそこへ作らず、無いことを前提として確かめる。
+    host.answer(
+        "sandboxes",
+        &format!("{sandbox}\tstopped\t{WORKSPACE_ROOT}/{sandbox}\n"),
+    )?;
+    assert!(
+        !PathBuf::from(WORKSPACE_ROOT).join(&sandbox).exists(),
+        "the premise is that the host does not hold {WORKSPACE_ROOT}/{sandbox}"
+    );
+
+    let run = host.run(&["--lang", "en", "ls"])?;
+
+    // 実在の欠落は状態として示す。1案件の欠落で一覧を失わせない。
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    let listed = row(&run.stdout, PROJECT)?;
+    assert!(listed.contains("stopped"), "{listed}");
+    assert!(
+        listed.contains("missing"),
+        "the workspace is reported as absent rather than folded into the state: {listed}"
+    );
+    Ok(())
+}
+
+#[test]
+fn prepare_does_not_treat_a_running_sandbox_as_already_built_when_its_workspace_is_gone() -> Checked
+{
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    // runningのまま、mount元のdirectoryだけがhostから消えている。live mountにより
+    // 中を見るcommandには応じるため、その事実だけではno-op成功にしてよいことに
+    // ならない。`WORKSPACE_ROOT`はsbxmが固定で使う共有pathであり、testから隔離
+    // できないため、ここでは作らずhostが実際には持っていないことを前提とする。
     host.sandbox_is_running(&sandbox)?;
     host.worktree_is_present()?;
+    assert!(
+        !PathBuf::from(WORKSPACE_ROOT).join(&sandbox).exists(),
+        "the premise is that the host does not hold {WORKSPACE_ROOT}/{sandbox}"
+    );
 
     let run = host.run(&["--lang", "en", "prepare", PROJECT])?;
 
-    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert_ne!(
+        run.code, 0,
+        "a workspace that is gone on host must not be folded into a silent success: {}{}",
+        run.stdout, run.stderr
+    );
     assert!(
-        run.stdout.contains("is already built"),
-        "an unchanged run says so rather than claiming work: {}",
+        !run.stdout.contains("is already built"),
+        "the host does not hold the workspace, so this is not a no-op: {}",
         run.stdout
     );
-    assert_eq!(value(&run.stdout, "Sandbox")?, sandbox);
-    assert_eq!(value(&run.stdout, "Sandbox state")?, "running");
-
-    // worktreeの状態は、metadataの宣言ではなくSandboxの中を見て示す。
-    let worktree = row(&run.stdout, "example-repo.tree-0")?;
-    assert!(worktree.contains(COMMIT), "{worktree}");
-    assert!(worktree.contains("refs/remotes/origin/main"), "{worktree}");
-
-    // 何も変えない実行は、Sandboxを作り直す起動を1つも出さない。
-    let asked = host.invocations()?;
-    assert!(!asked.contains("sbx create"), "{asked}");
-    assert!(!asked.contains("docker build"), "{asked}");
     Ok(())
 }
 

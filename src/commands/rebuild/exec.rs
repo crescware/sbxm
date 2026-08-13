@@ -1,4 +1,6 @@
 //! `rebuild`の実行。
+//!
+//! 作り直す前に計画を見せ、確認を取ってから実行する。
 
 use crate::command::HostEnvironment;
 use crate::design::{PromptUi, Ui};
@@ -29,10 +31,31 @@ pub fn exec(
         requested: project,
         prompt,
     };
-    match super::run::run(
+    let (prepared, snapshot) = match super::run::prepare(
         target,
-        &config,
         host,
+        std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        inventory::Poll::default(),
+        ui,
+    ) {
+        Ok(pair) => pair,
+        Err(error) => return report(ui, &error),
+    };
+
+    ui.stdout(&print::plan_document(&prepared.plan));
+
+    let confirmation =
+        match super::run::confirm(snapshot, context.interactivity.can_prompt(), prompt) {
+            Ok(confirmation) => confirmation,
+            Err(error) => return report(ui, &error),
+        };
+    ui.note_prompt_output();
+
+    match super::run::execute(
+        host,
+        prepared,
+        confirmation,
+        &config,
         std::path::Path::new(sandbox::WORKSPACE_ROOT),
         inventory::Poll::default(),
         ui,
