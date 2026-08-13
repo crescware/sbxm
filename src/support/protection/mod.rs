@@ -36,7 +36,9 @@
 //! どちらも[`Blocker`]として確認を求めずに拒否する。checkout中のbranchだけでなく、
 //! HEAD以外の全ローカル所有ref（branch、tag、notes、stash）にも同じ観測結果を適用する。
 
+mod answered;
 mod assessment;
+mod bare_git_dir_probe;
 mod blocker;
 mod commit_candidate;
 mod confirm_prompt;
@@ -59,7 +61,9 @@ mod request;
 mod unobservable_reason;
 mod worktree_report;
 
+use answered::answered;
 pub use assessment::Assessment;
+pub(crate) use bare_git_dir_probe::BARE_GIT_DIR_PROBE;
 pub use blocker::Blocker;
 pub use commit_candidate::CommitCandidate;
 pub use confirm_prompt::ConfirmPrompt;

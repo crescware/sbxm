@@ -1,4 +1,5 @@
 use crate::project::SandboxLayout;
+use crate::support::protection::BARE_GIT_DIR_PROBE;
 use crate::testing::host::FakeSbx;
 use crate::testing::outcome::Checked;
 use crate::testing::project::{Fixture, Registered};
@@ -13,6 +14,11 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
     Ok(answering_origin_observation(
         FakeSbx::listing(&format!(r#"{{"sandboxes":[{}]}}"#, fixture.entry(project, "running")?))
         .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
+        .answering(
+            &format!("exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {bare_git_dir}"),
+            0,
+            "probed",
+        )
         .answering(
             &format!(
                 "exec {name} -- git --git-dir {bare_git_dir} worktree list --porcelain -z",

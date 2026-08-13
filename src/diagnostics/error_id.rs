@@ -118,6 +118,7 @@ error_ids! {
     SelectionUnresolved => "selection-unresolved",
     SandboxNotCreated => "sandbox-not-created",
     SandboxNotRunning => "sandbox-not-running",
+    SandboxWorkspaceMissing => "sandbox-workspace-missing",
     SandboxStillRunning => "sandbox-still-running",
     SandboxStillPresent => "sandbox-still-present",
     RebuildGenerationMissing => "rebuild-generation-missing",

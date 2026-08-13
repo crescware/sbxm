@@ -15,6 +15,11 @@ use crate::support::select::{self, ProjectPrompt};
 use super::{DestroyPlan, Prepared, keeps, re_register, removes};
 
 /// 対象を特定し、削除して良い状態であることを確かめる。
+///
+/// 削除そのものはrecordを消すだけであり、中立workspace directoryを必要としない。
+/// 停止中のSandboxを通常modeで断るのは、中を観測できないからであり、これはdirectory
+/// が在っても同じである。runningのSandboxは、データ保護検査の入口でdirectoryの実在を
+/// 確かめる。mount元が無いままでは、中を見るcommandの答えを信頼できないためである。
 pub fn prepare(
     location: &ConfigLocation,
     requested: Option<&ProjectId>,
@@ -72,7 +77,13 @@ pub fn prepare(
             )
         } else {
             let layout = SandboxLayout::new(metadata.canonical_id());
-            let request = Request::new(DestructiveOperation::Destroy, &name, &layout, metadata);
+            let request = Request::new(
+                DestructiveOperation::Destroy,
+                &name,
+                workspace_root,
+                &layout,
+                metadata,
+            );
             protection::gate::assess(host, &request)?
         };
         // Blockerが1件でもあれば、削除計画を見せず明示確認も求めずにここで拒否する。
@@ -99,6 +110,7 @@ pub fn prepare(
         paths,
         name,
         state,
+        workspace_root: workspace_root.to_path_buf(),
         locked,
         snapshot,
         _session_lease: session_lease,

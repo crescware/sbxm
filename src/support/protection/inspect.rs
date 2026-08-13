@@ -4,13 +4,15 @@ use crate::command::{CommandOutcome, HostEnvironment};
 use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
+use crate::paths;
 
 use crate::support::sandbox;
 use crate::support::worktree;
 
 use super::{
-    Assessment, Blocker, CommitCandidate, ConfirmableLoss, DestructiveOperation, Kind, Mode,
-    OriginObservation, Reachability, Request, WorktreeReport, observe_for_mutation,
+    Assessment, BARE_GIT_DIR_PROBE, Blocker, CommitCandidate, ConfirmableLoss,
+    DestructiveOperation, Kind, Mode, OriginObservation, Reachability, Request, WorktreeReport,
+    answered, observe_for_mutation,
 };
 
 /// 進行中のGit操作を示すfile。1つでもあれば削除しない。
@@ -59,7 +61,8 @@ struct StatusReport {
 ///
 /// worktree単位の観測（作業ツリーの状態、無視対象path、進行中のGit操作、HEAD）は
 /// worktreeごとに行う。ref、remote、reflogは共有bare repositoryが持つため、worktree数に
-/// かかわらず1回だけ観測する。
+/// かかわらず1回だけ観測する。どちらもSandboxの中を見るため、その前にmount元の
+/// workspace directoryがhostに在ることを確かめる。
 ///
 /// origin回収可能性だけは、集めたcommitを1回の[`observe_for_mutation`]へまとめて渡し、
 /// その1つの観測結果から各refの[`Reachability`]を副作用なく決める。refs/remotes/origin/*
@@ -76,10 +79,14 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
     // 計上する。これが無いと「Sandboxがそもそも無い」観測と区別がつかない。
     let mut confirmable_losses = vec![ConfirmableLoss::SandboxWritableLayer];
 
+    if let Some(blocker) = missing_workspace(request) {
+        return observation_failure(request, project, confirmable_losses, Some(blocker));
+    }
+
     // 共有repositoryのないSandboxは、この案件の作業を1つも持たない。構築が途中で
     // 終わったSandboxがこれにあたり、worktreeが観測できないことを失うものがある
     // 徴候として読まない。
-    let repository_exists = match sandbox::path_exists(host, sandbox_name, &bare_git_dir) {
+    let repository_exists = match repository_present(host, sandbox_name, &bare_git_dir) {
         Ok(exists) => exists,
         Err(error) => {
             let blocker = worktree_inventory_unobservable(request, sandbox_name, &error);
@@ -334,6 +341,46 @@ fn origin_blocker(candidate: &CommitCandidate, reachability: &Reachability) -> O
             reason: *reason,
         }),
         Reachability::Pushed { .. } | Reachability::Reachable { .. } => None,
+    }
+}
+
+/// mount元のworkspace directoryがhostに在ることを、Sandboxの中を見る前に確かめる。
+///
+/// mount元が無いSandboxへの`sbx exec`は、内側のcommandを起動できないまま終了status
+/// だけを返す。その終了statusは、内側のcommandが答えた「不在」と区別できない
+/// (詳細は`workspace_missing`)。`sbx exec`の答えへ頼る前に、hostを直接見る。
+fn missing_workspace(request: &Request<'_>) -> Option<Blocker> {
+    match sandbox::workspace_exists(request.workspace_root, request.sandbox) {
+        Ok(true) => None,
+        Ok(false) => Some(Blocker::unobservable(workspace_missing(request))),
+        Err(error) => Some(observation_blocker(&error)),
+    }
+}
+
+/// 共有bare repositoryがSandboxの中に在るかを観測する。
+///
+/// 直前のhost側確認とこの`sbx exec`の間にもworkspace directoryは消えうる。その場合
+/// `sbx exec`は内側のshellを起動できないまま終了statusだけを返し、その値は`test -e`が
+/// 答える`0`/`1`と重なるため、終了statusだけでは区別できない(詳細は
+/// `BARE_GIT_DIR_PROBE`)。内側のshellが実際に走った場合だけstdoutへ書かれる印が
+/// 無ければ、終了statusを`test`の答えとして読まない。
+fn repository_present(
+    host: &dyn HostEnvironment,
+    sandbox_name: &str,
+    bare_git_dir: &str,
+) -> Result<bool> {
+    let probe = sandbox::exec(
+        host,
+        sandbox_name,
+        &["sh", "-c", BARE_GIT_DIR_PROBE, "sh", bare_git_dir],
+    )?;
+    if probe.stdout_text().is_empty() {
+        return Err(sandbox::unobservable(&probe, bare_git_dir));
+    }
+    match answered(&probe, bare_git_dir)? {
+        0 => Ok(true),
+        1 => Ok(false),
+        _ => Err(sandbox::unobservable(&probe, bare_git_dir)),
     }
 }
 
@@ -1278,4 +1325,29 @@ fn open_remediation(project: &str, explanation: Msg) -> Remediation {
 
 fn status_remediation(project: &str, explanation: Msg) -> Remediation {
     Remediation::text(explanation).try_run(format!("sbxm status {project}"))
+}
+
+/// hostのworkspace directoryが消えているSandboxを、共有repositoryのないSandboxと
+/// 同一視せず拒否する。
+///
+/// 実機では、runningのままworkspace directoryだけが消えたSandboxへの`sbx exec`が
+/// `422`を終了status `1`で示す。内側の`test`が「不在」を示す終了statusも`1`であり、
+/// 終了statusだけではこの2つを区別できない。区別できない答えを安全側に丸めず、
+/// host側を直接見て確かめられなかった場合は削除も再作成も行わない。
+fn workspace_missing(request: &Request<'_>) -> Diagnostic {
+    let path = sandbox::workspace_path(request.workspace_root, request.sandbox);
+    let project = request.metadata.display_id();
+    Diagnostic::new(
+        ErrorId::SandboxWorkspaceMissing,
+        msg!(
+            "error-protection-workspace-missing",
+            project = project.clone(),
+            sandbox = request.sandbox.as_str()
+        ),
+    )
+    .fact(Fact::path(&paths::display(&path)))
+    .remediation(
+        Remediation::text(msg!("remediation-sandbox-workspace-missing"))
+            .try_run(format!("sbxm prepare {project}")),
+    )
 }

@@ -19,6 +19,7 @@ mod project_state;
 mod project_status;
 mod sandbox_state;
 mod stop_result;
+mod workspace_state;
 
 pub use confirmable_loss::confirmable_loss;
 pub use creation_mode::creation_mode;
@@ -31,6 +32,7 @@ pub use project_state::project_state;
 pub use project_status::project_status;
 pub use sandbox_state::sandbox_state;
 pub use stop_result::stop_result;
+pub use workspace_state::workspace_state;
 
 #[cfg(test)]
 #[path = "present_test.rs"]

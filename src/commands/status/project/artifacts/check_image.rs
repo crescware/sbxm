@@ -39,7 +39,7 @@ pub fn check_image(
         Ok(None) => Value::Missing,
         Err(error) => {
             status.global_scope_failure(&error);
-            Value::Mismatch
+            Value::NotObserved
         }
     };
     status.push("status-item-image", value);

@@ -27,7 +27,7 @@ pub fn check_dockerfile(
                 status.push("status-item-dockerfile", value);
             }
             Err(error) => {
-                status.push("status-item-dockerfile", Value::Mismatch);
+                status.push("status-item-dockerfile", Value::NotObserved);
                 status.diagnostics.push(
                     Diagnostic::new(
                         ErrorId::ProjectPathUnreadable,
@@ -40,7 +40,7 @@ pub fn check_dockerfile(
         },
         Ok(false) => status.push("status-item-dockerfile", Value::Missing),
         Err(error) => {
-            status.push("status-item-dockerfile", Value::Mismatch);
+            status.push("status-item-dockerfile", Value::NotObserved);
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());

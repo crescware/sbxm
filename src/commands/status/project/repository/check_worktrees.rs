@@ -25,7 +25,7 @@ pub fn check_worktrees(
             status
                 .diagnostics
                 .extend(error.diagnostics().iter().cloned());
-            status.push("status-item-worktrees", Value::Mismatch);
+            status.push("status-item-worktrees", Value::NotObserved);
             return;
         }
     };
@@ -63,6 +63,8 @@ pub fn check_worktrees(
         let state = worktree_state(host, name, &entry.path, status);
         if state == Value::Mismatch {
             value = Value::Mismatch;
+        } else if state == Value::NotObserved && value == Value::Ready {
+            value = Value::NotObserved;
         }
         status.worktrees.push(WorktreeRow {
             path: relative,

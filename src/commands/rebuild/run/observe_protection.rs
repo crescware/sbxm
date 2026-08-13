@@ -35,13 +35,18 @@ pub(super) fn observe_protection(
     start_to_read_saved_state(
         host,
         metadata,
-        name,
         state == ProjectState::Stopped,
         workspace_root,
         poll,
         progress,
     )?;
     let layout = SandboxLayout::new(metadata.canonical_id());
-    let request = Request::new(DestructiveOperation::Rebuild, name, &layout, metadata);
+    let request = Request::new(
+        DestructiveOperation::Rebuild,
+        name,
+        workspace_root,
+        &layout,
+        metadata,
+    );
     protection::gate::assess(host, &request)
 }
