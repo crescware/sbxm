@@ -138,6 +138,7 @@ error-project-not-managed = { $project } は管理対象の案件ではありま
 error-sandbox-not-created = { $project } は登録済みですが、Sandbox { $sandbox } はまだ存在しません。
 error-sandbox-not-running = Sandbox { $sandbox } は { $observed } です。このcommandはrunningのSandboxだけを対象とします。
 error-sandbox-workspace-missing = { $project } のSandbox { $sandbox } が指すworkspace directoryがhostにないため、runtimeは起動を拒否します。
+error-protection-workspace-missing = { $project } のSandbox { $sandbox } はrunningですが、workspace directoryがhostにないため、削除する前に中身を確認できません。
 warning-dockerfile-changed-during-rebuild = { $project } のDockerfileは、再構築が世代を固定したあとに変更されました。この実行は固定済みの世代を適用しています。
 warning-lock-file-left-behind = 案件の管理は解除しましたが、lock fileを削除できませんでした
 warning-project-registered-again = この実行が管理を解いているあいだに { $project } が { $path } へ登録し直されたため、registry entryは残しました。

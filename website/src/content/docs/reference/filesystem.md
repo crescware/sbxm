@@ -37,6 +37,8 @@ The runtime records this path when the sandbox is created, and it refuses to sta
 
 That is a missing start-up condition rather than lost data. `sbxm ls` reports it in the `WORKSPACE` column, and `sbxm status <project-id>` reports it as the `workspace` item; both use `missing` for a directory observed to be absent. Preparing the project again creates the directory and says that it did.
 
+A running sandbox can lose the same directory the same way, without being stopped first. The runtime does not refuse an existing session's commands just because the host-side source of a live mount vanished, and a command that then fails reports the same exit status whether the sandbox holds a repository or the directory is simply gone. Because of that, `sbxm destroy` and `sbxm rebuild` confirm the directory is on the host before trusting anything a running sandbox reports about what is inside it, and refuse rather than guess when it is not.
+
 ## Sandbox worktrees
 
 Inside a prepared sandbox, managed worktrees look like:

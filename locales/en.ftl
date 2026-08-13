@@ -138,6 +138,7 @@ error-project-not-managed = { $project } is not a managed project.
 error-sandbox-not-created = { $project } is registered, but its sandbox { $sandbox } does not exist yet.
 error-sandbox-not-running = The sandbox { $sandbox } is { $observed }, and this command only acts on a running sandbox.
 error-sandbox-workspace-missing = The sandbox { $sandbox } of { $project } names a workspace directory that is not on the host, so the runtime refuses to start it.
+error-protection-workspace-missing = The sandbox { $sandbox } of { $project } is running, but its workspace directory is not on the host, so sbxm cannot confirm what is inside before removing it.
 warning-dockerfile-changed-during-rebuild = The Dockerfile of { $project } changed while the rebuild was already fixed on a generation, so this run applied the fixed one.
 warning-lock-file-left-behind = The project is no longer managed, but its lock file could not be removed
 warning-project-registered-again = { $project } was registered again at { $path } while this run was removing it, so its registry entry is kept.

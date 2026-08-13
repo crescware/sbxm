@@ -62,7 +62,14 @@ impl Switch<'_> {
                 poll,
                 progress,
             )?;
-            protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Refused)?;
+            protection::inspect(
+                host,
+                name,
+                workspace_root,
+                &layout,
+                metadata,
+                Unmanaged::Refused,
+            )?;
             // データ保護検査は上で済ませている。
             inventory::remove(host, name, poll, progress)?;
         }
