@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::{CommandSpec, HostEnvironment};
+use crate::command::HostEnvironment;
 use crate::config::ConfigLocation;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -11,7 +11,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{daemon, generation, sandbox, worktree};
+use crate::support::{daemon, disk, docker, generation, sandbox, worktree};
 
 use super::{ClampedIndex, Prepared};
 
@@ -73,7 +73,7 @@ pub fn prepare(
     let name = metadata.sandbox_name();
     generation::require_no_rebuild(metadata)?;
 
-    require_docker(host)?;
+    docker::require_reachable(host)?;
 
     let entries = daemon::list(host)?;
     match inventory::state_of(&entries, metadata, workspace_root)? {
@@ -90,6 +90,10 @@ pub fn prepare(
     let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
     let (working_directory, missing_worktree_index) = working_directory(&layout, &worktrees, index);
 
+    // ここまで来た時点でSandboxは必ずrunningである。この観測のために追加で
+    // 起動しない。値または理由はSSHへterminalを渡す前に1回だけ示す。
+    let disk = disk::observe(host, name.as_str(), Some(ProjectState::Running));
+
     Ok(Prepared {
         project: metadata.display_id(),
         sandbox: name.as_str().to_string(),
@@ -98,6 +102,7 @@ pub fn prepare(
         missing_worktree_index,
         clamped_worktree_index,
         worktrees,
+        disk,
         _session_lease: session_lease,
     })
 }
@@ -141,20 +146,6 @@ fn working_directory(
         Some(path) => (path.clone(), None),
         None => (layout.bare_root(), Some(requested)),
     }
-}
-
-/// Docker Engineへ疎通できることを確認する。
-fn require_docker(host: &dyn HostEnvironment) -> Result<()> {
-    let spec = CommandSpec::probe("docker", &["version", "--format", "{{.Server.Version}}"]);
-    let outcome = host.run(&spec)?;
-    if outcome.success() && !outcome.stdout_text().trim().is_empty() {
-        return Ok(());
-    }
-    Err(Error::single(
-        Diagnostic::new(ErrorId::DockerUnreachable, msg!("error-docker-unreachable"))
-            .fact(Fact::reason(msg!("cause-server-version-unreadable")))
-            .remediation(msg!("remediation-start-docker")),
-    ))
 }
 
 /// metadataが宣言するmanaged worktreeが、Sandbox内のGitに揃っていることを確認する。

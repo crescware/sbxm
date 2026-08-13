@@ -9,7 +9,7 @@ use crate::project::SandboxName;
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, ProtectionSnapshot};
-use crate::support::{daemon, generation, select};
+use crate::support::{daemon, docker, generation, select};
 
 use crate::commands::rebuild::Target;
 
@@ -21,6 +21,13 @@ use super::{Prepared, RebuildPlan, observe_protection};
 /// 対象とする。Sandboxが無く`RebuildIntent`も無い場合は拒否する。返す`ProtectionSnapshot`
 /// は、この削除計画の元になった最初の観測であり、`confirm`が明示確認と引き換えに
 /// 消費する。
+///
+/// 停止しているSandboxの起動だけは、明示確認より前に行う唯一のhost状態の変更である。
+/// 保存されていない作業は起動しなければ読めず、読めないまま削除計画を見せると、層Aも
+/// 層Bも空の計画を「失うものは無い」と示すことになる。ここでcancelしてもSandboxは
+/// 起動したまま残るが、image、template、metadata、`RebuildIntent`はどれも変えない。
+/// destroyは同じ状況を`SandboxNotRunning`で拒否する。これから作り直す対象を起動する
+/// rebuildと、利用者の判断を仰ぐdestroyの違いによる。
 pub fn prepare(
     selection: Target,
     host: &dyn HostEnvironment,
@@ -41,6 +48,8 @@ pub fn prepare(
     // project lockは自分が排他的に保持しているため、取得できない原因は開いている
     // sessionのshared leaseだけである。
     let session_lease = locked.acquire_exclusive_session_lease()?;
+
+    docker::require_reachable(host)?;
 
     let name = SandboxName::derive(locked.metadata.canonical_id());
     let current = generation::current_dockerfile_hash(&locked.paths)?;
@@ -63,7 +72,7 @@ pub fn prepare(
         poll,
         progress,
     )?;
-    // ProtectionBlockerが1件でもあれば、削除計画を見せず明示確認も求めずにここで拒否する。
+    // Blockerが1件でもあれば、削除計画を見せず明示確認も求めずにここで拒否する。
     protection::gate::require_no_blockers(snapshot.assessment())?;
 
     let plan = RebuildPlan {

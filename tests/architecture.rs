@@ -27,11 +27,11 @@ const SBX_RELAY: &str = "src/support/sandbox/relayed.rs";
 /// 確認promptにだけ答える`sbx`起動を組み立ててよい唯一のfile。
 const SBX_PTY_CONFIRM: &str = "src/support/sandbox/remove_confirmed.rs";
 
+/// Dockerのprocessを組み立ててよい唯一のmodule。
+const DOCKER_SUPPORT: &str = "src/support/docker/";
+
 /// 外部toolのbyteを運ぶmodule。
 const RELAY: &str = "src/command";
-
-/// 破壊前保護ゲートを意図的に迂回してよい唯一の場所。
-const FORCE_BYPASS_CALLER: &str = "src/commands/destroy/run/prepare.rs";
 
 /// session leaseのpathへ触れてよい唯一の場所。
 ///
@@ -282,23 +282,33 @@ fn sbx_is_run_with_a_confirmation_prompt_in_one_place_only() -> Checked {
 }
 
 #[test]
-fn the_protection_gate_is_bypassed_in_one_place_only() -> Checked {
-    // `ForceBypass`は保護ゲートを意図的に迂回する。呼び出し箇所が増えると、通常経路の
-    // `gate::authorize`を通さずに削除へ進む道がsandbox --force以外にも生まれてしまう。
+fn docker_commands_are_constructed_in_one_module() -> Checked {
+    // CommandSpecのconstructorは任意のprogram名を受け取るため、Rustのmodule privacy
+    // だけではdockerの境界を強制できない。実行を表す明確なconstructor呼び出しをここで
+    // 検査し、新しいdocker経路の追加時に集約を忘れたままmergeされないようにする。
+    let constructors = [
+        "CommandSpec::capture(\"docker\"",
+        "CommandSpec::probe(\"docker\"",
+        "TerminalCommand::relayed(\"docker\"",
+        "TerminalCommand::handed_over(\"docker\"",
+    ];
     let mut offenders = Vec::new();
     for (path, text) in sources()? {
-        if path == FORCE_BYPASS_CALLER || path.ends_with("_test.rs") {
+        if path.starts_with(DOCKER_SUPPORT) {
             continue;
         }
         for (index, line) in text.lines().enumerate() {
-            if line.contains("ForceBypass::force_destroy(") {
+            if constructors
+                .iter()
+                .any(|constructor| line.contains(constructor))
+            {
                 offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
             }
         }
     }
     assert!(
         offenders.is_empty(),
-        "the protection gate is bypassed only in {FORCE_BYPASS_CALLER}:\n{}",
+        "docker commands must be built through {DOCKER_SUPPORT}:\n{}",
         offenders.join("\n")
     );
     Ok(())

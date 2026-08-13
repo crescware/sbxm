@@ -10,37 +10,21 @@ pub fn confirmable_loss(loss: &ConfirmableLoss) -> Cell {
             worktree = worktree,
             count = paths.len()
         ),
-        ConfirmableLoss::LocalRef {
-            worktree,
-            reference,
-        } => msg!(
-            "confirmable-loss-local-ref",
-            worktree = worktree,
-            reference = reference
-        ),
-        ConfirmableLoss::BranchUpstream {
-            worktree,
-            branch,
-            upstream,
-        } => msg!(
+        ConfirmableLoss::LocalRef { reference } => {
+            msg!("confirmable-loss-local-ref", reference = reference)
+        }
+        ConfirmableLoss::BranchUpstream { branch, upstream } => msg!(
             "confirmable-loss-branch-upstream",
-            worktree = worktree,
             branch = branch,
             upstream = upstream
         ),
-        ConfirmableLoss::Tag { worktree, name } => {
-            msg!("confirmable-loss-tag", worktree = worktree, name = name)
+        ConfirmableLoss::Tag { name } => msg!("confirmable-loss-tag", name = name),
+        ConfirmableLoss::AdditionalRemote { name } => {
+            msg!("confirmable-loss-additional-remote", name = name)
         }
-        ConfirmableLoss::AdditionalRemote { worktree, name } => msg!(
-            "confirmable-loss-additional-remote",
-            worktree = worktree,
-            name = name
-        ),
-        ConfirmableLoss::ReflogOnlyCommits { worktree, count } => msg!(
-            "confirmable-loss-reflog-only-commits",
-            worktree = worktree,
-            count = count
-        ),
+        ConfirmableLoss::ReflogOnlyCommits { count } => {
+            msg!("confirmable-loss-reflog-only-commits", count = count)
+        }
         ConfirmableLoss::UnmanagedWorktree { worktree } => {
             msg!("confirmable-loss-unmanaged-worktree", worktree = worktree)
         }

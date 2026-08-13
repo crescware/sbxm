@@ -4,7 +4,7 @@ mod exec;
 #[cfg(test)]
 mod fake;
 mod parse;
-mod print;
+pub mod print;
 mod rebuild_output;
 pub mod run;
 mod spec;

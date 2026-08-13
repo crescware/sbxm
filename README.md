@@ -212,6 +212,60 @@ Rebuilding recreates the sandbox. To protect work, sbxm refuses a normal
 rebuild when worktrees contain dirty files, unpushed commits, or unmanaged
 worktrees.
 
+### Choose the sandbox root size
+
+Docker Sandboxes reads `DOCKER_SANDBOXES_ROOT_SIZE` from the environment of the
+process that creates a sandbox. sbxm does not interpret or rewrite this
+variable; it passes through whatever is set when it runs `sbx create`:
+
+```sh
+# First creation
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm prepare <project-id>
+
+# Re-creation, after the sandbox already exists
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
+```
+
+A few things this does *not* do:
+
+- The variable only takes effect on the sandbox being created. It is not an
+  in-place resize of an existing sandbox's filesystem; changing the size
+  requires recreating the sandbox, so `rebuild` still goes through the same
+  data-protection checks as any other rebuild.
+- The requested size is not reserved up front. It raises the ceiling each
+  sandbox can grow into; actual usage across all of a host's sandboxes still
+  adds up against the host's real disk.
+- Image and template caches live outside each sandbox's root filesystem and
+  consume host space of their own, independent of this setting.
+
+Check the host has headroom for the size you request before running either
+command.
+
+### Understand what fills the sandbox's disk
+
+`sbxm status <project-id>` shows a DISK section with the sandbox's current
+free space, usable ceiling, and capacity. A few facts explain what that number
+reflects:
+
+- `/home`, `/tmp`, and everything else inside the sandbox share one root
+  filesystem — the same one sized by `DOCKER_SANDBOXES_ROOT_SIZE` above. There
+  is no separate volume for build output or temporary files.
+- `/tmp` is not cleared by stopping and reopening a sandbox (`sbxm open`).
+  There is no init system running periodic cleanup inside it; files placed
+  there persist until the sandbox itself is destroyed or rebuilt.
+- Deleting a file inside the sandbox reclaims that space immediately — the
+  root filesystem is a normal writable layer, not a snapshot that only frees
+  up on recreation.
+- Each managed worktree builds independently, so `--worktrees N` multiplies
+  build artifacts (for example, Rust's `target/`) by however many worktrees
+  are configured.
+- Projects that support a shared build cache directory (for example Rust's
+  `CARGO_TARGET_DIR`) can point every worktree at the same directory via a
+  declared file (see "Place configuration files" below) to avoid that
+  multiplication. Sharing one directory serializes what would otherwise be
+  concurrent builds across worktrees, so treat it as an explicit trade-off,
+  not a default.
+
 ### Add managed worktrees
 
 A built project can gain more managed worktrees without a rebuild:

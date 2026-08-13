@@ -178,6 +178,10 @@ sbxm stop <project-id> ...
 非対話端末では、これらのcommandにプロジェクト引数を明示してください。`status`だけは
 project IDまたは`--global`をscopeとして指定できます。
 
+ただし`rebuild`と`destroy`は、引数を明示しても非対話端末では実行できません。どちらも
+削除計画を表示し、対象Sandbox名の完全一致入力を得た場合にだけ進むためです。`destroy`
+には確認を省略する`--force`がありますが、`rebuild`にはありません。
+
 ## プロジェクトをカスタマイズする
 
 ### Sandbox imageを編集する
@@ -191,6 +195,61 @@ sbxm rebuild <project-id>
 
 rebuildはSandboxを作り直します。作業内容を保護するため、dirty file、pushしていない
 commit、またはunmanaged worktreeがある場合、sbxmは通常のrebuildを拒否します。
+
+拒否しない場合も、作り直しで何が失われるかを先に表示します。無視対象のpath、
+checkoutしていないbranchやtagの名前、追加remote、reflogにだけ残るcommit、Sandboxの
+書き込み層が対象です。表示のあと、対象Sandbox名の完全一致入力を得た場合にだけ進みます。
+`rebuild`に確認を省略する方法はないため、非対話端末では実行できません。表示した状態が
+入力から実際の作り直しまでのあいだに変わった場合は、何も削除せずに中止します。
+
+### Sandboxのroot sizeを選ぶ
+
+Docker Sandboxesは、Sandboxを作成するprocessのenvironmentから`DOCKER_SANDBOXES_ROOT_SIZE`
+を読み取ります。sbxmはこの変数を解釈も書き換えもせず、`sbx create`を実行する時点で
+設定されている値をそのまま渡します。
+
+```sh
+# 初回作成
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm prepare <project-id>
+
+# 既存Sandboxの作り直し
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
+```
+
+この設定が*しないこと*もいくつかあります。
+
+- この変数は、これから作られるSandboxにだけ効きます。既存Sandboxのfilesystemを
+  in-place resizeするものではないため、sizeを変えるにはSandboxの作り直しが必要です。
+  `rebuild`はこの場合も他のrebuildと同じdata保護検査を通ります。
+- requested sizeは作成時にその場で予約される量ではありません。各Sandboxが書き込める
+  上限を引き上げるだけで、host上の複数Sandboxの実使用量は引き続きhostの実容量に対して
+  合算されます。
+- imageとtemplateのcacheは各Sandboxのroot filesystemとは別にhost容量を消費し、この
+  設定とは独立しています。
+
+どちらのcommandを実行する前にも、要求するsizeに対してhostに十分な空き容量があるか
+確認してください。
+
+### Sandboxのディスクを何が埋めるかを理解する
+
+`sbxm status <project-id>`は、Sandboxの現在の空き容量・実効天井・使用率を示すDISK
+sectionを表示します。この数値が何を反映しているかを理解するための事実です。
+
+- `/home`、`/tmp`を含むSandbox内のすべては、1枚のroot filesystemを共有します。上の
+  `DOCKER_SANDBOXES_ROOT_SIZE`でsizeを決めるのと同じfilesystemであり、build成果物や
+  一時fileのための別volumeはありません。
+- `/tmp`はSandboxを停止して再度開いて（`sbxm open`）も消えません。中でperiodicな
+  掃除を行うinit systemが無いため、置いたfileはSandbox自体を破棄または作り直すまで
+  残り続けます。
+- Sandbox内でfileを削除すると、その場で空き容量が戻ります。root filesystemは通常の
+  書き込み可能な層であり、作り直したときだけ空きが戻るsnapshotではありません。
+- managed worktreeはそれぞれ独立してbuildするため、`--worktrees N`はbuild成果物
+  （例えばRustの`target/`）をworktree数だけ増やします。
+- 共有build cache directoryをサポートする言語・toolであれば（例えばRustの
+  `CARGO_TARGET_DIR`）、下の「設定ファイルを配置する」で宣言するfile経由で全worktree
+  を同じdirectoryへ向けられ、この増加を避けられます。ただし1つのdirectoryを共有すると、
+  本来は並行にできるworktreeごとのbuildが直列化されるため、既定にはせず明示的な
+  trade-offとして選んでください。
 
 ### managed worktreeを追加する
 

@@ -7,9 +7,12 @@ use super::Prepared;
 
 /// 削除して良いことを利用者に確かめる。
 ///
-/// force mode、またはSandboxが元から無い場合は確認を求めない。それ以外は対話端末で
-/// Sandbox名の完全一致入力を得た場合だけ`ProtectionConfirmation`を返す。非対話環境、
-/// cancel、名前不一致では確認を作らずに拒否する。
+/// 確認を求めないのは`--force`だけである。Sandboxが元から無い場合も、その「不在」という
+/// 観測へ確認を結び付ける。確認から削除までのあいだにSandboxが現れた場合を、
+/// fingerprintの不一致として拒否できるようにするためである。
+///
+/// 対話端末でSandbox名の完全一致入力を得た場合だけ`ProtectionConfirmation`を返す。
+/// 非対話環境、cancel、名前不一致では確認を作らずに拒否する。
 pub fn confirm(
     prepared: &mut Prepared,
     interactive: bool,

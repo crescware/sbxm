@@ -5,8 +5,8 @@ use crate::testing::project::project_id;
 use std::collections::BTreeMap;
 
 use super::super::{
-    ConfirmableLoss, DestructiveOperation, Kind, Mode, OriginObservation, ProtectionAssessment,
-    ProtectionBlocker, Reachability, WorktreeReport,
+    Assessment, Blocker, ConfirmableLoss, DestructiveOperation, Kind, Mode, OriginObservation,
+    Reachability, WorktreeReport,
 };
 use super::ProtectionFingerprint;
 
@@ -46,11 +46,12 @@ fn observed(tip: &str) -> OriginObservation {
 
 fn assessment(
     worktrees: Vec<WorktreeReport>,
-    blockers: Vec<ProtectionBlocker>,
+    blockers: Vec<Blocker>,
     confirmable_losses: Vec<ConfirmableLoss>,
-) -> Checked<ProtectionAssessment> {
-    Ok(ProtectionAssessment::new(
+) -> Checked<Assessment> {
+    Ok(Assessment::new(
         DestructiveOperation::Destroy,
+        "example-org/example-repo".to_string(),
         sandbox()?,
         worktrees,
         blockers,
@@ -64,21 +65,19 @@ fn collection_order_alone_does_not_change_the_fingerprint() -> Checked {
     let forward = assessment(
         vec![worktree("a"), worktree("b")],
         vec![
-            ProtectionBlocker::TrackedChanges {
+            Blocker::TrackedChanges {
                 worktree: "a".to_string(),
             },
-            ProtectionBlocker::UntrackedPaths {
+            Blocker::UntrackedPaths {
                 worktree: "b".to_string(),
                 paths: vec!["scratch.txt".to_string()],
             },
         ],
         vec![
             ConfirmableLoss::Tag {
-                worktree: "a".to_string(),
                 name: "v1".to_string(),
             },
             ConfirmableLoss::AdditionalRemote {
-                worktree: "b".to_string(),
                 name: "upstream".to_string(),
             },
         ],
@@ -86,21 +85,19 @@ fn collection_order_alone_does_not_change_the_fingerprint() -> Checked {
     let reversed = assessment(
         vec![worktree("b"), worktree("a")],
         vec![
-            ProtectionBlocker::UntrackedPaths {
+            Blocker::UntrackedPaths {
                 worktree: "b".to_string(),
                 paths: vec!["scratch.txt".to_string()],
             },
-            ProtectionBlocker::TrackedChanges {
+            Blocker::TrackedChanges {
                 worktree: "a".to_string(),
             },
         ],
         vec![
             ConfirmableLoss::AdditionalRemote {
-                worktree: "b".to_string(),
                 name: "upstream".to_string(),
             },
             ConfirmableLoss::Tag {
-                worktree: "a".to_string(),
                 name: "v1".to_string(),
             },
         ],
@@ -137,8 +134,9 @@ fn any_difference_in_the_observed_state_changes_the_fingerprint() -> Checked {
 #[test]
 fn a_change_in_the_origin_observation_alone_changes_the_fingerprint() -> Checked {
     let base = assessment(vec![worktree("a")], Vec::new(), Vec::new())?;
-    let moved = ProtectionAssessment::new(
+    let moved = Assessment::new(
         DestructiveOperation::Destroy,
+        "example-org/example-repo".to_string(),
         sandbox()?,
         vec![worktree("a")],
         Vec::new(),

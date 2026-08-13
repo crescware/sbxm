@@ -5,7 +5,7 @@ use super::super::{ProtectionConfirmation, ProtectionPermit, ProtectionSnapshot}
 use super::require_no_blockers;
 
 /// remove直前に取り直した`current`が、`confirmation`が確認した状態とまだ一致しており、
-/// かつ拒否理由（`ProtectionBlocker`）が1件も無い場合だけ許可証を発行する。
+/// かつ拒否理由（`Blocker`）が1件も無い場合だけ許可証を発行する。
 ///
 /// 拒否理由が無くても、`confirmation`のsandbox名・操作種別・fingerprintのいずれかが
 /// `current`と食い違えば、確認した瞬間から状態が変わったとみなし、内容を示さずに拒否する
@@ -27,7 +27,7 @@ pub fn authorize(
             confirmation.sandbox.as_str(),
         ));
     }
-    Ok(ProtectionPermit::issue())
+    Ok(ProtectionPermit::issue(confirmation.sandbox))
 }
 
 /// 確認した瞬間から現在までのあいだに、対象・種別・観測結果のいずれかが変わった。

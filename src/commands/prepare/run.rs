@@ -11,7 +11,8 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::design::{ProgressSink, Warning};
 use crate::support::select::ProjectPrompt;
 use crate::support::{
-    files, generation, identity, image, repository, sandbox, secret, select, template, tools,
+    docker, files, generation, identity, image, repository, sandbox, secret, select, template,
+    tools,
 };
 
 use super::{PrepareOutput, already_built, observed_worktrees};
@@ -52,6 +53,8 @@ pub fn run(
     // custom secretはSandboxの作成時に結び付く。あとから登録しても既存のSandboxには
     // 届かないため、作成より前に、そしてimageを組む前に確認する。
     secret::require_github(host, name.as_str())?;
+
+    docker::require_reachable(host)?;
 
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     let generation = adopt_generation(

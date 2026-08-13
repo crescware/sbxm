@@ -7,9 +7,7 @@ use crate::project::{SandboxLayout, SandboxName};
 
 use crate::design::ProgressSink;
 use crate::support::inventory::{Poll, ProjectState};
-use crate::support::protection::{
-    self, DestructiveOperation, ProtectionAssessment, ProtectionRequest, ProtectionSnapshot,
-};
+use crate::support::protection::{self, DestructiveOperation, ProtectionSnapshot, Request};
 
 use super::start_to_read_saved_state;
 
@@ -28,10 +26,11 @@ pub(super) fn observe_protection(
     progress: &mut dyn ProgressSink,
 ) -> Result<ProtectionSnapshot> {
     if state == ProjectState::NotCreated {
-        return Ok(ProtectionSnapshot::new(ProtectionAssessment::empty(
+        return Ok(protection::gate::assess_absent(
             DestructiveOperation::Rebuild,
-            name.clone(),
-        )));
+            metadata.display_id(),
+            name,
+        ));
     }
     start_to_read_saved_state(
         host,
@@ -43,8 +42,6 @@ pub(super) fn observe_protection(
         progress,
     )?;
     let layout = SandboxLayout::new(metadata.canonical_id());
-    let request = ProtectionRequest::new(DestructiveOperation::Rebuild, name, &layout, metadata);
-    Ok(ProtectionSnapshot::new(protection::gate::assess(
-        host, request,
-    )?))
+    let request = Request::new(DestructiveOperation::Rebuild, name, &layout, metadata);
+    protection::gate::assess(host, &request)
 }

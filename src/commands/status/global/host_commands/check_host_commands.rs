@@ -4,8 +4,9 @@ use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
 use crate::support::StatusValue;
+use crate::support::docker;
 
-use crate::commands::status::global::external::{describe, external_of, read_stdout};
+use crate::commands::status::global::external::{describe, external_of};
 use crate::commands::status::global::{GlobalStatus, push};
 
 use super::REQUIRED_COMMANDS;
@@ -54,11 +55,7 @@ pub fn check_host_commands(
         return present;
     }
 
-    match read_stdout(
-        host,
-        "docker",
-        &["version", "--format", "{{.Server.Version}}"],
-    ) {
+    match docker::read_server_version(host) {
         Ok(output) if !output.trim().is_empty() => {
             push(status, "status-item-docker", StatusValue::Ready);
         }

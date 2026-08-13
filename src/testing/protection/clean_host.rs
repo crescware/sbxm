@@ -10,7 +10,9 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
     let name = project.sandbox.as_str();
     let bare_git_dir = layout.bare_git_dir();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
-    Ok(FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")?))
+    Ok(answering_origin_observation(
+        FakeSbx::listing(&format!(r#"{{"sandboxes":[{}]}}"#, fixture.entry(project, "running")?))
+        .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         .answering(
             &format!(
                 "exec {name} -- git --git-dir {bare_git_dir} worktree list --porcelain -z",
@@ -23,6 +25,39 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
         )
         .answering(
             &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+            0,
+            "",
+        )
+        // 無視対象pathも、ローカル所有refも、追加remoteも、reflogだけのcommitも無い。
+        // 層Bのcollectorが読むcommandは、素通りに見えないよう空の応答を明示する。
+        .answering(
+            &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --ignored=traditional"),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/heads/ refs/tags/ refs/notes/ refs/stash",
+                layout.bare_git_dir()
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {} remote", layout.bare_git_dir()),
+            0,
+            "origin\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {} rev-list --walk-reflogs --all",
+                layout.bare_git_dir()
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {} rev-list --all", layout.bare_git_dir()),
             0,
             "",
         )
@@ -54,30 +89,38 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
         .answering(&format!("exec {name} -- test -e {managed}/.git/REVERT_HEAD"), 1, "")
         .answering(&format!("exec {name} -- test -e {managed}/.git/BISECT_LOG"), 1, "")
         .answering(&format!("exec {name} -- test -e {managed}/.git/rebase-merge"), 1, "")
-        .answering(&format!("exec {name} -- test -e {managed}/.git/rebase-apply"), 1, "")
-        // originはHEADのtipをそのまま持つ。checkout中のbranchはupstreamからpushed済みになる。
-        .answering(
-            &format!("exec {name} -- git --git-dir {bare_git_dir} config --get remote.origin.url"),
-            0,
-            "https://github.com/example-org/example-repo.git\n",
-        )
-        .answering(
-            &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune origin"),
-            0,
-            "",
-        )
-        .answering(
-            &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
-            ),
-            0,
-            &format!("refs/remotes/origin/main\t{COMMIT}\n"),
-        )
-        .answering(
-            &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
-            ),
-            0,
-            "refs/remotes/origin/main\n",
-        ))
+        .answering(&format!("exec {name} -- test -e {managed}/.git/rebase-apply"), 1, ""),
+        name,
+        &bare_git_dir,
+    ))
+}
+
+/// 権威あるorigin観測が、HEADのtipをそのまま持つoriginを見る応答。
+///
+/// checkout中のbranchはそのupstreamから到達できるため、`Reachability::Pushed`になる。
+fn answering_origin_observation(host: FakeSbx, name: &str, bare_git_dir: &str) -> FakeSbx {
+    host.answering(
+        &format!("exec {name} -- git --git-dir {bare_git_dir} config --get remote.origin.url"),
+        0,
+        "https://github.com/example-org/example-repo.git\n",
+    )
+    .answering(
+        &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune origin"),
+        0,
+        "",
+    )
+    .answering(
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+        ),
+        0,
+        &format!("refs/remotes/origin/main\t{COMMIT}\n"),
+    )
+    .answering(
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+        ),
+        0,
+        "refs/remotes/origin/main\n",
+    )
 }

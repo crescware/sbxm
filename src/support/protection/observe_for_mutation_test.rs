@@ -10,6 +10,9 @@ use crate::testing::value::COMMIT;
 use super::observe_for_mutation;
 use crate::support::protection::{CommitCandidate, OriginObservation, UnobservableReason};
 
+/// remediationが案内する案件の表示名。
+const PROJECT: &str = "example-org/example-repo";
+
 fn sandbox() -> Checked<SandboxName> {
     Ok(SandboxName::derive(&canonical()?))
 }
@@ -37,7 +40,7 @@ fn a_command_that_could_not_even_launch_is_an_error_at_every_stage() -> Checked 
     ];
     for step in steps {
         let host = InnerCommandSandbox::new().timing_out(&step);
-        let error = observe_for_mutation(&host, &sandbox, &layout()?, &candidates)
+        let error = observe_for_mutation(&host, &sandbox, &layout()?, PROJECT, &candidates)
             .refused_because("a step that did not run is never read as observed")?;
         assert_eq!(
             error.first_id(),
@@ -58,7 +61,7 @@ fn an_origin_configuration_that_answers_oddly_is_unobservable_not_missing() -> C
         "",
     );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
         .refused_because("an answer that is neither 0 nor 1 is not a clean yes or no")?;
     assert_eq!(
         error.first_id(),
@@ -83,7 +86,7 @@ fn a_fetch_that_answered_but_could_not_launch_the_inner_command_is_unobservable(
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
         .refused_because(
             "an exit code sbx exec reserves for its own launch failure is never read as an answer",
         )?;
@@ -117,7 +120,7 @@ fn a_tip_listing_that_answered_but_could_not_launch_the_inner_command_is_unobser
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
         .refused_because(
             "an exit code sbx exec reserves for its own launch failure is never read as an answer",
         )?;
@@ -151,7 +154,7 @@ fn a_tip_listing_with_a_missing_field_is_an_invalid_advertisement() -> Checked {
             "refs/remotes/origin/main\t\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
         .required_because(
             "a malformed advertisement is a collected reason, not an outright failure",
         )?;
@@ -194,7 +197,7 @@ fn a_reachability_probe_with_a_blank_line_is_an_invalid_advertisement() -> Check
             "\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
         .required_because("a blank ref name is a collected reason, not an outright failure")?;
     assert_eq!(
         observation,

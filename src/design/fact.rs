@@ -41,6 +41,48 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-directory-label"), Inline::path(path))
     }
 
+    /// `Worktree:`。Sandbox内の作業ツリー。
+    pub fn worktree(path: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-worktree-label"), Inline::path(path))
+    }
+
+    /// `Operation:`。途中で止まっているGit操作。
+    pub fn operation(operation: &str) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-operation-label"),
+            Inline::important(operation),
+        )
+    }
+
+    /// `Reference:`。回収可能性を検査したGit ref。
+    pub fn reference(reference: &str) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-reference-label"),
+            Inline::important(reference),
+        )
+    }
+
+    /// `Commit:`。回収可能性を検査したGit commit。
+    pub fn commit(commit: &str) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-commit-label"),
+            Inline::important(commit),
+        )
+    }
+
+    /// `Count:`。commitなどの件数。
+    pub fn count(count: impl std::fmt::Display) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-count-label"),
+            Inline::important(count.to_string()),
+        )
+    }
+
+    /// `Repository root:`。共有bare repositoryのroot。
+    pub fn root(path: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-root-label"), Inline::path(path))
+    }
+
     /// `Path:`。診断の対象になったhost上のpath。
     pub fn path(path: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-path-label"), Inline::path(path))

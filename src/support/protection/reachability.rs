@@ -59,6 +59,23 @@ impl Reachability {
             Reachability::Unobservable { .. } => "legend-unobservable",
         }
     }
+
+    /// fingerprintの入力に使う、翻訳しない安定表記。
+    ///
+    /// 表記だけでなく根拠のref名まで写す。同じ`reachable`でも、到達できるorigin refが
+    /// 入れ替われば別の状態である。
+    pub(super) fn fingerprint_key(&self) -> String {
+        match self {
+            Reachability::Pushed { upstream } => format!("pushed\u{1f}{upstream}"),
+            Reachability::Reachable { origins } => {
+                format!("reachable\u{1f}{}", origins.join("\u{1e}"))
+            }
+            Reachability::Unreachable => "unreachable".to_string(),
+            Reachability::Unobservable { reason } => {
+                format!("unobservable\u{1f}{}", reason.fingerprint_key())
+            }
+        }
+    }
 }
 
 #[cfg(test)]

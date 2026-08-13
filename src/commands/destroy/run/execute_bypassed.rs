@@ -8,7 +8,10 @@ use crate::support::inventory::{self, Poll, ProjectState};
 
 use super::{DestroyOutcome, Prepared, finish_removal};
 
-/// 確認手順を通らずにSandboxを削除する。`--force`、またはSandboxが元から無い場合に使う。
+/// 確認手順を通らずにSandboxを削除する。`--force`だけがここを通る。
+///
+/// `--force`は保護ゲートを意図的に迂回する別操作である。Sandboxがそもそも無い場合は
+/// 削除commandを実行せず、不在を1回確かめてから管理情報の後始末へ進む。
 pub fn execute_bypassed(
     host: &dyn HostEnvironment,
     prepared: &Prepared,

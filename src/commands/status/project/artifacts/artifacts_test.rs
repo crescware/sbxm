@@ -71,7 +71,7 @@ fn a_project_root_that_is_not_there_is_reported_as_missing_rather_than_failing()
 fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let host = without_image(FakeSbx::listing("[]"), &project);
+    let host = without_image(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project);
 
     let status = diagnose(
         &fixture.location,
@@ -91,7 +91,11 @@ fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() -> Checked {
         &project.sandbox,
         &project.metadata.provisioning.dockerfile_sha256,
     );
-    let host = FakeSbx::listing("[]").answering(&format!("image ls --quiet {image}"), 1, "");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+        &format!("image ls --quiet {image}"),
+        1,
+        "",
+    );
 
     let status = diagnose(
         &fixture.location,
@@ -117,7 +121,7 @@ fn a_changed_dockerfile_is_reported_as_the_next_rebuild_rather_than_a_fault() ->
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
-    let host = without_image(FakeSbx::listing("[]"), &project);
+    let host = without_image(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project);
 
     let status = diagnose(
         &fixture.location,
@@ -145,7 +149,7 @@ fn a_dockerfile_whose_digest_matches_the_recorded_generation_is_ready() -> Check
     let status = diagnose(
         &fixture.location,
         &project_id("example-org/example-repo")?,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
     )
     .required_because("diagnose")?;
@@ -166,7 +170,7 @@ fn a_dockerfile_that_cannot_be_read_is_neither_absent_nor_a_new_generation() -> 
     let status = diagnose(
         &fixture.location,
         &project_id("example-org/example-repo")?,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
     );
     std::fs::set_permissions(&dockerfile, std::fs::Permissions::from_mode(0o600)).required()?;
@@ -211,7 +215,7 @@ fn a_dockerfile_that_is_a_symlink_is_refused_instead_of_followed() -> Checked {
     let status = diagnose(
         &fixture.location,
         &project_id("example-org/example-repo")?,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
     )
     .required_because("diagnose")?;
@@ -244,7 +248,7 @@ fn an_archive_of_the_recorded_generation_is_ready() -> Checked {
     let status = diagnose(
         &fixture.location,
         &project_id("example-org/example-repo")?,
-        &without_image(FakeSbx::listing("[]"), &project),
+        &without_image(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project),
         &fixture.workspace_root,
     )
     .required_because("diagnose")?;
@@ -271,7 +275,7 @@ fn an_archive_path_that_cannot_be_inspected_is_not_reported_as_absent() -> Check
     let status = diagnose(
         &fixture.location,
         &project_id("example-org/example-repo")?,
-        &without_image(FakeSbx::listing("[]"), &project),
+        &without_image(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project),
         &fixture.workspace_root,
     )
     .required_because("diagnose")?;
@@ -297,7 +301,7 @@ fn an_image_that_declares_this_project_and_this_generation_is_ready() -> Checked
     let project = fixture.register("example-org/example-repo")?;
     let generation = &project.metadata.provisioning.dockerfile_sha256;
     let image = image::image_name(&project.sandbox, generation);
-    let host = FakeSbx::listing("[]")
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#)
         .answering(&format!("image ls --quiet {image}"), 0, "a3d0f4449170\n")
         .answering(
             &format!("image inspect {image}"),
@@ -337,7 +341,7 @@ fn an_image_whose_labels_declare_something_else_is_unusable_rather_than_ready() 
         ("github.com/example-org/other-repo", generation.as_str()),
         (canonical.as_str(), other_generation.as_str()),
     ] {
-        let host = FakeSbx::listing("[]")
+        let host = FakeSbx::listing(r#"{"sandboxes":[]}"#)
             .answering(&format!("image ls --quiet {image}"), 0, "a3d0f4449170\n")
             .answering(
                 &format!("image inspect {image}"),
@@ -381,6 +385,7 @@ fn bare_status() -> ProjectStatus {
         project: "example-org/example-repo".to_string(),
         items: Vec::new(),
         worktrees: Vec::new(),
+        disk: crate::support::disk::DiskObservation::NotObservedMismatch,
         diagnostics: Vec::new(),
     }
 }

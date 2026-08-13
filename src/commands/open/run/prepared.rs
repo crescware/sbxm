@@ -1,4 +1,5 @@
 use crate::paths::SharedLock;
+use crate::support::disk::DiskObservation;
 
 use super::ClampedIndex;
 
@@ -16,9 +17,11 @@ pub struct Prepared {
     /// promptで確定したindexを、lock済みmetadataの範囲まで下げた場合のその内訳。
     pub clamped_worktree_index: Option<ClampedIndex>,
     pub worktrees: Vec<String>,
+    /// SSH接続前に観測した、root filesystemの使用量。
+    pub disk: DiskObservation,
     /// project lockが外れたあともSSH sessionの生存中だけ保持するshared session lease。
     ///
     /// 通常rebuild/destroyのexclusive session leaseと排他する。読まれることはなく、
-    /// `Prepared`が破棄される（`connect`が戻る）ときにdropだけが意味を持つ。
+    /// `connect`がSSH childの終了結果を受け取って戻るときにdropされる。
     pub(super) _session_lease: SharedLock,
 }

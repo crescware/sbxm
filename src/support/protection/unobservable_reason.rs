@@ -14,3 +14,15 @@ pub enum UnobservableReason {
     /// 到達可能性の判定に必要なobjectがない。
     ObjectMissing,
 }
+
+impl UnobservableReason {
+    /// fingerprintの入力に使う、翻訳しない安定表記。
+    pub(super) fn fingerprint_key(self) -> &'static str {
+        match self {
+            UnobservableReason::OriginMissing => "origin-missing",
+            UnobservableReason::RefreshFailed => "refresh-failed",
+            UnobservableReason::AdvertisementInvalid => "advertisement-invalid",
+            UnobservableReason::ObjectMissing => "object-missing",
+        }
+    }
+}
