@@ -180,6 +180,19 @@ fn the_locale_can_be_switched_once_the_configuration_declares_one() -> Checked {
 fn a_progress_sink_that_reports_nothing_is_still_a_valid_sink() {
     let mut silent = SilentProgress;
     silent.step(crate::msg!("progress-creating-sandbox"));
+    silent.warn(Warning::text(crate::msg!("destroy-force-notice")));
+}
+
+#[test]
+fn a_progress_sink_can_report_a_warning_through_the_same_ui_the_final_result_uses() -> Checked {
+    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+        let sink: &mut dyn ProgressSink = ui;
+        sink.warn(Warning::text(crate::msg!("destroy-force-notice")));
+    });
+
+    let err = streams.err()?;
+    assert!(err.contains("! Warning: "), "{err}");
+    Ok(())
 }
 
 #[test]

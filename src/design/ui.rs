@@ -95,6 +95,10 @@ impl ProgressSink for Ui<'_> {
     fn step(&mut self, message: Msg) {
         self.progress(message);
     }
+
+    fn warn(&mut self, warning: Warning) {
+        self.warning(&warning);
+    }
 }
 
 impl ExternalOutput for Ui<'_> {

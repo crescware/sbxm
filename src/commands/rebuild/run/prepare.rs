@@ -43,7 +43,7 @@ pub fn prepare(
     // 対象が決まる前にhostの状態へ触れない。
     let locked =
         select::one(location, requested, &msg!("select-rebuild-heading"), prompt)?.lock()?;
-    image::cleanup_stale_archives(&locked.paths);
+    let warnings = image::cleanup_stale_archives(&locked.paths)?;
     // project lockを保持している間にexclusive session leaseを取る。開いている
     // `sbxm open` sessionがあれば、削除計画を作る前にここで拒否する。この時点で
     // project lockは自分が排他的に保持しているため、取得できない原因は開いている
@@ -92,6 +92,7 @@ pub fn prepare(
             current,
             locked,
             _session_lease: session_lease,
+            warnings,
         },
         snapshot,
     ))

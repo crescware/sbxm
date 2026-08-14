@@ -18,8 +18,8 @@ pub use directory::{
     ensure_directory, ensure_private_dir, require_owned_directory, require_private_directory,
 };
 pub use inspect::{
-    directory_exists, display, is_symlink, lexically_standardize, permission_too_open, real_path,
-    regular_file_exists,
+    FileIdentity, directory_exists, display, is_symlink, lexically_standardize,
+    permission_too_open, real_path, regular_file_exists,
 };
 pub use lock::{ExclusiveLock, SharedLock, acquire_exclusive_lock, acquire_shared_lock};
 pub use lock_timeout::LOCK_TIMEOUT;

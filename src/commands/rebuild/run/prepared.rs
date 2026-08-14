@@ -1,3 +1,4 @@
+use crate::design::Warning;
 use crate::paths::ExclusiveLock;
 use crate::project::SandboxName;
 
@@ -19,4 +20,6 @@ pub struct Prepared {
     ///
     /// 読まれることはなく、`Prepared`が破棄されるときのdropだけが意味を持つ。
     pub(super) _session_lease: ExclusiveLock,
+    /// `prepare`の間に観測したwarning。`execute`が最終結果へ合流させる。
+    pub(super) warnings: Vec<Warning>,
 }

@@ -55,5 +55,5 @@ pub fn ensure_archive(
     archive::verify_holds_image(&temporary, &image.name, &image.labels)
         .map_err(|error| docker::diagnose_failure(host, error))?;
     paths::atomic_rename_into_place(&temporary, &target)?;
-    Ok(TransientArchive::new(target))
+    TransientArchive::new(target)
 }

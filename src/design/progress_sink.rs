@@ -1,6 +1,6 @@
 use crate::diagnostics::Msg;
 
-use super::ExternalOutput;
+use super::{ExternalOutput, Warning};
 
 /// 長い工程の開始を知らせる先。
 ///
@@ -12,4 +12,9 @@ use super::ExternalOutput;
 pub trait ProgressSink: ExternalOutput {
     /// これから始める工程を1行で示す。
     fn step(&mut self, message: Msg);
+
+    /// 最終結果を待たずに、注意を今すぐ伝える。
+    ///
+    /// `Error::Canceled`のように最終結果へ事実を残せない経路が使う。
+    fn warn(&mut self, warning: Warning);
 }
