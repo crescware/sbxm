@@ -86,13 +86,15 @@ fn run(argv: &[String]) -> ExitCode {
         Ok(Outcome::Run(command)) => {
             let context = Context {
                 location: &location,
+                workspace_root: std::path::Path::new(support::sandbox::WORKSPACE_ROOT),
                 lang: match peeked {
                     PeekedLang::Valid(locale) => Some(locale),
                     _ => None,
                 },
                 interactivity,
             };
-            // 実hostと実端末を選ぶのはここだけとする。commandは受け取ったものだけを使う。
+            // 実hostと実端末と実workspace rootを選ぶのはここだけとする。commandは受け取った
+            // ものだけを使う。
             let mut prompt = PromptUi::terminal(display_locale, policy.stderr);
             commands::dispatch(&command, &context, &mut ui, &RealHost, &mut prompt)
         }

@@ -2,8 +2,6 @@
 //!
 //! 作り直す前に計画を見せ、確認を取ってから実行する。
 
-use std::path::Path;
-
 use crate::command::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
@@ -21,7 +19,6 @@ pub fn exec(
     ui: &mut Ui,
     host: &dyn HostEnvironment,
     prompt: &mut PromptUi,
-    workspace_root: &Path,
 ) -> ExitCode {
     let (config, locale) = match context.settings() {
         Ok(pair) => pair,
@@ -34,11 +31,16 @@ pub fn exec(
         requested: project,
         prompt,
     };
-    let (prepared, snapshot) =
-        match super::run::prepare(target, host, workspace_root, inventory::Poll::default(), ui) {
-            Ok(pair) => pair,
-            Err(error) => return report(ui, &error),
-        };
+    let (prepared, snapshot) = match super::run::prepare(
+        target,
+        host,
+        context.workspace_root,
+        inventory::Poll::default(),
+        ui,
+    ) {
+        Ok(pair) => pair,
+        Err(error) => return report(ui, &error),
+    };
 
     ui.stdout(&print::plan_document(&prepared.plan));
 
@@ -54,7 +56,7 @@ pub fn exec(
         prepared,
         confirmation,
         &config,
-        workspace_root,
+        context.workspace_root,
         inventory::Poll::default(),
         ui,
     ) {

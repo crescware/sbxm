@@ -4,7 +4,7 @@ use crate::command::HostEnvironment;
 use crate::design::{Document, Inline, PromptUi, Ui, Warning};
 use crate::diagnostics::ExitCode;
 use crate::msg;
-use crate::support::{inventory, sandbox};
+use crate::support::inventory;
 
 use crate::commands::present;
 
@@ -30,7 +30,7 @@ pub fn exec(
         args.index,
         host,
         prompt,
-        std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        context.workspace_root,
         inventory::Poll::default(),
         ui,
     ) {
