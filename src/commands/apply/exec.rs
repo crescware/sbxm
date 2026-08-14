@@ -3,7 +3,6 @@
 use crate::command::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
-use crate::support::sandbox;
 
 use super::{
     super::{Context, report},
@@ -32,14 +31,7 @@ pub fn exec(
         requested: args.project.as_ref(),
         prompt,
     };
-    match super::run::run(
-        target,
-        &config,
-        scope,
-        host,
-        std::path::Path::new(sandbox::WORKSPACE_ROOT),
-        ui,
-    ) {
+    match super::run::run(target, &config, scope, host, context.workspace_root, ui) {
         Ok(output) => {
             ui.stdout(&print::document(&output, locale));
             ExitCode::Success

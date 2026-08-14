@@ -1,7 +1,5 @@
 //! `prepare`の実行。
 
-use std::path::Path;
-
 use crate::command::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
@@ -18,7 +16,6 @@ pub fn exec(
     ui: &mut Ui,
     host: &dyn HostEnvironment,
     prompt: &mut PromptUi,
-    workspace_root: &Path,
 ) -> ExitCode {
     let (config, locale) = match context.settings() {
         Ok(pair) => pair,
@@ -31,7 +28,7 @@ pub fn exec(
         &config,
         project,
         host,
-        workspace_root,
+        context.workspace_root,
         prompt,
         ui,
     ) {
