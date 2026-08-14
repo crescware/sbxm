@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::command::{HostEnvironment, TimeoutClass};
 use crate::compatibility::parse_df;
 
 use crate::support::inventory::ProjectState;
@@ -10,10 +10,15 @@ use super::DiskObservation;
 ///
 /// Sandboxが動いていない場合は、観測のために起動しない。状態そのものが分からない
 /// 場合も同様に、`df`を実行せず理由を返す。
+///
+/// `timeout`は呼び出し側の事情に合わせる。`status`/`open`のように利用者が明示的に
+/// 待つ操作は`SandboxLifecycle`（600秒）で構わないが、失敗診断からの追加観測は、
+/// 容量が尽きたSandboxほど応答が返らなくなりやすいため、より短いtimeoutが要る。
 pub fn observe(
     host: &dyn HostEnvironment,
     sandbox_name: &str,
     state: Option<ProjectState>,
+    timeout: TimeoutClass,
 ) -> DiskObservation {
     match state {
         Some(ProjectState::NotCreated) => return DiskObservation::NotObservedNotCreated,
@@ -22,7 +27,8 @@ pub fn observe(
         Some(ProjectState::Running) => {}
     }
 
-    let Ok(outcome) = sandbox::exec(host, sandbox_name, &["df", "-Pk", "/"]) else {
+    let Ok(outcome) = sandbox::exec_with_timeout(host, sandbox_name, &["df", "-Pk", "/"], timeout)
+    else {
         return DiskObservation::ParseFailed;
     };
     match outcome.status.code() {

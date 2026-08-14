@@ -274,6 +274,58 @@ fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Ch
 }
 
 #[test]
+fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    // files配置、identity設定、gh git_protocol設定、bare clone、worktree作成の
+    // それぞれの代表的な失敗。
+    for step in [
+        "sbx cp --follow-link",
+        "config --global user.name",
+        "gh config set git_protocol",
+        "git init --bare",
+        "worktree add",
+    ] {
+        world.failing(step);
+        let mark = world.mark();
+        let error = bench
+            .build(&world, &request)
+            .refused_because(&format!("{step} fails"))?;
+        let since = world.since(mark);
+        world.nothing_fails();
+
+        let facts = &error.diagnostics()[0].facts;
+        assert_eq!(facts.len(), 4, "{step}: {facts:?}");
+        assert_eq!(
+            since.iter().filter(|call| call.contains("df -Pk")).count(),
+            1,
+            "{step}: exactly one disk check per failure: {since:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    bench
+        .build(&world, &request)
+        .required_because("prepare succeeds")?;
+
+    assert!(
+        !world.ran("df -Pk"),
+        "a successful run never checks disk usage: {:?}",
+        world.invocations()
+    );
+    Ok(())
+}
+
+#[test]
 fn a_workspace_that_had_to_be_created_again_is_told_rather_than_hidden() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

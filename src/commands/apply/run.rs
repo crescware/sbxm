@@ -13,7 +13,7 @@ use crate::design::ProgressSink;
 use crate::design::Remediation;
 use crate::project::SandboxLayout;
 use crate::support::files::{self};
-use crate::support::{daemon, generation, inventory, repository, sandbox, select};
+use crate::support::{daemon, disk, generation, inventory, repository, sandbox, select};
 
 use super::{ApplyOutput, Scope, Target};
 
@@ -65,9 +65,15 @@ pub fn run(
         ));
     }
 
+    // sbxm自身がSandbox内を変更する工程が失敗した場合だけ、失敗直後の空き容量を
+    // 追加のfactとして載せる。平常時はcommandを1つも増やさない。ここまでの検査で
+    // `entry.state`は`Running`と確認済みである。
+    let decorate = |error| disk::attach_on_failure(host, &entry.name, entry.state, error);
+
     let mut files = Vec::new();
     if scope.files {
-        files = files::place_all(host, &entry.name, &config.files, files::Conflict::Overwrite)?;
+        files = files::place_all(host, &entry.name, &config.files, files::Conflict::Overwrite)
+            .map_err(decorate)?;
     }
 
     let mut worktrees = None;
@@ -75,7 +81,8 @@ pub fn run(
         raise_worktrees(&locked.paths, &mut locked.metadata, count)?;
         let layout = SandboxLayout::new(&canonical);
         let project = ProjectId::parse(&locked.metadata.display_id())?;
-        repository::ensure_bare_clone(host, &entry.name, &project, &layout, progress)?;
+        repository::ensure_bare_clone(host, &entry.name, &project, &layout, progress)
+            .map_err(decorate)?;
         let branch = repository::resolve_start_ref(
             host,
             &entry.name,
@@ -90,7 +97,8 @@ pub fn run(
             &locked.metadata,
             &branch,
             progress,
-        )?;
+        )
+        .map_err(decorate)?;
         worktrees = Some(locked.metadata.provisioning.requested_worktrees);
     }
 

@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::command::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
 use crate::compatibility::RootDiskUsage;
 use crate::diagnostics::Result;
 use crate::support::inventory::ProjectState;
@@ -25,7 +25,10 @@ fn a_stopped_or_not_created_or_unobservable_sandbox_is_never_started_to_check_di
     ];
     for (state, expected) in cases {
         let host = InnerCommandSandbox::new();
-        assert_eq!(observe(&host, NAME, state), expected);
+        assert_eq!(
+            observe(&host, NAME, state, TimeoutClass::SandboxLifecycle),
+            expected
+        );
         assert!(
             host.calls().is_empty(),
             "observing disk for {state:?} must not run any command"
@@ -40,7 +43,12 @@ fn a_running_sandbox_is_read_with_a_single_df_call() {
         "Filesystem     1024-blocks      Used Available Capacity Mounted on\noverlay          20466256  14502976   4898320       75% /\n",
     );
     assert_eq!(
-        observe(&host, NAME, Some(ProjectState::Running)),
+        observe(
+            &host,
+            NAME,
+            Some(ProjectState::Running),
+            TimeoutClass::SandboxLifecycle
+        ),
         DiskObservation::Observed(RootDiskUsage {
             free_kib: 4_898_320,
             usable_kib: 19_401_296,
@@ -59,7 +67,12 @@ fn only_raw_127_is_reported_as_command_missing() {
     ] {
         let host = FakeSbx::listing("[]").answering(&format!("exec {NAME} -- df -Pk /"), code, "");
         assert_eq!(
-            observe(&host, NAME, Some(ProjectState::Running)),
+            observe(
+                &host,
+                NAME,
+                Some(ProjectState::Running),
+                TimeoutClass::SandboxLifecycle
+            ),
             expected,
             "raw status {code}"
         );
@@ -83,7 +96,12 @@ impl HostEnvironment for SignaledSandbox {
 #[test]
 fn a_signaled_command_is_reported_as_a_parse_failure_not_as_missing() {
     assert_eq!(
-        observe(&SignaledSandbox, NAME, Some(ProjectState::Running)),
+        observe(
+            &SignaledSandbox,
+            NAME,
+            Some(ProjectState::Running),
+            TimeoutClass::SandboxLifecycle
+        ),
         DiskObservation::ParseFailed
     );
 }
@@ -92,7 +110,12 @@ fn a_signaled_command_is_reported_as_a_parse_failure_not_as_missing() {
 fn df_that_ran_but_exited_non_zero_is_a_parse_failure_not_missing() {
     let host = InnerCommandSandbox::new().failing("df -Pk /");
     assert_eq!(
-        observe(&host, NAME, Some(ProjectState::Running)),
+        observe(
+            &host,
+            NAME,
+            Some(ProjectState::Running),
+            TimeoutClass::SandboxLifecycle
+        ),
         DiskObservation::ParseFailed
     );
 }
@@ -101,7 +124,12 @@ fn df_that_ran_but_exited_non_zero_is_a_parse_failure_not_missing() {
 fn a_command_that_never_answers_is_reported_as_unobserved_rather_than_aborting_status() {
     let host = InnerCommandSandbox::new().timing_out("df -Pk /");
     assert_eq!(
-        observe(&host, NAME, Some(ProjectState::Running)),
+        observe(
+            &host,
+            NAME,
+            Some(ProjectState::Running),
+            TimeoutClass::SandboxLifecycle
+        ),
         DiskObservation::ParseFailed
     );
 }
@@ -110,7 +138,12 @@ fn a_command_that_never_answers_is_reported_as_unobserved_rather_than_aborting_s
 fn a_successful_but_unparseable_answer_is_a_parse_failure() {
     let host = InnerCommandSandbox::new().answering("df -Pk /", "not df output at all\n");
     assert_eq!(
-        observe(&host, NAME, Some(ProjectState::Running)),
+        observe(
+            &host,
+            NAME,
+            Some(ProjectState::Running),
+            TimeoutClass::SandboxLifecycle
+        ),
         DiskObservation::ParseFailed
     );
 }
