@@ -69,7 +69,7 @@ impl Switch<'_> {
         let decorate = |error| disk::attach_on_failure(host, &ready.name, ready.state, error);
 
         identity::ensure(host, &ready.name, &metadata.git_identity).map_err(decorate)?;
-        tools::SandboxReady::announce(host, &ready.name)?;
+        tools::SandboxReady::announce(host, &ready.name).map_err(decorate)?;
         secret::configure_git_credential(host, &ready.name).map_err(decorate)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)
             .map_err(decorate)?;

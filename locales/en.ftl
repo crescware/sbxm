@@ -197,6 +197,7 @@ diagnostic-destination-label = Destination:
 diagnostic-directory-label = Working directory:
 diagnostic-paths-label = Paths:
 diagnostic-cause-label = Cause:
+diagnostic-disk-mount-label = Mount:
 diagnostic-disk-free-label = Free:
 diagnostic-disk-usable-label = Usable:
 diagnostic-disk-capacity-label = Capacity:
