@@ -27,9 +27,14 @@ pub fn dispatch(
             prompt,
             std::path::Path::new(sandbox::WORKSPACE_ROOT),
         ),
-        Command::Rebuild(project) => {
-            crate::commands::rebuild::exec(project.as_ref(), context, ui, host, prompt)
-        }
+        Command::Rebuild(project) => crate::commands::rebuild::exec(
+            project.as_ref(),
+            context,
+            ui,
+            host,
+            prompt,
+            std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        ),
         Command::Open(args) => crate::commands::open::exec(args, context, ui, host, prompt),
         Command::Stop(projects) => crate::commands::stop::exec(projects, context, ui, host, prompt),
         Command::Ls => crate::commands::ls::exec(context, ui, host),
