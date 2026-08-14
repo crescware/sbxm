@@ -1,7 +1,7 @@
 use crate::design::{Document, Field, Inline};
 use crate::msg;
 
-use crate::support::disk::{DiskObservation, format_gib};
+use crate::support::disk::{DiskObservation, format_gib, format_percent};
 
 /// DISK sectionを足す。観測できた場合も理由だけの場合も、常に何かを表示する。
 ///
@@ -23,7 +23,7 @@ pub fn disk_section(document: Document, disk: &DiskObservation) -> Document {
                 ),
                 Field::new(
                     msg!("status-disk-capacity"),
-                    Inline::text(format!("{}%", usage.capacity_percent)),
+                    Inline::text(format_percent(usage.capacity_percent)),
                 ),
             ],
         ),

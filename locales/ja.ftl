@@ -198,6 +198,7 @@ diagnostic-destination-label = 配置先:
 diagnostic-directory-label = 作業directory:
 diagnostic-paths-label = Path一覧:
 diagnostic-cause-label = 原因:
+diagnostic-disk-mount-label = mount:
 diagnostic-disk-free-label = 空き容量:
 diagnostic-disk-usable-label = 実効天井:
 diagnostic-disk-capacity-label = 使用率:

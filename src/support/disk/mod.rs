@@ -3,11 +3,13 @@
 mod attach_on_failure;
 mod disk_observation;
 mod format_gib;
+mod format_percent;
 mod observe;
 
 pub use attach_on_failure::attach_on_failure;
 pub use disk_observation::DiskObservation;
 pub use format_gib::format_gib;
+pub use format_percent::format_percent;
 pub use observe::observe;
 
 #[cfg(test)]

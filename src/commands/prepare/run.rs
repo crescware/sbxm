@@ -108,7 +108,7 @@ pub fn run(
     let files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)
         .map_err(decorate)?;
     identity::ensure(host, &ready.name, &locked.metadata.git_identity).map_err(decorate)?;
-    tools::SandboxReady::announce(host, &ready.name)?;
+    tools::SandboxReady::announce(host, &ready.name).map_err(decorate)?;
     secret::configure_git_credential(host, &ready.name).map_err(decorate)?;
 
     repository::ensure_bare_clone(host, &ready.name, &project, &layout, progress)

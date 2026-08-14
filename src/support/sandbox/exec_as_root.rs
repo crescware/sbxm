@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, HostEnvironment};
+use crate::command::{CommandOutcome, HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 
 use super::run_exec;
@@ -9,5 +9,11 @@ pub fn exec_as_root(
     sandbox: &str,
     args: &[&str],
 ) -> Result<CommandOutcome> {
-    run_exec(host, sandbox, Some("root"), args)
+    run_exec(
+        host,
+        sandbox,
+        Some("root"),
+        args,
+        TimeoutClass::SandboxLifecycle,
+    )
 }

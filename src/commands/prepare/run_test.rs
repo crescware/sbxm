@@ -279,10 +279,12 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
 
-    // files配置、identity設定、bare clone、worktree作成のそれぞれの代表的な失敗。
+    // files配置、identity設定、gh git_protocol設定、bare clone、worktree作成の
+    // それぞれの代表的な失敗。
     for step in [
         "sbx cp --follow-link",
         "config --global user.name",
+        "gh config set git_protocol",
         "git init --bare",
         "worktree add",
     ] {
@@ -295,7 +297,7 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
         world.nothing_fails();
 
         let facts = &error.diagnostics()[0].facts;
-        assert_eq!(facts.len(), 3, "{step}: {facts:?}");
+        assert_eq!(facts.len(), 4, "{step}: {facts:?}");
         assert_eq!(
             since.iter().filter(|call| call.contains("df -Pk")).count(),
             1,

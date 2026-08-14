@@ -241,6 +241,7 @@ fn a_bare_repository_fetch_failure_carries_the_disk_state_at_that_moment() -> Ch
             "Filesystem     1024-blocks      Used Available Capacity Mounted on\noverlay          20466256  14502976   4898320       75% /\n",
         );
 
+    let mark = host.calls().len();
     let error = rebuild(
         Target {
             location: &fixture.location,
@@ -255,7 +256,16 @@ fn a_bare_repository_fetch_failure_carries_the_disk_state_at_that_moment() -> Ch
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     let facts = &error.diagnostics()[0].facts;
-    assert_eq!(facts.len(), 3, "{facts:?}");
+    assert_eq!(facts.len(), 4, "{facts:?}");
+    let since = &host.calls()[mark..];
+    assert_eq!(
+        since
+            .iter()
+            .filter(|call| call.contains(&"df".to_string()))
+            .count(),
+        1,
+        "exactly one disk check per failure: {since:?}"
+    );
     Ok(())
 }
 
