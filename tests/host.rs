@@ -539,6 +539,44 @@ fn prepare_does_not_treat_a_running_sandbox_as_already_built_when_its_workspace_
 }
 
 #[test]
+fn prepare_reports_an_unreadable_configuration_before_asking_the_host_anything() -> Checked {
+    let host = Host::new()?;
+    // configを、有効なfileではなくdirectoryへ差し替える。`context.settings()`だけを
+    // 壊す、登録や選択より前にある実行最初の関門である。
+    let config_file = host.home.path().join(".sbxm").join("config.yaml");
+    std::fs::remove_file(&config_file).required_because("the valid configuration is removed")?;
+    std::fs::create_dir(&config_file)
+        .required_because("the configuration path is replaced with a directory")?;
+
+    let run = host.run(&["--lang", "en", "prepare", PROJECT])?;
+
+    assert_ne!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("config-unreadable"), "{}", run.stderr);
+    assert_eq!(
+        host.invocations()?,
+        "",
+        "the refusal comes before any host tool is asked"
+    );
+    Ok(())
+}
+
+#[test]
+fn prepare_refuses_a_project_that_was_never_registered() -> Checked {
+    let host = Host::new()?;
+
+    let run = host.run(&["--lang", "en", "prepare", PROJECT])?;
+
+    assert_ne!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("project-not-managed"), "{}", run.stderr);
+    assert_eq!(
+        host.invocations()?,
+        "",
+        "nothing is asked of the host before the target is known to be managed"
+    );
+    Ok(())
+}
+
+#[test]
 fn open_names_the_sandbox_and_its_worktrees_before_it_hands_over_the_terminal() -> Checked {
     let host = Host::new()?;
     let sandbox = host.registered()?;
