@@ -4,7 +4,6 @@ use crate::command::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;
-use crate::support::sandbox;
 
 use super::{
     super::{Context, report},
@@ -29,7 +28,7 @@ pub fn exec(
         &config,
         project,
         host,
-        std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        context.workspace_root,
         prompt,
         ui,
     ) {

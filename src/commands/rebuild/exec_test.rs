@@ -8,7 +8,6 @@ use crate::hash::sha256_hex;
 use crate::i18n::Locale;
 use crate::metadata;
 use crate::support::image;
-use crate::support::sandbox::WORKSPACE_ROOT;
 
 use crate::testing::host::FakeSbx;
 use crate::testing::image::template_listing;
@@ -18,8 +17,8 @@ use crate::testing::protection::clean_host;
 
 /// `exec`が書いたstdoutとstderr、そして終了statusを取り出す。
 ///
-/// `exec`はhostのworkspace rootを引数に取らず、実行時と同じ`WORKSPACE_ROOT`を自分で
-/// 選ぶ。ここでもその選択ごと通し、`run`のtestが通らない経路だけを確かめる。
+/// `exec`は`Context`が運ぶworkspace rootを使うため、ここではfixtureのrootを渡す。
+/// `run`のtestが通らない経路、つまり計画、確認、実行のつなぎ目だけを確かめる。
 struct Ran {
     code: ExitCode,
     stdout: String,
@@ -40,6 +39,7 @@ fn run(fixture: &Fixture, host: &dyn HostEnvironment, typed: &str) -> Checked<Ra
         );
         let context = Context {
             location: &fixture.location,
+            workspace_root: &fixture.workspace_root,
             lang: Some(Locale::En),
             interactivity: Interactivity {
                 stdin_is_tty: true,
@@ -87,11 +87,11 @@ fn host_with_the_applied_generation(
 }
 
 /// `exec`が観測するworkspaceを申告する、稼働中のSandbox 1件の一覧。
-fn running(project: &Registered) -> String {
-    format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{WORKSPACE_ROOT}/{}"]}}]}}"#,
-        project.sandbox, project.sandbox,
-    )
+fn running(fixture: &Fixture, project: &Registered) -> Checked<String> {
+    Ok(format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(project, "running")?
+    ))
 }
 
 #[test]
@@ -104,7 +104,10 @@ fn a_sandbox_that_disappeared_after_it_was_confirmed_is_reported_instead_of_rebu
 
     // 一覧は末尾から取り出される。計画と確認までは稼働中のSandboxを観測し、実行が
     // 状態を取り直す時点では消えている。
-    *host.listing.borrow_mut() = vec![r#"{"sandboxes":[]}"#.to_string(), running(&project)];
+    *host.listing.borrow_mut() = vec![
+        r#"{"sandboxes":[]}"#.to_string(),
+        running(&fixture, &project)?,
+    ];
 
     let ran = run(&fixture, &host, project.sandbox.as_str())?;
 
@@ -135,7 +138,7 @@ fn a_name_that_does_not_match_the_sandbox_stops_before_anything_is_touched() -> 
     let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     let host = host_with_the_applied_generation(&fixture, &mut project)?;
-    *host.listing.borrow_mut() = vec![running(&project), running(&project)];
+    *host.listing.borrow_mut() = vec![running(&fixture, &project)?, running(&fixture, &project)?];
 
     let ran = run(&fixture, &host, "not-the-sandbox-name")?;
 

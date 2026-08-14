@@ -6,7 +6,7 @@ use crate::command::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;
-use crate::support::{inventory, sandbox};
+use crate::support::inventory;
 
 use super::{
     super::{Context, report},
@@ -34,7 +34,7 @@ pub fn exec(
     let (prepared, snapshot) = match super::run::prepare(
         target,
         host,
-        std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        context.workspace_root,
         inventory::Poll::default(),
         ui,
     ) {
@@ -56,7 +56,7 @@ pub fn exec(
         prepared,
         confirmation,
         &config,
-        std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        context.workspace_root,
         inventory::Poll::default(),
         ui,
     ) {

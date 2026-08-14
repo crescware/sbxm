@@ -148,10 +148,8 @@ fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
     let running = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}/{}"]}}]}}"#,
-        project.sandbox,
-        crate::support::sandbox::WORKSPACE_ROOT,
-        project.sandbox,
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
     );
     let host = ready(FakeSbx::listing(&running), &project).answering(
         &format!("exec {} -- df -Pk /", project.sandbox),
@@ -173,6 +171,7 @@ fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
             );
             let context = Context {
                 location: &fixture.location,
+                workspace_root: &fixture.workspace_root,
                 lang: Some(Locale::En),
                 interactivity: Interactivity {
                     stdin_is_tty: false,
