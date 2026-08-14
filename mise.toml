@@ -1,7 +1,9 @@
 [tools]
 # sbxmが動くのはmacOSだけだが、開発はLinuxでも行う。macOS向けにcompileできることを
 # Linuxからも確かめられるよう、targetをtoolchainへ含める。
-rust = { version = "1.89.0", targets = "aarch64-apple-darwin" }
+# profileを明示しないとminimalになりrustfmt/clippyを含まない。`mise run check`が
+# 要る両方を持たせるため、defaultを明示する。
+rust = { version = "1.89.0", targets = "aarch64-apple-darwin", profile = "default" }
 zig = "0.16.0"
 "github:taiki-e/cargo-llvm-cov" = "0.8.7"
 
