@@ -4,7 +4,9 @@
 //! 出すかと、そのあとのexit codeまでをここが決める。
 
 mod document;
+mod plan_document;
 mod report;
 
 pub use document::document;
+pub use plan_document::plan_document;
 pub use report::report;

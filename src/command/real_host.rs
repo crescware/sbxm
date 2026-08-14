@@ -2,8 +2,8 @@ use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
 use super::{
-    CommandOutcome, CommandSpec, HostEnvironment, TerminalCommand, exists_on_path, run,
-    run_with_terminal,
+    CommandOutcome, CommandSpec, HostEnvironment, PtyConfirmedCommand, TerminalCommand,
+    exists_on_path, run, run_pty_confirmed, run_with_terminal,
 };
 
 /// 実際のhost。
@@ -24,5 +24,9 @@ impl HostEnvironment for RealHost {
         output: &mut dyn ExternalOutput,
     ) -> Result<CommandOutcome> {
         run_with_terminal(command, output)
+    }
+
+    fn run_pty_confirmed(&self, command: &PtyConfirmedCommand) -> Result<CommandOutcome> {
+        run_pty_confirmed(command)
     }
 }

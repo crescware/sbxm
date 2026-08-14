@@ -6,10 +6,12 @@
 mod ensure_directory;
 mod ensure_private_dir;
 mod require_owned_directory;
+mod require_private_directory;
 
 pub use ensure_directory::ensure_directory;
 pub use ensure_private_dir::ensure_private_dir;
 pub use require_owned_directory::require_owned_directory;
+pub use require_private_directory::require_private_directory;
 
 #[cfg(test)]
 #[path = "directory_test.rs"]

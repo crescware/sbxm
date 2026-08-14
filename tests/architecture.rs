@@ -24,11 +24,28 @@ const CONFIGURE: &str = "src/command/configure.rs";
 /// `sbx`の出力を端末へ出す起動を組み立ててよい唯一のfile。
 const SBX_RELAY: &str = "src/support/sandbox/relayed.rs";
 
+/// 確認promptにだけ答える`sbx`起動を組み立ててよい唯一のfile。
+const SBX_PTY_CONFIRM: &str = "src/support/sandbox/remove_confirmed.rs";
+
 /// Dockerのprocessを組み立ててよい唯一のmodule。
 const DOCKER_SUPPORT: &str = "src/support/docker/";
 
 /// 外部toolのbyteを運ぶmodule。
 const RELAY: &str = "src/command";
+
+/// session leaseのpathへ触れてよい唯一の場所。
+///
+/// `Locked`のmethodだけがこのpathへlockを取ることで、project lockを保持した
+/// `Locked`を経由しない限りsession leaseを取得できないという、lock順序を
+/// project lock→session leaseに固定する制約を型で保証する。
+const SESSION_LEASE_ACQUIRER: &str = "src/support/select/locked.rs";
+
+/// sandbox名の完全一致入力を`ProtectionConfirmation`へ変えてよい唯一の場所。
+///
+/// `confirmation::confirm`はsnapshotをconsumeする低水準APIである。呼び出し箇所が
+/// 増えると、rebuild / destroyがそれぞれ独自の確認判定を持ち、共通gateを経ない
+/// `ProtectionConfirmation`が生まれ得る。
+const PROTECTION_CONFIRMER: &str = "src/support/protection/confirmation/confirm_interactively.rs";
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
@@ -242,6 +259,29 @@ fn what_sbx_says_reaches_the_terminal_through_one_place() -> Checked {
 }
 
 #[test]
+fn sbx_is_run_with_a_confirmation_prompt_in_one_place_only() -> Checked {
+    // 期待するpromptと答えの組はここでしか決めない。呼び出し箇所が増えると、
+    // どのpromptに何を答えるかがcommandごとに分かれ、固定protocolでなくなる。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path == SBX_PTY_CONFIRM || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("PtyConfirmedCommand::new(") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a PTY-confirmed sbx command is built only in {SBX_PTY_CONFIRM}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
 fn docker_commands_are_constructed_in_one_module() -> Checked {
     // CommandSpecのconstructorは任意のprogram名を受け取るため、Rustのmodule privacy
     // だけではdockerの境界を強制できない。実行を表す明確なconstructor呼び出しをここで
@@ -269,6 +309,55 @@ fn docker_commands_are_constructed_in_one_module() -> Checked {
     assert!(
         offenders.is_empty(),
         "docker commands must be built through {DOCKER_SUPPORT}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn the_session_lease_is_acquired_only_while_holding_the_project_lock() -> Checked {
+    // `session_lease_file`は`Locked`のmethod以外から呼べない。session lease自体を
+    // 直接構築する経路が増えると、project lockを取らずにsession leaseだけを取得する
+    // 逆順が生まれてしまう。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path == SESSION_LEASE_ACQUIRER || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            // `.`付きの呼び出し形にすることで、`ProjectPaths`自身の定義行を誤検出しない。
+            if line.contains(".session_lease_file(") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "the session lease path is touched only from {SESSION_LEASE_ACQUIRER}, always behind the project lock:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_protection_confirmation_is_built_in_one_place_only() -> Checked {
+    // `confirmation::confirm`はsandbox名の完全一致だけを合図に`ProtectionConfirmation`
+    // を作る低水準APIである。呼び出し箇所が増えると、rebuild / destroyがそれぞれ別の
+    // 確認判定を持ち、共通gateを経ない`ProtectionConfirmation`を作れてしまう。
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path == PROTECTION_CONFIRMER || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("confirmation::confirm(") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a ProtectionConfirmation is built only from {PROTECTION_CONFIRMER}:\n{}",
         offenders.join("\n")
     );
     Ok(())

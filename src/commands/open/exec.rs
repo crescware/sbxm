@@ -72,7 +72,7 @@ pub fn exec(
         );
     ui.stderr(&present::disk_section(connecting, &prepared.disk));
 
-    match super::run::connect(host, &prepared, ui) {
+    match super::run::connect(host, prepared, ui) {
         Ok(()) => ExitCode::Success,
         Err(error) => report(ui, &error),
     }

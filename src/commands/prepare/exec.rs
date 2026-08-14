@@ -1,10 +1,11 @@
 //! `prepare`の実行。
 
+use std::path::Path;
+
 use crate::command::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;
-use crate::support::sandbox;
 
 use super::{
     super::{Context, report},
@@ -17,6 +18,7 @@ pub fn exec(
     ui: &mut Ui,
     host: &dyn HostEnvironment,
     prompt: &mut PromptUi,
+    workspace_root: &Path,
 ) -> ExitCode {
     let (config, locale) = match context.settings() {
         Ok(pair) => pair,
@@ -29,7 +31,7 @@ pub fn exec(
         &config,
         project,
         host,
-        std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        workspace_root,
         prompt,
         ui,
     ) {
@@ -43,3 +45,7 @@ pub fn exec(
         Err(error) => report(ui, &error),
     }
 }
+
+#[cfg(test)]
+#[path = "exec_test.rs"]
+mod exec_test;

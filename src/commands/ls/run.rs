@@ -26,6 +26,7 @@ pub fn run(
                 root: crate::paths::display(&project.project_root),
                 sandbox: project.sandbox.clone(),
                 observed: project.observed.clone(),
+                workspace: project.workspace,
             })
             .collect(),
         unmanaged: inventory

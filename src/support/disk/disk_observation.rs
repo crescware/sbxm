@@ -13,7 +13,7 @@ pub enum DiskObservation {
     NotObservedNotCreated,
     /// Sandboxの状態そのものを観測できなかった。
     NotObservedMismatch,
-    /// Sandbox内に`df`が無い、またはcommandを起動できなかった。
+    /// `df`のraw終了statusが127で、command not foundとして扱える。
     CommandMissing,
     /// `df`は起動できたが、非ゼロ終了、または出力を解釈できなかった。
     ParseFailed,

@@ -76,6 +76,16 @@ impl ProjectPaths {
         )
     }
 
+    /// `<project-root>/.sbxm/session.lock`
+    ///
+    /// project lockとは別inodeのfileである。fileの存在自体は`sbxm open`のsessionが
+    /// 生きていることを意味せず、保持しているOS file lockの成否だけが根拠になる。
+    /// project lockを保持している間だけ取得できるよう、`support::select::Locked`経由でのみ
+    /// このpathへlockを取る。
+    pub fn session_lease_file(&self) -> PathBuf {
+        self.sbxm_dir().join("session.lock")
+    }
+
     /// `<project-root>/.sbxm/Dockerfile`
     pub fn dockerfile(&self) -> PathBuf {
         self.sbxm_dir().join("Dockerfile")

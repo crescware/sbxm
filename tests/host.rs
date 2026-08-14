@@ -11,12 +11,13 @@
 mod outcome;
 mod temp_home;
 
-use outcome::{Checked, Required};
+use outcome::{Checked, Required, Unmet};
 use temp_home::{TempHome, temp_home};
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 /// 実hostのtoolの代わりに答えるscript。呼ばれた名前でどのtoolかを決める。
 ///
@@ -35,8 +36,24 @@ COMMIT=1111111111111111111111111111111111111111
 
 case "$program" in
 ssh)
-	# terminalを引き渡した先の終了status。
-	exit "$(cat "$fake/ssh-exit")"
+	# terminalを引き渡した先の終了status。通常の数値のほか、lifecycle test用に
+	# 自分自身のsignal終了と、親sbxmの終了まで待つ動作を受け付ける。
+	mode=$(cat "$fake/ssh-exit")
+	case "$mode" in
+	hold)
+		: >"$fake/ssh-started"
+		while [ ! -e "$fake/ssh-release" ]; do sleep 0.01; done
+		: >"$fake/ssh-finished"
+		exit 0
+		;;
+	signal)
+		: >"$fake/ssh-started"
+		kill -TERM "$$"
+		;;
+	*)
+		exit "$mode"
+		;;
+	esac
 	;;
 docker)
 	[ "$1 $2" = "version --format" ] || exit 1
@@ -78,7 +95,7 @@ case "$1" in
 ls)
 	printf '{"sandboxes":['
 	awk -F'\t' '{
-		printf "%s{\"name\":\"%s\",\"state\":\"%s\",\"workspace\":\"%s\"}", (NR > 1 ? "," : ""), $1, $2, $3
+		printf "%s{\"name\":\"%s\",\"status\":\"%s\",\"workspaces\":[\"%s\"]}", (NR > 1 ? "," : ""), $1, $2, $3
 	}' "$fake/sandboxes"
 	printf ']}'
 	exit 0
@@ -127,12 +144,12 @@ esac
 exit 1
 "#;
 
-/// Sandbox内のgitが答えるcommit。`HOST_TOOL`が返す値と同じである。
-const COMMIT: &str = "1111111111111111111111111111111111111111";
-
 /// 登録に使うclone URLと、そこから決まる表示ID。
 const CLONE_URL: &str = "git@github.com:Example-Org/Example-Repo.git";
 const PROJECT: &str = "Example-Org/Example-Repo";
+
+/// Sandboxが持つ中立Workspaceのroot。sbxmが固定で使う位置である。
+const WORKSPACE_ROOT: &str = "/tmp/docker-sandboxes";
 
 /// Sandboxの中で案件が使うbare rootと、1本目のmanaged worktree。
 const BARE_ROOT: &str = "/home/agent/work/example-repo";
@@ -243,6 +260,26 @@ impl Host {
         Run::from(&output)
     }
 
+    /// 終了をtest側で制御するため、sbxmを待たずに起動する。
+    fn spawn(&self, arguments: &[&str]) -> Checked<Child> {
+        Command::new(env!("CARGO_BIN_EXE_sbxm"))
+            .args(arguments)
+            .current_dir(&self.base)
+            .env("HOME", self.home.path())
+            .env("LC_ALL", "C")
+            .env_remove("LC_MESSAGES")
+            .env_remove("LANG")
+            .env("PATH", &self.bin)
+            .env("SBXM_FAKE", &self.fake)
+            .env("NO_COLOR", "1")
+            .env_remove("TERM")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .required_because("sbxm runs")
+    }
+
     /// 案件を1件登録し、表示されたSandbox名を返す。
     ///
     /// `--detach`を使うのは、起点branchが登録の時点で決まる構成にするためである。
@@ -268,11 +305,33 @@ impl Host {
         self.base.join("example-repo.project")
     }
 
+    /// `sbxm open`が保持するsession leaseのpath。
+    fn session_lease(&self) -> PathBuf {
+        self.project_root().join(".sbxm/session.lock")
+    }
+
+    /// 別processのexclusive leaseが取れるかを、fileを削除せずに確かめる。
+    fn exclusive_session_lease_available(&self) -> Checked<bool> {
+        let path = self.session_lease();
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .required_because("the session lease file exists")?;
+        match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(false),
+            Err(error) => Err(Unmet::new(format!(
+                "the session lease probe failed: {error}"
+            ))),
+        }
+    }
+
     /// この案件のSandboxが動いていることにする。
     fn sandbox_is_running(&self, name: &str) -> Checked<()> {
         self.answer(
             "sandboxes",
-            &format!("{name}\trunning\t/tmp/docker-sandboxes/{name}\n"),
+            &format!("{name}\trunning\t{WORKSPACE_ROOT}/{name}\n"),
         )
     }
 
@@ -281,6 +340,21 @@ impl Host {
         self.answer("present", &format!("{WORKTREE}\n"))?;
         self.answer("worktrees", &format!("{WORKTREE}\n"))
     }
+}
+
+/// lifecycle testがchildの実行開始を待つ。
+fn wait_for_file(path: &Path) -> Checked<()> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !path.exists() {
+        if Instant::now() >= deadline {
+            return Err(Unmet::new(format!(
+                "{} was not created in time",
+                path.display()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
 }
 
 /// 表示されたSandbox名。
@@ -446,6 +520,8 @@ fn ls_exits_with_zero_when_every_registered_project_is_settled() -> Checked {
     let listed = row(&run.stdout, PROJECT)?;
     assert!(listed.contains(&sandbox), "{listed}");
     assert!(listed.contains("not-created"), "{listed}");
+    // Sandboxのrecordが無い案件には、実在を問うmount元も無い。
+    assert!(listed.contains("not-applicable"), "{listed}");
 
     // 管理外のSandboxは、sbxmの管理状態ではなくruntimeが返した原値で並べる。
     let unmanaged = row(&run.stdout, "sbxm-elsewhere")?;
@@ -478,32 +554,99 @@ fn ls_shows_what_it_observed_and_still_fails_when_a_project_is_not_settled() -> 
 }
 
 #[test]
-fn prepare_reports_a_sandbox_that_already_meets_the_target_without_changing_anything() -> Checked {
+fn ls_separates_a_sandbox_that_is_stopped_from_one_that_cannot_start() -> Checked {
     let host = Host::new()?;
     let sandbox = host.registered()?;
+    // recordはmount元のdirectoryを指しているが、hostにそのdirectoryは無い。workspace
+    // rootの位置はsbxmが固定で持つため、testはそこへ作らず、無いことを前提として確かめる。
+    host.answer(
+        "sandboxes",
+        &format!("{sandbox}\tstopped\t{WORKSPACE_ROOT}/{sandbox}\n"),
+    )?;
+    assert!(
+        !PathBuf::from(WORKSPACE_ROOT).join(&sandbox).exists(),
+        "the premise is that the host does not hold {WORKSPACE_ROOT}/{sandbox}"
+    );
+
+    let run = host.run(&["--lang", "en", "ls"])?;
+
+    // 実在の欠落は状態として示す。1案件の欠落で一覧を失わせない。
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    let listed = row(&run.stdout, PROJECT)?;
+    assert!(listed.contains("stopped"), "{listed}");
+    assert!(
+        listed.contains("missing"),
+        "the workspace is reported as absent rather than folded into the state: {listed}"
+    );
+    Ok(())
+}
+
+#[test]
+fn prepare_does_not_treat_a_running_sandbox_as_already_built_when_its_workspace_is_gone() -> Checked
+{
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    // runningのまま、mount元のdirectoryだけがhostから消えている。live mountにより
+    // 中を見るcommandには応じるため、その事実だけではno-op成功にしてよいことに
+    // ならない。`WORKSPACE_ROOT`はsbxmが固定で使う共有pathであり、testから隔離
+    // できないため、ここでは作らずhostが実際には持っていないことを前提とする。
     host.sandbox_is_running(&sandbox)?;
     host.worktree_is_present()?;
+    assert!(
+        !PathBuf::from(WORKSPACE_ROOT).join(&sandbox).exists(),
+        "the premise is that the host does not hold {WORKSPACE_ROOT}/{sandbox}"
+    );
 
     let run = host.run(&["--lang", "en", "prepare", PROJECT])?;
 
-    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert_ne!(
+        run.code, 0,
+        "a workspace that is gone on host must not be folded into a silent success: {}{}",
+        run.stdout, run.stderr
+    );
     assert!(
-        run.stdout.contains("is already built"),
-        "an unchanged run says so rather than claiming work: {}",
+        !run.stdout.contains("is already built"),
+        "the host does not hold the workspace, so this is not a no-op: {}",
         run.stdout
     );
-    assert_eq!(value(&run.stdout, "Sandbox")?, sandbox);
-    assert_eq!(value(&run.stdout, "Sandbox state")?, "running");
+    Ok(())
+}
 
-    // worktreeの状態は、metadataの宣言ではなくSandboxの中を見て示す。
-    let worktree = row(&run.stdout, "example-repo.tree-0")?;
-    assert!(worktree.contains(COMMIT), "{worktree}");
-    assert!(worktree.contains("refs/remotes/origin/main"), "{worktree}");
+#[test]
+fn prepare_reports_an_unreadable_configuration_before_asking_the_host_anything() -> Checked {
+    let host = Host::new()?;
+    // configを、有効なfileではなくdirectoryへ差し替える。`context.settings()`だけを
+    // 壊す、登録や選択より前にある実行最初の関門である。
+    let config_file = host.home.path().join(".sbxm").join("config.yaml");
+    std::fs::remove_file(&config_file).required_because("the valid configuration is removed")?;
+    std::fs::create_dir(&config_file)
+        .required_because("the configuration path is replaced with a directory")?;
 
-    // 何も変えない実行は、Sandboxを作り直す起動を1つも出さない。
-    let asked = host.invocations()?;
-    assert!(!asked.contains("sbx create"), "{asked}");
-    assert!(!asked.contains("docker build"), "{asked}");
+    let run = host.run(&["--lang", "en", "prepare", PROJECT])?;
+
+    assert_ne!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("config-unreadable"), "{}", run.stderr);
+    assert_eq!(
+        host.invocations()?,
+        "",
+        "the refusal comes before any host tool is asked"
+    );
+    Ok(())
+}
+
+#[test]
+fn prepare_refuses_a_project_that_was_never_registered() -> Checked {
+    let host = Host::new()?;
+
+    let run = host.run(&["--lang", "en", "prepare", PROJECT])?;
+
+    assert_ne!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("project-not-managed"), "{}", run.stderr);
+    assert_eq!(
+        host.invocations()?,
+        "",
+        "nothing is asked of the host before the target is known to be managed"
+    );
     Ok(())
 }
 
@@ -534,6 +677,23 @@ fn open_names_the_sandbox_and_its_worktrees_before_it_hands_over_the_terminal() 
             "ssh -t {sandbox}.sbx cd '/home/agent/work/example-repo' && exec \"${{SHELL:-/bin/sh}}\" -l\n"
         )),
         "{asked}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_successful_ssh_session_releases_the_lease_when_the_command_exits() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+
+    let run = host.run(&["--lang", "en", "open", PROJECT])?;
+
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert!(
+        host.exclusive_session_lease_available()?,
+        "the successful SSH child releases the session lease"
     );
     Ok(())
 }
@@ -607,6 +767,65 @@ fn a_connection_that_ends_in_failure_is_reported_without_taking_back_what_was_sh
             .contains(&format!("Connecting to {sandbox} for {PROJECT}")),
         "{}",
         run.stderr
+    );
+    assert!(
+        host.exclusive_session_lease_available()?,
+        "a non-zero SSH child releases the session lease"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_ssh_session_ended_by_signal_releases_the_lease() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+    host.answer("ssh-exit", "signal")?;
+
+    let run = host.run(&["--lang", "en", "open", PROJECT])?;
+
+    assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
+    assert!(
+        run.stderr.contains("external-command-failed"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        host.exclusive_session_lease_available()?,
+        "a signal-ended SSH child releases the session lease"
+    );
+    Ok(())
+}
+
+#[test]
+fn terminating_the_sbxm_process_releases_the_lease_without_deleting_the_file() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+    host.answer("ssh-exit", "hold")?;
+
+    let mut child = host.spawn(&["--lang", "en", "open", PROJECT])?;
+    let started = host.fake.join("ssh-started");
+    wait_for_file(&started)?;
+    assert!(
+        !host.exclusive_session_lease_available()?,
+        "the running SSH child holds the session lease"
+    );
+
+    child.kill().required_because("terminate sbxm")?;
+    let status = child
+        .wait()
+        .required_because("the sbxm process is reaped")?;
+    assert!(!status.success(), "the process was terminated by the test");
+
+    // sbxm processが消えたあと、孤立したfake SSHを終わらせる。lease file自体は触らない。
+    host.answer("ssh-release", "done")?;
+    wait_for_file(&host.fake.join("ssh-finished"))?;
+    assert!(
+        host.exclusive_session_lease_available()?,
+        "the OS releases the session lease when sbxm exits"
     );
     Ok(())
 }

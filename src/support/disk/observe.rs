@@ -25,14 +25,14 @@ pub fn observe(
     let Ok(outcome) = sandbox::exec(host, sandbox_name, &["df", "-Pk", "/"]) else {
         return DiskObservation::ParseFailed;
     };
-    match sandbox::inner_exit_code(&outcome) {
-        // `sbx exec`はcommandを起動できなかったことを125..=127で示す。`df`のような
-        // 単純な起動には他に理由が無いため、起動できなかったことを不在として読む。
-        None => DiskObservation::CommandMissing,
+    match outcome.status.code() {
+        // `inner_exit_code`はexec自体の失敗とsignal終了をNoneへまとめるため、ここでは
+        // raw statusを使う。127以外の終了理由から`df`不在を推測しない。
+        Some(127) => DiskObservation::CommandMissing,
         Some(0) => match parse_df(&outcome.stdout_text()) {
             Ok(usage) => DiskObservation::Observed(usage),
             Err(_) => DiskObservation::ParseFailed,
         },
-        Some(_) => DiskObservation::ParseFailed,
+        Some(_) | None => DiskObservation::ParseFailed,
     }
 }

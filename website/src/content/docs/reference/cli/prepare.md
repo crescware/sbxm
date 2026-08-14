@@ -12,3 +12,5 @@ Prepare builds the project image, creates the sandbox, clones the repository ins
 Before running it, register the project-specific `GH_TOKEN` custom secret printed by [`sbxm add`](../add/). The secret proxy must cover the GitHub hosts the repository uses.
 
 Prepare is a mutation. It refuses artifacts that cannot be proven to belong to the project instead of adopting or overwriting them.
+
+Prepare is also the way to restore a [neutral workspace directory](../../filesystem/#neutral-workspace) that the host lost. When the sandbox record is still there and its directory is not, prepare creates the directory again, keeps the sandbox itself, and reports the path it created as a warning. It restores nothing inside that directory, because there is nothing in it: the repository is inside the sandbox.

@@ -281,3 +281,79 @@ fn a_private_directory_that_cannot_be_read_is_reported_for_the_scope_it_protects
     );
     Ok(())
 }
+
+#[test]
+fn require_private_directory_accepts_a_directory_the_current_user_owns_privately() -> Checked {
+    let dir = temp_dir()?;
+    let target = dir.path().join("workspace");
+    fs::create_dir(&target).required_because("create")?;
+    fs::set_permissions(&target, fs::Permissions::from_mode(PRIVATE_DIR_MODE))
+        .required_because("narrow")?;
+
+    require_private_directory(&target, PRIVATE_DIR_MODE, PathScope::ProjectPath)
+        .required_because("an owned, private directory is trusted")
+}
+
+#[test]
+fn require_private_directory_refuses_an_over_permissive_directory_without_repairing_it() -> Checked
+{
+    let dir = temp_dir()?;
+    let target = dir.path().join("workspace");
+    fs::create_dir(&target).required_because("create")?;
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o777)).required_because("widen")?;
+
+    let error = require_private_directory(&target, PRIVATE_DIR_MODE, PathScope::ProjectPath)
+        .refused_because("an open directory is not trusted before a start is allowed")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert_eq!(
+        fs::metadata(&target).required()?.permissions().mode() & 0o777,
+        0o777,
+        "the permission is reported, not repaired"
+    );
+    Ok(())
+}
+
+#[test]
+fn require_private_directory_refuses_a_symlink() -> Checked {
+    let dir = temp_dir()?;
+    let real = dir.path().join("real");
+    fs::create_dir_all(&real).required_because("create")?;
+    let link = dir.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).required_because("symlink")?;
+
+    let error = require_private_directory(&link, PRIVATE_DIR_MODE, PathScope::ProjectPath)
+        .refused_because("symlinked directories are refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    Ok(())
+}
+
+#[test]
+fn require_private_directory_refuses_a_regular_file() -> Checked {
+    let dir = temp_dir()?;
+    let target = dir.path().join("workspace");
+    fs::write(&target, b"not a directory").required_because("write")?;
+
+    let error = require_private_directory(&target, PRIVATE_DIR_MODE, PathScope::ProjectPath)
+        .refused_because("a regular file is not a directory to trust")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    Ok(())
+}
+
+#[test]
+fn require_private_directory_reports_a_directory_it_cannot_read() -> Checked {
+    let dir = temp_dir()?;
+    let closed = dir.path().join("closed");
+    fs::create_dir(&closed).required_because("create")?;
+    let target = closed.join("workspace");
+    fs::create_dir(&target).required_because("create")?;
+
+    let outcome = observed_under(&closed, 0o000, || {
+        require_private_directory(&target, PRIVATE_DIR_MODE, PathScope::ProjectPath)
+    })?;
+    let error = outcome.refused_because("a path that cannot be read is not trusted")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    Ok(())
+}

@@ -58,6 +58,11 @@ pub fn prepare(
         )
     };
     let locked = candidate.lock()?;
+    // project lockを保持している間にshared session leaseを取る。lock順序を
+    // project lock→session leaseに固定し、`locked`が外れたあともこのleaseは
+    // `Prepared`が保持し続けるため、SSH sessionの生存中は通常rebuild/destroyの
+    // exclusive session leaseと排他し続ける。
+    let session_lease = locked.acquire_shared_session_lease()?;
     let (index, clamped_worktree_index) = if interactive_index {
         clamp_to_metadata(index, &locked.metadata)
     } else {
@@ -72,8 +77,11 @@ pub fn prepare(
 
     let entries = daemon::list(host)?;
     match inventory::state_of(&entries, metadata, workspace_root)? {
+        // 既に動いているSandboxを起動し直さない。hostのworkspace directoryが消えていても、
+        // 動いているmountが壊れているかどうかは観測しておらず、推測で接続を拒まない。
         ProjectState::Running => {}
-        ProjectState::Stopped => inventory::start(host, name.as_str(), progress)?,
+        // 起動には中立workspace directoryの実在が要る。`start`が起動前に実測する。
+        ProjectState::Stopped => inventory::start(host, metadata, workspace_root, progress)?,
         ProjectState::NotCreated => return Err(inventory::not_created(metadata, name.as_str())),
     }
     inventory::wait_until_running(host, metadata, workspace_root, poll)?;
@@ -98,6 +106,7 @@ pub fn prepare(
         clamped_worktree_index,
         worktrees,
         disk,
+        _session_lease: session_lease,
     })
 }
 

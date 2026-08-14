@@ -1,7 +1,10 @@
+use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::compatibility::RootDiskUsage;
+use crate::diagnostics::Result;
 use crate::support::inventory::ProjectState;
 use crate::testing::host::FakeSbx;
 use crate::testing::sandbox::InnerCommandSandbox;
+use std::os::unix::process::ExitStatusExt;
 
 use super::*;
 
@@ -48,12 +51,40 @@ fn a_running_sandbox_is_read_with_a_single_df_call() {
 }
 
 #[test]
-fn df_missing_inside_the_sandbox_is_reported_as_missing_not_as_a_parse_failure() {
-    // `sbx exec`は内側のcommandを起動できなかったことを125..=127で示す。
-    let host = FakeSbx::listing("[]").answering(&format!("exec {NAME} -- df -Pk /"), 127, "");
+fn only_raw_127_is_reported_as_command_missing() {
+    for (code, expected) in [
+        (125, DiskObservation::ParseFailed),
+        (126, DiskObservation::ParseFailed),
+        (127, DiskObservation::CommandMissing),
+    ] {
+        let host = FakeSbx::listing("[]").answering(&format!("exec {NAME} -- df -Pk /"), code, "");
+        assert_eq!(
+            observe(&host, NAME, Some(ProjectState::Running)),
+            expected,
+            "raw status {code}"
+        );
+    }
+}
+
+struct SignaledSandbox;
+
+impl HostEnvironment for SignaledSandbox {
+    fn command_exists(&self, _program: &str) -> bool {
+        true
+    }
+
+    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+        let mut outcome = crate::testing::command::outcome(spec, 0, "");
+        outcome.status = std::process::ExitStatus::from_raw(9);
+        Ok(outcome)
+    }
+}
+
+#[test]
+fn a_signaled_command_is_reported_as_a_parse_failure_not_as_missing() {
     assert_eq!(
-        observe(&host, NAME, Some(ProjectState::Running)),
-        DiskObservation::CommandMissing
+        observe(&SignaledSandbox, NAME, Some(ProjectState::Running)),
+        DiskObservation::ParseFailed
     );
 }
 

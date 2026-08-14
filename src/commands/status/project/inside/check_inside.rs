@@ -13,7 +13,7 @@ use super::{check_secret, check_ssh_agent};
 ///
 /// Sandboxがない場合は`not-applicable`、停止中は状態を変えないため検査せず
 /// `not-observed-stopped`とする。状態そのものを観測できなかった場合は、Sandboxが
-/// 無いことにせず`mismatch`とする。
+/// 無いことにせず`not-observed`とする。
 pub fn check_inside(
     host: &dyn HostEnvironment,
     name: &SandboxName,
@@ -31,7 +31,7 @@ pub fn check_inside(
         Some(ProjectState::NotCreated) => Some(Value::NotApplicable),
         // read-onlyの検査でもSandboxを起動し得るため実行しない。
         Some(ProjectState::Stopped) => Some(Value::NotObservedStopped),
-        None => Some(Value::Mismatch),
+        None => Some(Value::NotObserved),
         Some(ProjectState::Running) => None,
     };
     if let Some(value) = uniform {

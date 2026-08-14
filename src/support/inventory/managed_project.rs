@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::Observed;
+use super::{Observed, WorkspaceState};
 
 /// 1件の管理案件と、その現在の状態。
 #[derive(Debug, Clone)]
@@ -10,4 +10,6 @@ pub struct ManagedProject {
     pub project_root: PathBuf,
     pub sandbox: String,
     pub observed: Observed,
+    /// 中立workspace directoryの実在。`observed`とは別の事実である。
+    pub workspace: WorkspaceState,
 }

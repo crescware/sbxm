@@ -12,7 +12,7 @@ use super::{CommandSpec, pump_until_exit};
 /// 判断も描画側へ寄せられる。byteは溜めずに届いたまま流すため、復帰文字で書き換わる
 /// 進捗表示もそのまま動く。
 ///
-/// 端末を共有するcommandはprocess groupを分けない。利用者のCtrl-Cは子processへ直接
+/// この実行の子はsbxmと同じprocess groupに留まる。利用者のCtrl-Cは子processへ直接
 /// 届くため、割り込みを見張る相手をこの実行は持たない。
 pub(super) fn run_relay(
     child: &mut Child,

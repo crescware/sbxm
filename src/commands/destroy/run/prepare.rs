@@ -9,12 +9,17 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::Remediation;
 use crate::support::daemon;
 use crate::support::inventory::{self, ProjectState};
-use crate::support::protection::{self, Unmanaged};
+use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::select::{self, ProjectPrompt};
 
 use super::{DestroyPlan, Prepared, keeps, re_register, removes};
 
 /// 対象を特定し、削除して良い状態であることを確かめる。
+///
+/// 削除そのものはrecordを消すだけであり、中立workspace directoryを必要としない。
+/// 停止中のSandboxを通常modeで断るのは、中を観測できないからであり、これはdirectory
+/// が在っても同じである。runningのSandboxは、データ保護検査の入口でdirectoryの実在を
+/// 確かめる。mount元が無いままでは、中を見るcommandの答えを信頼できないためである。
 pub fn prepare(
     location: &ConfigLocation,
     requested: Option<&ProjectId>,
@@ -33,8 +38,9 @@ pub fn prepare(
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, metadata, workspace_root)?;
 
-    let worktrees = if force || state == ProjectState::NotCreated {
-        Vec::new()
+    let (worktrees, confirmable_losses, snapshot, session_lease) = if force {
+        // `--force`は保護ゲートとsession leaseを意図的に迂回する別操作であり、通常経路の観測は行わない。
+        (Vec::new(), Vec::new(), None, None)
     } else {
         if state == ProjectState::Stopped {
             // 停止中のSandboxは内部を観測できないため、通常modeでは削除しない。
@@ -48,13 +54,43 @@ pub fn prepare(
                     ),
                 )
                 .remediation(
-                    Remediation::text(msg!("remediation-destroy-force"))
-                        .try_run(format!("sbxm destroy --force {}", metadata.display_id())),
+                    Remediation::text(msg!("remediation-destroy-stopped"))
+                        .try_run(format!("sbxm open {}", metadata.display_id())),
                 ),
             ));
         }
-        let layout = SandboxLayout::new(metadata.canonical_id());
-        protection::inspect(host, name.as_str(), &layout, metadata, Unmanaged::Allowed)?.worktrees
+        // Sandboxがそもそも無ければ、session leaseを取る対象も観測する対象も無い。
+        // それ以外はproject lockを保持している間にexclusive session leaseを取り、
+        // 最終protection inspectからsandbox remove完了までこの`Prepared`が保持し
+        // 続ける。この時点でproject lockは自分が排他的に保持しているため、取得できない
+        // 原因は開いているsessionのshared leaseだけである。
+        let session_lease = if state == ProjectState::NotCreated {
+            None
+        } else {
+            Some(locked.acquire_exclusive_session_lease()?)
+        };
+        let snapshot = if state == ProjectState::NotCreated {
+            protection::gate::assess_absent(
+                DestructiveOperation::Destroy,
+                metadata.display_id(),
+                &name,
+            )
+        } else {
+            let layout = SandboxLayout::new(metadata.canonical_id());
+            let request = Request::new(
+                DestructiveOperation::Destroy,
+                &name,
+                workspace_root,
+                &layout,
+                metadata,
+            );
+            protection::gate::assess(host, &request)?
+        };
+        // Blockerが1件でもあれば、削除計画を見せず明示確認も求めずにここで拒否する。
+        protection::gate::require_no_blockers(snapshot.assessment())?;
+        let worktrees = snapshot.assessment().worktrees().to_vec();
+        let confirmable_losses = snapshot.assessment().confirmable_losses().to_vec();
+        (worktrees, confirmable_losses, Some(snapshot), session_lease)
     };
 
     let plan = DestroyPlan {
@@ -63,6 +99,7 @@ pub fn prepare(
         state,
         force,
         worktrees,
+        confirmable_losses,
         removes: removes(&paths, &name, state),
         keeps: keeps(&paths),
         re_register: re_register(&paths, metadata)?,
@@ -73,7 +110,9 @@ pub fn prepare(
         paths,
         name,
         state,
-        force,
+        workspace_root: workspace_root.to_path_buf(),
         locked,
+        snapshot,
+        _session_lease: session_lease,
     })
 }

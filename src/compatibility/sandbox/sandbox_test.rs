@@ -26,8 +26,7 @@ fn refusal_cause(error: &crate::diagnostics::Error) -> Checked<String> {
 
 #[test]
 fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() -> Checked {
-    let output =
-        r#"[{"name":"sbxm-a","state":"running","workspace":"/tmp/docker-sandboxes/sbxm-a"}]"#;
+    let output = r#"{"sandboxes":[{"name":"sbxm-a","status":"running","workspaces":["/tmp/docker-sandboxes/sbxm-a"]}]}"#;
     let entries = parse_sandbox_list(output).required_because("a listing parses")?;
     assert_eq!(
         entries,
@@ -39,12 +38,6 @@ fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() -> Checked {
         }]
     );
 
-    // 1行1件のJSONと、空の出力も同じ意味で読む。
-    let lines = "{\"name\":\"sbxm-a\",\"state\":\"stopped\"}\n{\"name\":\"sbxm-b\",\"status\":\"running\"}\n";
-    let entries = parse_sandbox_list(lines).required_because("line-delimited output parses")?;
-    assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0].state, SandboxState::Stopped);
-    assert_eq!(entries[1].state, SandboxState::Running);
     assert!(
         parse_sandbox_list("  \n")
             .required_because("an empty listing")?
@@ -52,9 +45,43 @@ fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() -> Checked {
     );
 
     // 3値へ写像しても、runtimeが示したままの値は表示のために残す。
-    let entries = parse_sandbox_list(r#"[{"name":"sbxm-a","state":"Running"}]"#).required()?;
+    let entries =
+        parse_sandbox_list(r#"{"sandboxes":[{"name":"sbxm-a","status":"Running"}]}"#).required()?;
     assert_eq!(entries[0].state, SandboxState::Running);
     assert_eq!(entries[0].raw_state, "Running");
+    Ok(())
+}
+
+#[test]
+fn a_form_with_no_confirmed_sbx_version_is_rejected() -> Checked {
+    // sbx v0.37.0（要件となる最小version）は常に`{"sandboxes": [...]}`で包み、
+    // item は`status`と配列の`workspaces`で示す。それ以外の形を出す実versionの根拠が
+    // ないため、包みのない配列・1行1件のJSON・`state`fieldは受け付けない。
+    for (output, cause) in [
+        (
+            r#"[{"name":"sbxm-a","status":"running"}]"#,
+            "the document does not wrap sandboxes",
+        ),
+        (
+            r#"{"name":"sbxm-a","status":"running"}"#,
+            "the document has no sandboxes field",
+        ),
+        (
+            r#"{"sandboxes":[{"name":"sbxm-a","state":"running"}]}"#,
+            "sandbox sbxm-a has no state",
+        ),
+    ] {
+        let error = parse_sandbox_list(output)
+            .refused_because("a form with no confirmed sbx version is rejected")?;
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+        assert_eq!(refusal_cause(&error)?, cause, "output {output}");
+    }
+
+    // 1行1件のJSONは、包んだ形として1度に読めないためparse自体が失敗する。
+    let lines = "{\"name\":\"sbxm-a\",\"status\":\"running\"}\n{\"name\":\"sbxm-b\",\"status\":\"running\"}\n";
+    let error = parse_sandbox_list(lines)
+        .refused_because("line-delimited output is not the wrapped document sbx returns")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
     Ok(())
 }
 
@@ -168,15 +195,24 @@ fn a_sandbox_listing_that_cannot_be_read_states_which_reading_failed() -> Checke
     // state不明のSandboxを止まっているものとして扱うと、動いているSandboxを消す。
     // どこで読めなくなったかを、拒否ごとに分けて示す。
     for (output, cause) in [
-        (r#"["sbxm-a"]"#, "an entry is not an object"),
-        (r#"[{"state":"running"}]"#, "an entry has no name"),
-        (r#"[{"name":"","state":"running"}]"#, "an entry has no name"),
-        (r#"[{"name":"sbxm-a"}]"#, "sandbox sbxm-a has no state"),
+        (r#"{"sandboxes":["sbxm-a"]}"#, "an entry is not an object"),
         (
-            r#"[{"name":"sbxm-a","state":"pausing"}]"#,
+            r#"{"sandboxes":[{"status":"running"}]}"#,
+            "an entry has no name",
+        ),
+        (
+            r#"{"sandboxes":[{"name":"","status":"running"}]}"#,
+            "an entry has no name",
+        ),
+        (
+            r#"{"sandboxes":[{"name":"sbxm-a"}]}"#,
+            "sandbox sbxm-a has no state",
+        ),
+        (
+            r#"{"sandboxes":[{"name":"sbxm-a","status":"pausing"}]}"#,
             "state pausing has no defined meaning in this build",
         ),
-        ("true", "the document is neither an array nor an object"),
+        ("true", "the document does not wrap sandboxes"),
     ] {
         let error = parse_sandbox_list(output).refused_because("a listing that cannot be read")?;
         assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));

@@ -1,6 +1,7 @@
 use crate::command::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
+use crate::support::sandbox;
 
 use super::{Command, Context};
 
@@ -18,12 +19,22 @@ pub fn dispatch(
     match command {
         Command::Add(args) => crate::commands::add::exec(args, context, ui, host, prompt),
         Command::Apply(args) => crate::commands::apply::exec(args, context, ui, host, prompt),
-        Command::Prepare(project) => {
-            crate::commands::prepare::exec(project.as_ref(), context, ui, host, prompt)
-        }
-        Command::Rebuild(project) => {
-            crate::commands::rebuild::exec(project.as_ref(), context, ui, host, prompt)
-        }
+        Command::Prepare(project) => crate::commands::prepare::exec(
+            project.as_ref(),
+            context,
+            ui,
+            host,
+            prompt,
+            std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        ),
+        Command::Rebuild(project) => crate::commands::rebuild::exec(
+            project.as_ref(),
+            context,
+            ui,
+            host,
+            prompt,
+            std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        ),
         Command::Open(args) => crate::commands::open::exec(args, context, ui, host, prompt),
         Command::Stop(projects) => crate::commands::stop::exec(projects, context, ui, host, prompt),
         Command::Ls => crate::commands::ls::exec(context, ui, host),

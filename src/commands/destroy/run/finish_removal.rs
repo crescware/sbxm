@@ -4,32 +4,19 @@ use crate::command::HostEnvironment;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths::{self, PathScope};
-use crate::project::SandboxName;
 
-use crate::design::{Fact, ProgressSink, Warning};
-use crate::support::daemon;
-use crate::support::inventory::{self, Poll, ProjectState};
+use crate::design::{Fact, Warning};
 use crate::support::secret;
 
 use super::{DestroyOutcome, Prepared};
 
-/// Sandboxと管理情報を削除する。
+/// Sandbox本体の削除が終わったあとの、管理情報の後始末。
 ///
 /// metadataの削除を管理解除のcommit pointとし、最後にlock fileを削除する。
-pub fn execute(
+pub(super) fn finish_removal(
     host: &dyn HostEnvironment,
     prepared: &Prepared,
-    poll: Poll,
-    progress: &mut dyn ProgressSink,
 ) -> Result<DestroyOutcome> {
-    if prepared.state == ProjectState::NotCreated {
-        // 削除commandを実行しない場合だけ、一覧で不在を1回確かめる。
-        require_absent(host, &prepared.name)?;
-    } else {
-        // 削除は、一覧から消えたことを確かめるまで完了しない。
-        inventory::remove(host, &prepared.name, poll, progress)?;
-    }
-
     // tokenの登録はSandboxを消しても残る。Sandboxが消えたあとに解くのは、消し損ねた
     // Sandboxがplaceholderを持ったまま動き続ける状態を作らないためである。commit pointの
     // 前に行うため、失敗したときは案件が管理下に残り、同じcommandでやり直せる。
@@ -72,14 +59,6 @@ pub fn execute(
         re_register: prepared.plan.re_register.clone(),
         warnings,
     })
-}
-
-/// Sandboxが存在しないことを1回確認する。
-fn require_absent(host: &dyn HostEnvironment, name: &SandboxName) -> Result<()> {
-    if inventory::single(&daemon::list(host)?, name.as_str())?.is_some() {
-        return Err(inventory::still_present(name));
-    }
-    Ok(())
 }
 
 /// 管理情報の削除に失敗した。残ったpathを示す。
