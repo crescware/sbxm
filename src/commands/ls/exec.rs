@@ -3,7 +3,6 @@
 use crate::command::HostEnvironment;
 use crate::design::Ui;
 use crate::diagnostics::ExitCode;
-use crate::support::sandbox;
 
 use super::{
     super::{Context, report},
@@ -16,11 +15,7 @@ pub fn exec(context: &Context, ui: &mut Ui, host: &dyn HostEnvironment) -> ExitC
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    match super::run::run(
-        context.location,
-        host,
-        std::path::Path::new(sandbox::WORKSPACE_ROOT),
-    ) {
+    match super::run::run(context.location, host, context.workspace_root) {
         Ok(listing) => {
             ui.stdout(&print::document(&listing, locale));
             // 復旧に必要なentryをすべて見せたうえで、1件でも整っていなければ失敗とする。
