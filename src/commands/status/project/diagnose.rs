@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::HostEnvironment;
+use crate::command::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
 use crate::diagnostics::Result;
 use crate::project::ProjectId;
@@ -53,7 +53,7 @@ pub fn diagnose(
     check_inside(host, &name, &metadata, state, &mut status);
 
     // root filesystemの使用量。running中だけ観測のためにcommandを実行する。
-    status.disk = disk::observe(host, name.as_str(), state);
+    status.disk = disk::observe(host, name.as_str(), state, TimeoutClass::SandboxLifecycle);
 
     Ok(status)
 }

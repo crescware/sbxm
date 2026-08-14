@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::HostEnvironment;
+use crate::command::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -95,7 +95,12 @@ pub fn prepare(
 
     // ここまで来た時点でSandboxは必ずrunningである。この観測のために追加で
     // 起動しない。値または理由はSSHへterminalを渡す前に1回だけ示す。
-    let disk = disk::observe(host, name.as_str(), Some(ProjectState::Running));
+    let disk = disk::observe(
+        host,
+        name.as_str(),
+        Some(ProjectState::Running),
+        TimeoutClass::SandboxLifecycle,
+    );
 
     Ok(Prepared {
         project: metadata.display_id(),

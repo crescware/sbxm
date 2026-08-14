@@ -170,6 +170,129 @@ fn a_failure_while_making_the_worktrees_keeps_the_raised_target() -> Checked {
     Ok(())
 }
 
+const REALISTIC_DF: &str = "Filesystem     1024-blocks      Used Available Capacity Mounted on\noverlay          20466256  14502976   4898320       75% /\n";
+
+#[test]
+fn a_bare_repository_fetch_failure_carries_the_disk_state_at_that_moment() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    write_metadata(&location, &parent, None)?;
+    let git_dir = SandboxLayout::new(&canonical()?).bare_git_dir();
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?)
+        .holding_repository()?
+        .failing(&format!(
+            "git --git-dir {git_dir} fetch --prune --progress origin"
+        ))
+        .answering("df -Pk /", REALISTIC_DF);
+
+    let mark = host.calls().len();
+    let error = run(
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &config,
+        WORKTREES_ONLY,
+        &host,
+        &workspace_root,
+        &mut SilentProgress,
+    )
+    .refused_because("the bare repository cannot be refreshed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    let facts = &error.diagnostics()[0].facts;
+    assert_eq!(facts.len(), 4, "{facts:?}");
+    let since = &host.calls()[mark..];
+    assert_eq!(
+        since
+            .iter()
+            .filter(|call| call.contains(&"df".to_string()))
+            .count(),
+        1,
+        "exactly one disk check per failure: {since:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_failure_with_both_scopes_active_still_checks_disk_only_once() -> Checked {
+    // filesとworktreesの両方を指定していても、`?`の早期returnで後続のworktree工程は
+    // 走らない。同じ失敗へ複数回観測しないことは構造で保証されるが、ここではその
+    // 構造がscopeを組み合わせても崩れないことを直接確かめる。
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    write_metadata(&location, &parent, None)?;
+    let git_dir = SandboxLayout::new(&canonical()?).bare_git_dir();
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?)
+        .holding_repository()?
+        .failing(&format!(
+            "git --git-dir {git_dir} fetch --prune --progress origin"
+        ))
+        .answering("df -Pk /", REALISTIC_DF);
+
+    let scope = Scope {
+        files: true,
+        worktrees: Some(3),
+    };
+    let mark = host.calls().len();
+    let error = run(
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &config,
+        scope,
+        &host,
+        &workspace_root,
+        &mut SilentProgress,
+    )
+    .refused_because("the bare repository cannot be refreshed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    let facts = &error.diagnostics()[0].facts;
+    assert_eq!(facts.len(), 4, "{facts:?}");
+    let since = &host.calls()[mark..];
+    assert_eq!(
+        since
+            .iter()
+            .filter(|call| call.contains(&"df".to_string()))
+            .count(),
+        1,
+        "exactly one disk check per failure even with files and worktrees both active: {since:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_successful_apply_never_asks_for_disk_usage() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    write_metadata(&location, &parent, None)?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?)
+        .holding_repository()?
+        .answering("df -Pk /", REALISTIC_DF);
+
+    run(
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &config,
+        WORKTREES_ONLY,
+        &host,
+        &workspace_root,
+        &mut SilentProgress,
+    )
+    .required_because("apply succeeds")?;
+
+    assert!(
+        !host.ran("df -Pk"),
+        "a successful run never checks disk usage: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
 #[test]
 fn a_number_below_what_the_project_has_is_refused() -> Checked {
     let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
