@@ -2,9 +2,6 @@
 
 mod exec;
 #[cfg(test)]
-#[path = "exec_test.rs"]
-mod exec_test;
-#[cfg(test)]
 mod fake;
 mod parse;
 pub mod print;

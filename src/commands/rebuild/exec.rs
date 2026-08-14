@@ -64,3 +64,7 @@ pub fn exec(
         Err(error) => report(ui, &error),
     }
 }
+
+#[cfg(test)]
+#[path = "exec_test.rs"]
+mod exec_test;
