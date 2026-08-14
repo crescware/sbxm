@@ -27,6 +27,7 @@ fn run_exec(
 ) -> Checked<(ExitCode, String)> {
     let context = Context {
         location: &fixture.location,
+        workspace_root: &fixture.workspace_root,
         lang: Some(Locale::En),
         interactivity: Interactivity {
             stdin_is_tty: true,
@@ -44,14 +45,7 @@ fn run_exec(
             Box::new(ScriptedKeys::typing(typed)),
             Box::new(RecordedScreen::new()),
         );
-        super::exec(
-            project,
-            &context,
-            &mut ui,
-            host,
-            &mut prompt,
-            &fixture.workspace_root,
-        )
+        super::exec(project, &context, &mut ui, host, &mut prompt)
     };
     let printed = String::from_utf8(stdout).required_because("stdout is valid UTF-8")?;
     Ok((code, printed))

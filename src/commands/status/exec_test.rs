@@ -32,6 +32,7 @@ fn execute_prompt(
         );
         let context = Context {
             location: &fixture.location,
+            workspace_root: &fixture.workspace_root,
             lang: Some(Locale::En),
             interactivity: Interactivity {
                 stdin_is_tty: true,
