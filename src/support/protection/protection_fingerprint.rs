@@ -2,10 +2,10 @@ use serde::Serialize;
 
 use crate::hash::sha256_hex;
 
-use super::{Assessment, Blocker, ConfirmableLoss};
+use super::{Assessment, Blocker, ConfirmableLoss, OriginObservation};
 
 /// fingerprint入力形の版識別子。入力に含める項目を変えたら値を上げる。
-const FINGERPRINT_VERSION: &str = "sbxm-protection-v1";
+const FINGERPRINT_VERSION: &str = "sbxm-protection-v2";
 
 /// 確認対象の状態を表すSHA-256値。
 ///
@@ -36,7 +36,7 @@ impl ProtectionFingerprint {
                 mode: report.mode.as_str(),
                 head: report.head.clone(),
                 branch: report.branch.clone(),
-                remote: report.remote.as_str(),
+                reachability: report.reachability.fingerprint_key(),
             })
             .collect();
         worktrees.sort_by(|a, b| a.relative.cmp(&b.relative));
@@ -55,6 +55,10 @@ impl ProtectionFingerprint {
             .collect();
         confirmable_losses.sort();
 
+        let origin_observation = assessment
+            .origin_observation()
+            .map(OriginObservation::fingerprint_key);
+
         let input = FingerprintInput {
             version: FINGERPRINT_VERSION,
             operation: assessment.operation().as_str(),
@@ -62,6 +66,7 @@ impl ProtectionFingerprint {
             worktrees,
             blockers,
             confirmable_losses,
+            origin_observation,
         };
         // `FingerprintInput`は文字列とその列だけで構成しており、直列化は失敗しない。
         // それでも空byte列へ丸めると、あらゆる状態が同じhashへ潰れて状態変化の検出が
@@ -83,6 +88,8 @@ struct FingerprintInput {
     worktrees: Vec<WorktreeInput>,
     blockers: Vec<String>,
     confirmable_losses: Vec<String>,
+    /// origin観測結果。確認後のorigin側の変化を古いpermitで越えられないようにする。
+    origin_observation: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -92,7 +99,7 @@ struct WorktreeInput {
     mode: &'static str,
     head: String,
     branch: Option<String>,
-    remote: &'static str,
+    reachability: String,
 }
 
 #[cfg(test)]

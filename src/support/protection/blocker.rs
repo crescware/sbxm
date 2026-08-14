@@ -2,7 +2,7 @@ use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
-use super::OriginRecoveryFailure;
+use super::UnobservableReason;
 
 /// 表示するpathの上限。これを超える件数は総数だけ`Fact::count`で示す。
 ///
@@ -31,11 +31,15 @@ pub enum Blocker {
     UnmanagedWorktree { worktree: String },
     /// worktreeが共有bare repositoryの外を指す。
     WorktreeOutsideRepository { path: String, root: String },
-    /// commitをoriginから回収できると証明できない。
-    OriginRecoveryNotProven {
-        reference: String,
-        commit: String,
-        reason: OriginRecoveryFailure,
+    /// refresh済みoriginのどのrefからもcommitへ到達できない。
+    OriginUnreachable { reference: String, commit: String },
+    /// originを権威ある状態として観測できず、commitを回収できるか判定できない。
+    ///
+    /// 観測不能はrepositoryへの観測1回につき1つの原因であり、影響するreferenceの数だけ
+    /// 同じ診断を繰り返さない。`references`は影響したcandidateのref名を1件へ畳む。
+    OriginUnobservable {
+        references: Vec<String>,
+        reason: UnobservableReason,
     },
 }
 
@@ -82,11 +86,16 @@ impl Blocker {
                 project,
                 msg!("remediation-worktree-outside-repository"),
             )),
-            Blocker::OriginRecoveryNotProven {
-                reference,
-                commit,
-                reason,
-            } => origin_recovery_diagnostic(project, reference, commit, reason),
+            Blocker::OriginUnreachable { reference, commit } => Diagnostic::new(
+                ErrorId::OriginCommitUnreachable,
+                msg!("error-origin-commit-unreachable"),
+            )
+            .fact(Fact::reference(reference))
+            .fact(Fact::commit(commit))
+            .remediation(open(project, msg!("remediation-origin-commit-unreachable"))),
+            Blocker::OriginUnobservable { references, reason } => {
+                origin_unobservable_diagnostic(project, references, *reason)
+            }
         }
     }
 
@@ -125,14 +134,18 @@ impl Blocker {
             Blocker::WorktreeOutsideRepository { path, root } => {
                 format!("worktree-outside-repository\u{1f}{path}\u{1f}{root}")
             }
-            Blocker::OriginRecoveryNotProven {
-                reference,
-                commit,
-                reason,
-            } => format!(
-                "origin-recovery-not-proven\u{1f}{reference}\u{1f}{commit}\u{1f}{}",
-                reason.fingerprint_key()
-            ),
+            Blocker::OriginUnreachable { reference, commit } => {
+                format!("origin-unreachable\u{1f}{reference}\u{1f}{commit}")
+            }
+            Blocker::OriginUnobservable { references, reason } => {
+                let mut sorted = references.clone();
+                sorted.sort();
+                format!(
+                    "origin-unobservable\u{1f}{}\u{1f}{}",
+                    sorted.join("\u{1e}"),
+                    reason.fingerprint_key()
+                )
+            }
         }
     }
 }
@@ -160,35 +173,52 @@ fn status(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {
     Remediation::text(explanation).try_run(format!("sbxm status {project}"))
 }
 
-fn origin_recovery_diagnostic(
+/// `sbxm status --global`と、この案件の`sbxm status`の両方を示す。
+///
+/// originのrefreshそのものが失敗した理由は、この案件のSandboxだけでなくhost側の
+/// network/credentialにも及びうる。両方の切り分けを案内する。
+fn status_global_and_project(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {
+    Remediation::text(explanation)
+        .try_run("sbxm status --global")
+        .try_run(format!("sbxm status {project}"))
+}
+
+/// 権威あるorigin観測が成立しなかった理由ごとに、固有の`ErrorId`を出す。
+///
+/// どの理由も「回収できると証明できていない」点は同じだが、利用者が次に直すものは
+/// 理由ごとに違う。共通のIDへ丸めない。観測不能はrepositoryへの観測1回につき1つの
+/// 原因なので、影響した`references`は1件のdiagnosticへ畳んで示す。
+fn origin_unobservable_diagnostic(
     project: &str,
-    reference: &str,
-    commit: &str,
-    reason: &OriginRecoveryFailure,
+    references: &[String],
+    reason: UnobservableReason,
 ) -> Diagnostic {
-    match reason {
-        OriginRecoveryFailure::NoUpstream => Diagnostic::new(
-            ErrorId::OriginUpstreamMissing,
-            msg!("error-origin-upstream-missing"),
-        )
-        .fact(Fact::reference(reference))
-        .fact(Fact::commit(commit))
-        .remediation(open(project, msg!("remediation-origin-upstream-missing"))),
-        OriginRecoveryFailure::AheadOfUpstream { upstream, count } => Diagnostic::new(
-            ErrorId::OriginCommitUnpushed,
-            msg!("error-origin-commit-unpushed"),
-        )
-        .fact(Fact::reference(reference))
-        .fact(Fact::commit(commit))
-        .fact(Fact::upstream(upstream))
-        .fact(Fact::count(*count))
-        .remediation(open(project, msg!("remediation-origin-commit-unpushed"))),
-        OriginRecoveryFailure::UnreachableFromOrigin => Diagnostic::new(
-            ErrorId::OriginCommitUnreachable,
-            msg!("error-origin-commit-unreachable"),
-        )
-        .fact(Fact::reference(reference))
-        .fact(Fact::commit(commit))
-        .remediation(open(project, msg!("remediation-origin-commit-unreachable"))),
+    let (id, description, remediation) = match reason {
+        UnobservableReason::OriginMissing => (
+            ErrorId::OriginMissing,
+            msg!("error-origin-missing"),
+            open(project, msg!("remediation-origin-missing")),
+        ),
+        UnobservableReason::RefreshFailed => (
+            ErrorId::OriginRefreshFailed,
+            msg!("error-origin-refresh-failed"),
+            status_global_and_project(project, msg!("remediation-origin-refresh-failed")),
+        ),
+        UnobservableReason::AdvertisementInvalid => (
+            ErrorId::OriginAdvertisementInvalid,
+            msg!("error-origin-advertisement-invalid"),
+            open(project, msg!("remediation-origin-advertisement-invalid")),
+        ),
+        UnobservableReason::ObjectMissing => (
+            ErrorId::OriginObjectMissing,
+            msg!("error-origin-object-missing"),
+            open(project, msg!("remediation-origin-object-missing")),
+        ),
+    };
+    let shown = &references[..references.len().min(MAX_LISTED_PATHS)];
+    let mut diagnostic = Diagnostic::new(id, description).fact(Fact::references(shown));
+    if references.len() > MAX_LISTED_PATHS {
+        diagnostic = diagnostic.fact(Fact::count(references.len()));
     }
+    diagnostic.remediation(remediation)
 }

@@ -16,7 +16,7 @@ use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::{PlacedFile, Placement};
 use crate::support::inventory::{Observed, ProjectState, WorkspaceState};
-use crate::support::protection::{ConfirmableLoss, Kind, Mode, Remote, WorktreeReport};
+use crate::support::protection::{ConfirmableLoss, Kind, Mode, Reachability, WorktreeReport};
 use crate::support::status::{Row, StatusValue};
 use crate::testing::plain;
 
@@ -450,7 +450,9 @@ fn destroy_plan_with_worktrees() -> super::destroy::run::DestroyPlan {
                 mode: Mode::Attached,
                 head: "a1b2c3d".to_string(),
                 branch: Some("main".to_string()),
-                remote: Remote::Pushed,
+                reachability: Reachability::Pushed {
+                    upstream: "refs/remotes/origin/main".to_string(),
+                },
             },
             WorktreeReport {
                 relative: "repo.scratch".to_string(),
@@ -458,7 +460,9 @@ fn destroy_plan_with_worktrees() -> super::destroy::run::DestroyPlan {
                 mode: Mode::Detached,
                 head: "d4e5f6a".to_string(),
                 branch: None,
-                remote: Remote::Reachable,
+                reachability: Reachability::Reachable {
+                    origins: vec!["refs/remotes/origin/main".to_string()],
+                },
             },
         ],
         ..destroy_plan(false)

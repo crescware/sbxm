@@ -53,7 +53,7 @@ pub fn plan_document(plan: &DestroyPlan, locale: Locale) -> Document {
             Inline::text(worktree.mode.as_str()).into(),
             Inline::text(worktree.branch.clone().unwrap_or_else(|| "-".to_string())).into(),
             Inline::text(worktree.head.clone()).into(),
-            Inline::text(worktree.remote.as_str()).into(),
+            Inline::text(worktree.reachability.as_str()).into(),
         ]);
     }
     document = document.table(Some(msg!("status-worktrees-section")), worktrees);
