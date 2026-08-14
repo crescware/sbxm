@@ -1,4 +1,4 @@
-use super::{Kind, Mode, Remote};
+use super::{Kind, Mode, Reachability};
 
 /// worktree 1件の観測結果。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,7 +10,7 @@ pub struct WorktreeReport {
     pub head: String,
     /// attached modeのbranch名。
     pub branch: Option<String>,
-    pub remote: Remote,
+    pub reachability: Reachability,
 }
 
 impl WorktreeReport {
@@ -19,7 +19,7 @@ impl WorktreeReport {
         [
             (self.kind.as_str(), self.kind.legend_id()),
             (self.mode.as_str(), self.mode.legend_id()),
-            (self.remote.as_str(), self.remote.legend_id()),
+            (self.reachability.as_str(), self.reachability.legend_id()),
         ]
     }
 }

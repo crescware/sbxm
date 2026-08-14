@@ -69,6 +69,7 @@ fn blocker_diagnostic(blocker: Blocker) -> Checked<crate::diagnostics::Diagnosti
         Vec::new(),
         vec![blocker],
         Vec::new(),
+        None,
     );
     let error =
         gate::require_no_blockers(&assessment).refused_because("the blocker is rendered")?;
@@ -83,6 +84,15 @@ fn assert_protection_diagnostic(
     blocker: Blocker,
     id: ErrorId,
     command: &str,
+    labels: &[&str],
+) -> Checked {
+    assert_protection_diagnostic_with_commands(blocker, id, &[command], labels)
+}
+
+fn assert_protection_diagnostic_with_commands(
+    blocker: Blocker,
+    id: ErrorId,
+    commands: &[&str],
     labels: &[&str],
 ) -> Checked {
     let diagnostic = blocker_diagnostic(blocker)?;
@@ -112,11 +122,13 @@ fn assert_protection_diagnostic(
             .iter()
             .map(crate::design::text::CommandLine::as_str)
             .collect::<Vec<_>>(),
-        vec![command]
+        commands
     );
     for locale in [Locale::En, Locale::Ja] {
         let drawn = render_diagnostic(&diagnostic, locale)?;
-        assert!(drawn.contains(command), "{locale:?}: {drawn:?}");
+        for command in commands {
+            assert!(drawn.contains(command), "{locale:?}: {drawn:?}");
+        }
         assert!(!drawn.contains("destroy --force"), "{drawn:?}");
         assert!(!drawn.contains("git clean"), "{drawn:?}");
         assert!(!drawn.contains("git reset --hard"), "{drawn:?}");
@@ -170,43 +182,68 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         &["diagnostic-path-label", "diagnostic-root-label"],
     )?;
     assert_protection_diagnostic(
-        Blocker::OriginRecoveryNotProven {
-            reference: "main".to_string(),
-            commit: COMMIT.to_string(),
-            reason: OriginRecoveryFailure::NoUpstream,
-        },
-        ErrorId::OriginUpstreamMissing,
-        "sbxm open example-org/example-repo",
-        &["diagnostic-reference-label", "diagnostic-commit-label"],
-    )?;
-    assert_protection_diagnostic(
-        Blocker::OriginRecoveryNotProven {
-            reference: "main".to_string(),
-            commit: COMMIT.to_string(),
-            reason: OriginRecoveryFailure::AheadOfUpstream {
-                upstream: "origin/main".to_string(),
-                count: 2,
-            },
-        },
-        ErrorId::OriginCommitUnpushed,
-        "sbxm open example-org/example-repo",
-        &[
-            "diagnostic-reference-label",
-            "diagnostic-commit-label",
-            "diagnostic-upstream-label",
-            "diagnostic-count-label",
-        ],
-    )?;
-    assert_protection_diagnostic(
-        Blocker::OriginRecoveryNotProven {
+        Blocker::OriginUnreachable {
             reference: "HEAD".to_string(),
             commit: COMMIT.to_string(),
-            reason: OriginRecoveryFailure::UnreachableFromOrigin,
         },
         ErrorId::OriginCommitUnreachable,
         "sbxm open example-org/example-repo",
         &["diagnostic-reference-label", "diagnostic-commit-label"],
     )?;
+    for (reason, id) in [
+        (UnobservableReason::OriginMissing, ErrorId::OriginMissing),
+        (
+            UnobservableReason::AdvertisementInvalid,
+            ErrorId::OriginAdvertisementInvalid,
+        ),
+        (
+            UnobservableReason::ObjectMissing,
+            ErrorId::OriginObjectMissing,
+        ),
+    ] {
+        assert_protection_diagnostic(
+            Blocker::OriginUnobservable {
+                references: vec!["refs/heads/main".to_string()],
+                reason,
+            },
+            id,
+            "sbxm open example-org/example-repo",
+            &["diagnostic-references-label"],
+        )?;
+    }
+    // originのrefreshそのものが失敗した場合だけ、この案件のstatusとhost全体のstatusの
+    // 両方を示す。
+    assert_protection_diagnostic_with_commands(
+        Blocker::OriginUnobservable {
+            references: vec!["refs/heads/main".to_string()],
+            reason: UnobservableReason::RefreshFailed,
+        },
+        ErrorId::OriginRefreshFailed,
+        &[
+            "sbxm status --global",
+            "sbxm status example-org/example-repo",
+        ],
+        &["diagnostic-references-label"],
+    )?;
+    Ok(())
+}
+
+#[test]
+fn an_unobservable_blocker_beyond_the_listing_cap_adds_a_count_fact() -> Checked {
+    let references: Vec<String> = (0..25)
+        .map(|index| format!("refs/heads/f{index}"))
+        .collect();
+    let diagnostic = blocker_diagnostic(Blocker::OriginUnobservable {
+        references,
+        reason: UnobservableReason::OriginMissing,
+    })?;
+    let fact_labels: Vec<&str> = diagnostic
+        .facts
+        .iter()
+        .map(|fact| fact.label().id)
+        .collect();
+    assert!(fact_labels.contains(&"diagnostic-references-label"));
+    assert!(fact_labels.contains(&"diagnostic-count-label"));
     Ok(())
 }
 
@@ -238,7 +275,9 @@ fn a_clean_managed_worktree_passes_and_is_reported() -> Checked {
             mode: Mode::Attached,
             head: COMMIT.to_string(),
             branch: Some("main".to_string()),
-            remote: Remote::Pushed,
+            reachability: Reachability::Pushed {
+                upstream: "refs/remotes/origin/main".to_string(),
+            },
         }]
     );
     assert!(assessment.blockers().is_empty());
@@ -264,29 +303,15 @@ fn each_kind_of_unsaved_work_produces_its_own_blocker_and_stops_the_run() -> Che
         0,
         "? untracked.txt\0",
     );
-    let unpushed = clean_host(&fixture, &project)?.answering(
-        &format!("exec {name} -- git -C {managed} rev-list --count origin/main..HEAD"),
-        0,
-        "2\n",
-    );
-    let no_upstream = clean_host(&fixture, &project)?.answering(
-            &format!(
-                "exec {name} -- git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
-            ),
-            1,
-            "",
-        );
     let in_progress = clean_host(&fixture, &project)?.answering(
         &format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"),
         0,
         "",
     );
 
-    let cases: [(FakeSbx, ErrorId); 5] = [
+    let cases: [(FakeSbx, ErrorId); 3] = [
         (tracked, ErrorId::WorktreeTrackedChanges),
         (untracked, ErrorId::WorktreeUntrackedPaths),
-        (unpushed, ErrorId::OriginCommitUnpushed),
-        (no_upstream, ErrorId::OriginUpstreamMissing),
         (in_progress, ErrorId::GitOperationInProgress),
     ];
     for (host, expected) in cases {
@@ -298,6 +323,286 @@ fn each_kind_of_unsaved_work_produces_its_own_blocker_and_stops_the_run() -> Che
     Ok(())
 }
 
+#[test]
+fn a_branch_without_an_upstream_that_another_origin_ref_reaches_passes() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let bare_git_dir = layout.bare_git_dir();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?
+        .answering(
+            &format!(
+                "exec {name} -- git -C {managed} rev-parse --symbolic-full-name @{{upstream}}"
+            ),
+            1,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            ),
+            0,
+            &format!("refs/remotes/origin/release\t{COMMIT}\n"),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            ),
+            0,
+            "refs/remotes/origin/release\n",
+        );
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because(
+            "a commit reachable from any origin ref is safe, even without an upstream",
+        )?;
+    assert!(assessment.blockers().is_empty());
+    assert_eq!(
+        assessment.worktrees()[0].reachability,
+        Reachability::Reachable {
+            origins: vec!["refs/remotes/origin/release".to_string()]
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn a_branch_whose_upstream_does_not_reach_it_but_another_origin_ref_does_passes() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let bare_git_dir = layout.bare_git_dir();
+
+    // upstreamは`refs/remotes/origin/main`だが、そのtipは別commitで、HEADへは
+    // `refs/remotes/origin/release`からしか到達できない。
+    let host = clean_host(&fixture, &project)?
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            ),
+            0,
+            &format!("refs/remotes/origin/main\tdef456\nrefs/remotes/origin/release\t{COMMIT}\n"),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            ),
+            0,
+            "refs/remotes/origin/release\n",
+        );
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("a commit reachable from a non-upstream origin ref is still safe")?;
+    assert!(assessment.blockers().is_empty());
+    assert_eq!(
+        assessment.worktrees()[0].reachability,
+        Reachability::Reachable {
+            origins: vec!["refs/remotes/origin/release".to_string()]
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn a_branch_whose_commit_no_origin_ref_reaches_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let bare_git_dir = layout.bare_git_dir();
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+        ),
+        0,
+        "",
+    );
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("assess collects the blocker instead of failing outright")?;
+    assert_eq!(
+        assessment.blockers(),
+        [Blocker::OriginUnreachable {
+            reference: "refs/heads/main".to_string(),
+            commit: COMMIT.to_string(),
+        }]
+    );
+    let error = authorize(assessment).refused_because(
+        "upstream not proven ahead does not matter once origin truly cannot reach it",
+    )?;
+    assert_eq!(error.first_id(), Some(ErrorId::OriginCommitUnreachable));
+    Ok(())
+}
+
+#[test]
+fn origin_unobservable_reasons_each_produce_their_own_blocker() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let bare_git_dir = layout.bare_git_dir();
+
+    let origin_missing = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git --git-dir {bare_git_dir} config --get remote.origin.url"),
+        1,
+        "",
+    );
+    let refresh_failed = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune --no-tags origin"),
+        128,
+        "",
+    );
+    let advertisement_invalid = clean_host(&fixture, &project)?.answering(
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+        ),
+        0,
+        "not-tab-separated\n",
+    );
+    let object_missing = clean_host(&fixture, &project)?
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            ),
+            128,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {bare_git_dir} cat-file -e {COMMIT}"),
+            1,
+            "",
+        );
+
+    let cases = [
+        (
+            origin_missing,
+            UnobservableReason::OriginMissing,
+            ErrorId::OriginMissing,
+        ),
+        (
+            refresh_failed,
+            UnobservableReason::RefreshFailed,
+            ErrorId::OriginRefreshFailed,
+        ),
+        (
+            advertisement_invalid,
+            UnobservableReason::AdvertisementInvalid,
+            ErrorId::OriginAdvertisementInvalid,
+        ),
+        (
+            object_missing,
+            UnobservableReason::ObjectMissing,
+            ErrorId::OriginObjectMissing,
+        ),
+    ];
+    for (host, reason, expected_id) in cases {
+        let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+            .required_because(
+                "an unobservable origin is a collected blocker, not an outright failure",
+            )?;
+        assert_eq!(
+            assessment.blockers(),
+            [Blocker::OriginUnobservable {
+                references: vec!["refs/heads/main".to_string()],
+                reason,
+            }]
+        );
+        let error = authorize(assessment)
+            .refused_because("an unobservable origin never permits a normal destroy/rebuild")?;
+        assert_eq!(error.first_id(), Some(expected_id));
+    }
+    Ok(())
+}
+
+#[test]
+fn local_refs_other_than_the_current_branch_are_classified_independently() -> Checked {
+    // checkout中のbranchだけでなく、tag・notes・stash・未checkoutのbranchも同じ観測結果で
+    // 判定する。1本でも回収できないrefがあれば、確認を求めず拒否する。
+    const TAG_COMMIT: &str = "1111111111111111111111111111111111111111";
+    const FEATURE_COMMIT: &str = "2222222222222222222222222222222222222222";
+    const ORPHAN_COMMIT: &str = "3333333333333333333333333333333333333333";
+
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let bare_git_dir = layout.bare_git_dir();
+
+    let host = clean_host(&fixture, &project)?
+        .answering(
+            &repository_command(
+                &project,
+                "for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/heads/ refs/tags/ refs/notes/ refs/stash",
+            ),
+            0,
+            &format!(
+                "refs/heads/main\t{COMMIT}\trefs/remotes/origin/main\nrefs/tags/v1\t{TAG_COMMIT}\t\nrefs/heads/feature\t{FEATURE_COMMIT}\trefs/remotes/origin/feature\nrefs/heads/orphan\t{ORPHAN_COMMIT}\t\n"
+            ),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            ),
+            0,
+            &format!(
+                "refs/remotes/origin/main	{COMMIT}\nrefs/remotes/origin/feature	{FEATURE_COMMIT}\n"
+            ),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={TAG_COMMIT} refs/remotes/origin/"
+            ),
+            0,
+            "refs/remotes/origin/main\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={FEATURE_COMMIT} refs/remotes/origin/"
+            ),
+            0,
+            "refs/remotes/origin/feature\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={ORPHAN_COMMIT} refs/remotes/origin/"
+            ),
+            0,
+            "",
+        );
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("origin-reachable local refs are confirmable, not a reason to refuse")?;
+    assert_eq!(
+        assessment.blockers(),
+        [Blocker::OriginUnreachable {
+            reference: "refs/heads/orphan".to_string(),
+            commit: ORPHAN_COMMIT.to_string(),
+        }]
+    );
+    // checkout中のbranchはstart refから再現できるため、ref名の損失には数えない。
+    assert_eq!(
+        assessment.confirmable_losses(),
+        [
+            ConfirmableLoss::SandboxWritableLayer,
+            ConfirmableLoss::Tag {
+                name: "v1".to_string(),
+            },
+            ConfirmableLoss::LocalRef {
+                reference: "refs/heads/feature".to_string(),
+            },
+            ConfirmableLoss::BranchUpstream {
+                branch: "feature".to_string(),
+                upstream: "refs/remotes/origin/feature".to_string(),
+            },
+        ]
+    );
+    Ok(())
+}
 #[test]
 fn untracked_paths_are_listed_in_full() -> Checked {
     let fixture = Fixture::new()?;
@@ -448,9 +753,10 @@ fn multiple_blockers_are_collected_in_stable_observation_order() -> Checked {
         .answering(&format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"), 0, "")
         .answering(
             &format!(
-                "exec {name} -- git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
+                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/",
+                SandboxLayout::new(project.metadata.canonical_id()).bare_git_dir()
             ),
-            1,
+            0,
             "",
         );
 
@@ -470,10 +776,9 @@ fn multiple_blockers_are_collected_in_stable_observation_order() -> Checked {
                 worktree: "example-repo.tree-0".to_string(),
                 operation: "MERGE_HEAD".to_string(),
             },
-            Blocker::OriginRecoveryNotProven {
-                reference: "main".to_string(),
+            Blocker::OriginUnreachable {
+                reference: "refs/heads/main".to_string(),
                 commit: COMMIT.to_string(),
-                reason: OriginRecoveryFailure::NoUpstream,
             },
         ]
     );
@@ -490,7 +795,7 @@ fn multiple_blockers_are_collected_in_stable_observation_order() -> Checked {
             ErrorId::WorktreeTrackedChanges,
             ErrorId::WorktreeUntrackedPaths,
             ErrorId::GitOperationInProgress,
-            ErrorId::OriginUpstreamMissing,
+            ErrorId::OriginCommitUnreachable,
         ]
     );
     Ok(())
@@ -517,9 +822,10 @@ fn an_observation_failure_does_not_hide_later_blockers() -> Checked {
         .answering(&format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"), 126, "")
         .answering(
             &format!(
-                "exec {name} -- git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
+                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/",
+                SandboxLayout::new(project.metadata.canonical_id()).bare_git_dir()
             ),
-            1,
+            0,
             "",
         );
 
@@ -538,7 +844,7 @@ fn an_observation_failure_does_not_hide_later_blockers() -> Checked {
         vec![
             ErrorId::WorktreeTrackedChanges,
             ErrorId::GitOperationUnobservable,
-            ErrorId::OriginUpstreamMissing,
+            ErrorId::OriginCommitUnreachable,
         ]
     );
     Ok(())
@@ -564,12 +870,10 @@ fn a_check_that_could_not_run_is_never_read_as_a_pass() -> Checked {
         "",
     );
     let upstream = clean_host(&fixture, &project)?.answering(
-            &format!(
-                "exec {name} -- git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
-            ),
-            125,
-            "",
-        );
+        &format!("exec {name} -- git -C {managed} rev-parse --symbolic-full-name @{{upstream}}"),
+        125,
+        "",
+    );
     let status = clean_host(&fixture, &project)?.answering(
         &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
         126,
@@ -642,11 +946,6 @@ fn an_unmanaged_worktree_is_refused_for_rebuild_and_confirmable_for_destroy() ->
                 1,
                 "",
             )
-            .answering(
-                &format!("exec {name} -- git -C {extra} rev-list --count HEAD --not --remotes=origin"),
-                0,
-                "0\n",
-            )
             .answering(&format!("exec {name} -- test -e {extra}/.git/MERGE_HEAD"), 1, "")
             .answering(&format!("exec {name} -- test -e {extra}/.git/CHERRY_PICK_HEAD"), 1, "")
             .answering(&format!("exec {name} -- test -e {extra}/.git/REVERT_HEAD"), 1, "")
@@ -671,7 +970,12 @@ fn an_unmanaged_worktree_is_refused_for_rebuild_and_confirmable_for_destroy() ->
     assert!(assessment.blockers().is_empty());
     assert_eq!(assessment.worktrees().len(), 2);
     assert_eq!(assessment.worktrees()[1].kind, Kind::Unmanaged);
-    assert_eq!(assessment.worktrees()[1].remote, Remote::Reachable);
+    assert_eq!(
+        assessment.worktrees()[1].reachability,
+        Reachability::Reachable {
+            origins: vec!["refs/remotes/origin/main".to_string()]
+        }
+    );
     // destroyは存在自体を削除計画へ載せ、確認の対象にする。
     assert!(
         assessment
@@ -1140,6 +1444,7 @@ fn a_detached_head_that_no_remote_reaches_stops_the_run() -> Checked {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+    let bare_git_dir = layout.bare_git_dir();
 
     let host = clean_host(&fixture, &project)?
         .answering(
@@ -1149,20 +1454,19 @@ fn a_detached_head_that_no_remote_reaches_stops_the_run() -> Checked {
         )
         .answering(
             &format!(
-                "exec {name} -- git -C {managed} rev-list --count HEAD --not --remotes=origin"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
             ),
             0,
-            "3\n",
+            "",
         );
 
     let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
         .required_because("assess collects the blocker instead of failing outright")?;
     assert_eq!(
         assessment.blockers(),
-        [Blocker::OriginRecoveryNotProven {
+        [Blocker::OriginUnreachable {
             reference: "HEAD".to_string(),
             commit: COMMIT.to_string(),
-            reason: OriginRecoveryFailure::UnreachableFromOrigin,
         }]
     );
     let error =
@@ -1270,106 +1574,29 @@ fn a_head_commit_that_cannot_be_read_stops_the_run() -> Checked {
 }
 
 #[test]
-fn an_ahead_count_that_cannot_be_read_stops_the_run() -> Checked {
+fn whether_an_origin_ref_reaches_a_commit_that_cannot_be_read_stops_the_run() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
-    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+    let bare_git_dir = layout.bare_git_dir();
 
     let host = clean_host(&fixture, &project)?.answering(
-        &format!("exec {name} -- git -C {managed} rev-list --count origin/main..HEAD"),
-        1,
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+        ),
+        126,
         "",
     );
 
     let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
-        .required_because("the unreadable ahead count is retained as a blocker")?;
+        .required_because("an origin that could not be observed is retained as a blocker")?;
     let error = gate::require_no_blockers(&assessment)
-        .refused_because("the ahead count could not be read")?;
-    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
-    Ok(())
-}
-
-#[test]
-fn an_ahead_count_that_is_not_a_number_stops_the_run() -> Checked {
-    let fixture = Fixture::new()?;
-    let project = fixture.register("example-org/example-repo")?;
-    let layout = SandboxLayout::new(project.metadata.canonical_id());
-    let name = project.sandbox.as_str();
-    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
-
-    let host = clean_host(&fixture, &project)?.answering(
-        &format!("exec {name} -- git -C {managed} rev-list --count origin/main..HEAD"),
-        0,
-        "not-a-number\n",
+        .refused_because("a command that could not even launch is never read as observed")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::OriginObservationUnobservable)
     );
-
-    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
-        .required_because("an unparseable ahead count is retained as a blocker")?;
-    let error = gate::require_no_blockers(&assessment)
-        .refused_because("an unparseable count is never read as zero")?;
-    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
-    Ok(())
-}
-
-#[test]
-fn an_unreachable_count_that_cannot_be_read_stops_the_run() -> Checked {
-    let fixture = Fixture::new()?;
-    let project = fixture.register("example-org/example-repo")?;
-    let layout = SandboxLayout::new(project.metadata.canonical_id());
-    let name = project.sandbox.as_str();
-    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
-
-    let host = clean_host(&fixture, &project)?
-        .answering(
-            &format!("exec {name} -- git -C {managed} symbolic-ref --quiet --short HEAD"),
-            1,
-            "",
-        )
-        .answering(
-            &format!(
-                "exec {name} -- git -C {managed} rev-list --count HEAD --not --remotes=origin"
-            ),
-            1,
-            "",
-        );
-
-    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
-        .required_because("the unreadable unreachable count is retained as a blocker")?;
-    let error = gate::require_no_blockers(&assessment)
-        .refused_because("the unreachable count could not be read")?;
-    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
-    Ok(())
-}
-
-#[test]
-fn an_unreachable_count_that_is_not_a_number_stops_the_run() -> Checked {
-    let fixture = Fixture::new()?;
-    let project = fixture.register("example-org/example-repo")?;
-    let layout = SandboxLayout::new(project.metadata.canonical_id());
-    let name = project.sandbox.as_str();
-    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
-
-    let host = clean_host(&fixture, &project)?
-        .answering(
-            &format!("exec {name} -- git -C {managed} symbolic-ref --quiet --short HEAD"),
-            1,
-            "",
-        )
-        .answering(
-            &format!(
-                "exec {name} -- git -C {managed} rev-list --count HEAD --not --remotes=origin"
-            ),
-            0,
-            "not-a-number\n",
-        );
-
-    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
-        .required_because("an unparseable unreachable count is retained as a blocker")?;
-    let error = gate::require_no_blockers(&assessment)
-        .refused_because("an unparseable count is never read as zero")?;
-    assert_eq!(error.first_id(), Some(ErrorId::LocalRefsUnobservable));
     Ok(())
 }
 
@@ -1520,7 +1747,7 @@ fn whether_an_upstream_is_configured_cannot_be_observed_stops_the_run() -> Check
             "main",
         )
         .timing_out(&format!(
-            "git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
+            "git -C {managed} rev-parse --symbolic-full-name @{{upstream}}"
         ));
 
     let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)

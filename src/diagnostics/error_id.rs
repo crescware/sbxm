@@ -136,8 +136,6 @@ error_ids! {
     WorktreeTrackedChanges => "worktree-tracked-changes",
     WorktreeUntrackedPaths => "worktree-untracked-paths",
     GitOperationInProgress => "git-operation-in-progress",
-    OriginUpstreamMissing => "origin-upstream-missing",
-    OriginCommitUnpushed => "origin-commit-unpushed",
     OriginCommitUnreachable => "origin-commit-unreachable",
     WorktreeInventoryUnobservable => "worktree-inventory-unobservable",
     WorktreeStatusUnobservable => "worktree-status-unobservable",
@@ -150,6 +148,13 @@ error_ids! {
     RemoteConfigurationUnobservable => "remote-configuration-unobservable",
     ProtectionNotConfirmed => "protection-not-confirmed",
     ProtectionStateChanged => "protection-state-changed",
+
+    // --- 破壊前保護ゲート・originの権威ある観測（#83） ---
+    OriginMissing => "origin-missing",
+    OriginRefreshFailed => "origin-refresh-failed",
+    OriginAdvertisementInvalid => "origin-advertisement-invalid",
+    OriginObjectMissing => "origin-object-missing",
+    OriginObservationUnobservable => "origin-observation-unobservable",
 
     // --- sessionのhost lease（#80） ---
     OpenSessionActive => "open-session-active",

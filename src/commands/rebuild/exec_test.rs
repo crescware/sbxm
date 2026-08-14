@@ -1,39 +1,31 @@
-use std::os::unix::fs::PermissionsExt;
-
 use crate::cli::Interactivity;
+use crate::command::HostEnvironment;
 use crate::commands::Context;
-use crate::commands::rebuild::fake::ready_to_switch;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::design::{OutputPolicy, PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::hash::sha256_hex;
 use crate::i18n::Locale;
 use crate::metadata;
-use crate::project::{ProjectId, SandboxLayout};
 use crate::support::image;
 
+use crate::testing::host::FakeSbx;
 use crate::testing::image::template_listing;
 use crate::testing::outcome::{Checked, Required};
-use crate::testing::project::{Fixture, project_id};
+use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::protection::clean_host;
 
-/// `exec`を1回起動し、終了codeとstdoutへ書かれた内容を返す。`typed`は確認promptへ
-/// そのまま打ち込む文字列。
-fn run_exec(
-    fixture: &Fixture,
-    host: &dyn crate::command::HostEnvironment,
-    project: Option<&ProjectId>,
-    typed: &str,
-) -> Checked<(ExitCode, String)> {
-    let context = Context {
-        location: &fixture.location,
-        workspace_root: &fixture.workspace_root,
-        lang: Some(Locale::En),
-        interactivity: Interactivity {
-            stdin_is_tty: true,
-            stderr_is_tty: true,
-        },
-    };
+/// `exec`が書いたstdoutとstderr、そして終了statusを取り出す。
+///
+/// `exec`は`Context`が運ぶworkspace rootを使うため、ここではfixtureのrootを渡す。
+/// `run`のtestが通らない経路、つまり計画、確認、実行のつなぎ目だけを確かめる。
+struct Ran {
+    code: ExitCode,
+    stdout: String,
+    stderr: String,
+}
+
+fn run(fixture: &Fixture, host: &dyn HostEnvironment, typed: &str) -> Checked<Ran> {
     let policy = OutputPolicy::plain();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -45,28 +37,44 @@ fn run_exec(
             Box::new(ScriptedKeys::typing(typed)),
             Box::new(RecordedScreen::new()),
         );
-        super::exec(project, &context, &mut ui, host, &mut prompt)
+        let context = Context {
+            location: &fixture.location,
+            workspace_root: &fixture.workspace_root,
+            lang: Some(Locale::En),
+            interactivity: Interactivity {
+                stdin_is_tty: true,
+                stderr_is_tty: true,
+            },
+        };
+        super::exec(
+            Some(&project_id("example-org/example-repo")?),
+            &context,
+            &mut ui,
+            host,
+            &mut prompt,
+        )
     };
-    let printed = String::from_utf8(stdout).required_because("stdout is valid UTF-8")?;
-    Ok((code, printed))
+    Ok(Ran {
+        code,
+        stdout: String::from_utf8(stdout).required_because("rebuild stdout is UTF-8")?,
+        stderr: String::from_utf8(stderr).required_because("rebuild stderr is UTF-8")?,
+    })
 }
 
-#[test]
-fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox_via_exec() -> Checked {
-    let fixture = Fixture::new()?;
-    let mut project = fixture.register("example-org/example-repo")?;
-    // 適用済みhashと同じ内容のDockerfileを置く。
+/// 適用済みのDockerfileと、その世代のimageとtemplateを既に持つhost。
+///
+/// buildもtemplate loadも起こらないため、`exec`が選ぶ経路だけがtestの対象になる。
+fn host_with_the_applied_generation(
+    fixture: &Fixture,
+    project: &mut Registered,
+) -> Checked<FakeSbx> {
     std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
     let target = sha256_hex(b"unchanged\n");
     project.metadata.provisioning.dockerfile_sha256 = target.clone();
     metadata::update(&project.paths, &project.metadata).required()?;
 
     let image = image::image_name(&project.sandbox, &target);
-    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
-    std::fs::create_dir_all(&workspace).required()?;
-    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
-
-    let host = clean_host(&fixture, &project)?
+    Ok(clean_host(fixture, project)?
         .answering(&format!("image ls --quiet {image}"), 0, "sha256:existing\n")
         .answering(
             &format!("image inspect {image}"),
@@ -75,64 +83,99 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox_via_exec() -> Ch
                 r#"[{{"Id":"sha256:existing","Config":{{"Labels":{{"io.crescware.sbxm.canonical-id":"example-org/example-repo","io.crescware.sbxm.dockerfile-sha256":"{target}","io.crescware.sbxm.metadata-version":"1"}}}}}}]"#
             ),
         )
-        .answering("template ls --json", 0, &template_listing(&image)?);
+        .answering("template ls --json", 0, &template_listing(&image)?))
+}
 
-    let layout = SandboxLayout::new(project.metadata.canonical_id());
-    let git_dir = layout.bare_git_dir();
-    let worktree = layout.worktree(0);
-    let name = project.sandbox.as_str();
-    let host = ready_to_switch(host, name, &git_dir, &worktree);
-
-    let running = format!(
+/// `exec`が観測するworkspaceを申告する、稼働中のSandbox 1件の一覧。
+fn running(fixture: &Fixture, project: &Registered) -> Checked<String> {
+    Ok(format!(
         r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
-    let created = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
-        project.sandbox,
-        workspace.display()
-    );
-    // 一覧は末尾から取り出される。状態の判定、削除前の再評価、削除完了の確認、作成前の
-    // 確認までは稼働中のSandboxが対象と観測し、作成後は新しいSandboxを観測する。
+        fixture.entry(project, "running")?
+    ))
+}
+
+#[test]
+fn a_sandbox_that_disappeared_after_it_was_confirmed_is_reported_instead_of_rebuilt() -> Checked {
+    // 計画を見せ、Sandbox名の完全一致で確認を取り、実行が拒否されるまでを`exec`ごと通す。
+    // 確認の直後に対象Sandboxが手作業で消えていれば、`exec`は作り直さず理由を述べる。
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let host = host_with_the_applied_generation(&fixture, &mut project)?;
+
+    // 一覧は末尾から取り出される。計画と確認までは稼働中のSandboxを観測し、実行が
+    // 状態を取り直す時点では消えている。
     *host.listing.borrow_mut() = vec![
-        created,
         r#"{"sandboxes":[]}"#.to_string(),
-        r#"{"sandboxes":[]}"#.to_string(),
-        running.clone(),
-        running,
+        running(&fixture, &project)?,
     ];
 
-    let project_id = project_id("example-org/example-repo")?;
-    let (code, printed) = run_exec(&fixture, &host, Some(&project_id), name)?;
+    let ran = run(&fixture, &host, project.sandbox.as_str())?;
 
-    assert_eq!(code, ExitCode::Success, "{printed}");
+    assert_eq!(ran.code, ExitCode::Failure, "{}{}", ran.stdout, ran.stderr);
+    // 確認の前に、何を失うかを述べた計画が出ている。
     assert!(
-        !host.ran("build"),
-        "the existing image is reused: {:?}",
-        host.calls()
+        ran.stdout.contains(project.sandbox.as_str()),
+        "the plan names the sandbox it would recreate: {}",
+        ran.stdout
+    );
+    // 拒否は理由ごと述べる。黙って作り直しへ進まない。
+    assert!(
+        ran.stderr.contains("changed"),
+        "the refusal says the state changed: {}",
+        ran.stderr
     );
     assert!(
-        host.ran("rm ") && host.ran("create --name"),
-        "an unchanged Dockerfile still recreates the sandbox: {:?}",
+        !host.ran("rm ") && !host.ran("create --name"),
+        "nothing is removed or created once the state has changed: {:?}",
         host.calls()
     );
     Ok(())
 }
 
 #[test]
-fn a_mistyped_sandbox_name_stops_the_rebuild_before_anything_is_touched() -> Checked {
+fn a_name_that_does_not_match_the_sandbox_stops_before_anything_is_touched() -> Checked {
+    // 確認は完全一致だけを合図にする。違う綴りでは実行へ進まない。
     let fixture = Fixture::new()?;
-    let project = fixture.register("example-org/example-repo")?;
-    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
-    let host = clean_host(&fixture, &project)?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let host = host_with_the_applied_generation(&fixture, &mut project)?;
+    *host.listing.borrow_mut() = vec![running(&fixture, &project)?, running(&fixture, &project)?];
 
-    let project_id = project_id("example-org/example-repo")?;
-    let (code, printed) = run_exec(&fixture, &host, Some(&project_id), "yes")?;
+    let ran = run(&fixture, &host, "not-the-sandbox-name")?;
 
-    assert_ne!(code, ExitCode::Success, "{printed}");
+    assert_eq!(ran.code, ExitCode::Failure, "{}{}", ran.stdout, ran.stderr);
     assert!(
         !host.ran("rm ") && !host.ran("create --name"),
-        "nothing is touched without the exact sandbox name: {:?}",
+        "a name that does not match touches nothing: {:?}",
+        host.calls()
+    );
+    let stored = metadata::load(&project.paths)
+        .required()?
+        .required_because("the project is still managed")?;
+    assert!(
+        stored.rebuild.is_none(),
+        "an unconfirmed rebuild commits no intent"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_project_that_is_not_managed_is_reported_before_the_plan_is_drawn() -> Checked {
+    // 対象が決まらなければ計画も確認も無い。`exec`は最初の失敗をそのまま述べる。
+    let fixture = Fixture::new()?;
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+
+    let ran = run(&fixture, &host, "")?;
+
+    assert_eq!(ran.code, ExitCode::Failure, "{}{}", ran.stdout, ran.stderr);
+    assert!(
+        ran.stdout.is_empty(),
+        "no plan is drawn for a project that is not managed: {}",
+        ran.stdout
+    );
+    // 案件が決まらない以上、Sandboxの中も覗かない。
+    assert!(
+        !host.ran("rm ") && !host.ran("create --name") && !host.ran("exec "),
+        "{:?}",
         host.calls()
     );
     Ok(())
