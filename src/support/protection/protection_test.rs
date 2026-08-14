@@ -86,6 +86,15 @@ fn assert_protection_diagnostic(
     command: &str,
     labels: &[&str],
 ) -> Checked {
+    assert_protection_diagnostic_with_commands(blocker, id, &[command], labels)
+}
+
+fn assert_protection_diagnostic_with_commands(
+    blocker: Blocker,
+    id: ErrorId,
+    commands: &[&str],
+    labels: &[&str],
+) -> Checked {
     let diagnostic = blocker_diagnostic(blocker)?;
     assert_eq!(diagnostic.id, id);
     assert!(
@@ -113,11 +122,13 @@ fn assert_protection_diagnostic(
             .iter()
             .map(crate::design::text::CommandLine::as_str)
             .collect::<Vec<_>>(),
-        vec![command]
+        commands
     );
     for locale in [Locale::En, Locale::Ja] {
         let drawn = render_diagnostic(&diagnostic, locale)?;
-        assert!(drawn.contains(command), "{locale:?}: {drawn:?}");
+        for command in commands {
+            assert!(drawn.contains(command), "{locale:?}: {drawn:?}");
+        }
         assert!(!drawn.contains("destroy --force"), "{drawn:?}");
         assert!(!drawn.contains("git clean"), "{drawn:?}");
         assert!(!drawn.contains("git reset --hard"), "{drawn:?}");
@@ -182,10 +193,6 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
     for (reason, id) in [
         (UnobservableReason::OriginMissing, ErrorId::OriginMissing),
         (
-            UnobservableReason::RefreshFailed,
-            ErrorId::OriginRefreshFailed,
-        ),
-        (
             UnobservableReason::AdvertisementInvalid,
             ErrorId::OriginAdvertisementInvalid,
         ),
@@ -196,15 +203,47 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
     ] {
         assert_protection_diagnostic(
             Blocker::OriginUnobservable {
-                reference: "refs/heads/main".to_string(),
-                commit: COMMIT.to_string(),
+                references: vec!["refs/heads/main".to_string()],
                 reason,
             },
             id,
             "sbxm open example-org/example-repo",
-            &["diagnostic-reference-label", "diagnostic-commit-label"],
+            &["diagnostic-references-label"],
         )?;
     }
+    // originのrefreshそのものが失敗した場合だけ、この案件のstatusとhost全体のstatusの
+    // 両方を示す。
+    assert_protection_diagnostic_with_commands(
+        Blocker::OriginUnobservable {
+            references: vec!["refs/heads/main".to_string()],
+            reason: UnobservableReason::RefreshFailed,
+        },
+        ErrorId::OriginRefreshFailed,
+        &[
+            "sbxm status --global",
+            "sbxm status example-org/example-repo",
+        ],
+        &["diagnostic-references-label"],
+    )?;
+    Ok(())
+}
+
+#[test]
+fn an_unobservable_blocker_beyond_the_listing_cap_adds_a_count_fact() -> Checked {
+    let references: Vec<String> = (0..25)
+        .map(|index| format!("refs/heads/f{index}"))
+        .collect();
+    let diagnostic = blocker_diagnostic(Blocker::OriginUnobservable {
+        references,
+        reason: UnobservableReason::OriginMissing,
+    })?;
+    let fact_labels: Vec<&str> = diagnostic
+        .facts
+        .iter()
+        .map(|fact| fact.label().id)
+        .collect();
+    assert!(fact_labels.contains(&"diagnostic-references-label"));
+    assert!(fact_labels.contains(&"diagnostic-count-label"));
     Ok(())
 }
 
@@ -414,7 +453,7 @@ fn origin_unobservable_reasons_each_produce_their_own_blocker() -> Checked {
         "",
     );
     let refresh_failed = clean_host(&fixture, &project)?.answering(
-        &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune origin"),
+        &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune --no-tags origin"),
         128,
         "",
     );
@@ -425,13 +464,19 @@ fn origin_unobservable_reasons_each_produce_their_own_blocker() -> Checked {
         0,
         "not-tab-separated\n",
     );
-    let object_missing = clean_host(&fixture, &project)?.answering(
-        &format!(
-            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
-        ),
-        128,
-        "",
-    );
+    let object_missing = clean_host(&fixture, &project)?
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            ),
+            128,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {bare_git_dir} cat-file -e {COMMIT}"),
+            1,
+            "",
+        );
 
     let cases = [
         (
@@ -463,8 +508,7 @@ fn origin_unobservable_reasons_each_produce_their_own_blocker() -> Checked {
         assert_eq!(
             assessment.blockers(),
             [Blocker::OriginUnobservable {
-                reference: "refs/heads/main".to_string(),
-                commit: COMMIT.to_string(),
+                references: vec!["refs/heads/main".to_string()],
                 reason,
             }]
         );

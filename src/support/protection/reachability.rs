@@ -17,6 +17,12 @@ pub enum Reachability {
 impl Reachability {
     /// `candidate`と`observation`だけから分類する。`observation`以外のGit状態を読まず、
     /// fetchやGit commandを実行しない。同じ入力には同じ結果を返す。
+    ///
+    /// `candidate`のcommitが`observation`の`reachable_from`に無い場合は、観測されて
+    /// いないcommitとして`Unobservable`を返す。`observe_for_mutation`は渡された全
+    /// candidateを必ず記録するため通常は起こらないが、candidateを網羅しない観測
+    /// (`observe_read_only`等)がこの関数へそのまま流れても、していない観測を
+    /// `Unreachable`と断定しない。
     pub fn classify(candidate: &CommitCandidate, observation: &OriginObservation) -> Reachability {
         let reachable_from = match observation {
             OriginObservation::Unobservable { reason } => {
@@ -25,19 +31,25 @@ impl Reachability {
             OriginObservation::Observed { reachable_from, .. } => reachable_from,
         };
 
-        let reaching = reachable_from.get(candidate.commit());
+        let Some(reaching) = reachable_from.get(candidate.commit()) else {
+            return Reachability::Unobservable {
+                reason: UnobservableReason::ObjectMissing,
+            };
+        };
+
         if let Some(upstream) = candidate.upstream()
-            && reaching.is_some_and(|origins| origins.contains(upstream))
+            && reaching.contains(upstream)
         {
             return Reachability::Pushed {
                 upstream: upstream.to_string(),
             };
         }
-        match reaching {
-            Some(origins) if !origins.is_empty() => Reachability::Reachable {
-                origins: origins.iter().cloned().collect(),
-            },
-            _ => Reachability::Unreachable,
+        if reaching.is_empty() {
+            Reachability::Unreachable
+        } else {
+            Reachability::Reachable {
+                origins: reaching.iter().cloned().collect(),
+            }
         }
     }
 

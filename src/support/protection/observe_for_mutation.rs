@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::command::{CommandOutcome, HostEnvironment};
-use crate::design::{Fact, Remediation};
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::project::{SandboxLayout, SandboxName};
@@ -23,25 +23,35 @@ const ORIGIN_REFS_NAMESPACE: &str = "refs/remotes/origin/";
 ///
 /// Gitが正常に応答した結果として観測不能と判定した場合は
 /// `OriginObservation::Unobservable`を返す。command自体を起動できない失敗は`Err`とする。
+/// `Err`が持つdiagnosticにremediationは無い。projectを知らないためで、呼び出し側が
+/// 案件固有のremediationを足す。
 pub fn observe_for_mutation(
     host: &dyn HostEnvironment,
     sandbox: &SandboxName,
     layout: &SandboxLayout,
-    project: &str,
     candidates: &[CommitCandidate],
 ) -> Result<OriginObservation> {
     let scope = ObservationScope {
         sandbox: sandbox.as_str(),
         git_dir: layout.bare_git_dir(),
-        project,
     };
 
     if !origin_configured(host, &scope)? {
         return Ok(unobservable(UnobservableReason::OriginMissing));
     }
 
-    let fetch = repository::refresh_origin(host, scope.sandbox, &scope.git_dir, None)
-        .map_err(|error| reclassify(&error, &scope))?;
+    // `--no-tags`で呼ぶ。既定のopportunistic tag追従はローカルの`refs/tags/*`へ書き込み、
+    // このfetch自身が観測対象のローカルref集合を変えてしまう(fetchは観測ではなく状態
+    // 変更である)。origin側のtipはtag追従の有無にかかわらず`refs/remotes/origin/*`
+    // だけに現れるため、`--no-tags`は到達可能性の判定結果を変えない。
+    let fetch = repository::refresh_origin(
+        host,
+        scope.sandbox,
+        &scope.git_dir,
+        repository::TagFollowing::Disabled,
+        None,
+    )
+    .map_err(|error| reclassify(&error, &scope))?;
     match sandbox::inner_exit_code(&fetch) {
         Some(0) => {}
         Some(_) => return Ok(unobservable(UnobservableReason::RefreshFailed)),
@@ -74,7 +84,6 @@ pub fn observe_for_mutation(
 struct ObservationScope<'a> {
     sandbox: &'a str,
     git_dir: String,
-    project: &'a str,
 }
 
 fn unobservable(reason: UnobservableReason) -> OriginObservation {
@@ -145,7 +154,9 @@ fn origin_tips(
 
 /// `commit`へ到達できるorigin ref名の集合。
 ///
-/// `commit`がローカルのobject databaseに無ければ`ObjectMissing`を返す。
+/// `commit`がローカルのobject databaseに無いと確かめられた場合だけ`ObjectMissing`を
+/// 返す。確かめられない非ゼロ終了は、他の観測不能と同じく起動できたcommandの失敗
+/// として`Err`にする。
 fn reaching_origin_refs(
     host: &dyn HostEnvironment,
     scope: &ObservationScope<'_>,
@@ -167,7 +178,7 @@ fn reaching_origin_refs(
     .map_err(|error| reclassify(&error, scope))?;
     match sandbox::inner_exit_code(&outcome) {
         Some(0) => {}
-        Some(_) => return Ok(Err(UnobservableReason::ObjectMissing)),
+        Some(_) => return classify_contains_failure(host, scope, commit, &outcome),
         None => return Err(unobservable_command(&outcome, scope)),
     }
 
@@ -182,11 +193,34 @@ fn reaching_origin_refs(
     Ok(Ok(origins))
 }
 
+/// `--contains`が非ゼロで終わった原因を確かめる。
+///
+/// `git cat-file -e`はobjectが無いことを`1`で示す。それだけが`ObjectMissing`の根拠で
+/// あり、それ以外(objectはあるのに`--contains`が失敗した、`cat-file`自体を起動できない
+/// 等)は、原因を断定せず`--contains`の失敗をそのまま観測不能な起動失敗として報告する。
+fn classify_contains_failure(
+    host: &dyn HostEnvironment,
+    scope: &ObservationScope<'_>,
+    commit: &str,
+    contains_outcome: &CommandOutcome,
+) -> Result<std::result::Result<BTreeSet<String>, UnobservableReason>> {
+    let probe = sandbox::exec(
+        host,
+        scope.sandbox,
+        &["git", "--git-dir", &scope.git_dir, "cat-file", "-e", commit],
+    )
+    .map_err(|error| reclassify(&error, scope))?;
+    match sandbox::inner_exit_code(&probe) {
+        Some(1) => Ok(Err(UnobservableReason::ObjectMissing)),
+        _ => Err(unobservable_command(contains_outcome, scope)),
+    }
+}
+
 /// origin観測commandの起動そのものに失敗した場合の共通の写像。
 ///
 /// 元のdiagnosticが持つfactとexternal causeは、原因の説明として保持する。
 fn reclassify(error: &Error, scope: &ObservationScope<'_>) -> Error {
-    let mut diagnostic = observation_unobservable(scope);
+    let mut diagnostic = observation_unobservable();
     if let Some(source) = error.diagnostics().first() {
         diagnostic.facts.clone_from(&source.facts);
         diagnostic.external.clone_from(&source.external);
@@ -198,7 +232,7 @@ fn reclassify(error: &Error, scope: &ObservationScope<'_>) -> Error {
 /// commandは起動できたが、終了statusが判定対象に無い場合。
 fn unobservable_command(outcome: &CommandOutcome, scope: &ObservationScope<'_>) -> Error {
     Error::single(
-        observation_unobservable(scope)
+        observation_unobservable()
             .fact(Fact::sandbox(scope.sandbox))
             .external(outcome.failure()),
     )
@@ -206,15 +240,12 @@ fn unobservable_command(outcome: &CommandOutcome, scope: &ObservationScope<'_>) 
 
 /// originの観測そのものが成立しなかったことを表すdiagnosticの土台。
 ///
-/// remote URLは持たせない。観測できなかった事実だけを示す。
-fn observation_unobservable(scope: &ObservationScope<'_>) -> Diagnostic {
+/// remote URLは持たせない。観測できなかった事実だけを示す。remediationは持たない。
+/// この関数はprojectを知らないため、呼び出し側が足す。
+fn observation_unobservable() -> Diagnostic {
     Diagnostic::new(
         ErrorId::OriginObservationUnobservable,
         msg!("error-origin-observation-unobservable"),
-    )
-    .remediation(
-        Remediation::text(msg!("remediation-origin-observation-unobservable"))
-            .try_run(format!("sbxm open {}", scope.project)),
     )
 }
 

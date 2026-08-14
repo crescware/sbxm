@@ -7,7 +7,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::ProgressSink;
 use crate::support::sandbox;
 
-use super::{FETCH_REFSPEC, unusable};
+use super::{FETCH_REFSPEC, TagFollowing, unusable};
 
 /// bare repositoryを用意する。
 ///
@@ -64,7 +64,8 @@ pub fn ensure_bare_clone(
 
     // remote-tracking refを現在の状態にしてから、起点refを解決する。
     progress.step(msg!("progress-fetching-repository"));
-    super::refresh_origin(host, sandbox, &git_dir, Some(progress))?.require_success()?;
+    super::refresh_origin(host, sandbox, &git_dir, TagFollowing::Auto, Some(progress))?
+        .require_success()?;
     Ok(())
 }
 

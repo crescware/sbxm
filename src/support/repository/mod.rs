@@ -10,6 +10,7 @@ mod fetch_refspec;
 mod mod_test;
 mod refresh_origin;
 mod start_ref;
+mod tag_following;
 mod unusable;
 mod worktree;
 
@@ -17,5 +18,6 @@ pub use ensure_bare_clone::ensure_bare_clone;
 pub(crate) use fetch_refspec::FETCH_REFSPEC;
 pub use refresh_origin::refresh_origin;
 pub use start_ref::resolve_start_ref;
+pub use tag_following::TagFollowing;
 use unusable::unusable;
 pub use worktree::ensure_worktrees;

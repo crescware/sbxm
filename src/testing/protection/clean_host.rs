@@ -111,7 +111,7 @@ fn answering_origin_observation(host: FakeSbx, name: &str, bare_git_dir: &str) -
         "https://github.com/example-org/example-repo.git\n",
     )
     .answering(
-        &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune origin"),
+        &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune --no-tags origin"),
         0,
         "",
     )

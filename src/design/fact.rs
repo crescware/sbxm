@@ -152,6 +152,14 @@ impl Fact {
         )
     }
 
+    /// `References:`。複数件の対象Git refを1件の事実としてまとめて示す。
+    pub fn references(references: &[String]) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-references-label"),
+            Inline::text(references.join("\n")),
+        )
+    }
+
     /// `Cause:`。外部が書いた原文をそのまま示す。
     pub fn cause(detail: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-cause-label"), Inline::text(detail))

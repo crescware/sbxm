@@ -10,9 +10,6 @@ use crate::testing::value::COMMIT;
 use super::observe_for_mutation;
 use crate::support::protection::{CommitCandidate, OriginObservation, UnobservableReason};
 
-/// remediationが案内する案件の表示名。
-const PROJECT: &str = "example-org/example-repo";
-
 fn sandbox() -> Checked<SandboxName> {
     Ok(SandboxName::derive(&canonical()?))
 }
@@ -33,14 +30,14 @@ fn a_command_that_could_not_even_launch_is_an_error_at_every_stage() -> Checked 
 
     let steps = [
         format!("git --git-dir {git_dir} config --get remote.origin.url"),
-        format!("git --git-dir {git_dir} fetch --prune origin"),
+        format!("git --git-dir {git_dir} fetch --prune --no-tags origin"),
         format!(
             "git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
         ),
     ];
     for step in steps {
         let host = InnerCommandSandbox::new().timing_out(&step);
-        let error = observe_for_mutation(&host, &sandbox, &layout()?, PROJECT, &candidates)
+        let error = observe_for_mutation(&host, &sandbox, &layout()?, &candidates)
             .refused_because("a step that did not run is never read as observed")?;
         assert_eq!(
             error.first_id(),
@@ -61,7 +58,7 @@ fn an_origin_configuration_that_answers_oddly_is_unobservable_not_missing() -> C
         "",
     );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
         .refused_because("an answer that is neither 0 nor 1 is not a clean yes or no")?;
     assert_eq!(
         error.first_id(),
@@ -81,12 +78,12 @@ fn a_fetch_that_answered_but_could_not_launch_the_inner_command_is_unobservable(
             "https://github.com/Example-Org/Example-Repo.git\n",
         )
         .answering(
-            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune origin"),
+            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
             126,
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
         .refused_because(
             "an exit code sbx exec reserves for its own launch failure is never read as an answer",
         )?;
@@ -108,7 +105,7 @@ fn a_tip_listing_that_answered_but_could_not_launch_the_inner_command_is_unobser
             "https://github.com/Example-Org/Example-Repo.git\n",
         )
         .answering(
-            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune origin"),
+            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
             0,
             "",
         )
@@ -120,7 +117,7 @@ fn a_tip_listing_that_answered_but_could_not_launch_the_inner_command_is_unobser
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
         .refused_because(
             "an exit code sbx exec reserves for its own launch failure is never read as an answer",
         )?;
@@ -142,7 +139,7 @@ fn a_tip_listing_with_a_missing_field_is_an_invalid_advertisement() -> Checked {
             "https://github.com/Example-Org/Example-Repo.git\n",
         )
         .answering(
-            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune origin"),
+            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
             0,
             "",
         )
@@ -154,7 +151,7 @@ fn a_tip_listing_with_a_missing_field_is_an_invalid_advertisement() -> Checked {
             "refs/remotes/origin/main\t\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
         .required_because(
             "a malformed advertisement is a collected reason, not an outright failure",
         )?;
@@ -178,7 +175,7 @@ fn a_reachability_probe_with_a_blank_line_is_an_invalid_advertisement() -> Check
             "https://github.com/Example-Org/Example-Repo.git\n",
         )
         .answering(
-            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune origin"),
+            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
             0,
             "",
         )
@@ -197,13 +194,80 @@ fn a_reachability_probe_with_a_blank_line_is_an_invalid_advertisement() -> Check
             "\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, PROJECT, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
         .required_because("a blank ref name is a collected reason, not an outright failure")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
             reason: UnobservableReason::AdvertisementInvalid
         }
+    );
+    Ok(())
+}
+
+/// `--contains`が非ゼロで終わったあとの、`git cat-file -e`による確認のためのhost。
+fn host_after_a_failed_contains_check(cat_file_exit: i32) -> Checked<FakeSbx> {
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    Ok(FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            ),
+            0,
+            &format!("refs/remotes/origin/main\t{COMMIT}\n"),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            ),
+            128,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} cat-file -e {COMMIT}"),
+            cat_file_exit,
+            "",
+        ))
+}
+
+#[test]
+fn a_contains_failure_confirmed_by_cat_file_as_missing_is_object_missing() -> Checked {
+    let host = host_after_a_failed_contains_check(1)?;
+
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+        .required_because("an object verified missing by cat-file is a collected reason")?;
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::ObjectMissing
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn a_contains_failure_that_cat_file_cannot_confirm_is_not_object_missing() -> Checked {
+    // cat-fileが`0`(objectはある)を返すのは、`--contains`の失敗が本当はobjectの不在で
+    // ないことの証拠である。していない断定はせず、`--contains`自体の失敗を観測不能な
+    // 起動失敗として報告する。
+    let host = host_after_a_failed_contains_check(0)?;
+
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+        .refused_because("a confirmed-present object is never reported as missing")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::OriginObservationUnobservable)
     );
     Ok(())
 }
