@@ -1,6 +1,6 @@
 use crate::project::SandboxName;
 
-use super::{Blocker, ConfirmableLoss, DestructiveOperation, WorktreeReport};
+use super::{Blocker, ConfirmableLoss, DestructiveOperation, OriginObservation, WorktreeReport};
 
 /// 保護ゲートが観測した結果。
 ///
@@ -13,6 +13,8 @@ pub struct Assessment {
     worktrees: Vec<WorktreeReport>,
     blockers: Vec<Blocker>,
     confirmable_losses: Vec<ConfirmableLoss>,
+    /// origin観測結果。何も観測しなかった`empty`では`None`。
+    origin: Option<OriginObservation>,
 }
 
 impl Assessment {
@@ -32,6 +34,7 @@ impl Assessment {
             Vec::new(),
             Vec::new(),
             Vec::new(),
+            None,
         )
     }
 
@@ -42,6 +45,7 @@ impl Assessment {
         worktrees: Vec<WorktreeReport>,
         blockers: Vec<Blocker>,
         confirmable_losses: Vec<ConfirmableLoss>,
+        origin: Option<OriginObservation>,
     ) -> Assessment {
         Assessment {
             operation,
@@ -50,6 +54,7 @@ impl Assessment {
             worktrees,
             blockers,
             confirmable_losses,
+            origin,
         }
     }
 
@@ -78,5 +83,12 @@ impl Assessment {
     /// ことを確かめる。
     pub fn confirmable_losses(&self) -> &[ConfirmableLoss] {
         &self.confirmable_losses
+    }
+
+    /// origin観測結果。fingerprintが確認後のorigin側の変化を検出するために読む。
+    ///
+    /// 表示はworktreeごとの`Reachability`が担うため、この観測そのものは外へ出さない。
+    pub(super) fn origin_observation(&self) -> Option<&OriginObservation> {
+        self.origin.as_ref()
     }
 }

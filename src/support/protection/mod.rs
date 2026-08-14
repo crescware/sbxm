@@ -27,11 +27,20 @@
 //! `inspect`はgate配下だけが呼ぶprivate collectorであり、productionから直接公開しない。
 //! `destroy --force`は保護を意図的に迂回する別操作であり、通常経路のremediationには
 //! 案内しない。
+//!
+//! originからの回収可能性は、観測（[`observe_for_mutation`]）と分類
+//! （[`Reachability::classify`]）を分離して求める。`inspect`は1回のfetchで全candidate分の
+//! [`CommitCandidate`]をまとめて[`OriginObservation`]へ観測し、その結果だけから各
+//! candidateの[`Reachability`]を副作用なく決める。origin自体を観測できない場合は
+//! [`UnobservableReason`]が理由を持ち、`Reachability::Unreachable`/`Unobservable`は
+//! どちらも[`Blocker`]として確認を求めずに拒否する。checkout中のbranchだけでなく、
+//! HEAD以外の全ローカル所有ref（branch、tag、notes、stash）にも同じ観測結果を適用する。
 
 mod answered;
 mod assessment;
 mod bare_git_dir_probe;
 mod blocker;
+mod commit_candidate;
 mod confirm_prompt;
 mod confirmable_loss;
 pub mod confirmation;
@@ -40,32 +49,37 @@ pub mod gate;
 mod inspect;
 mod kind;
 mod mode;
-mod origin_recovery_failure;
+mod observe_for_mutation;
+mod origin_observation;
 mod prompt_ui;
 mod protection_confirmation;
 mod protection_fingerprint;
 mod protection_permit;
 mod protection_snapshot;
-mod remote;
+mod reachability;
 mod request;
+mod unobservable_reason;
 mod worktree_report;
 
 use answered::answered;
 pub use assessment::Assessment;
 pub(crate) use bare_git_dir_probe::BARE_GIT_DIR_PROBE;
 pub use blocker::Blocker;
+pub use commit_candidate::CommitCandidate;
 pub use confirm_prompt::ConfirmPrompt;
 pub use confirmable_loss::ConfirmableLoss;
 pub use destructive_operation::DestructiveOperation;
 pub use kind::Kind;
 pub use mode::Mode;
-pub use origin_recovery_failure::OriginRecoveryFailure;
+pub use observe_for_mutation::observe_for_mutation;
+pub use origin_observation::OriginObservation;
 pub use protection_confirmation::ProtectionConfirmation;
 pub use protection_fingerprint::ProtectionFingerprint;
 pub use protection_permit::ProtectionPermit;
 pub use protection_snapshot::ProtectionSnapshot;
-pub use remote::Remote;
+pub use reachability::Reachability;
 pub use request::Request;
+pub use unobservable_reason::UnobservableReason;
 pub use worktree_report::WorktreeReport;
 
 #[cfg(test)]

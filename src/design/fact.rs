@@ -70,14 +70,6 @@ impl Fact {
         )
     }
 
-    /// `Upstream:`。local branchが追跡するupstream ref。
-    pub fn upstream(upstream: &str) -> Fact {
-        Fact::new(
-            Msg::new("diagnostic-upstream-label"),
-            Inline::important(upstream),
-        )
-    }
-
     /// `Count:`。commitなどの件数。
     pub fn count(count: impl std::fmt::Display) -> Fact {
         Fact::new(
@@ -157,6 +149,14 @@ impl Fact {
         Fact::new(
             Msg::new("diagnostic-paths-label"),
             Inline::text(paths.join("\n")),
+        )
+    }
+
+    /// `References:`。複数件の対象Git refを1件の事実としてまとめて示す。
+    pub fn references(references: &[String]) -> Fact {
+        Fact::new(
+            Msg::new("diagnostic-references-label"),
+            Inline::text(references.join("\n")),
         )
     }
 

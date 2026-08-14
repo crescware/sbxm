@@ -9,21 +9,19 @@ use crate::testing::value::COMMIT;
 pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
+    let bare_git_dir = layout.bare_git_dir();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
-    Ok(FakeSbx::listing(&format!(r#"{{"sandboxes":[{}]}}"#, fixture.entry(project, "running")?))
+    Ok(answering_origin_observation(
+        FakeSbx::listing(&format!(r#"{{"sandboxes":[{}]}}"#, fixture.entry(project, "running")?))
         .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         .answering(
-            &format!(
-                "exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {}",
-                layout.bare_git_dir()
-            ),
+            &format!("exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {bare_git_dir}"),
             0,
             "probed",
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {} worktree list --porcelain -z",
-                layout.bare_git_dir()
+                "exec {name} -- git --git-dir {bare_git_dir} worktree list --porcelain -z",
             ),
             0,
             &format!(
@@ -86,15 +84,10 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
         )
         .answering(
             &format!(
-                "exec {name} -- git -C {managed} rev-parse --abbrev-ref --symbolic-full-name @{{upstream}}"
+                "exec {name} -- git -C {managed} rev-parse --symbolic-full-name @{{upstream}}"
             ),
             0,
-            "origin/main\n",
-        )
-        .answering(
-            &format!("exec {name} -- git -C {managed} rev-list --count origin/main..HEAD"),
-            0,
-            "0\n",
+            "refs/remotes/origin/main\n",
         )
         // 進行中のGit操作を示すfileはない。
         .answering(&format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"), 1, "")
@@ -102,5 +95,38 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
         .answering(&format!("exec {name} -- test -e {managed}/.git/REVERT_HEAD"), 1, "")
         .answering(&format!("exec {name} -- test -e {managed}/.git/BISECT_LOG"), 1, "")
         .answering(&format!("exec {name} -- test -e {managed}/.git/rebase-merge"), 1, "")
-        .answering(&format!("exec {name} -- test -e {managed}/.git/rebase-apply"), 1, ""))
+        .answering(&format!("exec {name} -- test -e {managed}/.git/rebase-apply"), 1, ""),
+        name,
+        &bare_git_dir,
+    ))
+}
+
+/// 権威あるorigin観測が、HEADのtipをそのまま持つoriginを見る応答。
+///
+/// checkout中のbranchはそのupstreamから到達できるため、`Reachability::Pushed`になる。
+fn answering_origin_observation(host: FakeSbx, name: &str, bare_git_dir: &str) -> FakeSbx {
+    host.answering(
+        &format!("exec {name} -- git --git-dir {bare_git_dir} config --get remote.origin.url"),
+        0,
+        "https://github.com/example-org/example-repo.git\n",
+    )
+    .answering(
+        &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune --no-tags origin"),
+        0,
+        "",
+    )
+    .answering(
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+        ),
+        0,
+        &format!("refs/remotes/origin/main\t{COMMIT}\n"),
+    )
+    .answering(
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+        ),
+        0,
+        "refs/remotes/origin/main\n",
+    )
 }

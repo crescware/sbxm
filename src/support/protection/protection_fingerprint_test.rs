@@ -2,8 +2,11 @@ use crate::project::SandboxName;
 use crate::testing::outcome::Checked;
 use crate::testing::project::project_id;
 
+use std::collections::BTreeMap;
+
 use super::super::{
-    Assessment, Blocker, ConfirmableLoss, DestructiveOperation, Kind, Mode, Remote, WorktreeReport,
+    Assessment, Blocker, ConfirmableLoss, DestructiveOperation, Kind, Mode, OriginObservation,
+    Reachability, WorktreeReport,
 };
 use super::ProtectionFingerprint;
 
@@ -28,7 +31,16 @@ fn worktree(relative: &str) -> WorktreeReport {
         mode: Mode::Attached,
         head: "abc123".to_string(),
         branch: Some("main".to_string()),
-        remote: Remote::Pushed,
+        reachability: Reachability::Pushed {
+            upstream: "refs/remotes/origin/main".to_string(),
+        },
+    }
+}
+
+fn observed(tip: &str) -> OriginObservation {
+    OriginObservation::Observed {
+        tips: BTreeMap::from([("refs/remotes/origin/main".to_string(), tip.to_string())]),
+        reachable_from: BTreeMap::new(),
     }
 }
 
@@ -44,6 +56,7 @@ fn assessment(
         worktrees,
         blockers,
         confirmable_losses,
+        Some(observed("abc123")),
     ))
 }
 
@@ -114,6 +127,27 @@ fn any_difference_in_the_observed_state_changes_the_fingerprint() -> Checked {
         ProtectionFingerprint::of(&base),
         ProtectionFingerprint::of(&different_head),
         "a commit that moved is a different state"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_change_in_the_origin_observation_alone_changes_the_fingerprint() -> Checked {
+    let base = assessment(vec![worktree("a")], Vec::new(), Vec::new())?;
+    let moved = Assessment::new(
+        DestructiveOperation::Destroy,
+        "example-org/example-repo".to_string(),
+        sandbox()?,
+        vec![worktree("a")],
+        Vec::new(),
+        Vec::new(),
+        Some(observed("def456")),
+    );
+
+    assert_ne!(
+        ProtectionFingerprint::of(&base),
+        ProtectionFingerprint::of(&moved),
+        "origin advancing to a different tip is a different state, even if no worktree changed"
     );
     Ok(())
 }
