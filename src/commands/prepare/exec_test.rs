@@ -21,6 +21,7 @@ fn run_exec(
 ) -> Checked<(ExitCode, String, String)> {
     let context = Context {
         location: &bench.location,
+        workspace_root: bench.workspace_root.path(),
         lang: Some(Locale::En),
         interactivity: Interactivity {
             stdin_is_tty: false,
@@ -38,14 +39,7 @@ fn run_exec(
             Box::new(ScriptedKeys::choosing(0)),
             Box::new(RecordedScreen::new()),
         );
-        super::exec(
-            project,
-            &context,
-            &mut ui,
-            world,
-            &mut prompt,
-            bench.workspace_root.path(),
-        )
+        super::exec(project, &context, &mut ui, world, &mut prompt)
     };
     let printed = String::from_utf8(stdout).required_because("stdout is valid UTF-8")?;
     let printed_err = String::from_utf8(stderr).required_because("stderr is valid UTF-8")?;

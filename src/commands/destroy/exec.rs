@@ -6,7 +6,7 @@
 use crate::command::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
-use crate::support::{inventory, sandbox};
+use crate::support::inventory;
 
 use super::{
     super::{Context, report},
@@ -32,7 +32,7 @@ pub fn exec(
         args.force,
         host,
         prompt,
-        std::path::Path::new(sandbox::WORKSPACE_ROOT),
+        context.workspace_root,
     ) {
         Ok(prepared) => prepared,
         Err(error) => return report(ui, &error),

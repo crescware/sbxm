@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::cli::Interactivity;
 use crate::config::{self, ConfigLocation, ConfigState, GlobalConfig};
 use crate::diagnostics::Result;
@@ -6,6 +8,11 @@ use crate::i18n::{Locale, shell_locale};
 /// command固有でない実行の入力。
 pub struct Context<'a> {
     pub location: &'a ConfigLocation,
+    /// Sandboxのworkspaceを置くhost側のroot。
+    ///
+    /// 実行環境を名指すため、`location`と同じく`main`が選んだものだけを使う。commandが
+    /// 自分で正本の定数へ手を伸ばすと、その経路は実hostのpathでしか動かなくなる。
+    pub workspace_root: &'a Path,
     /// argvが選んだ表示言語。configの`language`より優先する。
     pub lang: Option<Locale>,
     pub interactivity: Interactivity,

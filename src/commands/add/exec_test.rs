@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::commands::Context;
 use crate::commands::add::Args;
 use crate::commands::add::{ask_language, choose_git_identity, choose_language};
@@ -20,6 +22,9 @@ fn home() -> Checked<(tempfile::TempDir, ConfigLocation)> {
     Ok((dir, location))
 }
 
+/// `add`はSandboxのworkspaceを観測しない。読まれた場合に失敗する所在を名前で示す。
+const UNOBSERVED_WORKSPACE_ROOT: &str = "/nonexistent/add-observes-no-workspace";
+
 fn context(
     location: &ConfigLocation,
     lang: Option<Locale>,
@@ -27,6 +32,7 @@ fn context(
 ) -> Context<'_> {
     Context {
         location,
+        workspace_root: Path::new(UNOBSERVED_WORKSPACE_ROOT),
         lang,
         interactivity,
     }

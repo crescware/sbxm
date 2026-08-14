@@ -5,7 +5,7 @@ use crate::design::{PromptUi, Ui};
 use crate::diagnostics::{ExitCode, Result};
 use crate::msg;
 use crate::project::ProjectId;
-use crate::support::{sandbox, select};
+use crate::support::select;
 
 use super::{
     super::{Context, report},
@@ -90,12 +90,7 @@ fn project_scope(
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    match super::project::diagnose(
-        context.location,
-        project,
-        host,
-        std::path::Path::new(sandbox::WORKSPACE_ROOT),
-    ) {
+    match super::project::diagnose(context.location, project, host, context.workspace_root) {
         Ok(status) => print::project(ui, &status),
         Err(error) => report(ui, &error),
     }
