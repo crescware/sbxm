@@ -30,6 +30,7 @@ pub fn run(
     // 対象が決まる前にhostの状態へ触れない。
     let mut locked =
         select::one(location, requested, &msg!("select-prepare-heading"), prompt)?.lock()?;
+    let mut warnings = image::cleanup_stale_archives(&locked.paths)?;
     generation::require_no_rebuild(&locked.metadata)?;
 
     let canonical = locked.metadata.canonical_id().clone();
@@ -37,9 +38,8 @@ pub fn run(
     let project = ProjectId::parse(&locked.metadata.display_id())?;
 
     let layout = SandboxLayout::new(&canonical);
-    let mut warnings = Vec::new();
 
-    if let Some(output) = already_built(
+    if let Some(mut output) = already_built(
         host,
         &locked.paths,
         &name,
@@ -47,6 +47,7 @@ pub fn run(
         &layout,
         workspace_root,
     )? {
+        output.warnings = warnings;
         return Ok(output);
     }
 
@@ -75,8 +76,13 @@ pub fn run(
         progress,
     )?;
     warnings.extend(built.warnings.clone());
-    let archive = image::ensure_archive(host, &locked.paths, &built, &generation, progress)?;
-    let loaded = template::ensure(host, &archive, &built, progress)?;
+    let loaded = if let Some(loaded) = template::existing(host, &built)? {
+        loaded
+    } else {
+        let archive = image::ensure_archive(host, &locked.paths, &built, &generation, progress)?;
+        let outcome = template::ensure(host, archive.path(), &built, progress);
+        archive.cleanup_after(outcome, &mut warnings, progress)?
+    };
 
     let ready = sandbox::ensure(host, &name, &loaded, workspace_root, progress)?;
     if ready.workspace_restored {

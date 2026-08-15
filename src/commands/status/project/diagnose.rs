@@ -7,9 +7,7 @@ use crate::project::ProjectId;
 
 use crate::support::{disk, select};
 
-use crate::commands::status::project::artifacts::{
-    check_archive, check_directory, check_dockerfile, check_image,
-};
+use crate::commands::status::project::artifacts::{check_directory, check_dockerfile, check_image};
 use crate::commands::status::project::inside::{check_inside, check_sandbox};
 
 use super::{ProjectStatus, Value};
@@ -44,12 +42,11 @@ pub fn diagnose(
     // 3. Dockerfileの世代
     check_dockerfile(&paths, &metadata, &mut status);
 
-    // 4-5. image、archive、Sandbox
+    // 4. image、Sandbox
     check_image(host, &name, &metadata, &mut status);
-    check_archive(&paths, &metadata, &mut status);
     let state = check_sandbox(host, &metadata, workspace_root, &mut status);
 
-    // 6-10. Sandbox内部の検査
+    // 5-9. Sandbox内部の検査
     check_inside(host, &name, &metadata, state, &mut status);
 
     // root filesystemの使用量。running中だけ観測のためにcommandを実行する。

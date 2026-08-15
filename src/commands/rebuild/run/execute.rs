@@ -70,7 +70,8 @@ pub fn execute(
         metadata::update(&prepared.locked.paths, &prepared.locked.metadata)?;
     }
 
-    let mut warnings = built.warnings;
+    let mut warnings = std::mem::take(&mut prepared.warnings);
+    warnings.extend(built.warnings);
     if prepared.current != prepared.target {
         // 注意だけを出して終えない。現在のDockerfileを適用する手順まで示す。
         warnings.push(
@@ -170,15 +171,15 @@ fn prepare_generation(
         target,
         progress,
     )?;
+    let mut warnings = Vec::new();
     // 中断した再構築を続ける場合、成功済みの工程はinspectしてskipする。
     let template = if let Some(template) = template::existing(host, &built)? {
         template
     } else {
         let archive = image::ensure_archive(host, paths, &built, target, progress)?;
-        template::ensure(host, &archive, &built, progress)?
+        let outcome = template::ensure(host, archive.path(), &built, progress);
+        archive.cleanup_after(outcome, &mut warnings, progress)?
     };
-    Ok(Generation {
-        template,
-        warnings: built.warnings,
-    })
+    warnings.extend(built.warnings);
+    Ok(Generation { template, warnings })
 }

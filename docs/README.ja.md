@@ -224,8 +224,9 @@ DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
 - requested sizeは作成時にその場で予約される量ではありません。各Sandboxが書き込める
   上限を引き上げるだけで、host上の複数Sandboxの実使用量は引き続きhostの実容量に対して
   合算されます。
-- imageとtemplateのcacheは各Sandboxのroot filesystemとは別にhost容量を消費し、この
-  設定とは独立しています。
+- build済みimageとload済みtemplateは各Sandboxのroot filesystemとは別にhost容量を
+  消費し、この設定とは独立しています。sbxmがその間に書き出すarchiveはloadが終われば
+  消える短命fileであり、積み上がりません。
 
 どちらのcommandを実行する前にも、要求するsizeに対してhostに十分な空き容量があるか
 確認してください。

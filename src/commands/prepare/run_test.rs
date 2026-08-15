@@ -308,6 +308,84 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
 }
 
 #[test]
+fn a_stale_archive_left_by_an_earlier_crash_is_swept_before_building() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    fs::create_dir_all(paths.cache_dir()).required_because("create the cache directory")?;
+    let leftover = paths.cache_dir().join("template-000000000000.tar.tmp");
+    fs::write(&leftover, b"left behind by an earlier crash")
+        .required_because("write a leftover archive")?;
+
+    run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .required_because("prepare still succeeds")?;
+
+    assert!(
+        !leftover.exists(),
+        "a stale archive from an earlier crash is swept while the lock is held"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_already_loaded_template_is_reused_without_exporting_a_new_archive() -> Checked {
+    // Templateが既にある経路では、archiveを作る理由がない。`docker image save`を
+    // 呼ばずに済ませられるかを、中断からの再開に頼らず直接確かめる。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    world.failing("docker image save");
+    bench
+        .build(&world, &request)
+        .refused_because("the run stops before the archive is exported")?;
+    world.nothing_fails();
+
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    let sandbox = SandboxName::derive(request.repository.canonical_id());
+    let image = image::image_name(&sandbox, &stored.provisioning.dockerfile_sha256);
+    // 何らかの理由で、この世代のTemplateは既に存在する。
+    world
+        .templates
+        .borrow_mut()
+        .insert(image, "deadbeef".to_string());
+
+    let mark = world.mark();
+    bench
+        .build(&world, &request)
+        .required_because("the existing template is reused")?;
+
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("image save")),
+        "an archive is not exported when the template already exists: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
 fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
