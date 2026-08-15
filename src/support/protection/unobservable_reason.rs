@@ -2,7 +2,7 @@
 ///
 /// `observe_origin::observe_for_mutation`が使う語彙であり、呼び出し元ごとに別のenumを
 /// 作らない。読み取り専用観測（`observe_read_only`）もこの語彙を共有する。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnobservableReason {
     /// bare repositoryにoriginが設定されていない。
     OriginMissing,

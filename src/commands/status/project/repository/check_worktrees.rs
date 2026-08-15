@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::command::HostEnvironment;
 use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, ErrorId};
@@ -40,13 +42,7 @@ pub fn check_worktrees(
     let (pending, value) =
         collect_pending_worktrees(host, name, layout, metadata, entries, &project, status);
     let observation = observe_candidates(host, name, layout, &pending, status);
-    append_worktree_rows(
-        &project,
-        name.as_str(),
-        pending,
-        observation.as_ref(),
-        status,
-    );
+    append_worktree_rows(&project, pending, observation.as_ref(), status);
     status.push("status-item-worktrees", value);
 }
 
@@ -198,21 +194,51 @@ fn observe_candidates(
     }
 }
 
+/// worktreeごとのRemoteを分類し、原因ごとに1件へ畳んだ観測不能診断をまとめて積む。
+///
+/// `observation`が`None`（`observe_read_only`自体が起動できなかった）場合、その原因は
+/// `observe_candidates`が既にdiagnosticとして積んでいる。ここで同じ原因を
+/// `ReadOnlyDataInsufficient`として再度診断すると、誤った理由の診断がworktreeの数だけ
+/// 重複する。`observation`が`Some`のときだけ、`Reachability::classify`が返す実際の理由で
+/// 集約する。
 fn append_worktree_rows(
     project: &str,
-    sandbox: &str,
     pending: Vec<PendingWorktree>,
     observation: Option<&protection::OriginObservation>,
     status: &mut ProjectStatus,
 ) {
-    for worktree in pending {
-        let remote = remote_for_worktree(
-            project,
-            sandbox,
-            worktree.candidate.as_ref(),
-            observation,
-            status,
-        );
+    let classified: Vec<(PendingWorktree, Reachability)> = pending
+        .into_iter()
+        .map(|worktree| {
+            let remote = classify_worktree(worktree.candidate.as_ref(), observation);
+            (worktree, remote)
+        })
+        .collect();
+
+    if observation.is_some() {
+        let mut unobservable_by_reason: BTreeMap<UnobservableReason, Vec<String>> = BTreeMap::new();
+        for (worktree, remote) in &classified {
+            if let (Some(candidate), Reachability::Unobservable { reason }) =
+                (worktree.candidate.as_ref(), remote)
+            {
+                unobservable_by_reason
+                    .entry(*reason)
+                    .or_default()
+                    .push(candidate.reference().to_string());
+            }
+        }
+        for (reason, references) in unobservable_by_reason {
+            status.diagnostics.push(
+                protection::Blocker::diagnostic_for_unobservable_reachability(
+                    project,
+                    &references,
+                    reason,
+                ),
+            );
+        }
+    }
+
+    for (worktree, remote) in classified {
         status.worktrees.push(WorktreeRow {
             path: worktree.path,
             kind: worktree.kind,
@@ -223,25 +249,19 @@ fn append_worktree_rows(
     }
 }
 
-fn remote_for_worktree(
-    project: &str,
-    sandbox: &str,
+/// `state`列とは違い、`Reachability::Unreachable`は観測に成功した通常の状態であり、
+/// diagnosticにしない。`candidate`が無いworktreeと、observationそのものが得られなかった
+/// worktreeは、どちらも同じ`ReadOnlyDataInsufficient`として表示する。
+fn classify_worktree(
     candidate: Option<&CommitCandidate>,
     observation: Option<&protection::OriginObservation>,
-    status: &mut ProjectStatus,
 ) -> Reachability {
     let Some(candidate) = candidate else {
         return read_only_unobservable();
     };
-    let remote = observation.map_or_else(read_only_unobservable, |observation| {
+    observation.map_or_else(read_only_unobservable, |observation| {
         Reachability::classify(candidate, observation)
-    });
-    if let Some(diagnostic) =
-        protection::Blocker::diagnostic_for_reachability(project, sandbox, candidate, &remote)
-    {
-        status.diagnostics.push(diagnostic);
-    }
-    remote
+    })
 }
 
 /// statusがRemoteを分類するために必要なcandidateを、worktreeの状態とは別に読む。

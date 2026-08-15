@@ -2,7 +2,7 @@ use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
-use super::{CommitCandidate, Reachability, UnobservableReason};
+use super::UnobservableReason;
 
 /// 表示するpathの上限。これを超える件数は総数だけ`Fact::count`で示す。
 ///
@@ -99,51 +99,18 @@ impl Blocker {
         }
     }
 
-    /// `status` の `Remote` 列に対応する利用者向け診断を組み立てる。
-    pub(crate) fn diagnostic_for_reachability(
+    /// `status` の `Remote` 列で観測不能となったcandidateの診断を組み立てる。
+    ///
+    /// `Reachability::Unreachable`はここでは扱わない。`state`列の`dirty`と同じく、
+    /// 観測に成功した通常の状態であり、観測不能ではないため診断にしない。observe不能な
+    /// 原因はrepositoryへの観測1回につき1つであり、影響したcandidateのref名は
+    /// `references`へ1件へ畳んで渡す（`OriginUnobservable`と同じ集約規則）。
+    pub(crate) fn diagnostic_for_unobservable_reachability(
         project: &str,
-        sandbox: &str,
-        candidate: &CommitCandidate,
-        reachability: &Reachability,
-    ) -> Option<Diagnostic> {
-        let facts = |diagnostic: Diagnostic| {
-            diagnostic
-                .fact(Fact::sandbox(sandbox))
-                .fact(Fact::reference(candidate.reference()))
-                .fact(Fact::commit(candidate.commit()))
-        };
-
-        match reachability {
-            Reachability::Pushed { .. } | Reachability::Reachable { .. } => None,
-            Reachability::Unreachable => Some(facts(
-                Diagnostic::new(
-                    ErrorId::OriginCommitUnreachable,
-                    msg!("error-origin-commit-unreachable"),
-                )
-                .remediation(open(project, msg!("remediation-origin-commit-unreachable"))),
-            )),
-            Reachability::Unobservable { reason } => {
-                let diagnostic = match reason {
-                    UnobservableReason::ReadOnlyDataInsufficient => Diagnostic::new(
-                        ErrorId::OriginReadOnlyDataInsufficient,
-                        msg!("error-origin-read-only-data-insufficient"),
-                    )
-                    .fact(Fact::reason(msg!(
-                        "cause-origin-read-only-data-insufficient"
-                    )))
-                    .remediation(
-                        Remediation::text(msg!("remediation-origin-read-only-data-insufficient"))
-                            .try_run(format!("sbxm open {project}")),
-                    ),
-                    other => origin_unobservable_diagnostic(
-                        project,
-                        &[candidate.reference().to_string()],
-                        *other,
-                    ),
-                };
-                Some(facts(diagnostic))
-            }
-        }
+        references: &[String],
+        reason: UnobservableReason,
+    ) -> Diagnostic {
+        origin_unobservable_diagnostic(project, references, reason)
     }
 
     /// 観測不能の診断を、他のblockerと同じ安定順序で保持する。

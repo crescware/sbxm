@@ -34,9 +34,12 @@ pub fn observe_read_only(
 
     let tips = match origin_tips(host, &scope)? {
         Ok(tips) if !tips.is_empty() => tips,
-        Ok(_) | Err(_) => {
-            return Ok(unobservable(UnobservableReason::ReadOnlyDataInsufficient));
-        }
+        // 空のtipsは、fetchしていないためにローカルへ何も無いだけかもしれず、originに
+        // 本当にbranchが無いとは断定できない。読み取り専用観測ではReadOnlyDataInsufficient
+        // へ丸める。一方、advertisementの解釈自体に失敗した場合はデータ不足とは別の
+        // 原因であり、その理由をそのまま伝える。
+        Ok(_) => return Ok(unobservable(UnobservableReason::ReadOnlyDataInsufficient)),
+        Err(reason) => return Ok(unobservable(reason)),
     };
 
     // for-each-ref can list a remote-tracking ref whose object is no longer present in the

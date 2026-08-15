@@ -194,7 +194,7 @@ sbxm rebuild <project-id>
 ```
 
 rebuildはDockerfileの変更有無にかかわらずSandboxを作り直し、元のSandboxの書き込み可能な
-層を失わせます。作業内容を保護するため、dirty file、pushしていないcommit、進行中のGit
+層を失わせます。作業内容を保護するため、dirty file、publishしていないcommit、進行中のGit
 操作、またはunmanaged worktreeがある場合、sbxmは通常のrebuildを拒否します。
 
 cleanなworktreeだけでは見えないrepository単位の状態も検査します。checkoutしていない
@@ -263,7 +263,7 @@ diskの復旧が必要なときは、次の順序で進めてください。
 1. Sandbox内の不要なfileを削除する。空き容量はその場で戻ります。
 2. rebuildで何を破棄するかを確認する。書き込み可能な層の作り直しが必要なら、
    通常の保護付き`rebuild`を実行し、表示されたplanを確認する。
-3. 保護検査が示すLayer Aのblockerをすべて保存または解決してから再実行する。pushしていない
+3. 保護検査が示すLayer Aのblockerをすべて保存または解決してから再実行する。publishしていない
    commit、dirtyまたは未追跡の作業、進行中のGit操作、active session、repository単位のrefも
    含まれます。
 
@@ -317,8 +317,8 @@ sbxm destroy <project-id>
 ```
 
 sbxmは何かを削除する前に、削除するものと残すものを表示します。通常のdestroyでは、
-dirty worktree、pushしていないcommit、repository単位のref、active sbxm sessionを検査します。対話端末
-では、続いてSandbox名の入力を求めます。Sandbox自体の削除では、Docker Sandboxes
+dirty worktree、publishしていないcommit、repository単位のref、active sbxm sessionを
+検査します。対話端末では、続いてSandbox名の入力を求めます。Sandbox自体の削除では、Docker Sandboxes
 自身のruntimeが行うactive-session検査（sbxmが開始していないsession）も尊重します。
 この確認はsbxmが内部で答えるため、利用者に二重には尋ねません。
 
