@@ -8,6 +8,7 @@ use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::COMMIT;
 
 use super::observe_for_mutation;
+use crate::support::protection::observe_read_only;
 use crate::support::protection::{CommitCandidate, OriginObservation, UnobservableReason};
 
 fn sandbox() -> Checked<SandboxName> {
@@ -268,6 +269,127 @@ fn a_contains_failure_that_cat_file_cannot_confirm_is_not_object_missing() -> Ch
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
+    );
+    Ok(())
+}
+
+fn read_only_host(tips: &str, cat_file_exit: i32) -> Checked<FakeSbx> {
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    Ok(FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            ),
+            0,
+            tips,
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} cat-file -e {COMMIT}"),
+            cat_file_exit,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            ),
+            0,
+            "refs/remotes/origin/main\n",
+        ))
+}
+
+#[test]
+fn read_only_observation_reuses_local_refs_without_fetching() -> Checked {
+    let host = read_only_host(&format!("refs/remotes/origin/main\t{COMMIT}\n"), 0)?;
+    let sandbox = sandbox()?;
+    let layout = layout()?;
+
+    let observation = observe_read_only(&host, &sandbox, &layout, &[candidate()])
+        .required_because("local origin refs and objects are enough for a read-only observation")?;
+
+    assert_eq!(
+        observation,
+        OriginObservation::Observed {
+            tips: std::collections::BTreeMap::from([(
+                "refs/remotes/origin/main".to_string(),
+                COMMIT.to_string()
+            )]),
+            reachable_from: std::collections::BTreeMap::from([(
+                COMMIT.to_string(),
+                std::collections::BTreeSet::from(["refs/remotes/origin/main".to_string()])
+            )]),
+        }
+    );
+    assert!(
+        !host.ran("fetch"),
+        "status observation must not refresh origin"
+    );
+    Ok(())
+}
+
+#[test]
+fn read_only_observation_keeps_a_missing_origin_distinct_from_missing_data() -> Checked {
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let host = FakeSbx::listing("[]").answering(
+        &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+        1,
+        "",
+    );
+
+    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
+        .required_because("a missing origin is a distinct read-only observation")?;
+
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::OriginMissing
+        }
+    );
+    assert!(
+        !host.ran("fetch"),
+        "status observation must remain read-only"
+    );
+    Ok(())
+}
+
+#[test]
+fn read_only_observation_does_not_round_missing_local_data_to_unreachable() -> Checked {
+    let host = read_only_host("", 0)?;
+
+    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
+        .required_because("an empty local origin advertisement is insufficient data")?;
+
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::ReadOnlyDataInsufficient
+        }
+    );
+    assert!(
+        !host.ran("fetch"),
+        "status observation must remain read-only"
+    );
+    Ok(())
+}
+
+#[test]
+fn read_only_observation_does_not_call_a_missing_commit_unreachable() -> Checked {
+    let host = read_only_host(&format!("refs/remotes/origin/main\t{COMMIT}\n"), 1)?;
+
+    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
+        .required_because("a missing local object leaves recovery unknown")?;
+
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::ReadOnlyDataInsufficient
+        }
     );
     Ok(())
 }

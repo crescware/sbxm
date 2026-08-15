@@ -2,7 +2,7 @@ use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
-use super::UnobservableReason;
+use super::{CommitCandidate, Reachability, UnobservableReason};
 
 /// 表示するpathの上限。これを超える件数は総数だけ`Fact::count`で示す。
 ///
@@ -95,6 +95,53 @@ impl Blocker {
             .remediation(open(project, msg!("remediation-origin-commit-unreachable"))),
             Blocker::OriginUnobservable { references, reason } => {
                 origin_unobservable_diagnostic(project, references, *reason)
+            }
+        }
+    }
+
+    /// `status` の `Remote` 列に対応する利用者向け診断を組み立てる。
+    pub(crate) fn diagnostic_for_reachability(
+        project: &str,
+        sandbox: &str,
+        candidate: &CommitCandidate,
+        reachability: &Reachability,
+    ) -> Option<Diagnostic> {
+        let facts = |diagnostic: Diagnostic| {
+            diagnostic
+                .fact(Fact::sandbox(sandbox))
+                .fact(Fact::reference(candidate.reference()))
+                .fact(Fact::commit(candidate.commit()))
+        };
+
+        match reachability {
+            Reachability::Pushed { .. } | Reachability::Reachable { .. } => None,
+            Reachability::Unreachable => Some(facts(
+                Diagnostic::new(
+                    ErrorId::OriginCommitUnreachable,
+                    msg!("error-origin-commit-unreachable"),
+                )
+                .remediation(open(project, msg!("remediation-origin-commit-unreachable"))),
+            )),
+            Reachability::Unobservable { reason } => {
+                let diagnostic = match reason {
+                    UnobservableReason::ReadOnlyDataInsufficient => Diagnostic::new(
+                        ErrorId::OriginReadOnlyDataInsufficient,
+                        msg!("error-origin-read-only-data-insufficient"),
+                    )
+                    .fact(Fact::reason(msg!(
+                        "cause-origin-read-only-data-insufficient"
+                    )))
+                    .remediation(
+                        Remediation::text(msg!("remediation-origin-read-only-data-insufficient"))
+                            .try_run(format!("sbxm open {project}")),
+                    ),
+                    other => origin_unobservable_diagnostic(
+                        project,
+                        &[candidate.reference().to_string()],
+                        *other,
+                    ),
+                };
+                Some(facts(diagnostic))
             }
         }
     }
@@ -213,6 +260,12 @@ fn origin_unobservable_diagnostic(
             ErrorId::OriginObjectMissing,
             msg!("error-origin-object-missing"),
             open(project, msg!("remediation-origin-object-missing")),
+        ),
+        UnobservableReason::ReadOnlyDataInsufficient => (
+            ErrorId::OriginReadOnlyDataInsufficient,
+            msg!("error-origin-read-only-data-insufficient"),
+            Remediation::text(msg!("remediation-origin-read-only-data-insufficient"))
+                .try_run(format!("sbxm open {project}")),
         ),
     };
     let shown = &references[..references.len().min(MAX_LISTED_PATHS)];

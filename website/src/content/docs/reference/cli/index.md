@@ -15,7 +15,7 @@ sbxm manages a project from registration through teardown. The command surface i
 | [`ls`](./ls/) | List managed projects and unmanaged sandboxes with their states |
 | [`status`](./status/) | Show host or project status without changing it |
 | [`apply`](./apply/) | Apply declared files or add managed worktrees |
-| [`rebuild`](./rebuild/) | Rebuild a project sandbox from its edited Dockerfile |
+| [`rebuild`](./rebuild/) | Rebuild a project sandbox from its Dockerfile; the old writable layer is lost |
 | [`stop`](./stop/) | Stop one or more project sandboxes without deleting them |
 | [`destroy`](./destroy/) | Destroy a project sandbox and stop managing the project |
 

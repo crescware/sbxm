@@ -208,9 +208,16 @@ file to add tools or system dependencies, then apply it:
 sbxm rebuild <project-id>
 ```
 
-Rebuilding recreates the sandbox. To protect work, sbxm refuses a normal
-rebuild when worktrees contain dirty files, unpushed commits, or unmanaged
-worktrees.
+Rebuilding recreates the sandbox from the Dockerfile whether or not it
+changed. The old sandbox's writable layer is lost. To protect work, sbxm
+refuses a normal rebuild when worktrees contain dirty files, unpublished
+commits, in-progress Git operations, or unmanaged worktrees.
+
+The protection pass also checks repository-level state that a clean worktree
+does not show by itself: local branches kept out of the checkout, tags, notes,
+stash entries, extra remotes, and reflog-only commits. Save or resolve any
+reported Layer A blocker before retrying. `status` keeps the worktree's
+`STATE` and its origin recovery evidence in a separate `REMOTE` column.
 
 ### Choose the sandbox root size
 
@@ -268,6 +275,15 @@ reflects:
   concurrent builds across worktrees, so treat it as an explicit trade-off,
   not a default.
 
+When disk recovery is needed, use this order:
+
+1. Delete unnecessary files inside the sandbox; the space returns immediately.
+2. Inspect what a rebuild would discard. If recreating the writable layer is
+   necessary, run the normal protected `rebuild` flow and review its plan.
+3. Resolve every Layer A blocker shown by the protection checks — including
+   unpublished commits, dirty or untracked work, Git operations, active
+   sessions, and repository-level refs — before retrying.
+
 ### Add managed worktrees
 
 A built project can gain more managed worktrees without a rebuild:
@@ -318,11 +334,12 @@ sbxm destroy <project-id>
 ```
 
 Before deleting anything, sbxm shows what will be removed and what will remain.
-Normal teardown checks for dirty worktrees, unpushed commits, and active
-sbxm sessions. In an interactive terminal, it then asks you to type the sandbox
-name. Removing the sandbox itself also respects Docker Sandboxes' own runtime
-check for anything still attached to it (a session sbxm did not start) —
-sbxm answers that confirmation internally, so you are not asked twice.
+Normal teardown checks for dirty worktrees, unpublished commits, repository-level
+refs, and active sbxm sessions. In an interactive terminal, it then asks you to
+type the sandbox name. Removing the sandbox itself also respects Docker
+Sandboxes' own runtime check for anything still attached to it (a session sbxm
+did not start) — sbxm answers that confirmation internally, so you are not
+asked twice.
 
 The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
 registered for that sandbox are deleted. A registration left behind would make
@@ -373,7 +390,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees |
-| `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its edited Dockerfile |
+| `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its Dockerfile; the old writable layer is lost |
 | `sbxm destroy [<project-id>]` | Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile |
 
 Use `sbxm --help` or `sbxm <command> --help` for the complete CLI reference.

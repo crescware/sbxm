@@ -155,6 +155,7 @@ error_ids! {
     OriginAdvertisementInvalid => "origin-advertisement-invalid",
     OriginObjectMissing => "origin-object-missing",
     OriginObservationUnobservable => "origin-observation-unobservable",
+    OriginReadOnlyDataInsufficient => "origin-read-only-data-insufficient",
 
     // --- sessionのhost lease（#80） ---
     OpenSessionActive => "open-session-active",

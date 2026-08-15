@@ -113,3 +113,17 @@ fn every_state_has_its_own_untranslated_spelling_and_legend() {
         assert_eq!(state.legend_id(), legend);
     }
 }
+
+#[test]
+fn an_unobservable_state_displays_its_reason_without_changing_its_legend() {
+    let state = Reachability::Unobservable {
+        reason: UnobservableReason::ReadOnlyDataInsufficient,
+    };
+
+    assert_eq!(
+        state.display(),
+        "unobservable(read-only-data-insufficient)".to_string()
+    );
+    assert_eq!(state.as_str(), "unobservable");
+    assert_eq!(state.legend_id(), "legend-unobservable");
+}

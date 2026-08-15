@@ -55,6 +55,46 @@ fn help_is_rendered_in_the_selected_language() -> Checked {
     Ok(())
 }
 
+#[test]
+fn rebuild_help_explains_that_recreation_loses_the_writable_layer() -> Checked {
+    for (locale, expected) in [
+        (
+            Locale::En,
+            [
+                "whether or not it changed",
+                "writable layer is lost",
+                "protects work",
+                "asks for confirmation",
+            ],
+        ),
+        (
+            Locale::Ja,
+            [
+                "変更有無にかかわらず",
+                "書き込み可能な層は失われます",
+                "作業を保護し",
+                "確認を求めます",
+            ],
+        ),
+    ] {
+        let catalog = Catalog::new(locale);
+        let outcome = parse(&argv(&["rebuild", "--help"]), &catalog, tty())
+            .required_because("rebuild help renders")?;
+        let Outcome::Help(text) = outcome else {
+            return Err(Unmet::new(format!(
+                "{locale}: rebuild help was not returned"
+            )));
+        };
+        for fragment in expected {
+            assert!(
+                text.contains(fragment),
+                "{locale}: rebuild help does not explain the writable layer: {text}"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// 公開契約をlocaleに依存しない形で書き出す。
 ///
 /// 翻訳文はlocaleごとに変わるため含めない。ここへ現れるのはcommand名、option名、

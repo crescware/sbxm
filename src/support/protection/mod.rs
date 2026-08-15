@@ -28,10 +28,11 @@
 //! `destroy --force`は保護を意図的に迂回する別操作であり、通常経路のremediationには
 //! 案内しない。
 //!
-//! originからの回収可能性は、観測（[`observe_for_mutation`]）と分類
-//! （[`Reachability::classify`]）を分離して求める。`inspect`は1回のfetchで全candidate分の
-//! [`CommitCandidate`]をまとめて[`OriginObservation`]へ観測し、その結果だけから各
-//! candidateの[`Reachability`]を副作用なく決める。origin自体を観測できない場合は
+//! originからの回収可能性は、mutation用のrefresh付き観測（[`observe_for_mutation`]）、
+//! status用のread-only観測（[`observe_read_only`]）と分類（[`Reachability::classify`]）を
+//! 分離して求める。`inspect`は1回のfetchで全candidate分の[`CommitCandidate`]をまとめて
+//! [`OriginObservation`]へ観測し、その結果だけから各candidateの[`Reachability`]を副作用なく
+//! 決める。origin自体を観測できない場合は
 //! [`UnobservableReason`]が理由を持ち、`Reachability::Unreachable`/`Unobservable`は
 //! どちらも[`Blocker`]として確認を求めずに拒否する。checkout中のbranchだけでなく、
 //! HEAD以外の全ローカル所有ref（branch、tag、notes、stash）にも同じ観測結果を適用する。
@@ -50,6 +51,7 @@ mod inspect;
 mod kind;
 mod mode;
 mod observe_for_mutation;
+mod observe_read_only;
 mod origin_observation;
 mod prompt_ui;
 mod protection_confirmation;
@@ -72,6 +74,7 @@ pub use destructive_operation::DestructiveOperation;
 pub use kind::Kind;
 pub use mode::Mode;
 pub use observe_for_mutation::observe_for_mutation;
+pub use observe_read_only::observe_read_only;
 pub use origin_observation::OriginObservation;
 pub use protection_confirmation::ProtectionConfirmation;
 pub use protection_fingerprint::ProtectionFingerprint;

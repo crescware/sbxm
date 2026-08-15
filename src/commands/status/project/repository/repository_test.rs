@@ -5,6 +5,7 @@ use crate::design::Fact;
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 use crate::project::SandboxLayout;
+use crate::support::protection::{Reachability, UnobservableReason};
 
 use crate::testing::outcome::{Checked, Required};
 
@@ -44,17 +45,70 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() -> Checked {
                 kind: "managed",
                 mode: Value::Attached,
                 state: Value::Clean,
+                remote: Reachability::Pushed {
+                    upstream: "refs/remotes/origin/main".to_string(),
+                },
             },
             WorktreeRow {
                 path: "agent-scratch".to_string(),
                 kind: "unmanaged",
                 mode: Value::Detached,
                 state: Value::Dirty,
+                remote: Reachability::Reachable {
+                    origins: vec!["refs/remotes/origin/main".to_string()],
+                },
             },
         ]
     );
     assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Ready);
     assert!(status.diagnostics.is_empty(), "{:?}", status.diagnostics);
+    assert!(!host.ran("fetch"), "status must not refresh origin");
+    Ok(())
+}
+
+#[test]
+fn status_keeps_clean_state_separate_from_an_unobservable_remote() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let tips = format!(
+        "exec {} -- git --git-dir {} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/",
+        project.sandbox,
+        layout.bare_git_dir()
+    );
+    let host =
+        looking_inside(&fixture, &project, &three_entries(&project))?.answering(&tips, 0, "");
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Ready);
+    assert!(status.worktrees.iter().all(|row| {
+        row.state
+            == if row.path == "agent-scratch" {
+                Value::Dirty
+            } else {
+                Value::Clean
+            }
+            && row.remote
+                == (Reachability::Unobservable {
+                    reason: UnobservableReason::ReadOnlyDataInsufficient,
+                })
+    }));
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::OriginReadOnlyDataInsufficient),
+        "the missing local advertisement remains unknown: {:?}",
+        status.diagnostics
+    );
+    assert!(!host.ran("fetch"), "status must not fill the missing data");
     Ok(())
 }
 

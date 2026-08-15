@@ -336,6 +336,9 @@ fn project_status_lists_the_worktrees_it_did_observe() {
         kind: "managed",
         mode: super::status::project::Value::Attached,
         state: super::status::project::Value::Clean,
+        remote: Reachability::Pushed {
+            upstream: "refs/remotes/origin/main".to_string(),
+        },
     }];
     assert_eq!(
         shape(&super::status::print::project_document(

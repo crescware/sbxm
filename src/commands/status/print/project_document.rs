@@ -27,13 +27,17 @@ pub fn project_document(status: &ProjectStatus, locale: Locale) -> Document {
         msg!("column-kind"),
         msg!("column-mode"),
         msg!("column-state"),
+        msg!("column-remote"),
     ]);
     for worktree in &status.worktrees {
+        let remote = worktree.remote.display();
+        legend.add(&remote, worktree.remote.legend_id());
         worktrees.push(vec![
             Inline::path(worktree.path.clone()).into(),
             Inline::text(worktree.kind).into(),
             legend.project_status(worktree.mode).into(),
             legend.project_status(worktree.state).into(),
+            Inline::text(remote).into(),
         ]);
     }
 
