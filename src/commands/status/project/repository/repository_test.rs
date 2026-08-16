@@ -5,12 +5,14 @@ use crate::design::Fact;
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 use crate::project::SandboxLayout;
+use crate::support::protection::{Reachability, UnobservableReason};
 
 use crate::testing::outcome::{Checked, Required};
 
 use super::{super::diagnose, super::fake::*};
 use crate::testing::host::FakeSbx;
 use crate::testing::project::{Fixture, project_id};
+use crate::testing::value::COMMIT;
 
 #[test]
 fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() -> Checked {
@@ -44,17 +46,482 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() -> Checked {
                 kind: "managed",
                 mode: Value::Attached,
                 state: Value::Clean,
+                remote: Reachability::Pushed {
+                    upstream: "refs/remotes/origin/main".to_string(),
+                },
             },
             WorktreeRow {
                 path: "agent-scratch".to_string(),
                 kind: "unmanaged",
                 mode: Value::Detached,
                 state: Value::Dirty,
+                remote: Reachability::Reachable {
+                    origins: vec!["refs/remotes/origin/main".to_string()],
+                },
             },
         ]
     );
     assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Ready);
     assert!(status.diagnostics.is_empty(), "{:?}", status.diagnostics);
+    assert!(!host.ran("fetch"), "status must not refresh origin");
+    Ok(())
+}
+
+#[test]
+fn status_keeps_clean_state_separate_from_an_unobservable_remote() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let tips = format!(
+        "exec {} -- git --git-dir {} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/",
+        project.sandbox,
+        layout.bare_git_dir()
+    );
+    let host =
+        looking_inside(&fixture, &project, &three_entries(&project))?.answering(&tips, 0, "");
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Ready);
+    assert!(status.worktrees.iter().all(|row| {
+        row.state
+            == if row.path == "agent-scratch" {
+                Value::Dirty
+            } else {
+                Value::Clean
+            }
+            && row.remote
+                == (Reachability::Unobservable {
+                    reason: UnobservableReason::ReadOnlyDataInsufficient,
+                })
+    }));
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::OriginReadOnlyDataInsufficient),
+        "the missing local advertisement remains unknown: {:?}",
+        status.diagnostics
+    );
+    assert!(!host.ran("fetch"), "status must not fill the missing data");
+    Ok(())
+}
+
+#[test]
+fn an_unpublished_commit_is_shown_without_failing_status() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let contains = format!(
+        "exec {} -- git --git-dir {} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/",
+        project.sandbox,
+        layout.bare_git_dir()
+    );
+    let host =
+        looking_inside(&fixture, &project, &three_entries(&project))?.answering(&contains, 0, "");
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status
+            .worktrees
+            .iter()
+            .all(|row| row.remote == Reachability::Unreachable),
+        "{:?}",
+        status.worktrees
+    );
+    assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Ready);
+    // 未pushのcommitはdirty worktreeと同じ通常の状態であり、観測に成功している。
+    // statusを失敗終了させない。
+    assert!(
+        status.is_healthy(),
+        "a commit not yet reachable from origin is an observed state, not a failure: {:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
+fn one_shared_observation_failure_produces_one_diagnostic_not_one_per_worktree() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let url = format!(
+        "exec {} -- git --git-dir {} config --get remote.origin.url",
+        project.sandbox,
+        layout.bare_git_dir()
+    );
+    let host = looking_inside(&fixture, &project, &three_entries(&project))?.answering(&url, 1, "");
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status.worktrees.iter().all(|row| row.remote
+            == Reachability::Unobservable {
+                reason: UnobservableReason::OriginMissing
+            }),
+        "{:?}",
+        status.worktrees
+    );
+    let count = status
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.id == ErrorId::OriginMissing)
+        .count();
+    assert_eq!(
+        count, 1,
+        "one repository-level observation failure is one diagnostic, not one per worktree: {:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
+fn a_read_only_observation_that_could_not_launch_is_diagnosed_once_with_its_own_reason() -> Checked
+{
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let url = format!(
+        "exec {} -- git --git-dir {} config --get remote.origin.url",
+        project.sandbox,
+        layout.bare_git_dir()
+    );
+    // `sbx exec`自身が内側のcommandを起動できなかった終了statusは、observe_candidatesが
+    // 一度だけ診断する。ここへ`ReadOnlyDataInsufficient`という別の理由を重ねて積まない。
+    let host =
+        looking_inside(&fixture, &project, &three_entries(&project))?.answering(&url, 126, "");
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert_eq!(
+        status
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.id == ErrorId::OriginObservationUnobservable)
+            .count(),
+        1,
+        "{:?}",
+        status.diagnostics
+    );
+    assert!(
+        !status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::OriginReadOnlyDataInsufficient),
+        "a launch failure must not be reported as insufficient data: {:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
+fn a_head_read_that_answered_empty_is_not_read_as_a_commit() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let head = format!(
+        "exec {} -- git -C {}/example-repo.tree-0 rev-parse HEAD",
+        project.sandbox,
+        layout.bare_root()
+    );
+    let host =
+        looking_inside(&fixture, &project, &three_entries(&project))?.answering(&head, 0, "\n");
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status
+            .worktrees
+            .iter()
+            .any(|row| row.path == "example-repo.tree-0"
+                && row.remote
+                    == (Reachability::Unobservable {
+                        reason: UnobservableReason::ReadOnlyDataInsufficient
+                    })),
+        "{:?}",
+        status.worktrees
+    );
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::OriginReadOnlyDataInsufficient),
+        "{:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
+fn a_head_read_the_host_could_not_launch_is_diagnosed_as_the_hosts_failure() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = UnrunnableCommand {
+        inner: looking_inside(&fixture, &project, &three_entries(&project))?,
+        needle: "example-repo.tree-0 rev-parse HEAD".to_string(),
+    };
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::ExternalCommandTimeout),
+        "the host's own failure is reported as itself: {:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
+fn a_branch_read_that_answered_empty_is_not_read_as_a_commit() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let symbolic_ref = format!(
+        "exec {} -- git -C {}/example-repo.tree-0 symbolic-ref --quiet --short HEAD",
+        project.sandbox,
+        layout.bare_root()
+    );
+    let host = looking_inside(&fixture, &project, &three_entries(&project))?.answering(
+        &symbolic_ref,
+        0,
+        "\n",
+    );
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status
+            .worktrees
+            .iter()
+            .any(|row| row.path == "example-repo.tree-0"
+                && row.remote
+                    == (Reachability::Unobservable {
+                        reason: UnobservableReason::ReadOnlyDataInsufficient
+                    })),
+        "{:?}",
+        status.worktrees
+    );
+    Ok(())
+}
+
+#[test]
+fn a_branch_read_the_host_could_not_launch_is_diagnosed_as_the_hosts_failure() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = UnrunnableCommand {
+        inner: looking_inside(&fixture, &project, &three_entries(&project))?,
+        needle: "symbolic-ref --quiet --short HEAD".to_string(),
+    };
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::ExternalCommandTimeout),
+        "the host's own failure is reported as itself: {:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
+fn an_upstream_read_that_answered_empty_is_not_read_as_configured() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let upstream = format!(
+        "exec {} -- git -C {}/example-repo.tree-0 rev-parse --symbolic-full-name @{{upstream}}",
+        project.sandbox,
+        layout.bare_root()
+    );
+    let host =
+        looking_inside(&fixture, &project, &three_entries(&project))?.answering(&upstream, 0, "\n");
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status
+            .worktrees
+            .iter()
+            .any(|row| row.path == "example-repo.tree-0"
+                && row.remote
+                    == (Reachability::Unobservable {
+                        reason: UnobservableReason::ReadOnlyDataInsufficient
+                    })),
+        "{:?}",
+        status.worktrees
+    );
+    Ok(())
+}
+
+#[test]
+fn a_worktree_without_an_upstream_can_still_be_shown_as_reachable() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let upstream = format!(
+        "exec {} -- git -C {}/example-repo.tree-0 rev-parse --symbolic-full-name @{{upstream}}",
+        project.sandbox,
+        layout.bare_root()
+    );
+    // upstreamが無いことは、そのref自体がoriginから回収できないという意味ではない。
+    // 他のorigin refから到達できればReachableとして示す。
+    let host =
+        looking_inside(&fixture, &project, &three_entries(&project))?.answering(&upstream, 1, "");
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status
+            .worktrees
+            .iter()
+            .any(|row| row.path == "example-repo.tree-0"
+                && row.remote
+                    == Reachability::Reachable {
+                        origins: vec!["refs/remotes/origin/main".to_string()]
+                    }),
+        "{:?}",
+        status.worktrees
+    );
+    assert!(status.is_healthy(), "{:?}", status.diagnostics);
+    Ok(())
+}
+
+#[test]
+fn an_upstream_read_that_answered_oddly_is_not_read_as_configured() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let upstream = format!(
+        "exec {} -- git -C {}/example-repo.tree-0 rev-parse --symbolic-full-name @{{upstream}}",
+        project.sandbox,
+        layout.bare_root()
+    );
+    let host =
+        looking_inside(&fixture, &project, &three_entries(&project))?.answering(&upstream, 126, "");
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status
+            .worktrees
+            .iter()
+            .any(|row| row.path == "example-repo.tree-0"
+                && row.remote
+                    == (Reachability::Unobservable {
+                        reason: UnobservableReason::ReadOnlyDataInsufficient
+                    })),
+        "{:?}",
+        status.worktrees
+    );
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::SandboxCheckUnobservable),
+        "{:?}",
+        status.diagnostics
+    );
+    Ok(())
+}
+
+#[test]
+fn an_upstream_read_the_host_could_not_launch_is_diagnosed_as_the_hosts_failure() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = UnrunnableCommand {
+        inner: looking_inside(&fixture, &project, &three_entries(&project))?,
+        needle: "rev-parse --symbolic-full-name".to_string(),
+    };
+
+    let status = diagnose(
+        &fixture.location,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::ExternalCommandTimeout),
+        "the host's own failure is reported as itself: {:?}",
+        status.diagnostics
+    );
     Ok(())
 }
 

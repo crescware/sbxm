@@ -63,6 +63,16 @@ impl Reachability {
         }
     }
 
+    /// 表示用の安定した値。観測不能な場合は、断定できない理由も値へ残す。
+    pub fn display(&self) -> String {
+        match self {
+            Reachability::Unobservable { reason } => {
+                format!("unobservable({})", reason.as_str())
+            }
+            _ => self.as_str().to_string(),
+        }
+    }
+
     pub fn legend_id(&self) -> &'static str {
         match self {
             Reachability::Pushed { .. } => "legend-pushed",

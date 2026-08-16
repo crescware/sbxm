@@ -99,6 +99,20 @@ impl Blocker {
         }
     }
 
+    /// `status` の `Remote` 列で観測不能となったcandidateの診断を組み立てる。
+    ///
+    /// `Reachability::Unreachable`はここでは扱わない。`state`列の`dirty`と同じく、
+    /// 観測に成功した通常の状態であり、観測不能ではないため診断にしない。observe不能な
+    /// 原因はrepositoryへの観測1回につき1つであり、影響したcandidateのref名は
+    /// `references`へ1件へ畳んで渡す（`OriginUnobservable`と同じ集約規則）。
+    pub(crate) fn diagnostic_for_unobservable_reachability(
+        project: &str,
+        references: &[String],
+        reason: UnobservableReason,
+    ) -> Diagnostic {
+        origin_unobservable_diagnostic(project, references, reason)
+    }
+
     /// 観測不能の診断を、他のblockerと同じ安定順序で保持する。
     pub(super) fn unobservable(diagnostic: Diagnostic) -> Blocker {
         Blocker::Unobservable { diagnostic }
@@ -213,6 +227,12 @@ fn origin_unobservable_diagnostic(
             ErrorId::OriginObjectMissing,
             msg!("error-origin-object-missing"),
             open(project, msg!("remediation-origin-object-missing")),
+        ),
+        UnobservableReason::ReadOnlyDataInsufficient => (
+            ErrorId::OriginReadOnlyDataInsufficient,
+            msg!("error-origin-read-only-data-insufficient"),
+            Remediation::text(msg!("remediation-origin-read-only-data-insufficient"))
+                .try_run(format!("sbxm open {project}")),
         ),
     };
     let shown = &references[..references.len().min(MAX_LISTED_PATHS)];

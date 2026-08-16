@@ -38,4 +38,7 @@ sbxm apply <project-id> --worktrees 4
 
 ## Protection
 
-Before a rebuild or destroy, sbxm checks dirty files, unpushed commits, unmanaged worktrees, and active sessions. Save work and resolve the reported condition before retrying.
+Before a rebuild or destroy, sbxm checks dirty files, unpublished commits,
+repository-level refs, unmanaged worktrees, and active sessions. Save work and
+resolve the reported condition before retrying. A clean worktree does not by
+itself make a rebuild safe.

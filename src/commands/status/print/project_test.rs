@@ -9,6 +9,7 @@ use crate::i18n::Locale;
 
 use crate::compatibility::RootDiskUsage;
 use crate::support::disk::DiskObservation;
+use crate::support::protection::{Reachability, UnobservableReason};
 
 use crate::commands::status::project::{Item, Value, WorktreeRow};
 
@@ -49,6 +50,9 @@ fn healthy() -> ProjectStatus {
             kind: "managed",
             mode: Value::Attached,
             state: Value::Clean,
+            remote: Reachability::Pushed {
+                upstream: "refs/remotes/origin/main".to_string(),
+            },
         }],
         disk: DiskObservation::Observed(RootDiskUsage {
             free_kib: 4_898_320,
@@ -84,6 +88,52 @@ fn a_project_without_a_problem_succeeds_and_leaves_stderr_untouched() -> Checked
         "{:?}",
         printed.stdout
     );
+    assert!(printed.stdout.contains("REMOTE"), "{:?}", printed.stdout);
+    assert!(printed.stdout.contains("pushed"), "{:?}", printed.stdout);
+    Ok(())
+}
+
+#[test]
+fn every_remote_state_is_printed_separately_from_worktree_state() -> Checked {
+    let remotes = [
+        Reachability::Pushed {
+            upstream: "refs/remotes/origin/main".to_string(),
+        },
+        Reachability::Reachable {
+            origins: vec!["refs/remotes/origin/release".to_string()],
+        },
+        Reachability::Unreachable,
+        Reachability::Unobservable {
+            reason: UnobservableReason::ReadOnlyDataInsufficient,
+        },
+    ];
+    let mut status = healthy();
+    status.worktrees = remotes
+        .into_iter()
+        .enumerate()
+        .map(|(index, remote)| WorktreeRow {
+            path: format!("worktree-{index}"),
+            kind: "managed",
+            mode: Value::Attached,
+            state: Value::Clean,
+            remote,
+        })
+        .collect();
+
+    let printed = print(&status)?;
+
+    for value in [
+        "pushed",
+        "reachable",
+        "unreachable",
+        "unobservable(read-only-data-insufficient)",
+    ] {
+        assert!(
+            printed.stdout.contains(value),
+            "{value}: {:?}",
+            printed.stdout
+        );
+    }
     Ok(())
 }
 

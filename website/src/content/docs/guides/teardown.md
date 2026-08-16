@@ -9,7 +9,7 @@ Destroy removes the sandbox and ends sbxm management for a project:
 sbxm destroy <project-id>
 ```
 
-Before deleting anything, sbxm shows what will be removed and what remains. It checks dirty worktrees, unpushed commits, active sessions, and other conditions that could make data disappear unexpectedly.
+Before deleting anything, sbxm shows what will be removed and what remains. It checks dirty worktrees, unpublished commits, repository-level refs, active sessions, and other conditions that could make data disappear unexpectedly.
 
 ## Removed
 

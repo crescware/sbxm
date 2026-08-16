@@ -193,8 +193,14 @@ system dependencyを追加するにはこのファイルを編集し、変更を
 sbxm rebuild <project-id>
 ```
 
-rebuildはSandboxを作り直します。作業内容を保護するため、dirty file、pushしていない
-commit、またはunmanaged worktreeがある場合、sbxmは通常のrebuildを拒否します。
+rebuildはDockerfileの変更有無にかかわらずSandboxを作り直し、元のSandboxの書き込み可能な
+層を失わせます。作業内容を保護するため、dirty file、publishしていないcommit、進行中のGit
+操作、またはunmanaged worktreeがある場合、sbxmは通常のrebuildを拒否します。
+
+cleanなworktreeだけでは見えないrepository単位の状態も検査します。checkoutしていない
+local branch、tag、note、stash、追加remote、reflogだけに残るcommitも対象です。表示された
+Layer Aのblockerを保存または解決してから、もう一度実行してください。`status`ではworktreeの
+`STATE`とoriginからの回収根拠を、別の`REMOTE`列に表示します。
 
 拒否しない場合も、作り直しで何が失われるかを先に表示します。無視対象のpath、
 checkoutしていないbranchやtagの名前、追加remote、reflogにだけ残るcommit、Sandboxの
@@ -252,6 +258,15 @@ sectionを表示します。この数値が何を反映しているかを理解�
   本来は並行にできるworktreeごとのbuildが直列化されるため、既定にはせず明示的な
   trade-offとして選んでください。
 
+diskの復旧が必要なときは、次の順序で進めてください。
+
+1. Sandbox内の不要なfileを削除する。空き容量はその場で戻ります。
+2. rebuildで何を破棄するかを確認する。書き込み可能な層の作り直しが必要なら、
+   通常の保護付き`rebuild`を実行し、表示されたplanを確認する。
+3. 保護検査が示すLayer Aのblockerをすべて保存または解決してから再実行する。publishしていない
+   commit、dirtyまたは未追跡の作業、進行中のGit操作、active session、repository単位のrefも
+   含まれます。
+
 ### managed worktreeを追加する
 
 構築済みのプロジェクトには、rebuildせずにmanaged worktreeを追加できます。
@@ -302,8 +317,8 @@ sbxm destroy <project-id>
 ```
 
 sbxmは何かを削除する前に、削除するものと残すものを表示します。通常のdestroyでは、
-dirty worktree、pushしていないcommit、active sbxm sessionを検査します。対話端末
-では、続いてSandbox名の入力を求めます。Sandbox自体の削除では、Docker Sandboxes
+dirty worktree、publishしていないcommit、repository単位のref、active sbxm sessionを
+検査します。対話端末では、続いてSandbox名の入力を求めます。Sandbox自体の削除では、Docker Sandboxes
 自身のruntimeが行うactive-session検査（sbxmが開始していないsession）も尊重します。
 この確認はsbxmが内部で答えるため、利用者に二重には尋ねません。
 
@@ -350,7 +365,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
-| `sbxm rebuild [<project-id>]` | 編集したDockerfileから案件のSandboxを再構築する |
+| `sbxm rebuild [<project-id>]` | Dockerfileから案件のSandboxを作り直す（元の書き込み可能な層は失われる） |
 | `sbxm destroy [<project-id>]` | Sandboxを破棄して案件を管理対象から外し、host cloneとDockerfileは残す |
 
 完全なCLI referenceは、`sbxm --help`または`sbxm <command> --help`で確認できます。
