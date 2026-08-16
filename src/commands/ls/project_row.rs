@@ -1,4 +1,4 @@
-use crate::support::inventory::{Observed, WorkspaceState};
+use super::ListState;
 
 /// 一覧の1行。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -7,7 +7,6 @@ pub struct ProjectRow {
     /// registryが指すhost project root。
     pub root: String,
     pub sandbox: String,
-    pub observed: Observed,
-    /// 中立workspace directoryの実在。`observed`が示すruntime stateとは別の事実である。
-    pub workspace: WorkspaceState,
+    /// runtimeとhostの観測結果から、利用者が次に取る行動へ写した状態。
+    pub state: ListState,
 }

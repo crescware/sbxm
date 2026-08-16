@@ -1,3 +1,4 @@
+use crate::commands::ls::ListState;
 use crate::commands::status::project::Value as ProjectValue;
 use crate::commands::stop::StopResult;
 use crate::compatibility::SandboxState;
@@ -5,7 +6,7 @@ use crate::design::{Inline, VisualState};
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::support::files::Placement;
-use crate::support::inventory::{Observed, ProjectState, WorkspaceState};
+use crate::support::inventory::{Observed, ProjectState};
 use crate::support::status::StatusValue;
 
 use crate::testing::outcome::{Checked, Required};
@@ -173,15 +174,14 @@ fn a_sandbox_that_exists_but_is_not_running_is_not_a_finished_state() {
 
 #[test]
 fn a_project_whose_sandbox_is_not_running_is_not_settled() {
-    // 一覧のrunningだけが手を入れずに使える状態である。停止中も未作成も、
-    // 作業を始めるには何かをしなければならない。
+    // `ls`のstoppedはopenが起動するため、runningと同じく事前操作を要求しない。
     assert_eq!(
-        project_state(ProjectState::Running),
+        ListState::Running.render(),
         Inline::state("running", VisualState::Positive)
     );
-    for state in [ProjectState::Stopped, ProjectState::NotCreated] {
+    for state in [ListState::Stopped, ListState::NotCreated] {
         assert_eq!(
-            project_state(state),
+            state.render(),
             Inline::state(state.as_str(), VisualState::Attention),
             "{} is not a settled state",
             state.as_str()
@@ -190,49 +190,62 @@ fn a_project_whose_sandbox_is_not_running_is_not_settled() {
 }
 
 #[test]
-fn a_workspace_that_is_gone_is_a_missing_start_up_condition_and_not_a_lost_artifact() {
-    // 中立workspaceは空のmount点である。消えていても案件の成果物は失われていないため、
-    // registryとの食い違いと同じ失敗としては示さない。
+fn ls_uses_one_state_to_show_that_open_is_blocked() {
     assert_eq!(
-        workspace_state(WorkspaceState::Ready),
-        Inline::state("ready", VisualState::Positive)
+        ListState::Running.render(),
+        Inline::state("running", VisualState::Positive)
     );
-    for state in [WorkspaceState::Missing, WorkspaceState::NotObserved] {
-        assert_eq!(
-            workspace_state(state),
-            Inline::state(state.as_str(), VisualState::Attention),
-            "{} needs attention rather than reading as a failure",
-            state.as_str()
-        );
-    }
-    // 見に行く対象が無いことは、良し悪しではない。
     assert_eq!(
-        workspace_state(WorkspaceState::NotApplicable),
-        Inline::state("not-applicable", VisualState::Neutral)
+        ListState::Stopped.render(),
+        Inline::state("stopped", VisualState::Attention)
+    );
+    assert_eq!(
+        ListState::OpenBlocked.render(),
+        Inline::state("open-blocked", VisualState::Attention)
     );
 }
 
 #[test]
-fn every_workspace_state_is_explained_by_a_legend_the_catalog_can_render() -> Checked {
-    // `ls`のWORKSPACE列は`status`の`status-item-workspace`と同じ語彙で示す。翻訳先で
-    // 読めるのは凡例だけであり、説明の無い値は残せない。
+fn ls_open_blocked_has_a_legend() -> Checked {
     let catalog = crate::i18n::Catalog::new(Locale::Ja);
-    for state in [
-        WorkspaceState::Ready,
-        WorkspaceState::Missing,
-        WorkspaceState::NotObserved,
-        WorkspaceState::NotApplicable,
-    ] {
-        let description = catalog
-            .text(state.legend_id())
-            .required_because(&format!("{} has a legend", state.as_str()))?;
-        assert!(
-            !description.is_empty(),
-            "{} has an empty legend",
-            state.as_str()
-        );
-    }
+    let description = catalog
+        .text(ListState::OpenBlocked.legend_id())
+        .required_because("open-blocked has a legend")?;
+    assert!(!description.is_empty());
     Ok(())
+}
+
+#[test]
+fn every_ls_state_has_a_stable_name_and_legend() {
+    for state in [
+        ListState::Missing,
+        ListState::Incomplete,
+        ListState::Inconsistent,
+        ListState::Running,
+        ListState::Stopped,
+        ListState::OpenBlocked,
+        ListState::NotObserved,
+        ListState::NotCreated,
+    ] {
+        assert!(!state.as_str().is_empty());
+        assert!(!state.legend_id().is_empty());
+    }
+}
+
+#[test]
+fn ls_renders_observation_states_with_their_existing_severity() {
+    assert_eq!(
+        ListState::Missing.render(),
+        Inline::state("missing", VisualState::Negative)
+    );
+    assert_eq!(
+        ListState::Incomplete.render(),
+        Inline::state("incomplete", VisualState::Attention)
+    );
+    assert_eq!(
+        ListState::Inconsistent.render(),
+        Inline::state("inconsistent", VisualState::Negative)
+    );
 }
 
 #[test]

@@ -8,6 +8,7 @@ pub mod run;
 mod spec;
 mod unmanaged_row;
 
+pub use crate::commands::present::ListState;
 pub use exec::exec;
 pub use listing::Listing;
 pub use project_row::ProjectRow;

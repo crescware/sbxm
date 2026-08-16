@@ -538,7 +538,8 @@ legend-incomplete = registered, but its project metadata has not been created ye
 legend-inconsistent = the project directory does not hold what the registry says it does
 legend-not-created = the project is registered, but its sandbox does not exist yet
 legend-sandbox-running = the sandbox is running
-legend-sandbox-stopped = the sandbox exists but is not running
+legend-sandbox-stopped = the sandbox exists but is not running; opening it starts the sandbox
+legend-open-blocked = opening is blocked until a prior recovery action is completed
 legend-running = the service is running
 legend-stopped = the service is installed but not running
 

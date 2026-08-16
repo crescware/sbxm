@@ -180,24 +180,18 @@ fn one_project_is_resolved_without_the_rest_of_the_listing_being_sound() -> Chec
 }
 
 #[test]
-fn observed_states_keep_their_spelling_legend_and_settled_meaning() {
-    for (observed, spelling, legend) in [
-        (Observed::Missing, "missing", "legend-missing"),
-        (Observed::Incomplete, "incomplete", "legend-incomplete"),
-        (
-            Observed::Inconsistent,
-            "inconsistent",
-            "legend-inconsistent",
-        ),
+fn observed_states_keep_their_spelling_and_settled_meaning() {
+    for (observed, spelling) in [
+        (Observed::Missing, "missing"),
+        (Observed::Incomplete, "incomplete"),
+        (Observed::Inconsistent, "inconsistent"),
     ] {
         assert_eq!(observed.as_str(), spelling);
-        assert_eq!(observed.legend_id(), legend);
         assert!(!observed.is_settled());
     }
 
     let registered = Observed::Registered(ProjectState::Running);
     assert_eq!(registered.as_str(), "running");
-    assert_eq!(registered.legend_id(), "legend-sandbox-running");
     assert!(registered.is_settled());
 }
 

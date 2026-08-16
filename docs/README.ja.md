@@ -172,6 +172,10 @@ sbxm stop <project-id>
 sbxm stop <project-id> ...
 ```
 
+`STATE`は`sbxm open`をそのまま実行できるかを示します。`stopped`は開くと
+Sandboxが起動し、`open-blocked`は先に復旧が必要です。理由は
+`sbxm status <project-id>`で確認できます。
+
 対話端末で実行した場合、`prepare`、`apply`、`rebuild`、`open`、`stop`、`destroy`、
 `status`はプロジェクト引数を省略すると対象を選択するpromptを表示できます。
 `status`では先頭に`global`を表示し、その後へ登録済みproject IDを並べます。

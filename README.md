@@ -190,6 +190,11 @@ sbxm stop <project-id>
 sbxm stop <project-id> ...
 ```
 
+The `STATE` column answers whether `sbxm open` can proceed directly: `stopped`
+means opening starts the sandbox, while `open-blocked` means a startup
+prerequisite needs recovery first. Use `sbxm status <project-id>` for the
+reason.
+
 When run in an interactive terminal, `prepare`, `apply`, `rebuild`, `open`,
 `stop`, `destroy`, and `status` can prompt you to select a target if the
 project argument is omitted. For `status`, the first choice is `global`,

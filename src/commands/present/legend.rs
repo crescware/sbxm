@@ -7,15 +7,13 @@ use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::Placement;
-use crate::support::inventory::{Observed, WorkspaceState};
 use crate::support::status::StatusValue;
 
 use crate::commands::status::project::Value as ProjectValue;
 use crate::commands::stop::StopResult;
 
 use super::{
-    creation_mode, global_status, observed, placement, project_status, sandbox_state, stop_result,
-    workspace_state,
+    ListState, creation_mode, global_status, placement, project_status, sandbox_state, stop_result,
 };
 
 /// Sandboxの状態を説明するmessage ID。host serviceの説明を流用しない。
@@ -76,12 +74,8 @@ impl Legend {
         self.cell(project_status(value), value.legend_id())
     }
 
-    pub fn observed(&mut self, value: &Observed) -> Inline {
-        self.cell(observed(value), value.legend_id())
-    }
-
-    pub fn workspace_state(&mut self, state: WorkspaceState) -> Inline {
-        self.cell(workspace_state(state), state.legend_id())
+    pub fn list_state(&mut self, value: ListState) -> Inline {
+        self.cell(value.render(), value.legend_id())
     }
 
     pub fn sandbox_state(&mut self, state: SandboxState) -> Inline {

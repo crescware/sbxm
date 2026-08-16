@@ -538,7 +538,8 @@ legend-incomplete = 登録済みだが、案件metadataがまだ作られてい�
 legend-inconsistent = 案件directoryの内容がregistryの宣言と一致しない
 legend-not-created = 案件は登録済みですが、Sandboxはまだ存在しません
 legend-sandbox-running = Sandboxが起動しています
-legend-sandbox-stopped = Sandboxはありますが起動していません
+legend-sandbox-stopped = Sandboxはありますが起動していません。開くと起動します
+legend-open-blocked = 開く操作は、先に復旧を完了するまで進められません
 legend-running = serviceが起動しています
 legend-stopped = serviceは導入済みですが起動していません
 

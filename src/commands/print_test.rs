@@ -8,6 +8,7 @@ use crate::testing::plain;
 
 use std::path::PathBuf;
 
+use crate::commands::ls::ListState;
 use crate::compatibility::SandboxState;
 use crate::design::{Block, SectionBody};
 use crate::design::{Document, Inline, VisualState};
@@ -16,7 +17,7 @@ use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::{PlacedFile, Placement};
-use crate::support::inventory::{Observed, ProjectState, WorkspaceState};
+use crate::support::inventory::ProjectState;
 use crate::support::protection::{ConfirmableLoss, Kind, Mode, Reachability, WorktreeReport};
 use crate::support::status::{Row, StatusValue};
 
@@ -210,8 +211,7 @@ fn listing() -> super::ls::Listing {
             project: "owner/repo".to_string(),
             root: "/home/user/Projects/repo.project".to_string(),
             sandbox: "owner-repo".to_string(),
-            observed: Observed::Registered(ProjectState::Running),
-            workspace: WorkspaceState::Ready,
+            state: ListState::Running,
         }],
         unmanaged: Vec::new(),
         settled: true,
@@ -235,6 +235,32 @@ fn ls_shows_the_unmanaged_section_only_when_there_is_one() {
         shape(&super::ls::print::document(&with_unmanaged, Locale::En)),
         vec!["table", "table"]
     );
+}
+
+#[test]
+fn ls_keeps_managed_projects_to_one_state_column() -> Checked {
+    let document = super::ls::print::document(&listing(), Locale::En);
+    let Block::Section(section) = &document.blocks()[0] else {
+        return Err(Unmet::new("the managed projects table".to_string()));
+    };
+    let SectionBody::Table(table) = &section.body else {
+        return Err(Unmet::new("the managed projects table".to_string()));
+    };
+    assert_eq!(
+        table
+            .headers()
+            .iter()
+            .map(|header| header.id)
+            .collect::<Vec<_>>(),
+        vec![
+            "column-project",
+            "column-project-root",
+            "column-sandbox",
+            "column-state",
+        ]
+    );
+    assert_eq!(table.rows()[0].len(), 4);
+    Ok(())
 }
 
 #[test]

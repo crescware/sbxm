@@ -520,8 +520,8 @@ fn ls_exits_with_zero_when_every_registered_project_is_settled() -> Checked {
     let listed = row(&run.stdout, PROJECT)?;
     assert!(listed.contains(&sandbox), "{listed}");
     assert!(listed.contains("not-created"), "{listed}");
-    // Sandboxのrecordが無い案件には、実在を問うmount元も無い。
-    assert!(listed.contains("not-applicable"), "{listed}");
+    // 管理案件の一覧は、workspaceを別列へ展開せずSTATEだけを示す。
+    assert!(!listed.contains("not-applicable"), "{listed}");
 
     // 管理外のSandboxは、sbxmの管理状態ではなくruntimeが返した原値で並べる。
     let unmanaged = row(&run.stdout, "sbxm-elsewhere")?;
@@ -554,7 +554,7 @@ fn ls_shows_what_it_observed_and_still_fails_when_a_project_is_not_settled() -> 
 }
 
 #[test]
-fn ls_separates_a_sandbox_that_is_stopped_from_one_that_cannot_start() -> Checked {
+fn ls_reports_open_blocked_for_a_stopped_sandbox_that_cannot_start() -> Checked {
     let host = Host::new()?;
     let sandbox = host.registered()?;
     // recordはmount元のdirectoryを指しているが、hostにそのdirectoryは無い。workspace
@@ -570,14 +570,12 @@ fn ls_separates_a_sandbox_that_is_stopped_from_one_that_cannot_start() -> Checke
 
     let run = host.run(&["--lang", "en", "ls"])?;
 
-    // 実在の欠落は状態として示す。1案件の欠落で一覧を失わせない。
+    // openをそのまま進められない結論だけをSTATEへまとめる。
     assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
     let listed = row(&run.stdout, PROJECT)?;
-    assert!(listed.contains("stopped"), "{listed}");
-    assert!(
-        listed.contains("missing"),
-        "the workspace is reported as absent rather than folded into the state: {listed}"
-    );
+    assert!(listed.contains("open-blocked"), "{listed}");
+    assert!(!listed.contains("stopped"), "{listed}");
+    assert!(!listed.contains("missing"), "{listed}");
     Ok(())
 }
 
