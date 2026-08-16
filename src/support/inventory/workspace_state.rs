@@ -16,25 +16,3 @@ pub enum WorkspaceState {
     /// 対応するSandboxのrecordが無く、mount元として宣言されたdirectoryが無い。
     NotApplicable,
 }
-
-impl WorkspaceState {
-    /// 翻訳しない安定した表記。
-    pub fn as_str(self) -> &'static str {
-        match self {
-            WorkspaceState::Ready => "ready",
-            WorkspaceState::Missing => "missing",
-            WorkspaceState::NotObserved => "not-observed",
-            WorkspaceState::NotApplicable => "not-applicable",
-        }
-    }
-
-    /// 凡例に使うFTL message ID。
-    pub fn legend_id(self) -> &'static str {
-        match self {
-            WorkspaceState::Ready => "legend-ready",
-            WorkspaceState::Missing => "legend-missing",
-            WorkspaceState::NotObserved => "legend-not-observed",
-            WorkspaceState::NotApplicable => "legend-not-applicable",
-        }
-    }
-}

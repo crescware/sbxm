@@ -35,7 +35,7 @@ The path is derived from the project ID alone, so it carries neither the project
 
 The runtime records this path when the sandbox is created, and it refuses to start a sandbox whose recorded directory is no longer on the host. This host-side `/tmp` path is volatile: it can disappear after a reboot, OS cleanup, or other external/manual removal while the sandbox record remains. It is separate from the sandbox's own `/tmp`, which is inside the writable layer and is lost when that layer is recreated.
 
-That is a missing start-up condition rather than lost data. `sbxm ls` reports it in the `WORKSPACE` column, and `sbxm status <project-id>` reports it as the `workspace` item; both use `missing` for a directory observed to be absent. Preparing the project again creates the directory and says that it did.
+That is a missing start-up condition rather than lost data. `sbxm ls` reports the affected stopped project as `open-blocked`, and `sbxm status <project-id>` reports the directory as the `workspace` item with value `missing`. The status or open diagnostic gives the recovery action; the list does not expose the host directory as a separate column.
 
 A running sandbox can lose the same directory the same way, without being stopped first. The runtime does not refuse an existing session's commands just because the host-side source of a live mount vanished, and a command that then fails reports the same exit status whether the sandbox holds a repository or the directory is simply gone. Because of that, `sbxm destroy` and `sbxm rebuild` confirm the directory is on the host before trusting anything a running sandbox reports about what is inside it, and refuse rather than guess when it is not.
 

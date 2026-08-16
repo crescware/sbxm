@@ -27,16 +27,6 @@ impl Observed {
         }
     }
 
-    /// 凡例に使うFTL message ID。
-    pub fn legend_id(&self) -> &'static str {
-        match self {
-            Observed::Missing => "legend-missing",
-            Observed::Incomplete => "legend-incomplete",
-            Observed::Inconsistent => "legend-inconsistent",
-            Observed::Registered(state) => state.legend_id(),
-        }
-    }
-
     /// 登録が完了し、成果物がentryと一致しているか。
     pub fn is_settled(&self) -> bool {
         matches!(self, Observed::Registered(_))

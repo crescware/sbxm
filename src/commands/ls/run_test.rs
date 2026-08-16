@@ -1,12 +1,10 @@
-use crate::commands::ls::{ProjectRow, UnmanagedRow};
-use crate::support::inventory::{Observed, WorkspaceState};
+use crate::commands::ls::{ListState, ProjectRow, UnmanagedRow};
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::diagnostics::ErrorId;
 use crate::paths::display;
-use crate::support::inventory::ProjectState;
 use crate::testing::host::FakeSbx;
 use crate::testing::project::{Fixture, ssh_repository};
 
@@ -30,15 +28,13 @@ fn managed_projects_and_unmanaged_sandboxes_are_listed_separately() -> Checked {
                 project: "Example-Org/Example-Repo".to_string(),
                 root: display(first.paths.root()),
                 sandbox: first.sandbox.as_str().to_string(),
-                observed: Observed::Registered(ProjectState::Running),
-                workspace: WorkspaceState::Ready,
+                state: ListState::Running,
             },
             ProjectRow {
                 project: "other/repo".to_string(),
                 root: display(second.paths.root()),
                 sandbox: second.sandbox.as_str().to_string(),
-                observed: Observed::Registered(ProjectState::Stopped),
-                workspace: WorkspaceState::Ready,
+                state: ListState::Stopped,
             },
         ]
     );
@@ -91,10 +87,7 @@ fn a_project_without_a_sandbox_is_listed_as_not_created() -> Checked {
         &fixture.workspace_root,
     )
     .required_because("list")?;
-    assert_eq!(
-        listing.projects[0].observed,
-        Observed::Registered(ProjectState::NotCreated)
-    );
+    assert_eq!(listing.projects[0].state, ListState::NotCreated);
     assert!(listing.settled);
     Ok(())
 }
@@ -119,7 +112,7 @@ fn an_entry_whose_artifacts_are_not_there_is_shown_rather_than_dropped() -> Chec
         listing
             .projects
             .iter()
-            .map(|row| (row.project.as_str(), row.observed.as_str()))
+            .map(|row| (row.project.as_str(), row.state.as_str()))
             .collect::<Vec<_>>(),
         vec![
             ("example-org/gone", "missing"),
@@ -170,7 +163,7 @@ fn a_project_directory_that_names_another_project_is_inconsistent() -> Checked {
         .iter()
         .find(|row| row.project == "example-org/other")
         .required_because("the entry is shown rather than dropped")?;
-    assert_eq!(row.observed.as_str(), "inconsistent");
+    assert_eq!(row.state.as_str(), "inconsistent");
     assert!(!listing.settled);
     Ok(())
 }
@@ -205,7 +198,7 @@ fn a_listing_that_cannot_be_trusted_produces_no_rows() -> Checked {
 }
 
 #[test]
-fn a_project_whose_workspace_is_gone_is_shown_as_missing_rather_than_stopped_alone() -> Checked {
+fn a_stopped_project_whose_workspace_is_gone_is_shown_as_open_blocked() -> Checked {
     let fixture = Fixture::new()?;
     let running = fixture.register("example-org/running")?;
     let stopped = fixture.register("example-org/stopped")?;
@@ -222,15 +215,32 @@ fn a_project_whose_workspace_is_gone_is_shown_as_missing_rather_than_stopped_alo
         listing
             .projects
             .iter()
-            .map(|row| (row.observed.as_str(), row.workspace.as_str()))
+            .map(|row| row.state.as_str())
             .collect::<Vec<_>>(),
-        vec![("running", "ready"), ("stopped", "missing")],
-        "the runtime state and the workspace are shown as separate facts"
+        vec!["running", "open-blocked"],
+        "the listing shows whether open can proceed directly"
     );
     assert!(
         listing.settled,
         "a missing start-up condition is not a mismatch between the registry and its artifacts"
     );
+    Ok(())
+}
+
+#[test]
+fn a_running_project_is_not_blocked_by_a_missing_workspace() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/running")?;
+    let listing = run(
+        &fixture.location,
+        &FakeSbx::listing(&format!(
+            r#"{{"sandboxes":[{}]}}"#,
+            fixture.declared_entry(&project, "running")
+        )),
+        &fixture.workspace_root,
+    )
+    .required_because("list")?;
+    assert_eq!(listing.projects[0].state, ListState::Running);
     Ok(())
 }
 
@@ -246,7 +256,7 @@ fn a_workspace_that_cannot_be_observed_is_not_reported_as_absent() -> Checked {
 
     let listing =
         run(&fixture.location, &host, &fixture.workspace_root).required_because("list")?;
-    assert_eq!(listing.projects[0].workspace, WorkspaceState::NotObserved);
+    assert_eq!(listing.projects[0].state, ListState::NotObserved);
     Ok(())
 }
 
@@ -260,7 +270,7 @@ fn a_project_without_a_sandbox_has_no_workspace_to_ask_about() -> Checked {
         &fixture.workspace_root,
     )
     .required_because("list")?;
-    assert_eq!(listing.projects[0].workspace, WorkspaceState::NotApplicable);
+    assert_eq!(listing.projects[0].state, ListState::NotCreated);
     Ok(())
 }
 
@@ -279,7 +289,6 @@ fn an_entry_that_needs_recovery_is_not_asked_about_its_workspace() -> Checked {
         &fixture.workspace_root,
     )
     .required_because("list")?;
-    assert_eq!(listing.projects[0].observed.as_str(), "missing");
-    assert_eq!(listing.projects[0].workspace, WorkspaceState::NotApplicable);
+    assert_eq!(listing.projects[0].state.as_str(), "missing");
     Ok(())
 }

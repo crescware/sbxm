@@ -6,7 +6,7 @@ use crate::diagnostics::Result;
 
 use crate::support::inventory::{self};
 
-use super::{Listing, ProjectRow, UnmanagedRow};
+use super::{ListState, Listing, ProjectRow, UnmanagedRow};
 
 /// 管理案件と管理外Sandboxを一覧する。
 pub fn run(
@@ -25,8 +25,7 @@ pub fn run(
                 project: project.display_id.clone(),
                 root: crate::paths::display(&project.project_root),
                 sandbox: project.sandbox.clone(),
-                observed: project.observed.clone(),
-                workspace: project.workspace,
+                state: ListState::from_observation(&project.observed, project.workspace),
             })
             .collect(),
         unmanaged: inventory

@@ -3,9 +3,10 @@ title: Status values
 description: Understand the state values reported by sbxm status and sbxm ls.
 ---
 
-`sbxm status` and `sbxm ls` use stable, untranslated values so they can be recognized
-across locales. The values below describe the observation result and the action it
-suggests.
+`sbxm status` uses stable, untranslated values so they can be recognized across locales.
+The values below describe an observation result and the action it suggests. `sbxm ls`
+uses a smaller user-facing project-state vocabulary; its `open-blocked` state points to
+the detailed observations in `sbxm status <project-id>`.
 
 | Value | Meaning | What to do |
 | --- | --- | --- |
