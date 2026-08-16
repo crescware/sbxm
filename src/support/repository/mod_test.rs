@@ -7,6 +7,21 @@ use crate::design::{Fact, SilentProgress};
 use crate::testing::repository::*;
 
 #[test]
+fn a_silent_refresh_can_disable_opportunistic_tags() -> Checked {
+    let host = healthy_clone()?;
+    refresh_origin(
+        &host,
+        "sbxm-example",
+        &layout()?.bare_git_dir(),
+        TagFollowing::Disabled,
+        None,
+    )
+    .required_because("the silent refresh completes")?;
+    assert!(host.ran("fetch --prune --no-tags origin"));
+    Ok(())
+}
+
+#[test]
 fn a_missing_repository_is_cloned_bare_over_https_and_then_verified() -> Checked {
     let host = healthy_clone()?;
     ensure_bare_clone(

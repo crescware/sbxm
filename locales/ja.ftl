@@ -471,7 +471,7 @@ destroy-done = { $project } の管理を解除しました。
 destroy-re-register = 必要になったら再登録できます。
 
 confirmable-losses-heading = 失われるが、確認すれば削除できるもの
-confirmable-loss-ignored-paths = { $worktree } にはGitが追跡しない無視対象pathが { $count } 件あります。
+confirmable-loss-ignored-paths = { $worktree } にはGitが追跡しない無視対象pathが { $count } 件あります: { $paths }。
 confirmable-loss-local-ref = repositoryは { $reference } という名前を失います。
 confirmable-loss-branch-upstream = repositoryは { $branch } のupstream追跡（{ $upstream }）を失います。
 confirmable-loss-tag = repositoryはtag { $name } を失います。

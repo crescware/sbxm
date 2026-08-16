@@ -4,6 +4,7 @@
 //! どう描かれるかは`src/design`のinvariant testが持ち、ここは何を並べるかだけを見る。
 
 use crate::testing::outcome::{Checked, Required, Unmet};
+use crate::testing::plain;
 
 use std::path::PathBuf;
 
@@ -18,7 +19,6 @@ use crate::support::files::{PlacedFile, Placement};
 use crate::support::inventory::{Observed, ProjectState, WorkspaceState};
 use crate::support::protection::{ConfirmableLoss, Kind, Mode, Reachability, WorktreeReport};
 use crate::support::status::{Row, StatusValue};
-use crate::testing::plain;
 
 /// blockの並びを役割の名前で表す。
 fn shape(document: &Document) -> Vec<&'static str> {
@@ -533,6 +533,15 @@ fn the_deletion_plan_explains_every_kind_of_loss_it_observed() -> Checked {
         confirmable_losses: every_confirmable_loss(),
         ..destroy_plan_with_worktrees()
     };
+    for locale in [Locale::En, Locale::Ja] {
+        let drawn = plain(&super::destroy::print::plan_document(&plan, locale), locale)?;
+        for path in ["node_modules/", "target/"] {
+            assert!(
+                drawn.contains(path),
+                "{locale:?}: every ignored path is shown: {drawn}"
+            );
+        }
+    }
     let document = super::destroy::print::plan_document(&plan, Locale::En);
     assert_eq!(
         shape(&document),

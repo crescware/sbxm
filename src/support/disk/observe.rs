@@ -11,9 +11,8 @@ use super::DiskObservation;
 /// Sandboxが動いていない場合は、観測のために起動しない。状態そのものが分からない
 /// 場合も同様に、`df`を実行せず理由を返す。
 ///
-/// `timeout`は呼び出し側の事情に合わせる。`status`/`open`のように利用者が明示的に
-/// 待つ操作は`SandboxLifecycle`（600秒）で構わないが、失敗診断からの追加観測は、
-/// 容量が尽きたSandboxほど応答が返らなくなりやすいため、より短いtimeoutが要る。
+/// `timeout`は呼び出し側の事情に合わせる。補助的な観測や診断では、容量が尽きたSandbox
+/// ほど応答が返らなくなりやすいため、`Probe`のような短いtimeoutを選ぶ。
 pub fn observe(
     host: &dyn HostEnvironment,
     sandbox_name: &str,

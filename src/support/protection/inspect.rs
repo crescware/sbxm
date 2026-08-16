@@ -25,9 +25,11 @@ const IN_PROGRESS_MARKERS: [&str; 6] = [
     "rebase-apply",
 ];
 
-/// ローカル所有refを列挙するnamespace。`refs/remotes/*`はoriginの写しであり、
-/// 対象に含めない。
-const LOCAL_REF_NAMESPACES: [&str; 4] = ["refs/heads/", "refs/tags/", "refs/notes/", "refs/stash"];
+/// ローカル所有refを列挙するnamespace。remote-tracking refと、観測用に一時作成する
+/// namespaceは対象に含めない。
+const LOCAL_REF_NAMESPACE: &str = "refs/";
+const REMOTE_REF_NAMESPACE: &str = "refs/remotes/";
+const OBSERVATION_REF_NAMESPACE: &str = "refs/sbxm/";
 
 /// 観測結果と、観測不能であることを区別する。後者もblockerとして保持するため、
 /// `Result`の`Err`でassessment全体を捨てない。
@@ -120,14 +122,6 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         &mut confirmable_losses,
     );
 
-    // どこかのworktreeがcheckoutしているbranchは、project metadataのstart refから
-    // 再現できるため、ref名の損失に数えない。worktreeごとに判定すると、他のworktreeが
-    // checkoutしているbranchを損失として数えてしまう。
-    let checked_out: BTreeSet<String> = pending_worktrees
-        .iter()
-        .filter_map(|pending| pending.branch.clone())
-        .collect();
-
     let repository = RepositoryScope {
         git_dir: &bare_git_dir,
         root: &bare_root,
@@ -140,7 +134,6 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         host,
         sandbox_name,
         &repository,
-        &checked_out,
         &mut blockers,
         &mut repository_losses,
     );
@@ -479,11 +472,10 @@ fn collect_repository_inventory(
     host: &dyn HostEnvironment,
     sandbox_name: &str,
     repository: &RepositoryScope<'_>,
-    checked_out: &BTreeSet<String>,
     blockers: &mut Vec<Blocker>,
     confirmable_losses: &mut Vec<ConfirmableLoss>,
 ) -> Vec<PendingLocalRef> {
-    let pending_refs = collect_local_refs(host, sandbox_name, repository, checked_out, blockers);
+    let pending_refs = collect_local_refs(host, sandbox_name, repository, blockers);
     collect_additional_remotes(host, sandbox_name, repository, blockers, confirmable_losses);
     collect_reflog_only_commits(host, sandbox_name, repository, blockers, confirmable_losses);
     pending_refs
@@ -808,9 +800,11 @@ fn collect_ignored_paths(
         }
     };
     if !status.ignored.is_empty() {
+        let mut paths = status.ignored;
+        paths.sort();
         confirmable_losses.push(ConfirmableLoss::IgnoredPaths {
             worktree: relative.to_string(),
-            paths: status.ignored,
+            paths,
         });
     }
 }
@@ -926,17 +920,16 @@ fn read_upstream(
     }
 }
 
-/// HEAD以外のローカル所有ref（branch、tag、notes、stash）を集める。
+/// ローカル所有ref（branch、tag、notes、stash、その他のnamespace）を集める。
 ///
 /// refは共有bare repositoryが持つため、worktreeごとではなくrepositoryごとに1回だけ
-/// 数える。どこかのworktreeがcheckout中のbranchは、project metadataのstart refから
-/// 再現できるため対象外とする。指すcommitをoriginから回収できるかは、全candidateを
-/// 揃えてから1つの観測で決めるため、ここでは判定せずcandidateとして返す。
+/// 数える。checkout中のbranchも、削除時に失われるlocal refとupstream追跡として対象に
+/// 含める。指すcommitをoriginから回収できるかは、全candidateを揃えてから1つの観測で
+/// 決めるため、ここでは判定せずcandidateとして返す。
 fn collect_local_refs(
     host: &dyn HostEnvironment,
     sandbox_name: &str,
     repository: &RepositoryScope<'_>,
-    checked_out: &BTreeSet<String>,
     blockers: &mut Vec<Blocker>,
 ) -> Vec<PendingLocalRef> {
     let outcome = match run(
@@ -948,10 +941,7 @@ fn collect_local_refs(
             repository.git_dir,
             "for-each-ref",
             "--format=%(refname)%09%(objectname)%09%(upstream)",
-            LOCAL_REF_NAMESPACES[0],
-            LOCAL_REF_NAMESPACES[1],
-            LOCAL_REF_NAMESPACES[2],
-            LOCAL_REF_NAMESPACES[3],
+            LOCAL_REF_NAMESPACE,
         ],
     ) {
         Ok(outcome) => outcome,
@@ -982,11 +972,11 @@ fn collect_local_refs(
         };
         let upstream = fields.next().filter(|value| !value.is_empty());
 
-        let branch_name = reference.strip_prefix("refs/heads/");
-        if branch_name.is_some_and(|branch| checked_out.contains(branch)) {
+        if !is_local_owned_ref(reference) {
             continue;
         }
 
+        let branch_name = reference.strip_prefix("refs/heads/");
         let loss = match reference.strip_prefix("refs/tags/") {
             Some(name) => ConfirmableLoss::Tag {
                 name: name.to_string(),
@@ -1014,6 +1004,12 @@ fn collect_local_refs(
         });
     }
     pending
+}
+
+fn is_local_owned_ref(reference: &str) -> bool {
+    reference.starts_with(LOCAL_REF_NAMESPACE)
+        && !reference.starts_with(REMOTE_REF_NAMESPACE)
+        && !reference.starts_with(OBSERVATION_REF_NAMESPACE)
 }
 
 /// originとは別の、追加のremote名を集める。remote URLは読まない。

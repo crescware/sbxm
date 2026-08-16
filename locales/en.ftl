@@ -471,7 +471,7 @@ destroy-done = { $project } is no longer managed.
 destroy-re-register = Register it again when you need it.
 
 confirmable-losses-heading = What would be lost, but can be confirmed
-confirmable-loss-ignored-paths = { $worktree } has { $count } ignored paths that Git does not track.
+confirmable-loss-ignored-paths = { $worktree } has { $count } ignored paths that Git does not track: { $paths }.
 confirmable-loss-local-ref = The repository would lose the name { $reference }.
 confirmable-loss-branch-upstream = The repository would lose the upstream tracking of { $branch } ({ $upstream }).
 confirmable-loss-tag = The repository would lose the tag { $name }.

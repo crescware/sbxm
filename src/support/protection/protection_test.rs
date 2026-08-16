@@ -342,17 +342,17 @@ fn a_branch_without_an_upstream_that_another_origin_ref_reaches_passes() -> Chec
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
             ),
             0,
-            &format!("refs/remotes/origin/release\t{COMMIT}\n"),
+            &format!("refs/sbxm/origin/heads/release\t{COMMIT}\n"),
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
             ),
             0,
-            "refs/remotes/origin/release\n",
+            "refs/sbxm/origin/heads/release\n",
         );
 
     let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
@@ -382,17 +382,17 @@ fn a_branch_whose_upstream_does_not_reach_it_but_another_origin_ref_does_passes(
     let host = clean_host(&fixture, &project)?
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
             ),
             0,
-            &format!("refs/remotes/origin/main\tdef456\nrefs/remotes/origin/release\t{COMMIT}\n"),
+            &format!("refs/sbxm/origin/heads/main\tdef456\nrefs/sbxm/origin/heads/release\t{COMMIT}\n"),
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
             ),
             0,
-            "refs/remotes/origin/release\n",
+            "refs/sbxm/origin/heads/release\n",
         );
 
     let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
@@ -417,7 +417,7 @@ fn a_branch_whose_commit_no_origin_ref_reaches_stops_the_run() -> Checked {
 
     let host = clean_host(&fixture, &project)?.answering(
         &format!(
-            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
         ),
         0,
         "",
@@ -453,13 +453,15 @@ fn origin_unobservable_reasons_each_produce_their_own_blocker() -> Checked {
         "",
     );
     let refresh_failed = clean_host(&fixture, &project)?.answering(
-        &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune --no-tags origin"),
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+        ),
         128,
         "",
     );
     let advertisement_invalid = clean_host(&fixture, &project)?.answering(
         &format!(
-            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
         ),
         0,
         "not-tab-separated\n",
@@ -467,7 +469,7 @@ fn origin_unobservable_reasons_each_produce_their_own_blocker() -> Checked {
     let object_missing = clean_host(&fixture, &project)?
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
             ),
             128,
             "",
@@ -521,11 +523,12 @@ fn origin_unobservable_reasons_each_produce_their_own_blocker() -> Checked {
 
 #[test]
 fn local_refs_other_than_the_current_branch_are_classified_independently() -> Checked {
-    // checkout中のbranchだけでなく、tag・notes・stash・未checkoutのbranchも同じ観測結果で
-    // 判定する。1本でも回収できないrefがあれば、確認を求めず拒否する。
+    // checkout中のbranchも含め、tag・notes・stash・未checkoutのbranch・custom namespaceを
+    // 同じ観測結果で判定する。1本でも回収できないrefがあれば、確認を求めず拒否する。
     const TAG_COMMIT: &str = "1111111111111111111111111111111111111111";
     const FEATURE_COMMIT: &str = "2222222222222222222222222222222222222222";
     const ORPHAN_COMMIT: &str = "3333333333333333333333333333333333333333";
+    const CUSTOM_COMMIT: &str = "4444444444444444444444444444444444444444";
 
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
@@ -537,42 +540,49 @@ fn local_refs_other_than_the_current_branch_are_classified_independently() -> Ch
         .answering(
             &repository_command(
                 &project,
-                "for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/heads/ refs/tags/ refs/notes/ refs/stash",
+                "for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/",
             ),
             0,
             &format!(
-                "refs/heads/main\t{COMMIT}\trefs/remotes/origin/main\nrefs/tags/v1\t{TAG_COMMIT}\t\nrefs/heads/feature\t{FEATURE_COMMIT}\trefs/remotes/origin/feature\nrefs/heads/orphan\t{ORPHAN_COMMIT}\t\n"
+                "refs/heads/main\t{COMMIT}\trefs/remotes/origin/main\nrefs/tags/v1\t{TAG_COMMIT}\t\nrefs/heads/feature\t{FEATURE_COMMIT}\trefs/remotes/origin/feature\nrefs/heads/orphan\t{ORPHAN_COMMIT}\t\nrefs/custom/local\t{CUSTOM_COMMIT}\t\n"
             ),
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
             ),
             0,
             &format!(
-                "refs/remotes/origin/main	{COMMIT}\nrefs/remotes/origin/feature	{FEATURE_COMMIT}\n"
+                "refs/sbxm/origin/heads/main	{COMMIT}\nrefs/sbxm/origin/heads/feature	{FEATURE_COMMIT}\n"
             ),
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={TAG_COMMIT} refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={TAG_COMMIT} refs/sbxm/origin/"
             ),
             0,
-            "refs/remotes/origin/main\n",
+            "refs/sbxm/origin/heads/main\n",
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={FEATURE_COMMIT} refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={FEATURE_COMMIT} refs/sbxm/origin/"
             ),
             0,
-            "refs/remotes/origin/feature\n",
+            "refs/sbxm/origin/heads/feature\n",
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={ORPHAN_COMMIT} refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={ORPHAN_COMMIT} refs/sbxm/origin/"
             ),
             0,
             "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={CUSTOM_COMMIT} refs/sbxm/origin/"
+            ),
+            0,
+            "refs/sbxm/origin/custom/remote\n",
         );
 
     let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
@@ -584,11 +594,18 @@ fn local_refs_other_than_the_current_branch_are_classified_independently() -> Ch
             commit: ORPHAN_COMMIT.to_string(),
         }]
     );
-    // checkout中のbranchはstart refから再現できるため、ref名の損失には数えない。
+    // checkout中のbranchも、削除時にはlocal ref名とupstream追跡を失うため数える。
     assert_eq!(
         assessment.confirmable_losses(),
         [
             ConfirmableLoss::SandboxWritableLayer,
+            ConfirmableLoss::LocalRef {
+                reference: "refs/heads/main".to_string(),
+            },
+            ConfirmableLoss::BranchUpstream {
+                branch: "main".to_string(),
+                upstream: "refs/remotes/origin/main".to_string(),
+            },
             ConfirmableLoss::Tag {
                 name: "v1".to_string(),
             },
@@ -598,6 +615,9 @@ fn local_refs_other_than_the_current_branch_are_classified_independently() -> Ch
             ConfirmableLoss::BranchUpstream {
                 branch: "feature".to_string(),
                 upstream: "refs/remotes/origin/feature".to_string(),
+            },
+            ConfirmableLoss::LocalRef {
+                reference: "refs/custom/local".to_string(),
             },
         ]
     );
@@ -753,7 +773,7 @@ fn multiple_blockers_are_collected_in_stable_observation_order() -> Checked {
         .answering(&format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"), 0, "")
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/",
+                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/",
                 SandboxLayout::new(project.metadata.canonical_id()).bare_git_dir()
             ),
             0,
@@ -822,7 +842,7 @@ fn an_observation_failure_does_not_hide_later_blockers() -> Checked {
         .answering(&format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"), 126, "")
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/",
+                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/",
                 SandboxLayout::new(project.metadata.canonical_id()).bare_git_dir()
             ),
             0,
@@ -1002,9 +1022,8 @@ fn repository_command(project: &Registered, rest: &str) -> String {
 
 /// 層Bの確認対象を一通り持つhost。
 ///
-/// 無視対象path、checkoutしていないbranchとそのupstream、tag、notes、stash、追加remote、
-/// reflogにだけ残るcommitを揃える。checkout中のbranchはstart refから再現できるため、
-/// 一覧に載っていても損失には数えない。
+/// 無視対象path、checkout中のbranchとそのupstream、未checkoutのbranch、tag、notes、stash、
+/// 追加remote、reflogにだけ残るcommitを揃える。
 fn host_with_every_layer_b_loss(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let name = project.sandbox.as_str();
@@ -1023,7 +1042,7 @@ fn host_with_every_layer_b_loss(fixture: &Fixture, project: &Registered) -> Chec
         .answering(
             &repository_command(
                 project,
-                "for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/heads/ refs/tags/ refs/notes/ refs/stash",
+                "for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/",
             ),
             0,
             &format!(
@@ -1074,7 +1093,14 @@ fn every_kind_of_layer_b_loss_reaches_the_deletion_plan() -> Checked {
                 worktree: "example-repo.tree-0".to_string(),
                 paths: vec!["node_modules/".to_string(), "target/".to_string()],
             },
-            // checkoutしていないbranchは、名前とupstream追跡を分けて数える。
+            // branchはcheckout中かどうかにかかわらず、名前とupstream追跡を分けて数える。
+            ConfirmableLoss::LocalRef {
+                reference: "refs/heads/main".to_string(),
+            },
+            ConfirmableLoss::BranchUpstream {
+                branch: "main".to_string(),
+                upstream: "origin/main".to_string(),
+            },
             ConfirmableLoss::LocalRef {
                 reference: "refs/heads/topic".to_string(),
             },
@@ -1197,13 +1223,13 @@ fn a_repository_wide_loss_is_counted_once_however_many_worktrees_there_are() -> 
         1,
         "the reflog is walked once for the whole repository: {losses:?}"
     );
-    // `topic`は2つ目のworktreeがcheckoutしている。名前の損失には数えない。
+    // topicは2つ目のworktreeがcheckoutしていても、local ref名として損失に数える。
     assert!(
-        !losses.iter().any(|loss| matches!(
+        losses.iter().any(|loss| matches!(
             loss,
             ConfirmableLoss::LocalRef { reference } if reference == "refs/heads/topic"
         )),
-        "a branch another worktree has checked out is not a lost name: {losses:?}"
+        "a checked-out branch is still a lost local name: {losses:?}"
     );
     Ok(())
 }
@@ -1264,7 +1290,7 @@ fn a_layer_b_collector_that_cannot_answer_names_the_inventory_it_could_not_read(
         format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --ignored=traditional");
     let refs = repository_command(
         &project,
-        "for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/heads/ refs/tags/ refs/notes/ refs/stash",
+        "for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/",
     );
     let remotes = repository_command(&project, "remote");
     let reflog = repository_command(&project, "rev-list --walk-reflogs --all");
@@ -1454,7 +1480,7 @@ fn a_detached_head_that_no_remote_reaches_stops_the_run() -> Checked {
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+                "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
             ),
             0,
             "",
@@ -1583,7 +1609,7 @@ fn whether_an_origin_ref_reaches_a_commit_that_cannot_be_read_stops_the_run() ->
 
     let host = clean_host(&fixture, &project)?.answering(
         &format!(
-            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
         ),
         126,
         "",

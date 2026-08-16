@@ -1,5 +1,5 @@
 //! bare repositoryとmanaged worktreeの診断。
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::command::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
 use crate::commands::status::project::{ProjectStatus, Value, WorktreeRow};
 use crate::design::Fact;
 use crate::diagnostics::{Error, ErrorId, Result};
@@ -61,6 +61,7 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() -> Checked {
             },
         ]
     );
+    assert_eq!(host.spec("df -Pk /")?.timeout, TimeoutClass::Probe);
     assert_eq!(value_of(&status, "status-item-worktrees")?, Value::Ready);
     assert!(status.diagnostics.is_empty(), "{:?}", status.diagnostics);
     assert!(!host.ran("fetch"), "status must not refresh origin");

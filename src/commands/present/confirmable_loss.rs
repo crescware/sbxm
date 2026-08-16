@@ -8,7 +8,8 @@ pub fn confirmable_loss(loss: &ConfirmableLoss) -> Cell {
         ConfirmableLoss::IgnoredPaths { worktree, paths } => msg!(
             "confirmable-loss-ignored-paths",
             worktree = worktree,
-            count = paths.len()
+            count = paths.len(),
+            paths = paths.join(", ")
         ),
         ConfirmableLoss::LocalRef { reference } => {
             msg!("confirmable-loss-local-ref", reference = reference)

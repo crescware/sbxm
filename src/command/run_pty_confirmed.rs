@@ -220,14 +220,15 @@ fn finish(
 /// これまでに読めたbyte列が、答えるべき確認promptそのものであるかを決める。
 ///
 /// 部分一致では、期待文字列の直後に不正byteが続く出力や、期待文字列を前置きとして
-/// 別の質問へ続く出力まで一致に見せかけてしまう。観測済みの全byteが有効なUTF-8として
-/// 確定し、末尾の空白を除けば期待するprompt文字列とちょうど一致するときだけ答える。
-/// 末尾の空白（入力を待つ位置を示す1つの空白）だけは許すが、それ以外の食い違いは
-/// 大小どちらの向きにも一致とみなさない。有効な列の末尾が複数byte文字の途中で切れて
-/// いる場合は`Err`（`error_len`が`None`）になるため、続きを待つ側として扱われ、答えを
-/// 早まらせない。
+/// 別の質問へ続く出力まで一致に見せかけてしまう。観測済みのbyte列が期待文字列と
+/// 完全一致するか、入力待ち位置を示すASCIIの空白1個だけが末尾に付く場合だけ答える。
+/// 2個以上の空白、tab、改行、unicode空白などは一致とみなさない。
 fn prompt_is_ready(buffer: &[u8], expected_prompt: &str) -> bool {
-    matches!(std::str::from_utf8(buffer), Ok(text) if text.trim_end() == expected_prompt)
+    let expected = expected_prompt.as_bytes();
+    buffer == expected
+        || (buffer.len() == expected.len() + 1
+            && buffer.starts_with(expected)
+            && buffer[expected.len()] == b' ')
 }
 
 /// 有効なUTF-8として読める先頭部分。

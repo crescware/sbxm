@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::diagnostics::ErrorId;
 use crate::project::SandboxName;
 
@@ -31,9 +33,11 @@ fn a_command_that_could_not_even_launch_is_an_error_at_every_stage() -> Checked 
 
     let steps = [
         format!("git --git-dir {git_dir} config --get remote.origin.url"),
-        format!("git --git-dir {git_dir} fetch --prune --no-tags origin"),
         format!(
-            "git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            "git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+        ),
+        format!(
+            "git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
         ),
     ];
     for step in steps {
@@ -79,7 +83,9 @@ fn a_fetch_that_answered_but_could_not_launch_the_inner_command_is_unobservable(
             "https://github.com/Example-Org/Example-Repo.git\n",
         )
         .answering(
-            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
             126,
             "",
         );
@@ -106,13 +112,15 @@ fn a_tip_listing_that_answered_but_could_not_launch_the_inner_command_is_unobser
             "https://github.com/Example-Org/Example-Repo.git\n",
         )
         .answering(
-            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
             0,
             "",
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
             ),
             126,
             "",
@@ -140,16 +148,18 @@ fn a_tip_listing_with_a_missing_field_is_an_invalid_advertisement() -> Checked {
             "https://github.com/Example-Org/Example-Repo.git\n",
         )
         .answering(
-            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
             0,
             "",
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
             ),
             0,
-            "refs/remotes/origin/main\t\n",
+            "refs/sbxm/origin/heads/main\t\n",
         );
 
     let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
@@ -166,6 +176,135 @@ fn a_tip_listing_with_a_missing_field_is_an_invalid_advertisement() -> Checked {
 }
 
 #[test]
+fn mutation_observation_includes_origin_tags_and_custom_refs_in_isolation() -> Checked {
+    const TAG_COMMIT: &str = "1111111111111111111111111111111111111111";
+    const CUSTOM_COMMIT: &str = "2222222222222222222222222222222222222222";
+
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let tag_candidate = CommitCandidate::new(
+        "refs/tags/release".to_string(),
+        TAG_COMMIT.to_string(),
+        None,
+    );
+    let custom_candidate = CommitCandidate::new(
+        "refs/custom/release".to_string(),
+        CUSTOM_COMMIT.to_string(),
+        None,
+    );
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
+            ),
+            0,
+            &format!(
+                "refs/sbxm/origin/heads/main\t{COMMIT}\n\
+                 refs/sbxm/origin/tags/release\t{TAG_COMMIT}\n\
+                 refs/sbxm/origin/custom/release\t{CUSTOM_COMMIT}\n"
+            ),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
+            ),
+            0,
+            "refs/sbxm/origin/heads/main\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={TAG_COMMIT} refs/sbxm/origin/"
+            ),
+            0,
+            "refs/sbxm/origin/tags/release\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={CUSTOM_COMMIT} refs/sbxm/origin/"
+            ),
+            0,
+            "refs/sbxm/origin/custom/release\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) refs/sbxm/origin/"
+            ),
+            0,
+            "refs/sbxm/origin/heads/main\n\
+             refs/sbxm/origin/tags/release\n\
+             refs/sbxm/origin/custom/release\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} update-ref -d refs/sbxm/origin/heads/main"
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} update-ref -d refs/sbxm/origin/tags/release"
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} update-ref -d refs/sbxm/origin/custom/release"
+            ),
+            0,
+            "",
+        );
+
+    let observation = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate(), tag_candidate, custom_candidate],
+    )
+    .required_because("all advertised origin namespaces are observed")?;
+    assert_eq!(
+        observation,
+        OriginObservation::Observed {
+            tips: BTreeMap::from([
+                ("refs/custom/release".to_string(), CUSTOM_COMMIT.to_string()),
+                ("refs/remotes/origin/main".to_string(), COMMIT.to_string()),
+                ("refs/tags/release".to_string(), TAG_COMMIT.to_string()),
+            ]),
+            reachable_from: BTreeMap::from([
+                (
+                    COMMIT.to_string(),
+                    BTreeSet::from(["refs/remotes/origin/main".to_string()]),
+                ),
+                (
+                    TAG_COMMIT.to_string(),
+                    BTreeSet::from(["refs/tags/release".to_string()]),
+                ),
+                (
+                    CUSTOM_COMMIT.to_string(),
+                    BTreeSet::from(["refs/custom/release".to_string()]),
+                ),
+            ]),
+        }
+    );
+    assert!(host.ran("+refs/*:refs/sbxm/origin/*"));
+    assert!(host.ran("update-ref -d refs/sbxm/origin/heads/main"));
+    Ok(())
+}
+
+#[test]
 fn a_reachability_probe_with_a_blank_line_is_an_invalid_advertisement() -> Checked {
     let git_dir = layout()?.bare_git_dir();
     let name = sandbox()?.as_str().to_string();
@@ -176,20 +315,22 @@ fn a_reachability_probe_with_a_blank_line_is_an_invalid_advertisement() -> Check
             "https://github.com/Example-Org/Example-Repo.git\n",
         )
         .answering(
-            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
             0,
             "",
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
             ),
             0,
-            &format!("refs/remotes/origin/main\t{COMMIT}\n"),
+            &format!("refs/sbxm/origin/heads/main\t{COMMIT}\n"),
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
             ),
             0,
             "\n",
@@ -217,20 +358,22 @@ fn host_after_a_failed_contains_check(cat_file_exit: i32) -> Checked<FakeSbx> {
             "https://github.com/Example-Org/Example-Repo.git\n",
         )
         .answering(
-            &format!("exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin"),
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
             0,
             "",
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
             ),
             0,
-            &format!("refs/remotes/origin/main\t{COMMIT}\n"),
+            &format!("refs/sbxm/origin/heads/main\t{COMMIT}\n"),
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
             ),
             128,
             "",

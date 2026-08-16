@@ -7,9 +7,9 @@ const DEFAULT_PROMPT_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// 確認promptにだけ答える、専用のPTY実行の指定。
 ///
-/// 汎用のPTY転送ではない。読み取ったbyteが`expected_prompt`を含んだ場合にだけ、
-/// `answer`をちょうど1回書き込む。それ以外のpromptにも、2回目以降のpromptにも
-/// 何も送らない。
+/// 汎用のPTY転送ではない。読み取ったbyteが`expected_prompt`と完全一致するか、末尾に
+/// ASCII空白1個だけ付いた場合にだけ、`answer`をちょうど1回書き込む。それ以外のprompt
+/// にも、2回目以降のpromptにも何も送らない。
 #[derive(Debug, Clone)]
 pub struct PtyConfirmedCommand {
     pub(super) program: String,

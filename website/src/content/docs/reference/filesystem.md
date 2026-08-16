@@ -33,7 +33,7 @@ Every sandbox mounts one directory from the host:
 
 The path is derived from the project ID alone, so it carries neither the project directory nor your home directory into the sandbox. It is an empty mount point: the repository and the managed worktrees live inside the sandbox, not here.
 
-The runtime records this path when the sandbox is created, and it refuses to start a sandbox whose recorded directory is no longer on the host. The directory persists across stopping and reopening the sandbox; it can be missing only after an external cleanup or manual removal, while the sandbox record remains.
+The runtime records this path when the sandbox is created, and it refuses to start a sandbox whose recorded directory is no longer on the host. This host-side `/tmp` path is volatile: it can disappear after a reboot, OS cleanup, or other external/manual removal while the sandbox record remains. It is separate from the sandbox's own `/tmp`, which is inside the writable layer and is lost when that layer is recreated.
 
 That is a missing start-up condition rather than lost data. `sbxm ls` reports it in the `WORKSPACE` column, and `sbxm status <project-id>` reports it as the `workspace` item; both use `missing` for a directory observed to be absent. Preparing the project again creates the directory and says that it did.
 

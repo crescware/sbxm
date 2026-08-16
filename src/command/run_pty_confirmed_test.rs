@@ -197,6 +197,43 @@ fn an_additional_question_after_the_expected_prompt_is_never_answered() -> Check
     Ok(())
 }
 
+fn prompt_suffix_is_not_accepted(suffix: &str, reason: &str) -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let script = fake_script(
+        dir.path(),
+        &format!(
+            "printf \"Remove sandbox 'x'? This cannot be undone. (y/N): {suffix}\"\n\
+             sleep 5\n"
+        ),
+    )?;
+
+    let error = run_pty_confirmed(&command(
+        &script,
+        "Remove sandbox 'x'? This cannot be undone. (y/N):",
+    ))
+    .refused_because(reason)?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotConfirmed));
+    Ok(())
+}
+
+#[test]
+fn two_ascii_spaces_after_the_prompt_are_not_accepted() -> Checked {
+    prompt_suffix_is_not_accepted(
+        "  ",
+        "two trailing spaces are not the exact prompt contract",
+    )
+}
+
+#[test]
+fn a_tab_after_the_prompt_is_not_accepted() -> Checked {
+    prompt_suffix_is_not_accepted("\t", "a tab is not the exact prompt contract")
+}
+
+#[test]
+fn a_newline_after_the_prompt_is_not_accepted() -> Checked {
+    prompt_suffix_is_not_accepted("\n", "a newline is not the exact prompt contract")
+}
+
 #[test]
 fn a_process_that_ends_before_the_prompt_appears_is_not_confirmed() -> Checked {
     let dir = tempfile::tempdir().required()?;

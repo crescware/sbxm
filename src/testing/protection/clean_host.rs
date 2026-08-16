@@ -43,7 +43,7 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
         )
         .answering(
             &format!(
-                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/heads/ refs/tags/ refs/notes/ refs/stash",
+                "exec {name} -- git --git-dir {} for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/",
                 layout.bare_git_dir()
             ),
             0,
@@ -111,22 +111,31 @@ fn answering_origin_observation(host: FakeSbx, name: &str, bare_git_dir: &str) -
         "https://github.com/example-org/example-repo.git\n",
     )
     .answering(
-        &format!("exec {name} -- git --git-dir {bare_git_dir} fetch --prune --no-tags origin"),
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+        ),
         0,
         "",
     )
     .answering(
         &format!(
-            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
         ),
         0,
-        &format!("refs/remotes/origin/main\t{COMMIT}\n"),
+        &format!("refs/sbxm/origin/heads/main\t{COMMIT}\n"),
     )
     .answering(
         &format!(
-            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
         ),
         0,
-        "refs/remotes/origin/main\n",
+        "refs/sbxm/origin/heads/main\n",
+    )
+    .answering(
+        &format!(
+            "exec {name} -- git --git-dir {bare_git_dir} for-each-ref --format=%(refname) refs/sbxm/origin/"
+        ),
+        0,
+        "",
     )
 }
