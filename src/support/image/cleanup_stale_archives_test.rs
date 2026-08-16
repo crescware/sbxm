@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::diagnostics::ErrorId;
 use crate::paths::ProjectPaths;
 use crate::testing::outcome::{Checked, Refused, Required};
+use rustix::io::Errno;
 
 use super::{cleanup_stale_archives, fake::canonical};
 
@@ -128,7 +129,15 @@ fn a_name_that_is_not_valid_utf8_is_left_alone() -> Checked {
     invalid.extend_from_slice(b".tar");
     let name = std::ffi::OsStr::from_bytes(&invalid);
     let path = paths.cache_dir().join(name);
-    std::fs::write(&path, b"left alone").required()?;
+    let write = std::fs::write(&path, b"left alone");
+    if write.as_ref().err().and_then(std::io::Error::raw_os_error)
+        == Some(Errno::ILSEQ.raw_os_error())
+    {
+        // macOSのAPFSは不正UTF-8のfile name自体を作成できないため、この入力を作れる
+        // filesystemでだけcleanupの観測を確認する。
+        return Ok(());
+    }
+    write.required()?;
 
     let warnings = cleanup_stale_archives(&paths).required()?;
 
