@@ -40,7 +40,9 @@ fn command_with_prompt_timeout(
 }
 
 fn command_for_interactive_exchange(program: &Path, expected_prompt: &str) -> PtyConfirmedCommand {
-    command_with_prompt_timeout(program, expected_prompt, Duration::from_secs(5))
+    // 正常系は、coverage buildでmacOSのshell起動が遅くなっても既定のprompt timeoutまで
+    // 待つ。異常系の短いtimeoutは、promptが現れないことを確認するtestだけで使う。
+    command_with_prompt_timeout(program, expected_prompt, Duration::from_secs(20))
 }
 
 #[test]
