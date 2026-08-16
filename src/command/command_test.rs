@@ -9,6 +9,7 @@ use super::*;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 
 /// 実行内容を記録するfake executableを作る。
@@ -37,11 +38,54 @@ fn run_with_limit(spec: &CommandSpec, limit: Duration) -> Result<CommandOutcome>
     run_inner(spec, Some(limit))
 }
 
+/// 背景processの起動を確認してからcaptureのdeadlineを始める。
+///
+/// 直接の子をspawnしてすぐに200msのtimeoutを始めると、負荷の高いmacOSではshellが
+/// 背景processを作る前に打ち切られることがある。このtestは子孫がpipeを握ったまま
+/// 直接の子だけが終わることを見たいので、起動完了を待ってからpumpを始める。
+fn run_capture_after_ready(
+    spec: &CommandSpec,
+    ready: &Path,
+    limit: Duration,
+    started: &mut Option<Instant>,
+) -> Result<()> {
+    let mut command = configure(spec);
+    command.process_group(0);
+    let signal = SignalGuard::new().map_err(|error| spawn_failure(spec, &error))?;
+    let mut child = spawn(&mut command, spec)?;
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ready.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    if !ready.exists() {
+        terminate_child(&mut child);
+        return Err(spawn_failure(
+            spec,
+            &std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "the capture descendant did not start",
+            ),
+        ));
+    }
+
+    *started = Some(Instant::now());
+    let mut output = Vec::new();
+    pump_until_exit(
+        &mut child,
+        spec,
+        Some(limit),
+        Some(&signal),
+        &mut |_, bytes| output.extend_from_slice(bytes),
+    )?;
+    Ok(())
+}
+
 /// spawnに失敗した試行だけをやり直す。
 ///
 /// 別threadのtestがforkしている最中は、書き込み直後のfileが`ETXTBSY`で起動できない
 /// ことがある。実装ではなくtest環境の競合なので、短い間だけ繰り返す。
-fn retrying(mut attempt: impl FnMut() -> Result<CommandOutcome>) -> Result<CommandOutcome> {
+fn retrying<T>(mut attempt: impl FnMut() -> Result<T>) -> Result<T> {
     for _ in 0..50 {
         match attempt() {
             Err(error) if error.contains_id(ErrorId::ExternalCommandSpawnFailed) => {
@@ -393,6 +437,7 @@ fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
 #[test]
 fn a_descendant_outliving_the_direct_child_cannot_hold_capture_open_after_timeout() -> Checked {
     let dir = tempfile::tempdir().required()?;
+    let ready = dir.path().join("ready");
     let survivor = dir.path().join("survivor");
     let fake = fake_executable(
         dir.path(),
@@ -400,19 +445,25 @@ fn a_descendant_outliving_the_direct_child_cannot_hold_capture_open_after_timeou
         &format!(
             // 背景のprocessは直接の子が終わったあとにmarkerを残す。stdoutのpipeも握ったままに
             // するため、readerがEOFを待つ実装へ戻るとこのtestもtimeoutする。
-            r#"(sleep 1; printf 'alive' > "{}") &
+            r#"(printf 'ready' > "{}"; sleep 1; printf 'alive' > "{}") &
 sleep 30"#,
+            ready.display(),
             survivor.display()
         ),
     )?;
 
     let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
-    let started = Instant::now();
-    let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
-        .refused_because("the command must be terminated")?;
+    let mut started = None;
+    let error = retrying(|| {
+        run_capture_after_ready(&spec, &ready, Duration::from_millis(200), &mut started)
+    })
+    .refused_because("the command must be terminated")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     assert!(
-        started.elapsed() < Duration::from_millis(1500),
+        started
+            .required_because("capture must start after the descendant is ready")?
+            .elapsed()
+            < Duration::from_millis(1500),
         "the reader must not wait for a descendant that outlives the direct child"
     );
 
