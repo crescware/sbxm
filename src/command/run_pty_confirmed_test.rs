@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -12,7 +13,11 @@ use super::*;
 /// script1本を実行可能fileとして置く。
 fn fake_script(dir: &Path, body: &str) -> Checked<PathBuf> {
     let path = dir.join("fake-sbx");
-    fs::write(&path, format!("#!/bin/sh\n{body}\n")).required_because("write the fake script")?;
+    let mut file = fs::File::create(&path).required_because("create the fake script")?;
+    file.write_all(format!("#!/bin/sh\n{body}\n").as_bytes())
+        .required_because("write the fake script")?;
+    file.sync_all().required_because("flush the fake script")?;
+    drop(file);
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
         .required_because("make it executable")?;
     Ok(path)
@@ -45,6 +50,131 @@ fn command_for_interactive_exchange(program: &Path, expected_prompt: &str) -> Pt
     command_with_prompt_timeout(program, expected_prompt, Duration::from_secs(20))
 }
 
+/// promptを待つloopだけを試すため、十分長く生きる直接の子processを用意する。
+fn sleeping_child() -> Checked<std::process::Child> {
+    std::process::Command::new("sleep")
+        .arg("30")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .required_because("a child to keep the prompt loop alive")
+}
+
+fn short_prompt_command() -> PtyConfirmedCommand {
+    command_with_prompt_timeout(Path::new("sleep"), "confirmation", Duration::from_millis(1))
+}
+
+/// 別`test`の`fork`と実行可能`file`の作成が重なる`macOS`の`ETXTBSY`だけを短く再試行する。
+fn run_pty_confirmed_retrying(
+    command: &PtyConfirmedCommand,
+) -> crate::diagnostics::Result<CommandOutcome> {
+    for _ in 0..50 {
+        match super::run_pty_confirmed(command) {
+            Err(error) if error.contains_id(ErrorId::ExternalCommandSpawnFailed) => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            other => return other,
+        }
+    }
+    super::run_pty_confirmed(command)
+}
+
+#[test]
+fn an_eof_from_the_controller_is_treated_as_a_missing_prompt() -> Checked {
+    let mut child = sleeping_child()?;
+    let error = drive(
+        &mut child,
+        fs::File::open("/dev/null").required_because("an empty controller")?,
+        &short_prompt_command(),
+    )
+    .refused_because("an EOF does not confirm the command")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotConfirmed));
+    Ok(())
+}
+
+#[test]
+fn an_unreadable_controller_is_treated_as_a_missing_prompt() -> Checked {
+    let mut child = sleeping_child()?;
+    let controller = fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/null")
+        .required_because("an unreadable controller")?;
+    let error = drive(&mut child, controller, &short_prompt_command())
+        .refused_because("an unreadable controller does not confirm the command")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotConfirmed));
+    Ok(())
+}
+
+#[test]
+fn an_answer_write_failure_is_reported_as_not_confirmed() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    fs::write(dir.path().join("prompt"), b"confirmation")
+        .required_because("a controller that contains the prompt")?;
+    let controller =
+        fs::File::open(dir.path().join("prompt")).required_because("a read-only controller")?;
+    let mut child = sleeping_child()?;
+    let error = drive(&mut child, controller, &short_prompt_command())
+        .refused_because("a failed answer write is not confirmation")?;
+    terminate_child(&mut child);
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotConfirmed));
+    Ok(())
+}
+
+#[test]
+fn a_wait_failure_is_reported_as_a_spawn_failure() -> Checked {
+    let mut child = sleeping_child()?;
+    child
+        .kill()
+        .required_because("stop the child before reaping it outside its handle")?;
+    rustix::process::waitpid(
+        Some(rustix::process::Pid::from_child(&child)),
+        rustix::process::WaitOptions::empty(),
+    )
+    .required_because("reap the child outside its handle")?;
+
+    let error = drive(
+        &mut child,
+        fs::File::open("/dev/null").required_because("an empty controller")?,
+        &short_prompt_command(),
+    )
+    .refused_because("a child that cannot be waited for is a spawn failure")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    Ok(())
+}
+
+#[test]
+fn draining_an_empty_controller_is_complete() -> Checked {
+    let mut buffer = Vec::new();
+    drain_after_exit(
+        &mut fs::File::open("/dev/null").required_because("an empty controller")?,
+        &mut buffer,
+        &short_prompt_command(),
+    )
+    .required_because("an empty controller is drained")?;
+    assert!(buffer.is_empty());
+    Ok(())
+}
+
+#[test]
+fn draining_an_unreadable_controller_is_reported() -> Checked {
+    let mut controller = fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/null")
+        .required_because("an unreadable controller")?;
+    let mut buffer = Vec::new();
+    let error = drain_after_exit(&mut controller, &mut buffer, &short_prompt_command())
+        .refused_because("an unreadable controller cannot be drained")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandOutputUnreadable)
+    );
+    Ok(())
+}
+
 #[test]
 fn a_matched_prompt_is_answered_exactly_once() -> Checked {
     let dir = tempfile::tempdir().required()?;
@@ -57,7 +187,7 @@ fn a_matched_prompt_is_answered_exactly_once() -> Checked {
          printf \"Sandbox 'x' removed\\n\"\n",
     )?;
 
-    let outcome = run_pty_confirmed(
+    let outcome = run_pty_confirmed_retrying(
         &command_for_interactive_exchange(
             &script,
             "Remove sandbox 'x'? This cannot be undone. (y/N):",
@@ -86,7 +216,7 @@ fn a_runtime_refusal_after_the_prompt_is_answered_is_still_reported() -> Checked
          exit 1\n",
     )?;
 
-    let outcome = run_pty_confirmed(&command_for_interactive_exchange(
+    let outcome = run_pty_confirmed_retrying(&command_for_interactive_exchange(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -115,7 +245,7 @@ fn a_runtime_refusal_past_one_read_chunk_is_still_reported_in_full() -> Checked 
          exit 1\n",
     )?;
 
-    let outcome = run_pty_confirmed(&command_for_interactive_exchange(
+    let outcome = run_pty_confirmed_retrying(&command_for_interactive_exchange(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -145,7 +275,7 @@ fn a_different_prompt_is_never_answered() -> Checked {
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed(&command(
+    let error = run_pty_confirmed_retrying(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -165,7 +295,7 @@ fn an_invalid_byte_right_after_the_expected_prompt_is_never_answered() -> Checke
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed(&command(
+    let error = run_pty_confirmed_retrying(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -185,7 +315,7 @@ fn a_prompt_that_drifts_past_the_expected_text_on_the_same_line_is_never_answere
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed(&command(
+    let error = run_pty_confirmed_retrying(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -206,7 +336,7 @@ fn an_additional_question_after_the_expected_prompt_is_never_answered() -> Check
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed(&command(
+    let error = run_pty_confirmed_retrying(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -225,7 +355,7 @@ fn prompt_suffix_is_not_accepted(suffix: &str, reason: &str) -> Checked {
         ),
     )?;
 
-    let error = run_pty_confirmed(&command(
+    let error = run_pty_confirmed_retrying(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -257,7 +387,7 @@ fn a_process_that_ends_before_the_prompt_appears_is_not_confirmed() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let script = fake_script(dir.path(), "exit 1\n")?;
 
-    let error = run_pty_confirmed(&command(
+    let error = run_pty_confirmed_retrying(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -276,7 +406,7 @@ fn invalid_utf8_never_satisfies_the_expected_prompt() -> Checked {
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed(&command(
+    let error = run_pty_confirmed_retrying(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -287,7 +417,7 @@ fn invalid_utf8_never_satisfies_the_expected_prompt() -> Checked {
 
 #[test]
 fn a_program_that_cannot_be_found_is_reported_without_opening_a_pty_forever() -> Checked {
-    let error = run_pty_confirmed(&command(
+    let error = run_pty_confirmed_retrying(&command(
         Path::new("/does/not/exist/sbx"),
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
