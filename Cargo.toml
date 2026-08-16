@@ -2,7 +2,7 @@
 
 [package]
 name = "sbxm"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2024"
 rust-version = "1.89"
 description = "CLI for managing Docker Sandboxes: per-project setup and daily operations"
