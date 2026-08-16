@@ -7,9 +7,10 @@ use crate::commands::present::Legend;
 
 /// `ls`が並べるもの。
 ///
-/// `STATE`と`WORKSPACE`は別の事実を示す。前者はruntimeが持つrecordの状態であり、
-/// 後者はそのrecordがmount元として宣言するdirectoryがhostに在るかである。どちらの列も、
-/// 管理案件ではsbxmの語彙へ写した値を示し、管理外Sandboxではruntimeの原値を示す。
+/// 管理案件の`STATE`は、runtimeとhostの観測結果を利用者向けの結論へ写した値である。
+/// `WORKSPACE`のような内部の観測軸を別列へ増やさず、`open-blocked`でopenに事前対応が
+/// 要ることだけを示す。管理外Sandboxはsbxmが管理状態を持たないため、runtimeの原値と
+/// workspace pathをそのまま示す。
 pub fn document(listing: &Listing, locale: Locale) -> Document {
     let mut legend = Legend::new(locale);
 
@@ -18,15 +19,13 @@ pub fn document(listing: &Listing, locale: Locale) -> Document {
         msg!("column-project-root"),
         msg!("column-sandbox"),
         msg!("column-state"),
-        msg!("column-workspace"),
     ]);
     for row in &listing.projects {
         projects.push(vec![
             Inline::important(row.project.clone()).into(),
             Inline::path(row.root.clone()).into(),
             Inline::text(row.sandbox.clone()).into(),
-            legend.observed(&row.observed).into(),
-            legend.workspace_state(row.workspace).into(),
+            legend.list_state(row.state).into(),
         ]);
     }
 
