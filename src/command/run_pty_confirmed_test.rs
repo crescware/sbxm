@@ -20,14 +20,27 @@ fn fake_script(dir: &Path, body: &str) -> Checked<PathBuf> {
 
 /// promptを短いtimeoutで待つ以外は既定のcommand。
 fn command(program: &Path, expected_prompt: &str) -> PtyConfirmedCommand {
+    command_with_prompt_timeout(program, expected_prompt, Duration::from_millis(500))
+}
+
+/// coverage実行時のmacOSでも、shellが起動してpromptを出す時間を確保する。
+fn command_with_prompt_timeout(
+    program: &Path,
+    expected_prompt: &str,
+    prompt_timeout: Duration,
+) -> PtyConfirmedCommand {
     let mut command = PtyConfirmedCommand::new(
         program.to_str().unwrap_or_default(),
         &[],
         "the sandbox",
         expected_prompt,
     );
-    command.prompt_timeout = Duration::from_millis(500);
+    command.prompt_timeout = prompt_timeout;
     command
+}
+
+fn command_for_interactive_exchange(program: &Path, expected_prompt: &str) -> PtyConfirmedCommand {
+    command_with_prompt_timeout(program, expected_prompt, Duration::from_secs(5))
 }
 
 #[test]
@@ -43,8 +56,11 @@ fn a_matched_prompt_is_answered_exactly_once() -> Checked {
     )?;
 
     let outcome = run_pty_confirmed(
-        &command(&script, "Remove sandbox 'x'? This cannot be undone. (y/N):")
-            .env(EnvPolicy::InheritWithoutSshAgent),
+        &command_for_interactive_exchange(
+            &script,
+            "Remove sandbox 'x'? This cannot be undone. (y/N):",
+        )
+        .env(EnvPolicy::InheritWithoutSshAgent),
     )
     .required_because("the expected prompt is answered")?;
     assert!(outcome.success(), "{}", outcome.stdout_text());
@@ -68,7 +84,7 @@ fn a_runtime_refusal_after_the_prompt_is_answered_is_still_reported() -> Checked
          exit 1\n",
     )?;
 
-    let outcome = run_pty_confirmed(&command(
+    let outcome = run_pty_confirmed(&command_for_interactive_exchange(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -97,7 +113,7 @@ fn a_runtime_refusal_past_one_read_chunk_is_still_reported_in_full() -> Checked 
          exit 1\n",
     )?;
 
-    let outcome = run_pty_confirmed(&command(
+    let outcome = run_pty_confirmed(&command_for_interactive_exchange(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
