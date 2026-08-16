@@ -99,7 +99,7 @@ pub fn prepare(
         host,
         name.as_str(),
         Some(ProjectState::Running),
-        TimeoutClass::SandboxLifecycle,
+        TimeoutClass::Probe,
     );
 
     Ok(Prepared {

@@ -195,7 +195,11 @@ When run in an interactive terminal, `prepare`, `apply`, `rebuild`, `open`,
 project argument is omitted. For `status`, the first choice is `global`,
 followed by registered project IDs.
 In a non-interactive terminal, provide an explicit project argument for these
-commands; `status` accepts either a project ID or `--global`.
+commands; `status` accepts either a project ID or `--global`. Normal `rebuild`
+and `destroy` still refuse in a non-interactive terminal because their protected
+flows require an interactive, exact sandbox-name confirmation. `destroy --force`
+is the only non-interactive bypass for destroy; it skips those checks
+and does not make the discarded data recoverable.
 
 ## Customize a project
 
@@ -218,6 +222,9 @@ does not show by itself: local branches kept out of the checkout, tags, notes,
 stash entries, extra remotes, and reflog-only commits. Save or resolve any
 reported Layer A blocker before retrying. `status` keeps the worktree's
 `STATE` and its origin recovery evidence in a separate `REMOTE` column.
+Normal rebuild always requires an interactive plan and exact sandbox-name
+confirmation; it refuses rather than silently skipping that confirmation in a
+non-interactive terminal.
 
 ### Choose the sandbox root size
 
@@ -339,7 +346,8 @@ refs, and active sbxm sessions. In an interactive terminal, it then asks you to
 type the sandbox name. Removing the sandbox itself also respects Docker
 Sandboxes' own runtime check for anything still attached to it (a session sbxm
 did not start) — sbxm answers that confirmation internally, so you are not
-asked twice.
+asked twice. A normal destroy in a non-interactive terminal refuses rather than
+skipping the exact-name confirmation.
 
 The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
 registered for that sandbox are deleted. A registration left behind would make

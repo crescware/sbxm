@@ -140,6 +140,7 @@ fn disk_usage_is_observed_exactly_once_after_the_sandbox_is_confirmed_running() 
         .filter(|call| call.contains(&"df".to_string()))
         .count();
     assert_eq!(df_calls, 1, "{:?}", host.calls());
+    assert_eq!(host.spec("df -Pk /")?.timeout, TimeoutClass::Probe);
     Ok(())
 }
 

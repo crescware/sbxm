@@ -50,7 +50,7 @@ pub fn diagnose(
     check_inside(host, &name, &metadata, state, &mut status);
 
     // root filesystemの使用量。running中だけ観測のためにcommandを実行する。
-    status.disk = disk::observe(host, name.as_str(), state, TimeoutClass::SandboxLifecycle);
+    status.disk = disk::observe(host, name.as_str(), state, TimeoutClass::Probe);
 
     Ok(status)
 }
