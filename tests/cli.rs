@@ -721,7 +721,6 @@ fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() -
             "Host clone",
             "Dockerfile",
             "Image",
-            "Template archive",
             "Sandbox",
             "Workspace",
             "GitHub secret",

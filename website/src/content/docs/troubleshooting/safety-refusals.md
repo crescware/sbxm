@@ -3,9 +3,13 @@ title: Resolve safety refusals
 description: Understand common sbxm refusals and the safe next observation.
 ---
 
-### Dirty or unpushed work
+### Dirty or unpublished work
 
-Commit and push what you want to keep, remove what you do not, and run status again. Rebuild and destroy refuse to guess whether uncommitted or unreachable work is disposable.
+Commit and push what you want to keep, remove what you do not, and run status
+again. Rebuild and destroy refuse to guess whether uncommitted or unreachable
+work is disposable. A clean worktree does not cover repository-level local
+branches, tags, notes, stash entries, extra remotes, or reflog-only commits;
+save or resolve those Layer A blockers independently.
 
 ### Active session
 

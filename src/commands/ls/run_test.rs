@@ -16,7 +16,7 @@ fn managed_projects_and_unmanaged_sandboxes_are_listed_separately() -> Checked {
     let first = fixture.register("Example-Org/Example-Repo")?;
     let second = fixture.register("other/repo")?;
     let host = FakeSbx::listing(&format!(
-        r#"[{},{},{{"name":"sbxm-foreign","state":"Running","workspace":"/tmp/elsewhere","template":"other:1"}}]"#,
+        r#"{{"sandboxes":[{},{},{{"name":"sbxm-foreign","status":"Running","workspaces":["/tmp/elsewhere"]}}]}}"#,
         fixture.entry(&first, "running")?,
         fixture.entry(&second, "stopped")?,
     ));
@@ -58,7 +58,7 @@ fn managed_projects_and_unmanaged_sandboxes_are_listed_separately() -> Checked {
 fn an_unmanaged_sandbox_without_a_workspace_shows_a_placeholder() -> Checked {
     let fixture = Fixture::new()?;
     let host = FakeSbx::listing(
-        r#"[{"name":"sbxm-known","state":"Running","workspace":"/tmp/known","template":"other:1"},{"name":"sbxm-nowhere","state":"Running","template":"other:1"}]"#,
+        r#"{"sandboxes":[{"name":"sbxm-known","status":"Running","workspaces":["/tmp/known"]},{"name":"sbxm-nowhere","status":"Running"}]}"#,
     );
 
     let listing =
@@ -87,7 +87,7 @@ fn a_project_without_a_sandbox_is_listed_as_not_created() -> Checked {
     fixture.register("example-org/example-repo")?;
     let listing = run(
         &fixture.location,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
     )
     .required_because("list")?;
@@ -111,7 +111,7 @@ fn an_entry_whose_artifacts_are_not_there_is_shown_rather_than_dropped() -> Chec
 
     let listing = run(
         &fixture.location,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
     )
     .required_because("list")?;
@@ -161,7 +161,7 @@ fn a_project_directory_that_names_another_project_is_inconsistent() -> Checked {
 
     let listing = run(
         &fixture.location,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
     )
     .required_because("list")?;
@@ -180,7 +180,7 @@ fn a_host_with_nothing_on_it_still_lists_successfully() -> Checked {
     let fixture = Fixture::new()?;
     let listing = run(
         &fixture.location,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
     )
     .required_because("an empty host is a valid answer")?;
@@ -194,7 +194,7 @@ fn a_listing_that_cannot_be_trusted_produces_no_rows() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo");
     let host = FakeSbx::listing(&format!(
-        r#"[{{"name":"{}","state":"pausing","workspace":"/tmp/x","template":"x"}}]"#,
+        r#"{{"sandboxes":[{{"name":"{}","status":"pausing","workspaces":["/tmp/x"]}}]}}"#,
         project?.sandbox
     ));
 
@@ -211,7 +211,7 @@ fn a_project_whose_workspace_is_gone_is_shown_as_missing_rather_than_stopped_alo
     let stopped = fixture.register("example-org/stopped")?;
     // 停止中の案件だけ、runtimeのrecordが残ったままhostのdirectoryが消えている。
     let host = FakeSbx::listing(&format!(
-        "[{},{}]",
+        r#"{{"sandboxes":[{},{}]}}"#,
         fixture.entry(&running, "running")?,
         fixture.declared_entry(&stopped, "stopped"),
     ));
@@ -240,7 +240,7 @@ fn a_workspace_that_cannot_be_observed_is_not_reported_as_absent() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     fixture.workspace_is_unobservable(&project)?;
     let host = FakeSbx::listing(&format!(
-        "[{}]",
+        r#"{{"sandboxes":[{}]}}"#,
         fixture.declared_entry(&project, "stopped")
     ));
 
@@ -256,7 +256,7 @@ fn a_project_without_a_sandbox_has_no_workspace_to_ask_about() -> Checked {
     fixture.register("example-org/example-repo")?;
     let listing = run(
         &fixture.location,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
     )
     .required_because("list")?;
@@ -275,7 +275,7 @@ fn an_entry_that_needs_recovery_is_not_asked_about_its_workspace() -> Checked {
 
     let listing = run(
         &fixture.location,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
     )
     .required_because("list")?;

@@ -8,7 +8,9 @@
 //! 出現した値の説明を添える。表へ値を置くたびに凡例へ控えられるよう、写像と登録を
 //! 1回の呼び出しにまとめる。
 
+mod confirmable_loss;
 mod creation_mode;
+mod disk_section;
 mod global_status;
 mod legend;
 mod observed;
@@ -19,7 +21,9 @@ mod sandbox_state;
 mod stop_result;
 mod workspace_state;
 
+pub use confirmable_loss::confirmable_loss;
 pub use creation_mode::creation_mode;
+pub use disk_section::disk_section;
 pub use global_status::global_status;
 pub use legend::Legend;
 pub use observed::observed;

@@ -1,5 +1,5 @@
 use crate::support::inventory::ProjectState;
-use crate::support::protection::WorktreeReport;
+use crate::support::protection::{ConfirmableLoss, WorktreeReport};
 
 use super::Target;
 
@@ -13,6 +13,8 @@ pub struct DestroyPlan {
     pub force: bool,
     /// 通常modeで観測したworktree。force modeでは空。
     pub worktrees: Vec<WorktreeReport>,
+    /// 確認すれば削除してよい対象。force modeでは空。
+    pub confirmable_losses: Vec<ConfirmableLoss>,
     pub removes: Vec<Target>,
     pub keeps: Vec<Target>,
     /// 再登録に使うcommand。

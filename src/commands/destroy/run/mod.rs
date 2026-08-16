@@ -4,14 +4,14 @@
 //! 利用者が管理する成果物は保持する。
 
 mod confirm;
-mod confirm_prompt;
 mod destroy_outcome;
 mod destroy_plan;
-mod execute;
+mod execute_bypassed;
+mod execute_confirmed;
+mod finish_removal;
 mod keeps;
 mod prepare;
 mod prepared;
-mod prompt_ui;
 mod re_register;
 mod removes;
 mod target;
@@ -19,10 +19,11 @@ mod unregister;
 mod unregistration;
 
 pub use confirm::confirm;
-pub use confirm_prompt::ConfirmPrompt;
 pub use destroy_outcome::DestroyOutcome;
 pub use destroy_plan::DestroyPlan;
-pub use execute::execute;
+pub use execute_bypassed::execute_bypassed;
+pub use execute_confirmed::execute_confirmed;
+use finish_removal::finish_removal;
 use keeps::keeps;
 pub use prepare::prepare;
 pub use prepared::Prepared;

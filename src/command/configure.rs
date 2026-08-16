@@ -6,7 +6,9 @@ use super::{CommandSpec, EnvPolicy, OutputPolicy};
 pub(super) fn configure(spec: &CommandSpec) -> Command {
     let mut command = Command::new(&spec.program);
     command.args(&spec.args);
-    // defaultで現在processのenvironmentを継承する。
+    // defaultで現在processのenvironmentを継承する。`env_clear`や`envs`は呼ばない。
+    // `InheritWithoutSshAgent`は`SSH_AUTH_SOCK`だけを取り除き、それ以外の変数
+    // （`DOCKER_SANDBOXES_ROOT_SIZE`を含む）はそのまま子processへ渡る。
     if spec.env == EnvPolicy::InheritWithoutSshAgent {
         command.env_remove("SSH_AUTH_SOCK");
     }

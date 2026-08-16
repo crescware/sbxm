@@ -45,7 +45,7 @@ pub fn plan_document(plan: &DestroyPlan, locale: Locale) -> Document {
     for worktree in &plan.worktrees {
         // 状態値は翻訳しないため、正本locale以外では説明を添える。
         for (value, description) in worktree.legends() {
-            legend.add(value, description);
+            legend.add(&value, description);
         }
         worktrees.push(vec![
             Inline::path(worktree.relative.clone()).into(),
@@ -53,10 +53,18 @@ pub fn plan_document(plan: &DestroyPlan, locale: Locale) -> Document {
             Inline::text(worktree.mode.as_str()).into(),
             Inline::text(worktree.branch.clone().unwrap_or_else(|| "-".to_string())).into(),
             Inline::text(worktree.head.clone()).into(),
-            Inline::text(worktree.remote.as_str()).into(),
+            Inline::text(worktree.reachability.display()).into(),
         ]);
     }
     document = document.table(Some(msg!("status-worktrees-section")), worktrees);
+
+    document = document.lines(
+        Some(msg!("confirmable-losses-heading")),
+        plan.confirmable_losses
+            .iter()
+            .map(crate::commands::present::confirmable_loss)
+            .collect(),
+    );
 
     document = document
         .lines(

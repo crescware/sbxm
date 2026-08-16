@@ -2,7 +2,7 @@ use crate::design::{Document, Field, Inline, Table};
 use crate::i18n::Locale;
 use crate::msg;
 
-use crate::commands::present::Legend;
+use crate::commands::present::{self, Legend};
 use crate::commands::status::project::ProjectStatus;
 
 /// project scopeの`status`が並べるもの。
@@ -27,13 +27,17 @@ pub fn project_document(status: &ProjectStatus, locale: Locale) -> Document {
         msg!("column-kind"),
         msg!("column-mode"),
         msg!("column-state"),
+        msg!("column-remote"),
     ]);
     for worktree in &status.worktrees {
+        let remote = worktree.remote.display();
+        legend.add(&remote, worktree.remote.legend_id());
         worktrees.push(vec![
             Inline::path(worktree.path.clone()).into(),
             Inline::text(worktree.kind).into(),
             legend.project_status(worktree.mode).into(),
             legend.project_status(worktree.state).into(),
+            Inline::text(remote).into(),
         ]);
     }
 
@@ -45,5 +49,6 @@ pub fn project_document(status: &ProjectStatus, locale: Locale) -> Document {
     } else {
         document.table(Some(heading), worktrees)
     };
+    let document = present::disk_section(document, &status.disk);
     document.legend(Legend::heading(), legend.entries())
 }

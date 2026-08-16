@@ -87,8 +87,16 @@ impl Fixture {
         Ok(())
     }
 
-    /// 案件に対応するSandboxの一覧行。
+    /// 案件に対応するSandboxの一覧行。hostのworkspace directoryも作る。
     pub fn entry(&self, project: &Registered, state: &str) -> Checked<String> {
+        self.create_workspace(project)?;
+        Ok(self.declared_entry(project, state))
+    }
+
+    /// 案件のworkspace directoryをhostに作る。
+    ///
+    /// 一覧を組み立てないtestが、mount元だけを実在させるために使う。
+    pub fn create_workspace(&self, project: &Registered) -> Checked {
         let workspace = self.workspace_root.join(project.sandbox.as_str());
         std::fs::create_dir_all(&workspace).required_because("create the workspace")?;
         // 実環境と同じく、workspaceは自分だけが辿れるdirectoryとして作る。
@@ -97,15 +105,17 @@ impl Fixture {
             std::fs::Permissions::from_mode(crate::paths::PRIVATE_DIR_MODE),
         )
         .required_because("the workspace belongs to the current user only")?;
-        Ok(self.declared_entry(project, state))
+        Ok(())
     }
 
     /// 案件に対応するSandboxの一覧行。hostのworkspace directoryは作らない。
     ///
     /// runtimeがrecordを持ちながら、mount元のdirectoryがhostから消えている状態を表す。
+    /// sbx v0.37.0が実際に返す形（`status`、`workspaces`は配列）に合わせる。呼び出し側は
+    /// これを`{"sandboxes": [...]}`で包んで`sbx ls --json`の応答とする。
     pub fn declared_entry(&self, project: &Registered, state: &str) -> String {
         format!(
-            r#"{{"name":"{}","state":"{state}","workspace":"{}"}}"#,
+            r#"{{"name":"{}","status":"{state}","workspaces":["{}"]}}"#,
             project.sandbox,
             self.workspace_root.join(project.sandbox.as_str()).display()
         )

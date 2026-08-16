@@ -103,7 +103,7 @@ fn prompt_executes_the_selected_project_scope() -> Checked {
 
     let code = execute_prompt(
         &fixture,
-        &FakeSbx::listing("[]"),
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         ScriptedKeys::choosing(1),
         &screen,
     );

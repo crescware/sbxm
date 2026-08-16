@@ -178,6 +178,10 @@ sbxm stop <project-id> ...
 非対話端末では、これらのcommandにプロジェクト引数を明示してください。`status`だけは
 project IDまたは`--global`をscopeとして指定できます。
 
+ただし`rebuild`と`destroy`は、引数を明示しても非対話端末では実行できません。どちらも
+削除計画を表示し、対象Sandbox名の完全一致入力を得た場合にだけ進むためです。`destroy`
+には確認を省略する`--force`がありますが、`rebuild`にはありません。
+
 ## プロジェクトをカスタマイズする
 
 ### Sandbox imageを編集する
@@ -189,8 +193,79 @@ system dependencyを追加するにはこのファイルを編集し、変更を
 sbxm rebuild <project-id>
 ```
 
-rebuildはSandboxを作り直します。作業内容を保護するため、dirty file、pushしていない
-commit、またはunmanaged worktreeがある場合、sbxmは通常のrebuildを拒否します。
+rebuildはDockerfileの変更有無にかかわらずSandboxを作り直し、元のSandboxの書き込み可能な
+層を失わせます。作業内容を保護するため、dirty file、publishしていないcommit、進行中のGit
+操作、またはunmanaged worktreeがある場合、sbxmは通常のrebuildを拒否します。
+
+cleanなworktreeだけでは見えないrepository単位の状態も検査します。checkoutしていない
+local branch、tag、note、stash、追加remote、reflogだけに残るcommitも対象です。表示された
+Layer Aのblockerを保存または解決してから、もう一度実行してください。`status`ではworktreeの
+`STATE`とoriginからの回収根拠を、別の`REMOTE`列に表示します。
+
+拒否しない場合も、作り直しで何が失われるかを先に表示します。無視対象のpath、
+checkoutしていないbranchやtagの名前、追加remote、reflogにだけ残るcommit、Sandboxの
+書き込み層が対象です。表示のあと、対象Sandbox名の完全一致入力を得た場合にだけ進みます。
+`rebuild`に確認を省略する方法はないため、非対話端末では実行できません。表示した状態が
+入力から実際の作り直しまでのあいだに変わった場合は、何も削除せずに中止します。
+
+### Sandboxのroot sizeを選ぶ
+
+Docker Sandboxesは、Sandboxを作成するprocessのenvironmentから`DOCKER_SANDBOXES_ROOT_SIZE`
+を読み取ります。sbxmはこの変数を解釈も書き換えもせず、`sbx create`を実行する時点で
+設定されている値をそのまま渡します。
+
+```sh
+# 初回作成
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm prepare <project-id>
+
+# 既存Sandboxの作り直し
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
+```
+
+この設定が*しないこと*もいくつかあります。
+
+- この変数は、これから作られるSandboxにだけ効きます。既存Sandboxのfilesystemを
+  in-place resizeするものではないため、sizeを変えるにはSandboxの作り直しが必要です。
+  `rebuild`はこの場合も他のrebuildと同じdata保護検査を通ります。
+- requested sizeは作成時にその場で予約される量ではありません。各Sandboxが書き込める
+  上限を引き上げるだけで、host上の複数Sandboxの実使用量は引き続きhostの実容量に対して
+  合算されます。
+- build済みimageとload済みtemplateは各Sandboxのroot filesystemとは別にhost容量を
+  消費し、この設定とは独立しています。sbxmがその間に書き出すarchiveはloadが終われば
+  消える短命fileであり、積み上がりません。
+
+どちらのcommandを実行する前にも、要求するsizeに対してhostに十分な空き容量があるか
+確認してください。
+
+### Sandboxのディスクを何が埋めるかを理解する
+
+`sbxm status <project-id>`は、Sandboxの現在の空き容量・実効天井・使用率を示すDISK
+sectionを表示します。この数値が何を反映しているかを理解するための事実です。
+
+- `/home`、`/tmp`を含むSandbox内のすべては、1枚のroot filesystemを共有します。上の
+  `DOCKER_SANDBOXES_ROOT_SIZE`でsizeを決めるのと同じfilesystemであり、build成果物や
+  一時fileのための別volumeはありません。
+- `/tmp`はSandboxを停止して再度開いて（`sbxm open`）も消えません。中でperiodicな
+  掃除を行うinit systemが無いため、置いたfileはSandbox自体を破棄または作り直すまで
+  残り続けます。
+- Sandbox内でfileを削除すると、その場で空き容量が戻ります。root filesystemは通常の
+  書き込み可能な層であり、作り直したときだけ空きが戻るsnapshotではありません。
+- managed worktreeはそれぞれ独立してbuildするため、`--worktrees N`はbuild成果物
+  （例えばRustの`target/`）をworktree数だけ増やします。
+- 共有build cache directoryをサポートする言語・toolであれば（例えばRustの
+  `CARGO_TARGET_DIR`）、下の「設定ファイルを配置する」で宣言するfile経由で全worktree
+  を同じdirectoryへ向けられ、この増加を避けられます。ただし1つのdirectoryを共有すると、
+  本来は並行にできるworktreeごとのbuildが直列化されるため、既定にはせず明示的な
+  trade-offとして選んでください。
+
+diskの復旧が必要なときは、次の順序で進めてください。
+
+1. Sandbox内の不要なfileを削除する。空き容量はその場で戻ります。
+2. rebuildで何を破棄するかを確認する。書き込み可能な層の作り直しが必要なら、
+   通常の保護付き`rebuild`を実行し、表示されたplanを確認する。
+3. 保護検査が示すLayer Aのblockerをすべて保存または解決してから再実行する。publishしていない
+   commit、dirtyまたは未追跡の作業、進行中のGit操作、active session、repository単位のrefも
+   含まれます。
 
 ### managed worktreeを追加する
 
@@ -242,8 +317,10 @@ sbxm destroy <project-id>
 ```
 
 sbxmは何かを削除する前に、削除するものと残すものを表示します。通常のdestroyでは、
-dirty worktree、pushしていないcommit、active sessionを検査します。対話端末では、
-続いてSandbox名の入力を求めます。
+dirty worktree、publishしていないcommit、repository単位のref、active sbxm sessionを
+検査します。対話端末では、続いてSandbox名の入力を求めます。Sandbox自体の削除では、Docker Sandboxes
+自身のruntimeが行うactive-session検査（sbxmが開始していないsession）も尊重します。
+この確認はsbxmが内部で答えるため、利用者に二重には尋ねません。
 
 Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに登録した`GH_TOKEN`のcustom
 secretは削除されます。登録が残ると、同じプロジェクトに対する次の`sbx secret set-custom`
@@ -251,8 +328,8 @@ secretは削除されます。登録が残ると、同じプロジェクトに�
 プロジェクトのDockerfile、build済みimage、load済みtemplate、それ以外を対象に登録した
 secretは残るため、tokenを再登録すればあとからプロジェクトを再登録できます。
 
-データ保護とactive sessionの検査、および確認promptを意図的に省略する必要がある場合は、
-次を実行します。
+データ保護・active session・runtimeのin-use検査、および確認promptを意図的に省略する
+必要がある場合は、次を実行します。
 
 ```sh
 sbxm destroy --force <project-id>
@@ -288,7 +365,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
-| `sbxm rebuild [<project-id>]` | 編集したDockerfileから案件のSandboxを再構築する |
+| `sbxm rebuild [<project-id>]` | Dockerfileから案件のSandboxを作り直す（元の書き込み可能な層は失われる） |
 | `sbxm destroy [<project-id>]` | Sandboxを破棄して案件を管理対象から外し、host cloneとDockerfileは残す |
 
 完全なCLI referenceは、`sbxm --help`または`sbxm <command> --help`で確認できます。

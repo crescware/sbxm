@@ -195,7 +195,11 @@ When run in an interactive terminal, `prepare`, `apply`, `rebuild`, `open`,
 project argument is omitted. For `status`, the first choice is `global`,
 followed by registered project IDs.
 In a non-interactive terminal, provide an explicit project argument for these
-commands; `status` accepts either a project ID or `--global`.
+commands; `status` accepts either a project ID or `--global`. Normal `rebuild`
+and `destroy` still refuse in a non-interactive terminal because their protected
+flows require an interactive, exact sandbox-name confirmation. `destroy --force`
+is the only non-interactive bypass for destroy; it skips those checks
+and does not make the discarded data recoverable.
 
 ## Customize a project
 
@@ -208,9 +212,84 @@ file to add tools or system dependencies, then apply it:
 sbxm rebuild <project-id>
 ```
 
-Rebuilding recreates the sandbox. To protect work, sbxm refuses a normal
-rebuild when worktrees contain dirty files, unpushed commits, or unmanaged
-worktrees.
+Rebuilding recreates the sandbox from the Dockerfile whether or not it
+changed. The old sandbox's writable layer is lost. To protect work, sbxm
+refuses a normal rebuild when worktrees contain dirty files, unpublished
+commits, in-progress Git operations, or unmanaged worktrees.
+
+The protection pass also checks repository-level state that a clean worktree
+does not show by itself: local branches kept out of the checkout, tags, notes,
+stash entries, extra remotes, and reflog-only commits. Save or resolve any
+reported Layer A blocker before retrying. `status` keeps the worktree's
+`STATE` and its origin recovery evidence in a separate `REMOTE` column.
+Normal rebuild always requires an interactive plan and exact sandbox-name
+confirmation; it refuses rather than silently skipping that confirmation in a
+non-interactive terminal.
+
+### Choose the sandbox root size
+
+Docker Sandboxes reads `DOCKER_SANDBOXES_ROOT_SIZE` from the environment of the
+process that creates a sandbox. sbxm does not interpret or rewrite this
+variable; it passes through whatever is set when it runs `sbx create`:
+
+```sh
+# First creation
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm prepare <project-id>
+
+# Re-creation, after the sandbox already exists
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
+```
+
+A few things this does *not* do:
+
+- The variable only takes effect on the sandbox being created. It is not an
+  in-place resize of an existing sandbox's filesystem; changing the size
+  requires recreating the sandbox, so `rebuild` still goes through the same
+  data-protection checks as any other rebuild.
+- The requested size is not reserved up front. It raises the ceiling each
+  sandbox can grow into; actual usage across all of a host's sandboxes still
+  adds up against the host's real disk.
+- Built images and loaded templates live outside each sandbox's root
+  filesystem and consume host space of their own, independent of this
+  setting. The archive sbxm exports in between is a transient file removed
+  once the load finishes; it does not accumulate.
+
+Check the host has headroom for the size you request before running either
+command.
+
+### Understand what fills the sandbox's disk
+
+`sbxm status <project-id>` shows a DISK section with the sandbox's current
+free space, usable ceiling, and capacity. A few facts explain what that number
+reflects:
+
+- `/home`, `/tmp`, and everything else inside the sandbox share one root
+  filesystem — the same one sized by `DOCKER_SANDBOXES_ROOT_SIZE` above. There
+  is no separate volume for build output or temporary files.
+- `/tmp` is not cleared by stopping and reopening a sandbox (`sbxm open`).
+  There is no init system running periodic cleanup inside it; files placed
+  there persist until the sandbox itself is destroyed or rebuilt.
+- Deleting a file inside the sandbox reclaims that space immediately — the
+  root filesystem is a normal writable layer, not a snapshot that only frees
+  up on recreation.
+- Each managed worktree builds independently, so `--worktrees N` multiplies
+  build artifacts (for example, Rust's `target/`) by however many worktrees
+  are configured.
+- Projects that support a shared build cache directory (for example Rust's
+  `CARGO_TARGET_DIR`) can point every worktree at the same directory via a
+  declared file (see "Place configuration files" below) to avoid that
+  multiplication. Sharing one directory serializes what would otherwise be
+  concurrent builds across worktrees, so treat it as an explicit trade-off,
+  not a default.
+
+When disk recovery is needed, use this order:
+
+1. Delete unnecessary files inside the sandbox; the space returns immediately.
+2. Inspect what a rebuild would discard. If recreating the writable layer is
+   necessary, run the normal protected `rebuild` flow and review its plan.
+3. Resolve every Layer A blocker shown by the protection checks — including
+   unpublished commits, dirty or untracked work, Git operations, active
+   sessions, and repository-level refs — before retrying.
 
 ### Add managed worktrees
 
@@ -262,9 +341,13 @@ sbxm destroy <project-id>
 ```
 
 Before deleting anything, sbxm shows what will be removed and what will remain.
-Normal teardown checks for dirty worktrees, unpushed commits, and active
-sessions. In an interactive terminal, it then asks you to type the sandbox
-name.
+Normal teardown checks for dirty worktrees, unpublished commits, repository-level
+refs, and active sbxm sessions. In an interactive terminal, it then asks you to
+type the sandbox name. Removing the sandbox itself also respects Docker
+Sandboxes' own runtime check for anything still attached to it (a session sbxm
+did not start) — sbxm answers that confirmation internally, so you are not
+asked twice. A normal destroy in a non-interactive terminal refuses rather than
+skipping the exact-name confirmation.
 
 The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
 registered for that sandbox are deleted. A registration left behind would make
@@ -276,8 +359,8 @@ token registered anew. Because those artifacts stay behind and sbxm never
 adopts a directory it did not register, registering the project again in the
 same place means moving them aside first.
 
-If you intentionally need to bypass data-protection and active-session checks
-and the confirmation prompt:
+If you intentionally need to bypass data-protection, active-session, and
+runtime in-use checks, and the confirmation prompt:
 
 ```sh
 sbxm destroy --force <project-id>
@@ -315,7 +398,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees |
-| `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its edited Dockerfile |
+| `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its Dockerfile; the old writable layer is lost |
 | `sbxm destroy [<project-id>]` | Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile |
 
 Use `sbxm --help` or `sbxm <command> --help` for the complete CLI reference.

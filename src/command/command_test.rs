@@ -156,6 +156,21 @@ fn timeout_classes_match_the_documented_defaults() {
 }
 
 #[test]
+fn the_real_host_uses_the_pty_runner() -> Checked {
+    let error = RealHost
+        .run_pty_confirmed(&PtyConfirmedCommand::new(
+            "/does/not/exist/sbx",
+            &[],
+            "the sandbox",
+            "confirmation",
+        ))
+        .refused_because("the real host delegates PTY execution")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
+    Ok(())
+}
+
+#[test]
 fn a_command_runs_in_the_working_directory_it_was_given() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let workspace = dir.path().join("workspace");
@@ -354,6 +369,18 @@ fn security_sensitive_runs_drop_the_ssh_agent_socket() -> Checked {
     // 親がSSH_AUTH_SOCKを持たない環境でも、除外側は常にunsetである。
     assert!(with_agent.starts_with("ssh="));
     Ok(())
+}
+
+#[test]
+fn security_sensitive_runs_touch_no_environment_variable_other_than_the_ssh_agent_socket() {
+    // `env` / `env_remove`による明示的な変更は`get_envs()`に現れ、
+    // `env_clear`を呼んだ場合もこのassertionの結果が変わる。
+    // `DOCKER_SANDBOXES_ROOT_SIZE`のような他の変数は、実際のprocess environmentを
+    // 動かさずとも、この一覧が`SSH_AUTH_SOCK`の除去だけであることで素通りすると示せる。
+    let spec = CommandSpec::probe("true", &[]).env(EnvPolicy::InheritWithoutSshAgent);
+    let command = configure(&spec);
+    let envs: Vec<(&std::ffi::OsStr, Option<&std::ffi::OsStr>)> = command.get_envs().collect();
+    assert_eq!(envs, [(std::ffi::OsStr::new("SSH_AUTH_SOCK"), None)]);
 }
 
 #[test]

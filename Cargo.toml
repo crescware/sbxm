@@ -29,7 +29,9 @@ rustix = { version = "1.1.4", default-features = false, features = [
   "event",
   "fs",
   "process",
+  "pty",
   "std",
+  "termios",
 ] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -42,11 +44,6 @@ yaml_serde = "0.10"
 [dev-dependencies]
 fluent-syntax = "0.12.0"
 proc-macro2 = "1.0.107"
-# 端末を要するpromptをtestから動かすためのPTY。出荷するbinaryはこのfeatureを持たない。
-rustix = { version = "1.1.4", default-features = false, features = [
-  "pty",
-  "termios",
-] }
 syn = { version = "2.0.0", features = ["full", "visit"] }
 
 [lints]

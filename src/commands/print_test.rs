@@ -4,6 +4,7 @@
 //! どう描かれるかは`src/design`のinvariant testが持ち、ここは何を並べるかだけを見る。
 
 use crate::testing::outcome::{Checked, Required, Unmet};
+use crate::testing::plain;
 
 use std::path::PathBuf;
 
@@ -16,9 +17,8 @@ use crate::metadata::CreationMode;
 use crate::msg;
 use crate::support::files::{PlacedFile, Placement};
 use crate::support::inventory::{Observed, ProjectState, WorkspaceState};
-use crate::support::protection::{Kind, Mode, Remote, WorktreeReport};
+use crate::support::protection::{ConfirmableLoss, Kind, Mode, Reachability, WorktreeReport};
 use crate::support::status::{Row, StatusValue};
-use crate::testing::plain;
 
 /// blockの並びを役割の名前で表す。
 fn shape(document: &Document) -> Vec<&'static str> {
@@ -310,6 +310,7 @@ fn project_status(
             value: super::status::project::Value::Ready,
         }],
         worktrees,
+        disk: crate::support::disk::DiskObservation::NotObservedMismatch,
         diagnostics: vec![Diagnostic::new(
             ErrorId::GlobalScopeUnobservable,
             msg!("error-global-scope-unobservable"),
@@ -324,7 +325,7 @@ fn project_status_says_that_no_worktree_was_observed() {
             &project_status(Vec::new()),
             Locale::En
         )),
-        vec!["fields", "empty"]
+        vec!["fields", "empty", "empty"]
     );
 }
 
@@ -335,13 +336,16 @@ fn project_status_lists_the_worktrees_it_did_observe() {
         kind: "managed",
         mode: super::status::project::Value::Attached,
         state: super::status::project::Value::Clean,
+        remote: Reachability::Pushed {
+            upstream: "refs/remotes/origin/main".to_string(),
+        },
     }];
     assert_eq!(
         shape(&super::status::print::project_document(
             &project_status(worktrees),
             Locale::En
         )),
-        vec!["fields", "table"]
+        vec!["fields", "table", "empty"]
     );
 }
 
@@ -387,6 +391,7 @@ fn destroy_plan(force: bool) -> super::destroy::run::DestroyPlan {
         state: ProjectState::Running,
         force,
         worktrees: Vec::new(),
+        confirmable_losses: Vec::new(),
         removes: vec![super::destroy::run::Target::Described(msg!(
             "destroy-target-sandbox",
             sandbox = "owner-repo"
@@ -448,7 +453,9 @@ fn destroy_plan_with_worktrees() -> super::destroy::run::DestroyPlan {
                 mode: Mode::Attached,
                 head: "a1b2c3d".to_string(),
                 branch: Some("main".to_string()),
-                remote: Remote::Pushed,
+                reachability: Reachability::Pushed {
+                    upstream: "refs/remotes/origin/main".to_string(),
+                },
             },
             WorktreeReport {
                 relative: "repo.scratch".to_string(),
@@ -456,11 +463,159 @@ fn destroy_plan_with_worktrees() -> super::destroy::run::DestroyPlan {
                 mode: Mode::Detached,
                 head: "d4e5f6a".to_string(),
                 branch: None,
-                remote: Remote::Reachable,
+                reachability: Reachability::Reachable {
+                    origins: vec!["refs/remotes/origin/main".to_string()],
+                },
             },
         ],
         ..destroy_plan(false)
     }
+}
+
+/// 層Bの確認対象を1 variantずつ並べた一覧。
+///
+/// 削除計画は観測した損失を1件も落とさずに見せる。variantを足したときに説明のない行が
+/// 出ないよう、全variantをここへ置いて表示まで通す。
+fn every_confirmable_loss() -> Vec<ConfirmableLoss> {
+    vec![
+        ConfirmableLoss::IgnoredPaths {
+            worktree: "repo.tree-0".to_string(),
+            paths: vec!["node_modules/".to_string(), "target/".to_string()],
+        },
+        ConfirmableLoss::LocalRef {
+            reference: "refs/stash".to_string(),
+        },
+        ConfirmableLoss::BranchUpstream {
+            branch: "topic".to_string(),
+            upstream: "origin/topic".to_string(),
+        },
+        ConfirmableLoss::Tag {
+            name: "v1".to_string(),
+        },
+        ConfirmableLoss::AdditionalRemote {
+            name: "fork".to_string(),
+        },
+        ConfirmableLoss::ReflogOnlyCommits { count: 3 },
+        ConfirmableLoss::UnmanagedWorktree {
+            worktree: "repo.scratch".to_string(),
+        },
+        ConfirmableLoss::SandboxWritableLayer,
+    ]
+}
+
+/// documentが持つ`index`番目のsectionの行。
+fn lines_at(document: &Document, index: usize) -> Checked<&Vec<crate::design::Cell>> {
+    let Some(Block::Section(section)) = document.blocks().get(index) else {
+        return Err(Unmet::new("a section".to_string()));
+    };
+    let SectionBody::Lines(lines) = &section.body else {
+        return Err(Unmet::new("lines".to_string()));
+    };
+    Ok(lines)
+}
+
+/// 行が持つmessage IDの並び。
+fn line_ids(lines: &[crate::design::Cell]) -> Vec<&'static str> {
+    lines
+        .iter()
+        .map(|cell| match cell {
+            crate::design::Cell::Label(message) => message.id,
+            crate::design::Cell::Value(_) => "value",
+        })
+        .collect()
+}
+
+#[test]
+fn the_deletion_plan_explains_every_kind_of_loss_it_observed() -> Checked {
+    // 層Bの損失は、確認を求める前に1件残らず見せる。説明を持たないvariantがあると、
+    // 利用者は何を失うのかを知らないまま名前を入力することになる。
+    let plan = super::destroy::run::DestroyPlan {
+        confirmable_losses: every_confirmable_loss(),
+        ..destroy_plan_with_worktrees()
+    };
+    for locale in [Locale::En, Locale::Ja] {
+        let drawn = plain(&super::destroy::print::plan_document(&plan, locale), locale)?;
+        for path in ["node_modules/", "target/"] {
+            assert!(
+                drawn.contains(path),
+                "{locale:?}: every ignored path is shown: {drawn}"
+            );
+        }
+    }
+    let document = super::destroy::print::plan_document(&plan, Locale::En);
+    assert_eq!(
+        shape(&document),
+        vec![
+            "fields", "table", "lines", "lines", "lines", "guidance", "command"
+        ]
+    );
+    assert_eq!(
+        line_ids(lines_at(&document, 2)?),
+        vec![
+            "confirmable-loss-ignored-paths",
+            "confirmable-loss-local-ref",
+            "confirmable-loss-branch-upstream",
+            "confirmable-loss-tag",
+            "confirmable-loss-additional-remote",
+            "confirmable-loss-reflog-only-commits",
+            "confirmable-loss-unmanaged-worktree",
+            "confirmable-loss-sandbox-writable-layer",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn the_rebuild_plan_shows_both_generations_and_what_the_rebuild_loses() -> Checked {
+    // rebuildもdestroyと同じ層Bの一覧を見せる。世代のhashは、どちらへ動くのかが
+    // 読めるよう現在と適用先を並べる。
+    let plan = super::rebuild::run::RebuildPlan {
+        project: "owner/repo".to_string(),
+        sandbox: "sbxm-owner-repo-0123456789ab".to_string(),
+        current_generation: "a".repeat(64),
+        target_generation: "b".repeat(64),
+        confirmable_losses: every_confirmable_loss(),
+    };
+    let document = super::rebuild::print::plan_document(&plan);
+    assert_eq!(shape(&document), vec!["fields", "lines"]);
+
+    let Some(Block::Section(section)) = document.blocks().first() else {
+        return Err(Unmet::new("a section".to_string()));
+    };
+    let SectionBody::Fields(fields) = &section.body else {
+        return Err(Unmet::new("fields".to_string()));
+    };
+    assert_eq!(
+        fields
+            .iter()
+            .map(|field| field.label.id)
+            .collect::<Vec<&str>>(),
+        vec![
+            "add-field-project",
+            "add-field-sandbox",
+            "rebuild-plan-current-generation",
+            "rebuild-plan-target-generation",
+        ]
+    );
+    assert_eq!(
+        line_ids(lines_at(&document, 1)?).len(),
+        every_confirmable_loss().len(),
+        "the rebuild plan drops none of the losses it observed"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_plan_without_a_single_loss_shows_no_empty_section() {
+    // 失うものが1件も無いことと、見出しだけがあることは別である。
+    let document = super::rebuild::print::plan_document(&super::rebuild::run::RebuildPlan {
+        project: "owner/repo".to_string(),
+        sandbox: "sbxm-owner-repo-0123456789ab".to_string(),
+        current_generation: "a".repeat(64),
+        target_generation: "a".repeat(64),
+        confirmable_losses: Vec::new(),
+    });
+    assert_eq!(shape(&document), vec!["fields"]);
 }
 
 /// documentが持つ`index`番目のtable。

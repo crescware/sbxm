@@ -8,11 +8,12 @@ pub(super) fn run_exec(
     sandbox: &str,
     user: Option<&str>,
     args: &[&str],
+    timeout: TimeoutClass,
 ) -> Result<CommandOutcome> {
     let full = exec_arguments(sandbox, user, args);
     let borrowed: Vec<&str> = full.iter().map(String::as_str).collect();
     let spec = CommandSpec::capture("sbx", &borrowed)
         .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(TimeoutClass::SandboxLifecycle);
+        .timeout(timeout);
     host.run(&spec)
 }

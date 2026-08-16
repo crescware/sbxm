@@ -7,6 +7,7 @@
 //! application全体のinterfaceとして持つ。
 
 pub mod daemon;
+pub mod disk;
 pub mod docker;
 pub mod files;
 pub mod generation;

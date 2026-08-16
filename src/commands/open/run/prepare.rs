@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::HostEnvironment;
+use crate::command::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -11,7 +11,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{daemon, docker, generation, sandbox, worktree};
+use crate::support::{daemon, disk, docker, generation, sandbox, worktree};
 
 use super::{ClampedIndex, Prepared};
 
@@ -58,6 +58,11 @@ pub fn prepare(
         )
     };
     let locked = candidate.lock()?;
+    // project lockを保持している間にshared session leaseを取る。lock順序を
+    // project lock→session leaseに固定し、`locked`が外れたあともこのleaseは
+    // `Prepared`が保持し続けるため、SSH sessionの生存中は通常rebuild/destroyの
+    // exclusive session leaseと排他し続ける。
+    let session_lease = locked.acquire_shared_session_lease()?;
     let (index, clamped_worktree_index) = if interactive_index {
         clamp_to_metadata(index, &locked.metadata)
     } else {
@@ -88,6 +93,15 @@ pub fn prepare(
     let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
     let (working_directory, missing_worktree_index) = working_directory(&layout, &worktrees, index);
 
+    // ここまで来た時点でSandboxは必ずrunningである。この観測のために追加で
+    // 起動しない。値または理由はSSHへterminalを渡す前に1回だけ示す。
+    let disk = disk::observe(
+        host,
+        name.as_str(),
+        Some(ProjectState::Running),
+        TimeoutClass::Probe,
+    );
+
     Ok(Prepared {
         project: metadata.display_id(),
         sandbox: name.as_str().to_string(),
@@ -96,6 +110,8 @@ pub fn prepare(
         missing_worktree_index,
         clamped_worktree_index,
         worktrees,
+        disk,
+        _session_lease: session_lease,
     })
 }
 

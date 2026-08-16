@@ -1,11 +1,18 @@
-use crate::diagnostics::{ErrorId, Result};
+use crate::cli::Interactivity;
+use crate::commands::{Context, open::Args};
+use crate::compatibility::RootDiskUsage;
+use crate::design::prompt::{RecordedScreen, ScriptedKeys};
+use crate::design::{OutputPolicy, PromptUi, Ui};
+use crate::diagnostics::{ErrorId, ExitCode, Result};
+use crate::i18n::Locale;
 use crate::project::{ProjectId, SandboxLayout};
+use crate::support::disk::DiskObservation;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
-use crate::command::{OutputPolicy, TimeoutClass};
+use crate::command::{OutputPolicy as CommandOutputPolicy, TimeoutClass};
 use crate::design::SilentProgress;
 use crate::metadata::{self, MAX_WORKTREE_INDEX, RebuildIntent};
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};
@@ -32,7 +39,7 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
         host.answering("version --format {{.Server.Version}}", 0, "27.0.3\n"),
         project.sandbox.as_str(),
     );
-    host.answering(
+    let host = host.answering(
         &format!(
             "exec {} -- git --git-dir {} worktree list --porcelain -z",
             project.sandbox,
@@ -40,6 +47,11 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
         ),
         0,
         &listing,
+    );
+    host.answering(
+        &format!("exec {} -- df -Pk /", project.sandbox),
+        0,
+        "Filesystem     1024-blocks      Used Available Capacity Mounted on\noverlay          20466256  14502976   4898320       75% /\n",
     )
 }
 
@@ -73,7 +85,10 @@ fn prepare_for_index(fixture: &Fixture, host: &FakeSbx, index: Option<u32>) -> R
 fn a_running_project_is_opened_without_touching_the_daemon() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listing(&running), &project);
 
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
@@ -96,6 +111,113 @@ fn a_running_project_is_opened_without_touching_the_daemon() -> Checked {
         "a running sandbox is not started again: {:?}",
         host.calls()
     );
+    assert_eq!(
+        prepared.disk,
+        DiskObservation::Observed(RootDiskUsage {
+            free_kib: 4_898_320,
+            usable_kib: 19_401_296,
+            capacity_percent: 75,
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn disk_usage_is_observed_exactly_once_after_the_sandbox_is_confirmed_running() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("Example-Org/Example-Repo")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = ready(FakeSbx::listing(&running), &project);
+
+    prepare_for(&fixture, &host).required_because("prepare")?;
+
+    let df_calls = host
+        .calls()
+        .iter()
+        .filter(|call| call.contains(&"df".to_string()))
+        .count();
+    assert_eq!(df_calls, 1, "{:?}", host.calls());
+    assert_eq!(host.spec("df -Pk /")?.timeout, TimeoutClass::Probe);
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("Example-Org/Example-Repo")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = ready(FakeSbx::listing(&running), &project).answering(
+        &format!("exec {} -- df -Pk /", project.sandbox),
+        127,
+        "",
+    );
+
+    let (code, stderr) = {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = {
+            let policy = OutputPolicy::plain();
+            let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
+            let mut prompt = PromptUi::new(
+                Locale::En,
+                policy.stderr,
+                Box::new(ScriptedKeys::confirming()),
+                Box::new(RecordedScreen::new()),
+            );
+            let context = Context {
+                location: &fixture.location,
+                workspace_root: &fixture.workspace_root,
+                lang: Some(Locale::En),
+                interactivity: Interactivity {
+                    stdin_is_tty: false,
+                    stderr_is_tty: false,
+                },
+            };
+            crate::commands::open::exec(
+                &Args {
+                    project: Some(project_id("example-org/example-repo")?),
+                    index: None,
+                },
+                &context,
+                &mut ui,
+                &host,
+                &mut prompt,
+            )
+        };
+        (
+            code,
+            String::from_utf8(stderr).required_because("open stderr is UTF-8")?,
+        )
+    };
+
+    assert_eq!(code, ExitCode::Success);
+    assert!(stderr.contains("DISK"), "{stderr:?}");
+    assert!(stderr.contains("is not available"), "{stderr:?}");
+
+    let ssh = host.spec(&format!("{}.sbx", project.sandbox))?;
+    assert_eq!(ssh.program, "ssh");
+    assert_eq!(
+        ssh.args,
+        vec![
+            "-t".to_string(),
+            format!("{}.sbx", project.sandbox),
+            format!(
+                "cd '{}' && exec \"${{SHELL:-/bin/sh}}\" -l",
+                SandboxLayout::new(project.metadata.canonical_id()).bare_root()
+            ),
+        ]
+    );
+    assert_eq!(
+        ssh.output(),
+        CommandOutputPolicy::HandOver,
+        "the terminal is handed over even when disk observation is unavailable"
+    );
     Ok(())
 }
 
@@ -103,7 +225,10 @@ fn a_running_project_is_opened_without_touching_the_daemon() -> Checked {
 fn a_selected_worktree_becomes_the_ssh_starting_directory() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listing(&running), &project);
 
     let prepared = prepare_for_index(&fixture, &host, Some(0))
@@ -124,7 +249,10 @@ fn an_interactive_index_is_bounded_by_the_selected_projects_worktrees() -> Check
     project.metadata.provisioning.requested_worktrees = 5;
     metadata::update(&project.paths, &project.metadata)
         .required_because("record five managed worktrees")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listing(&running), &project);
     let mut prompt = ScriptedPrompt::choosing_worktree(99);
 
@@ -163,7 +291,10 @@ fn an_interactive_index_inside_the_metadata_is_opened_without_a_warning() -> Che
     project.metadata.provisioning.requested_worktrees = 5;
     metadata::update(&project.paths, &project.metadata)
         .required_because("record five managed worktrees")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listing(&running), &project);
 
     let prepared = prepare(
@@ -193,7 +324,10 @@ fn an_interactive_index_inside_the_metadata_is_opened_without_a_warning() -> Che
 fn an_unconfigured_worktree_index_falls_back_to_the_repository_root() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listing(&running), &project);
 
     let prepared = prepare_for_index(&fixture, &host, Some(1))
@@ -207,7 +341,10 @@ fn an_unconfigured_worktree_index_falls_back_to_the_repository_root() -> Checked
 fn the_host_agent_has_to_be_out_of_reach_before_the_terminal_is_handed_over() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     // daemonがSSH Agentを渡す状態で起動していた場合、中から到達できる。
     let host = ready(FakeSbx::listing(&running), &project).answering(
         &format!("exec {} -- ssh-add -L", project.sandbox),
@@ -229,8 +366,14 @@ fn the_host_agent_has_to_be_out_of_reach_before_the_terminal_is_handed_over() ->
 fn a_stopped_project_is_started_without_a_terminal_and_waited_for() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listings(&[&stopped, &running]), &project);
 
     prepare_for(&fixture, &host).required_because("prepare")?;
@@ -245,7 +388,10 @@ fn a_stopped_project_whose_workspace_is_gone_is_refused_instead_of_started() -> 
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
     // runtimeのrecordは残っているが、mount元のdirectoryはhostから消えている。
-    let stopped = format!("[{}]", fixture.declared_entry(&project, "stopped"));
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.declared_entry(&project, "stopped")
+    );
     let host = ready(FakeSbx::listing(&stopped), &project);
 
     let error = prepare_for(&fixture, &host)
@@ -279,7 +425,10 @@ fn a_running_project_is_opened_even_though_its_workspace_is_not_observed() -> Ch
     let project = fixture.register("example-org/example-repo")?;
     // 動いているSandboxは起動し直さない。hostのdirectoryが消えていても、動いている
     // mountが壊れているかは観測しておらず、推測で接続を拒まない。
-    let running = format!("[{}]", fixture.declared_entry(&project, "running"));
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.declared_entry(&project, "running")
+    );
     let host = ready(FakeSbx::listing(&running), &project);
 
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
@@ -297,7 +446,7 @@ fn a_running_project_is_opened_even_though_its_workspace_is_not_observed() -> Ch
 fn a_project_without_a_sandbox_is_sent_back_to_add() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
-    let host = ready(FakeSbx::listing("[]"), &project);
+    let host = ready(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project);
 
     let error = prepare_for(&fixture, &host).refused_because("open never creates a sandbox")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
@@ -334,7 +483,7 @@ fn a_project_without_a_sandbox_is_sent_back_to_add() -> Checked {
 #[test]
 fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing("[]");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
 
     let error = prepare(
         &fixture.location,
@@ -367,7 +516,10 @@ fn a_rebuild_in_progress_stops_the_connection() -> Checked {
     });
     metadata::update(&project.paths, &metadata).required_because("record the intent")?;
 
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listing(&running), &project);
 
     let error =
@@ -381,7 +533,10 @@ fn a_rebuild_in_progress_stops_the_connection() -> Checked {
 fn an_intent_recorded_after_the_selection_is_still_seen() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listing(&running), &project);
 
     // 選択したあとにrebuildが始まった状態を、lock取得後のmetadataから読み直す。
@@ -411,7 +566,10 @@ fn an_intent_recorded_after_the_selection_is_still_seen() -> Checked {
 fn a_sandbox_that_never_reaches_running_is_reported_rather_than_assumed() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
     let host = ready(FakeSbx::listing(&stopped), &project);
 
     let error = prepare_for(&fixture, &host)
@@ -435,7 +593,10 @@ fn a_sandbox_that_never_reaches_running_is_reported_rather_than_assumed() -> Che
 fn a_missing_managed_worktree_stops_before_the_terminal_is_handed_over() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     // directoryはあってもGitのworktreeでなければ、宣言を満たしていない。
     let host = ready(FakeSbx::listing(&running), &project).answering(
@@ -457,7 +618,11 @@ fn a_missing_managed_worktree_stops_before_the_terminal_is_handed_over() -> Chec
 fn an_engine_that_does_not_answer_stops_before_anything_is_read() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("example-org/example-repo")?;
-    let host = FakeSbx::listing("[]").answering("version --format {{.Server.Version}}", 1, "");
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+        "version --format {{.Server.Version}}",
+        1,
+        "",
+    );
 
     let error = prepare_for(&fixture, &host)
         .refused_because("without the engine there is nothing to open")?;
@@ -470,11 +635,14 @@ fn an_engine_that_does_not_answer_stops_before_anything_is_read() -> Checked {
 fn the_connection_hands_the_terminal_to_ssh() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listing(&running), &project);
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 
-    connect(&host, &prepared, &mut RecordedOutput::new()).required_because("connect")?;
+    connect(&host, prepared, &mut RecordedOutput::new()).required_because("connect")?;
     let ssh = host.spec(&format!("{}.sbx", project.sandbox))?;
     assert_eq!(ssh.program, "ssh");
     assert_eq!(
@@ -487,7 +655,7 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
     );
     assert_eq!(
         ssh.output(),
-        OutputPolicy::HandOver,
+        CommandOutputPolicy::HandOver,
         "the terminal itself is handed over"
     );
     assert_eq!(
@@ -499,10 +667,43 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
 }
 
 #[test]
+fn the_session_lease_is_released_before_a_connection_error_is_reported() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = ready(FakeSbx::listing(&running), &project).answering(
+        &format!(
+            "-t {}.sbx cd '/home/agent/work/example-repo/example-repo.tree-0' && exec \"${{SHELL:-/bin/sh}}\" -l",
+            project.sandbox
+        ),
+        3,
+        "",
+    );
+    let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
+
+    connect(&host, prepared, &mut RecordedOutput::new())
+        .refused_because("a failed SSH child is reported")?;
+    paths::acquire_exclusive_lock(
+        &project.paths.session_lease_file(),
+        Duration::from_millis(50),
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("the session lease is released before the error report")?;
+    Ok(())
+}
+
+#[test]
 fn the_project_lock_is_released_before_the_terminal_is_handed_over() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
     let host = ready(FakeSbx::listing(&running), &project);
 
     prepare_for(&fixture, &host).required_because("prepare")?;
@@ -514,5 +715,39 @@ fn the_project_lock_is_released_before_the_terminal_is_handed_over() -> Checked 
         PathScope::ProjectPath,
     )
     .required_because("the lock covers the mutation, not the session")?;
+    Ok(())
+}
+
+#[test]
+fn the_session_lease_stays_held_until_the_terminal_session_ends() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = ready(FakeSbx::listing(&running), &project);
+
+    let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
+
+    // project lockは外れても、SSH sessionの生存中はshared session leaseを持ち続ける。
+    // 通常rebuild/destroyが取るexclusive leaseはここで拒否される。
+    paths::acquire_exclusive_lock(
+        &project.paths.session_lease_file(),
+        Duration::from_millis(50),
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .refused_because("an active sbxm open session blocks a new exclusive session lease")?;
+
+    // sessionが終わる（`Prepared`が破棄される）と、exclusive leaseを取得できる。
+    drop(prepared);
+    paths::acquire_exclusive_lock(
+        &project.paths.session_lease_file(),
+        Duration::from_millis(50),
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("the session lease releases once the session ends")?;
     Ok(())
 }
