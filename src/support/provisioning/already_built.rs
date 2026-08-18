@@ -6,7 +6,7 @@ use crate::metadata::ProjectMetadata;
 use crate::paths::ProjectPaths;
 use crate::project::{SandboxLayout, SandboxName};
 
-use crate::support::{daemon, inventory, sandbox};
+use crate::support::{daemon, sandbox};
 
 use super::{ProvisioningOutput, observed_worktrees};
 
@@ -25,11 +25,14 @@ pub(crate) fn already_built(
     }
 
     let sandboxes = daemon::list(host)?;
-    let Some(entry) = inventory::single(&sandboxes, name.as_str())? else {
+    let Some(entry) = sandboxes
+        .into_iter()
+        .find(|entry| entry.name == name.as_str())
+    else {
         return Ok(None);
     };
 
-    sandbox::verify_identity(entry, name, workspace_root)?;
+    sandbox::verify_identity(&entry, name, workspace_root)?;
     if !sandbox::workspace_exists(workspace_root, name)? {
         return Ok(None);
     }

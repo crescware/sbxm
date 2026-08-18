@@ -2,19 +2,16 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::design::{Fact, ProgressSink, Remediation};
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
-use crate::metadata::ProjectMetadata;
+use crate::design::ProgressSink;
+use crate::diagnostics::Result;
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
-use crate::support::provisioning::{self, ProvisioningState};
 use crate::support::select::ProjectPrompt;
+use crate::support::{generation, image, provisioning, secret};
 
 use super::PrepareOutput;
 
-/// 現行の`prepare`入口。fresh案件だけが共有provisioning境界へ進み、途中状態の暗黙再開は
-/// `repair`へ委ねる。
-#[allow(clippy::too_many_arguments)]
+/// 対象を引数またはpromptで解決し、登録済み案件のSandboxを構築する。
 pub fn run(
     location: &ConfigLocation,
     config: &GlobalConfig,
@@ -27,91 +24,44 @@ pub fn run(
     let mut locked =
         crate::support::select::one(location, requested, &msg!("select-prepare-heading"), prompt)?
             .lock()?;
-    if locked.metadata.rebuild.is_some() {
-        crate::support::generation::require_no_rebuild(&locked.metadata)?;
-    }
-    if locked.metadata.initial_provisioning.is_none() {
-        crate::support::docker::require_reachable(host)?;
-    }
+    let mut warnings = image::cleanup_stale_archives(&locked.paths)?;
+    generation::require_no_rebuild(&locked.metadata)?;
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
     let layout = SandboxLayout::new(&canonical);
-    let observed = provisioning::observe(
+
+    if let Some(mut output) = provisioning::already_built(
         host,
         &locked.paths,
         &name,
         &locked.metadata,
         &layout,
         workspace_root,
-        false,
-    )?;
-
-    match observed.state {
-        ProvisioningState::Pending => Err(pending(&locked.metadata)),
-        ProvisioningState::Incomplete => Err(incomplete(&locked.metadata, &observed.artifacts)),
-        ProvisioningState::Ready => match observed.output {
-            Some(output) => Ok(output),
-            None => Err(incomplete(&locked.metadata, &observed.artifacts)),
-        },
-        ProvisioningState::Fresh => {
-            let (target, warnings) =
-                provisioning::fresh_target(host, &locked.paths, &name, &locked.metadata)?;
-            provisioning::provision(
-                &mut locked,
-                config,
-                &target,
-                host,
-                workspace_root,
-                progress,
-                warnings,
-            )
-        }
+    )? {
+        output.warnings = warnings;
+        return Ok(output);
     }
-}
 
-fn pending(metadata: &ProjectMetadata) -> Error {
-    let target = metadata
-        .initial_provisioning
-        .as_ref()
-        .map_or("<unobserved>", |intent| {
-            intent.target_dockerfile_sha256.as_str()
-        });
-    Error::single(
-        Diagnostic::new(
-            ErrorId::InitialProvisioningPending,
-            msg!(
-                "error-initial-provisioning-pending",
-                project = metadata.display_id()
-            ),
-        )
-        .fact(Fact::sandbox(&metadata.sandbox_name().to_string()))
-        .fact(Fact::value(target))
-        .remediation(
-            Remediation::text(msg!("remediation-initial-provisioning-pending"))
-                .try_run(format!("sbxm repair {}", metadata.display_id())),
-        ),
-    )
-}
+    // custom secretはSandboxの作成時に結び付く。あとから登録しても既存のSandboxには
+    // 届かないため、作成より前に、そしてimageを組む前に確認する。
+    secret::require_github(host, name.as_str())?;
+    crate::support::docker::require_reachable(host)?;
 
-fn incomplete(metadata: &ProjectMetadata, artifacts: &[provisioning::Artifact]) -> Error {
-    let values = artifacts
-        .iter()
-        .map(provisioning::Artifact::as_str)
-        .collect::<Vec<_>>();
-    Error::single(
-        Diagnostic::new(
-            ErrorId::InitialProvisioningIncomplete,
-            msg!(
-                "error-initial-provisioning-incomplete",
-                project = metadata.display_id()
-            ),
-        )
-        .fact(Fact::paths(&values))
-        .remediation(
-            Remediation::text(msg!("remediation-initial-provisioning-incomplete"))
-                .try_run(format!("sbxm repair {}", metadata.display_id())),
-        ),
+    // 中断後もbaseと同じgeneration選択規則で続行する。intentがある場合も、既にimageが
+    // 完成していればDockerfile変更のwarningを従来どおり出す。
+    let (target, target_warnings) =
+        provisioning::fresh_target(host, &locked.paths, &name, &locked.metadata)?;
+    warnings.extend(target_warnings);
+
+    provisioning::provision(
+        &mut locked,
+        config,
+        &target,
+        host,
+        workspace_root,
+        progress,
+        warnings,
     )
 }
 

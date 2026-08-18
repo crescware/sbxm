@@ -19,6 +19,7 @@ mod placeholder_probe;
 mod register_command;
 mod require_github;
 mod require_placeholder_present;
+#[allow(dead_code)]
 mod verify_git_credential;
 
 pub use configure_git_credential::configure_git_credential;

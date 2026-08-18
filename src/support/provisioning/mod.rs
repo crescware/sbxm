@@ -5,17 +5,22 @@
 //! allowlistの検査と再利用規則へ戻れるようにする。
 
 mod already_built;
+#[allow(dead_code)]
 mod artifact;
 mod changed_dockerfile_warning;
 mod clear_intent;
 mod fresh_target;
+#[allow(dead_code)]
 mod observation;
+#[allow(dead_code)]
 mod observe;
 mod observed_worktrees;
 mod persist_intent;
+#[allow(dead_code)]
 mod preflight;
 mod provision;
 mod provisioning_output;
+#[allow(dead_code)]
 mod provisioning_state;
 mod worktree_row;
 
@@ -25,9 +30,11 @@ pub(crate) use changed_dockerfile_warning::changed_dockerfile_warning;
 pub(crate) use clear_intent::clear_intent;
 pub(crate) use fresh_target::fresh_target;
 pub use observation::Observation;
+#[allow(unused_imports)]
 pub use observe::observe;
 pub(crate) use observed_worktrees::observed_worktrees;
 pub(crate) use persist_intent::persist_intent;
+#[allow(unused_imports)]
 pub(crate) use preflight::preflight;
 pub(crate) use provision::provision;
 pub use provisioning_output::ProvisioningOutput;

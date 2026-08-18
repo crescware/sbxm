@@ -12,6 +12,7 @@
 mod ensure;
 mod existing;
 mod find;
+#[allow(dead_code)]
 mod has;
 mod loaded_template;
 mod unusable;

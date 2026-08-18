@@ -14,6 +14,7 @@ mod place;
 mod place_all;
 mod placed_file;
 mod placement;
+#[allow(dead_code)]
 mod preflight;
 mod read_source;
 mod require_no_symlink_in_sandbox;

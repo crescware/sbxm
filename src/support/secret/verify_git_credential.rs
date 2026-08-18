@@ -13,12 +13,16 @@ pub(crate) fn verify_git_credential(host: &dyn HostEnvironment, sandbox: &str) -
         sandbox,
         &["git", "config", "--global", "--get", &key],
     )?;
-    if !outcome.success() {
-        return Ok(());
-    }
     let observed = outcome.stdout_text().trim().to_string();
-    if observed.is_empty() || observed == helper() {
-        return Ok(());
+    match crate::support::sandbox::inner_exit_code(&outcome) {
+        Some(0) => {
+            if observed.is_empty() || observed == helper() {
+                return Ok(());
+            }
+        }
+        // `git config --get` uses status 1 for a missing key.
+        Some(1) => return Ok(()),
+        _ => return Err(crate::support::sandbox::unobservable(&outcome, &key)),
     }
     Err(Error::single(
         Diagnostic::new(

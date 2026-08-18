@@ -19,11 +19,16 @@ fn verify_value(
     expected: &str,
 ) -> Result<()> {
     let outcome = sandbox::exec(host, sandbox, &["git", "config", "--global", "--get", key])?;
-    if outcome.success() {
-        let observed = outcome.stdout_text().trim().to_string();
-        if !observed.is_empty() && observed != expected {
-            return Err(mismatch(sandbox, key, &observed, expected));
+    match sandbox::inner_exit_code(&outcome) {
+        Some(0) => {
+            let observed = outcome.stdout_text().trim().to_string();
+            if !observed.is_empty() && observed != expected {
+                return Err(mismatch(sandbox, key, &observed, expected));
+            }
         }
+        // `git config --get` uses status 1 for a key that is not configured.
+        Some(1) => {}
+        _ => return Err(sandbox::unobservable(&outcome, key)),
     }
     Ok(())
 }

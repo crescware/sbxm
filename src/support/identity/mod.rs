@@ -18,7 +18,9 @@ mod ensure_git_protocol;
 mod git_protocol;
 mod github_host;
 mod mismatch;
+#[allow(dead_code)]
 mod verify;
+#[allow(dead_code)]
 mod verify_git_protocol;
 
 pub use candidate_from_host::candidate_from_host;

@@ -162,6 +162,37 @@ fn observation_reports_both_persistent_and_temporary_archives() -> Checked {
 }
 
 #[test]
+fn matching_immutable_cache_is_not_reported_as_incomplete() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("create the reusable cache")?;
+
+    let metadata = bench.stored("Example-Org/Example-Repo")?;
+    let sandbox = metadata.sandbox_name();
+    let workspace = bench.workspace_root.path().join(sandbox.as_str());
+    std::fs::remove_dir_all(&workspace).required_because("remove the old workspace")?;
+    world.sandboxes.borrow_mut().clear();
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    let observation = observe(
+        &world,
+        &paths,
+        &sandbox,
+        &metadata,
+        &SandboxLayout::new(metadata.canonical_id()),
+        bench.workspace_root.path(),
+        true,
+    )?;
+
+    assert_eq!(observation.state, ProvisioningState::Fresh);
+    assert!(observation.artifacts.is_empty());
+    Ok(())
+}
+
+#[test]
 fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

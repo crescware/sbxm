@@ -29,10 +29,17 @@ pub(crate) fn provision(
     secret::require_github(host, locked.metadata.sandbox_name().as_str())?;
     docker::require_reachable(host)?;
 
+    // 同名のforeign imageをcache missとして扱わない。intentを保存したあとで衝突に
+    // 到達すると、中断状態だけが残って次回のprepareの挙動を変えてしまう。
+    image::verify_generation(
+        host,
+        &locked.metadata.sandbox_name(),
+        locked.metadata.canonical_id(),
+        target,
+    )?;
+
     // これが初回構築における最初のmutationである。
     persist_intent(locked, target)?;
-
-    warnings.extend(image::cleanup_stale_archives(&locked.paths)?);
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
@@ -100,7 +107,6 @@ pub(crate) fn provision(
 
     // ensure_worktreesは各工程のpost-conditionを検査し、ここでは最終表示用の観測を行う。
     let worktrees = observed_worktrees(host, &ready.name, &layout, &locked.metadata)?;
-    super::preflight(locked, config, target, host, workspace_root, true, true)?;
     let output = ProvisioningOutput {
         project: locked.metadata.display_id(),
         sandbox: ready.name,

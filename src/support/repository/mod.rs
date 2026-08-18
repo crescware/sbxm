@@ -14,6 +14,7 @@ mod start_ref;
 mod tag_following;
 mod unusable;
 mod verify_bare_clone;
+#[allow(dead_code)]
 mod verify_existing;
 mod worktree;
 
