@@ -4,7 +4,7 @@ use crate::commands::prepare::fake::{Bench, World};
 use crate::metadata;
 use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout};
-use crate::support::select;
+use crate::support::{image, select};
 use crate::testing::add_request::request;
 use crate::testing::metadata::git_identity;
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -40,24 +40,57 @@ fn locked_fixture(fixture: &Fixture) -> Checked<crate::support::select::Locked> 
 }
 
 #[test]
-fn intent_persistence_is_idempotent_and_rejects_a_different_target() -> Checked {
+fn intent_persistence_is_idempotent_and_retargets_before_anything_is_built() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("Example-Org/Example-Repo")?;
     let mut locked = locked_fixture(&fixture)?;
+    let world = World::new();
 
     clear_intent(&mut locked).required_because("clearing an absent intent is a no-op")?;
-    persist_intent(&mut locked, DIGEST).required_because("persist the first intent")?;
-    persist_intent(&mut locked, DIGEST).required_because("reuse the same intent")?;
+    persist_intent(&world, &mut locked, DIGEST).required_because("persist the first intent")?;
+    persist_intent(&world, &mut locked, DIGEST).required_because("reuse the same intent")?;
 
-    let error = persist_intent(&mut locked, &"f".repeat(64))
-        .refused_because("a different target cannot reuse the intent")?;
+    // 最初のtargetのimageはまだ無いため、Dockerfileを直した通常のprepareは
+    // 従来どおりretargetできる。
+    let retargeted = "f".repeat(64);
+    persist_intent(&world, &mut locked, &retargeted)
+        .required_because("no artifact was built for the abandoned target yet")?;
+    assert_eq!(
+        locked
+            .metadata
+            .initial_provisioning
+            .as_ref()
+            .map(|intent| intent.target_dockerfile_sha256.clone()),
+        Some(retargeted.clone())
+    );
+    assert_eq!(locked.metadata.provisioning.dockerfile_sha256, retargeted);
+
+    clear_intent(&mut locked).required_because("clear the completed intent")?;
+    assert!(locked.metadata.initial_provisioning.is_none());
+    Ok(())
+}
+
+#[test]
+fn a_different_target_is_rejected_once_the_abandoned_targets_image_is_built() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("Example-Org/Example-Repo")?;
+    let mut locked = locked_fixture(&fixture)?;
+    let world = World::new();
+
+    persist_intent(&world, &mut locked, DIGEST).required_because("persist the first intent")?;
+    let name = locked.metadata.sandbox_name();
+    let image_name = image::image_name(&name, DIGEST);
+    world.images.borrow_mut().insert(
+        image_name,
+        image::expected_labels(locked.metadata.canonical_id(), DIGEST),
+    );
+
+    let error = persist_intent(&world, &mut locked, &"f".repeat(64))
+        .refused_because("an image already built for the intent cannot be abandoned silently")?;
     assert_eq!(
         error.first_id(),
         Some(crate::diagnostics::ErrorId::InitialProvisioningInvalid)
     );
-
-    clear_intent(&mut locked).required_because("clear the completed intent")?;
-    assert!(locked.metadata.initial_provisioning.is_none());
     Ok(())
 }
 
@@ -85,6 +118,55 @@ fn a_repair_preflight_requires_the_workspace_when_a_sandbox_exists() -> Checked 
         error.first_id(),
         Some(crate::diagnostics::ErrorId::InitialProvisioningIncomplete)
     );
+    Ok(())
+}
+
+#[test]
+fn a_repair_preflight_skips_sandbox_checks_when_none_exists() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("Example-Org/Example-Repo")?;
+    let locked = locked_fixture(&fixture)?;
+    let target = locked.metadata.provisioning.dockerfile_sha256.clone();
+
+    preflight(
+        &locked,
+        &fixture.config,
+        &target,
+        &World::new(),
+        &fixture.workspace_root,
+        false,
+        true,
+    )
+    .required_because("no sandbox means nothing more to verify")?;
+    Ok(())
+}
+
+#[test]
+fn a_repair_preflight_passes_for_a_fully_provisioned_project() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("build a complete project")?;
+
+    let project = crate::testing::add_request::project_of(&request)?;
+    let locked = select::find(&bench.location, &project)
+        .required_because("find the built project")?
+        .lock()
+        .required_because("lock the built project")?;
+    let target = locked.metadata.provisioning.dockerfile_sha256.clone();
+
+    preflight(
+        &locked,
+        &bench.config,
+        &target,
+        &world,
+        bench.workspace_root.path(),
+        true,
+        true,
+    )
+    .required_because("a fully built project has nothing left to fix")?;
     Ok(())
 }
 
@@ -158,6 +240,102 @@ fn observation_reports_both_persistent_and_temporary_archives() -> Checked {
             .iter()
             .all(|artifact| matches!(artifact, Artifact::Archive(_)))
     );
+    Ok(())
+}
+
+#[test]
+fn a_pending_project_is_reported_without_inspecting_its_artifacts() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    world.failing("sbx create");
+    bench
+        .build(&world, &request)
+        .refused_because("leave an intent behind without a sandbox")?;
+    world.nothing_fails();
+
+    let metadata = bench.stored("Example-Org/Example-Repo")?;
+    assert!(metadata.initial_provisioning.is_some());
+    let name = metadata.sandbox_name();
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+
+    let observation = observe(
+        &world,
+        &paths,
+        &name,
+        &metadata,
+        &SandboxLayout::new(metadata.canonical_id()),
+        bench.workspace_root.path(),
+        false,
+    )?;
+
+    assert_eq!(observation.state, ProvisioningState::Pending);
+    assert_eq!(observation.artifacts, vec![Artifact::Sandbox]);
+    assert!(observation.output.is_none());
+    Ok(())
+}
+
+#[test]
+fn a_fully_built_project_observes_as_ready() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first prepare succeeds")?;
+
+    let metadata = bench.stored("Example-Org/Example-Repo")?;
+    let name = metadata.sandbox_name();
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+
+    let observation = observe(
+        &world,
+        &paths,
+        &name,
+        &metadata,
+        &SandboxLayout::new(metadata.canonical_id()),
+        bench.workspace_root.path(),
+        true,
+    )?;
+
+    assert_eq!(observation.state, ProvisioningState::Ready);
+    assert!(observation.output.is_some());
+    assert!(observation.artifacts.is_empty());
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_build_with_a_running_sandbox_reports_it_alongside_the_workspace() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    world.failing("worktree add");
+    bench
+        .build(&world, &request)
+        .refused_because("the run stops after the sandbox and workspace exist")?;
+    world.nothing_fails();
+
+    let metadata = bench.stored("Example-Org/Example-Repo")?;
+    assert!(
+        metadata.initial_provisioning.is_some(),
+        "the interrupted build still carries its intent"
+    );
+    let name = metadata.sandbox_name();
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+
+    let observation = observe(
+        &world,
+        &paths,
+        &name,
+        &metadata,
+        &SandboxLayout::new(metadata.canonical_id()),
+        bench.workspace_root.path(),
+        true,
+    )?;
+
+    assert_eq!(observation.state, ProvisioningState::Pending);
+    assert!(observation.artifacts.contains(&Artifact::Sandbox));
+    assert!(observation.artifacts.contains(&Artifact::Workspace));
     Ok(())
 }
 

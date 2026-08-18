@@ -207,6 +207,46 @@ fn a_ready_project_is_a_no_op_even_when_docker_is_unreachable() -> Checked {
 }
 
 #[test]
+fn a_ready_no_op_clears_a_stale_intent_left_by_an_interrupted_completion() -> Checked {
+    // 完成直後のprocess interruption、または最後のintent消去だけの失敗を模し、
+    // 完成済み成果物とintentが同時に残っている状態を作る。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first prepare succeeds")?;
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    let mut stored = bench.stored("Example-Org/Example-Repo")?;
+    stored.initial_provisioning = Some(metadata::InitialProvisioningIntent {
+        target_dockerfile_sha256: stored.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&paths, &stored).required_because("leave the stale intent behind")?;
+
+    let output = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .required_because("a ready project is still a no-op")?;
+
+    assert!(output.already_built);
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none(),
+        "the ready no-op clears the stale intent instead of contradicting observe forever"
+    );
+    Ok(())
+}
+
+#[test]
 fn an_image_collision_is_rejected_before_the_initial_intent_is_saved() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
@@ -309,6 +349,42 @@ fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Che
 }
 
 #[test]
+fn a_failed_image_build_lets_the_same_prepare_retarget_after_the_dockerfile_is_fixed() -> Checked {
+    // intentは保存済みだがimageはまだ無い段階。Dockerfileを直しての再実行は、
+    // baseと同じくその新しいgenerationへ続けられる。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    world.failing("docker build");
+    bench
+        .build(&world, &request)
+        .refused_because("the run stops when the image cannot be built")?;
+    world.nothing_fails();
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    fs::write(paths.dockerfile(), b"FROM example:edited\n")
+        .required_because("fix the Dockerfile")?;
+
+    let output = bench
+        .build(&world, &request)
+        .required_because("the same prepare retargets to the fixed generation")?;
+
+    assert!(!output.already_built);
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    assert!(
+        stored.initial_provisioning.is_none(),
+        "the completed build clears the intent"
+    );
+    assert_eq!(
+        stored.provisioning.dockerfile_sha256,
+        sha256_hex(b"FROM example:edited\n"),
+        "the fixed dockerfile becomes the generation that was built"
+    );
+    Ok(())
+}
+
+#[test]
 fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
@@ -349,6 +425,10 @@ fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Ch
 
 #[test]
 fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
     // files配置、identity設定、gh git_protocol設定、bare clone、worktree作成の
     // それぞれの代表的な失敗。
     for step in [
@@ -358,9 +438,6 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
         "git init --bare",
         "worktree add",
     ] {
-        let bench = Bench::new()?;
-        let world = World::new();
-        let request = request("Example-Org/Example-Repo", None, None)?;
         world.failing(step);
         let mark = world.mark();
         let error = bench

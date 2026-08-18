@@ -39,7 +39,7 @@ pub(crate) fn provision(
     )?;
 
     // これが初回構築における最初のmutationである。
-    persist_intent(locked, target)?;
+    persist_intent(host, locked, target)?;
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);

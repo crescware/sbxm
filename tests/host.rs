@@ -56,25 +56,9 @@ ssh)
 	esac
 	;;
 docker)
-	case "$1 $2" in
-	"version --format")
-		echo '27.0.0'
-		exit 0
-		;;
-	"image ls")
-		exit 0
-		;;
-	"image inspect")
-		exit 1
-		;;
-	build*)
-		[ ! -e "$fake/fail-docker-build" ] || exit 1
-		exit 0
-		;;
-	*)
-		exit 1
-		;;
-	esac
+	[ "$1 $2" = "version --format" ] || exit 1
+	echo '27.0.0'
+	exit 0
 	;;
 git)
 	case "$1" in
@@ -104,17 +88,6 @@ git)
 		;;
 	esac
 	exit 1
-	;;
-esac
-
-case "$1 $2 $3" in
-"template ls --json")
-	printf '{"images":[]}'
-	exit 0
-	;;
-"secret ls "*)
-	printf 'CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n%s   github.com **.github.com **.githubusercontent.com ghcr.io   GH_TOKEN   sbx-cs-example   ghp_example\n' "$3"
-	exit 0
 	;;
 esac
 

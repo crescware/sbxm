@@ -40,6 +40,9 @@ pub fn run(
         workspace_root,
     )? {
         output.warnings = warnings;
+        // 全成果物が揃ったことをここで証明できた。直前のintent消去だけが中断で
+        // 残っていても、この経路で確実に消し、Readyとの矛盾を残さない。
+        provisioning::clear_intent(&mut locked)?;
         return Ok(output);
     }
 
