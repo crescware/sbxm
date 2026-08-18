@@ -275,36 +275,6 @@ fn the_workspace_path_carries_no_project_or_home_path() -> Checked {
 }
 
 #[test]
-fn workspace_is_empty_distinguishes_missing_empty_and_nonempty_directories() -> Checked {
-    let root = workspace_root()?;
-    let name = sandbox()?;
-    assert!(workspace_is_empty(root.path(), &name).required_because("missing is empty")?);
-
-    let path = workspace_path(root.path(), &name);
-    fs::create_dir(&path).required_because("create an empty workspace")?;
-    assert!(workspace_is_empty(root.path(), &name).required_because("empty is empty")?);
-
-    fs::write(path.join("kept.txt"), b"keep me").required_because("write a workspace file")?;
-    assert!(!workspace_is_empty(root.path(), &name).required_because("nonempty is observed")?);
-    Ok(())
-}
-
-#[test]
-fn an_unreadable_workspace_is_not_assumed_empty() -> Checked {
-    let root = workspace_root()?;
-    let name = sandbox()?;
-    let path = workspace_path(root.path(), &name);
-    fs::create_dir(&path).required_because("create the workspace")?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o000))
-        .required_because("make the workspace unreadable")?;
-
-    let error = workspace_is_empty(root.path(), &name)
-        .refused_because("an unreadable workspace is not empty by assumption")?;
-    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
-    Ok(())
-}
-
-#[test]
 fn a_sandbox_that_matches_the_expected_state_is_reused_whoever_made_it() -> Checked {
     let root = workspace_root()?;
     let workspace = workspace_path(root.path(), &sandbox()?);

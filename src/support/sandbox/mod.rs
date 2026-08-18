@@ -29,7 +29,6 @@ mod unusable;
 mod verify;
 mod verify_identity;
 mod workspace_exists;
-mod workspace_is_empty;
 mod workspace_path;
 mod workspace_root;
 
@@ -58,8 +57,6 @@ use unusable::unusable;
 use verify::verify;
 pub use verify_identity::verify_identity;
 pub use workspace_exists::workspace_exists;
-#[allow(unused_imports)]
-pub use workspace_is_empty::workspace_is_empty;
 pub use workspace_path::workspace_path;
 pub use workspace_root::WORKSPACE_ROOT;
 

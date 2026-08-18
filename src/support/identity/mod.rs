@@ -18,10 +18,6 @@ mod ensure_git_protocol;
 mod git_protocol;
 mod github_host;
 mod mismatch;
-#[allow(dead_code)]
-mod verify;
-#[allow(dead_code)]
-mod verify_git_protocol;
 
 pub use candidate_from_host::candidate_from_host;
 pub use ensure::ensure;
@@ -29,8 +25,6 @@ pub(super) use ensure_git_protocol::ensure_git_protocol;
 use git_protocol::GIT_PROTOCOL;
 use github_host::GITHUB_HOST;
 use mismatch::mismatch;
-pub(crate) use verify::verify;
-pub(crate) use verify_git_protocol::verify_git_protocol;
 
 #[cfg(test)]
 #[path = "identity_test.rs"]

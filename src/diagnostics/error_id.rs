@@ -9,7 +9,6 @@ macro_rules! error_ids {
         /// script側の分岐対象となる公開契約であり、locale、libraryのversion、
         /// 外部commandのexit codeによって変化しない。
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-        #[allow(dead_code)]
         pub enum ErrorId {
             $($variant),+
         }
@@ -94,8 +93,6 @@ error_ids! {
     InvalidBranchName => "invalid-branch-name",
     TargetConfigurationMismatch => "target-configuration-mismatch",
     RebuildIntentPending => "rebuild-intent-pending",
-    InitialProvisioningPending => "initial-provisioning-pending",
-    InitialProvisioningIncomplete => "initial-provisioning-incomplete",
     InitialProvisioningInvalid => "initial-provisioning-invalid",
 
     // --- Host clone ---

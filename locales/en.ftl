@@ -99,7 +99,6 @@ error-sandbox-name-duplicated = The sandbox listing holds more than one sandbox 
 error-invalid-branch-name = The branch name cannot be used
 error-target-configuration-mismatch = { $project } was registered to be built as { $stored }, but this run asks for { $requested }.
 error-rebuild-intent-pending = { $project } is in the middle of a rebuild, so its first build cannot be continued.
-error-initial-provisioning-incomplete = { $project } has provisioning artifacts, but completion cannot be proven safely.
 error-initial-provisioning-invalid = { $project } has an initial provisioning intent that disagrees with its recorded target generation.
 
 error-host-clone-unusable = The clone cannot be used for this project
@@ -348,7 +347,6 @@ remediation-unmanaged-worktree-present = Save the work in that worktree, remove 
 remediation-rebuild-generation-missing = Restore the Dockerfile of that generation and run the rebuild again.
 remediation-destroy-stopped = Open the stopped sandbox, inspect and save anything you need, then run destroy again.
 remediation-run-rebuild = Finish the rebuild.
-remediation-initial-provisioning-incomplete = Run the explicit repair workflow after reviewing the observed provisioning artifacts.
 remediation-initial-provisioning-invalid = Inspect the project metadata and restore one consistent target generation before repairing it.
 remediation-target-configuration-mismatch = Leave those options out to continue with the stored target, or destroy the project first to build it differently.
 remediation-image-collision = Inspect { $image } yourself, then remove or rename it once you are sure it is not needed. sbxm does not overwrite an image it did not build.

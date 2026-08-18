@@ -19,8 +19,6 @@ mod placeholder_probe;
 mod register_command;
 mod require_github;
 mod require_placeholder_present;
-#[allow(dead_code)]
-mod verify_git_credential;
 
 pub use configure_git_credential::configure_git_credential;
 pub use forget_command::forget_command;
@@ -33,7 +31,6 @@ pub(crate) use placeholder_probe::placeholder_probe;
 pub use register_command::register_command;
 pub use require_github::require_github;
 pub use require_placeholder_present::require_placeholder_present;
-pub(crate) use verify_git_credential::verify_git_credential;
 
 #[cfg(test)]
 #[path = "secret_test.rs"]

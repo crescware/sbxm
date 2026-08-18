@@ -114,7 +114,7 @@ fn prepare_output() -> super::prepare::PrepareOutput {
         mode: CreationMode::Attached,
         start_ref: "main".to_string(),
         sandbox_state: SandboxState::Running,
-        worktrees: vec![super::prepare::WorktreeRow {
+        worktrees: vec![crate::support::provisioning::WorktreeRow {
             path: "workspace".to_string(),
             created_from: "main".to_string(),
             head: Some("a1b2c3d".to_string()),
