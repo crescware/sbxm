@@ -24,6 +24,8 @@ cli-apply-worktrees-help = Desired number of managed worktrees (1-32; cannot be 
 
 cli-prepare-about = Prepare a registered project for work by building and provisioning its sandbox
 cli-prepare-project-help = Registered owner/repository ID of the project to prepare
+cli-repair-about = Explicitly repair interrupted provisioning without deleting or overwriting project data
+cli-repair-project-help = Registered owner/repository ID of the project to repair
 
 cli-rebuild-about = Rebuild a project's sandbox from its Dockerfile, whether or not it changed; the old writable layer is lost. Normal rebuild protects work and asks for confirmation.
 cli-rebuild-project-help = Registered owner/repository ID of the project to rebuild
@@ -498,6 +500,7 @@ select-open-heading = Which project do you want to open?
 select-stop-heading = Which projects do you want to stop?
 select-status-heading = Which status do you want to inspect?
 select-prepare-heading = Which project do you want to prepare?
+select-repair-heading = Which project do you want to repair?
 select-apply-heading = Which project do you want to apply changes to?
 select-rebuild-heading = Which project do you want to rebuild?
 
@@ -568,6 +571,17 @@ remediation-heading = Try:
 remediation-rebuild-generation-missing-destroy = If it cannot be restored, deleting the sandbox and the management data keeps the host clone and the Dockerfile.
 guidance-apply-current-dockerfile = Apply the current Dockerfile.
 guidance-workspace-restored = It is an empty mount point, so nothing was restored inside it and nothing inside the sandbox was touched.
+repair-plan = The following interrupted provisioning will be repaired using the recorded target generation.
+repair-fresh = This project is fresh and does not need repair.
+repair-healthy = This project is healthy and does not need repair.
+repair-done = The interrupted provisioning for { $project } was repaired.
+repair-field-target-generation = Fixed target generation (TARGET)
+repair-observed-section = Observed provisioning artifacts
+repair-column-observed-artifact = Artifact
+repair-plan-guidance = Review the observed artifacts and repair scope above. The repair workflow will not delete or overwrite project data.
+repair-fresh-guidance = Start the first provisioning with the open workflow.
+repair-healthy-guidance = No repair was needed; open the sandbox when you are ready.
+repair-done-guidance = The target generation is complete; open the sandbox.
 prompt-language-heading = 表示言語を選択してください / Choose a display language
 prompt-git-user-name = Enter the name this project's commits are made under
 prompt-git-user-email = Enter the email address this project's commits are made under

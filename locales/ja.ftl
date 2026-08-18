@@ -24,6 +24,8 @@ cli-apply-worktrees-help = 追加後のmanaged worktree総数 (1〜32、現在�
 
 cli-prepare-about = 登録済み案件のSandboxを構築し、作業できる状態に準備します
 cli-prepare-project-help = 準備する案件のowner/repository形式の登録ID
+cli-repair-about = 構築の中断を、削除や上書きなしで明示的に復旧します
+cli-repair-project-help = 復旧する案件のowner/repository形式の登録ID
 
 cli-rebuild-about = Dockerfileの変更有無にかかわらず案件のSandboxを作り直します。元の書き込み可能な層は失われます。通常のrebuildは作業を保護し、確認を求めます
 cli-rebuild-project-help = 再構築する案件のowner/repository形式の登録ID
@@ -498,6 +500,7 @@ select-open-heading = どの案件を開きますか?
 select-stop-heading = どの案件を停止しますか?
 select-status-heading = どのstatusを表示しますか?
 select-prepare-heading = どの案件を準備しますか?
+select-repair-heading = どの案件を復旧しますか?
 select-apply-heading = どの案件へ変更を適用しますか?
 select-rebuild-heading = どの案件を再構築しますか?
 
@@ -568,6 +571,17 @@ remediation-heading = 対処 (Try):
 remediation-rebuild-generation-missing-destroy = 復元できない場合、Sandboxと管理情報を削除すればhost cloneとDockerfileは残ります。
 guidance-apply-current-dockerfile = 現在のDockerfileを適用します。
 guidance-workspace-restored = 空のmount点であり、中に何かを復元したわけではなく、Sandboxの中にも触れていません。
+repair-plan = 次の中断した初回構築を、記録済みのtarget generationへ復旧します。
+repair-fresh = この案件はfreshであり、repairは必要ありません。
+repair-healthy = この案件はhealthyであり、repairは必要ありません。
+repair-done = { $project } の中断した初回構築を復旧しました。
+repair-field-target-generation = 固定済みtarget generation (TARGET)
+repair-observed-section = 観測した初回構築成果物
+repair-column-observed-artifact = 成果物 (ARTIFACT)
+repair-plan-guidance = 上の観測成果物とrepair範囲を確認してください。repair workflowは案件データを削除・上書きしません。
+repair-fresh-guidance = 最初の構築はopen workflowで開始してください。
+repair-healthy-guidance = repairは不要でした。準備ができたらSandboxをopenしてください。
+repair-done-guidance = target generationの構築が完了しました。Sandboxをopenしてください。
 prompt-language-heading = 表示言語を選択してください / Choose a display language
 prompt-git-user-name = この案件のcommitに使う名前を入力してください
 prompt-git-user-email = この案件のcommitに使うmail addressを入力してください

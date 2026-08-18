@@ -20,6 +20,7 @@ mod present;
 #[path = "print_test.rs"]
 mod print_test;
 pub mod rebuild;
+pub mod repair;
 mod report;
 mod specs;
 pub mod status;

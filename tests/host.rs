@@ -676,6 +676,51 @@ fn prepare_refuses_a_project_that_was_never_registered() -> Checked {
 }
 
 #[test]
+fn repair_reports_a_fresh_project_without_mutating_it() -> Checked {
+    let host = Host::new()?;
+    host.registered()?;
+
+    let run = host.run(&["--lang", "en", "repair", PROJECT])?;
+
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert!(
+        run.stdout.contains("does not need repair"),
+        "a fresh project is a no-op: {}",
+        run.stdout
+    );
+    assert!(
+        !host.invocations()?.contains("create --name"),
+        "repair diagnosis does not create a Sandbox"
+    );
+    Ok(())
+}
+
+#[test]
+fn repair_keeps_a_failed_prepare_intent_and_reports_the_repair_failure() -> Checked {
+    let host = Host::new()?;
+    host.registered()?;
+    std::fs::write(host.fake.join("fail-docker-build"), "1")
+        .required_because("the fake Docker build is made to fail")?;
+
+    let prepare = host.run(&["--lang", "en", "prepare", PROJECT])?;
+    assert_ne!(prepare.code, 0, "{}{}", prepare.stdout, prepare.stderr);
+
+    let repair = host.run(&["--lang", "en", "repair", PROJECT])?;
+    assert_ne!(repair.code, 0, "{}{}", repair.stdout, repair.stderr);
+    assert!(
+        repair.stdout.contains("interrupted provisioning"),
+        "{}",
+        repair.stdout
+    );
+    assert!(
+        repair.stderr.contains("external-command-failed"),
+        "{}",
+        repair.stderr
+    );
+    Ok(())
+}
+
+#[test]
 fn open_names_the_sandbox_and_its_worktrees_before_it_hands_over_the_terminal() -> Checked {
     let host = Host::new()?;
     let sandbox = host.registered()?;
