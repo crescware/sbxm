@@ -8,7 +8,7 @@ use crate::testing::outcome::{Checked, Required};
 use crate::testing::plain;
 use crate::testing::value::COMMIT;
 
-use crate::commands::prepare::WorktreeRow;
+use crate::support::provisioning::WorktreeRow;
 
 use super::*;
 

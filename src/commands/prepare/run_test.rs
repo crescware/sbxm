@@ -182,6 +182,273 @@ fn a_sandbox_that_is_not_this_projects_stops_prepare_instead_of_counting_as_buil
 }
 
 #[test]
+fn a_ready_project_is_a_no_op_even_when_docker_is_unreachable() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first prepare succeeds")?;
+
+    world.failing("version --format");
+    let output = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .required_because("a ready project does not need Docker")?;
+
+    assert!(output.already_built);
+    Ok(())
+}
+
+#[test]
+fn a_ready_project_with_a_stale_intent_requires_explicit_repair() -> Checked {
+    // 完成直後のprocess interruption、または最後のintent消去だけの失敗を模し、
+    // 完成済み成果物とintentが同時に残っている状態を作る。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first prepare succeeds")?;
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    let mut stored = bench.stored("Example-Org/Example-Repo")?;
+    stored.initial_provisioning = Some(metadata::InitialProvisioningIntent {
+        target_dockerfile_sha256: stored.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&paths, &stored).required_because("leave the stale intent behind")?;
+
+    let mark = world.mark();
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("an intent is never cleared by ordinary prepare")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some(),
+        "prepare leaves the recovery intent for repair"
+    );
+    assert!(
+        world.since(mark).is_empty(),
+        "pending prepare does not inspect or mutate the host: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn incomplete_artifacts_require_explicit_repair() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    let name = SandboxName::derive(request.repository.canonical_id());
+    let workspace = bench.workspace_root.path().join(name.as_str());
+    fs::create_dir_all(&workspace).required_because("leave an unrecorded workspace behind")?;
+
+    let mark = world.mark();
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("an incomplete project requires explicit repair")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningIncomplete)
+    );
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .required_because("the user is told how to repair the project")?;
+    assert_eq!(
+        remediation.commands[0].as_str(),
+        "sbxm repair Example-Org/Example-Repo"
+    );
+    assert!(
+        world
+            .since(mark)
+            .iter()
+            .all(|call| !call.contains("create") && !call.contains("build")),
+        "observation does not mutate the host: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn an_image_collision_is_rejected_before_the_initial_intent_is_saved() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    let metadata = bench.stored("Example-Org/Example-Repo")?;
+    let name = SandboxName::derive(request.repository.canonical_id());
+    let image_name = image::image_name(&name, &metadata.provisioning.dockerfile_sha256);
+    world.images.borrow_mut().insert(
+        image_name,
+        vec![(
+            image::LABEL_CANONICAL_ID.to_string(),
+            "Other-Org/Other-Repo".to_string(),
+        )],
+    );
+
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("a foreign image is not overwritten")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none(),
+        "the collision is found before the intent mutation"
+    );
+    assert!(!world.ran("docker build"));
+    Ok(())
+}
+
+#[test]
+fn pending_prepare_does_not_inspect_an_image_or_change_its_generation() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    // imageまで組み上がり、Sandboxの作成で中断した実行を作る。
+    world.failing("sbx create");
+    bench
+        .build(&world, &request)
+        .refused_because("the run stops at sandbox creation")?;
+    world.nothing_fails();
+
+    let started_from = bench
+        .stored("Example-Org/Example-Repo")?
+        .provisioning
+        .dockerfile_sha256;
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    fs::write(paths.dockerfile(), b"FROM example:edited\n")
+        .required_because("edit the Dockerfile")?;
+
+    world.failing("docker image inspect");
+    let mark = world.mark();
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("the interrupted run requires explicit repair")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert_eq!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .provisioning
+            .dockerfile_sha256,
+        started_from,
+        "an unobserved generation is not replaced by the edited one"
+    );
+    assert!(
+        world.since(mark).is_empty(),
+        "pending prepare does not inspect or build anything: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_failed_image_build_cannot_be_retargeted_by_ordinary_prepare() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    world.failing("docker build");
+    bench
+        .build(&world, &request)
+        .refused_because("the run stops when the image cannot be built")?;
+    world.nothing_fails();
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    fs::write(paths.dockerfile(), b"FROM example:edited\n")
+        .required_because("fix the Dockerfile")?;
+
+    let mark = world.mark();
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("the edited Dockerfile does not bypass explicit repair")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    assert!(
+        stored.initial_provisioning.is_some(),
+        "prepare preserves the interrupted intent"
+    );
+    assert!(
+        world.since(mark).is_empty(),
+        "pending prepare neither retargets nor mutates: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
 fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
@@ -211,10 +478,13 @@ fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Ch
 
     assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
     assert!(
-        !world.since(mark).iter().any(|call| call.contains("build")
-            || call.contains("image")
-            || call.contains("create --name")),
-        "nothing is built before the engine is confirmed reachable: {:?}",
+        !world.since(mark).iter().any(|call| {
+            call.contains("docker build")
+                || call.contains("docker image save")
+                || call.contains("sbx template load")
+                || call.contains("sbx create")
+        }),
+        "read-only observation may run, but nothing is mutated before the engine is reachable: {:?}",
         world.since(mark)
     );
     Ok(())
@@ -240,8 +510,6 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
             .build(&world, &request)
             .refused_because(&format!("{step} fails"))?;
         let since = world.since(mark);
-        world.nothing_fails();
-
         let facts = &error.diagnostics()[0].facts;
         assert_eq!(facts.len(), 4, "{step}: {facts:?}");
         assert_eq!(
@@ -293,6 +561,48 @@ fn a_stale_archive_left_by_an_earlier_crash_is_swept_before_building() -> Checke
 }
 
 #[test]
+fn an_existing_template_does_not_make_pending_prepare_resume() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    world.failing("docker image save");
+    bench
+        .build(&world, &request)
+        .refused_because("the run stops before the archive is exported")?;
+    world.nothing_fails();
+
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    let sandbox = SandboxName::derive(request.repository.canonical_id());
+    let image = image::image_name(&sandbox, &stored.provisioning.dockerfile_sha256);
+    // 何らかの理由で、この世代のTemplateは既に存在する。
+    world
+        .templates
+        .borrow_mut()
+        .insert(image, "deadbeef".to_string());
+
+    let mark = world.mark();
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("only repair may reuse the existing template")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert!(
+        world.since(mark).is_empty(),
+        "pending prepare does not inspect or export the template: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
 fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
@@ -306,6 +616,49 @@ fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
         !world.ran("df -Pk"),
         "a successful run never checks disk usage: {:?}",
         world.invocations()
+    );
+    Ok(())
+}
+
+#[test]
+fn pending_prepare_does_not_restore_a_missing_workspace() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    // worktreeを揃える工程で止め、Sandboxだけができている状態を作る。
+    world.failing("worktree add");
+    bench
+        .build(&world, &request)
+        .refused_because("the run stops at the step that failed")?;
+    world.nothing_fails();
+
+    // 続きを実行する前に、hostのworkspace directoryだけが消える。
+    let sandbox = world.sandboxes.borrow()[0].name.clone();
+    let workspace = bench.workspace_root.path().join(&sandbox);
+    fs::remove_dir_all(&workspace).required_because("the workspace directory is removed")?;
+
+    let mark = world.mark();
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("workspace restoration belongs to explicit repair")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert!(
+        !workspace.exists(),
+        "prepare leaves the missing mount point unchanged: {}",
+        workspace.display()
+    );
+    assert!(
+        world.since(mark).is_empty(),
+        "pending prepare performs no host action: {:?}",
+        world.since(mark)
     );
     Ok(())
 }

@@ -244,6 +244,34 @@ fn a_different_existing_identity_or_protocol_is_refused() -> Checked {
 }
 
 #[test]
+fn an_unobservable_identity_or_protocol_is_not_read_as_missing() -> Checked {
+    let identity_host = crate::testing::host::FakeSbx::listing("").answering(
+        "exec sbxm-example -- git config --global --get user.name",
+        2,
+        "",
+    );
+    let identity_error = verify(&identity_host, "sbxm-example", &identity())
+        .refused_because("a failed identity read is not a missing setting")?;
+    assert_eq!(
+        identity_error.first_id(),
+        Some(ErrorId::SandboxCheckUnobservable)
+    );
+
+    let protocol_host = crate::testing::host::FakeSbx::listing("").answering(
+        &format!("exec sbxm-example -- gh config get git_protocol --host {GITHUB_HOST}"),
+        2,
+        "",
+    );
+    let protocol_error = verify_git_protocol(&protocol_host, "sbxm-example")
+        .refused_because("a failed protocol read is not a missing setting")?;
+    assert_eq!(
+        protocol_error.first_id(),
+        Some(ErrorId::SandboxCheckUnobservable)
+    );
+    Ok(())
+}
+
+#[test]
 fn an_empty_existing_protocol_is_left_unchanged() -> Checked {
     verify_git_protocol(&FakeSbx::holding(&[]), "sbxm-example")
         .required_because("an empty protocol is treated as an unset default")?;

@@ -62,12 +62,11 @@ docker)
 		exit 0
 		;;
 	"image ls")
+		[ -e "$fake/observe-empty-generation" ] || exit 1
 		exit 0
 		;;
-	"image inspect")
-		exit 1
-		;;
 	build*)
+		[ -e "$fake/allow-docker-build" ] || exit 1
 		[ ! -e "$fake/fail-docker-build" ] || exit 1
 		exit 0
 		;;
@@ -109,10 +108,12 @@ esac
 
 case "$1 $2 $3" in
 "template ls --json")
+	[ -e "$fake/observe-empty-generation" ] || exit 1
 	printf '{"images":[]}'
 	exit 0
 	;;
 "secret ls "*)
+	[ -e "$fake/git-secret-is-configured" ] || exit 1
 	printf 'CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n%s   github.com **.github.com **.githubusercontent.com ghcr.io   GH_TOKEN   sbx-cs-example   ghp_example\n' "$3"
 	exit 0
 	;;
@@ -679,6 +680,7 @@ fn prepare_refuses_a_project_that_was_never_registered() -> Checked {
 fn repair_reports_a_fresh_project_without_mutating_it() -> Checked {
     let host = Host::new()?;
     host.registered()?;
+    host.answer("observe-empty-generation", "")?;
 
     let run = host.run(&["--lang", "en", "repair", PROJECT])?;
 
@@ -699,6 +701,9 @@ fn repair_reports_a_fresh_project_without_mutating_it() -> Checked {
 fn repair_keeps_a_failed_prepare_intent_and_reports_the_repair_failure() -> Checked {
     let host = Host::new()?;
     host.registered()?;
+    host.answer("observe-empty-generation", "")?;
+    host.answer("git-secret-is-configured", "")?;
+    host.answer("allow-docker-build", "")?;
     std::fs::write(host.fake.join("fail-docker-build"), "1")
         .required_because("the fake Docker build is made to fail")?;
 

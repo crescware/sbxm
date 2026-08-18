@@ -11,7 +11,7 @@ fn an_incomplete_error_lists_the_observed_artifacts() -> Checked {
         &[
             Artifact::Sandbox,
             Artifact::Workspace,
-            Artifact::Image("example-image".into()),
+            Artifact::Archive("/tmp/example.tar".into()),
         ],
     );
 
@@ -30,6 +30,6 @@ fn an_incomplete_error_lists_the_observed_artifacts() -> Checked {
     };
     assert!(rendered.contains("Sandbox"), "{rendered}");
     assert!(rendered.contains("workspace"), "{rendered}");
-    assert!(rendered.contains("image example-image"), "{rendered}");
+    assert!(rendered.contains("archive /tmp/example.tar"), "{rendered}");
     Ok(())
 }

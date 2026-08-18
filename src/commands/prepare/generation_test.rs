@@ -67,11 +67,8 @@ fn a_dockerfile_edited_after_an_interruption_keeps_the_generation_it_started_fro
         &sha256_hex(EDITED_DOCKERFILE),
     );
     assert!(
-        !world
-            .since(mark)
-            .iter()
-            .any(|call| call.contains("docker build") && call.contains(&edited)),
-        "prepare does not build the edited Dockerfile while recovery is pending: {:?}",
+        world.since(mark).is_empty(),
+        "pending prepare does not inspect or build the edited generation {edited}: {:?}",
         world.since(mark)
     );
     Ok(())

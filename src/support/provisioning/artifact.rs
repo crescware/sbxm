@@ -3,8 +3,6 @@
 pub enum Artifact {
     Sandbox,
     Workspace,
-    Image(String),
-    Template(String),
     Archive(String),
 }
 
@@ -13,8 +11,6 @@ impl Artifact {
         match self {
             Self::Sandbox => "Sandbox".to_string(),
             Self::Workspace => "workspace directory".to_string(),
-            Self::Image(name) => format!("image {name}"),
-            Self::Template(name) => format!("Template {name}"),
             Self::Archive(path) => format!("archive {path}"),
         }
     }

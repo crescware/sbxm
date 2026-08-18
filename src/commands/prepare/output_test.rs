@@ -73,6 +73,7 @@ fn the_declared_file_is_placed_and_its_staging_copy_is_removed() -> Checked {
         !world.present.borrow().contains("/tmp/sbxm-file-0"),
         "the staged copy does not survive the placement"
     );
+
     assert_eq!(output.files.len(), 1);
     Ok(())
 }

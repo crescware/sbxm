@@ -9,7 +9,6 @@ use crate::support::provisioning::{self, ProvisioningOutput};
 use super::RepairPlan;
 
 /// 診断済みの計画を、共有provisioning境界で実行する。
-#[allow(clippy::too_many_arguments)]
 pub fn execute(
     plan: RepairPlan,
     config: &GlobalConfig,

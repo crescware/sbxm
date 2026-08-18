@@ -432,24 +432,32 @@ fn a_different_credential_helper_is_not_overwritten() -> Checked {
 }
 
 #[test]
-fn configure_reuses_an_existing_matching_credential_helper() -> Checked {
+fn an_unobservable_credential_helper_is_not_read_as_missing() -> Checked {
     let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
-    let helper = "!f() { echo username=x; echo password=$GH_TOKEN; }; f";
-    let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, helper);
-    configure_git_credential(&host, "sbxm-example")
-        .required_because("the expected helper is already configured")?;
-    assert!(!host.ran("credential.https://github.com.helper !f"));
+    let host = crate::testing::host::FakeSbx::listing("").answering(key, 2, "");
+    let error = verify_git_credential(&host, "sbxm-example")
+        .refused_because("a failed helper read is not a missing setting")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
     Ok(())
 }
 
 #[test]
-fn configure_refuses_a_different_credential_helper() -> Checked {
+fn configure_writes_an_existing_matching_credential_helper() -> Checked {
+    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
+    let helper = "!f() { echo username=x; echo password=$GH_TOKEN; }; f";
+    let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, helper);
+    configure_git_credential(&host, "sbxm-example").required_because("the helper is configured")?;
+    assert!(host.ran("credential.https://github.com.helper !f"));
+    Ok(())
+}
+
+#[test]
+fn configure_overwrites_a_different_credential_helper() -> Checked {
     let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
     let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, "store");
-    let error = configure_git_credential(&host, "sbxm-example")
-        .refused_because("a different helper must not be overwritten")?;
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
-    assert!(!host.ran("credential.https://github.com.helper store"));
+    configure_git_credential(&host, "sbxm-example")
+        .required_because("prepare preserves its existing overwrite behavior")?;
+    assert!(host.ran("credential.https://github.com.helper !f"));
     Ok(())
 }
 

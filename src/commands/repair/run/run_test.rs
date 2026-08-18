@@ -143,6 +143,47 @@ fn a_healthy_project_is_a_noop_for_repair() -> Checked {
 }
 
 #[test]
+fn repair_clears_an_intent_left_after_every_artifact_was_completed() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("build every provisioning artifact")?;
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    let mut metadata = bench.stored("Example-Org/Example-Repo")?;
+    metadata.initial_provisioning = Some(crate::metadata::InitialProvisioningIntent {
+        target_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+    });
+    crate::metadata::update(&paths, &metadata)
+        .required_because("simulate interruption before the final intent clear")?;
+
+    let project = project_of(&request)?;
+    let mark = world.mark();
+    let output = execute_repair(&bench, &world, &project)?;
+
+    assert!(!output.already_built);
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none(),
+        "explicit repair commits the already completed generation"
+    );
+    assert!(
+        !world.since(mark).iter().any(|call| {
+            call.contains("docker build")
+                || call.contains("sbx create")
+                || call.contains("worktree add")
+        }),
+        "verified artifacts are reused: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
 fn a_conflicting_image_is_rejected_before_repair_changes_metadata() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

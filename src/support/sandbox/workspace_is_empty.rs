@@ -7,7 +7,6 @@ use crate::project::SandboxName;
 use super::{workspace_exists, workspace_path};
 
 /// workspace directoryが空であることをread-onlyで確かめる。
-#[allow(dead_code)]
 pub fn workspace_is_empty(workspace_root: &Path, sandbox: &SandboxName) -> Result<bool> {
     let path = workspace_path(workspace_root, sandbox);
     if !workspace_exists(workspace_root, sandbox)? {

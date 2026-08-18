@@ -7,7 +7,7 @@ use crate::metadata::ProjectMetadata;
 use crate::paths::{self, PathScope, ProjectPaths};
 use crate::project::{SandboxLayout, SandboxName};
 
-use crate::support::{daemon, generation, image, inventory, sandbox, template};
+use crate::support::{daemon, generation, image, sandbox, template};
 
 use super::{Artifact, Observation, ProvisioningState, already_built};
 
@@ -63,7 +63,7 @@ fn incomplete_artifacts(
 ) -> Result<Vec<Artifact>> {
     let mut artifacts = Vec::new();
     let entries = daemon::list(host)?;
-    if let Some(entry) = inventory::single(&entries, name.as_str())? {
+    if let Some(entry) = entries.iter().find(|entry| entry.name == name.as_str()) {
         sandbox::verify_identity(entry, name, workspace_root)?;
         artifacts.push(Artifact::Sandbox);
     }
@@ -80,12 +80,12 @@ fn incomplete_artifacts(
     };
     for generation in generations {
         let image_name = image::image_name(name, &generation);
-        if image::generation_is_built(host, name, metadata.canonical_id(), &generation)? {
-            artifacts.push(Artifact::Image(image_name.clone()));
-        }
-        if template::has(host, &image_name)? {
-            artifacts.push(Artifact::Template(image_name.clone()));
-        }
+        // imageとTemplateはgeneration/canonical nameで参照するimmutable cacheであり、
+        // 一致するものを「途中成果物」と数えると、destroy後の再addがIncompleteになる。
+        // 衝突の検出はprovisioningのintent保存前に`verify_generation`で行う。
+        let _image_built =
+            image::generation_is_built(host, name, metadata.canonical_id(), &generation)?;
+        let _template_present = template::has(host, &image_name)?;
         let short = short_hex(&generation);
         for (path, label) in [
             (paths.template_archive(short), "archive"),

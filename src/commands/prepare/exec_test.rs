@@ -8,9 +8,8 @@ use crate::paths::ProjectPaths;
 use crate::project::ProjectId;
 
 use crate::testing::add_request::{project_of, request};
-use crate::testing::outcome::{Checked, Required};
+use crate::testing::outcome::{Checked, Refused, Required};
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 
 use super::super::fake::{Bench, World};
 
@@ -68,34 +67,53 @@ fn a_finished_build_is_reported_as_a_no_op_success() -> Checked {
 }
 
 #[test]
-fn a_successful_prepare_prints_each_nonfatal_warning() -> Checked {
+fn a_cleanup_warning_is_written_by_the_command_wrapper() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let add_request = request("Example-Org/Example-Repo", None, None)?;
-    crate::commands::add::run::run(
-        &bench.location,
-        &bench.parent,
-        &add_request,
-        &crate::testing::metadata::git_identity(),
-        &world,
-        &mut crate::design::SilentProgress,
-    )
-    .required_because("register the project")?;
+    bench
+        .build(&world, &add_request)
+        .required_because("the first run builds everything")?;
 
     let paths = ProjectPaths::derive(&bench.parent, add_request.repository.canonical_id());
-    fs::create_dir_all(paths.cache_dir()).required_because("create the archive cache")?;
-    fs::set_permissions(paths.cache_dir(), fs::Permissions::from_mode(0o300))
-        .required_because("make the cache writable but not listable")?;
+    fs::remove_dir_all(paths.cache_dir()).required_because("remove the cache directory")?;
+    fs::write(paths.cache_dir(), b"not a directory")
+        .required_because("make the cache directory unreadable as a directory")?;
 
-    let outcome = run_exec(&bench, &world, Some(&project_of(&add_request)?));
+    let project = project_of(&add_request)?;
+    let (code, _, printed_err) = run_exec(&bench, &world, Some(&project))?;
 
-    fs::set_permissions(paths.cache_dir(), fs::Permissions::from_mode(0o700))
-        .required_because("restore the cache permissions")?;
-    let (code, _, printed_err) = outcome?;
     assert_eq!(code, ExitCode::Success);
     assert!(
         printed_err.contains("could not be inspected"),
-        "the warning reaches stderr: {printed_err}"
+        "the non-fatal cleanup problem is shown as a warning: {printed_err}"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_prepare_reports_the_explicit_repair_command() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let add_request = request("Example-Org/Example-Repo", None, None)?;
+    world.failing("worktree add");
+    bench
+        .build(&world, &add_request)
+        .refused_because("the run stops at the step that failed")?;
+    world.nothing_fails();
+
+    let project = project_of(&add_request)?;
+    let mark = world.mark();
+    let (code, _, printed_err) = run_exec(&bench, &world, Some(&project))?;
+    assert_eq!(code, ExitCode::Failure);
+    assert!(
+        printed_err.contains("sbxm repair Example-Org/Example-Repo"),
+        "the refusal gives one executable next step: {printed_err}"
+    );
+    assert!(
+        world.since(mark).is_empty(),
+        "the refused prepare does not touch the host: {:?}",
+        world.since(mark)
     );
     Ok(())
 }
