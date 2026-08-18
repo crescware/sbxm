@@ -206,6 +206,50 @@ fn a_sandbox_configured_for_someone_else_is_not_overwritten() -> Checked {
     Ok(())
 }
 
+#[test]
+fn matching_existing_identity_and_protocol_are_accepted() -> Checked {
+    let host = FakeSbx::holding(&[
+        ("user.name", "Example User"),
+        ("user.email", "user@example.com"),
+        ("git_protocol", GIT_PROTOCOL),
+    ]);
+    verify(&host, "sbxm-example", &identity()).required_because("the identity matches")?;
+    verify_git_protocol(&host, "sbxm-example").required_because("the GitHub protocol matches")?;
+    Ok(())
+}
+
+#[test]
+fn a_different_existing_identity_or_protocol_is_refused() -> Checked {
+    let identity_error = verify(
+        &FakeSbx::holding(&[("user.name", "Another User")]),
+        "sbxm-example",
+        &identity(),
+    )
+    .refused_because("a different identity is not overwritten")?;
+    assert_eq!(
+        identity_error.first_id(),
+        Some(ErrorId::SandboxIdentityMismatch)
+    );
+
+    let protocol_error = verify_git_protocol(
+        &FakeSbx::holding(&[("git_protocol", "ssh")]),
+        "sbxm-example",
+    )
+    .refused_because("a different protocol is not overwritten")?;
+    assert_eq!(
+        protocol_error.first_id(),
+        Some(ErrorId::SandboxIdentityMismatch)
+    );
+    Ok(())
+}
+
+#[test]
+fn an_empty_existing_protocol_is_left_unchanged() -> Checked {
+    verify_git_protocol(&FakeSbx::holding(&[]), "sbxm-example")
+        .required_because("an empty protocol is treated as an unset default")?;
+    Ok(())
+}
+
 /// hostの`git config --global --get-all`が返す原文を決め打ちするhost。
 struct FakeGitConfig {
     answers: HashMap<String, (i32, String)>,

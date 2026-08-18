@@ -23,11 +23,13 @@ mod require_credentials_isolated;
 mod run_exec;
 mod ssh_add_no_agent;
 mod ssh_agent_is_exposed;
+mod symlink_exists;
 mod unobservable;
 mod unusable;
 mod verify;
 mod verify_identity;
 mod workspace_exists;
+mod workspace_is_empty;
 mod workspace_path;
 mod workspace_root;
 
@@ -50,11 +52,14 @@ pub use require_credentials_isolated::require_credentials_isolated;
 use run_exec::run_exec;
 pub use ssh_add_no_agent::SSH_ADD_NO_AGENT;
 pub use ssh_agent_is_exposed::ssh_agent_is_exposed;
+pub use symlink_exists::symlink_exists;
 pub use unobservable::unobservable;
 use unusable::unusable;
 use verify::verify;
 pub use verify_identity::verify_identity;
 pub use workspace_exists::workspace_exists;
+#[allow(unused_imports)]
+pub use workspace_is_empty::workspace_is_empty;
 pub use workspace_path::workspace_path;
 pub use workspace_root::WORKSPACE_ROOT;
 

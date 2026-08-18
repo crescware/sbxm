@@ -31,6 +31,7 @@ mod transient_archive;
 #[cfg(test)]
 #[path = "transient_archive_test.rs"]
 mod transient_archive_test;
+mod verify_generation;
 
 use build::build;
 use build_context_prefix::BUILD_CONTEXT_PREFIX;
@@ -49,3 +50,4 @@ pub use label_dockerfile_sha256::LABEL_DOCKERFILE_SHA256;
 pub use label_metadata_version::LABEL_METADATA_VERSION;
 use labels_match::labels_match;
 pub use transient_archive::TransientArchive;
+pub(crate) use verify_generation::verify_generation;

@@ -93,6 +93,9 @@ error_ids! {
     InvalidBranchName => "invalid-branch-name",
     TargetConfigurationMismatch => "target-configuration-mismatch",
     RebuildIntentPending => "rebuild-intent-pending",
+    InitialProvisioningPending => "initial-provisioning-pending",
+    InitialProvisioningIncomplete => "initial-provisioning-incomplete",
+    InitialProvisioningInvalid => "initial-provisioning-invalid",
 
     // --- Host clone ---
     HostCloneUnusable => "host-clone-unusable",

@@ -182,59 +182,6 @@ fn a_sandbox_that_is_not_this_projects_stops_prepare_instead_of_counting_as_buil
 }
 
 #[test]
-fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Checked {
-    // どちらの世代で完成させるかは、保存済み世代のimageがあるかどうかで決まる。
-    // それを観測できなかった実行は、どちらかへ倒さずに止まる。
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-
-    // imageまで組み上がり、Sandboxの作成で中断した実行を作る。
-    world.failing("sbx create");
-    bench
-        .build(&world, &request)
-        .refused_because("the run stops at sandbox creation")?;
-    world.nothing_fails();
-
-    let started_from = bench
-        .stored("Example-Org/Example-Repo")?
-        .provisioning
-        .dockerfile_sha256;
-    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    fs::write(paths.dockerfile(), b"FROM example:edited\n")
-        .required_because("edit the Dockerfile")?;
-
-    world.failing("docker image inspect");
-    let mark = world.mark();
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("the stored generation cannot be observed")?;
-
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
-    assert_eq!(
-        bench
-            .stored("Example-Org/Example-Repo")?
-            .provisioning
-            .dockerfile_sha256,
-        started_from,
-        "an unobserved generation is not replaced by the edited one"
-    );
-    assert!(
-        !world.since(mark).iter().any(|call| call.contains("build")),
-        "nothing is built before the generation is decided: {:?}",
-        world.since(mark)
-    );
-    Ok(())
-}
-
-#[test]
 fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
@@ -275,10 +222,6 @@ fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Ch
 
 #[test]
 fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Checked {
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-
     // files配置、identity設定、gh git_protocol設定、bare clone、worktree作成の
     // それぞれの代表的な失敗。
     for step in [
@@ -288,6 +231,9 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
         "git init --bare",
         "worktree add",
     ] {
+        let bench = Bench::new()?;
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", None, None)?;
         world.failing(step);
         let mark = world.mark();
         let error = bench
@@ -347,45 +293,6 @@ fn a_stale_archive_left_by_an_earlier_crash_is_swept_before_building() -> Checke
 }
 
 #[test]
-fn an_already_loaded_template_is_reused_without_exporting_a_new_archive() -> Checked {
-    // Templateが既にある経路では、archiveを作る理由がない。`docker image save`を
-    // 呼ばずに済ませられるかを、中断からの再開に頼らず直接確かめる。
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-
-    world.failing("docker image save");
-    bench
-        .build(&world, &request)
-        .refused_because("the run stops before the archive is exported")?;
-    world.nothing_fails();
-
-    let stored = bench.stored("Example-Org/Example-Repo")?;
-    let sandbox = SandboxName::derive(request.repository.canonical_id());
-    let image = image::image_name(&sandbox, &stored.provisioning.dockerfile_sha256);
-    // 何らかの理由で、この世代のTemplateは既に存在する。
-    world
-        .templates
-        .borrow_mut()
-        .insert(image, "deadbeef".to_string());
-
-    let mark = world.mark();
-    bench
-        .build(&world, &request)
-        .required_because("the existing template is reused")?;
-
-    assert!(
-        !world
-            .since(mark)
-            .iter()
-            .any(|call| call.contains("image save")),
-        "an archive is not exported when the template already exists: {:?}",
-        world.since(mark)
-    );
-    Ok(())
-}
-
-#[test]
 fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
@@ -399,61 +306,6 @@ fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
         !world.ran("df -Pk"),
         "a successful run never checks disk usage: {:?}",
         world.invocations()
-    );
-    Ok(())
-}
-
-#[test]
-fn a_workspace_that_had_to_be_created_again_is_told_rather_than_hidden() -> Checked {
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-    // worktreeを揃える工程で止め、Sandboxだけができている状態を作る。
-    world.failing("worktree add");
-    bench
-        .build(&world, &request)
-        .refused_because("the run stops at the step that failed")?;
-    world.nothing_fails();
-
-    // 続きを実行する前に、hostのworkspace directoryだけが消える。
-    let sandbox = world.sandboxes.borrow()[0].name.clone();
-    let workspace = bench.workspace_root.path().join(&sandbox);
-    fs::remove_dir_all(&workspace).required_because("the workspace directory is removed")?;
-
-    let mark = world.mark();
-    let output = bench
-        .build(&world, &request)
-        .required_because("the same prepare finishes")?;
-
-    assert!(
-        workspace.is_dir(),
-        "the mount point is there again: {}",
-        workspace.display()
-    );
-    assert!(
-        !world
-            .since(mark)
-            .iter()
-            .any(|call| call.contains("sbx create")),
-        "the sandbox itself is kept: {:?}",
-        world.since(mark)
-    );
-    let restored = output
-        .warnings
-        .iter()
-        .find(|warning| warning.description.id == "warning-workspace-restored")
-        .required_because("creating the directory again is reported")?;
-    assert_eq!(
-        restored
-            .facts
-            .iter()
-            .filter_map(|fact| match fact {
-                crate::design::Fact::OneLine { value, .. } => Some(value.as_str().to_string()),
-                _ => None,
-            })
-            .collect::<Vec<_>>(),
-        vec![crate::paths::display(&workspace)],
-        "the report names the directory it created"
     );
     Ok(())
 }

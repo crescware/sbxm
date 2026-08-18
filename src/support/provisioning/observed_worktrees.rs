@@ -8,7 +8,7 @@ use crate::support::sandbox;
 use super::WorktreeRow;
 
 /// metadataが宣言するmanaged worktreeの現在の状態。
-pub(super) fn observed_worktrees(
+pub(crate) fn observed_worktrees(
     host: &dyn HostEnvironment,
     sandbox: &str,
     layout: &SandboxLayout,
@@ -23,7 +23,7 @@ pub(super) fn observed_worktrees(
         .unwrap_or_default();
     let mut rows = Vec::with_capacity(names.len());
     for name in names {
-        let path = format!("{}/{}", layout.bare_root(), name);
+        let path = format!("{}/{name}", layout.bare_root());
         let outcome = sandbox::exec(host, sandbox, &["git", "-C", &path, "rev-parse", "HEAD"])?;
         let head = outcome
             .success()

@@ -5,7 +5,6 @@ use crate::testing::outcome::{Checked, Required};
 use super::super::fake::{Bench, World};
 use crate::command::{OutputPolicy, TimeoutClass};
 use crate::hash::sha256_hex;
-use crate::support::files::Placement;
 use crate::testing::add_request::request;
 
 #[test]
@@ -53,11 +52,13 @@ fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() -> Ch
 }
 
 #[test]
-fn the_declared_file_is_placed_once_and_left_alone_afterwards() -> Checked {
+fn the_declared_file_is_placed_and_its_staging_copy_is_removed() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
-    bench.build(&world, &request).required_because("build")?;
+    let output = bench
+        .build(&world, &request)
+        .required_because("the initial provisioning succeeds")?;
 
     assert_eq!(
         world
@@ -72,22 +73,6 @@ fn the_declared_file_is_placed_once_and_left_alone_afterwards() -> Checked {
         !world.present.borrow().contains("/tmp/sbxm-file-0"),
         "the staged copy does not survive the placement"
     );
-
-    // 同じ内容の再配置は、Sandboxへ書き込まない。
-    let world = World::new();
-    world.digests.borrow_mut().insert(
-        "/home/agent/.config/example/settings.yaml".to_string(),
-        sha256_hex(b"declared = true\n"),
-    );
-    world
-        .present
-        .borrow_mut()
-        .insert("/home/agent/.config/example/settings.yaml".to_string());
-    let output = bench.build(&world, &request).required_because("build")?;
-    assert_eq!(output.files[0].placement, Placement::Unchanged);
-    assert!(
-        !world.ran("sbx cp"),
-        "an identical destination is left alone"
-    );
+    assert_eq!(output.files.len(), 1);
     Ok(())
 }

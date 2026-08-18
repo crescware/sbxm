@@ -376,6 +376,44 @@ fn every_step_of_the_destination_is_checked_for_a_symbolic_link() -> Checked {
 }
 
 #[test]
+fn preflight_accepts_a_missing_or_matching_declared_file() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
+    let declaration = declaration(&source, ".config/example/settings.yaml")?;
+
+    preflight(
+        &FakeSbx::empty(),
+        "sbxm-example",
+        std::slice::from_ref(&declaration),
+    )
+    .required_because("a missing destination is safe to place")?;
+
+    let host = FakeSbx::holding(
+        "/home/agent/.config/example/settings.yaml",
+        b"declared = true\n",
+    );
+    preflight(&host, "sbxm-example", &[declaration])
+        .required_because("a matching destination is safe to reuse")?;
+    Ok(())
+}
+
+#[test]
+fn preflight_refuses_a_declared_file_with_different_contents() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"new contents\n")?;
+    let declaration = declaration(&source, ".config/example/settings.yaml")?;
+    let host = FakeSbx::holding(
+        "/home/agent/.config/example/settings.yaml",
+        b"older contents\n",
+    );
+
+    let error = preflight(&host, "sbxm-example", &[declaration])
+        .refused_because("repair does not overwrite a changed declared file")?;
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    Ok(())
+}
+
+#[test]
 fn the_content_of_a_declared_file_never_reaches_a_diagnostic() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let secret = "a-value-that-must-not-be-shown";

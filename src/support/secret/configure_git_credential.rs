@@ -1,5 +1,7 @@
 use crate::command::HostEnvironment;
-use crate::diagnostics::Result;
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::msg;
 
 use super::{GITHUB_HOST, GITHUB_TOKEN_ENV};
 
@@ -17,12 +19,40 @@ fn credential_key() -> String {
 /// 送り、proxyがgithub.com宛のrequest headerで本物のtokenへ差し替える。usernameは
 /// `GitHubのgit` endpointでは任意の値でよい。
 pub fn configure_git_credential(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
-    let helper = format!("!f() {{ echo username=x; echo password=${GITHUB_TOKEN_ENV}; }}; f");
-    crate::support::sandbox::exec(
+    let key = credential_key();
+    let helper = helper();
+    let observed = crate::support::sandbox::exec(
         host,
         sandbox,
-        &["git", "config", "--global", &credential_key(), &helper],
-    )?
-    .require_success()?;
+        &["git", "config", "--global", "--get", &key],
+    )?;
+    if observed.success() {
+        let value = observed.stdout_text().trim().to_string();
+        if value == helper {
+            return Ok(());
+        }
+        if !value.is_empty() {
+            return Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::SandboxIdentityMismatch,
+                    msg!(
+                        "error-sandbox-identity-mismatch",
+                        sandbox = sandbox,
+                        key = key,
+                        observed = value,
+                        expected = helper
+                    ),
+                )
+                .fact(Fact::value(&key))
+                .remediation(msg!("remediation-sandbox-identity-mismatch")),
+            ));
+        }
+    }
+    crate::support::sandbox::exec(host, sandbox, &["git", "config", "--global", &key, &helper])?
+        .require_success()?;
     Ok(())
+}
+
+fn helper() -> String {
+    format!("!f() {{ echo username=x; echo password=${GITHUB_TOKEN_ENV}; }}; f")
 }

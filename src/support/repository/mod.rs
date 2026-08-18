@@ -13,6 +13,8 @@ mod refresh_origin_all_refs;
 mod start_ref;
 mod tag_following;
 mod unusable;
+mod verify_bare_clone;
+mod verify_existing;
 mod worktree;
 
 pub use ensure_bare_clone::ensure_bare_clone;
@@ -22,4 +24,6 @@ pub use refresh_origin_all_refs::refresh_origin_all_refs;
 pub use start_ref::resolve_start_ref;
 pub use tag_following::TagFollowing;
 use unusable::unusable;
+pub(crate) use verify_bare_clone::verify_bare_clone;
+pub(crate) use verify_existing::verify_existing;
 pub use worktree::ensure_worktrees;

@@ -4,12 +4,13 @@ use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::design::{OutputPolicy, PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::i18n::Locale;
+use crate::paths::ProjectPaths;
 use crate::project::ProjectId;
 
 use crate::testing::add_request::{project_of, request};
-use crate::testing::outcome::{Checked, Refused, Required};
-
+use crate::testing::outcome::{Checked, Required};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 
 use super::super::fake::{Bench, World};
 
@@ -67,29 +68,34 @@ fn a_finished_build_is_reported_as_a_no_op_success() -> Checked {
 }
 
 #[test]
-fn a_workspace_that_had_to_be_created_again_is_warned_about_by_the_command_wrapper() -> Checked {
+fn a_successful_prepare_prints_each_nonfatal_warning() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let add_request = request("Example-Org/Example-Repo", None, None)?;
-    // worktreeを揃える工程で止め、Sandboxだけができている状態を作る。
-    world.failing("worktree add");
-    bench
-        .build(&world, &add_request)
-        .refused_because("the run stops at the step that failed")?;
-    world.nothing_fails();
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &add_request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut crate::design::SilentProgress,
+    )
+    .required_because("register the project")?;
 
-    // 続きを実行する前に、hostのworkspace directoryだけが消える。
-    let sandbox = world.sandboxes.borrow()[0].name.clone();
-    let workspace = bench.workspace_root.path().join(&sandbox);
-    fs::remove_dir_all(&workspace).required_because("the workspace directory is removed")?;
+    let paths = ProjectPaths::derive(&bench.parent, add_request.repository.canonical_id());
+    fs::create_dir_all(paths.cache_dir()).required_because("create the archive cache")?;
+    fs::set_permissions(paths.cache_dir(), fs::Permissions::from_mode(0o300))
+        .required_because("make the cache writable but not listable")?;
 
-    let project = project_of(&add_request)?;
-    let (code, _, printed_err) = run_exec(&bench, &world, Some(&project))?;
+    let outcome = run_exec(&bench, &world, Some(&project_of(&add_request)?));
 
+    fs::set_permissions(paths.cache_dir(), fs::Permissions::from_mode(0o700))
+        .required_because("restore the cache permissions")?;
+    let (code, _, printed_err) = outcome?;
     assert_eq!(code, ExitCode::Success);
     assert!(
-        printed_err.contains(&sandbox),
-        "the warning names the sandbox whose workspace was recreated: {printed_err}"
+        printed_err.contains("could not be inspected"),
+        "the warning reaches stderr: {printed_err}"
     );
     Ok(())
 }
