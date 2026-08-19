@@ -9,26 +9,28 @@ use crate::paths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use crate::support::select::Locked;
-use crate::support::{
-    disk, docker, files, identity, image, repository, sandbox, secret, template, tools,
+use crate::support::{disk, files, identity, image, repository, sandbox, secret, template, tools};
+
+use super::{
+    ExternalPreconditions, ProvisioningOutput, clear_intent, observed_worktrees, persist_intent,
 };
 
-use super::{ProvisioningOutput, clear_intent, observed_worktrees, persist_intent};
-
 /// 固定済みgenerationへ向けて初回構築を進める唯一の共有境界。
+///
+/// secretとengineのread-only事前条件は`preconditions`が既に確認済みであることを
+/// 証明する。呼び出しごとに1回だけ確認すればよいよう、ここでは同じ外部callを
+/// 再発行しない。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn provision(
     locked: &mut Locked,
     config: &GlobalConfig,
     target: &str,
+    _preconditions: ExternalPreconditions,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
     mut warnings: Vec<Warning>,
 ) -> Result<ProvisioningOutput> {
-    // secretとengineはread-onlyの事前条件であり、intentより前に確認できる。
-    secret::require_github(host, locked.metadata.sandbox_name().as_str())?;
-    docker::require_reachable(host)?;
-
     // 同名のforeign imageをcache missとして扱わない。intentを保存したあとで衝突に
     // 到達すると、中断状態だけが残って次回のprepareの挙動を変えてしまう。
     image::verify_generation(

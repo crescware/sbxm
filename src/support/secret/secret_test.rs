@@ -394,13 +394,7 @@ fn the_credential_helper_reads_the_placeholder_and_holds_no_token() -> Checked {
     let host = FakeSbx::listing("");
     configure_git_credential(&host, "sbxm-example").required_because("the helper is configured")?;
 
-    let call = host
-        .calls
-        .borrow()
-        .iter()
-        .find(|args| args.iter().any(|arg| arg.contains("password=$GH_TOKEN")))
-        .map(|args| args.join(" "))
-        .required_because("the helper value is written")?;
+    let call = host.calls.borrow()[0].join(" ");
     assert!(call.contains("credential.https://github.com.helper"));
     // helperはSandboxの環境変数を読むだけで、値そのものは持たない。
     assert!(call.contains("password=$GH_TOKEN"));
@@ -414,6 +408,12 @@ fn configure_writes_an_existing_matching_credential_helper() -> Checked {
     let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, helper);
     configure_git_credential(&host, "sbxm-example").required_because("the helper is configured")?;
     assert!(host.ran("credential.https://github.com.helper !f"));
+    assert_eq!(
+        host.calls().len(),
+        1,
+        "no unnecessary preceding call is added: {:?}",
+        host.calls()
+    );
     Ok(())
 }
 
@@ -423,6 +423,12 @@ fn configure_overwrites_a_different_credential_helper() -> Checked {
     let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, "store");
     configure_git_credential(&host, "sbxm-example")
         .required_because("prepare preserves its existing overwrite behavior")?;
+    assert_eq!(
+        host.calls().len(),
+        1,
+        "no unnecessary preceding call is added: {:?}",
+        host.calls()
+    );
     assert!(host.ran("credential.https://github.com.helper !f"));
     Ok(())
 }

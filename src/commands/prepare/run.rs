@@ -7,7 +7,7 @@ use crate::diagnostics::Result;
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::support::select::ProjectPrompt;
-use crate::support::{generation, image, provisioning, secret};
+use crate::support::{generation, image, provisioning};
 
 use super::PrepareOutput;
 
@@ -47,9 +47,9 @@ pub fn run(
     }
 
     // custom secretはSandboxの作成時に結び付く。あとから登録しても既存のSandboxには
-    // 届かないため、作成より前に、そしてimageを組む前に確認する。
-    secret::require_github(host, name.as_str())?;
-    crate::support::docker::require_reachable(host)?;
+    // 届かないため、作成より前に、そしてimageを組む前に確認する。Dockerの到達性も
+    // ここで一度だけ確認し、以降のgeneration解決や`provision`の中では再確認しない。
+    let preconditions = provisioning::verify_external_preconditions(host, &name)?;
 
     // 中断後もbaseと同じgeneration選択規則で続行する。intentがある場合も、既にimageが
     // 完成していればDockerfile変更のwarningを従来どおり出す。
@@ -61,6 +61,7 @@ pub fn run(
         &mut locked,
         config,
         &target,
+        preconditions,
         host,
         workspace_root,
         progress,

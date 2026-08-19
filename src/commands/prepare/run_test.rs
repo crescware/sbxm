@@ -554,6 +554,55 @@ fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
 }
 
 #[test]
+fn a_successful_prepare_checks_secret_and_docker_reachability_exactly_once() -> Checked {
+    // `provision`はrun側から確認済みの状態をconsumeするだけであり、内部で同じ
+    // 外部callを二重に発行しない。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    let mark = world.mark();
+    run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .required_because("prepare succeeds")?;
+
+    let since = world.since(mark);
+    assert_eq!(
+        since
+            .iter()
+            .filter(|call| call.contains("secret ls"))
+            .count(),
+        1,
+        "the github secret is checked exactly once: {since:?}"
+    );
+    assert_eq!(
+        since
+            .iter()
+            .filter(|call| call.contains("version --format"))
+            .count(),
+        1,
+        "docker reachability is checked exactly once: {since:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_workspace_that_had_to_be_created_again_is_told_rather_than_hidden() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

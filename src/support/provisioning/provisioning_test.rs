@@ -133,11 +133,16 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
         .join(locked.metadata.sandbox_name().as_str());
     fs::remove_dir_all(&workspace).required_because("remove the neutral workspace")?;
 
+    let name = locked.metadata.sandbox_name();
+    let preconditions = verify_external_preconditions(&world, &name)
+        .required_because("secret and docker preconditions are met")?;
+
     let mark = world.mark();
     let output = provision(
         &mut locked,
         &bench.config,
         &target,
+        preconditions,
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,
