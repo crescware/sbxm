@@ -8,7 +8,8 @@ use crate::project::{SandboxLayout, SandboxName};
 
 use crate::support::{daemon, sandbox};
 
-use super::{ProvisioningOutput, observed_worktrees};
+use super::ProvisioningOutput;
+use super::observed_worktrees::observed_worktrees;
 
 /// 目標構成をすべて満たしたSandboxが既にあるか。
 ///

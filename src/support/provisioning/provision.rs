@@ -12,9 +12,8 @@ use crate::support::image::VerifiedGeneration;
 use crate::support::select::Locked;
 use crate::support::{disk, files, identity, image, repository, sandbox, secret, template, tools};
 
-use super::{
-    ExternalPreconditions, ProvisioningOutput, clear_intent, observed_worktrees, persist_intent,
-};
+use super::observed_worktrees::observed_worktrees;
+use super::{ExternalPreconditions, ProvisioningOutput, clear_intent, persist_intent};
 
 /// 固定済みgenerationへ向けて初回構築を進める唯一の共有境界。
 ///

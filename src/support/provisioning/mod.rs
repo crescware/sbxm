@@ -29,7 +29,6 @@ pub(crate) use external_preconditions::ExternalPreconditions;
 pub(crate) use fresh_target::fresh_target;
 pub use observation::Observation;
 pub use observe::observe;
-pub(crate) use observed_worktrees::observed_worktrees;
 pub(crate) use persist_intent::persist_intent;
 pub(crate) use preflight::preflight;
 pub(crate) use provision::provision;
