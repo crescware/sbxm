@@ -207,3 +207,7 @@ mod tools_test;
 #[cfg(test)]
 #[path = "output_test.rs"]
 mod output_test;
+
+#[cfg(test)]
+#[path = "external_calls_test.rs"]
+mod external_calls_test;
