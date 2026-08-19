@@ -8,21 +8,21 @@ use crate::project::{SandboxLayout, SandboxName};
 
 use crate::support::{daemon, sandbox};
 
-use super::{PrepareOutput, observed_worktrees};
+use super::ProvisioningOutput;
+use super::observed_worktrees::observed_worktrees;
 
 /// 目標構成をすべて満たしたSandboxが既にあるか。
 ///
 /// ある場合は副作用なしのno-op成功とする。判定はmetadataの完全性だけで済ませず、
 /// Sandbox identityまで確認する。
-pub(super) fn already_built(
+pub(crate) fn already_built(
     host: &dyn HostEnvironment,
-    paths: &ProjectPaths,
+    _paths: &ProjectPaths,
     name: &SandboxName,
     metadata: &ProjectMetadata,
     layout: &SandboxLayout,
     workspace_root: &Path,
-) -> Result<Option<PrepareOutput>> {
-    let _ = paths;
+) -> Result<Option<ProvisioningOutput>> {
     let provisioning = &metadata.provisioning;
     if provisioning.start_ref.is_none() {
         return Ok(None);
@@ -57,9 +57,9 @@ pub(super) fn already_built(
     }
 
     let worktrees = observed_worktrees(host, &entry.name, layout, metadata)?;
-    Ok(Some(PrepareOutput {
+    Ok(Some(ProvisioningOutput {
         project: metadata.display_id(),
-        sandbox: entry.name,
+        sandbox: entry.name.clone(),
         mode: provisioning.mode,
         start_ref: provisioning.start_ref.clone().unwrap_or_default(),
         sandbox_state: entry.state,

@@ -402,6 +402,38 @@ fn the_credential_helper_reads_the_placeholder_and_holds_no_token() -> Checked {
 }
 
 #[test]
+fn configure_writes_an_existing_matching_credential_helper() -> Checked {
+    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
+    let helper = "!f() { echo username=x; echo password=$GH_TOKEN; }; f";
+    let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, helper);
+    configure_git_credential(&host, "sbxm-example").required_because("the helper is configured")?;
+    assert!(host.ran("credential.https://github.com.helper !f"));
+    assert_eq!(
+        host.calls().len(),
+        1,
+        "no unnecessary preceding call is added: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn configure_overwrites_a_different_credential_helper() -> Checked {
+    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
+    let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, "store");
+    configure_git_credential(&host, "sbxm-example")
+        .required_because("prepare preserves its existing overwrite behavior")?;
+    assert_eq!(
+        host.calls().len(),
+        1,
+        "no unnecessary preceding call is added: {:?}",
+        host.calls()
+    );
+    assert!(host.ran("credential.https://github.com.helper !f"));
+    Ok(())
+}
+
+#[test]
 fn an_incomplete_secret_is_told_to_keep_the_placeholder_the_sandbox_already_holds() -> Checked {
     // placeholderを指定しない登録は、同じenvが既にあると重複として拒否される。
     // 既存の値を引き継ぐ形で示さないと、案内どおりに実行しても必ず失敗する。

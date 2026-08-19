@@ -182,6 +182,73 @@ fn a_sandbox_that_is_not_this_projects_stops_prepare_instead_of_counting_as_buil
 }
 
 #[test]
+fn a_ready_project_is_a_no_op_even_when_docker_is_unreachable() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first prepare succeeds")?;
+
+    world.failing("version --format");
+    let output = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .required_because("a ready project does not need Docker")?;
+
+    assert!(output.already_built);
+    Ok(())
+}
+
+#[test]
+fn a_foreign_image_stops_prepare_before_anything_is_built() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    let metadata = bench.stored("Example-Org/Example-Repo")?;
+    let name = SandboxName::derive(request.repository.canonical_id());
+    let image_name = image::image_name(&name, &metadata.provisioning.dockerfile_sha256);
+    world.images.borrow_mut().insert(
+        image_name,
+        vec![(
+            image::LABEL_CANONICAL_ID.to_string(),
+            "Other-Org/Other-Repo".to_string(),
+        )],
+    );
+
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("a foreign image is not overwritten")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
+    assert!(!world.ran("docker build"));
+    Ok(())
+}
+
+#[test]
 fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Checked {
     // どちらの世代で完成させるかは、保存済み世代のimageがあるかどうかで決まる。
     // それを観測できなかった実行は、どちらかへ倒さずに止まる。
@@ -230,6 +297,38 @@ fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Che
         !world.since(mark).iter().any(|call| call.contains("build")),
         "nothing is built before the generation is decided: {:?}",
         world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_failed_image_build_lets_the_same_prepare_retarget_after_the_dockerfile_is_fixed() -> Checked {
+    // immutableな成果物が何も残らなかった段階。Dockerfileを直しての再実行は、
+    // その新しいgenerationへ続けられる。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    world.failing("docker build");
+    bench
+        .build(&world, &request)
+        .refused_because("the run stops when the image cannot be built")?;
+    world.nothing_fails();
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    fs::write(paths.dockerfile(), b"FROM example:edited\n")
+        .required_because("fix the Dockerfile")?;
+
+    let output = bench
+        .build(&world, &request)
+        .required_because("the same prepare retargets to the fixed generation")?;
+
+    assert!(!output.already_built);
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    assert_eq!(
+        stored.provisioning.dockerfile_sha256,
+        sha256_hex(b"FROM example:edited\n"),
+        "the fixed dockerfile becomes the generation that was built"
     );
     Ok(())
 }
@@ -399,6 +498,55 @@ fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
         !world.ran("df -Pk"),
         "a successful run never checks disk usage: {:?}",
         world.invocations()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_successful_prepare_checks_secret_and_docker_reachability_exactly_once() -> Checked {
+    // `provision`はrun側から確認済みの状態をconsumeするだけであり、内部で同じ
+    // 外部callを二重に発行しない。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    let mark = world.mark();
+    run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .required_because("prepare succeeds")?;
+
+    let since = world.since(mark);
+    assert_eq!(
+        since
+            .iter()
+            .filter(|call| call.contains("secret ls"))
+            .count(),
+        1,
+        "the github secret is checked exactly once: {since:?}"
+    );
+    assert_eq!(
+        since
+            .iter()
+            .filter(|call| call.contains("version --format"))
+            .count(),
+        1,
+        "docker reachability is checked exactly once: {since:?}"
     );
     Ok(())
 }
