@@ -8,39 +8,45 @@ use crate::msg;
 use crate::paths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
+use crate::support::image::VerifiedGeneration;
 use crate::support::select::Locked;
 use crate::support::{disk, files, identity, image, repository, sandbox, secret, template, tools};
 
 use super::observed_worktrees::observed_worktrees;
-use super::{ExternalPreconditions, ProvisioningOutput};
+use super::{ExternalPreconditions, ProvisioningOutput, clear_intent, persist_intent};
 
 /// 固定済みgenerationへ向けて初回構築を進める唯一の共有境界。
 ///
-/// secretとengineのread-only事前条件は`preconditions`が既に確認済みであることを
-/// 証明する。呼び出しごとに1回だけ確認すればよいよう、ここでは同じ外部callを
-/// 再発行しない。
+/// secretとengineのread-only事前条件は`preconditions`が、世代名に衝突が無いことは
+/// `verified`が、それぞれ確認済みであることを証明する。呼び出しごとに1回だけ観測
+/// すればよいよう、ここでは同じ外部callを再発行しない。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn provision(
     locked: &mut Locked,
     config: &GlobalConfig,
     generation: &str,
+    verified: VerifiedGeneration,
     _preconditions: ExternalPreconditions,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
     mut warnings: Vec<Warning>,
 ) -> Result<ProvisioningOutput> {
+    // 衝突が無いことは`verified`が証明する。これが初回構築における最初のmutationである。
+    persist_intent(host, locked, generation)?;
+
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
     let project = ProjectId::parse(&locked.metadata.display_id())?;
     let layout = SandboxLayout::new(&canonical);
 
-    let built = image::ensure(
+    let built = image::ensure_verified(
         host,
         &name,
         locked.metadata.canonical_id(),
         &locked.paths.dockerfile(),
         generation,
+        verified,
         progress,
     )?;
     warnings.extend(built.warnings.clone());
@@ -100,7 +106,7 @@ pub(crate) fn provision(
 
     // ensure_worktreesは各工程のpost-conditionを検査し、ここでは最終表示用の観測を行う。
     let worktrees = observed_worktrees(host, &ready.name, &layout, &locked.metadata)?;
-    Ok(ProvisioningOutput {
+    let output = ProvisioningOutput {
         project: locked.metadata.display_id(),
         sandbox: ready.name,
         mode: locked.metadata.provisioning.mode,
@@ -110,5 +116,9 @@ pub(crate) fn provision(
         files: placed_files,
         already_built: false,
         warnings,
-    })
+    };
+
+    // intentの消去までが構築完了のcommit。失敗すればintentを残したまま返す。
+    clear_intent(locked)?;
+    Ok(output)
 }

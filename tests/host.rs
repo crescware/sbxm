@@ -56,9 +56,24 @@ ssh)
 	esac
 	;;
 docker)
-	[ "$1 $2" = "version --format" ] || exit 1
-	echo '27.0.0'
-	exit 0
+	case "$1 $2" in
+	"version --format")
+		echo '27.0.0'
+		exit 0
+		;;
+	"image ls")
+		[ -e "$fake/observe-empty-generation" ] || exit 1
+		exit 0
+		;;
+	build*)
+		[ -e "$fake/allow-docker-build" ] || exit 1
+		[ ! -e "$fake/fail-docker-build" ] || exit 1
+		exit 0
+		;;
+	*)
+		exit 1
+		;;
+	esac
 	;;
 git)
 	case "$1" in
@@ -88,6 +103,19 @@ git)
 		;;
 	esac
 	exit 1
+	;;
+esac
+
+case "$1 $2 $3" in
+"template ls --json")
+	[ -e "$fake/observe-empty-generation" ] || exit 1
+	printf '{"images":[]}'
+	exit 0
+	;;
+"secret ls "*)
+	[ -e "$fake/git-secret-is-configured" ] || exit 1
+	printf 'CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n%s   github.com **.github.com **.githubusercontent.com ghcr.io   GH_TOKEN   sbx-cs-example   ghp_example\n' "$3"
+	exit 0
 	;;
 esac
 
@@ -644,6 +672,55 @@ fn prepare_refuses_a_project_that_was_never_registered() -> Checked {
         host.invocations()?,
         "",
         "nothing is asked of the host before the target is known to be managed"
+    );
+    Ok(())
+}
+
+#[test]
+fn repair_reports_a_fresh_project_without_mutating_it() -> Checked {
+    let host = Host::new()?;
+    host.registered()?;
+    host.answer("observe-empty-generation", "")?;
+
+    let run = host.run(&["--lang", "en", "repair", PROJECT])?;
+
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    assert!(
+        run.stdout.contains("does not need repair"),
+        "a fresh project is a no-op: {}",
+        run.stdout
+    );
+    assert!(
+        !host.invocations()?.contains("create --name"),
+        "repair diagnosis does not create a Sandbox"
+    );
+    Ok(())
+}
+
+#[test]
+fn repair_keeps_a_failed_prepare_intent_and_reports_the_repair_failure() -> Checked {
+    let host = Host::new()?;
+    host.registered()?;
+    host.answer("observe-empty-generation", "")?;
+    host.answer("git-secret-is-configured", "")?;
+    host.answer("allow-docker-build", "")?;
+    std::fs::write(host.fake.join("fail-docker-build"), "1")
+        .required_because("the fake Docker build is made to fail")?;
+
+    let prepare = host.run(&["--lang", "en", "prepare", PROJECT])?;
+    assert_ne!(prepare.code, 0, "{}{}", prepare.stdout, prepare.stderr);
+
+    let repair = host.run(&["--lang", "en", "repair", PROJECT])?;
+    assert_ne!(repair.code, 0, "{}{}", repair.stdout, repair.stderr);
+    assert!(
+        repair.stdout.contains("interrupted provisioning"),
+        "{}",
+        repair.stdout
+    );
+    assert!(
+        repair.stderr.contains("external-command-failed"),
+        "{}",
+        repair.stderr
     );
     Ok(())
 }

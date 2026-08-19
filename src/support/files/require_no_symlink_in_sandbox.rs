@@ -24,7 +24,7 @@ pub(super) fn require_no_symlink_in_sandbox(
     for part in destination.split('/') {
         current.push('/');
         current.push_str(part);
-        if sandbox::exec(host, sandbox, &["test", "-h", &current])?.success() {
+        if sandbox::symlink_exists(host, sandbox, &current)? {
             return Err(Error::single(
                 Diagnostic::new(
                     ErrorId::DeclaredFileUnusable,

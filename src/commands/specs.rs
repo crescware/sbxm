@@ -9,6 +9,7 @@ pub fn specs(builder: &Builder) -> Result<Vec<ClapCommand>> {
         crate::commands::add::spec(builder)?,
         crate::commands::apply::spec(builder)?,
         crate::commands::prepare::spec(builder)?,
+        crate::commands::repair::spec(builder)?,
         crate::commands::rebuild::spec(builder)?,
         crate::commands::open::spec(builder)?,
         crate::commands::stop::spec(builder)?,

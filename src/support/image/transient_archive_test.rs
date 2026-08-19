@@ -269,6 +269,32 @@ fn an_unobservable_replacement_is_reported_the_same_way_as_a_removal_failure() -
 }
 
 #[test]
+fn an_archive_whose_identity_cannot_be_observed_is_never_held() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+
+    // 作成時点の実体を控えられないまま持つと、あとの片付けで、名前が一致するだけの
+    // 別物を消しかねない。観測できないことを、控えなくてよいことにしない。
+    let dir = tempfile::tempdir().required()?;
+    let sub = dir.path().join("sub");
+    std::fs::create_dir(&sub).required()?;
+    let path = sub.join("template-000000000000.tar");
+    std::fs::write(&path, b"archive").required()?;
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o000)).required()?;
+
+    let outcome = TransientArchive::new(path.clone());
+
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o700)).required()?;
+
+    let error = outcome.refused_because("an archive that cannot be identified is not held")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    assert!(
+        path.exists(),
+        "the file that could not be identified is left where it was"
+    );
+    Ok(())
+}
+
+#[test]
 fn dropping_an_archive_that_was_never_cleaned_up_removes_it() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("template-000000000000.tar");

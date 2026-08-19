@@ -4,6 +4,7 @@ use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::design::{OutputPolicy, PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::i18n::Locale;
+use crate::paths::ProjectPaths;
 use crate::project::ProjectId;
 
 use crate::testing::add_request::{project_of, request};
@@ -67,29 +68,54 @@ fn a_finished_build_is_reported_as_a_no_op_success() -> Checked {
 }
 
 #[test]
-fn a_workspace_that_had_to_be_created_again_is_warned_about_by_the_command_wrapper() -> Checked {
+fn a_cleanup_warning_is_written_by_the_command_wrapper() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let add_request = request("Example-Org/Example-Repo", None, None)?;
-    // worktreeを揃える工程で止め、Sandboxだけができている状態を作る。
-    world.failing("worktree add");
     bench
         .build(&world, &add_request)
-        .refused_because("the run stops at the step that failed")?;
-    world.nothing_fails();
+        .required_because("the first run builds everything")?;
 
-    // 続きを実行する前に、hostのworkspace directoryだけが消える。
-    let sandbox = world.sandboxes.borrow()[0].name.clone();
-    let workspace = bench.workspace_root.path().join(&sandbox);
-    fs::remove_dir_all(&workspace).required_because("the workspace directory is removed")?;
+    let paths = ProjectPaths::derive(&bench.parent, add_request.repository.canonical_id());
+    fs::remove_dir_all(paths.cache_dir()).required_because("remove the cache directory")?;
+    fs::write(paths.cache_dir(), b"not a directory")
+        .required_because("make the cache directory unreadable as a directory")?;
 
     let project = project_of(&add_request)?;
     let (code, _, printed_err) = run_exec(&bench, &world, Some(&project))?;
 
     assert_eq!(code, ExitCode::Success);
     assert!(
-        printed_err.contains(&sandbox),
-        "the warning names the sandbox whose workspace was recreated: {printed_err}"
+        printed_err.contains("could not be inspected"),
+        "the non-fatal cleanup problem is shown as a warning: {printed_err}"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_prepare_reports_the_explicit_repair_command() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let add_request = request("Example-Org/Example-Repo", None, None)?;
+    world.failing("worktree add");
+    bench
+        .build(&world, &add_request)
+        .refused_because("the run stops at the step that failed")?;
+    world.nothing_fails();
+
+    let project = project_of(&add_request)?;
+    let mark = world.mark();
+    let (code, _, printed_err) = run_exec(&bench, &world, Some(&project))?;
+
+    assert_eq!(code, ExitCode::Failure);
+    assert!(
+        printed_err.contains("sbxm repair Example-Org/Example-Repo"),
+        "the refusal gives one executable next step: {printed_err}"
+    );
+    assert!(
+        world.since(mark).is_empty(),
+        "the refused prepare does not touch the host: {:?}",
+        world.since(mark)
     );
     Ok(())
 }

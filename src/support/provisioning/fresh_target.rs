@@ -7,7 +7,7 @@ use crate::project::SandboxName;
 
 use crate::support::{generation, image};
 
-use super::changed_dockerfile_warning::changed_dockerfile_warning;
+use super::changed_dockerfile_warning;
 
 /// 初回構築を完成させる世代を決める。
 ///

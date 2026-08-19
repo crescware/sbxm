@@ -2,10 +2,12 @@ use std::path::Path;
 
 use crate::command::HostEnvironment;
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::design::ProgressSink;
-use crate::diagnostics::Result;
+use crate::design::{Fact, ProgressSink, Remediation};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
+use crate::support::provisioning::ProvisioningState;
 use crate::support::select::ProjectPrompt;
 use crate::support::{generation, image, provisioning};
 
@@ -25,21 +27,37 @@ pub fn run(
     let mut locked =
         crate::support::select::one(location, requested, &msg!("select-prepare-heading"), prompt)?
             .lock()?;
-    let mut warnings = image::cleanup_stale_archives(&locked.paths)?;
     generation::require_no_rebuild(&locked.metadata)?;
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
     let layout = SandboxLayout::new(&canonical);
-
-    if let Some(mut output) = provisioning::already_built(
+    let observed = provisioning::observe(
         host,
         &locked.paths,
         &name,
         &locked.metadata,
         &layout,
         workspace_root,
-    )? {
+        false,
+    )?;
+    // 観測は1回だけ行う。Readyを証明したのは`observe`であり、その結果をここで
+    // 捨てて同じ観測を撃ち直さない。
+    let ready = match observed.state {
+        ProvisioningState::Pending => return Err(pending(&locked.metadata)),
+        ProvisioningState::Incomplete => {
+            return Err(incomplete(&locked.metadata, &observed.artifacts));
+        }
+        ProvisioningState::Ready => match observed.output {
+            Some(output) => Some(output),
+            None => return Err(incomplete(&locked.metadata, &observed.artifacts)),
+        },
+        ProvisioningState::Fresh => None,
+    };
+
+    let mut warnings = image::cleanup_stale_archives(&locked.paths)?;
+
+    if let Some(mut output) = ready {
         output.warnings = warnings;
         return Ok(output);
     }
@@ -53,15 +71,66 @@ pub fn run(
         provisioning::fresh_target(host, &locked.paths, &mut locked.metadata, &name)?;
     warnings.extend(target_warnings);
 
+    // 同名のforeign imageをcache missとして扱わない。intentを保存したあとで衝突に
+    // 到達すると、中断状態だけが残って次回のprepareの挙動を変えてしまう。
+    let verified =
+        image::verify_generation(host, &name, locked.metadata.canonical_id(), &generation)?;
+
     provisioning::provision(
         &mut locked,
         config,
         &generation,
+        verified,
         preconditions,
         host,
         workspace_root,
         progress,
         warnings,
+    )
+}
+
+fn pending(metadata: &ProjectMetadata) -> Error {
+    let target = metadata
+        .initial_provisioning
+        .as_ref()
+        .map_or("<unobserved>", |intent| {
+            intent.target_dockerfile_sha256.as_str()
+        });
+    Error::single(
+        Diagnostic::new(
+            ErrorId::InitialProvisioningPending,
+            msg!(
+                "error-initial-provisioning-pending",
+                project = metadata.display_id()
+            ),
+        )
+        .fact(Fact::sandbox(&metadata.sandbox_name().to_string()))
+        .fact(Fact::value(target))
+        .remediation(
+            Remediation::text(msg!("remediation-initial-provisioning-pending"))
+                .try_run(format!("sbxm repair {}", metadata.display_id())),
+        ),
+    )
+}
+
+fn incomplete(metadata: &ProjectMetadata, artifacts: &[provisioning::Artifact]) -> Error {
+    let values = artifacts
+        .iter()
+        .map(provisioning::Artifact::as_str)
+        .collect::<Vec<_>>();
+    Error::single(
+        Diagnostic::new(
+            ErrorId::InitialProvisioningIncomplete,
+            msg!(
+                "error-initial-provisioning-incomplete",
+                project = metadata.display_id()
+            ),
+        )
+        .fact(Fact::paths(&values))
+        .remediation(
+            Remediation::text(msg!("remediation-initial-provisioning-incomplete"))
+                .try_run(format!("sbxm repair {}", metadata.display_id())),
+        ),
     )
 }
 
