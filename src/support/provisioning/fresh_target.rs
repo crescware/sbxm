@@ -6,7 +6,7 @@ use crate::project::SandboxName;
 
 use crate::support::{generation, image};
 
-use super::changed_dockerfile_warning;
+use super::{ObservedGeneration, TargetSelection, changed_dockerfile_warning};
 
 /// fresh案件の初回構築targetを、hostの変更前に一意に決める。
 pub(crate) fn fresh_target(
@@ -14,14 +14,32 @@ pub(crate) fn fresh_target(
     paths: &ProjectPaths,
     name: &SandboxName,
     metadata: &ProjectMetadata,
-) -> Result<(String, Vec<crate::design::Warning>)> {
+) -> Result<TargetSelection> {
     let stored = metadata.provisioning.dockerfile_sha256.clone();
     let current = generation::current_dockerfile_hash(paths)?;
     if current == stored {
-        return Ok((stored, Vec::new()));
+        return Ok(TargetSelection {
+            generation: stored,
+            warnings: Vec::new(),
+            stored: None,
+        });
     }
-    if image::generation_is_built(host, name, metadata.canonical_id(), &stored)? {
-        return Ok((stored, vec![changed_dockerfile_warning(metadata)]));
+
+    let built = image::generation_is_built(host, name, metadata.canonical_id(), &stored)?;
+    let observed = Some(ObservedGeneration {
+        dockerfile_sha256: stored.clone(),
+        built,
+    });
+    if built {
+        return Ok(TargetSelection {
+            generation: stored,
+            warnings: vec![changed_dockerfile_warning(metadata)],
+            stored: observed,
+        });
     }
-    Ok((current, Vec::new()))
+    Ok(TargetSelection {
+        generation: current,
+        warnings: Vec::new(),
+        stored: observed,
+    })
 }

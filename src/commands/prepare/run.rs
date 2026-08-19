@@ -24,7 +24,7 @@ pub fn run(
     let mut locked =
         crate::support::select::one(location, requested, &msg!("select-prepare-heading"), prompt)?
             .lock()?;
-    let mut warnings = image::cleanup_stale_archives(&locked.paths)?;
+    let warnings = image::cleanup_stale_archives(&locked.paths)?;
     generation::require_no_rebuild(&locked.metadata)?;
 
     let canonical = locked.metadata.canonical_id().clone();
@@ -52,15 +52,14 @@ pub fn run(
     let preconditions = provisioning::verify_external_preconditions(host, &name)?;
 
     // 中断後もbaseと同じgeneration選択規則で続行する。intentがある場合も、既にimageが
-    // 完成していればDockerfile変更のwarningを従来どおり出す。
-    let (target, target_warnings) =
-        provisioning::fresh_target(host, &locked.paths, &name, &locked.metadata)?;
-    warnings.extend(target_warnings);
+    // 完成していればDockerfile変更のwarningを従来どおり出す。ここで行った観測は
+    // `provision`が引き継ぎ、同じimageを見直さない。
+    let target = provisioning::fresh_target(host, &locked.paths, &name, &locked.metadata)?;
 
     provisioning::provision(
         &mut locked,
         config,
-        &target,
+        target,
         preconditions,
         host,
         workspace_root,

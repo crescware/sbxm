@@ -28,13 +28,14 @@ fn intent_persistence_is_idempotent_and_retargets_before_anything_is_built() -> 
     let world = World::new();
 
     clear_intent(&mut locked).required_because("clearing an absent intent is a no-op")?;
-    persist_intent(&world, &mut locked, DIGEST).required_because("persist the first intent")?;
-    persist_intent(&world, &mut locked, DIGEST).required_because("reuse the same intent")?;
+    persist_intent(&world, &mut locked, DIGEST, None)
+        .required_because("persist the first intent")?;
+    persist_intent(&world, &mut locked, DIGEST, None).required_because("reuse the same intent")?;
 
     // 最初のtargetのimageはまだ無いため、Dockerfileを直した通常のprepareは
     // 従来どおりretargetできる。
     let retargeted = "f".repeat(64);
-    persist_intent(&world, &mut locked, &retargeted)
+    persist_intent(&world, &mut locked, &retargeted, None)
         .required_because("no artifact was built for the abandoned target yet")?;
     assert_eq!(
         locked
@@ -58,7 +59,8 @@ fn a_different_target_is_rejected_once_the_abandoned_targets_image_is_built() ->
     let mut locked = locked_fixture(&fixture)?;
     let world = World::new();
 
-    persist_intent(&world, &mut locked, DIGEST).required_because("persist the first intent")?;
+    persist_intent(&world, &mut locked, DIGEST, None)
+        .required_because("persist the first intent")?;
     let name = locked.metadata.sandbox_name();
     let image_name = image::image_name(&name, DIGEST);
     world.images.borrow_mut().insert(
@@ -66,7 +68,7 @@ fn a_different_target_is_rejected_once_the_abandoned_targets_image_is_built() ->
         image::expected_labels(locked.metadata.canonical_id(), DIGEST),
     );
 
-    let error = persist_intent(&world, &mut locked, &"f".repeat(64))
+    let error = persist_intent(&world, &mut locked, &"f".repeat(64), None)
         .refused_because("an image already built for the intent cannot be abandoned silently")?;
     assert_eq!(
         error.first_id(),
@@ -94,14 +96,14 @@ fn fresh_target_keeps_a_built_generation_when_the_dockerfile_changes() -> Checke
         .required_because("edit the Dockerfile")?;
 
     let name = metadata.sandbox_name();
-    let (target, warnings) = fresh_target(&world, &paths, &name, &metadata)?;
-    assert_eq!(target, metadata.provisioning.dockerfile_sha256);
-    assert_eq!(warnings.len(), 1);
+    let fresh = fresh_target(&world, &paths, &name, &metadata)?;
+    assert_eq!(fresh.generation, metadata.provisioning.dockerfile_sha256);
+    assert_eq!(fresh.warnings.len(), 1);
 
     world.images.borrow_mut().clear();
-    let (target, warnings) = fresh_target(&world, &paths, &name, &metadata)?;
-    assert_eq!(target, sha256_hex(b"FROM example:edited\n"));
-    assert!(warnings.is_empty());
+    let fresh = fresh_target(&world, &paths, &name, &metadata)?;
+    assert_eq!(fresh.generation, sha256_hex(b"FROM example:edited\n"));
+    assert!(fresh.warnings.is_empty());
     Ok(())
 }
 
@@ -127,6 +129,11 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
         .as_ref()
         .map(|intent| intent.target_dockerfile_sha256.clone())
         .required_because("the interrupted run recorded its target")?;
+    let target = TargetSelection {
+        generation: target,
+        warnings: Vec::new(),
+        stored: None,
+    };
     let workspace = bench
         .workspace_root
         .path()
@@ -141,7 +148,7 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
     let output = provision(
         &mut locked,
         &bench.config,
-        &target,
+        target,
         preconditions,
         &world,
         bench.workspace_root.path(),

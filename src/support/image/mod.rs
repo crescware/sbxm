@@ -10,9 +10,11 @@ mod cleanup_stale_archives;
 #[cfg(test)]
 #[path = "cleanup_stale_archives_test.rs"]
 mod cleanup_stale_archives_test;
+mod compare_labels;
 mod empty_private_context;
 mod ensure;
 mod ensure_archive;
+mod ensure_verified;
 mod ephemeral_context;
 mod expected_labels;
 #[cfg(test)]
@@ -31,15 +33,18 @@ mod transient_archive;
 #[cfg(test)]
 #[path = "transient_archive_test.rs"]
 mod transient_archive_test;
+mod verified_generation;
 mod verify_generation;
 
 use build::build;
 use build_context_prefix::BUILD_CONTEXT_PREFIX;
 pub use built_image::BuiltImage;
 pub use cleanup_stale_archives::cleanup_stale_archives;
+use compare_labels::compare_labels;
 use empty_private_context::empty_private_context;
 pub use ensure::ensure;
 pub use ensure_archive::ensure_archive;
+pub(crate) use ensure_verified::ensure_verified;
 use ephemeral_context::ephemeral_context;
 pub use expected_labels::expected_labels;
 pub use generation_is_built::generation_is_built;
@@ -50,4 +55,5 @@ pub use label_dockerfile_sha256::LABEL_DOCKERFILE_SHA256;
 pub use label_metadata_version::LABEL_METADATA_VERSION;
 use labels_match::labels_match;
 pub use transient_archive::TransientArchive;
+pub(crate) use verified_generation::VerifiedGeneration;
 pub(crate) use verify_generation::verify_generation;

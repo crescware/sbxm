@@ -12,49 +12,54 @@ use crate::support::select::Locked;
 use crate::support::{disk, files, identity, image, repository, sandbox, secret, template, tools};
 
 use super::{
-    ExternalPreconditions, ProvisioningOutput, clear_intent, observed_worktrees, persist_intent,
+    ExternalPreconditions, ProvisioningOutput, TargetSelection, clear_intent, observed_worktrees,
+    persist_intent,
 };
 
 /// 固定済みgenerationへ向けて初回構築を進める唯一の共有境界。
 ///
 /// secretとengineのread-only事前条件は`preconditions`が既に確認済みであることを
-/// 証明する。呼び出しごとに1回だけ確認すればよいよう、ここでは同じ外部callを
-/// 再発行しない。
+/// 証明する。同じように、target選択のためにhostを観測した結果は`target`が持つ。
+/// 呼び出しごとに1回だけ観測すればよいよう、ここでは同じ外部callを再発行しない。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn provision(
     locked: &mut Locked,
     config: &GlobalConfig,
-    target: &str,
+    target: TargetSelection,
     _preconditions: ExternalPreconditions,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
     mut warnings: Vec<Warning>,
 ) -> Result<ProvisioningOutput> {
+    warnings.extend(target.warnings);
+    let generation = target.generation;
+
     // 同名のforeign imageをcache missとして扱わない。intentを保存したあとで衝突に
-    // 到達すると、中断状態だけが残って次回のprepareの挙動を変えてしまう。
-    image::verify_generation(
+    // 到達すると、中断状態だけが残って次回のprepareの挙動を変えてしまう。観測した
+    // 同一性はそのまま`ensure_verified`へ渡し、同じimageを見直さない。
+    let verified = image::verify_generation(
         host,
         &locked.metadata.sandbox_name(),
         locked.metadata.canonical_id(),
-        target,
+        &generation,
     )?;
 
     // これが初回構築における最初のmutationである。
-    persist_intent(host, locked, target)?;
+    persist_intent(host, locked, &generation, target.stored.as_ref())?;
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
     let project = ProjectId::parse(&locked.metadata.display_id())?;
     let layout = SandboxLayout::new(&canonical);
-    let generation = locked.metadata.provisioning.dockerfile_sha256.clone();
 
-    let built = image::ensure(
+    let built = image::ensure_verified(
         host,
         &name,
         locked.metadata.canonical_id(),
         &locked.paths.dockerfile(),
         &generation,
+        verified,
         progress,
     )?;
     warnings.extend(built.warnings.clone());
