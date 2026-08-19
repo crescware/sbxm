@@ -17,7 +17,6 @@ pub fn attached(owner: &str, repository: &str) -> Checked<ProjectMetadata> {
             dockerfile_sha256: DIGEST.to_string(),
         },
         git_identity: git_identity(),
-        initial_provisioning: None,
         rebuild: None,
     })
 }

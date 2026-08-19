@@ -21,10 +21,11 @@ pub fn run(
     prompt: &mut dyn ProjectPrompt,
     progress: &mut dyn ProgressSink,
 ) -> Result<PrepareOutput> {
+    // 対象が決まる前にhostの状態へ触れない。
     let mut locked =
         crate::support::select::one(location, requested, &msg!("select-prepare-heading"), prompt)?
             .lock()?;
-    let warnings = image::cleanup_stale_archives(&locked.paths)?;
+    let mut warnings = image::cleanup_stale_archives(&locked.paths)?;
     generation::require_no_rebuild(&locked.metadata)?;
 
     let canonical = locked.metadata.canonical_id().clone();
@@ -40,9 +41,6 @@ pub fn run(
         workspace_root,
     )? {
         output.warnings = warnings;
-        // 全成果物が揃ったことをここで証明できた。直前のintent消去だけが中断で
-        // 残っていても、この経路で確実に消し、Readyとの矛盾を残さない。
-        provisioning::clear_intent(&mut locked)?;
         return Ok(output);
     }
 
@@ -51,15 +49,14 @@ pub fn run(
     // ここで一度だけ確認し、以降のgeneration解決や`provision`の中では再確認しない。
     let preconditions = provisioning::verify_external_preconditions(host, &name)?;
 
-    // 中断後もbaseと同じgeneration選択規則で続行する。intentがある場合も、既にimageが
-    // 完成していればDockerfile変更のwarningを従来どおり出す。ここで行った観測は
-    // `provision`が引き継ぎ、同じimageを見直さない。
-    let target = provisioning::fresh_target(host, &locked.paths, &name, &locked.metadata)?;
+    let (generation, target_warnings) =
+        provisioning::fresh_target(host, &locked.paths, &mut locked.metadata, &name)?;
+    warnings.extend(target_warnings);
 
     provisioning::provision(
         &mut locked,
         config,
-        target,
+        &generation,
         preconditions,
         host,
         workspace_root,

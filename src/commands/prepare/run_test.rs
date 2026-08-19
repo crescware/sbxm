@@ -207,47 +207,7 @@ fn a_ready_project_is_a_no_op_even_when_docker_is_unreachable() -> Checked {
 }
 
 #[test]
-fn a_ready_no_op_clears_a_stale_intent_left_by_an_interrupted_completion() -> Checked {
-    // 完成直後のprocess interruption、または最後のintent消去だけの失敗を模し、
-    // 完成済み成果物とintentが同時に残っている状態を作る。
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-    bench
-        .build(&world, &request)
-        .required_because("the first prepare succeeds")?;
-
-    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    let mut stored = bench.stored("Example-Org/Example-Repo")?;
-    stored.initial_provisioning = Some(metadata::InitialProvisioningIntent {
-        target_dockerfile_sha256: stored.provisioning.dockerfile_sha256.clone(),
-    });
-    metadata::update(&paths, &stored).required_because("leave the stale intent behind")?;
-
-    let output = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("a ready project is still a no-op")?;
-
-    assert!(output.already_built);
-    assert!(
-        bench
-            .stored("Example-Org/Example-Repo")?
-            .initial_provisioning
-            .is_none(),
-        "the ready no-op clears the stale intent instead of contradicting observe forever"
-    );
-    Ok(())
-}
-
-#[test]
-fn an_image_collision_is_rejected_before_the_initial_intent_is_saved() -> Checked {
+fn a_foreign_image_stops_prepare_before_anything_is_built() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -284,13 +244,6 @@ fn an_image_collision_is_rejected_before_the_initial_intent_is_saved() -> Checke
     .refused_because("a foreign image is not overwritten")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
-    assert!(
-        bench
-            .stored("Example-Org/Example-Repo")?
-            .initial_provisioning
-            .is_none(),
-        "the collision is found before the intent mutation"
-    );
     assert!(!world.ran("docker build"));
     Ok(())
 }
@@ -350,8 +303,8 @@ fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Che
 
 #[test]
 fn a_failed_image_build_lets_the_same_prepare_retarget_after_the_dockerfile_is_fixed() -> Checked {
-    // intentは保存済みだがimageはまだ無い段階。Dockerfileを直しての再実行は、
-    // baseと同じくその新しいgenerationへ続けられる。
+    // immutableな成果物が何も残らなかった段階。Dockerfileを直しての再実行は、
+    // その新しいgenerationへ続けられる。
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -372,10 +325,6 @@ fn a_failed_image_build_lets_the_same_prepare_retarget_after_the_dockerfile_is_f
 
     assert!(!output.already_built);
     let stored = bench.stored("Example-Org/Example-Repo")?;
-    assert!(
-        stored.initial_provisioning.is_none(),
-        "the completed build clears the intent"
-    );
     assert_eq!(
         stored.provisioning.dockerfile_sha256,
         sha256_hex(b"FROM example:edited\n"),
@@ -529,7 +478,7 @@ fn an_already_loaded_template_is_reused_without_exporting_a_new_archive() -> Che
             .since(mark)
             .iter()
             .any(|call| call.contains("image save")),
-        "an archive is not exported when the existing template already exists: {:?}",
+        "an archive is not exported when the template already exists: {:?}",
         world.since(mark)
     );
     Ok(())

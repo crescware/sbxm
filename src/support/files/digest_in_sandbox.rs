@@ -9,7 +9,8 @@ pub(super) fn digest_in_sandbox(
     sandbox: &str,
     destination: &str,
 ) -> Result<Option<String>> {
-    if !sandbox::path_exists(host, sandbox, destination)? {
+    let exists = sandbox::exec(host, sandbox, &["test", "-e", destination])?;
+    if !exists.success() {
         return Ok(None);
     }
 

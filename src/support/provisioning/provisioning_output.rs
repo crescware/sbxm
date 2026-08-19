@@ -14,6 +14,7 @@ pub struct ProvisioningOutput {
     pub sandbox_state: SandboxState,
     pub worktrees: Vec<WorktreeRow>,
     pub files: Vec<crate::support::files::PlacedFile>,
+    /// 既に構築済みで、この実行が何も変更しなかったか。
     pub already_built: bool,
     pub warnings: Vec<Warning>,
 }

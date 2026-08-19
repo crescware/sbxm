@@ -8,8 +8,7 @@ use crate::paths::{self};
 use crate::repository::RepositoryIdentity;
 
 use crate::metadata::document::{
-    RawGitIdentity, RawInitialProvisioning, RawMetadata, RawProvisioning, RawRebuild,
-    RawRepository, RawStartRef,
+    RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository, RawStartRef,
 };
 use crate::metadata::{
     CreationMode, DOCUMENT_VERSION, GitIdentity, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata,
@@ -42,39 +41,14 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
     let repository = parse_repository(raw.repository, path)?;
     let provisioning = parse_provisioning(raw.provisioning, path)?;
     let git_identity = parse_git_identity(raw.git_identity, path)?;
-    let initial_provisioning = parse_initial_provisioning(raw.initial_provisioning, path)?;
     let rebuild = parse_rebuild(raw.rebuild, path)?;
 
     Ok(ProjectMetadata {
         repository,
         provisioning,
         git_identity,
-        initial_provisioning,
         rebuild,
     })
-}
-
-/// 初回構築の中断を示すintentを読む。
-fn parse_initial_provisioning(
-    raw: Option<RawInitialProvisioning>,
-    path: &Path,
-) -> Result<Option<crate::metadata::InitialProvisioningIntent>> {
-    let Some(intent) = raw else {
-        return Ok(None);
-    };
-    let target = intent
-        .target_dockerfile_sha256
-        .ok_or_else(|| missing(path, "initial_provisioning.target_dockerfile_sha256"))?;
-    require_sha256(&target).map_err(|reason| {
-        invalid(
-            path,
-            "initial_provisioning.target_dockerfile_sha256",
-            reason,
-        )
-    })?;
-    Ok(Some(crate::metadata::InitialProvisioningIntent {
-        target_dockerfile_sha256: target,
-    }))
 }
 
 /// fieldの値が受け付けられないことを報告する。

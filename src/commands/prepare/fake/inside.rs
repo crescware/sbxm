@@ -207,20 +207,6 @@ impl World {
     /// managed worktreeを作る、または見る起動。
     fn worktree_of(&self, inner: &[&str]) -> Option<(i32, String)> {
         match inner {
-            [
-                "git",
-                "-C",
-                path,
-                "rev-parse",
-                "--path-format=absolute",
-                "--git-common-dir",
-            ] => {
-                let parent = std::path::Path::new(path).parent()?;
-                Some((
-                    0,
-                    format!("{}\n", crate::paths::display(&parent.join(".git"))),
-                ))
-            }
             ["git", "--git-dir", _, "worktree", "add", rest @ ..] => {
                 let branch = rest
                     .iter()

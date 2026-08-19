@@ -1,8 +1,7 @@
 //! `project.yaml`の書き出し。
 
 use super::document::{
-    RawGitIdentity, RawInitialProvisioning, RawMetadata, RawProvisioning, RawRebuild,
-    RawRepository, RawStartRef,
+    RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository, RawStartRef,
 };
 use super::{METADATA_VERSION, ProjectMetadata};
 
@@ -32,11 +31,6 @@ pub fn render(metadata: &ProjectMetadata) -> crate::diagnostics::Result<String> 
         git_identity: Some(RawGitIdentity {
             user_name: Some(metadata.git_identity.user_name.clone()),
             user_email: Some(metadata.git_identity.user_email.clone()),
-        }),
-        initial_provisioning: metadata.initial_provisioning.as_ref().map(|intent| {
-            RawInitialProvisioning {
-                target_dockerfile_sha256: Some(intent.target_dockerfile_sha256.clone()),
-            }
         }),
         rebuild: metadata.rebuild.as_ref().map(|rebuild| RawRebuild {
             target_dockerfile_sha256: Some(rebuild.target_dockerfile_sha256.clone()),

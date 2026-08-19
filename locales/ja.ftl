@@ -99,7 +99,6 @@ error-sandbox-name-duplicated = Sandbox一覧に { $sandbox } という名前の
 error-invalid-branch-name = このbranch名は使用できません
 error-target-configuration-mismatch = { $project } は { $stored } として構築するよう登録されていますが、この実行は { $requested } を指定しています。
 error-rebuild-intent-pending = { $project } は再構築の途中であるため、初回構築を継続できません。
-error-initial-provisioning-invalid = { $project } の初回構築intentと記録済みtarget generationが食い違っています。
 
 error-host-clone-unusable = このcloneはこの案件には使用できません
 error-image-collision = 同じ名前のimageが既に存在し、別の内容を宣言しているため、この世代はその名前を使えません
@@ -347,7 +346,6 @@ remediation-unmanaged-worktree-present = そのworktreeの作業を保存し、S
 remediation-rebuild-generation-missing = その世代のDockerfileを復元してから、もう一度rebuildを実行してください。
 remediation-destroy-stopped = 停止中のSandboxをopenし、必要な作業を確認・保存してから、もう一度destroyを実行してください。
 remediation-run-rebuild = 再構築を完了します。
-remediation-initial-provisioning-invalid = 案件metadataを確認し、1つの一貫したtarget generationへ戻してからrepairしてください。
 remediation-target-configuration-mismatch = 保存済みの目標構成で続けるにはそのoptionを外して実行し、別の構成で作り直すには先に案件を破棄してください。
 remediation-image-collision = { $image } の内容をご自身で確認し、不要であることを確かめてから削除または改名してください。sbxmは自分がbuildしていないimageを上書きしません。
 remediation-cleanup-failed = ほかに必要とするものがないことを確かめてから { $path } をご自身で削除し、もう一度実行してください。

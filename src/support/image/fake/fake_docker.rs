@@ -12,8 +12,6 @@ pub struct FakeDocker {
     pub inspect: RefCell<Vec<Option<String>>>,
     pub calls: RefCell<Vec<CommandSpec>>,
     pub build_fails: bool,
-    /// 一覧には存在するが、`docker image inspect`自体が失敗する状態。
-    pub inspect_fails: bool,
     /// Docker Engineへ問い合わせられない状態。
     pub listing_fails: bool,
     /// buildの途中でbuild contextを消してしまう外部tool。
@@ -33,7 +31,6 @@ impl FakeDocker {
             ),
             calls: RefCell::new(Vec::new()),
             build_fails: false,
-            inspect_fails: false,
             listing_fails: false,
             removes_context: false,
             daemon_answers: true,
@@ -42,11 +39,6 @@ impl FakeDocker {
 
     pub fn failing_build(mut self) -> FakeDocker {
         self.build_fails = true;
-        self
-    }
-
-    pub fn failing_inspect(mut self) -> FakeDocker {
-        self.inspect_fails = true;
         self
     }
 
@@ -87,7 +79,6 @@ impl HostEnvironment for FakeDocker {
         let sub = |index: usize, name: &str| spec.args.get(index).is_some_and(|arg| arg == name);
         let checking_version = sub(0, "version") && sub(1, "--format");
         let building = sub(0, "build");
-        let inspecting = sub(0, "image") && sub(1, "inspect");
         let saving = sub(0, "image") && sub(1, "save");
         let listing = sub(0, "image") && sub(1, "ls");
         let (code, stdout) = if checking_version {
@@ -121,8 +112,6 @@ impl HostEnvironment for FakeDocker {
                 }
                 (0, if present { "0123456789ab\n" } else { "" }.to_string())
             }
-        } else if inspecting && self.inspect_fails {
-            (1, String::new())
         } else {
             match self.inspect.borrow_mut().pop() {
                 Some(Some(output)) => (0, output),

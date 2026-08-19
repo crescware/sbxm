@@ -8,6 +8,7 @@ use crate::project::ProjectId;
 
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
+
 use std::fs;
 
 use super::super::fake::{Bench, World};
@@ -84,6 +85,7 @@ fn a_workspace_that_had_to_be_created_again_is_warned_about_by_the_command_wrapp
 
     let project = project_of(&add_request)?;
     let (code, _, printed_err) = run_exec(&bench, &world, Some(&project))?;
+
     assert_eq!(code, ExitCode::Success);
     assert!(
         printed_err.contains(&sandbox),

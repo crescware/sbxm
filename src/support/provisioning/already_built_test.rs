@@ -5,8 +5,9 @@ use crate::project::{SandboxLayout, SandboxName};
 
 use crate::testing::outcome::{Checked, Required};
 
-use super::super::fake::{Bench, World};
-use crate::support::provisioning::already_built;
+use crate::commands::prepare::fake::{Bench, World};
+
+use super::already_built;
 use crate::testing::add_request::{project_of, request};
 
 #[test]

@@ -103,7 +103,6 @@ pub fn register(
                 dockerfile_sha256: dockerfile_sha256.clone(),
             },
             git_identity: git_identity.clone(),
-            initial_provisioning: None,
             rebuild: None,
         };
         metadata::create(&paths, &metadata)?;

@@ -1,7 +1,5 @@
 use crate::diagnostics::ErrorId;
-use crate::metadata::{
-    CreationMode, InitialProvisioningIntent, ProjectMetadata, Provisioning, RebuildIntent,
-};
+use crate::metadata::{CreationMode, ProjectMetadata, Provisioning, RebuildIntent};
 use std::path::Path;
 
 use std::fmt::Write as _;
@@ -215,37 +213,6 @@ fn a_half_written_rebuild_record_is_refused_rather_than_resumed() -> Checked {
         // どちらの世代の値が読めなかったのかを、診断がfield名で述べる。
         assert_eq!(field_of(&error)?, field, "{from} produced the wrong field");
     }
-    Ok(())
-}
-
-#[test]
-fn a_half_written_initial_provisioning_record_is_refused_rather_than_ignored() -> Checked {
-    let pending = ProjectMetadata {
-        initial_provisioning: Some(InitialProvisioningIntent {
-            target_dockerfile_sha256: OTHER_DIGEST.to_string(),
-        }),
-        ..attached("example-org", "example-repo")?
-    };
-    let full = render(&pending)?;
-    assert_eq!(round_trip(&pending)?, pending);
-
-    let missing = full.replace("target_dockerfile_sha256:", "other:");
-    assert_eq!(
-        refusal(&missing)?,
-        Some(ErrorId::MetadataMissingField),
-        "a missing intent target is not treated as no intent"
-    );
-
-    let error = parse(
-        &full.replace(OTHER_DIGEST, "not-a-digest"),
-        Path::new("/tmp/project.yaml"),
-    )
-    .refused_because("an invalid intent target is not accepted")?;
-    assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidValue));
-    assert_eq!(
-        field_of(&error)?,
-        "initial_provisioning.target_dockerfile_sha256"
-    );
     Ok(())
 }
 

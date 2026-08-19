@@ -157,35 +157,6 @@ fn a_probe_that_could_not_run_is_not_read_as_isolation() -> Checked {
     Ok(())
 }
 
-#[test]
-fn a_symlink_probe_distinguishes_present_absent_and_unobservable() -> Checked {
-    use crate::testing::sandbox::InnerCommandSandbox;
-
-    let path = "/home/agent/.config";
-    assert!(
-        symlink_exists(
-            &InnerCommandSandbox::new().holding(&[path]),
-            "sandbox",
-            path
-        )
-        .required_because("a present symlink answers")?
-    );
-    assert!(
-        !symlink_exists(&InnerCommandSandbox::new(), "sandbox", path)
-            .required_because("an absent symlink answers")?
-    );
-
-    let host = crate::testing::host::FakeSbx::listing("").answering(
-        &format!("exec sandbox -- test -h {path}"),
-        2,
-        "",
-    );
-    let error = symlink_exists(&host, "sandbox", path)
-        .refused_because("an unobservable symlink is not treated as absent")?;
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
-    Ok(())
-}
-
 /// 中立Workspaceのrootを、実行時と同じ条件で用意する。
 fn workspace_root() -> Checked<tempfile::TempDir> {
     let root = tempfile::tempdir().required_because("temporary workspace root")?;

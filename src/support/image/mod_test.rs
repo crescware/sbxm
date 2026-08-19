@@ -176,37 +176,6 @@ fn an_image_that_declares_something_else_is_a_collision_and_is_left_alone() -> C
 }
 
 #[test]
-fn generation_verification_rejects_a_foreign_image_without_replacing_it() -> Checked {
-    let foreign = inspect_output(&[(LABEL_CANONICAL_ID, "other-org/other-repo")]);
-    let host = FakeDocker::new(vec![Some(&foreign)]);
-
-    let error = verify_generation(&host, &sandbox()?, &canonical()?, DIGEST)
-        .refused_because("the repair target belongs to this project and generation")?;
-
-    assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
-    assert!(
-        !host
-            .calls()
-            .iter()
-            .any(|args| args.first().is_some_and(|arg| arg == "build")),
-        "verification is read-only"
-    );
-    Ok(())
-}
-
-#[test]
-fn generation_verification_does_not_treat_a_failed_inspect_as_absence() -> Checked {
-    let matching = matching_inspect()?;
-    let host = FakeDocker::new(vec![Some(&matching)]).failing_inspect();
-
-    let error = verify_generation(&host, &sandbox()?, &canonical()?, DIGEST)
-        .refused_because("a failed inspect cannot authorize repair")?;
-
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
-    Ok(())
-}
-
-#[test]
 fn an_engine_that_cannot_be_asked_is_not_read_as_an_absent_image() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let dockerfile = dir.path().join("Dockerfile");

@@ -1,45 +1,36 @@
 use crate::command::HostEnvironment;
+use crate::design::Warning;
 use crate::diagnostics::Result;
-use crate::metadata::ProjectMetadata;
+use crate::metadata::{self, ProjectMetadata};
 use crate::paths::ProjectPaths;
 use crate::project::SandboxName;
 
 use crate::support::{generation, image};
 
-use super::{ObservedGeneration, TargetSelection, changed_dockerfile_warning};
+use super::changed_dockerfile_warning;
 
-/// fresh案件の初回構築targetを、hostの変更前に一意に決める。
+/// 初回構築を完成させる世代を決める。
+///
+/// image buildの前にDockerfileが変わった場合は、現在のDockerfileを目標とする。
+/// 既にimageがある場合は保存済み世代で完成させ、現在の内容は`rebuild`へ案内する。
 pub(crate) fn fresh_target(
     host: &dyn HostEnvironment,
     paths: &ProjectPaths,
+    metadata: &mut ProjectMetadata,
     name: &SandboxName,
-    metadata: &ProjectMetadata,
-) -> Result<TargetSelection> {
+) -> Result<(String, Vec<Warning>)> {
     let stored = metadata.provisioning.dockerfile_sha256.clone();
     let current = generation::current_dockerfile_hash(paths)?;
     if current == stored {
-        return Ok(TargetSelection {
-            generation: stored,
-            warnings: Vec::new(),
-            stored: None,
-        });
+        return Ok((stored, Vec::new()));
     }
 
-    let built = image::generation_is_built(host, name, metadata.canonical_id(), &stored)?;
-    let observed = Some(ObservedGeneration {
-        dockerfile_sha256: stored.clone(),
-        built,
-    });
-    if built {
-        return Ok(TargetSelection {
-            generation: stored,
-            warnings: vec![changed_dockerfile_warning(metadata)],
-            stored: observed,
-        });
+    if image::generation_is_built(host, name, metadata.canonical_id(), &stored)? {
+        // 注意だけを出して終えない。現在のDockerfileを適用する手順まで示す。
+        return Ok((stored, vec![changed_dockerfile_warning(metadata)]));
     }
-    Ok(TargetSelection {
-        generation: current,
-        warnings: Vec::new(),
-        stored: observed,
-    })
+
+    metadata.provisioning.dockerfile_sha256.clone_from(&current);
+    metadata::update(paths, metadata)?;
+    Ok((current, Vec::new()))
 }
