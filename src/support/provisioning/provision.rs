@@ -9,63 +9,66 @@ use crate::paths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use crate::support::select::Locked;
-use crate::support::{
-    disk, docker, files, identity, image, repository, sandbox, secret, template, tools,
+use crate::support::{disk, files, identity, image, repository, sandbox, secret, template, tools};
+
+use super::{
+    ExternalPreconditions, ProvisioningOutput, clear_intent, observed_worktrees, persist_intent,
 };
 
-use super::{ProvisioningOutput, clear_intent, observed_worktrees, persist_intent};
-
 /// 固定済みgenerationへ向けて初回構築を進める唯一の共有境界。
+///
+/// secretとengineのread-only事前条件は`preconditions`が既に確認済みであることを
+/// 証明する。呼び出しごとに1回だけ確認すればよいよう、ここでは同じ外部callを
+/// 再発行しない。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn provision(
     locked: &mut Locked,
     config: &GlobalConfig,
-    target: &str,
+    generation: &str,
+    _preconditions: ExternalPreconditions,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
     mut warnings: Vec<Warning>,
 ) -> Result<ProvisioningOutput> {
-    // secretとengineはread-onlyの事前条件であり、intentより前に確認できる。
-    secret::require_github(host, locked.metadata.sandbox_name().as_str())?;
-    docker::require_reachable(host)?;
-
     // 同名のforeign imageをcache missとして扱わない。intentを保存したあとで衝突に
     // 到達すると、中断状態だけが残って次回のprepareの挙動を変えてしまう。
     image::verify_generation(
         host,
         &locked.metadata.sandbox_name(),
         locked.metadata.canonical_id(),
-        target,
+        generation,
     )?;
 
     // これが初回構築における最初のmutationである。
-    persist_intent(host, locked, target)?;
+    persist_intent(host, locked, generation)?;
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
     let project = ProjectId::parse(&locked.metadata.display_id())?;
     let layout = SandboxLayout::new(&canonical);
-    let generation = locked.metadata.provisioning.dockerfile_sha256.clone();
 
     let built = image::ensure(
         host,
         &name,
         locked.metadata.canonical_id(),
         &locked.paths.dockerfile(),
-        &generation,
+        generation,
         progress,
     )?;
     warnings.extend(built.warnings.clone());
     let loaded = if let Some(loaded) = template::existing(host, &built)? {
         loaded
     } else {
-        let archive = image::ensure_archive(host, &locked.paths, &built, &generation, progress)?;
+        let archive = image::ensure_archive(host, &locked.paths, &built, generation, progress)?;
         let outcome = template::ensure(host, archive.path(), &built, progress);
         archive.cleanup_after(outcome, &mut warnings, progress)?
     };
 
     let ready = sandbox::ensure(host, &name, &loaded, workspace_root, progress)?;
     if ready.workspace_restored {
+        // 消えていたmount点を作り直したことを、成功のなかへ黙って混ぜない。対象のpathと
+        // 変更範囲を示し、Sandboxの中には触れていないことまで告げる。
         warnings.push(
             Warning::text(msg!(
                 "warning-workspace-restored",
@@ -75,9 +78,12 @@ pub(crate) fn provision(
             .explain(msg!("guidance-workspace-restored")),
         );
     }
+    // hostのSSH Agentが届かないことを、daemonの起動条件から推定せず中から確かめる。
     sandbox::require_credentials_isolated(host, &ready.name)?;
     secret::require_placeholder_present(host, &ready.name)?;
 
+    // sbxm自身がSandbox内を変更する工程が失敗した場合だけ、失敗直後の空き容量を
+    // 追加のfactとして載せる。平常時はcommandを1つも増やさない。
     let decorate = |error| disk::attach_on_failure(host, &ready.name, ready.state, error);
 
     let placed_files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)

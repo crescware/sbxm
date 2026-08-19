@@ -9,7 +9,7 @@ use crate::msg;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::support::provisioning::ProvisioningState;
 use crate::support::select::ProjectPrompt;
-use crate::support::{generation, image, provisioning, secret};
+use crate::support::{generation, image, provisioning};
 
 use super::PrepareOutput;
 
@@ -23,6 +23,7 @@ pub fn run(
     prompt: &mut dyn ProjectPrompt,
     progress: &mut dyn ProgressSink,
 ) -> Result<PrepareOutput> {
+    // 対象が決まる前にhostの状態へ触れない。
     let mut locked =
         crate::support::select::one(location, requested, &msg!("select-prepare-heading"), prompt)?
             .lock()?;
@@ -59,27 +60,23 @@ pub fn run(
         workspace_root,
     )? {
         output.warnings = warnings;
-        // 全成果物が揃ったことをここで証明できた。直前のintent消去だけが中断で
-        // 残っていても、この経路で確実に消し、Readyとの矛盾を残さない。
-        provisioning::clear_intent(&mut locked)?;
         return Ok(output);
     }
 
     // custom secretはSandboxの作成時に結び付く。あとから登録しても既存のSandboxには
-    // 届かないため、作成より前に、そしてimageを組む前に確認する。
-    secret::require_github(host, name.as_str())?;
-    crate::support::docker::require_reachable(host)?;
+    // 届かないため、作成より前に、そしてimageを組む前に確認する。Dockerの到達性も
+    // ここで一度だけ確認し、以降のgeneration解決や`provision`の中では再確認しない。
+    let preconditions = provisioning::verify_external_preconditions(host, &name)?;
 
-    // 中断後もbaseと同じgeneration選択規則で続行する。intentがある場合も、既にimageが
-    // 完成していればDockerfile変更のwarningを従来どおり出す。
-    let (target, target_warnings) =
-        provisioning::fresh_target(host, &locked.paths, &name, &locked.metadata)?;
+    let (generation, target_warnings) =
+        provisioning::fresh_target(host, &locked.paths, &mut locked.metadata, &name)?;
     warnings.extend(target_warnings);
 
     provisioning::provision(
         &mut locked,
         config,
-        &target,
+        &generation,
+        preconditions,
         host,
         workspace_root,
         progress,
@@ -159,3 +156,7 @@ mod tools_test;
 #[cfg(test)]
 #[path = "output_test.rs"]
 mod output_test;
+
+#[cfg(test)]
+#[path = "external_calls_test.rs"]
+mod external_calls_test;

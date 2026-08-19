@@ -1,6 +1,5 @@
 //! `sbxm prepare`。
 
-mod already_built;
 mod exec;
 #[cfg(test)]
 pub(crate) mod fake;

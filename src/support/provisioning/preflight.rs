@@ -8,7 +8,9 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use std::path::Path;
 
 use crate::support::select::Locked;
-use crate::support::{docker, files, identity, image, repository, sandbox, secret, tools};
+use crate::support::{files, identity, image, repository, sandbox, secret, tools};
+
+use super::{ExternalPreconditions, verify_external_preconditions};
 
 /// repair計画を返す前に、既存成果物のidentityと衝突をread-onlyで確認する。
 ///
@@ -23,17 +25,16 @@ pub(crate) fn preflight(
     workspace_root: &Path,
     has_sandbox: bool,
     require_workspace: bool,
-) -> Result<()> {
+) -> Result<ExternalPreconditions> {
     let name = SandboxName::derive(locked.metadata.canonical_id());
     let project = ProjectId::parse(&locked.metadata.display_id())?;
     let layout = SandboxLayout::new(locked.metadata.canonical_id());
 
-    secret::require_github(host, name.as_str())?;
-    docker::require_reachable(host)?;
+    let preconditions = verify_external_preconditions(host, &name)?;
     image::verify_generation(host, &name, locked.metadata.canonical_id(), target)?;
 
     if !has_sandbox {
-        return Ok(());
+        return Ok(preconditions);
     }
 
     if require_workspace && !sandbox::workspace_exists(workspace_root, &name)? {
@@ -62,5 +63,5 @@ pub(crate) fn preflight(
     }
     secret::verify_git_credential(host, name.as_str())?;
     repository::verify_existing(host, name.as_str(), &project, &layout, &locked.metadata)?;
-    Ok(())
+    Ok(preconditions)
 }

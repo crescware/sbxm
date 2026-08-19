@@ -9,6 +9,7 @@ use crate::project::ProjectId;
 
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
+
 use std::fs;
 
 use super::super::fake::{Bench, World};
@@ -105,6 +106,7 @@ fn an_interrupted_prepare_reports_the_explicit_repair_command() -> Checked {
     let project = project_of(&add_request)?;
     let mark = world.mark();
     let (code, _, printed_err) = run_exec(&bench, &world, Some(&project))?;
+
     assert_eq!(code, ExitCode::Failure);
     assert!(
         printed_err.contains("sbxm repair Example-Org/Example-Repo"),

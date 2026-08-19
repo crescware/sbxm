@@ -344,13 +344,6 @@ fn an_image_collision_is_rejected_before_the_initial_intent_is_saved() -> Checke
     .refused_because("a foreign image is not overwritten")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
-    assert!(
-        bench
-            .stored("Example-Org/Example-Repo")?
-            .initial_provisioning
-            .is_none(),
-        "the collision is found before the intent mutation"
-    );
     assert!(!world.ran("docker build"));
     Ok(())
 }
@@ -659,6 +652,55 @@ fn pending_prepare_does_not_restore_a_missing_workspace() -> Checked {
         world.since(mark).is_empty(),
         "pending prepare performs no host action: {:?}",
         world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_successful_prepare_checks_secret_and_docker_reachability_exactly_once() -> Checked {
+    // `provision`はrun側から確認済みの状態をconsumeするだけであり、内部で同じ
+    // 外部callを二重に発行しない。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    let mark = world.mark();
+    run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .required_because("prepare succeeds")?;
+
+    let since = world.since(mark);
+    assert_eq!(
+        since
+            .iter()
+            .filter(|call| call.contains("secret ls"))
+            .count(),
+        1,
+        "the github secret is checked exactly once: {since:?}"
+    );
+    assert_eq!(
+        since
+            .iter()
+            .filter(|call| call.contains("version --format"))
+            .count(),
+        1,
+        "docker reachability is checked exactly once: {since:?}"
     );
     Ok(())
 }

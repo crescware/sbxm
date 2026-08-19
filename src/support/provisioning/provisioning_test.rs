@@ -174,21 +174,35 @@ fn fresh_target_keeps_a_built_generation_when_the_dockerfile_changes() -> Checke
     world.nothing_fails();
 
     let mut metadata = bench.stored("Example-Org/Example-Repo")?;
-    metadata.initial_provisioning = None;
     let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    metadata::update(&paths, &metadata).required_because("remove the intent")?;
     fs::write(paths.dockerfile(), b"FROM example:edited\n")
         .required_because("edit the Dockerfile")?;
 
     let name = metadata.sandbox_name();
-    let (target, warnings) = fresh_target(&world, &paths, &name, &metadata)?;
-    assert_eq!(target, metadata.provisioning.dockerfile_sha256);
+    let stored = metadata.provisioning.dockerfile_sha256.clone();
+    let (target, warnings) = fresh_target(&world, &paths, &mut metadata, &name)?;
+    assert_eq!(target, stored, "the built generation finishes the build");
     assert_eq!(warnings.len(), 1);
+    assert_eq!(
+        metadata.provisioning.dockerfile_sha256, stored,
+        "the stored generation is not moved while its image exists"
+    );
 
+    // imageが無くなれば、Dockerfileを直した通常のprepareは現在の世代へ移る。
     world.images.borrow_mut().clear();
-    let (target, warnings) = fresh_target(&world, &paths, &name, &metadata)?;
-    assert_eq!(target, sha256_hex(b"FROM example:edited\n"));
+    let (target, warnings) = fresh_target(&world, &paths, &mut metadata, &name)?;
+    let edited = sha256_hex(b"FROM example:edited\n");
+    assert_eq!(target, edited);
     assert!(warnings.is_empty());
+    assert_eq!(
+        metadata::load(&paths)
+            .required_because("read the metadata")?
+            .required_because("the project is present")?
+            .provisioning
+            .dockerfile_sha256,
+        edited,
+        "the new generation is recorded before anything is built"
+    );
     Ok(())
 }
 
@@ -378,23 +392,23 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
         .required_because("find the interrupted project")?
         .lock()
         .required_because("lock the interrupted project")?;
-    let target = locked
-        .metadata
-        .initial_provisioning
-        .as_ref()
-        .map(|intent| intent.target_dockerfile_sha256.clone())
-        .required_because("the interrupted run recorded its target")?;
+    let generation = locked.metadata.provisioning.dockerfile_sha256.clone();
     let workspace = bench
         .workspace_root
         .path()
         .join(locked.metadata.sandbox_name().as_str());
     fs::remove_dir_all(&workspace).required_because("remove the neutral workspace")?;
 
+    let name = locked.metadata.sandbox_name();
+    let preconditions = verify_external_preconditions(&world, &name)
+        .required_because("secret and docker preconditions are met")?;
+
     let mark = world.mark();
     let output = provision(
         &mut locked,
         &bench.config,
-        &target,
+        &generation,
+        preconditions,
         &world,
         bench.workspace_root.path(),
         &mut SilentProgress,
@@ -417,6 +431,5 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
         "verified artifacts are reused: {:?}",
         world.since(mark)
     );
-    assert!(locked.metadata.initial_provisioning.is_none());
     Ok(())
 }
