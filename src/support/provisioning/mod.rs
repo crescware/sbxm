@@ -15,10 +15,8 @@ mod verify_external_preconditions;
 mod worktree_row;
 
 pub(crate) use already_built::already_built;
-pub(crate) use changed_dockerfile_warning::changed_dockerfile_warning;
 pub(crate) use external_preconditions::ExternalPreconditions;
 pub(crate) use fresh_target::fresh_target;
-pub(crate) use observed_worktrees::observed_worktrees;
 pub(crate) use provision::provision;
 pub use provisioning_output::ProvisioningOutput;
 pub(crate) use verify_external_preconditions::verify_external_preconditions;

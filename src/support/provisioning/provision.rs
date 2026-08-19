@@ -11,7 +11,8 @@ use crate::project::{ProjectId, SandboxLayout, SandboxName};
 use crate::support::select::Locked;
 use crate::support::{disk, files, identity, image, repository, sandbox, secret, template, tools};
 
-use super::{ExternalPreconditions, ProvisioningOutput, observed_worktrees};
+use super::observed_worktrees::observed_worktrees;
+use super::{ExternalPreconditions, ProvisioningOutput};
 
 /// 固定済みgenerationへ向けて初回構築を進める唯一の共有境界。
 ///
