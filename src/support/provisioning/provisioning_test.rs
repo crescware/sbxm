@@ -402,12 +402,20 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
     let name = locked.metadata.sandbox_name();
     let preconditions = verify_external_preconditions(&world, &name)
         .required_because("secret and docker preconditions are met")?;
+    let verified = crate::support::image::verify_generation(
+        &world,
+        &name,
+        locked.metadata.canonical_id(),
+        &generation,
+    )
+    .required_because("the generation name is not taken by something else")?;
 
     let mark = world.mark();
     let output = provision(
         &mut locked,
         &bench.config,
         &generation,
+        verified,
         preconditions,
         &world,
         bench.workspace_root.path(),

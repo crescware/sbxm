@@ -41,24 +41,23 @@ pub fn run(
         workspace_root,
         false,
     )?;
-    match observed.state {
+    // 観測は1回だけ行う。Readyを証明したのは`observe`であり、その結果をここで
+    // 捨てて同じ観測を撃ち直さない。
+    let ready = match observed.state {
         ProvisioningState::Pending => return Err(pending(&locked.metadata)),
         ProvisioningState::Incomplete => {
             return Err(incomplete(&locked.metadata, &observed.artifacts));
         }
-        ProvisioningState::Fresh | ProvisioningState::Ready => {}
-    }
+        ProvisioningState::Ready => match observed.output {
+            Some(output) => Some(output),
+            None => return Err(incomplete(&locked.metadata, &observed.artifacts)),
+        },
+        ProvisioningState::Fresh => None,
+    };
 
     let mut warnings = image::cleanup_stale_archives(&locked.paths)?;
 
-    if let Some(mut output) = provisioning::already_built(
-        host,
-        &locked.paths,
-        &name,
-        &locked.metadata,
-        &layout,
-        workspace_root,
-    )? {
+    if let Some(mut output) = ready {
         output.warnings = warnings;
         return Ok(output);
     }
@@ -72,10 +71,16 @@ pub fn run(
         provisioning::fresh_target(host, &locked.paths, &mut locked.metadata, &name)?;
     warnings.extend(target_warnings);
 
+    // 同名のforeign imageをcache missとして扱わない。intentを保存したあとで衝突に
+    // 到達すると、中断状態だけが残って次回のprepareの挙動を変えてしまう。
+    let verified =
+        image::verify_generation(host, &name, locked.metadata.canonical_id(), &generation)?;
+
     provisioning::provision(
         &mut locked,
         config,
         &generation,
+        verified,
         preconditions,
         host,
         workspace_root,

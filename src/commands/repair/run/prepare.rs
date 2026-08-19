@@ -58,7 +58,7 @@ pub fn prepare(
                         .artifacts
                         .iter()
                         .any(|artifact| matches!(artifact, Artifact::Sandbox));
-                    let preconditions = provisioning::preflight(
+                    let (preconditions, verified) = provisioning::preflight(
                         &locked,
                         config,
                         &target,
@@ -77,6 +77,7 @@ pub fn prepare(
                         locked,
                         session_lease,
                         preconditions,
+                        verified,
                     })))
                 }
             }

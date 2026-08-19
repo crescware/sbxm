@@ -7,7 +7,7 @@ use crate::metadata::ProjectMetadata;
 use crate::paths::{self, PathScope, ProjectPaths};
 use crate::project::{SandboxLayout, SandboxName};
 
-use crate::support::{daemon, generation, image, sandbox, template};
+use crate::support::{daemon, generation, sandbox};
 
 use super::{Artifact, Observation, ProvisioningState, already_built};
 
@@ -78,14 +78,10 @@ fn incomplete_artifacts(
     } else {
         vec![stored, current]
     };
+    // imageとTemplateはgeneration/canonical nameで参照するimmutable cacheであり、
+    // 一致するものを「途中成果物」と数えると、destroy後の再addがIncompleteになる。
+    // 数えない以上ここでは観測もしない。衝突の検出はintent保存前の`verify_generation`が行う。
     for generation in generations {
-        let image_name = image::image_name(name, &generation);
-        // imageとTemplateはgeneration/canonical nameで参照するimmutable cacheであり、
-        // 一致するものを「途中成果物」と数えると、destroy後の再addがIncompleteになる。
-        // 衝突の検出はprovisioningのintent保存前に`verify_generation`で行う。
-        let _image_built =
-            image::generation_is_built(host, name, metadata.canonical_id(), &generation)?;
-        let _template_present = template::has(host, &image_name)?;
         let short = short_hex(&generation);
         for (path, label) in [
             (paths.template_archive(short), "archive"),

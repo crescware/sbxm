@@ -22,6 +22,7 @@ pub fn execute(
         target_generation,
         warnings,
         preconditions,
+        verified,
         ..
     } = plan;
     let _session_lease = session_lease;
@@ -29,6 +30,7 @@ pub fn execute(
         &mut locked,
         config,
         &target_generation,
+        verified,
         preconditions,
         host,
         workspace_root,

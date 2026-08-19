@@ -8,6 +8,7 @@ use crate::msg;
 use crate::paths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
+use crate::support::image::VerifiedGeneration;
 use crate::support::select::Locked;
 use crate::support::{disk, files, identity, image, repository, sandbox, secret, template, tools};
 
@@ -17,30 +18,22 @@ use super::{
 
 /// 固定済みgenerationへ向けて初回構築を進める唯一の共有境界。
 ///
-/// secretとengineのread-only事前条件は`preconditions`が既に確認済みであることを
-/// 証明する。呼び出しごとに1回だけ確認すればよいよう、ここでは同じ外部callを
-/// 再発行しない。
+/// secretとengineのread-only事前条件は`preconditions`が、世代名に衝突が無いことは
+/// `verified`が、それぞれ確認済みであることを証明する。呼び出しごとに1回だけ観測
+/// すればよいよう、ここでは同じ外部callを再発行しない。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn provision(
     locked: &mut Locked,
     config: &GlobalConfig,
     generation: &str,
+    verified: VerifiedGeneration,
     _preconditions: ExternalPreconditions,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
     mut warnings: Vec<Warning>,
 ) -> Result<ProvisioningOutput> {
-    // 同名のforeign imageをcache missとして扱わない。intentを保存したあとで衝突に
-    // 到達すると、中断状態だけが残って次回のprepareの挙動を変えてしまう。
-    image::verify_generation(
-        host,
-        &locked.metadata.sandbox_name(),
-        locked.metadata.canonical_id(),
-        generation,
-    )?;
-
-    // これが初回構築における最初のmutationである。
+    // 衝突が無いことは`verified`が証明する。これが初回構築における最初のmutationである。
     persist_intent(host, locked, generation)?;
 
     let canonical = locked.metadata.canonical_id().clone();
@@ -48,12 +41,13 @@ pub(crate) fn provision(
     let project = ProjectId::parse(&locked.metadata.display_id())?;
     let layout = SandboxLayout::new(&canonical);
 
-    let built = image::ensure(
+    let built = image::ensure_verified(
         host,
         &name,
         locked.metadata.canonical_id(),
         &locked.paths.dockerfile(),
         generation,
+        verified,
         progress,
     )?;
     warnings.extend(built.warnings.clone());

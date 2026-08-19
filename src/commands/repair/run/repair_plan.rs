@@ -1,5 +1,6 @@
 use crate::design::Warning;
 use crate::paths::ExclusiveLock;
+use crate::support::image::VerifiedGeneration;
 use crate::support::provisioning::ExternalPreconditions;
 use crate::support::select::Locked;
 
@@ -14,4 +15,5 @@ pub struct RepairPlan {
     pub(crate) session_lease: ExclusiveLock,
     /// preflightが確認済みであることの証跡。`provision`は再確認しない。
     pub(crate) preconditions: ExternalPreconditions,
+    pub(crate) verified: VerifiedGeneration,
 }
