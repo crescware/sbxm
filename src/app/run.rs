@@ -9,13 +9,13 @@ use crate::i18n::Locale;
 pub(crate) fn run(argv: Vec<String>) -> ExitCode {
     let invocation = cli::Invocation::new(argv);
     let command_line_locale = invocation.command_line_locale();
-    let rendering = RenderingPolicy::detect(invocation.color());
+    let policy = RenderingPolicy::detect(invocation.color());
 
     let location = match ConfigLocation::discover() {
         Ok(location) => location,
         Err(error) => {
             // localeが決まる前の失敗も、同じ描画条件で報告する。
-            let mut ui = Ui::terminal(Locale::SOURCE, rendering);
+            let mut ui = Ui::terminal(Locale::SOURCE, policy);
             ui.error(&error);
             return error.exit_code();
         }
@@ -30,7 +30,7 @@ pub(crate) fn run(argv: Vec<String>) -> ExitCode {
         configured_locale,
         crate::i18n::shell_locale(),
     );
-    let mut ui = Ui::terminal(display_locale, rendering);
+    let mut ui = Ui::terminal(display_locale, policy);
 
     // 表示localeはconfigからbest-effortで解決済みである。`--lang`の不正はconfigの
     // validation errorより先に報告するため、壊れたconfigがparse errorを覆い隠さない。
@@ -60,7 +60,7 @@ pub(crate) fn run(argv: Vec<String>) -> ExitCode {
             };
             // 実hostと実端末と実workspace rootを選ぶのはここだけとする。commandは受け取った
             // ものだけを使う。
-            let mut prompt = PromptUi::terminal(display_locale, rendering.stderr);
+            let mut prompt = PromptUi::terminal(display_locale, policy.stderr);
             crate::commands::dispatch(&command, &context, &mut ui, &RealHost, &mut prompt)
         }
         Err(error) => {
