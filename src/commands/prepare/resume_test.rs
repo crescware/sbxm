@@ -1,4 +1,4 @@
-//! 中断した構築を、同じ`prepare`が続きから進める。
+//! 中断した構築を、同じ`prepare`が暗黙に継続しない。
 use crate::metadata::CreationMode;
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -6,9 +6,9 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use super::super::fake::{Bench, World};
 use crate::compatibility::SandboxState;
 use crate::diagnostics::ErrorId;
-use crate::support::files::Placement;
-use crate::testing::add_request::request;
+use crate::testing::add_request::{project_of, request};
 use crate::testing::value::COMMIT;
+use crate::{commands::repair::run::Prepared, design::SilentProgress};
 
 /// `add`と`prepare`が外部工程を呼ぶ順に並べた、失敗させる工程とその診断。
 const STEPS: [(&str, ErrorId); 11] = [
@@ -29,67 +29,84 @@ const STEPS: [(&str, ErrorId); 11] = [
 ];
 
 #[test]
-fn an_interruption_at_any_step_is_continued_by_the_same_prepare() -> Checked {
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-
-    // 1工程ずつ後ろへずらして失敗させる。次の実行がそこまで進めることが継続の証拠になる。
+fn every_interrupted_mutation_requires_repair_and_repair_finishes_it() -> Checked {
     for (step, expected) in STEPS {
+        let bench = Bench::new()?;
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", None, None)?;
         world.failing(step);
         let error = bench
             .build(&world, &request)
             .refused_because("the run stops at the step that failed")?;
         assert_eq!(error.first_id(), Some(expected), "{step}");
         world.nothing_fails();
-    }
 
-    // 最後に失敗したのはworktree作成であり、続きの実行はそこから進む。
-    let mark = world.mark();
-    let output = bench
-        .build(&world, &request)
-        .required_because("the same add finishes")?;
-    let tail = world.since(mark);
+        // host cloneとsecret確認はintent保存前に失敗するため、通常のprepareで再試行できる。
+        let output = if step == "git clone --progress git@github.com" || step == "sbx secret ls" {
+            bench
+                .build(&world, &request)
+                .required_because(&format!("{step}: no recovery intent was committed"))?
+        } else {
+            let project = project_of(&request)?;
+            let mark = world.mark();
+            let pending = super::run(
+                &bench.location,
+                &bench.config,
+                Some(&project),
+                &world,
+                bench.workspace_root.path(),
+                &mut crate::testing::prompt::ScriptedPrompt::choosing(0),
+                &mut SilentProgress,
+            )
+            .refused_because(&format!("{step}: prepare refuses implicit recovery"))?;
+            assert_eq!(
+                pending.first_id(),
+                Some(ErrorId::InitialProvisioningPending),
+                "{step}"
+            );
+            assert!(
+                world.since(mark).is_empty(),
+                "{step}: pending prepare performs no host action: {:?}",
+                world.since(mark)
+            );
 
-    assert!(!output.already_built);
-    assert_eq!(output.mode, CreationMode::Attached);
-    assert_eq!(output.start_ref, "main");
-    assert_eq!(output.sandbox_state, SandboxState::Running);
-    assert_eq!(output.worktrees.len(), 1);
-    assert_eq!(output.worktrees[0].path, "example-repo.tree-0");
-    assert_eq!(output.worktrees[0].head.as_deref(), Some(COMMIT));
-    assert_eq!(output.files.len(), 1);
-    assert_eq!(
-        output.files[0].placement,
-        Placement::Unchanged,
-        "an earlier run placed the file, and an identical destination is left alone"
-    );
+            let prepared = crate::commands::repair::run::prepare(
+                &bench.location,
+                &bench.config,
+                Some(&project),
+                &world,
+                &mut crate::testing::prompt::ScriptedPrompt::choosing(0),
+                bench.workspace_root.path(),
+            )?;
+            let Prepared::Repairable(plan) = prepared else {
+                return Err(crate::testing::outcome::Unmet::new(format!(
+                    "{step}: the interrupted project is repairable"
+                )));
+            };
+            crate::commands::repair::run::execute(
+                *plan,
+                &bench.config,
+                &world,
+                bench.workspace_root.path(),
+                &mut SilentProgress,
+            )?
+        };
 
-    let stored = bench.stored("Example-Org/Example-Repo")?;
-    assert_eq!(stored.provisioning.start_ref.as_deref(), Some("main"));
-
-    // 成功済みの成果物は作り直さない。既にloadされたtemplateがあるため、archiveも
-    // 作り直さない。
-    for done in [
-        "git clone --progress git@github.com",
-        "docker build",
-        "docker image save",
-        "sbx template load",
-        "sbx create",
-        "git init --bare",
-    ] {
+        assert!(!output.already_built, "{step}");
+        assert_eq!(output.mode, CreationMode::Attached, "{step}");
+        assert_eq!(output.start_ref, "main", "{step}");
+        assert_eq!(output.sandbox_state, SandboxState::Running, "{step}");
+        assert_eq!(output.worktrees.len(), 1, "{step}");
+        assert_eq!(output.worktrees[0].path, "example-repo.tree-0", "{step}");
+        assert_eq!(output.worktrees[0].head.as_deref(), Some(COMMIT), "{step}");
         assert!(
-            !tail.iter().any(|call| call.contains(done)),
-            "{done} was already done: {tail:?}"
+            bench
+                .stored("Example-Org/Example-Repo")?
+                .initial_provisioning
+                .is_none(),
+            "{step}: successful recovery commits completion"
         );
     }
-    assert_eq!(
-        tail.iter()
-            .filter(|call| call.contains("worktree add"))
-            .count(),
-        1,
-        "the run continues with the step that had failed: {tail:?}"
-    );
     Ok(())
 }
 

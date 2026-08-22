@@ -157,6 +157,35 @@ fn a_probe_that_could_not_run_is_not_read_as_isolation() -> Checked {
     Ok(())
 }
 
+#[test]
+fn a_symlink_probe_distinguishes_present_absent_and_unobservable() -> Checked {
+    use crate::testing::sandbox::InnerCommandSandbox;
+
+    let path = "/home/agent/.config";
+    assert!(
+        symlink_exists(
+            &InnerCommandSandbox::new().holding(&[path]),
+            "sandbox",
+            path
+        )
+        .required_because("a present symlink answers")?
+    );
+    assert!(
+        !symlink_exists(&InnerCommandSandbox::new(), "sandbox", path)
+            .required_because("an absent symlink answers")?
+    );
+
+    let host = crate::testing::host::FakeSbx::listing("").answering(
+        &format!("exec sandbox -- test -h {path}"),
+        2,
+        "",
+    );
+    let error = symlink_exists(&host, "sandbox", path)
+        .refused_because("an unobservable symlink is not treated as absent")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
+    Ok(())
+}
+
 /// 中立Workspaceのrootを、実行時と同じ条件で用意する。
 fn workspace_root() -> Checked<tempfile::TempDir> {
     let root = tempfile::tempdir().required_because("temporary workspace root")?;
@@ -242,6 +271,36 @@ fn the_workspace_path_carries_no_project_or_home_path() -> Checked {
         Path::new("/tmp/docker-sandboxes").join(sandbox()?.as_str())
     );
     assert!(!paths::display(&workspace).contains("/Users/"));
+    Ok(())
+}
+
+#[test]
+fn workspace_is_empty_distinguishes_missing_empty_and_nonempty_directories() -> Checked {
+    let root = workspace_root()?;
+    let name = sandbox()?;
+    assert!(workspace_is_empty(root.path(), &name).required_because("missing is empty")?);
+
+    let path = workspace_path(root.path(), &name);
+    fs::create_dir(&path).required_because("create an empty workspace")?;
+    assert!(workspace_is_empty(root.path(), &name).required_because("empty is empty")?);
+
+    fs::write(path.join("kept.txt"), b"keep me").required_because("write a workspace file")?;
+    assert!(!workspace_is_empty(root.path(), &name).required_because("nonempty is observed")?);
+    Ok(())
+}
+
+#[test]
+fn an_unreadable_workspace_is_not_assumed_empty() -> Checked {
+    let root = workspace_root()?;
+    let name = sandbox()?;
+    let path = workspace_path(root.path(), &name);
+    fs::create_dir(&path).required_because("create the workspace")?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000))
+        .required_because("make the workspace unreadable")?;
+
+    let error = workspace_is_empty(root.path(), &name)
+        .refused_because("an unreadable workspace is not empty by assumption")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
     Ok(())
 }
 

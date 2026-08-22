@@ -402,6 +402,40 @@ fn the_credential_helper_reads_the_placeholder_and_holds_no_token() -> Checked {
 }
 
 #[test]
+fn an_existing_matching_credential_helper_is_reused() -> Checked {
+    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
+    let helper = "!f() { echo username=x; echo password=$GH_TOKEN; }; f";
+    let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, helper);
+    verify_git_credential(&host, "sbxm-example")
+        .required_because("the expected helper is already configured")?;
+    Ok(())
+}
+
+#[test]
+fn a_different_credential_helper_is_not_overwritten() -> Checked {
+    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
+    let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, "store");
+    let error = verify_git_credential(&host, "sbxm-example")
+        .refused_because("a different helper belongs to another setup")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
+
+    let absent = crate::testing::host::FakeSbx::listing("").answering(key, 1, "");
+    verify_git_credential(&absent, "sbxm-example")
+        .required_because("an absent helper can be configured")?;
+    Ok(())
+}
+
+#[test]
+fn an_unobservable_credential_helper_is_not_read_as_missing() -> Checked {
+    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
+    let host = crate::testing::host::FakeSbx::listing("").answering(key, 2, "");
+    let error = verify_git_credential(&host, "sbxm-example")
+        .refused_because("a failed helper read is not a missing setting")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
+    Ok(())
+}
+
+#[test]
 fn configure_writes_an_existing_matching_credential_helper() -> Checked {
     let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
     let helper = "!f() { echo username=x; echo password=$GH_TOKEN; }; f";

@@ -14,6 +14,7 @@ mod place;
 mod place_all;
 mod placed_file;
 mod placement;
+mod preflight;
 mod read_source;
 mod require_no_symlink_in_sandbox;
 
@@ -28,6 +29,7 @@ use place::place;
 pub use place_all::place_all;
 pub use placed_file::PlacedFile;
 pub use placement::Placement;
+pub(crate) use preflight::preflight;
 use read_source::read_source;
 use require_no_symlink_in_sandbox::require_no_symlink_in_sandbox;
 

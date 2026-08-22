@@ -93,6 +93,7 @@ fn prepare(
 }
 
 const FRESH: &[&str] = &[
+    "sbx ls --json",
     "sbx secret ls sbxm-example-org-example-repo-99a40327a69b",
     "docker version --format {{.Server.Version}}",
     "docker image ls --quiet sbxm-example-org-example-repo-99a40327a69b-template:4a0f8d41e27e",
@@ -188,150 +189,48 @@ fn a_ready_project_touches_the_outside_in_this_order() -> Checked {
     Ok(())
 }
 
-/// `resume_test.rs`と同じ中断点。1工程ずつ後ろへずらして失敗させる。
-const STEPS: [(&str, ErrorId); 11] = [
-    (
-        "git clone --progress git@github.com",
-        ErrorId::ExternalCommandFailed,
-    ),
-    ("docker build", ErrorId::ExternalCommandFailed),
-    ("docker image save", ErrorId::ExternalCommandFailed),
-    ("sbx template load", ErrorId::ExternalCommandFailed),
-    ("sbx create", ErrorId::ExternalCommandFailed),
-    ("sbx cp --follow-link", ErrorId::ExternalCommandFailed),
-    ("config --global user.name", ErrorId::ExternalCommandFailed),
-    ("sbx secret ls", ErrorId::ExternalCommandFailed),
-    ("git init --bare", ErrorId::ExternalCommandFailed),
-    ("check-ref-format", ErrorId::InvalidBranchName),
-    ("worktree add", ErrorId::ExternalCommandFailed),
-];
-
-const RESUMED: &[&str] = &[
+/// prepareは中断した初回構築を継続しない。記録済みintentを見た時点でPendingとして
+/// 拒否するため、`add`が撃つhost cloneの確認より先へは進まない。完成させるのは
+/// `sbxm repair`である。
+const INTERRUPTED: &[&str] = &[
+    // `add`のhost clone確認。prepareはこの先へ進まない。
     "git rev-parse --is-bare-repository",
     "git rev-parse --show-toplevel",
     "git config --get-all remote.origin.url",
-    "sbx ls --json",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -e /home/agent/work/example-repo/example-repo.tree-0",
-    "sbx secret ls sbxm-example-org-example-repo-99a40327a69b",
-    "docker version --format {{.Server.Version}}",
-    "docker image ls --quiet sbxm-example-org-example-repo-99a40327a69b-template:4a0f8d41e27e",
-    "docker image inspect sbxm-example-org-example-repo-99a40327a69b-template:4a0f8d41e27e",
-    "sbx template ls --json",
-    "sbx ls --json",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- printenv SSH_AUTH_SOCK",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- ssh-add -L",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- sh -c printf %s \"${GH_TOKEN:-}\"",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -h /home/agent/.config",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -h /home/agent/.config/example",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -h /home/agent/.config/example/settings.yaml",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -e /home/agent/.config/example/settings.yaml",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- sha256sum /home/agent/.config/example/settings.yaml",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git config --global --get user.name",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git config --global --get user.email",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- sh -c for c in gh mise claude codex; do command -v \"$c\" > /dev/null 2>&1 && printf '%s\\n' \"$c\"; done",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- gh config get git_protocol --host github.com",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git config --global credential.https://github.com.helper !f() { echo username=x; echo password=$GH_TOKEN; }; f",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -e /home/agent/work/example-repo/.git",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git rev-parse --is-bare-repository",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git config --get-all remote.origin.url",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git config --get-all remote.origin.fetch",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git fsck --connectivity-only",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git fetch --prune --progress origin",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git check-ref-format --branch main",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git show-ref --verify --quiet refs/remotes/origin/main",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git rev-parse refs/remotes/origin/main",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -e /home/agent/work/example-repo/example-repo.tree-0",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -e /home/agent/work/example-repo/example-repo.tree-0",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git worktree add --track -b main /home/agent/work/example-repo/example-repo.tree-0 refs/remotes/origin/main",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git -C /home/agent/work/example-repo/example-repo.tree-0 rev-parse HEAD",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git -C /home/agent/work/example-repo/example-repo.tree-0 symbolic-ref -q HEAD",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git -C /home/agent/work/example-repo/example-repo.tree-0 rev-parse HEAD",
 ];
 
 #[test]
-fn a_prepare_resuming_after_every_interruption_touches_the_outside_in_this_order() -> Checked {
+fn a_prepare_after_an_interruption_touches_the_outside_in_this_order() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
 
-    // 1工程ずつ後ろへずらして失敗させ、成果物が各段階まで残った状態を作る。
-    for (step, expected_id) in STEPS {
-        world.failing(step);
-        let error = bench
-            .build(&world, &request)
-            .refused_because("the run stops at the step that failed")?;
-        assert_eq!(error.first_id(), Some(expected_id), "{step}");
-        world.nothing_fails();
-    }
-
-    // 残っている成果物を再利用して完成させる実行が、外部へ触れる並び。
-    let mark = world.mark();
+    world.failing("sbx create");
     bench
         .build(&world, &request)
-        .required_because("the same add finishes")?;
-    assert_calls("resumed", &normalized(&bench, &world, mark), RESUMED);
+        .refused_because("the run stops at the step that failed")?;
+    world.nothing_fails();
+
+    let mark = world.mark();
+    let error = bench
+        .build(&world, &request)
+        .refused_because("an interrupted provisioning is finished only by repair")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert_calls(
+        "interrupted",
+        &normalized(&bench, &world, mark),
+        INTERRUPTED,
+    );
     Ok(())
 }
 
+/// build失敗後にDockerfileを直しても、通常のprepareは新しい世代へ移らない。記録済みの
+/// target generationは`repair`だけが扱う。
 const RETARGETED: &[&str] = &[
+    // `add`のhost clone確認。prepareはこの先へ進まない。
     "git rev-parse --is-bare-repository",
     "git rev-parse --show-toplevel",
     "git config --get-all remote.origin.url",
-    "sbx secret ls sbxm-example-org-example-repo-99a40327a69b",
-    "docker version --format {{.Server.Version}}",
-    "docker image ls --quiet sbxm-example-org-example-repo-99a40327a69b-template:4a0f8d41e27e",
-    "docker image ls --quiet sbxm-example-org-example-repo-99a40327a69b-template:6fb4e96d76fb",
-    "docker build --label io.crescware.sbxm.canonical-id=example-org/example-repo --label io.crescware.sbxm.dockerfile-sha256=6fb4e96d76fb02230a00b5e9778cda8be665349062c20646c31b876d1167b5ca --label io.crescware.sbxm.metadata-version=1 --tag sbxm-example-org-example-repo-99a40327a69b-template:6fb4e96d76fb --file <parent>/example-repo.project/.sbxm/Dockerfile <context>",
-    "docker image ls --quiet sbxm-example-org-example-repo-99a40327a69b-template:6fb4e96d76fb",
-    "docker image inspect sbxm-example-org-example-repo-99a40327a69b-template:6fb4e96d76fb",
-    "sbx template ls --json",
-    "docker image save sbxm-example-org-example-repo-99a40327a69b-template:6fb4e96d76fb --output <parent>/example-repo.project/.sbxm/.cache/template-6fb4e96d76fb.tar.tmp",
-    "sbx template ls --json",
-    "sbx template load <parent>/example-repo.project/.sbxm/.cache/template-6fb4e96d76fb.tar",
-    "sbx template ls --json",
-    "sbx ls --json",
-    "sbx create --name sbxm-example-org-example-repo-99a40327a69b --template sbxm-example-org-example-repo-99a40327a69b-template:6fb4e96d76fb shell <workspaces>/sbxm-example-org-example-repo-99a40327a69b",
-    "sbx ls --json",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- printenv SSH_AUTH_SOCK",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- ssh-add -L",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- sh -c printf %s \"${GH_TOKEN:-}\"",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -h /home/agent/.config",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -h /home/agent/.config/example",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -h /home/agent/.config/example/settings.yaml",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -e /home/agent/.config/example/settings.yaml",
-    "sbx cp --follow-link <declared> sbxm-example-org-example-repo-99a40327a69b:/tmp/sbxm-file-0",
-    "sbx exec --user root sbxm-example-org-example-repo-99a40327a69b -- install -d -o agent -g agent -m 0700 /home/agent/.config/example",
-    "sbx exec --user root sbxm-example-org-example-repo-99a40327a69b -- install -o agent -g agent -m 0600 /tmp/sbxm-file-0 /home/agent/.config/example/settings.yaml.sbxm-new",
-    "sbx exec --user root sbxm-example-org-example-repo-99a40327a69b -- mv -f /home/agent/.config/example/settings.yaml.sbxm-new /home/agent/.config/example/settings.yaml",
-    "sbx exec --user root sbxm-example-org-example-repo-99a40327a69b -- rm -f /tmp/sbxm-file-0 /home/agent/.config/example/settings.yaml.sbxm-new",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git config --global --get user.name",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git config --global user.name Example User",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git config --global --get user.email",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git config --global user.email user@example.com",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- sh -c for c in gh mise claude codex; do command -v \"$c\" > /dev/null 2>&1 && printf '%s\\n' \"$c\"; done",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- gh config get git_protocol --host github.com",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- gh config set git_protocol https --host github.com",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git config --global credential.https://github.com.helper !f() { echo username=x; echo password=$GH_TOKEN; }; f",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -e /home/agent/work/example-repo/.git",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- mkdir -p /home/agent/work/example-repo",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git init --bare /home/agent/work/example-repo/.git",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git remote add origin https://github.com/Example-Org/Example-Repo.git",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git config remote.origin.fetch +refs/heads/*:refs/remotes/origin/*",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git rev-parse --is-bare-repository",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git config --get-all remote.origin.url",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git config --get-all remote.origin.fetch",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git fsck --connectivity-only",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git fetch --prune --progress origin",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git ls-remote --symref origin HEAD",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git check-ref-format --branch main",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git show-ref --verify --quiet refs/remotes/origin/main",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git rev-parse refs/remotes/origin/main",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -e /home/agent/work/example-repo/example-repo.tree-0",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- test -e /home/agent/work/example-repo/example-repo.tree-0",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git --git-dir /home/agent/work/example-repo/.git worktree add --track -b main /home/agent/work/example-repo/example-repo.tree-0 refs/remotes/origin/main",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git -C /home/agent/work/example-repo/example-repo.tree-0 rev-parse HEAD",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git -C /home/agent/work/example-repo/example-repo.tree-0 symbolic-ref -q HEAD",
-    "sbx exec sbxm-example-org-example-repo-99a40327a69b -- git -C /home/agent/work/example-repo/example-repo.tree-0 rev-parse HEAD",
 ];
 
 #[test]
@@ -352,15 +251,17 @@ fn a_prepare_after_a_failed_build_and_a_fixed_dockerfile_touches_the_outside_in_
     fs::write(paths.dockerfile(), b"FROM example:edited\n").required_because("fix it")?;
 
     let mark = world.mark();
-    bench
+    let error = bench
         .build(&world, &request)
-        .required_because("the same prepare finishes on the fixed generation")?;
+        .refused_because("the recorded target generation is only repair's to move")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
 
     assert_calls("retargeted", &normalized(&bench, &world, mark), RETARGETED);
     Ok(())
 }
 
 const COLLISION: &[&str] = &[
+    "sbx ls --json",
     "sbx secret ls sbxm-example-org-example-repo-99a40327a69b",
     "docker version --format {{.Server.Version}}",
     "docker image ls --quiet sbxm-example-org-example-repo-99a40327a69b-template:4a0f8d41e27e",

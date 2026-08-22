@@ -49,6 +49,26 @@ fn a_missing_repository_is_cloned_bare_over_https_and_then_verified() -> Checked
 }
 
 #[test]
+fn verification_accepts_a_repository_that_has_not_been_created_yet() -> Checked {
+    let host = healthy_clone()?;
+
+    verify_existing(
+        &host,
+        "sbxm-example",
+        &project()?,
+        &layout()?,
+        &metadata(crate::metadata::CreationMode::Detached, None, 1)?,
+    )
+    .required_because("an absent repository is available for later provisioning")?;
+
+    assert!(
+        !host.ran("rev-parse --is-bare-repository"),
+        "nothing inside an absent repository is inspected"
+    );
+    Ok(())
+}
+
+#[test]
 fn an_existing_repository_of_the_same_project_is_reused() -> Checked {
     let git_dir = layout()?.bare_git_dir();
     let host = healthy_clone()?.holding(&[&git_dir]);

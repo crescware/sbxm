@@ -19,8 +19,7 @@ use std::fs;
 const EDITED_DOCKERFILE: &[u8] = b"FROM example:edited\n";
 
 #[test]
-fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_started_from() -> Checked
-{
+fn a_dockerfile_edited_after_an_interruption_keeps_the_generation_it_started_from() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -40,7 +39,7 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
     fs::write(paths.dockerfile(), EDITED_DOCKERFILE).required_because("edit the Dockerfile")?;
 
     let mark = world.mark();
-    let output = run(
+    let error = run(
         &bench.location,
         &bench.config,
         Some(&project_of(&request)?),
@@ -49,15 +48,11 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
         &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
-    .required_because("the interrupted run finishes")?;
+    .refused_because("an interrupted build requires explicit recovery")?;
 
     assert_eq!(
-        output
-            .warnings
-            .iter()
-            .map(|warning| warning.description.id)
-            .collect::<Vec<_>>(),
-        vec!["warning-dockerfile-changed-during-build"]
+        error.first_id(),
+        Some(crate::diagnostics::ErrorId::InitialProvisioningPending)
     );
     assert_eq!(
         bench
@@ -65,15 +60,15 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
             .provisioning
             .dockerfile_sha256,
         started_from,
-        "the generation the build started from is the one it is finished on"
+        "the interrupted build remains fixed to the generation it started from"
     );
     let edited = image::image_name(
         &SandboxName::derive(request.repository.canonical_id()),
         &sha256_hex(EDITED_DOCKERFILE),
     );
     assert!(
-        !world.since(mark).iter().any(|call| call.contains(&edited)),
-        "the edited Dockerfile is left for rebuild: {:?}",
+        world.since(mark).is_empty(),
+        "pending prepare does not inspect or build the edited generation {edited}: {:?}",
         world.since(mark)
     );
     Ok(())
