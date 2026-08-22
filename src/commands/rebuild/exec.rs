@@ -44,11 +44,10 @@ pub fn exec(
 
     ui.stdout(&print::plan_document(&prepared.plan));
 
-    let confirmation =
-        match super::run::confirm(snapshot, context.interactivity.can_prompt(), prompt) {
-            Ok(confirmation) => confirmation,
-            Err(error) => return report(ui, &error),
-        };
+    let confirmation = match super::run::confirm(snapshot, context.can_prompt, prompt) {
+        Ok(confirmation) => confirmation,
+        Err(error) => return report(ui, &error),
+    };
     ui.note_prompt_output();
 
     match super::run::execute(

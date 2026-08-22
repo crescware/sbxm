@@ -1,4 +1,4 @@
-use crate::design::{OutputPolicy, Ui, Warning};
+use crate::design::{RenderingPolicy, Ui, Warning};
 use crate::i18n::Locale;
 
 use crate::testing::outcome::{Checked, Required};
@@ -36,7 +36,12 @@ fn print(output: &RebuildOutput) -> Checked<Printed> {
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     let code = {
-        let mut ui = Ui::capture(Locale::En, OutputPolicy::plain(), &mut stdout, &mut stderr);
+        let mut ui = Ui::capture(
+            Locale::En,
+            RenderingPolicy::plain(),
+            &mut stdout,
+            &mut stderr,
+        );
         report(&mut ui, output)
     };
     Ok(Printed {

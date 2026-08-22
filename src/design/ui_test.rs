@@ -6,7 +6,7 @@ use super::*;
 impl<'a> Ui<'a> {
     pub fn capture(
         locale: Locale,
-        policy: OutputPolicy,
+        policy: RenderingPolicy,
         stdout: impl std::io::Write + 'a,
         stderr: impl std::io::Write + 'a,
     ) -> Ui<'a> {

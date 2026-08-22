@@ -1,8 +1,7 @@
-use crate::cli::Interactivity;
 use crate::commands::{Context, open::Args};
 use crate::compatibility::RootDiskUsage;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
-use crate::design::{OutputPolicy, PromptUi, Ui};
+use crate::design::{PromptUi, RenderingPolicy, Ui};
 use crate::diagnostics::{ErrorId, ExitCode, Result};
 use crate::i18n::Locale;
 use crate::project::{ProjectId, SandboxLayout};
@@ -162,7 +161,7 @@ fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let code = {
-            let policy = OutputPolicy::plain();
+            let policy = RenderingPolicy::plain();
             let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
             let mut prompt = PromptUi::new(
                 Locale::En,
@@ -173,11 +172,8 @@ fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
             let context = Context {
                 location: &fixture.location,
                 workspace_root: &fixture.workspace_root,
-                lang: Some(Locale::En),
-                interactivity: Interactivity {
-                    stdin_is_tty: false,
-                    stderr_is_tty: false,
-                },
+                locale: Locale::En,
+                can_prompt: false,
             };
             crate::commands::open::exec(
                 &Args {

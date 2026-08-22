@@ -8,7 +8,6 @@
 
 mod app;
 mod archive;
-mod cli;
 mod command;
 mod commands;
 mod compatibility;
@@ -30,6 +29,6 @@ mod testing;
 
 fn main() -> std::process::ExitCode {
     let argv: Vec<String> = std::env::args().collect();
-    let code = app::run(&argv);
+    let code = app::run(argv);
     std::process::ExitCode::from(code.as_u8())
 }

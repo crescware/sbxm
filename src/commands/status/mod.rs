@@ -6,16 +6,9 @@
 
 mod exec;
 pub mod global;
-#[cfg(test)]
-#[path = "mod_test.rs"]
-mod mod_test;
-mod parse;
 pub mod print;
 pub mod project;
 mod scope;
-mod spec;
 
 pub use exec::exec;
-pub use parse::parse;
 pub use scope::Scope;
-pub use spec::spec;

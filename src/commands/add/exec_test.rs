@@ -10,7 +10,6 @@ use crate::metadata::GitIdentity;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use crate::cli::Interactivity;
 use crate::config::ConfigLocation;
 use crate::testing::cli::{non_tty, tty};
 use crate::testing::global_status::FakeHost;
@@ -25,16 +24,12 @@ fn home() -> Checked<(tempfile::TempDir, ConfigLocation)> {
 /// `add`はSandboxのworkspaceを観測しない。読まれた場合に失敗する所在を名前で示す。
 const UNOBSERVED_WORKSPACE_ROOT: &str = "/nonexistent/add-observes-no-workspace";
 
-fn context(
-    location: &ConfigLocation,
-    lang: Option<Locale>,
-    interactivity: Interactivity,
-) -> Context<'_> {
+fn context(location: &ConfigLocation, locale: Option<Locale>, can_prompt: bool) -> Context<'_> {
     Context {
         location,
         workspace_root: Path::new(UNOBSERVED_WORKSPACE_ROOT),
-        lang,
-        interactivity,
+        locale: locale.unwrap_or(Locale::En),
+        can_prompt,
     }
 }
 
@@ -48,7 +43,7 @@ fn saved(location: &ConfigLocation) -> Checked<Option<Locale>> {
 #[test]
 fn the_first_interactive_add_asks_once_and_saves_what_was_chosen() -> Checked {
     let (_dir, location) = home()?;
-    let context = context(&location, None, tty());
+    let context = context(&location, None, tty().can_prompt());
     let mut prompt = ScriptedPrompt::choosing(0);
 
     let chosen = choose_language(&context, &GlobalConfig::default(), Locale::En, &mut prompt)
@@ -106,7 +101,7 @@ fn the_prompt_keeps_the_wording_both_kinds_of_user_can_read() -> Checked {
 #[test]
 fn a_run_that_cannot_prompt_neither_asks_nor_saves() -> Checked {
     let (_dir, location) = home()?;
-    let context = context(&location, None, non_tty());
+    let context = context(&location, None, non_tty().can_prompt());
     let mut prompt = ScriptedPrompt::choosing(0);
 
     let chosen = choose_language(&context, &GlobalConfig::default(), Locale::Ja, &mut prompt)
@@ -122,7 +117,7 @@ fn a_run_that_cannot_prompt_neither_asks_nor_saves() -> Checked {
 #[test]
 fn a_language_option_is_an_override_rather_than_a_choice_of_the_saved_one() -> Checked {
     let (_dir, location) = home()?;
-    let context = context(&location, Some(Locale::Ja), tty());
+    let context = context(&location, Some(Locale::Ja), tty().can_prompt());
     let mut prompt = ScriptedPrompt::choosing(0);
 
     // `--lang`はそのprocessだけのoverrideである。永続設定を選ぶpromptを省略しない。
@@ -150,7 +145,7 @@ fn a_language_option_is_an_override_rather_than_a_choice_of_the_saved_one() -> C
 #[test]
 fn cancelling_the_prompt_changes_nothing_and_exits_with_130() -> Checked {
     let (_dir, location) = home()?;
-    let context = context(&location, None, tty());
+    let context = context(&location, None, tty().can_prompt());
     let mut prompt = ScriptedPrompt::canceling();
 
     let error = choose_language(&context, &GlobalConfig::default(), Locale::En, &mut prompt)
@@ -216,7 +211,7 @@ fn silent_host() -> FakeHost {
 #[test]
 fn the_first_interactive_add_asks_for_the_identity_and_saves_what_was_entered() -> Checked {
     let (_dir, location) = home()?;
-    let context = context(&location, None, tty());
+    let context = context(&location, None, tty().can_prompt());
     let mut prompt = ScriptedIdentityPrompt::typing("Chosen User", "chosen@example.com");
 
     let chosen = choose_git_identity(
@@ -241,7 +236,7 @@ fn the_first_interactive_add_asks_for_the_identity_and_saves_what_was_entered() 
 #[test]
 fn the_host_is_offered_as_a_candidate_rather_than_taken_as_the_value() -> Checked {
     let (_dir, location) = home()?;
-    let context = context(&location, None, tty());
+    let context = context(&location, None, tty().can_prompt());
     // 何も打たなければ、置かれた候補がそのまま確定する。Enterだけを押した場合にあたる。
     let mut prompt = ScriptedIdentityPrompt::accepting_the_candidates();
 
@@ -272,7 +267,7 @@ fn the_host_is_offered_as_a_candidate_rather_than_taken_as_the_value() -> Checke
 #[test]
 fn a_host_that_declares_nothing_leaves_an_empty_field_rather_than_failing() -> Checked {
     let (_dir, location) = home()?;
-    let context = context(&location, None, tty());
+    let context = context(&location, None, tty().can_prompt());
     let mut prompt = ScriptedIdentityPrompt::typing("Typed User", "typed@example.com");
 
     let chosen = choose_git_identity(
@@ -299,7 +294,7 @@ fn a_saved_default_is_used_without_asking_again() -> Checked {
     let mut prompt = ScriptedIdentityPrompt::typing("Never Asked", "never@example.com");
 
     for interactivity in [tty(), non_tty()] {
-        let context = context(&location, None, interactivity);
+        let context = context(&location, None, interactivity.can_prompt());
         let chosen = choose_git_identity(
             &context,
             &config_holding(Some(identity())),
@@ -326,7 +321,7 @@ fn a_declared_identity_decides_the_run_without_asking_or_saving() -> Checked {
     for interactivity in [tty(), non_tty()] {
         for saved in [None, Some(identity())] {
             let (_dir, location) = home()?;
-            let context = context(&location, None, interactivity);
+            let context = context(&location, None, interactivity.can_prompt());
             let mut prompt = ScriptedIdentityPrompt::typing("Never Asked", "never@example.com");
 
             let chosen = choose_git_identity(
@@ -354,7 +349,7 @@ fn a_declared_identity_decides_the_run_without_asking_or_saving() -> Checked {
 #[test]
 fn a_run_that_can_neither_ask_nor_read_a_default_refuses_before_creating_anything() -> Checked {
     let (_dir, location) = home()?;
-    let context = context(&location, None, non_tty());
+    let context = context(&location, None, non_tty().can_prompt());
     let mut prompt = ScriptedIdentityPrompt::typing("Never Asked", "never@example.com");
 
     let error = choose_git_identity(
@@ -376,7 +371,7 @@ fn a_run_that_can_neither_ask_nor_read_a_default_refuses_before_creating_anythin
 #[test]
 fn cancelling_the_identity_prompt_saves_nothing() -> Checked {
     let (_dir, location) = home()?;
-    let context = context(&location, None, tty());
+    let context = context(&location, None, tty().can_prompt());
     let mut prompt = ScriptedIdentityPrompt::canceling();
 
     let error = choose_git_identity(
@@ -397,7 +392,7 @@ fn cancelling_the_identity_prompt_saves_nothing() -> Checked {
 fn a_value_that_cannot_be_a_git_identity_is_refused_rather_than_saved() -> Checked {
     for (name, email) in [("", "user@example.com"), ("Example User", "   ")] {
         let (_dir, location) = home()?;
-        let context = context(&location, None, tty());
+        let context = context(&location, None, tty().can_prompt());
         let mut prompt = ScriptedIdentityPrompt::typing(name, email);
 
         let error = choose_git_identity(
