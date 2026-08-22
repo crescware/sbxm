@@ -34,6 +34,7 @@ pub(crate) fn run(argv: &[String]) -> ExitCode {
             _ => None,
         },
         configured_locale,
+        crate::i18n::shell_locale(),
     );
     let mut ui = Ui::terminal(display_locale, policy);
 
