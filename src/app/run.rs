@@ -1,4 +1,4 @@
-use crate::cli::{self, Interactivity, Outcome, PeekedLang};
+use crate::cli::{self, Interactivity, Outcome};
 use crate::command::RealHost;
 use crate::commands::Context;
 use crate::config::{self, ConfigLocation, ConfigState};
@@ -6,10 +6,11 @@ use crate::design::{Document, Environment, OutputPolicy, PromptUi, Terminals, Ui
 use crate::diagnostics::ExitCode;
 use crate::i18n::Locale;
 
-pub(crate) fn run(argv: &[String]) -> ExitCode {
-    let peeked = cli::peek_lang(argv);
+pub(crate) fn run(argv: Vec<String>) -> ExitCode {
+    let invocation = cli::Invocation::new(argv);
+    let command_line_locale = invocation.command_line_locale();
     let policy = OutputPolicy::resolve(
-        cli::peek_color(argv),
+        invocation.color(),
         &Environment::detect(),
         &Terminals::detect(),
     );
@@ -29,10 +30,7 @@ pub(crate) fn run(argv: &[String]) -> ExitCode {
         _ => None,
     };
     let display_locale = crate::i18n::resolve_display_locale(
-        match peeked {
-            PeekedLang::Valid(locale) => Some(locale),
-            _ => None,
-        },
+        command_line_locale,
         configured_locale,
         crate::i18n::shell_locale(),
     );
@@ -40,7 +38,7 @@ pub(crate) fn run(argv: &[String]) -> ExitCode {
 
     // 表示localeはconfigからbest-effortで解決済みである。`--lang`の不正はconfigの
     // validation errorより先に報告するため、壊れたconfigがparse errorを覆い隠さない。
-    if let PeekedLang::Invalid(value) = &peeked {
+    if let Some(value) = invocation.invalid_language() {
         let error = cli::invalid_lang_error(value);
         ui.error(&error);
         return error.exit_code();
@@ -48,7 +46,7 @@ pub(crate) fn run(argv: &[String]) -> ExitCode {
 
     let interactivity = Interactivity::detect();
     let catalog = crate::i18n::Catalog::new(display_locale);
-    match cli::parse(argv, &catalog, interactivity) {
+    match invocation.parse(&catalog, interactivity) {
         Ok(Outcome::Help(text)) => {
             ui.help(&text);
             ExitCode::Success
@@ -61,10 +59,7 @@ pub(crate) fn run(argv: &[String]) -> ExitCode {
             let context = Context {
                 location: &location,
                 workspace_root: std::path::Path::new(crate::support::sandbox::WORKSPACE_ROOT),
-                lang: match peeked {
-                    PeekedLang::Valid(locale) => Some(locale),
-                    _ => None,
-                },
+                lang: command_line_locale,
                 interactivity,
             };
             // 実hostと実端末と実workspace rootを選ぶのはここだけとする。commandは受け取った

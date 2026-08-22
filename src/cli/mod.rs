@@ -19,6 +19,7 @@ mod color;
 mod diagnostics;
 pub mod help;
 mod interactivity;
+mod invocation;
 mod lang;
 #[cfg(test)]
 #[path = "mod_test.rs"]
@@ -29,10 +30,11 @@ pub mod project_arg;
 mod version_line;
 
 use build_command::build_command;
-pub use color::peek_color;
 pub use help::Builder;
 pub use interactivity::Interactivity;
-pub use lang::{PeekedLang, invalid_lang_error, peek_lang};
+pub use invocation::Invocation;
+pub use lang::invalid_lang_error;
 pub use outcome::Outcome;
+#[cfg(test)]
 pub use parse::parse;
 pub use version_line::version_line;
