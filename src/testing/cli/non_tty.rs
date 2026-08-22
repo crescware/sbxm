@@ -1,4 +1,4 @@
-use crate::cli::Interactivity;
+use crate::app::Interactivity;
 
 pub fn non_tty() -> Interactivity {
     Interactivity {
