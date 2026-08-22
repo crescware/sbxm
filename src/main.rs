@@ -28,10 +28,8 @@ mod support;
 #[cfg(test)]
 mod testing;
 
-use std::process::ExitCode as ProcessExitCode;
-
-fn main() -> ProcessExitCode {
+fn main() -> std::process::ExitCode {
     let argv: Vec<String> = std::env::args().collect();
     let code = app::run(&argv);
-    ProcessExitCode::from(code.as_u8())
+    std::process::ExitCode::from(code.as_u8())
 }
