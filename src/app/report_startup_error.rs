@@ -11,3 +11,7 @@ pub(crate) fn report_startup_error(command_line: &CommandLine, error: &Error) ->
     ui.error(error);
     error.exit_code()
 }
+
+#[cfg(test)]
+#[path = "report_startup_error_test.rs"]
+mod report_startup_error_test;
