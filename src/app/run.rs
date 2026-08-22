@@ -1,12 +1,10 @@
 use crate::cli::{self, Interactivity, Outcome, PeekedLang};
 use crate::command::RealHost;
 use crate::commands::Context;
-use crate::config::ConfigLocation;
+use crate::config::{self, ConfigLocation, ConfigState};
 use crate::design::{Document, Environment, OutputPolicy, PromptUi, Terminals, Ui};
 use crate::diagnostics::ExitCode;
 use crate::i18n::Locale;
-
-use super::resolve_display_locale;
 
 pub(crate) fn run(argv: &[String]) -> ExitCode {
     let peeked = cli::peek_lang(argv);
@@ -26,7 +24,17 @@ pub(crate) fn run(argv: &[String]) -> ExitCode {
         }
     };
 
-    let display_locale = resolve_display_locale::resolve_display_locale(&peeked, &location);
+    let configured_locale = match config::load(&location) {
+        Ok(ConfigState::Valid { config, .. }) => config.language,
+        _ => None,
+    };
+    let display_locale = crate::i18n::resolve_display_locale(
+        match peeked {
+            PeekedLang::Valid(locale) => Some(locale),
+            _ => None,
+        },
+        configured_locale,
+    );
     let mut ui = Ui::terminal(display_locale, policy);
 
     // 表示localeはconfigからbest-effortで解決済みである。`--lang`の不正はconfigの
