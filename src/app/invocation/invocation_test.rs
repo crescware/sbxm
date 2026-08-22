@@ -51,10 +51,9 @@ fn an_invalid_language_is_reported_before_full_parsing() {
         RenderingPolicy::detect(ColorMode::Never),
         non_tty(),
     );
-    let error = match invocation.parse() {
-        Ok(_) => panic!("an invalid language must be refused"),
-        Err(error) => error,
-    };
+    let result = invocation.parse();
+    assert!(result.is_err(), "an invalid language must be refused");
+    let error = result.err().unwrap_or(crate::diagnostics::Error::Canceled);
 
     assert_eq!(error.first_id(), Some(ErrorId::InvalidLang));
 }

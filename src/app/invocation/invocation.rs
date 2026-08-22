@@ -36,10 +36,10 @@ impl Invocation {
 
     pub(crate) fn parse(&self) -> Result<Command> {
         if let Some(value) = self.command_line.invalid_locale_override() {
-            return Err(self.command_line.invalid_locale_error(value));
+            return Err(CommandLine::invalid_locale_error(value));
         }
         let catalog = Catalog::new(self.locale);
-        super::parse::parse(self.command_line.argv(), &catalog, self.interactivity)
+        super::parser::parse(self.command_line.argv(), &catalog, self.interactivity)
     }
 
     pub(crate) fn location(&self) -> &ConfigLocation {

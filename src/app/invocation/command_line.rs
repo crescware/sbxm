@@ -47,7 +47,7 @@ impl CommandLine {
         self.color_mode
     }
 
-    pub(super) fn invalid_locale_error(&self, value: &str) -> crate::diagnostics::Error {
+    pub(super) fn invalid_locale_error(value: &str) -> crate::diagnostics::Error {
         lang::invalid_lang_error(value)
     }
 

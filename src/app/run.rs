@@ -13,5 +13,5 @@ pub(crate) fn run(argv: Vec<String>) -> ExitCode {
     };
     let invocation = Invocation::new(command_line, config);
     let command = invocation.parse();
-    execute(invocation, command)
+    execute(&invocation, command)
 }

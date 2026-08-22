@@ -6,7 +6,7 @@ use crate::diagnostics::{ExitCode, Result};
 use super::invocation::Invocation;
 
 /// parse結果を利用者へ提示し、通常commandをapplication境界から実行する。
-pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitCode {
+pub(super) fn execute(invocation: &Invocation, command: Result<Command>) -> ExitCode {
     let locale = invocation.locale();
     let policy = invocation.rendering_policy();
     let mut ui = Ui::terminal(locale, policy);
