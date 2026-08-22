@@ -18,7 +18,7 @@ pub fn choose_language(
     fallback: Locale,
     prompt: &mut dyn ProjectPrompt,
 ) -> Result<Locale> {
-    if config.language.is_some() || !context.interactivity.can_prompt() {
+    if config.language.is_some() || !context.can_prompt {
         return Ok(fallback);
     }
     let chosen = ask_language(prompt, shell_locale().unwrap_or(Locale::SOURCE))?;

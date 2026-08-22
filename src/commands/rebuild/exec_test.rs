@@ -1,4 +1,3 @@
-use crate::cli::Interactivity;
 use crate::command::HostEnvironment;
 use crate::commands::Context;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
@@ -40,11 +39,8 @@ fn run(fixture: &Fixture, host: &dyn HostEnvironment, typed: &str) -> Checked<Ra
         let context = Context {
             location: &fixture.location,
             workspace_root: &fixture.workspace_root,
-            lang: Some(Locale::En),
-            interactivity: Interactivity {
-                stdin_is_tty: true,
-                stderr_is_tty: true,
-            },
+            locale: Locale::En,
+            can_prompt: true,
         };
         super::exec(
             Some(&project_id("example-org/example-repo")?),

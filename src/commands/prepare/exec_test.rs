@@ -1,4 +1,3 @@
-use crate::cli::Interactivity;
 use crate::commands::Context;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::design::{PromptUi, RenderingPolicy, Ui};
@@ -22,11 +21,8 @@ fn run_exec(
     let context = Context {
         location: &bench.location,
         workspace_root: bench.workspace_root.path(),
-        lang: Some(Locale::En),
-        interactivity: Interactivity {
-            stdin_is_tty: false,
-            stderr_is_tty: false,
-        },
+        locale: Locale::En,
+        can_prompt: false,
     };
     let policy = RenderingPolicy::plain();
     let mut stdout = Vec::new();

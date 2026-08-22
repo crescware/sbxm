@@ -44,11 +44,6 @@ impl Ui<'_> {
         }
     }
 
-    /// 既に組み立てられたhelpを書く。
-    pub fn help(&mut self, text: &str) {
-        self.stdout(&Document::new().verbatim(text));
-    }
-
     /// promptがrendererを経由せずstderrへ書いたことを知らせる。
     ///
     /// 次のblockが空行から始まるようにするためだけに使う。

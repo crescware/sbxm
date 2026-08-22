@@ -1,4 +1,3 @@
-use crate::cli::Interactivity;
 use crate::commands::{Context, status::Scope};
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::design::{PromptUi, RenderingPolicy, Ui};
@@ -33,11 +32,8 @@ fn execute_prompt(
         let context = Context {
             location: &fixture.location,
             workspace_root: &fixture.workspace_root,
-            lang: Some(Locale::En),
-            interactivity: Interactivity {
-                stdin_is_tty: true,
-                stderr_is_tty: true,
-            },
+            locale: Locale::En,
+            can_prompt: true,
         };
         super::exec(&Scope::Prompt, &context, &mut ui, host, &mut prompt)
     }

@@ -43,11 +43,10 @@ pub fn exec(
         ui.warning(&print::force_notice());
     }
 
-    let confirmation =
-        match super::run::confirm(&mut prepared, context.interactivity.can_prompt(), prompt) {
-            Ok(confirmation) => confirmation,
-            Err(error) => return report(ui, &error),
-        };
+    let confirmation = match super::run::confirm(&mut prepared, context.can_prompt, prompt) {
+        Ok(confirmation) => confirmation,
+        Err(error) => return report(ui, &error),
+    };
     ui.note_prompt_output();
 
     let executed = match confirmation {

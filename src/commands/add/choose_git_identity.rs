@@ -30,7 +30,7 @@ pub fn choose_git_identity(
     if let Some(saved) = &config.git_identity {
         return Ok(saved.clone());
     }
-    if !context.interactivity.can_prompt() {
+    if !context.can_prompt {
         return Err(Error::single(
             Diagnostic::new(
                 ErrorId::GitIdentityUndecidable,
