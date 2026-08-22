@@ -1,9 +1,9 @@
 use super::*;
 
-impl OutputPolicy {
+impl RenderingPolicy {
     /// ANSIを一切出さない条件。
-    pub fn plain() -> OutputPolicy {
-        OutputPolicy {
+    pub fn plain() -> RenderingPolicy {
+        RenderingPolicy {
             stdout: StreamPolicy::plain(),
             stderr: StreamPolicy::plain(),
         }

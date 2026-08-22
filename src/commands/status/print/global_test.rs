@@ -3,7 +3,7 @@
 //! 表と診断は行き先が別であり、入れ替わってもexit codeでは気付けない。2つのstreamを
 //! 別々に受け取り、どちらに何が出たかを確かめる。
 
-use crate::design::{OutputPolicy, Warning};
+use crate::design::{RenderingPolicy, Warning};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::i18n::Locale;
 use crate::support::{Row, StatusValue};
@@ -22,7 +22,12 @@ fn print(status: &GlobalStatus) -> Checked<Printed> {
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     let code = {
-        let mut ui = Ui::capture(Locale::En, OutputPolicy::plain(), &mut stdout, &mut stderr);
+        let mut ui = Ui::capture(
+            Locale::En,
+            RenderingPolicy::plain(),
+            &mut stdout,
+            &mut stderr,
+        );
         global(&mut ui, status)
     };
     Ok(Printed {

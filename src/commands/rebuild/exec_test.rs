@@ -2,7 +2,7 @@ use crate::cli::Interactivity;
 use crate::command::HostEnvironment;
 use crate::commands::Context;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
-use crate::design::{OutputPolicy, PromptUi, Ui};
+use crate::design::{PromptUi, RenderingPolicy, Ui};
 use crate::diagnostics::ExitCode;
 use crate::hash::sha256_hex;
 use crate::i18n::Locale;
@@ -26,7 +26,7 @@ struct Ran {
 }
 
 fn run(fixture: &Fixture, host: &dyn HostEnvironment, typed: &str) -> Checked<Ran> {
-    let policy = OutputPolicy::plain();
+    let policy = RenderingPolicy::plain();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let code = {

@@ -13,7 +13,7 @@ struct Streams {
 }
 
 impl Streams {
-    fn capture(policy: OutputPolicy, act: impl FnOnce(&mut Ui<'_>)) -> Streams {
+    fn capture(policy: RenderingPolicy, act: impl FnOnce(&mut Ui<'_>)) -> Streams {
         let mut stdout: Vec<u8> = Vec::new();
         let mut stderr: Vec<u8> = Vec::new();
         {
@@ -41,7 +41,7 @@ fn summary() -> Document {
 
 #[test]
 fn results_go_to_stdout_and_everything_else_to_stderr() -> Checked {
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         ui.progress(crate::msg!("progress-creating-sandbox"));
         ui.warning(&Warning::text(crate::msg!("destroy-force-notice")));
         ui.error(&crate::diagnostics::Error::new(
@@ -64,7 +64,7 @@ fn results_go_to_stdout_and_everything_else_to_stderr() -> Checked {
 #[test]
 fn the_two_streams_carry_their_own_color_decision() {
     // stdoutだけをpipeした場合、結果はplain textで診断は色付きになる。
-    let policy = OutputPolicy {
+    let policy = RenderingPolicy {
         stdout: policy::StreamPolicy::plain(),
         stderr: policy::StreamPolicy::colored(),
     };
@@ -80,7 +80,7 @@ fn the_two_streams_carry_their_own_color_decision() {
 #[test]
 fn separate_calls_to_the_same_stream_are_still_one_blank_line_apart() -> Checked {
     // blockの間隔はdocumentごとではなくstreamごとに数える。
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         ui.stdout(&summary());
         ui.stdout(&Document::new().note(crate::msg!("files-secret-hint")));
     });
@@ -96,7 +96,7 @@ fn separate_calls_to_the_same_stream_are_still_one_blank_line_apart() -> Checked
 
 #[test]
 fn consecutive_progress_stays_together_and_the_summary_after_it_does_not() -> Checked {
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         ui.progress(crate::msg!("progress-creating-sandbox"));
         ui.progress(crate::msg!("progress-starting-sandbox"));
         ui.stderr(&Document::new().summary(crate::msg!("destroy-done", project = "owner/alpha")));
@@ -120,7 +120,7 @@ fn a_warning_with_a_follow_up_keeps_the_command_on_its_own_line() -> Checked {
     .explain(crate::msg!("guidance-apply-current-dockerfile"))
     .try_run("sbxm rebuild owner/alpha");
 
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| ui.warning(&warning));
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| ui.warning(&warning));
     let err = streams.err()?;
     let lines: Vec<&str> = err.lines().collect();
     let index = lines
@@ -135,7 +135,7 @@ fn a_warning_with_a_follow_up_keeps_the_command_on_its_own_line() -> Checked {
 #[test]
 fn a_cancel_reports_nothing_at_all() -> Checked {
     // Ctrl-CとEscは何も変更していない。画面にも何も残さない。
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         ui.error(&crate::diagnostics::Error::Canceled);
     });
     assert!(streams.err()?.is_empty(), "{:?}", streams.err());
@@ -155,7 +155,7 @@ fn every_diagnostic_of_one_error_is_reported() -> Checked {
             crate::msg!("error-docker-unreachable"),
         ),
     ]);
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| ui.error(&error));
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| ui.error(&error));
     assert_eq!(streams.err()?.matches("\u{d7} error:").count(), 2);
     Ok(())
 }
@@ -165,7 +165,12 @@ fn the_locale_can_be_switched_once_the_configuration_declares_one() -> Checked {
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     {
-        let mut ui = Ui::capture(Locale::En, OutputPolicy::plain(), &mut stdout, &mut stderr);
+        let mut ui = Ui::capture(
+            Locale::En,
+            RenderingPolicy::plain(),
+            &mut stdout,
+            &mut stderr,
+        );
         assert_eq!(ui.locale(), Locale::En);
         ui.set_locale(Locale::Ja);
         assert_eq!(ui.locale(), Locale::Ja);
@@ -185,7 +190,7 @@ fn a_progress_sink_that_reports_nothing_is_still_a_valid_sink() {
 
 #[test]
 fn a_progress_sink_can_report_a_warning_through_the_same_ui_the_final_result_uses() -> Checked {
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         let sink: &mut dyn ProgressSink = ui;
         sink.warn(Warning::text(crate::msg!("destroy-force-notice")));
     });
@@ -197,7 +202,7 @@ fn a_progress_sink_can_report_a_warning_through_the_same_ui_the_final_result_use
 
 #[test]
 fn an_external_tool_is_separated_from_the_sbxm_lines_by_one_blank_line_on_both_sides() -> Checked {
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         ui.progress(crate::msg!("progress-cloning-host"));
         ui.relay(b"Cloning into 'example'...\n");
         ui.relay(b"Receiving objects: 100%, done.\n");
@@ -224,7 +229,7 @@ fn an_external_tool_is_separated_from_the_sbxm_lines_by_one_blank_line_on_both_s
 
 #[test]
 fn an_external_tool_that_says_nothing_leaves_the_progress_lines_together() -> Checked {
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         ui.progress(crate::msg!("progress-starting-sandbox"));
         ui.finished();
         ui.progress(crate::msg!("progress-building-image"));
@@ -241,7 +246,7 @@ fn an_external_tool_that_says_nothing_leaves_the_progress_lines_together() -> Ch
 #[test]
 fn a_tool_that_ends_without_a_newline_still_gets_its_own_line() -> Checked {
     // 進捗表示は復帰文字で行を上書きするため、最後の1行が改行なしで終わることがある。
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         ui.progress(crate::msg!("progress-cloning-host"));
         ui.relay(b"Receiving objects:  50%\rReceiving objects: 100%");
         ui.finished();
@@ -259,7 +264,7 @@ fn a_tool_that_ends_without_a_newline_still_gets_its_own_line() -> Checked {
 #[test]
 fn a_handed_over_terminal_is_opened_with_a_blank_line_after_the_result() -> Checked {
     // 中継しない相手が何を書くかは観測できないため、境界は渡す前に置く。
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         ui.stderr(&summary());
         ui.hand_over();
         ui.finished();
@@ -277,7 +282,7 @@ fn a_handed_over_terminal_is_opened_with_a_blank_line_after_the_result() -> Chec
 #[test]
 fn a_result_on_stdout_and_a_relay_on_stderr_share_one_boundary() -> Checked {
     // 端末では2つのstreamが同じ場所へ出る。境界の空行が2つ並ばない。
-    let streams = Streams::capture(OutputPolicy::plain(), |ui| {
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
         ui.stdout(&summary());
         ui.progress(crate::msg!("progress-starting-sandbox"));
         ui.relay(b"Sandbox started successfully\n");

@@ -1,4 +1,4 @@
-use crate::design::{OutputPolicy, Ui};
+use crate::design::{RenderingPolicy, Ui};
 use crate::i18n::Locale;
 
 use crate::testing::outcome::{Checked, Required};
@@ -22,7 +22,7 @@ fn rendered(output: &RebuildOutput) -> Checked<String> {
     {
         let mut ui = Ui::capture(
             Locale::En,
-            OutputPolicy::plain(),
+            RenderingPolicy::plain(),
             &mut written,
             std::io::sink(),
         );

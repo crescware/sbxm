@@ -1,7 +1,7 @@
 use crate::cli::Interactivity;
 use crate::commands::{Context, status::Scope};
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
-use crate::design::{OutputPolicy, PromptUi, Ui};
+use crate::design::{PromptUi, RenderingPolicy, Ui};
 use crate::diagnostics::ExitCode;
 use crate::i18n::Locale;
 use crate::project::ProjectId;
@@ -19,7 +19,7 @@ fn execute_prompt(
     keys: ScriptedKeys,
     screen: &RecordedScreen,
 ) -> ExitCode {
-    let policy = OutputPolicy::plain();
+    let policy = RenderingPolicy::plain();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     {

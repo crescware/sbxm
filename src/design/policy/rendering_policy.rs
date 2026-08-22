@@ -2,12 +2,17 @@ use super::{CharacterSet, ColorMode, Environment, StreamPolicy, Terminals};
 
 /// 1実行ぶんの描画条件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutputPolicy {
+pub struct RenderingPolicy {
     pub stdout: StreamPolicy,
     pub stderr: StreamPolicy,
 }
 
-impl OutputPolicy {
+impl RenderingPolicy {
+    /// 現在のprocessの環境と端末から描画条件を決める。
+    pub fn detect(mode: ColorMode) -> RenderingPolicy {
+        Self::resolve(mode, &Environment::detect(), &Terminals::detect())
+    }
+
     /// 明示option、環境変数、TTYからstreamごとの条件を決める。
     ///
     /// 優先順位は次のとおりとし、CIかどうかを独自に推測しない。
@@ -17,17 +22,17 @@ impl OutputPolicy {
     /// 3. `CLICOLOR_FORCE`が`0`以外なら`Always`
     /// 4. `TERM=dumb`なら`Never`
     /// 5. `Auto``は対象streamがTTYのときだけ有効`
-    pub fn resolve(
+    pub(super) fn resolve(
         mode: ColorMode,
         environment: &Environment,
         terminals: &Terminals,
-    ) -> OutputPolicy {
+    ) -> RenderingPolicy {
         let characters = if is_dumb(environment) {
             CharacterSet::Ascii
         } else {
             CharacterSet::Unicode
         };
-        OutputPolicy {
+        RenderingPolicy {
             stdout: StreamPolicy {
                 color: color_for(mode, environment, terminals.stdout_is_tty),
                 characters,
@@ -71,5 +76,5 @@ fn is_dumb(environment: &Environment) -> bool {
 }
 
 #[cfg(test)]
-#[path = "output_policy_test.rs"]
-mod output_policy_test;
+#[path = "rendering_policy_test.rs"]
+mod rendering_policy_test;
