@@ -304,9 +304,13 @@ fn a_broken_configuration_does_not_stop_help_from_being_shown() -> Checked {
     )
     .required_because("the fixture permissions are applied")?;
 
-    let run = sbxm(home.path(), &["--help"])?;
+    let run = sbxm_with_shell_locale(home.path(), "ja_JP.UTF-8", &["--help"])?;
     assert_eq!(run.code, 0, "help must not fail because of a broken config");
-    assert!(run.stdout.contains("Usage:"), "{}", run.stdout);
+    assert!(
+        run.stdout.contains("使い方 (Usage):"),
+        "help must fall back to the shell locale when config loading fails: {}",
+        run.stdout
+    );
 
     // 通常commandは、同じconfig不正をparse成功後のconfig loadで診断する。
     let run = sbxm(home.path(), &["ls"])?;
