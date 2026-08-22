@@ -8,7 +8,6 @@
 
 mod app;
 mod archive;
-mod cli;
 mod command;
 mod commands;
 mod compatibility;
