@@ -15,7 +15,7 @@ mod format_result;
 mod ja;
 mod locale;
 mod locale_definition;
-mod resolve_display_locale;
+mod resolve_locale;
 mod shell_locale;
 
 pub use catalog::Catalog;
@@ -27,7 +27,7 @@ pub use format_result::FormatResult;
 use ja::JA;
 pub use locale::Locale;
 use locale_definition::LocaleDefinition;
-pub(crate) use resolve_display_locale::resolve_display_locale;
+pub(crate) use resolve_locale::resolve_locale;
 pub use shell_locale::shell_locale;
 
 #[cfg(test)]

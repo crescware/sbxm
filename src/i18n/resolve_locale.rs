@@ -1,6 +1,6 @@
 use super::Locale;
 
-pub(crate) fn resolve_display_locale(
+pub(crate) fn resolve_locale(
     command_line: Option<Locale>,
     configured: Option<Locale>,
     shell: Option<Locale>,
@@ -12,5 +12,5 @@ pub(crate) fn resolve_display_locale(
 }
 
 #[cfg(test)]
-#[path = "resolve_display_locale_test.rs"]
-mod resolve_display_locale_test;
+#[path = "resolve_locale_test.rs"]
+mod resolve_locale_test;
