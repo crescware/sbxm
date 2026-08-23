@@ -23,7 +23,7 @@ impl Invocation {
             config.language(),
             i18n::shell_locale(),
         );
-        let policy = RenderingPolicy::detect(command_line.color_mode());
+        let policy = RenderingPolicy::detect(command_line.color_setting());
         let interactivity = Interactivity::detect();
         Self {
             command_line,

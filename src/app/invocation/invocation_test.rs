@@ -1,5 +1,5 @@
 use crate::config::{ConfigLocation, ConfigObservation};
-use crate::design::{ColorMode, RenderingPolicy};
+use crate::design::{ColorMode, ColorSetting, RenderingPolicy};
 use crate::diagnostics::ErrorId;
 use crate::i18n::Locale;
 use crate::testing::cli::{argv, non_tty};
@@ -43,7 +43,7 @@ fn an_invocation_resolves_one_locale_from_its_inputs() {
         CommandLine::new(argv(&["--lang", "ja", "ls"])),
         observation(Some(Locale::En)),
         Some(Locale::En),
-        RenderingPolicy::detect(ColorMode::Never),
+        RenderingPolicy::detect(ColorSetting::Explicit(ColorMode::Never)),
         non_tty(),
     );
 
@@ -56,7 +56,7 @@ fn an_invalid_language_is_reported_before_full_parsing() {
         CommandLine::new(argv(&["--lang=zz", "ls"])),
         observation(None),
         Some(Locale::En),
-        RenderingPolicy::detect(ColorMode::Never),
+        RenderingPolicy::detect(ColorSetting::Explicit(ColorMode::Never)),
         non_tty(),
     );
 

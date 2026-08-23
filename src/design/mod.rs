@@ -49,7 +49,7 @@ pub use legend_entry::LegendEntry;
 use line::line;
 use paint::paint;
 use painter::Painter;
-pub use policy::{ColorMode, RenderingPolicy};
+pub use policy::{ColorMode, ColorSetting, RenderingPolicy};
 pub use progress_sink::ProgressSink;
 pub use prompt::PromptUi;
 use row::row;

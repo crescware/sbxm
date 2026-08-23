@@ -1,4 +1,4 @@
-use crate::design::ColorMode;
+use crate::design::{ColorMode, ColorSetting};
 use crate::i18n::Locale;
 use crate::testing::cli::argv;
 
@@ -9,7 +9,10 @@ fn a_command_line_captures_options_needed_before_full_parsing() {
     let command_line = CommandLine::new(argv(&["--lang", "ja", "--color=never", "ls"]));
 
     assert_eq!(command_line.locale_override(), Some(Locale::Ja));
-    assert_eq!(command_line.color_mode(), ColorMode::Never);
+    assert_eq!(
+        command_line.color_setting(),
+        ColorSetting::Explicit(ColorMode::Never)
+    );
 }
 
 #[test]
@@ -28,7 +31,10 @@ fn options_are_peeked_before_or_after_the_subcommand_in_both_forms() {
     ] {
         let command_line = CommandLine::new(argv(&arguments));
         assert_eq!(command_line.locale_override(), Some(Locale::Ja));
-        assert_eq!(command_line.color_mode(), ColorMode::Never);
+        assert_eq!(
+            command_line.color_setting(),
+            ColorSetting::Explicit(ColorMode::Never)
+        );
     }
 }
 
@@ -37,5 +43,5 @@ fn options_after_double_dash_are_not_peeked() {
     let command_line = CommandLine::new(argv(&["ls", "--", "--lang=ja", "--color=never"]));
 
     assert_eq!(command_line.locale_override(), None);
-    assert_eq!(command_line.color_mode(), ColorMode::Auto);
+    assert_eq!(command_line.color_setting(), ColorSetting::Default);
 }

@@ -1,6 +1,6 @@
 //! 生argvと、完全parseより前に必要な先読み値。
 
-use crate::design::ColorMode;
+use crate::design::ColorSetting;
 use crate::i18n::Locale;
 
 mod color;
@@ -13,14 +13,14 @@ use lang::{PeekedLang, peek_lang};
 pub(crate) struct CommandLine {
     argv: Vec<String>,
     locale_override: PeekedLang,
-    color_mode: ColorMode,
+    color_setting: ColorSetting,
 }
 
 impl CommandLine {
     pub(crate) fn new(argv: Vec<String>) -> Self {
         Self {
             locale_override: peek_lang(&argv),
-            color_mode: peek_color(&argv),
+            color_setting: peek_color(&argv),
             argv,
         }
     }
@@ -43,8 +43,8 @@ impl CommandLine {
         }
     }
 
-    pub(crate) fn color_mode(&self) -> ColorMode {
-        self.color_mode
+    pub(crate) fn color_setting(&self) -> ColorSetting {
+        self.color_setting
     }
 
     pub(super) fn invalid_locale_error(value: &str) -> crate::diagnostics::Error {
