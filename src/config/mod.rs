@@ -34,7 +34,6 @@ mod sandbox_home_relative_path;
 mod save_git_identity;
 mod save_language;
 mod serialized;
-mod supported_language_list;
 mod unknown_key_warnings;
 mod write_config;
 
@@ -65,7 +64,6 @@ pub use sandbox_home_relative_path::SandboxHomeRelativePath;
 pub use save_git_identity::save_git_identity;
 pub use save_language::save_language;
 pub(crate) use serialized::serialized;
-use supported_language_list::supported_language_list;
 use unknown_key_warnings::unknown_key_warnings;
 use write_config::write_config;
 

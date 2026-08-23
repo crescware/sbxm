@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 use unic_langid::LanguageIdentifier;
 
@@ -36,6 +37,24 @@ impl Locale {
     /// `--lang`とconfigで使う安定した表記。翻訳しない。
     pub fn as_str(self) -> &'static str {
         self.definition().tag
+    }
+
+    /// `--lang`とconfigが受け付ける安定した表記の全体。
+    pub fn accepted_values() -> impl ExactSizeIterator<Item = &'static str> {
+        Self::ALL.into_iter().map(Self::as_str)
+    }
+
+    /// `--lang`のvalue name。parser libraryが`&'static str`を要求するため一度だけ組む。
+    pub fn value_name() -> &'static str {
+        static VALUE_NAME: OnceLock<String> = OnceLock::new();
+        VALUE_NAME
+            .get_or_init(|| Self::accepted_values().collect::<Vec<_>>().join("|"))
+            .as_str()
+    }
+
+    /// helpとdiagnosticへ並べる、受け付けるlocale tagの一覧。
+    pub fn value_list() -> String {
+        Self::accepted_values().collect::<Vec<_>>().join(", ")
     }
 
     /// `--lang`とconfigの`language`が受け付ける厳密な値。

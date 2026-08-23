@@ -18,8 +18,8 @@ const DESIGN: &str = "src/design";
 /// color modeの受け入れ語彙を定義してよい唯一のproduction file。
 const COLOR_MODE: &str = "src/design/policy/color_mode.rs";
 
-/// `--color`のargv adapter。
-const COLOR_ADAPTER: &str = "src/app/invocation/command_line/color/";
+/// command line adapter。
+const COMMAND_LINE: &str = "src/app/invocation/command_line";
 
 /// ANSI escape sequenceを生成してよい唯一のfile。
 const RENDERER: &str = "src/design/painter.rs";
@@ -96,7 +96,7 @@ fn outside_design(path: &str) -> bool {
 fn color_mode_vocabulary_stays_in_the_design_policy() -> Checked {
     let mut offenders = Vec::new();
     for (path, text) in sources()? {
-        if !path.starts_with(COLOR_ADAPTER) || path.ends_with("_test.rs") {
+        if !path.starts_with(COMMAND_LINE) || path.ends_with("_test.rs") {
             continue;
         }
         for (index, line) in text.lines().enumerate() {

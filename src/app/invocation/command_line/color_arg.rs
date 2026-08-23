@@ -7,12 +7,13 @@ use crate::msg;
 
 use crate::app::invocation::parse::help::Builder;
 
+use super::PreparseOption;
+
 /// parserへ登録する`--color`。
-pub fn arg(builder: &Builder) -> Result<Arg> {
-    Ok(Arg::new("color")
-        .long(super::OPTION_NAME)
+pub(super) fn color_arg(builder: &Builder) -> Result<Arg> {
+    Ok(PreparseOption::Color
+        .arg()
         .value_name(ColorMode::value_name())
-        .global(true)
         .value_parser(PossibleValuesParser::new(ColorMode::accepted_values()))
         // 値の一覧はFTLのhelp textに含めるため、libraryの英語固定表記は出さない。
         .hide_possible_values(true)

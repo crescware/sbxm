@@ -3,29 +3,34 @@
 use crate::design::{ColorMode, ColorSetting};
 use crate::i18n::Locale;
 
-mod color;
-mod lang;
+mod color_arg;
+mod invalid_lang_error;
+mod lang_arg;
+mod locale_override;
 mod peek;
+mod preparse_option;
 
-use lang::PeekedLang;
+use locale_override::LocaleOverride;
 use peek::peek;
+use preparse_option::PreparseOption;
 
 /// 1回のCLI呼び出しに渡されたcommand line。
 pub(crate) struct CommandLine {
     argv: Vec<String>,
-    locale_override: PeekedLang,
+    locale_override: LocaleOverride,
     color_setting: ColorSetting,
 }
 
 impl CommandLine {
     pub(crate) fn new(argv: Vec<String>) -> Self {
-        let locale_override = peek(&argv, lang::OPTION_NAME).map_or(PeekedLang::Absent, |value| {
-            match Locale::parse_exact(value) {
-                Some(locale) => PeekedLang::Valid(locale),
-                None => PeekedLang::Invalid(value.to_owned()),
-            }
-        });
-        let color_setting = peek(&argv, color::OPTION_NAME)
+        let locale_override =
+            peek(&argv, PreparseOption::Lang).map_or(LocaleOverride::Absent, |value| {
+                match Locale::parse_exact(value) {
+                    Some(locale) => LocaleOverride::Valid(locale),
+                    None => LocaleOverride::Invalid(value.to_owned()),
+                }
+            });
+        let color_setting = peek(&argv, PreparseOption::Color)
             .and_then(ColorMode::parse_exact)
             .map(ColorSetting::Explicit)
             .unwrap_or_default();
@@ -43,15 +48,15 @@ impl CommandLine {
 
     pub(crate) fn locale_override(&self) -> Option<Locale> {
         match self.locale_override {
-            PeekedLang::Valid(locale) => Some(locale),
-            PeekedLang::Absent | PeekedLang::Invalid(_) => None,
+            LocaleOverride::Valid(locale) => Some(locale),
+            LocaleOverride::Absent | LocaleOverride::Invalid(_) => None,
         }
     }
 
     pub(crate) fn invalid_locale_override(&self) -> Option<&str> {
         match &self.locale_override {
-            PeekedLang::Invalid(value) => Some(value),
-            PeekedLang::Absent | PeekedLang::Valid(_) => None,
+            LocaleOverride::Invalid(value) => Some(value),
+            LocaleOverride::Absent | LocaleOverride::Valid(_) => None,
         }
     }
 
@@ -60,19 +65,19 @@ impl CommandLine {
     }
 
     pub(super) fn invalid_locale_error(value: &str) -> crate::diagnostics::Error {
-        lang::invalid_lang_error(value)
+        invalid_lang_error::invalid_lang_error(value)
     }
 
     pub(super) fn color_arg(
         builder: &super::parse::help::Builder,
     ) -> crate::diagnostics::Result<clap::Arg> {
-        color::arg(builder)
+        color_arg::color_arg(builder)
     }
 
     pub(super) fn lang_arg(
         builder: &super::parse::help::Builder,
     ) -> crate::diagnostics::Result<clap::Arg> {
-        lang::arg(builder)
+        lang_arg::lang_arg(builder)
     }
 }
 
@@ -83,3 +88,7 @@ mod command_line_test;
 #[cfg(test)]
 #[path = "command_line/peek_test.rs"]
 mod peek_test;
+
+#[cfg(test)]
+#[path = "command_line/invalid_lang_error_test.rs"]
+mod invalid_lang_error_test;
