@@ -1,4 +1,5 @@
 use crate::commands::{self, Command};
+use crate::design::ColorMode;
 use crate::diagnostics::ErrorId;
 use crate::i18n::Catalog;
 use clap::{Arg, Command as ClapCommand};
@@ -53,6 +54,39 @@ fn help_is_rendered_in_the_selected_language() -> Checked {
         text.contains("案件ごとのDocker Sandbox"),
         "the about text must come from the Japanese resource: {text}"
     );
+    Ok(())
+}
+
+#[test]
+fn localized_help_lists_policy_values_without_clap_possible_values() -> Checked {
+    for locale in Locale::ALL {
+        let catalog = Catalog::new(locale);
+        let outcome =
+            parse(&argv(&["--help"]), &catalog, tty()).required_because("help renders")?;
+        let Command::Help(text) = outcome else {
+            return Err(Unmet::new(format!(
+                "{locale}: --help must produce help text"
+            )));
+        };
+
+        for (option, values) in [
+            ("--lang", Locale::value_list()),
+            ("--color", ColorMode::value_list()),
+        ] {
+            let line = text
+                .lines()
+                .find(|line| line.contains(option))
+                .required_because(&format!("{locale}: {option} is shown in help"))?;
+            assert!(
+                line.contains(values.as_str()),
+                "{locale}: {option} must list policy values in its localized help: {line}"
+            );
+        }
+        assert!(
+            !text.contains("[possible values:"),
+            "{locale}: clap's fixed possible-values text must not be added to help: {text}"
+        );
+    }
     Ok(())
 }
 
