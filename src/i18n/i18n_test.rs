@@ -95,6 +95,15 @@ fn every_locale_is_defined_exactly_once_and_round_trips_through_its_tag() {
 }
 
 #[test]
+fn locale_vocabulary_is_derived_from_the_definition_table() {
+    let expected: Vec<&str> = Locale::ALL.iter().map(|locale| locale.as_str()).collect();
+
+    assert_eq!(Locale::accepted_values().collect::<Vec<_>>(), expected);
+    assert_eq!(Locale::value_name(), expected.join("|"));
+    assert_eq!(Locale::value_list(), expected.join(", "));
+}
+
+#[test]
 fn every_locale_tag_is_a_language_identifier() {
     for locale in Locale::ALL {
         assert_eq!(locale.langid().to_string(), locale.as_str());

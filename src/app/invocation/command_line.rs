@@ -5,26 +5,28 @@ use crate::i18n::Locale;
 
 mod color;
 mod lang;
+mod locale_override;
 mod peek;
 
-use lang::PeekedLang;
+use locale_override::LocaleOverride;
 use peek::peek;
 
 /// 1回のCLI呼び出しに渡されたcommand line。
 pub(crate) struct CommandLine {
     argv: Vec<String>,
-    locale_override: PeekedLang,
+    locale_override: LocaleOverride,
     color_setting: ColorSetting,
 }
 
 impl CommandLine {
     pub(crate) fn new(argv: Vec<String>) -> Self {
-        let locale_override = peek(&argv, lang::OPTION_NAME).map_or(PeekedLang::Absent, |value| {
-            match Locale::parse_exact(value) {
-                Some(locale) => PeekedLang::Valid(locale),
-                None => PeekedLang::Invalid(value.to_owned()),
-            }
-        });
+        let locale_override =
+            peek(&argv, lang::OPTION_NAME).map_or(LocaleOverride::Absent, |value| {
+                match Locale::parse_exact(value) {
+                    Some(locale) => LocaleOverride::Valid(locale),
+                    None => LocaleOverride::Invalid(value.to_owned()),
+                }
+            });
         let color_setting = peek(&argv, color::OPTION_NAME)
             .and_then(ColorMode::parse_exact)
             .map(ColorSetting::Explicit)
@@ -43,15 +45,15 @@ impl CommandLine {
 
     pub(crate) fn locale_override(&self) -> Option<Locale> {
         match self.locale_override {
-            PeekedLang::Valid(locale) => Some(locale),
-            PeekedLang::Absent | PeekedLang::Invalid(_) => None,
+            LocaleOverride::Valid(locale) => Some(locale),
+            LocaleOverride::Absent | LocaleOverride::Invalid(_) => None,
         }
     }
 
     pub(crate) fn invalid_locale_override(&self) -> Option<&str> {
         match &self.locale_override {
-            PeekedLang::Invalid(value) => Some(value),
-            PeekedLang::Absent | PeekedLang::Valid(_) => None,
+            LocaleOverride::Invalid(value) => Some(value),
+            LocaleOverride::Absent | LocaleOverride::Valid(_) => None,
         }
     }
 

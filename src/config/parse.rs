@@ -8,7 +8,7 @@ use crate::paths::{self};
 
 use super::{
     ConfigState, DOCUMENT_VERSION, GlobalConfig, RawConfig, invalid_value, missing_field,
-    parse_files, parse_git_identity, supported_language_list, unknown_key_warnings,
+    parse_files, parse_git_identity, unknown_key_warnings,
 };
 
 /// configのtextを検証する。filesystemには触れない部分の判定をまとめる。
@@ -50,7 +50,7 @@ pub(super) fn parse(text: &str, path: &Path) -> Result<ConfigState> {
                 msg!(
                     "cause-language-unsupported",
                     value = value,
-                    supported = supported_language_list()
+                    supported = Locale::value_list()
                 ),
             )
         })?),

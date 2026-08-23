@@ -1,8 +1,8 @@
 use crate::i18n::Locale;
 
-/// argvから先読みした`--lang`。
+/// 完全parseより前に先読みしたlocale override。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PeekedLang {
+pub(super) enum LocaleOverride {
     Absent,
     Valid(Locale),
     Invalid(String),
