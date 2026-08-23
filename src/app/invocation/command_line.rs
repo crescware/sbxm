@@ -1,13 +1,14 @@
 //! 生argvと、完全parseより前に必要な先読み値。
 
-use crate::design::ColorSetting;
+use crate::design::{ColorMode, ColorSetting};
 use crate::i18n::Locale;
 
 mod color;
 mod lang;
+mod peek;
 
-use color::peek_color;
-use lang::{PeekedLang, peek_lang};
+use lang::PeekedLang;
+use peek::peek;
 
 /// 1回のCLI呼び出しに渡されたcommand line。
 pub(crate) struct CommandLine {
@@ -18,10 +19,21 @@ pub(crate) struct CommandLine {
 
 impl CommandLine {
     pub(crate) fn new(argv: Vec<String>) -> Self {
+        let locale_override = peek(&argv, lang::LONG).map_or(PeekedLang::Absent, |value| {
+            match Locale::parse_exact(value) {
+                Some(locale) => PeekedLang::Valid(locale),
+                None => PeekedLang::Invalid(value.to_owned()),
+            }
+        });
+        let color_setting = peek(&argv, color::LONG)
+            .and_then(ColorMode::parse_exact)
+            .map(ColorSetting::Explicit)
+            .unwrap_or_default();
+
         Self {
-            locale_override: peek_lang(&argv),
-            color_setting: peek_color(&argv),
             argv,
+            locale_override,
+            color_setting,
         }
     }
 
@@ -67,3 +79,7 @@ impl CommandLine {
 #[cfg(test)]
 #[path = "command_line_test.rs"]
 mod command_line_test;
+
+#[cfg(test)]
+#[path = "command_line/peek_test.rs"]
+mod peek_test;

@@ -11,7 +11,7 @@ use super::{tag_list, tags, value_name};
 /// parserへ登録する`--lang`。
 pub fn arg(builder: &Builder) -> Result<Arg> {
     Ok(Arg::new("lang")
-        .long("lang")
+        .long(super::LONG)
         .value_name(value_name())
         .global(true)
         .value_parser(PossibleValuesParser::new(tags()))

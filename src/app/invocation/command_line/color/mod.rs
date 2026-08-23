@@ -5,11 +5,7 @@
 //! 本moduleは判定を持たない。
 
 mod arg;
-mod peek_color;
+mod long;
 
 pub use arg::arg;
-pub use peek_color::peek_color;
-
-#[cfg(test)]
-#[path = "color_test.rs"]
-mod color_test;
+pub(super) use long::LONG;

@@ -5,7 +5,7 @@
 
 mod arg;
 mod invalid_lang_error;
-mod peek_lang;
+mod long;
 mod peeked_lang;
 mod tag_list;
 mod tags;
@@ -13,7 +13,7 @@ mod value_name;
 
 pub use arg::arg;
 pub use invalid_lang_error::invalid_lang_error;
-pub use peek_lang::peek_lang;
+pub(super) use long::LONG;
 pub use peeked_lang::PeekedLang;
 use tag_list::tag_list;
 use tags::tags;

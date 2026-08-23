@@ -24,6 +24,13 @@ fn an_invalid_language_remains_available_for_the_application_diagnostic() {
 }
 
 #[test]
+fn an_invalid_color_is_left_for_the_parser_to_reject() {
+    let command_line = CommandLine::new(argv(&["--color=maybe", "ls"]));
+
+    assert_eq!(command_line.color_setting(), ColorSetting::Default);
+}
+
+#[test]
 fn options_are_peeked_before_or_after_the_subcommand_in_both_forms() {
     for arguments in [
         vec!["--lang=ja", "--color=never", "ls"],
