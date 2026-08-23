@@ -93,15 +93,21 @@ terminal themeのcyan、green、yellow、redを意味色として使えば、利
 
 color modeは`Auto`、`Always`、`Never`の三値とする。
 
-優先順位は次のとおり。
+明示的なcolor modeがある場合は、環境変数より優先する。
 
-1. 明示的な`--color=always|never|auto`
-2. `NO_COLOR`が存在すれば`Never`
-3. `CLICOLOR_FORCE`が`0`以外なら`Always`
-4. `TERM=dumb`なら`Never`
-5. `Auto``は対象streamがTTYのときだけ有効`
+- `Always`はredirect先にも色を出す
+- `Never`はTTYでも色を出さない
+- `Auto`は環境変数を見ず、対象streamがTTYのときだけ色を出す
 
-`NO_COLOR`は値を問わず、空文字でもopt-outとして扱う。`Always``は利用者が明示した場合だけredirect先へANSI` sequenceを出す。
+明示的なmodeがない場合だけ、次の順序で環境とTTYから決める。
+
+1. `NO_COLOR`が存在すれば`Never`
+2. `CLICOLOR_FORCE`が`0`以外なら`Always`
+3. `TERM=dumb`なら`Never`
+4. `対象stream`が`TTY`なら`Always`
+
+`NO_COLOR`は値を問わず、空文字でもopt-outとして扱う。`TERM=dumb`はcolorとは独立して
+markerの文字集合をASCIIへ切り替える。明示的な`Always`でも、文字集合のfallbackは維持する。
 
 CIかどうかを独自に推測しない。TTY、標準的な環境変数、明示optionに従う。
 

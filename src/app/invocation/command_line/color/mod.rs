@@ -5,14 +5,10 @@
 //! 本moduleは判定を持たない。
 
 mod arg;
-mod modes;
 mod peek_color;
-mod value_name;
 
 pub use arg::arg;
-use modes::modes;
 pub use peek_color::peek_color;
-use value_name::value_name;
 
 #[cfg(test)]
 #[path = "color_test.rs"]

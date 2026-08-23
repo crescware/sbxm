@@ -15,6 +15,12 @@ use std::path::{Path, PathBuf};
 /// 描画を組み立ててよい唯一の場所。
 const DESIGN: &str = "src/design";
 
+/// color modeの受け入れ語彙を定義してよい唯一のproduction file。
+const COLOR_MODE: &str = "src/design/policy/color_mode.rs";
+
+/// `--color`のargv adapter。
+const COLOR_ADAPTER: &str = "src/app/invocation/command_line/color/";
+
 /// ANSI escape sequenceを生成してよい唯一のfile。
 const RENDERER: &str = "src/design/painter.rs";
 
@@ -84,6 +90,51 @@ fn collect(directory: &Path, found: &mut Vec<PathBuf>) -> Checked {
 /// `src/design`の外か。
 fn outside_design(path: &str) -> bool {
     !path.starts_with(DESIGN)
+}
+
+#[test]
+fn color_mode_vocabulary_stays_in_the_design_policy() -> Checked {
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if !path.starts_with(COLOR_ADAPTER) || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if ["\"auto\"", "\"always\"", "\"never\""]
+                .iter()
+                .any(|value| line.contains(value))
+            {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "accepted color values belong to {COLOR_MODE}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn the_design_system_does_not_depend_on_the_cli_parser() -> Checked {
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if !path.starts_with(DESIGN) || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("clap::") || line.contains("use clap") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "the design system must not depend on clap:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
 }
 
 #[test]

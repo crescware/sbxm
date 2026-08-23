@@ -9,6 +9,7 @@
 
 mod character_set;
 mod color_mode;
+mod color_setting;
 mod environment;
 mod rendering_policy;
 mod stream_policy;
@@ -16,6 +17,7 @@ mod terminals;
 
 pub use character_set::CharacterSet;
 pub use color_mode::ColorMode;
+pub use color_setting::ColorSetting;
 pub use environment::Environment;
 pub use rendering_policy::RenderingPolicy;
 pub use stream_policy::StreamPolicy;
