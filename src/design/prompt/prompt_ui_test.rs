@@ -1,5 +1,3 @@
-use console::Key;
-
 use crate::design::policy::StreamPolicy;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::diagnostics::{ErrorId, ExitCode, Msg};
@@ -8,7 +6,7 @@ use crate::metadata::MAX_WORKTREE_INDEX;
 use crate::msg;
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::PromptUi;
+use super::{Key, PromptUi};
 
 fn labels() -> Vec<String> {
     ["owner/alpha", "owner/bravo", "owner/charlie"]

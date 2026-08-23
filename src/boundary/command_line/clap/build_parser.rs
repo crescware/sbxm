@@ -9,11 +9,12 @@ use crate::diagnostics::Result;
 use crate::i18n::{Catalog, Locale};
 
 pub(crate) fn build_parser(catalog: &Catalog, syntaxes: &[CommandSyntax]) -> Result<ClapCommand> {
-    let builder = Builder::new(catalog)?;
+    let builder = Builder::new(catalog);
+    let templates = super::help_templates::HelpTemplates::new(&builder)?;
     let mut command = ClapCommand::new("sbxm")
         .about(builder.text("cli-about")?)
         .version(env!("CARGO_PKG_VERSION"))
-        .help_template(builder.root_template())
+        .help_template(templates.root())
         .disable_help_flag(true)
         .disable_version_flag(true)
         .disable_help_subcommand(true)
@@ -21,7 +22,7 @@ pub(crate) fn build_parser(catalog: &Catalog, syntaxes: &[CommandSyntax]) -> Res
         .arg_required_else_help(false)
         .arg(lang_arg(&builder)?)
         .arg(color_arg(&builder)?)
-        .arg(help_flag(&builder))
+        .arg(help_flag(&templates))
         .arg(
             Arg::new("version")
                 .long("version")
@@ -32,17 +33,20 @@ pub(crate) fn build_parser(catalog: &Catalog, syntaxes: &[CommandSyntax]) -> Res
         );
 
     for syntax in syntaxes {
-        command = command.subcommand(command_syntax(&builder, syntax));
+        command = command.subcommand(command_syntax(&templates, syntax));
     }
     Ok(command)
 }
 
-fn command_syntax(builder: &Builder, syntax: &CommandSyntax) -> ClapCommand {
+fn command_syntax(
+    templates: &super::help_templates::HelpTemplates,
+    syntax: &CommandSyntax,
+) -> ClapCommand {
     let mut command = ClapCommand::new(syntax.name)
         .about(syntax.about.clone())
-        .help_template(builder.template(syntax.layout))
+        .help_template(templates.command(syntax))
         .disable_help_flag(true)
-        .arg(help_flag(builder));
+        .arg(help_flag(templates));
 
     for argument in &syntax.arguments {
         command = command.arg(argument_syntax(argument));
@@ -71,13 +75,13 @@ fn argument_syntax(syntax: &ArgumentSyntax) -> Arg {
     }
 }
 
-fn help_flag(builder: &Builder) -> Arg {
+fn help_flag(templates: &super::help_templates::HelpTemplates) -> Arg {
     Arg::new("help")
         .long("help")
         .short('h')
         .action(ArgAction::Help)
         .display_order(1000)
-        .help(builder.help_text().to_owned())
+        .help(templates.help_text().to_owned())
 }
 
 fn lang_arg(builder: &Builder) -> Result<Arg> {

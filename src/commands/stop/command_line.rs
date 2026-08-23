@@ -1,8 +1,6 @@
 //! `stop`のparser非依存command-line解釈。
 
-use crate::boundary::command_line::{
-    ArgumentSyntax, Arguments, Builder, CommandLayout, CommandSyntax,
-};
+use crate::boundary::command_line::{ArgumentSyntax, Arguments, Builder, CommandSyntax};
 use crate::boundary::terminal::PromptCapability;
 use crate::commands::command_line_values::CommandLineValues;
 use crate::diagnostics::Result;
@@ -12,12 +10,10 @@ pub(crate) struct CommandLine;
 
 impl CommandLine {
     pub(crate) fn syntax(builder: &Builder) -> Result<CommandSyntax> {
-        Ok(builder
-            .command("stop", "cli-stop-about", CommandLayout::Positional)?
-            .arg(
-                ArgumentSyntax::append("project", builder.text("cli-stop-project-help")?)
-                    .value_name(CommandLineValues::PROJECT_VALUE_NAME),
-            ))
+        Ok(builder.command("stop", "cli-stop-about")?.arg(
+            ArgumentSyntax::append("project", builder.text("cli-stop-project-help")?)
+                .value_name(CommandLineValues::PROJECT_VALUE_NAME),
+        ))
     }
 
     pub(crate) fn interpret(

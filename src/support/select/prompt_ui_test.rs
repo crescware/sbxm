@@ -1,6 +1,6 @@
 use crate::design::PromptUi;
 use crate::design::policy::StreamPolicy;
-use crate::design::prompt::{RecordedScreen, ScriptedKeys};
+use crate::design::prompt::{Key, RecordedScreen, ScriptedKeys};
 use crate::i18n::Locale;
 use crate::metadata::MAX_WORKTREE_INDEX;
 use crate::msg;
@@ -48,9 +48,9 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
     let mut no_maximums = |_project| None;
     let chosen = ProjectPrompt::select_open(
         &mut prompt(ScriptedKeys::pressing(&[
-            console::Key::ArrowDown,
-            console::Key::ArrowRight,
-            console::Key::Enter,
+            Key::ArrowDown,
+            Key::ArrowRight,
+            Key::Enter,
         ])),
         &msg!("select-open-heading"),
         &candidates(),
@@ -63,9 +63,9 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
     let mut maximums = |_project| Some(1);
     let chosen = ProjectPrompt::select_open(
         &mut prompt(ScriptedKeys::pressing(&[
-            console::Key::ArrowRight,
-            console::Key::ArrowRight,
-            console::Key::Enter,
+            Key::ArrowRight,
+            Key::ArrowRight,
+            Key::Enter,
         ])),
         &msg!("select-open-heading"),
         &candidates(),

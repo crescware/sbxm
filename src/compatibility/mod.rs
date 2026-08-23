@@ -1,8 +1,13 @@
-//! 外部commandの出力を解釈する。Docker Sandboxes CLIが大半を占めるが、`df`のような
-//! POSIX commandの出力も同じ境界へ置く。
+//! 外部protocolの出力を解釈する。Docker Sandboxes CLIが大半を占めるが、`df`のような
+//! POSIX commandの出力も同じ分類軸へ置く。
 //!
 //! 解釈できない出力から状態を推測しない。parseできない出力はerrorとして扱う。
 //! 1 moduleが1 commandの出力を担当し、structured outputの共通部分だけを`json`が持つ。
+//!
+//! `boundary::host`がprocessを実行してbytesを運ぶtransport境界であるのに対し、ここは
+//! 外部toolのprotocol vocabularyを内部値へ変換するadapter群である。複数のsupport workflow
+//! が同じprotocol型を共有するため、transportの下へ置くのではなく、protocolという別の
+//! 分類軸を持つtop-level moduleとして維持する。
 
 mod daemon;
 mod disk;

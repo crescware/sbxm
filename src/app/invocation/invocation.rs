@@ -1,4 +1,4 @@
-use crate::boundary::terminal::PromptCapability;
+use crate::boundary::terminal::{PromptCapability, detect_rendering_policy};
 use crate::commands::Command;
 use crate::config::{ConfigLocation, ConfigObservation};
 use crate::design::RenderingPolicy;
@@ -27,7 +27,7 @@ impl Invocation {
             config.language(),
             i18n::shell_locale(),
         );
-        let policy = RenderingPolicy::detect(command_line.color_setting());
+        let policy = detect_rendering_policy(command_line.color_setting());
         let prompt = PromptCapability::detect();
         Self {
             command_line,

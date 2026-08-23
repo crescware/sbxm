@@ -63,4 +63,8 @@ impl ArgumentSyntax {
         self.required = true;
         self
     }
+
+    pub(crate) fn is_positional(&self) -> bool {
+        self.long.is_none() && self.short.is_none()
+    }
 }

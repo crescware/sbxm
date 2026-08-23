@@ -17,8 +17,8 @@ clap = { version = "4.6.4", default-features = false, features = [
   "error-context",
   "suggestions",
 ] }
-# 端末styleとkey入力の唯一の供給元。`src/design`だけがこのcrateをimportし、その型を
-# module外へ公開しない。
+# 端末styleとkey入力の唯一の供給元。styleはdesignで、実端末とkeyのadapterは
+# `boundary::terminal`でこのcrateをimportする。
 console = { version = "0.16.4", default-features = false, features = [
   "std",
   "ansi-parsing",

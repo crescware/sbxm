@@ -10,7 +10,7 @@ pub(crate) fn parse(
     catalog: &Catalog,
     prompt: PromptCapability,
 ) -> Result<Command> {
-    let builder = Builder::new(catalog)?;
+    let builder = Builder::new(catalog);
     let syntax = Command::syntax(&builder)?;
     let parsed = parse_command_line(argv, catalog, &syntax)?;
     Command::interpret(parsed, prompt)

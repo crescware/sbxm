@@ -1,8 +1,9 @@
 use std::path::Path;
 
 use crate::boundary::host::RealHost;
+use crate::boundary::terminal::{create_prompt_ui, create_ui};
 use crate::commands::{Command, Context};
-use crate::design::{Document, PromptUi, Ui};
+use crate::design::Document;
 use crate::diagnostics::{ExitCode, Result};
 use crate::support::sandbox::WORKSPACE_ROOT;
 
@@ -16,7 +17,7 @@ use super::invocation::Invocation;
 pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitCode {
     let locale = invocation.locale();
     let policy = invocation.rendering_policy();
-    let mut ui = Ui::terminal(locale, policy);
+    let mut ui = create_ui(locale, policy);
 
     let command = match command {
         Ok(command) => command,
@@ -33,7 +34,7 @@ pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitC
         can_prompt: invocation.can_prompt(),
     };
     let host = &RealHost;
-    let mut prompt = PromptUi::terminal(locale, policy.stderr);
+    let mut prompt = create_prompt_ui(locale, policy.stderr);
 
     match command {
         Command::Help(text) | Command::Version(text) => {

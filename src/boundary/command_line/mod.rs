@@ -7,7 +7,6 @@ mod argument_action;
 mod argument_syntax;
 mod arguments;
 pub(crate) mod clap;
-mod command_layout;
 // `CommandLine`の実装はfile名とsubjectを一致させるmodule境界規約に従う。
 #[allow(clippy::module_inception)]
 mod command_line;
@@ -24,7 +23,6 @@ pub use argument_action::ArgumentAction;
 pub use argument_syntax::ArgumentSyntax;
 pub use arguments::Arguments;
 pub(crate) use clap::parse;
-pub use command_layout::CommandLayout;
 pub(crate) use command_line::CommandLine;
 pub use command_syntax::CommandSyntax;
 pub use help::Builder;

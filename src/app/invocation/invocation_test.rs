@@ -43,7 +43,9 @@ fn an_invocation_resolves_one_locale_from_its_inputs() {
         CommandLine::new(argv(&["--lang", "ja", "ls"])),
         observation(Some(Locale::En)),
         Some(Locale::En),
-        RenderingPolicy::detect(ColorSetting::Explicit(ColorMode::Never)),
+        crate::boundary::terminal::detect_rendering_policy(ColorSetting::Explicit(
+            ColorMode::Never,
+        )),
         non_tty(),
     );
 
@@ -56,7 +58,9 @@ fn an_invalid_language_is_reported_before_full_parsing() {
         CommandLine::new(argv(&["--lang=zz", "ls"])),
         observation(None),
         Some(Locale::En),
-        RenderingPolicy::detect(ColorSetting::Explicit(ColorMode::Never)),
+        crate::boundary::terminal::detect_rendering_policy(ColorSetting::Explicit(
+            ColorMode::Never,
+        )),
         non_tty(),
     );
 

@@ -21,6 +21,9 @@ const COLOR_MODE: &str = "src/design/policy/color_mode.rs";
 /// command line adapter。
 const COMMAND_LINE: &str = "src/boundary/command_line";
 
+/// 具体的なterminal adapterを置いてよい唯一のmodule。
+const TERMINAL_ADAPTER: &str = "src/boundary/terminal/";
+
 /// clapへ接続する具体adapterを置いてよい唯一のmodule。
 const CLAP_ADAPTER: &str = "src/boundary/command_line/clap/";
 
@@ -214,19 +217,19 @@ fn ansi_escape_sequences_are_generated_in_one_file() -> Checked {
 }
 
 #[test]
-fn the_terminal_crate_is_imported_only_by_the_design_system() -> Checked {
-    // 具体的なterminal crateの型を`design`の外へ公開しない。
+fn concrete_terminal_adapters_are_confined_to_the_terminal_boundary() -> Checked {
+    // promptのportと描画styleはdesignに残し、実端末の型だけをboundaryへ閉じ込める。
     let mut offenders = Vec::new();
     for (path, text) in sources()? {
-        if !outside_design(&path) {
+        if path.starts_with(TERMINAL_ADAPTER) || path.ends_with("_test.rs") {
             continue;
         }
         for (index, line) in text.lines().enumerate() {
             let trimmed = line.trim_start();
-            if trimmed.starts_with("use console::")
-                || trimmed.starts_with("use dialoguer::")
+            if trimmed.starts_with("use console")
+                || trimmed.starts_with("use dialoguer")
                 || line.contains("console::Term")
-                || line.contains("console::Style")
+                || line.contains("console::Key")
             {
                 offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
             }
@@ -234,7 +237,37 @@ fn the_terminal_crate_is_imported_only_by_the_design_system() -> Checked {
     }
     assert!(
         offenders.is_empty(),
-        "the terminal crate stays inside {DESIGN}:\n{}",
+        "concrete terminal adapters belong only in {TERMINAL_ADAPTER}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn terminal_and_environment_observation_stays_in_the_terminal_boundary() -> Checked {
+    let observed = [
+        "std::io::stdin()",
+        "std::io::stdout()",
+        "std::io::stderr()",
+        "IsTerminal",
+        "\"NO_COLOR\"",
+        "\"CLICOLOR_FORCE\"",
+        "\"TERM\"",
+    ];
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path.starts_with(TERMINAL_ADAPTER) || path.ends_with("_test.rs") {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if observed.iter().any(|value| line.contains(value)) {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "terminal and environment observation belongs in {TERMINAL_ADAPTER}:\n{}",
         offenders.join("\n")
     );
     Ok(())

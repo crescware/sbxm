@@ -1,8 +1,6 @@
 //! `apply`のparser非依存command-line解釈。
 
-use crate::boundary::command_line::{
-    ArgumentSyntax, Arguments, Builder, CommandLayout, CommandSyntax,
-};
+use crate::boundary::command_line::{ArgumentSyntax, Arguments, Builder, CommandSyntax};
 use crate::boundary::terminal::PromptCapability;
 use crate::commands::command_line_values::CommandLineValues;
 use crate::diagnostics::{ErrorId, Result, fail};
@@ -15,7 +13,7 @@ pub(crate) struct CommandLine;
 impl CommandLine {
     pub(crate) fn syntax(builder: &Builder) -> Result<CommandSyntax> {
         Ok(builder
-            .command("apply", "cli-apply-about", CommandLayout::Positional)?
+            .command("apply", "cli-apply-about")?
             .arg(
                 ArgumentSyntax::value("project", builder.text("cli-apply-project-help")?)
                     .value_name(CommandLineValues::PROJECT_VALUE_NAME),

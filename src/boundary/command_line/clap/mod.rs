@@ -4,6 +4,7 @@
 
 mod build_parser;
 mod diagnostics;
+mod help_templates;
 mod parse;
 mod version_line;
 

@@ -1,8 +1,6 @@
 //! `add`のparser非依存command-line解釈。
 
-use crate::boundary::command_line::{
-    ArgumentSyntax, Arguments, Builder, CommandLayout, CommandSyntax,
-};
+use crate::boundary::command_line::{ArgumentSyntax, Arguments, Builder, CommandSyntax};
 use crate::commands::command_line_values::CommandLineValues;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result, fail};
@@ -16,7 +14,7 @@ pub(crate) struct CommandLine;
 impl CommandLine {
     pub(crate) fn syntax(builder: &Builder) -> Result<CommandSyntax> {
         Ok(builder
-            .command("add", "cli-add-about", CommandLayout::Positional)?
+            .command("add", "cli-add-about")?
             .arg(
                 ArgumentSyntax::value("repository", builder.text("cli-add-repository-help")?)
                     .value_name(CommandLineValues::CLONE_URL_VALUE_NAME)
