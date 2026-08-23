@@ -39,7 +39,7 @@ impl Invocation {
             return Err(CommandLine::invalid_locale_error(value));
         }
         let catalog = Catalog::new(self.locale);
-        super::parser::parse(self.command_line.argv(), &catalog, self.interactivity)
+        super::parse::parse(self.command_line.argv(), &catalog, self.interactivity)
     }
 
     pub(crate) fn location(&self) -> &ConfigLocation {
@@ -58,3 +58,7 @@ impl Invocation {
         self.interactivity.can_prompt()
     }
 }
+
+#[cfg(test)]
+#[path = "invocation_test.rs"]
+mod invocation_test;

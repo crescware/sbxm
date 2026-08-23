@@ -4,7 +4,7 @@ use crate::diagnostics::ErrorId;
 use crate::testing::cli::tty;
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::from_matches;
+use super::Subcommand;
 
 #[test]
 fn a_subcommand_the_dispatcher_does_not_know_is_refused_and_named() -> Checked {
@@ -12,7 +12,7 @@ fn a_subcommand_the_dispatcher_does_not_know_is_refused_and_named() -> Checked {
         .try_get_matches_from(["sbxm"])
         .required_because("an empty set of arguments parses")?;
 
-    let error = from_matches("teleport", &matches, tty())
+    let error = Subcommand::from_matches("teleport", &matches, tty())
         .refused_because("a subcommand with no arm cannot be run")?;
 
     let diagnostic = error

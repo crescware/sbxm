@@ -1,25 +1,28 @@
+use crate::config::{ConfigLocation, ConfigObservation};
 use crate::design::{ColorMode, RenderingPolicy};
 use crate::diagnostics::ErrorId;
 use crate::i18n::Locale;
 use crate::testing::cli::{argv, non_tty};
 
-use super::{CommandLine, Invocation};
+use super::{CommandLine, Interactivity, Invocation};
 
 impl Invocation {
-    fn resolve_for_test(
+    /// process environmentを読まずに、この起動の観測値を明示して組み立てる。
+    ///
+    /// productionの`new`が一度だけ観測する値をそのまま受け取る。localeの解決規則は
+    /// `new`と同じものを通す。
+    pub(crate) fn for_test(
         command_line: CommandLine,
-        configured: Option<Locale>,
+        config: ConfigObservation,
         shell: Option<Locale>,
         policy: RenderingPolicy,
-        interactivity: super::Interactivity,
+        interactivity: Interactivity,
     ) -> Self {
-        let locale = crate::i18n::resolve_locale(command_line.locale_override(), configured, shell);
+        let locale =
+            crate::i18n::resolve_locale(command_line.locale_override(), config.language(), shell);
         Self {
             command_line,
-            config: crate::config::ConfigObservation::new(
-                crate::config::ConfigLocation::from_home(std::path::PathBuf::from("/test-home")),
-                configured,
-            ),
+            config,
             locale,
             policy,
             interactivity,
@@ -27,12 +30,18 @@ impl Invocation {
     }
 }
 
+fn observation(configured: Option<Locale>) -> ConfigObservation {
+    ConfigObservation::new(
+        ConfigLocation::from_home(std::path::PathBuf::from("/test-home")),
+        configured,
+    )
+}
+
 #[test]
 fn an_invocation_resolves_one_locale_from_its_inputs() {
-    let command_line = CommandLine::new(argv(&["--lang", "ja", "ls"]));
-    let invocation = Invocation::resolve_for_test(
-        command_line,
-        Some(Locale::En),
+    let invocation = Invocation::for_test(
+        CommandLine::new(argv(&["--lang", "ja", "ls"])),
+        observation(Some(Locale::En)),
         Some(Locale::En),
         RenderingPolicy::detect(ColorMode::Never),
         non_tty(),
@@ -43,14 +52,14 @@ fn an_invocation_resolves_one_locale_from_its_inputs() {
 
 #[test]
 fn an_invalid_language_is_reported_before_full_parsing() {
-    let command_line = CommandLine::new(argv(&["--lang=zz", "ls"]));
-    let invocation = Invocation::resolve_for_test(
-        command_line,
-        None,
+    let invocation = Invocation::for_test(
+        CommandLine::new(argv(&["--lang=zz", "ls"])),
+        observation(None),
         Some(Locale::En),
         RenderingPolicy::detect(ColorMode::Never),
         non_tty(),
     );
+
     let result = invocation.parse();
     assert!(result.is_err(), "an invalid language must be refused");
     let error = result.err().unwrap_or(crate::diagnostics::Error::Canceled);

@@ -3,7 +3,7 @@ use clap::{Arg, ArgAction, Command as ClapCommand};
 use crate::diagnostics::Result;
 use crate::i18n::Catalog;
 
-use super::super::help::Builder;
+use super::help::Builder;
 
 /// `FTLからhelp` textを組み立てたparserを作る。
 pub(crate) fn build_parser(catalog: &Catalog) -> Result<ClapCommand> {
@@ -18,8 +18,8 @@ pub(crate) fn build_parser(catalog: &Catalog) -> Result<ClapCommand> {
         .disable_help_subcommand(true)
         .subcommand_required(true)
         .arg_required_else_help(false)
-        .arg(crate::app::invocation::CommandLine::lang_arg(&builder)?)
-        .arg(crate::app::invocation::CommandLine::color_arg(&builder)?)
+        .arg(super::super::CommandLine::lang_arg(&builder)?)
+        .arg(super::super::CommandLine::color_arg(&builder)?)
         .arg(builder.help_flag())
         .arg(
             Arg::new("version")
@@ -31,7 +31,7 @@ pub(crate) fn build_parser(catalog: &Catalog) -> Result<ClapCommand> {
         );
 
     // 並び順がhelpの並び順になる。
-    for subcommand in super::subcommand::specs(&builder)? {
+    for subcommand in super::subcommand::Subcommand::specs(&builder)? {
         command = command.subcommand(subcommand);
     }
     Ok(command)

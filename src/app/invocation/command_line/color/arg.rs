@@ -4,7 +4,7 @@ use clap::builder::PossibleValuesParser;
 use crate::diagnostics::Result;
 use crate::msg;
 
-use crate::app::invocation::help::Builder;
+use crate::app::invocation::parse::help::Builder;
 
 use super::{modes, value_name};
 

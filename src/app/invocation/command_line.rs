@@ -52,13 +52,13 @@ impl CommandLine {
     }
 
     pub(super) fn color_arg(
-        builder: &crate::app::invocation::help::Builder,
+        builder: &super::parse::help::Builder,
     ) -> crate::diagnostics::Result<clap::Arg> {
         color::arg(builder)
     }
 
     pub(super) fn lang_arg(
-        builder: &crate::app::invocation::help::Builder,
+        builder: &super::parse::help::Builder,
     ) -> crate::diagnostics::Result<clap::Arg> {
         lang::arg(builder)
     }

@@ -5,7 +5,8 @@ use clap::{Arg, Command as ClapCommand};
 
 use crate::testing::outcome::{Checked, Refused, Required, Unmet};
 
-use super::{Interactivity, build_parser_for_test as build_command, parse_for_test as parse};
+use super::{build_parser_for_test as build_command, parse};
+use crate::app::invocation::Interactivity;
 use crate::i18n::Locale;
 use crate::testing::cli::{argv, command, non_tty, parse_argv, tty};
 

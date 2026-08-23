@@ -4,7 +4,8 @@ use crate::i18n::Catalog;
 use crate::msg;
 
 use super::super::Interactivity;
-use super::{build_parser, diagnostics, subcommand};
+use super::subcommand::Subcommand;
+use super::{build_parser, diagnostics};
 
 /// localeと対話可能性が確定したargvをparseする。
 pub(crate) fn parse(
@@ -21,5 +22,5 @@ pub(crate) fn parse(
     let (name, sub) = matches
         .subcommand()
         .ok_or_else(|| Error::new(ErrorId::MissingSubcommand, msg!("error-missing-subcommand")))?;
-    subcommand::from_matches(name, sub, interactivity)
+    Subcommand::from_matches(name, sub, interactivity)
 }
