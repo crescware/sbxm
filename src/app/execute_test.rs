@@ -43,11 +43,14 @@ fn invocation(location: &ConfigLocation) -> Invocation {
     )
 }
 
+/// helpとversionは、設定を読まずに提示される。
+///
+/// 通常commandはどれも設定を読むところから始まる。読めないconfigを置いたHOMEで成功
+/// することが、この2つがその工程を通らないことを示す。
 #[test]
-fn help_and_version_are_presented_without_the_environment_a_command_needs() -> Checked {
+fn help_and_version_are_presented_without_reading_the_configuration() -> Checked {
     let (_home, location) = unreadable_config()?;
 
-    // 設定も対話も要らないため、読めないconfigのHOMEでも成功する。
     for command in [
         Command::Help("help".to_string()),
         Command::Version("sbxm 0.0.0".to_string()),
