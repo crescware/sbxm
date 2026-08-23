@@ -16,7 +16,7 @@ impl Invocation {
         config: ConfigObservation,
         shell: Option<Locale>,
         policy: RenderingPolicy,
-        interactivity: Interactivity,
+        prompt: Interactivity,
     ) -> Self {
         let locale =
             crate::i18n::resolve_locale(command_line.locale_override(), config.language(), shell);
@@ -25,7 +25,7 @@ impl Invocation {
             config,
             locale,
             policy,
-            interactivity,
+            prompt,
         }
     }
 }

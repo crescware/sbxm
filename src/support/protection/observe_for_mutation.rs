@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::command::{CommandOutcome, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, HostEnvironment};
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;

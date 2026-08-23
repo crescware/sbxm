@@ -1,10 +1,10 @@
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment};
 use crate::diagnostics::Result;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::command::CommandOutcome;
+use crate::boundary::host::CommandOutcome;
 use std::cell::RefCell;
 
 struct FakeSbx {

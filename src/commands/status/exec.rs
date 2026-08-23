@@ -1,6 +1,6 @@
 //! `status`の実行。
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::{ExitCode, Result};
 use crate::msg;

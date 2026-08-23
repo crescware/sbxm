@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::compatibility::{ImageIdentity, parse_image_inspect};
 use crate::diagnostics::Result;
 use crate::support::docker;

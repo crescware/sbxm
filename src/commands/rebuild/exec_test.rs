@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::commands::Context;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::design::{PromptUi, RenderingPolicy, Ui};

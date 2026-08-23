@@ -8,6 +8,7 @@
 pub mod add;
 pub mod apply;
 mod command;
+mod command_line_values;
 mod context;
 pub mod destroy;
 pub mod ls;
@@ -25,3 +26,7 @@ pub mod stop;
 pub use command::Command;
 pub use context::Context;
 pub use report::report;
+
+#[cfg(test)]
+#[path = "command_line_test.rs"]
+mod command_line_test;

@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, CommandSpec};
+use crate::boundary::host::{CommandOutcome, CommandSpec};
 use std::os::unix::process::ExitStatusExt;
 
 /// 標準error出力も持つ実行結果。

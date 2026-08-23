@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 
 use super::{GITHUB_HOST, GITHUB_TOKEN_ENV};

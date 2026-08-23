@@ -19,13 +19,16 @@ const DESIGN: &str = "src/design";
 const COLOR_MODE: &str = "src/design/policy/color_mode.rs";
 
 /// command line adapter。
-const COMMAND_LINE: &str = "src/app/invocation/command_line";
+const COMMAND_LINE: &str = "src/boundary/command_line";
+
+/// clapへ接続する具体adapterを置いてよい唯一のmodule。
+const CLAP_ADAPTER: &str = "src/boundary/command_line/clap/";
 
 /// ANSI escape sequenceを生成してよい唯一のfile。
 const RENDERER: &str = "src/design/painter.rs";
 
 /// 子processへ端末のstreamを直接渡してよい唯一のfile。
-const CONFIGURE: &str = "src/command/configure.rs";
+const CONFIGURE: &str = "src/boundary/host/configure.rs";
 
 /// `sbx`の出力を端末へ出す起動を組み立ててよい唯一のfile。
 const SBX_RELAY: &str = "src/support/sandbox/relayed.rs";
@@ -37,7 +40,7 @@ const SBX_PTY_CONFIRM: &str = "src/support/sandbox/remove_confirmed.rs";
 const DOCKER_SUPPORT: &str = "src/support/docker/";
 
 /// 外部toolのbyteを運ぶmodule。
-const RELAY: &str = "src/command";
+const RELAY: &str = "src/boundary/host";
 
 /// session leaseのpathへ触れてよい唯一の場所。
 ///
@@ -111,6 +114,30 @@ fn color_mode_vocabulary_stays_in_the_design_policy() -> Checked {
     assert!(
         offenders.is_empty(),
         "accepted color values belong to {COLOR_MODE}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn clap_is_used_only_by_the_command_line_boundary_adapter() -> Checked {
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path.ends_with("_test.rs")
+            || path.starts_with(CLAP_ADAPTER)
+            || path == "src/boundary/command_line/mod.rs"
+        {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("clap::") || line.contains("use clap") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "clap belongs only in {CLAP_ADAPTER}:\n{}",
         offenders.join("\n")
     );
     Ok(())
@@ -416,7 +443,7 @@ fn a_protection_confirmation_is_built_in_one_place_only() -> Checked {
 
 #[test]
 fn no_command_grows_its_own_receiver_for_external_output() -> Checked {
-    // 境界の空行を置くのは`src/design`、外部toolのbyteを運ぶのは`src/command`である。
+    // 境界の空行を置くのは`src/design`、外部toolのbyteを運ぶのは`src/boundary/host`である。
     // commandや工程が自前の受け口を持てば、そのcommandだけ見え方が分かれる。
     let mut offenders = Vec::new();
     for (path, text) in sources()? {

@@ -1,26 +1,17 @@
+use crate::boundary::command_line::{Builder, parse as parse_command_line};
+use crate::boundary::terminal::PromptCapability;
 use crate::commands::Command;
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::diagnostics::Result;
 use crate::i18n::Catalog;
-use crate::msg;
 
-use super::super::Interactivity;
-use super::subcommand::Subcommand;
-use super::{build_parser, diagnostics};
-
-/// localeと対話可能性が確定したargvをparseする。
+/// localeとprompt能力が確定したargvをapplication commandへ解釈する。
 pub(crate) fn parse(
     argv: &[String],
     catalog: &Catalog,
-    interactivity: Interactivity,
+    prompt: PromptCapability,
 ) -> Result<Command> {
-    let parser = build_parser::build_parser(catalog)?;
-    let matches = match parser.try_get_matches_from(argv) {
-        Ok(matches) => matches,
-        Err(error) => return diagnostics::interpret(&error),
-    };
-
-    let (name, sub) = matches
-        .subcommand()
-        .ok_or_else(|| Error::new(ErrorId::MissingSubcommand, msg!("error-missing-subcommand")))?;
-    Subcommand::from_matches(name, sub, interactivity)
+    let builder = Builder::new(catalog)?;
+    let syntax = Command::syntax(&builder)?;
+    let parsed = parse_command_line(argv, catalog, &syntax)?;
+    Command::interpret(parsed, prompt)
 }

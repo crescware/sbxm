@@ -1,4 +1,4 @@
-use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::diagnostics::{ErrorId, Result};
 use crate::hash::short_hex;
 use crate::msg;
@@ -10,7 +10,7 @@ use std::path::Path;
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::{fake::*, *};
-use crate::command::{CommandOutcome, OutputPolicy};
+use crate::boundary::host::{CommandOutcome, OutputPolicy};
 use crate::design::{Fact, SilentProgress};
 use crate::testing::archive::image_archive_bytes;
 use crate::testing::value::{DIGEST, IMAGE_ID};

@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::compatibility::parse_login_status;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;

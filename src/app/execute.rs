@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::RealHost;
+use crate::boundary::host::RealHost;
 use crate::commands::{Command, Context};
 use crate::design::{Document, PromptUi, Ui};
 use crate::diagnostics::{ExitCode, Result};

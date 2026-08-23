@@ -3,7 +3,7 @@
 //! 消す前に計画を見せ、確認を取ってから実行する。確認前の計画と実行後の結果は
 //! 別のdocumentとして作り、同じ画面のなかで混ざらないようにする。
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::support::inventory;

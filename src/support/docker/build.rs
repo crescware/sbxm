@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, HostEnvironment, TerminalCommand, TimeoutClass};
+use crate::boundary::host::{CommandOutcome, HostEnvironment, TerminalCommand, TimeoutClass};
 use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 

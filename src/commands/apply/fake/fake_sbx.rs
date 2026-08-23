@@ -3,7 +3,7 @@ use crate::testing::outcome::Checked;
 use std::cell::RefCell;
 use std::path::PathBuf;
 
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::diagnostics::Result;
 use crate::metadata::MAX_WORKTREES;
 use crate::paths::{PRIVATE_FILE_MODE, PathScope};

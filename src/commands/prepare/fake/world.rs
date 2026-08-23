@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::command::{CommandOutcome, TimeoutClass};
+use crate::boundary::host::{CommandOutcome, TimeoutClass};
 use crate::diagnostics::Result;
 
 use crate::support::tools;
@@ -35,7 +35,7 @@ pub struct World {
     pub default_branch: String,
     /// 一致した起動を、実行せずにこのexit statusと標準出力で答える。副作用は起こさない。
     pub answer: RefCell<Option<(String, i32, String)>>,
-    pub calls: RefCell<Vec<crate::command::CommandSpec>>,
+    pub calls: RefCell<Vec<crate::boundary::host::CommandSpec>>,
 }
 
 impl World {
@@ -121,7 +121,10 @@ impl World {
         self.invocations().split_off(mark)
     }
 
-    pub fn policy_of(&self, needle: &str) -> Option<(crate::command::OutputPolicy, TimeoutClass)> {
+    pub fn policy_of(
+        &self,
+        needle: &str,
+    ) -> Option<(crate::boundary::host::OutputPolicy, TimeoutClass)> {
         self.calls
             .borrow()
             .iter()
@@ -129,17 +132,21 @@ impl World {
             .map(|spec| (spec.output(), spec.timeout))
     }
 
-    pub fn outcome(spec: &crate::command::CommandSpec, code: i32, stdout: &str) -> CommandOutcome {
+    pub fn outcome(
+        spec: &crate::boundary::host::CommandSpec,
+        code: i32,
+        stdout: &str,
+    ) -> CommandOutcome {
         crate::testing::command::outcome(spec, code, stdout)
     }
 }
 
-impl crate::command::HostEnvironment for World {
+impl crate::boundary::host::HostEnvironment for World {
     fn command_exists(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &crate::command::CommandSpec) -> Result<CommandOutcome> {
+    fn run(&self, spec: &crate::boundary::host::CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let invocation = format!("{} {}", spec.program, spec.args.join(" "));
         if let Some((needle, code, stdout)) = self.answer.borrow().as_ref()

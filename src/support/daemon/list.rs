@@ -1,7 +1,7 @@
 use std::thread;
 use std::time::Duration;
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{SandboxEntry, parse_sandbox_list};
 use crate::diagnostics::{ErrorId, Result};
 

@@ -1,4 +1,4 @@
-use crate::command::{HostEnvironment, TerminalCommand};
+use crate::boundary::host::{HostEnvironment, TerminalCommand};
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 

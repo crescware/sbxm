@@ -11,7 +11,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
-use crate::command::{OutputPolicy as CommandOutputPolicy, TimeoutClass};
+use crate::boundary::host::{OutputPolicy as CommandOutputPolicy, TimeoutClass};
 use crate::design::SilentProgress;
 use crate::metadata::{self, MAX_WORKTREE_INDEX, RebuildIntent};
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};

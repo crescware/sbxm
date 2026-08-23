@@ -8,7 +8,7 @@
 
 mod app;
 mod archive;
-mod command;
+mod boundary;
 mod commands;
 mod compatibility;
 mod config;

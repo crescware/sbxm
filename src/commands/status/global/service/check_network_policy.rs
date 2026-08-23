@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::compatibility::{EXPECTED_NETWORK_POLICY, parse_network_policy};
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};

@@ -1,6 +1,6 @@
 //! `open`の実行と出力。
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::design::{Document, Inline, PromptUi, Ui, Warning};
 use crate::diagnostics::ExitCode;
 use crate::msg;

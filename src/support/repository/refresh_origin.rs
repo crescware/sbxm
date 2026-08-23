@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, HostEnvironment};
 use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 

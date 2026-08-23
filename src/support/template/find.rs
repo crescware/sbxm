@@ -1,4 +1,4 @@
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{TemplateEntry, parse_template_list};
 use crate::diagnostics::Result;
 

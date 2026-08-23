@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment};
 use crate::compatibility::SandboxState;
 use crate::diagnostics::{ErrorId, Result};
 use crate::paths::{self, PRIVATE_DIR_MODE};

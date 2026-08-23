@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, CommandSpec};
+use crate::boundary::host::{CommandOutcome, CommandSpec};
 
 use super::outcome_with_stderr;
 

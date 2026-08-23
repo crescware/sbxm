@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::compatibility::parse_daemon_status;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};

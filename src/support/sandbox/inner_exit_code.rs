@@ -1,4 +1,4 @@
-use crate::command::CommandOutcome;
+use crate::boundary::host::CommandOutcome;
 
 /// exec自体の失敗を示す終了status。POSIX shellとcontainer runtimeの慣例に従う。
 const EXEC_FAILURE: std::ops::RangeInclusive<i32> = 125..=127;

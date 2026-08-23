@@ -1,4 +1,4 @@
-use crate::command::TimeoutClass;
+use crate::boundary::host::TimeoutClass;
 use crate::compatibility::SandboxState;
 use crate::design::{Fact, Inline};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, ExternalFailure};

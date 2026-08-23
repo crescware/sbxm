@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::command::{HostEnvironment, TimeoutClass};
+use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
 use crate::design::ExternalOutput;
 use crate::diagnostics::{Error, ErrorId, Result};

@@ -14,7 +14,7 @@ use super::select_scope;
 
 fn execute_prompt(
     fixture: &Fixture,
-    host: &dyn crate::command::HostEnvironment,
+    host: &dyn crate::boundary::host::HostEnvironment,
     keys: ScriptedKeys,
     screen: &RecordedScreen,
 ) -> ExitCode {

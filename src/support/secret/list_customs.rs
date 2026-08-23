@@ -1,4 +1,4 @@
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::compatibility::{CustomSecret, parse_custom_secrets};
 use crate::diagnostics::Result;
 

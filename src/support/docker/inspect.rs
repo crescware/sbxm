@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 
 use super::diagnose_failure;

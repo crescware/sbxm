@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 
 use std::fmt::Write as _;
@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use crate::testing::outcome::{Checked, Required};
 
 use super::*;
-use crate::command::{CommandOutcome, CommandSpec};
+use crate::boundary::host::{CommandOutcome, CommandSpec};
 use std::cell::RefCell;
 
 /// probeへ決め打ちで答え、それ以外の起動を成功として扱うhost。
