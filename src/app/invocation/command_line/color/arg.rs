@@ -10,7 +10,7 @@ use crate::app::invocation::parse::help::Builder;
 /// parserへ登録する`--color`。
 pub fn arg(builder: &Builder) -> Result<Arg> {
     Ok(Arg::new("color")
-        .long("color")
+        .long(super::OPTION_NAME)
         .value_name(ColorMode::value_name())
         .global(true)
         .value_parser(PossibleValuesParser::new(ColorMode::accepted_values()))
