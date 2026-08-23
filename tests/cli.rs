@@ -151,23 +151,18 @@ fn locale_tags() -> Checked<Vec<String>> {
 }
 
 fn write_config(home: &Path, language: &str) -> Checked {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = home.join(".sbxm");
-    std::fs::create_dir_all(&dir).required_because("create ~/.sbxm")?;
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
-        .required_because("mode")?;
-    let path = dir.join("config.yaml");
-    std::fs::write(&path, format!("version: 1\nlanguage: {language}\n"))
-        .required_because("write config")?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-        .required_because("mode")?;
-    Ok(())
+    let dir = config_dir(home)?;
+    write_private(
+        &dir.join("config.yaml"),
+        format!("version: 1\nlanguage: {language}\n").as_bytes(),
+    )
 }
 
 /// helpは全localeで、全commandについて成功する。
 ///
 /// 出力の中身はresourceが正本であり、ここでは複製しない。構造の契約は
-/// `tests/snapshots/cli-surface.txt`が、slotがresourceで埋まることは`src/cli.rs`のtestが持つ。
+/// `tests/snapshots/cli-surface.txt`が、slotがresourceで埋まることは
+/// `src/app/invocation/parse`のtestが持つ。
 #[test]
 fn help_exits_with_zero_in_every_locale_for_every_command() -> Checked {
     let home = temp_home()?;
@@ -288,56 +283,107 @@ fn the_language_option_is_read_before_the_configuration() -> Checked {
     Ok(())
 }
 
-#[test]
-fn a_broken_configuration_does_not_stop_help_from_being_shown() -> Checked {
-    use std::os::unix::fs::PermissionsExt;
-    let home = temp_home()?;
-    let dir = home.path().join(".sbxm");
-    std::fs::create_dir_all(&dir).required_because("the fixture directory is created")?;
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
-        .required_because("the fixture permissions are applied")?;
-    std::fs::write(dir.join("config.yaml"), "version: 99\n")
-        .required_because("the fixture file is written")?;
-    std::fs::set_permissions(
-        dir.join("config.yaml"),
-        std::fs::Permissions::from_mode(0o600),
-    )
-    .required_because("the fixture permissions are applied")?;
+/// sbxmが読めないconfigの並び。
+///
+/// 起動時の観測はどれも「保存localeなし」として扱い、helpとversionを妨げない。同じ
+/// fileを通常commandは実行段階で読み、その不正を診断する。
+type BrokenConfiguration = (&'static str, &'static str, fn(&Path) -> Checked);
 
-    let run = sbxm_with_shell_locale(home.path(), "ja_JP.UTF-8", &["--help"])?;
-    assert_eq!(run.code, 0, "help must not fail because of a broken config");
-    assert!(
-        run.stdout.contains("使い方 (Usage):"),
-        "help must fall back to the shell locale when config loading fails: {}",
-        run.stdout
-    );
-
-    // 通常commandは、同じconfig不正をparse成功後のconfig loadで診断する。
-    let run = sbxm(home.path(), &["ls"])?;
-    assert_eq!(run.code, 1);
-    assert!(
-        run.stderr.contains("config-unknown-version"),
-        "{}",
-        run.stderr
-    );
-    Ok(())
+fn broken_configurations() -> [BrokenConfiguration; 5] {
+    [
+        ("invalid syntax", "config-invalid-syntax", invalid_syntax),
+        ("unknown version", "config-unknown-version", unknown_version),
+        (
+            "permissions too open",
+            "config-permission-too-open",
+            too_open,
+        ),
+        ("symlink", "config-symlink", symlinked),
+        ("unreadable bytes", "config-unreadable", unreadable_bytes),
+    ]
 }
 
-/// sbxmが読めないconfigを置く。
-fn write_unreadable_config(home: &Path) -> Checked {
+/// `~/.sbxm`だけを作る。
+fn config_dir(home: &Path) -> Checked<std::path::PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     let dir = home.join(".sbxm");
-    std::fs::create_dir_all(&dir).required_because("the fixture directory is created")?;
+    std::fs::create_dir_all(&dir).required_because("create ~/.sbxm")?;
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
-        .required_because("the fixture permissions are applied")?;
+        .required_because("mode")?;
+    Ok(dir)
+}
+
+/// 中身を書いて、sbxmが求めるpermissionを与える。
+fn write_private(path: &Path, contents: &[u8]) -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, contents).required_because("write config")?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).required_because("mode")
+}
+
+fn invalid_syntax(home: &Path) -> Checked {
+    let dir = config_dir(home)?;
+    write_private(&dir.join("config.yaml"), b"version: 1\nlanguage: \"ja\n")
+}
+
+fn unknown_version(home: &Path) -> Checked {
+    let dir = config_dir(home)?;
     // このbuildが知らないversionは、既定へ丸めずconfigの不正として扱う。
-    std::fs::write(dir.join("config.yaml"), "version: 99\n")
-        .required_because("the fixture file is written")?;
-    std::fs::set_permissions(
-        dir.join("config.yaml"),
-        std::fs::Permissions::from_mode(0o600),
-    )
-    .required_because("the fixture permissions are applied")
+    write_private(&dir.join("config.yaml"), b"version: 99\n")
+}
+
+fn too_open(home: &Path) -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = config_dir(home)?;
+    let path = dir.join("config.yaml");
+    write_private(&path, b"version: 1\nlanguage: ja\n")?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
+        .required_because("make config too open")
+}
+
+fn symlinked(home: &Path) -> Checked {
+    let dir = config_dir(home)?;
+    let target = dir.join("target.yaml");
+    write_private(&target, b"version: 1\nlanguage: ja\n")?;
+    std::os::unix::fs::symlink(&target, dir.join("config.yaml"))
+        .required_because("create config symlink")
+}
+
+fn unreadable_bytes(home: &Path) -> Checked {
+    let dir = config_dir(home)?;
+    write_private(&dir.join("config.yaml"), b"version: 1\nlanguage: \xff\n")
+}
+
+#[test]
+fn a_broken_configuration_does_not_stop_help_from_being_shown() -> Checked {
+    for (name, id, write) in broken_configurations() {
+        let home = temp_home()?;
+        write(home.path())?;
+
+        let run = sbxm_with_shell_locale(home.path(), "ja_JP.UTF-8", &["--help"])?;
+        assert_eq!(
+            run.code, 0,
+            "{name}: help must not fail because of a broken config: {}",
+            run.stderr
+        );
+        assert!(
+            run.stdout.contains("使い方 (Usage):"),
+            "{name}: help must fall back to the shell locale when config loading fails: {}",
+            run.stdout
+        );
+
+        let run = sbxm(home.path(), &["--version"])?;
+        assert_eq!(
+            run.code, 0,
+            "{name}: version must not fail because of a broken config: {}",
+            run.stderr
+        );
+
+        // 通常commandは、同じconfig不正をparse成功後のconfig loadで診断する。
+        let run = sbxm(home.path(), &["ls"])?;
+        assert_eq!(run.code, 1, "{name}: {}", run.stderr);
+        assert!(run.stderr.contains(id), "{name}: {}", run.stderr);
+    }
+    Ok(())
 }
 
 /// 案件を引数で取り、設定を読んでから動くcommand。
@@ -348,7 +394,7 @@ fn a_configuration_this_build_cannot_read_stops_a_command_before_it_touches_anyt
     let home = temp_home()?;
     let base = home.path().join("Projects");
     std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
-    write_unreadable_config(home.path())?;
+    unknown_version(home.path())?;
 
     // 設定は工程の入口であり、読めないまま既定で進めない。案件が登録済みかどうかを
     // 調べる前に、configの不正だけを理由として止まる。
@@ -398,8 +444,6 @@ fn a_configuration_this_build_cannot_read_stops_a_command_before_it_touches_anyt
 
 #[test]
 fn an_unsupported_language_is_reported_before_any_configuration_error() -> Checked {
-    use std::os::unix::fs::PermissionsExt;
-
     let home = temp_home()?;
     // 実在しないtagを使う。将来どの言語を足してもこのtestは意味を保つ。
     let run = sbxm(home.path(), &["--lang", "zz", "ls"])?;
@@ -408,17 +452,7 @@ fn an_unsupported_language_is_reported_before_any_configuration_error() -> Check
     assert!(run.stdout.is_empty(), "{}", run.stdout);
 
     // 壊れたconfigはparse errorを覆い隠さない。
-    let dir = home.path().join(".sbxm");
-    std::fs::create_dir_all(&dir).required_because("the fixture directory is created")?;
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
-        .required_because("the fixture permissions are applied")?;
-    std::fs::write(dir.join("config.yaml"), "version: 99\n")
-        .required_because("the fixture file is written")?;
-    std::fs::set_permissions(
-        dir.join("config.yaml"),
-        std::fs::Permissions::from_mode(0o600),
-    )
-    .required_because("the fixture permissions are applied")?;
+    unknown_version(home.path())?;
 
     let run = sbxm(home.path(), &["--lang", "zz", "ls"])?;
     assert_eq!(run.code, 1);
