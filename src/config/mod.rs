@@ -8,6 +8,7 @@
 //! read失敗である場合はdefaultへfallbackせず拒否する。不正なconfigを自動修復しない。
 
 mod config_location;
+mod config_observation;
 mod config_state;
 mod config_version;
 mod declaration;
@@ -20,6 +21,7 @@ mod invalid_value;
 mod known_top_level_keys;
 mod load;
 mod missing_field;
+mod observe;
 mod parse;
 mod parse_files;
 mod parse_git_identity;
@@ -37,6 +39,7 @@ mod unknown_key_warnings;
 mod write_config;
 
 pub use config_location::ConfigLocation;
+pub(crate) use config_observation::ConfigObservation;
 pub use config_state::ConfigState;
 pub use config_version::CONFIG_VERSION;
 use declaration::declaration;
@@ -49,6 +52,7 @@ use invalid_value::invalid_value;
 use known_top_level_keys::KNOWN_TOP_LEVEL_KEYS;
 pub use load::load;
 use missing_field::missing_field;
+pub(crate) use observe::observe;
 use parse::parse;
 use parse_files::parse_files;
 use parse_git_identity::parse_git_identity;

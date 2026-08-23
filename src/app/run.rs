@@ -1,80 +1,33 @@
-use crate::cli::{self, Interactivity, Outcome, PeekedLang};
-use crate::command::RealHost;
-use crate::commands::Context;
-use crate::config::{self, ConfigLocation, ConfigState};
-use crate::design::{Document, Environment, OutputPolicy, PromptUi, Terminals, Ui};
-use crate::diagnostics::ExitCode;
-use crate::i18n::Locale;
+use crate::config::{self, ConfigObservation};
+use crate::diagnostics::{ExitCode, Result};
 
-pub(crate) fn run(argv: &[String]) -> ExitCode {
-    let peeked = cli::peek_lang(argv);
-    let policy = OutputPolicy::resolve(
-        cli::peek_color(argv),
-        &Environment::detect(),
-        &Terminals::detect(),
-    );
+use super::execute::execute;
+use super::invocation::{CommandLine, Invocation};
+use super::report_startup_error::report_startup_error;
 
-    let location = match ConfigLocation::discover() {
-        Ok(location) => location,
-        Err(error) => {
-            // localeが決まる前の失敗も、同じ描画条件で報告する。
-            let mut ui = Ui::terminal(Locale::SOURCE, policy);
-            ui.error(&error);
-            return error.exit_code();
-        }
-    };
-
-    let configured_locale = match config::load(&location) {
-        Ok(ConfigState::Valid { config, .. }) => config.language,
-        _ => None,
-    };
-    let display_locale = crate::i18n::resolve_display_locale(
-        match peeked {
-            PeekedLang::Valid(locale) => Some(locale),
-            _ => None,
-        },
-        configured_locale,
-        crate::i18n::shell_locale(),
-    );
-    let mut ui = Ui::terminal(display_locale, policy);
-
-    // 表示localeはconfigからbest-effortで解決済みである。`--lang`の不正はconfigの
-    // validation errorより先に報告するため、壊れたconfigがparse errorを覆い隠さない。
-    if let PeekedLang::Invalid(value) = &peeked {
-        let error = cli::invalid_lang_error(value);
-        ui.error(&error);
-        return error.exit_code();
-    }
-
-    let interactivity = Interactivity::detect();
-    let catalog = crate::i18n::Catalog::new(display_locale);
-    match cli::parse(argv, &catalog, interactivity) {
-        Ok(Outcome::Help(text)) => {
-            ui.help(&text);
-            ExitCode::Success
-        }
-        Ok(Outcome::Version(text)) => {
-            ui.stdout(&Document::new().verbatim(text));
-            ExitCode::Success
-        }
-        Ok(Outcome::Run(command)) => {
-            let context = Context {
-                location: &location,
-                workspace_root: std::path::Path::new(crate::support::sandbox::WORKSPACE_ROOT),
-                lang: match peeked {
-                    PeekedLang::Valid(locale) => Some(locale),
-                    _ => None,
-                },
-                interactivity,
-            };
-            // 実hostと実端末と実workspace rootを選ぶのはここだけとする。commandは受け取った
-            // ものだけを使う。
-            let mut prompt = PromptUi::terminal(display_locale, policy.stderr);
-            crate::commands::dispatch(&command, &context, &mut ui, &RealHost, &mut prompt)
-        }
-        Err(error) => {
-            ui.error(&error);
-            error.exit_code()
-        }
-    }
+/// 起動の順序だけを持つ。
+///
+/// localeの優先順位、parser、Commandのvariant、Host、Ui/Promptの配線はここへ置かず、
+/// `Invocation`と`execute`が持つ。
+pub(crate) fn run(argv: Vec<String>) -> ExitCode {
+    run_with_config(CommandLine::new(argv), config::observe())
 }
+
+/// 起動材料が揃った状態からの順序。
+///
+/// `config::observe`はprocessのhome directoryを読む。その発見失敗はprocessの環境変数を
+/// 書き換えないと再現できず、`unsafe`を禁じたこのcrateのtestからは踏めない。観測結果を
+/// 受け取る位置をここへ置き、発見に失敗した起動がfull parseへ進まないことをtestで固定する。
+fn run_with_config(command_line: CommandLine, config: Result<ConfigObservation>) -> ExitCode {
+    let config = match config {
+        Ok(config) => config,
+        Err(error) => return report_startup_error(&command_line, &error),
+    };
+    let invocation = Invocation::new(command_line, config);
+    let command = invocation.parse();
+    execute(invocation, command)
+}
+
+#[cfg(test)]
+#[path = "run_test.rs"]
+mod run_test;

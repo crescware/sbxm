@@ -1,7 +1,6 @@
-use crate::cli::Interactivity;
 use crate::commands::Context;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
-use crate::design::{OutputPolicy, PromptUi, Ui};
+use crate::design::{PromptUi, RenderingPolicy, Ui};
 use crate::diagnostics::ExitCode;
 use crate::i18n::Locale;
 use crate::project::ProjectId;
@@ -22,13 +21,10 @@ fn run_exec(
     let context = Context {
         location: &bench.location,
         workspace_root: bench.workspace_root.path(),
-        lang: Some(Locale::En),
-        interactivity: Interactivity {
-            stdin_is_tty: false,
-            stderr_is_tty: false,
-        },
+        locale: Locale::En,
+        can_prompt: false,
     };
-    let policy = OutputPolicy::plain();
+    let policy = RenderingPolicy::plain();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let code = {

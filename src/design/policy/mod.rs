@@ -10,14 +10,14 @@
 mod character_set;
 mod color_mode;
 mod environment;
-mod output_policy;
+mod rendering_policy;
 mod stream_policy;
 mod terminals;
 
 pub use character_set::CharacterSet;
 pub use color_mode::ColorMode;
 pub use environment::Environment;
-pub use output_policy::OutputPolicy;
+pub use rendering_policy::RenderingPolicy;
 pub use stream_policy::StreamPolicy;
 pub use terminals::Terminals;
 

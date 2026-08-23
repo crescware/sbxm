@@ -3,7 +3,7 @@ use crate::i18n::{Catalog, Locale};
 
 use crate::design::renderer::Renderer;
 
-use super::{Document, ExternalOutput, GuidanceItem, OutputPolicy, ProgressSink, Warning};
+use super::{Document, ExternalOutput, GuidanceItem, ProgressSink, RenderingPolicy, Warning};
 
 /// 1実行ぶんの利用者interface。
 ///
@@ -19,7 +19,7 @@ pub struct Ui<'a> {
 
 impl Ui<'static> {
     /// 実際の端末へ書くUI。
-    pub fn terminal(locale: Locale, policy: OutputPolicy) -> Ui<'static> {
+    pub fn terminal(locale: Locale, policy: RenderingPolicy) -> Ui<'static> {
         Ui {
             catalog: Catalog::new(locale),
             stdout: Renderer::new(std::io::stdout(), policy.stdout),
@@ -42,11 +42,6 @@ impl Ui<'_> {
         if self.catalog.locale() != locale {
             self.catalog = Catalog::new(locale);
         }
-    }
-
-    /// 既に組み立てられたhelpを書く。
-    pub fn help(&mut self, text: &str) {
-        self.stdout(&Document::new().verbatim(text));
     }
 
     /// promptがrendererを経由せずstderrへ書いたことを知らせる。

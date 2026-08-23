@@ -1,5 +1,5 @@
 use crate::commands::stop::{StopOutcome, StopResult};
-use crate::design::OutputPolicy;
+use crate::design::RenderingPolicy;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::i18n::Locale;
 
@@ -18,7 +18,12 @@ fn print(stopped: &StopReport) -> Checked<Printed> {
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     let code = {
-        let mut ui = Ui::capture(Locale::En, OutputPolicy::plain(), &mut stdout, &mut stderr);
+        let mut ui = Ui::capture(
+            Locale::En,
+            RenderingPolicy::plain(),
+            &mut stdout,
+            &mut stderr,
+        );
         report(&mut ui, stopped)
     };
     Ok(Printed {

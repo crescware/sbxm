@@ -11,18 +11,13 @@ mod choose_language;
 pub mod exec;
 mod host_clone;
 mod identity_prompt;
-#[cfg(test)]
-#[path = "mod_test.rs"]
-mod mod_test;
 mod observe;
-mod parse;
 mod presence;
 pub mod print;
 mod prompt_ui;
 mod register;
 mod registration;
 pub mod run;
-mod spec;
 mod target_configuration;
 mod was_already_registered;
 
@@ -37,10 +32,8 @@ pub(super) use choose_language::choose_language;
 pub use exec::exec;
 pub use identity_prompt::IdentityPrompt;
 use observe::observe;
-pub use parse::parse;
 use presence::Presence;
 pub use register::register;
 pub use registration::Registration;
-pub use spec::spec;
 pub use target_configuration::TargetConfiguration;
 use was_already_registered::was_already_registered;
