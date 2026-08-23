@@ -5,7 +5,7 @@
 //! 本moduleは判定を持たない。
 
 mod arg;
-mod long;
+mod option_name;
 
 pub use arg::arg;
-pub(super) use long::LONG;
+pub(super) use option_name::OPTION_NAME;

@@ -19,13 +19,13 @@ pub(crate) struct CommandLine {
 
 impl CommandLine {
     pub(crate) fn new(argv: Vec<String>) -> Self {
-        let locale_override = peek(&argv, lang::LONG).map_or(PeekedLang::Absent, |value| {
+        let locale_override = peek(&argv, lang::OPTION_NAME).map_or(PeekedLang::Absent, |value| {
             match Locale::parse_exact(value) {
                 Some(locale) => PeekedLang::Valid(locale),
                 None => PeekedLang::Invalid(value.to_owned()),
             }
         });
-        let color_setting = peek(&argv, color::LONG)
+        let color_setting = peek(&argv, color::OPTION_NAME)
             .and_then(ColorMode::parse_exact)
             .map(ColorSetting::Explicit)
             .unwrap_or_default();
