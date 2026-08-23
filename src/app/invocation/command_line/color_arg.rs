@@ -15,7 +15,6 @@ pub(super) fn color_arg(builder: &Builder) -> Result<Arg> {
         .arg()
         .value_name(ColorMode::value_name())
         .value_parser(PossibleValuesParser::new(ColorMode::accepted_values()))
-        // 値の一覧はFTLのhelp textに含めるため、libraryの英語固定表記は出さない。
         .hide_possible_values(true)
         .display_order(901)
         .help(builder.message(&msg!("cli-color-help", supported = ColorMode::value_list()))?))

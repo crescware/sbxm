@@ -15,7 +15,6 @@ pub(super) fn lang_arg(builder: &Builder) -> Result<Arg> {
         .arg()
         .value_name(Locale::value_name())
         .value_parser(PossibleValuesParser::new(Locale::accepted_values()))
-        // 値の一覧はFTLのhelp textに含めるため、libraryの英語固定表記は出さない。
         .hide_possible_values(true)
         .display_order(900)
         .help(builder.message(&msg!("cli-lang-help", supported = Locale::value_list()))?))
