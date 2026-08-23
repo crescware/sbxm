@@ -1,4 +1,4 @@
-use console::Term;
+use console::{Key as ConsoleKey, Term};
 
 use crate::design::prompt::{Key, Keys, Screen};
 use crate::testing::outcome::{Checked, Required};
@@ -7,6 +7,22 @@ use super::RealTerminal;
 
 #[test]
 fn a_screen_that_is_not_a_terminal_reports_no_height_and_no_keys() -> Checked {
+    for (console_key, prompt_key) in [
+        (ConsoleKey::ArrowLeft, Key::ArrowLeft),
+        (ConsoleKey::ArrowRight, Key::ArrowRight),
+        (ConsoleKey::ArrowUp, Key::ArrowUp),
+        (ConsoleKey::ArrowDown, Key::ArrowDown),
+        (ConsoleKey::Enter, Key::Enter),
+        (ConsoleKey::Escape, Key::Escape),
+        (ConsoleKey::Backspace, Key::Backspace),
+        (ConsoleKey::Home, Key::Home),
+        (ConsoleKey::Tab, Key::Tab),
+        (ConsoleKey::Char('x'), Key::Char('x')),
+        (ConsoleKey::CtrlC, Key::CtrlC),
+    ] {
+        assert_eq!(super::map_key(&console_key), prompt_key);
+    }
+
     // 端末でない先へ書くこと自体は妨げない。読めないのは高さと打鍵である。
     let directory = tempfile::tempdir().required_because("a temporary directory")?;
     let path = directory.path().join("screen");

@@ -22,12 +22,7 @@ pub(crate) fn parse(
     let syntax = syntaxes
         .iter()
         .find(|syntax| syntax.name == name)
-        .ok_or_else(|| {
-            Error::new(
-                ErrorId::UnknownSubcommand,
-                msg!("error-unknown-subcommand", subcommand = name),
-            )
-        })?;
+        .unwrap_or_else(|| unreachable!("the parser's subcommands come from these syntaxes"));
     let mut arguments = Arguments::default();
     for argument in &syntax.arguments {
         match argument.action {

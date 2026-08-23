@@ -48,3 +48,26 @@ fn an_absent_value_is_reported_as_the_missing_argument_help_names() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn an_invalid_numeric_option_is_named_as_an_invalid_value() -> Checked {
+    let mut arguments = Arguments::default();
+    arguments.insert_value("index", "not-a-number".to_owned());
+
+    let error = CommandLineValues::optional_u32(&arguments, "index", "--index")
+        .refused_because("a numeric option must contain a number")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InvalidValue));
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert_eq!(diagnostic.description.id, "error-invalid-value");
+    assert_eq!(
+        diagnostic.description.args,
+        vec![
+            ("argument", "--index".to_owned()),
+            ("value", "not-a-number".to_owned()),
+        ]
+    );
+    Ok(())
+}
