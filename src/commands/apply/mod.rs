@@ -2,6 +2,7 @@
 
 mod apply_output;
 mod args;
+mod command_line;
 mod exec;
 #[cfg(test)]
 mod fake;
@@ -12,6 +13,11 @@ mod target;
 
 pub use apply_output::ApplyOutput;
 pub use args::Args;
+pub(crate) use command_line::CommandLine as CommandLineParser;
 pub use exec::exec;
 pub use scope::Scope;
 pub use target::Target;
+
+#[cfg(test)]
+#[path = "command_line_test.rs"]
+mod command_line_test;
