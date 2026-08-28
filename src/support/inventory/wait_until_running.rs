@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;

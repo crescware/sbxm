@@ -2,7 +2,7 @@ use std::fs;
 
 use std::cell::RefCell;
 
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::diagnostics::Result;
 
 /// 4種の状態はどれも独立で、組み合わせて使うbuilderであるため束ねない。

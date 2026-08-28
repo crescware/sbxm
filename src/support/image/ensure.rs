@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use crate::command::HostEnvironment;
-use crate::compatibility::ImageIdentity;
+use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::ImageIdentity;
 use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;

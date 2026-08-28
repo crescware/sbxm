@@ -7,7 +7,7 @@ use crate::design::RenderingPolicy;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::i18n::Locale;
 
-use crate::compatibility::RootDiskUsage;
+use crate::boundary::host::protocol::RootDiskUsage;
 use crate::support::disk::DiskObservation;
 use crate::support::protection::{Reachability, UnobservableReason};
 

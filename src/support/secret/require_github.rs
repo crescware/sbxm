@@ -1,5 +1,5 @@
-use crate::command::HostEnvironment;
-use crate::compatibility::CustomSecret;
+use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::CustomSecret;
 use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;

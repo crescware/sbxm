@@ -4,7 +4,7 @@ use crate::metadata::CreationMode;
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::super::fake::{Bench, World};
-use crate::compatibility::SandboxState;
+use crate::boundary::host::protocol::SandboxState;
 use crate::diagnostics::ErrorId;
 use crate::support::files::Placement;
 use crate::testing::add_request::request;

@@ -1,5 +1,5 @@
-use crate::command::TimeoutClass;
-use crate::compatibility::SandboxState;
+use crate::boundary::host::TimeoutClass;
+use crate::boundary::host::protocol::SandboxState;
 use crate::design::{Fact, Inline};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, ExternalFailure};
 use crate::msg;

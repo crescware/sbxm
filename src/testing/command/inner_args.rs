@@ -1,4 +1,4 @@
-use crate::command::CommandSpec;
+use crate::boundary::host::CommandSpec;
 
 /// `sbx exec <name> -- ...`の`--`より後ろ。`--`がなければ空。
 pub fn inner_args(spec: &CommandSpec) -> Vec<&str> {

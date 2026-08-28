@@ -1,4 +1,4 @@
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 
 pub fn read_stdout(host: &dyn HostEnvironment, program: &str, args: &[&str]) -> Result<String> {

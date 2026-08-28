@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::compatibility::SandboxState;
+use crate::boundary::host::protocol::SandboxState;
 use crate::design::{Inline, LegendEntry};
 use crate::diagnostics::Msg;
 use crate::i18n::Locale;

@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::command::HostEnvironment;
-use crate::compatibility::SandboxEntry;
+use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::SandboxEntry;
 use crate::config::ConfigLocation;
 use crate::diagnostics::Result;
 use crate::paths::ProjectPaths;

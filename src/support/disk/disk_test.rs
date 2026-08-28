@@ -1,5 +1,5 @@
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
-use crate::compatibility::RootDiskUsage;
+use crate::boundary::host::protocol::RootDiskUsage;
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::support::inventory::ProjectState;
 use crate::testing::host::FakeSbx;

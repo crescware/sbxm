@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::{ErrorId, Result};
 use crate::metadata::GitIdentity;
 use crate::msg;
@@ -6,7 +6,7 @@ use crate::msg;
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::command::{CommandOutcome, CommandSpec};
+use crate::boundary::host::{CommandOutcome, CommandSpec};
 use crate::testing::sandbox::InnerCommandSandbox;
 use std::cell::RefCell;
 use std::collections::HashMap;

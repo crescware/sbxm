@@ -1,6 +1,6 @@
 use crate::testing::outcome::{Checked, Required};
 
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::diagnostics::Result;
 use std::cell::RefCell;
 

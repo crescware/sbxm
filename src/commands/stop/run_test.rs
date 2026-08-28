@@ -5,7 +5,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
-use crate::command::OutputPolicy;
+use crate::boundary::host::OutputPolicy;
 use crate::metadata::{self, RebuildIntent};
 use crate::testing::host::{FakeSbx, assert_lifecycle};
 use crate::testing::poll::poll;

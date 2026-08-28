@@ -1,5 +1,5 @@
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
-use crate::compatibility::{CustomSecret, parse_custom_secrets};
+use crate::boundary::host::protocol::{CustomSecret, parse_custom_secrets};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 
 /// Sandbox scopeのcustom secretを読む。

@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use crate::command::HostEnvironment;
-use crate::compatibility::SandboxState;
+use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::SandboxState;
 use crate::config::GlobalConfig;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};

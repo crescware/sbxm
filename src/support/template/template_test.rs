@@ -1,4 +1,4 @@
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment};
 use crate::diagnostics::{ErrorId, Result};
 use crate::support::image::BuiltImage;
 use std::path::Path;
@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::command::CommandOutcome;
+use crate::boundary::host::CommandOutcome;
 use crate::design::SilentProgress;
 use crate::testing::image::template_listing;
 use std::cell::RefCell;

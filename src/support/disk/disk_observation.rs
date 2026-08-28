@@ -1,4 +1,4 @@
-use crate::compatibility::RootDiskUsage;
+use crate::boundary::host::protocol::RootDiskUsage;
 
 /// root filesystemの使用量観測。成功値と、観測できなかった理由を型で区別する。
 ///

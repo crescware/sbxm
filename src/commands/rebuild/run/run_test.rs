@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment, OutputPolicy};
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment, OutputPolicy};
 use crate::config::GlobalConfig;
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::metadata::{self, RebuildIntent};

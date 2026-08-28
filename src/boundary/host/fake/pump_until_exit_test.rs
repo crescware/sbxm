@@ -4,7 +4,7 @@ use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use std::time::Duration;
 
-use crate::command::{CommandSpec, TerminalCommand};
+use crate::boundary::host::{CommandSpec, TerminalCommand};
 use crate::design::ExternalOutput;
 use crate::design::Fact;
 use crate::diagnostics::{Error, ErrorId, Result};

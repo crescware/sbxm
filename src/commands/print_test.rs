@@ -8,8 +8,8 @@ use crate::testing::plain;
 
 use std::path::PathBuf;
 
+use crate::boundary::host::protocol::SandboxState;
 use crate::commands::ls::ListState;
-use crate::compatibility::SandboxState;
 use crate::design::{Block, SectionBody};
 use crate::design::{Document, Inline, VisualState};
 use crate::diagnostics::{Diagnostic, ErrorId, Msg};

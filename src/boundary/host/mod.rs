@@ -8,6 +8,8 @@
 //! ままでも実行の外側へreaderが残らない。Capture commandは専用のprocess groupに置くが、
 //! timeoutまたはCtrl-Cで終わらせるのは直接の子だけである。
 
+pub mod protocol;
+
 mod command_outcome;
 mod command_spec;
 mod configure;

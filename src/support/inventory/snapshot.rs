@@ -1,4 +1,4 @@
-use crate::compatibility::SandboxEntry;
+use crate::boundary::host::protocol::SandboxEntry;
 
 use super::ManagedProject;
 

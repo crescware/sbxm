@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::metadata::ProjectMetadata;

@@ -1,4 +1,4 @@
-use crate::command::{CommandSpec, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandSpec, HostEnvironment, TimeoutClass};
 use crate::metadata::validate_git_identity_value;
 
 /// 入力欄へ置くhostの候補を読む。

@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::diagnostics::Result;
 
 /// `docker version`のserver側versionを読み取る、read-onlyのprobe。

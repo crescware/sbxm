@@ -3,7 +3,7 @@ use crate::support::StatusValue;
 use crate::testing::outcome::{Checked, Required};
 
 use super::*;
-use crate::compatibility::EXPECTED_NETWORK_POLICY;
+use crate::boundary::host::protocol::EXPECTED_NETWORK_POLICY;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId, Msg};
 use crate::i18n::Locale;

@@ -1,4 +1,6 @@
-use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{
+    CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass,
+};
 use crate::diagnostics::Result;
 
 use super::exec_arguments;

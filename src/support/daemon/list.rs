@@ -1,8 +1,8 @@
 use std::thread;
 use std::time::Duration;
 
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
-use crate::compatibility::{SandboxEntry, parse_sandbox_list};
+use crate::boundary::host::protocol::{SandboxEntry, parse_sandbox_list};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::diagnostics::{ErrorId, Result};
 
 /// daemonが暖まりきる前の`sbx ls`は、出力を出し切る前に終わることがある。

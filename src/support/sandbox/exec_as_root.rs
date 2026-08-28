@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandOutcome, HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 
 use super::run_exec;

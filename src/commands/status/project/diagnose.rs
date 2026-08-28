@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::{HostEnvironment, TimeoutClass};
+use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
 use crate::diagnostics::Result;
 use crate::project::ProjectId;

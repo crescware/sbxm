@@ -1,5 +1,5 @@
-use crate::command::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
-use crate::compatibility::CustomSecret;
+use crate::boundary::host::protocol::CustomSecret;
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
