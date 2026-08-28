@@ -1,5 +1,3 @@
-use console::{Key, Term};
-
 use crate::diagnostics::{Error, ErrorId, Msg, Result};
 use crate::i18n::{Catalog, Locale};
 use crate::msg;
@@ -8,8 +6,8 @@ use crate::design::policy::StreamPolicy;
 use crate::design::width::display_width;
 
 use super::{
-    Keys, OpenSelection, Painter, RealTerminal, Screen, Selection, Transition, action_for,
-    open_viewport, unreadable, viewport,
+    Key, Keys, OpenSelection, Painter, Screen, Selection, Transition, action_for, open_viewport,
+    unreadable, viewport,
 };
 
 /// 対話の入口。
@@ -25,21 +23,6 @@ pub struct PromptUi {
 }
 
 impl PromptUi {
-    /// 実端末へ出すprompt。
-    ///
-    /// 出す先はstderrとする。正常結果はstdoutへ残るため、描き直しと混ざらない。
-    /// composition rootから使う組み立てhelperであり、通常のprompt処理が端末へ触れるのは
-    /// `new`へ渡された`Keys`と`Screen`だけである。
-    pub fn terminal(locale: Locale, policy: StreamPolicy) -> PromptUi {
-        let term = Term::stderr();
-        PromptUi::new(
-            locale,
-            policy,
-            Box::new(RealTerminal::new(term.clone())),
-            Box::new(RealTerminal::new(term)),
-        )
-    }
-
     /// 打鍵の供給元と描画先を決めて組み立てる。
     pub fn new(
         locale: Locale,
@@ -110,7 +93,7 @@ impl PromptUi {
             drawn = frame.len();
 
             match self.keys.read_key() {
-                Ok(key) => match selection.apply(action_for(&key)) {
+                Ok(key) => match selection.apply(action_for(key)) {
                     Transition::Continue => {}
                     Transition::DoneOpen { project, index } => break Ok((project, index)),
                     Transition::Done(_) => {
@@ -153,7 +136,7 @@ impl PromptUi {
             drawn = frame.len();
 
             match self.keys.read_key() {
-                Ok(key) => match selection.apply(action_for(&key)) {
+                Ok(key) => match selection.apply(action_for(key)) {
                     Transition::Continue => {}
                     Transition::Done(indexes) => break Ok(indexes),
                     Transition::DoneOpen { .. } => {

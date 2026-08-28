@@ -1,6 +1,4 @@
-use console::Key;
-
-use super::{Action, action_for};
+use super::{Action, Key, action_for};
 
 #[test]
 fn every_accepted_keystroke_names_the_operation_it_performs() {
@@ -22,6 +20,6 @@ fn every_accepted_keystroke_names_the_operation_it_performs() {
         (Key::Unknown, Action::Ignore),
     ];
     for (key, action) in expected {
-        assert_eq!(action_for(&key), action, "{key:?}");
+        assert_eq!(action_for(key), action, "{key:?}");
     }
 }

@@ -1,8 +1,6 @@
 use std::collections::VecDeque;
 
-use console::Key;
-
-use super::super::Keys;
+use super::super::{Key, Keys};
 
 /// 決め打ちした打鍵を順に返すkey source。
 ///
@@ -17,7 +15,7 @@ impl ScriptedKeys {
     /// 打鍵をそのまま並べる。
     pub fn pressing(keys: &[Key]) -> ScriptedKeys {
         ScriptedKeys {
-            pending: keys.iter().cloned().collect(),
+            pending: keys.iter().copied().collect(),
             failure: None,
         }
     }

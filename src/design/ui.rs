@@ -17,13 +17,18 @@ pub struct Ui<'a> {
     external: bool,
 }
 
-impl Ui<'static> {
-    /// 実際の端末へ書くUI。
-    pub fn terminal(locale: Locale, policy: RenderingPolicy) -> Ui<'static> {
+impl<'a> Ui<'a> {
+    /// 描画先を注入してUIを組み立てる。
+    pub fn new(
+        locale: Locale,
+        policy: RenderingPolicy,
+        stdout: impl std::io::Write + 'a,
+        stderr: impl std::io::Write + 'a,
+    ) -> Ui<'a> {
         Ui {
             catalog: Catalog::new(locale),
-            stdout: Renderer::new(std::io::stdout(), policy.stdout),
-            stderr: Renderer::new(std::io::stderr(), policy.stderr),
+            stdout: Renderer::new(stdout, policy.stdout),
+            stderr: Renderer::new(stderr, policy.stderr),
             external: false,
         }
     }

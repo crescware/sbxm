@@ -1,8 +1,6 @@
-use console::Key;
-
 use crate::metadata::MAX_WORKTREE_INDEX;
 
-use super::super::{Action, OpenSelection, Transition, action_for};
+use super::super::{Action, Key, OpenSelection, Transition, action_for};
 
 #[test]
 fn vertical_keys_move_projects_and_horizontal_keys_change_index() {
@@ -83,12 +81,12 @@ fn an_index_moves_up_to_the_ceiling_while_the_maximum_is_unknown() {
 #[test]
 fn enter_confirms_both_current_values() {
     let mut selection = OpenSelection::new(3, MAX_WORKTREE_INDEX);
-    selection.apply(action_for(&Key::ArrowDown));
-    selection.apply(action_for(&Key::ArrowRight));
-    selection.apply(action_for(&Key::ArrowRight));
+    selection.apply(action_for(Key::ArrowDown));
+    selection.apply(action_for(Key::ArrowRight));
+    selection.apply(action_for(Key::ArrowRight));
 
     assert_eq!(
-        selection.apply(action_for(&Key::Enter)),
+        selection.apply(action_for(Key::Enter)),
         Transition::DoneOpen {
             project: 1,
             index: 2,

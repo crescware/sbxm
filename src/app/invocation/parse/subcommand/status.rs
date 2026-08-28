@@ -2,7 +2,7 @@
 
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 
-use crate::app::invocation::Interactivity;
+use crate::boundary::terminal::PromptCapability;
 use crate::commands::status::Scope;
 use crate::diagnostics::{ErrorId, Result, fail};
 use crate::msg;
@@ -31,13 +31,13 @@ impl Status {
             ))
     }
 
-    pub(super) fn parse(matches: &ArgMatches, interactivity: Interactivity) -> Result<Scope> {
+    pub(super) fn parse(matches: &ArgMatches, prompt: PromptCapability) -> Result<Scope> {
         let global = matches.get_flag("global");
         let project = matches.get_one::<String>("project");
         match (global, project) {
             (true, None) => Ok(Scope::Global),
             (false, Some(value)) => Ok(Scope::Project(ProjectId::parse(value)?)),
-            (false, None) if interactivity.can_prompt() => Ok(Scope::Prompt),
+            (false, None) if prompt.can_prompt() => Ok(Scope::Prompt),
             _ => fail(
                 ErrorId::StatusScopeRequired,
                 msg!("error-status-scope-required"),

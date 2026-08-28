@@ -2,7 +2,7 @@
 
 use clap::{Arg, ArgMatches, Command as ClapCommand};
 
-use crate::app::invocation::Interactivity;
+use crate::boundary::terminal::PromptCapability;
 use crate::commands::open::Args;
 use crate::diagnostics::Result;
 
@@ -30,9 +30,9 @@ impl Open {
             ))
     }
 
-    pub(super) fn parse(matches: &ArgMatches, interactivity: Interactivity) -> Result<Args> {
+    pub(super) fn parse(matches: &ArgMatches, prompt: PromptCapability) -> Result<Args> {
         Ok(Args {
-            project: project_arg::optional_project(matches, interactivity, "sbxm open")?,
+            project: project_arg::optional_project(matches, prompt, "sbxm open")?,
             index: matches.get_one::<u32>("index").copied(),
         })
     }

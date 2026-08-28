@@ -1,4 +1,4 @@
-use console::Key;
+use super::Key;
 
 /// 打鍵の供給元。
 ///
