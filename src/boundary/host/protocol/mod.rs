@@ -1,10 +1,9 @@
-//! `sbx`、`docker`、sandbox 内の `df -Pk /` が返す標準出力を、後続の処理が使う
-//! `SandboxEntry`、`ImageIdentity`、`RootDiskUsage` などの型へ変換する。
+//! `boundary::host` が収集した標準出力を、後続の処理が扱う内部の値へ変換する。
 //!
 //! process の起動と標準出力の収集は `boundary::host` が担う。この module は収集した
 //! 文字列の形式を検証し、期待した形式でなければ状態を推測せず error を返す。
 //!
-//! 出力ごとの解釈を module に分け、複数の parser で共通する JSON document の読み取りだけを
+//! 出力形式ごとの解釈を module に分け、複数の解釈処理で共通する JSON の読み取りだけを
 //! `json` に置く。
 
 mod daemon;
