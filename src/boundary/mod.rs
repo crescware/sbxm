@@ -4,5 +4,6 @@
 //! application と support には、外界固有の transport や出力形式ではなく、境界で
 //! 変換された値だけを渡す。
 
+pub mod command_line;
 pub mod host;
 pub(crate) mod terminal;

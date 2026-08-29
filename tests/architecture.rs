@@ -19,10 +19,13 @@ const DESIGN: &str = "src/design";
 const COLOR_MODE: &str = "src/design/policy/color_mode.rs";
 
 /// command line adapter。
-const COMMAND_LINE: &str = "src/app/invocation/command_line";
+const COMMAND_LINE: &str = "src/boundary/command_line";
 
 /// 具体的なterminal adapterを置いてよい唯一のmodule。
 const TERMINAL_ADAPTER: &str = "src/boundary/terminal/";
+
+/// clapへ接続する具体adapterを置いてよい唯一のmodule。
+const CLAP_ADAPTER: &str = "src/boundary/command_line/clap/";
 
 /// ANSI escape sequenceを生成してよい唯一のfile。
 const RENDERER: &str = "src/design/painter.rs";
@@ -114,6 +117,30 @@ fn color_mode_vocabulary_stays_in_the_design_policy() -> Checked {
     assert!(
         offenders.is_empty(),
         "accepted color values belong to {COLOR_MODE}:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn clap_is_used_only_by_the_command_line_boundary_adapter() -> Checked {
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if path.ends_with("_test.rs")
+            || path.starts_with(CLAP_ADAPTER)
+            || path == "src/boundary/command_line/mod.rs"
+        {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("clap::") || line.contains("use clap") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "clap belongs only in {CLAP_ADAPTER}:\n{}",
         offenders.join("\n")
     );
     Ok(())

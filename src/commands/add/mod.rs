@@ -8,6 +8,7 @@ mod ask_language;
 mod bundled_dockerfile;
 mod choose_git_identity;
 mod choose_language;
+mod command_line;
 pub mod exec;
 mod host_clone;
 mod identity_prompt;
@@ -29,6 +30,7 @@ pub(super) use ask_language::ask_language;
 use bundled_dockerfile::BUNDLED_DOCKERFILE;
 pub(super) use choose_git_identity::choose_git_identity;
 pub(super) use choose_language::choose_language;
+pub(crate) use command_line::CommandLine as CommandLineParser;
 pub use exec::exec;
 pub use identity_prompt::IdentityPrompt;
 use observe::observe;
@@ -37,3 +39,7 @@ pub use register::register;
 pub use registration::Registration;
 pub use target_configuration::TargetConfiguration;
 use was_already_registered::was_already_registered;
+
+#[cfg(test)]
+#[path = "command_line_test.rs"]
+mod command_line_test;
