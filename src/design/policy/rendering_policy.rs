@@ -8,17 +8,12 @@ pub struct RenderingPolicy {
 }
 
 impl RenderingPolicy {
-    /// 現在のprocessの環境と端末から描画条件を決める。
-    pub fn detect(setting: ColorSetting) -> RenderingPolicy {
-        Self::resolve(setting, &Environment::detect(), &Terminals::detect())
-    }
-
     /// 明示option、環境変数、TTYからstreamごとの条件を決める。
     ///
     /// 優先順位は次のとおりとし、CIかどうかを独自に推測しない。
     ///
     /// 明示指定は環境変数より優先し、指定がない場合だけ環境変数とTTYを見る。
-    pub(super) fn resolve(
+    pub(crate) fn resolve(
         setting: ColorSetting,
         environment: &Environment,
         terminals: &Terminals,

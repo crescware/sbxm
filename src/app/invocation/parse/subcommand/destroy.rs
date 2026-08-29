@@ -2,7 +2,7 @@
 
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 
-use crate::app::invocation::Interactivity;
+use crate::boundary::terminal::PromptCapability;
 use crate::commands::destroy::Args;
 use crate::diagnostics::{ErrorId, Result, fail};
 use crate::msg;
@@ -31,7 +31,7 @@ impl Destroy {
             ))
     }
 
-    pub(super) fn parse(matches: &ArgMatches, interactivity: Interactivity) -> Result<Args> {
+    pub(super) fn parse(matches: &ArgMatches, prompt: PromptCapability) -> Result<Args> {
         let force = matches.get_flag("force");
         let project = matches.get_one::<String>("project");
         match project {
@@ -47,7 +47,7 @@ impl Destroy {
                 ),
             ),
             None => {
-                project_arg::require_prompt_capability(interactivity, "sbxm destroy")?;
+                project_arg::require_prompt_capability(prompt, "sbxm destroy")?;
                 Ok(Args {
                     project: None,
                     force,

@@ -2,7 +2,7 @@
 
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 
-use crate::app::invocation::Interactivity;
+use crate::boundary::terminal::PromptCapability;
 use crate::commands::apply::Args;
 use crate::diagnostics::{ErrorId, Result, fail};
 use crate::msg;
@@ -37,7 +37,7 @@ impl Apply {
             ))
     }
 
-    pub(super) fn parse(matches: &ArgMatches, interactivity: Interactivity) -> Result<Args> {
+    pub(super) fn parse(matches: &ArgMatches, prompt: PromptCapability) -> Result<Args> {
         let files = matches.get_flag("files");
         let worktrees = matches.get_one::<u32>("worktrees").copied();
         if !files && worktrees.is_none() {
@@ -47,7 +47,7 @@ impl Apply {
             );
         }
         Ok(Args {
-            project: project_arg::optional_project(matches, interactivity, "sbxm apply")?,
+            project: project_arg::optional_project(matches, prompt, "sbxm apply")?,
             files,
             worktrees,
         })

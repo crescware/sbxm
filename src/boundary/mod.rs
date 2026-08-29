@@ -5,3 +5,4 @@
 //! 変換された値だけを渡す。
 
 pub mod host;
+pub(crate) mod terminal;

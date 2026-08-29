@@ -361,16 +361,8 @@ fn open_accepts_a_zero_based_worktree_index() -> Checked {
 
 #[test]
 fn a_prompt_needs_both_stdin_and_stderr_to_be_a_terminal() -> Checked {
-    for interactivity in [
-        Interactivity {
-            stdin_is_tty: true,
-            stderr_is_tty: false,
-        },
-        Interactivity {
-            stdin_is_tty: false,
-            stderr_is_tty: true,
-        },
-    ] {
+    for (stdin_is_tty, stderr_is_tty) in [(true, false), (false, true)] {
+        let interactivity = Interactivity::from_streams(stdin_is_tty, stderr_is_tty);
         let error = parse_argv(&["open"], interactivity)
             .refused_because("both streams must be a terminal to prompt")?;
         assert_eq!(error.first_id(), Some(ErrorId::ProjectArgumentRequired));

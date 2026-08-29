@@ -1,10 +1,14 @@
+use crate::boundary::terminal::{PromptCapability, detect_rendering_policy};
 use crate::commands::Command;
 use crate::config::{ConfigLocation, ConfigObservation};
 use crate::design::RenderingPolicy;
 use crate::diagnostics::Result;
 use crate::i18n::{self, Catalog, Locale};
 
-use super::{CommandLine, Interactivity};
+use super::CommandLine;
+
+#[cfg(test)]
+use crate::boundary::terminal::PromptCapability as Interactivity;
 
 /// 1回のapplication実行。
 pub(crate) struct Invocation {
@@ -12,7 +16,7 @@ pub(crate) struct Invocation {
     pub(super) config: ConfigObservation,
     pub(super) locale: Locale,
     pub(super) policy: RenderingPolicy,
-    pub(super) interactivity: Interactivity,
+    pub(super) prompt: PromptCapability,
 }
 
 impl Invocation {
@@ -23,14 +27,14 @@ impl Invocation {
             config.language(),
             i18n::shell_locale(),
         );
-        let policy = RenderingPolicy::detect(command_line.color_setting());
-        let interactivity = Interactivity::detect();
+        let policy = detect_rendering_policy(command_line.color_setting());
+        let prompt = PromptCapability::detect();
         Self {
             command_line,
             config,
             locale,
             policy,
-            interactivity,
+            prompt,
         }
     }
 
@@ -39,7 +43,7 @@ impl Invocation {
             return Err(CommandLine::invalid_locale_error(value));
         }
         let catalog = Catalog::new(self.locale);
-        super::parse::parse(self.command_line.argv(), &catalog, self.interactivity)
+        super::parse::parse(self.command_line.argv(), &catalog, self.prompt)
     }
 
     pub(crate) fn location(&self) -> &ConfigLocation {
@@ -55,7 +59,7 @@ impl Invocation {
     }
 
     pub(crate) fn can_prompt(&self) -> bool {
-        self.interactivity.can_prompt()
+        self.prompt.can_prompt()
     }
 }
 

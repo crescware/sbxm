@@ -6,8 +6,8 @@
 //! 描画と打鍵の解釈を[`Selection`]と端末adapterへ分ける。状態遷移は端末なしで確かめられ、
 //! 端末adapterは打鍵の供給と描画の操作だけを持つ。
 //!
-//! 端末は[`Keys`]と[`Screen`]として受け取る。実端末の操作を担うのは、その2つを満たす
-//! [`RealTerminal`] adapterである。[`PromptUi`]が決める進み方はfakeで確かめられる。
+//! 端末は[`Keys`]と[`Screen`]として受け取る。実端末のadapterは`boundary::terminal`にあり、
+//! [`PromptUi`]が決める進み方はfakeで確かめられる。
 //!
 //! prompt libraryの既定themeへ要件を合わせず、単一選択と複数選択で同じ描画を使う。
 //! 自由入力とyes/noも同じ入口から出すのは、commandごとにpromptの見た目が変わらない
@@ -20,13 +20,13 @@ mod action;
 mod action_for;
 #[cfg(test)]
 mod fake;
+mod key;
 mod keys;
 mod open_frame_fixed_rows;
 mod open_selection;
 mod open_viewport;
 mod painter;
 mod prompt_ui;
-mod real_terminal;
 mod screen;
 mod selection;
 mod transition;
@@ -38,13 +38,13 @@ pub use action::Action;
 pub use action_for::action_for;
 #[cfg(test)]
 pub use fake::{RecordedScreen, ScriptedKeys};
+pub use key::Key;
 pub use keys::Keys;
 use open_frame_fixed_rows::OPEN_FRAME_FIXED_ROWS;
 pub use open_selection::OpenSelection;
 use open_viewport::open_viewport;
 use painter::Painter;
 pub use prompt_ui::PromptUi;
-use real_terminal::RealTerminal;
 pub use screen::Screen;
 pub use selection::Selection;
 pub use transition::Transition;

@@ -1,4 +1,4 @@
-use crate::design::{RenderingPolicy, Ui};
+use crate::boundary::terminal::{create_ui, detect_rendering_policy};
 use crate::diagnostics::{Error, ExitCode};
 use crate::i18n::Locale;
 
@@ -6,8 +6,8 @@ use super::invocation::CommandLine;
 
 /// config locationだけが見つからない起動失敗を、Invocationなしで報告する。
 pub(crate) fn report_startup_error(command_line: &CommandLine, error: &Error) -> ExitCode {
-    let policy = RenderingPolicy::detect(command_line.color_setting());
-    let mut ui = Ui::terminal(Locale::SOURCE, policy);
+    let policy = detect_rendering_policy(command_line.color_setting());
+    let mut ui = create_ui(Locale::SOURCE, policy);
     ui.error(error);
     error.exit_code()
 }

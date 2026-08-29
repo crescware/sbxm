@@ -15,11 +15,11 @@ mod stop;
 
 use clap::{ArgMatches, Command as ClapCommand};
 
+use crate::boundary::terminal::PromptCapability;
 use crate::commands::Command;
 use crate::diagnostics::{ErrorId, Result, fail};
 use crate::msg;
 
-use super::super::Interactivity;
 use super::help::Builder;
 use add::Add;
 use apply::Apply;
@@ -54,18 +54,18 @@ impl Subcommand {
     pub(super) fn from_matches(
         name: &str,
         matches: &ArgMatches,
-        interactivity: Interactivity,
+        prompt: PromptCapability,
     ) -> Result<Command> {
         match name {
             "add" => Ok(Command::Add(Add::parse(matches)?)),
-            "apply" => Ok(Command::Apply(Apply::parse(matches, interactivity)?)),
-            "prepare" => Ok(Command::Prepare(Prepare::parse(matches, interactivity)?)),
-            "rebuild" => Ok(Command::Rebuild(Rebuild::parse(matches, interactivity)?)),
-            "open" => Ok(Command::Open(Open::parse(matches, interactivity)?)),
-            "stop" => Ok(Command::Stop(Stop::parse(matches, interactivity)?)),
+            "apply" => Ok(Command::Apply(Apply::parse(matches, prompt)?)),
+            "prepare" => Ok(Command::Prepare(Prepare::parse(matches, prompt)?)),
+            "rebuild" => Ok(Command::Rebuild(Rebuild::parse(matches, prompt)?)),
+            "open" => Ok(Command::Open(Open::parse(matches, prompt)?)),
+            "stop" => Ok(Command::Stop(Stop::parse(matches, prompt)?)),
             "ls" => Ok(Command::Ls),
-            "status" => Ok(Command::Status(Status::parse(matches, interactivity)?)),
-            "destroy" => Ok(Command::Destroy(Destroy::parse(matches, interactivity)?)),
+            "status" => Ok(Command::Status(Status::parse(matches, prompt)?)),
+            "destroy" => Ok(Command::Destroy(Destroy::parse(matches, prompt)?)),
             other => fail(
                 ErrorId::UnknownSubcommand,
                 msg!("error-unknown-subcommand", subcommand = other),

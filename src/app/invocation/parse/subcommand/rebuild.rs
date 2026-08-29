@@ -2,7 +2,7 @@
 
 use clap::{Arg, ArgMatches, Command as ClapCommand};
 
-use crate::app::invocation::Interactivity;
+use crate::boundary::terminal::PromptCapability;
 use crate::diagnostics::Result;
 use crate::project::ProjectId;
 
@@ -22,8 +22,8 @@ impl Rebuild {
 
     pub(super) fn parse(
         matches: &ArgMatches,
-        interactivity: Interactivity,
+        prompt: PromptCapability,
     ) -> Result<Option<ProjectId>> {
-        project_arg::optional_project(matches, interactivity, "sbxm rebuild")
+        project_arg::optional_project(matches, prompt, "sbxm rebuild")
     }
 }
