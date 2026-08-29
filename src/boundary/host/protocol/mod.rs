@@ -1,9 +1,10 @@
-//! 外部 command の出力を、protocol 固有の表現から内部で扱う値へ変換する。
+//! `sbx`、`docker`、sandbox 内の `df -Pk /` が返す標準出力を、後続の処理が使う
+//! `SandboxEntry`、`ImageIdentity`、`RootDiskUsage` などの型へ変換する。
 //!
-//! `boundary::host` が process を実行して stdout / stderr を運ぶ。ここではその出力を
-//! parse し、解釈できないものは状態として推測せず error にする。
+//! process の起動と標準出力の収集は `boundary::host` が担う。この module は収集した
+//! 文字列の形式を検証し、期待した形式でなければ状態を推測せず error を返す。
 //!
-//! protocol ごとに parser を分け、複数の parser に共通する structured output の処理だけを
+//! 出力ごとの解釈を module に分け、複数の parser で共通する JSON document の読み取りだけを
 //! `json` に置く。
 
 mod daemon;
