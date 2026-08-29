@@ -1,6 +1,6 @@
 use crate::diagnostics::{Result, unparseable};
 
-use crate::compatibility::json::string_field;
+use crate::boundary::host::protocol::json::string_field;
 
 use super::{SandboxEntry, SandboxState};
 

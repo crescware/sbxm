@@ -1,7 +1,7 @@
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::compatibility::parse_template_list;
+use crate::boundary::host::protocol::parse_template_list;
 use crate::design::Fact;
 use crate::diagnostics::ErrorId;
 

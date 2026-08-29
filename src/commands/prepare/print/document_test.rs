@@ -1,6 +1,6 @@
 //! `prepare`のworktree表が、観測できなかった値をどう置くか。
 
-use crate::compatibility::SandboxState;
+use crate::boundary::host::protocol::SandboxState;
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 

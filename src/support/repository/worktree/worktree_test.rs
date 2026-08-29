@@ -1,7 +1,7 @@
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::design::{Fact, SilentProgress};
 use crate::diagnostics::{Error, ErrorId};
 use crate::metadata;

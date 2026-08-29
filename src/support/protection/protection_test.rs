@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::design::Document;
 use crate::design::policy::StreamPolicy;
 use crate::design::renderer::Renderer;

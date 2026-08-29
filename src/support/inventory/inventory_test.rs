@@ -170,7 +170,8 @@ fn one_project_is_resolved_without_the_rest_of_the_listing_being_sound() -> Chec
         r#"{{"sandboxes":[{},{{"name":"sbxm-other","status":"running"}},{{"name":"sbxm-other","status":"stopped"}}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let entries = crate::compatibility::parse_sandbox_list(&listing).required_because("listing")?;
+    let entries = crate::boundary::host::protocol::parse_sandbox_list(&listing)
+        .required_because("listing")?;
 
     assert_eq!(
         state_of(&entries, &project.metadata, &fixture.workspace_root).required_because("state")?,
@@ -198,15 +199,15 @@ fn observed_states_keep_their_spelling_and_settled_meaning() {
 #[test]
 fn single_refuses_two_entries_with_the_requested_name() -> Checked {
     let entries = vec![
-        crate::compatibility::SandboxEntry {
+        crate::boundary::host::protocol::SandboxEntry {
             name: "sbxm-example".to_string(),
-            state: crate::compatibility::SandboxState::Running,
+            state: crate::boundary::host::protocol::SandboxState::Running,
             raw_state: "running".to_string(),
             workspace: None,
         },
-        crate::compatibility::SandboxEntry {
+        crate::boundary::host::protocol::SandboxEntry {
             name: "sbxm-example".to_string(),
-            state: crate::compatibility::SandboxState::Stopped,
+            state: crate::boundary::host::protocol::SandboxState::Stopped,
             raw_state: "stopped".to_string(),
             workspace: None,
         },

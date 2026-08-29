@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::compatibility::{SandboxEntry, SandboxState};
+use crate::boundary::host::protocol::{SandboxEntry, SandboxState};
 use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
 

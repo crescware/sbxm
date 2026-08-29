@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::command::{HostEnvironment, TimeoutClass};
+use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
 use crate::design::ExternalOutput;
 use crate::diagnostics::{Error, ErrorId, Result};
@@ -82,7 +82,7 @@ pub fn run(
 /// 停止して良い状態であることを確かめ、現在のstateを返す。
 fn validate(
     metadata: &ProjectMetadata,
-    entries: &[crate::compatibility::SandboxEntry],
+    entries: &[crate::boundary::host::protocol::SandboxEntry],
     workspace_root: &Path,
 ) -> Result<ProjectState> {
     generation::require_no_rebuild(metadata)?;
@@ -110,14 +110,18 @@ fn stop_one(
             .map(|entry| entry.state);
         match state {
             // 削除されている場合も、起動していないことは確認できている。
-            None | Some(crate::compatibility::SandboxState::Stopped) => return Ok(()),
-            Some(crate::compatibility::SandboxState::Running) if Instant::now() >= deadline => {
+            None | Some(crate::boundary::host::protocol::SandboxState::Stopped) => return Ok(()),
+            Some(crate::boundary::host::protocol::SandboxState::Running)
+                if Instant::now() >= deadline =>
+            {
                 return Err(Error::new(
                     ErrorId::SandboxStillRunning,
                     msg!("error-sandbox-still-running", sandbox = sandbox),
                 ));
             }
-            Some(crate::compatibility::SandboxState::Running) => std::thread::sleep(poll.interval),
+            Some(crate::boundary::host::protocol::SandboxState::Running) => {
+                std::thread::sleep(poll.interval);
+            }
         }
     }
 }

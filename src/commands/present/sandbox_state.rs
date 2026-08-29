@@ -1,4 +1,4 @@
-use crate::compatibility::SandboxState;
+use crate::boundary::host::protocol::SandboxState;
 use crate::design::{Inline, VisualState};
 
 /// 構築後のSandboxの状態。

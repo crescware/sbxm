@@ -1,6 +1,6 @@
 use crate::diagnostics::{Result, unparseable};
 
-use crate::compatibility::json::string_field;
+use crate::boundary::host::protocol::json::string_field;
 
 /// `sbx policy ls`から現在のnetwork policyを取り出す。
 pub fn parse_network_policy(output: &str) -> Result<String> {

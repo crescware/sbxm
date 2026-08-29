@@ -1,4 +1,4 @@
-use crate::command::{EnvPolicy, TerminalCommand};
+use crate::boundary::host::{EnvPolicy, TerminalCommand};
 
 /// `sbx`が出す接続案内。
 ///

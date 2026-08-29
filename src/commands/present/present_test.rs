@@ -1,7 +1,7 @@
+use crate::boundary::host::protocol::SandboxState;
 use crate::commands::ls::ListState;
 use crate::commands::status::project::Value as ProjectValue;
 use crate::commands::stop::StopResult;
-use crate::compatibility::SandboxState;
 use crate::design::{Inline, VisualState};
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;

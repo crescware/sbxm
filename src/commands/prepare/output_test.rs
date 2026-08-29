@@ -3,7 +3,7 @@
 use crate::testing::outcome::{Checked, Required};
 
 use super::super::fake::{Bench, World};
-use crate::command::{OutputPolicy, TimeoutClass};
+use crate::boundary::host::{OutputPolicy, TimeoutClass};
 use crate::hash::sha256_hex;
 use crate::support::files::Placement;
 use crate::testing::add_request::request;

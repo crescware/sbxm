@@ -1,5 +1,5 @@
-use crate::command::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment};
-use crate::compatibility::SandboxState;
+use crate::boundary::host::protocol::SandboxState;
+use crate::boundary::host::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment};
 use crate::diagnostics::{ErrorId, Result};
 use crate::paths::{self, PRIVATE_DIR_MODE};
 use crate::project::SandboxName;

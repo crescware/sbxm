@@ -1,5 +1,5 @@
-use crate::command::HostEnvironment;
-use crate::compatibility::{CliVersion, require_minimum_version};
+use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::{CliVersion, require_minimum_version};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 

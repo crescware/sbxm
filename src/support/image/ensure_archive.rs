@@ -2,7 +2,7 @@ use std::fs;
 
 use crate::archive;
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::design::Fact;
 use crate::design::ProgressSink;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};

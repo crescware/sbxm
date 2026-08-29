@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 use crate::project::SandboxName;

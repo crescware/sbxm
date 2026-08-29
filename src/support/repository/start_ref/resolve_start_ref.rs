@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::git;
 use crate::metadata::{self, ProjectMetadata};

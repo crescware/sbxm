@@ -1,4 +1,4 @@
-use crate::command::{EnvPolicy, PtyConfirmedCommand};
+use crate::boundary::host::{EnvPolicy, PtyConfirmedCommand};
 use crate::project::SandboxName;
 
 /// 確認promptにだけ答えて`sbx rm`を実行する起動。

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::config::GlobalConfig;
 use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;

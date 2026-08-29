@@ -1,5 +1,5 @@
-use crate::command::{HostEnvironment, TimeoutClass};
-use crate::compatibility::parse_df;
+use crate::boundary::host::protocol::parse_df;
+use crate::boundary::host::{HostEnvironment, TimeoutClass};
 
 use crate::support::inventory::ProjectState;
 use crate::support::sandbox;

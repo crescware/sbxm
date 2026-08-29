@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::command::{CommandSpec, HostEnvironment, TerminalCommand, TimeoutClass};
+use crate::boundary::host::{CommandSpec, HostEnvironment, TerminalCommand, TimeoutClass};
 use crate::design::Fact;
 use crate::design::ProgressSink;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};

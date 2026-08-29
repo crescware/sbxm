@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
-use crate::command::CommandSpec;
+use crate::boundary::host::CommandSpec;
 use crate::hash::sha256_hex;
 use crate::paths;
 use crate::testing::archive::image_archive_bytes;

@@ -9,7 +9,7 @@ use crate::support::select::{self};
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+use crate::boundary::host::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::design::SilentProgress;
 use crate::diagnostics::{ErrorId, ExitCode};
 use crate::metadata;

@@ -2,7 +2,7 @@
 //!
 //! 作り直す前に計画を見せ、確認を取ってから実行する。
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;

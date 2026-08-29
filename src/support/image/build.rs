@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::design::{Fact, ProgressSink, Warning};
 use crate::diagnostics::Result;
 use crate::msg;

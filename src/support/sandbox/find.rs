@@ -1,5 +1,5 @@
-use crate::command::HostEnvironment;
-use crate::compatibility::SandboxEntry;
+use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::SandboxEntry;
 use crate::diagnostics::Result;
 use crate::project::SandboxName;
 

@@ -1,6 +1,6 @@
 use crate::testing::outcome::Checked;
 
-use crate::command::{EnvPolicy, OutputPolicy, TimeoutClass};
+use crate::boundary::host::{EnvPolicy, OutputPolicy, TimeoutClass};
 
 use super::FakeSbx;
 

@@ -1,4 +1,4 @@
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 use crate::support::protection::BARE_GIT_DIR_PROBE;

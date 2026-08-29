@@ -25,7 +25,7 @@ const COMMAND_LINE: &str = "src/app/invocation/command_line";
 const RENDERER: &str = "src/design/painter.rs";
 
 /// 子processへ端末のstreamを直接渡してよい唯一のfile。
-const CONFIGURE: &str = "src/command/configure.rs";
+const CONFIGURE: &str = "src/boundary/host/configure.rs";
 
 /// `sbx`の出力を端末へ出す起動を組み立ててよい唯一のfile。
 const SBX_RELAY: &str = "src/support/sandbox/relayed.rs";
@@ -37,7 +37,7 @@ const SBX_PTY_CONFIRM: &str = "src/support/sandbox/remove_confirmed.rs";
 const DOCKER_SUPPORT: &str = "src/support/docker/";
 
 /// 外部toolのbyteを運ぶmodule。
-const RELAY: &str = "src/command";
+const RELAY: &str = "src/boundary/host";
 
 /// session leaseのpathへ触れてよい唯一の場所。
 ///
@@ -416,7 +416,7 @@ fn a_protection_confirmation_is_built_in_one_place_only() -> Checked {
 
 #[test]
 fn no_command_grows_its_own_receiver_for_external_output() -> Checked {
-    // 境界の空行を置くのは`src/design`、外部toolのbyteを運ぶのは`src/command`である。
+    // 境界の空行を置くのは`src/design`、外部toolのbyteを運ぶのは`src/boundary/host`である。
     // commandや工程が自前の受け口を持てば、そのcommandだけ見え方が分かれる。
     let mut offenders = Vec::new();
     for (path, text) in sources()? {

@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::config::FileDeclaration;
 use crate::diagnostics::{ErrorId, Result};
 use crate::hash::sha256_hex;
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::command::{CommandOutcome, CommandSpec};
+use crate::boundary::host::{CommandOutcome, CommandSpec};
 use crate::config::{HostFileSource, SandboxHomeRelativePath};
 use std::cell::RefCell;
 use std::collections::HashMap;

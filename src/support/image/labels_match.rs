@@ -1,4 +1,4 @@
-use crate::compatibility::ImageIdentity;
+use crate::boundary::host::protocol::ImageIdentity;
 
 pub(super) fn labels_match(identity: &ImageIdentity, expected: &[(String, String)]) -> bool {
     expected

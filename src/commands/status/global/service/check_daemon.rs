@@ -1,5 +1,5 @@
-use crate::command::HostEnvironment;
-use crate::compatibility::parse_daemon_status;
+use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::parse_daemon_status;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
@@ -14,8 +14,8 @@ pub fn check_daemon(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
         Ok(output) => match parse_daemon_status(&output) {
             Ok(state) => {
                 let value = match state {
-                    crate::compatibility::DaemonState::Running => StatusValue::Running,
-                    crate::compatibility::DaemonState::Stopped => StatusValue::Stopped,
+                    crate::boundary::host::protocol::DaemonState::Running => StatusValue::Running,
+                    crate::boundary::host::protocol::DaemonState::Stopped => StatusValue::Stopped,
                 };
                 push(status, "status-item-daemon", value);
             }

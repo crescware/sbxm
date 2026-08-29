@@ -1,4 +1,4 @@
-use crate::command::CommandOutcome;
+use crate::boundary::host::CommandOutcome;
 use crate::diagnostics::Result;
 
 use crate::support::sandbox;

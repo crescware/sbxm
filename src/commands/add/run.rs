@@ -1,4 +1,4 @@
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::config::ConfigLocation;
 use crate::diagnostics::Result;
 use crate::metadata::GitIdentity;

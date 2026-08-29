@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::compatibility::SandboxState;
+use crate::boundary::host::protocol::SandboxState;
 
 /// 使用できる状態のSandbox。
 #[derive(Debug, Clone, PartialEq, Eq)]

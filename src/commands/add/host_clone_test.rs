@@ -1,7 +1,7 @@
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::command::{CommandOutcome, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, HostEnvironment};
 use crate::design::SilentProgress;
 use crate::paths::ProjectParent;
 use crate::testing::project::{https_repository, ssh_repository};
@@ -183,14 +183,17 @@ fn the_clone_forwards_its_progress_while_the_checks_capture_their_output() -> Ch
 
     let calls = host.calls.borrow();
     let clone = &calls[0];
-    assert_eq!(clone.output(), crate::command::OutputPolicy::Relay);
+    assert_eq!(clone.output(), crate::boundary::host::OutputPolicy::Relay);
     assert_eq!(clone.timeout, TimeoutClass::RepositoryTransfer);
     assert_eq!(
         clone.working_dir, None,
         "the clone creates its own directory"
     );
     for inspection in calls.iter().skip(1) {
-        assert_eq!(inspection.output(), crate::command::OutputPolicy::Capture);
+        assert_eq!(
+            inspection.output(),
+            crate::boundary::host::OutputPolicy::Capture
+        );
         assert_eq!(
             inspection.working_dir.as_deref(),
             Some(paths.host_clone().as_path()),

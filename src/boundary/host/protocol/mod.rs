@@ -1,8 +1,10 @@
-//! 外部commandの出力を解釈する。Docker Sandboxes CLIが大半を占めるが、`df`のような
-//! POSIX commandの出力も同じ境界へ置く。
+//! `boundary::host` が収集した標準出力を、後続の処理が扱う内部の値へ変換する。
 //!
-//! 解釈できない出力から状態を推測しない。parseできない出力はerrorとして扱う。
-//! 1 moduleが1 commandの出力を担当し、structured outputの共通部分だけを`json`が持つ。
+//! process の起動と標準出力の収集は `boundary::host` が担う。この module は収集した
+//! 文字列の形式を検証し、期待した形式でなければ状態を推測せず error を返す。
+//!
+//! 出力形式ごとの解釈を module に分け、複数の解釈処理で共通する JSON の読み取りだけを
+//! `json` に置く。
 
 mod daemon;
 mod disk;

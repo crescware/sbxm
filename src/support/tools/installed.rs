@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 
 use crate::support::sandbox;

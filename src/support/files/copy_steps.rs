@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::command::HostEnvironment;
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 use crate::paths;
 
@@ -16,7 +16,7 @@ pub(super) fn copy_steps(
     destination: &str,
     pending: &str,
 ) -> Result<()> {
-    let spec = crate::command::CommandSpec::capture(
+    let spec = crate::boundary::host::CommandSpec::capture(
         "sbx",
         &[
             "cp",
@@ -25,8 +25,8 @@ pub(super) fn copy_steps(
             &format!("{sandbox}:{staged}"),
         ],
     )
-    .env(crate::command::EnvPolicy::InheritWithoutSshAgent)
-    .timeout(crate::command::TimeoutClass::SandboxLifecycle);
+    .env(crate::boundary::host::EnvPolicy::InheritWithoutSshAgent)
+    .timeout(crate::boundary::host::TimeoutClass::SandboxLifecycle);
     host.run(&spec)?.require_success()?;
 
     let parent = destination

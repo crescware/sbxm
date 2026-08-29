@@ -1,5 +1,5 @@
 //! bare repositoryとmanaged worktreeの診断。
-use crate::command::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
 use crate::commands::status::project::{ProjectStatus, Value, WorktreeRow};
 use crate::design::Fact;
 use crate::diagnostics::{Error, ErrorId, Result};
