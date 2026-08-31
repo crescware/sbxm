@@ -4,21 +4,28 @@
 //! repositoryを進める処理はここだけを使う。どの入口から入っても、同じ検査と
 //! 同じ再利用規則を通る。
 
-mod already_built;
-mod changed_dockerfile_warning;
 mod external_preconditions;
-mod fresh_target;
+mod initial_intent;
+mod observation;
+mod observe;
 mod observed_worktrees;
 mod provision;
 mod provisioning_output;
+mod provisioning_state;
+mod require_repair;
+mod validate_intent;
 mod verify_external_preconditions;
 mod worktree_row;
 
-pub(crate) use already_built::already_built;
 pub(crate) use external_preconditions::ExternalPreconditions;
-pub(crate) use fresh_target::fresh_target;
+pub(crate) use initial_intent::initial_intent;
+pub use observation::Observation;
+pub(crate) use observe::observe;
 pub(crate) use provision::provision;
 pub use provisioning_output::ProvisioningOutput;
+pub use provisioning_state::ProvisioningState;
+pub(crate) use require_repair::require_repair;
+pub(crate) use validate_intent::validate_intent;
 pub(crate) use verify_external_preconditions::verify_external_preconditions;
 pub use worktree_row::WorktreeRow;
 

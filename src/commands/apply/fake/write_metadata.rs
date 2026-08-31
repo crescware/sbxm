@@ -30,6 +30,7 @@ pub fn write_metadata(
             dockerfile_sha256: DIGEST.into(),
         },
         git_identity: crate::testing::metadata::git_identity(),
+        initial_provisioning: None,
         rebuild,
     };
     metadata::create(&paths, &metadata).required()?;

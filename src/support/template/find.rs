@@ -3,7 +3,7 @@ use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClas
 use crate::diagnostics::Result;
 
 /// 名前が完全一致するTemplateを探す。
-pub(super) fn find(host: &dyn HostEnvironment, name: &str) -> Result<Option<TemplateEntry>> {
+pub fn find(host: &dyn HostEnvironment, name: &str) -> Result<Option<TemplateEntry>> {
     let spec = CommandSpec::capture("sbx", &["template", "ls", "--json"])
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);

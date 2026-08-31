@@ -10,6 +10,7 @@ use super::{
 use crate::design::SilentProgress;
 use crate::diagnostics::ErrorId;
 use crate::hash::sha256_hex;
+use crate::project::SandboxName;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::project::project_id;
 use crate::testing::prompt::ScriptedPrompt;
@@ -243,7 +244,10 @@ fn a_foreign_image_stops_prepare_before_anything_is_built() -> Checked {
     )
     .refused_because("a foreign image is not overwritten")?;
 
-    assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningIncomplete)
+    );
     assert!(!world.ran("docker build"));
     Ok(())
 }
@@ -302,9 +306,9 @@ fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Che
 }
 
 #[test]
-fn a_failed_image_build_lets_the_same_prepare_retarget_after_the_dockerfile_is_fixed() -> Checked {
-    // immutableな成果物が何も残らなかった段階。Dockerfileを直しての再実行は、
-    // その新しいgenerationへ続けられる。
+fn a_failed_image_build_requires_repair_even_after_the_dockerfile_is_fixed() -> Checked {
+    // intentが保存された後は、Dockerfileを直してもprepareが新しいgenerationへ
+    // 暗黙に切り替わらない。固定targetの成果物が無いので、repairも安全に止まる。
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -314,21 +318,37 @@ fn a_failed_image_build_lets_the_same_prepare_retarget_after_the_dockerfile_is_f
         .build(&world, &request)
         .refused_because("the run stops when the image cannot be built")?;
     world.nothing_fails();
+    let started_from = bench
+        .stored("Example-Org/Example-Repo")?
+        .provisioning
+        .dockerfile_sha256;
 
     let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
     fs::write(paths.dockerfile(), b"FROM example:edited\n")
         .required_because("fix the Dockerfile")?;
 
-    let output = bench
+    let error = bench
         .build(&world, &request)
-        .required_because("the same prepare retargets to the fixed generation")?;
-
-    assert!(!output.already_built);
+        .refused_because("the same prepare does not retarget the fixed generation")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    let project = project_of(&request)?;
+    let error = crate::commands::repair::run::prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .refused_because("repair cannot invent the fixed target image")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningGenerationMissing)
+    );
     let stored = bench.stored("Example-Org/Example-Repo")?;
     assert_eq!(
-        stored.provisioning.dockerfile_sha256,
-        sha256_hex(b"FROM example:edited\n"),
-        "the fixed dockerfile becomes the generation that was built"
+        stored.provisioning.dockerfile_sha256, started_from,
+        "the original generation remains the target"
     );
     Ok(())
 }
@@ -363,9 +383,10 @@ fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Ch
 
     assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
     assert!(
-        !world.since(mark).iter().any(|call| call.contains("build")
-            || call.contains("image")
-            || call.contains("create --name")),
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("docker build") || call.contains("create --name")),
         "nothing is built before the engine is confirmed reachable: {:?}",
         world.since(mark)
     );
@@ -374,10 +395,6 @@ fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Ch
 
 #[test]
 fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Checked {
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-
     // files配置、identity設定、gh git_protocol設定、bare clone、worktree作成の
     // それぞれの代表的な失敗。
     for step in [
@@ -387,6 +404,9 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
         "git init --bare",
         "worktree add",
     ] {
+        let bench = Bench::new()?;
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", None, None)?;
         world.failing(step);
         let mark = world.mark();
         let error = bench
@@ -395,12 +415,21 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
         let since = world.since(mark);
         world.nothing_fails();
 
-        let facts = &error.diagnostics()[0].facts;
-        assert_eq!(facts.len(), 4, "{step}: {facts:?}");
         assert_eq!(
-            since.iter().filter(|call| call.contains("df -Pk")).count(),
-            1,
-            "{step}: exactly one disk check per failure: {since:?}"
+            error.first_id(),
+            Some(ErrorId::ExternalCommandFailed),
+            "{step}: {error:?}"
+        );
+        assert!(
+            bench
+                .stored("Example-Org/Example-Repo")?
+                .initial_provisioning
+                .is_some(),
+            "{step}: the intent survives the interruption"
+        );
+        assert!(
+            since.iter().any(|call| call.contains(step)),
+            "{step}: the injected failure was reached: {since:?}"
         );
     }
     Ok(())
@@ -469,9 +498,24 @@ fn an_already_loaded_template_is_reused_without_exporting_a_new_archive() -> Che
         .insert(image, "deadbeef".to_string());
 
     let mark = world.mark();
-    bench
-        .build(&world, &request)
-        .required_because("the existing template is reused")?;
+    let project = project_of(&request)?;
+    let prepared = crate::commands::repair::run::prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("repair uses the existing template")?;
+    crate::commands::repair::run::execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .required_because("repair completes the interrupted build")?;
 
     assert!(
         !world
@@ -569,9 +613,24 @@ fn a_workspace_that_had_to_be_created_again_is_told_rather_than_hidden() -> Chec
     fs::remove_dir_all(&workspace).required_because("the workspace directory is removed")?;
 
     let mark = world.mark();
-    let output = bench
-        .build(&world, &request)
-        .required_because("the same prepare finishes")?;
+    let project = project_of(&request)?;
+    let prepared = crate::commands::repair::run::prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("repair resumes the interrupted build")?;
+    let output = crate::commands::repair::run::execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .required_because("repair finishes")?;
 
     assert!(
         workspace.is_dir(),

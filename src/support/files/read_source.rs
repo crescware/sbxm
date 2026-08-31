@@ -10,7 +10,7 @@ use crate::paths;
 use super::MAX_SOURCE_BYTES;
 
 /// sourceを検証し、そのSHA-256を返す。
-pub(super) fn read_source(source: &Path) -> Result<String> {
+pub fn read_source(source: &Path) -> Result<String> {
     let invalid = |reason: Msg| {
         Err(Error::single(
             Diagnostic::new(

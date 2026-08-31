@@ -17,7 +17,7 @@ mod unusable;
 
 pub use ensure::ensure;
 pub use existing::existing;
-use find::find;
+pub use find::find;
 pub use loaded_template::LoadedTemplate;
 use unusable::unusable;
 
