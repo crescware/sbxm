@@ -1,28 +1,65 @@
 use crate::boundary::host::HostEnvironment;
-use crate::diagnostics::Result;
+use crate::design::Fact;
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::msg;
 
-use super::{GITHUB_HOST, GITHUB_TOKEN_ENV};
+use crate::support::Observed;
 
-/// `Sandbox内のgitがGitHubへ提示するcredentialのconfig` key。
-///
-/// github.comだけに絞る。ほかのhostへplaceholderを送っても意味がなく、送る相手を
-/// 広げる理由がない。
-fn credential_key() -> String {
-    format!("credential.https://{GITHUB_HOST}.helper")
-}
+use super::{credential_key, expected_credential_helper, observe_git_credential};
 
 /// Sandbox内のgitに、placeholderをcredentialとして使わせる。
 ///
-/// helperはplaceholderを読むだけで、tokenは持たない。gitはこれをBasic認証として
-/// 送り、proxyがgithub.com宛のrequest headerで本物のtokenへ差し替える。usernameは
-/// `GitHubのgit` endpointでは任意の値でよい。
+/// 書く前に必ず再観測する。既に期待どおりならmutationを起こさず、値が無ければ
+/// 設定する。別の値が既にある場合は、別の利用者のSandboxである可能性を捨てきれない
+/// ため上書きしない。観測できない場合も同様に拒否する。
 pub fn configure_git_credential(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
-    let helper = format!("!f() {{ echo username=x; echo password=${GITHUB_TOKEN_ENV}; }}; f");
-    crate::support::sandbox::exec(
-        host,
-        sandbox,
-        &["git", "config", "--global", &credential_key(), &helper],
-    )?
-    .require_success()?;
-    Ok(())
+    match observe_git_credential(host, sandbox)? {
+        Observed::Matching => Ok(()),
+        Observed::Missing => {
+            crate::support::sandbox::exec(
+                host,
+                sandbox,
+                &[
+                    "git",
+                    "config",
+                    "--global",
+                    &credential_key(),
+                    &expected_credential_helper(),
+                ],
+            )?
+            .require_success()?;
+            Ok(())
+        }
+        Observed::Mismatch { evidence } => Err(refused(sandbox, &evidence)),
+        Observed::Unobservable { evidence } => Err(unobservable(sandbox, &evidence)),
+    }
+}
+
+fn refused(sandbox: &str, observed: &str) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::SandboxCredentialHelperUnusable,
+            msg!(
+                "error-sandbox-credential-helper-unusable",
+                sandbox = sandbox
+            ),
+        )
+        .fact(Fact::reason(msg!(
+            "cause-credential-helper-differs",
+            observed = observed
+        ))),
+    )
+}
+
+fn unobservable(sandbox: &str, detail: &str) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::SandboxCredentialHelperUnusable,
+            msg!(
+                "error-sandbox-credential-helper-unusable",
+                sandbox = sandbox
+            ),
+        )
+        .fact(Fact::cause(detail)),
+    )
 }

@@ -5,7 +5,8 @@ use crate::metadata::CreationMode;
 pub struct WorktreeRow {
     pub path: String,
     pub created_from: String,
-    /// 観測できたHEAD。停止中のSandboxでは読めないため`None`になる。
-    pub head: Option<String>,
+    /// 観測したHEAD。読めない、または空の応答は観測不能として拒否するため、この行が
+    /// 作られる時点で必ず値を持つ。
+    pub head: String,
     pub mode: CreationMode,
 }

@@ -14,6 +14,7 @@ pub mod generation;
 pub mod identity;
 pub mod image;
 pub mod inventory;
+mod observed;
 pub mod protection;
 pub mod provisioning;
 pub mod repository;
@@ -25,4 +26,5 @@ pub mod template;
 pub mod tools;
 pub mod worktree;
 
+pub use observed::Observed;
 pub use status::{Row, StatusValue};

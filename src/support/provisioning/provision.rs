@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
-use crate::config::GlobalConfig;
 use crate::design::{Fact, ProgressSink, Warning};
 use crate::diagnostics::Result;
 use crate::msg;
@@ -12,18 +11,18 @@ use crate::support::select::Locked;
 use crate::support::{disk, files, identity, image, repository, sandbox, secret, template, tools};
 
 use super::observed_worktrees::observed_worktrees;
-use super::{ExternalPreconditions, ProvisioningOutput};
+use super::{ExternalPreconditions, ProvisioningInputs, ProvisioningOutput};
 
 /// 固定済みgenerationへ向けて初回構築を進める唯一の共有境界。
 ///
 /// secretとengineのread-only事前条件は`preconditions`が既に確認済みであることを
 /// 証明する。呼び出しごとに1回だけ確認すればよいよう、ここでは同じ外部callを
-/// 再発行しない。
+/// 再発行しない。Dockerfileと宣言fileは`inputs`が固定したsnapshotだけを読み、
+/// 生きているhost pathへは二度と触れない。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn provision(
     locked: &mut Locked,
-    config: &GlobalConfig,
-    generation: &str,
+    inputs: &ProvisioningInputs,
     _preconditions: ExternalPreconditions,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
@@ -34,20 +33,27 @@ pub(crate) fn provision(
     let name = SandboxName::derive(&canonical);
     let project = ProjectId::parse(&locked.metadata.display_id())?;
     let layout = SandboxLayout::new(&canonical);
+    let generation = inputs.dockerfile_sha256.as_str();
 
+    // buildへ渡す直前にもう一度、snapshotが作った時点のままであることを確かめる。
+    inputs.verify_unchanged()?;
     let built = image::ensure(
         host,
         &name,
         locked.metadata.canonical_id(),
-        &locked.paths.dockerfile(),
+        &inputs.dockerfile_path,
         generation,
         progress,
     )?;
     warnings.extend(built.warnings.clone());
-    let loaded = if let Some(loaded) = template::existing(host, &built)? {
+
+    // Templateの再利用は、名前一致だけでなく、runtimeのidがlabel検証済みhost imageと
+    // 対応することまで確かめてから許可する。archiveのconfig digestを期待値として使う
+    // ため、再利用する場合でも一度archiveを作る。
+    let archive = image::ensure_archive(host, &locked.paths, &built, generation, progress)?;
+    let loaded = if let Some(loaded) = template::verified_existing(host, &built, archive.path())? {
         loaded
     } else {
-        let archive = image::ensure_archive(host, &locked.paths, &built, generation, progress)?;
         let outcome = template::ensure(host, archive.path(), &built, progress);
         archive.cleanup_after(outcome, &mut warnings, progress)?
     };
@@ -73,8 +79,15 @@ pub(crate) fn provision(
     // 追加のfactとして載せる。平常時はcommandを1つも増やさない。
     let decorate = |error| disk::attach_on_failure(host, &ready.name, ready.state, error);
 
-    let placed_files = files::place_all(host, &ready.name, &config.files, files::Conflict::Refuse)
-        .map_err(decorate)?;
+    // copyへ渡す直前にもう一度、snapshotが作った時点のままであることを確かめる。
+    inputs.verify_unchanged()?;
+    let placed_files = files::place_all(
+        host,
+        &ready.name,
+        &inputs.file_declarations(),
+        files::Conflict::Refuse,
+    )
+    .map_err(decorate)?;
     identity::ensure(host, &ready.name, &locked.metadata.git_identity).map_err(decorate)?;
     tools::SandboxReady::announce(host, &ready.name).map_err(decorate)?;
     secret::configure_git_credential(host, &ready.name).map_err(decorate)?;

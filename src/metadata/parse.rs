@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::config::{HostFileSource, SandboxHomeRelativePath};
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::git;
@@ -8,11 +9,13 @@ use crate::paths::{self};
 use crate::repository::RepositoryIdentity;
 
 use crate::metadata::document::{
-    RawGitIdentity, RawMetadata, RawProvisioning, RawRebuild, RawRepository, RawStartRef,
+    RawGitIdentity, RawInitialProvisioning, RawInitialProvisioningFile, RawMetadata,
+    RawProvisioning, RawRebuild, RawRepository, RawStartRef,
 };
 use crate::metadata::{
-    CreationMode, DOCUMENT_VERSION, GitIdentity, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata,
-    Provisioning, RebuildIntent, validate_git_identity_value,
+    CreationMode, DOCUMENT_VERSION, GitIdentity, InitialProvisioningFile,
+    InitialProvisioningIntent, MAX_WORKTREES, MIN_WORKTREES, ProjectMetadata, Provisioning,
+    RebuildIntent, validate_git_identity_value,
 };
 
 use super::{missing, require_sha256};
@@ -41,12 +44,34 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
     let repository = parse_repository(raw.repository, path)?;
     let provisioning = parse_provisioning(raw.provisioning, path)?;
     let git_identity = parse_git_identity(raw.git_identity, path)?;
+    let initial_provisioning = parse_initial_provisioning(raw.initial_provisioning, path)?;
+    let declared_files = parse_declared_files(raw.declared_files, path)?;
     let rebuild = parse_rebuild(raw.rebuild, path)?;
+
+    if let Some(initial) = &initial_provisioning
+        && initial.target_dockerfile_sha256 != provisioning.dockerfile_sha256
+    {
+        return Err(invalid(
+            path,
+            "initial_provisioning.target_dockerfile_sha256",
+            msg!("cause-initial-provisioning-target-differs"),
+        ));
+    }
+
+    if initial_provisioning.is_some() && rebuild.is_some() {
+        return Err(invalid(
+            path,
+            "initial_provisioning",
+            msg!("cause-initial-provisioning-conflicts-with-rebuild"),
+        ));
+    }
 
     Ok(ProjectMetadata {
         repository,
         provisioning,
         git_identity,
+        initial_provisioning,
+        declared_files,
         rebuild,
     })
 }
@@ -192,6 +217,90 @@ fn parse_git_identity(raw: Option<RawGitIdentity>, path: &Path) -> Result<GitIde
         user_name,
         user_email,
     })
+}
+
+/// 初回構築の復旧先と入力snapshotを読む。
+fn parse_initial_provisioning(
+    raw: Option<RawInitialProvisioning>,
+    path: &Path,
+) -> Result<Option<InitialProvisioningIntent>> {
+    let Some(initial) = raw else {
+        return Ok(None);
+    };
+    let target = initial
+        .target_dockerfile_sha256
+        .ok_or_else(|| missing(path, "initial_provisioning.target_dockerfile_sha256"))?;
+    require_sha256(&target).map_err(|reason| {
+        invalid(
+            path,
+            "initial_provisioning.target_dockerfile_sha256",
+            reason,
+        )
+    })?;
+    let files = initial
+        .files
+        .ok_or_else(|| missing(path, "initial_provisioning.files"))?;
+    let mut snapshots = Vec::with_capacity(files.len());
+    for file in files {
+        let source = file
+            .source
+            .ok_or_else(|| missing(path, "initial_provisioning.files.source"))?;
+        HostFileSource::new(&source)
+            .map_err(|reason| invalid(path, "initial_provisioning.files.source", reason))?;
+        let destination = file
+            .destination
+            .ok_or_else(|| missing(path, "initial_provisioning.files.destination"))?;
+        SandboxHomeRelativePath::new(&destination)
+            .map_err(|reason| invalid(path, "initial_provisioning.files.destination", reason))?;
+        let sha256 = file
+            .sha256
+            .ok_or_else(|| missing(path, "initial_provisioning.files.sha256"))?;
+        require_sha256(&sha256)
+            .map_err(|reason| invalid(path, "initial_provisioning.files.sha256", reason))?;
+        snapshots.push(InitialProvisioningFile {
+            source,
+            destination,
+            sha256,
+        });
+    }
+    Ok(Some(InitialProvisioningIntent {
+        target_dockerfile_sha256: target,
+        files: snapshots,
+    }))
+}
+
+/// 初回構築が完成した時点のbaselineを読む。この記録が無い案件は、この機能より前に
+/// 完成した案件として扱う。
+fn parse_declared_files(
+    raw: Option<Vec<RawInitialProvisioningFile>>,
+    path: &Path,
+) -> Result<Option<Vec<InitialProvisioningFile>>> {
+    let Some(files) = raw else {
+        return Ok(None);
+    };
+    let mut baseline = Vec::with_capacity(files.len());
+    for file in files {
+        let source = file
+            .source
+            .ok_or_else(|| missing(path, "declared_files.source"))?;
+        HostFileSource::new(&source)
+            .map_err(|reason| invalid(path, "declared_files.source", reason))?;
+        let destination = file
+            .destination
+            .ok_or_else(|| missing(path, "declared_files.destination"))?;
+        SandboxHomeRelativePath::new(&destination)
+            .map_err(|reason| invalid(path, "declared_files.destination", reason))?;
+        let sha256 = file
+            .sha256
+            .ok_or_else(|| missing(path, "declared_files.sha256"))?;
+        require_sha256(&sha256).map_err(|reason| invalid(path, "declared_files.sha256", reason))?;
+        baseline.push(InitialProvisioningFile {
+            source,
+            destination,
+            sha256,
+        });
+    }
+    Ok(Some(baseline))
 }
 
 /// 途中で止まった世代交代の記録を読む。

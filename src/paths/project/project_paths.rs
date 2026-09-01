@@ -106,4 +106,21 @@ impl ProjectPaths {
         self.cache_dir()
             .join(format!("template-{short_hash}.tar.tmp"))
     }
+
+    /// `<project-root>/.sbxm/.snapshot`
+    ///
+    /// 初回構築の1回の実行中だけ生きる、private な入力snapshot置き場。
+    pub fn snapshot_dir(&self) -> PathBuf {
+        self.sbxm_dir().join(".snapshot")
+    }
+
+    /// intentが固定したDockerfileの不変snapshot。
+    pub fn snapshot_dockerfile(&self) -> PathBuf {
+        self.snapshot_dir().join("Dockerfile")
+    }
+
+    /// intentが固定した、宣言file 1件の不変snapshot。
+    pub fn snapshot_file(&self, index: usize) -> PathBuf {
+        self.snapshot_dir().join(format!("file-{index}"))
+    }
 }

@@ -4,7 +4,7 @@ use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 use crate::project::ProjectId;
 
-use super::{add, apply, destroy, ls, open, prepare, rebuild, status, stop};
+use super::{add, apply, destroy, ls, open, prepare, rebuild, repair, status, stop};
 
 /// 実行するcommand。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +16,7 @@ pub enum Command {
     Add(crate::commands::add::Args),
     Apply(crate::commands::apply::Args),
     Prepare(Option<ProjectId>),
+    Repair(Option<ProjectId>),
     Rebuild(Option<ProjectId>),
     Open(crate::commands::open::Args),
     Stop(Vec<ProjectId>),
@@ -32,6 +33,7 @@ impl Command {
             add::CommandLineParser::syntax(builder)?,
             apply::CommandLineParser::syntax(builder)?,
             prepare::CommandLineParser::syntax(builder)?,
+            repair::CommandLineParser::syntax(builder)?,
             rebuild::CommandLineParser::syntax(builder)?,
             open::CommandLineParser::syntax(builder)?,
             stop::CommandLineParser::syntax(builder)?,
@@ -54,6 +56,9 @@ impl Command {
                     &arguments, prompt,
                 )?)),
                 "prepare" => Ok(Command::Prepare(prepare::CommandLineParser::interpret(
+                    &arguments, prompt,
+                )?)),
+                "repair" => Ok(Command::Repair(repair::CommandLineParser::interpret(
                     &arguments, prompt,
                 )?)),
                 "rebuild" => Ok(Command::Rebuild(rebuild::CommandLineParser::interpret(

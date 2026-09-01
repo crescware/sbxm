@@ -1,7 +1,9 @@
 use crate::project::{CanonicalProjectId, SandboxName};
 use crate::repository::RepositoryIdentity;
 
-use super::{GitIdentity, Provisioning, RebuildIntent};
+use super::{
+    GitIdentity, InitialProvisioningFile, InitialProvisioningIntent, Provisioning, RebuildIntent,
+};
 
 /// 1案件のmetadata。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +15,13 @@ pub struct ProjectMetadata {
     pub provisioning: Provisioning,
     /// `Sandbox内で使うGit` identity。登録時のhost設定のsnapshotである。
     pub git_identity: GitIdentity,
+    /// 初回構築の復旧先と、global configの入力snapshot。
+    pub initial_provisioning: Option<InitialProvisioningIntent>,
+    /// 初回構築が完成した時点で配置済みだった宣言fileのbaseline。
+    ///
+    /// `repair`はこのbaselineだけを復旧対象にし、現在のglobal configとの差分は`apply`の
+    /// 責務とする。この記録が無い案件は、この機能より前に完成した案件である。
+    pub declared_files: Option<Vec<InitialProvisioningFile>>,
     pub rebuild: Option<RebuildIntent>,
 }
 

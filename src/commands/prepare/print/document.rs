@@ -62,7 +62,7 @@ pub fn document(output: &PrepareOutput, locale: Locale) -> Document {
         worktrees.push(vec![
             Inline::path(worktree.path.clone()).into(),
             Inline::text(worktree.created_from.clone()).into(),
-            Inline::text(worktree.head.clone().unwrap_or_else(|| "-".to_string())).into(),
+            Inline::text(worktree.head.clone()).into(),
             legend.creation_mode(worktree.mode).into(),
         ]);
     }

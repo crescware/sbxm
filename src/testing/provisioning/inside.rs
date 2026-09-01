@@ -145,6 +145,7 @@ impl World {
         match inner {
             ["git", "init", "--bare", git_dir] => {
                 self.present.borrow_mut().insert((*git_dir).to_string());
+                *self.bare_git_dir.borrow_mut() = Some((*git_dir).to_string());
                 Some(ok())
             }
             ["git", "--git-dir", _, "remote", "add", "origin", url] => {
@@ -220,6 +221,17 @@ impl World {
                     .borrow_mut()
                     .insert((*path).to_string(), branch);
                 Some(ok())
+            }
+            [
+                "git",
+                "-C",
+                _,
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+            ] => {
+                let git_dir = self.bare_git_dir.borrow().clone().unwrap_or_default();
+                Some((0, format!("{git_dir}\n")))
             }
             ["git", "-C", _, "rev-parse", "HEAD"] => Some((0, format!("{COMMIT}\n"))),
             ["git", "-C", path, "symbolic-ref", "-q", "HEAD"] => {

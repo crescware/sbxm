@@ -9,24 +9,30 @@
 //! 扱いを変え、classic personal access tokenを注入しないためである。
 
 mod configure_git_credential;
+mod credential_key;
+mod expected_credential_helper;
 mod forget_command;
 mod forget_github;
 mod github_host;
 mod github_hosts;
 mod github_token_env;
 mod list_customs;
+mod observe_git_credential;
 mod placeholder_probe;
 mod register_command;
 mod require_github;
 mod require_placeholder_present;
 
 pub use configure_git_credential::configure_git_credential;
+use credential_key::credential_key;
+use expected_credential_helper::expected_credential_helper;
 pub use forget_command::forget_command;
 pub use forget_github::forget_github;
 pub use github_host::GITHUB_HOST;
 pub use github_hosts::GITHUB_HOSTS;
 pub use github_token_env::GITHUB_TOKEN_ENV;
 use list_customs::list_customs;
+pub(crate) use observe_git_credential::observe_git_credential;
 pub(crate) use placeholder_probe::placeholder_probe;
 pub use register_command::register_command;
 pub use require_github::require_github;

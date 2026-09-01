@@ -1,56 +1,23 @@
 use super::*;
 
-use crate::commands::prepare::fake::{Bench, World};
-use crate::metadata;
-use crate::paths::ProjectPaths;
+use crate::design::SilentProgress;
 use crate::support::select;
 use crate::testing::add_request::request;
 use crate::testing::outcome::{Checked, Refused, Required};
-use crate::{design::SilentProgress, hash::sha256_hex};
+use crate::testing::provisioning::{Bench, World};
 use std::fs;
 
 #[test]
-fn fresh_target_keeps_a_built_generation_when_the_dockerfile_changes() -> Checked {
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-    world.failing("sbx create");
-    bench
-        .build(&world, &request)
-        .refused_because("leave an image from the interrupted build")?;
-    world.nothing_fails();
-
-    let mut metadata = bench.stored("Example-Org/Example-Repo")?;
-    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    fs::write(paths.dockerfile(), b"FROM example:edited\n")
-        .required_because("edit the Dockerfile")?;
-
-    let name = metadata.sandbox_name();
-    let stored = metadata.provisioning.dockerfile_sha256.clone();
-    let (target, warnings) = fresh_target(&world, &paths, &mut metadata, &name)?;
-    assert_eq!(target, stored, "the built generation finishes the build");
-    assert_eq!(warnings.len(), 1);
-    assert_eq!(
-        metadata.provisioning.dockerfile_sha256, stored,
-        "the stored generation is not moved while its image exists"
-    );
-
-    // imageが無くなれば、Dockerfileを直した通常のprepareは現在の世代へ移る。
-    world.images.borrow_mut().clear();
-    let (target, warnings) = fresh_target(&world, &paths, &mut metadata, &name)?;
-    let edited = sha256_hex(b"FROM example:edited\n");
-    assert_eq!(target, edited);
-    assert!(warnings.is_empty());
-    assert_eq!(
-        metadata::load(&paths)
-            .required_because("read the metadata")?
-            .required_because("the project is present")?
-            .provisioning
-            .dockerfile_sha256,
-        edited,
-        "the new generation is recorded before anything is built"
-    );
-    Ok(())
+fn provisioning_states_keep_their_stable_spellings() {
+    for (state, expected) in [
+        (ProvisioningState::Fresh, "fresh"),
+        (ProvisioningState::Ready, "ready"),
+        (ProvisioningState::Pending, "pending"),
+        (ProvisioningState::Incomplete, "incomplete"),
+    ] {
+        assert_eq!(state.as_str(), expected);
+        assert_eq!(state.to_string(), expected);
+    }
 }
 
 #[test]
@@ -79,12 +46,13 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
     let name = locked.metadata.sandbox_name();
     let preconditions = verify_external_preconditions(&world, &name)
         .required_because("secret and docker preconditions are met")?;
+    let inputs = ProvisioningInputs::capture(&locked.paths, &bench.config, Some(&generation))
+        .required_because("capture the snapshot that fixes this attempt")?;
 
     let mark = world.mark();
     let output = provision(
         &mut locked,
-        &bench.config,
-        &generation,
+        &inputs,
         preconditions,
         &world,
         bench.workspace_root.path(),
@@ -100,11 +68,14 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
             .iter()
             .any(|warning| warning.description.id == "warning-workspace-restored")
     );
+    // Templateのruntime idは、label検証済みのimageから作るarchiveのconfig digestと
+    // 照合してから再利用可否を決める。そのため`docker image save`自体は毎回起こるが、
+    // 検証を通った場合は`sbx template load`や`sbx create`のような再構築へは進まない。
     assert!(
         !world
             .since(mark)
             .iter()
-            .any(|call| call.contains("docker image save") || call.contains("sbx create")),
+            .any(|call| call.contains("template load") || call.contains("sbx create")),
         "verified artifacts are reused: {:?}",
         world.since(mark)
     );

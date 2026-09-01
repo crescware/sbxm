@@ -1,7 +1,8 @@
 //! managed worktreeの作成と、観測できたHEAD。
+use crate::diagnostics::ErrorId;
 use crate::metadata::CreationMode;
 
-use crate::testing::outcome::{Checked, Required};
+use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::{
     super::fake::{Bench, World},
@@ -13,7 +14,7 @@ use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::value::COMMIT;
 
 #[test]
-fn a_head_that_cannot_be_read_is_left_unknown() -> Checked {
+fn a_head_that_cannot_be_read_is_refused_rather_than_left_unknown() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -22,9 +23,10 @@ fn a_head_that_cannot_be_read_is_left_unknown() -> Checked {
         .required_because("the first run builds")?;
 
     // 停止中のSandboxと同じく、worktreeのHEADだけが読めない状態にする。読めない読み取りも
-    // 出力は返すので、成功したかどうかはexit statusでしか分からない。
+    // 出力は返すので、成功したかどうかはexit statusでしか分からない。observeできない
+    // post-conditionを`already_built`へ丸めず、明示的なrepairへ送る。
     world.failing_with("rev-parse HEAD", "fatal: not a git repository\n");
-    let output = run(
+    let error = run(
         &bench.location,
         &bench.config,
         Some(&project_of(&request)?),
@@ -33,24 +35,13 @@ fn a_head_that_cannot_be_read_is_left_unknown() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
-    .required_because("a project that is built stays built")?;
-
-    assert!(output.already_built);
-    assert_eq!(output.worktrees.len(), 1);
-    assert_eq!(
-        output.worktrees[0].head, None,
-        "the output of a failed read is not reported as a HEAD"
-    );
-    assert_eq!(
-        output.worktrees[0].created_from, "refs/remotes/origin/main",
-        "what metadata declares is still reported"
-    );
-    assert_eq!(output.worktrees[0].mode, CreationMode::Attached);
+    .refused_because("an unreadable worktree head is not a verified post-condition")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     Ok(())
 }
 
 #[test]
-fn a_head_that_reads_back_empty_is_left_unknown() -> Checked {
+fn a_head_that_reads_back_empty_is_refused_rather_than_left_unknown() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -60,7 +51,7 @@ fn a_head_that_reads_back_empty_is_left_unknown() -> Checked {
 
     // 成功しながら何も答えない読み取り。値がない以上、観測できたことにはならない。
     world.succeeding_silently("rev-parse HEAD");
-    let output = run(
+    let error = run(
         &bench.location,
         &bench.config,
         Some(&project_of(&request)?),
@@ -69,14 +60,8 @@ fn a_head_that_reads_back_empty_is_left_unknown() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &mut SilentProgress,
     )
-    .required_because("a project that is built stays built")?;
-
-    assert!(output.already_built);
-    assert_eq!(output.worktrees.len(), 1);
-    assert_eq!(
-        output.worktrees[0].head, None,
-        "an empty answer is not reported as a HEAD"
-    );
+    .refused_because("an empty answer is not a verified post-condition")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     Ok(())
 }
 
@@ -93,7 +78,7 @@ fn three_detached_worktrees_start_from_one_commit_of_the_named_branch() -> Check
     for (index, worktree) in output.worktrees.iter().enumerate() {
         assert_eq!(worktree.path, format!("example-repo.tree-{index}"));
         assert_eq!(worktree.created_from, "refs/remotes/origin/develop");
-        assert_eq!(worktree.head.as_deref(), Some(COMMIT));
+        assert_eq!(worktree.head, COMMIT);
         assert!(
                 world.ran(&format!(
                     "worktree add --detach /home/agent/work/example-repo/example-repo.tree-{index} refs/remotes/origin/develop"

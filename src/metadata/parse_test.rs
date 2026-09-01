@@ -1,5 +1,8 @@
 use crate::diagnostics::ErrorId;
-use crate::metadata::{CreationMode, ProjectMetadata, Provisioning, RebuildIntent};
+use crate::metadata::{
+    CreationMode, InitialProvisioningFile, InitialProvisioningIntent, ProjectMetadata,
+    Provisioning, RebuildIntent,
+};
 use std::path::Path;
 
 use std::fmt::Write as _;
@@ -271,6 +274,119 @@ fn metadata_round_trips_through_the_rendered_form() -> Checked {
         ..attached("example-org", "example-repo")?
     };
     assert_eq!(round_trip(&detached)?, detached);
+    Ok(())
+}
+
+#[test]
+fn an_initial_provisioning_intent_round_trips_and_cannot_share_rebuild() -> Checked {
+    let mut metadata = attached("example-org", "example-repo")?;
+    metadata.initial_provisioning = Some(InitialProvisioningIntent {
+        target_dockerfile_sha256: DIGEST.to_string(),
+        files: vec![InitialProvisioningFile {
+            source: "/tmp/declared.yaml".to_string(),
+            destination: ".config/example/settings.yaml".to_string(),
+            sha256: OTHER_DIGEST.to_string(),
+        }],
+    });
+    assert_eq!(round_trip(&metadata)?, metadata);
+
+    let mut conflicting = metadata;
+    conflicting.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: OTHER_DIGEST.to_string(),
+        previous_dockerfile_sha256: DIGEST.to_string(),
+    });
+    let error = parse(&render(&conflicting)?, Path::new("/tmp/project.yaml"))
+        .refused_because("initial provisioning and rebuild are different intents")?;
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidValue));
+    assert_eq!(field_of(&error)?, "initial_provisioning");
+    Ok(())
+}
+
+#[test]
+fn an_initial_provisioning_record_names_missing_and_invalid_inputs() -> Checked {
+    let mut metadata = attached("example-org", "example-repo")?;
+    metadata.initial_provisioning = Some(InitialProvisioningIntent {
+        target_dockerfile_sha256: DIGEST.to_string(),
+        files: vec![InitialProvisioningFile {
+            source: "/tmp/declared.yaml".to_string(),
+            destination: ".config/example/settings.yaml".to_string(),
+            sha256: OTHER_DIGEST.to_string(),
+        }],
+    });
+    let full = render(&metadata)?;
+
+    for field in [
+        "target_dockerfile_sha256:",
+        "files:",
+        "source:",
+        "destination:",
+        "sha256:",
+    ] {
+        let text = if field == "files:" {
+            let mut dropping_files = false;
+            joined_lines(full.lines().filter(|line| {
+                if line.starts_with("  files:") {
+                    dropping_files = true;
+                    return false;
+                }
+                if dropping_files && line.starts_with("  ") {
+                    return false;
+                }
+                dropping_files = false;
+                true
+            }))
+        } else {
+            let line = full
+                .lines()
+                .find(|line| {
+                    let trimmed = line.trim_start();
+                    trimmed.starts_with(field)
+                        || trimmed
+                            .strip_prefix("- ")
+                            .is_some_and(|value| value.starts_with(field))
+                })
+                .required_because("find the initial provisioning field")?;
+            let start = line
+                .find(field)
+                .required_because("find the initial provisioning field name")?;
+            replaced(&full, line, &format!("{}{field} null", &line[..start]))
+        };
+        assert_eq!(
+            refusal(&text)?,
+            Some(ErrorId::MetadataMissingField),
+            "initial_provisioning.{field} produced the wrong error"
+        );
+    }
+
+    for (field, replacement) in [
+        (
+            "target_dockerfile_sha256:",
+            "target_dockerfile_sha256: nope",
+        ),
+        ("source:", "source: relative.yaml"),
+        ("destination:", "destination: ../outside"),
+        ("sha256:", "sha256: nope"),
+    ] {
+        let line = full
+            .lines()
+            .find(|line| {
+                let trimmed = line.trim_start();
+                trimmed.starts_with(field)
+                    || trimmed
+                        .strip_prefix("- ")
+                        .is_some_and(|value| value.starts_with(field))
+            })
+            .required_because("find the initial provisioning field")?;
+        let start = line
+            .find(field)
+            .required_because("find the initial provisioning field name")?;
+        let text = replaced(&full, line, &format!("{}{replacement}", &line[..start]));
+        assert_eq!(
+            refusal(&text)?,
+            Some(ErrorId::MetadataInvalidValue),
+            "{field} accepted an invalid value"
+        );
+    }
     Ok(())
 }
 

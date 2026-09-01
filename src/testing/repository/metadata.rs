@@ -16,6 +16,8 @@ pub fn metadata(
             dockerfile_sha256: "1".repeat(64),
         },
         git_identity: crate::testing::metadata::git_identity(),
+        initial_provisioning: None,
+        declared_files: None,
         rebuild: None,
     })
 }
