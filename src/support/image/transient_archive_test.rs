@@ -269,6 +269,27 @@ fn an_unobservable_replacement_is_reported_the_same_way_as_a_removal_failure() -
 }
 
 #[test]
+fn a_path_that_cannot_be_observed_is_never_adopted_as_an_archive() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().required()?;
+    let sub = dir.path().join("sub");
+    std::fs::create_dir(&sub).required()?;
+    let path = sub.join("template-000000000000.tar");
+    // 存在を確かめる権利すら無いdirectoryの下に置く。不在と観測不能を混同しない。
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o000)).required()?;
+
+    let created = TransientArchive::new(path.clone());
+
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o700)).required()?;
+
+    let error = created
+        .refused_because("a path that cannot be observed is never treated as a fresh archive")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    Ok(())
+}
+
+#[test]
 fn dropping_an_archive_that_was_never_cleaned_up_removes_it() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("template-000000000000.tar");

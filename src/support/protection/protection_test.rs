@@ -1342,6 +1342,87 @@ fn a_layer_b_collector_that_cannot_answer_names_the_inventory_it_could_not_read(
 }
 
 #[test]
+fn every_kind_of_malformed_status_record_is_never_read_as_clean() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+    let status_command =
+        format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all");
+
+    let cases = [
+        // フィールドの区切りが壊れており、空のfieldが残る。
+        "\0",
+        // kindの後にfieldとして解釈できるspaceが無い。
+        "nospace\0",
+        // rename recordのXY欄が9 fieldに満たない。
+        "2 too few fields\0",
+        // rename recordの構造は正しいが、原pathが空文字列で続く。
+        "2 R. N... 100644 100644 100644 abc abc R100 new.txt\0\0",
+        // 未追跡pathの種別なのにpathが無い。
+        "? \0",
+    ];
+    for output in cases {
+        let host = clean_host(&fixture, &project)?.answering(&status_command, 0, output);
+        let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+            .required_because("a malformed record is retained as an observation blocker")?;
+        let error = gate::require_no_blockers(&assessment)
+            .refused_because("a malformed status record is not evidence of a clean worktree")?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::WorktreeStatusUnobservable),
+            "{output:?}"
+        );
+    }
+
+    // 無視対象pathの種別なのにpathが無い。この種別は`--ignored`を渡したcommandだけが
+    // 受け付けるため、別のneedleへ答える。
+    let ignored_command =
+        format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --ignored=traditional");
+    let host = clean_host(&fixture, &project)?.answering(&ignored_command, 0, "! \0");
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because(
+            "a malformed ignored-path record is retained as an observation blocker",
+        )?;
+    let error = gate::require_no_blockers(&assessment)
+        .refused_because("a malformed ignored-path record is not evidence of a clean worktree")?;
+    assert_eq!(error.first_id(), Some(ErrorId::IgnoredPathsUnobservable));
+    Ok(())
+}
+
+#[test]
+fn a_worktree_inventory_missing_the_shared_bare_repository_is_unobservable() -> Checked {
+    // `test -e <bare_git_dir>`はrepositoryの存在を答えても、`worktree list`自体が
+    // その項目を持たないことがある。一覧が別の何かを読んだ可能性を、worktreeが
+    // 1件も無い状態として丸めない。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let name = project.sandbox.as_str();
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!(
+            "exec {name} -- git --git-dir {} worktree list --porcelain -z",
+            layout.bare_git_dir()
+        ),
+        0,
+        &format!("worktree {managed}\0branch refs/heads/main\0\0"),
+    );
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("the failure is retained as an observation blocker")?;
+    let error = gate::require_no_blockers(&assessment).refused_because(
+        "a listing without the shared bare repository never reaches confirmation",
+    )?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::WorktreeInventoryUnobservable)
+    );
+    Ok(())
+}
+
+#[test]
 fn a_worktree_that_is_not_an_artifact_of_this_project_is_not_reported_as_unsaved_work() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;

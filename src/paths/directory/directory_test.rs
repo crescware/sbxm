@@ -343,6 +343,57 @@ fn require_private_directory_refuses_a_regular_file() -> Checked {
 }
 
 #[test]
+fn require_owned_directory_accepts_a_directory_the_current_user_owns() -> Checked {
+    let dir = temp_dir()?;
+    let target = dir.path().join("root.project");
+    fs::create_dir(&target).required_because("create")?;
+    require_owned_directory(&target, PathScope::ProjectPath)
+        .required_because("an owned directory is trusted regardless of its permission")
+}
+
+#[test]
+fn require_owned_directory_refuses_a_symlink() -> Checked {
+    let dir = temp_dir()?;
+    let real = dir.path().join("real.project");
+    fs::create_dir(&real).required_because("create")?;
+    let link = dir.path().join("link.project");
+    std::os::unix::fs::symlink(&real, &link).required_because("symlink")?;
+
+    let error = require_owned_directory(&link, PathScope::ProjectPath)
+        .refused_because("symlinked project roots are refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    Ok(())
+}
+
+#[test]
+fn require_owned_directory_refuses_a_regular_file() -> Checked {
+    let dir = temp_dir()?;
+    let target = dir.path().join("root.project");
+    fs::write(&target, b"not a directory").required_because("write")?;
+
+    let error = require_owned_directory(&target, PathScope::ProjectPath)
+        .refused_because("a regular file is not a project root to trust")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    Ok(())
+}
+
+#[test]
+fn require_owned_directory_reports_a_directory_it_cannot_read() -> Checked {
+    let dir = temp_dir()?;
+    let closed = dir.path().join("closed");
+    fs::create_dir(&closed).required_because("create")?;
+    let target = closed.join("root.project");
+    fs::create_dir(&target).required_because("create")?;
+
+    let outcome = observed_under(&closed, 0o000, || {
+        require_owned_directory(&target, PathScope::ProjectPath)
+    })?;
+    let error = outcome.refused_because("a path that cannot be read is not trusted")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    Ok(())
+}
+
+#[test]
 fn require_private_directory_reports_a_directory_it_cannot_read() -> Checked {
     let dir = temp_dir()?;
     let closed = dir.path().join("closed");
