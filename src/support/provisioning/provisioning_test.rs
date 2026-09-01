@@ -46,12 +46,13 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
     let name = locked.metadata.sandbox_name();
     let preconditions = verify_external_preconditions(&world, &name)
         .required_because("secret and docker preconditions are met")?;
+    let inputs = ProvisioningInputs::capture(&locked.paths, &bench.config, Some(&generation))
+        .required_because("capture the snapshot that fixes this attempt")?;
 
     let mark = world.mark();
     let output = provision(
         &mut locked,
-        &bench.config,
-        &generation,
+        &inputs,
         preconditions,
         &world,
         bench.workspace_root.path(),
@@ -67,11 +68,14 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
             .iter()
             .any(|warning| warning.description.id == "warning-workspace-restored")
     );
+    // Templateのruntime idは、label検証済みのimageから作るarchiveのconfig digestと
+    // 照合してから再利用可否を決める。そのため`docker image save`自体は毎回起こるが、
+    // 検証を通った場合は`sbx template load`や`sbx create`のような再構築へは進まない。
     assert!(
         !world
             .since(mark)
             .iter()
-            .any(|call| call.contains("docker image save") || call.contains("sbx create")),
+            .any(|call| call.contains("template load") || call.contains("sbx create")),
         "verified artifacts are reused: {:?}",
         world.since(mark)
     );

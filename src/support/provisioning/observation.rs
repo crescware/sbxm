@@ -1,4 +1,5 @@
 use crate::boundary::host::protocol::SandboxState;
+use crate::support::Observed;
 use crate::support::files::PlacedFile;
 
 use super::{ProvisioningState, WorktreeRow};
@@ -26,6 +27,7 @@ pub struct Observation {
     pub tools_complete: bool,
     pub credentials_isolated: bool,
     pub secret_present: bool,
+    pub credential_helper: Observed,
     pub repository_complete: bool,
     pub worktrees_complete: bool,
     pub worktrees: Vec<WorktreeRow>,
@@ -58,6 +60,7 @@ impl Observation {
             tools_complete: false,
             credentials_isolated: false,
             secret_present: false,
+            credential_helper: Observed::Missing,
             repository_complete: false,
             worktrees_complete: false,
             worktrees: Vec::new(),
@@ -81,6 +84,7 @@ impl Observation {
             && self.tools_complete
             && self.credentials_isolated
             && self.secret_present
+            && self.credential_helper.is_matching()
             && self.repository_complete
             && self.worktrees_complete
     }

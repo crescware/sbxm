@@ -6,6 +6,7 @@ use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 use crate::msg;
 use crate::project::ProjectId;
+use crate::support::provisioning::ProvisioningInputs;
 use crate::support::select::ProjectPrompt;
 use crate::support::{generation, image, provisioning};
 
@@ -54,22 +55,24 @@ pub fn run(
     // ここで一度だけ確認し、以降の`provision`の中では再確認しない。
     let preconditions = provisioning::verify_external_preconditions(host, &name)?;
 
+    // Dockerfileと宣言fileを1回だけ読み、privateなsnapshotへ複製する。以降はこの
+    // snapshotだけを使い、生きているhost pathを二度と読まない。
+    let inputs = ProvisioningInputs::capture(&locked.paths, config, None)?;
+
     // metadataのintentとtarget generationを、最初のhost側mutationより先にatomicに保存する。
-    let generation = observation.current_generation.clone();
-    locked.metadata.initial_provisioning = Some(provisioning::initial_intent(config, &generation)?);
+    locked.metadata.initial_provisioning = Some(provisioning::initial_intent(&inputs));
     locked
         .metadata
         .provisioning
         .dockerfile_sha256
-        .clone_from(&generation);
+        .clone_from(&inputs.dockerfile_sha256);
     crate::metadata::update(&locked.paths, &locked.metadata)?;
 
     let warnings = image::cleanup_stale_archives(&locked.paths)?;
 
     let output = provisioning::provision(
         &mut locked,
-        config,
-        &generation,
+        &inputs,
         preconditions,
         host,
         workspace_root,
@@ -93,6 +96,7 @@ pub fn run(
         ));
     }
     locked.metadata.initial_provisioning = None;
+    locked.metadata.declared_files = Some(provisioning::initial_intent(&inputs).files);
     crate::metadata::update(&locked.paths, &locked.metadata)?;
     Ok(output)
 }

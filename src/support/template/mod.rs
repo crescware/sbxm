@@ -14,12 +14,14 @@ mod existing;
 mod find;
 mod loaded_template;
 mod unusable;
+mod verified_existing;
 
 pub use ensure::ensure;
 pub use existing::existing;
 pub use find::find;
 pub use loaded_template::LoadedTemplate;
 use unusable::unusable;
+pub use verified_existing::verified_existing;
 
 #[cfg(test)]
 #[path = "template_test.rs"]

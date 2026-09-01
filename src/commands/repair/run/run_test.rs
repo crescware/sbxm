@@ -429,11 +429,10 @@ fn repair_clears_an_intent_after_read_only_completion_verification() -> Checked 
 
     let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
     let mut stored = bench.stored("Example-Org/Example-Repo")?;
-    let generation = stored.provisioning.dockerfile_sha256.clone();
-    stored.initial_provisioning = Some(
-        crate::support::provisioning::initial_intent(&bench.config, &generation)
-            .required_because("record the already-complete intent")?,
-    );
+    let inputs =
+        crate::support::provisioning::ProvisioningInputs::capture(&paths, &bench.config, None)
+            .required_because("capture the current inputs as a snapshot")?;
+    stored.initial_provisioning = Some(crate::support::provisioning::initial_intent(&inputs));
     metadata::update(&paths, &stored).required_because("persist the already-complete intent")?;
 
     let mark = world.mark();
@@ -468,6 +467,101 @@ fn repair_clears_an_intent_after_read_only_completion_verification() -> Checked 
         }),
         "a complete pending project is only observed and cleared: {:?}",
         world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn repair_does_not_clear_an_intent_it_cannot_verify_as_complete() -> Checked {
+    // 完成確認そのものが観測できなければ、成果物が揃って見えても完了とみなさない。
+    // intentを消すのは、全post-conditionをread-onlyで確認できたときだけである。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the project is complete")?;
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    let mut stored = bench.stored("Example-Org/Example-Repo")?;
+    let inputs =
+        crate::support::provisioning::ProvisioningInputs::capture(&paths, &bench.config, None)
+            .required_because("capture the current inputs as a snapshot")?;
+    stored.initial_provisioning = Some(crate::support::provisioning::initial_intent(&inputs));
+    metadata::update(&paths, &stored).required_because("persist the already-complete intent")?;
+
+    world.failing_with("rev-parse HEAD", "fatal: not a git repository\n");
+    let project = project_of(&request)?;
+    prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .refused_because("an unreadable worktree head is not read as a completed post-condition")?;
+
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some(),
+        "the intent is not cleared while completion cannot be verified"
+    );
+    Ok(())
+}
+
+#[test]
+fn repair_asks_for_another_repair_when_completion_cannot_be_reverified_after_provisioning()
+-> Checked {
+    // provisionそのものは成功しても、直後の読み取り専用の完成確認がそれを裏付けられ
+    // なければ、intentは消さない。次のrepairへ安全に送る。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    world.failing("worktree add");
+    bench
+        .build(&world, &request)
+        .refused_because("the old run stopped after reusable artifacts were made")?;
+    world.nothing_fails();
+
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    let workspace = bench
+        .workspace_root
+        .path()
+        .join(stored.sandbox_name().as_str());
+    let project = project_of(&request)?;
+    let prepared = prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("repair prepares an explicit plan")?;
+
+    // 最後のworktreeを作った直後、中立workspaceが消える。provisionそのものは成功
+    // で終わるが、直後の再観測はそれを完成として確認できない。
+    world.mutate_before("worktree add", move || {
+        let _ = fs::remove_dir_all(&workspace);
+    });
+    let error = execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .refused_because("provisioning that cannot be reverified as complete is not a success")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some(),
+        "the intent is not cleared when completion cannot be reverified"
     );
     Ok(())
 }

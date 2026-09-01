@@ -117,7 +117,7 @@ fn prepare_output() -> super::prepare::PrepareOutput {
         worktrees: vec![crate::support::provisioning::WorktreeRow {
             path: "workspace".to_string(),
             created_from: "main".to_string(),
-            head: Some("a1b2c3d".to_string()),
+            head: "a1b2c3d".to_string(),
             mode: CreationMode::Attached,
         }],
         files: placed(),

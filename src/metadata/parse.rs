@@ -9,8 +9,8 @@ use crate::paths::{self};
 use crate::repository::RepositoryIdentity;
 
 use crate::metadata::document::{
-    RawGitIdentity, RawInitialProvisioning, RawMetadata, RawProvisioning, RawRebuild,
-    RawRepository, RawStartRef,
+    RawGitIdentity, RawInitialProvisioning, RawInitialProvisioningFile, RawMetadata,
+    RawProvisioning, RawRebuild, RawRepository, RawStartRef,
 };
 use crate::metadata::{
     CreationMode, DOCUMENT_VERSION, GitIdentity, InitialProvisioningFile,
@@ -45,6 +45,7 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
     let provisioning = parse_provisioning(raw.provisioning, path)?;
     let git_identity = parse_git_identity(raw.git_identity, path)?;
     let initial_provisioning = parse_initial_provisioning(raw.initial_provisioning, path)?;
+    let declared_files = parse_declared_files(raw.declared_files, path)?;
     let rebuild = parse_rebuild(raw.rebuild, path)?;
 
     if let Some(initial) = &initial_provisioning
@@ -70,6 +71,7 @@ pub fn parse(text: &str, path: &Path) -> Result<ProjectMetadata> {
         provisioning,
         git_identity,
         initial_provisioning,
+        declared_files,
         rebuild,
     })
 }
@@ -265,6 +267,40 @@ fn parse_initial_provisioning(
         target_dockerfile_sha256: target,
         files: snapshots,
     }))
+}
+
+/// 初回構築が完成した時点のbaselineを読む。この記録が無い案件は、この機能より前に
+/// 完成した案件として扱う。
+fn parse_declared_files(
+    raw: Option<Vec<RawInitialProvisioningFile>>,
+    path: &Path,
+) -> Result<Option<Vec<InitialProvisioningFile>>> {
+    let Some(files) = raw else {
+        return Ok(None);
+    };
+    let mut baseline = Vec::with_capacity(files.len());
+    for file in files {
+        let source = file
+            .source
+            .ok_or_else(|| missing(path, "declared_files.source"))?;
+        HostFileSource::new(&source)
+            .map_err(|reason| invalid(path, "declared_files.source", reason))?;
+        let destination = file
+            .destination
+            .ok_or_else(|| missing(path, "declared_files.destination"))?;
+        SandboxHomeRelativePath::new(&destination)
+            .map_err(|reason| invalid(path, "declared_files.destination", reason))?;
+        let sha256 = file
+            .sha256
+            .ok_or_else(|| missing(path, "declared_files.sha256"))?;
+        require_sha256(&sha256).map_err(|reason| invalid(path, "declared_files.sha256", reason))?;
+        baseline.push(InitialProvisioningFile {
+            source,
+            destination,
+            sha256,
+        });
+    }
+    Ok(Some(baseline))
 }
 
 /// 途中で止まった世代交代の記録を読む。

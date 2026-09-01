@@ -104,6 +104,7 @@ pub fn register(
             },
             git_identity: git_identity.clone(),
             initial_provisioning: None,
+            declared_files: None,
             rebuild: None,
         };
         metadata::create(&paths, &metadata)?;

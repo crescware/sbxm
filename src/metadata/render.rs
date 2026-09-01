@@ -49,6 +49,16 @@ pub fn render(metadata: &ProjectMetadata) -> crate::diagnostics::Result<String> 
                 ),
             }
         }),
+        declared_files: metadata.declared_files.as_ref().map(|files| {
+            files
+                .iter()
+                .map(|file| RawInitialProvisioningFile {
+                    source: Some(file.source.clone()),
+                    destination: Some(file.destination.clone()),
+                    sha256: Some(file.sha256.clone()),
+                })
+                .collect()
+        }),
         rebuild: metadata.rebuild.as_ref().map(|rebuild| RawRebuild {
             target_dockerfile_sha256: Some(rebuild.target_dockerfile_sha256.clone()),
             previous_dockerfile_sha256: Some(rebuild.previous_dockerfile_sha256.clone()),

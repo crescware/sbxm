@@ -45,3 +45,7 @@ fn changed(project: &str, entry: &str) -> Error {
         .remediation(msg!("remediation-initial-provisioning-input-changed")),
     )
 }
+
+#[cfg(test)]
+#[path = "validate_intent_test.rs"]
+mod validate_intent_test;

@@ -18,6 +18,7 @@ pub fn attached(owner: &str, repository: &str) -> Checked<ProjectMetadata> {
         },
         git_identity: git_identity(),
         initial_provisioning: None,
+        declared_files: None,
         rebuild: None,
     })
 }

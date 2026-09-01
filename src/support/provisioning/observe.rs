@@ -9,10 +9,10 @@ use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use crate::support::{
-    daemon, files, generation, identity, image, inventory, repository, sandbox, secret, template,
-    tools,
+    daemon, generation, identity, image, inventory, repository, sandbox, secret, template, tools,
 };
 
+use super::declared_files::declared_files;
 use super::observed_worktrees::observed_worktrees;
 use super::{Observation, ProvisioningState};
 
@@ -45,14 +45,20 @@ pub(crate) fn observe(
         sandbox::verify_identity(entry, &name, workspace_root)?;
         observation.sandbox_present = true;
         observation.sandbox_state = Some(entry.state);
-        observation.workspace_present = sandbox::workspace_exists(workspace_root, &name)?;
+        // 存在するだけでは安全とみなさない。symlink、他アカウント所有、group/otherへの
+        // permissionは`Ready`にも`Incomplete`にも丸めず、ここで拒否する。
+        observation.workspace_present =
+            sandbox::observe_workspace(workspace_root, &name, true)?.is_matching();
         if observation.workspace_present
             && entry.state == crate::boundary::host::protocol::SandboxState::Running
         {
             observe_sandbox(host, entry, config, metadata, &layout, &mut observation)?;
         }
     } else {
-        observation.workspace_present = sandbox::workspace_exists(workspace_root, &name)?;
+        // Sandboxが無いorphan workspaceは、空であることまで確かめる。中身があると、
+        // それがどこから来たかを確認できない。
+        observation.workspace_present =
+            sandbox::observe_workspace(workspace_root, &name, false)?.is_matching();
     }
 
     // 完成済みSandboxは、再利用判定にDocker daemonを要しない。Dockerfileが変わった
@@ -123,11 +129,12 @@ fn observe_sandbox(
         }
         Err(error) => return Err(error),
     };
-    observation.files = files::observe(host, sandbox, &config.files)?;
+    observation.credential_helper = secret::observe_git_credential(host, sandbox)?;
+    observation.files = declared_files(host, sandbox, metadata, config)?;
     observation.files_complete = observation
         .files
         .iter()
-        .all(|file| file.placement == files::Placement::Unchanged);
+        .all(|file| file.placement == crate::support::files::Placement::Unchanged);
     observation.identity_complete = identity::observe(host, sandbox, &metadata.git_identity)?;
 
     let installed = tools::Installed::observe(host, sandbox)?;

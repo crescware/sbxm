@@ -6,11 +6,12 @@ use crate::design::{Fact, ProgressSink, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata;
 use crate::msg;
-use crate::support::provisioning::{self, Observation, ProvisioningState};
+use crate::support::provisioning::{self, Observation, ProvisioningInputs, ProvisioningState};
 
 use crate::commands::repair::RepairOutput;
 
 use super::Prepared;
+use super::actions_for::actions_for;
 
 /// plan表示後、固定したtargetへ明示的にrepairする。
 pub fn execute(
@@ -43,12 +44,13 @@ pub fn execute(
         &prepared.locked.metadata,
         workspace_root,
     )?;
+    let has_intent = prepared.locked.metadata.initial_provisioning.is_some();
     if latest.state != prepared.observation.state
-        || selected_target(
-            &latest,
-            prepared.locked.metadata.initial_provisioning.is_some(),
-        ) != prepared.target
+        || selected_target(&latest, has_intent) != prepared.target
+        || actions_for(&prepared.locked.metadata, &latest, has_intent) != prepared.plan.actions
     {
+        // 表示した対象と、これから実行する対象が一致しない。displayした一覧だけを
+        // 実行するという契約を守るため、ここで拒否し、mutationは1つも起こさない。
         return Err(state_changed(
             &prepared.locked.metadata,
             prepared.observation.state,
@@ -78,9 +80,13 @@ pub fn execute(
         .take()
         .ok_or_else(|| state_changed(&prepared.locked.metadata, latest.state, latest.state))?;
 
+    // intentが再現するべき入力から、同じsnapshotをここで作り直してから初めてmutationへ
+    // 進む。validate_intentが確かめた現在の入力と、これから使うsnapshotの間に隙間を
+    // 作らない。
+    let inputs = ProvisioningInputs::capture(&prepared.paths, config, Some(&prepared.target))?;
+
     if prepared.locked.metadata.initial_provisioning.is_none() {
-        prepared.locked.metadata.initial_provisioning =
-            Some(provisioning::initial_intent(config, &prepared.target)?);
+        prepared.locked.metadata.initial_provisioning = Some(provisioning::initial_intent(&inputs));
         prepared
             .locked
             .metadata
@@ -95,8 +101,7 @@ pub fn execute(
     )?);
     let output = provisioning::provision(
         &mut prepared.locked,
-        config,
-        &prepared.target,
+        &inputs,
         preconditions,
         host,
         workspace_root,
@@ -118,6 +123,7 @@ pub fn execute(
         ));
     }
     prepared.locked.metadata.initial_provisioning = None;
+    prepared.locked.metadata.declared_files = Some(provisioning::initial_intent(&inputs).files);
     metadata::update(&prepared.paths, &prepared.locked.metadata)?;
 
     Ok(RepairOutput {
@@ -170,3 +176,7 @@ fn state_changed(
         ),
     )
 }
+
+#[cfg(test)]
+#[path = "selected_target_test.rs"]
+mod selected_target_test;

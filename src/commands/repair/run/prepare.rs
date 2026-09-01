@@ -2,15 +2,17 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::design::{Cell, Fact, Remediation};
+use crate::design::{Fact, Field, Inline, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::hash::short_hex;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::{ProjectId, SandboxName};
+use crate::support::files::Placement;
 use crate::support::provisioning::{self, Observation, ProvisioningState};
 use crate::support::select::ProjectPrompt;
 
+use super::actions_for::actions_for;
 use super::{Prepared, RepairPlan};
 
 /// 対象を決め、repair前の観測と変更範囲を固定する。
@@ -167,28 +169,61 @@ fn plan(
     target: &str,
     has_intent: bool,
 ) -> RepairPlan {
-    let mut actions = Vec::new();
-    if observation.state == ProvisioningState::Fresh
-        || observation.state == ProvisioningState::Ready
-    {
-        actions.push(Cell::label(msg!("repair-plan-no-change")));
-    } else {
-        actions.push(Cell::label(msg!("repair-plan-verify")));
-        if observation.stored_image_matches || observation.current_image_matches {
-            actions.push(Cell::label(msg!("repair-plan-reuse")));
-        }
-        actions.push(Cell::label(msg!("repair-plan-provision")));
-        if has_intent {
-            actions.push(Cell::label(msg!("repair-plan-clear-intent")));
-        } else {
-            actions.push(Cell::label(msg!("repair-plan-record-intent")));
-        }
-    }
     RepairPlan {
         project: metadata.display_id(),
         sandbox: SandboxName::derive(metadata.canonical_id()).to_string(),
         state: observation.state,
         target_generation: target.to_string(),
-        actions,
+        observations: observations_for(observation),
+        actions: actions_for(metadata, observation, has_intent),
     }
+}
+
+/// artifactごとの観測結果を、変更対象と分けて表示するための一覧。
+fn observations_for(observation: &Observation) -> Vec<Field> {
+    let mut fields = vec![
+        artifact_field("repair-observation-sandbox", observation.sandbox_present),
+        artifact_field(
+            "repair-observation-workspace",
+            observation.workspace_present,
+        ),
+    ];
+    for file in &observation.files {
+        fields.push(Field::new(
+            msg!(
+                "repair-observation-declared-file",
+                destination = file.destination.clone()
+            ),
+            Inline::important(matching_or_missing(file.placement == Placement::Unchanged)),
+        ));
+    }
+    fields.push(artifact_field(
+        "repair-observation-identity",
+        observation.identity_complete,
+    ));
+    fields.push(artifact_field(
+        "repair-observation-credential-helper",
+        observation.credential_helper.is_matching(),
+    ));
+    fields.push(artifact_field(
+        "repair-observation-repository",
+        observation.repository_complete,
+    ));
+    fields.push(artifact_field(
+        "repair-observation-worktrees",
+        observation.worktrees_complete,
+    ));
+    fields
+}
+
+fn artifact_field(label: &'static str, matching: bool) -> Field {
+    Field::new(
+        msg!(label),
+        Inline::important(matching_or_missing(matching)),
+    )
+}
+
+/// 翻訳しない安定した表記。
+fn matching_or_missing(matching: bool) -> &'static str {
+    if matching { "matching" } else { "missing" }
 }

@@ -98,6 +98,8 @@ error_ids! {
     InitialProvisioningGenerationMissing => "initial-provisioning-generation-missing",
     InitialProvisioningInputChanged => "initial-provisioning-input-changed",
     InitialProvisioningStateChanged => "initial-provisioning-state-changed",
+    InitialProvisioningSnapshotChanged => "initial-provisioning-snapshot-changed",
+    InitialProvisioningBaselineAmbiguous => "initial-provisioning-baseline-ambiguous",
 
     // --- Host clone ---
     HostCloneUnusable => "host-clone-unusable",
@@ -124,6 +126,8 @@ error_ids! {
     SandboxNotCreated => "sandbox-not-created",
     SandboxNotRunning => "sandbox-not-running",
     SandboxWorkspaceMissing => "sandbox-workspace-missing",
+    SandboxWorkspaceNotEmpty => "sandbox-workspace-not-empty",
+    SandboxCredentialHelperUnusable => "sandbox-credential-helper-unusable",
     SandboxStillRunning => "sandbox-still-running",
     SandboxStillPresent => "sandbox-still-present",
     RebuildGenerationMissing => "rebuild-generation-missing",

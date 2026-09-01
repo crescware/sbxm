@@ -28,6 +28,9 @@ pub struct World {
     pub settings: RefCell<BTreeMap<String, String>>,
     /// bare repositoryの設定値。
     pub repository: RefCell<BTreeMap<String, String>>,
+    /// `git init --bare`で作ったbare repositoryのpath。managed worktreeの
+    /// `--git-common-dir`はこれを指す。
+    pub bare_git_dir: RefCell<Option<String>>,
     /// managed worktreeのpath -> branch。detachedは`None`。
     pub worktrees: RefCell<BTreeMap<String, Option<String>>>,
     /// Sandbox内にあるcommand。既定のtemplateが入れるものを持つ。
@@ -36,6 +39,9 @@ pub struct World {
     /// 一致した起動を、実行せずにこのexit statusと標準出力で答える。副作用は起こさない。
     pub answer: RefCell<Option<(String, i32, String)>>,
     pub calls: RefCell<Vec<crate::boundary::host::CommandSpec>>,
+    /// 一致した起動の直前に、hostの外で誰かが書き換えたことを模したclosureを1回走らせる。
+    #[allow(clippy::type_complexity)]
+    pub mutate_before: RefCell<Option<(String, Box<dyn Fn()>)>>,
 }
 
 impl World {
@@ -54,6 +60,7 @@ impl World {
             digests: RefCell::new(BTreeMap::new()),
             settings: RefCell::new(BTreeMap::new()),
             repository: RefCell::new(BTreeMap::new()),
+            bare_git_dir: RefCell::new(None),
             worktrees: RefCell::new(BTreeMap::new()),
             commands: RefCell::new(
                 tools::ALL
@@ -64,7 +71,15 @@ impl World {
             default_branch: "main".to_string(),
             answer: RefCell::new(None),
             calls: RefCell::new(Vec::new()),
+            mutate_before: RefCell::new(None),
         }
+    }
+
+    /// 次に指定と一致する起動の直前に、hostの外で誰かが行った変更を模して`action`を
+    /// 1回だけ走らせる。TOCTOU再現のために、固定した入力を使うはずの工程が実際に
+    /// live pathを読んでいないことを確かめる。
+    pub fn mutate_before(&self, needle: &str, action: impl Fn() + 'static) {
+        *self.mutate_before.borrow_mut() = Some((needle.to_string(), Box::new(action)));
     }
 
     /// `利用者がDockerfileから外したtoolを持たないSandbox`。
@@ -149,6 +164,16 @@ impl crate::boundary::host::HostEnvironment for World {
     fn run(&self, spec: &crate::boundary::host::CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let invocation = format!("{} {}", spec.program, spec.args.join(" "));
+
+        let matched = self
+            .mutate_before
+            .borrow()
+            .as_ref()
+            .is_some_and(|(needle, _)| invocation.contains(needle.as_str()));
+        if matched && let Some((_, action)) = self.mutate_before.borrow_mut().take() {
+            action();
+        }
+
         if let Some((needle, code, stdout)) = self.answer.borrow().as_ref()
             && invocation.contains(needle.as_str())
         {

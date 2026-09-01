@@ -11,11 +11,13 @@ mod destination_path;
 mod digest_in_sandbox;
 mod max_source_bytes;
 mod observe;
+mod observe_against_baseline;
 mod place;
 mod place_all;
 mod placed_file;
 mod placement;
 mod read_source;
+mod read_source_bytes;
 mod require_no_symlink_in_sandbox;
 
 use agent_home::AGENT_HOME;
@@ -26,11 +28,13 @@ use destination_path::destination_path;
 use digest_in_sandbox::digest_in_sandbox;
 use max_source_bytes::MAX_SOURCE_BYTES;
 pub use observe::observe;
+pub use observe_against_baseline::observe_against_baseline;
 use place::place;
 pub use place_all::place_all;
 pub use placed_file::PlacedFile;
 pub use placement::Placement;
 pub use read_source::read_source;
+pub use read_source_bytes::read_source_bytes;
 use require_no_symlink_in_sandbox::require_no_symlink_in_sandbox;
 
 #[cfg(test)]

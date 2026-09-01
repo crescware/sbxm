@@ -1,9 +1,9 @@
-use crate::commands::repair::run::RepairPlan;
+use crate::commands::repair::run::{RepairAction, RepairPlan};
 use crate::design::{Document, Field, Inline};
 use crate::hash::short_hex;
 use crate::msg;
 
-/// mutationの前にrepairのtargetと変更範囲を表示する。
+/// mutationの前にrepairの観測事実、targetと変更範囲を表示する。
 pub fn plan_document(plan: &RepairPlan) -> Document {
     Document::new()
         .fields(
@@ -27,8 +27,12 @@ pub fn plan_document(plan: &RepairPlan) -> Document {
                 ),
             ],
         )
+        .fields(
+            Some(msg!("repair-plan-observations-heading")),
+            plan.observations.clone(),
+        )
         .lines(
             Some(msg!("repair-plan-actions-heading")),
-            plan.actions.clone(),
+            plan.actions.iter().map(RepairAction::cell).collect(),
         )
 }

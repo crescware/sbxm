@@ -567,3 +567,47 @@ fn a_destination_that_is_not_utf8_is_refused_rather_than_placed() -> Checked {
     assert_eq!(reason, "cause-not-valid-utf8");
     Ok(())
 }
+
+fn baseline_entry(destination: &str, sha256: &str) -> crate::metadata::InitialProvisioningFile {
+    crate::metadata::InitialProvisioningFile {
+        source: "/home/user/original.yaml".to_string(),
+        destination: destination.to_string(),
+        sha256: sha256.to_string(),
+    }
+}
+
+#[test]
+fn a_baseline_entry_absent_from_the_sandbox_is_observed_as_missing() -> Checked {
+    let host = FakeSbx::empty();
+    let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
+    let observed = observe_against_baseline(&host, "sbxm-example", &baseline)
+        .required_because("an absent destination is observed, not an error")?;
+    assert_eq!(observed[0].placement, Placement::Placed);
+    Ok(())
+}
+
+#[test]
+fn a_baseline_entry_matching_the_sandboxs_digest_is_unchanged() -> Checked {
+    // baselineの照合はSandbox内のdigestとだけ行い、生きているsourceは一切読まない。
+    let host = FakeSbx::holding("/home/agent/.gitconfig", b"original\n");
+    let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
+    let observed = observe_against_baseline(&host, "sbxm-example", &baseline)
+        .required_because("a digest that matches the baseline is unchanged")?;
+    assert_eq!(observed[0].placement, Placement::Unchanged);
+    assert!(
+        !host.ran("/home/user/original.yaml"),
+        "the live source path is never read: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_baseline_entry_that_differs_from_the_sandbox_is_a_conflict() -> Checked {
+    let host = FakeSbx::holding("/home/agent/.gitconfig", b"different in the sandbox\n");
+    let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
+    let error = observe_against_baseline(&host, "sbxm-example", &baseline)
+        .refused_because("existing different content is not silently overwritten")?;
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    Ok(())
+}

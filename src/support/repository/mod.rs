@@ -24,4 +24,4 @@ pub use start_ref::resolve_start_ref;
 pub use tag_following::TagFollowing;
 use unusable::unusable;
 pub use verify_bare_clone::verify_bare_clone;
-pub use worktree::ensure_worktrees;
+pub use worktree::{adopt_worktree, ensure_worktrees};
