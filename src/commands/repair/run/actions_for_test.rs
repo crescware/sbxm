@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
+use crate::metadata::CreationMode;
+use crate::project::SandboxLayout;
 use crate::support::Observed;
 use crate::support::files::{PlacedFile, Placement};
-use crate::support::provisioning::{Observation, ProvisioningState};
+use crate::support::provisioning::{Observation, ProvisioningState, WorktreeRow};
 use crate::testing::metadata::attached;
 use crate::testing::outcome::Checked;
 
@@ -146,5 +148,28 @@ fn a_missing_managed_worktree_is_named_by_its_path() -> Checked {
             .any(|action| matches!(action, RepairAction::CreateWorktree { .. }))
     );
     assert!(actions.contains(&RepairAction::ClearIntent));
+    Ok(())
+}
+
+#[test]
+fn an_already_present_managed_worktree_is_not_named_again() -> Checked {
+    let mut metadata = attached("example-org", "example-repo")?;
+    metadata.provisioning.requested_worktrees = 2;
+    let layout = SandboxLayout::new(metadata.canonical_id());
+    let names = layout.worktree_names(metadata.provisioning.requested_worktrees);
+    let (present, missing) = (names[0].clone(), names[1].clone());
+
+    let mut observation = incomplete_observation();
+    observation.worktrees_complete = false;
+    observation.worktrees = vec![WorktreeRow {
+        path: present.clone(),
+        created_from: "main".to_string(),
+        head: "a1b2c3d".to_string(),
+        mode: CreationMode::Attached,
+    }];
+
+    let actions = actions_for(&metadata, &observation, true);
+    assert!(!actions.contains(&RepairAction::CreateWorktree { path: present }));
+    assert!(actions.contains(&RepairAction::CreateWorktree { path: missing }));
     Ok(())
 }

@@ -28,6 +28,25 @@ fn an_absent_dockerfile_is_refused_rather_than_silently_captured() -> Checked {
 }
 
 #[test]
+fn a_dockerfile_that_cannot_be_read_is_refused() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    fs::write(paths.dockerfile(), b"FROM example\n").required_because("write the Dockerfile")?;
+    fs::set_permissions(paths.dockerfile(), fs::Permissions::from_mode(0o000))
+        .required_because("make the Dockerfile unreadable")?;
+
+    let error = ProvisioningInputs::capture(&paths, &config(), None)
+        .refused_because("a Dockerfile that exists but cannot be read cannot be captured")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+
+    fs::set_permissions(paths.dockerfile(), fs::Permissions::from_mode(0o644))
+        .required_because("restore permissions so the temp directory can be cleaned up")?;
+    Ok(())
+}
+
+#[test]
 fn a_snapshot_removed_after_capture_fails_verification() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let paths = project_paths(dir.path())?;

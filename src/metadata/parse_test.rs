@@ -303,6 +303,24 @@ fn an_initial_provisioning_intent_round_trips_and_cannot_share_rebuild() -> Chec
 }
 
 #[test]
+fn an_initial_provisioning_target_must_match_the_current_dockerfile() -> Checked {
+    let mut metadata = attached("example-org", "example-repo")?;
+    metadata.initial_provisioning = Some(InitialProvisioningIntent {
+        target_dockerfile_sha256: OTHER_DIGEST.to_string(),
+        files: Vec::new(),
+    });
+    let error = parse(&render(&metadata)?, Path::new("/tmp/project.yaml")).refused_because(
+        "the intent's target differs from the current provisioning.dockerfile_sha256",
+    )?;
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidValue));
+    assert_eq!(
+        field_of(&error)?,
+        "initial_provisioning.target_dockerfile_sha256"
+    );
+    Ok(())
+}
+
+#[test]
 fn an_initial_provisioning_record_names_missing_and_invalid_inputs() -> Checked {
     let mut metadata = attached("example-org", "example-repo")?;
     metadata.initial_provisioning = Some(InitialProvisioningIntent {
@@ -388,6 +406,63 @@ fn an_initial_provisioning_record_names_missing_and_invalid_inputs() -> Checked 
         );
     }
     Ok(())
+}
+
+#[test]
+fn a_declared_files_baseline_round_trips_and_names_missing_or_invalid_entries() -> Checked {
+    let mut metadata = attached("example-org", "example-repo")?;
+    metadata.declared_files = Some(vec![InitialProvisioningFile {
+        source: "/tmp/declared.yaml".to_string(),
+        destination: ".config/example/settings.yaml".to_string(),
+        sha256: OTHER_DIGEST.to_string(),
+    }]);
+    assert_eq!(round_trip(&metadata)?, metadata);
+
+    let full = render(&metadata)?;
+
+    for field in ["source:", "destination:", "sha256:"] {
+        let line = find_declared_files_field_line(&full, field)?;
+        let start = line
+            .find(field)
+            .required_because("find the declared_files field name")?;
+        let text = replaced(&full, line, &format!("{}{field} null", &line[..start]));
+        assert_eq!(
+            refusal(&text)?,
+            Some(ErrorId::MetadataMissingField),
+            "declared_files.{field} produced the wrong error"
+        );
+    }
+
+    for (field, replacement) in [
+        ("source:", "source: relative.yaml"),
+        ("destination:", "destination: ../outside"),
+        ("sha256:", "sha256: nope"),
+    ] {
+        let line = find_declared_files_field_line(&full, field)?;
+        let start = line
+            .find(field)
+            .required_because("find the declared_files field name")?;
+        let text = replaced(&full, line, &format!("{}{replacement}", &line[..start]));
+        assert_eq!(
+            refusal(&text)?,
+            Some(ErrorId::MetadataInvalidValue),
+            "declared_files.{field} accepted an invalid value"
+        );
+    }
+    Ok(())
+}
+
+/// `declared_files`のlist item内で、指定fieldを書いている行を探す。
+fn find_declared_files_field_line<'a>(full: &'a str, field: &str) -> Checked<&'a str> {
+    full.lines()
+        .find(|line| {
+            let trimmed = line.trim_start();
+            trimmed.starts_with(field)
+                || trimmed
+                    .strip_prefix("- ")
+                    .is_some_and(|value| value.starts_with(field))
+        })
+        .required_because("find the declared_files field")
 }
 
 #[test]
