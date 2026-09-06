@@ -22,7 +22,8 @@ use super::{ApplyOutput, Scope, Target};
 /// 対象を引数またはpromptで解決し、構築済みの案件へ変更を適用する。
 ///
 /// Sandboxの中身を変えるmutationであるため、対象を確かめた後にproject lockを取得し、
-/// lock取得後のmetadataでpreconditionを判定し直してから適用する。
+/// lock取得後のmetadataでpreconditionを判定し直してから適用する。世代交代の途中の案件も、
+/// 初回構築が中断したままの案件も、hostの一覧を取る前にmetadataだけで拒否する。
 pub fn run(
     target: Target,
     config: &GlobalConfig,
@@ -40,6 +41,11 @@ pub fn run(
     let mut locked =
         select::one(location, requested, &msg!("select-apply-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
+    // 中断した初回構築を暗黙に進めない。固定した入力snapshotで復旧するのは`repair`
+    // だけであり、現在のconfigを正本にする`apply`が先に成果物を進めてよい状態ではない。
+    // intentはmetadataだけで判定できるため、Sandboxの有無にも停止中かどうかにも依らず、
+    // hostへ触れる前にここで1つに絞る。
+    provisioning::require_no_initial_intent(&locked.metadata)?;
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
@@ -47,10 +53,6 @@ pub fn run(
         .into_iter()
         .find(|entry| entry.name == name.as_str());
     let Some(entry) = found else {
-        // 中断した初回構築が残っている案件へ`open`を案内しても、その`open`は暗黙に
-        // 再開せずrepairを案内して終わる。metadataだけで分かる事実なので、実行できる
-        // commandをここで1つに絞る。
-        provisioning::require_no_initial_intent(&locked.metadata)?;
         return Err(inventory::not_created(&locked.metadata, name.as_str()));
     };
 
