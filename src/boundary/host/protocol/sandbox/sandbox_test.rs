@@ -38,12 +38,6 @@ fn the_sandbox_list_parser_reads_the_fields_the_workflow_compares() -> Checked {
         }]
     );
 
-    assert!(
-        parse_sandbox_list("  \n")
-            .required_because("an empty listing")?
-            .is_empty()
-    );
-
     // 3値へ写像しても、runtimeが示したままの値は表示のために残す。
     let entries =
         parse_sandbox_list(r#"{"sandboxes":[{"name":"sbxm-a","status":"Running"}]}"#).required()?;
@@ -58,6 +52,7 @@ fn a_form_with_no_confirmed_sbx_version_is_rejected() -> Checked {
     // item は`status`と配列の`workspaces`で示す。それ以外の形を出す実versionの根拠が
     // ないため、包みのない配列・1行1件のJSON・`state`fieldは受け付けない。
     for (output, cause) in [
+        ("  \n", "EOF while parsing a value at line 1 column 0"),
         (
             r#"[{"name":"sbxm-a","status":"running"}]"#,
             "the document does not wrap sandboxes",

@@ -29,7 +29,7 @@ cli-repair-project-help = Registered owner/repository ID of the project to repai
 cli-rebuild-about = Rebuild a project's sandbox from its Dockerfile, whether or not it changed; the old writable layer is lost. Normal rebuild protects work and asks for confirmation.
 cli-rebuild-project-help = Registered owner/repository ID of the project to rebuild
 
-cli-open-about = Open an SSH session to a project's sandbox, starting the sandbox if needed
+cli-open-about = Open an SSH session to a project's sandbox, building it on the first run and starting it if needed
 cli-open-project-help = Registered owner/repository ID of the project to open
 cli-open-index-help = Start in the Nth managed worktree instead of the repository root (zero-based)
 warning-open-worktree-not-found = Managed worktree { $index } was not found; opening the repository root instead.
@@ -204,6 +204,7 @@ diagnostic-root-label = Repository root:
 diagnostic-field-label = Field:
 diagnostic-entry-label = Entry:
 diagnostic-value-label = Value:
+diagnostic-fixed-target-generation-label = Fixed target generation:
 diagnostic-image-label = Image:
 diagnostic-template-label = Template:
 diagnostic-sandbox-label = Sandbox:

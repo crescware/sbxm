@@ -370,6 +370,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
+| `sbxm repair [<project-id>]` | 固定済みのtarget世代を変えず、中断または未完成の初回構築を復旧する |
 | `sbxm rebuild [<project-id>]` | Dockerfileから案件のSandboxを作り直す（元の書き込み可能な層は失われる） |
 | `sbxm destroy [<project-id>]` | Sandboxを破棄して案件を管理対象から外し、host cloneとDockerfileは残す |
 

@@ -53,9 +53,6 @@ pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
 /// JSONを返すversionは確認できていないため、そのような出力は`unparseable`とする。
 fn sandbox_documents(output: &str) -> Result<Vec<serde_json::Value>> {
     let trimmed = output.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
     let document: serde_json::Value =
         serde_json::from_str(trimmed).map_err(|error| unparseable("sbx ls", &error.to_string()))?;
     let object = document

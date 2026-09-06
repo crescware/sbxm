@@ -12,7 +12,7 @@ use super::*;
 use crate::boundary::host::{EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::design::SilentProgress;
 use crate::diagnostics::{ErrorId, ExitCode};
-use crate::metadata;
+use crate::metadata::{self, InitialProvisioningIntent};
 use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
 use crate::testing::host::{FakeSbx, custom_secret_listing, no_custom_secrets, no_secrets};
 use crate::testing::poll::poll;
@@ -265,6 +265,46 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> C
     // active-session検査も省く。通常経路とは別の`remove_forced`を通る。
     assert!(host.ran(&format!("rm --force {}", project.sandbox)));
     assert!(!project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_stopped_pending_project_is_sent_directly_to_repair() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let mut pending = project.metadata.clone();
+    pending.initial_provisioning = Some(InitialProvisioningIntent {
+        target_dockerfile_sha256: pending.provisioning.dockerfile_sha256.clone(),
+        files: Vec::new(),
+    });
+    metadata::update(&project.paths, &pending).required_because("store the interrupted intent")?;
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let host = FakeSbx::listing(&stopped);
+
+    let error = prepare(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        false,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+    )
+    .refused_because("open cannot resume a pending initial provisioning")?;
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .required_because("the refusal names the direct recovery command")?;
+    assert_eq!(
+        remediation
+            .commands
+            .iter()
+            .map(crate::design::text::CommandLine::as_str)
+            .collect::<Vec<_>>(),
+        vec!["sbxm repair example-org/example-repo"]
+    );
     Ok(())
 }
 

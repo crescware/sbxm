@@ -1,5 +1,6 @@
 use crate::boundary::command_line::Arguments;
 use crate::boundary::terminal::PromptCapability;
+use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::msg;
 use crate::project::ProjectId;
@@ -57,10 +58,19 @@ impl CommandLineValues {
             .value(id)
             .map(|value| {
                 value.parse::<u32>().map_err(|_| {
-                    Error::single(Diagnostic::new(
-                        ErrorId::InvalidValue,
-                        msg!("error-invalid-value", argument = option, value = value),
-                    ))
+                    Error::single(
+                        Diagnostic::new(
+                            ErrorId::InvalidValue,
+                            msg!(
+                                "error-invalid-value",
+                                argument = format!("{option} <N>"),
+                                value = value
+                            ),
+                        )
+                        .remediation(
+                            Remediation::text(msg!("remediation-run-help")).try_run("sbxm --help"),
+                        ),
+                    )
                 })
             })
             .transpose()

@@ -59,7 +59,7 @@ hostの要件とDocker Sandboxes環境を変更せずに診断するには、次
 cargo run -- status --global
 ```
 
-`status --global`、`prepare`、`open`などの実環境を使う操作は、READMEに記載したmacOS 14以降、
+`status --global`、`open`、`repair`などの実環境を使う操作は、READMEに記載したmacOS 14以降、
 Docker Desktop、Docker Sandboxes CLIが揃ったhostで実行する。Linuxではcompileとtestを実行できるが、
 Sandboxへの接続はできない。
 

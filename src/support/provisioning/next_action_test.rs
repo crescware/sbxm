@@ -134,6 +134,17 @@ fn a_project_whose_state_could_not_be_observed_is_not_given_a_command() -> Check
 }
 
 #[test]
+fn a_missing_custom_secret_is_not_given_a_repair_that_cannot_apply_it() -> Checked {
+    let metadata = attached("example-org", "example-repo")?;
+    let mut observation = observation(ProvisioningState::Incomplete);
+    observation.sandbox = Observed::Matching;
+    observation.secret = Observed::Missing;
+
+    assert_eq!(NextAction::decide(&metadata, &observation), None);
+    Ok(())
+}
+
+#[test]
 fn every_action_names_its_command_reason_and_exit_meaning() {
     for (action, command, blocking) in [
         (NextAction::RepairPending, "sbxm repair owner/repo", true),

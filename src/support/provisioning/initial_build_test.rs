@@ -251,9 +251,19 @@ fn a_failed_image_build_requires_repair_even_after_the_dockerfile_is_fixed() -> 
     let request = request("Example-Org/Example-Repo", None, None)?;
 
     world.failing("docker build");
-    bench
+    let first_error = bench
         .build(&world, &request)
         .refused_because("the run stops when the image cannot be built")?;
+    let remediation = first_error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .required_because("the first failure immediately names the recovery command")?;
+    assert!(
+        remediation
+            .commands
+            .iter()
+            .any(|command| command.as_str() == "sbxm repair Example-Org/Example-Repo")
+    );
     world.nothing_fails();
     let started_from = bench
         .stored("Example-Org/Example-Repo")?
