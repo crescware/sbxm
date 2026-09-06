@@ -11,7 +11,7 @@ use std::cell::Cell;
 use std::fs;
 use std::path::PathBuf;
 
-use super::{execute, prepare};
+use super::{RepairAction, execute, prepare};
 
 struct StateChangingHost<'a> {
     world: &'a World,
@@ -245,6 +245,17 @@ fn an_interrupted_build_is_still_repairable_after_its_sandbox_stopped() -> Check
     )
     .required_because("a saved intent still names what to recover")?;
     assert_eq!(prepared.plan.state.as_str(), "pending");
+    assert_eq!(
+        prepared.plan.actions,
+        vec![
+            RepairAction::ReuseImage,
+            RepairAction::ReuseTemplate,
+            RepairAction::StartSandbox,
+            RepairAction::ProvisionInterior,
+            RepairAction::ClearIntent,
+        ],
+        "the plan names the implicit start and full interior provisioning without guessing gaps"
+    );
 
     let output = execute(
         &world,
