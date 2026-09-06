@@ -11,7 +11,7 @@ sbxm is a CLI for giving each GitHub project an isolated Docker Sandbox and pred
 2. [Install sbxm](./install/).
 3. [Create your first sandbox](./quickstart/).
 
-The quick start follows the same order as the commands you will use later: inspect the host, register a project, register its GitHub credential, prepare the sandbox, and open it.
+The quick start follows the same order as the commands you will use later: inspect the host, register a project, register its GitHub credential, and open the sandbox.
 
 ## Before you begin
 

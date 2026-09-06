@@ -1,5 +1,6 @@
 use crate::paths::SharedLock;
 use crate::support::disk::DiskObservation;
+use crate::support::provisioning::ProvisioningOutput;
 
 use super::ClampedIndex;
 
@@ -19,6 +20,11 @@ pub struct Prepared {
     pub worktrees: Vec<String>,
     /// SSH接続前に観測した、root filesystemの使用量。
     pub disk: DiskObservation,
+    /// この実行が初回構築を行った場合の、その結果。
+    ///
+    /// 構築済みの案件を開いた場合は`None`である。接続先を見せる前に、何を作ったかを
+    /// 同じ実行の中で示す。
+    pub provisioned: Option<ProvisioningOutput>,
     /// project lockが外れたあともSSH sessionの生存中だけ保持するshared session lease。
     ///
     /// 通常rebuild/destroyのexclusive session leaseと排他する。読まれることはなく、

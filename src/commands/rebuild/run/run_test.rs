@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment, OutputPolicy};
 use crate::config::GlobalConfig;
 use crate::diagnostics::{Error, ErrorId, Result};
-use crate::metadata::{self, RebuildIntent};
+use crate::metadata::{self, InitialProvisioningIntent, RebuildIntent};
 use crate::msg;
 use crate::project::SandboxLayout;
 use crate::support::image;
@@ -306,7 +306,7 @@ fn an_open_session_stops_the_rebuild_before_anything_is_touched() -> Checked {
 }
 
 #[test]
-fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_dockerfile() -> Checked {
+fn a_project_whose_build_never_finished_is_sent_to_open_even_with_the_same_dockerfile() -> Checked {
     let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     // `add`は登録時に適用済みhashを書く。Sandboxを作る前に中断した案件は、
@@ -333,6 +333,64 @@ fn a_project_whose_build_never_finished_is_sent_to_add_even_with_the_same_docker
     )
     .refused_because("there is no sandbox to report as unchanged")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
+    // 初回構築は`open`が同じ実行の中で行う。構築だけを行う別commandへは送らない。
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .required_because("the user is told how to get a sandbox")?;
+    assert_eq!(
+        remediation
+            .commands
+            .first()
+            .map(crate::design::text::CommandLine::as_str),
+        Some("sbxm open example-org/example-repo")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_project_whose_first_build_was_interrupted_is_sent_to_repair_instead_of_open() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
+    // `sbx create`より前に中断した初回構築。Sandboxは無く、intentだけが残っている。
+    project.metadata.initial_provisioning = Some(InitialProvisioningIntent {
+        target_dockerfile_sha256: project.metadata.provisioning.dockerfile_sha256.clone(),
+        files: Vec::new(),
+    });
+    metadata::update(&project.paths, &project.metadata).required()?;
+
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+        "version --format {{.Server.Version}}",
+        0,
+        "27.0.3\n",
+    );
+    let error = prepare(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .refused_because("an interrupted first build is recovered explicitly")?;
+
+    // `open`を案内すると、その`open`が同じ事実からrepairを案内して終わる。
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .required_because("the user is told how to recover")?;
+    assert_eq!(
+        remediation
+            .commands
+            .first()
+            .map(crate::design::text::CommandLine::as_str),
+        Some("sbxm repair example-org/example-repo")
+    );
     Ok(())
 }
 

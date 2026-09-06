@@ -57,19 +57,12 @@ pub fn document(output: &AddOutput) -> Document {
             ],
         )
         .try_command(secret::register_command(&output.sandbox, None))
-        .guidance(
-            None,
-            vec![GuidanceItem::Ordered {
-                number: 2,
-                text: msg!("add-next-prepare"),
-            }],
-        )
-        .try_command(format!("sbxm prepare {}", output.project))
+        // 初回構築は`open`が同じ実行の中で行う。構築だけを行う手順を間に挟まない。
         // 案件IDを打ち直させない。次のcommandはそのままcopyできる形で出す。
         .guidance(
             None,
             vec![GuidanceItem::Ordered {
-                number: 3,
+                number: 2,
                 text: msg!("add-next-open"),
             }],
         )

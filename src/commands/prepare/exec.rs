@@ -5,10 +5,7 @@ use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
 use crate::project::ProjectId;
 
-use super::{
-    super::{Context, report},
-    print,
-};
+use super::super::{Context, report};
 
 pub fn exec(
     project: Option<&ProjectId>,
@@ -36,7 +33,7 @@ pub fn exec(
             for warning in &output.warnings {
                 ui.warning(warning);
             }
-            ui.stdout(&print::document(&output, locale));
+            ui.stdout(&super::print(&output, locale));
             ExitCode::Success
         }
         Err(error) => report(ui, &error),

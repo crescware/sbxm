@@ -18,7 +18,7 @@ pub fn exec(
     host: &dyn HostEnvironment,
     prompt: &mut PromptUi,
 ) -> ExitCode {
-    let (_config, locale) = match context.settings() {
+    let (config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
@@ -26,6 +26,7 @@ pub fn exec(
     prompt.set_locale(locale);
     let prepared = match super::run::prepare(
         context.location,
+        &config,
         args.project.as_ref(),
         args.index,
         host,
@@ -37,6 +38,15 @@ pub fn exec(
         Ok(prepared) => prepared,
         Err(error) => return report(ui, &error),
     };
+
+    // 初回構築を行った実行では、接続先を見せる前に何を作ったかを示す。stdoutはSSHへ
+    // 引き渡すため、この報告もstderrへ出す。
+    if let Some(output) = &prepared.provisioned {
+        for warning in &output.warnings {
+            ui.warning(warning);
+        }
+        ui.stderr(&present::provisioning_output(output, locale));
+    }
 
     if let Some(index) = prepared.missing_worktree_index {
         ui.warning(&Warning::text(msg!(

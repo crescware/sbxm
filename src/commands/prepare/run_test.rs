@@ -11,6 +11,7 @@ use crate::design::SilentProgress;
 use crate::diagnostics::ErrorId;
 use crate::hash::sha256_hex;
 use crate::project::SandboxName;
+use crate::support::image;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::project::project_id;
 use crate::testing::prompt::ScriptedPrompt;

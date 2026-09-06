@@ -25,4 +25,4 @@ Inspect the existing path, image, Dockerfile, registry entry, or sandbox identit
 
 ### Missing credential
 
-Register the project-specific custom secret with Docker Sandboxes, then prepare a new sandbox if necessary. The secret must cover the GitHub hosts and `GH_TOKEN` environment variable the project expects.
+Register the project-specific custom secret with Docker Sandboxes, then build a new sandbox if necessary. The secret must cover the GitHub hosts and `GH_TOKEN` environment variable the project expects.

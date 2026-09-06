@@ -3,12 +3,12 @@ use crate::msg;
 use crate::paths;
 use crate::support::files::PlacedFile;
 
-use crate::commands::present::Legend;
+use super::Legend;
 
 /// 宣言fileの配置結果と、そこへ入れてはいけないものの注記。
 ///
 /// 注記はtableの末尾へ接着させず、独立したblockにする。
-pub fn files(placed: &[PlacedFile], legend: &mut Legend) -> Document {
+pub fn placed_files(placed: &[PlacedFile], legend: &mut Legend) -> Document {
     let mut table = Table::new(vec![
         msg!("column-file"),
         msg!("column-destination"),

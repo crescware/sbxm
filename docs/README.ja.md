@@ -109,7 +109,7 @@ repositoryを読み書きできるpersonal access tokenを発行します。
 - classic tokenには`repo` scopeが必要です。
 
 `sbxm add`は、プロジェクト専用の`sbx secret set-custom`コマンドを表示します。
-プロジェクトをprepareする前に、そのコマンドへtokenを渡して実行してください。
+Sandboxを構築する前に、そのコマンドへtokenを渡して実行してください。
 表示されるコマンドは次のような形です。
 
 ```sh
@@ -129,13 +129,13 @@ placeholderだけであり、登録済みのhostへのrequestに限ってproxy�
 ### 4. Sandboxを構築して接続する
 
 ```sh
-sbxm prepare <project-id>
 sbxm open <project-id>
 ```
 
-`prepare`はプロジェクトのimageをbuildし、Sandboxを作成して、その中へrepositoryを
-cloneし、managed worktreeを作成します。`open`は必要に応じて停止中のSandboxを起動し、
-SSHで接続します。
+最初の`open`は、プロジェクトのimageをbuildし、Sandboxを作成して、その中へrepositoryを
+cloneし、managed worktreeを作成してからSSHで接続します。2回目以降は、必要に応じて
+停止中のSandboxを起動して接続します。中断した初回構築は暗黙に再開しません。対象は
+`sbxm status`が示し、`sbxm repair <project-id>`だけが続きを進めます。
 
 接続時の起点は`/home/agent/work/<repository>`です。managed worktreeを起点にする場合は
 0始まりのindexを指定します。たとえば`sbxm open <project-id> -i 0`です。
@@ -222,7 +222,7 @@ Docker Sandboxesは、Sandboxを作成するprocessのenvironmentから`DOCKER_S
 
 ```sh
 # 初回作成
-DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm prepare <project-id>
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm open <project-id>
 
 # 既存Sandboxの作り直し
 DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
@@ -301,7 +301,7 @@ files:
 ```
 
 配置先はSandbox userのhome directoryからの相対pathです。宣言したファイルは
-`prepare`の実行時に配置されます。あとから加えた変更は明示的に適用します。
+Sandboxの初回構築時に配置されます。あとから加えた変更は明示的に適用します。
 
 ```sh
 sbxm apply <project-id> --files
@@ -364,7 +364,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 |---|---|
 | `sbxm add <github-clone-url>` | GitHub repositoryをsbxmへ追加し、このhostへcloneする |
 | `sbxm prepare [<project-id>]` | 登録済み案件のSandboxを構築し、作業できる状態に準備する |
-| `sbxm open [<project-id>] [--index N]` | SandboxへのSSH接続を開き、必要なら先に起動する。`N`は0始まりのmanaged worktree index |
+| `sbxm open [<project-id>] [--index N]` | SandboxへのSSH接続を開く。初回はSandboxを構築し、以降は必要なら先に起動する。`N`は0始まりのmanaged worktree index |
 | `sbxm stop [<project-id> ...]` | 1件以上の案件のSandboxを、削除せず停止する |
 | `sbxm ls` | 管理案件と管理外Sandboxを、その状態とともに一覧する |
 | `sbxm status` | 対話端末でhostまたは案件を選択して診断する。`global`を先頭にpromptを表示する |
