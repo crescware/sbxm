@@ -87,6 +87,13 @@ impl World {
         self.commands.borrow_mut().remove(program);
     }
 
+    /// 構築済みSandboxが停止した状態。中を読むcommandは、実物と同じく起動を伴う。
+    pub fn stopped(&self) {
+        for row in self.sandboxes.borrow_mut().iter_mut() {
+            row.running = false;
+        }
+    }
+
     /// Sandbox内に既にあるfile。cloneした案件が持ち込むものを表す。
     pub fn carrying(&self, path: &str) {
         self.present.borrow_mut().insert(path.to_string());

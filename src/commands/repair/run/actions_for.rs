@@ -29,7 +29,7 @@ pub(super) fn actions_for(
     if !has_intent {
         actions.push(RepairAction::RecordIntent);
     }
-    if !observation.sandbox_present {
+    if !observation.sandbox.is_matching() {
         actions.push(RepairAction::CreateSandbox);
     }
     if observation.stored_image_matches || observation.current_image_matches {
@@ -42,7 +42,7 @@ pub(super) fn actions_for(
     } else {
         actions.push(RepairAction::LoadTemplate);
     }
-    if !observation.workspace_present {
+    if !observation.workspace.is_matching() {
         actions.push(RepairAction::RestoreWorkspace);
     }
     for file in &observation.files {
@@ -52,16 +52,16 @@ pub(super) fn actions_for(
             });
         }
     }
-    if !observation.identity_complete {
+    if !observation.identity.is_matching() {
         actions.push(RepairAction::ConfigureIdentity);
     }
     if !observation.credential_helper.is_matching() {
         actions.push(RepairAction::ConfigureCredentialHelper);
     }
-    if !observation.repository_complete {
+    if !observation.repository.is_matching() {
         actions.push(RepairAction::CreateBareRepository);
     }
-    if !observation.worktrees_complete {
+    if !observation.worktrees_present.is_matching() {
         let layout = SandboxLayout::new(metadata.canonical_id());
         let existing: BTreeSet<&str> = observation
             .worktrees

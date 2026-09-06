@@ -34,6 +34,9 @@ pub fn run(
         &locked.metadata,
         workspace_root,
     )?;
+    // 観測は最後まで並べるが、安全と確認できなかった事実が1つでもあれば、hostを
+    // 変更する前にここで止める。
+    observation.require_safe()?;
 
     match observation.state {
         provisioning::ProvisioningState::Ready => {
@@ -43,6 +46,14 @@ pub fn run(
             return Err(provisioning::require_repair(
                 &locked.metadata,
                 observation.state,
+            ));
+        }
+        // 停止中のSandboxは、中を読めば起動してしまう。欠落と決めてrepairへ送らず、
+        // 完成と決めて構築を飛ばすこともせず、観測できない事実として拒否する。
+        provisioning::ProvisioningState::Unobservable => {
+            return Err(provisioning::require_observable(
+                &locked.metadata,
+                &observation,
             ));
         }
         provisioning::ProvisioningState::Fresh => {}
@@ -89,6 +100,7 @@ pub fn run(
         &locked.metadata,
         workspace_root,
     )?;
+    completed.require_safe()?;
     if !completed.is_complete() {
         return Err(provisioning::require_repair(
             &locked.metadata,

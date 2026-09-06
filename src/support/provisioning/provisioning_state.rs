@@ -9,6 +9,11 @@ pub enum ProvisioningState {
     Pending,
     /// intentはないが、初回構築の成果物が部分的に残っている。
     Incomplete,
+    /// 成果物は在るが、完成しているかどうかを変更なしには観測できない。
+    ///
+    /// 停止中のSandboxが典型で、中を見るcommandはSandboxを起動し得る。欠落と決めて
+    /// repairへ送ることも、完成と決めてreadyへ丸めることもしない。
+    Unobservable,
 }
 
 impl ProvisioningState {
@@ -19,6 +24,7 @@ impl ProvisioningState {
             Self::Ready => "ready",
             Self::Pending => "pending",
             Self::Incomplete => "incomplete",
+            Self::Unobservable => "unobservable",
         }
     }
 }

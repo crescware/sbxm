@@ -15,7 +15,10 @@ pub(crate) fn require_repair(metadata: &ProjectMetadata, state: ProvisioningStat
                 project = metadata.display_id()
             ),
         ),
-        ProvisioningState::Incomplete | ProvisioningState::Fresh | ProvisioningState::Ready => (
+        ProvisioningState::Incomplete
+        | ProvisioningState::Fresh
+        | ProvisioningState::Ready
+        | ProvisioningState::Unobservable => (
             ErrorId::InitialProvisioningIncomplete,
             msg!(
                 "error-initial-provisioning-incomplete",

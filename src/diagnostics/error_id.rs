@@ -100,6 +100,7 @@ error_ids! {
     InitialProvisioningStateChanged => "initial-provisioning-state-changed",
     InitialProvisioningSnapshotChanged => "initial-provisioning-snapshot-changed",
     InitialProvisioningBaselineAmbiguous => "initial-provisioning-baseline-ambiguous",
+    InitialProvisioningUnobservable => "initial-provisioning-unobservable",
 
     // --- Host clone ---
     HostCloneUnusable => "host-clone-unusable",

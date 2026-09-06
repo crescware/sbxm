@@ -8,6 +8,7 @@ use crate::hash::short_hex;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::{ProjectId, SandboxName};
+use crate::support::Observed;
 use crate::support::files::Placement;
 use crate::support::provisioning::{self, Observation, ProvisioningState};
 use crate::support::select::ProjectPrompt;
@@ -38,7 +39,15 @@ pub fn prepare(
         &locked.metadata,
         workspace_root,
     )?;
+    // 観測は最後まで並べたうえで、安全と確認できなかった事実があれば計画を作らない。
+    first.require_safe()?;
     let name = locked.metadata.sandbox_name();
+
+    // 中を読めば起動してしまうSandboxを、repairの計画のためだけに動かさない。欠けた
+    // 工程を推測せず、観測できない事実として拒否する。
+    if first.state == ProvisioningState::Unobservable {
+        return Err(provisioning::require_observable(&locked.metadata, &first));
+    }
 
     if matches!(
         first.state,
@@ -74,6 +83,7 @@ pub fn prepare(
         &locked.metadata,
         workspace_root,
     )?;
+    second.require_safe()?;
     let second_target = target_generation(&second, &locked.metadata)?;
     if second.state != first.state || second_target != target {
         return Err(state_changed(&locked.metadata, first.state, second.state));
@@ -182,11 +192,8 @@ fn plan(
 /// artifactごとの観測結果を、変更対象と分けて表示するための一覧。
 fn observations_for(observation: &Observation) -> Vec<Field> {
     let mut fields = vec![
-        artifact_field("repair-observation-sandbox", observation.sandbox_present),
-        artifact_field(
-            "repair-observation-workspace",
-            observation.workspace_present,
-        ),
+        artifact_field("repair-observation-sandbox", &observation.sandbox),
+        artifact_field("repair-observation-workspace", &observation.workspace),
     ];
     for file in &observation.files {
         fields.push(Field::new(
@@ -194,36 +201,34 @@ fn observations_for(observation: &Observation) -> Vec<Field> {
                 "repair-observation-declared-file",
                 destination = file.destination.clone()
             ),
-            Inline::important(matching_or_missing(file.placement == Placement::Unchanged)),
+            Inline::important(placement_label(file.placement == Placement::Unchanged)),
         ));
     }
     fields.push(artifact_field(
         "repair-observation-identity",
-        observation.identity_complete,
+        &observation.identity,
     ));
     fields.push(artifact_field(
         "repair-observation-credential-helper",
-        observation.credential_helper.is_matching(),
+        &observation.credential_helper,
     ));
     fields.push(artifact_field(
         "repair-observation-repository",
-        observation.repository_complete,
+        &observation.repository,
     ));
     fields.push(artifact_field(
         "repair-observation-worktrees",
-        observation.worktrees_complete,
+        &observation.worktrees_present,
     ));
     fields
 }
 
-fn artifact_field(label: &'static str, matching: bool) -> Field {
-    Field::new(
-        msg!(label),
-        Inline::important(matching_or_missing(matching)),
-    )
+/// artifactごとの観測結果。観測しなかったものを欠落として書かない。
+fn artifact_field(label: &'static str, observed: &Observed) -> Field {
+    Field::new(msg!(label), Inline::important(observed.as_str()))
 }
 
 /// 翻訳しない安定した表記。
-fn matching_or_missing(matching: bool) -> &'static str {
+fn placement_label(matching: bool) -> &'static str {
     if matching { "matching" } else { "missing" }
 }

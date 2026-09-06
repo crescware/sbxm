@@ -44,6 +44,7 @@ pub fn execute(
         &prepared.locked.metadata,
         workspace_root,
     )?;
+    latest.require_safe()?;
     let has_intent = prepared.locked.metadata.initial_provisioning.is_some();
     if latest.state != prepared.observation.state
         || selected_target(&latest, has_intent) != prepared.target
@@ -116,6 +117,7 @@ pub fn execute(
         &prepared.locked.metadata,
         workspace_root,
     )?;
+    completed.require_safe()?;
     if !completed.is_complete() {
         return Err(provisioning::require_repair(
             &prepared.locked.metadata,

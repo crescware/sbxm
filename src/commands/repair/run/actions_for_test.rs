@@ -18,12 +18,12 @@ fn incomplete_observation() -> Observation {
         "stored".to_string(),
         "target".to_string(),
     );
-    observation.sandbox_present = true;
-    observation.workspace_present = true;
-    observation.identity_complete = true;
+    observation.sandbox = Observed::Matching;
+    observation.workspace = Observed::Matching;
+    observation.identity = Observed::Matching;
     observation.credential_helper = Observed::Matching;
-    observation.repository_complete = true;
-    observation.worktrees_complete = true;
+    observation.repository = Observed::Matching;
+    observation.worktrees_present = Observed::Matching;
     observation
 }
 
@@ -45,8 +45,8 @@ fn fresh_and_ready_projects_need_no_action() -> Checked {
 fn a_missing_sandbox_and_intent_are_named_explicitly() -> Checked {
     let metadata = attached("example-org", "example-repo")?;
     let mut observation = incomplete_observation();
-    observation.sandbox_present = false;
-    observation.workspace_present = false;
+    observation.sandbox = Observed::Missing;
+    observation.workspace = Observed::Missing;
 
     let actions = actions_for(&metadata, &observation, false);
     assert!(actions.contains(&RepairAction::RecordIntent));
@@ -123,9 +123,9 @@ fn a_declared_file_that_is_not_unchanged_is_named_by_its_destination() -> Checke
 fn incomplete_identity_credential_and_repository_are_named() -> Checked {
     let metadata = attached("example-org", "example-repo")?;
     let mut observation = incomplete_observation();
-    observation.identity_complete = false;
+    observation.identity = Observed::Missing;
     observation.credential_helper = Observed::Missing;
-    observation.repository_complete = false;
+    observation.repository = Observed::Missing;
 
     let actions = actions_for(&metadata, &observation, true);
     assert!(actions.contains(&RepairAction::ConfigureIdentity));
@@ -138,7 +138,7 @@ fn incomplete_identity_credential_and_repository_are_named() -> Checked {
 fn a_missing_managed_worktree_is_named_by_its_path() -> Checked {
     let metadata = attached("example-org", "example-repo")?;
     let mut observation = incomplete_observation();
-    observation.worktrees_complete = false;
+    observation.worktrees_present = Observed::Missing;
     observation.worktrees = Vec::new();
 
     let actions = actions_for(&metadata, &observation, true);
@@ -160,7 +160,7 @@ fn an_already_present_managed_worktree_is_not_named_again() -> Checked {
     let (present, missing) = (names[0].clone(), names[1].clone());
 
     let mut observation = incomplete_observation();
-    observation.worktrees_complete = false;
+    observation.worktrees_present = Observed::Missing;
     observation.worktrees = vec![WorktreeRow {
         path: present.clone(),
         created_from: "main".to_string(),

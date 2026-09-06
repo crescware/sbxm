@@ -30,6 +30,14 @@ impl World {
         let inner = &args[position + 1..];
         let sandbox = args[position - 1];
 
+        // 実物と同じく、中で何かを動かせばSandboxは起動する。read-onlyのつもりの
+        // 検査でも状態が変わることを、fakeでも同じ性質として持つ。
+        for row in self.sandboxes.borrow_mut().iter_mut() {
+            if row.name == sandbox {
+                row.running = true;
+            }
+        }
+
         self.probe(inner, sandbox)
             .or_else(|| self.filesystem(inner))
             .or_else(|| self.settings_of(inner))
