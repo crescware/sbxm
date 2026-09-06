@@ -79,6 +79,31 @@ fn atomic_create_refuses_to_overwrite_a_target_that_appeared() -> Checked {
 }
 
 #[test]
+fn a_temporary_file_that_cannot_be_created_reports_what_the_operating_system_said() -> Checked {
+    // `AlreadyExists`ではない失敗（parent directoryが書き込みを許さない、など）は、
+    // 中断の跡としてではなく、そのまま書き込みの失敗として報告する。
+    let dir = temp_dir()?;
+    let closed = dir.path().join("closed");
+    fs::create_dir(&closed).required_because("create the parent")?;
+    let target = closed.join("config.yaml");
+
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o500))
+        .required_because("close the parent directory to writes")?;
+    let outcome = atomic_create(&target, "version: 1\n", PRIVATE_FILE_MODE);
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o700))
+        .required_because("reopen the parent directory")?;
+
+    let error = outcome.refused_because("a temporary file that cannot be created is refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        !cause_of(&error)?.is_empty(),
+        "the operating system said why"
+    );
+    assert!(!target.exists(), "a refused write creates nothing");
+    Ok(())
+}
+
+#[test]
 fn an_interrupted_temporary_file_is_reported_instead_of_deleted() -> Checked {
     let dir = temp_dir()?;
     let target = dir.path().join("config.yaml");
