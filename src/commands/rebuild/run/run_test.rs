@@ -394,6 +394,105 @@ fn a_project_whose_first_build_was_interrupted_is_sent_to_repair_instead_of_open
     Ok(())
 }
 
+/// 初回構築が中断したまま残っている案件にする。
+///
+/// 復旧先の世代はintentが固定するため、適用済み世代と同じhashを置く。
+fn interrupt_initial_build(project: &mut Registered) -> Checked {
+    project.metadata.initial_provisioning = Some(InitialProvisioningIntent {
+        target_dockerfile_sha256: project.metadata.provisioning.dockerfile_sha256.clone(),
+        files: Vec::new(),
+    });
+    metadata::update(&project.paths, &project.metadata).required()?;
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_first_build_is_refused_even_when_the_sandbox_runs() -> Checked {
+    // `sbx create`のあとで中断した初回構築。Sandboxはあるが、案件はまだ完成して
+    // いない。世代交代はintentを残したまま適用済み世代を進めるため、そのあと
+    // metadataを読めなくする。
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
+    interrupt_initial_build(&mut project)?;
+
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host =
+        FakeSbx::listing(&running).answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
+    let error = prepare(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .refused_because("an unfinished first build is recovered explicitly")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .required_because("the user is told how to recover")?;
+    assert_eq!(
+        remediation
+            .commands
+            .first()
+            .map(crate::design::text::CommandLine::as_str),
+        Some("sbxm repair example-org/example-repo")
+    );
+    assert!(
+        host.calls().is_empty(),
+        "nothing is asked of the runtime: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_first_build_is_refused_without_starting_the_sandbox() -> Checked {
+    // 停止中のSandboxの起動は、明示確認より前に行う唯一のhost状態の変更である。
+    // 拒否がその手前で終わることを固定する。
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
+    interrupt_initial_build(&mut project)?;
+    let name = project.sandbox.as_str().to_string();
+
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let host =
+        FakeSbx::listing(&stopped).answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
+    let error = prepare(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .refused_because("an unfinished first build is recovered explicitly")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert!(
+        !host.ran(&format!("exec {name} -- /bin/true")),
+        "the sandbox is left as it was found: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
 #[test]
 fn a_project_that_is_not_managed_cannot_be_rebuilt() -> Checked {
     let fixture = Fixture::new()?;

@@ -9,7 +9,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use super::{super::fake::*, *};
 use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
-use crate::metadata::RebuildIntent;
+use crate::metadata::{InitialProvisioningIntent, RebuildIntent};
 use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::value::DIGEST;
@@ -590,6 +590,87 @@ fn a_rebuild_in_progress_places_nothing() -> Checked {
     )
     .refused_because("a half-switched sandbox is not the target of a placement")?;
     assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
+    assert!(host.calls().is_empty(), "nothing is asked of the runtime");
+    Ok(())
+}
+
+/// 初回構築が中断したまま残っている案件にする。
+///
+/// 復旧先の世代はintentが固定するため、適用済み世代と同じhashを置く。
+fn interrupt_initial_build(paths: &ProjectPaths) -> Checked {
+    let mut metadata = metadata::load(paths)
+        .required()?
+        .required_because("the project is managed")?;
+    metadata.initial_provisioning = Some(InitialProvisioningIntent {
+        target_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+        files: Vec::new(),
+    });
+    metadata::update(paths, &metadata).required()?;
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_first_build_places_nothing_into_a_running_sandbox() -> Checked {
+    // Sandboxが動いていても、初回構築が終わっていない案件へは適用しない。固定した
+    // 入力snapshotを正本にするのは`repair`であり、現在のconfigを配ると、そのあとの
+    // repairが別の判断をする。
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    let paths = write_metadata(&location, &parent, None)?;
+    interrupt_initial_build(&paths)?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
+
+    let error = run(
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &config,
+        FILES_ONLY,
+        &host,
+        &workspace_root,
+        &mut SilentProgress,
+    )
+    .refused_because("an unfinished first build is recovered explicitly")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .required_because("the user is told how to recover")?;
+    assert_eq!(
+        remediation
+            .commands
+            .first()
+            .map(crate::design::text::CommandLine::as_str),
+        Some("sbxm repair Example-Org/Example-Repo")
+    );
+    assert!(host.calls().is_empty(), "nothing is asked of the runtime");
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_first_build_is_sent_to_repair_rather_than_open() -> Checked {
+    // 停止中のSandboxでも同じ拒否になる。`SandboxNotRunning`で`open`を案内すると、
+    // その`open`が同じ事実からrepairを案内して終わる。実行できるcommandを1つに絞る。
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    let paths = write_metadata(&location, &parent, None)?;
+    interrupt_initial_build(&paths)?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "stopped")?);
+
+    let error = run(
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &config,
+        FILES_ONLY,
+        &host,
+        &workspace_root,
+        &mut SilentProgress,
+    )
+    .refused_because("an unfinished first build is recovered explicitly")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
     assert!(host.calls().is_empty(), "nothing is asked of the runtime");
     Ok(())
 }

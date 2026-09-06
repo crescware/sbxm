@@ -22,6 +22,10 @@ use super::{Prepared, RebuildPlan, observe_protection};
 /// は、この削除計画の元になった最初の観測であり、`confirm`が明示確認と引き換えに
 /// 消費する。
 ///
+/// 中断した初回構築が残っている案件は、対象が決まった直後にmetadataだけで拒否する。
+/// 世代交代は初回構築が終わった案件にしか意味がなく、intentを残したまま適用済み世代を
+/// 進めると、`parse`が拒否する組み合わせがdiskに乗る。下のhost状態の変更にも届かない。
+///
 /// 停止しているSandboxの起動だけは、明示確認より前に行う唯一のhost状態の変更である。
 /// 保存されていない作業は起動しなければ読めず、読めないまま削除計画を見せると、層Aも
 /// 層Bも空の計画を「失うものは無い」と示すことになる。ここでcancelしてもSandboxは
@@ -43,6 +47,10 @@ pub fn prepare(
     // 対象が決まる前にhostの状態へ触れない。
     let locked =
         select::one(location, requested, &msg!("select-rebuild-heading"), prompt)?.lock()?;
+    // 中断した初回構築を暗黙に進めない。Sandboxの有無にも停止中かどうかにも依らず、
+    // 対象が決まった直後に無条件で拒否する。中断したrebuildの再開はここを素通りする。
+    // 2つのintentは同時にdiskへ乗れないため、`metadata.rebuild`があるならintentは無い。
+    provisioning::require_no_initial_intent(&locked.metadata)?;
     let warnings = image::cleanup_stale_archives(&locked.paths)?;
     // project lockを保持している間にexclusive session leaseを取る。開いている
     // `sbxm open` sessionがあれば、削除計画を作る前にここで拒否する。この時点で
@@ -106,12 +114,6 @@ fn require_created(
 ) -> Result<()> {
     match state {
         ProjectState::Running | ProjectState::Stopped => Ok(()),
-        // 中断した初回構築が残っている案件へ`open`を案内しても、その`open`は暗黙に
-        // 再開せずrepairを案内して終わる。metadataだけで分かる事実なので、実行できる
-        // commandをここで1つに絞る。
-        ProjectState::NotCreated => {
-            provisioning::require_no_initial_intent(metadata)?;
-            Err(inventory::not_created(metadata, name.as_str()))
-        }
+        ProjectState::NotCreated => Err(inventory::not_created(metadata, name.as_str())),
     }
 }
