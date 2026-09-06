@@ -173,8 +173,10 @@ sbxm stop <project-id> ...
 ```
 
 `STATE`は`sbxm open`をそのまま実行できるかを示します。`stopped`は開くと
-Sandboxが起動し、`open-blocked`は先に復旧が必要です。理由は
-`sbxm status <project-id>`で確認できます。
+Sandboxが起動し、`open-blocked`は先に復旧が必要です。初回構築が始まったまま
+完了していない案件もここに含まれます。理由は`sbxm status <project-id>`で確認でき、
+次に実行するcommandを1つだけ示します。中断・欠落した初回構築は`sbxm repair`、
+世代交代は`sbxm rebuild`です。
 
 対話端末で実行した場合、`prepare`、`apply`、`rebuild`、`open`、`stop`、`destroy`、
 `status`はプロジェクト引数を省略すると対象を選択するpromptを表示できます。

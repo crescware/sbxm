@@ -12,4 +12,7 @@ pub struct ManagedProject {
     pub observed: Observed,
     /// 中立workspace directoryの実在。`observed`とは別の事実である。
     pub workspace: WorkspaceState,
+    /// 初回構築のintentが残っている。一覧が案件ごとにSandboxの中まで観測することは
+    /// ないため、metadataだけで確実に言えるこの1点を、`open`が進めない印として持つ。
+    pub recovery_pending: bool,
 }

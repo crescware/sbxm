@@ -75,6 +75,7 @@ fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -99,6 +100,7 @@ fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -125,6 +127,7 @@ fn a_changed_dockerfile_is_reported_as_the_next_rebuild_rather_than_a_fault() ->
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -148,6 +151,7 @@ fn a_dockerfile_whose_digest_matches_the_recorded_generation_is_ready() -> Check
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
@@ -169,6 +173,7 @@ fn a_dockerfile_that_cannot_be_read_is_neither_absent_nor_a_new_generation() -> 
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
@@ -214,6 +219,7 @@ fn a_dockerfile_that_is_a_symlink_is_refused_instead_of_followed() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
@@ -257,6 +263,7 @@ fn an_image_that_declares_this_project_and_this_generation_is_ready() -> Checked
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -294,6 +301,7 @@ fn an_image_whose_labels_declare_something_else_is_unusable_rather_than_ready() 
 
         let status = diagnose(
             &fixture.location,
+            &fixture.config,
             &project_id("example-org/example-repo")?,
             &host,
             &fixture.workspace_root,
@@ -327,6 +335,7 @@ fn bare_status() -> ProjectStatus {
         worktrees: Vec::new(),
         disk: crate::support::disk::DiskObservation::NotObservedMismatch,
         diagnostics: Vec::new(),
+        next: None,
     }
 }
 

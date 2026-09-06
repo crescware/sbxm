@@ -337,6 +337,7 @@ fn project_status(
         }],
         worktrees,
         disk: crate::support::disk::DiskObservation::NotObservedMismatch,
+        next: None,
         diagnostics: vec![Diagnostic::new(
             ErrorId::GlobalScopeUnobservable,
             msg!("error-global-scope-unobservable"),

@@ -1,10 +1,11 @@
 use std::path::Path;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
-use crate::config::ConfigLocation;
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::diagnostics::Result;
 use crate::project::ProjectId;
 
+use crate::support::provisioning::{self, NextAction};
 use crate::support::{disk, select};
 
 use crate::commands::status::project::artifacts::{check_directory, check_dockerfile, check_image};
@@ -15,6 +16,7 @@ use super::{ProjectStatus, Value};
 /// 1案件を診断する。何も変更しない。
 pub fn diagnose(
     location: &ConfigLocation,
+    config: &GlobalConfig,
     project: &ProjectId,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
@@ -31,6 +33,7 @@ pub fn diagnose(
         worktrees: Vec::new(),
         disk: disk::DiskObservation::NotObservedMismatch,
         diagnostics: Vec::new(),
+        next: None,
     };
 
     // 1. metadataと目標構成
@@ -51,6 +54,13 @@ pub fn diagnose(
 
     // root filesystemの使用量。running中だけ観測のためにcommandを実行する。
     status.disk = disk::observe(host, name.as_str(), state, TimeoutClass::Probe);
+
+    // 次の1手は、`repair`と同じ共有観測から同じ規則で決める。statusが別の判定規則を
+    // 持つと、案内したcommandが実行時に「不要」と答え得る。観測そのものが成立しない
+    // 場合は、実行できると証明できないcommandを出さない。
+    status.next = provisioning::observe(host, &paths, config, &metadata, workspace_root)
+        .ok()
+        .and_then(|observation| NextAction::decide(&metadata, &observation));
 
     Ok(status)
 }

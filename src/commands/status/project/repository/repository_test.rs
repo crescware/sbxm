@@ -22,6 +22,7 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -83,6 +84,7 @@ fn status_keeps_clean_state_separate_from_an_unobservable_remote() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -129,6 +131,7 @@ fn an_unpublished_commit_is_shown_without_failing_status() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -168,6 +171,7 @@ fn one_shared_observation_failure_produces_one_diagnostic_not_one_per_worktree()
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -213,6 +217,7 @@ fn a_read_only_observation_that_could_not_launch_is_diagnosed_once_with_its_own_
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -255,6 +260,7 @@ fn a_head_read_that_answered_empty_is_not_read_as_a_commit() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -295,6 +301,7 @@ fn a_head_read_the_host_could_not_launch_is_diagnosed_as_the_hosts_failure() -> 
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -330,6 +337,7 @@ fn a_branch_read_that_answered_empty_is_not_read_as_a_commit() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -362,6 +370,7 @@ fn a_branch_read_the_host_could_not_launch_is_diagnosed_as_the_hosts_failure() -
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -394,6 +403,7 @@ fn an_upstream_read_that_answered_empty_is_not_read_as_configured() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -432,6 +442,7 @@ fn a_worktree_without_an_upstream_can_still_be_shown_as_reachable() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -469,6 +480,7 @@ fn an_upstream_read_that_answered_oddly_is_not_read_as_configured() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -509,6 +521,7 @@ fn an_upstream_read_the_host_could_not_launch_is_diagnosed_as_the_hosts_failure(
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -538,6 +551,7 @@ fn a_worktree_outside_the_shared_repository_is_not_counted_as_the_projects() -> 
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -581,6 +595,7 @@ fn a_declared_worktree_that_is_missing_is_reported_as_unusable() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -630,6 +645,7 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -652,6 +668,7 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() -> Checked {
     );
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -676,6 +693,7 @@ fn a_repository_check_the_host_could_not_start_stays_the_hosts_own_failure() -> 
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -724,6 +742,7 @@ fn a_worktree_listing_that_failed_leaves_no_worktree_row_behind() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -774,6 +793,7 @@ fn a_worktree_whose_status_did_not_answer_is_not_reported_as_clean() -> Checked 
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -818,6 +838,7 @@ fn a_status_command_that_could_not_be_run_leaves_the_worktree_unobserved() -> Ch
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,

@@ -3,8 +3,11 @@ use crate::diagnostics::ErrorId;
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::{fake::*, *};
+use crate::support::provisioning::NextAction;
+use crate::testing::add_request::{project_of, request};
 use crate::testing::host::FakeSbx;
 use crate::testing::project::{Fixture, project_id};
+use crate::testing::provisioning::{Bench, World};
 
 #[test]
 fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
@@ -12,6 +15,7 @@ fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
     let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
     let error = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -29,6 +33,7 @@ fn the_items_are_reported_in_the_documented_order() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -66,6 +71,7 @@ fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() -> Ch
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("Example-Org/Example-Repo")?,
         &host,
         &fixture.workspace_root,
@@ -86,5 +92,90 @@ fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() -> Ch
         assert_eq!(value_of(&status, item)?, Value::NotApplicable, "{item}");
     }
     assert!(status.worktrees.is_empty());
+    Ok(())
+}
+
+#[test]
+fn an_unfinished_first_provisioning_is_named_with_the_command_that_recovers_it() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    world.failing("worktree add");
+    bench
+        .build(&world, &request)
+        .refused_because("the build is interrupted after its intent was saved")?;
+    world.nothing_fails();
+
+    let status = diagnose(
+        &bench.location,
+        &bench.config,
+        &project_of(&request)?,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .required_because("diagnose the interrupted project")?;
+
+    // 判定は`repair`と同じ共有観測から来る。statusが別の規則で結論を出さない。
+    assert_eq!(status.next, Some(NextAction::RepairPending));
+    assert!(
+        !status.is_healthy(),
+        "an unfinished first provisioning does not end successfully"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_changed_dockerfile_on_a_finished_project_is_named_as_a_generation_change() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first build completes")?;
+
+    let project = project_of(&request)?;
+    let candidate = crate::support::select::find(&bench.location, &project)
+        .required_because("find the built project")?;
+    std::fs::write(
+        candidate.paths.dockerfile(),
+        b"FROM example\nRUN echo new\n",
+    )
+    .required_because("edit the Dockerfile after the build")?;
+
+    let status = diagnose(
+        &bench.location,
+        &bench.config,
+        &project,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .required_because("diagnose the finished project")?;
+
+    assert_eq!(status.next, Some(NextAction::RebuildChanged));
+    Ok(())
+}
+
+#[test]
+fn a_stopped_project_is_not_given_a_command_that_cannot_be_proven() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first build completes")?;
+
+    // 停止中のSandboxの中は読めない。欠けているとも揃っているとも言えない案件へ、
+    // 実行できると証明できないcommandを出さない。
+    world.stopped();
+    let status = diagnose(
+        &bench.location,
+        &bench.config,
+        &project_of(&request)?,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .required_because("diagnose the stopped project")?;
+
+    assert_eq!(status.next, None);
     Ok(())
 }

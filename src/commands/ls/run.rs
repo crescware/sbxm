@@ -25,7 +25,11 @@ pub fn run(
                 project: project.display_id.clone(),
                 root: crate::paths::display(&project.project_root),
                 sandbox: project.sandbox.clone(),
-                state: ListState::from_observation(&project.observed, project.workspace),
+                state: ListState::from_observation(
+                    &project.observed,
+                    project.workspace,
+                    project.recovery_pending,
+                ),
             })
             .collect(),
         unmanaged: inventory
