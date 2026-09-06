@@ -17,7 +17,7 @@ use crate::support::provisioning::{ProvisioningOutput, ensure_initial};
 use crate::support::select;
 
 use super::World;
-use crate::design::SilentProgress;
+use crate::design::{ProgressSink, SilentProgress};
 
 /// 宣言file 1件を持つ、実行時と同じ形の入力一式。
 pub struct Bench {
@@ -78,19 +78,41 @@ impl Bench {
         ProjectId::parse(&request.repository.display_id())
     }
 
-    /// `add`で登録してから初回構築を通す。工程は通しで判定する。
+    /// 登録済み案件の初回構築を進める。
     ///
-    /// 入口commandではなく共有境界を直接使い、どのcommandの寿命にも縛られない。
-    pub fn build(&self, world: &World, request: &AddRequest) -> Result<ProvisioningOutput> {
-        let project = self.register(world, request)?;
-        let mut locked = select::find(&self.location, &project)?.lock()?;
+    /// 入口commandではなく共有境界を直接使い、どのcommandの寿命にも縛られない。対象の
+    /// 解決とlockは入口commandと同じ順序で通す。
+    pub fn ensure(
+        &self,
+        world: &World,
+        project: &ProjectId,
+        progress: &mut dyn ProgressSink,
+    ) -> Result<ProvisioningOutput> {
+        self.ensure_with(world, project, &self.config, progress)
+    }
+
+    /// 別の設定で初回構築を進める。構築後に宣言fileを足した場合の挙動を見るために使う。
+    pub fn ensure_with(
+        &self,
+        world: &World,
+        project: &ProjectId,
+        config: &GlobalConfig,
+        progress: &mut dyn ProgressSink,
+    ) -> Result<ProvisioningOutput> {
+        let mut locked = select::find(&self.location, project)?.lock()?;
         ensure_initial(
             &mut locked,
-            &self.config,
+            config,
             world,
             self.workspace_root.path(),
-            &mut SilentProgress,
+            progress,
         )
+    }
+
+    /// `add`で登録してから初回構築を通す。工程は通しで判定する。
+    pub fn build(&self, world: &World, request: &AddRequest) -> Result<ProvisioningOutput> {
+        let project = self.register(world, request)?;
+        self.ensure(world, &project, &mut SilentProgress)
     }
 
     pub fn stored(&self, project: &str) -> Checked<ProjectMetadata> {

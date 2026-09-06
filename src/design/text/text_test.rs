@@ -7,8 +7,8 @@ use super::*;
 #[test]
 fn a_command_line_keeps_what_the_user_types() -> Checked {
     let command =
-        CommandLine::new("sbxm prepare owner/repository").required_because("a single line")?;
-    assert_eq!(command.as_str(), "sbxm prepare owner/repository");
+        CommandLine::new("sbxm open owner/repository").required_because("a single line")?;
+    assert_eq!(command.as_str(), "sbxm open owner/repository");
     Ok(())
 }
 
@@ -21,11 +21,11 @@ fn an_empty_command_is_refused() {
 #[test]
 fn a_line_feed_is_refused() {
     assert_eq!(
-        CommandLine::new("sbxm prepare\nsbxm open"),
+        CommandLine::new("sbxm open\nsbxm open"),
         Err(InvalidCommandLine::Multiline)
     );
     assert_eq!(
-        CommandLine::new("sbxm prepare\n"),
+        CommandLine::new("sbxm open\n"),
         Err(InvalidCommandLine::Multiline)
     );
 }
@@ -33,11 +33,11 @@ fn a_line_feed_is_refused() {
 #[test]
 fn a_carriage_return_is_refused() {
     assert_eq!(
-        CommandLine::new("sbxm prepare\r\nsbxm open"),
+        CommandLine::new("sbxm open\r\nsbxm open"),
         Err(InvalidCommandLine::Multiline)
     );
     assert_eq!(
-        CommandLine::new("sbxm prepare\r"),
+        CommandLine::new("sbxm open\r"),
         Err(InvalidCommandLine::Multiline)
     );
 }

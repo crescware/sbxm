@@ -104,8 +104,8 @@ fn placed() -> Vec<PlacedFile> {
     }]
 }
 
-fn prepare_output() -> super::prepare::PrepareOutput {
-    super::prepare::PrepareOutput {
+fn provisioning_output() -> crate::support::provisioning::ProvisioningOutput {
+    crate::support::provisioning::ProvisioningOutput {
         project: "owner/repo".to_string(),
         sandbox: "owner-repo".to_string(),
         mode: CreationMode::Attached,
@@ -124,51 +124,59 @@ fn prepare_output() -> super::prepare::PrepareOutput {
 }
 
 #[test]
-fn prepare_keeps_the_security_note_off_the_end_of_the_table() {
-    let document = super::prepare::print(&prepare_output(), Locale::En);
+fn provisioning_keeps_the_security_note_off_the_end_of_the_table() {
+    let document = super::present::provisioning_output(&provisioning_output(), Locale::En);
     assert_eq!(
         shape(&document),
-        vec![
-            "summary", "fields", "table", "table", "note", "guidance", "command"
-        ]
+        vec!["summary", "fields", "table", "table", "note"]
     );
 }
 
 #[test]
-fn prepare_closes_with_the_command_that_opens_what_it_just_built() {
-    // 構築の次はSSHで入ることであり、`add`もその順で案内する。ここで案内しないと、
-    // 利用者は`add`の案内を遡って読み直すことになる。
-    let document = super::prepare::print(&prepare_output(), Locale::En);
-    assert_eq!(commands(&document), vec!["sbxm open owner/repo"]);
-    assert_eq!(shape(&document).last(), Some(&"command"));
-}
-
-#[test]
-fn prepare_adds_a_legend_only_where_the_values_are_not_the_source_language() -> Checked {
-    let english = super::prepare::print(&prepare_output(), Locale::En);
-    assert!(!shape(&english).contains(&"legend"));
-
-    let japanese = shape(&super::prepare::print(&prepare_output(), Locale::Ja));
-    let legend = japanese
-        .iter()
-        .position(|block| *block == "legend")
-        .required_because("the legend describes the values above it")?;
-    assert_eq!(
-        japanese[legend + 1..],
-        ["guidance", "command"],
-        "the next step stays last: {japanese:?}"
+fn provisioning_reports_an_unchanged_run_without_claiming_work() -> Checked {
+    // 何も変えなかった実行が、構築したかのようなsummaryを出さない。
+    let mut output = provisioning_output();
+    output.already_built = true;
+    let drawn = plain(
+        &super::present::provisioning_output(&output, Locale::En),
+        Locale::En,
+    )?;
+    assert!(
+        drawn.starts_with("\u{2713} owner/repo is already built"),
+        "{drawn}"
     );
     Ok(())
 }
 
 #[test]
-fn prepare_leaves_out_a_table_it_has_no_rows_for() {
-    let mut output = prepare_output();
+fn provisioning_adds_a_legend_only_where_the_values_are_not_the_source_language() -> Checked {
+    let english = super::present::provisioning_output(&provisioning_output(), Locale::En);
+    assert!(!shape(&english).contains(&"legend"));
+
+    let japanese = shape(&super::present::provisioning_output(
+        &provisioning_output(),
+        Locale::Ja,
+    ));
+    let legend = japanese
+        .iter()
+        .position(|block| *block == "legend")
+        .required_because("the legend describes the values above it")?;
+    assert_eq!(
+        legend + 1,
+        japanese.len(),
+        "the legend closes the report: {japanese:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn provisioning_leaves_out_a_table_it_has_no_rows_for() {
+    let mut output = provisioning_output();
     output.worktrees.clear();
     output.files.clear();
     assert_eq!(
-        shape(&super::prepare::print(&output, Locale::En)),
-        vec!["summary", "fields", "guidance", "command"]
+        shape(&super::present::provisioning_output(&output, Locale::En)),
+        vec!["summary", "fields"]
     );
 }
 

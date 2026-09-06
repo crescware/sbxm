@@ -21,7 +21,7 @@ it, so a project whose sandbox is stopped is refused with what was observed inst
 repaired from steps that were never read. Open the project to start it, then run `repair` if a
 diagnostic still points to it.
 
-A pending or incomplete initial provisioning is never resumed implicitly: neither the first
-`open` nor `prepare` continues it. Run `repair` when the diagnostic points to it. A successful repair verifies the resulting sandbox and clears
+A pending or incomplete initial provisioning is never resumed implicitly: a later `open`
+reports it instead of continuing it. Run `repair` when the diagnostic points to it. A successful repair verifies the resulting sandbox and clears
 the initial-provisioning intent from project metadata only after that read-only verification
 passes.

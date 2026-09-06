@@ -2,9 +2,9 @@
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::super::fake::{Bench, World};
 use crate::diagnostics::ErrorId;
 use crate::testing::add_request::request;
+use crate::testing::provisioning::{Bench, World};
 
 #[test]
 fn git_is_given_the_placeholder_before_it_reaches_github() -> Checked {

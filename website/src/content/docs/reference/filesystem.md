@@ -52,7 +52,7 @@ When a sandbox is full, use this order:
 
 ## Sandbox worktrees
 
-Inside a prepared sandbox, managed worktrees look like:
+Inside a built sandbox, managed worktrees look like:
 
 ```text
 /home/agent/work/<repository>/<repository>.tree-1

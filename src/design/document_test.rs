@@ -20,7 +20,7 @@ fn blocks_keep_the_order_they_were_declared_in() {
                 Inline::important("owner/repository"),
             )],
         )
-        .try_command("sbxm prepare owner/repository");
+        .try_command("sbxm open owner/repository");
 
     assert!(matches!(document.blocks()[0], Block::Summary(_)));
     assert!(matches!(document.blocks()[1], Block::Section(_)));
@@ -107,7 +107,7 @@ fn guidance_keeps_its_numbering_across_the_command_blocks_between_it() {
                 text: msg!("add-next-prepare"),
             }],
         )
-        .try_command("sbxm prepare owner/repository");
+        .try_command("sbxm open owner/repository");
 
     let numbers: Vec<usize> = document
         .blocks()

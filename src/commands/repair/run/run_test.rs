@@ -58,16 +58,9 @@ fn an_interrupted_prepare_keeps_its_intent_until_explicit_repair() -> Checked {
     )
     .required_because("the project is registered")?;
     let project = project_of(&request)?;
-    let error = crate::commands::prepare::run::run(
-        &bench.location,
-        &bench.config,
-        Some(&project),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("the failed first mutation leaves an intent")?;
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the failed first mutation leaves an intent")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     assert!(
         bench
@@ -77,16 +70,9 @@ fn an_interrupted_prepare_keeps_its_intent_until_explicit_repair() -> Checked {
     );
     world.nothing_fails();
 
-    let error = crate::commands::prepare::run::run(
-        &bench.location,
-        &bench.config,
-        Some(&project),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("prepare does not implicitly resume the intent")?;
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("prepare does not implicitly resume the intent")?;
     assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
 
     let prepared = prepare(
@@ -350,16 +336,9 @@ fn repair_is_read_only_for_fresh_and_ready_projects() -> Checked {
     .required_because("a fresh project needs no repair")?;
     assert!(!output.changed);
 
-    crate::commands::prepare::run::run(
-        &bench.location,
-        &bench.config,
-        Some(&project),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("the normal prepare finishes the project")?;
+    bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .required_because("the normal prepare finishes the project")?;
 
     let prepared = prepare(
         &bench.location,

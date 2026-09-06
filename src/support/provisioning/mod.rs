@@ -51,3 +51,31 @@ pub use worktree_row::WorktreeRow;
 #[cfg(test)]
 #[path = "provisioning_test.rs"]
 mod provisioning_test;
+
+#[cfg(test)]
+#[path = "initial_build_test.rs"]
+mod initial_build_test;
+
+#[cfg(test)]
+#[path = "initial_generation_test.rs"]
+mod initial_generation_test;
+
+#[cfg(test)]
+#[path = "initial_intent_test.rs"]
+mod initial_intent_test;
+
+#[cfg(test)]
+#[path = "initial_output_test.rs"]
+mod initial_output_test;
+
+#[cfg(test)]
+#[path = "initial_secret_test.rs"]
+mod initial_secret_test;
+
+#[cfg(test)]
+#[path = "initial_tools_test.rs"]
+mod initial_tools_test;
+
+#[cfg(test)]
+#[path = "initial_worktree_test.rs"]
+mod initial_worktree_test;

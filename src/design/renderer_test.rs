@@ -72,7 +72,7 @@ fn representative() -> Document {
                 text: msg!("add-next-prepare"),
             }],
         )
-        .try_command("sbxm prepare owner/alpha")
+        .try_command("sbxm open owner/alpha")
         .note(msg!("files-secret-hint"))
 }
 
@@ -144,13 +144,13 @@ fn a_command_line_owns_its_line_with_a_blank_line_on_each_side() -> Checked {
     let drawn = plain(
         &Document::new()
             .guidance(None, vec![GuidanceItem::Plain(msg!("add-next-prepare"))])
-            .try_command("sbxm prepare owner/alpha")
+            .try_command("sbxm open owner/alpha")
             .note(msg!("files-secret-hint")),
     )?;
     let lines: Vec<&str> = drawn.lines().collect();
     let index = lines
         .iter()
-        .position(|line| *line == "  sbxm prepare owner/alpha")
+        .position(|line| *line == "  sbxm open owner/alpha")
         .required_because("the command occupies a line of its own")?;
     assert_eq!(lines[index - 1], "", "{drawn:?}");
     assert_eq!(lines[index + 1], "", "{drawn:?}");
@@ -159,14 +159,14 @@ fn a_command_line_owns_its_line_with_a_blank_line_on_each_side() -> Checked {
 
 #[test]
 fn a_trailing_command_still_closes_with_a_blank_line() -> Checked {
-    let drawn = plain(&Document::new().try_command("sbxm prepare owner/alpha"))?;
-    assert_eq!(drawn, "  sbxm prepare owner/alpha\n\n");
+    let drawn = plain(&Document::new().try_command("sbxm open owner/alpha"))?;
+    assert_eq!(drawn, "  sbxm open owner/alpha\n\n");
     Ok(())
 }
 
 #[test]
 fn a_command_line_carries_nothing_the_user_did_not_type() -> Checked {
-    let drawn = plain(&Document::new().try_command("sbxm prepare owner/alpha"))?;
+    let drawn = plain(&Document::new().try_command("sbxm open owner/alpha"))?;
     let line = drawn.lines().next().required_because("a command line")?;
     // 字下げは説明と左端を揃えるためのものであり、行の中には何も足さない。
     let command = line
@@ -178,7 +178,7 @@ fn a_command_line_carries_nothing_the_user_did_not_type() -> Checked {
             "{decoration:?} is not part of what gets pasted: {command:?}"
         );
     }
-    assert_eq!(command, "sbxm prepare owner/alpha");
+    assert_eq!(command, "sbxm open owner/alpha");
     Ok(())
 }
 
@@ -194,7 +194,7 @@ fn a_command_lines_up_with_the_step_that_asked_for_it() -> Checked {
                     text: msg!("add-next-prepare"),
                 }],
             )
-            .try_command("sbxm prepare owner/alpha"),
+            .try_command("sbxm open owner/alpha"),
     )?;
 
     let indent = |line: &str| line.len() - line.trim_start().len();
@@ -205,7 +205,7 @@ fn a_command_lines_up_with_the_step_that_asked_for_it() -> Checked {
         .required_because("the numbered step")?;
     let command = lines
         .iter()
-        .find(|line| line.contains("sbxm prepare"))
+        .find(|line| line.contains("sbxm open"))
         .required_because("the command")?;
     assert_eq!(indent(step), indent(command), "{drawn:?}");
     Ok(())

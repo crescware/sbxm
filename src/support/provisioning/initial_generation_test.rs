@@ -5,14 +5,11 @@ use crate::support::image;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::{
-    super::fake::{Bench, World},
-    *,
-};
 use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::prompt::ScriptedPrompt;
+use crate::testing::provisioning::{Bench, World};
 use std::fs;
 
 use crate::commands::repair::run::{execute as repair_execute, prepare as repair_prepare};
@@ -103,16 +100,9 @@ fn a_dockerfile_edited_before_any_image_exists_is_the_generation_that_gets_built
     fs::write(paths.dockerfile(), EDITED_DOCKERFILE).required_because("edit the Dockerfile")?;
     let edited = sha256_hex(EDITED_DOCKERFILE);
 
-    let output = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("the build runs on the Dockerfile that is there")?;
+    let output = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .required_because("the build runs on the Dockerfile that is there")?;
 
     assert!(output.warnings.is_empty(), "{:?}", output.warnings);
     assert_eq!(

@@ -357,7 +357,7 @@ sbx secret set ...
 
   2. Prepare the sandbox.
 
-sbxm prepare Example-Org/Example-Repo
+sbxm open Example-Org/Example-Repo
 
 ```
 
@@ -368,7 +368,7 @@ command行はbold + cyanとする。色なしでも前後の空行によって�
 この規則は次のすべてに適用する。
 
 - `sbx secret`のようにsbxmが代行できない操作
-- `sbxm prepare`などの後続操作
+- `sbxm open`などの後続操作
 - error remediation
 - 再登録、復旧、再実行
 

@@ -2,8 +2,8 @@
 
 use crate::testing::outcome::{Checked, Required};
 
-use super::super::fake::{Bench, World};
 use crate::testing::add_request::request;
+use crate::testing::provisioning::{Bench, World};
 
 #[test]
 fn a_worktree_that_declares_mise_is_never_looked_for() -> Checked {

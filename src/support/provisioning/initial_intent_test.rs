@@ -8,10 +8,7 @@ use crate::hash::sha256_hex;
 use crate::paths::{self, ProjectPaths};
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
-use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
-
-use super::run;
 
 /// projectを登録するだけで、まだ構築しない。
 fn registered(bench: &Bench, request: &crate::commands::add::AddRequest, world: &World) -> Checked {
@@ -76,16 +73,9 @@ fn prepare_observes_an_intent_without_resuming_it() -> Checked {
     world.nothing_fails();
 
     let mark = world.mark();
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("prepare requires explicit repair after interruption")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("prepare requires explicit repair after interruption")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
     assert!(
@@ -119,16 +109,11 @@ fn a_dockerfile_edited_after_the_snapshot_does_not_change_what_is_built() -> Che
         let _ = fs::write(&edited, b"FROM example:edited-during-the-race\n");
     });
 
-    run(
-        &bench.location,
-        &bench.config,
-        Some(&project),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("prepare still succeeds because it never reads the live Dockerfile again")?;
+    bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .required_because(
+            "prepare still succeeds because it never reads the live Dockerfile again",
+        )?;
 
     let build = world
         .calls
@@ -178,16 +163,9 @@ fn a_declared_file_edited_after_the_snapshot_does_not_change_what_is_copied() ->
         let _ = fs::write(&edited, b"changed = true # raced the copy\n");
     });
 
-    run(
-        &bench.location,
-        &bench.config,
-        Some(&project),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("prepare still succeeds because it never reads the live source again")?;
+    bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .required_because("prepare still succeeds because it never reads the live source again")?;
 
     let placed = world
         .digests
