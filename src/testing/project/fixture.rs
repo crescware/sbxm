@@ -65,6 +65,8 @@ impl Fixture {
                 dockerfile_sha256: DIGEST.into(),
             },
             git_identity: crate::testing::metadata::git_identity(),
+            initial_provisioning: None,
+            declared_files: None,
             rebuild: None,
         };
         metadata::create(&paths, &metadata).required_because("write the metadata")?;

@@ -3,6 +3,8 @@
 //! ここでは値の妥当性を判定しない。structへ写した後の検査は`parse`が持つ。
 
 mod raw_git_identity;
+mod raw_initial_provisioning;
+mod raw_initial_provisioning_file;
 mod raw_metadata;
 mod raw_provisioning;
 mod raw_rebuild;
@@ -10,6 +12,8 @@ mod raw_repository;
 mod raw_start_ref;
 
 pub(super) use raw_git_identity::RawGitIdentity;
+pub(super) use raw_initial_provisioning::RawInitialProvisioning;
+pub(super) use raw_initial_provisioning_file::RawInitialProvisioningFile;
 pub(super) use raw_metadata::RawMetadata;
 pub(super) use raw_provisioning::RawProvisioning;
 pub(super) use raw_rebuild::RawRebuild;

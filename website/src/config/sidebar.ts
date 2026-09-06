@@ -25,6 +25,7 @@ export const sidebar = [
 			{ slug: 'reference/cli/add', label: 'add' },
 			{ slug: 'reference/cli/apply', label: 'apply' },
 			{ slug: 'reference/cli/prepare', label: 'prepare' },
+			{ slug: 'reference/cli/repair', label: 'repair' },
 			{ slug: 'reference/cli/rebuild', label: 'rebuild' },
 			{ slug: 'reference/cli/open', label: 'open' },
 			{ slug: 'reference/cli/stop', label: 'stop' },

@@ -3,7 +3,7 @@
 mod command_line;
 mod exec;
 #[cfg(test)]
-pub(crate) mod fake;
+pub(crate) use crate::testing::provisioning as fake;
 pub mod print;
 pub mod run;
 

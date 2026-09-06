@@ -15,6 +15,8 @@ use crate::testing::add_request::{project_of, request};
 use crate::testing::prompt::ScriptedPrompt;
 use std::fs;
 
+use crate::commands::repair::run::{execute as repair_execute, prepare as repair_prepare};
+
 /// 編集後のDockerfileの内容。世代が変わったことだけが要る。
 const EDITED_DOCKERFILE: &[u8] = b"FROM example:edited\n";
 
@@ -40,39 +42,42 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
     fs::write(paths.dockerfile(), EDITED_DOCKERFILE).required_because("edit the Dockerfile")?;
 
     let mark = world.mark();
-    let output = run(
+    let prepared = repair_prepare(
         &bench.location,
         &bench.config,
         Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
         &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("repair prepares the interrupted run")?;
+    let output = repair_execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
         &mut SilentProgress,
     )
-    .required_because("the interrupted run finishes")?;
+    .required_because("repair finishes the interrupted run")?;
 
-    assert_eq!(
-        output
-            .warnings
-            .iter()
-            .map(|warning| warning.description.id)
-            .collect::<Vec<_>>(),
-        vec!["warning-dockerfile-changed-during-build"]
-    );
+    assert!(output.changed);
     assert_eq!(
         bench
             .stored("Example-Org/Example-Repo")?
             .provisioning
             .dockerfile_sha256,
         started_from,
-        "the generation the build started from is the one it is finished on"
+        "the generation the build started from is the one repair finishes on"
     );
     let edited = image::image_name(
         &SandboxName::derive(request.repository.canonical_id()),
         &sha256_hex(EDITED_DOCKERFILE),
     );
     assert!(
-        !world.since(mark).iter().any(|call| call.contains(&edited)),
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("docker build") && call.contains(&edited)),
         "the edited Dockerfile is left for rebuild: {:?}",
         world.since(mark)
     );

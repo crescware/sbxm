@@ -114,18 +114,18 @@ fn consecutive_progress_stays_together_and_the_summary_after_it_does_not() -> Ch
 #[test]
 fn a_warning_with_a_follow_up_keeps_the_command_on_its_own_line() -> Checked {
     let warning = Warning::text(crate::msg!(
-        "warning-dockerfile-changed-during-build",
-        project = "owner/alpha"
+        "warning-workspace-restored",
+        sandbox = "sbx-alpha"
     ))
-    .explain(crate::msg!("guidance-apply-current-dockerfile"))
-    .try_run("sbxm rebuild owner/alpha");
+    .explain(crate::msg!("guidance-workspace-restored"))
+    .try_run("sbxm repair owner/alpha");
 
     let streams = Streams::capture(RenderingPolicy::plain(), |ui| ui.warning(&warning));
     let err = streams.err()?;
     let lines: Vec<&str> = err.lines().collect();
     let index = lines
         .iter()
-        .position(|line| *line == "  sbxm rebuild owner/alpha")
+        .position(|line| *line == "  sbxm repair owner/alpha")
         .required_because("the follow-up is its own line")?;
     assert_eq!(lines[index - 1], "", "{err:?}");
     assert!(lines[0].starts_with("! Warning: "), "{err:?}");

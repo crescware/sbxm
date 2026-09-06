@@ -257,6 +257,37 @@ fn a_destination_that_already_holds_the_same_content_is_left_alone() -> Checked 
 }
 
 #[test]
+fn read_only_observation_distinguishes_missing_matching_and_conflicting_files() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let contents = b"declared = true\n";
+    let source = source_file(dir.path(), contents)?;
+    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
+
+    assert_eq!(
+        observe(&FakeSbx::empty(), "sbxm-example", &declarations)?[0].placement,
+        Placement::Placed,
+        "a missing destination still needs placement"
+    );
+    assert_eq!(
+        observe(
+            &FakeSbx::holding("/home/agent/.config/example/settings.yaml", contents),
+            "sbxm-example",
+            &declarations,
+        )?[0]
+            .placement,
+        Placement::Unchanged,
+        "a matching destination is already complete"
+    );
+
+    let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", b"older\n");
+    let error = observe(&host, "sbxm-example", &declarations)
+        .refused_because("a conflicting destination is never overwritten")?;
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    assert!(!host.ran("cp"), "observation never mutates the sandbox");
+    Ok(())
+}
+
+#[test]
 fn add_refuses_to_overwrite_a_different_file_while_sync_files_replaces_it() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let source = source_file(dir.path(), b"new contents\n")?;
@@ -534,5 +565,49 @@ fn a_destination_that_is_not_utf8_is_refused_rather_than_placed() -> Checked {
         })
         .required_because("the observed reason is named")?;
     assert_eq!(reason, "cause-not-valid-utf8");
+    Ok(())
+}
+
+fn baseline_entry(destination: &str, sha256: &str) -> crate::metadata::InitialProvisioningFile {
+    crate::metadata::InitialProvisioningFile {
+        source: "/home/user/original.yaml".to_string(),
+        destination: destination.to_string(),
+        sha256: sha256.to_string(),
+    }
+}
+
+#[test]
+fn a_baseline_entry_absent_from_the_sandbox_is_observed_as_missing() -> Checked {
+    let host = FakeSbx::empty();
+    let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
+    let observed = observe_against_baseline(&host, "sbxm-example", &baseline)
+        .required_because("an absent destination is observed, not an error")?;
+    assert_eq!(observed[0].placement, Placement::Placed);
+    Ok(())
+}
+
+#[test]
+fn a_baseline_entry_matching_the_sandboxs_digest_is_unchanged() -> Checked {
+    // baselineの照合はSandbox内のdigestとだけ行い、生きているsourceは一切読まない。
+    let host = FakeSbx::holding("/home/agent/.gitconfig", b"original\n");
+    let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
+    let observed = observe_against_baseline(&host, "sbxm-example", &baseline)
+        .required_because("a digest that matches the baseline is unchanged")?;
+    assert_eq!(observed[0].placement, Placement::Unchanged);
+    assert!(
+        !host.ran("/home/user/original.yaml"),
+        "the live source path is never read: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_baseline_entry_that_differs_from_the_sandbox_is_a_conflict() -> Checked {
+    let host = FakeSbx::holding("/home/agent/.gitconfig", b"different in the sandbox\n");
+    let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
+    let error = observe_against_baseline(&host, "sbxm-example", &baseline)
+        .refused_because("existing different content is not silently overwritten")?;
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
     Ok(())
 }

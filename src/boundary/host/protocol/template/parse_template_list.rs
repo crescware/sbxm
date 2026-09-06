@@ -32,8 +32,13 @@ pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
                 )
             })?;
 
+        let id = string_field(object, "id")
+            .or_else(|| string_field(object, "Id"))
+            .filter(|value| !value.is_empty());
+
         entries.push(TemplateEntry {
             names: reference_names(&repository, &tag),
+            id,
         });
     }
     Ok(entries)

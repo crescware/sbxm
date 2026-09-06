@@ -394,42 +394,83 @@ fn the_credential_helper_reads_the_placeholder_and_holds_no_token() -> Checked {
     let host = FakeSbx::listing("");
     configure_git_credential(&host, "sbxm-example").required_because("the helper is configured")?;
 
-    let call = host.calls.borrow()[0].join(" ");
-    assert!(call.contains("credential.https://github.com.helper"));
+    let calls = host.calls.borrow();
+    assert!(
+        calls[0]
+            .join(" ")
+            .contains("credential.https://github.com.helper"),
+        "the current value is read before anything is written: {calls:?}"
+    );
+    let write = calls
+        .iter()
+        .map(|call| call.join(" "))
+        .find(|call| call.contains("password=$GH_TOKEN"))
+        .required_because("the helper is configured because nothing was set yet")?;
     // helperはSandboxの環境変数を読むだけで、値そのものは持たない。
-    assert!(call.contains("password=$GH_TOKEN"));
+    assert!(write.contains("credential.https://github.com.helper"));
     Ok(())
 }
 
 #[test]
-fn configure_writes_an_existing_matching_credential_helper() -> Checked {
+fn configure_leaves_an_existing_matching_credential_helper_untouched() -> Checked {
     let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
     let helper = "!f() { echo username=x; echo password=$GH_TOKEN; }; f";
     let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, helper);
     configure_git_credential(&host, "sbxm-example").required_because("the helper is configured")?;
-    assert!(host.ran("credential.https://github.com.helper !f"));
+    assert!(
+        !host.ran("credential.https://github.com.helper !f"),
+        "an already-matching value is not written again: {:?}",
+        host.calls()
+    );
     assert_eq!(
         host.calls().len(),
         1,
-        "no unnecessary preceding call is added: {:?}",
+        "the value is read once and never written: {:?}",
         host.calls()
     );
     Ok(())
 }
 
 #[test]
-fn configure_overwrites_a_different_credential_helper() -> Checked {
+fn configure_refuses_a_different_credential_helper() -> Checked {
     let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
     let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, "store");
-    configure_git_credential(&host, "sbxm-example")
-        .required_because("prepare preserves its existing overwrite behavior")?;
+    let error = configure_git_credential(&host, "sbxm-example")
+        .refused_because("a helper set to something else may belong to another user's sandbox")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::SandboxCredentialHelperUnusable)
+    );
     assert_eq!(
         host.calls().len(),
         1,
-        "no unnecessary preceding call is added: {:?}",
+        "the mismatch is refused before any write is attempted: {:?}",
         host.calls()
     );
-    assert!(host.ran("credential.https://github.com.helper !f"));
+    assert!(
+        !host.ran("credential.https://github.com.helper !f"),
+        "the existing value is not overwritten: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn configure_refuses_a_credential_helper_it_cannot_observe() -> Checked {
+    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
+    let host = crate::testing::host::FakeSbx::listing("").answering(key, 1, "fatal: bad config");
+    let error = configure_git_credential(&host, "sbxm-example")
+        .refused_because("a failure that answered with text is not the same as an unset key")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::SandboxCredentialHelperUnusable)
+    );
+    assert_eq!(
+        host.calls().len(),
+        1,
+        "nothing is written while the existing value cannot be read: {:?}",
+        host.calls()
+    );
     Ok(())
 }
 

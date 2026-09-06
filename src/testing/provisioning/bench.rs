@@ -13,9 +13,10 @@ use crate::metadata::{self, ProjectMetadata};
 use crate::paths::{self, PRIVATE_DIR_MODE, ProjectParent, ProjectPaths};
 use crate::project::ProjectId;
 
-use super::super::run::run;
+use crate::commands::prepare::PrepareOutput;
+use crate::commands::prepare::run::run;
 
-use super::{super::PrepareOutput, World};
+use super::World;
 use crate::design::SilentProgress;
 use crate::testing::prompt::ScriptedPrompt;
 

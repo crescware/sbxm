@@ -1,4 +1,4 @@
-//! `prepare`のtestが動かすSandbox世界のfake。
+//! provisioningのtestが動かすSandbox世界のfake。
 //!
 //! 工程は外部commandの応答だけで決まるため、応答と観測できる状態をここが持つ。
 

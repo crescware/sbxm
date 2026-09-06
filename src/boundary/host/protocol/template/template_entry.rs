@@ -3,6 +3,9 @@
 pub struct TemplateEntry {
     /// このentryを指す名前。registry prefixを補う前後の両方を持つ。
     pub names: Vec<String>,
+    /// runtimeのimage storeが割り当てたid。名前だけでは、別内容のTemplateへ同じ名前が
+    /// 再利用されたことを見分けられない。
+    pub id: Option<String>,
 }
 
 impl TemplateEntry {

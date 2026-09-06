@@ -73,20 +73,13 @@ fn the_declared_file_is_placed_once_and_left_alone_afterwards() -> Checked {
         "the staged copy does not survive the placement"
     );
 
-    // 同じ内容の再配置は、Sandboxへ書き込まない。
-    let world = World::new();
-    world.digests.borrow_mut().insert(
-        "/home/agent/.config/example/settings.yaml".to_string(),
-        sha256_hex(b"declared = true\n"),
-    );
-    world
-        .present
-        .borrow_mut()
-        .insert("/home/agent/.config/example/settings.yaml".to_string());
+    // 同じ内容の再配置は、Sandboxへ書き込まない。完了済みの同じworldを
+    // もう一度観測して、prepareがread-onlyで終わることも確かめる。
+    let mark = world.mark();
     let output = bench.build(&world, &request).required_because("build")?;
     assert_eq!(output.files[0].placement, Placement::Unchanged);
     assert!(
-        !world.ran("sbx cp"),
+        !world.since(mark).iter().any(|call| call.contains("sbx cp")),
         "an identical destination is left alone"
     );
     Ok(())

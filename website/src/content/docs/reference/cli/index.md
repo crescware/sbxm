@@ -11,6 +11,7 @@ sbxm manages a project from registration through teardown. The command surface i
 | --- | --- |
 | [`add`](./add/) | Add a GitHub repository to sbxm and clone it onto this host |
 | [`prepare`](./prepare/) | Prepare a registered project by building and provisioning its sandbox |
+| [`repair`](./repair/) | Explicitly recover an interrupted or incomplete initial provisioning |
 | [`open`](./open/) | Open an SSH session to a project sandbox, starting it if needed |
 | [`ls`](./ls/) | List managed projects and unmanaged sandboxes with their states |
 | [`status`](./status/) | Show host or project status without changing it |

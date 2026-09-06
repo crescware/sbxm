@@ -12,8 +12,8 @@ use temp_home::{TempHome, temp_home};
 use std::path::Path;
 use std::process::{Command, Output};
 
-const COMMANDS: [&str; 9] = [
-    "add", "apply", "prepare", "rebuild", "open", "stop", "ls", "status", "destroy",
+const COMMANDS: [&str; 10] = [
+    "add", "apply", "prepare", "repair", "rebuild", "open", "stop", "ls", "status", "destroy",
 ];
 
 /// 実行結果。
@@ -387,7 +387,7 @@ fn a_broken_configuration_does_not_stop_help_from_being_shown() -> Checked {
 }
 
 /// 案件を引数で取り、設定を読んでから動くcommand。
-const CONFIGURED_COMMANDS: [&str; 3] = ["prepare", "rebuild", "open"];
+const CONFIGURED_COMMANDS: [&str; 4] = ["prepare", "repair", "rebuild", "open"];
 
 #[test]
 fn a_configuration_this_build_cannot_read_stops_a_command_before_it_touches_anything() -> Checked {
@@ -825,7 +825,7 @@ fn apply_refuses_a_project_that_was_never_added() -> Checked {
 }
 
 /// 案件を引数で指定するcommand。`apply`は指定の形が違うため別に確かめる。
-const PROJECT_COMMANDS: [&str; 5] = ["prepare", "rebuild", "open", "stop", "destroy"];
+const PROJECT_COMMANDS: [&str; 6] = ["prepare", "repair", "rebuild", "open", "stop", "destroy"];
 
 #[test]
 fn every_command_that_targets_a_project_refuses_one_that_was_never_added() -> Checked {

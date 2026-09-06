@@ -10,6 +10,7 @@ use super::{
 use crate::design::SilentProgress;
 use crate::diagnostics::ErrorId;
 use crate::hash::sha256_hex;
+use crate::project::SandboxName;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::project::project_id;
 use crate::testing::prompt::ScriptedPrompt;
@@ -243,7 +244,10 @@ fn a_foreign_image_stops_prepare_before_anything_is_built() -> Checked {
     )
     .refused_because("a foreign image is not overwritten")?;
 
-    assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningIncomplete)
+    );
     assert!(!world.ran("docker build"));
     Ok(())
 }
@@ -302,9 +306,9 @@ fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Che
 }
 
 #[test]
-fn a_failed_image_build_lets_the_same_prepare_retarget_after_the_dockerfile_is_fixed() -> Checked {
-    // immutableな成果物が何も残らなかった段階。Dockerfileを直しての再実行は、
-    // その新しいgenerationへ続けられる。
+fn a_failed_image_build_requires_repair_even_after_the_dockerfile_is_fixed() -> Checked {
+    // intentが保存された後は、Dockerfileを直してもprepareが新しいgenerationへ
+    // 暗黙に切り替わらない。固定targetの成果物が無いので、repairも安全に止まる。
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -314,21 +318,37 @@ fn a_failed_image_build_lets_the_same_prepare_retarget_after_the_dockerfile_is_f
         .build(&world, &request)
         .refused_because("the run stops when the image cannot be built")?;
     world.nothing_fails();
+    let started_from = bench
+        .stored("Example-Org/Example-Repo")?
+        .provisioning
+        .dockerfile_sha256;
 
     let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
     fs::write(paths.dockerfile(), b"FROM example:edited\n")
         .required_because("fix the Dockerfile")?;
 
-    let output = bench
+    let error = bench
         .build(&world, &request)
-        .required_because("the same prepare retargets to the fixed generation")?;
-
-    assert!(!output.already_built);
+        .refused_because("the same prepare does not retarget the fixed generation")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    let project = project_of(&request)?;
+    let error = crate::commands::repair::run::prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .refused_because("repair cannot invent the fixed target image")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningGenerationMissing)
+    );
     let stored = bench.stored("Example-Org/Example-Repo")?;
     assert_eq!(
-        stored.provisioning.dockerfile_sha256,
-        sha256_hex(b"FROM example:edited\n"),
-        "the fixed dockerfile becomes the generation that was built"
+        stored.provisioning.dockerfile_sha256, started_from,
+        "the original generation remains the target"
     );
     Ok(())
 }
@@ -363,9 +383,10 @@ fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Ch
 
     assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
     assert!(
-        !world.since(mark).iter().any(|call| call.contains("build")
-            || call.contains("image")
-            || call.contains("create --name")),
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("docker build") || call.contains("create --name")),
         "nothing is built before the engine is confirmed reachable: {:?}",
         world.since(mark)
     );
@@ -374,19 +395,24 @@ fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Ch
 
 #[test]
 fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Checked {
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-
-    // files配置、identity設定、gh git_protocol設定、bare clone、worktree作成の
-    // それぞれの代表的な失敗。
+    // Issue #147が挙げる工程を、省略せず1つずつ失敗させる。archive save、Template
+    // load、宣言file配置、Git identity、secret placeholder、credential helper、
+    // bare clone、start ref解決、worktree作成。
     for step in [
+        "docker image save",
+        "template load",
         "sbx cp --follow-link",
         "config --global user.name",
         "gh config set git_protocol",
+        "printf %s",
+        "credential.https://github.com.helper",
         "git init --bare",
+        "ls-remote --symref origin HEAD",
         "worktree add",
     ] {
+        let bench = Bench::new()?;
+        let world = World::new();
+        let request = request("Example-Org/Example-Repo", None, None)?;
         world.failing(step);
         let mark = world.mark();
         let error = bench
@@ -395,14 +421,310 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
         let since = world.since(mark);
         world.nothing_fails();
 
-        let facts = &error.diagnostics()[0].facts;
-        assert_eq!(facts.len(), 4, "{step}: {facts:?}");
         assert_eq!(
-            since.iter().filter(|call| call.contains("df -Pk")).count(),
-            1,
-            "{step}: exactly one disk check per failure: {since:?}"
+            error.first_id(),
+            Some(ErrorId::ExternalCommandFailed),
+            "{step}: {error:?}"
+        );
+        assert!(
+            bench
+                .stored("Example-Org/Example-Repo")?
+                .initial_provisioning
+                .is_some(),
+            "{step}: the intent survives the interruption"
+        );
+        assert!(
+            since.iter().any(|call| call.contains(step)),
+            "{step}: the injected failure was reached: {since:?}"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn a_declaration_added_after_completion_is_not_placed_by_a_later_prepare() -> Checked {
+    // 実測: 完成済みprojectのglobal configへ新しいdeclared fileを足すと、既存の実装は
+    // Incompleteと判定してintentを作り、そのfileを配置する。repairの責務は初回構築が
+    // 固定したbaselineの復旧であり、完成後に増えた宣言の配置は`apply`の責務である。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the project completes with its original declared file")?;
+
+    let extra_home = tempfile::tempdir().required_because("temporary home for the extra file")?;
+    let mut config = bench.config.clone();
+    let extra_source = extra_home.path().join("extra.yaml");
+    fs::write(&extra_source, b"extra = true\n").required_because("write the new file")?;
+    config.files.push(crate::config::FileDeclaration {
+        source: crate::config::HostFileSource::new(&crate::paths::display(&extra_source))
+            .required_because("valid source")?,
+        destination: crate::config::SandboxHomeRelativePath::new(".config/example/extra.yaml")
+            .required_because("valid destination")?,
+    });
+
+    let mark = world.mark();
+    let output = run(
+        &bench.location,
+        &config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .required_because("a declaration added after completion does not block the project")?;
+    assert!(
+        output.already_built,
+        "the project stays ready; the new declaration is not this run's business"
+    );
+    assert!(
+        !world.since(mark).iter().any(|call| call.contains("cp")),
+        "nothing is copied for a declaration that was never part of the completed baseline: {:?}",
+        world.since(mark)
+    );
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none(),
+        "no intent is created to chase a declaration that belongs to apply, not repair"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_legacy_project_without_a_recorded_baseline_is_ambiguous_when_a_declaration_is_missing()
+-> Checked {
+    // baselineを記録する前に完成した案件（この機能より前のversionが作った案件）で、
+    // 宣言fileがsandboxに無い場合、それが構築の途中で欠けたのか、完成後に追加された
+    // 宣言なのかをこの観測だけでは一意に決められない。intentを作って推測で復旧する
+    // のではなく、拒否する。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the project completes")?;
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    let mut stored = bench.stored("Example-Org/Example-Repo")?;
+    stored.declared_files = None;
+    metadata::update(&paths, &stored).required_because("simulate a pre-existing installation")?;
+
+    let extra_home = tempfile::tempdir().required_because("temporary home for the extra file")?;
+    let mut config = bench.config.clone();
+    let extra_source = extra_home.path().join("extra.yaml");
+    fs::write(&extra_source, b"extra = true\n").required_because("write the new file")?;
+    config.files.push(crate::config::FileDeclaration {
+        source: crate::config::HostFileSource::new(&crate::paths::display(&extra_source))
+            .required_because("valid source")?,
+        destination: crate::config::SandboxHomeRelativePath::new(".config/example/extra.yaml")
+            .required_because("valid destination")?,
+    });
+
+    let error = run(
+        &bench.location,
+        &config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because(
+        "a legacy project cannot tell broken from newly-declared without a baseline",
+    )?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningBaselineAmbiguous)
+    );
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none(),
+        "no intent is guessed into existence for an ambiguous legacy project"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_legacy_project_without_a_recorded_baseline_stays_ready_when_nothing_changed() -> Checked {
+    // baselineが無くても、現在の宣言がsandboxの中身とそのまま一致するなら健全とみなす。
+    // この機能の追加が、既存installationの正常な案件を壊さないことを確かめる。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the project completes")?;
+
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    let mut stored = bench.stored("Example-Org/Example-Repo")?;
+    stored.declared_files = None;
+    metadata::update(&paths, &stored).required_because("simulate a pre-existing installation")?;
+
+    let output = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .required_because("an unchanged legacy project remains ready without a recorded baseline")?;
+    assert!(output.already_built);
+    Ok(())
+}
+
+#[test]
+fn a_placeholder_no_longer_present_in_a_running_sandbox_is_not_treated_as_ready() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the project completes")?;
+
+    // 何らかの理由で、稼働中のSandboxがもうplaceholderを持っていない。
+    world.answering("printf %s", 0, "");
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("a sandbox that lost its placeholder is not a verified post-condition")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningIncomplete)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_opened_up_to_group_and_other_is_not_treated_as_ready() -> Checked {
+    // 実測: 完成済みprojectのworkspaceをmode 0777へ変更すると、既存の実装はready・
+    // repair不要のまま成功する。存在するというだけでは安全とみなさず、群衆や他人が
+    // 書き込めるdirectoryをそのまま採用しない。
+    use std::os::unix::fs::PermissionsExt;
+
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the project completes")?;
+
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    let workspace = bench
+        .workspace_root
+        .path()
+        .join(stored.sandbox_name().as_str());
+    fs::set_permissions(&workspace, fs::Permissions::from_mode(0o777))
+        .required_because("open the workspace up to group and other")?;
+
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("an overly-open workspace is not a verified post-condition")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_path_that_is_a_symlink_is_not_treated_as_a_reusable_artifact() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    let workspace = bench
+        .workspace_root
+        .path()
+        .join(stored.sandbox_name().as_str());
+    let elsewhere = bench.workspace_root.path().join("elsewhere");
+    fs::create_dir_all(&elsewhere).required_because("create a directory to link to")?;
+    std::os::unix::fs::symlink(&elsewhere, &workspace)
+        .required_because("point the workspace path at a symlink")?;
+
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("a symlinked workspace path is not a verified post-condition")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    Ok(())
+}
+
+#[test]
+fn an_orphan_workspace_that_is_not_empty_is_not_treated_as_a_reusable_artifact() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    crate::commands::add::run::run(
+        &bench.location,
+        &bench.parent,
+        &request,
+        &crate::testing::metadata::git_identity(),
+        &world,
+        &mut SilentProgress,
+    )
+    .required_because("the project is registered")?;
+
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    let workspace = bench
+        .workspace_root
+        .path()
+        .join(stored.sandbox_name().as_str());
+    fs::create_dir_all(&workspace).required_because("create the orphan workspace")?;
+    fs::set_permissions(&workspace, fs::Permissions::from_mode(0o700))
+        .required_because("keep the workspace private so only its contents are at issue")?;
+    fs::write(workspace.join("leftover"), b"not sbxm's to explain")
+        .required_because("leave unexplained content in it")?;
+
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("a non-empty orphan workspace is not a safe artifact to build into")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxWorkspaceNotEmpty));
     Ok(())
 }
 
@@ -446,9 +768,10 @@ fn a_stale_archive_left_by_an_earlier_crash_is_swept_before_building() -> Checke
 }
 
 #[test]
-fn an_already_loaded_template_is_reused_without_exporting_a_new_archive() -> Checked {
-    // Templateが既にある経路では、archiveを作る理由がない。`docker image save`を
-    // 呼ばずに済ませられるかを、中断からの再開に頼らず直接確かめる。
+fn a_template_reused_by_name_alone_is_refused_when_its_runtime_id_differs() -> Checked {
+    // 同じ名前のTemplateを無条件で再利用すると、別内容のTemplateへ同じ世代labelを
+    // 付けたことになる。名前だけでなく、label検証済みhost imageから作るarchiveの
+    // config digestとruntime idまで一致することを確かめてから再利用する。
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -462,23 +785,83 @@ fn an_already_loaded_template_is_reused_without_exporting_a_new_archive() -> Che
     let stored = bench.stored("Example-Org/Example-Repo")?;
     let sandbox = SandboxName::derive(request.repository.canonical_id());
     let image = image::image_name(&sandbox, &stored.provisioning.dockerfile_sha256);
-    // 何らかの理由で、この世代のTemplateは既に存在する。
+    // 何らかの理由で、この世代の名前を持つTemplateは既に存在するが、中身の対応は
+    // 取れていない。
     world
         .templates
         .borrow_mut()
         .insert(image, "deadbeef".to_string());
 
     let mark = world.mark();
+    let project = project_of(&request)?;
+    let prepared = crate::commands::repair::run::prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("repair observes the pending state before mutating")?;
+    let error = crate::commands::repair::run::execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .refused_because("a mismatched runtime id is not a verified reuse target")?;
+    assert_eq!(error.first_id(), Some(ErrorId::TemplateUnusable));
+
+    assert!(
+        !world.since(mark).iter().any(|call| {
+            call.contains("template load") || call.contains("sbx create") || call.contains("sbx cp")
+        }),
+        "a template whose id does not match is not loaded over, and nothing else mutates: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_template_with_a_matching_runtime_id_is_reused() -> Checked {
+    // runtime idが実際に一致する場合は、名前一致だけの再利用と同じく、再loadしない。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    world.failing("worktree add");
     bench
         .build(&world, &request)
-        .required_because("the existing template is reused")?;
+        .refused_because("the old run stopped after reusable artifacts were made")?;
+    world.nothing_fails();
+
+    let project = project_of(&request)?;
+    let mark = world.mark();
+    let prepared = crate::commands::repair::run::prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("repair observes the pending state")?;
+    crate::commands::repair::run::execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .required_because("repair completes the interrupted build")?;
 
     assert!(
         !world
             .since(mark)
             .iter()
-            .any(|call| call.contains("image save")),
-        "an archive is not exported when the template already exists: {:?}",
+            .any(|call| call.contains("template load")),
+        "a template whose id matches is reused rather than reloaded: {:?}",
         world.since(mark)
     );
     Ok(())
@@ -569,9 +952,24 @@ fn a_workspace_that_had_to_be_created_again_is_told_rather_than_hidden() -> Chec
     fs::remove_dir_all(&workspace).required_because("the workspace directory is removed")?;
 
     let mark = world.mark();
-    let output = bench
-        .build(&world, &request)
-        .required_because("the same prepare finishes")?;
+    let project = project_of(&request)?;
+    let prepared = crate::commands::repair::run::prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("repair resumes the interrupted build")?;
+    let output = crate::commands::repair::run::execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .required_because("repair finishes")?;
 
     assert!(
         workspace.is_dir(),

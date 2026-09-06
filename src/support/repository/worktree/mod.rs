@@ -7,7 +7,7 @@ mod mode_for;
 mod provision_worktree;
 mod verify_mode;
 
-pub(super) use adopt_worktree::adopt_worktree;
+pub use adopt_worktree::adopt_worktree;
 pub(super) use create_worktree::create_worktree;
 pub use ensure_worktrees::ensure_worktrees;
 pub(super) use mode_for::mode_for;

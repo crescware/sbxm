@@ -176,6 +176,58 @@ fn values_that_already_match_are_left_as_they_are() -> Checked {
 }
 
 #[test]
+fn read_only_identity_observation_reports_missing_empty_matching_and_other_values() -> Checked {
+    let expected = identity();
+    assert!(observe(
+        &FakeSbx::holding(&[
+            ("user.name", "Example User"),
+            ("user.email", "user@example.com"),
+        ]),
+        "sbxm-example",
+        &expected,
+    )?);
+    assert!(!observe(&FakeSbx::holding(&[]), "sbxm-example", &expected)?);
+    assert!(!observe(
+        &FakeSbx::holding(&[("user.name", ""), ("user.email", "user@example.com")]),
+        "sbxm-example",
+        &expected,
+    )?);
+
+    let error = observe(
+        &FakeSbx::holding(&[("user.name", "Another User")]),
+        "sbxm-example",
+        &expected,
+    )
+    .refused_because("a different identity is not silently accepted")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
+    Ok(())
+}
+
+#[test]
+fn read_only_git_protocol_observation_reports_missing_empty_matching_and_other_values() -> Checked {
+    assert!(observe_git_protocol(
+        &FakeSbx::holding(&[("git_protocol", "https")]),
+        "sbxm-example",
+    )?);
+    assert!(!observe_git_protocol(
+        &FakeSbx::holding(&[]),
+        "sbxm-example",
+    )?);
+    assert!(!observe_git_protocol(
+        &FakeSbx::holding(&[("git_protocol", "")]),
+        "sbxm-example",
+    )?);
+
+    let error = observe_git_protocol(
+        &FakeSbx::holding(&[("git_protocol", "ssh")]),
+        "sbxm-example",
+    )
+    .refused_because("a different protocol is not silently accepted")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
+    Ok(())
+}
+
+#[test]
 fn a_sandbox_configured_for_someone_else_is_not_overwritten() -> Checked {
     for settings in [
         vec![("user.name", "Another User")],
