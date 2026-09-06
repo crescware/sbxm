@@ -10,6 +10,7 @@ use crate::i18n::Locale;
 use crate::boundary::host::protocol::RootDiskUsage;
 use crate::support::disk::DiskObservation;
 use crate::support::protection::{Reachability, UnobservableReason};
+use crate::support::provisioning::NextAction;
 
 use crate::commands::status::project::{Item, Value, WorktreeRow};
 
@@ -65,6 +66,15 @@ fn healthy() -> ProjectStatus {
             capacity_percent: 75,
         }),
         diagnostics: Vec::new(),
+        next: None,
+    }
+}
+
+/// 次の1手だけが違う診断結果。
+fn needing(next: NextAction) -> ProjectStatus {
+    ProjectStatus {
+        next: Some(next),
+        ..healthy()
     }
 }
 
@@ -194,5 +204,59 @@ fn a_diagnosed_project_fails_and_every_diagnostic_is_written_on_its_own() -> Che
     // 診断が出ても、読めた項目の表は隠れない。
     assert!(printed.stdout.contains("PROJECT"), "{:?}", printed.stdout);
     assert!(!printed.stdout.contains("error:"), "{:?}", printed.stdout);
+    Ok(())
+}
+
+#[test]
+fn a_recovery_that_is_still_needed_names_one_command_and_fails() -> Checked {
+    let printed = print(&needing(NextAction::RepairPending))?;
+
+    // 案件はまだ目標構成に達していない。読めた表は出したうえで、失敗として終える。
+    assert_eq!(printed.code, ExitCode::Failure);
+    assert!(printed.stdout.contains("PROJECT"), "{:?}", printed.stdout);
+    assert!(
+        printed
+            .stdout
+            .contains("sbxm repair example-org/example-repo"),
+        "{:?}",
+        printed.stdout
+    );
+    // 次の1手は結果であり、失敗の報告ではない。
+    assert!(printed.stderr.is_empty(), "{:?}", printed.stderr);
+    assert_eq!(
+        printed.stdout.matches("sbxm ").count(),
+        1,
+        "only one command is offered: {:?}",
+        printed.stdout
+    );
+    Ok(())
+}
+
+#[test]
+fn a_changed_dockerfile_is_named_without_calling_the_project_broken() -> Checked {
+    let printed = print(&needing(NextAction::RebuildChanged))?;
+
+    // Dockerfileの変更は破損ではない。案内しても成功のまま終える。
+    assert_eq!(printed.code, ExitCode::Success);
+    assert!(
+        printed
+            .stdout
+            .contains("sbxm rebuild example-org/example-repo"),
+        "{:?}",
+        printed.stdout
+    );
+    assert!(printed.stderr.is_empty(), "{:?}", printed.stderr);
+    Ok(())
+}
+
+#[test]
+fn a_project_that_needs_nothing_is_not_given_a_command() -> Checked {
+    let printed = print(&healthy())?;
+
+    assert!(
+        !printed.stdout.contains("sbxm "),
+        "a healthy project has no next command: {:?}",
+        printed.stdout
+    );
     Ok(())
 }

@@ -85,12 +85,18 @@ fn project_scope(
     ui: &mut Ui,
     host: &dyn HostEnvironment,
 ) -> ExitCode {
-    let (_config, locale) = match context.settings() {
+    let (config, locale) = match context.settings() {
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    match super::project::diagnose(context.location, project, host, context.workspace_root) {
+    match super::project::diagnose(
+        context.location,
+        &config,
+        project,
+        host,
+        context.workspace_root,
+    ) {
         Ok(status) => print::project(ui, &status),
         Err(error) => report(ui, &error),
     }

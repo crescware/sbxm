@@ -35,7 +35,7 @@ pub fn take(
     for entry in registry.entries() {
         let name = entry.sandbox_name();
         let paths = ProjectPaths::at(entry.project_root(), entry.canonical_id());
-        let observed = observe(&paths, entry, &entries, workspace_root)?;
+        let (observed, recovery_pending) = observe(&paths, entry, &entries, workspace_root)?;
         if matches!(
             observed,
             Observed::Registered(ProjectState::Running | ProjectState::Stopped)
@@ -48,6 +48,7 @@ pub fn take(
             sandbox: name.as_str().to_string(),
             workspace: observe_workspace(&name, workspace_root, &observed),
             observed,
+            recovery_pending,
         });
     }
 

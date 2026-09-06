@@ -51,7 +51,17 @@ impl ListState {
     }
 
     /// 内部の観測結果を、一覧で使う利用者向けの状態へ写す。
-    pub fn from_observation(observed: &Observed, workspace: WorkspaceState) -> Self {
+    ///
+    /// 初回構築のintentが残っている案件は、Sandboxが動いていても`open`がそのまま
+    /// 進まない。理由や対処commandは状態名へ埋め込まず、`status`と診断が示す。
+    pub fn from_observation(
+        observed: &Observed,
+        workspace: WorkspaceState,
+        recovery_pending: bool,
+    ) -> Self {
+        if recovery_pending && matches!(observed, Observed::Registered(_)) {
+            return ListState::OpenBlocked;
+        }
         match observed {
             Observed::Missing => ListState::Missing,
             Observed::Incomplete => ListState::Incomplete,

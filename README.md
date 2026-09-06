@@ -192,8 +192,10 @@ sbxm stop <project-id> ...
 
 The `STATE` column answers whether `sbxm open` can proceed directly: `stopped`
 means opening starts the sandbox, while `open-blocked` means a startup
-prerequisite needs recovery first. Use `sbxm status <project-id>` for the
-reason.
+prerequisite needs recovery first, including a first provisioning that started
+and did not finish. Use `sbxm status <project-id>` for the reason: it ends with
+the single command to run next, `sbxm repair` for an interrupted or incomplete
+first provisioning and `sbxm rebuild` for a generation change.
 
 When run in an interactive terminal, `prepare`, `apply`, `rebuild`, `open`,
 `stop`, `destroy`, and `status` can prompt you to select a target if the

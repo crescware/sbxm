@@ -1,4 +1,4 @@
-use crate::design::{Document, Field, Inline, Table};
+use crate::design::{Document, Field, GuidanceItem, Inline, Table};
 use crate::i18n::Locale;
 use crate::msg;
 
@@ -50,5 +50,24 @@ pub fn project_document(status: &ProjectStatus, locale: Locale) -> Document {
         document.table(Some(heading), worktrees)
     };
     let document = present::disk_section(document, &status.disk);
-    document.legend(Legend::heading(), legend.entries())
+    let document = document.legend(Legend::heading(), legend.entries());
+    next_step(document, status)
+}
+
+/// 今すぐ実行できる1手を、末尾に1回だけ示す。
+///
+/// 相反するcommandを並べない。復旧が要る案件では、Dockerfileが変わっていても
+/// `repair`だけを出し、そのあとに世代交代が続き得ることは説明として添える。
+fn next_step(document: Document, status: &ProjectStatus) -> Document {
+    let Some(next) = status.next else {
+        return document;
+    };
+    let mut items = vec![GuidanceItem::Plain(msg!(next.reason_id()))];
+    if next.leaves_generation_behind() {
+        items.push(GuidanceItem::Plain(msg!("guidance-next-then-status")));
+    }
+    // 案件IDを打ち直させない。次のcommandはそのままcopyできる形で出す。
+    document
+        .guidance(Some(msg!("status-next-heading")), items)
+        .try_command(next.command(&status.project))
 }

@@ -7,6 +7,7 @@
 mod declared_files;
 mod external_preconditions;
 mod initial_intent;
+mod next_action;
 mod observation;
 mod observe;
 mod observed_worktrees;
@@ -23,6 +24,7 @@ mod worktree_row;
 
 pub(crate) use external_preconditions::ExternalPreconditions;
 pub(crate) use initial_intent::initial_intent;
+pub use next_action::NextAction;
 pub use observation::Observation;
 pub(crate) use observe::observe;
 pub(crate) use provision::provision;

@@ -4,6 +4,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::diagnostics::ErrorId;
+use crate::metadata::{self, InitialProvisioningIntent};
 use crate::paths::display;
 use crate::testing::host::FakeSbx;
 use crate::testing::project::{Fixture, ssh_repository};
@@ -290,5 +291,44 @@ fn an_entry_that_needs_recovery_is_not_asked_about_its_workspace() -> Checked {
     )
     .required_because("list")?;
     assert_eq!(listing.projects[0].state.as_str(), "missing");
+    Ok(())
+}
+
+#[test]
+fn a_project_whose_first_provisioning_did_not_finish_is_shown_as_open_blocked() -> Checked {
+    let fixture = Fixture::new()?;
+    let running = fixture.register("example-org/running")?;
+    let recovering = fixture.register("example-org/recovering")?;
+
+    // 中断した初回構築は、Sandboxの中を読まなくてもmetadataのintentだけで分かる。
+    // 一覧は案件ごとに中を観測しないため、この安価に証明できる事実だけを使う。
+    let mut metadata = recovering.metadata.clone();
+    metadata.initial_provisioning = Some(InitialProvisioningIntent {
+        target_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+        files: Vec::new(),
+    });
+    metadata::update(&recovering.paths, &metadata).required_because("save the intent")?;
+
+    let host = FakeSbx::listing(&format!(
+        r#"{{"sandboxes":[{},{}]}}"#,
+        fixture.entry(&running, "running")?,
+        fixture.entry(&recovering, "running")?,
+    ));
+
+    let listing =
+        run(&fixture.location, &host, &fixture.workspace_root).required_because("list")?;
+    assert_eq!(
+        listing
+            .projects
+            .iter()
+            .map(|row| row.state.as_str())
+            .collect::<Vec<_>>(),
+        vec!["open-blocked", "running"],
+        "a sandbox that is running is still not one open can take over"
+    );
+    assert!(
+        listing.settled,
+        "an unfinished build is not a mismatch between the registry and its artifacts"
+    );
     Ok(())
 }

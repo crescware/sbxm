@@ -25,6 +25,7 @@ fn a_stopped_sandbox_is_not_started_to_look_inside_it() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -67,6 +68,7 @@ fn the_workspace_a_stopped_sandbox_declares_is_confirmed_on_the_host() -> Checke
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -94,6 +96,7 @@ fn a_workspace_that_is_gone_is_not_reported_as_ready() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -131,6 +134,7 @@ fn a_workspace_that_cannot_be_observed_is_not_read_as_present_or_absent() -> Che
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -169,6 +173,7 @@ fn a_sandbox_state_that_cannot_be_read_is_not_reported_as_a_missing_sandbox() ->
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -216,6 +221,7 @@ fn colliding_sandbox_names_are_not_reported_as_a_mismatch() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -268,6 +274,7 @@ fn an_unrelated_project_does_not_decide_this_one() -> Checked {
     );
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -295,6 +302,7 @@ fn an_ssh_agent_inside_the_sandbox_is_a_security_failure() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -331,6 +339,7 @@ fn an_agent_that_answers_without_keys_is_still_reachable() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -359,6 +368,7 @@ fn a_check_that_could_not_run_is_not_read_as_not_exposed() -> Checked {
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -390,6 +400,7 @@ fn a_token_that_was_never_registered_is_missing_rather_than_unusable() -> Checke
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -414,6 +425,7 @@ fn a_token_that_was_never_registered_is_missing_rather_than_unusable() -> Checke
     );
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
@@ -447,6 +459,7 @@ fn a_sandbox_that_works_somewhere_else_is_not_taken_for_this_projects() -> Check
 
     let status = diagnose(
         &fixture.location,
+        &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
