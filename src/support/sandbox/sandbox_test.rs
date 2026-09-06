@@ -235,6 +235,74 @@ fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() -> Ch
 }
 
 #[test]
+fn a_sandbox_absent_right_after_creation_is_reported_rather_than_guessed_at() -> Checked {
+    let root = workspace_root()?;
+    // `create`が成功を返した直後の一覧に、作ったはずのSandboxが出てこない状態を模す。
+    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#, r#"{"sandboxes":[]}"#]);
+
+    let error = ensure(
+        &host,
+        &sandbox()?,
+        &template(),
+        root.path(),
+        &mut SilentProgress,
+    )
+    .refused_because("a sandbox that never showed up after `create` is never assumed to exist")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+    Ok(())
+}
+
+#[test]
+fn a_workspace_root_that_cannot_be_created_stops_before_asking_the_host_anything() -> Checked {
+    let root = workspace_root()?;
+    let missing_root = root.path().join("missing-root");
+    // 新規rootを作る権利そのものを奪う。
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o500)).required()?;
+
+    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#]);
+    let error = ensure(
+        &host,
+        &sandbox()?,
+        &template(),
+        &missing_root,
+        &mut SilentProgress,
+    );
+
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(PRIVATE_DIR_MODE)).required()?;
+
+    let error =
+        error.refused_because("a workspace root that cannot be made is never silently skipped")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    Ok(())
+}
+
+#[test]
+fn a_workspace_root_that_cannot_be_created_stops_even_for_an_already_known_sandbox() -> Checked {
+    let root = workspace_root()?;
+    let missing_root = root.path().join("missing-root");
+    let workspace = workspace_path(&missing_root, &sandbox()?);
+    // 新規rootを作る権利そのものを奪う。既知のSandboxでも黙って諦めない。
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o500)).required()?;
+
+    let host = FakeSbx::listing(&[&listing(&workspace, "running")?]);
+    let error = ensure(
+        &host,
+        &sandbox()?,
+        &template(),
+        &missing_root,
+        &mut SilentProgress,
+    );
+
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(PRIVATE_DIR_MODE)).required()?;
+
+    let error = error.refused_because(
+        "a workspace root that cannot be made is never skipped even for a known sandbox",
+    )?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    Ok(())
+}
+
+#[test]
 fn the_workspace_path_carries_no_project_or_home_path() -> Checked {
     let workspace = workspace_path(Path::new(WORKSPACE_ROOT), &sandbox()?);
     assert_eq!(

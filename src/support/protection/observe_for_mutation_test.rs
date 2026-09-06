@@ -774,6 +774,368 @@ fn a_read_only_contains_query_that_could_not_launch_is_unobservable() -> Checked
     Ok(())
 }
 
+#[test]
+fn a_cleanup_listing_that_answered_but_failed_is_unobservable() -> Checked {
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
+            ),
+            0,
+            &format!("refs/sbxm/origin/heads/main\t{COMMIT}\n"),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
+            ),
+            0,
+            "refs/sbxm/origin/heads/main\n",
+        )
+        // cleanupの一覧取得そのものが、起動はできたが非ゼロで終わる。
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) refs/sbxm/origin/"
+            ),
+            1,
+            "",
+        );
+
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+        .refused_because("a cleanup listing that failed to launch is not a completed cleanup")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::OriginObservationUnobservable)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_cleanup_ref_outside_the_temporary_namespace_is_unobservable() -> Checked {
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
+            ),
+            0,
+            &format!("refs/sbxm/origin/heads/main\t{COMMIT}\n"),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
+            ),
+            0,
+            "refs/sbxm/origin/heads/main\n",
+        )
+        // cleanupが一覧した1件が、隔離namespaceの外を指している。
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) refs/sbxm/origin/"
+            ),
+            0,
+            "refs/heads/main\n",
+        );
+
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+        .refused_because("a ref outside the isolated namespace is never deleted as cleanup")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::OriginObservationUnobservable)
+    );
+    assert!(
+        !host.ran("update-ref -d refs/heads/main"),
+        "a ref outside the temporary namespace is never targeted for deletion: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_cleanup_deletion_that_answered_but_failed_is_unobservable() -> Checked {
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
+            ),
+            0,
+            &format!("refs/sbxm/origin/heads/main\t{COMMIT}\n"),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
+            ),
+            0,
+            "refs/sbxm/origin/heads/main\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) refs/sbxm/origin/"
+            ),
+            0,
+            "refs/sbxm/origin/heads/main\n",
+        )
+        // 削除そのものが、起動はできたが非ゼロで終わる。
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} update-ref -d refs/sbxm/origin/heads/main"
+            ),
+            1,
+            "",
+        );
+
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+        .refused_because("a deletion that failed to launch does not leave a clean namespace")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::OriginObservationUnobservable)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_tip_listing_reference_outside_the_temporary_namespace_is_an_invalid_advertisement() -> Checked
+{
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
+            0,
+            "",
+        )
+        // 一覧された1行が、隔離namespaceの外を指している。
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
+            ),
+            0,
+            &format!("refs/heads/main\t{COMMIT}\n"),
+        );
+
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+        .required_because(
+            "an advertised ref outside the isolated namespace is a collected reason",
+        )?;
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::AdvertisementInvalid
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn a_tip_listing_with_a_duplicate_reference_is_an_invalid_advertisement() -> Checked {
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
+            0,
+            "",
+        )
+        // 隔離namespace上は別々の2行が、観測後の同じref名へ写る。
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
+            ),
+            0,
+            &format!(
+                "refs/sbxm/origin/heads/main\t{COMMIT}\n\
+                 refs/sbxm/origin/remotes/origin/main\t{COMMIT}\n"
+            ),
+        );
+
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+        .required_because("a duplicate observed reference is a collected reason")?;
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::AdvertisementInvalid
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn a_reachability_probe_reference_outside_the_temporary_namespace_is_an_invalid_advertisement()
+-> Checked {
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
+            ),
+            0,
+            &format!("refs/sbxm/origin/heads/main\t{COMMIT}\n"),
+        )
+        // reachability probeが、隔離namespaceの外を指す行を答える。
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
+            ),
+            0,
+            "refs/heads/main\n",
+        );
+
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+        .required_because(
+            "a reachability answer outside the isolated namespace is a collected reason",
+        )?;
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::AdvertisementInvalid
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn a_read_only_tip_listing_with_an_extra_field_is_an_invalid_advertisement() -> Checked {
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        // 3列目が余分にある行は、fieldの個数がpatternと一致しない。
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            ),
+            0,
+            &format!("refs/remotes/origin/main\t{COMMIT}\textra\n"),
+        );
+
+    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
+        .required_because("a line with an unexpected extra field is a collected reason")?;
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::AdvertisementInvalid
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn a_read_only_contains_query_that_fails_without_a_launch_failure_is_insufficient_data() -> Checked
+{
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            ),
+            0,
+            &format!("refs/remotes/origin/main\t{COMMIT}\n"),
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} cat-file -e {COMMIT}"),
+            0,
+            "",
+        )
+        // `--contains`が起動はできたが非ゼロで終わる。読み取り専用観測はcat-fileで
+        // 原因を切り分けず、そのままdata不足として丸める。
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            ),
+            128,
+            "",
+        );
+
+    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
+        .required_because(
+            "a contains query that failed without a launch failure is insufficient read-only data",
+        )?;
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::ReadOnlyDataInsufficient
+        }
+    );
+    Ok(())
+}
+
 /// `--contains`のtip listと違うstdoutで答えるための、`read_only_host`の拡張版。
 fn read_only_host_with_contains(
     tips: &str,
