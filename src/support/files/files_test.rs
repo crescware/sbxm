@@ -20,8 +20,8 @@ struct FakeSbx {
     files: HashMap<String, String>,
     /// Sandbox内でsymlinkであるpath。
     symlinks: Vec<String>,
-    /// 非zeroで答えるinner command。
-    failing: Option<String>,
+    /// 指定した終了statusで答えるinner command。
+    answering: Option<(String, i32)>,
     /// `sha256sum`が返す出力そのもの。digestを含まない答えを与えるために使う。
     reported: Option<String>,
     calls: RefCell<Vec<Vec<String>>>,
@@ -32,7 +32,7 @@ impl FakeSbx {
         FakeSbx {
             files: HashMap::new(),
             symlinks: Vec::new(),
-            failing: None,
+            answering: None,
             reported: None,
             calls: RefCell::new(Vec::new()),
         }
@@ -44,7 +44,7 @@ impl FakeSbx {
         FakeSbx {
             files,
             symlinks: Vec::new(),
-            failing: None,
+            answering: None,
             reported: None,
             calls: RefCell::new(Vec::new()),
         }
@@ -57,7 +57,7 @@ impl FakeSbx {
         FakeSbx {
             files,
             symlinks: Vec::new(),
-            failing: None,
+            answering: None,
             reported: Some(output.to_string()),
             calls: RefCell::new(Vec::new()),
         }
@@ -71,7 +71,13 @@ impl FakeSbx {
 
     /// 指定したinner commandを失敗させる。
     fn failing(mut self, command: &str) -> FakeSbx {
-        self.failing = Some(command.to_string());
+        self.answering = Some((command.to_string(), 1));
+        self
+    }
+
+    /// 指定したinner commandを任意の終了statusで答えさせる。
+    fn answering(mut self, command: &str, code: i32) -> FakeSbx {
+        self.answering = Some((command.to_string(), code));
         self
     }
 
@@ -116,12 +122,11 @@ impl HostEnvironment for FakeSbx {
             }
             _ => {}
         }
-        if inner.first().is_some_and(|arg| {
-            self.failing
-                .as_deref()
-                .is_some_and(|failing| failing == *arg)
-        }) {
-            code = 1;
+        let invocation = inner.join(" ");
+        if let Some((needle, answered)) = &self.answering
+            && invocation.contains(needle)
+        {
+            code = *answered;
         }
 
         Ok(crate::testing::command::outcome(spec, code, &stdout))
@@ -284,6 +289,20 @@ fn read_only_observation_distinguishes_missing_matching_and_conflicting_files() 
         .refused_because("a conflicting destination is never overwritten")?;
     assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
     assert!(!host.ran("cp"), "observation never mutates the sandbox");
+    Ok(())
+}
+
+#[test]
+fn an_unanswered_destination_probe_is_not_observed_as_a_missing_file() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
+    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
+    let host = FakeSbx::empty().answering("test -e", 126);
+
+    let error = observe(&host, "sbxm-example", &declarations)
+        .refused_because("an unanswered existence probe is not a missing artifact")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
+    assert!(!host.ran("sha256sum"), "an unknown destination is not read");
     Ok(())
 }
 
@@ -504,6 +523,56 @@ fn a_destination_that_is_not_in_the_sandbox_has_no_digest_rather_than_an_error()
         "a destination that is not there is never read: {:?}",
         host.calls()
     );
+    Ok(())
+}
+
+#[test]
+fn a_destination_probe_that_did_not_answer_never_permits_a_copy() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
+
+    for code in [2, 125, 126, 127] {
+        let host = FakeSbx::empty().answering("test -e", code);
+        let error = place_all(
+            &host,
+            "sbxm-example",
+            &[declaration(&source, ".config/example/settings.yaml")?],
+            Conflict::Refuse,
+        )
+        .refused_because("an unanswered existence probe does not mean the file is absent")?;
+
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
+        assert!(
+            !host.ran("cp") && !host.ran("install") && !host.ran("mv"),
+            "exit {code} stops before every mutation: {:?}",
+            host.calls()
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_symlink_probe_that_did_not_answer_never_permits_a_copy() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
+
+    for code in [2, 125, 126, 127] {
+        let host = FakeSbx::empty().answering("test -h", code);
+        let error = place_all(
+            &host,
+            "sbxm-example",
+            &[declaration(&source, ".config/example/settings.yaml")?],
+            Conflict::Refuse,
+        )
+        .refused_because("an unanswered symlink probe does not establish a safe path")?;
+
+        assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
+        assert!(
+            !host.ran("cp") && !host.ran("install") && !host.ran("mv"),
+            "exit {code} stops before every mutation: {:?}",
+            host.calls()
+        );
+    }
     Ok(())
 }
 

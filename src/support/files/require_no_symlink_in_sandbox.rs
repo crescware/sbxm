@@ -24,18 +24,23 @@ pub(super) fn require_no_symlink_in_sandbox(
     for part in destination.split('/') {
         current.push('/');
         current.push_str(part);
-        if sandbox::exec(host, sandbox, &["test", "-h", &current])?.success() {
-            return Err(Error::single(
-                Diagnostic::new(
-                    ErrorId::DeclaredFileUnusable,
-                    msg!("error-declared-file-unusable"),
-                )
-                .fact(Fact::source(&paths::display(source)))
-                .fact(Fact::reason(msg!(
-                    "cause-symbolic-link-in-sandbox",
-                    observed = current
-                ))),
-            ));
+        let outcome = sandbox::exec(host, sandbox, &["test", "-h", &current])?;
+        match sandbox::inner_exit_code(&outcome) {
+            Some(0) => {
+                return Err(Error::single(
+                    Diagnostic::new(
+                        ErrorId::DeclaredFileUnusable,
+                        msg!("error-declared-file-unusable"),
+                    )
+                    .fact(Fact::source(&paths::display(source)))
+                    .fact(Fact::reason(msg!(
+                        "cause-symbolic-link-in-sandbox",
+                        observed = current
+                    ))),
+                ));
+            }
+            Some(1) => {}
+            _ => return Err(sandbox::unobservable(&outcome, &current)),
         }
     }
     Ok(())
