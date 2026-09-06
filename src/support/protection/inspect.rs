@@ -1440,6 +1440,6 @@ fn workspace_missing(request: &Request<'_>) -> Diagnostic {
     .fact(Fact::path(&paths::display(&path)))
     .remediation(
         Remediation::text(msg!("remediation-sandbox-workspace-missing"))
-            .try_run(format!("sbxm prepare {project}")),
+            .try_run(format!("sbxm repair {project}")),
     )
 }

@@ -460,7 +460,7 @@ fn a_stopped_project_whose_workspace_is_gone_is_refused_instead_of_started() -> 
         remediation
             .commands
             .iter()
-            .any(|command| command.as_str() == "sbxm prepare Example-Org/Example-Repo"),
+            .any(|command| command.as_str() == "sbxm repair Example-Org/Example-Repo"),
         "the remediation names a command that can be run: {remediation:?}"
     );
     Ok(())

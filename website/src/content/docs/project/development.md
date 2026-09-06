@@ -22,7 +22,7 @@ To run the checked-out source directly, pass sbxm arguments after `cargo run --`
 cargo run -- status --global
 ```
 
-`status --global`, `prepare`, and `open` exercise the host environment and Docker Sandboxes. Run them on a supported macOS 14 or later Apple silicon host with Docker Desktop and the Docker Sandboxes CLI. Linux is supported for compilation and tests, but not for opening a sandbox.
+`status --global`, `open`, and `repair` exercise the host environment and Docker Sandboxes. Run them on a supported macOS 14 or later Apple silicon host with Docker Desktop and the Docker Sandboxes CLI. Linux is supported for compilation and tests, but not for opening a sandbox.
 
 Before proposing a change, run the complete verification task:
 

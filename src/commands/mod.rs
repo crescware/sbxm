@@ -13,12 +13,14 @@ mod context;
 pub mod destroy;
 pub mod ls;
 pub mod open;
-pub mod prepare;
 mod present;
 #[cfg(test)]
 #[path = "print_test.rs"]
 mod print_test;
 pub mod rebuild;
+#[cfg(test)]
+#[path = "recovery_test.rs"]
+mod recovery_test;
 pub mod repair;
 mod report;
 pub mod status;

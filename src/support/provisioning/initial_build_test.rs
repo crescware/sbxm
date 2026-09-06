@@ -3,18 +3,14 @@ use crate::paths::ProjectPaths;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::{
-    super::fake::{Bench, World},
-    *,
-};
 use crate::design::SilentProgress;
 use crate::diagnostics::ErrorId;
-use crate::hash::sha256_hex;
 use crate::project::SandboxName;
 use crate::support::image;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::project::project_id;
 use crate::testing::prompt::ScriptedPrompt;
+use crate::testing::provisioning::{Bench, World};
 use std::fs;
 
 #[test]
@@ -22,16 +18,13 @@ fn a_project_that_is_not_registered_is_sent_to_add() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
 
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_id("example-org/example-repo")?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("there is nothing to build yet")?;
+    let error = bench
+        .ensure(
+            &world,
+            &project_id("example-org/example-repo")?,
+            &mut SilentProgress,
+        )
+        .refused_because("there is nothing to build yet")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
 
     let diagnostic = &error.diagnostics()[0];
@@ -61,16 +54,9 @@ fn an_unregistered_project_gets_no_lock_file() -> Checked {
     fs::create_dir_all(paths.sbxm_dir())
         .required_because("the project directory is left behind")?;
 
-    run(
-        &bench.location,
-        &bench.config,
-        Some(&project),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("there is nothing to build yet")?;
+    bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("there is nothing to build yet")?;
 
     assert!(
         !paths.lock_file().exists(),
@@ -82,64 +68,6 @@ fn an_unregistered_project_gets_no_lock_file() -> Checked {
             .count(),
         0,
         "nothing is written under an unregistered project"
-    );
-    Ok(())
-}
-
-#[test]
-fn a_rebuild_in_progress_builds_nothing() -> Checked {
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-    crate::commands::add::run::run(
-        &bench.location,
-        &bench.parent,
-        &request,
-        &crate::testing::metadata::git_identity(),
-        &world,
-        &mut SilentProgress,
-    )
-    .required_because("the project is registered")?;
-
-    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    let mut stored = metadata::load(&paths)
-        .required_because("read the metadata")?
-        .required_because("present")?;
-    stored.rebuild = Some(metadata::RebuildIntent {
-        target_dockerfile_sha256: sha256_hex(b"target"),
-        previous_dockerfile_sha256: stored.provisioning.dockerfile_sha256.clone(),
-    });
-    metadata::update(&paths, &stored).required_because("record the intent")?;
-
-    let mark = world.mark();
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("a half-switched project is not built on")?;
-    assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
-
-    let remediation = error.diagnostics()[0]
-        .remediation
-        .as_ref()
-        .required_because("the user is told how to get out of it")?;
-    assert_eq!(remediation.explanation[0].id, "remediation-run-rebuild");
-    // 実行するcommandは説明文ではなく、独立した一行として持つ。
-    let command = remediation
-        .commands
-        .first()
-        .required_because("the remediation carries the command to run")?;
-    assert_eq!(command.as_str(), "sbxm rebuild Example-Org/Example-Repo");
-
-    assert!(
-        world.since(mark).is_empty(),
-        "nothing is asked of the host: {:?}",
-        world.since(mark)
     );
     Ok(())
 }
@@ -163,16 +91,9 @@ fn a_sandbox_that_is_not_this_projects_stops_prepare_instead_of_counting_as_buil
         .for_each(|row| row.workspace = "/tmp/elsewhere".to_string());
 
     let mark = world.mark();
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("a sandbox that cannot be identified is not the project's")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("a sandbox that cannot be identified is not the project's")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
     assert!(
@@ -193,16 +114,9 @@ fn a_ready_project_is_a_no_op_even_when_docker_is_unreachable() -> Checked {
         .required_because("the first prepare succeeds")?;
 
     world.failing("version --format");
-    let output = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("a ready project does not need Docker")?;
+    let output = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .required_because("a ready project does not need Docker")?;
 
     assert!(output.already_built);
     Ok(())
@@ -220,16 +134,9 @@ fn a_stopped_project_is_neither_rebuilt_nor_sent_to_repair() -> Checked {
     // 完成した案件のSandboxが止まっただけで、成果物は何も欠けていない。
     world.stopped();
     let mark = world.mark();
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("a stopped sandbox cannot be observed as complete")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("a stopped sandbox cannot be observed as complete")?;
 
     assert!(
         error.contains_id(ErrorId::InitialProvisioningUnobservable),
@@ -277,16 +184,9 @@ fn a_foreign_image_stops_prepare_before_anything_is_built() -> Checked {
         )],
     );
 
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("a foreign image is not overwritten")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("a foreign image is not overwritten")?;
 
     assert_eq!(
         error.first_id(),
@@ -321,16 +221,9 @@ fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Che
 
     world.failing("docker image inspect");
     let mark = world.mark();
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("the stored generation cannot be observed")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("the stored generation cannot be observed")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     assert_eq!(
@@ -414,16 +307,9 @@ fn an_engine_that_does_not_answer_stops_prepare_before_anything_is_built() -> Ch
 
     world.failing("version --format");
     let mark = world.mark();
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("without the engine there is nothing to prepare")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("without the engine there is nothing to prepare")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
     assert!(
@@ -509,16 +395,9 @@ fn a_declaration_added_after_completion_is_not_placed_by_a_later_prepare() -> Ch
     });
 
     let mark = world.mark();
-    let output = run(
-        &bench.location,
-        &config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("a declaration added after completion does not block the project")?;
+    let output = bench
+        .ensure_with(&world, &project_of(&request)?, &config, &mut SilentProgress)
+        .required_because("a declaration added after completion does not block the project")?;
     assert!(
         output.already_built,
         "the project stays ready; the new declaration is not this run's business"
@@ -568,18 +447,11 @@ fn a_legacy_project_without_a_recorded_baseline_is_ambiguous_when_a_declaration_
             .required_because("valid destination")?,
     });
 
-    let error = run(
-        &bench.location,
-        &config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because(
-        "a legacy project cannot tell broken from newly-declared without a baseline",
-    )?;
+    let error = bench
+        .ensure_with(&world, &project_of(&request)?, &config, &mut SilentProgress)
+        .refused_because(
+            "a legacy project cannot tell broken from newly-declared without a baseline",
+        )?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::InitialProvisioningBaselineAmbiguous)
@@ -610,16 +482,11 @@ fn a_legacy_project_without_a_recorded_baseline_stays_ready_when_nothing_changed
     stored.declared_files = None;
     metadata::update(&paths, &stored).required_because("simulate a pre-existing installation")?;
 
-    let output = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("an unchanged legacy project remains ready without a recorded baseline")?;
+    let output = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .required_because(
+            "an unchanged legacy project remains ready without a recorded baseline",
+        )?;
     assert!(output.already_built);
     Ok(())
 }
@@ -635,16 +502,9 @@ fn a_placeholder_no_longer_present_in_a_running_sandbox_is_not_treated_as_ready(
 
     // 何らかの理由で、稼働中のSandboxがもうplaceholderを持っていない。
     world.answering("printf %s", 0, "");
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("a sandbox that lost its placeholder is not a verified post-condition")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("a sandbox that lost its placeholder is not a verified post-condition")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::InitialProvisioningIncomplete)
@@ -674,16 +534,9 @@ fn a_workspace_opened_up_to_group_and_other_is_not_treated_as_ready() -> Checked
     fs::set_permissions(&workspace, fs::Permissions::from_mode(0o777))
         .required_because("open the workspace up to group and other")?;
 
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("an overly-open workspace is not a verified post-condition")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("an overly-open workspace is not a verified post-condition")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::ProjectFilePermissionTooOpen)
@@ -716,16 +569,9 @@ fn a_workspace_path_that_is_a_symlink_is_not_treated_as_a_reusable_artifact() ->
     std::os::unix::fs::symlink(&elsewhere, &workspace)
         .required_because("point the workspace path at a symlink")?;
 
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("a symlinked workspace path is not a verified post-condition")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("a symlinked workspace path is not a verified post-condition")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
     Ok(())
 }
@@ -758,16 +604,9 @@ fn an_orphan_workspace_that_is_not_empty_is_not_treated_as_a_reusable_artifact()
     fs::write(workspace.join("leftover"), b"not sbxm's to explain")
         .required_because("leave unexplained content in it")?;
 
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("a non-empty orphan workspace is not a safe artifact to build into")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("a non-empty orphan workspace is not a safe artifact to build into")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxWorkspaceNotEmpty));
     Ok(())
 }
@@ -793,16 +632,9 @@ fn a_stale_archive_left_by_an_earlier_crash_is_swept_before_building() -> Checke
     fs::write(&leftover, b"left behind by an earlier crash")
         .required_because("write a leftover archive")?;
 
-    run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("prepare still succeeds")?;
+    bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .required_because("prepare still succeeds")?;
 
     assert!(
         !leftover.exists(),
@@ -947,16 +779,9 @@ fn a_successful_prepare_checks_secret_and_docker_reachability_exactly_once() -> 
     .required_because("the project is registered")?;
 
     let mark = world.mark();
-    run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .required_because("prepare succeeds")?;
+    bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .required_because("prepare succeeds")?;
 
     let since = world.since(mark);
     assert_eq!(

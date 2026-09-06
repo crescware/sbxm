@@ -274,7 +274,7 @@ fn collect_strings(command: &ClapCommand, path: &str, out: &mut Vec<(String, Opt
 #[test]
 fn each_subcommand_renders_its_own_help() -> Checked {
     for name in [
-        "add", "prepare", "repair", "apply", "rebuild", "open", "stop", "ls", "status", "destroy",
+        "add", "repair", "apply", "rebuild", "open", "stop", "ls", "status", "destroy",
     ] {
         let outcome =
             parse_argv(&[name, "--help"], tty()).required_because("subcommand help renders")?;
@@ -298,7 +298,6 @@ fn a_command_that_always_needs_a_project_refuses_to_prompt() -> Checked {
 #[test]
 fn omitting_the_target_outside_a_terminal_is_a_usage_error() -> Checked {
     for arguments in [
-        vec!["prepare"],
         vec!["repair"],
         vec!["apply", "--files"],
         vec!["rebuild"],
@@ -319,7 +318,6 @@ fn omitting_the_target_outside_a_terminal_is_a_usage_error() -> Checked {
 
 #[test]
 fn omitting_the_target_on_a_terminal_defers_to_the_selection_prompt() -> Checked {
-    assert_eq!(command(&["prepare"], tty())?, Command::Prepare(None));
     assert_eq!(command(&["repair"], tty())?, Command::Repair(None));
     assert_eq!(
         command(&["apply", "--files"], tty())?,
@@ -375,7 +373,6 @@ fn a_prompt_needs_both_stdin_and_stderr_to_be_a_terminal() -> Checked {
 #[test]
 fn an_invalid_project_identifier_is_refused_by_every_command_that_takes_one() -> Checked {
     for arguments in [
-        vec!["prepare", "owner/repo/extra"],
         vec!["repair", "owner/repo/extra"],
         vec!["apply", "--files", "owner/repo/extra"],
         vec!["rebuild", "/repo"],

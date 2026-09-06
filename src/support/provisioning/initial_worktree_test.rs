@@ -4,13 +4,9 @@ use crate::metadata::CreationMode;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::{
-    super::fake::{Bench, World},
-    *,
-};
 use crate::design::SilentProgress;
 use crate::testing::add_request::{project_of, request};
-use crate::testing::prompt::ScriptedPrompt;
+use crate::testing::provisioning::{Bench, World};
 use crate::testing::value::COMMIT;
 
 #[test]
@@ -26,16 +22,9 @@ fn a_head_that_cannot_be_read_is_refused_rather_than_left_unknown() -> Checked {
     // 出力は返すので、成功したかどうかはexit statusでしか分からない。observeできない
     // post-conditionを`already_built`へ丸めず、明示的なrepairへ送る。
     world.failing_with("rev-parse HEAD", "fatal: not a git repository\n");
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("an unreadable worktree head is not a verified post-condition")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("an unreadable worktree head is not a verified post-condition")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     Ok(())
 }
@@ -51,16 +40,9 @@ fn a_head_that_reads_back_empty_is_refused_rather_than_left_unknown() -> Checked
 
     // 成功しながら何も答えない読み取り。値がない以上、観測できたことにはならない。
     world.succeeding_silently("rev-parse HEAD");
-    let error = run(
-        &bench.location,
-        &bench.config,
-        Some(&project_of(&request)?),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-        &mut SilentProgress,
-    )
-    .refused_because("an empty answer is not a verified post-condition")?;
+    let error = bench
+        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
+        .refused_because("an empty answer is not a verified post-condition")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     Ok(())
 }

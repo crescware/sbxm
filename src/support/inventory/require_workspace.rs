@@ -48,11 +48,11 @@ pub(super) fn require_workspace(
             workspace_root,
             sandbox_name,
         ))))
-        // 中は空のmount点であり、案件の成果物はSandboxの中にある。作り直しは構築
-        // commandの一部として、何を作ったかを示したうえで行う。
+        // 中は空のmount点であり、案件の成果物はSandboxの中にある。作り直しは明示的な
+        // 復旧の一部として、何を作ったかを示したうえで行う。
         .remediation(
             Remediation::text(msg!("remediation-sandbox-workspace-missing"))
-                .try_run(format!("sbxm prepare {}", metadata.display_id())),
+                .try_run(format!("sbxm repair {}", metadata.display_id())),
         ),
     ))
 }

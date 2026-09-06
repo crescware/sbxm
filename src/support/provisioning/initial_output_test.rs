@@ -2,11 +2,11 @@
 
 use crate::testing::outcome::{Checked, Required};
 
-use super::super::fake::{Bench, World};
 use crate::boundary::host::{OutputPolicy, TimeoutClass};
 use crate::hash::sha256_hex;
 use crate::support::files::Placement;
 use crate::testing::add_request::request;
+use crate::testing::provisioning::{Bench, World};
 
 #[test]
 fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() -> Checked {

@@ -178,7 +178,7 @@ Sandboxが起動し、`open-blocked`は先に復旧が必要です。初回構�
 次に実行するcommandを1つだけ示します。中断・欠落した初回構築は`sbxm repair`、
 世代交代は`sbxm rebuild`です。
 
-対話端末で実行した場合、`prepare`、`apply`、`rebuild`、`open`、`stop`、`destroy`、
+対話端末で実行した場合、`repair`、`apply`、`rebuild`、`open`、`stop`、`destroy`、
 `status`はプロジェクト引数を省略すると対象を選択するpromptを表示できます。
 `status`では先頭に`global`を表示し、その後へ登録済みproject IDを並べます。
 非対話端末では、これらのcommandにプロジェクト引数を明示してください。`status`だけは
@@ -363,7 +363,6 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | コマンド | 用途 |
 |---|---|
 | `sbxm add <github-clone-url>` | GitHub repositoryをsbxmへ追加し、このhostへcloneする |
-| `sbxm prepare [<project-id>]` | 登録済み案件のSandboxを構築し、作業できる状態に準備する |
 | `sbxm open [<project-id>] [--index N]` | SandboxへのSSH接続を開く。初回はSandboxを構築し、以降は必要なら先に起動する。`N`は0始まりのmanaged worktree index |
 | `sbxm stop [<project-id> ...]` | 1件以上の案件のSandboxを、削除せず停止する |
 | `sbxm ls` | 管理案件と管理外Sandboxを、その状態とともに一覧する |

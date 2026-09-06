@@ -198,7 +198,7 @@ and did not finish. Use `sbxm status <project-id>` for the reason: it ends with
 the single command to run next, `sbxm repair` for an interrupted or incomplete
 first provisioning and `sbxm rebuild` for a generation change.
 
-When run in an interactive terminal, `prepare`, `apply`, `rebuild`, `open`,
+When run in an interactive terminal, `repair`, `apply`, `rebuild`, `open`,
 `stop`, `destroy`, and `status` can prompt you to select a target if the
 project argument is omitted. For `status`, the first choice is `global`,
 followed by registered project IDs.
@@ -398,7 +398,6 @@ rather than sbxm guessing at the new location.
 | Command | Purpose |
 |---|---|
 | `sbxm add <github-clone-url>` | Add a GitHub repository to sbxm and clone it onto this host |
-| `sbxm prepare [<project-id>]` | Prepare a registered project by building and provisioning its sandbox |
 | `sbxm open [<project-id>] [--index N]` | Open an SSH session to a project sandbox, building it on the first run and starting it if needed; `N` selects a zero-based managed worktree |
 | `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
 | `sbxm ls` | List managed projects and unmanaged sandboxes with their states |

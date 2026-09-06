@@ -17,7 +17,7 @@ Home
        -> Verify the host
        -> Register a project
        -> Register the GitHub credential
-       -> Prepare and open the sandbox
+       -> Open the sandbox
 ```
 
 ### 日常利用
@@ -76,7 +76,7 @@ Reference
   CLI overview
   add
   apply
-  prepare
+  repair
   rebuild
   open
   stop
@@ -139,7 +139,7 @@ referenceへ隔離しない。必要なら将来`/guides/github-credentials/`へ
 | `/reference/cli/` | CLI reference | lifecycle順のcommand一覧、syntax規約、project ID |
 | `/reference/cli/add/` | `sbxm add` | accepted clone URL、identity、worktree/detach option、mutation |
 | `/reference/cli/apply/` | `sbxm apply` | required scope、files/worktrees、overwriteと増加のみ、optional project prompt |
-| `/reference/cli/prepare/` | `sbxm prepare` | build/provision、credential前提、成果物、optional project prompt |
+| `/reference/cli/repair/` | `sbxm repair` | 中断した初回構築の観測、変更範囲の提示、明示的な復旧 |
 | `/reference/cli/rebuild/` | `sbxm rebuild` | recreation、安全check、rebuild intent、optional project prompt |
 | `/reference/cli/open/` | `sbxm open` | optional project prompt、start、SSH接続 |
 | `/reference/cli/stop/` | `sbxm stop` | zero-or-more project argument、interactive selection |
@@ -237,9 +237,8 @@ quickstartはREADMEの順序を維持する。
 4. SSHまたはHTTPSのGitHub clone URLをそのまま`sbxm add`へ渡す
 5. first interactive addのlanguage/identity promptを説明する
 6. outputされたproject-specific `sbx secret set-custom` commandをPAT付きで実行する
-7. `sbxm prepare <project-id>`
-8. `sbxm open <project-id>`
-9. sandbox内worktree pathを確認する
+7. `sbxm open <project-id>`（初回はここでbuild/provisionまで行う）
+8. sandbox内worktree pathを確認する
 
 quickstart中のcredential sectionは、fine-grained tokenの`Contents: read and write`と
 `Metadata: read`、classic tokenの`repo` scopeを明記する。exampleの`<token>`は実値でないと

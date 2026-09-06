@@ -3,7 +3,7 @@ title: Daily workflow
 description: Inspect, open, stop, and manage registered sbxm projects.
 ---
 
-Once a project is prepared, these commands cover the normal day-to-day loop.
+Once a project is built, these commands cover the normal day-to-day loop.
 
 ## List projects
 

@@ -9,17 +9,17 @@ use super::{Legend, placed_files};
 /// 初回構築の結果が並べるもの。
 ///
 /// 成果を一行のsummaryへ集め、案件のfields、worktree、宣言file、注記、凡例をそれぞれ
-/// 独立したsectionにする。`prepare`も`open`も、同じ結果を同じ語彙で示す。次の一手は
-/// 入口ごとに違うため、呼び出し側が足す。
+/// 独立したsectionにする。初回構築と復旧のどちらから入っても、同じ結果を同じ語彙で示す。
+/// 次の一手は入口ごとに違うため、呼び出し側が足す。
 pub fn provisioning_output(output: &ProvisioningOutput, locale: Locale) -> Document {
     let mut legend = Legend::new(locale);
 
     // 既に完了文を持つ場合はそれをsummaryとし、同じ内容を重ねない。
     let summary = if output.already_built {
-        msg!("prepare-already-built", project = output.project)
+        msg!("provisioning-already-built", project = output.project)
     } else {
         msg!(
-            "prepare-done",
+            "provisioning-done",
             project = output.project,
             sandbox = output.sandbox
         )

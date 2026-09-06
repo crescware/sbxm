@@ -101,7 +101,6 @@ fn every_normal_command_reaches_the_command_that_reads_the_configuration() -> Ch
             files: true,
             worktrees: None,
         }),
-        Command::Prepare(Some(project.clone())),
         Command::Repair(Some(project.clone())),
         Command::Rebuild(Some(project.clone())),
         Command::Open(open::Args {
@@ -136,7 +135,6 @@ fn every_command_variant_is_routed_to_its_own_command_once() {
     for (variant, call) in [
         ("Command::Add(", "commands::add::exec("),
         ("Command::Apply(", "commands::apply::exec("),
-        ("Command::Prepare(", "commands::prepare::exec("),
         ("Command::Repair(", "commands::repair::exec("),
         ("Command::Rebuild(", "commands::rebuild::exec("),
         ("Command::Open(", "commands::open::exec("),

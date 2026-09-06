@@ -1,6 +1,6 @@
 //! host toolが答えるところまで進む実行の契約。
 //!
-//! `add`、`ls`、`prepare`、`open`は、対象が決まったあとhostへ問い合わせる。問い合わせ先が
+//! `add`、`ls`、`repair`、`open`は、対象が決まったあとhostへ問い合わせる。問い合わせ先が
 //! 1つも無い実行は`tests/cli.rs`が持つ。ここでは答えるhostを置き、結果として何を見せ、
 //! どのexit codeで終わるかを固定する。
 //!
@@ -580,8 +580,7 @@ fn ls_reports_open_blocked_for_a_stopped_sandbox_that_cannot_start() -> Checked 
 }
 
 #[test]
-fn prepare_does_not_treat_a_running_sandbox_as_already_built_when_its_workspace_is_gone() -> Checked
-{
+fn repair_does_not_treat_a_running_sandbox_as_intact_when_its_workspace_is_gone() -> Checked {
     let host = Host::new()?;
     let sandbox = host.registered()?;
     // runningのまま、mount元のdirectoryだけがhostから消えている。live mountにより
@@ -595,15 +594,10 @@ fn prepare_does_not_treat_a_running_sandbox_as_already_built_when_its_workspace_
         "the premise is that the host does not hold {WORKSPACE_ROOT}/{sandbox}"
     );
 
-    let run = host.run(&["--lang", "en", "prepare", PROJECT])?;
+    let run = host.run(&["--lang", "en", "repair", PROJECT])?;
 
-    assert_ne!(
-        run.code, 0,
-        "a workspace that is gone on host must not be folded into a silent success: {}{}",
-        run.stdout, run.stderr
-    );
     assert!(
-        !run.stdout.contains("is already built"),
+        !run.stdout.contains("needs no repair"),
         "the host does not hold the workspace, so this is not a no-op: {}",
         run.stdout
     );
@@ -611,7 +605,7 @@ fn prepare_does_not_treat_a_running_sandbox_as_already_built_when_its_workspace_
 }
 
 #[test]
-fn prepare_reports_an_unreadable_configuration_before_asking_the_host_anything() -> Checked {
+fn open_reports_an_unreadable_configuration_before_asking_the_host_anything() -> Checked {
     let host = Host::new()?;
     // configを、有効なfileではなくdirectoryへ差し替える。`context.settings()`だけを
     // 壊す、登録や選択より前にある実行最初の関門である。
@@ -620,7 +614,7 @@ fn prepare_reports_an_unreadable_configuration_before_asking_the_host_anything()
     std::fs::create_dir(&config_file)
         .required_because("the configuration path is replaced with a directory")?;
 
-    let run = host.run(&["--lang", "en", "prepare", PROJECT])?;
+    let run = host.run(&["--lang", "en", "open", PROJECT])?;
 
     assert_ne!(run.code, 0, "{}{}", run.stdout, run.stderr);
     assert!(run.stderr.contains("config-unreadable"), "{}", run.stderr);
@@ -633,10 +627,10 @@ fn prepare_reports_an_unreadable_configuration_before_asking_the_host_anything()
 }
 
 #[test]
-fn prepare_refuses_a_project_that_was_never_registered() -> Checked {
+fn open_refuses_a_project_that_was_never_registered() -> Checked {
     let host = Host::new()?;
 
-    let run = host.run(&["--lang", "en", "prepare", PROJECT])?;
+    let run = host.run(&["--lang", "en", "open", PROJECT])?;
 
     assert_ne!(run.code, 0, "{}{}", run.stdout, run.stderr);
     assert!(run.stderr.contains("project-not-managed"), "{}", run.stderr);

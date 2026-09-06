@@ -12,8 +12,8 @@ use temp_home::{TempHome, temp_home};
 use std::path::Path;
 use std::process::{Command, Output};
 
-const COMMANDS: [&str; 10] = [
-    "add", "apply", "prepare", "repair", "rebuild", "open", "stop", "ls", "status", "destroy",
+const COMMANDS: [&str; 9] = [
+    "add", "apply", "repair", "rebuild", "open", "stop", "ls", "status", "destroy",
 ];
 
 /// 実行結果。
@@ -387,7 +387,7 @@ fn a_broken_configuration_does_not_stop_help_from_being_shown() -> Checked {
 }
 
 /// 案件を引数で取り、設定を読んでから動くcommand。
-const CONFIGURED_COMMANDS: [&str; 4] = ["prepare", "repair", "rebuild", "open"];
+const CONFIGURED_COMMANDS: [&str; 3] = ["repair", "rebuild", "open"];
 
 #[test]
 fn a_configuration_this_build_cannot_read_stops_a_command_before_it_touches_anything() -> Checked {
@@ -825,7 +825,7 @@ fn apply_refuses_a_project_that_was_never_added() -> Checked {
 }
 
 /// 案件を引数で指定するcommand。`apply`は指定の形が違うため別に確かめる。
-const PROJECT_COMMANDS: [&str; 6] = ["prepare", "repair", "rebuild", "open", "stop", "destroy"];
+const PROJECT_COMMANDS: [&str; 5] = ["repair", "rebuild", "open", "stop", "destroy"];
 
 #[test]
 fn every_command_that_targets_a_project_refuses_one_that_was_never_added() -> Checked {
@@ -1223,5 +1223,74 @@ fn status_values_stay_untranslated_in_the_japanese_mode() -> Checked {
     assert!(run.stdout.contains("設定 (Config)"), "{}", run.stdout);
     assert!(run.stdout.contains("missing"), "{}", run.stdout);
     assert!(run.stdout.contains("error"), "{}", run.stdout);
+    Ok(())
+}
+
+/// 生成物と履歴を除いた、この作業treeが持つtext file。
+fn tracked_text_files(directory: &Path, found: &mut Vec<std::path::PathBuf>) -> Checked {
+    const SKIPPED: [&str; 5] = [".git", "target", "node_modules", "dist", ".astro"];
+    for entry in std::fs::read_dir(directory).required_because("the directory is readable")? {
+        let path = entry.required_because("directory entry")?.path();
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string();
+        if SKIPPED.contains(&name.as_str()) {
+            continue;
+        }
+        if path.is_dir() {
+            tracked_text_files(&path, found)?;
+        } else {
+            found.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// 除去したcommandへの導線が、実装にも文書にも残っていないこと。
+///
+/// helpとsurface snapshotは、CLIが今提示するものしか見ない。案内や手順として書かれた
+/// ままの起動は、そのとおり実行すればunknown subcommandになる。command surfaceから
+/// 消したことと、利用者が読む導線が0件であることは別の事実なので、後者をここで固定
+/// する。needleを連結して組み立てるのは、このtest自身を数えないためである。
+#[test]
+fn no_route_points_at_a_command_the_surface_no_longer_has() -> Checked {
+    let needle = concat!("sbxm ", "prepare");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    tracked_text_files(root, &mut files)?;
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let Ok(text) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(text) = String::from_utf8(text) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            let Some(position) = line.find(needle) else {
+                continue;
+            };
+            // `sbxm prepares`のような散文の動詞は、実行を促す導線ではない。
+            let rest = &line[position + needle.len()..];
+            if rest.starts_with(|character: char| character.is_alphanumeric()) {
+                continue;
+            }
+            offenders.push(format!(
+                "{}:{}: {}",
+                path.strip_prefix(root).unwrap_or(&path).display(),
+                number + 1,
+                line.trim()
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "the command is gone, so nothing may still ask for it:\n{}",
+        offenders.join("\n")
+    );
     Ok(())
 }
