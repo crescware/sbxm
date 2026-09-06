@@ -235,6 +235,86 @@ fn repair_rechecks_state_after_taking_the_exclusive_lease() -> Checked {
 }
 
 #[test]
+fn an_interrupted_build_is_still_repairable_after_its_sandbox_stopped() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    world.failing("worktree add");
+    bench
+        .build(&world, &request)
+        .refused_because("the build is interrupted after the sandbox exists")?;
+    world.nothing_fails();
+
+    // 中断した案件のSandboxが止まっていても、保存済みintentが復旧先を固定している。
+    // 観測できない状態を理由にrepairを閉ざさない。
+    world.stopped();
+    let project = project_of(&request)?;
+    let prepared = prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("a saved intent still names what to recover")?;
+    assert_eq!(prepared.plan.state.as_str(), "pending");
+
+    let output = execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .required_because("repair finishes the interrupted build")?;
+    assert!(output.changed);
+
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    assert!(
+        stored.initial_provisioning.is_none(),
+        "a verified repair clears the intent"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stopped_project_is_refused_rather_than_repaired_from_unread_facts() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first prepare succeeds")?;
+
+    // 完成した案件のSandboxが止まっただけ。中を読めない以上、欠けた工程も導けない。
+    world.stopped();
+    let mark = world.mark();
+    let error = prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .refused_because("repair does not plan from facts it could not observe")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningUnobservable)
+    );
+    let calls = world.since(mark);
+    assert!(
+        !calls
+            .iter()
+            .any(|call| call.contains("exec") || call.contains("sbx start")),
+        "{calls:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn repair_is_read_only_for_fresh_and_ready_projects() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

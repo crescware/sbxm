@@ -19,4 +19,19 @@ impl Observed {
     pub fn is_matching(&self) -> bool {
         matches!(self, Observed::Matching)
     }
+
+    /// 無いことを確認できた。観測できなかった場合と混ぜない。
+    pub fn is_missing(&self) -> bool {
+        matches!(self, Observed::Missing)
+    }
+
+    /// 翻訳しない安定した表記。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Observed::Missing => "missing",
+            Observed::Matching => "matching",
+            Observed::Mismatch { .. } => "mismatch",
+            Observed::Unobservable { .. } => "not-observed",
+        }
+    }
 }

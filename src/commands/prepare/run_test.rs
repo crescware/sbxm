@@ -208,6 +208,49 @@ fn a_ready_project_is_a_no_op_even_when_docker_is_unreachable() -> Checked {
 }
 
 #[test]
+fn a_stopped_project_is_neither_rebuilt_nor_sent_to_repair() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first prepare succeeds")?;
+
+    // 完成した案件のSandboxが止まっただけで、成果物は何も欠けていない。
+    world.stopped();
+    let mark = world.mark();
+    let error = run(
+        &bench.location,
+        &bench.config,
+        Some(&project_of(&request)?),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+        &mut SilentProgress,
+    )
+    .refused_because("a stopped sandbox cannot be observed as complete")?;
+
+    assert!(
+        error.contains_id(ErrorId::InitialProvisioningUnobservable),
+        "a stopped project is not reported as a partially built one"
+    );
+    assert!(
+        !error.contains_id(ErrorId::InitialProvisioningIncomplete),
+        "being stopped is not a missing artifact"
+    );
+    // 観測だけで終える。Sandboxを起動も作成もしない。
+    let calls = world.since(mark);
+    assert!(
+        !calls.iter().any(|call| call.contains("exec")
+            || call.contains("sbx create")
+            || call.contains("sbx start")
+            || call.contains("docker build")),
+        "{calls:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_foreign_image_stops_prepare_before_anything_is_built() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

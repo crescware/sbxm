@@ -16,6 +16,11 @@ generation, and the steps it may perform. It refuses to evict an active session,
 ambiguous image or template, overwrite an artifact it cannot verify, or use a changed declared
 configuration file as if it were the original input.
 
+Repair reads a sandbox only while it is running. Looking inside a stopped sandbox would start
+it, so a project whose sandbox is stopped is refused with what was observed instead of being
+repaired from steps that were never read. Open the project to start it, then run `repair` if a
+diagnostic still points to it.
+
 `prepare` never resumes a pending or incomplete initial provisioning implicitly. Run `repair`
 when the diagnostic points to it. A successful repair verifies the resulting sandbox and clears
 the initial-provisioning intent from project metadata only after that read-only verification

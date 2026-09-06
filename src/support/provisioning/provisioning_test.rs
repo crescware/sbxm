@@ -14,6 +14,7 @@ fn provisioning_states_keep_their_stable_spellings() {
         (ProvisioningState::Ready, "ready"),
         (ProvisioningState::Pending, "pending"),
         (ProvisioningState::Incomplete, "incomplete"),
+        (ProvisioningState::Unobservable, "unobservable"),
     ] {
         assert_eq!(state.as_str(), expected);
         assert_eq!(state.to_string(), expected);

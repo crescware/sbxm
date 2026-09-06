@@ -114,8 +114,10 @@ impl World {
                     .iter()
                     .map(|row| {
                         format!(
-                            r#"{{"name":"{}","status":"running","workspaces":["{}"]}}"#,
-                            row.name, row.workspace
+                            r#"{{"name":"{}","status":"{}","workspaces":["{}"]}}"#,
+                            row.name,
+                            if row.running { "running" } else { "stopped" },
+                            row.workspace
                         )
                     })
                     .collect::<Vec<_>>()
@@ -166,6 +168,7 @@ impl World {
                     name: (*name).to_string(),
                     workspace: (*workspace).to_string(),
                     placeholder: registered,
+                    running: true,
                 });
                 (0, String::new())
             }
