@@ -15,3 +15,7 @@ pub use prepared::Prepared;
 #[cfg(test)]
 #[path = "run_test.rs"]
 mod run_test;
+
+#[cfg(test)]
+#[path = "provisioning_test.rs"]
+mod provisioning_test;

@@ -1,4 +1,4 @@
-//! `add`から`prepare`までを通しで動かす台。
+//! `add`から初回構築までを通しで動かす台。
 
 use crate::testing::outcome::{Checked, Required};
 
@@ -13,12 +13,11 @@ use crate::metadata::{self, ProjectMetadata};
 use crate::paths::{self, PRIVATE_DIR_MODE, ProjectParent, ProjectPaths};
 use crate::project::ProjectId;
 
-use crate::commands::prepare::PrepareOutput;
-use crate::commands::prepare::run::run;
+use crate::support::provisioning::{ProvisioningOutput, ensure_initial};
+use crate::support::select;
 
 use super::World;
 use crate::design::SilentProgress;
-use crate::testing::prompt::ScriptedPrompt;
 
 /// 宣言file 1件を持つ、実行時と同じ形の入力一式。
 pub struct Bench {
@@ -66,8 +65,8 @@ impl Bench {
         })
     }
 
-    /// `add`で登録してから`prepare`で構築する。工程は通しで判定する。
-    pub fn build(&self, world: &World, request: &AddRequest) -> Result<PrepareOutput> {
+    /// `add`で登録するだけで、Sandboxもimageも作らない。
+    pub fn register(&self, world: &World, request: &AddRequest) -> Result<ProjectId> {
         crate::commands::add::run::run(
             &self.location,
             &self.parent,
@@ -76,14 +75,20 @@ impl Bench {
             world,
             &mut SilentProgress,
         )?;
-        let project = ProjectId::parse(&request.repository.display_id())?;
-        run(
-            &self.location,
+        ProjectId::parse(&request.repository.display_id())
+    }
+
+    /// `add`で登録してから初回構築を通す。工程は通しで判定する。
+    ///
+    /// 入口commandではなく共有境界を直接使い、どのcommandの寿命にも縛られない。
+    pub fn build(&self, world: &World, request: &AddRequest) -> Result<ProvisioningOutput> {
+        let project = self.register(world, request)?;
+        let mut locked = select::find(&self.location, &project)?.lock()?;
+        ensure_initial(
+            &mut locked,
             &self.config,
-            Some(&project),
             world,
             self.workspace_root.path(),
-            &mut ScriptedPrompt::choosing(0),
             &mut SilentProgress,
         )
     }

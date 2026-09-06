@@ -1,14 +1,17 @@
-use crate::design::{Document, Field, GuidanceItem, Inline, Table};
+use crate::design::{Document, Field, Inline, Table};
 use crate::i18n::Locale;
 use crate::msg;
 
-use crate::commands::prepare::PrepareOutput;
-use crate::commands::present::Legend;
+use crate::support::provisioning::ProvisioningOutput;
 
-use super::files;
+use super::{Legend, placed_files};
 
-/// `prepare`が並べるもの。
-pub fn document(output: &PrepareOutput, locale: Locale) -> Document {
+/// 初回構築の結果が並べるもの。
+///
+/// 成果を一行のsummaryへ集め、案件のfields、worktree、宣言file、注記、凡例をそれぞれ
+/// 独立したsectionにする。`prepare`も`open`も、同じ結果を同じ語彙で示す。次の一手は
+/// 入口ごとに違うため、呼び出し側が足す。
+pub fn provisioning_output(output: &ProvisioningOutput, locale: Locale) -> Document {
     let mut legend = Legend::new(locale);
 
     // 既に完了文を持つ場合はそれをsummaryとし、同じ内容を重ねない。
@@ -69,16 +72,10 @@ pub fn document(output: &PrepareOutput, locale: Locale) -> Document {
 
     document
         .table(Some(msg!("status-worktrees-section")), worktrees)
-        .concat(files(&output.files, &mut legend))
+        .concat(placed_files(&output.files, &mut legend))
         .legend(Legend::heading(), legend.entries())
-        // 案件IDを打ち直させない。次のcommandはそのままcopyできる形で出す。
-        .guidance(
-            Some(msg!("add-next-heading")),
-            vec![GuidanceItem::Plain(msg!("add-next-open"))],
-        )
-        .try_command(format!("sbxm open {}", output.project))
 }
 
 #[cfg(test)]
-#[path = "document_test.rs"]
-mod document_test;
+#[path = "provisioning_output_test.rs"]
+mod provisioning_output_test;

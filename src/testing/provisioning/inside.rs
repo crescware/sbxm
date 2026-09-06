@@ -241,6 +241,29 @@ impl World {
                 let git_dir = self.bare_git_dir.borrow().clone().unwrap_or_default();
                 Some((0, format!("{git_dir}\n")))
             }
+            // `-z`はfieldごとにNUL、recordごとに空fieldを出す。bare repositoryが最初の
+            // recordになり、作成済みのmanaged worktreeがそれに続く。
+            [
+                "git",
+                "--git-dir",
+                git_dir,
+                "worktree",
+                "list",
+                "--porcelain",
+                "-z",
+            ] => {
+                let bare_root = git_dir.strip_suffix("/.git").unwrap_or(git_dir);
+                let mut listed = format!("worktree {bare_root}\0bare\0\0");
+                for (path, branch) in self.worktrees.borrow().iter() {
+                    let state = match branch {
+                        Some(branch) => format!("branch refs/heads/{branch}"),
+                        None => "detached".to_string(),
+                    };
+                    // Stringへの書き込みは失敗しない。
+                    let _ = write!(listed, "worktree {path}\0{state}\0\0");
+                }
+                Some((0, listed))
+            }
             ["git", "-C", _, "rev-parse", "HEAD"] => Some((0, format!("{COMMIT}\n"))),
             ["git", "-C", path, "symbolic-ref", "-q", "HEAD"] => {
                 Some(match self.worktrees.borrow().get(*path) {

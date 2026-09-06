@@ -64,14 +64,13 @@ sbx secret set-custom <sandbox> \
 
 Replace `<sandbox>` and `<token>` with the values from your project setup. The real token remains with the Docker Sandboxes secret proxy. Do not commit it, put it in `config.yaml`, or paste it into a public issue.
 
-## 5. Prepare and open
+## 5. Open the project
 
 ```sh
-sbxm prepare <project-id>
 sbxm open <project-id>
 ```
 
-`prepare` builds the project image, creates the sandbox, clones the repository inside it, and creates the managed worktrees. `open` starts a stopped sandbox when necessary and connects over SSH.
+The first `open` builds the project image, creates the sandbox, clones the repository inside it, and creates the managed worktrees before connecting over SSH. Later runs start a stopped sandbox when necessary and connect. A first build that is interrupted is never resumed implicitly: `sbxm status <project-id>` names the project, and `sbxm repair <project-id>` finishes it.
 
 The session starts in `/home/agent/work/<repository>`. To start in a managed worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
 

@@ -124,7 +124,7 @@ Create a personal access token that can read and write the repository:
 - a classic token needs the `repo` scope.
 
 `sbxm add` prints a project-specific `sbx secret set-custom` command. Run that
-command with your token before preparing the project. The command resembles:
+command with your token before building the sandbox. The command resembles:
 
 ```sh
 sbx secret set-custom <sandbox> \
@@ -143,13 +143,14 @@ hosts.
 ### 4. Build and enter the sandbox
 
 ```sh
-sbxm prepare <project-id>
 sbxm open <project-id>
 ```
 
-`prepare` builds the project image, creates the sandbox, clones the repository
-inside it, and creates the managed worktrees. `open` starts a stopped sandbox
-when necessary and connects over SSH.
+The first `open` builds the project image, creates the sandbox, clones the
+repository inside it, and creates the managed worktrees before connecting over
+SSH. Later runs start a stopped sandbox when necessary and connect. A first
+build that is interrupted is never resumed implicitly; `sbxm status` names the
+project and `sbxm repair <project-id>` finishes it.
 
 The session starts in `/home/agent/work/<repository>`. To start in a managed
 worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
@@ -241,7 +242,7 @@ variable; it passes through whatever is set when it runs `sbx create`:
 
 ```sh
 # First creation
-DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm prepare <project-id>
+DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm open <project-id>
 
 # Re-creation, after the sandbox already exists
 DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
@@ -326,7 +327,7 @@ files:
 ```
 
 The destination is relative to the sandbox user's home directory. Declarations
-are placed during `prepare`; apply later changes explicitly:
+are placed while the sandbox is first built; apply later changes explicitly:
 
 ```sh
 sbxm apply <project-id> --files
@@ -398,7 +399,7 @@ rather than sbxm guessing at the new location.
 |---|---|
 | `sbxm add <github-clone-url>` | Add a GitHub repository to sbxm and clone it onto this host |
 | `sbxm prepare [<project-id>]` | Prepare a registered project by building and provisioning its sandbox |
-| `sbxm open [<project-id>] [--index N]` | Open an SSH session to a project sandbox, starting it if needed; `N` selects a zero-based managed worktree |
+| `sbxm open [<project-id>] [--index N]` | Open an SSH session to a project sandbox, building it on the first run and starting it if needed; `N` selects a zero-based managed worktree |
 | `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
 | `sbxm ls` | List managed projects and unmanaged sandboxes with their states |
 | `sbxm status` | Select and show the host or a project's status interactively; `global` is first |

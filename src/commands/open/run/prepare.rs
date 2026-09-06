@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
-use crate::config::ConfigLocation;
+use crate::config::{ConfigLocation, GlobalConfig};
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata, last_worktree_index};
@@ -11,7 +11,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{daemon, disk, docker, generation, sandbox, worktree};
+use crate::support::{daemon, disk, docker, generation, provisioning, sandbox, worktree};
 
 use super::{ClampedIndex, Prepared};
 
@@ -19,17 +19,21 @@ use super::{ClampedIndex, Prepared};
 ///
 /// 1. 対象を引数またはpromptで解決し、必要なら案件とindexを1画面で選ぶ
 /// 2. project lockを取得する
-/// 3. Docker Engineへの疎通を確認する
-/// 4. 1回の一覧取得からSandbox identityとstateを検証する
-/// 5. runningでなければ起動して待つ
-/// 6. hostのSSH `Agentが届かないことをSandboxの中から確認する`
-/// 7. managed worktreeをmetadataとGitから検証する
+/// 3. 中断した初回構築が残っていないことを、hostへ触れる前にmetadataで確かめる
+/// 4. Docker Engineへの疎通を確認する
+/// 5. 1回の一覧取得からSandbox identityとstateを検証する
+/// 6. Sandboxがまだ無ければ、共有境界で初回構築を完了させる
+/// 7. runningでなければ起動して待つ
+/// 8. hostのSSH `Agentが届かないことをSandboxの中から確認する`
+/// 9. managed worktreeをmetadataとGitから検証する
 ///
-/// lockはこの関数のあいだだけ保持する。SSH sessionそのものはsbxmのmutationではなく、
-/// 接続中に別terminalの`stop`が待たされる状態を作らない。
+/// lockはこの関数のあいだだけ保持する。初回構築もこのlockの下で進むため、構築中の
+/// 排他はproject lockが担う。session leaseは構築中も接続中もsharedのままとし、lockが
+/// 外れたあとも続くSSH sessionだけを、rebuild/destroy/repairのexclusive leaseと排他する。
 #[allow(clippy::too_many_arguments)]
 pub fn prepare(
     location: &ConfigLocation,
+    config: &GlobalConfig,
     requested: Option<&ProjectId>,
     index: Option<u32>,
     host: &dyn HostEnvironment,
@@ -57,7 +61,7 @@ pub fn prepare(
             index,
         )
     };
-    let locked = candidate.lock()?;
+    let mut locked = candidate.lock()?;
     // project lockを保持している間にshared session leaseを取る。lock順序を
     // project lock→session leaseに固定し、`locked`が外れたあともこのleaseは
     // `Prepared`が保持し続けるため、SSH sessionの生存中は通常rebuild/destroyの
@@ -69,22 +73,37 @@ pub fn prepare(
         (index, None)
     };
 
-    let metadata = &locked.metadata;
-    let name = metadata.sandbox_name();
-    generation::require_no_rebuild(metadata)?;
+    generation::require_no_rebuild(&locked.metadata)?;
+    // 中断した初回構築を暗黙に再開しない。intentはmetadataだけで判定できるため、
+    // repairへ渡す案件に対してはDockerにもsbxにも触れず、metadataも書き換えない。
+    provisioning::require_no_initial_intent(&locked.metadata)?;
 
     docker::require_reachable(host)?;
 
     let entries = daemon::list(host)?;
-    match inventory::state_of(&entries, metadata, workspace_root)? {
+    let provisioned = match inventory::state_of(&entries, &locked.metadata, workspace_root)? {
         // 既に動いているSandboxを起動し直さない。hostのworkspace directoryが消えていても、
         // 動いているmountが壊れているかどうかは観測しておらず、推測で接続を拒まない。
-        ProjectState::Running => {}
+        ProjectState::Running => None,
         // 起動には中立workspace directoryの実在が要る。`start`が起動前に実測する。
-        ProjectState::Stopped => inventory::start(host, metadata, workspace_root, progress)?,
-        ProjectState::NotCreated => return Err(inventory::not_created(metadata, name.as_str())),
-    }
-    inventory::wait_until_running(host, metadata, workspace_root, poll)?;
+        ProjectState::Stopped => {
+            inventory::start(host, &locked.metadata, workspace_root, progress)?;
+            None
+        }
+        // Sandboxをまだ持たない案件だけが初回構築の対象になる。停止中の完成済み案件は
+        // この経路へ来ないため、中を観測できないことを理由にrepairへ送らない。
+        ProjectState::NotCreated => Some(provisioning::ensure_initial(
+            &mut locked,
+            config,
+            host,
+            workspace_root,
+            progress,
+        )?),
+    };
+    inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
+
+    let metadata = &locked.metadata;
+    let name = metadata.sandbox_name();
 
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
     sandbox::require_credentials_isolated(host, name.as_str())?;
@@ -111,6 +130,7 @@ pub fn prepare(
         clamped_worktree_index,
         worktrees,
         disk,
+        provisioned,
         _session_lease: session_lease,
     })
 }

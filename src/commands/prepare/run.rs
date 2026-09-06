@@ -6,13 +6,15 @@ use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 use crate::msg;
 use crate::project::ProjectId;
-use crate::support::provisioning::ProvisioningInputs;
 use crate::support::select::ProjectPrompt;
-use crate::support::{generation, image, provisioning};
+use crate::support::{generation, provisioning, select};
 
 use super::PrepareOutput;
 
 /// 対象を引数またはpromptで解決し、登録済み案件のSandboxを構築する。
+///
+/// 観測、状態の分類、構築の順序は`support::provisioning`だけが持つ。この入口は対象の
+/// 解決とlockに限り、`open`が同じ初回構築を行うときと別の規則を当てない。
 pub fn run(
     location: &ConfigLocation,
     config: &GlobalConfig,
@@ -24,112 +26,9 @@ pub fn run(
 ) -> Result<PrepareOutput> {
     // 対象が決まる前にhostの状態へ触れない。
     let mut locked =
-        crate::support::select::one(location, requested, &msg!("select-prepare-heading"), prompt)?
-            .lock()?;
+        select::one(location, requested, &msg!("select-prepare-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
-    let observation = provisioning::observe(
-        host,
-        &locked.paths,
-        config,
-        &locked.metadata,
-        workspace_root,
-    )?;
-    // 観測は最後まで並べるが、安全と確認できなかった事実が1つでもあれば、hostを
-    // 変更する前にここで止める。
-    observation.require_safe()?;
-
-    match observation.state {
-        provisioning::ProvisioningState::Ready => {
-            return Ok(ready_output(&locked.metadata, &observation));
-        }
-        provisioning::ProvisioningState::Pending | provisioning::ProvisioningState::Incomplete => {
-            return Err(provisioning::require_repair(
-                &locked.metadata,
-                observation.state,
-            ));
-        }
-        // 停止中のSandboxは、中を読めば起動してしまう。欠落と決めてrepairへ送らず、
-        // 完成と決めて構築を飛ばすこともせず、観測できない事実として拒否する。
-        provisioning::ProvisioningState::Unobservable => {
-            return Err(provisioning::require_observable(
-                &locked.metadata,
-                &observation,
-            ));
-        }
-        provisioning::ProvisioningState::Fresh => {}
-    }
-
-    let name = locked.metadata.sandbox_name();
-
-    // custom secretはSandboxの作成時に結び付く。あとから登録しても既存のSandboxには
-    // 届かないため、作成より前に、そしてimageを組む前に確認する。Dockerの到達性も
-    // ここで一度だけ確認し、以降の`provision`の中では再確認しない。
-    let preconditions = provisioning::verify_external_preconditions(host, &name)?;
-
-    // Dockerfileと宣言fileを1回だけ読み、privateなsnapshotへ複製する。以降はこの
-    // snapshotだけを使い、生きているhost pathを二度と読まない。
-    let inputs = ProvisioningInputs::capture(&locked.paths, config, None)?;
-
-    // metadataのintentとtarget generationを、最初のhost側mutationより先にatomicに保存する。
-    locked.metadata.initial_provisioning = Some(provisioning::initial_intent(&inputs));
-    locked
-        .metadata
-        .provisioning
-        .dockerfile_sha256
-        .clone_from(&inputs.dockerfile_sha256);
-    crate::metadata::update(&locked.paths, &locked.metadata)?;
-
-    let warnings = image::cleanup_stale_archives(&locked.paths)?;
-
-    let output = provisioning::provision(
-        &mut locked,
-        &inputs,
-        preconditions,
-        host,
-        workspace_root,
-        progress,
-        warnings,
-    )?;
-
-    // 成果物をread-onlyで再確認できてからintentをclearする。clearのatomic replaceに失敗
-    // した場合も、disk上のintentは残るため、次回の明示repairへ安全に渡る。
-    let completed = provisioning::observe(
-        host,
-        &locked.paths,
-        config,
-        &locked.metadata,
-        workspace_root,
-    )?;
-    completed.require_safe()?;
-    if !completed.is_complete() {
-        return Err(provisioning::require_repair(
-            &locked.metadata,
-            provisioning::ProvisioningState::Pending,
-        ));
-    }
-    locked.metadata.initial_provisioning = None;
-    locked.metadata.declared_files = Some(provisioning::initial_intent(&inputs).files);
-    crate::metadata::update(&locked.paths, &locked.metadata)?;
-    Ok(output)
-}
-
-fn ready_output(
-    metadata: &crate::metadata::ProjectMetadata,
-    observation: &provisioning::Observation,
-) -> PrepareOutput {
-    PrepareOutput {
-        project: metadata.display_id(),
-        sandbox: metadata.sandbox_name().to_string(),
-        mode: metadata.provisioning.mode,
-        start_ref: metadata.provisioning.start_ref.clone().unwrap_or_default(),
-        sandbox_state: observation
-            .sandbox_state
-            .unwrap_or(crate::boundary::host::protocol::SandboxState::Running),
-        worktrees: observation.worktrees.clone(),
-        files: observation.files.clone(),
-        already_built: true,
-        warnings: Vec::new(),
-    }
+    provisioning::ensure_initial(&mut locked, config, host, workspace_root, progress)
 }
 
 #[cfg(test)]

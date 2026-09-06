@@ -13,7 +13,9 @@ use crate::design::ProgressSink;
 use crate::design::Remediation;
 use crate::project::SandboxLayout;
 use crate::support::files::{self};
-use crate::support::{daemon, disk, generation, inventory, repository, sandbox, select};
+use crate::support::{
+    daemon, disk, generation, inventory, provisioning, repository, sandbox, select,
+};
 
 use super::{ApplyOutput, Scope, Target};
 
@@ -41,10 +43,16 @@ pub fn run(
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
-    let entry = daemon::list(host)?
+    let found = daemon::list(host)?
         .into_iter()
-        .find(|entry| entry.name == name.as_str())
-        .ok_or_else(|| inventory::not_created(&locked.metadata, name.as_str()))?;
+        .find(|entry| entry.name == name.as_str());
+    let Some(entry) = found else {
+        // 中断した初回構築が残っている案件へ`open`を案内しても、その`open`は暗黙に
+        // 再開せずrepairを案内して終わる。metadataだけで分かる事実なので、実行できる
+        // commandをここで1つに絞る。
+        provisioning::require_no_initial_intent(&locked.metadata)?;
+        return Err(inventory::not_created(&locked.metadata, name.as_str()));
+    };
 
     sandbox::verify_identity(&entry, &name, workspace_root)?;
 

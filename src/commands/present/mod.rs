@@ -15,9 +15,11 @@ mod global_status;
 mod legend;
 mod list_state;
 mod observed;
+mod placed_files;
 mod placement;
 mod project_state;
 mod project_status;
+mod provisioning_output;
 mod sandbox_state;
 mod stop_result;
 
@@ -28,9 +30,11 @@ pub use global_status::global_status;
 pub use legend::Legend;
 pub use list_state::ListState;
 pub use observed::observed;
+pub use placed_files::placed_files;
 pub use placement::placement;
 pub use project_state::project_state;
 pub use project_status::project_status;
+pub use provisioning_output::provisioning_output;
 pub use sandbox_state::sandbox_state;
 pub use stop_result::stop_result;
 

@@ -16,7 +16,7 @@ files:
     destination: .config/another-tool/settings.yaml
 ```
 
-The destination is relative to the sandbox user’s home directory. Declarations are placed during `prepare`.
+The destination is relative to the sandbox user’s home directory. Declarations are placed while the sandbox is first built.
 
 ## Apply a later change
 

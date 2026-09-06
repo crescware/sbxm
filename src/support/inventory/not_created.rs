@@ -16,10 +16,11 @@ pub fn not_created(metadata: &ProjectMetadata, sandbox: &str) -> Error {
             ),
         )
         // 案件は既に登録済みである。`add`はimageにもsandboxにも触れないため、
-        // 構築するcommandを案内する。
+        // 構築するcommandを案内する。初回構築は`open`が同じ実行の中で行うため、
+        // 構築だけを行う別commandへは送らない。
         .remediation(
             Remediation::text(msg!("remediation-sandbox-not-created"))
-                .try_run(format!("sbxm prepare {}", metadata.display_id())),
+                .try_run(format!("sbxm open {}", metadata.display_id())),
         ),
     )
 }

@@ -9,7 +9,7 @@ use crate::project::SandboxName;
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, ProtectionSnapshot};
-use crate::support::{daemon, docker, generation, image, select};
+use crate::support::{daemon, docker, generation, image, provisioning, select};
 
 use crate::commands::rebuild::Target;
 
@@ -106,6 +106,12 @@ fn require_created(
 ) -> Result<()> {
     match state {
         ProjectState::Running | ProjectState::Stopped => Ok(()),
-        ProjectState::NotCreated => Err(inventory::not_created(metadata, name.as_str())),
+        // 中断した初回構築が残っている案件へ`open`を案内しても、その`open`は暗黙に
+        // 再開せずrepairを案内して終わる。metadataだけで分かる事実なので、実行できる
+        // commandをここで1つに絞る。
+        ProjectState::NotCreated => {
+            provisioning::require_no_initial_intent(metadata)?;
+            Err(inventory::not_created(metadata, name.as_str()))
+        }
     }
 }

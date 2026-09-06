@@ -1,6 +1,6 @@
 use crate::boundary::host::protocol::RootDiskUsage;
 use crate::commands::{Context, open::Args};
-use crate::design::prompt::{RecordedScreen, ScriptedKeys};
+use crate::design::prompt::{Key, RecordedScreen, ScriptedKeys};
 use crate::design::{PromptUi, RenderingPolicy, Ui};
 use crate::diagnostics::{ErrorId, ExitCode, Result};
 use crate::i18n::Locale;
@@ -55,21 +55,13 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
 }
 
 fn prepare_for(fixture: &Fixture, host: &FakeSbx) -> Result<Prepared> {
-    prepare(
-        &fixture.location,
-        None,
-        None,
-        host,
-        &mut ScriptedPrompt::choosing(0),
-        &fixture.workspace_root,
-        poll(),
-        &mut SilentProgress,
-    )
+    prepare_for_index(fixture, host, None)
 }
 
 fn prepare_for_index(fixture: &Fixture, host: &FakeSbx, index: Option<u32>) -> Result<Prepared> {
     prepare(
         &fixture.location,
+        &fixture.config,
         None,
         index,
         host,
@@ -218,6 +210,63 @@ fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
 }
 
 #[test]
+fn an_index_beyond_the_project_is_reported_before_the_terminal_is_handed_over() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = ready(FakeSbx::listing(&running), &project);
+
+    // promptはmetadataを待たずに設定上限まで受け付ける。案件が持つ範囲まで下げた事実は、
+    // 接続先を見せる前に述べる。
+    let mut keys = vec![Key::ArrowRight; 5];
+    keys.push(Key::Enter);
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = {
+        let policy = RenderingPolicy::plain();
+        let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
+        let mut prompt = PromptUi::new(
+            Locale::En,
+            policy.stderr,
+            Box::new(ScriptedKeys::pressing(&keys)),
+            Box::new(RecordedScreen::new()),
+        );
+        let context = Context {
+            location: &fixture.location,
+            workspace_root: &fixture.workspace_root,
+            locale: Locale::En,
+            can_prompt: true,
+        };
+        crate::commands::open::exec(
+            &Args {
+                project: None,
+                index: None,
+            },
+            &context,
+            &mut ui,
+            &host,
+            &mut prompt,
+        )
+    };
+
+    assert_eq!(code, ExitCode::Success);
+    let stderr = String::from_utf8(stderr).required_because("open stderr is UTF-8")?;
+    assert!(
+        stderr.contains("has no managed worktree 5"),
+        "the clamp names what was asked for: {stderr:?}"
+    );
+    assert!(
+        stderr.contains("opening managed worktree 0"),
+        "the clamp names where the session starts: {stderr:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_selected_worktree_becomes_the_ssh_starting_directory() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
@@ -254,6 +303,7 @@ fn an_interactive_index_is_bounded_by_the_selected_projects_worktrees() -> Check
 
     let prepared = prepare(
         &fixture.location,
+        &fixture.config,
         None,
         None,
         &host,
@@ -295,6 +345,7 @@ fn an_interactive_index_inside_the_metadata_is_opened_without_a_warning() -> Che
 
     let prepared = prepare(
         &fixture.location,
+        &fixture.config,
         None,
         None,
         &host,
@@ -439,50 +490,13 @@ fn a_running_project_is_opened_even_though_its_workspace_is_not_observed() -> Ch
 }
 
 #[test]
-fn a_project_without_a_sandbox_is_sent_back_to_add() -> Checked {
-    let fixture = Fixture::new()?;
-    let project = fixture.register("Example-Org/Example-Repo")?;
-    let host = ready(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project);
-
-    let error = prepare_for(&fixture, &host).refused_because("open never creates a sandbox")?;
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
-    let diagnostic = &error.diagnostics()[0];
-    assert_eq!(diagnostic.description.id, "error-sandbox-not-created");
-    assert_eq!(
-        diagnostic.description.args,
-        vec![
-            ("project", "Example-Org/Example-Repo".to_string()),
-            ("sandbox", project.sandbox.to_string())
-        ]
-    );
-    let remediation = diagnostic
-        .remediation
-        .as_ref()
-        .required_because("the user is told how to build the sandbox")?;
-    assert_eq!(
-        remediation.explanation.first().map(|message| message.id),
-        Some("remediation-sandbox-not-created")
-    );
-    // 実行を求めるcommandは説明文へ埋め込まず、独立した一行として持つ。
-    assert_eq!(
-        remediation
-            .commands
-            .iter()
-            .map(crate::design::text::CommandLine::as_str)
-            .collect::<Vec<_>>(),
-        vec!["sbxm prepare Example-Org/Example-Repo"]
-    );
-    assert!(!host.ran("daemon stop"), "the daemon is left alone");
-    Ok(())
-}
-
-#[test]
 fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
     let fixture = Fixture::new()?;
     let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
 
     let error = prepare(
         &fixture.location,
+        &fixture.config,
         Some(&project_id("example-org/example-repo")?),
         None,
         &host,
@@ -545,6 +559,7 @@ fn an_intent_recorded_after_the_selection_is_still_seen() -> Checked {
 
     let error = prepare(
         &fixture.location,
+        &fixture.config,
         Some(&ProjectId::parse("example-org/example-repo").required()?),
         None,
         &host,
