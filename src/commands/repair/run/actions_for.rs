@@ -45,32 +45,39 @@ pub(super) fn actions_for(
     if !observation.workspace.is_matching() {
         actions.push(RepairAction::RestoreWorkspace);
     }
-    for file in &observation.files {
-        if file.placement != Placement::Unchanged {
-            actions.push(RepairAction::PlaceDeclaredFile {
-                destination: file.destination.clone(),
-            });
+    if observation.interior_is_unobservable() {
+        // 停止中Sandboxは、最初の内部検査に使うsbx execが暗黙に起動する。内部の
+        // 個別artifactを欠落と推測せず、未観測のため全工程を実行する事実を示す。
+        actions.push(RepairAction::StartSandbox);
+        actions.push(RepairAction::ProvisionInterior);
+    } else {
+        for file in &observation.files {
+            if file.placement != Placement::Unchanged {
+                actions.push(RepairAction::PlaceDeclaredFile {
+                    destination: file.destination.clone(),
+                });
+            }
         }
-    }
-    if !observation.identity.is_matching() {
-        actions.push(RepairAction::ConfigureIdentity);
-    }
-    if !observation.credential_helper.is_matching() {
-        actions.push(RepairAction::ConfigureCredentialHelper);
-    }
-    if !observation.repository.is_matching() {
-        actions.push(RepairAction::CreateBareRepository);
-    }
-    if !observation.worktrees_present.is_matching() {
-        let layout = SandboxLayout::new(metadata.canonical_id());
-        let existing: BTreeSet<&str> = observation
-            .worktrees
-            .iter()
-            .map(|worktree| worktree.path.as_str())
-            .collect();
-        for name in layout.worktree_names(metadata.provisioning.requested_worktrees) {
-            if !existing.contains(name.as_str()) {
-                actions.push(RepairAction::CreateWorktree { path: name });
+        if !observation.identity.is_matching() {
+            actions.push(RepairAction::ConfigureIdentity);
+        }
+        if !observation.credential_helper.is_matching() {
+            actions.push(RepairAction::ConfigureCredentialHelper);
+        }
+        if !observation.repository.is_matching() {
+            actions.push(RepairAction::CreateBareRepository);
+        }
+        if !observation.worktrees_present.is_matching() {
+            let layout = SandboxLayout::new(metadata.canonical_id());
+            let existing: BTreeSet<&str> = observation
+                .worktrees
+                .iter()
+                .map(|worktree| worktree.path.as_str())
+                .collect();
+            for name in layout.worktree_names(metadata.provisioning.requested_worktrees) {
+                if !existing.contains(name.as_str()) {
+                    actions.push(RepairAction::CreateWorktree { path: name });
+                }
             }
         }
     }

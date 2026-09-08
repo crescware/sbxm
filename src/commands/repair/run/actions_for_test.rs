@@ -135,6 +135,36 @@ fn incomplete_identity_credential_and_repository_are_named() -> Checked {
 }
 
 #[test]
+fn an_unobserved_interior_names_the_implicit_start_and_full_provisioning() -> Checked {
+    let metadata = attached("example-org", "example-repo")?;
+    let mut observation = incomplete_observation();
+    let unobservable = Observed::Unobservable {
+        evidence: "stopped".to_string(),
+    };
+    observation.files_placed = unobservable.clone();
+    observation.identity = unobservable.clone();
+    observation.tools = unobservable.clone();
+    observation.credentials = unobservable.clone();
+    observation.secret = unobservable.clone();
+    observation.credential_helper = unobservable.clone();
+    observation.repository = unobservable.clone();
+    observation.worktrees_present = unobservable;
+
+    let actions = actions_for(&metadata, &observation, true);
+    assert!(actions.contains(&RepairAction::StartSandbox));
+    assert!(actions.contains(&RepairAction::ProvisionInterior));
+    assert!(!actions.contains(&RepairAction::ConfigureIdentity));
+    assert!(!actions.contains(&RepairAction::ConfigureCredentialHelper));
+    assert!(!actions.contains(&RepairAction::CreateBareRepository));
+    assert!(
+        !actions
+            .iter()
+            .any(|action| matches!(action, RepairAction::CreateWorktree { .. }))
+    );
+    Ok(())
+}
+
+#[test]
 fn a_missing_managed_worktree_is_named_by_its_path() -> Checked {
     let metadata = attached("example-org", "example-repo")?;
     let mut observation = incomplete_observation();

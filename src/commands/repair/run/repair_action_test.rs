@@ -15,6 +15,8 @@ fn every_action_renders_a_label_cell() -> Checked {
         RepairAction::LoadTemplate,
         RepairAction::RestoreWorkspace,
         RepairAction::CreateSandbox,
+        RepairAction::StartSandbox,
+        RepairAction::ProvisionInterior,
         RepairAction::PlaceDeclaredFile {
             destination: ".config/example.yaml".to_string(),
         },

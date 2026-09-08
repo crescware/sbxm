@@ -120,6 +120,22 @@ impl Observation {
             .all(|observed| observed.is_matching())
     }
 
+    /// Sandboxを起動しないため、内部のartifactを1件も観測しなかった。
+    pub(crate) fn interior_is_unobservable(&self) -> bool {
+        [
+            &self.files_placed,
+            &self.identity,
+            &self.tools,
+            &self.credentials,
+            &self.secret,
+            &self.credential_helper,
+            &self.repository,
+            &self.worktrees_present,
+        ]
+        .into_iter()
+        .all(|observed| matches!(observed, Observed::Unobservable { .. }))
+    }
+
     /// 欠落または食い違いを実際に観測した。観測不能はここへ含めない。
     pub(crate) fn has_definite_gap(&self) -> bool {
         self.required()

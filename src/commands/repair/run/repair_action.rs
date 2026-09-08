@@ -23,6 +23,10 @@ pub enum RepairAction {
     RestoreWorkspace,
     /// Sandboxを作成する。
     CreateSandbox,
+    /// 最初の内部検査によって、停止中Sandboxを起動する。
+    StartSandbox,
+    /// 未観測のSandbox内部へ接続し、宣言した全工程を実行する。
+    ProvisionInterior,
     /// 宣言file 1件を配置する。
     PlaceDeclaredFile { destination: String },
     /// `Sandbox内のGit` identityを設定する。
@@ -49,6 +53,10 @@ impl RepairAction {
             RepairAction::LoadTemplate => Cell::label(msg!("repair-action-load-template")),
             RepairAction::RestoreWorkspace => Cell::label(msg!("repair-action-restore-workspace")),
             RepairAction::CreateSandbox => Cell::label(msg!("repair-action-create-sandbox")),
+            RepairAction::StartSandbox => Cell::label(msg!("repair-action-start-sandbox")),
+            RepairAction::ProvisionInterior => {
+                Cell::label(msg!("repair-action-provision-interior"))
+            }
             RepairAction::PlaceDeclaredFile { destination } => Cell::label(msg!(
                 "repair-action-place-declared-file",
                 destination = destination
