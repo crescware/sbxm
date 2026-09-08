@@ -31,6 +31,12 @@ impl NextAction {
         if observation.require_safe().is_err() {
             return None;
         }
+        // custom secretがSandboxへ適用されていない場合、repairはplaceholder検査で必ず
+        // 拒否される。実際の復旧手段はsecret診断が示すSandbox削除であり、ここから
+        // 成功しないrepairを重ねて案内しない。
+        if observation.sandbox.is_matching() && observation.secret.is_missing() {
+            return None;
+        }
 
         match observation.state {
             ProvisioningState::Pending => return Some(NextAction::RepairPending),

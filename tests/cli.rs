@@ -230,6 +230,42 @@ fn version_prints_the_version_and_exits_with_zero() -> Checked {
     Ok(())
 }
 
+#[test]
+fn nonnumeric_count_options_keep_their_value_name_and_help_hint() -> Checked {
+    let home = temp_home()?;
+    for (arguments, expected) in [
+        (
+            &[
+                "--lang",
+                "en",
+                "open",
+                "example-org/example-repo",
+                "--index",
+                "nope",
+            ][..],
+            "--index <N>",
+        ),
+        (
+            &[
+                "--lang",
+                "en",
+                "apply",
+                "example-org/example-repo",
+                "--worktrees",
+                "nope",
+            ][..],
+            "--worktrees <N>",
+        ),
+    ] {
+        let run = sbxm(home.path(), arguments)?;
+        assert_ne!(run.code, 0, "{}", run.stderr);
+        assert!(run.stderr.contains(expected), "{}", run.stderr);
+        assert!(run.stderr.contains("Try:"), "{}", run.stderr);
+        assert!(run.stderr.contains("sbxm --help"), "{}", run.stderr);
+    }
+    Ok(())
+}
+
 /// shell localeだけを差し替えてsbxmを実行する。
 ///
 /// `LC_ALL`を唯一の手がかりにするため、後ろの2つは取り除いた状態で渡す。

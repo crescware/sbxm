@@ -58,11 +58,11 @@ pub fn execute(
             latest.state,
         ));
     }
-    if let Some(intent) = &prepared.locked.metadata.initial_provisioning {
-        provisioning::validate_intent(intent, config, &prepared.locked.metadata.display_id())?;
-    }
     let mut warnings = std::mem::take(&mut prepared.warnings);
     if latest.is_complete() {
+        if let Some(intent) = &prepared.locked.metadata.initial_provisioning {
+            provisioning::validate_intent(intent, config, &prepared.locked.metadata.display_id())?;
+        }
         // 既に全post-conditionが揃っている場合は、rebuildやcredential再設定を呼ばず、
         // intentのclearだけを行う。
         prepared.locked.metadata.initial_provisioning = None;
@@ -81,10 +81,9 @@ pub fn execute(
         .take()
         .ok_or_else(|| state_changed(&prepared.locked.metadata, latest.state, latest.state))?;
 
-    // intentが再現するべき入力から、同じsnapshotをここで作り直してから初めてmutationへ
-    // 進む。validate_intentが確かめた現在の入力と、これから使うsnapshotの間に隙間を
-    // 作らない。
-    let inputs = ProvisioningInputs::capture(&prepared.paths, config, Some(&prepared.target))?;
+    // intentが再現するべき入力を先にsnapshotへ固定し、そのsnapshotのdigestをintentと
+    // 比較してから初めてmutationへ進む。検証後に生きている入力を読み直す隙を作らない。
+    let inputs = capture_repair_inputs(&prepared, config)?;
 
     if prepared.locked.metadata.initial_provisioning.is_none() {
         prepared.locked.metadata.initial_provisioning = Some(provisioning::initial_intent(&inputs));
@@ -135,6 +134,18 @@ pub fn execute(
         changed: true,
         warnings: output.warnings,
     })
+}
+
+fn capture_repair_inputs(prepared: &Prepared, config: &GlobalConfig) -> Result<ProvisioningInputs> {
+    let inputs = ProvisioningInputs::capture(&prepared.paths, config, Some(&prepared.target))?;
+    if let Some(intent) = &prepared.locked.metadata.initial_provisioning {
+        provisioning::validate_captured_intent(
+            intent,
+            &inputs,
+            &prepared.locked.metadata.display_id(),
+        )?;
+    }
+    Ok(inputs)
 }
 
 fn selected_target(observation: &Observation, has_intent: bool) -> String {

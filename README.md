@@ -405,6 +405,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees |
+| `sbxm repair [<project-id>]` | Repair an interrupted or incomplete first provisioning without changing its fixed target generation |
 | `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its Dockerfile; the old writable layer is lost |
 | `sbxm destroy [<project-id>]` | Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile |
 

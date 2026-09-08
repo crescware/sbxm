@@ -44,6 +44,13 @@ pub fn prepare(
     } else {
         if state == ProjectState::Stopped {
             // 停止中のSandboxは内部を観測できないため、通常modeでは削除しない。
+            let remediation = if metadata.initial_provisioning.is_some() {
+                Remediation::text(msg!("remediation-run-repair"))
+                    .try_run(format!("sbxm repair {}", metadata.display_id()))
+            } else {
+                Remediation::text(msg!("remediation-destroy-stopped"))
+                    .try_run(format!("sbxm open {}", metadata.display_id()))
+            };
             return Err(Error::single(
                 Diagnostic::new(
                     ErrorId::SandboxNotRunning,
@@ -53,10 +60,7 @@ pub fn prepare(
                         observed = "stopped"
                     ),
                 )
-                .remediation(
-                    Remediation::text(msg!("remediation-destroy-stopped"))
-                        .try_run(format!("sbxm open {}", metadata.display_id())),
-                ),
+                .remediation(remediation),
             ));
         }
         // Sandboxがそもそも無ければ、session leaseを取る対象も観測する対象も無い。

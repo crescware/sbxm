@@ -61,6 +61,39 @@ fn asking_for_worktrees_leaves_the_declared_files_alone() -> Checked {
 }
 
 #[test]
+fn duplicate_sandbox_names_are_refused_before_apply_changes_either_one() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    write_metadata(&location, &parent, None)?;
+    let name = SandboxName::derive(&canonical()?);
+    let listing = format!(
+        r#"{{"sandboxes":[{{"name":"{name}","status":"running"}},{{"name":"{name}","status":"running"}}]}}"#
+    );
+    let host = FakeSbx::listing(&listing);
+
+    let error = run(
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &config,
+        WORKTREES_ONLY,
+        &host,
+        &workspace_root,
+        &mut SilentProgress,
+    )
+    .refused_because("two sandboxes with the same name are not interchangeable")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    assert!(
+        !host.ran("exec") && !host.ran("cp --follow-link"),
+        "neither ambiguous sandbox is changed: {:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
 fn asking_for_the_number_the_project_already_targets_rewrites_nothing() -> Checked {
     // 目標が変わらない指定はmetadataを書き換えない。同じ値の書き戻しでも、
     // 保存済みの宣言に触れる理由にはならない。

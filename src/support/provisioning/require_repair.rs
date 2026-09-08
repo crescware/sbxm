@@ -1,5 +1,6 @@
-use crate::design::{Fact, Remediation};
+use crate::design::{Fact, Inline, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId};
+use crate::hash::short_hex;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 
@@ -26,9 +27,18 @@ pub(crate) fn require_repair(metadata: &ProjectMetadata, state: ProvisioningStat
             ),
         ),
     };
+    let mut diagnostic =
+        Diagnostic::new(id, description).fact(Fact::sandbox(&metadata.sandbox_name().to_string()));
+    if state == ProvisioningState::Pending
+        && let Some(intent) = &metadata.initial_provisioning
+    {
+        diagnostic = diagnostic.fact(Fact::new(
+            msg!("diagnostic-fixed-target-generation-label"),
+            Inline::important(short_hex(&intent.target_dockerfile_sha256)),
+        ));
+    }
     Error::single(
-        Diagnostic::new(id, description)
-            .fact(Fact::sandbox(&metadata.sandbox_name().to_string()))
+        diagnostic
             .fact(Fact::reason(msg!(
                 "cause-provisioning-state",
                 state = state

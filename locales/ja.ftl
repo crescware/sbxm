@@ -29,7 +29,7 @@ cli-repair-project-help = 復旧する案件のowner/repository形式の登録ID
 cli-rebuild-about = Dockerfileの変更有無にかかわらず案件のSandboxを作り直します。元の書き込み可能な層は失われます。通常のrebuildは作業を保護し、確認を求めます
 cli-rebuild-project-help = 再構築する案件のowner/repository形式の登録ID
 
-cli-open-about = 案件のSandboxへのSSH接続を開き、必要なら先に起動します
+cli-open-about = 案件のSandboxへのSSH接続を開き、初回は構築し、必要なら先に起動します
 cli-open-project-help = SSH接続する案件のowner/repository形式の登録ID
 cli-open-index-help = repository rootではなくN番目のmanaged worktreeを起点にします（0始まり）
 warning-open-worktree-not-found = managed worktree { $index } が見つからないため、repository rootを開きます。
@@ -204,6 +204,7 @@ diagnostic-root-label = repository root:
 diagnostic-field-label = 項目:
 diagnostic-entry-label = 宣言:
 diagnostic-value-label = 値:
+diagnostic-fixed-target-generation-label = 固定したtarget世代:
 diagnostic-image-label = image:
 diagnostic-template-label = Template:
 diagnostic-sandbox-label = Sandbox:

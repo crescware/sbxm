@@ -65,9 +65,15 @@ fn an_invalid_numeric_option_is_named_as_an_invalid_value() -> Checked {
     assert_eq!(
         diagnostic.description.args,
         vec![
-            ("argument", "--index".to_owned()),
+            ("argument", "--index <N>".to_owned()),
             ("value", "not-a-number".to_owned()),
         ]
     );
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .required_because("the refusal points to command help")?;
+    assert_eq!(remediation.explanation[0].id, "remediation-run-help");
+    assert_eq!(remediation.commands[0].as_str(), "sbxm --help");
     Ok(())
 }

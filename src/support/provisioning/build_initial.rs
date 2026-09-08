@@ -3,8 +3,9 @@ use std::path::Path;
 use crate::boundary::host::HostEnvironment;
 use crate::config::GlobalConfig;
 use crate::design::ProgressSink;
-use crate::diagnostics::Result;
+use crate::diagnostics::{Error, Result};
 use crate::metadata;
+use crate::msg;
 use crate::support::image;
 use crate::support::select::Locked;
 
@@ -45,7 +46,9 @@ pub(crate) fn build_initial(
         .clone_from(&inputs.dockerfile_sha256);
     metadata::update(&locked.paths, &locked.metadata)?;
 
-    let warnings = image::cleanup_stale_archives(&locked.paths)?;
+    let project = locked.metadata.display_id();
+    let warnings = image::cleanup_stale_archives(&locked.paths)
+        .map_err(|error| with_repair_command(error, &project))?;
 
     let output = provision(
         locked,
@@ -55,7 +58,8 @@ pub(crate) fn build_initial(
         workspace_root,
         progress,
         warnings,
-    )?;
+    )
+    .map_err(|error| with_repair_command(error, &project))?;
 
     // 成果物をread-onlyで再確認できてからintentをclearする。clearのatomic replaceに失敗
     // した場合も、disk上のintentは残るため、次回の明示repairへ安全に渡る。
@@ -65,13 +69,34 @@ pub(crate) fn build_initial(
         config,
         &locked.metadata,
         workspace_root,
-    )?;
-    completed.require_safe()?;
+    )
+    .map_err(|error| with_repair_command(error, &project))?;
+    completed
+        .require_safe()
+        .map_err(|error| with_repair_command(error, &project))?;
     if !completed.is_complete() {
         return Err(require_repair(&locked.metadata, ProvisioningState::Pending));
     }
     locked.metadata.initial_provisioning = None;
     locked.metadata.declared_files = Some(initial_intent(&inputs).files);
-    metadata::update(&locked.paths, &locked.metadata)?;
+    metadata::update(&locked.paths, &locked.metadata)
+        .map_err(|error| with_repair_command(error, &project))?;
     Ok(output)
+}
+
+/// intent保存後の失敗へ、次に実行できる明示的な復旧commandを足す。
+fn with_repair_command(error: Error, project: &str) -> Error {
+    let Error::Diagnostics(mut diagnostics) = error else {
+        return error;
+    };
+    if let Some(diagnostic) = diagnostics.last_mut() {
+        let remediation = diagnostic
+            .remediation
+            .take()
+            .unwrap_or_default()
+            .explain(msg!("remediation-run-repair"))
+            .try_run(format!("sbxm repair {project}"));
+        diagnostic.remediation = Some(remediation);
+    }
+    Error::Diagnostics(diagnostics)
 }

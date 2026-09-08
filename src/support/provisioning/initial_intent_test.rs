@@ -72,12 +72,30 @@ fn prepare_observes_an_intent_without_resuming_it() -> Checked {
         .refused_because("the initial image build is interrupted")?;
     world.nothing_fails();
 
+    let target = bench
+        .stored("Example-Org/Example-Repo")?
+        .initial_provisioning
+        .required_because("the interrupted build keeps its target")?
+        .target_dockerfile_sha256;
     let mark = world.mark();
     let error = bench
         .ensure(&world, &project_of(&request)?, &mut SilentProgress)
         .refused_because("prepare requires explicit repair after interruption")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    let fixed_target = error.diagnostics()[0]
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            crate::design::Fact::OneLine { label, value }
+                if label.id == "diagnostic-fixed-target-generation-label" =>
+            {
+                Some(value.as_str())
+            }
+            _ => None,
+        })
+        .required_because("the pending refusal shows the fixed target generation")?;
+    assert_eq!(fixed_target, crate::hash::short_hex(&target));
     assert!(
         !world.since(mark).iter().any(|call| {
             call.contains("docker build")

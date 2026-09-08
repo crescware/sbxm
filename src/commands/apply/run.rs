@@ -49,14 +49,12 @@ pub fn run(
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
-    let found = daemon::list(host)?
-        .into_iter()
-        .find(|entry| entry.name == name.as_str());
-    let Some(entry) = found else {
+    let entries = daemon::list(host)?;
+    let Some(entry) = inventory::single(&entries, name.as_str())? else {
         return Err(inventory::not_created(&locked.metadata, name.as_str()));
     };
 
-    sandbox::verify_identity(&entry, &name, workspace_root)?;
+    sandbox::verify_identity(entry, &name, workspace_root)?;
 
     if entry.state != SandboxState::Running {
         return Err(Error::single(
@@ -114,7 +112,7 @@ pub fn run(
 
     Ok(ApplyOutput {
         project: locked.metadata.display_id(),
-        sandbox: entry.name,
+        sandbox: entry.name.clone(),
         files,
         worktrees,
     })

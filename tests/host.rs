@@ -596,6 +596,7 @@ fn repair_does_not_treat_a_running_sandbox_as_intact_when_its_workspace_is_gone(
 
     let run = host.run(&["--lang", "en", "repair", PROJECT])?;
 
+    assert_ne!(run.code, 0, "{}{}", run.stdout, run.stderr);
     assert!(
         !run.stdout.contains("needs no repair"),
         "the host does not hold the workspace, so this is not a no-op: {}",
