@@ -10,8 +10,10 @@ pub(super) fn digest_in_sandbox(
     destination: &str,
 ) -> Result<Option<String>> {
     let exists = sandbox::exec(host, sandbox, &["test", "-e", destination])?;
-    if !exists.success() {
-        return Ok(None);
+    match sandbox::inner_exit_code(&exists) {
+        Some(0) => {}
+        Some(1) => return Ok(None),
+        _ => return Err(sandbox::unobservable(&exists, destination)),
     }
 
     let outcome = sandbox::exec(host, sandbox, &["sha256sum", destination])?.require_success()?;
