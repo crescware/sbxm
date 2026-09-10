@@ -41,8 +41,8 @@ pub fn run(
     let mut locked =
         select::one(location, requested, &msg!("select-apply-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
-    // 中断した初回構築を暗黙に進めない。固定した入力snapshotで復旧するのは`repair`
-    // だけであり、現在のconfigを正本にする`apply`が先に成果物を進めてよい状態ではない。
+    // 中断した初回構築を暗黙に進めない。固定した入力snapshotで復旧するのは`open`または
+    // `repair`であり、現在のconfigを正本にする`apply`が先に成果物を進めてよい状態ではない。
     // intentはmetadataだけで判定できるため、Sandboxの有無にも停止中かどうかにも依らず、
     // hostへ触れる前にここで1つに絞る。
     provisioning::require_no_initial_intent(&locked.metadata)?;
@@ -80,8 +80,19 @@ pub fn run(
 
     let mut files = Vec::new();
     if scope.files {
-        files = files::place_all(host, &entry.name, &config.files, files::Conflict::Overwrite)
-            .map_err(decorate)?;
+        let inputs = provisioning::ProvisioningInputs::capture_files(&locked.paths, config)?;
+        files = files::place_all(
+            host,
+            &entry.name,
+            &inputs
+                .iter()
+                .map(|input| input.declaration.clone())
+                .collect::<Vec<_>>(),
+            files::Conflict::Overwrite,
+        )
+        .map_err(decorate)?;
+        locked.metadata.declared_files = Some(provisioning::recorded_files(&inputs));
+        metadata::update(&locked.paths, &locked.metadata)?;
     }
 
     let mut worktrees = None;

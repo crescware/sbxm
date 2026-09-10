@@ -127,13 +127,35 @@ esac
 
 shift
 case "$1 $2" in
-"--git-dir "*)
-	[ "$3 $4" = "worktree list" ] || exit 1
-	printf 'worktree %s\000bare\000\000' "${2%/.git}"
-	while IFS= read -r worktree; do
-		printf 'worktree %s\000HEAD %s\000detached\000\000' "$worktree" "$COMMIT"
-	done <"$fake/worktrees"
+"check-ref-format --branch")
+	[ -n "$3" ] || exit 1
+	printf '%s\n' "$3"
 	exit 0
+	;;
+"--git-dir "*)
+	case "$3 $4" in
+	"worktree list")
+		printf 'worktree %s\000bare\000\000' "${2%/.git}"
+		while IFS= read -r worktree; do
+			printf 'worktree %s\000HEAD %s\000detached\000\000' "$worktree" "$COMMIT"
+		done <"$fake/worktrees"
+		exit 0
+		;;
+	"show-ref --verify")
+		exit 0
+		;;
+	"rev-parse refs/remotes/origin/main")
+		echo "$COMMIT"
+		exit 0
+		;;
+	"worktree add")
+		[ "$5" = "--detach" ] || exit 1
+		printf '%s\n' "$6" >>"$fake/present"
+		printf '%s\n' "$6" >>"$fake/worktrees"
+		exit 0
+		;;
+	esac
+	exit 1
 	;;
 "-C "*)
 	[ "$3 $4" = "rev-parse HEAD" ] || exit 1
@@ -337,7 +359,10 @@ impl Host {
 
     /// managed worktreeがSandboxの中に揃っていることにする。
     fn worktree_is_present(&self) -> Checked<()> {
-        self.answer("present", &format!("{WORKTREE}\n"))?;
+        self.answer(
+            "present",
+            &format!("{BARE_ROOT}\n{BARE_ROOT}/.git\n{WORKTREE}\n"),
+        )?;
         self.answer("worktrees", &format!("{WORKTREE}\n"))
     }
 }
@@ -824,25 +849,30 @@ fn terminating_the_sbxm_process_releases_the_lease_without_deleting_the_file() -
 }
 
 #[test]
-fn open_refuses_a_sandbox_whose_managed_worktree_is_not_there() -> Checked {
+fn open_recreates_a_missing_managed_worktree_before_connecting() -> Checked {
     let host = Host::new()?;
     let sandbox = host.registered()?;
     host.sandbox_is_running(&sandbox)?;
     // Sandboxはあるが、宣言されたworktreeが1本も無い。
+    host.answer("present", &format!("{BARE_ROOT}\n{BARE_ROOT}/.git\n"))?;
     host.answer("worktrees", "")?;
 
     let run = host.run(&["--lang", "en", "open", PROJECT])?;
 
-    assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
     assert!(
-        run.stderr.contains("sandbox-repository-unusable"),
+        run.stderr.contains("Creating the managed worktrees"),
         "{}",
         run.stderr
     );
     assert!(run.stderr.contains(WORKTREE), "{}", run.stderr);
-    // 接続先を見せる前に止まるため、terminalは引き渡さない。
     let asked = host.invocations()?;
-    assert!(!asked.contains(&format!("ssh {sandbox}.sbx")), "{asked}");
-    assert!(asked.contains(BARE_ROOT), "{asked}");
+    let created = asked
+        .find(&format!("worktree add --detach {WORKTREE}"))
+        .required_because("the missing worktree is recreated")?;
+    let connected = asked
+        .find(&format!("ssh -t {sandbox}.sbx"))
+        .required_because("the terminal is handed over after recovery")?;
+    assert!(created < connected, "{asked}");
     Ok(())
 }

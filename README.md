@@ -148,9 +148,9 @@ sbxm open <project-id>
 
 The first `open` builds the project image, creates the sandbox, clones the
 repository inside it, and creates the managed worktrees before connecting over
-SSH. Later runs start a stopped sandbox when necessary and connect. A first
-build that is interrupted is never resumed implicitly; `sbxm status` names the
-project and `sbxm repair <project-id>` finishes it.
+SSH. Later runs start a stopped sandbox when necessary and connect. If a build
+step is interrupted, the next `open` verifies and reuses completed artifacts,
+finishes the missing steps, and connects without discarding work.
 
 The session starts in `/home/agent/work/<repository>`. To start in a managed
 worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
@@ -191,12 +191,12 @@ sbxm stop <project-id>
 sbxm stop <project-id> ...
 ```
 
-The `STATE` column answers whether `sbxm open` can proceed directly: `stopped`
-means opening starts the sandbox, while `open-blocked` means a startup
-prerequisite needs recovery first, including a first provisioning that started
-and did not finish. Use `sbxm status <project-id>` for the reason: it ends with
-the single command to run next, `sbxm repair` for an interrupted or incomplete
-first provisioning and `sbxm rebuild` for a generation change.
+The `STATE` column answers whether `sbxm open` can connect immediately: `stopped`
+means opening starts the sandbox, while `open-blocked` means preparation remains,
+including a first provisioning that started and did not finish. Use
+`sbxm status <project-id>` for the reason: it ends with
+the single command to run next, `sbxm open` for interrupted or incomplete
+connection preparation and `sbxm rebuild` for a generation change.
 
 When run in an interactive terminal, `repair`, `apply`, `rebuild`, `open`,
 `stop`, `destroy`, and `status` can prompt you to select a target if the
@@ -405,7 +405,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees |
-| `sbxm repair [<project-id>]` | Repair an interrupted or incomplete first provisioning without changing its fixed target generation |
+| `sbxm repair [<project-id>]` | Explicitly prepare an interrupted or incomplete project without opening SSH; `open` performs the same recovery when connecting |
 | `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its Dockerfile; the old writable layer is lost |
 | `sbxm destroy [<project-id>]` | Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile |
 

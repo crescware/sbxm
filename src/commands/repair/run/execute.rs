@@ -34,9 +34,6 @@ pub fn execute(
         });
     }
 
-    if let Some(intent) = &prepared.locked.metadata.initial_provisioning {
-        provisioning::validate_intent(intent, config, &prepared.locked.metadata.display_id())?;
-    }
     let latest = provisioning::observe(
         host,
         &prepared.paths,
@@ -58,23 +55,10 @@ pub fn execute(
             latest.state,
         ));
     }
-    let mut warnings = std::mem::take(&mut prepared.warnings);
-    if latest.is_complete() {
-        if let Some(intent) = &prepared.locked.metadata.initial_provisioning {
-            provisioning::validate_intent(intent, config, &prepared.locked.metadata.display_id())?;
-        }
-        // 既に全post-conditionが揃っている場合は、rebuildやcredential再設定を呼ばず、
-        // intentのclearだけを行う。
-        prepared.locked.metadata.initial_provisioning = None;
-        metadata::update(&prepared.paths, &prepared.locked.metadata)?;
-        return Ok(RepairOutput {
-            project,
-            sandbox,
-            target_generation: prepared.target,
-            changed: true,
-            warnings,
-        });
+    if has_intent {
+        return resume_intent(host, &mut prepared, config, workspace_root, progress);
     }
+    let mut warnings = std::mem::take(&mut prepared.warnings);
 
     let preconditions = prepared
         .preconditions
@@ -85,16 +69,14 @@ pub fn execute(
     // 比較してから初めてmutationへ進む。検証後に生きている入力を読み直す隙を作らない。
     let inputs = capture_repair_inputs(&prepared, config)?;
 
-    if prepared.locked.metadata.initial_provisioning.is_none() {
-        prepared.locked.metadata.initial_provisioning = Some(provisioning::initial_intent(&inputs));
-        prepared
-            .locked
-            .metadata
-            .provisioning
-            .dockerfile_sha256
-            .clone_from(&prepared.target);
-        metadata::update(&prepared.paths, &prepared.locked.metadata)?;
-    }
+    prepared.locked.metadata.initial_provisioning = Some(provisioning::initial_intent(&inputs));
+    prepared
+        .locked
+        .metadata
+        .provisioning
+        .dockerfile_sha256
+        .clone_from(&prepared.target);
+    metadata::update(&prepared.paths, &prepared.locked.metadata)?;
 
     warnings.extend(crate::support::image::cleanup_stale_archives(
         &prepared.paths,
@@ -136,20 +118,36 @@ pub fn execute(
     })
 }
 
+fn resume_intent(
+    host: &dyn HostEnvironment,
+    prepared: &mut Prepared,
+    config: &GlobalConfig,
+    workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
+) -> Result<RepairOutput> {
+    let output =
+        provisioning::ensure_initial(&mut prepared.locked, config, host, workspace_root, progress)?;
+    Ok(RepairOutput {
+        project: output.project,
+        sandbox: output.sandbox,
+        target_generation: prepared.target.clone(),
+        changed: true,
+        warnings: output.warnings,
+    })
+}
+
 fn capture_repair_inputs(prepared: &Prepared, config: &GlobalConfig) -> Result<ProvisioningInputs> {
-    let inputs = ProvisioningInputs::capture(&prepared.paths, config, Some(&prepared.target))?;
-    if let Some(intent) = &prepared.locked.metadata.initial_provisioning {
-        provisioning::validate_captured_intent(
-            intent,
-            &inputs,
-            &prepared.locked.metadata.display_id(),
-        )?;
-    }
-    Ok(inputs)
+    ProvisioningInputs::capture(&prepared.paths, config, Some(&prepared.target))
 }
 
 fn selected_target(observation: &Observation, has_intent: bool) -> String {
     if has_intent {
+        let no_target_artifact = !observation.stored_image_present
+            && !observation.stored_template_present
+            && observation.sandbox.is_missing();
+        if no_target_artifact {
+            return observation.current_generation.clone();
+        }
         return observation.target_generation.clone();
     }
     if observation.current_generation == observation.stored_generation {

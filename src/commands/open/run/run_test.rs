@@ -431,7 +431,7 @@ fn a_stopped_project_is_started_without_a_terminal_and_waited_for() -> Checked {
 }
 
 #[test]
-fn a_stopped_project_whose_workspace_is_gone_is_refused_instead_of_started() -> Checked {
+fn a_stopped_project_whose_workspace_is_gone_is_restored_and_started() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
     // runtimeのrecordは残っているが、mount元のdirectoryはhostから消えている。
@@ -439,29 +439,50 @@ fn a_stopped_project_whose_workspace_is_gone_is_refused_instead_of_started() -> 
         r#"{{"sandboxes":[{}]}}"#,
         fixture.declared_entry(&project, "stopped")
     );
-    let host = ready(FakeSbx::listing(&stopped), &project);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.declared_entry(&project, "running")
+    );
+    let host = ready(FakeSbx::listings(&[&stopped, &stopped, &running]), &project);
 
-    let error = prepare_for(&fixture, &host)
-        .refused_because("a sandbox the runtime cannot start is not asked to start")?;
-
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxWorkspaceMissing));
-    let diagnostic = &error.diagnostics()[0];
-    assert_eq!(diagnostic.description.id, "error-sandbox-workspace-missing");
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = {
+        let policy = RenderingPolicy::plain();
+        let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
+        let mut prompt = PromptUi::new(
+            Locale::En,
+            policy.stderr,
+            Box::new(ScriptedKeys::confirming()),
+            Box::new(RecordedScreen::new()),
+        );
+        let context = Context {
+            location: &fixture.location,
+            workspace_root: &fixture.workspace_root,
+            locale: Locale::En,
+            can_prompt: false,
+        };
+        crate::commands::open::exec(
+            &Args {
+                project: Some(project_id("Example-Org/Example-Repo")?),
+                index: None,
+            },
+            &context,
+            &mut ui,
+            &host,
+            &mut prompt,
+        )
+    };
+    assert_eq!(code, ExitCode::Success);
     assert!(
-        !host.ran("/bin/true"),
-        "the refusal comes before the start: {:?}",
+        host.ran("/bin/true"),
+        "the sandbox is started after restoring its mount point: {:?}",
         host.calls()
     );
-    let remediation = diagnostic
-        .remediation
-        .as_ref()
-        .required_because("the user is told how to restore it")?;
+    let stderr = String::from_utf8(stderr).required_because("open stderr is UTF-8")?;
     assert!(
-        remediation
-            .commands
-            .iter()
-            .any(|command| command.as_str() == "sbxm repair Example-Org/Example-Repo"),
-        "the remediation names a command that can be run: {remediation:?}"
+        stderr.contains("was not on the host, and this run created it again"),
+        "the restored path is reported: {stderr}"
     );
     Ok(())
 }

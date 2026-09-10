@@ -147,8 +147,8 @@ fn a_missing_custom_secret_is_not_given_a_repair_that_cannot_apply_it() -> Check
 #[test]
 fn every_action_names_its_command_reason_and_exit_meaning() {
     for (action, command, blocking) in [
-        (NextAction::RepairPending, "sbxm repair owner/repo", true),
-        (NextAction::RepairIncomplete, "sbxm repair owner/repo", true),
+        (NextAction::RepairPending, "sbxm open owner/repo", true),
+        (NextAction::RepairIncomplete, "sbxm open owner/repo", true),
         (NextAction::RebuildPending, "sbxm rebuild owner/repo", true),
         (NextAction::RebuildChanged, "sbxm rebuild owner/repo", false),
     ] {

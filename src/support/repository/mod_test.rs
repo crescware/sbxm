@@ -4,6 +4,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::design::{Fact, SilentProgress};
+use crate::testing::provisioning::World;
 use crate::testing::repository::*;
 
 #[test]
@@ -70,6 +71,30 @@ fn an_existing_repository_of_the_same_project_is_reused() -> Checked {
 }
 
 #[test]
+fn an_empty_repository_left_after_git_init_gets_its_missing_origin() -> Checked {
+    let world = World::new();
+    let git_dir = layout()?.bare_git_dir();
+    world.present.borrow_mut().insert(git_dir.clone());
+    *world.bare_git_dir.borrow_mut() = Some(git_dir);
+
+    ensure_bare_clone(
+        &world,
+        "sbxm-example",
+        &project()?,
+        &layout()?,
+        &mut SilentProgress,
+    )
+    .required_because("resume the empty repository initialization")?;
+
+    assert_eq!(
+        world.repository.borrow().get("remote.origin.url").cloned(),
+        Some("https://github.com/Example-Org/Example-Repo.git".to_string())
+    );
+    assert!(world.ran("count-objects -v"));
+    Ok(())
+}
+
+#[test]
 fn a_repository_that_does_not_match_is_refused_instead_of_being_replaced() -> Checked {
     let git_dir = layout()?.bare_git_dir();
 
@@ -101,6 +126,11 @@ fn a_repository_that_does_not_match_is_refused_instead_of_being_replaced() -> Ch
         .refused_because("a repository that cannot be proven is refused")?;
         assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
         assert!(!host.ran("rm "), "nothing is deleted: {:?}", host.calls());
+        assert!(
+            !host.ran("remote add origin"),
+            "a foreign repository is not completed: {:?}",
+            host.calls()
+        );
     }
     Ok(())
 }

@@ -24,6 +24,7 @@ pub fn ensure_bare_clone(
 
     if sandbox::path_exists(host, sandbox, &git_dir)? {
         progress.step(msg!("progress-checking-repository"));
+        complete_empty_initialization(host, sandbox, project, &git_dir)?;
     } else {
         progress.step(msg!("progress-preparing-repository"));
         sandbox::exec(host, sandbox, &["mkdir", "-p", &layout.bare_root()])?.require_success()?;
@@ -66,5 +67,91 @@ pub fn ensure_bare_clone(
     progress.step(msg!("progress-fetching-repository"));
     super::refresh_origin(host, sandbox, &git_dir, TagFollowing::Auto, Some(progress))?
         .require_success()?;
+    Ok(())
+}
+
+/// `git init --bare`の直後に中断した、まだ利用者のrefもobjectも無いrepositoryだけを
+/// 宣言済みoriginへ進める。内容があるdirectoryには設定を足さない。
+fn complete_empty_initialization(
+    host: &dyn HostEnvironment,
+    sandbox_name: &str,
+    project: &ProjectId,
+    git_dir: &str,
+) -> Result<()> {
+    let bare = sandbox::read(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "--git-dir",
+            git_dir,
+            "rev-parse",
+            "--is-bare-repository",
+        ],
+    )?;
+    if bare != "true" {
+        return Ok(());
+    }
+    let origin = sandbox::exec(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "--git-dir",
+            git_dir,
+            "config",
+            "--get-all",
+            "remote.origin.url",
+        ],
+    )?;
+    if !origin.stdout_text().trim().is_empty() {
+        return Ok(());
+    }
+    let refs = sandbox::exec(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "--git-dir",
+            git_dir,
+            "for-each-ref",
+            "--format=%(refname)",
+        ],
+    )?
+    .require_success()?;
+    let objects = sandbox::exec(
+        host,
+        sandbox_name,
+        &["git", "--git-dir", git_dir, "count-objects", "-v"],
+    )?
+    .require_success()?;
+    let empty_objects = objects.stdout_text().lines().any(|line| line == "count: 0")
+        && objects
+            .stdout_text()
+            .lines()
+            .any(|line| line == "in-pack: 0");
+    if !refs.stdout_text().trim().is_empty() || !empty_objects {
+        return Ok(());
+    }
+    let url = git::https_remote_url(project.owner(), project.repository());
+    sandbox::exec(
+        host,
+        sandbox_name,
+        &["git", "--git-dir", git_dir, "remote", "add", "origin", &url],
+    )?
+    .require_success()?;
+    sandbox::exec(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "--git-dir",
+            git_dir,
+            "config",
+            "remote.origin.fetch",
+            FETCH_REFSPEC,
+        ],
+    )?
+    .require_success()?;
     Ok(())
 }

@@ -142,6 +142,27 @@ fn atomic_replace_swaps_the_content_and_keeps_the_requested_mode() -> Checked {
 }
 
 #[test]
+fn resumable_replace_reports_a_closed_parent_as_an_atomic_write_failure() -> Checked {
+    let dir = temp_dir()?;
+    let parent = dir.path().join("closed");
+    fs::create_dir(&parent).required_because("create the parent")?;
+    let target = parent.join("project.yaml");
+    fs::write(&target, "version: 1\n").required_because("seed the target")?;
+    fs::set_permissions(&target, fs::Permissions::from_mode(PRIVATE_FILE_MODE)).required()?;
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o500))
+        .required_because("close the parent directory to writes")?;
+
+    let outcome = atomic_replace_resumable(&target, "version: 2\n", PRIVATE_FILE_MODE);
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
+        .required_because("reopen the parent directory")?;
+    let error = outcome.refused_because("the temporary file cannot be created in its parent")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(!cause_of(&error)?.is_empty());
+    assert_eq!(fs::read_to_string(&target).required()?, "version: 1\n");
+    Ok(())
+}
+
+#[test]
 fn atomic_replace_refuses_a_symlink_a_directory_and_an_open_file() -> Checked {
     let dir = temp_dir()?;
 

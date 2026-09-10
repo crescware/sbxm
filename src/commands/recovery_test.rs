@@ -8,7 +8,7 @@
 use crate::design::SilentProgress;
 use crate::diagnostics::{ErrorId, Result};
 use crate::project::ProjectId;
-use crate::support::provisioning::{NextAction, ProvisioningState};
+use crate::support::provisioning::NextAction;
 
 use crate::testing::add_request::request;
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -59,33 +59,8 @@ fn listed(bench: &Bench, world: &World) -> Checked<ListState> {
         .state)
 }
 
-/// 案内された`repair`を、計画の確認から実行まで通す。
-fn repair(bench: &Bench, world: &World, project: &ProjectId) -> Checked {
-    let prepared = super::repair::run::prepare(
-        &bench.location,
-        &bench.config,
-        Some(project),
-        world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-    )
-    .required_because("the guided repair can be planned")?;
-    assert_eq!(prepared.plan.state, ProvisioningState::Pending);
-
-    let repaired = super::repair::run::execute(
-        world,
-        prepared,
-        &bench.config,
-        bench.workspace_root.path(),
-        &mut SilentProgress,
-    )
-    .required_because("the guided repair finishes the build")?;
-    assert!(repaired.changed);
-    Ok(())
-}
-
 #[test]
-fn an_interrupted_first_open_is_diagnosed_listed_repaired_and_then_opened() -> Checked {
+fn an_interrupted_first_open_is_diagnosed_and_resumed_by_open() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let project = bench
@@ -99,7 +74,7 @@ fn an_interrupted_first_open_is_diagnosed_listed_repaired_and_then_opened() -> C
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     world.nothing_fails();
 
-    // 2. `status`が、実行できる1手として`repair`だけを名指しする。
+    // 2. `status`が、実行できる1手として`open`を名指しする。
     let status = diagnose(&bench, &world, &project)?;
     let next = status
         .next
@@ -107,18 +82,18 @@ fn an_interrupted_first_open_is_diagnosed_listed_repaired_and_then_opened() -> C
     assert_eq!(next, NextAction::RepairPending);
     assert_eq!(
         next.command(&status.project),
-        "sbxm repair Example-Org/Example-Repo"
+        "sbxm open Example-Org/Example-Repo"
     );
     assert!(next.is_blocking(), "an unfinished build is not a success");
 
     // 3. `ls`が、同じ案件をopenできない状態として写す。
     assert_eq!(listed(&bench, &world)?, ListState::OpenBlocked);
 
-    // 4. 案内された`repair`だけが、中断した工程の続きを進める。
-    repair(&bench, &world, &project)?;
+    // 4. 案内された`open`が、中断した工程の続きを進めて接続準備を完了する。
+    open(&bench, &world, &project).required_because("open resumes the interrupted build")?;
     assert!(
         bench.stored(PROJECT)?.initial_provisioning.is_none(),
-        "a finished repair clears the intent"
+        "a finished open clears the intent"
     );
 
     // 5. 復旧後の`status`は何も案内せず、`ls`はrunningへ戻る。

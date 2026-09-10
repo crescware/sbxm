@@ -13,7 +13,10 @@ mod private_file_mode;
 mod project;
 mod scope;
 
-pub use atomic::{atomic_create, atomic_rename_into_place, atomic_replace};
+pub(crate) use atomic::atomic_write_failed;
+pub use atomic::{
+    atomic_create, atomic_rename_into_place, atomic_replace, atomic_replace_resumable,
+};
 pub use directory::{
     ensure_directory, ensure_private_dir, require_owned_directory, require_private_directory,
 };

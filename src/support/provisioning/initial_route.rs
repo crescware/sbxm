@@ -10,13 +10,15 @@ pub(crate) enum InitialRoute {
     Build,
     /// 目標構成が揃っている。何も変更せずそのまま使える。
     AlreadyBuilt,
+    /// 固定済みintentと観測した成果物から、不足工程を続ける。
+    Resume,
 }
 
 impl InitialRoute {
     /// 初回構築を行う入口が、観測結果から道を決める唯一の規則。
     ///
     /// `prepare`と`open`が同じ事実へ別の規則を当てないよう、拒否する理由もここが決める。
-    /// 中断した初回構築と、欠落を観測した成果物は暗黙に再開せず、明示的なrepairへ渡す。
+    /// 中断した初回構築は固定済み入力から再開し、根拠のない欠落だけをrepairへ渡す。
     pub(crate) fn decide(
         metadata: &ProjectMetadata,
         observation: &Observation,
@@ -27,9 +29,11 @@ impl InitialRoute {
         match observation.state {
             ProvisioningState::Fresh => Ok(InitialRoute::Build),
             ProvisioningState::Ready => Ok(InitialRoute::AlreadyBuilt),
-            ProvisioningState::Pending | ProvisioningState::Incomplete => {
-                Err(require_repair(metadata, observation.state))
+            ProvisioningState::Pending => Ok(InitialRoute::Resume),
+            ProvisioningState::Incomplete if observation.sandbox.is_missing() => {
+                Ok(InitialRoute::Build)
             }
+            ProvisioningState::Incomplete => Err(require_repair(metadata, observation.state)),
             // 停止中のSandboxは、中を読めば起動してしまう。欠落と決めてrepairへ送らず、
             // 完成と決めて構築を飛ばすこともせず、観測できない事実として拒否する。
             ProvisioningState::Unobservable => Err(require_observable(metadata, observation)),

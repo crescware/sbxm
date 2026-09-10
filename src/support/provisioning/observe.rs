@@ -33,12 +33,18 @@ pub(crate) fn observe(
     metadata: &ProjectMetadata,
     workspace_root: &Path,
 ) -> Result<Observation> {
-    let current_generation = generation::current_dockerfile_hash(paths)?;
     let stored_generation = metadata.provisioning.dockerfile_sha256.clone();
     let target_generation = metadata.initial_provisioning.as_ref().map_or_else(
         || stored_generation.clone(),
         |intent| intent.target_dockerfile_sha256.clone(),
     );
+    // intentがある再開では保存済み世代が正本である。現在のDockerfileを読めないだけで、
+    // 既存成果物やSandboxの完成確認まで拒まない。
+    let current_generation = match generation::current_dockerfile_hash(paths) {
+        Ok(generation) => generation,
+        Err(_) if metadata.initial_provisioning.is_some() => target_generation.clone(),
+        Err(error) => return Err(error),
+    };
     let name = SandboxName::derive(metadata.canonical_id());
     let layout = SandboxLayout::new(metadata.canonical_id());
     let mut observation = Observation::new(

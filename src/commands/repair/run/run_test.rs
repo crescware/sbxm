@@ -42,7 +42,7 @@ impl HostEnvironment for StateChangingHost<'_> {
 }
 
 #[test]
-fn an_interrupted_prepare_keeps_its_intent_until_explicit_repair() -> Checked {
+fn repair_remains_a_compatible_entry_for_an_interrupted_open() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -69,11 +69,6 @@ fn an_interrupted_prepare_keeps_its_intent_until_explicit_repair() -> Checked {
             .is_some()
     );
     world.nothing_fails();
-
-    let error = bench
-        .ensure(&world, &project, &mut SilentProgress)
-        .refused_because("prepare does not implicitly resume the intent")?;
-    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
 
     let prepared = prepare(
         &bench.location,
@@ -104,7 +99,7 @@ fn an_interrupted_prepare_keeps_its_intent_until_explicit_repair() -> Checked {
 }
 
 #[test]
-fn repair_refuses_changed_global_file_input_before_observing_the_host() -> Checked {
+fn repair_uses_the_recorded_snapshot_after_global_input_changes() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -116,8 +111,7 @@ fn repair_refuses_changed_global_file_input_before_observing_the_host() -> Check
     fs::write(bench.config.files[0].source.as_path(), b"changed = true\n")
         .required_because("change the global file input")?;
 
-    let mark = world.mark();
-    let error = prepare(
+    let prepared = prepare(
         &bench.location,
         &bench.config,
         Some(&project_of(&request)?),
@@ -125,15 +119,21 @@ fn repair_refuses_changed_global_file_input_before_observing_the_host() -> Check
         bench.workspace_root.path(),
         &mut ScriptedPrompt::choosing(0),
     )
-    .refused_because("repair does not use changed intent input")?;
-    assert_eq!(
-        error.first_id(),
-        Some(ErrorId::InitialProvisioningInputChanged)
-    );
+    .required_because("repair plans from the recorded input")?;
+    let output = execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .required_because("repair resumes from the immutable snapshot")?;
+    assert!(output.changed);
     assert!(
-        world.since(mark).is_empty(),
-        "input validation precedes host observation: {:?}",
-        world.since(mark)
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none()
     );
     Ok(())
 }
@@ -502,8 +502,11 @@ fn repair_clears_an_intent_after_read_only_completion_verification() -> Checked 
     let inputs =
         crate::support::provisioning::ProvisioningInputs::capture(&paths, &bench.config, None)
             .required_because("capture the current inputs as a snapshot")?;
-    stored.initial_provisioning = Some(crate::support::provisioning::initial_intent(&inputs));
+    let intent = crate::support::provisioning::initial_intent(&inputs);
+    stored.initial_provisioning = Some(intent.clone());
     metadata::update(&paths, &stored).required_because("persist the already-complete intent")?;
+    fs::remove_dir_all(paths.snapshot_dir())
+        .required_because("remove inputs that a completed sandbox no longer needs")?;
 
     let mark = world.mark();
     let project = project_of(&request)?;
@@ -530,6 +533,11 @@ fn repair_clears_an_intent_after_read_only_completion_verification() -> Checked 
             .stored("Example-Org/Example-Repo")?
             .initial_provisioning
             .is_none()
+    );
+    assert_eq!(
+        bench.stored("Example-Org/Example-Repo")?.declared_files,
+        Some(intent.files),
+        "completion records the baseline while clearing the intent"
     );
     assert!(
         !world.since(mark).iter().any(|call| {

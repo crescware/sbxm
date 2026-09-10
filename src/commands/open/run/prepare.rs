@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::design::Fact;
+use crate::design::{Fact, Warning};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata, last_worktree_index};
 use crate::msg;
@@ -11,7 +11,9 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{daemon, disk, docker, generation, provisioning, sandbox, worktree};
+use crate::support::{
+    daemon, disk, docker, generation, provisioning, repository, sandbox, template, worktree,
+};
 
 use super::{ClampedIndex, Prepared};
 
@@ -19,17 +21,16 @@ use super::{ClampedIndex, Prepared};
 ///
 /// 1. 対象を引数またはpromptで解決し、必要なら案件とindexを1画面で選ぶ
 /// 2. project lockを取得する
-/// 3. 中断した初回構築が残っていないことを、hostへ触れる前にmetadataで確かめる
-/// 4. Docker Engineへの疎通を確認する
-/// 5. 1回の一覧取得からSandbox identityとstateを検証する
-/// 6. Sandboxがまだ無ければ、共有境界で初回構築を完了させる
-/// 7. runningでなければ起動して待つ
+/// 3. 外側の状態を観測し、中断した初回構築があれば同じopenで再開する
+/// 4. 必要な準備中はexclusive session leaseを保持する
+/// 5. runningでなければworkspaceを検証・復元して起動する
+/// 6. 不足する初回構築またはmanaged worktreeを完成させる
+/// 7. exclusive leaseをshared session leaseへ引き継ぐ
 /// 8. hostのSSH `Agentが届かないことをSandboxの中から確認する`
 /// 9. managed worktreeをmetadataとGitから検証する
 ///
-/// lockはこの関数のあいだだけ保持する。初回構築もこのlockの下で進むため、構築中の
-/// 排他はproject lockが担う。session leaseは構築中も接続中もsharedのままとし、lockが
-/// 外れたあとも続くSSH sessionだけを、rebuild/destroy/repairのexclusive leaseと排他する。
+/// lockはこの関数のあいだだけ保持する。準備mutationはexclusive session lease、接続は
+/// shared session leaseで守り、project lockを保持したまま両者を引き継ぐ。
 #[allow(clippy::too_many_arguments)]
 pub fn prepare(
     location: &ConfigLocation,
@@ -62,11 +63,6 @@ pub fn prepare(
         )
     };
     let mut locked = candidate.lock()?;
-    // project lockを保持している間にshared session leaseを取る。lock順序を
-    // project lock→session leaseに固定し、`locked`が外れたあともこのleaseは
-    // `Prepared`が保持し続けるため、SSH sessionの生存中は通常rebuild/destroyの
-    // exclusive session leaseと排他し続ける。
-    let session_lease = locked.acquire_shared_session_lease()?;
     let (index, clamped_worktree_index) = if interactive_index {
         clamp_to_metadata(index, &locked.metadata)
     } else {
@@ -74,33 +70,44 @@ pub fn prepare(
     };
 
     generation::require_no_rebuild(&locked.metadata)?;
-    // 中断した初回構築を暗黙に再開しない。intentはmetadataだけで判定できるため、
-    // repairへ渡す案件に対してはDockerにもsbxにも触れず、metadataも書き換えない。
-    provisioning::require_no_initial_intent(&locked.metadata)?;
-
     docker::require_reachable(host)?;
 
-    let entries = daemon::list(host)?;
-    let provisioned = match inventory::state_of(&entries, &locked.metadata, workspace_root)? {
-        // 既に動いているSandboxを起動し直さない。hostのworkspace directoryが消えていても、
-        // 動いているmountが壊れているかどうかは観測しておらず、推測で接続を拒まない。
-        ProjectState::Running => None,
-        // 起動には中立workspace directoryの実在が要る。`start`が起動前に実測する。
-        ProjectState::Stopped => {
-            inventory::start(host, &locked.metadata, workspace_root, progress)?;
-            None
+    let (provisioned, warnings) =
+        prepare_runtime(&mut locked, config, host, workspace_root, poll, progress)?;
+
+    let metadata = &locked.metadata;
+    let name = metadata.sandbox_name();
+    let layout = SandboxLayout::new(metadata.canonical_id());
+    let repository_missing = provisioned.is_none()
+        && !sandbox::path_exists(host, name.as_str(), &layout.bare_git_dir())?;
+    let worktree_missing = provisioned.is_none()
+        && (repository_missing || has_missing_worktree(host, name.as_str(), &layout, metadata)?);
+    if worktree_missing {
+        let exclusive = locked.acquire_exclusive_session_lease()?;
+        if repository_missing {
+            let project = ProjectId::parse(&locked.metadata.display_id())?;
+            repository::ensure_bare_clone(host, name.as_str(), &project, &layout, progress)?;
         }
-        // Sandboxをまだ持たない案件だけが初回構築の対象になる。停止中の完成済み案件は
-        // この経路へ来ないため、中を観測できないことを理由にrepairへ送らない。
-        ProjectState::NotCreated => Some(provisioning::ensure_initial(
-            &mut locked,
-            config,
+        let branch = repository::resolve_start_ref(
             host,
-            workspace_root,
+            name.as_str(),
+            &layout,
+            &locked.paths,
+            &mut locked.metadata,
+        )?;
+        repository::ensure_worktrees(
+            host,
+            name.as_str(),
+            &layout,
+            &locked.metadata,
+            &branch,
             progress,
-        )?),
-    };
-    inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
+        )?;
+        drop(exclusive);
+    }
+
+    // 準備と起動が完了した状態をSSH sessionとして保護する。
+    let session_lease = locked.acquire_shared_session_lease()?;
 
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
@@ -108,7 +115,6 @@ pub fn prepare(
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
     sandbox::require_credentials_isolated(host, name.as_str())?;
 
-    let layout = SandboxLayout::new(metadata.canonical_id());
     let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
     let (working_directory, missing_worktree_index) = working_directory(&layout, &worktrees, index);
 
@@ -131,8 +137,88 @@ pub fn prepare(
         worktrees,
         disk,
         provisioned,
+        warnings,
         _session_lease: session_lease,
     })
+}
+
+fn prepare_runtime(
+    locked: &mut crate::support::select::Locked,
+    config: &GlobalConfig,
+    host: &dyn HostEnvironment,
+    workspace_root: &Path,
+    poll: Poll,
+    progress: &mut dyn ProgressSink,
+) -> Result<(Option<provisioning::ProvisioningOutput>, Vec<Warning>)> {
+    let entries = daemon::list(host)?;
+    let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;
+    let mut warnings = Vec::new();
+    if state == ProjectState::Stopped
+        && let Some(warning) = restore_workspace(host, &locked.metadata, workspace_root, progress)?
+    {
+        warnings.push(warning);
+    }
+    let needs_provisioning =
+        locked.metadata.initial_provisioning.is_some() || state == ProjectState::NotCreated;
+    let provisioned = if needs_provisioning {
+        // 準備のmutationは既存SSH sessionと共存させない。完了後、project lockを保持した
+        // ままexclusiveを解放してsharedへ移るため、lifecycle操作が間へ入らない。
+        let exclusive = locked.acquire_exclusive_session_lease()?;
+        if state == ProjectState::Stopped {
+            inventory::start(host, &locked.metadata, workspace_root, progress)?;
+            inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
+        }
+        let output = provisioning::ensure_initial(locked, config, host, workspace_root, progress)?;
+        drop(exclusive);
+        Some(output)
+    } else {
+        if state == ProjectState::Stopped {
+            inventory::start(host, &locked.metadata, workspace_root, progress)?;
+        }
+        None
+    };
+    inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
+    Ok((provisioned, warnings))
+}
+
+fn restore_workspace(
+    host: &dyn HostEnvironment,
+    metadata: &ProjectMetadata,
+    workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
+) -> Result<Option<Warning>> {
+    let ready = sandbox::ensure(
+        host,
+        &metadata.sandbox_name(),
+        &template::LoadedTemplate {
+            name: String::new(),
+            loaded: false,
+        },
+        workspace_root,
+        progress,
+    )?;
+    Ok(ready.workspace_restored.then(|| {
+        Warning::text(msg!("warning-workspace-restored", sandbox = ready.name))
+            .fact(Fact::path(&crate::paths::display(&ready.workspace)))
+            .explain(msg!("guidance-workspace-restored"))
+    }))
+}
+
+fn has_missing_worktree(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    layout: &SandboxLayout,
+    metadata: &ProjectMetadata,
+) -> Result<bool> {
+    let bare_root = layout.bare_root();
+    let listed: Vec<String> = worktree::list(host, sandbox, layout)?
+        .iter()
+        .filter_map(|entry| entry.relative_to(&bare_root))
+        .collect();
+    Ok(layout
+        .worktree_names(metadata.provisioning.requested_worktrees)
+        .iter()
+        .any(|name| !listed.contains(name)))
 }
 
 /// promptの楽観的な上限で確定したindexを、lock済みmetadataの範囲へ収める。

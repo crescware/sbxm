@@ -6,9 +6,8 @@
 use crate::boundary::host::EnvPolicy;
 use crate::commands::Context;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
-use crate::design::text::CommandLine;
 use crate::design::{PromptUi, RenderingPolicy, SilentProgress, Ui};
-use crate::diagnostics::{ErrorId, ExitCode, Result};
+use crate::diagnostics::{ExitCode, Result};
 use crate::i18n::Locale;
 use crate::paths::{PRIVATE_DIR_MODE, ProjectPaths};
 use crate::project::{ProjectId, SandboxLayout};
@@ -166,7 +165,7 @@ fn the_requested_worktree_index_is_honoured_on_the_first_build() -> Checked {
 }
 
 #[test]
-fn an_interrupted_first_open_is_sent_to_repair_without_touching_the_host() -> Checked {
+fn an_interrupted_first_open_is_resumed_by_the_next_open() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let project = registered(&bench, &world, None)?;
@@ -181,25 +180,73 @@ fn an_interrupted_first_open_is_sent_to_repair_without_touching_the_host() -> Ch
     );
 
     let mark = world.mark();
-    let error = open(&bench, &world, &project, None)
-        .refused_because("an interrupted first build is never resumed implicitly")?;
+    let prepared = open(&bench, &world, &project, None)
+        .required_because("the next open resumes the interrupted build")?;
 
-    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
-    let remediation = error.diagnostics()[0]
-        .remediation
-        .as_ref()
-        .required_because("the user is told how to recover")?;
-    // 実行するcommandは説明文ではなく、独立した一行として持つ。
-    assert_eq!(
-        remediation.commands.first().map(CommandLine::as_str),
-        Some("sbxm repair Example-Org/Example-Repo")
-    );
-    // 中断した案件へは、Dockerにもsbxにも触れずに拒否する。
+    assert!(prepared.provisioned.is_some());
+    assert!(bench.stored(PROJECT)?.initial_provisioning.is_none());
+    // 完成済みimageとTemplateを再作成せず、失敗したSandbox作成から続ける。
     assert!(
-        world.since(mark).is_empty(),
-        "a pending open asks the host for nothing: {:?}",
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("docker build")),
+        "the completed image is reused: {:?}",
         world.since(mark)
     );
+    Ok(())
+}
+
+#[test]
+fn an_intentless_legacy_partial_build_is_completed_by_open() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = registered(&bench, &world, None)?;
+    world.failing("sbx create");
+    open(&bench, &world, &project, None).refused_because("the Sandbox creation is interrupted")?;
+    world.nothing_fails();
+
+    let mut legacy = bench.stored(PROJECT)?;
+    legacy.initial_provisioning = None;
+    crate::metadata::update(
+        &ProjectPaths::derive(&bench.parent, &project.canonical()),
+        &legacy,
+    )
+    .required_because("simulate metadata from before resumable intents")?;
+
+    let mark = world.mark();
+    open(&bench, &world, &project, None)
+        .required_because("open completes the observable legacy partial build")?;
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("docker build")),
+        "the verified image is reused: {:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn open_retargets_a_fixed_dockerfile_before_any_artifact_exists() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = registered(&bench, &world, None)?;
+    world.failing("docker build");
+    open(&bench, &world, &project, None).refused_because("the image build fails")?;
+    world.nothing_fails();
+    let original = bench.stored(PROJECT)?.provisioning.dockerfile_sha256;
+    let paths = ProjectPaths::derive(&bench.parent, &project.canonical());
+    fs::write(paths.dockerfile(), b"FROM example:fixed\n")
+        .required_because("fix the Dockerfile")?;
+
+    open(&bench, &world, &project, None)
+        .required_because("open adopts the fixed input when the old generation has no artifact")?;
+
+    let stored = bench.stored(PROJECT)?;
+    assert_ne!(stored.provisioning.dockerfile_sha256, original);
+    assert!(stored.initial_provisioning.is_none());
     Ok(())
 }
 
@@ -225,6 +272,70 @@ fn an_open_after_a_successful_build_connects_without_building_again() -> Checked
             .any(|call| call.contains("docker build") || call.contains("sbx create")),
         "nothing is built a second time: {since:?}"
     );
+    Ok(())
+}
+
+#[test]
+fn open_recreates_only_a_missing_managed_worktree() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = registered(&bench, &world, Some(2))?;
+    open(&bench, &world, &project, None).required_because("the first open builds")?;
+
+    let layout = SandboxLayout::new(bench.stored(PROJECT)?.canonical_id());
+    let missing = layout.worktree(1);
+    world.present.borrow_mut().remove(&missing);
+    world.worktrees.borrow_mut().remove(&missing);
+    let existing = layout.worktree(0);
+    let existing_branch = world.worktrees.borrow().get(&existing).cloned();
+    let mark = world.mark();
+
+    let prepared = open(&bench, &world, &project, Some(1))
+        .required_because("open restores the selected managed worktree")?;
+
+    assert_eq!(prepared.working_directory, missing);
+    assert_eq!(
+        world.worktrees.borrow().get(&existing).cloned(),
+        existing_branch
+    );
+    assert_eq!(
+        world
+            .since(mark)
+            .iter()
+            .filter(|call| call.contains("worktree add"))
+            .count(),
+        1,
+        "only the missing worktree is created"
+    );
+    Ok(())
+}
+
+#[test]
+fn open_recreates_a_missing_managed_repository_without_rebuilding_the_sandbox() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = registered(&bench, &world, None)?;
+    open(&bench, &world, &project, None).required_because("the first open builds")?;
+
+    let layout = SandboxLayout::new(bench.stored(PROJECT)?.canonical_id());
+    world.present.borrow_mut().remove(&layout.bare_git_dir());
+    for path in layout.worktree_names(1) {
+        let absolute = format!("{}/{path}", layout.bare_root());
+        world.present.borrow_mut().remove(&absolute);
+        world.worktrees.borrow_mut().remove(&absolute);
+    }
+    world.repository.borrow_mut().clear();
+    *world.bare_git_dir.borrow_mut() = None;
+    let mark = world.mark();
+
+    open(&bench, &world, &project, None)
+        .required_because("open reconstructs the managed Git prerequisites")?;
+
+    let calls = world.since(mark);
+    assert!(calls.iter().any(|call| call.contains("git init --bare")));
+    assert!(calls.iter().any(|call| call.contains("worktree add")));
+    assert!(!calls.iter().any(|call| call.contains("sbx create")));
+    assert!(!calls.iter().any(|call| call.contains("docker build")));
     Ok(())
 }
 

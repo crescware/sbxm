@@ -474,13 +474,15 @@ fn a_project_that_is_not_managed_gets_no_lock_file() -> Checked {
 }
 
 #[test]
-fn nothing_else_in_the_project_is_touched() -> Checked {
+fn applying_files_only_updates_the_file_baseline() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let source = dir.path().join("declared.yaml");
     std::fs::write(&source, b"declared = true\n").required()?;
     let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
     let paths = write_metadata(&location, &parent, None)?;
-    let before = std::fs::read_to_string(paths.metadata_file()).required()?;
+    let mut expected = metadata::load(&paths)
+        .required_because("load metadata")?
+        .required_because("metadata exists")?;
     let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
 
     run(
@@ -510,11 +512,15 @@ fn nothing_else_in_the_project_is_touched() -> Checked {
             host.calls()
         );
     }
-    assert_eq!(
-        std::fs::read_to_string(paths.metadata_file()).required()?,
-        before,
-        "the metadata is read-only for sync-files"
+    let after = metadata::load(&paths)
+        .required_because("load updated metadata")?
+        .required_because("metadata exists")?;
+    assert!(
+        after.declared_files.is_some(),
+        "the applied bytes become the baseline"
     );
+    expected.declared_files = after.declared_files.clone();
+    assert_eq!(after, expected, "only the declared-file baseline changes");
     Ok(())
 }
 
@@ -675,16 +681,14 @@ fn an_interrupted_first_build_places_nothing_into_a_running_sandbox() -> Checked
             .commands
             .first()
             .map(crate::design::text::CommandLine::as_str),
-        Some("sbxm repair Example-Org/Example-Repo")
+        Some("sbxm open Example-Org/Example-Repo")
     );
     assert!(host.calls().is_empty(), "nothing is asked of the runtime");
     Ok(())
 }
 
 #[test]
-fn an_interrupted_first_build_is_sent_to_repair_rather_than_open() -> Checked {
-    // 停止中のSandboxでも同じ拒否になる。`SandboxNotRunning`で`open`を案内すると、
-    // その`open`が同じ事実からrepairを案内して終わる。実行できるcommandを1つに絞る。
+fn an_interrupted_first_build_is_sent_to_open_for_resumption() -> Checked {
     let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
     let paths = write_metadata(&location, &parent, None)?;
     interrupt_initial_build(&paths)?;

@@ -114,6 +114,11 @@ impl ProjectPaths {
         self.sbxm_dir().join(".snapshot")
     }
 
+    /// 内容digestを名前にした、不変な入力blob。
+    pub fn snapshot_blob(&self, sha256: &str) -> PathBuf {
+        self.snapshot_dir().join("sha256").join(sha256)
+    }
+
     /// intentが固定したDockerfileの不変snapshot。
     pub fn snapshot_dockerfile(&self) -> PathBuf {
         self.snapshot_dir().join("Dockerfile")

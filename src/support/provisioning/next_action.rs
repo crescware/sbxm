@@ -62,7 +62,7 @@ impl NextAction {
     pub fn command(self, project: &str) -> String {
         match self {
             NextAction::RepairPending | NextAction::RepairIncomplete => {
-                format!("sbxm repair {project}")
+                format!("sbxm open {project}")
             }
             NextAction::RebuildPending | NextAction::RebuildChanged => {
                 format!("sbxm rebuild {project}")

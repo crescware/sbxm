@@ -269,7 +269,7 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> C
 }
 
 #[test]
-fn a_stopped_pending_project_is_sent_directly_to_repair() -> Checked {
+fn a_stopped_pending_project_is_sent_directly_to_open() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let mut pending = project.metadata.clone();
@@ -292,7 +292,7 @@ fn a_stopped_pending_project_is_sent_directly_to_repair() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
     )
-    .refused_because("open cannot resume a pending initial provisioning")?;
+    .refused_because("a pending initial provisioning must be resumed before removal")?;
     let remediation = error.diagnostics()[0]
         .remediation
         .as_ref()
@@ -303,7 +303,7 @@ fn a_stopped_pending_project_is_sent_directly_to_repair() -> Checked {
             .iter()
             .map(crate::design::text::CommandLine::as_str)
             .collect::<Vec<_>>(),
-        vec!["sbxm repair example-org/example-repo"]
+        vec!["sbxm open example-org/example-repo"]
     );
     Ok(())
 }

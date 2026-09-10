@@ -47,6 +47,9 @@ pub fn exec(
         }
         ui.stderr(&present::provisioning_output(output, locale));
     }
+    for warning in &prepared.warnings {
+        ui.warning(warning);
+    }
 
     if let Some(index) = prepared.missing_worktree_index {
         ui.warning(&Warning::text(msg!(

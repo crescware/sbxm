@@ -188,9 +188,9 @@ fn a_foreign_image_stops_prepare_before_anything_is_built() -> Checked {
         .ensure(&world, &project_of(&request)?, &mut SilentProgress)
         .refused_because("a foreign image is not overwritten")?;
 
-    assert_eq!(
-        error.first_id(),
-        Some(ErrorId::InitialProvisioningIncomplete)
+    assert!(
+        error.contains_id(ErrorId::ImageUnusable),
+        "the foreign image is rejected by its verified identity: {error:?}"
     );
     assert!(!world.ran("docker build"));
     Ok(())
@@ -243,9 +243,8 @@ fn an_image_that_cannot_be_inspected_leaves_the_generation_where_it_was() -> Che
 }
 
 #[test]
-fn a_failed_image_build_requires_repair_even_after_the_dockerfile_is_fixed() -> Checked {
-    // intentが保存された後は、Dockerfileを直してもprepareが新しいgenerationへ
-    // 暗黙に切り替わらない。固定targetの成果物が無いので、repairも安全に止まる。
+fn a_failed_image_build_resumes_with_the_fixed_dockerfile() -> Checked {
+    // 元世代の成果物が一つも無い段階なら、次の同じ入口が修正後のDockerfileを固定し直す。
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -262,7 +261,7 @@ fn a_failed_image_build_requires_repair_even_after_the_dockerfile_is_fixed() -> 
         remediation
             .commands
             .iter()
-            .any(|command| command.as_str() == "sbxm repair Example-Org/Example-Repo")
+            .any(|command| command.as_str() == "sbxm open Example-Org/Example-Repo")
     );
     world.nothing_fails();
     let started_from = bench
@@ -274,29 +273,16 @@ fn a_failed_image_build_requires_repair_even_after_the_dockerfile_is_fixed() -> 
     fs::write(paths.dockerfile(), b"FROM example:edited\n")
         .required_because("fix the Dockerfile")?;
 
-    let error = bench
+    let output = bench
         .build(&world, &request)
-        .refused_because("the same prepare does not retarget the fixed generation")?;
-    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
-    let project = project_of(&request)?;
-    let error = crate::commands::repair::run::prepare(
-        &bench.location,
-        &bench.config,
-        Some(&project),
-        &world,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-    )
-    .refused_because("repair cannot invent the fixed target image")?;
-    assert_eq!(
-        error.first_id(),
-        Some(ErrorId::InitialProvisioningGenerationMissing)
-    );
+        .required_because("the same entry resumes with the fixed generation")?;
+    assert!(!output.already_built);
     let stored = bench.stored("Example-Org/Example-Repo")?;
-    assert_eq!(
+    assert_ne!(
         stored.provisioning.dockerfile_sha256, started_from,
-        "the original generation remains the target"
+        "the generation changes because the original has no artifact"
     );
+    assert!(stored.initial_provisioning.is_none());
     Ok(())
 }
 

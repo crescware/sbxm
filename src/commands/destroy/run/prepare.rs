@@ -45,8 +45,8 @@ pub fn prepare(
         if state == ProjectState::Stopped {
             // 停止中のSandboxは内部を観測できないため、通常modeでは削除しない。
             let remediation = if metadata.initial_provisioning.is_some() {
-                Remediation::text(msg!("remediation-run-repair"))
-                    .try_run(format!("sbxm repair {}", metadata.display_id()))
+                Remediation::text(msg!("remediation-run-open"))
+                    .try_run(format!("sbxm open {}", metadata.display_id()))
             } else {
                 Remediation::text(msg!("remediation-destroy-stopped"))
                     .try_run(format!("sbxm open {}", metadata.display_id()))

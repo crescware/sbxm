@@ -62,6 +62,24 @@ fn metadata_is_written_privately_and_replaced_in_place() -> Checked {
 }
 
 #[test]
+fn a_leftover_legacy_temporary_file_does_not_block_metadata_recovery() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let base = ProjectParent::at(dir.path()).required()?;
+    let metadata = attached("example-org", "example-repo")?;
+    let project = ProjectPaths::derive(&base, metadata.canonical_id());
+    fs::create_dir_all(project.sbxm_dir()).required()?;
+    create(&project, &metadata).required_because("create")?;
+    fs::write(project.sbxm_dir().join(".project.yaml.tmp"), b"interrupted")
+        .required_because("leave an old temporary file")?;
+
+    let mut resolved = metadata;
+    resolved.provisioning.start_ref = Some("develop".to_string());
+    update(&project, &resolved).required_because("metadata update resumes independently")?;
+    assert_eq!(load(&project).required()?, Some(resolved));
+    Ok(())
+}
+
+#[test]
 fn a_missing_metadata_file_is_not_an_error_but_a_symlinked_one_is() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let base = ProjectParent::at(dir.path()).required()?;

@@ -29,9 +29,6 @@ pub fn prepare(
         crate::support::select::one(location, requested, &msg!("select-repair-heading"), prompt)?
             .lock()?;
     crate::support::generation::require_no_rebuild(&locked.metadata)?;
-    if let Some(intent) = &locked.metadata.initial_provisioning {
-        provisioning::validate_intent(intent, config, &locked.metadata.display_id())?;
-    }
     let first = provisioning::observe(
         host,
         &locked.paths,
@@ -88,9 +85,6 @@ pub fn prepare(
     if second.state != first.state || second_target != target {
         return Err(state_changed(&locked.metadata, first.state, second.state));
     }
-    if let Some(intent) = &locked.metadata.initial_provisioning {
-        provisioning::validate_intent(intent, config, &locked.metadata.display_id())?;
-    }
     let preconditions = provisioning::verify_external_preconditions(host, &name)?;
     let plan = plan(
         &locked.metadata,
@@ -112,10 +106,11 @@ pub fn prepare(
 
 fn target_generation(observation: &Observation, metadata: &ProjectMetadata) -> Result<String> {
     if metadata.initial_provisioning.is_some() {
-        if observation.current_generation != observation.target_generation
-            && !observation.stored_image_matches
-        {
-            return Err(generation_missing(observation, metadata));
+        let no_target_artifact = !observation.stored_image_present
+            && !observation.stored_template_present
+            && observation.sandbox.is_missing();
+        if no_target_artifact {
+            return Ok(observation.current_generation.clone());
         }
         return Ok(observation.target_generation.clone());
     }

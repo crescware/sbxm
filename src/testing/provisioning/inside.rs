@@ -179,7 +179,11 @@ impl World {
             }
             ["git", "--git-dir", _, "fsck", "--connectivity-only"]
             | ["git", "--git-dir", _, "fetch", "--prune", "origin"]
-            | ["git", "check-ref-format", "--branch", _] => Some(ok()),
+            | ["git", "check-ref-format", "--branch", _]
+            | ["git", "--git-dir", _, "for-each-ref", "--format=%(refname)"] => Some(ok()),
+            ["git", "--git-dir", _, "count-objects", "-v"] => {
+                Some((0, "count: 0\nin-pack: 0\n".to_string()))
+            }
             [
                 "git",
                 "--git-dir",

@@ -9,10 +9,14 @@ use super::layout;
 /// worktreeの検査を通る応答。
 pub fn worktree_host(mode: CreationMode, count: u32) -> Checked<InnerCommandSandbox> {
     let git_dir = layout()?.bare_git_dir();
-    let mut host = InnerCommandSandbox::new().answering(
-        &format!("git --git-dir {git_dir} rev-parse refs/remotes/origin/develop"),
-        &format!("{COMMIT}\n"),
-    );
+    let mut host = InnerCommandSandbox::new()
+        .answering(
+            &format!("git --git-dir {git_dir} rev-parse refs/remotes/origin/develop"),
+            &format!("{COMMIT}\n"),
+        )
+        .failing(&format!(
+            "git --git-dir {git_dir} show-ref --verify --quiet refs/heads/develop"
+        ));
     for index in 0..count {
         let path = layout()?.worktree(index);
         host = host.answering(

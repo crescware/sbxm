@@ -11,9 +11,17 @@ fn observation(current: &str, stored: &str) -> Observation {
 }
 
 #[test]
-fn an_active_intent_always_targets_its_own_recorded_generation() {
+fn an_active_intent_without_artifacts_adopts_the_current_generation() {
     let mut observed = observation("current", "stored");
     observed.target_generation = "target".to_string();
+    assert_eq!(selected_target(&observed, true), "current");
+}
+
+#[test]
+fn an_active_intent_with_an_artifact_keeps_its_recorded_generation() {
+    let mut observed = observation("current", "stored");
+    observed.target_generation = "target".to_string();
+    observed.stored_image_present = true;
     assert_eq!(selected_target(&observed, true), "target");
 }
 

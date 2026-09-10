@@ -217,7 +217,7 @@ fn a_recovery_that_is_still_needed_names_one_command_and_fails() -> Checked {
     assert!(
         printed
             .stdout
-            .contains("sbxm repair example-org/example-repo"),
+            .contains("sbxm open example-org/example-repo"),
         "{:?}",
         printed.stdout
     );
