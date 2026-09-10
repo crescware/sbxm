@@ -10,9 +10,9 @@ use super::{Observation, ProvisioningState};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NextAction {
     /// 初回構築のintentが残っている。固定済みgenerationへ戻す。
-    RepairPending,
+    OpenPending,
     /// intentは無いが、初回構築の成果物が欠けていることを観測した。
-    RepairIncomplete,
+    OpenIncomplete,
     /// 開始済みの世代交代が残っている。同じ世代交代を完了する。
     RebuildPending,
     /// 案件は使えるが、現在のDockerfileが適用済みgenerationと違う。
@@ -39,8 +39,8 @@ impl NextAction {
         }
 
         match observation.state {
-            ProvisioningState::Pending => return Some(NextAction::RepairPending),
-            ProvisioningState::Incomplete => return Some(NextAction::RepairIncomplete),
+            ProvisioningState::Pending => return Some(NextAction::OpenPending),
+            ProvisioningState::Incomplete => return Some(NextAction::OpenIncomplete),
             // 中を観測できない案件へ、欠けているとも揃っているとも言えない。
             ProvisioningState::Unobservable => return None,
             ProvisioningState::Fresh | ProvisioningState::Ready => {}
@@ -61,7 +61,7 @@ impl NextAction {
     /// 実行するcommand。案件IDを打ち直させない。
     pub fn command(self, project: &str) -> String {
         match self {
-            NextAction::RepairPending | NextAction::RepairIncomplete => {
+            NextAction::OpenPending | NextAction::OpenIncomplete => {
                 format!("sbxm open {project}")
             }
             NextAction::RebuildPending | NextAction::RebuildChanged => {
@@ -73,8 +73,8 @@ impl NextAction {
     /// なぜその1手なのかを述べるmessage ID。
     pub fn reason_id(self) -> &'static str {
         match self {
-            NextAction::RepairPending => "guidance-next-repair-pending",
-            NextAction::RepairIncomplete => "guidance-next-repair-incomplete",
+            NextAction::OpenPending => "guidance-next-open-pending",
+            NextAction::OpenIncomplete => "guidance-next-open-incomplete",
             NextAction::RebuildPending => "guidance-next-rebuild-pending",
             NextAction::RebuildChanged => "guidance-next-rebuild-changed",
         }
@@ -94,10 +94,7 @@ impl NextAction {
     /// 復旧と世代交代が同時に要る場合も、今すぐ実行できるcommandは1つしか示さない。
     /// 続きがあることだけを持ち、順序を説明できるようにする。
     pub fn leaves_generation_behind(self) -> bool {
-        matches!(
-            self,
-            NextAction::RepairPending | NextAction::RepairIncomplete
-        )
+        matches!(self, NextAction::OpenPending | NextAction::OpenIncomplete)
     }
 }
 

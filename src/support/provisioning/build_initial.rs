@@ -11,7 +11,7 @@ use crate::support::select::Locked;
 
 use super::{
     ProvisioningInputs, ProvisioningOutput, ProvisioningState, initial_intent, observe, provision,
-    require_repair, verify_external_preconditions,
+    require_open, verify_external_preconditions,
 };
 
 /// 固定済みintentのもとで初回構築を完了させる、唯一の共有workflow。
@@ -25,6 +25,7 @@ pub(crate) fn build_initial(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
+    target: Option<&str>,
 ) -> Result<ProvisioningOutput> {
     let name = locked.metadata.sandbox_name();
 
@@ -34,8 +35,10 @@ pub(crate) fn build_initial(
     let preconditions = verify_external_preconditions(host, &name)?;
 
     // Dockerfileと宣言fileを1回だけ読み、privateなsnapshotへ複製する。以降はこの
-    // snapshotだけを使い、生きているhost pathを二度と読まない。
-    let inputs = ProvisioningInputs::capture(&locked.paths, config, None)?;
+    // snapshotだけを使い、生きているhost pathを二度と読まない。`target`が`Some`の
+    // 場合、旧世代のimage/templateを保持したまま完成させるため、現在のDockerfileは
+    // このgenerationのsnapshotとして書かない。
+    let inputs = ProvisioningInputs::capture(&locked.paths, config, target)?;
 
     // metadataのintentとtarget generationを、最初のhost側mutationより先にatomicに保存する。
     locked.metadata.initial_provisioning = Some(initial_intent(&inputs));
@@ -75,7 +78,7 @@ pub(crate) fn build_initial(
         .require_safe()
         .map_err(|error| with_open_command(error, &project))?;
     if !completed.is_complete() {
-        return Err(require_repair(&locked.metadata, ProvisioningState::Pending));
+        return Err(require_open(&locked.metadata, ProvisioningState::Pending));
     }
     locked.metadata.initial_provisioning = None;
     locked.metadata.declared_files = Some(initial_intent(&inputs).files);

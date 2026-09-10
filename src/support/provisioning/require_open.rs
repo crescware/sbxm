@@ -7,7 +7,7 @@ use crate::msg;
 use super::ProvisioningState;
 
 /// 現在の入口では続行できない状態を、通常の再開入口であるopenへ渡す。
-pub(crate) fn require_repair(metadata: &ProjectMetadata, state: ProvisioningState) -> Error {
+pub(crate) fn require_open(metadata: &ProjectMetadata, state: ProvisioningState) -> Error {
     let (id, description) = match state {
         ProvisioningState::Pending => (
             ErrorId::InitialProvisioningPending,

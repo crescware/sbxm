@@ -249,33 +249,34 @@ fn observe_worktrees(
     observation: &mut Observation,
     blocking: &mut Blocking,
 ) {
+    // 1本でも欠けているからといって、そこで打ち切らない。打ち切ると存在するworktreeの
+    // 一覧が空のままになり、`actions_for`が要求本数すべてを作成対象として表示する。
+    let mut present = Vec::new();
+    let mut all_present = true;
     for name in layout.worktree_names(metadata.provisioning.requested_worktrees) {
         match sandbox::path_exists(host, sandbox, &format!("{}/{name}", layout.bare_root())) {
-            Ok(true) => {}
-            Ok(false) => {
-                observation.worktrees_present = Observed::Missing;
-                return;
-            }
+            Ok(true) => present.push(name),
+            Ok(false) => all_present = false,
             Err(error) => {
                 observation.worktrees_present = blocked(blocking, error);
                 return;
             }
         }
     }
-    if metadata.provisioning.start_ref.is_none() {
-        // 起点branchが決まっていない案件は、worktreeが揃ったとは言えない。
-        observation.worktrees_present = Observed::Missing;
-        return;
-    }
-    match observed_worktrees(host, sandbox, layout, metadata) {
+    // 起点branchが決まっていない案件は、worktreeが揃ったとは言えない。それでも、
+    // 存在が確認できたものだけはこの下でHEADまで観測する。
+    let start_ref_resolved = metadata.provisioning.start_ref.is_some();
+    match observed_worktrees(host, sandbox, layout, metadata, &present) {
         Ok(worktrees) => {
             let requested = usize::try_from(metadata.provisioning.requested_worktrees);
-            observation.worktrees_present =
-                if requested.is_ok_and(|requested| worktrees.len() == requested) {
-                    Observed::Matching
-                } else {
-                    Observed::Missing
-                };
+            observation.worktrees_present = if all_present
+                && start_ref_resolved
+                && requested.is_ok_and(|requested| worktrees.len() == requested)
+            {
+                Observed::Matching
+            } else {
+                Observed::Missing
+            };
             observation.worktrees = worktrees;
         }
         Err(error) => observation.worktrees_present = blocked(blocking, error),

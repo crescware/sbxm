@@ -30,7 +30,14 @@ pub(crate) fn ensure_initial(
     )?;
     match InitialRoute::decide(&locked.metadata, &observation)? {
         InitialRoute::AlreadyBuilt => Ok(ready_output(&locked.metadata, &observation)),
-        InitialRoute::Build => build_initial(locked, config, host, workspace_root, progress),
+        InitialRoute::Build { target } => build_initial(
+            locked,
+            config,
+            host,
+            workspace_root,
+            progress,
+            target.as_deref(),
+        ),
         InitialRoute::Resume => {
             resume_initial(locked, config, host, workspace_root, progress, &observation)
         }

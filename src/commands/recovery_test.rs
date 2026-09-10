@@ -79,7 +79,7 @@ fn an_interrupted_first_open_is_diagnosed_and_resumed_by_open() -> Checked {
     let next = status
         .next
         .required_because("the diagnosis ends with one command to run")?;
-    assert_eq!(next, NextAction::RepairPending);
+    assert_eq!(next, NextAction::OpenPending);
     assert_eq!(
         next.command(&status.project),
         "sbxm open Example-Org/Example-Repo"
@@ -118,6 +118,42 @@ fn an_interrupted_first_open_is_diagnosed_and_resumed_by_open() -> Checked {
             .any(|call| call.contains("sbx create") || call.contains("docker build")),
         "nothing is built a second time: {:?}",
         world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_drifted_git_identity_on_an_otherwise_complete_project_is_restored_by_open() -> Checked {
+    // intentは無いが、Sandboxは既に在る案件でgit identityだけが欠けた状態を再現する。
+    // `status`はこの状態にも`sbxm open`を案内するため、openがそれを実際に直せなければ
+    // 矛盾した案内になる。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = bench
+        .register(&world, &request(PROJECT, None, None)?)
+        .required_because("the project is registered")?;
+    open(&bench, &world, &project).required_because("the first open builds")?;
+
+    world.settings.borrow_mut().remove("user.name");
+
+    let status = diagnose(&bench, &world, &project)?;
+    assert_eq!(
+        status.next,
+        Some(NextAction::OpenIncomplete),
+        "a drifted identity is a gap open can close, not one it must be told to ignore"
+    );
+
+    open(&bench, &world, &project).required_because("open restores the observable gap")?;
+
+    assert_eq!(
+        world.settings.borrow().get("user.name").cloned(),
+        Some("Example User".to_string()),
+        "the recorded identity is reapplied"
+    );
+    assert_eq!(
+        diagnose(&bench, &world, &project)?.next,
+        None,
+        "the restored project needs no further command"
     );
     Ok(())
 }

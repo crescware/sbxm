@@ -116,7 +116,7 @@ fn an_unfinished_first_provisioning_is_named_with_the_command_that_recovers_it()
     .required_because("diagnose the interrupted project")?;
 
     // 判定は`repair`と同じ共有観測から来る。statusが別の規則で結論を出さない。
-    assert_eq!(status.next, Some(NextAction::RepairPending));
+    assert_eq!(status.next, Some(NextAction::OpenPending));
     assert!(
         !status.is_healthy(),
         "an unfinished first provisioning does not end successfully"

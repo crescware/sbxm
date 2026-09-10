@@ -51,11 +51,11 @@ fn an_unfinished_first_provisioning_is_recovered_before_anything_else() -> Check
     let metadata = attached("example-org", "example-repo")?;
     assert_eq!(
         NextAction::decide(&metadata, &observation(ProvisioningState::Pending)),
-        Some(NextAction::RepairPending)
+        Some(NextAction::OpenPending)
     );
     assert_eq!(
         NextAction::decide(&metadata, &observation(ProvisioningState::Incomplete)),
-        Some(NextAction::RepairIncomplete)
+        Some(NextAction::OpenIncomplete)
     );
     Ok(())
 }
@@ -107,7 +107,7 @@ fn a_project_that_needs_recovery_is_not_also_told_to_rebuild() -> Checked {
     observation.current_generation = OTHER_DIGEST.to_string();
 
     let action = NextAction::decide(&metadata, &observation);
-    assert_eq!(action, Some(NextAction::RepairIncomplete));
+    assert_eq!(action, Some(NextAction::OpenIncomplete));
     assert!(
         action.is_some_and(NextAction::leaves_generation_behind),
         "the caller can explain that a rebuild may still follow"
@@ -147,8 +147,8 @@ fn a_missing_custom_secret_is_not_given_a_repair_that_cannot_apply_it() -> Check
 #[test]
 fn every_action_names_its_command_reason_and_exit_meaning() {
     for (action, command, blocking) in [
-        (NextAction::RepairPending, "sbxm open owner/repo", true),
-        (NextAction::RepairIncomplete, "sbxm open owner/repo", true),
+        (NextAction::OpenPending, "sbxm open owner/repo", true),
+        (NextAction::OpenIncomplete, "sbxm open owner/repo", true),
         (NextAction::RebuildPending, "sbxm rebuild owner/repo", true),
         (NextAction::RebuildChanged, "sbxm rebuild owner/repo", false),
     ] {

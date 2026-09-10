@@ -20,10 +20,10 @@ pub(crate) fn observed_worktrees(
     sandbox: &str,
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
+    names: &[String],
 ) -> Result<Vec<WorktreeRow>> {
     let provisioning = &metadata.provisioning;
     let git_dir = layout.bare_git_dir();
-    let names = layout.worktree_names(provisioning.requested_worktrees);
     let created_from = provisioning
         .start_ref
         .as_deref()
@@ -35,7 +35,7 @@ pub(crate) fn observed_worktrees(
         repository::adopt_worktree(host, sandbox, &git_dir, &path)?;
         let head = read_head(host, sandbox, &path)?;
         rows.push(WorktreeRow {
-            path: name,
+            path: name.clone(),
             created_from: created_from.clone(),
             head,
             mode: provisioning.mode,

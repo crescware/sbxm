@@ -7,8 +7,8 @@ use crate::diagnostics::Result;
 use crate::metadata;
 use crate::msg;
 use crate::paths;
+use crate::support::sandbox;
 use crate::support::select::Locked;
-use crate::support::{sandbox, template};
 
 use super::{
     Observation, ProvisioningInputs, ProvisioningOutput, build_initial, initial_intent, observe,
@@ -29,11 +29,11 @@ pub(crate) fn resume_initial(
         && observation.sandbox.is_missing();
     if no_target_artifact && observation.current_generation != observation.target_generation {
         // 元の世代へ結び付く成果物が一つも無い場合だけ、修正後の入力へ対象を更新する。
-        return build_initial(locked, config, host, workspace_root, progress);
+        return build_initial(locked, config, host, workspace_root, progress, None);
     }
 
     let Some(intent) = locked.metadata.initial_provisioning.clone() else {
-        return build_initial(locked, config, host, workspace_root, progress);
+        return build_initial(locked, config, host, workspace_root, progress, None);
     };
     if observation.is_complete() {
         locked.metadata.declared_files = Some(intent.files);
@@ -45,24 +45,14 @@ pub(crate) fn resume_initial(
     let inputs = ProvisioningInputs::resume(&locked.paths, &intent, needs_dockerfile)?;
     let output = if observation.sandbox.is_matching() {
         let mut warnings = Vec::new();
-        if !observation.workspace.is_matching() {
-            let ready = sandbox::ensure(
-                host,
-                &locked.metadata.sandbox_name(),
-                &template::LoadedTemplate {
-                    name: String::new(),
-                    loaded: false,
-                },
-                workspace_root,
-                progress,
-            )?;
-            if ready.workspace_restored {
-                warnings.push(
-                    Warning::text(msg!("warning-workspace-restored", sandbox = ready.name))
-                        .fact(Fact::path(&paths::display(&ready.workspace)))
-                        .explain(msg!("guidance-workspace-restored")),
-                );
-            }
+        let ready =
+            sandbox::restore_workspace(host, &locked.metadata.sandbox_name(), workspace_root)?;
+        if ready.workspace_restored {
+            warnings.push(
+                Warning::text(msg!("warning-workspace-restored", sandbox = ready.name))
+                    .fact(Fact::path(&paths::display(&ready.workspace)))
+                    .explain(msg!("guidance-workspace-restored")),
+            );
         }
         provision_interior(locked, &inputs, host, progress, warnings)?
     } else {
@@ -87,7 +77,7 @@ pub(crate) fn resume_initial(
     )?;
     completed.require_safe()?;
     if !completed.is_complete() {
-        return Err(super::require_repair(
+        return Err(super::require_open(
             &locked.metadata,
             super::ProvisioningState::Pending,
         ));

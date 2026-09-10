@@ -28,7 +28,7 @@ pub use permission_too_open::permission_too_open;
 pub use real_path::real_path;
 pub use regular_file_exists::regular_file_exists;
 pub(super) use require_owned_by_current_user::require_owned_by_current_user;
-pub(super) use require_private_file::require_private_file;
+pub use require_private_file::require_private_file;
 pub(super) use unexpected_type::unexpected_type;
 
 #[cfg(test)]

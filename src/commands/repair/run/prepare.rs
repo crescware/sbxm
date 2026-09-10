@@ -2,9 +2,8 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::design::{Fact, Field, Inline, Remediation};
+use crate::design::{Fact, Field, Inline};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
-use crate::hash::short_hex;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::{ProjectId, SandboxName};
@@ -105,44 +104,10 @@ pub fn prepare(
 }
 
 fn target_generation(observation: &Observation, metadata: &ProjectMetadata) -> Result<String> {
-    if metadata.initial_provisioning.is_some() {
-        let no_target_artifact = !observation.stored_image_present
-            && !observation.stored_template_present
-            && observation.sandbox.is_missing();
-        if no_target_artifact {
-            return Ok(observation.current_generation.clone());
-        }
-        return Ok(observation.target_generation.clone());
-    }
-    if observation.current_generation == observation.stored_generation {
-        return Ok(observation.stored_generation.clone());
-    }
-    match (
-        observation.stored_image_matches,
-        observation.current_image_matches,
-    ) {
-        (true, false) => Ok(observation.stored_generation.clone()),
-        (false, true) => Ok(observation.current_generation.clone()),
-        _ => Err(generation_missing(observation, metadata)),
-    }
-}
-
-fn generation_missing(observation: &Observation, metadata: &ProjectMetadata) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::InitialProvisioningGenerationMissing,
-            msg!(
-                "error-initial-provisioning-generation-missing",
-                project = metadata.display_id()
-            ),
-        )
-        .fact(Fact::value(short_hex(&observation.target_generation)))
-        .fact(Fact::reason(msg!(
-            "cause-initial-provisioning-generation-ambiguous"
-        )))
-        .remediation(Remediation::text(msg!(
-            "remediation-initial-provisioning-generation-missing"
-        ))),
+    provisioning::select_generation(
+        observation,
+        metadata,
+        metadata.initial_provisioning.is_some(),
     )
 }
 

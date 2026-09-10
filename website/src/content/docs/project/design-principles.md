@@ -15,4 +15,4 @@ Validation happens before project state changes. An unobservable external condit
 
 ## Make recovery explicit
 
-When a safe condition is not met, the error reports the observed fact and points to a deliberate next action. `open` may complete connection prerequisites only when observation and recorded inputs determine the exact target and change; ambiguous artifacts are never adopted.
+When a safe condition is not met, the error reports the observed fact and points to a deliberate next action. Automatic repair is a separate workflow, not a hidden convenience of a normal command. As an exception, `open` may complete connection prerequisites — using a saved intent, a recorded baseline, or artifacts it could observe — only when they determine the exact target and change; ambiguous artifacts are never adopted.

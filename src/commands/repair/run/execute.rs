@@ -6,7 +6,7 @@ use crate::design::{Fact, ProgressSink, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata;
 use crate::msg;
-use crate::support::provisioning::{self, Observation, ProvisioningInputs, ProvisioningState};
+use crate::support::provisioning::{self, ProvisioningInputs, ProvisioningState};
 
 use crate::commands::repair::RepairOutput;
 
@@ -43,8 +43,11 @@ pub fn execute(
     )?;
     latest.require_safe()?;
     let has_intent = prepared.locked.metadata.initial_provisioning.is_some();
+    let target_still_selected =
+        provisioning::select_generation(&latest, &prepared.locked.metadata, has_intent)
+            .is_ok_and(|generation| generation == prepared.target);
     if latest.state != prepared.observation.state
-        || selected_target(&latest, has_intent) != prepared.target
+        || !target_still_selected
         || actions_for(&prepared.locked.metadata, &latest, has_intent) != prepared.plan.actions
     {
         // 表示した対象と、これから実行する対象が一致しない。displayした一覧だけを
@@ -100,7 +103,7 @@ pub fn execute(
     )?;
     completed.require_safe()?;
     if !completed.is_complete() {
-        return Err(provisioning::require_repair(
+        return Err(provisioning::require_open(
             &prepared.locked.metadata,
             ProvisioningState::Pending,
         ));
@@ -140,29 +143,6 @@ fn capture_repair_inputs(prepared: &Prepared, config: &GlobalConfig) -> Result<P
     ProvisioningInputs::capture(&prepared.paths, config, Some(&prepared.target))
 }
 
-fn selected_target(observation: &Observation, has_intent: bool) -> String {
-    if has_intent {
-        let no_target_artifact = !observation.stored_image_present
-            && !observation.stored_template_present
-            && observation.sandbox.is_missing();
-        if no_target_artifact {
-            return observation.current_generation.clone();
-        }
-        return observation.target_generation.clone();
-    }
-    if observation.current_generation == observation.stored_generation {
-        return observation.stored_generation.clone();
-    }
-    match (
-        observation.stored_image_matches,
-        observation.current_image_matches,
-    ) {
-        (true, false) => observation.stored_generation.clone(),
-        (false, true) => observation.current_generation.clone(),
-        _ => observation.target_generation.clone(),
-    }
-}
-
 fn state_changed(
     metadata: &crate::metadata::ProjectMetadata,
     before: ProvisioningState,
@@ -187,7 +167,3 @@ fn state_changed(
         ),
     )
 }
-
-#[cfg(test)]
-#[path = "selected_target_test.rs"]
-mod selected_target_test;

@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -12,7 +12,7 @@ use crate::paths::{self, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, Project
 use crate::support::files;
 
 use super::SnapshotFile;
-use crate::metadata::InitialProvisioningIntent;
+use crate::metadata::{InitialProvisioningFile, InitialProvisioningIntent};
 
 /// 最初のmutationより前に固定する、初回構築の入力一式。
 ///
@@ -92,34 +92,29 @@ impl ProvisioningInputs {
                 &paths.dockerfile(),
             )?
         };
-        let mut files = Vec::with_capacity(intent.files.len());
-        for (index, recorded) in intent.files.iter().enumerate() {
-            let original = std::path::PathBuf::from(&recorded.source);
-            let snapshot_path = resolve_recorded(
-                paths,
-                &recorded.sha256,
-                &paths.snapshot_file(index),
-                &original,
-            )?;
-            let source =
-                HostFileSource::new(&paths::display(&snapshot_path)).map_err(invalid_recorded)?;
-            let destination =
-                SandboxHomeRelativePath::new(&recorded.destination).map_err(invalid_recorded)?;
-            files.push(SnapshotFile {
-                declaration: FileDeclaration {
-                    source,
-                    destination,
-                },
-                sha256: recorded.sha256.clone(),
-                original_source: recorded.source.clone(),
-            });
-        }
+        let files = snapshot_recorded_files(paths, &intent.files)?;
         let dockerfile_snapshot_written = require_dockerfile || dockerfile_path.exists();
         Ok(ProvisioningInputs {
             dockerfile_path,
             dockerfile_sha256: intent.target_dockerfile_sha256.clone(),
             dockerfile_snapshot_written,
             files,
+        })
+    }
+
+    /// baselineとして記録済みの宣言fileだけを、Dockerfileに触れずsnapshotへ固定する。
+    ///
+    /// intentが無い案件のIncompleteを`open`が観測済みbaselineから補うときに使う。
+    /// `files`が空なら`files`も空のまま返す。
+    pub(crate) fn from_recorded_files(
+        paths: &ProjectPaths,
+        files: &[InitialProvisioningFile],
+    ) -> Result<ProvisioningInputs> {
+        Ok(ProvisioningInputs {
+            dockerfile_path: PathBuf::new(),
+            dockerfile_sha256: String::new(),
+            dockerfile_snapshot_written: false,
+            files: snapshot_recorded_files(paths, files)?,
         })
     }
 
@@ -179,6 +174,39 @@ impl ProvisioningInputs {
     }
 }
 
+/// 記録済みの宣言fileを、内容別blobから読み直してsnapshotへ固定する。
+///
+/// `resume`と`from_recorded_files`はfileの記録元が違う（intentのtarget snapshotか、
+/// 完成時のbaselineか）だけで、1件ごとの解決規則は同じであり、ここへ集約する。
+fn snapshot_recorded_files(
+    paths: &ProjectPaths,
+    files: &[InitialProvisioningFile],
+) -> Result<Vec<SnapshotFile>> {
+    let mut captured = Vec::with_capacity(files.len());
+    for (index, recorded) in files.iter().enumerate() {
+        let original = PathBuf::from(&recorded.source);
+        let snapshot_path = resolve_recorded(
+            paths,
+            &recorded.sha256,
+            &paths.snapshot_file(index),
+            &original,
+        )?;
+        let source =
+            HostFileSource::new(&paths::display(&snapshot_path)).map_err(invalid_recorded)?;
+        let destination =
+            SandboxHomeRelativePath::new(&recorded.destination).map_err(invalid_recorded)?;
+        captured.push(SnapshotFile {
+            declaration: FileDeclaration {
+                source,
+                destination,
+            },
+            sha256: recorded.sha256.clone(),
+            original_source: recorded.source.clone(),
+        });
+    }
+    Ok(captured)
+}
+
 fn read_dockerfile(paths: &ProjectPaths) -> Result<Vec<u8>> {
     let path = paths.dockerfile();
     if !paths::regular_file_exists(&path, PathScope::ProjectPath)? {
@@ -196,16 +224,24 @@ fn read_dockerfile(paths: &ProjectPaths) -> Result<Vec<u8>> {
 }
 
 fn verify_snapshot(path: &Path, expected_sha256: &str) -> Result<()> {
-    let bytes = fs::read(path).map_err(|error| {
+    let changed_with_cause = |cause: String| {
         Error::single(
             Diagnostic::new(
                 ErrorId::InitialProvisioningSnapshotChanged,
                 msg!("error-initial-provisioning-snapshot-changed"),
             )
             .fact(Fact::path(&paths::display(path)))
-            .fact(Fact::cause(&error.to_string())),
+            .fact(Fact::cause(&cause)),
         )
-    })?;
+    };
+    let mut file = File::open(path).map_err(|error| changed_with_cause(error.to_string()))?;
+    // snapshotはこの実行だけが書くprivate fileである。読む前に、regular file・所有者・
+    // permissionが期待通りであることも確かめ、他プロセスが入れ替えた入り口を実際の
+    // digest不一致より前に検知する。
+    paths::require_private_file(&file, path, PRIVATE_FILE_MODE, PathScope::ProjectPath)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|error| changed_with_cause(error.to_string()))?;
     let observed = sha256_hex(&bytes);
     if observed != expected_sha256 {
         return Err(Error::single(
@@ -222,6 +258,25 @@ fn verify_snapshot(path: &Path, expected_sha256: &str) -> Result<()> {
     Ok(())
 }
 
+/// 移行元の2候補から、期待digestに一致するbyte列を探す。
+///
+/// `legacy`はsbxm自身が過去に書いたsnapshot pathであり、`fs::read`で足りる。`original`は
+/// 利用者のhost sourceであるため、`files::read_source_bytes`のsymlink・regular file・
+/// 上限size検査を通してから読む。
+fn matching_recorded_bytes(legacy: &Path, original: &Path, expected: &str) -> Option<Vec<u8>> {
+    if let Ok(bytes) = fs::read(legacy)
+        && sha256_hex(&bytes) == expected
+    {
+        return Some(bytes);
+    }
+    if let Ok((bytes, digest)) = files::read_source_bytes(original)
+        && digest == expected
+    {
+        return Some(bytes);
+    }
+    None
+}
+
 fn resolve_recorded(
     paths: &ProjectPaths,
     expected: &str,
@@ -233,14 +288,9 @@ fn resolve_recorded(
         verify_snapshot(&blob, expected)?;
         return Ok(blob);
     }
-    for candidate in [legacy, original] {
-        let Ok(bytes) = fs::read(candidate) else {
-            continue;
-        };
-        if sha256_hex(&bytes) == expected {
-            write_blob(paths, expected, &bytes)?;
-            return Ok(blob);
-        }
+    if let Some(bytes) = matching_recorded_bytes(legacy, original, expected) {
+        write_blob(paths, expected, &bytes)?;
+        return Ok(blob);
     }
     verify_snapshot(&blob, expected)?;
     Ok(blob)
@@ -257,14 +307,8 @@ fn import_recorded_if_available(
         verify_snapshot(&blob, expected)?;
         return Ok(blob);
     }
-    for candidate in [legacy, original] {
-        let Ok(bytes) = fs::read(candidate) else {
-            continue;
-        };
-        if sha256_hex(&bytes) == expected {
-            write_blob(paths, expected, &bytes)?;
-            break;
-        }
+    if let Some(bytes) = matching_recorded_bytes(legacy, original, expected) {
+        write_blob(paths, expected, &bytes)?;
     }
     Ok(blob)
 }

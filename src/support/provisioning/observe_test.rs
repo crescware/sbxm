@@ -86,6 +86,45 @@ fn a_stopped_sandbox_is_observed_as_unobservable_rather_than_incomplete() -> Che
 }
 
 #[test]
+fn only_the_missing_worktree_among_several_ends_the_matching_state() -> Checked {
+    // 1本欠けているだけで走査を打ち切ると、存在するworktreeの一覧が空のまま返り、
+    // 呼び出し側（`actions_for`など）が要求本数すべてを欠落として扱ってしまう。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", Some(2), Some("main"))?;
+    bench
+        .build(&world, &request)
+        .required_because("the first build completes")?;
+
+    let project = project_of(&request)?;
+    let candidate = select::find(&bench.location, &project).required_because("find the project")?;
+    let metadata = candidate.reload().required_because("read the metadata")?;
+    let layout = crate::project::SandboxLayout::new(metadata.canonical_id());
+    let missing = layout.worktree(1);
+    world.present.borrow_mut().remove(&missing);
+    world.worktrees.borrow_mut().remove(&missing);
+
+    let observation = observe(
+        &world,
+        &candidate.paths,
+        &bench.config,
+        &metadata,
+        bench.workspace_root.path(),
+    )
+    .required_because("one missing worktree does not end the observation")?;
+
+    assert_eq!(observation.worktrees_present.as_str(), "missing");
+    assert_eq!(
+        observation.worktrees.len(),
+        1,
+        "the worktree that is still present is still reported: {:?}",
+        observation.worktrees
+    );
+    assert_eq!(observation.worktrees[0].path, layout.worktree_name(0));
+    Ok(())
+}
+
+#[test]
 fn an_unsafe_artifact_is_recorded_without_ending_the_observation() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

@@ -104,8 +104,9 @@ fn complete_empty_initialization(
             "remote.origin.url",
         ],
     )?;
-    if !origin.stdout_text().trim().is_empty() {
-        return Ok(());
+    let origin_urls = origin.stdout_text();
+    if !origin_urls.trim().is_empty() {
+        return complete_missing_fetch_refspec(host, sandbox_name, project, git_dir, &origin_urls);
     }
     let refs = sandbox::exec(
         host,
@@ -140,6 +141,60 @@ fn complete_empty_initialization(
         &["git", "--git-dir", git_dir, "remote", "add", "origin", &url],
     )?
     .require_success()?;
+    sandbox::exec(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "--git-dir",
+            git_dir,
+            "config",
+            "remote.origin.fetch",
+            FETCH_REFSPEC,
+        ],
+    )?
+    .require_success()?;
+    Ok(())
+}
+
+/// origin設定済みで、`remote.origin.fetch`だけ欠けているrepositoryを補う。
+///
+/// `remote add origin`の直後、`config remote.origin.fetch`より前に中断した状態を
+/// 想定する。originが対象repositoryと一致し、fetch refspecが未設定の場合だけ補い、
+/// 別repositoryのoriginや複数originには触れない。`verify_bare_clone`がその判定を
+/// 別途行う。
+fn complete_missing_fetch_refspec(
+    host: &dyn HostEnvironment,
+    sandbox_name: &str,
+    project: &ProjectId,
+    git_dir: &str,
+    origin_urls: &str,
+) -> Result<()> {
+    let urls: Vec<&str> = origin_urls
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    let [url] = urls.as_slice() else {
+        return Ok(());
+    };
+    if git::canonical_id_of_remote(url).as_deref() != Some(project.canonical().as_str()) {
+        return Ok(());
+    }
+    let fetch = sandbox::exec(
+        host,
+        sandbox_name,
+        &[
+            "git",
+            "--git-dir",
+            git_dir,
+            "config",
+            "--get-all",
+            "remote.origin.fetch",
+        ],
+    )?;
+    if !fetch.stdout_text().trim().is_empty() {
+        return Ok(());
+    }
     sandbox::exec(
         host,
         sandbox_name,

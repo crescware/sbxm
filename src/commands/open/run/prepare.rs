@@ -11,9 +11,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{
-    daemon, disk, docker, generation, provisioning, repository, sandbox, template, worktree,
-};
+use crate::support::{daemon, disk, docker, generation, provisioning, sandbox, worktree};
 
 use super::{ClampedIndex, Prepared};
 
@@ -75,42 +73,12 @@ pub fn prepare(
     let (provisioned, warnings) =
         prepare_runtime(&mut locked, config, host, workspace_root, poll, progress)?;
 
-    let metadata = &locked.metadata;
-    let name = metadata.sandbox_name();
-    let layout = SandboxLayout::new(metadata.canonical_id());
-    let repository_missing = provisioned.is_none()
-        && !sandbox::path_exists(host, name.as_str(), &layout.bare_git_dir())?;
-    let worktree_missing = provisioned.is_none()
-        && (repository_missing || has_missing_worktree(host, name.as_str(), &layout, metadata)?);
-    if worktree_missing {
-        let exclusive = locked.acquire_exclusive_session_lease()?;
-        if repository_missing {
-            let project = ProjectId::parse(&locked.metadata.display_id())?;
-            repository::ensure_bare_clone(host, name.as_str(), &project, &layout, progress)?;
-        }
-        let branch = repository::resolve_start_ref(
-            host,
-            name.as_str(),
-            &layout,
-            &locked.paths,
-            &mut locked.metadata,
-        )?;
-        repository::ensure_worktrees(
-            host,
-            name.as_str(),
-            &layout,
-            &locked.metadata,
-            &branch,
-            progress,
-        )?;
-        drop(exclusive);
-    }
-
     // 準備と起動が完了した状態をSSH sessionとして保護する。
     let session_lease = locked.acquire_shared_session_lease()?;
 
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
+    let layout = SandboxLayout::new(metadata.canonical_id());
 
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
     sandbox::require_credentials_isolated(host, name.as_str())?;
@@ -154,13 +122,13 @@ fn prepare_runtime(
     let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;
     let mut warnings = Vec::new();
     if state == ProjectState::Stopped
-        && let Some(warning) = restore_workspace(host, &locked.metadata, workspace_root, progress)?
+        && let Some(warning) = restore_workspace(host, &locked.metadata, workspace_root)?
     {
         warnings.push(warning);
     }
-    let needs_provisioning =
+    let needs_initial =
         locked.metadata.initial_provisioning.is_some() || state == ProjectState::NotCreated;
-    let provisioned = if needs_provisioning {
+    let provisioned = if needs_initial {
         // 準備のmutationは既存SSH sessionと共存させない。完了後、project lockを保持した
         // ままexclusiveを解放してsharedへ移るため、lifecycle操作が間へ入らない。
         let exclusive = locked.acquire_exclusive_session_lease()?;
@@ -178,47 +146,77 @@ fn prepare_runtime(
         None
     };
     inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
+
+    // intentは無いがSandboxは在る案件で、成果物の一部が欠けている場合だけ、観測できた
+    // 不足工程をこのopenで補う。`status`はこの状態にも`sbxm open`を案内するため、
+    // ここで直せない欠落を残さない。
+    let provisioned = if provisioned.is_none() {
+        complete_missing_interior(locked, config, host, workspace_root, progress)?
+    } else {
+        provisioned
+    };
     Ok((provisioned, warnings))
+}
+
+/// intentが無い案件のIncompleteを、記録済みbaselineから観測できた不足工程だけ補う。
+///
+/// image/archive/Template/Sandbox作成には触れない。それらが欠けている場合は
+/// `InitialRoute::decide`が`Build`へ送り、ここへは来ない。
+fn complete_missing_interior(
+    locked: &mut crate::support::select::Locked,
+    config: &GlobalConfig,
+    host: &dyn HostEnvironment,
+    workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
+) -> Result<Option<provisioning::ProvisioningOutput>> {
+    let observation = provisioning::observe(
+        host,
+        &locked.paths,
+        config,
+        &locked.metadata,
+        workspace_root,
+    )?;
+    observation.require_safe()?;
+    if observation.state != provisioning::ProvisioningState::Incomplete {
+        return Ok(None);
+    }
+    let exclusive = locked.acquire_exclusive_session_lease()?;
+    let files = locked.metadata.declared_files.clone().unwrap_or_default();
+    let inputs = provisioning::ProvisioningInputs::from_recorded_files(&locked.paths, &files)?;
+    let output = provisioning::provision_interior(locked, &inputs, host, progress, Vec::new())?;
+    drop(exclusive);
+
+    let completed = provisioning::observe(
+        host,
+        &locked.paths,
+        config,
+        &locked.metadata,
+        workspace_root,
+    )?;
+    completed.require_safe()?;
+    // workspaceが確認できないままだと、内部は補ったあとも観測不能のまま残る。それは
+    // この経路が直せなかった欠落ではなく、動いているSandboxの中を推測で読まなかった
+    // だけである。ここで拒否せず、接続はそのまま進める。
+    if !completed.is_complete() && !completed.interior_is_unobservable() {
+        return Err(provisioning::require_open(
+            &locked.metadata,
+            provisioning::ProvisioningState::Incomplete,
+        ));
+    }
+    Ok(Some(output))
 }
 
 fn restore_workspace(
     host: &dyn HostEnvironment,
     metadata: &ProjectMetadata,
     workspace_root: &Path,
-    progress: &mut dyn ProgressSink,
 ) -> Result<Option<Warning>> {
-    let ready = sandbox::ensure(
-        host,
-        &metadata.sandbox_name(),
-        &template::LoadedTemplate {
-            name: String::new(),
-            loaded: false,
-        },
-        workspace_root,
-        progress,
-    )?;
+    let ready = sandbox::restore_workspace(host, &metadata.sandbox_name(), workspace_root)?;
     Ok(ready.workspace_restored.then(|| {
         Warning::text(msg!("warning-workspace-restored", sandbox = ready.name))
             .fact(Fact::path(&crate::paths::display(&ready.workspace)))
             .explain(msg!("guidance-workspace-restored"))
     }))
-}
-
-fn has_missing_worktree(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
-    layout: &SandboxLayout,
-    metadata: &ProjectMetadata,
-) -> Result<bool> {
-    let bare_root = layout.bare_root();
-    let listed: Vec<String> = worktree::list(host, sandbox, layout)?
-        .iter()
-        .filter_map(|entry| entry.relative_to(&bare_root))
-        .collect();
-    Ok(layout
-        .worktree_names(metadata.provisioning.requested_worktrees)
-        .iter()
-        .any(|name| !listed.contains(name)))
 }
 
 /// promptの楽観的な上限で確定したindexを、lock済みmetadataの範囲へ収める。

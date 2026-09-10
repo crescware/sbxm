@@ -209,7 +209,7 @@ fn a_diagnosed_project_fails_and_every_diagnostic_is_written_on_its_own() -> Che
 
 #[test]
 fn a_recovery_that_is_still_needed_names_one_command_and_fails() -> Checked {
-    let printed = print(&needing(NextAction::RepairPending))?;
+    let printed = print(&needing(NextAction::OpenPending))?;
 
     // 案件はまだ目標構成に達していない。読めた表は出したうえで、失敗として終える。
     assert_eq!(printed.code, ExitCode::Failure);

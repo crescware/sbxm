@@ -1,7 +1,7 @@
 use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
 
-use super::{ProvisioningState, require_repair};
+use super::{ProvisioningState, require_open};
 
 /// 中断した初回構築を、成果物を観測せずに拒否する。
 ///
@@ -11,7 +11,7 @@ use super::{ProvisioningState, require_repair};
 /// `Pending`と呼ぶ事実と同じものを指す。
 pub(crate) fn require_no_initial_intent(metadata: &ProjectMetadata) -> Result<()> {
     if metadata.initial_provisioning.is_some() {
-        return Err(require_repair(metadata, ProvisioningState::Pending));
+        return Err(require_open(metadata, ProvisioningState::Pending));
     }
     Ok(())
 }

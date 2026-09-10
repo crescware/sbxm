@@ -62,7 +62,14 @@ pub(crate) fn provision_interior(
     )
     .map_err(decorate)?;
 
-    let worktrees = observed_worktrees(host, &ready_name, &layout, &locked.metadata)?;
+    let worktree_names = layout.worktree_names(locked.metadata.provisioning.requested_worktrees);
+    let worktrees = observed_worktrees(
+        host,
+        &ready_name,
+        &layout,
+        &locked.metadata,
+        &worktree_names,
+    )?;
     Ok(ProvisioningOutput {
         project: locked.metadata.display_id(),
         sandbox: ready_name,

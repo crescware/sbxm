@@ -22,7 +22,7 @@ pub use directory::{
 };
 pub use inspect::{
     FileIdentity, directory_exists, display, is_symlink, lexically_standardize,
-    permission_too_open, real_path, regular_file_exists,
+    permission_too_open, real_path, regular_file_exists, require_private_file,
 };
 pub use lock::{ExclusiveLock, SharedLock, acquire_exclusive_lock, acquire_shared_lock};
 pub use lock_timeout::LOCK_TIMEOUT;
