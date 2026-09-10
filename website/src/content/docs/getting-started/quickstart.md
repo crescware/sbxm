@@ -70,7 +70,7 @@ Replace `<sandbox>` and `<token>` with the values from your project setup. The r
 sbxm open <project-id>
 ```
 
-The first `open` builds the project image, creates the sandbox, clones the repository inside it, and creates the managed worktrees before connecting over SSH. Later runs start a stopped sandbox when necessary and connect. A first build that is interrupted is never resumed implicitly: `sbxm status <project-id>` names the project, and `sbxm repair <project-id>` finishes it.
+The first `open` builds the project image, creates the sandbox, clones the repository inside it, and creates the managed worktrees before connecting over SSH. Later runs start a stopped sandbox when necessary and connect. If a preparation step is interrupted, the next `open` verifies completed artifacts, resumes the missing steps from recorded inputs, and connects.
 
 The session starts in `/home/agent/work/<repository>`. To start in a managed worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
 

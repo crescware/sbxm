@@ -96,7 +96,6 @@ error_ids! {
     InitialProvisioningPending => "initial-provisioning-pending",
     InitialProvisioningIncomplete => "initial-provisioning-incomplete",
     InitialProvisioningGenerationMissing => "initial-provisioning-generation-missing",
-    InitialProvisioningInputChanged => "initial-provisioning-input-changed",
     InitialProvisioningStateChanged => "initial-provisioning-state-changed",
     InitialProvisioningSnapshotChanged => "initial-provisioning-snapshot-changed",
     InitialProvisioningBaselineAmbiguous => "initial-provisioning-baseline-ambiguous",

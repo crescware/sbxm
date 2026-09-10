@@ -26,8 +26,8 @@ that `sbxm repair` uses, so the two never disagree.
 
 | What was observed | Next command |
 | --- | --- |
-| The first provisioning started and did not finish, or part of its result is missing. | `sbxm repair <project-id>` — recovery goes back to the generation the project already fixed. |
+| The first provisioning started and did not finish, or part of its result is missing. | `sbxm open <project-id>` — preparation resumes and then connects. |
 | A generation change started and did not finish. | `sbxm rebuild <project-id>` — the same generation change is completed. |
 | The project is usable and the Dockerfile differs from the applied generation. | `sbxm rebuild <project-id>` — the current Dockerfile is applied as a new generation. |
-| Recovery and a generation change are both relevant. | `sbxm repair <project-id>` only. Run status again afterwards to see whether a rebuild is still needed. |
-| Nothing can be proven safe: an identity mismatch, an unobservable artifact, or a sandbox that is not running. | None. Status reports the observation instead of naming a command it cannot prove is safe. |
+| Recovery and a generation change are both relevant. | `sbxm open <project-id>` first. Run status again afterwards to see whether a rebuild is still needed. |
+| Nothing can be proven safe: an identity mismatch, an unobservable artifact, or a stopped sandbox that has no first-provisioning intent. | None. Status reports the observation instead of naming a command it cannot prove is safe. |

@@ -134,8 +134,8 @@ sbxm open <project-id>
 
 最初の`open`は、プロジェクトのimageをbuildし、Sandboxを作成して、その中へrepositoryを
 cloneし、managed worktreeを作成してからSSHで接続します。2回目以降は、必要に応じて
-停止中のSandboxを起動して接続します。中断した初回構築は暗黙に再開しません。対象は
-`sbxm status`が示し、`sbxm repair <project-id>`だけが続きを進めます。
+停止中のSandboxを起動して接続します。途中で中断した場合、次の`open`が完成済み成果物を
+検証して再利用し、不足工程を完了してから作業を失わず接続します。
 
 接続時の起点は`/home/agent/work/<repository>`です。managed worktreeを起点にする場合は
 0始まりのindexを指定します。たとえば`sbxm open <project-id> -i 0`です。
@@ -172,10 +172,10 @@ sbxm stop <project-id>
 sbxm stop <project-id> ...
 ```
 
-`STATE`は`sbxm open`をそのまま実行できるかを示します。`stopped`は開くと
-Sandboxが起動し、`open-blocked`は先に復旧が必要です。初回構築が始まったまま
+`STATE`は`sbxm open`がすぐ接続できるかを示します。`stopped`は開くと
+Sandboxが起動し、`open-blocked`は接続前の準備が残っています。初回構築が始まったまま
 完了していない案件もここに含まれます。理由は`sbxm status <project-id>`で確認でき、
-次に実行するcommandを1つだけ示します。中断・欠落した初回構築は`sbxm repair`、
+次に実行するcommandを1つだけ示します。中断・欠落した接続準備は`sbxm open`、
 世代交代は`sbxm rebuild`です。
 
 対話端末で実行した場合、`repair`、`apply`、`rebuild`、`open`、`stop`、`destroy`、
@@ -370,7 +370,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
-| `sbxm repair [<project-id>]` | 固定済みのtarget世代を変えず、中断または未完成の初回構築を復旧する |
+| `sbxm repair [<project-id>]` | SSH接続を開かず、中断または未完成の案件を明示的に準備する。接続時は`open`が同じ復旧を行う |
 | `sbxm rebuild [<project-id>]` | Dockerfileから案件のSandboxを作り直す（元の書き込み可能な層は失われる） |
 | `sbxm destroy [<project-id>]` | Sandboxを破棄して案件を管理対象から外し、host cloneとDockerfileは残す |
 

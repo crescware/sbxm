@@ -33,12 +33,18 @@ pub(crate) fn observe(
     metadata: &ProjectMetadata,
     workspace_root: &Path,
 ) -> Result<Observation> {
-    let current_generation = generation::current_dockerfile_hash(paths)?;
     let stored_generation = metadata.provisioning.dockerfile_sha256.clone();
     let target_generation = metadata.initial_provisioning.as_ref().map_or_else(
         || stored_generation.clone(),
         |intent| intent.target_dockerfile_sha256.clone(),
     );
+    // intentがある再開では保存済み世代が正本である。現在のDockerfileを読めないだけで、
+    // 既存成果物やSandboxの完成確認まで拒まない。
+    let current_generation = match generation::current_dockerfile_hash(paths) {
+        Ok(generation) => generation,
+        Err(_) if metadata.initial_provisioning.is_some() => target_generation.clone(),
+        Err(error) => return Err(error),
+    };
     let name = SandboxName::derive(metadata.canonical_id());
     let layout = SandboxLayout::new(metadata.canonical_id());
     let mut observation = Observation::new(
@@ -243,33 +249,34 @@ fn observe_worktrees(
     observation: &mut Observation,
     blocking: &mut Blocking,
 ) {
+    // 1本でも欠けているからといって、そこで打ち切らない。打ち切ると存在するworktreeの
+    // 一覧が空のままになり、`actions_for`が要求本数すべてを作成対象として表示する。
+    let mut present = Vec::new();
+    let mut all_present = true;
     for name in layout.worktree_names(metadata.provisioning.requested_worktrees) {
         match sandbox::path_exists(host, sandbox, &format!("{}/{name}", layout.bare_root())) {
-            Ok(true) => {}
-            Ok(false) => {
-                observation.worktrees_present = Observed::Missing;
-                return;
-            }
+            Ok(true) => present.push(name),
+            Ok(false) => all_present = false,
             Err(error) => {
                 observation.worktrees_present = blocked(blocking, error);
                 return;
             }
         }
     }
-    if metadata.provisioning.start_ref.is_none() {
-        // 起点branchが決まっていない案件は、worktreeが揃ったとは言えない。
-        observation.worktrees_present = Observed::Missing;
-        return;
-    }
-    match observed_worktrees(host, sandbox, layout, metadata) {
+    // 起点branchが決まっていない案件は、worktreeが揃ったとは言えない。それでも、
+    // 存在が確認できたものだけはこの下でHEADまで観測する。
+    let start_ref_resolved = metadata.provisioning.start_ref.is_some();
+    match observed_worktrees(host, sandbox, layout, metadata, &present) {
         Ok(worktrees) => {
             let requested = usize::try_from(metadata.provisioning.requested_worktrees);
-            observation.worktrees_present =
-                if requested.is_ok_and(|requested| worktrees.len() == requested) {
-                    Observed::Matching
-                } else {
-                    Observed::Missing
-                };
+            observation.worktrees_present = if all_present
+                && start_ref_resolved
+                && requested.is_ok_and(|requested| worktrees.len() == requested)
+            {
+                Observed::Matching
+            } else {
+                Observed::Missing
+            };
             observation.worktrees = worktrees;
         }
         Err(error) => observation.worktrees_present = blocked(blocking, error),

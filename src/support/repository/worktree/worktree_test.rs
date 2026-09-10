@@ -175,6 +175,37 @@ fn an_attached_project_gets_one_tracking_branch() -> Checked {
 }
 
 #[test]
+fn an_attached_branch_left_by_an_interruption_is_reused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let git_dir = layout()?.bare_git_dir();
+    let host = worktree_host(CreationMode::Attached, 1)?.answering(
+        &format!("git --git-dir {git_dir} show-ref --verify --quiet refs/heads/develop"),
+        "",
+    );
+    let project = metadata(CreationMode::Attached, Some("develop"), 1)?;
+    metadata::create(&paths, &project).required_because("write the metadata")?;
+
+    ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout()?,
+        &project,
+        "develop",
+        &mut SilentProgress,
+    )
+    .required_because("attach the existing branch")?;
+
+    assert!(
+        host.ran(&format!("worktree add {} develop", layout()?.worktree(0))),
+        "{:?}",
+        host.calls()
+    );
+    assert!(!host.ran("worktree add --track -b"));
+    Ok(())
+}
+
+#[test]
 fn a_worktree_that_is_already_there_and_correct_is_adopted_without_recreating_it() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let paths = project_paths(dir.path())?;

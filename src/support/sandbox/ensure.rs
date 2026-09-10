@@ -9,6 +9,7 @@ use crate::project::SandboxName;
 use crate::design::ProgressSink;
 use crate::support::template::LoadedTemplate;
 
+use super::restore_found::restore_found;
 use super::{
     AGENT_KIT, ReadySandbox, find, relayed, unusable, verify, workspace_exists, workspace_path,
 };
@@ -27,29 +28,15 @@ pub fn ensure(
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<ReadySandbox> {
-    let workspace = workspace_path(workspace_root, sandbox);
     // 作る前に観測する。作ってから見ると、消えていたという事実はもう残っていない。
+    // symlinkなど不正なworkspace pathは、hostへ一度も問い合わせずここで拒否する。
     let present = workspace_exists(workspace_root, sandbox)?;
-
     if let Some(entry) = find(host, sandbox)? {
-        // 対応関係を確認できていないexpected pathを、確認より前に作らない。同名の
-        // 既存Sandboxが別workspaceを指している場合、mismatchで失敗させ、hostには
-        // まだ触れない。
-        verify(&entry, sandbox, &workspace)?;
-        // rootを別accountが所有していると、その下のworkspaceを入れ替えられる。
-        paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
-        paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
-        return Ok(ReadySandbox {
-            name: entry.name,
-            workspace,
-            state: entry.state,
-            created: false,
-            // recordが在るのにmount元が無かった場合だけ、作り直しとして扱う。
-            workspace_restored: !present,
-        });
+        return restore_found(sandbox, workspace_root, entry, present);
     }
 
     // recordが無い場合だけ、新規作成用のdirectoryを作る。
+    let workspace = workspace_path(workspace_root, sandbox);
     paths::ensure_private_dir(workspace_root, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
     paths::ensure_private_dir(&workspace, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
 

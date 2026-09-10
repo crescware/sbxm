@@ -15,18 +15,39 @@ pub fn create_worktree(
 ) -> Result<()> {
     let reference = git::origin_ref(branch);
     let arguments: Vec<&str> = match mode {
-        CreationMode::Attached => vec![
-            "git",
-            "--git-dir",
-            git_dir,
-            "worktree",
-            "add",
-            "--track",
-            "-b",
-            branch,
-            path,
-            &reference,
-        ],
+        CreationMode::Attached => {
+            let local = format!("refs/heads/{branch}");
+            let exists = sandbox::exec(
+                host,
+                sandbox,
+                &[
+                    "git",
+                    "--git-dir",
+                    git_dir,
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    &local,
+                ],
+            )?
+            .success();
+            if exists {
+                vec!["git", "--git-dir", git_dir, "worktree", "add", path, branch]
+            } else {
+                vec![
+                    "git",
+                    "--git-dir",
+                    git_dir,
+                    "worktree",
+                    "add",
+                    "--track",
+                    "-b",
+                    branch,
+                    path,
+                    &reference,
+                ]
+            }
+        }
         CreationMode::Detached => vec![
             "git",
             "--git-dir",

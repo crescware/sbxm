@@ -6,6 +6,8 @@
 mod atomic_create;
 mod atomic_rename_into_place;
 mod atomic_replace;
+mod atomic_replace_resumable;
+mod atomic_write_failed;
 mod atomic_write_with_precondition;
 mod replaceable_identity;
 mod temp_path_for;
@@ -14,6 +16,8 @@ mod unchanged_identity;
 pub use atomic_create::atomic_create;
 pub use atomic_rename_into_place::atomic_rename_into_place;
 pub use atomic_replace::atomic_replace;
+pub use atomic_replace_resumable::atomic_replace_resumable;
+pub(crate) use atomic_write_failed::atomic_write_failed;
 use atomic_write_with_precondition::atomic_write_with_precondition;
 use replaceable_identity::replaceable_identity;
 use temp_path_for::temp_path_for;

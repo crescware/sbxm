@@ -1,6 +1,6 @@
 //! `sbxm open`。
 //!
-//! 登録済み案件のSandboxを起動し、SSHでterminalを引き渡す。Sandboxを新規作成しない。
+//! 登録済み案件を接続可能な状態まで準備し、SSHでterminalを引き渡す。
 
 mod clamped_index;
 mod connect;

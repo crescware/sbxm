@@ -4,6 +4,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::design::{Fact, SilentProgress};
+use crate::testing::provisioning::World;
 use crate::testing::repository::*;
 
 #[test]
@@ -70,6 +71,69 @@ fn an_existing_repository_of_the_same_project_is_reused() -> Checked {
 }
 
 #[test]
+fn an_empty_repository_left_after_git_init_gets_its_missing_origin() -> Checked {
+    let world = World::new();
+    let git_dir = layout()?.bare_git_dir();
+    world.present.borrow_mut().insert(git_dir.clone());
+    *world.bare_git_dir.borrow_mut() = Some(git_dir);
+
+    ensure_bare_clone(
+        &world,
+        "sbxm-example",
+        &project()?,
+        &layout()?,
+        &mut SilentProgress,
+    )
+    .required_because("resume the empty repository initialization")?;
+
+    assert_eq!(
+        world.repository.borrow().get("remote.origin.url").cloned(),
+        Some("https://github.com/Example-Org/Example-Repo.git".to_string())
+    );
+    assert!(world.ran("count-objects -v"));
+    Ok(())
+}
+
+#[test]
+fn a_repository_with_a_matching_origin_but_no_fetch_refspec_gets_it_completed() -> Checked {
+    // `remote add origin`の直後、`config remote.origin.fetch`より前に中断した状態を
+    // 再現する。originは既に対象repositoryを指しているため、それを作り直さず、
+    // 欠けているfetch refspecだけを補う。
+    let world = World::new();
+    let git_dir = layout()?.bare_git_dir();
+    world.present.borrow_mut().insert(git_dir.clone());
+    *world.bare_git_dir.borrow_mut() = Some(git_dir);
+    world.repository.borrow_mut().insert(
+        "remote.origin.url".to_string(),
+        "https://github.com/Example-Org/Example-Repo.git".to_string(),
+    );
+
+    ensure_bare_clone(
+        &world,
+        "sbxm-example",
+        &project()?,
+        &layout()?,
+        &mut SilentProgress,
+    )
+    .required_because("resume the interrupted origin setup")?;
+
+    assert_eq!(
+        world
+            .repository
+            .borrow()
+            .get("remote.origin.fetch")
+            .cloned(),
+        Some(FETCH_REFSPEC.to_string())
+    );
+    assert!(
+        !world.ran("remote add origin"),
+        "the already-declared origin is not replaced: {:?}",
+        world.invocations()
+    );
+    Ok(())
+}
+
+#[test]
 fn a_repository_that_does_not_match_is_refused_instead_of_being_replaced() -> Checked {
     let git_dir = layout()?.bare_git_dir();
 
@@ -101,6 +165,11 @@ fn a_repository_that_does_not_match_is_refused_instead_of_being_replaced() -> Ch
         .refused_because("a repository that cannot be proven is refused")?;
         assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
         assert!(!host.ran("rm "), "nothing is deleted: {:?}", host.calls());
+        assert!(
+            !host.ran("remote add origin"),
+            "a foreign repository is not completed: {:?}",
+            host.calls()
+        );
     }
     Ok(())
 }

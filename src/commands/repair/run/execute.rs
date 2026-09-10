@@ -6,7 +6,7 @@ use crate::design::{Fact, ProgressSink, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata;
 use crate::msg;
-use crate::support::provisioning::{self, Observation, ProvisioningInputs, ProvisioningState};
+use crate::support::provisioning::{self, ProvisioningInputs, ProvisioningState};
 
 use crate::commands::repair::RepairOutput;
 
@@ -34,9 +34,6 @@ pub fn execute(
         });
     }
 
-    if let Some(intent) = &prepared.locked.metadata.initial_provisioning {
-        provisioning::validate_intent(intent, config, &prepared.locked.metadata.display_id())?;
-    }
     let latest = provisioning::observe(
         host,
         &prepared.paths,
@@ -46,8 +43,11 @@ pub fn execute(
     )?;
     latest.require_safe()?;
     let has_intent = prepared.locked.metadata.initial_provisioning.is_some();
+    let target_still_selected =
+        provisioning::select_generation(&latest, &prepared.locked.metadata, has_intent)
+            .is_ok_and(|generation| generation == prepared.target);
     if latest.state != prepared.observation.state
-        || selected_target(&latest, has_intent) != prepared.target
+        || !target_still_selected
         || actions_for(&prepared.locked.metadata, &latest, has_intent) != prepared.plan.actions
     {
         // 表示した対象と、これから実行する対象が一致しない。displayした一覧だけを
@@ -58,23 +58,10 @@ pub fn execute(
             latest.state,
         ));
     }
-    let mut warnings = std::mem::take(&mut prepared.warnings);
-    if latest.is_complete() {
-        if let Some(intent) = &prepared.locked.metadata.initial_provisioning {
-            provisioning::validate_intent(intent, config, &prepared.locked.metadata.display_id())?;
-        }
-        // 既に全post-conditionが揃っている場合は、rebuildやcredential再設定を呼ばず、
-        // intentのclearだけを行う。
-        prepared.locked.metadata.initial_provisioning = None;
-        metadata::update(&prepared.paths, &prepared.locked.metadata)?;
-        return Ok(RepairOutput {
-            project,
-            sandbox,
-            target_generation: prepared.target,
-            changed: true,
-            warnings,
-        });
+    if has_intent {
+        return resume_intent(host, &mut prepared, config, workspace_root, progress);
     }
+    let mut warnings = std::mem::take(&mut prepared.warnings);
 
     let preconditions = prepared
         .preconditions
@@ -85,16 +72,14 @@ pub fn execute(
     // 比較してから初めてmutationへ進む。検証後に生きている入力を読み直す隙を作らない。
     let inputs = capture_repair_inputs(&prepared, config)?;
 
-    if prepared.locked.metadata.initial_provisioning.is_none() {
-        prepared.locked.metadata.initial_provisioning = Some(provisioning::initial_intent(&inputs));
-        prepared
-            .locked
-            .metadata
-            .provisioning
-            .dockerfile_sha256
-            .clone_from(&prepared.target);
-        metadata::update(&prepared.paths, &prepared.locked.metadata)?;
-    }
+    prepared.locked.metadata.initial_provisioning = Some(provisioning::initial_intent(&inputs));
+    prepared
+        .locked
+        .metadata
+        .provisioning
+        .dockerfile_sha256
+        .clone_from(&prepared.target);
+    metadata::update(&prepared.paths, &prepared.locked.metadata)?;
 
     warnings.extend(crate::support::image::cleanup_stale_archives(
         &prepared.paths,
@@ -118,7 +103,7 @@ pub fn execute(
     )?;
     completed.require_safe()?;
     if !completed.is_complete() {
-        return Err(provisioning::require_repair(
+        return Err(provisioning::require_open(
             &prepared.locked.metadata,
             ProvisioningState::Pending,
         ));
@@ -136,33 +121,26 @@ pub fn execute(
     })
 }
 
-fn capture_repair_inputs(prepared: &Prepared, config: &GlobalConfig) -> Result<ProvisioningInputs> {
-    let inputs = ProvisioningInputs::capture(&prepared.paths, config, Some(&prepared.target))?;
-    if let Some(intent) = &prepared.locked.metadata.initial_provisioning {
-        provisioning::validate_captured_intent(
-            intent,
-            &inputs,
-            &prepared.locked.metadata.display_id(),
-        )?;
-    }
-    Ok(inputs)
+fn resume_intent(
+    host: &dyn HostEnvironment,
+    prepared: &mut Prepared,
+    config: &GlobalConfig,
+    workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
+) -> Result<RepairOutput> {
+    let output =
+        provisioning::ensure_initial(&mut prepared.locked, config, host, workspace_root, progress)?;
+    Ok(RepairOutput {
+        project: output.project,
+        sandbox: output.sandbox,
+        target_generation: prepared.target.clone(),
+        changed: true,
+        warnings: output.warnings,
+    })
 }
 
-fn selected_target(observation: &Observation, has_intent: bool) -> String {
-    if has_intent {
-        return observation.target_generation.clone();
-    }
-    if observation.current_generation == observation.stored_generation {
-        return observation.stored_generation.clone();
-    }
-    match (
-        observation.stored_image_matches,
-        observation.current_image_matches,
-    ) {
-        (true, false) => observation.stored_generation.clone(),
-        (false, true) => observation.current_generation.clone(),
-        _ => observation.target_generation.clone(),
-    }
+fn capture_repair_inputs(prepared: &Prepared, config: &GlobalConfig) -> Result<ProvisioningInputs> {
+    ProvisioningInputs::capture(&prepared.paths, config, Some(&prepared.target))
 }
 
 fn state_changed(
@@ -189,7 +167,3 @@ fn state_changed(
         ),
     )
 }
-
-#[cfg(test)]
-#[path = "selected_target_test.rs"]
-mod selected_target_test;

@@ -11,7 +11,7 @@ use crate::support::select::Locked;
 
 use super::{
     ProvisioningInputs, ProvisioningOutput, ProvisioningState, initial_intent, observe, provision,
-    require_repair, verify_external_preconditions,
+    require_open, verify_external_preconditions,
 };
 
 /// 固定済みintentのもとで初回構築を完了させる、唯一の共有workflow。
@@ -25,6 +25,7 @@ pub(crate) fn build_initial(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
+    target: Option<&str>,
 ) -> Result<ProvisioningOutput> {
     let name = locked.metadata.sandbox_name();
 
@@ -34,8 +35,10 @@ pub(crate) fn build_initial(
     let preconditions = verify_external_preconditions(host, &name)?;
 
     // Dockerfileと宣言fileを1回だけ読み、privateなsnapshotへ複製する。以降はこの
-    // snapshotだけを使い、生きているhost pathを二度と読まない。
-    let inputs = ProvisioningInputs::capture(&locked.paths, config, None)?;
+    // snapshotだけを使い、生きているhost pathを二度と読まない。`target`が`Some`の
+    // 場合、旧世代のimage/templateを保持したまま完成させるため、現在のDockerfileは
+    // このgenerationのsnapshotとして書かない。
+    let inputs = ProvisioningInputs::capture(&locked.paths, config, target)?;
 
     // metadataのintentとtarget generationを、最初のhost側mutationより先にatomicに保存する。
     locked.metadata.initial_provisioning = Some(initial_intent(&inputs));
@@ -48,7 +51,7 @@ pub(crate) fn build_initial(
 
     let project = locked.metadata.display_id();
     let warnings = image::cleanup_stale_archives(&locked.paths)
-        .map_err(|error| with_repair_command(error, &project))?;
+        .map_err(|error| with_open_command(error, &project))?;
 
     let output = provision(
         locked,
@@ -59,10 +62,10 @@ pub(crate) fn build_initial(
         progress,
         warnings,
     )
-    .map_err(|error| with_repair_command(error, &project))?;
+    .map_err(|error| with_open_command(error, &project))?;
 
     // 成果物をread-onlyで再確認できてからintentをclearする。clearのatomic replaceに失敗
-    // した場合も、disk上のintentは残るため、次回の明示repairへ安全に渡る。
+    // した場合も、disk上のintentは残るため、次回のopenへ安全に渡る。
     let completed = observe(
         host,
         &locked.paths,
@@ -70,22 +73,22 @@ pub(crate) fn build_initial(
         &locked.metadata,
         workspace_root,
     )
-    .map_err(|error| with_repair_command(error, &project))?;
+    .map_err(|error| with_open_command(error, &project))?;
     completed
         .require_safe()
-        .map_err(|error| with_repair_command(error, &project))?;
+        .map_err(|error| with_open_command(error, &project))?;
     if !completed.is_complete() {
-        return Err(require_repair(&locked.metadata, ProvisioningState::Pending));
+        return Err(require_open(&locked.metadata, ProvisioningState::Pending));
     }
     locked.metadata.initial_provisioning = None;
     locked.metadata.declared_files = Some(initial_intent(&inputs).files);
     metadata::update(&locked.paths, &locked.metadata)
-        .map_err(|error| with_repair_command(error, &project))?;
+        .map_err(|error| with_open_command(error, &project))?;
     Ok(output)
 }
 
 /// intent保存後の失敗へ、次に実行できる明示的な復旧commandを足す。
-fn with_repair_command(error: Error, project: &str) -> Error {
+fn with_open_command(error: Error, project: &str) -> Error {
     let Error::Diagnostics(mut diagnostics) = error else {
         return error;
     };
@@ -94,8 +97,8 @@ fn with_repair_command(error: Error, project: &str) -> Error {
             .remediation
             .take()
             .unwrap_or_default()
-            .explain(msg!("remediation-run-repair"))
-            .try_run(format!("sbxm repair {project}"));
+            .explain(msg!("remediation-run-open"))
+            .try_run(format!("sbxm open {project}"));
         diagnostic.remediation = Some(remediation);
     }
     Error::Diagnostics(diagnostics)

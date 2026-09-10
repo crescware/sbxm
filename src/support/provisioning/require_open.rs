@@ -6,8 +6,8 @@ use crate::msg;
 
 use super::ProvisioningState;
 
-/// prepareが暗黙に継続せず、明示的なrepairへ渡す診断を作る。
-pub(crate) fn require_repair(metadata: &ProjectMetadata, state: ProvisioningState) -> Error {
+/// 現在の入口では続行できない状態を、通常の再開入口であるopenへ渡す。
+pub(crate) fn require_open(metadata: &ProjectMetadata, state: ProvisioningState) -> Error {
     let (id, description) = match state {
         ProvisioningState::Pending => (
             ErrorId::InitialProvisioningPending,
@@ -44,8 +44,8 @@ pub(crate) fn require_repair(metadata: &ProjectMetadata, state: ProvisioningStat
                 state = state
             )))
             .remediation(
-                Remediation::text(msg!("remediation-run-repair"))
-                    .try_run(format!("sbxm repair {}", metadata.display_id())),
+                Remediation::text(msg!("remediation-run-open"))
+                    .try_run(format!("sbxm open {}", metadata.display_id())),
             ),
     )
 }

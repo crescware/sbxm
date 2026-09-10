@@ -486,6 +486,32 @@ fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() -> Chec
 }
 
 #[test]
+fn restoring_a_workspace_for_a_sandbox_that_does_not_exist_is_refused() -> Checked {
+    // `restore_workspace`は`ensure`と違い、対応するrecordが無い場合に新規作成しない。
+    let root = workspace_root()?;
+    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#]);
+
+    let error = restore_workspace(&host, &sandbox()?, root.path())
+        .refused_because("there is nothing to restore without a matching sandbox")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+    Ok(())
+}
+
+#[test]
+fn restoring_an_existing_sandboxs_workspace_reports_whether_it_was_recreated() -> Checked {
+    let root = workspace_root()?;
+    let workspace = workspace_path(root.path(), &sandbox()?);
+    let host = FakeSbx::listing(&[&listing(&workspace, "running")?]);
+
+    let ready = restore_workspace(&host, &sandbox()?, root.path())
+        .required_because("an existing sandbox is restored")?;
+    assert!(!ready.created);
+    assert!(ready.workspace_restored, "the mount point was gone");
+    assert!(workspace.is_dir(), "the directory is there again");
+    Ok(())
+}
+
+#[test]
 fn a_path_check_that_could_not_run_is_not_read_as_absence() -> Checked {
     // `sbx exec`が内側のcommandを起動できなかったことを示す終了statusは、`test -e`が
     // 「不在」を示す`1`と重ならない。答えでない値を、不在として読まない。

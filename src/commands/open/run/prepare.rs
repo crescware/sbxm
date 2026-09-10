@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::design::Fact;
+use crate::design::{Fact, Warning};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata, last_worktree_index};
 use crate::msg;
@@ -19,17 +19,16 @@ use super::{ClampedIndex, Prepared};
 ///
 /// 1. 対象を引数またはpromptで解決し、必要なら案件とindexを1画面で選ぶ
 /// 2. project lockを取得する
-/// 3. 中断した初回構築が残っていないことを、hostへ触れる前にmetadataで確かめる
-/// 4. Docker Engineへの疎通を確認する
-/// 5. 1回の一覧取得からSandbox identityとstateを検証する
-/// 6. Sandboxがまだ無ければ、共有境界で初回構築を完了させる
-/// 7. runningでなければ起動して待つ
+/// 3. 外側の状態を観測し、中断した初回構築があれば同じopenで再開する
+/// 4. 必要な準備中はexclusive session leaseを保持する
+/// 5. runningでなければworkspaceを検証・復元して起動する
+/// 6. 不足する初回構築またはmanaged worktreeを完成させる
+/// 7. exclusive leaseをshared session leaseへ引き継ぐ
 /// 8. hostのSSH `Agentが届かないことをSandboxの中から確認する`
 /// 9. managed worktreeをmetadataとGitから検証する
 ///
-/// lockはこの関数のあいだだけ保持する。初回構築もこのlockの下で進むため、構築中の
-/// 排他はproject lockが担う。session leaseは構築中も接続中もsharedのままとし、lockが
-/// 外れたあとも続くSSH sessionだけを、rebuild/destroy/repairのexclusive leaseと排他する。
+/// lockはこの関数のあいだだけ保持する。準備mutationはexclusive session lease、接続は
+/// shared session leaseで守り、project lockを保持したまま両者を引き継ぐ。
 #[allow(clippy::too_many_arguments)]
 pub fn prepare(
     location: &ConfigLocation,
@@ -62,11 +61,6 @@ pub fn prepare(
         )
     };
     let mut locked = candidate.lock()?;
-    // project lockを保持している間にshared session leaseを取る。lock順序を
-    // project lock→session leaseに固定し、`locked`が外れたあともこのleaseは
-    // `Prepared`が保持し続けるため、SSH sessionの生存中は通常rebuild/destroyの
-    // exclusive session leaseと排他し続ける。
-    let session_lease = locked.acquire_shared_session_lease()?;
     let (index, clamped_worktree_index) = if interactive_index {
         clamp_to_metadata(index, &locked.metadata)
     } else {
@@ -74,41 +68,21 @@ pub fn prepare(
     };
 
     generation::require_no_rebuild(&locked.metadata)?;
-    // 中断した初回構築を暗黙に再開しない。intentはmetadataだけで判定できるため、
-    // repairへ渡す案件に対してはDockerにもsbxにも触れず、metadataも書き換えない。
-    provisioning::require_no_initial_intent(&locked.metadata)?;
-
     docker::require_reachable(host)?;
 
-    let entries = daemon::list(host)?;
-    let provisioned = match inventory::state_of(&entries, &locked.metadata, workspace_root)? {
-        // 既に動いているSandboxを起動し直さない。hostのworkspace directoryが消えていても、
-        // 動いているmountが壊れているかどうかは観測しておらず、推測で接続を拒まない。
-        ProjectState::Running => None,
-        // 起動には中立workspace directoryの実在が要る。`start`が起動前に実測する。
-        ProjectState::Stopped => {
-            inventory::start(host, &locked.metadata, workspace_root, progress)?;
-            None
-        }
-        // Sandboxをまだ持たない案件だけが初回構築の対象になる。停止中の完成済み案件は
-        // この経路へ来ないため、中を観測できないことを理由にrepairへ送らない。
-        ProjectState::NotCreated => Some(provisioning::ensure_initial(
-            &mut locked,
-            config,
-            host,
-            workspace_root,
-            progress,
-        )?),
-    };
-    inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
+    let (provisioned, warnings) =
+        prepare_runtime(&mut locked, config, host, workspace_root, poll, progress)?;
+
+    // 準備と起動が完了した状態をSSH sessionとして保護する。
+    let session_lease = locked.acquire_shared_session_lease()?;
 
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
+    let layout = SandboxLayout::new(metadata.canonical_id());
 
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
     sandbox::require_credentials_isolated(host, name.as_str())?;
 
-    let layout = SandboxLayout::new(metadata.canonical_id());
     let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
     let (working_directory, missing_worktree_index) = working_directory(&layout, &worktrees, index);
 
@@ -131,8 +105,118 @@ pub fn prepare(
         worktrees,
         disk,
         provisioned,
+        warnings,
         _session_lease: session_lease,
     })
+}
+
+fn prepare_runtime(
+    locked: &mut crate::support::select::Locked,
+    config: &GlobalConfig,
+    host: &dyn HostEnvironment,
+    workspace_root: &Path,
+    poll: Poll,
+    progress: &mut dyn ProgressSink,
+) -> Result<(Option<provisioning::ProvisioningOutput>, Vec<Warning>)> {
+    let entries = daemon::list(host)?;
+    let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;
+    let mut warnings = Vec::new();
+    if state == ProjectState::Stopped
+        && let Some(warning) = restore_workspace(host, &locked.metadata, workspace_root)?
+    {
+        warnings.push(warning);
+    }
+    let needs_initial =
+        locked.metadata.initial_provisioning.is_some() || state == ProjectState::NotCreated;
+    let provisioned = if needs_initial {
+        // 準備のmutationは既存SSH sessionと共存させない。完了後、project lockを保持した
+        // ままexclusiveを解放してsharedへ移るため、lifecycle操作が間へ入らない。
+        let exclusive = locked.acquire_exclusive_session_lease()?;
+        if state == ProjectState::Stopped {
+            inventory::start(host, &locked.metadata, workspace_root, progress)?;
+            inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
+        }
+        let output = provisioning::ensure_initial(locked, config, host, workspace_root, progress)?;
+        drop(exclusive);
+        Some(output)
+    } else {
+        if state == ProjectState::Stopped {
+            inventory::start(host, &locked.metadata, workspace_root, progress)?;
+        }
+        None
+    };
+    inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
+
+    // intentは無いがSandboxは在る案件で、成果物の一部が欠けている場合だけ、観測できた
+    // 不足工程をこのopenで補う。`status`はこの状態にも`sbxm open`を案内するため、
+    // ここで直せない欠落を残さない。
+    let provisioned = if provisioned.is_none() {
+        complete_missing_interior(locked, config, host, workspace_root, progress)?
+    } else {
+        provisioned
+    };
+    Ok((provisioned, warnings))
+}
+
+/// intentが無い案件のIncompleteを、記録済みbaselineから観測できた不足工程だけ補う。
+///
+/// image/archive/Template/Sandbox作成には触れない。それらが欠けている場合は
+/// `InitialRoute::decide`が`Build`へ送り、ここへは来ない。
+fn complete_missing_interior(
+    locked: &mut crate::support::select::Locked,
+    config: &GlobalConfig,
+    host: &dyn HostEnvironment,
+    workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
+) -> Result<Option<provisioning::ProvisioningOutput>> {
+    let observation = provisioning::observe(
+        host,
+        &locked.paths,
+        config,
+        &locked.metadata,
+        workspace_root,
+    )?;
+    observation.require_safe()?;
+    if observation.state != provisioning::ProvisioningState::Incomplete {
+        return Ok(None);
+    }
+    let exclusive = locked.acquire_exclusive_session_lease()?;
+    let files = locked.metadata.declared_files.clone().unwrap_or_default();
+    let inputs = provisioning::ProvisioningInputs::from_recorded_files(&locked.paths, &files)?;
+    let output = provisioning::provision_interior(locked, &inputs, host, progress, Vec::new())?;
+    drop(exclusive);
+
+    let completed = provisioning::observe(
+        host,
+        &locked.paths,
+        config,
+        &locked.metadata,
+        workspace_root,
+    )?;
+    completed.require_safe()?;
+    // workspaceが確認できないままだと、内部は補ったあとも観測不能のまま残る。それは
+    // この経路が直せなかった欠落ではなく、動いているSandboxの中を推測で読まなかった
+    // だけである。ここで拒否せず、接続はそのまま進める。
+    if !completed.is_complete() && !completed.interior_is_unobservable() {
+        return Err(provisioning::require_open(
+            &locked.metadata,
+            provisioning::ProvisioningState::Incomplete,
+        ));
+    }
+    Ok(Some(output))
+}
+
+fn restore_workspace(
+    host: &dyn HostEnvironment,
+    metadata: &ProjectMetadata,
+    workspace_root: &Path,
+) -> Result<Option<Warning>> {
+    let ready = sandbox::restore_workspace(host, &metadata.sandbox_name(), workspace_root)?;
+    Ok(ready.workspace_restored.then(|| {
+        Warning::text(msg!("warning-workspace-restored", sandbox = ready.name))
+            .fact(Fact::path(&crate::paths::display(&ready.workspace)))
+            .explain(msg!("guidance-workspace-restored"))
+    }))
 }
 
 /// promptの楽観的な上限で確定したindexを、lock済みmetadataの範囲へ収める。

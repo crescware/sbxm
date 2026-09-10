@@ -349,7 +349,7 @@ fn a_project_whose_build_never_finished_is_sent_to_open_even_with_the_same_docke
 }
 
 #[test]
-fn a_project_whose_first_build_was_interrupted_is_sent_to_repair_instead_of_open() -> Checked {
+fn a_project_whose_first_build_was_interrupted_is_sent_to_open_for_resumption() -> Checked {
     let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
@@ -378,7 +378,7 @@ fn a_project_whose_first_build_was_interrupted_is_sent_to_repair_instead_of_open
     )
     .refused_because("an interrupted first build is recovered explicitly")?;
 
-    // `open`を案内すると、その`open`が同じ事実からrepairを案内して終わる。
+    // 初回構築のintentは`open`自身が再開する。
     assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
     let remediation = error.diagnostics()[0]
         .remediation
@@ -389,7 +389,7 @@ fn a_project_whose_first_build_was_interrupted_is_sent_to_repair_instead_of_open
             .commands
             .first()
             .map(crate::design::text::CommandLine::as_str),
-        Some("sbxm repair example-org/example-repo")
+        Some("sbxm open example-org/example-repo")
     );
     Ok(())
 }
@@ -445,7 +445,7 @@ fn an_interrupted_first_build_is_refused_even_when_the_sandbox_runs() -> Checked
             .commands
             .first()
             .map(crate::design::text::CommandLine::as_str),
-        Some("sbxm repair example-org/example-repo")
+        Some("sbxm open example-org/example-repo")
     );
     assert!(
         host.calls().is_empty(),

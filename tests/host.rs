@@ -33,6 +33,11 @@ printf '%s %s\n' "$program" "$*" >>"$fake/log"
 
 # Sandboxの中のGitが答えるcommit。
 COMMIT=1111111111111111111111111111111111111111
+# managed repositoryのoriginとfetch refspec。`open`はintentが無い場合も観測のために
+# 毎回これらを確かめる。
+ORIGIN_URL="https://github.com/Example-Org/Example-Repo.git"
+FETCH_REFSPEC="+refs/heads/*:refs/remotes/origin/*"
+BARE_GIT_DIR="/home/agent/work/example-repo/.git"
 
 case "$program" in
 ssh)
@@ -56,9 +61,17 @@ ssh)
 	esac
 	;;
 docker)
-	[ "$1 $2" = "version --format" ] || exit 1
-	echo '27.0.0'
-	exit 0
+	case "$1 $2" in
+	"version --format")
+		echo '27.0.0'
+		exit 0
+		;;
+	"image ls")
+		# 対象generationのimageはbuildしていない。不在を空の一覧で示す。
+		exit 0
+		;;
+	esac
+	exit 1
 	;;
 git)
 	case "$1" in
@@ -100,6 +113,12 @@ ls)
 	printf ']}'
 	exit 0
 	;;
+template)
+	# 対象generationのimageはbuildしていないので、Templateも1つも無い。
+	[ "$2" = ls ] || exit 1
+	printf '{"images":[]}'
+	exit 0
+	;;
 exec) ;;
 *) exit 1 ;;
 esac
@@ -121,24 +140,112 @@ test)
 	grep -Fxq "$3" "$fake/present"
 	exit
 	;;
+sh)
+	# custom secretのplaceholderとinstalled toolの一覧を数える、副作用の無いscript。
+	# 個別の値で答え、実際にhost環境を検索して不安定にしない。
+	case "$3" in
+	'printf %s "${GH_TOKEN:-}"')
+		printf '%s' "placeholder-value"
+		exit 0
+		;;
+	"for c in "*)
+		# gh等のtoolは1つも入れていない。
+		exit 0
+		;;
+	esac
+	exit 1
+	;;
 git) ;;
 *) exit 1 ;;
 esac
 
 shift
 case "$1 $2" in
-"--git-dir "*)
-	[ "$3 $4" = "worktree list" ] || exit 1
-	printf 'worktree %s\000bare\000\000' "${2%/.git}"
-	while IFS= read -r worktree; do
-		printf 'worktree %s\000HEAD %s\000detached\000\000' "$worktree" "$COMMIT"
-	done <"$fake/worktrees"
+"check-ref-format --branch")
+	[ -n "$3" ] || exit 1
+	printf '%s\n' "$3"
 	exit 0
 	;;
-"-C "*)
-	[ "$3 $4" = "rev-parse HEAD" ] || exit 1
-	echo "$COMMIT"
+"config --global")
+	if [ "$3" = --get ]; then
+		case "$4" in
+		user.name) file=git-user-name ;;
+		user.email) file=git-user-email ;;
+		credential.https://github.com.helper) file=git-credential-helper ;;
+		*) exit 1 ;;
+		esac
+		[ -s "$fake/$file" ] || exit 1
+		cat "$fake/$file"
+		exit 0
+	fi
+	case "$3" in
+	user.name) file=git-user-name ;;
+	user.email) file=git-user-email ;;
+	credential.https://github.com.helper) file=git-credential-helper ;;
+	*) exit 1 ;;
+	esac
+	shift 3
+	printf '%s' "$*" >"$fake/$file"
 	exit 0
+	;;
+"--git-dir "*)
+	case "$3 $4" in
+	"worktree list")
+		printf 'worktree %s\000bare\000\000' "${2%/.git}"
+		while IFS= read -r worktree; do
+			printf 'worktree %s\000HEAD %s\000detached\000\000' "$worktree" "$COMMIT"
+		done <"$fake/worktrees"
+		exit 0
+		;;
+	"show-ref --verify")
+		exit 0
+		;;
+	"rev-parse refs/remotes/origin/main")
+		echo "$COMMIT"
+		exit 0
+		;;
+	"worktree add")
+		[ "$5" = "--detach" ] || exit 1
+		printf '%s\n' "$6" >>"$fake/present"
+		printf '%s\n' "$6" >>"$fake/worktrees"
+		exit 0
+		;;
+	"rev-parse --is-bare-repository")
+		echo true
+		exit 0
+		;;
+	"fsck --connectivity-only")
+		exit 0
+		;;
+	"fetch --prune")
+		exit 0
+		;;
+	esac
+	case "$3 $4 $5" in
+	"config --get-all remote.origin.url")
+		printf '%s\n' "$ORIGIN_URL"
+		exit 0
+		;;
+	"config --get-all remote.origin.fetch")
+		printf '%s\n' "$FETCH_REFSPEC"
+		exit 0
+		;;
+	esac
+	exit 1
+	;;
+"-C "*)
+	case "$3 $4" in
+	"rev-parse HEAD")
+		echo "$COMMIT"
+		exit 0
+		;;
+	"rev-parse --path-format=absolute")
+		[ "$5" = --git-common-dir ] || exit 1
+		printf '%s\n' "$BARE_GIT_DIR"
+		exit 0
+		;;
+	esac
+	exit 1
 	;;
 esac
 exit 1
@@ -225,6 +332,14 @@ impl Host {
             host.answer(answer, "")?;
         }
         host.answer("ssh-exit", "0")?;
+        // `open`はintentが無い場合も観測のためにSandbox内部のgit identityと
+        // credential helperを毎回確かめる。`registered()`が渡す値と揃えておく。
+        host.answer("git-user-name", "Example User")?;
+        host.answer("git-user-email", "user@example.com")?;
+        host.answer(
+            "git-credential-helper",
+            "!f() { echo username=x; echo password=$GH_TOKEN; }; f",
+        )?;
         Ok(host)
     }
 
@@ -337,7 +452,10 @@ impl Host {
 
     /// managed worktreeがSandboxの中に揃っていることにする。
     fn worktree_is_present(&self) -> Checked<()> {
-        self.answer("present", &format!("{WORKTREE}\n"))?;
+        self.answer(
+            "present",
+            &format!("{BARE_ROOT}\n{BARE_ROOT}/.git\n{WORKTREE}\n"),
+        )?;
         self.answer("worktrees", &format!("{WORKTREE}\n"))
     }
 }
@@ -824,25 +942,30 @@ fn terminating_the_sbxm_process_releases_the_lease_without_deleting_the_file() -
 }
 
 #[test]
-fn open_refuses_a_sandbox_whose_managed_worktree_is_not_there() -> Checked {
+fn open_recreates_a_missing_managed_worktree_before_connecting() -> Checked {
     let host = Host::new()?;
     let sandbox = host.registered()?;
     host.sandbox_is_running(&sandbox)?;
     // Sandboxはあるが、宣言されたworktreeが1本も無い。
+    host.answer("present", &format!("{BARE_ROOT}\n{BARE_ROOT}/.git\n"))?;
     host.answer("worktrees", "")?;
 
     let run = host.run(&["--lang", "en", "open", PROJECT])?;
 
-    assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
     assert!(
-        run.stderr.contains("sandbox-repository-unusable"),
+        run.stderr.contains("Creating the managed worktrees"),
         "{}",
         run.stderr
     );
     assert!(run.stderr.contains(WORKTREE), "{}", run.stderr);
-    // 接続先を見せる前に止まるため、terminalは引き渡さない。
     let asked = host.invocations()?;
-    assert!(!asked.contains(&format!("ssh {sandbox}.sbx")), "{asked}");
-    assert!(asked.contains(BARE_ROOT), "{asked}");
+    let created = asked
+        .find(&format!("worktree add --detach {WORKTREE}"))
+        .required_because("the missing worktree is recreated")?;
+    let connected = asked
+        .find(&format!("ssh -t {sandbox}.sbx"))
+        .required_because("the terminal is handed over after recovery")?;
+    assert!(created < connected, "{asked}");
     Ok(())
 }

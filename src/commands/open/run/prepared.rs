@@ -1,3 +1,4 @@
+use crate::design::Warning;
 use crate::paths::SharedLock;
 use crate::support::disk::DiskObservation;
 use crate::support::provisioning::ProvisioningOutput;
@@ -25,6 +26,8 @@ pub struct Prepared {
     /// 構築済みの案件を開いた場合は`None`である。接続先を見せる前に、何を作ったかを
     /// 同じ実行の中で示す。
     pub provisioned: Option<ProvisioningOutput>,
+    /// 接続準備中に復元した外側の状態。
+    pub warnings: Vec<Warning>,
     /// project lockが外れたあともSSH sessionの生存中だけ保持するshared session lease。
     ///
     /// 通常rebuild/destroyのexclusive session leaseと排他する。読まれることはなく、

@@ -23,7 +23,21 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 /// Docker疎通とworktree一覧に応答するhost。
-fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
+///
+/// `open`は、intentが無い案件でも観測のためにSandbox内部（bare repository、git
+/// identity、custom secretのplaceholder）を毎回確かめる。ここで作るhostは、
+/// registerした案件がその意味でも完成済みであるように答える。
+fn ready(host: FakeSbx, project: &Registered) -> Checked<FakeSbx> {
+    // `open`はintentが無い場合も観測のために現在のDockerfileを読む。書く内容の
+    // digestが`project.metadata.provisioning.dockerfile_sha256`と一致する必要はない
+    // （それはこのファイルの範囲では`Ready`到達後の世代一致検査の対象であり、この
+    // helperを使うtestが確かめる事実ではない）。既に別のtestがこのpathへ
+    // 書いている場合は上書きしない。
+    let dockerfile = project.paths.dockerfile();
+    if !dockerfile.exists() {
+        std::fs::write(&dockerfile, b"FROM example:test\n")
+            .required_because("write a readable Dockerfile for the open fixture")?;
+    }
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     let mut listing = format!("worktree {}\0bare\0\0", layout.bare_root());
     for index in 0..project.metadata.provisioning.requested_worktrees {
@@ -47,10 +61,108 @@ fn ready(host: FakeSbx, project: &Registered) -> FakeSbx {
         0,
         &listing,
     );
-    host.answering(
+    let host = host.answering(
         &format!("exec {} -- df -Pk /", project.sandbox),
         0,
         "Filesystem     1024-blocks      Used Available Capacity Mounted on\noverlay          20466256  14502976   4898320       75% /\n",
+    );
+    Ok(interior_ready(host, project, &layout))
+}
+
+/// bare repository、managed worktree、git identity、custom secretのplaceholderが
+/// 揃っていることに答えるhost。`open`が観測できたintent無しの案件を、実際に完成済み
+/// として扱ってよいように答える。
+fn interior_ready(host: FakeSbx, project: &Registered, layout: &SandboxLayout) -> FakeSbx {
+    let git_dir = layout.bare_git_dir();
+    let host = host
+        .answering(
+            &format!(
+                "exec {} -- git --git-dir {git_dir} rev-parse --is-bare-repository",
+                project.sandbox
+            ),
+            0,
+            "true\n",
+        )
+        .answering(
+            &format!(
+                "exec {} -- git --git-dir {git_dir} config --get-all remote.origin.url",
+                project.sandbox
+            ),
+            0,
+            &format!(
+                "{}\n",
+                crate::git::https_remote_url("Example-Org", "Example-Repo")
+            ),
+        )
+        .answering(
+            &format!(
+                "exec {} -- git --git-dir {git_dir} config --get-all remote.origin.fetch",
+                project.sandbox
+            ),
+            0,
+            &format!("{}\n", crate::support::repository::FETCH_REFSPEC),
+        )
+        .answering(
+            &format!(
+                "exec {} -- git --git-dir {git_dir} fsck --connectivity-only",
+                project.sandbox
+            ),
+            0,
+            "",
+        );
+    let identity = crate::testing::metadata::git_identity();
+    let mut host = host
+        .answering(
+            &format!(
+                "exec {} -- git config --global --get user.name",
+                project.sandbox
+            ),
+            0,
+            &format!("{}\n", identity.user_name),
+        )
+        .answering(
+            &format!(
+                "exec {} -- git config --global --get user.email",
+                project.sandbox
+            ),
+            0,
+            &format!("{}\n", identity.user_email),
+        );
+    // observeは`worktree list`ではなく、path単位の実在確認とworktree登録の照合で
+    // managed worktreeを確かめる。宣言された本数だけ、同じ答えを揃える。
+    for index in 0..project.metadata.provisioning.requested_worktrees {
+        let worktree_path = layout.worktree(index);
+        host = host
+            .answering(
+                &format!(
+                    "exec {} -- git -C {worktree_path} rev-parse --path-format=absolute --git-common-dir",
+                    project.sandbox
+                ),
+                0,
+                &format!("{git_dir}\n"),
+            )
+            .answering(
+                &format!("exec {} -- git -C {worktree_path} rev-parse HEAD", project.sandbox),
+                0,
+                "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2\n",
+            );
+    }
+    let host = host.answering(
+        &format!(
+            "exec {} -- sh -c {}",
+            project.sandbox,
+            crate::support::secret::placeholder_probe()
+        ),
+        0,
+        "placeholder\n",
+    );
+    host.answering(
+        &format!(
+            "exec {} -- git config --global --get credential.https://github.com.helper",
+            project.sandbox
+        ),
+        0,
+        "!f() { echo username=x; echo password=$GH_TOKEN; }; f\n",
     )
 }
 
@@ -80,7 +192,7 @@ fn a_running_project_is_opened_without_touching_the_daemon() -> Checked {
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 
@@ -121,7 +233,7 @@ fn disk_usage_is_observed_exactly_once_after_the_sandbox_is_confirmed_running() 
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     prepare_for(&fixture, &host).required_because("prepare")?;
 
@@ -143,7 +255,7 @@ fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project).answering(
+    let host = ready(FakeSbx::listing(&running), &project)?.answering(
         &format!("exec {} -- df -Pk /", project.sandbox),
         127,
         "",
@@ -217,7 +329,7 @@ fn an_index_beyond_the_project_is_reported_before_the_terminal_is_handed_over() 
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     // promptはmetadataを待たずに設定上限まで受け付ける。案件が持つ範囲まで下げた事実は、
     // 接続先を見せる前に述べる。
@@ -274,7 +386,7 @@ fn a_selected_worktree_becomes_the_ssh_starting_directory() -> Checked {
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     let prepared = prepare_for_index(&fixture, &host, Some(0))
         .required_because("prepare the selected worktree")?;
@@ -298,7 +410,7 @@ fn an_interactive_index_is_bounded_by_the_selected_projects_worktrees() -> Check
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
     let mut prompt = ScriptedPrompt::choosing_worktree(99);
 
     let prepared = prepare(
@@ -341,7 +453,7 @@ fn an_interactive_index_inside_the_metadata_is_opened_without_a_warning() -> Che
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     let prepared = prepare(
         &fixture.location,
@@ -375,7 +487,7 @@ fn an_unconfigured_worktree_index_falls_back_to_the_repository_root() -> Checked
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     let prepared = prepare_for_index(&fixture, &host, Some(1))
         .required_because("an unknown worktree falls back to the root")?;
@@ -393,7 +505,7 @@ fn the_host_agent_has_to_be_out_of_reach_before_the_terminal_is_handed_over() ->
         fixture.entry(&project, "running")?
     );
     // daemonがSSH Agentを渡す状態で起動していた場合、中から到達できる。
-    let host = ready(FakeSbx::listing(&running), &project).answering(
+    let host = ready(FakeSbx::listing(&running), &project)?.answering(
         &format!("exec {} -- ssh-add -L", project.sandbox),
         0,
         "ssh-rsa AAAA...\n",
@@ -421,7 +533,7 @@ fn a_stopped_project_is_started_without_a_terminal_and_waited_for() -> Checked {
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listings(&[&stopped, &running]), &project);
+    let host = ready(FakeSbx::listings(&[&stopped, &running]), &project)?;
 
     prepare_for(&fixture, &host).required_because("prepare")?;
 
@@ -431,7 +543,7 @@ fn a_stopped_project_is_started_without_a_terminal_and_waited_for() -> Checked {
 }
 
 #[test]
-fn a_stopped_project_whose_workspace_is_gone_is_refused_instead_of_started() -> Checked {
+fn a_stopped_project_whose_workspace_is_gone_is_restored_and_started() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
     // runtimeのrecordは残っているが、mount元のdirectoryはhostから消えている。
@@ -439,29 +551,50 @@ fn a_stopped_project_whose_workspace_is_gone_is_refused_instead_of_started() -> 
         r#"{{"sandboxes":[{}]}}"#,
         fixture.declared_entry(&project, "stopped")
     );
-    let host = ready(FakeSbx::listing(&stopped), &project);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.declared_entry(&project, "running")
+    );
+    let host = ready(FakeSbx::listings(&[&stopped, &stopped, &running]), &project)?;
 
-    let error = prepare_for(&fixture, &host)
-        .refused_because("a sandbox the runtime cannot start is not asked to start")?;
-
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxWorkspaceMissing));
-    let diagnostic = &error.diagnostics()[0];
-    assert_eq!(diagnostic.description.id, "error-sandbox-workspace-missing");
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = {
+        let policy = RenderingPolicy::plain();
+        let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
+        let mut prompt = PromptUi::new(
+            Locale::En,
+            policy.stderr,
+            Box::new(ScriptedKeys::confirming()),
+            Box::new(RecordedScreen::new()),
+        );
+        let context = Context {
+            location: &fixture.location,
+            workspace_root: &fixture.workspace_root,
+            locale: Locale::En,
+            can_prompt: false,
+        };
+        crate::commands::open::exec(
+            &Args {
+                project: Some(project_id("Example-Org/Example-Repo")?),
+                index: None,
+            },
+            &context,
+            &mut ui,
+            &host,
+            &mut prompt,
+        )
+    };
+    assert_eq!(code, ExitCode::Success);
     assert!(
-        !host.ran("/bin/true"),
-        "the refusal comes before the start: {:?}",
+        host.ran("/bin/true"),
+        "the sandbox is started after restoring its mount point: {:?}",
         host.calls()
     );
-    let remediation = diagnostic
-        .remediation
-        .as_ref()
-        .required_because("the user is told how to restore it")?;
+    let stderr = String::from_utf8(stderr).required_because("open stderr is UTF-8")?;
     assert!(
-        remediation
-            .commands
-            .iter()
-            .any(|command| command.as_str() == "sbxm repair Example-Org/Example-Repo"),
-        "the remediation names a command that can be run: {remediation:?}"
+        stderr.contains("was not on the host, and this run created it again"),
+        "the restored path is reported: {stderr}"
     );
     Ok(())
 }
@@ -476,7 +609,7 @@ fn a_running_project_is_opened_even_though_its_workspace_is_not_observed() -> Ch
         r#"{{"sandboxes":[{}]}}"#,
         fixture.declared_entry(&project, "running")
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 
@@ -530,7 +663,7 @@ fn a_rebuild_in_progress_stops_the_connection() -> Checked {
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     let error =
         prepare_for(&fixture, &host).refused_because("a half-switched sandbox is not opened")?;
@@ -547,7 +680,7 @@ fn an_intent_recorded_after_the_selection_is_still_seen() -> Checked {
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     // 選択したあとにrebuildが始まった状態を、lock取得後のmetadataから読み直す。
     let mut metadata = project.metadata.clone();
@@ -581,7 +714,7 @@ fn a_sandbox_that_never_reaches_running_is_reported_rather_than_assumed() -> Che
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "stopped")?
     );
-    let host = ready(FakeSbx::listing(&stopped), &project);
+    let host = ready(FakeSbx::listing(&stopped), &project)?;
 
     let error = prepare_for(&fixture, &host)
         .refused_because("a sandbox that stays stopped is not connected")?;
@@ -610,7 +743,7 @@ fn a_missing_managed_worktree_stops_before_the_terminal_is_handed_over() -> Chec
     );
     let layout = SandboxLayout::new(project.metadata.canonical_id());
     // directoryはあってもGitのworktreeでなければ、宣言を満たしていない。
-    let host = ready(FakeSbx::listing(&running), &project).answering(
+    let host = ready(FakeSbx::listing(&running), &project)?.answering(
         &format!(
             "exec {} -- git --git-dir {} worktree list --porcelain -z",
             project.sandbox,
@@ -650,7 +783,7 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 
     connect(&host, prepared, &mut RecordedOutput::new()).required_because("connect")?;
@@ -685,7 +818,7 @@ fn the_session_lease_is_released_before_a_connection_error_is_reported() -> Chec
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project).answering(
+    let host = ready(FakeSbx::listing(&running), &project)?.answering(
         &format!(
             "-t {}.sbx cd '/home/agent/work/example-repo/example-repo.tree-0' && exec \"${{SHELL:-/bin/sh}}\" -l",
             project.sandbox
@@ -715,7 +848,7 @@ fn the_project_lock_is_released_before_the_terminal_is_handed_over() -> Checked 
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     prepare_for(&fixture, &host).required_because("prepare")?;
     // 接続中に、別terminalの`stop`がこの案件を待たされない。
@@ -737,7 +870,7 @@ fn the_session_lease_stays_held_until_the_terminal_session_ends() -> Checked {
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listing(&running), &project);
+    let host = ready(FakeSbx::listing(&running), &project)?;
 
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 

@@ -1,11 +1,17 @@
 use super::*;
 
 use crate::design::SilentProgress;
+use crate::paths::{self, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
 use crate::support::select;
 use crate::testing::add_request::request;
 use crate::testing::outcome::{Checked, Refused, Required};
+use crate::testing::poll::poll;
+use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
+use std::cell::RefCell;
 use std::fs;
+use std::rc::Rc;
+use std::time::Duration;
 
 #[test]
 fn provisioning_states_keep_their_stable_spellings() {
@@ -80,5 +86,72 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
         "verified artifacts are reused: {:?}",
         world.since(mark)
     );
+    Ok(())
+}
+
+#[test]
+fn construction_holds_exclusive_then_connection_holds_shared() -> Checked {
+    // project lock → exclusive → sharedの順序は、`open`が準備mutationと接続を1回で
+    // 済ませるようになったあとも変わらない。構築中は他のsession/lifecycle操作を
+    // 入れず、接続中はexclusiveな操作（rebuild/destroyなど）だけを締め出す。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let add_request = request("Example-Org/Example-Repo", None, None)?;
+    let project = bench
+        .register(&world, &add_request)
+        .required_because("the project is registered")?;
+    let paths = ProjectPaths::derive(&bench.parent, &project.canonical());
+    let lease_file = paths.session_lease_file();
+
+    let refused_during_construction = Rc::new(RefCell::new(None));
+    let recorded = Rc::clone(&refused_during_construction);
+    world.mutate_before("sbx create", move || {
+        let refused = paths::acquire_shared_lock(
+            &lease_file,
+            Duration::from_millis(50),
+            PRIVATE_FILE_MODE,
+            PathScope::ProjectPath,
+        )
+        .is_err();
+        *recorded.borrow_mut() = Some(refused);
+    });
+
+    let prepared = crate::commands::open::run::prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        None,
+        &world,
+        &mut ScriptedPrompt::choosing(0),
+        bench.workspace_root.path(),
+        poll(),
+        &mut SilentProgress,
+    )
+    .required_because("the first open builds and connects")?;
+
+    assert_eq!(
+        refused_during_construction.take(),
+        Some(true),
+        "a shared lock attempt made while the exclusive session lease is held is refused"
+    );
+
+    // 準備が終わり接続まで進んだあとは、shared session leaseがexclusiveな操作を
+    // 締め出す（sharedな他sessionとは共存できる、と混同しない）。
+    paths::acquire_exclusive_lock(
+        &paths.session_lease_file(),
+        Duration::from_millis(50),
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .refused_because("an active connection blocks a new exclusive session lease")?;
+
+    drop(prepared);
+    paths::acquire_exclusive_lock(
+        &paths.session_lease_file(),
+        Duration::from_millis(50),
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("the session lease releases once the session ends")?;
     Ok(())
 }
