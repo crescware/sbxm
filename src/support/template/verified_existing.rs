@@ -14,8 +14,13 @@ use super::{LoadedTemplate, find};
 /// 名前が一致する既存Templateを、runtime idまで確認してから再利用する。
 ///
 /// `sbx template ls --json`のrepositoryとtagだけでは、別内容のTemplateが同じ名前で
-/// 登録されていても見分けられない。archiveのconfig digestを、label検証済みhost image
-/// から作った期待値として使う。
+/// 登録されていても見分けられない。label検証済みhost imageから作ったarchiveが宣言する
+/// digestを期待値として使う。
+///
+/// runtimeが報告するidは、archiveがOCI layoutならindexまたはmanifestのdigest、
+/// legacy layoutならimage configのdigestになる。どちらか一方に決め打ちすると、
+/// 同じimageから作った正しいTemplateを別物として拒み、2度目の準備が進まなくなる。
+/// archiveが宣言する候補のいずれかと一致すれば、同じimageと判定する。
 pub fn verified_existing(
     host: &dyn HostEnvironment,
     image: &BuiltImage,
@@ -24,20 +29,20 @@ pub fn verified_existing(
     let Some(entry) = find(host, &image.name)? else {
         return Ok(None);
     };
-    let manifest = archive::read_manifest(archive_path)?;
-    let expected = short_hex(
-        manifest
-            .config_digest
-            .strip_prefix("sha256:")
-            .unwrap_or(&manifest.config_digest),
-    );
+    let declared = archive::read_image_ids(archive_path)?;
 
     match entry.id.as_deref() {
-        Some(observed) if normalize(observed) == expected => Ok(Some(LoadedTemplate {
-            name: image.name.clone(),
-            loaded: false,
-        })),
-        Some(observed) => Err(mismatched(&image.name, observed, expected)),
+        Some(observed)
+            if declared
+                .iter()
+                .any(|id| normalize(id) == normalize(observed)) =>
+        {
+            Ok(Some(LoadedTemplate {
+                name: image.name.clone(),
+                loaded: false,
+            }))
+        }
+        Some(observed) => Err(mismatched(&image.name, observed, &declared)),
         None => Err(unobservable_id(&image.name)),
     }
 }
@@ -47,7 +52,12 @@ fn normalize(id: &str) -> &str {
     short_hex(id.strip_prefix("sha256:").unwrap_or(id))
 }
 
-fn mismatched(name: &str, observed: &str, expected: &str) -> Error {
+fn mismatched(name: &str, observed: &str, declared: &[String]) -> Error {
+    let expected = declared
+        .iter()
+        .map(|id| normalize(id))
+        .collect::<Vec<_>>()
+        .join(", ");
     Error::single(
         Diagnostic::new(ErrorId::TemplateUnusable, msg!("error-template-unusable"))
             .fact(Fact::template(name))

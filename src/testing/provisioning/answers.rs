@@ -141,13 +141,21 @@ impl World {
                 (0, format!(r#"{{"images":[{rendered}]}}"#))
             }
             ["template", "load", archive] => {
-                let Ok(manifest) = crate::archive::read_manifest(Path::new(archive)) else {
+                // 実物のruntimeと同じく、登録するidはarchiveのindexが指すdigestであり、
+                // image configのdigestではない。
+                let path = Path::new(archive);
+                let (Ok(manifest), Ok(ids)) = (
+                    crate::archive::read_manifest(path),
+                    crate::archive::read_image_ids(path),
+                ) else {
                     return (1, String::new());
                 };
-                self.templates.borrow_mut().insert(
-                    manifest.repo_tags[0].clone(),
-                    manifest.config_digest.clone(),
-                );
+                let Some(id) = ids.first() else {
+                    return (1, String::new());
+                };
+                self.templates
+                    .borrow_mut()
+                    .insert(manifest.repo_tags[0].clone(), id.clone());
                 (0, String::new())
             }
             [

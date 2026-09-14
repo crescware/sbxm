@@ -740,6 +740,62 @@ fn a_template_with_a_matching_runtime_id_is_reused() -> Checked {
 }
 
 #[test]
+fn a_template_left_behind_by_a_dropped_sandbox_is_reused_to_rebuild_it() -> Checked {
+    // 準備の途中でSandboxだけを手で削除しても、同じ世代のTemplateはruntimeに残る。
+    // containerd image storeではそのidはimage indexのdigestであり、image configの
+    // digestではない。configのdigestと突き合わせると、同じimageのTemplateを別物と
+    // して拒み、`open`も`repair`もそこから進めなくなる。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+
+    world.failing("worktree add");
+    bench
+        .build(&world, &request)
+        .refused_because("the old run stopped after the sandbox was created")?;
+    world.nothing_fails();
+    assert!(
+        !world.sandboxes.borrow().is_empty(),
+        "the sandbox was created before the interruption"
+    );
+    // `sbx rm`に相当する。Templateはそのまま残る。
+    world.sandboxes.borrow_mut().clear();
+
+    let project = project_of(&request)?;
+    let mark = world.mark();
+    let prepared = crate::commands::repair::run::prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("repair observes the pending state")?;
+    crate::commands::repair::run::execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .required_because(
+        "the template the runtime reports by its index digest is the verified image",
+    )?;
+
+    let calls = world.since(mark);
+    assert!(
+        !calls.iter().any(|call| call.contains("template load")),
+        "the template is reused rather than reloaded: {calls:?}"
+    );
+    assert!(
+        calls.iter().any(|call| call.contains("create")),
+        "the sandbox is created again from the reused template: {calls:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_successful_prepare_never_asks_for_disk_usage() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

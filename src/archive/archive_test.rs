@@ -401,3 +401,79 @@ fn a_missing_archive_is_refused_with_the_path() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
     Ok(())
 }
+
+/// `index.json`が指すdigest。image configのdigestとは別の値。
+const INDEX_ID: &str = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+
+#[test]
+fn an_oci_archive_declares_the_index_digest_before_the_config_digest() -> Checked {
+    let hex = &IMAGE_ID["sha256:".len()..];
+    let document = manifest(
+        "sbxm-example-template:111111111111",
+        &format!("blobs/sha256/{hex}"),
+    );
+    let index = index_json("sbxm-example-template:111111111111", INDEX_ID);
+    let (_dir, path) = write_archive(&[
+        ("index.json", index.as_bytes()),
+        (MANIFEST_ENTRY, document.as_bytes()),
+    ])?;
+    let ids = read_image_ids(&path).required_because("both digests are declared")?;
+    assert_eq!(ids, vec![INDEX_ID.to_string(), IMAGE_ID.to_string()]);
+    Ok(())
+}
+
+#[test]
+fn a_legacy_archive_declares_only_its_config_digest() -> Checked {
+    let hex = &IMAGE_ID["sha256:".len()..];
+    let document = manifest(
+        "sbxm-example-template:111111111111",
+        &format!("blobs/sha256/{hex}"),
+    );
+    let (_dir, path) = write_archive(&[(MANIFEST_ENTRY, document.as_bytes())])?;
+    let ids = read_image_ids(&path).required_because("the config digest is declared")?;
+    assert_eq!(ids, vec![IMAGE_ID.to_string()]);
+    Ok(())
+}
+
+#[test]
+fn an_index_that_points_at_the_config_is_not_declared_twice() -> Checked {
+    let hex = &IMAGE_ID["sha256:".len()..];
+    let document = manifest(
+        "sbxm-example-template:111111111111",
+        &format!("blobs/sha256/{hex}"),
+    );
+    let index = index_json("sbxm-example-template:111111111111", IMAGE_ID);
+    let (_dir, path) = write_archive(&[
+        ("index.json", index.as_bytes()),
+        (MANIFEST_ENTRY, document.as_bytes()),
+    ])?;
+    let ids = read_image_ids(&path).required_because("one digest is declared once")?;
+    assert_eq!(ids, vec![IMAGE_ID.to_string()]);
+    Ok(())
+}
+
+#[test]
+fn an_index_that_cannot_be_used_is_refused() -> Checked {
+    let hex = &IMAGE_ID["sha256:".len()..];
+    let document = manifest(
+        "sbxm-example-template:111111111111",
+        &format!("blobs/sha256/{hex}"),
+    );
+    let cases: Vec<&[u8]> = vec![
+        // JSONではない。
+        b"not json",
+        // manifestsを列挙していない。
+        br#"{"schemaVersion":2}"#,
+        // digestを持たないmanifestがある。
+        br#"{"manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json"}]}"#,
+        // digestの形をしていない。
+        br#"{"manifests":[{"digest":"sha256:short"}]}"#,
+    ];
+    for index in cases {
+        let (_dir, path) =
+            write_archive(&[("index.json", index), (MANIFEST_ENTRY, document.as_bytes())])?;
+        let error = read_image_ids(&path).refused_because("the index is not usable")?;
+        assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+    }
+    Ok(())
+}
