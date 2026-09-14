@@ -121,6 +121,7 @@ error-declared-file-conflict = { $destination } already holds different content,
 error-sandbox-identity-mismatch = { $sandbox } already sets { $key } to { $observed }, and this project expects { $expected }.
 error-github-secret-missing = The sandbox { $sandbox } has no single custom secret covering { $hosts }, so it cannot reach the repository.
 error-github-credential-rejected = GitHub did not accept the credential the git inside { $sandbox } presented.
+error-sandbox-token-env-unusable = { $path } in the sandbox { $sandbox } holds something sbxm did not write, so the GitHub token variables cannot be set from it.
 error-sandbox-credential-helper-unusable = The git credential helper inside { $sandbox } cannot be safely configured
 error-secret-still-registered = The custom secret carrying { $env } was still registered for { $sandbox } after it was removed.
 error-sandbox-repository-unusable = This path in the sandbox cannot be used for this project

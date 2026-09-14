@@ -115,6 +115,7 @@ error_ids! {
     SandboxIdentityMismatch => "sandbox-identity-mismatch",
     GithubSecretMissing => "github-secret-missing",
     GithubCredentialRejected => "github-credential-rejected",
+    SandboxTokenEnvUnusable => "sandbox-token-env-unusable",
     SecretStillRegistered => "secret-still-registered",
     SandboxRepositoryUnusable => "sandbox-repository-unusable",
     StartRefUnresolved => "start-ref-unresolved",

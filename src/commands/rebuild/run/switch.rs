@@ -69,6 +69,7 @@ impl Switch<'_> {
         identity::ensure(host, &ready.name, &metadata.git_identity).map_err(decorate)?;
         tools::SandboxReady::announce(host, &ready.name).map_err(decorate)?;
         secret::configure_git_credential(host, &ready.name, &placeholder).map_err(decorate)?;
+        secret::configure_token_env(host, &ready.name, &placeholder).map_err(decorate)?;
         secret::require_github_accepts(host, &ready.name, project)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)
             .map_err(decorate)?;

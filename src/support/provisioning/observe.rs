@@ -132,6 +132,7 @@ fn mark_inside_unobservable(observation: &mut Observation, state: SandboxState) 
     observation.credentials = unobservable.clone();
     observation.secret = unobservable.clone();
     observation.credential_helper = unobservable.clone();
+    observation.token_env = unobservable.clone();
     observation.repository = unobservable.clone();
     observation.worktrees_present = unobservable;
 }
@@ -180,14 +181,20 @@ fn observe_sandbox(
                     Ok(observed) => observed,
                     Err(error) => blocked(blocking, error),
                 };
+            observation.token_env = match secret::observe_token_env(host, sandbox, &placeholder) {
+                Ok(observed) => observed,
+                Err(error) => blocked(blocking, error),
+            };
         }
         Err(error) if error.contains_id(crate::diagnostics::ErrorId::GithubSecretMissing) => {
             observation.secret = Observed::Missing;
             observation.credential_helper = Observed::Missing;
+            observation.token_env = Observed::Missing;
         }
         Err(error) => {
             observation.secret = blocked(blocking, error);
             observation.credential_helper = Observed::Missing;
+            observation.token_env = Observed::Missing;
         }
     }
     match declared_files(host, sandbox, metadata, config) {

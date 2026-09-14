@@ -69,6 +69,37 @@ fn git_is_given_the_placeholder_before_it_reaches_github() -> Checked {
 }
 
 #[test]
+fn the_sandbox_is_left_able_to_run_gh_without_the_service_sentinel() -> Checked {
+    // 組み込み`github` serviceは、tokenを保存していなくてもSandboxの`GH_TOKEN`と
+    // `GITHUB_TOKEN`をsentinelで埋める。`gh`はそれを送って401になるため、構築の
+    // 中でlogin shellが読むfileを置き、登録済みのplaceholderで上書きする。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the build completes")?;
+
+    let written = world
+        .settings
+        .borrow()
+        .get("/etc/profile.d/sbxm-github-token.sh")
+        .cloned()
+        .required_because("the token environment file is placed")?;
+    for variable in ["GH_TOKEN", "GITHUB_TOKEN"] {
+        assert!(
+            written.contains(&format!("export {variable}=sbx-cs-example")),
+            "{variable} carries the placeholder: {written}"
+        );
+    }
+    assert!(
+        !written.contains("sbxproxymanaged"),
+        "the service sentinel is not what the sandbox keeps: {written}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

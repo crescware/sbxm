@@ -44,6 +44,7 @@ pub(crate) fn provision_interior(
     identity::ensure(host, &ready_name, &locked.metadata.git_identity).map_err(decorate)?;
     tools::SandboxReady::announce(host, &ready_name).map_err(decorate)?;
     secret::configure_git_credential(host, &ready_name, &placeholder).map_err(decorate)?;
+    secret::configure_token_env(host, &ready_name, &placeholder).map_err(decorate)?;
     // 数分かかるfetchへ進む前に、実物と同じ経路で認証だけを確かめる。
     secret::require_github_accepts(host, &ready_name, &project)?;
 

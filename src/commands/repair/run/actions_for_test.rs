@@ -22,6 +22,7 @@ fn incomplete_observation() -> Observation {
     observation.workspace = Observed::Matching;
     observation.identity = Observed::Matching;
     observation.credential_helper = Observed::Matching;
+    observation.token_env = Observed::Matching;
     observation.repository = Observed::Matching;
     observation.worktrees_present = Observed::Matching;
     observation
@@ -125,6 +126,7 @@ fn incomplete_identity_credential_and_repository_are_named() -> Checked {
     let mut observation = incomplete_observation();
     observation.identity = Observed::Missing;
     observation.credential_helper = Observed::Missing;
+    observation.token_env = Observed::Missing;
     observation.repository = Observed::Missing;
 
     let actions = actions_for(&metadata, &observation, true);
@@ -147,6 +149,7 @@ fn an_unobserved_interior_names_the_implicit_start_and_full_provisioning() -> Ch
     observation.credentials = unobservable.clone();
     observation.secret = unobservable.clone();
     observation.credential_helper = unobservable.clone();
+    observation.token_env = unobservable.clone();
     observation.repository = unobservable.clone();
     observation.worktrees_present = unobservable;
 

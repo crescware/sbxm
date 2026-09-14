@@ -617,3 +617,126 @@ fn a_failure_that_is_not_a_rejection_is_reported_as_the_command_that_failed() ->
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     Ok(())
 }
+
+/// `gh`が読む環境変数fileの、期待する中身。
+fn token_env(placeholder: &str) -> String {
+    format!(
+        "# Written by sbxm. The placeholder is substituted by the Docker Sandboxes proxy.\n\
+         export GH_TOKEN={placeholder}\n\
+         export GITHUB_TOKEN={placeholder}\n"
+    )
+}
+
+#[test]
+fn the_variables_gh_reads_are_set_to_the_placeholder() -> Checked {
+    // 組み込み`github` serviceは、tokenを1件も保存していなくても`GH_TOKEN`と
+    // `GITHUB_TOKEN`をsentinelで埋める。実機では`gho_sbxproxymanaged…`が入り、
+    // `gh`はそれを送って401になる。login shellが読むfileで両方を上書きする。
+    let host = FakeSbx::listing("");
+    configure_token_env(&host, "sbxm-example", "sbx-cs-example")
+        .required_because("the file is written")?;
+
+    let written = host
+        .calls
+        .borrow()
+        .iter()
+        .map(|call| call.join(" "))
+        .find(|call| call.contains("printf"))
+        .required_because("the file is written")?;
+    assert!(
+        written.contains("--user root"),
+        "the file lives under /etc, so it is written as root: {written}"
+    );
+    for variable in ["GH_TOKEN", "GITHUB_TOKEN"] {
+        assert!(
+            written.contains(&format!("export {variable}=sbx-cs-example")),
+            "{variable} is overridden, so nothing sends the sentinel: {written}"
+        );
+    }
+    assert!(
+        !written.contains("ghp_") && !written.contains("github_pat_"),
+        "no token material reaches the sandbox: {written}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_matching_token_env_file_is_left_untouched() -> Checked {
+    let host = FakeSbx::listing("").inside(
+        "cat /etc/profile.d",
+        0,
+        Box::leak(token_env("sbx-cs-example").into_boxed_str()),
+        "",
+    );
+    configure_token_env(&host, "sbxm-example", "sbx-cs-example")
+        .required_because("the file already matches")?;
+    assert_eq!(
+        host.calls.borrow().len(),
+        1,
+        "read once, never written: {:?}",
+        host.calls.borrow()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_token_env_file_sbxm_wrote_earlier_is_brought_up_to_the_current_placeholder() -> Checked {
+    // tokenを登録し直すとplaceholderが変わる。古い値のままでは`gh`が401になる。
+    let host = FakeSbx::listing("").inside(
+        "cat /etc/profile.d",
+        0,
+        Box::leak(token_env("sbx-cs-old").into_boxed_str()),
+        "",
+    );
+    configure_token_env(&host, "sbxm-example", "sbx-cs-new")
+        .required_because("a file sbxm wrote is updated, not refused")?;
+    assert!(
+        host.calls
+            .borrow()
+            .iter()
+            .any(|call| call.join(" ").contains("export GH_TOKEN=sbx-cs-new")),
+        "the current placeholder is written: {:?}",
+        host.calls.borrow()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_token_env_file_sbxm_did_not_write_is_refused() -> Checked {
+    // 同じ名前で誰かが置いたfileを上書きしない。
+    let host = FakeSbx::listing("").inside(
+        "cat /etc/profile.d",
+        0,
+        "export GH_TOKEN=someone-elses-value\n",
+        "",
+    );
+    let error = configure_token_env(&host, "sbxm-example", "sbx-cs-example")
+        .refused_because("a file with unknown content is not overwritten")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxTokenEnvUnusable));
+    assert_eq!(
+        host.calls.borrow().len(),
+        1,
+        "nothing is written after the refusal: {:?}",
+        host.calls.borrow()
+    );
+    Ok(())
+}
+
+#[test]
+fn an_empty_token_env_file_is_treated_as_absent_and_written() -> Checked {
+    // 中身の無いfileには残すべきものが無い。読めた・読めないにかかわらず書く。
+    for code in [0, 1] {
+        let host = FakeSbx::listing("").inside("cat /etc/profile.d", code, "", "");
+        configure_token_env(&host, "sbxm-example", "sbx-cs-example")
+            .required_because("an empty file is not a foreign one")?;
+        assert!(
+            host.calls
+                .borrow()
+                .iter()
+                .any(|call| call.join(" ").contains("printf")),
+            "the file is written: {:?}",
+            host.calls.borrow()
+        );
+    }
+    Ok(())
+}

@@ -121,6 +121,7 @@ error-declared-file-conflict = { $destination } には別の内容があるた�
 error-sandbox-identity-mismatch = { $sandbox } では { $key } が既に { $observed } であり、この案件が期待する値は { $expected } です。
 error-github-secret-missing = Sandbox { $sandbox } に { $hosts } を1件でまとめて覆うcustom secretがないため、repositoryへaccessできません。
 error-github-credential-rejected = { $sandbox } の中のgitが提示したcredentialを、GitHubが受け付けませんでした。
+error-sandbox-token-env-unusable = Sandbox { $sandbox } の { $path } はsbxmが書いたものではないため、GitHub tokenの環境変数をこのfileから設定できません。
 error-sandbox-credential-helper-unusable = { $sandbox } の中のgit credential helperを安全に設定できません
 error-secret-still-registered = { $env } を運ぶcustom secretは、削除を要求したあとも { $sandbox } に登録されたままです。
 error-sandbox-repository-unusable = Sandbox内のこのpathはこの案件には使用できません
