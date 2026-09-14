@@ -49,6 +49,18 @@ impl World {
     /// Sandboxの状態を訊くだけの起動。
     fn probe(&self, inner: &[&str], _sandbox: &str) -> Option<(i32, String)> {
         match inner {
+            // login shellが読むtoken環境変数file。sbxmが書いた内容をそのまま返す。
+            ["cat", path] => Some(match self.settings.borrow().get(*path) {
+                Some(content) => (0, content.clone()),
+                None => missing(),
+            }),
+            // sbxmがそのfileを書く。argvで渡った行をそのまま持つ。
+            ["sh", "-c", script, "sh", first, second, third, path] if script.contains("printf") => {
+                self.settings
+                    .borrow_mut()
+                    .insert((*path).to_string(), format!("{first}\n{second}\n{third}\n"));
+                Some(ok())
+            }
             // fetchの前の認証確認。登録があればGitHubは受け付ける。
             ["sh", "-c", script, "sh", _] if script.contains("ls-remote") => {
                 Some(if self.secrets.borrow().is_empty() {

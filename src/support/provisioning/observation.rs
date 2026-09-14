@@ -33,6 +33,7 @@ pub struct Observation {
     pub credentials: Observed,
     pub secret: Observed,
     pub credential_helper: Observed,
+    pub token_env: Observed,
     pub repository: Observed,
     pub worktrees_present: Observed,
     pub worktrees: Vec<WorktreeRow>,
@@ -67,6 +68,7 @@ impl Observation {
             credentials: Observed::Missing,
             secret: Observed::Missing,
             credential_helper: Observed::Missing,
+            token_env: Observed::Missing,
             repository: Observed::Missing,
             worktrees_present: Observed::Missing,
             worktrees: Vec::new(),
@@ -90,7 +92,7 @@ impl Observation {
     }
 
     /// 目標構成の判定に使うartifact一式。
-    fn required(&self) -> [&Observed; 10] {
+    fn required(&self) -> [&Observed; 11] {
         [
             &self.sandbox,
             &self.workspace,
@@ -100,6 +102,7 @@ impl Observation {
             &self.credentials,
             &self.secret,
             &self.credential_helper,
+            &self.token_env,
             &self.repository,
             &self.worktrees_present,
         ]
@@ -129,6 +132,7 @@ impl Observation {
             &self.credentials,
             &self.secret,
             &self.credential_helper,
+            &self.token_env,
             &self.repository,
             &self.worktrees_present,
         ]

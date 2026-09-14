@@ -25,6 +25,7 @@ fn complete() -> Observation {
     observation.credentials = Observed::Matching;
     observation.secret = Observed::Matching;
     observation.credential_helper = Observed::Matching;
+    observation.token_env = Observed::Matching;
     observation.repository = Observed::Matching;
     observation.worktrees_present = Observed::Matching;
     observation

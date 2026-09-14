@@ -145,6 +145,11 @@ Sandboxes because that service's preset treats a token by its shape and does
 not inject a classic personal access token. Both classic and fine-grained
 tokens work through a custom secret.
 
+That built-in service still fills `GH_TOKEN` and `GITHUB_TOKEN` in every
+sandbox with a sentinel of its own, even when no token is stored for it. sbxm
+overrides both with the placeholder in a file the login shell reads, so `gh`
+inside the sandbox authenticates through the same proxy as git.
+
 ### 4. Build and enter the sandbox
 
 ```sh

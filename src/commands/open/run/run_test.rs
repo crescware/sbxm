@@ -155,6 +155,16 @@ fn interior_ready(host: FakeSbx, project: &Registered, layout: &SandboxLayout) -
         0,
         "!f() { echo username=x; echo password=sbx-cs-example; }; f\n",
     );
+    let host = host.answering(
+        &format!(
+            "exec {} -- cat /etc/profile.d/sbxm-github-token.sh",
+            project.sandbox
+        ),
+        0,
+        "# Written by sbxm. The placeholder is substituted by the Docker Sandboxes proxy.\n\
+         export GH_TOKEN=sbx-cs-example\n\
+         export GITHUB_TOKEN=sbx-cs-example\n",
+    );
     crate::testing::host::registered_secret(host, project.sandbox.as_str())
 }
 

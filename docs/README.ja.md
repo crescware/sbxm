@@ -130,6 +130,10 @@ Docker Sandboxesの組み込み`github` serviceではなくcustom secretを使�
 serviceのpresetがtokenの形で扱いを変え、classic personal access tokenを注入しない
 ためです。custom secretなら、classicでもfine-grainedでも動作します。
 
+この組み込みserviceは、tokenを1件も保存していなくても、各Sandboxの`GH_TOKEN`と
+`GITHUB_TOKEN`を自身のsentinelで埋めます。sbxmはlogin shellが読むfileで両方を
+placeholderへ上書きするため、Sandboxの中の`gh`もgitと同じproxy経由で認証できます。
+
 ### 4. Sandboxを構築して接続する
 
 ```sh

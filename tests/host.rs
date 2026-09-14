@@ -148,12 +148,21 @@ test)
 	grep -Fxq "$3" "$fake/present"
 	exit
 	;;
+cat)
+	# login shellが読むtoken環境変数file。sbxmが書いた内容をそのまま返す。
+	[ -s "$fake/token-env" ] || exit 1
+	cat "$fake/token-env"
+	exit 0
+	;;
 sh)
-	# installed toolの一覧とGitHubの認証確認。副作用の無いscriptで、個別の値で
-	# 答え、実際にhost環境を検索して不安定にしない。
+	# installed toolの一覧、GitHubの認証確認、token環境変数fileの書き込み。
 	case "$3" in
 	"GIT_TERMINAL_PROMPT=0 "*)
 		# GitHubはcredentialを受け付ける。
+		exit 0
+		;;
+	"printf "*)
+		printf '%s\n' "$5" "$6" "$7" >"$fake/token-env"
 		exit 0
 		;;
 	"for c in "*)
