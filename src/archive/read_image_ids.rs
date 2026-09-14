@@ -46,17 +46,14 @@ fn read_index_digests(path: &Path) -> Result<Vec<String>> {
     manifests
         .iter()
         .map(|item| {
-            let written = item
-                .get("digest")
-                .and_then(|value| value.as_str())
-                .unwrap_or_default();
-            normalized_digest(written).ok_or_else(|| {
+            let written = item.get("digest").and_then(|value| value.as_str());
+            normalized_digest(written.unwrap_or_default()).ok_or_else(|| {
                 unusable(
                     path,
                     msg!(
                         "cause-archive-index-digest-unusable",
                         entry = INDEX_ENTRY,
-                        observed = written
+                        observed = written.unwrap_or("<absent>")
                     ),
                 )
             })
