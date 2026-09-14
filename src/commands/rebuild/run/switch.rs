@@ -56,13 +56,13 @@ impl Switch<'_> {
             inventory::remove_protected(host, permit, poll, progress)?;
         }
 
-        // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。custom secretは
-        // 作成時に結び付くため、作り直す前に確認する。
+        // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。tokenのない
+        // ままTemplateのloadやSandboxの作成へ進まないよう、作り直す前に確認する。
         secret::require_github(host, name.as_str())?;
 
         let ready = sandbox::ensure(host, name, template, workspace_root, progress)?;
 
-        secret::require_placeholder_present(host, &ready.name)?;
+        secret::require_token_env_present(host, &ready.name)?;
 
         // sbxm自身がSandbox内を変更する工程が失敗した場合だけ、失敗直後の空き容量を
         // 追加のfactとして載せる。平常時はcommandを1つも増やさない。
@@ -71,6 +71,7 @@ impl Switch<'_> {
         identity::ensure(host, &ready.name, &metadata.git_identity).map_err(decorate)?;
         tools::SandboxReady::announce(host, &ready.name).map_err(decorate)?;
         secret::configure_git_credential(host, &ready.name).map_err(decorate)?;
+        secret::require_github_accepts(host, &ready.name, project)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)
             .map_err(decorate)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout, progress)

@@ -6,7 +6,7 @@ use crate::support::{docker, secret};
 
 use super::ExternalPreconditions;
 
-/// custom secretの登録とDocker Engineへの疎通を、hostへ触れる前に確認する。
+/// GitHub tokenの登録とDocker Engineへの疎通を、hostへ触れる前に確認する。
 pub(crate) fn verify_external_preconditions(
     host: &dyn HostEnvironment,
     name: &SandboxName,

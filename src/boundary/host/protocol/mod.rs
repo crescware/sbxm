@@ -23,6 +23,6 @@ pub use image::{ImageIdentity, parse_image_inspect};
 pub use login::parse_login_status;
 pub use policy::{EXPECTED_NETWORK_POLICY, parse_network_policy};
 pub use sandbox::{SandboxEntry, SandboxState, parse_sandbox_list};
-pub use secret::{CustomSecret, parse_custom_secrets};
+pub use secret::{CustomSecret, SecretListing, is_global_scope, parse_secret_listing};
 pub use template::{TemplateEntry, parse_template_list};
 pub use version::{CliVersion, require_minimum_version};

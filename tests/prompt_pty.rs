@@ -318,7 +318,7 @@ fn without_sandboxes(bin: &Path) -> Checked<()> {
         "#!/bin/sh\n\
          case \"$1 $2\" in\n\
          \"ls --json\") echo '{\"sandboxes\":[]}'; exit 0;;\n\
-         \"secret ls\") echo 'No secrets found'; exit 0;;\n\
+         \"secret ls\") echo '{\"secrets\":[],\"custom_secrets\":[]}'; exit 0;;\n\
          esac\n\
          exit 1\n",
     )

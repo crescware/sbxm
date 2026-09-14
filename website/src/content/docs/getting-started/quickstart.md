@@ -53,16 +53,10 @@ sbxm add git@github.com:<owner>/<repository>.git \
 `sbxm add` prints a project-specific command like this:
 
 ```sh
-sbx secret set-custom <sandbox> \
-  --host github.com \
-  --host '**.github.com' \
-  --host '**.githubusercontent.com' \
-  --host ghcr.io \
-  --env GH_TOKEN \
-  --value <token>
+sbx secret set github --sandbox <sandbox>
 ```
 
-Replace `<sandbox>` and `<token>` with the values from your project setup. The real token remains with the Docker Sandboxes secret proxy. Do not commit it, put it in `config.yaml`, or paste it into a public issue.
+Replace `<sandbox>` with the value from your project setup. The command prompts for a fine-grained personal access token with **Contents: read and write** and **Metadata: read** on the repository. The real token remains with the Docker Sandboxes secret proxy. Do not commit it, put it in `config.yaml`, or paste it into a public issue.
 
 ## 5. Open the project
 

@@ -1,73 +1,65 @@
 use crate::boundary::host::HostEnvironment;
-use crate::boundary::host::protocol::CustomSecret;
-use crate::design::Remediation;
+use crate::boundary::host::protocol::{SecretListing, is_global_scope};
+use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-use super::{GITHUB_HOSTS, GITHUB_TOKEN_ENV, list_customs, register_command};
+use super::{
+    GITHUB_SERVICE, GITHUB_TOKEN_ENV, forget_custom_command, list_secrets, register_command,
+};
 
-/// `GitHubのcustom` secretが登録済みであることを確認する。
+/// `GitHubのservice` secretが登録済みであることを確認する。
 ///
-/// 未登録なら、発行条件と登録commandを示して前提条件不足として停止する。custom secretは
-/// Sandboxの作成時に結び付くため、この確認はSandboxを作る前に行う。
+/// 未登録なら、発行条件と登録commandを示して前提条件不足として停止する。Sandbox限定の
+/// service secretは登録した時点で効くが、Sandboxを作る前に確認しておくと、tokenの
+/// ないままimageのbuildやTemplateのloadへ進まずに済む。
 pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
-    let customs = list_customs(host, sandbox)?;
-
-    // 1件のsecretが全hostを覆っていることを求める。複数のsecretへ分けて登録すると
-    // placeholderが分かれ、Sandboxはそのうち1つしか受け取れない。
-    //
-    // scopeは絞らない。global scopeの登録でもSandboxはplaceholderを受け取れる。
-    let covered = |custom: &CustomSecret| {
-        custom.env == GITHUB_TOKEN_ENV
-            && GITHUB_HOSTS
-                .iter()
-                .all(|host| custom.targets.iter().any(|target| target == host))
-    };
-    if customs.iter().any(covered) {
+    let listing = list_secrets(host)?;
+    if covered(&listing, sandbox) {
         return Ok(());
     }
 
-    // 覆われていないhostだけを示す。github.comだけ登録済みの状態から来た場合に、
-    // 何が足りないのかがそのまま読める。どのhostも登録はされていて、1件にまとまって
-    // いないだけの場合は、まとめる対象として全hostを示す。
-    let missing: Vec<&str> = GITHUB_HOSTS
+    let mut diagnostic = Diagnostic::new(
+        ErrorId::GithubSecretMissing,
+        msg!(
+            "error-github-secret-missing",
+            sandbox = sandbox,
+            service = GITHUB_SERVICE
+        ),
+    );
+    let mut remediation = Remediation::text(msg!("remediation-github-secret-missing"));
+
+    // 以前の版が案内した`--env GH_TOKEN`のcustom secretは、組み込みserviceに影に
+    // されて届かない。登録してあるのに動かない理由をここで示し、消す手順も添える。
+    let shadowed: Vec<_> = listing
+        .customs
         .iter()
-        .filter(|host| {
-            !customs.iter().any(|custom| {
-                custom.env == GITHUB_TOKEN_ENV
-                    && custom.targets.iter().any(|target| target == *host)
-            })
-        })
-        .copied()
+        .filter(|custom| custom.env == GITHUB_TOKEN_ENV)
+        .filter(|custom| custom.scope == sandbox || is_global_scope(&custom.scope))
         .collect();
-    let missing = if missing.is_empty() {
-        GITHUB_HOSTS.to_vec()
-    } else {
-        missing
-    };
+    if !shadowed.is_empty() {
+        diagnostic = diagnostic.fact(Fact::reason(msg!(
+            "cause-github-custom-secret-shadowed",
+            env = GITHUB_TOKEN_ENV,
+            service = GITHUB_SERVICE
+        )));
+        remediation = remediation.explain(msg!("remediation-github-custom-secret-shadowed"));
+        for custom in shadowed.iter().filter(|custom| custom.scope == sandbox) {
+            remediation = remediation.try_run(forget_custom_command(sandbox, &custom.placeholder));
+        }
+    }
 
-    // 同じenvのsecretが既にあると、placeholderを指定しない登録は重複として拒否される。
-    // 案内どおりに実行しても失敗する状態を作らないため、既存のplaceholderを引き継ぐ形で
-    // 示す。同じ値のまま更新されるので、既存Sandboxを作り直さずに済む。
-    let existing = customs
-        .iter()
-        .find(|custom| custom.env == GITHUB_TOKEN_ENV)
-        .map(|custom| custom.placeholder.as_str());
+    Err(Error::single(diagnostic.remediation(
+        remediation.try_run(register_command(sandbox)),
+    )))
+}
 
-    Err(Error::single(
-        Diagnostic::new(
-            ErrorId::GithubSecretMissing,
-            msg!(
-                "error-github-secret-missing",
-                sandbox = sandbox,
-                hosts = missing.join(", ")
-            ),
-        )
-        .remediation(match existing {
-            Some(placeholder) => Remediation::text(msg!("remediation-github-secret-incomplete"))
-                .try_run(register_command(sandbox, Some(placeholder))),
-            None => Remediation::text(msg!("remediation-github-secret-missing"))
-                .try_run(register_command(sandbox, None)),
-        }),
-    ))
+/// このSandboxが`github` serviceのtokenを受けられるか。
+///
+/// Sandbox限定の登録か、global scopeの登録のどちらかがあればよい。
+fn covered(listing: &SecretListing, sandbox: &str) -> bool {
+    listing.services.iter().any(|service| {
+        service.name == GITHUB_SERVICE
+            && (service.scope == sandbox || is_global_scope(&service.scope))
+    })
 }

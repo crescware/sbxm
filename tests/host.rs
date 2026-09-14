@@ -161,6 +161,10 @@ esac
 
 shift
 case "$1 $2" in
+"ls-remote "*)
+	# GitHubはcredentialを受け付ける。fetchの前の認証確認はここを通る。
+	exit 0
+	;;
 "check-ref-format --branch")
 	[ -n "$3" ] || exit 1
 	printf '%s\n' "$3"

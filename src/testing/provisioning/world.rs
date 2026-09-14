@@ -18,7 +18,7 @@ pub struct World {
     /// Template名 -> 対応するimage ID。
     pub templates: RefCell<BTreeMap<String, String>>,
     pub sandboxes: RefCell<Vec<SandboxRow>>,
-    /// 登録済みcustom secretの対象host。
+    /// `github` serviceのtokenが登録されているscope。Sandbox名か`(global)`。
     pub secrets: RefCell<Vec<String>>,
     /// Sandbox内に存在するpath。
     pub present: RefCell<BTreeSet<String>>,
@@ -50,12 +50,7 @@ impl World {
             images: RefCell::new(BTreeMap::new()),
             templates: RefCell::new(BTreeMap::new()),
             sandboxes: RefCell::new(Vec::new()),
-            secrets: RefCell::new(
-                crate::support::secret::GITHUB_HOSTS
-                    .iter()
-                    .map(|host| (*host).to_string())
-                    .collect(),
-            ),
+            secrets: RefCell::new(vec!["(global)".to_string()]),
             present: RefCell::new(BTreeSet::new()),
             digests: RefCell::new(BTreeMap::new()),
             settings: RefCell::new(BTreeMap::new()),

@@ -1,10 +1,6 @@
-use super::{FakeSbx, no_custom_secrets};
+use super::{FakeSbx, no_secrets_listing};
 
-/// tokenの登録がないSandbox scope。
-pub fn no_secrets(host: FakeSbx, sandbox: &str) -> FakeSbx {
-    host.answering(
-        &format!("secret ls {sandbox}"),
-        0,
-        &no_custom_secrets(sandbox),
-    )
+/// tokenの登録がないhost。
+pub fn no_secrets(host: FakeSbx, _sandbox: &str) -> FakeSbx {
+    host.answering("secret ls --json", 0, &no_secrets_listing())
 }

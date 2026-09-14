@@ -45,8 +45,8 @@ fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there(
         !world.ran("git init --bare"),
         "the sandbox repository is not made without the secret"
     );
-    // custom secretはSandboxの作成時に結び付く。先に作ってしまうと、登録しても
-    // placeholderの届かないSandboxが残り、作り直しを強いることになる。
+    // tokenのないままSandboxを作らない。作ってから止まると、Templateのloadと作成の
+    // 時間を使った末に、同じ案内で止まることになる。
     assert!(
         !world.ran("sbx create"),
         "the sandbox is not created before the secret it has to be built with"
@@ -56,9 +56,7 @@ fn a_missing_secret_stops_the_build_and_the_same_add_continues_once_it_is_there(
         "the image is not built before the missing secret is reported"
     );
 
-    for host in crate::support::secret::GITHUB_HOSTS {
-        world.secrets.borrow_mut().push(host.to_string());
-    }
+    world.secrets.borrow_mut().push("(global)".to_string());
     let output = bench
         .build(&world, &request)
         .required_because("the same add continues once the secret is registered")?;

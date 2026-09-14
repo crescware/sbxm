@@ -95,7 +95,7 @@ rm)
 	;;
 secret)
 	[ "$2" = ls ] || exit 1
-	printf 'No secrets found for scope "%s".\n' "$3"
+	printf '{"secrets":[],"custom_secrets":[]}\n'
 	exit 0
 	;;
 exec) ;;

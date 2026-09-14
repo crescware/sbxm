@@ -15,9 +15,9 @@ Before deleting anything, sbxm shows what will be removed and what remains. It c
 
 - the Docker Sandbox
 - the project metadata used by sbxm
-- the `GH_TOKEN` custom secret registered for that sandbox
+- the `github` service token registered for that sandbox
 
-Removing the custom secret matters: a stale registration can make the next registration fail as a duplicate and can leave a token attached to a sandbox that no longer exists.
+Removing the token matters: a stale registration leaves a token attached to a sandbox that no longer exists.
 
 ## Kept
 

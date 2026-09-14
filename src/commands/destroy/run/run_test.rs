@@ -14,7 +14,7 @@ use crate::design::SilentProgress;
 use crate::diagnostics::{ErrorId, ExitCode};
 use crate::metadata::{self, InitialProvisioningIntent};
 use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
-use crate::testing::host::{FakeSbx, custom_secret_listing, no_custom_secrets, no_secrets};
+use crate::testing::host::{FakeSbx, no_secrets, no_secrets_listing, service_secret_listing};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::prompt::{ScriptedConfirm, ScriptedPrompt};
@@ -452,16 +452,16 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
 
 #[test]
 fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
-    // scopeはSandboxの有無と無関係に残る。登録を残したまま管理を解くと、次に同じ案件を
-    // addして案内どおりにset-customを実行しても、同じenvの登録が既にあるとして拒否される。
+    // 登録を残したまま管理を解くと、存在しないSandbox宛のtokenを預けたままになる。
+    // `sbx rm`がSandbox限定のsecretを消す版でも、消えたことは一覧で確かめる。
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let sandbox = project.sandbox.as_str();
     let host = clean_host(&fixture, &project)?.answering_in_turn(
-        &format!("secret ls {sandbox}"),
+        "secret ls --json",
         &[
-            (0, &custom_secret_listing(sandbox, "sbx-cs-example")),
-            (0, &no_custom_secrets(sandbox)),
+            (0, &service_secret_listing(sandbox)),
+            (0, &no_secrets_listing()),
         ],
     );
     expect_successful_removal(&host);
@@ -480,10 +480,8 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
 
     destroy(&host, &mut prepared).required_because("destroy")?;
     assert!(
-        host.ran(&format!(
-            "secret rm {sandbox} --placeholder sbx-cs-example --force"
-        )),
-        "the registration is named by its placeholder: {:?}",
+        host.ran(&format!("secret rm github --sandbox {sandbox} --force")),
+        "the registration is removed for this sandbox only: {:?}",
         host.calls()
     );
     // 消し損ねたSandboxがplaceholderを持ったまま残る順序にしない。
@@ -503,9 +501,9 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
     let project = fixture.register("example-org/example-repo")?;
     let sandbox = project.sandbox.as_str();
     let host = clean_host(&fixture, &project)?.answering(
-        &format!("secret ls {sandbox}"),
+        "secret ls --json",
         0,
-        &custom_secret_listing(sandbox, "sbx-cs-example"),
+        &service_secret_listing(sandbox),
     );
     expect_successful_removal(&host);
 
@@ -528,7 +526,7 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
         .required_because("the user is told how to remove it")?;
     assert!(
         remediation.commands.iter().any(|command| command.as_str()
-            == format!("sbx secret rm {sandbox} --placeholder sbx-cs-example --force")),
+            == format!("sbx secret rm github --sandbox {sandbox} --force")),
         "the command that removes it is its own line: {remediation:?}"
     );
     assert!(
@@ -543,11 +541,10 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() -> Che
     // global scopeのsecretはほかのSandboxも使う。1案件の後片付けで消す対象ではない。
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let sandbox = project.sandbox.as_str();
     let host = clean_host(&fixture, &project)?.answering(
-        &format!("secret ls {sandbox}"),
+        "secret ls --json",
         0,
-        &custom_secret_listing("global", "sbx-cs-elsewhere"),
+        &service_secret_listing("(global)"),
     );
     expect_successful_removal(&host);
 

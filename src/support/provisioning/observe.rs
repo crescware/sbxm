@@ -170,7 +170,7 @@ fn observe_sandbox(
         Ok(()) => Observed::Matching,
         Err(error) => blocked(blocking, error),
     };
-    observation.secret = match secret::require_placeholder_present(host, sandbox) {
+    observation.secret = match secret::require_token_env_present(host, sandbox) {
         Ok(()) => Observed::Matching,
         Err(error) if error.contains_id(crate::diagnostics::ErrorId::SandboxSecretNotApplied) => {
             Observed::Missing

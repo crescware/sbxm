@@ -26,7 +26,7 @@ pub(super) fn removes(
     removes.push(Target::Described(msg!(
         "destroy-target-secret",
         sandbox = name,
-        env = secret::GITHUB_TOKEN_ENV
+        service = secret::GITHUB_SERVICE
     )));
     removes.push(Target::Path(paths::display(&paths.metadata_file())));
     removes.push(Target::Path(paths::display(&paths.lock_file())));

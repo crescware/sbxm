@@ -3,13 +3,14 @@ use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-use super::{GITHUB_HOST, GITHUB_TOKEN_ENV, placeholder_probe};
+use super::{GITHUB_HOST, GITHUB_TOKEN_ENV, placeholder_probe, register_command};
 
-/// placeholderがSandboxへ届いていることを、中から確かめる。
+/// `GH_TOKEN`がSandboxへ届いていることを、中から確かめる。
 ///
-/// custom secretはSandboxの作成時に結び付く。登録済みという事実から届いたと推定せず、
-/// 環境変数を観測する。値は判定にも表示にも使わず、空かどうかだけを見る。
-pub fn require_placeholder_present(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
+/// 組み込み`github` serviceは、Sandboxの作成時に`GH_TOKEN`をsentinelで埋める。
+/// 登録済みという事実から届いたと推定せず、環境変数を観測する。値は判定にも表示にも
+/// 使わず、空かどうかだけを見る。sentinelもtokenも読まない。
+pub fn require_token_env_present(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     let outcome =
         crate::support::sandbox::exec(host, sandbox, &["sh", "-c", &placeholder_probe()])?
             .require_success()?;
@@ -29,7 +30,7 @@ pub fn require_placeholder_present(host: &dyn HostEnvironment, sandbox: &str) ->
         )
         .remediation(
             Remediation::text(msg!("remediation-sandbox-secret-not-applied"))
-                .try_run(format!("sbx rm {sandbox}")),
+                .try_run(register_command(sandbox)),
         ),
     ))
 }

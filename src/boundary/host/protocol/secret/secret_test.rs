@@ -23,53 +23,46 @@ fn refusal_cause(error: &crate::diagnostics::Error) -> Checked<String> {
         .required_because("the refusal states what could not be read")
 }
 
+/// 対象versionが実際に出力する形。scope名とsecretは記録から伏せてある。
+const OBSERVED: &str = r#"{
+  "secrets": [
+    {
+      "scope": "sbxm-example",
+      "type": "service",
+      "name": "github",
+      "secret": "(stored)"
+    }
+  ],
+  "custom_secrets": [
+    {
+      "scope": "sbxm-example",
+      "targets": [
+        "github.com",
+        "**.github.com",
+        "**.githubusercontent.com",
+        "ghcr.io"
+      ],
+      "env": "GH_TOKEN",
+      "placeholder": "sbx-cs-J0uA6pOfxmdzMF1W",
+      "secret": "github******...******6KGT"
+    }
+  ],
+  "shadowed_services": [],
+  "env_only_count": 0
+}"#;
+
 #[test]
 fn the_secret_listing_of_the_target_version_is_read_as_it_is() -> Checked {
-    // 対象versionが実際に出力する形。service secretの表のあとに、見出しを挟んで
-    // custom secretの表が続く。
-    let observed = "SCOPE           TYPE      NAME     SECRET\n\
-                        sbxm-example    service   github   (stored)\n\
-                        \n\
-                        CUSTOM SECRETS\n\
-                        SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
-                        sbxm-example   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n";
+    let listing = parse_secret_listing(OBSERVED).required()?;
     assert_eq!(
-        parse_custom_secrets(observed).required()?,
-        vec![CustomSecret {
+        listing.services,
+        vec![ServiceSecret {
             scope: "sbxm-example".to_string(),
-            placeholder: "sbx-cs-example".to_string(),
-            targets: vec!["github.com".to_string()],
-            env: "GH_TOKEN".to_string(),
+            name: "github".to_string(),
         }]
     );
-
-    // custom secretの見出しがない出力は、1件も登録がないことを示す。service secretの
-    // 表だけを読み違えて登録ありとしない。
-    let services_only = "SCOPE           TYPE      NAME     SECRET\n\
-                             sbxm-example    service   github   (stored)\n";
-    assert!(parse_custom_secrets(services_only).required()?.is_empty());
-
-    // 1件もない場合は表ではなく文で示す。
-    let absent = "No secrets found for scope \"sbxm-example\".\n";
-    assert!(parse_custom_secrets(absent).required()?.is_empty());
-
-    // 1つの列が複数のhostを並べることがある。空白1つで切ると列がずれる。
-    let several = "CUSTOM SECRETS\n\
-                       SCOPE          TARGETS                  ENV        PLACEHOLDER      SECRET\n\
-                       sbxm-example   github.com gitlab.com    GH_TOKEN   sbx-cs-example   ghp_example\n";
     assert_eq!(
-        parse_custom_secrets(several).required()?[0].targets,
-        vec!["github.com".to_string(), "gitlab.com".to_string()]
-    );
-
-    // 実機がwildcardを登録したscopeで出す形。`TARGETS`はcommaと空白1つで区切り、
-    // wildcardは展開せず書いたまま並べる。scope名とsecretは記録から伏せてある。
-    let wildcards = "CUSTOM SECRETS\n\
-                         SCOPE          TARGETS                                                        ENV        PLACEHOLDER               SECRET\n\
-                         sbxm-example   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO   ghp_redacted\n";
-    let parsed = parse_custom_secrets(wildcards).required()?;
-    assert_eq!(
-        parsed,
+        listing.customs,
         vec![CustomSecret {
             scope: "sbxm-example".to_string(),
             targets: vec![
@@ -79,131 +72,108 @@ fn the_secret_listing_of_the_target_version_is_read_as_it_is() -> Checked {
                 "ghcr.io".to_string(),
             ],
             env: "GH_TOKEN".to_string(),
-            placeholder: "sbx-cs-Y1k0SfTWbkN6HzCO".to_string(),
+            placeholder: "sbx-cs-J0uA6pOfxmdzMF1W".to_string(),
         }],
         "the pattern is compared as written, so it has to survive the listing unexpanded"
     );
+    Ok(())
+}
 
-    // scopeを読めない一覧からは、消してよい登録とほかのSandboxが使う登録を区別できない。
-    let scopeless = "CUSTOM SECRETS\n\
-                         TARGETS      ENV        PLACEHOLDER      SECRET\n\
-                         github.com   GH_TOKEN   sbx-cs-example   ghp_example\n";
-
+#[test]
+fn an_empty_listing_and_a_null_listing_hold_nothing() -> Checked {
     for output in [
-        "",
-        "CUSTOM SECRETS\nSCOPE          ENV\nsbxm-example   GH_TOKEN\n",
-        "CUSTOM SECRETS\nSCOPE          TARGETS      ENV\nsbxm-example   github.com\n",
-        scopeless,
+        r#"{"secrets":[],"custom_secrets":[],"shadowed_services":[],"env_only_count":0}"#,
+        r#"{"secrets":null,"custom_secrets":null}"#,
+        "{}",
     ] {
-        let error = parse_custom_secrets(output).refused_because("{output} must be refused")?;
-        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
-    }
-    Ok(())
-}
-
-#[test]
-fn the_custom_secret_table_ends_at_the_first_blank_line() -> Checked {
-    // 表の下に文が続く出力がある。空行で切らずに読み進めると、列数の合わない行として
-    // 一覧全体を拒み、実在する登録を見落とす。
-    let observed = "CUSTOM SECRETS\n\
-                        SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
-                        sbxm-example   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n\
-                        \n\
-                        Run `sbx secret set` to add another.\n";
-
-    let parsed =
-        parse_custom_secrets(observed).required_because("the closing sentence is not a row")?;
-    assert_eq!(
-        parsed,
-        vec![CustomSecret {
-            scope: "sbxm-example".to_string(),
-            targets: vec!["github.com".to_string()],
-            env: "GH_TOKEN".to_string(),
-            placeholder: "sbx-cs-example".to_string(),
-        }]
-    );
-    Ok(())
-}
-
-#[test]
-fn a_row_that_does_not_fill_the_columns_is_refused_with_both_counts() -> Checked {
-    // 列がずれた行では、どの値がENVでどれがPLACEHOLDERかを決められない。数の食い違いを
-    // そのまま示さないと、読み手は出力のどこがずれたかを探せない。
-    let short_row = "CUSTOM SECRETS\n\
-                         SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
-                         sbxm-example   github.com   GH_TOKEN   sbx-cs-example\n";
-
-    let error =
-        parse_custom_secrets(short_row).refused_because("a row that fills four of five columns")?;
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
-    assert_eq!(
-        refusal_cause(&error)?,
-        "a custom secret row holds 4 values for 5 columns"
-    );
-    Ok(())
-}
-
-#[test]
-fn a_heading_with_no_table_under_it_is_refused_rather_than_read_as_none() -> Checked {
-    // 見出しの直後で途切れた出力を「1件もない」と読むと、残っている登録を消えたものと
-    // して扱う。空行しか続かない場合も同じで、列が並ばない限り読めていない。
-    for truncated in [
-        "SCOPE           TYPE      NAME     SECRET\n\
-             sbxm-example    service   github   (stored)\n\
-             \n\
-             CUSTOM SECRETS",
-        "CUSTOM SECRETS\n   \n",
-    ] {
-        let error = parse_custom_secrets(truncated)
-            .refused_because("a listing that stops at the heading")?;
-        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
-        assert_eq!(
-            refusal_cause(&error)?,
-            "the custom secret listing has no header"
+        let listing = parse_secret_listing(output).required_because(output)?;
+        assert!(
+            listing.services.is_empty() && listing.customs.is_empty(),
+            "{output}"
         );
     }
     Ok(())
 }
 
 #[test]
-fn an_answer_with_nothing_in_it_is_not_read_as_an_absence_of_secrets() -> Checked {
-    // 何も書かれていない出力は観測ではない。1件もないことは文で示される。
-    let error = parse_custom_secrets("   \n").refused_because("nothing was said at all")?;
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
-    assert_eq!(refusal_cause(&error)?, "the output is empty");
-    assert!(
-        parse_custom_secrets("No secrets found for scope \"sbxm-example\".\n")
-            .required_because("a stated absence")?
-            .is_empty()
-    );
+fn registrations_that_are_not_services_are_left_out_of_the_services() -> Checked {
+    // registry credentialも同じ一覧に並ぶ。serviceの登録と取り違えない。
+    let output = r#"{"secrets":[{"scope":"(global)","type":"registry","name":"ghcr.io","secret":"(stored)"}],"custom_secrets":[]}"#;
+    let listing = parse_secret_listing(output).required()?;
+    assert!(listing.services.is_empty());
     Ok(())
 }
 
 #[test]
-fn a_column_the_listing_does_not_carry_is_named_in_the_refusal() -> Checked {
-    // 欠けた列ごとに読めなくなるものが違う。SCOPEがなければ消してよい登録を選べず、
-    // PLACEHOLDERがなければ登録をやり直せない。どの列かを示す。
+fn the_global_scope_is_recognised_in_either_spelling() {
+    assert!(is_global_scope("(global)"));
+    assert!(is_global_scope("global"));
+    assert!(!is_global_scope("sbxm-example"));
+}
+
+#[test]
+fn an_answer_with_nothing_in_it_is_not_read_as_an_absence_of_secrets() -> Checked {
+    // 何も書かれていない出力は観測ではない。1件もないことは空の一覧で示される。
+    let error = parse_secret_listing("   \n").refused_because("nothing was said at all")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    assert_eq!(refusal_cause(&error)?, "the output is empty");
+    Ok(())
+}
+
+#[test]
+fn a_listing_that_cannot_be_read_names_what_is_wrong() -> Checked {
+    // 欠けた値ごとに読めなくなるものが違う。scopeがなければ消してよい登録を選べず、
+    // placeholderがなければcustom secretを指せない。どれかを示す。
     for (output, cause) in [
         (
-            "CUSTOM SECRETS\nTARGETS      ENV        PLACEHOLDER\ngithub.com   GH_TOKEN   sbx-cs-a\n",
-            "the custom secret listing has no SCOPE column",
+            "not json",
+            "the output is not JSON: expected ident at line 1 column 2",
+        ),
+        ("[]", "the output is not an object"),
+        (r#"{"secrets":{}}"#, "secrets is not a list"),
+        (r#"{"secrets":[1]}"#, "a secret is not an object"),
+        (
+            r#"{"secrets":[{"type":"service","name":"github"}]}"#,
+            "a service secret has no scope",
         ),
         (
-            "CUSTOM SECRETS\nSCOPE          ENV        PLACEHOLDER\nsbxm-example   GH_TOKEN   sbx-cs-a\n",
-            "the custom secret listing has no TARGETS column",
+            r#"{"secrets":[{"type":"service","scope":"s"}]}"#,
+            "a service secret has no name",
+        ),
+        (r#"{"custom_secrets":"x"}"#, "custom_secrets is not a list"),
+        (
+            r#"{"custom_secrets":[1]}"#,
+            "a custom secret is not an object",
         ),
         (
-            "CUSTOM SECRETS\nSCOPE          TARGETS      PLACEHOLDER\nsbxm-example   github.com   sbx-cs-a\n",
-            "the custom secret listing has no ENV column",
+            r#"{"custom_secrets":[{"scope":"s","targets":"github.com","env":"E","placeholder":"p"}]}"#,
+            "a custom secret's targets is not a list",
         ),
         (
-            "CUSTOM SECRETS\nSCOPE          TARGETS      ENV\nsbxm-example   github.com   GH_TOKEN\n",
-            "the custom secret listing has no PLACEHOLDER column",
+            r#"{"custom_secrets":[{"scope":"s","targets":[1],"env":"E","placeholder":"p"}]}"#,
+            "a custom secret target is not a string",
+        ),
+        (
+            r#"{"custom_secrets":[{"targets":[],"env":"E","placeholder":"p"}]}"#,
+            "a custom secret has no scope",
+        ),
+        (
+            r#"{"custom_secrets":[{"scope":"s","targets":[],"placeholder":"p"}]}"#,
+            "a custom secret has no env",
+        ),
+        (
+            r#"{"custom_secrets":[{"scope":"s","targets":[],"env":"E"}]}"#,
+            "a custom secret has no placeholder",
         ),
     ] {
-        let error = parse_custom_secrets(output).refused_because("a listing missing a column")?;
+        let error = parse_secret_listing(output).refused_because(output)?;
         assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
-        assert_eq!(refusal_cause(&error)?, cause);
+        assert_eq!(refusal_cause(&error)?, cause, "{output}");
     }
+    // targetsが無いcustom secretは、対象hostを持たない登録として読む。
+    let listing =
+        parse_secret_listing(r#"{"custom_secrets":[{"scope":"s","env":"E","placeholder":"p"}]}"#)
+            .required()?;
+    assert!(listing.customs[0].targets.is_empty());
     Ok(())
 }

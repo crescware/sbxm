@@ -114,6 +114,7 @@ error_ids! {
     DeclaredFileConflict => "declared-file-conflict",
     SandboxIdentityMismatch => "sandbox-identity-mismatch",
     GithubSecretMissing => "github-secret-missing",
+    GithubCredentialRejected => "github-credential-rejected",
     SandboxSecretNotApplied => "sandbox-secret-not-applied",
     SecretStillRegistered => "secret-still-registered",
     SandboxRepositoryUnusable => "sandbox-repository-unusable",

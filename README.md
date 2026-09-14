@@ -117,28 +117,28 @@ shortened to `-t`.
 
 ### 3. Register the GitHub credential
 
-Create a personal access token that can read and write the repository:
+Create a fine-grained personal access token that can read and write the
+repository: **Contents: read and write** and **Metadata: read**.
 
-- a fine-grained token needs **Contents: read and write** and
-  **Metadata: read**;
-- a classic token needs the `repo` scope.
-
-`sbxm add` prints a project-specific `sbx secret set-custom` command. Run that
-command with your token before building the sandbox. The command resembles:
+`sbxm add` prints a project-specific `sbx secret set` command. Run it before
+building the sandbox; it prompts for the token, so the value never lands in
+your shell history. The command resembles:
 
 ```sh
-sbx secret set-custom <sandbox> \
-  --host github.com \
-  --host '**.github.com' \
-  --host '**.githubusercontent.com' \
-  --host ghcr.io \
-  --env GH_TOKEN \
-  --value <token>
+sbx secret set github --sandbox <sandbox>
 ```
 
-The secret proxy keeps the real token outside the sandbox. The sandbox sees a
-placeholder, which the proxy replaces only for requests to the registered
-hosts.
+This registers the token with the built-in `github` service of Docker
+Sandboxes, scoped to that one sandbox. The secret proxy keeps the real token
+outside the sandbox: the sandbox sees only a sentinel in `GH_TOKEN`, which the
+proxy replaces for requests to GitHub. Before the first fetch, sbxm checks that
+GitHub actually accepts the credential and tells you how to register it again
+if it does not.
+
+Earlier releases asked for an `sbx secret set-custom … --env GH_TOKEN` custom
+secret instead. Docker Sandboxes reserves `GH_TOKEN` for its `github` service,
+so that registration never reaches the sandbox; sbxm reports it and shows the
+command that removes it.
 
 ### 4. Build and enter the sandbox
 
@@ -357,10 +357,9 @@ did not start) — sbxm answers that confirmation internally, so you are not
 asked twice. A normal destroy in a non-interactive terminal refuses rather than
 skipping the exact-name confirmation.
 
-The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
-registered for that sandbox are deleted. A registration left behind would make
-the next `sbx secret set-custom` for the same project fail as a duplicate, and
-it would keep a token for a sandbox that no longer exists. The host clone,
+The sandbox, sbxm's project metadata, and the `github` service token
+registered for that sandbox are deleted. A registration left behind would keep
+a token for a sandbox that no longer exists. The host clone,
 project Dockerfile, built images, loaded templates, and every secret registered
 for anything else are kept, so the project can be registered again later with a
 token registered anew. Because those artifacts stay behind and sbxm never

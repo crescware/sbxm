@@ -103,28 +103,26 @@ sbxm add git@github.com:<owner>/<repository>.git --detach main --worktrees 3
 
 ### 3. GitHubの認証情報を登録する
 
-repositoryを読み書きできるpersonal access tokenを発行します。
+repositoryを読み書きできるfine-grained personal access tokenを発行します。必要な
+権限は**Contents: read and write**と**Metadata: read**です。
 
-- fine-grained tokenには**Contents: read and write**と**Metadata: read**が必要です。
-- classic tokenには`repo` scopeが必要です。
-
-`sbxm add`は、プロジェクト専用の`sbx secret set-custom`コマンドを表示します。
-Sandboxを構築する前に、そのコマンドへtokenを渡して実行してください。
+`sbxm add`は、プロジェクト専用の`sbx secret set`コマンドを表示します。Sandboxを
+構築する前に実行してください。tokenは対話で訊かれるため、shell historyには残りません。
 表示されるコマンドは次のような形です。
 
 ```sh
-sbx secret set-custom <sandbox> \
-  --host github.com \
-  --host '**.github.com' \
-  --host '**.githubusercontent.com' \
-  --host ghcr.io \
-  --env GH_TOKEN \
-  --value <token>
+sbx secret set github --sandbox <sandbox>
 ```
 
-secret proxyにより、本物のtokenはSandboxの外側に保たれます。Sandboxから見えるのは
-placeholderだけであり、登録済みのhostへのrequestに限ってproxyが本物のtokenへ
-置き換えます。
+これはDocker Sandboxesの組み込み`github` serviceへ、そのSandboxに限定してtokenを
+登録します。secret proxyにより、本物のtokenはSandboxの外側に保たれます。Sandboxから
+見えるのは`GH_TOKEN`のsentinelだけであり、GitHubへのrequestに限ってproxyが本物の
+tokenへ置き換えます。sbxmは最初のfetchの前に、GitHubがそのcredentialを実際に受け付ける
+ことを確かめ、拒まれた場合は登録し直す手順を示します。
+
+以前の版は`sbx secret set-custom … --env GH_TOKEN`のcustom secretを案内していました。
+Docker Sandboxesは`GH_TOKEN`を`github` serviceのために予約しているため、その登録は
+Sandboxへ届きません。sbxmはその登録を検出して理由を示し、削除するコマンドを表示します。
 
 ### 4. Sandboxを構築して接続する
 
@@ -328,9 +326,9 @@ dirty worktree、publishしていないcommit、repository単位のref、active 
 自身のruntimeが行うactive-session検査（sbxmが開始していないsession）も尊重します。
 この確認はsbxmが内部で答えるため、利用者に二重には尋ねません。
 
-Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに登録した`GH_TOKEN`のcustom
-secretは削除されます。登録が残ると、同じプロジェクトに対する次の`sbx secret set-custom`
-が重複として失敗し、存在しないSandbox宛のtokenを預けたままになります。ホスト側のclone、
+Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに`github` serviceへ登録した
+tokenは削除されます。登録が残ると、存在しないSandbox宛のtokenを預けたままになります。
+ホスト側のclone、
 プロジェクトのDockerfile、build済みimage、load済みtemplate、それ以外を対象に登録した
 secretは残るため、tokenを再登録すればあとからプロジェクトを再登録できます。
 

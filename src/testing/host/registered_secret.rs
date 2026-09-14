@@ -1,18 +1,14 @@
-use super::{FakeSbx, custom_secret_listing};
+use super::{FakeSbx, service_secret_listing};
 
-/// custom secretが登録済みで、placeholderも解決できるSandbox。
+/// `github` serviceのtokenが登録済みで、Sandboxが`GH_TOKEN`のsentinelを持つhost。
 pub fn registered_secret(host: FakeSbx, sandbox: &str) -> FakeSbx {
-    host.answering(
-        &format!("secret ls {sandbox}"),
-        0,
-        &custom_secret_listing(sandbox, "sbx-cs-example"),
-    )
-    .answering(
-        &format!(
-            "exec {sandbox} -- sh -c {}",
-            crate::support::secret::placeholder_probe()
-        ),
-        0,
-        "sbx-cs-example",
-    )
+    host.answering("secret ls --json", 0, &service_secret_listing(sandbox))
+        .answering(
+            &format!(
+                "exec {sandbox} -- sh -c {}",
+                crate::support::secret::placeholder_probe()
+            ),
+            0,
+            "gho_sbxproxymanaged000000000000000000000",
+        )
 }

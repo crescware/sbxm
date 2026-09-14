@@ -56,7 +56,7 @@ pub fn document(output: &AddOutput) -> Document {
                 GuidanceItem::Plain(msg!("add-next-token")),
             ],
         )
-        .try_command(secret::register_command(&output.sandbox, None))
+        .try_command(secret::register_command(&output.sandbox))
         // 初回構築は`open`が同じ実行の中で行う。構築だけを行う手順を間に挟まない。
         // 案件IDを打ち直させない。次のcommandはそのままcopyできる形で出す。
         .guidance(

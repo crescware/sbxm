@@ -1,6 +1,5 @@
 //! host上のcommandが返す応答。
 
-use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
@@ -162,34 +161,35 @@ impl World {
                 _kit,
                 workspace,
             ] => {
-                let registered = self
-                    .secrets
-                    .borrow()
-                    .iter()
-                    .any(|target| target == crate::support::secret::GITHUB_HOST);
+                // 組み込み`github` serviceは、tokenの登録の有無にかかわらず作成した
+                // Sandboxへ`GH_TOKEN`のsentinelを入れる。
                 self.sandboxes.borrow_mut().push(SandboxRow {
                     name: (*name).to_string(),
                     workspace: (*workspace).to_string(),
-                    placeholder: registered,
+                    placeholder: true,
                     running: true,
                 });
                 (0, String::new())
             }
-            ["secret", "ls", name] => {
-                let secrets = self.secrets.borrow();
-                if secrets.is_empty() {
-                    return (0, format!("No secrets found for scope \"{name}\".\n"));
-                }
-                // 1件のcustom secretが複数hostを覆う。TARGETS列は空白1つで並ぶ。
-                let mut table =
-                    String::from("CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n");
-                // Stringへの書き込みは失敗しない。
-                let _ = writeln!(
-                    table,
-                    "{name}   {}   GH_TOKEN   sbx-cs-example   ghp_example",
-                    secrets.join(" ")
-                );
-                (0, table)
+            ["secret", "ls", "--json"] => {
+                // 実機と同じく、値は`(stored)`と伏せて返る。
+                let services = self
+                    .secrets
+                    .borrow()
+                    .iter()
+                    .map(|scope| {
+                        format!(
+                            r#"{{"scope":"{scope}","type":"service","name":"github","secret":"(stored)"}}"#
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                (
+                    0,
+                    format!(
+                        r#"{{"secrets":[{services}],"custom_secrets":[],"shadowed_services":[],"env_only_count":0}}"#
+                    ),
+                )
             }
             ["cp", "--follow-link", source, target] => {
                 let (Ok(bytes), Some((_, path))) = (fs::read(source), target.split_once(':'))

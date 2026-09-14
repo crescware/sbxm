@@ -27,7 +27,7 @@ pub(crate) fn provision_interior(
     let layout = SandboxLayout::new(&canonical);
 
     sandbox::require_credentials_isolated(host, &ready_name)?;
-    secret::require_placeholder_present(host, &ready_name)?;
+    secret::require_token_env_present(host, &ready_name)?;
 
     let decorate = |error| disk::attach_on_failure(host, &ready_name, SandboxState::Running, error);
 
@@ -42,6 +42,9 @@ pub(crate) fn provision_interior(
     identity::ensure(host, &ready_name, &locked.metadata.git_identity).map_err(decorate)?;
     tools::SandboxReady::announce(host, &ready_name).map_err(decorate)?;
     secret::configure_git_credential(host, &ready_name).map_err(decorate)?;
+    // 長いfetchへ進む前に、実物と同じ経路でGitHubが認証を受け付けることを確かめる。
+    // 拒まれた場合は容量ではなくtokenの問題であり、空き容量は載せない。
+    secret::require_github_accepts(host, &ready_name, &project)?;
 
     repository::ensure_bare_clone(host, &ready_name, &project, &layout, progress)
         .map_err(decorate)?;

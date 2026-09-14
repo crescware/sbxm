@@ -215,11 +215,11 @@ fn a_secret_not_applied_to_the_sandbox_is_not_given_a_doomed_repair() -> Checked
         .iter()
         .map(crate::design::text::CommandLine::as_str)
         .collect::<Vec<_>>();
+    // Sandbox限定のservice secretは登録した時点で効く。Sandboxを消す案内はしない。
     assert_eq!(
         commands,
-        vec![format!(
-            "sbx rm {}",
-            crate::project::SandboxName::derive(request.repository.canonical_id())
+        vec![crate::support::secret::register_command(
+            crate::project::SandboxName::derive(request.repository.canonical_id()).as_str()
         )]
     );
     Ok(())
