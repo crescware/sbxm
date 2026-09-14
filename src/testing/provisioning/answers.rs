@@ -7,7 +7,7 @@ use std::path::Path;
 use crate::boundary::host::CommandSpec;
 use crate::hash::sha256_hex;
 use crate::paths;
-use crate::testing::archive::image_archive_bytes;
+use crate::testing::archive::{image_archive_bytes, index_id};
 
 use super::{IMAGE_ID, SandboxRow, World};
 
@@ -141,12 +141,15 @@ impl World {
                 (0, format!(r#"{{"images":[{rendered}]}}"#))
             }
             ["template", "load", archive] => {
+                // containerd image storeを持つ実物のruntimeと同じく、登録するidは
+                // `image save`が`index.json`へ書いたdigestであり、image configの
+                // digestではない。`image_archive_bytes`が書く値をここで独立に再現する。
                 let Ok(manifest) = crate::archive::read_manifest(Path::new(archive)) else {
                     return (1, String::new());
                 };
                 self.templates.borrow_mut().insert(
                     manifest.repo_tags[0].clone(),
-                    manifest.config_digest.clone(),
+                    index_id(&manifest.config_digest),
                 );
                 (0, String::new())
             }

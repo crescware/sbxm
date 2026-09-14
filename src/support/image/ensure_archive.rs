@@ -54,6 +54,10 @@ pub fn ensure_archive(
 
     archive::verify_holds_image(&temporary, &image.name, &image.labels)
         .map_err(|error| docker::diagnose_failure(host, error))?;
+    // 既存Templateとの照合に使うdigestは、保存した直後にここで読む。後の実行で
+    // 初めて読むと、同じarchiveが初回は通り2回目から拒まれる非対称が生じる。
+    let image_ids = archive::read_image_ids(&temporary)
+        .map_err(|error| docker::diagnose_failure(host, error))?;
     paths::atomic_rename_into_place(&temporary, &target)?;
-    TransientArchive::new(target)
+    TransientArchive::new(target, image_ids)
 }

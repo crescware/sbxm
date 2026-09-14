@@ -1,6 +1,3 @@
-use std::path::Path;
-
-use crate::archive;
 use crate::boundary::host::HostEnvironment;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -14,32 +11,33 @@ use super::{LoadedTemplate, find};
 /// 名前が一致する既存Templateを、runtime idまで確認してから再利用する。
 ///
 /// `sbx template ls --json`のrepositoryとtagだけでは、別内容のTemplateが同じ名前で
-/// 登録されていても見分けられない。archiveのconfig digestを、label検証済みhost image
-/// から作った期待値として使う。
+/// 登録されていても見分けられない。label検証済みhost imageから作ったarchiveが宣言する
+/// digest（`declared`、[`crate::archive::read_image_ids`]の結果）を期待値として使う。
+///
+/// runtimeが報告するidは、archiveがOCI layoutならindexまたはmanifestのdigestであり、
+/// image configのdigestではない。configのdigestに決め打ちすると、同じimageから作った
+/// 正しいTemplateを別物として拒み、2度目の準備が進まなくなる。archiveが宣言する候補の
+/// いずれかと一致すれば同じimageと判定し、どれとも一致しなければ再利用しない。
 pub fn verified_existing(
     host: &dyn HostEnvironment,
     image: &BuiltImage,
-    archive_path: &Path,
+    declared: &[String],
 ) -> Result<Option<LoadedTemplate>> {
     let Some(entry) = find(host, &image.name)? else {
         return Ok(None);
     };
-    let manifest = archive::read_manifest(archive_path)?;
-    let expected = short_hex(
-        manifest
-            .config_digest
-            .strip_prefix("sha256:")
-            .unwrap_or(&manifest.config_digest),
-    );
+    let Some(observed) = entry.id.as_deref() else {
+        return Err(unobservable_id(&image.name));
+    };
 
-    match entry.id.as_deref() {
-        Some(observed) if normalize(observed) == expected => Ok(Some(LoadedTemplate {
+    let expected: Vec<&str> = declared.iter().map(|id| normalize(id)).collect();
+    if expected.contains(&normalize(observed)) {
+        return Ok(Some(LoadedTemplate {
             name: image.name.clone(),
             loaded: false,
-        })),
-        Some(observed) => Err(mismatched(&image.name, observed, expected)),
-        None => Err(unobservable_id(&image.name)),
+        }));
     }
+    Err(mismatched(&image.name, observed, &expected.join(", ")))
 }
 
 /// runtimeが返すidの表記幅を、比較できる形へ揃える。

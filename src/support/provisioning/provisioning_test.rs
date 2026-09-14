@@ -75,7 +75,7 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
             .iter()
             .any(|warning| warning.description.id == "warning-workspace-restored")
     );
-    // Templateのruntime idは、label検証済みのimageから作るarchiveのconfig digestと
+    // Templateのruntime idは、label検証済みのimageから作るarchiveが宣言するdigestと
     // 照合してから再利用可否を決める。そのため`docker image save`自体は毎回起こるが、
     // 検証を通った場合は`sbx template load`や`sbx create`のような再構築へは進まない。
     assert!(
