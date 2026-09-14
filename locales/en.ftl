@@ -422,7 +422,7 @@ security-project-path-owner-description = { $path } belongs to user ID { $observ
 security-project-path-owner-remediation = Move { $path } out of the way and let sbxm create it again, or restore a path you own there.
 
 security-ssh-agent-exposed-description = The host SSH agent can be reached from { $sandbox } ({ $observed }). An agent inside the sandbox can sign with your keys.
-security-ssh-agent-exposed-remediation = A sandbox keeps whatever the daemon gave it when it was created, so restarting the daemon is not enough on its own. Stop every running sandbox, start the daemon again from a shell where SSH_AUTH_SOCK is unset, drop this sandbox, then run the command again to build it clean.
+security-ssh-agent-exposed-remediation = Docker Sandboxes forwards the host SSH agent into every sandbox by default. Turn forwarding off in the Docker Sandboxes settings (CLI 0.42.0 or later), restart its daemon so existing sandboxes pick up the change, then run the same command again. Do not remove the sandbox: that also removes its scoped secret, and the recreated sandbox would receive the agent again.
 
 
 error-git-identity-incomplete = The Git identity is only half declared. { $missing } is missing

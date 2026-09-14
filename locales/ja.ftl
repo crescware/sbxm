@@ -422,7 +422,7 @@ security-project-path-owner-description = { $path } の所有者はuser ID { $ob
 security-project-path-owner-remediation = { $path } を退避してsbxmに作り直させるか、自分が所有するpathをこのpathへ戻してください。
 
 security-ssh-agent-exposed-description = { $sandbox } からhostのSSH Agentへ到達できます ({ $observed })。Sandbox内のagentがあなたの鍵で署名できる状態です。
-security-ssh-agent-exposed-remediation = Sandboxは作成時にdaemonから受け取った状態を保持するため、daemonを起動し直すだけでは変わりません。動作中のSandboxをすべて停止し、SSH_AUTH_SOCKを外したshellからdaemonを起動し直し、このSandboxを削除してから、もう一度実行して作り直してください。
+security-ssh-agent-exposed-remediation = Docker Sandboxesは既定で、hostのSSH Agentをすべてのsandboxへ転送します。Docker Sandboxesの設定で転送を無効にし（CLI 0.42.0以降）、既存のsandboxへ反映するためdaemonを再起動してから、同じcommandをもう一度実行してください。Sandboxは削除しないでください。削除するとscoped secretも消え、作り直したsandboxには再びagentが渡ります。
 
 
 error-git-identity-incomplete = Git identityの宣言が揃っていません。{ $missing } がありません
