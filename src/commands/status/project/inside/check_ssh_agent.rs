@@ -1,12 +1,9 @@
 use crate::boundary::host::HostEnvironment;
-use crate::diagnostics::{Diagnostic, ErrorId};
-use crate::msg;
 use crate::project::SandboxName;
 
 use crate::support::sandbox;
 
 use crate::commands::status::project::{ProjectStatus, Value};
-use crate::design::Remediation;
 
 /// SSH Agentが露出していないこと。
 ///
@@ -15,20 +12,9 @@ use crate::design::Remediation;
 pub fn check_ssh_agent(host: &dyn HostEnvironment, name: &SandboxName, status: &mut ProjectStatus) {
     let value = match sandbox::ssh_agent_is_exposed(host, name.as_str()) {
         Ok(observed) if !observed.is_empty() => {
-            status.diagnostics.push(
-                Diagnostic::new(
-                    ErrorId::SshAgentExposed,
-                    msg!(
-                        "security-ssh-agent-exposed-description",
-                        sandbox = name,
-                        observed = observed.join(", ")
-                    ),
-                )
-                .remediation(
-                    Remediation::text(msg!("security-ssh-agent-exposed-remediation"))
-                        .try_run(format!("sbx rm {name}")),
-                ),
-            );
+            status
+                .diagnostics
+                .push(sandbox::ssh_agent_exposed(name.as_str(), &observed));
             Value::Exposed
         }
         Ok(_) => Value::NotExposed,

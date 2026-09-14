@@ -298,7 +298,11 @@ fn an_ssh_agent_inside_the_sandbox_is_a_security_failure() -> Checked {
             0,
             "/tmp/ssh-agent.sock\n",
         )
-        .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 2, "");
+        .answering(
+            &format!("exec {} -- ssh-add -L", project.sandbox),
+            0,
+            "ssh-ed25519 AAAA example\n",
+        );
 
     let status = diagnose(
         &fixture.location,
@@ -317,6 +321,45 @@ fn an_ssh_agent_inside_the_sandbox_is_a_security_failure() -> Checked {
             .any(|diagnostic| diagnostic.id == ErrorId::SshAgentExposed)
     );
     assert!(!status.is_healthy());
+    Ok(())
+}
+
+#[test]
+fn a_socket_variable_without_a_reachable_agent_is_not_exposed() -> Checked {
+    // 転送を無効にした後の既存Sandboxは、変数だけが残り、agentへは届かない。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let listing = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = FakeSbx::listing(&listing)
+        .answering(
+            &format!("exec {} -- printenv SSH_AUTH_SOCK", project.sandbox),
+            0,
+            "/run/ssh-agent.sock\n",
+        )
+        .answering(&format!("exec {} -- ssh-add -L", project.sandbox), 2, "");
+
+    let status = diagnose(
+        &fixture.location,
+        &fixture.config,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("diagnose")?;
+
+    assert_eq!(
+        value_of(&status, "status-item-ssh-agent")?,
+        Value::NotExposed
+    );
+    assert!(
+        !status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::SshAgentExposed)
+    );
     Ok(())
 }
 

@@ -98,22 +98,40 @@ fn a_sandbox_that_cannot_reach_the_host_agent_passes_the_isolation_check() -> Ch
 }
 
 #[test]
-fn either_a_socket_or_a_reachable_agent_counts_as_exposed() -> Checked {
-    let by_socket = FakeProbe {
+fn a_reachable_agent_counts_as_exposed_with_or_without_the_variable() -> Checked {
+    let with_socket = FakeProbe {
         socket: (0, "/tmp/agent.sock\n"),
-        keys: (SSH_ADD_NO_AGENT, ""),
+        keys: (0, ""),
     };
-    let by_agent = FakeProbe {
+    let without_socket = FakeProbe {
         socket: (1, ""),
         // 鍵が1件もない`1`でも、agentへ接続できている。
         keys: (1, ""),
     };
 
-    for host in [by_socket, by_agent] {
+    for host in [with_socket, without_socket] {
         let error = require_credentials_isolated(&host, "sandbox")
             .refused_because("the host agent is reachable from inside")?;
         assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
     }
+    Ok(())
+}
+
+#[test]
+fn a_socket_variable_that_no_agent_serves_is_not_exposure() -> Checked {
+    // Docker Sandboxesは転送を無効にした後も、既存のSandboxへ`SSH_AUTH_SOCK`を
+    // 渡し続けることがある。誰も応えないsocketは何にも署名できない。
+    let host = FakeProbe {
+        socket: (0, "/run/ssh-agent.sock\n"),
+        keys: (SSH_ADD_NO_AGENT, ""),
+    };
+    assert!(
+        ssh_agent_is_exposed(&host, "sandbox")
+            .required_because("the check answered")?
+            .is_empty()
+    );
+    require_credentials_isolated(&host, "sandbox")
+        .required_because("a dangling socket path is not a reachable agent")?;
     Ok(())
 }
 
