@@ -122,9 +122,13 @@ sbx secret set-custom <sandbox> \
   --value <token>
 ```
 
-secret proxyにより、本物のtokenはSandboxの外側に保たれます。Sandboxから見えるのは
-placeholderだけであり、登録済みのhostへのrequestに限ってproxyが本物のtokenへ
-置き換えます。
+secret proxyにより、本物のtokenはSandboxの外側に保たれます。Sandboxへtokenは入らず、
+sbxmは中のgitへplaceholderを渡します。登録済みのhostへのrequestに限って、proxyが
+placeholderを本物のtokenへ置き換えます。
+
+Docker Sandboxesの組み込み`github` serviceではなくcustom secretを使うのは、
+serviceのpresetがtokenの形で扱いを変え、classic personal access tokenを注入しない
+ためです。custom secretなら、classicでもfine-grainedでも動作します。
 
 ### 4. Sandboxを構築して接続する
 

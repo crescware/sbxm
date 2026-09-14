@@ -25,4 +25,4 @@ Inspect the existing path, image, Dockerfile, registry entry, or sandbox identit
 
 ### Missing credential
 
-Register the project-specific custom secret with Docker Sandboxes, then build a new sandbox if necessary. The secret must cover the GitHub hosts and `GH_TOKEN` environment variable the project expects.
+Register the project-specific custom secret with Docker Sandboxes. The secret must cover the GitHub hosts the project expects, in one registration. Registering it takes effect at once: the next `sbxm open` hands the placeholder to the git inside the sandbox, so the sandbox does not have to be rebuilt.

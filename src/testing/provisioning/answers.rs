@@ -162,23 +162,17 @@ impl World {
                 _kit,
                 workspace,
             ] => {
-                let registered = self
-                    .secrets
-                    .borrow()
-                    .iter()
-                    .any(|target| target == crate::support::secret::GITHUB_HOST);
                 self.sandboxes.borrow_mut().push(SandboxRow {
                     name: (*name).to_string(),
                     workspace: (*workspace).to_string(),
-                    placeholder: registered,
                     running: true,
                 });
                 (0, String::new())
             }
-            ["secret", "ls", name] => {
+            ["secret", "ls"] => {
                 let secrets = self.secrets.borrow();
                 if secrets.is_empty() {
-                    return (0, format!("No secrets found for scope \"{name}\".\n"));
+                    return (0, "No secrets found.\n".to_string());
                 }
                 // 1件のcustom secretが複数hostを覆う。TARGETS列は空白1つで並ぶ。
                 let mut table =
@@ -186,7 +180,7 @@ impl World {
                 // Stringへの書き込みは失敗しない。
                 let _ = writeln!(
                     table,
-                    "{name}   {}   GH_TOKEN   sbx-cs-example   ghp_example",
+                    "(global)   {}   GH_TOKEN   sbx-cs-example   ghp_example",
                     secrets.join(" ")
                 );
                 (0, table)

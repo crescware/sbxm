@@ -7,12 +7,10 @@ use crate::support::secret;
 use crate::commands::status::project::{ProjectStatus, Value};
 
 pub fn check_secret(host: &dyn HostEnvironment, name: &SandboxName, status: &mut ProjectStatus) {
-    // 登録されていることと、そのSandboxが受け取っていることは別である。片方だけを見て
-    // 使える状態とは言えない。
-    let value = match secret::require_github(host, name.as_str())
-        .and_then(|()| secret::require_placeholder_present(host, name.as_str()))
-    {
-        Ok(()) => Value::Ready,
+    // 見るのは登録があることだけとする。Sandboxの中のgitがそれを提示できるかどうかは
+    // credential helperの観測が持ち、足りなければ準備の続きとして埋まる。
+    let value = match secret::require_github(host, name.as_str()) {
+        Ok(_) => Value::Ready,
         Err(error) if error.contains_id(ErrorId::GithubSecretMissing) => {
             status
                 .diagnostics

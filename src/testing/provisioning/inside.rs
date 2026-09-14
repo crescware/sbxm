@@ -47,19 +47,19 @@ impl World {
     }
 
     /// Sandboxの状態を訊くだけの起動。
-    fn probe(&self, inner: &[&str], sandbox: &str) -> Option<(i32, String)> {
+    fn probe(&self, inner: &[&str], _sandbox: &str) -> Option<(i32, String)> {
         match inner {
-            ["sh", "-c", script] if *script == crate::support::secret::placeholder_probe() => {
-                let carried = self
-                    .sandboxes
-                    .borrow()
-                    .iter()
-                    .any(|row| row.name == sandbox && row.placeholder);
-                if carried {
-                    Some((0, "sbx-cs-example".to_string()))
+            // fetchの前の認証確認。登録があればGitHubは受け付ける。
+            ["sh", "-c", script, "sh", _] if script.contains("ls-remote") => {
+                Some(if self.secrets.borrow().is_empty() {
+                    (
+                        128,
+                        "remote: Invalid username or token.\nfatal: Authentication failed\n"
+                            .to_string(),
+                    )
                 } else {
-                    Some(ok())
-                }
+                    ok()
+                })
             }
             // Sandboxが持っているtoolを一度に答える。
             ["sh", "-c", script] if *script == tools::probe() => {

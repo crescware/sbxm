@@ -7,7 +7,6 @@ use crate::diagnostics::ErrorId;
 use crate::testing::outcome::{Checked, Required};
 
 use super::{super::diagnose, super::fake::*};
-use crate::support::secret::placeholder_probe;
 use crate::testing::host::{FakeSbx, no_secrets, registered_secret};
 use crate::testing::project::{Fixture, project_id};
 
@@ -416,13 +415,8 @@ fn a_token_that_was_never_registered_is_missing_rather_than_unusable() -> Checke
         status.diagnostics
     );
 
-    // 登録済みでも、そのSandboxが受け取っていなければ使える状態ではない。届いていない
-    // ことは、登録が無いことと同じ答えにしない。
-    let host = registered_secret(FakeSbx::listing(&listing), project.sandbox.as_str()).answering(
-        &format!("exec {} -- sh -c {}", project.sandbox, placeholder_probe()),
-        0,
-        "",
-    );
+    // ほかのSandboxのscopeへ登録されていても、このSandboxのrequestでは差し替えられない。
+    let host = registered_secret(FakeSbx::listing(&listing), "sbxm-another-project");
     let status = diagnose(
         &fixture.location,
         &fixture.config,
@@ -431,13 +425,13 @@ fn a_token_that_was_never_registered_is_missing_rather_than_unusable() -> Checke
         &fixture.workspace_root,
     )
     .required_because("diagnose")?;
-    assert_eq!(value_of(&status, "status-item-secret")?, Value::NotObserved);
+    assert_eq!(value_of(&status, "status-item-secret")?, Value::Missing);
     assert!(
         status
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.id == ErrorId::SandboxSecretNotApplied),
-        "a registered token that never reached the sandbox is its own failure: {:?}",
+            .any(|diagnostic| diagnostic.id == ErrorId::GithubSecretMissing),
+        "a registration bound to another sandbox is not this one's: {:?}",
         status.diagnostics
     );
     Ok(())

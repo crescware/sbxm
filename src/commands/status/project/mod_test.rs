@@ -181,16 +181,15 @@ fn a_stopped_project_is_not_given_a_command_that_cannot_be_proven() -> Checked {
 }
 
 #[test]
-fn a_secret_not_applied_to_the_sandbox_is_not_given_a_doomed_repair() -> Checked {
+fn a_missing_token_registration_is_reported_with_the_command_that_registers_it() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
     bench
         .build(&world, &request)
         .required_because("the first build completes")?;
-    for sandbox in world.sandboxes.borrow_mut().iter_mut() {
-        sandbox.placeholder = false;
-    }
+    // 登録を解いた状態。Sandboxは残っているが、提示するtokenが無い。
+    world.secrets.borrow_mut().clear();
 
     let status = diagnose(
         &bench.location,
@@ -199,13 +198,13 @@ fn a_secret_not_applied_to_the_sandbox_is_not_given_a_doomed_repair() -> Checked
         &world,
         bench.workspace_root.path(),
     )
-    .required_because("diagnose the sandbox that never received its secret")?;
+    .required_because("diagnose the sandbox whose token is no longer registered")?;
 
     assert_eq!(status.next, None);
     let diagnostic = status
         .diagnostics
         .iter()
-        .find(|diagnostic| diagnostic.id == ErrorId::SandboxSecretNotApplied)
+        .find(|diagnostic| diagnostic.id == ErrorId::GithubSecretMissing)
         .required_because("the actionable secret diagnostic remains")?;
     let commands = diagnostic
         .remediation
@@ -215,11 +214,12 @@ fn a_secret_not_applied_to_the_sandbox_is_not_given_a_doomed_repair() -> Checked
         .iter()
         .map(crate::design::text::CommandLine::as_str)
         .collect::<Vec<_>>();
+    // Sandboxを作り直させない。登録し直せば、次の`open`がその値をgitへ持たせる。
     assert_eq!(
         commands,
-        vec![format!(
-            "sbx rm {}",
-            crate::project::SandboxName::derive(request.repository.canonical_id())
+        vec![crate::support::secret::register_command(
+            crate::project::SandboxName::derive(request.repository.canonical_id()).as_str(),
+            None
         )]
     );
     Ok(())

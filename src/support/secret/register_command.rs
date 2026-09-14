@@ -7,6 +7,10 @@ use super::{GITHUB_HOSTS, GITHUB_TOKEN_ENV};
 /// `--host`は`stringArray`であり、繰り返して渡す。区切り文字1つで並べた値は1件のhost
 /// 名として読まれる。wildcardはshellに食われるため引用符で囲む。
 ///
+/// `--env`は、Sandboxの中でtokenを読む利用者のために残す。sbxm自身のgitは環境変数を
+/// 使わず、placeholderをcredential helperへ直接持たせるため、この変数が届かなくても
+/// clone、fetch、pushは通る。
+///
 /// 同じenvのcustom secretが既にある場合、`set-custom`はそれを重複として拒否する。
 /// 既存のplaceholderを`--placeholder`で明示すると更新として通り、しかもSandboxが
 /// 持つ値が変わらないため、作り直さずに済む。

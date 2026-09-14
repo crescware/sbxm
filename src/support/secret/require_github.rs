@@ -1,73 +1,87 @@
 use crate::boundary::host::HostEnvironment;
-use crate::boundary::host::protocol::CustomSecret;
-use crate::design::Remediation;
+use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-use super::{GITHUB_HOSTS, GITHUB_TOKEN_ENV, list_customs, register_command};
+use super::{GITHUB_HOSTS, GITHUB_TOKEN_ENV, forget_command, register_command, registered_github};
 
-/// `GitHubのcustom` secretが登録済みであることを確認する。
+/// `GitHubのcustom` secretが登録済みであることを確認し、そのplaceholderを返す。
 ///
-/// 未登録なら、発行条件と登録commandを示して前提条件不足として停止する。custom secretは
-/// Sandboxの作成時に結び付くため、この確認はSandboxを作る前に行う。
-pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
-    let customs = list_customs(host, sandbox)?;
-
-    // 1件のsecretが全hostを覆っていることを求める。複数のsecretへ分けて登録すると
-    // placeholderが分かれ、Sandboxはそのうち1つしか受け取れない。
-    //
-    // scopeは絞らない。global scopeの登録でもSandboxはplaceholderを受け取れる。
-    let covered = |custom: &CustomSecret| {
-        custom.env == GITHUB_TOKEN_ENV
-            && GITHUB_HOSTS
-                .iter()
-                .all(|host| custom.targets.iter().any(|target| target == host))
-    };
-    if customs.iter().any(covered) {
-        return Ok(());
+/// 未登録なら、発行条件と登録commandを示して前提条件不足として停止する。返すのは
+/// tokenではなくplaceholderであり、`sbx secret ls`が誰にでも示す公開の値である。
+pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<String> {
+    let registered = registered_github(host, sandbox)?;
+    match registered.as_slice() {
+        [single] => Ok(single.placeholder.clone()),
+        [] => Err(missing(host, sandbox)),
+        several => Err(ambiguous(sandbox, several.len())),
     }
+}
 
-    // 覆われていないhostだけを示す。github.comだけ登録済みの状態から来た場合に、
-    // 何が足りないのかがそのまま読める。どのhostも登録はされていて、1件にまとまって
-    // いないだけの場合は、まとめる対象として全hostを示す。
-    let missing: Vec<&str> = GITHUB_HOSTS
+/// 覆われていないhostだけを示す。github.comだけ登録済みの状態から来た場合に、何が
+/// 足りないのかがそのまま読める。どのhostも登録はされていて、1件にまとまっていない
+/// だけの場合は、まとめる対象として全hostを示す。
+fn missing(host: &dyn HostEnvironment, sandbox: &str) -> Error {
+    let customs = super::list_customs(host).unwrap_or_default();
+    let uncovered: Vec<&str> = GITHUB_HOSTS
         .iter()
-        .filter(|host| {
-            !customs.iter().any(|custom| {
-                custom.env == GITHUB_TOKEN_ENV
-                    && custom.targets.iter().any(|target| target == *host)
-            })
+        .filter(|wanted| {
+            !customs
+                .iter()
+                .any(|custom| custom.targets.iter().any(|target| target == *wanted))
         })
         .copied()
         .collect();
-    let missing = if missing.is_empty() {
+    let uncovered = if uncovered.is_empty() {
         GITHUB_HOSTS.to_vec()
     } else {
-        missing
+        uncovered
     };
 
     // 同じenvのsecretが既にあると、placeholderを指定しない登録は重複として拒否される。
     // 案内どおりに実行しても失敗する状態を作らないため、既存のplaceholderを引き継ぐ形で
-    // 示す。同じ値のまま更新されるので、既存Sandboxを作り直さずに済む。
+    // 示す。同じ値のまま更新されるので、Sandboxを作り直さずに済む。
     let existing = customs
         .iter()
-        .find(|custom| custom.env == GITHUB_TOKEN_ENV)
+        .find(|custom| custom.env == GITHUB_TOKEN_ENV && custom.scope == sandbox)
         .map(|custom| custom.placeholder.as_str());
+    let explanation = if existing.is_some() {
+        msg!("remediation-github-secret-incomplete")
+    } else {
+        msg!("remediation-github-secret-missing")
+    };
 
-    Err(Error::single(
+    Error::single(
         Diagnostic::new(
             ErrorId::GithubSecretMissing,
             msg!(
                 "error-github-secret-missing",
                 sandbox = sandbox,
-                hosts = missing.join(", ")
+                hosts = uncovered.join(", ")
             ),
         )
-        .remediation(match existing {
-            Some(placeholder) => Remediation::text(msg!("remediation-github-secret-incomplete"))
-                .try_run(register_command(sandbox, Some(placeholder))),
-            None => Remediation::text(msg!("remediation-github-secret-missing"))
-                .try_run(register_command(sandbox, None)),
-        }),
-    ))
+        .remediation(Remediation::text(explanation).try_run(register_command(sandbox, existing))),
+    )
+}
+
+/// どのplaceholderを使うべきか決められない。選ばずに止める。
+fn ambiguous(sandbox: &str, count: usize) -> Error {
+    Error::single(
+        Diagnostic::new(
+            ErrorId::GithubSecretMissing,
+            msg!(
+                "error-github-secret-missing",
+                sandbox = sandbox,
+                hosts = GITHUB_HOSTS.join(", ")
+            ),
+        )
+        .fact(Fact::reason(msg!(
+            "cause-github-secret-ambiguous",
+            count = count
+        )))
+        .remediation(
+            Remediation::text(msg!("remediation-github-secret-ambiguous"))
+                .try_run(forget_command(sandbox, "<placeholder>")),
+        ),
+    )
 }

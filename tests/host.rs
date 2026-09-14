@@ -119,6 +119,14 @@ template)
 	printf '{"images":[]}'
 	exit 0
 	;;
+secret)
+	# 実機と同じ形の一覧。1件のcustom secretが全hostを覆う。
+	[ "$2" = ls ] || exit 1
+	printf 'CUSTOM SECRETS\n'
+	printf 'SCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n'
+	printf '(global)   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-example   ghp_example\n'
+	exit 0
+	;;
 exec) ;;
 *) exit 1 ;;
 esac
@@ -141,11 +149,11 @@ test)
 	exit
 	;;
 sh)
-	# custom secretのplaceholderとinstalled toolの一覧を数える、副作用の無いscript。
-	# 個別の値で答え、実際にhost環境を検索して不安定にしない。
+	# installed toolの一覧とGitHubの認証確認。副作用の無いscriptで、個別の値で
+	# 答え、実際にhost環境を検索して不安定にしない。
 	case "$3" in
-	'printf %s "${GH_TOKEN:-}"')
-		printf '%s' "placeholder-value"
+	"GIT_TERMINAL_PROMPT=0 "*)
+		# GitHubはcredentialを受け付ける。
 		exit 0
 		;;
 	"for c in "*)

@@ -27,7 +27,9 @@ pub(crate) fn provision_interior(
     let layout = SandboxLayout::new(&canonical);
 
     sandbox::require_credentials_isolated(host, &ready_name)?;
-    secret::require_placeholder_present(host, &ready_name)?;
+    // credential helperへ書く直前に読む。事前条件の確認から時間が空くため、その間に
+    // tokenを登録し直していれば、新しいplaceholderをそのまま持たせる。
+    let placeholder = secret::require_github(host, &ready_name)?;
 
     let decorate = |error| disk::attach_on_failure(host, &ready_name, SandboxState::Running, error);
 
@@ -41,7 +43,9 @@ pub(crate) fn provision_interior(
     .map_err(decorate)?;
     identity::ensure(host, &ready_name, &locked.metadata.git_identity).map_err(decorate)?;
     tools::SandboxReady::announce(host, &ready_name).map_err(decorate)?;
-    secret::configure_git_credential(host, &ready_name).map_err(decorate)?;
+    secret::configure_git_credential(host, &ready_name, &placeholder).map_err(decorate)?;
+    // 数分かかるfetchへ進む前に、実物と同じ経路で認証だけを確かめる。
+    secret::require_github_accepts(host, &ready_name, &project)?;
 
     repository::ensure_bare_clone(host, &ready_name, &project, &layout, progress)
         .map_err(decorate)?;
