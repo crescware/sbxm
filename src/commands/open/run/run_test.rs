@@ -149,21 +149,13 @@ fn interior_ready(host: FakeSbx, project: &Registered, layout: &SandboxLayout) -
     }
     let host = host.answering(
         &format!(
-            "exec {} -- sh -c {}",
-            project.sandbox,
-            crate::support::secret::placeholder_probe()
-        ),
-        0,
-        "placeholder\n",
-    );
-    host.answering(
-        &format!(
             "exec {} -- git config --global --get credential.https://github.com.helper",
             project.sandbox
         ),
         0,
-        "!f() { echo username=x; echo password=$GH_TOKEN; }; f\n",
-    )
+        "!f() { echo username=x; echo password=sbx-cs-example; }; f\n",
+    );
+    crate::testing::host::registered_secret(host, project.sandbox.as_str())
 }
 
 fn prepare_for(fixture: &Fixture, host: &FakeSbx) -> Result<Prepared> {

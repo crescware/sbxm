@@ -136,9 +136,14 @@ sbx secret set-custom <sandbox> \
   --value <token>
 ```
 
-The secret proxy keeps the real token outside the sandbox. The sandbox sees a
-placeholder, which the proxy replaces only for requests to the registered
-hosts.
+The secret proxy keeps the real token outside the sandbox. The sandbox never
+receives the token: sbxm hands the placeholder to the git inside it, and the
+proxy replaces the placeholder only for requests to the registered hosts.
+
+A custom secret is used rather than the built-in `github` service of Docker
+Sandboxes because that service's preset treats a token by its shape and does
+not inject a classic personal access token. Both classic and fine-grained
+tokens work through a custom secret.
 
 ### 4. Build and enter the sandbox
 

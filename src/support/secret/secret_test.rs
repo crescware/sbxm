@@ -5,20 +5,20 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::boundary::host::CommandOutcome;
+use crate::project::ProjectId;
 use std::cell::RefCell;
 
 struct FakeSbx {
     /// `secret ls`へ順に返す出力。末尾から取り出し、最後の1件は繰り返す。
     listings: RefCell<Vec<String>>,
     calls: RefCell<Vec<Vec<String>>>,
+    /// Sandbox内のcommandが返す終了statusと出力。argvの一部で選ぶ。
+    inside: RefCell<Vec<(&'static str, i32, &'static str, &'static str)>>,
 }
 
 impl FakeSbx {
     fn listing(output: &str) -> FakeSbx {
-        FakeSbx {
-            listings: RefCell::new(vec![output.to_string()]),
-            calls: RefCell::new(Vec::new()),
-        }
+        FakeSbx::listings(&[output])
     }
 
     /// mutationの前後で観測が変わるhost。
@@ -32,7 +32,22 @@ impl FakeSbx {
                     .collect(),
             ),
             calls: RefCell::new(Vec::new()),
+            inside: RefCell::new(Vec::new()),
         }
+    }
+
+    /// `needle`を含むSandbox内のcommandへ、この終了statusと出力で答える。
+    fn inside(
+        self,
+        needle: &'static str,
+        code: i32,
+        stdout: &'static str,
+        stderr: &'static str,
+    ) -> FakeSbx {
+        self.inside
+            .borrow_mut()
+            .push((needle, code, stdout, stderr));
+        self
     }
 }
 
@@ -43,23 +58,33 @@ impl HostEnvironment for FakeSbx {
 
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.args.clone());
+        let joined = spec.args.join(" ");
+        if let Some((_, code, stdout, stderr)) = self
+            .inside
+            .borrow()
+            .iter()
+            .find(|(needle, ..)| joined.contains(needle))
+        {
+            let mut outcome = crate::testing::command::outcome(spec, *code, stdout);
+            outcome.stderr = stderr.as_bytes().to_vec();
+            return Ok(outcome);
+        }
+        let reads_listing = spec.args.first().is_some_and(|arg| arg == "secret")
+            && spec.args.get(1).is_some_and(|arg| arg == "ls");
+        if !reads_listing {
+            return Ok(crate::testing::command::outcome(spec, 0, ""));
+        }
         let mut listings = self.listings.borrow_mut();
         let output = listings.last().cloned().unwrap_or_default();
         // 一覧を読み直す工程だけが次の観測へ進む。最後の1件は繰り返す。
-        let reads_listing = spec.args.first().is_some_and(|arg| arg == "secret")
-            && spec.args.get(1).is_some_and(|arg| arg == "ls");
-        if reads_listing && listings.len() > 1 {
+        if listings.len() > 1 {
             listings.pop();
         }
         Ok(crate::testing::command::outcome(spec, 0, &output))
     }
 }
 
-fn registered() -> String {
-    scoped("sbxm-example", "sbx-cs-example")
-}
-
-/// 1件のcustom secretが並ぶ一覧。
+/// 1件のcustom secretが全hostを覆う一覧。
 fn scoped(scope: &str, placeholder: &str) -> String {
     format!(
         "CUSTOM SECRETS\n\
@@ -69,48 +94,49 @@ fn scoped(scope: &str, placeholder: &str) -> String {
     )
 }
 
+fn registered() -> String {
+    scoped("sbxm-example", "sbx-cs-example")
+}
+
 /// 1件も登録がないscopeの一覧。
 fn none() -> String {
     "No secrets found for scope \"sbxm-example\".\n".to_string()
 }
 
+fn project() -> Checked<ProjectId> {
+    ProjectId::parse("example-org/example-repo").required()
+}
+
 #[test]
-fn a_registered_custom_secret_lets_the_build_continue() -> Checked {
+fn a_registered_custom_secret_lets_the_build_continue_and_names_its_placeholder() -> Checked {
     let host = FakeSbx::listing(&registered());
-    require_github(&host, "sbxm-example").required_because("the secret is there")?;
+    let placeholder =
+        require_github(&host, "sbxm-example").required_because("the secret is there")?;
+    assert_eq!(placeholder, "sbx-cs-example");
 
     let calls = host.calls.borrow();
     assert_eq!(
         calls[0],
-        vec![
-            "secret".to_string(),
-            "ls".to_string(),
-            "sbxm-example".to_string()
-        ],
-        "the check is read-only and never asks for the value"
+        vec!["secret".to_string(), "ls".to_string()],
+        "the check is read-only, never asks for the value, and never narrows the scope"
     );
-    Ok(())
-}
-
-#[test]
-fn the_listing_a_real_registration_produces_is_accepted() -> Checked {
-    // 実機で`sbx secret set-custom`を実行したあとの`sbx secret ls`の形。scope名と
-    // secretは記録から伏せてある。`TARGETS`はcommaと空白1つで区切られ、wildcardは
-    // 展開されずに並ぶため、sbxmが書いた文字列とそのまま突き合わせられる。
-    let host = FakeSbx::listing(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS                                                        ENV        PLACEHOLDER               SECRET\n\
-             sbxm-example   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO   ghp_redacted\n",
-    );
-    require_github(&host, "sbxm-example")
-        .required_because("the registration this build asks for passes")?;
     Ok(())
 }
 
 #[test]
 fn a_service_secret_is_not_accepted_in_place_of_a_custom_one() -> Checked {
-    // service secretはproxyのgithub presetを通り、classic tokenを注入しない。
-    // 登録されていても、Sandboxがrepositoryへ届くとは限らない。
+    // これはsbxmの根幹の判断であり、実機の測定に基づく（PR #10 / commit 4cb8907）。
+    // 同じclassic personal access tokenを`github` service secretとして登録し、
+    // Sandboxの外と中から同じrequestを投げた結果:
+    //
+    // | request                          | 外  | 中  |
+    // |----------------------------------|----:|----:|
+    // | api.github.com/user（Bearer）    | 200 | 401 |
+    // | github.comのgit endpoint（Basic）| 200 | 401 |
+    //
+    // proxyのgithub presetはtokenの形で扱いを変え、classic tokenを注入しない。
+    // service secretを受け付けると、classic tokenの利用者は登録できたのに認証が
+    // 通らない状態に落ちる。custom secretはtokenの形を問わない。
     let host = FakeSbx::listing(
         "SCOPE          TYPE      NAME     SECRET\nsbxm-example   service   github   (stored)\n",
     );
@@ -118,6 +144,64 @@ fn a_service_secret_is_not_accepted_in_place_of_a_custom_one() -> Checked {
         .refused_because("a service secret does not carry every token type")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+    Ok(())
+}
+
+#[test]
+fn the_command_sbxm_prints_registers_a_custom_secret_so_that_any_token_shape_works() {
+    // 案内をservice secretへ変えると、classic tokenの利用者が認証できなくなる。
+    // 上のtestと対で、案内と検査の両側からこの判断を固定する。
+    let command = register_command("sbxm-example", None);
+    assert!(
+        command.starts_with("sbx secret set-custom "),
+        "the token is registered as a custom secret, not as a service secret: {command}"
+    );
+    assert!(
+        !command.contains("secret set github") && !command.contains("--service"),
+        "nothing asks the proxy to interpret the token by its shape: {command}"
+    );
+    for host in GITHUB_HOSTS {
+        assert!(
+            command.contains(&format!("--host '{host}'")),
+            "{host} is checked for, so it has to be registered: {command}"
+        );
+    }
+    assert_eq!(
+        command.matches("--host ").count(),
+        GITHUB_HOSTS.len(),
+        "no host is registered that is never checked for: {command}"
+    );
+    assert_eq!(
+        command.matches("--env ").count(),
+        1,
+        "one secret carries every host, so one placeholder covers them all: {command}"
+    );
+}
+
+#[test]
+fn the_credential_the_sandbox_presents_is_the_placeholder_and_never_the_token() -> Checked {
+    // helperが持つのはplaceholderだけである。tokenの形にも長さにも依存しないため、
+    // classic tokenでもfine-grained tokenでも、Sandboxの中の手順は同じになる。
+    for placeholder in ["sbx-cs-example", "sbx-cs-J0uA6pOfxmdzMF1W"] {
+        let host = FakeSbx::listing("");
+        configure_git_credential(&host, "sbxm-example", placeholder)
+            .required_because("the helper is configured")?;
+        let written = host
+            .calls
+            .borrow()
+            .iter()
+            .map(|call| call.join(" "))
+            .find(|call| call.contains("credential.https://github.com.helper !f"))
+            .required_because("the helper is written")?;
+        assert!(
+            written.contains(&format!("password={placeholder};")),
+            "the placeholder is what git presents: {written}"
+        );
+        assert!(
+            !written.contains("ghp_") && !written.contains("github_pat_"),
+            "no token material reaches the sandbox: {written}"
+        );
+    }
     Ok(())
 }
 
@@ -154,41 +238,64 @@ fn covering_only_the_git_host_leaves_gh_unauthenticated_and_is_refused() -> Chec
 }
 
 #[test]
-fn the_hosts_have_to_share_one_secret_so_that_they_share_one_placeholder() -> Checked {
-    // 両hostが登録されていても、別々のsecretならplaceholderが2つになる。Sandboxの
-    // GH_TOKENは1つしか持てないので、片方は必ず素通しになる。
-    let host = FakeSbx::listing(&format!(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
-             sbxm-example   {}   GH_TOKEN   sbx-cs-one       ghp_example\n\
-             sbxm-example   {}   GH_TOKEN   sbx-cs-two       ghp_example\n",
-        GITHUB_HOST,
-        GITHUB_HOSTS[1..].join(" ")
-    ));
+fn a_registration_bound_to_another_sandbox_does_not_count() -> Checked {
+    // 別のSandboxのscopeへ結び付いた登録は、このSandboxのrequestでは差し替えられない。
+    let host = FakeSbx::listing(&scoped("sbxm-another", "sbx-cs-elsewhere"));
     let error = require_github(&host, "sbxm-example")
-        .refused_because("two placeholders cannot both reach one environment variable")?;
-
+        .refused_because("another sandbox's registration never reaches this one")?;
     assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
     Ok(())
 }
 
 #[test]
-fn a_custom_secret_for_another_host_does_not_count() -> Checked {
-    let host = FakeSbx::listing(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
-             sbxm-example   gitlab.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
-    );
-    let error = require_github(&host, "sbxm-example")
-        .refused_because("the proxy only substitutes for the hosts it was told about")?;
+fn a_global_registration_counts_for_this_sandbox() -> Checked {
+    let host = FakeSbx::listing(&scoped("(global)", "sbx-cs-global"));
+    let placeholder = require_github(&host, "sbxm-example")
+        .required_because("a global registration reaches every sandbox")?;
+    assert_eq!(placeholder, "sbx-cs-global");
+    Ok(())
+}
 
+#[test]
+fn a_sandbox_scoped_registration_wins_over_a_global_one() -> Checked {
+    // 両方ある場合、Sandboxへ結び付いた側が使われる。案件ごとのtokenを、ほかの案件と
+    // 共有するglobalの登録で上書きしない。
+    let host = FakeSbx::listing(&format!(
+        "CUSTOM SECRETS\n\
+             SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
+             (global)   {}   GH_TOKEN   sbx-cs-global   ghp_example\n\
+             sbxm-example   {}   GH_TOKEN   sbx-cs-scoped   ghp_example\n",
+        GITHUB_HOSTS.join(" "),
+        GITHUB_HOSTS.join(" ")
+    ));
+    assert_eq!(
+        require_github(&host, "sbxm-example").required_because("the scoped one is chosen")?,
+        "sbx-cs-scoped"
+    );
+    Ok(())
+}
+
+#[test]
+fn several_registrations_for_one_sandbox_are_refused_instead_of_picked_from() -> Checked {
+    // どちらのplaceholderをgitへ持たせるかを選ぶと、食い違ったまま静かに失敗する。
+    let host = FakeSbx::listing(&format!(
+        "CUSTOM SECRETS\n\
+             SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
+             sbxm-example   {}   GH_TOKEN   sbx-cs-one   ghp_example\n\
+             sbxm-example   {}   OTHER      sbx-cs-two   ghp_example\n",
+        GITHUB_HOSTS.join(" "),
+        GITHUB_HOSTS.join(" ")
+    ));
+    let error = require_github(&host, "sbxm-example")
+        .refused_because("two placeholders cannot both be presented")?;
     assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+    assert!(format!("{error:?}").contains("cause-github-secret-ambiguous"));
     Ok(())
 }
 
 #[test]
 fn a_missing_secret_stops_with_the_command_that_registers_it() -> Checked {
-    let host = FakeSbx::listing("No secrets found for scope \"sbxm-example\".\n");
+    let host = FakeSbx::listing(&none());
     let error = require_github(&host, "sbxm-example")
         .refused_because("a build without repository access cannot continue")?;
 
@@ -211,6 +318,42 @@ fn a_missing_secret_stops_with_the_command_that_registers_it() -> Checked {
 }
 
 #[test]
+fn an_incomplete_secret_is_told_to_keep_the_placeholder_the_sandbox_already_holds() -> Checked {
+    // placeholderを指定しない登録は、同じenvが既にあると重複として拒否される。
+    // 既存の値を引き継ぐ形で示さないと、案内どおりに実行しても必ず失敗する。
+    let host = FakeSbx::listing(
+        "CUSTOM SECRETS\n\
+             SCOPE          TARGETS      ENV        PLACEHOLDER              SECRET\n\
+             sbxm-example   github.com   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO  ghp_example\n",
+    );
+    let error =
+        require_github(&host, "sbxm-example").refused_because("the coverage is incomplete")?;
+
+    let remediation = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .required_because("the user is told how to get out of it")?;
+    assert_eq!(
+        remediation.explanation[0].id,
+        "remediation-github-secret-incomplete"
+    );
+    let command = remediation
+        .commands
+        .first()
+        .map(|command| command.as_str().to_string())
+        .required_because("the remediation carries the command to run")?;
+    assert!(
+        command.contains("--placeholder sbx-cs-Y1k0SfTWbkN6HzCO"),
+        "the existing placeholder is carried over: {command}"
+    );
+    assert!(
+        !command.contains("sbx rm"),
+        "keeping the placeholder means the sandbox does not have to be rebuilt: {command}"
+    );
+    Ok(())
+}
+
+#[test]
 fn the_registration_is_removed_by_its_placeholder_and_verified_gone() -> Checked {
     let host = FakeSbx::listings(&[&registered(), &none()]);
     let removed =
@@ -219,27 +362,9 @@ fn the_registration_is_removed_by_its_placeholder_and_verified_gone() -> Checked
 
     let calls = host.calls.borrow();
     assert_eq!(
-        calls[1],
-        vec![
-            "secret".to_string(),
-            "rm".to_string(),
-            "sbxm-example".to_string(),
-            "--placeholder".to_string(),
-            "sbx-cs-example".to_string(),
-            "--force".to_string()
-        ],
-        "the custom secret is named by its placeholder, and sbx is not asked to confirm"
-    );
-    // 案内する文字列と実行する引数がずれると、対処方法どおりに実行しても結果が変わる。
-    assert_eq!(
         format!("sbx {}", calls[1].join(" ")),
         forget_command("sbxm-example", "sbx-cs-example"),
         "sbxm runs exactly the command it names when the removal has to be repeated by hand"
-    );
-    // scopeを渡さない実行はscopeの選択を対話で訊く。stdinを閉じて実行するため答えられない。
-    assert!(
-        calls[1].contains(&"sbxm-example".to_string()),
-        "the scope is given, so nothing is asked interactively: {calls:?}"
     );
     assert_eq!(
         calls.len(),
@@ -250,30 +375,9 @@ fn the_registration_is_removed_by_its_placeholder_and_verified_gone() -> Checked
 }
 
 #[test]
-fn every_registration_of_the_env_in_this_scope_is_removed() -> Checked {
-    // hostを分けて登録した状態から来ることがある。1件だけ消すと、残った側が次の登録を
-    // 重複として拒否させる。
-    let host = FakeSbx::listings(&[
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
-             sbxm-example   github.com   GH_TOKEN   sbx-cs-one       ghp_example\n\
-             sbxm-example   ghcr.io      GH_TOKEN   sbx-cs-two       ghp_example\n",
-        &none(),
-    ]);
-
-    let removed = forget_github(&host, "sbxm-example").required_because("both are removed")?;
-    assert_eq!(
-        removed,
-        vec!["sbx-cs-one".to_string(), "sbx-cs-two".to_string()]
-    );
-    Ok(())
-}
-
-#[test]
 fn a_registration_of_another_scope_is_not_removed_with_this_sandbox() -> Checked {
-    // global scopeのsecretはほかのSandboxも使う。placeholderで指して消すと、この案件と
-    // 無関係なSandboxがrepositoryへ届かなくなる。
-    let host = FakeSbx::listing(&scoped("global", "sbx-cs-elsewhere"));
+    // global scopeのsecretはほかのSandboxも使う。1案件の後片付けで消す対象ではない。
+    let host = FakeSbx::listing(&scoped("(global)", "sbx-cs-elsewhere"));
     let removed = forget_github(&host, "sbxm-example")
         .required_because("nothing of this project is there")?;
     assert!(removed.is_empty());
@@ -300,15 +404,6 @@ fn a_secret_the_user_registered_for_something_else_is_left_alone() -> Checked {
     let removed = forget_github(&host, "sbxm-example")
         .required_because("nothing sbxm registered is there")?;
     assert!(removed.is_empty());
-    assert!(
-        !host
-            .calls
-            .borrow()
-            .iter()
-            .any(|args| args.contains(&"rm".to_string())),
-        "nothing is removed: {:?}",
-        host.calls.borrow()
-    );
     Ok(())
 }
 
@@ -346,13 +441,16 @@ fn a_registration_that_survives_the_removal_is_reported_with_the_command_to_run(
 }
 
 #[test]
-fn the_value_of_a_secret_is_never_named_while_removing_it() -> Checked {
+fn the_value_of_a_secret_is_never_named_or_requested() -> Checked {
     let host = FakeSbx::listings(&[&registered(), &none()]);
+    require_github(&host, "sbxm-example").required_because("the secret is there")?;
     forget_github(&host, "sbxm-example").required_because("the registration is removed")?;
 
     for args in host.calls.borrow().iter() {
         assert!(
-            !args.iter().any(|arg| arg == "--value" || arg == "--token"),
+            !args
+                .iter()
+                .any(|arg| arg == "--value" || arg == "--token" || arg == "get" || arg == "reveal"),
             "sbxm only names the placeholder: {args:?}"
         );
     }
@@ -360,39 +458,10 @@ fn the_value_of_a_secret_is_never_named_while_removing_it() -> Checked {
 }
 
 #[test]
-fn a_sandbox_that_carries_the_placeholder_passes_the_check() -> Checked {
-    let host = FakeSbx::listing("sbx-cs-example");
-    require_placeholder_present(&host, "sbxm-example")
-        .required_because("the placeholder is there")?;
-    Ok(())
-}
-
-#[test]
-fn a_sandbox_without_the_placeholder_is_refused_instead_of_assumed_ready() -> Checked {
-    // 登録済みという事実からSandboxへ届いたと推定しない。作成より後に登録した場合、
-    // secretは一覧に並んでいてもSandboxの中には現れない。
+fn the_credential_helper_is_written_when_nothing_is_set_yet() -> Checked {
     let host = FakeSbx::listing("");
-    let error = require_placeholder_present(&host, "sbxm-example")
-        .refused_because("git inside cannot authenticate without the placeholder")?;
-
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxSecretNotApplied));
-    let remediation = error.diagnostics()[0]
-        .remediation
-        .as_ref()
-        .required_because("the user is told how to get out of it")?;
-    assert!(
-        remediation
-            .commands
-            .iter()
-            .any(|command| command.as_str() == "sbx rm sbxm-example")
-    );
-    Ok(())
-}
-
-#[test]
-fn the_credential_helper_reads_the_placeholder_and_holds_no_token() -> Checked {
-    let host = FakeSbx::listing("");
-    configure_git_credential(&host, "sbxm-example").required_because("the helper is configured")?;
+    configure_git_credential(&host, "sbxm-example", "sbx-cs-example")
+        .required_because("the helper is configured")?;
 
     let calls = host.calls.borrow();
     assert!(
@@ -401,171 +470,150 @@ fn the_credential_helper_reads_the_placeholder_and_holds_no_token() -> Checked {
             .contains("credential.https://github.com.helper"),
         "the current value is read before anything is written: {calls:?}"
     );
-    let write = calls
-        .iter()
-        .map(|call| call.join(" "))
-        .find(|call| call.contains("password=$GH_TOKEN"))
-        .required_because("the helper is configured because nothing was set yet")?;
-    // helperはSandboxの環境変数を読むだけで、値そのものは持たない。
-    assert!(write.contains("credential.https://github.com.helper"));
+    assert_eq!(calls.len(), 2, "read once, write once: {calls:?}");
     Ok(())
 }
 
 #[test]
 fn configure_leaves_an_existing_matching_credential_helper_untouched() -> Checked {
-    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
-    let helper = "!f() { echo username=x; echo password=$GH_TOKEN; }; f";
-    let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, helper);
-    configure_git_credential(&host, "sbxm-example").required_because("the helper is configured")?;
-    assert!(
-        !host.ran("credential.https://github.com.helper !f"),
-        "an already-matching value is not written again: {:?}",
-        host.calls()
+    let host = FakeSbx::listing("").inside(
+        "--get credential.https://github.com.helper",
+        0,
+        "!f() { echo username=x; echo password=sbx-cs-example; }; f",
+        "",
     );
+    configure_git_credential(&host, "sbxm-example", "sbx-cs-example")
+        .required_because("the helper already matches")?;
     assert_eq!(
-        host.calls().len(),
+        host.calls.borrow().len(),
         1,
         "the value is read once and never written: {:?}",
-        host.calls()
+        host.calls.borrow()
     );
     Ok(())
 }
 
 #[test]
+fn a_helper_sbxm_wrote_earlier_is_brought_up_to_the_current_placeholder() -> Checked {
+    // tokenを登録し直すとplaceholderが変わる。旧版は環境変数を読む形で書いていた。
+    // どちらも次のfetchが認証できなくなるため、観測したその場で書き換える。
+    for stale in [
+        "!f() { echo username=x; echo password=$GH_TOKEN; }; f",
+        "!f() { echo username=x; echo password=sbx-cs-old; }; f",
+    ] {
+        let host =
+            FakeSbx::listing("").inside("--get credential.https://github.com.helper", 0, stale, "");
+        configure_git_credential(&host, "sbxm-example", "sbx-cs-new")
+            .required_because("a value sbxm wrote is updated, not refused")?;
+        let written = host
+            .calls
+            .borrow()
+            .iter()
+            .map(|call| call.join(" "))
+            .find(|call| call.contains("password=sbx-cs-new"))
+            .required_because("the current placeholder is written");
+        assert!(written.is_ok(), "{stale} is replaced");
+    }
+    Ok(())
+}
+
+#[test]
 fn configure_refuses_a_different_credential_helper() -> Checked {
-    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
-    let host = crate::testing::host::FakeSbx::listing("").answering(key, 0, "store");
-    let error = configure_git_credential(&host, "sbxm-example")
+    let host =
+        FakeSbx::listing("").inside("--get credential.https://github.com.helper", 0, "store", "");
+    let error = configure_git_credential(&host, "sbxm-example", "sbx-cs-example")
         .refused_because("a helper set to something else may belong to another user's sandbox")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::SandboxCredentialHelperUnusable)
     );
     assert_eq!(
-        host.calls().len(),
+        host.calls.borrow().len(),
         1,
         "the mismatch is refused before any write is attempted: {:?}",
-        host.calls()
-    );
-    assert!(
-        !host.ran("credential.https://github.com.helper !f"),
-        "the existing value is not overwritten: {:?}",
-        host.calls()
+        host.calls.borrow()
     );
     Ok(())
 }
 
 #[test]
 fn configure_refuses_a_credential_helper_it_cannot_observe() -> Checked {
-    let key = "exec sbxm-example -- git config --global --get credential.https://github.com.helper";
-    let host = crate::testing::host::FakeSbx::listing("").answering(key, 1, "fatal: bad config");
-    let error = configure_git_credential(&host, "sbxm-example")
+    let host = FakeSbx::listing("").inside(
+        "--get credential.https://github.com.helper",
+        1,
+        "fatal: bad config",
+        "",
+    );
+    let error = configure_git_credential(&host, "sbxm-example", "sbx-cs-example")
         .refused_because("a failure that answered with text is not the same as an unset key")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::SandboxCredentialHelperUnusable)
     );
     assert_eq!(
-        host.calls().len(),
+        host.calls.borrow().len(),
         1,
         "nothing is written while the existing value cannot be read: {:?}",
-        host.calls()
+        host.calls.borrow()
     );
     Ok(())
 }
 
 #[test]
-fn an_incomplete_secret_is_told_to_keep_the_placeholder_the_sandbox_already_holds() -> Checked {
-    // placeholderを指定しない登録は、同じenvが既にあると重複として拒否される。
-    // 既存の値を引き継ぐ形で示さないと、案内どおりに実行しても必ず失敗する。
-    let host = FakeSbx::listing(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS      ENV        PLACEHOLDER              SECRET\n\
-             sbxm-example   github.com   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO  ghp_example\n",
-    );
-    let error =
-        require_github(&host, "sbxm-example").refused_because("the coverage is incomplete")?;
-
-    let remediation = error.diagnostics()[0]
-        .remediation
-        .as_ref()
-        .required_because("the user is told how to get out of it")?;
-    assert_eq!(
-        remediation.explanation[0].id,
-        "remediation-github-secret-incomplete"
-    );
-    let command = remediation
-        .commands
-        .first()
-        .map(|command| command.as_str().to_string())
-        .required_because("the remediation carries the command to run")?;
+fn github_accepting_the_credential_lets_the_build_continue() -> Checked {
+    let host = FakeSbx::listing("");
+    require_github_accepts(&host, "sbxm-example", &project()?)
+        .required_because("GitHub answered the probe")?;
+    let probe = host.calls.borrow()[0].join(" ");
     assert!(
-        command.contains("--placeholder sbx-cs-Y1k0SfTWbkN6HzCO"),
-        "the existing placeholder is carried over: {command}"
+        probe.contains("ls-remote")
+            && probe.contains("https://github.com/example-org/example-repo.git"),
+        "the probe takes the same path as the fetch that follows: {probe}"
     );
-    // 同じplaceholderのまま更新されるため、Sandboxが持つ値は変わらない。
     assert!(
-        !command.contains("sbx rm"),
-        "keeping the placeholder means the sandbox does not have to be rebuilt: {command}"
+        probe.contains("GIT_TERMINAL_PROMPT=0"),
+        "a probe without a terminal must not wait for a username: {probe}"
     );
     Ok(())
 }
 
 #[test]
-fn a_sandbox_with_no_secret_at_all_is_told_to_register_one_without_a_placeholder() -> Checked {
-    let host = FakeSbx::listing("No secrets found for scope \"sbxm-example\".\n");
-    let error = require_github(&host, "sbxm-example").refused_because("nothing is registered")?;
-
-    let remediation = error.diagnostics()[0]
-        .remediation
-        .as_ref()
-        .required_because("present")?;
-    assert_eq!(
-        remediation.explanation[0].id,
-        "remediation-github-secret-missing"
-    );
-    assert!(
-        remediation
-            .commands
-            .iter()
-            .all(|command| !command.as_str().contains("--placeholder")),
-        "there is no placeholder to keep, so none is invented"
-    );
-    Ok(())
-}
-
-#[test]
-fn the_command_sbxm_prints_registers_exactly_what_sbxm_checks_for() {
-    // 案内と検査がずれると、案内どおりに実行しても止まり続ける状態になる。
-    let command = register_command("sbxm-example", None);
-    for host in GITHUB_HOSTS {
+fn a_credential_github_rejects_is_named_before_the_fetch() -> Checked {
+    // tokenが無効でも、proxyが差し替えずplaceholderがそのまま届いても、GitHubは同じ
+    // 文で拒む。どちらも登録し直すところから始まる。
+    for stderr in [
+        "remote: Invalid username or token. Password authentication is not supported for Git operations.\nfatal: Authentication failed for 'https://github.com/example-org/example-repo.git/'\n",
+        "fatal: could not read Username for 'https://github.com': No such device or address\n",
+    ] {
+        let host = FakeSbx::listing("").inside("ls-remote", 128, "", stderr);
+        let error = require_github_accepts(&host, "sbxm-example", &project()?)
+            .refused_because("a rejected credential stops the build before the fetch")?;
+        assert_eq!(error.first_id(), Some(ErrorId::GithubCredentialRejected));
+        let remediation = error.diagnostics()[0]
+            .remediation
+            .as_ref()
+            .required_because("the user is told how to register the token again")?;
         assert!(
-            command.contains(&format!("--host '{host}'")),
-            "{host} is checked for, so it has to be registered: {command}"
+            remediation
+                .commands
+                .iter()
+                .any(|command| command.as_str() == register_command("sbxm-example", None))
         );
     }
-    assert_eq!(
-        command.matches("--host ").count(),
-        GITHUB_HOSTS.len(),
-        "no host is registered that is never checked for: {command}"
-    );
-    assert_eq!(
-        command.matches("--env ").count(),
-        1,
-        "one secret carries every host, so one placeholder reaches GH_TOKEN: {command}"
-    );
+    Ok(())
 }
 
 #[test]
-fn the_value_of_a_secret_is_never_requested() -> Checked {
-    let host = FakeSbx::listing(&registered());
-    require_github(&host, "sbxm-example").required_because("the secret is there")?;
-
-    for args in host.calls.borrow().iter() {
-        assert!(
-            !args.iter().any(|arg| arg == "get" || arg == "reveal"),
-            "sbxm only asks whether the secret exists: {args:?}"
-        );
-    }
+fn a_failure_that_is_not_a_rejection_is_reported_as_the_command_that_failed() -> Checked {
+    // 到達できない、repositoryが無いといった失敗は、tokenを登録し直しても直らない。
+    let host = FakeSbx::listing("").inside(
+        "ls-remote",
+        128,
+        "",
+        "fatal: unable to access 'https://github.com/example-org/example-repo.git/': Could not resolve host: github.com\n",
+    );
+    let error = require_github_accepts(&host, "sbxm-example", &project()?)
+        .refused_because("the probe failed for another reason")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     Ok(())
 }

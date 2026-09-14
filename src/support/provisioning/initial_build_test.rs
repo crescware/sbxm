@@ -330,7 +330,6 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
         "sbx cp --follow-link",
         "config --global user.name",
         "gh config set git_protocol",
-        "printf %s",
         "credential.https://github.com.helper",
         "git init --bare",
         "ls-remote --symref origin HEAD",
@@ -488,7 +487,7 @@ fn a_legacy_project_without_a_recorded_baseline_stays_ready_when_nothing_changed
 }
 
 #[test]
-fn a_placeholder_no_longer_present_in_a_running_sandbox_is_not_treated_as_ready() -> Checked {
+fn a_credential_helper_no_longer_matching_the_registration_is_not_treated_as_ready() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -496,11 +495,16 @@ fn a_placeholder_no_longer_present_in_a_running_sandbox_is_not_treated_as_ready(
         .build(&world, &request)
         .required_because("the project completes")?;
 
-    // 何らかの理由で、稼働中のSandboxがもうplaceholderを持っていない。
-    world.answering("printf %s", 0, "");
+    // 何らかの理由で、稼働中のSandboxのgitがもう登録済みのplaceholderを提示しない。
+    world.settings.borrow_mut().insert(
+        "credential.https://github.com.helper".to_string(),
+        "store".to_string(),
+    );
     let error = bench
         .ensure(&world, &project_of(&request)?, &mut SilentProgress)
-        .refused_because("a sandbox that lost its placeholder is not a verified post-condition")?;
+        .refused_because(
+            "a sandbox that cannot present the token is not a verified post-condition",
+        )?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::InitialProvisioningIncomplete)
@@ -836,13 +840,16 @@ fn a_successful_prepare_checks_secret_and_docker_reachability_exactly_once() -> 
         .required_because("prepare succeeds")?;
 
     let since = world.since(mark);
+    // 事前条件として1回、credential helperへ書く直前にもう1回、完了確認の観測で
+    // もう1回。2つ目は、事前条件の確認から時間が空くあいだにtokenを登録し直した
+    // 場合へ追随するためにある。3つ目はmutationを起こさないread-onlyの観測である。
     assert_eq!(
         since
             .iter()
             .filter(|call| call.contains("secret ls"))
             .count(),
-        1,
-        "the github secret is checked exactly once: {since:?}"
+        3,
+        "the github secret is read as a precondition, before it is written, and when the result is verified: {since:?}"
     );
     assert_eq!(
         since

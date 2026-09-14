@@ -2,7 +2,7 @@
 ///
 /// scope、対象host、環境変数名、placeholderを持つ。`SECRET`列は読まない。tokenの一部が
 /// 現れるためである。
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomSecret {
     /// この登録が属するscope。
     ///

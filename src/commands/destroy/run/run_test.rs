@@ -458,7 +458,7 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     let sandbox = project.sandbox.as_str();
     let host = clean_host(&fixture, &project)?.answering_in_turn(
-        &format!("secret ls {sandbox}"),
+        "secret ls",
         &[
             (0, &custom_secret_listing(sandbox, "sbx-cs-example")),
             (0, &no_custom_secrets(sandbox)),
@@ -503,7 +503,7 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
     let project = fixture.register("example-org/example-repo")?;
     let sandbox = project.sandbox.as_str();
     let host = clean_host(&fixture, &project)?.answering(
-        &format!("secret ls {sandbox}"),
+        "secret ls",
         0,
         &custom_secret_listing(sandbox, "sbx-cs-example"),
     );
@@ -543,11 +543,10 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() -> Che
     // global scopeのsecretはほかのSandboxも使う。1案件の後片付けで消す対象ではない。
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let sandbox = project.sandbox.as_str();
     let host = clean_host(&fixture, &project)?.answering(
-        &format!("secret ls {sandbox}"),
+        "secret ls",
         0,
-        &custom_secret_listing("global", "sbx-cs-elsewhere"),
+        &custom_secret_listing("(global)", "sbx-cs-elsewhere"),
     );
     expect_successful_removal(&host);
 
