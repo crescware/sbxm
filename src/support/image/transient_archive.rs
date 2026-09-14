@@ -15,17 +15,28 @@ pub struct TransientArchive {
     path: PathBuf,
     /// 作成した時点の実体。削除の直前に確かめ、入れ替わっていれば削除しない。
     identity: FileIdentity,
+    /// archiveがimageの同一性として宣言するdigest。保存直後に一度だけ読む。
+    image_ids: Vec<String>,
 }
 
 impl TransientArchive {
-    pub(super) fn new(path: PathBuf) -> Result<TransientArchive> {
+    pub(super) fn new(path: PathBuf, image_ids: Vec<String>) -> Result<TransientArchive> {
         let identity = FileIdentity::of_path_without_following(&path)
             .map_err(|error| PathScope::ProjectPath.unreadable_error(&path, &error.to_string()))?;
-        Ok(TransientArchive { path, identity })
+        Ok(TransientArchive {
+            path,
+            identity,
+            image_ids,
+        })
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// archiveが宣言するdigest。既存Templateのruntime idと照合する期待値になる。
+    pub fn image_ids(&self) -> &[String] {
+        &self.image_ids
     }
 
     /// このarchiveをbest-effortで削除する。

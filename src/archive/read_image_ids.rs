@@ -7,13 +7,16 @@ use super::{INDEX_ENTRY, normalized_digest, read_entry, read_manifest, unreadabl
 
 /// archiveがimageの同一性として宣言するdigest。
 ///
-/// runtimeはloadしたTemplateのidを、archiveの書き方に応じて別の値で報告する。
-/// OCI layout（containerd image storeの`docker image save`）では`index.json`が指す
-/// image indexまたはmanifestのdigestになり、image configのdigestとは一致しない。
-/// legacy layoutにはindexが無く、idはimage configのdigestになる。
+/// runtimeはloadしたTemplateのidを、archiveの書き方とruntime自身のimage storeに
+/// 応じて別の値で報告する。containerd image storeを持つruntimeは、OCI layout
+/// （containerd storeの`docker image save`）なら`index.json`が指すimage indexまたは
+/// manifestのdigestを報告し、image configのdigestとは一致しない。graph driverの
+/// storeを持つruntimeは、どちらのlayoutでもimage configのdigestを報告する。
 ///
-/// どちらで報告されても照合できるよう、archiveが宣言する候補をすべて返す。並びは
-/// `index.json`が指すdigest、次にimage configのdigestとする。
+/// archiveが宣言する候補をすべて返す。並びは`index.json`が指すdigest、次にimage
+/// configのdigestとする。legacy layout（indexを持たない）をcontainerd storeの
+/// runtimeへloadした場合、idはruntimeが合成したmanifestのdigestになり、archiveの
+/// どの値からも導けない。その組み合わせは照合できず、呼び出し側で再利用を拒む。
 pub fn read_image_ids(path: &Path) -> Result<Vec<String>> {
     let mut ids = read_index_digests(path)?;
     let manifest = read_manifest(path)?;
@@ -33,6 +36,7 @@ fn read_index_digests(path: &Path) -> Result<Vec<String>> {
     let manifests = document
         .get("manifests")
         .and_then(|value| value.as_array())
+        .filter(|manifests| !manifests.is_empty())
         .ok_or_else(|| {
             unusable(
                 path,

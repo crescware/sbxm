@@ -55,7 +55,7 @@ fn a_successful_outcome_is_kept_once_the_file_is_removed() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("template-000000000000.tar");
     std::fs::write(&path, b"archive").required()?;
-    let archive = TransientArchive::new(path.clone()).required()?;
+    let archive = TransientArchive::new(path.clone(), Vec::new()).required()?;
     let mut warnings = Vec::new();
 
     let outcome = archive.cleanup_after(Ok(42), &mut warnings, &mut SilentProgress);
@@ -77,7 +77,7 @@ fn a_failed_outcome_is_kept_once_the_file_is_removed() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("template-000000000000.tar");
     std::fs::write(&path, b"archive").required()?;
-    let archive = TransientArchive::new(path.clone()).required()?;
+    let archive = TransientArchive::new(path.clone(), Vec::new()).required()?;
     let mut warnings = Vec::new();
     let original = sample_error();
 
@@ -105,7 +105,7 @@ fn a_cleanup_failure_after_success_is_a_warning_rather_than_a_replaced_result() 
     let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("template-000000000000.tar");
     std::fs::create_dir(&path).required()?;
-    let archive = TransientArchive::new(path.clone()).required()?;
+    let archive = TransientArchive::new(path.clone(), Vec::new()).required()?;
     let mut warnings = Vec::new();
 
     let outcome = archive.cleanup_after(Ok(42), &mut warnings, &mut SilentProgress);
@@ -134,7 +134,7 @@ fn a_cleanup_failure_after_a_load_failure_is_folded_into_the_original_error() ->
     let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("template-000000000000.tar");
     std::fs::create_dir(&path).required()?;
-    let archive = TransientArchive::new(path.clone()).required()?;
+    let archive = TransientArchive::new(path.clone(), Vec::new()).required()?;
     let mut warnings = Vec::new();
     let original = sample_error();
 
@@ -172,7 +172,7 @@ fn a_cleanup_failure_after_a_cancellation_is_reported_through_progress() -> Chec
     let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("template-000000000000.tar");
     std::fs::create_dir(&path).required()?;
-    let archive = TransientArchive::new(path.clone()).required()?;
+    let archive = TransientArchive::new(path.clone(), Vec::new()).required()?;
     let mut warnings = Vec::new();
     let mut progress = RecordingProgress::default();
 
@@ -210,7 +210,7 @@ fn a_replaced_file_is_left_alone_instead_of_removed() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let path = dir.path().join("template-000000000000.tar");
     std::fs::write(&path, b"archive").required()?;
-    let archive = TransientArchive::new(path.clone()).required()?;
+    let archive = TransientArchive::new(path.clone(), Vec::new()).required()?;
     // loadの間に、この実行が作った実体が別のものへ入れ替わった状況を模す。`rename`で
     // 差し替えることで、削除・再作成による同じinode番号の再利用と区別できるようにする。
     let replacement = dir.path().join("replacement");
@@ -249,7 +249,7 @@ fn an_unobservable_replacement_is_reported_the_same_way_as_a_removal_failure() -
     std::fs::create_dir(&sub).required()?;
     let path = sub.join("template-000000000000.tar");
     std::fs::write(&path, b"archive").required()?;
-    let archive = TransientArchive::new(path.clone()).required()?;
+    let archive = TransientArchive::new(path.clone(), Vec::new()).required()?;
     // 消す権利はfile自身ではなく、それを載せているdirectoryが持つ。実体を確かめ直す
     // こともできなくする。
     std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o000)).required()?;
@@ -279,7 +279,7 @@ fn a_path_that_cannot_be_observed_is_never_adopted_as_an_archive() -> Checked {
     // 存在を確かめる権利すら無いdirectoryの下に置く。不在と観測不能を混同しない。
     std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o000)).required()?;
 
-    let created = TransientArchive::new(path.clone());
+    let created = TransientArchive::new(path.clone(), Vec::new());
 
     std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o700)).required()?;
 
@@ -295,7 +295,7 @@ fn dropping_an_archive_that_was_never_cleaned_up_removes_it() -> Checked {
     let path = dir.path().join("template-000000000000.tar");
     std::fs::write(&path, b"archive").required()?;
 
-    drop(TransientArchive::new(path.clone()).required()?);
+    drop(TransientArchive::new(path.clone(), Vec::new()).required()?);
 
     assert!(!path.exists(), "the last resort cleanup runs on drop");
     Ok(())

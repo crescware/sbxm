@@ -7,8 +7,9 @@
 //! `sbx template ls --json`が持つのはrepository、tag、runtime内部のidだけであり、
 //! host側の`docker image inspect`とは別のstoreの値である。対応の根拠は、
 //! loadしたarchiveがlabelで宣言していた案件と世代、およびその名前で登録された
-//! ことの2つになる。既存Templateを再利用するときは、archiveが宣言するdigestの
-//! いずれかとruntime idが一致することを、さらに確かめる。
+//! ことの2つになる。初回構築と`repair`が既存Templateを再利用するときは、archiveが
+//! 宣言するdigestのいずれかとruntime idが一致することを[`verified_existing`]で
+//! さらに確かめる。`rebuild`は[`existing`]で名前だけを見る。
 
 mod ensure;
 mod existing;

@@ -44,12 +44,13 @@ pub(crate) fn provision(
     warnings.extend(built.warnings.clone());
 
     let archive = image::ensure_archive(host, &locked.paths, &built, generation, progress)?;
-    let loaded = if let Some(loaded) = template::verified_existing(host, &built, archive.path())? {
-        loaded
-    } else {
-        let outcome = template::ensure(host, archive.path(), &built, progress);
-        archive.cleanup_after(outcome, &mut warnings, progress)?
-    };
+    let loaded =
+        if let Some(loaded) = template::verified_existing(host, &built, archive.image_ids())? {
+            loaded
+        } else {
+            let outcome = template::ensure(host, archive.path(), &built, progress);
+            archive.cleanup_after(outcome, &mut warnings, progress)?
+        };
 
     let ready = sandbox::ensure(host, &name, &loaded, workspace_root, progress)?;
     if ready.workspace_restored {

@@ -1,11 +1,8 @@
-use crate::testing::outcome::{Checked, Required};
+use crate::testing::outcome::Checked;
+
+use super::template_listing_with_id;
 
 /// runtimeのimage storeが示す一覧。registry prefixを補って表示する。
 pub fn template_listing(image: &str) -> Checked<String> {
-    let (repository, tag) = image
-        .rsplit_once(':')
-        .required_because("an image reference")?;
-    Ok(format!(
-        r#"{{"images":[{{"id":"a3d0f4449170","repository":"docker.io/library/{repository}","tag":"{tag}"}}]}}"#
-    ))
+    template_listing_with_id(image, "a3d0f4449170")
 }

@@ -642,8 +642,8 @@ fn a_stale_archive_left_by_an_earlier_crash_is_swept_before_building() -> Checke
 #[test]
 fn a_template_reused_by_name_alone_is_refused_when_its_runtime_id_differs() -> Checked {
     // 同じ名前のTemplateを無条件で再利用すると、別内容のTemplateへ同じ世代labelを
-    // 付けたことになる。名前だけでなく、label検証済みhost imageから作るarchiveの
-    // config digestとruntime idまで一致することを確かめてから再利用する。
+    // 付けたことになる。名前だけでなく、label検証済みhost imageから作るarchiveが
+    // 宣言するdigestのいずれかとruntime idが一致することを確かめてから再利用する。
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;

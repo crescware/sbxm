@@ -464,6 +464,8 @@ fn an_index_that_cannot_be_used_is_refused() -> Checked {
         b"not json",
         // manifestsを列挙していない。
         br#"{"schemaVersion":2}"#,
+        // manifestsが空である。
+        br#"{"schemaVersion":2,"manifests":[]}"#,
         // digestを持たないmanifestがある。
         br#"{"manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json"}]}"#,
         // digestの形をしていない。
