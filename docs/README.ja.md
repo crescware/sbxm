@@ -14,7 +14,7 @@ English: [README.md](../README.md)
 
 - macOS 14以降を搭載したApple silicon Mac
 - Docker Engineが起動しているDocker Desktop
-- **[Docker Sandboxes CLI 0.37.0以降](https://docs.docker.com/ai/sandboxes/get-started/)**
+- **[Docker Sandboxes CLI 0.42.1以降](https://docs.docker.com/ai/sandboxes/get-started/)**
 - GitとSSH
 - 管理対象のrepositoryごとに発行したGitHub personal access token
 

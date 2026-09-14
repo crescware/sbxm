@@ -9,7 +9,7 @@ sbxm currently supports **macOS 14 or later on Apple silicon**.
 
 - macOS 14 or later on an arm64 Mac
 - Docker Desktop with a running Docker Engine
-- Docker Sandboxes CLI 0.37.0 or later
+- Docker Sandboxes CLI 0.42.1 or later
 - Git and SSH
 - A GitHub personal access token with read and write access to each repository you manage
 

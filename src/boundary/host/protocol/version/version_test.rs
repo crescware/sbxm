@@ -35,7 +35,7 @@ fn versions_are_extracted_from_surrounding_text() {
 
 #[test]
 fn versions_below_the_minimum_are_refused() -> Checked {
-    let error = require_minimum_version(CliVersion::parse("0.36.9").required()?)
+    let error = require_minimum_version(CliVersion::parse("0.42.0").required()?)
         .refused_because("an older version must be refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::SbxVersionBelowMinimum));
     Ok(())
@@ -43,7 +43,7 @@ fn versions_below_the_minimum_are_refused() -> Checked {
 
 #[test]
 fn the_minimum_version_and_later_are_accepted() -> Checked {
-    for observed in ["0.37.0", "0.37.5", "0.38.0", "1.0.0"] {
+    for observed in ["0.42.1", "0.42.5", "0.43.0", "1.0.0"] {
         assert!(
             require_minimum_version(CliVersion::parse(observed).required()?).is_ok(),
             "{observed} must be accepted"
