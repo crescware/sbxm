@@ -30,8 +30,7 @@ use super::{Prepared, RebuildPlan, observe_protection};
 /// 保存されていない作業は起動しなければ読めず、読めないまま削除計画を見せると、層Aも
 /// 層Bも空の計画を「失うものは無い」と示すことになる。ここでcancelしてもSandboxは
 /// 起動したまま残るが、image、template、metadata、`RebuildIntent`はどれも変えない。
-/// destroyは同じ状況を`SandboxNotRunning`で拒否する。これから作り直す対象を起動する
-/// rebuildと、利用者の判断を仰ぐdestroyの違いによる。
+/// destroyも同じ理由で同じ起動を行う。
 pub fn prepare(
     selection: Target,
     host: &dyn HostEnvironment,

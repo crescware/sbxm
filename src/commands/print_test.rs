@@ -418,6 +418,7 @@ fn destroy_plan(force: bool) -> super::destroy::run::DestroyPlan {
         project: "owner/repo".to_string(),
         sandbox: "owner-repo".to_string(),
         state: ProjectState::Running,
+        started: false,
         force,
         worktrees: Vec::new(),
         confirmable_losses: Vec::new(),
@@ -736,6 +737,19 @@ fn force_mode_is_a_warning_rather_than_part_of_the_plan() {
             Locale::En
         ))
         .contains(&"warning")
+    );
+}
+
+#[test]
+fn starting_a_stopped_sandbox_is_a_warning_rather_than_part_of_the_plan() {
+    // 計画のために起動したという事実は、消すものでも残るものでもない。計画の表へ
+    // 混ぜず、cancelしても起動したまま残ることと一緒に注意として告げる。
+    let notice: Msg = super::destroy::print::started_notice().description;
+    assert_eq!(notice.id, "destroy-started-notice");
+    let mut started = destroy_plan(false);
+    started.started = true;
+    assert!(
+        !shape(&super::destroy::print::plan_document(&started, Locale::En)).contains(&"warning")
     );
 }
 

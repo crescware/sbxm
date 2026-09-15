@@ -373,7 +373,6 @@ remediation-worktrees-not-reducible = Removing a worktree deletes whatever is ch
 remediation-worktree-outside-repository = Inspect that path yourself. sbxm never deletes a worktree it cannot account for.
 remediation-unmanaged-worktree-present = Save the work in that worktree, remove it from inside the sandbox, then run the rebuild again.
 remediation-rebuild-generation-missing = Restore the Dockerfile of that generation and run the rebuild again.
-remediation-destroy-stopped = Open the stopped sandbox, inspect and save anything you need, then run destroy again.
 remediation-run-rebuild = Finish the rebuild.
 remediation-run-repair = Review the repair plan and run the explicit repair command again.
 remediation-run-open = Resolve the reported cause, then run open again to continue and connect.
@@ -500,6 +499,7 @@ destroy-target-host-images = the images built on this host, and the templates lo
 destroy-target-secret = the custom secret that carries { $env } for the sandbox { $sandbox }
 destroy-target-secrets = the secrets registered with Docker Sandboxes for anything other than this sandbox
 destroy-force-notice = Force mode skips the data protection and active session checks.
+destroy-started-notice = The sandbox was stopped and has been started so its contents could be inspected. Cancelling the confirmation leaves it running.
 destroy-done = { $project } is no longer managed.
 destroy-re-register = Register it again when you need it.
 

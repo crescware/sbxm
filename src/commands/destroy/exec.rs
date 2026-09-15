@@ -10,7 +10,7 @@ use crate::support::inventory;
 
 use super::{
     super::{Context, report},
-    Args, print,
+    Args, Selection, print,
 };
 
 pub fn exec(
@@ -26,19 +26,27 @@ pub fn exec(
     };
     ui.set_locale(locale);
     prompt.set_locale(locale);
+    let selection = Selection {
+        location: context.location,
+        requested: args.project.as_ref(),
+        prompt,
+    };
     let mut prepared = match super::run::prepare(
-        context.location,
-        args.project.as_ref(),
+        selection,
         args.force,
         host,
-        prompt,
         context.workspace_root,
+        inventory::Poll::default(),
+        ui,
     ) {
         Ok(prepared) => prepared,
         Err(error) => return report(ui, &error),
     };
 
     ui.stdout(&print::plan_document(&prepared.plan, locale));
+    if prepared.plan.started {
+        ui.warning(&print::started_notice());
+    }
     if prepared.plan.force {
         ui.warning(&print::force_notice());
     }
