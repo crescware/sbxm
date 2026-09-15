@@ -11,8 +11,8 @@ use super::Prepared;
 /// 観測へ確認を結び付ける。確認から削除までのあいだにSandboxが現れた場合を、
 /// fingerprintの不一致として拒否できるようにするためである。
 ///
-/// 対話端末でSandbox名の完全一致入力を得た場合だけ`ProtectionConfirmation`を返す。
-/// 非対話環境、cancel、名前不一致では確認を作らずに拒否する。
+/// 対話端末で対象の登録IDの入力を得た場合だけ`ProtectionConfirmation`を返す。
+/// 非対話環境、cancel、打ち直しの尽きた不一致では確認を作らずに拒否する。
 pub fn confirm(
     prepared: &mut Prepared,
     interactive: bool,
@@ -25,7 +25,7 @@ pub fn confirm(
         snapshot,
         interactive,
         prompt,
-        &msg!("destroy-confirm-prompt"),
+        &msg!("destroy-confirm-prompt", project = prepared.plan.project),
     )?;
     Ok(Some(confirmation))
 }

@@ -5,11 +5,12 @@ use crate::support::protection::{self, ConfirmPrompt, ProtectionConfirmation, Pr
 
 /// 再構築して良いことを利用者に確かめる。
 ///
-/// rebuildに`--force`は無く、常に対話端末でSandbox名の完全一致入力を得た場合だけ
-/// `ProtectionConfirmation`を返す。非対話環境、cancel、名前不一致では確認を作らずに
-/// 拒否する。
+/// rebuildに`--force`は無く、常に対話端末で対象の登録IDの入力を得た場合だけ
+/// `ProtectionConfirmation`を返す。非対話環境、cancel、打ち直しの尽きた不一致では
+/// 確認を作らずに拒否する。
 pub fn confirm(
     snapshot: ProtectionSnapshot,
+    project: &str,
     interactive: bool,
     prompt: &mut dyn ConfirmPrompt,
 ) -> Result<ProtectionConfirmation> {
@@ -17,6 +18,6 @@ pub fn confirm(
         snapshot,
         interactive,
         prompt,
-        &msg!("rebuild-confirm-prompt"),
+        &msg!("rebuild-confirm-prompt", project = project),
     )
 }

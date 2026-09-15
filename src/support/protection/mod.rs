@@ -12,12 +12,12 @@
 //!   `Blocker`の検査でoriginから回収できると確認済みだが、削除後は自動復元
 //!   できない付随情報（無視対象のpath、ref名、branchのupstream追跡、tag、追加remote名、
 //!   reflogにだけ残るcommit、destroy対象の管理外worktree、sandboxの書き込み層）は、
-//!   削除計画へ全件示し、対象sandbox名の完全一致入力を得た場合だけ削除を許可する。
+//!   削除計画へ全件示し、対象を名指す入力を得た場合だけ削除を許可する。
 //!
 //! `gate::assess`がこの2種類の観測を固定順序で行い、[`ProtectionSnapshot`]（観測結果と
 //! その正規化fingerprintの組）を作る。`Blocker`が1件も無い`ProtectionSnapshot`
-//! だけを[`confirmation::confirm`]へ渡すと、sandbox名の完全一致を条件に
-//! [`ProtectionConfirmation`]を得られる。`gate::authorize`は、そのconfirmationの
+//! だけを[`confirmation::confirm`]へ渡すと、対象を名指す入力（案件の登録ID、または
+//! そこから導いたsandbox名）を条件に[`ProtectionConfirmation`]を得られる。`gate::authorize`は、そのconfirmationの
 //! sandbox名・操作種別・fingerprintが**remove直前に取り直した**現在の`ProtectionSnapshot`
 //! と完全一致し、かつ現在`Blocker`が1件も無い場合だけ[`ProtectionPermit`]を
 //! 発行する。確認から実際の削除までのあいだに状態が変わればfingerprintが変わり、permitは
