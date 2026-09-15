@@ -373,7 +373,6 @@ remediation-worktrees-not-reducible = worktreeを減らすことは、そこにc
 remediation-worktree-outside-repository = そのpathの内容はご自身で確認してください。sbxmは説明のつかないworktreeを削除しません。
 remediation-unmanaged-worktree-present = そのworktreeの作業を保存し、Sandboxの中で削除してから、もう一度rebuildを実行してください。
 remediation-rebuild-generation-missing = その世代のDockerfileを復元してから、もう一度rebuildを実行してください。
-remediation-destroy-stopped = 停止中のSandboxをopenし、必要な作業を確認・保存してから、もう一度destroyを実行してください。
 remediation-run-rebuild = 再構築を完了します。
 remediation-run-repair = repair計画を確認し、明示的なrepair commandを実行してください。
 remediation-run-open = 表示された原因を解消し、openを再実行して準備と接続を続けてください。
@@ -500,6 +499,7 @@ destroy-target-host-images = このhostでbuildしたimageと、そこからload
 destroy-target-secret = Sandbox { $sandbox } へ { $env } を運ぶcustom secret
 destroy-target-secrets = このSandbox以外を対象にDocker Sandboxesへ登録したsecret
 destroy-force-notice = force modeではデータ保護検査とactive session検査を省略します。
+destroy-started-notice = 停止していたSandboxを、中を確認するために起動しました。確認をcancelした場合も起動したまま残ります。
 destroy-done = { $project } の管理を解除しました。
 destroy-re-register = 必要になったら再登録できます。
 

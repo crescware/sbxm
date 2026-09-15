@@ -1,33 +1,44 @@
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
-use crate::config::ConfigLocation;
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::diagnostics::Result;
 use crate::msg;
-use crate::project::{ProjectId, SandboxLayout};
+use crate::project::SandboxLayout;
 
-use crate::design::Remediation;
+use crate::design::ProgressSink;
 use crate::support::daemon;
-use crate::support::inventory::{self, ProjectState};
+use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, DestructiveOperation, Request};
-use crate::support::select::{self, ProjectPrompt};
+use crate::support::select;
+
+use crate::commands::destroy::Selection;
 
 use super::{DestroyPlan, Prepared, keeps, re_register, removes};
 
 /// 対象を特定し、削除して良い状態であることを確かめる。
 ///
 /// 削除そのものはrecordを消すだけであり、中立workspace directoryを必要としない。
-/// 停止中のSandboxを通常modeで断るのは、中を観測できないからであり、これはdirectory
-/// が在っても同じである。runningのSandboxは、データ保護検査の入口でdirectoryの実在を
-/// 確かめる。mount元が無いままでは、中を見るcommandの答えを信頼できないためである。
+/// runningのSandboxは、データ保護検査の入口でdirectoryの実在を確かめる。mount元が
+/// 無いままでは、中を見るcommandの答えを信頼できないためである。
+///
+/// 停止しているSandboxは、削除計画を作るためにここで起動する。中を観測しなければ、
+/// 失うものが無いのか観測できていないだけなのかを区別できず、空の計画を「失うものは
+/// 無い」として見せることになる。起動は`open`と違い、repositoryの取得もworktreeの
+/// 用意も行わない。これから消す案件のために、利用者へ準備をやり直させない。
+/// 確認をcancelしてもSandboxは起動したまま残るが、metadataもregistryも変えない。
 pub fn prepare(
-    location: &ConfigLocation,
-    requested: Option<&ProjectId>,
+    selection: Selection,
     force: bool,
     host: &dyn HostEnvironment,
-    prompt: &mut dyn ProjectPrompt,
     workspace_root: &Path,
+    poll: Poll,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
+    let Selection {
+        location,
+        requested,
+        prompt,
+    } = selection;
     // 対象が決まる前にhostの状態へ触れない。
     let locked =
         select::one(location, requested, &msg!("select-destroy-heading"), prompt)?.lock()?;
@@ -36,44 +47,30 @@ pub fn prepare(
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
     let entries = daemon::list(host)?;
-    let state = inventory::state_of(&entries, metadata, workspace_root)?;
+    let observed = inventory::state_of(&entries, metadata, workspace_root)?;
 
-    let (worktrees, confirmable_losses, snapshot, session_lease) = if force {
+    let (worktrees, confirmable_losses, snapshot, session_lease, started) = if force {
         // `--force`は保護ゲートとsession leaseを意図的に迂回する別操作であり、通常経路の観測は行わない。
-        (Vec::new(), Vec::new(), None, None)
+        // 観測しない以上、観測のための起動も行わない。
+        (Vec::new(), Vec::new(), None, None, false)
     } else {
-        if state == ProjectState::Stopped {
-            // 停止中のSandboxは内部を観測できないため、通常modeでは削除しない。
-            let remediation = if metadata.initial_provisioning.is_some() {
-                Remediation::text(msg!("remediation-run-open"))
-                    .try_run(format!("sbxm open {}", metadata.display_id()))
-            } else {
-                Remediation::text(msg!("remediation-destroy-stopped"))
-                    .try_run(format!("sbxm open {}", metadata.display_id()))
-            };
-            return Err(Error::single(
-                Diagnostic::new(
-                    ErrorId::SandboxNotRunning,
-                    msg!(
-                        "error-sandbox-not-running",
-                        sandbox = name,
-                        observed = "stopped"
-                    ),
-                )
-                .remediation(remediation),
-            ));
-        }
         // Sandboxがそもそも無ければ、session leaseを取る対象も観測する対象も無い。
         // それ以外はproject lockを保持している間にexclusive session leaseを取り、
         // 最終protection inspectからsandbox remove完了までこの`Prepared`が保持し
         // 続ける。この時点でproject lockは自分が排他的に保持しているため、取得できない
         // 原因は開いているsessionのshared leaseだけである。
-        let session_lease = if state == ProjectState::NotCreated {
+        let session_lease = if observed == ProjectState::NotCreated {
             None
         } else {
             Some(locked.acquire_exclusive_session_lease()?)
         };
-        let snapshot = if state == ProjectState::NotCreated {
+        // 停止中のSandboxは、明示確認より前に行う唯一のhost状態の変更として起動する。
+        let started = observed == ProjectState::Stopped;
+        if started {
+            inventory::start(host, metadata, workspace_root, progress)?;
+            inventory::wait_until_running(host, metadata, workspace_root, poll)?;
+        }
+        let snapshot = if observed == ProjectState::NotCreated {
             protection::gate::assess_absent(
                 DestructiveOperation::Destroy,
                 metadata.display_id(),
@@ -94,13 +91,28 @@ pub fn prepare(
         protection::gate::require_no_blockers(snapshot.assessment())?;
         let worktrees = snapshot.assessment().worktrees().to_vec();
         let confirmable_losses = snapshot.assessment().confirmable_losses().to_vec();
-        (worktrees, confirmable_losses, Some(snapshot), session_lease)
+        (
+            worktrees,
+            confirmable_losses,
+            Some(snapshot),
+            session_lease,
+            started,
+        )
+    };
+
+    // 起動を待ち切った直後の状態はrunningである。観測した時点の停止を計画へ残すと、
+    // 計画が示すstateと、これから削除する対象の状態が食い違う。
+    let state = if started {
+        ProjectState::Running
+    } else {
+        observed
     };
 
     let plan = DestroyPlan {
         project: metadata.display_id(),
         sandbox: name.as_str().to_string(),
         state,
+        started,
         force,
         worktrees,
         confirmable_losses,

@@ -11,6 +11,8 @@ sbxm destroy <project-id>
 
 Before deleting anything, sbxm shows what will be removed and what remains. It checks dirty worktrees, unpublished commits, repository-level refs, active sessions, and other conditions that could make data disappear unexpectedly.
 
+A stopped sandbox is started so those checks can read it, and a notice says so next to the plan. The start prepares nothing else, and cancelling the confirmation leaves the sandbox running. Destroy never sends you to `open` first: a project whose first build was interrupted is removable exactly as it is.
+
 ## Removed
 
 - the Docker Sandbox

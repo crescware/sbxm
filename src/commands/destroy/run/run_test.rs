@@ -1,9 +1,11 @@
+use crate::commands::destroy::Selection;
 use crate::diagnostics::{Error, Result};
 use crate::metadata::CreationMode;
 use crate::paths::{self, PathScope, ProjectPaths};
 use crate::project::SandboxLayout;
 use crate::registry::RegistryGuard;
 use crate::support::inventory::ProjectState;
+use crate::support::protection::{BARE_GIT_DIR_PROBE, ConfirmableLoss};
 use crate::support::select::{self};
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -74,12 +76,16 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
     expect_successful_removal(&host);
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("Example-Org/Example-Repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("Example-Org/Example-Repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
@@ -133,12 +139,16 @@ fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> 
     expect_successful_removal(&host);
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
     destroy(&host, &mut prepared).required_because("destroy")?;
@@ -176,12 +186,16 @@ fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -
     );
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
     let ls_calls_after_prepare = host
@@ -212,36 +226,64 @@ fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -
 }
 
 #[test]
-fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> Checked {
+fn a_stopped_project_is_started_so_the_plan_can_show_what_would_be_lost() -> Checked {
+    // 停止を理由に拒否して`open`を求めると、これから消す案件のために、repositoryの取得と
+    // worktreeの用意をやり直させることになる。destroyは観測に要る起動だけを自分で行う。
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
+    let name = project.sandbox.as_str();
     let stopped = format!(
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "stopped")?
     );
+    let host = no_secrets(clean_host(&fixture, &project)?, name);
+    let running = host.listing.borrow()[0].clone();
+    // 観測は停止から始まり、起動を待ち切った一覧はrunning、削除後の一覧では消えている。
+    *host.listing.borrow_mut() = vec![
+        r#"{"sandboxes":[]}"#.to_string(),
+        running.clone(),
+        running,
+        stopped,
+    ];
 
-    let host = FakeSbx::listing(&stopped);
-    let error = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+    let mut prepared = prepare(
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
-    .refused_because("a stopped sandbox cannot be inspected")?;
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
-    let remediation = error.diagnostics()[0]
-        .remediation
-        .as_ref()
-        .required_because("a stopped sandbox has a safe recovery command")?;
-    assert_eq!(
-        remediation
-            .commands
-            .iter()
-            .map(crate::design::text::CommandLine::as_str)
-            .collect::<Vec<_>>(),
-        vec!["sbxm open example-org/example-repo"]
+    .required_because("a stopped sandbox is started rather than handed back")?;
+
+    assert!(
+        host.ran(&format!("exec {name} -- /bin/true")),
+        "the stopped sandbox is started: {:?}",
+        host.calls()
+    );
+    // 起動したからこそ、失うものを数えた計画を見せられる。
+    assert!(prepared.plan.started);
+    assert_eq!(prepared.plan.state, ProjectState::Running);
+    assert_eq!(prepared.plan.worktrees.len(), 1);
+
+    destroy(&host, &mut prepared).required_because("destroy")?;
+    assert!(host.ran(&format!("rm {name}")));
+    assert!(!project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn force_removes_a_stopped_project_without_starting_it() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let name = project.sandbox.as_str();
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
     );
 
     let host = no_secrets(
@@ -249,16 +291,27 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> C
         project.sandbox.as_str(),
     );
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         true,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("force skips the checks")?;
     assert!(prepared.plan.force);
     assert!(prepared.plan.worktrees.is_empty());
+    // 観測しないforceは、観測のための起動も行わない。
+    assert!(!prepared.plan.started);
+    assert!(
+        !host.ran(&format!("exec {name} -- /bin/true")),
+        "force leaves the stopped sandbox as it was found: {:?}",
+        host.calls()
+    );
 
     destroy(&host, &mut prepared).required_because("destroy")?;
     // `--force`は、sbxm自身のデータ保護検査だけでなく、runtimeの確認prompt・
@@ -269,7 +322,10 @@ fn a_stopped_project_is_refused_in_the_normal_mode_and_removed_with_force() -> C
 }
 
 #[test]
-fn a_stopped_pending_project_is_sent_directly_to_open() -> Checked {
+fn a_stopped_pending_project_is_started_and_planned_without_open() -> Checked {
+    // 初回構築が途中で終わった案件こそ、消したい対象である。完成させてからでなければ
+    // 消せない、という順序を求めない。共有repositoryを持たないSandboxは、この案件の
+    // 作業を1つも持たないため、失うものは書き込み層だけである。
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let mut pending = project.metadata.clone();
@@ -278,32 +334,46 @@ fn a_stopped_pending_project_is_sent_directly_to_open() -> Checked {
         files: Vec::new(),
     });
     metadata::update(&project.paths, &pending).required_because("store the interrupted intent")?;
+    let name = project.sandbox.as_str();
+    let bare_git_dir = SandboxLayout::new(project.metadata.canonical_id()).bare_git_dir();
     let stopped = format!(
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "stopped")?
     );
-    let host = FakeSbx::listing(&stopped);
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.declared_entry(&project, "running")
+    );
+    let host = FakeSbx::listings(&[&stopped, &running]).answering(
+        &format!("exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {bare_git_dir}"),
+        1,
+        "probed",
+    );
 
-    let error = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+    let prepared = prepare(
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
-    .refused_because("a pending initial provisioning must be resumed before removal")?;
-    let remediation = error.diagnostics()[0]
-        .remediation
-        .as_ref()
-        .required_because("the refusal names the direct recovery command")?;
+    .required_because("an interrupted first build is removable as it is")?;
+
+    assert!(
+        host.ran(&format!("exec {name} -- /bin/true")),
+        "the stopped sandbox is started: {:?}",
+        host.calls()
+    );
+    assert!(prepared.plan.started);
+    assert!(prepared.plan.worktrees.is_empty());
     assert_eq!(
-        remediation
-            .commands
-            .iter()
-            .map(crate::design::text::CommandLine::as_str)
-            .collect::<Vec<_>>(),
-        vec!["sbxm open example-org/example-repo"]
+        prepared.plan.confirmable_losses,
+        vec![ConfirmableLoss::SandboxWritableLayer]
     );
     Ok(())
 }
@@ -322,12 +392,16 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() -> Checked {
     );
 
     let error = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .refused_because("work that only exists here is not deleted")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeTrackedChanges));
@@ -350,12 +424,16 @@ fn an_open_session_stops_the_normal_destroy_before_anything_is_inspected() -> Ch
     .required_because("simulate an active sbxm open session")?;
 
     let error = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .refused_because("a normal destroy must not run while a session is open")?;
     assert_eq!(error.first_id(), Some(ErrorId::OpenSessionActive));
@@ -388,12 +466,16 @@ fn force_bypasses_the_session_lease_even_while_a_session_is_open() -> Checked {
     .required_because("simulate an active sbxm open session")?;
 
     prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         true,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("--force bypasses the session lease just like the protection gate")?;
 
@@ -407,12 +489,16 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
     let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
 
     let error = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .refused_because("a project that is not managed has nothing to destroy")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
@@ -434,12 +520,16 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
     );
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
     assert_eq!(prepared.plan.state, ProjectState::NotCreated);
@@ -467,12 +557,16 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
     expect_successful_removal(&host);
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
     // 消す前に、tokenの登録も消えることを見せる。
@@ -510,12 +604,16 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
     expect_successful_removal(&host);
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
@@ -551,12 +649,16 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() -> Che
     expect_successful_removal(&host);
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
@@ -611,12 +713,16 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> 
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
     expect_successful_removal(&host);
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
@@ -641,12 +747,16 @@ fn prepared_project(fixture: &Fixture, force: bool) -> Checked<(FakeSbx, Prepare
         .borrow_mut()
         .insert(0, r#"{"sandboxes":[]}"#.to_string());
     let prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         force,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
     Ok((host, prepared))
@@ -811,12 +921,16 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() -> C
     expect_successful_removal(&host);
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
@@ -857,12 +971,16 @@ fn a_cache_that_cannot_be_removed_names_the_cache_and_keeps_the_project_managed(
     expect_successful_removal(&host);
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
@@ -893,12 +1011,16 @@ fn a_metadata_file_that_is_a_symlink_is_not_followed_and_the_project_stays_manag
     expect_successful_removal(&host);
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
@@ -940,12 +1062,16 @@ fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() 
     *host.listing.borrow_mut() = vec![running, r#"{"sandboxes":[]}"#.to_string()];
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
     assert_eq!(prepared.plan.state, ProjectState::NotCreated);
@@ -972,12 +1098,16 @@ fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged
     expect_successful_removal(&host);
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
@@ -1004,12 +1134,16 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() -> Checked {
     let host = clean_host(&fixture, &project)?;
 
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
@@ -1157,12 +1291,16 @@ fn a_project_registered_again_during_the_removal_keeps_its_entry() -> Checked {
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
     expect_successful_removal(&host);
     let mut prepared = prepare(
-        &fixture.location,
-        Some(&project_id("example-org/example-repo")?),
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
         false,
         &host,
-        &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
     )
     .required_because("prepare")?;
 
