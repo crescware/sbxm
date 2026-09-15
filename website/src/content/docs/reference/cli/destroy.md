@@ -8,7 +8,7 @@ sbxm destroy [<project-id>]
 sbxm destroy --force <project-id>
 ```
 
-Normal destroy checks dirty worktrees, unpublished commits, repository-level refs, active sessions, and ownership before showing what will be removed and what remains. In an interactive terminal, omit the ID to select a project, then type the exact sandbox name to confirm the protected plan. In a non-interactive terminal, normal destroy refuses rather than skipping that confirmation.
+Normal destroy checks dirty worktrees, unpublished commits, repository-level refs, active sessions, and ownership before showing what will be removed and what remains. In an interactive terminal, omit the ID to select a project, then type the project ID — the same `<owner>/<repository>` you pass on the command line — to confirm the protected plan. The prompt shows what to type, and asks again, up to three times in all, when the answer names something else; the sandbox name shown in the plan is accepted as well, and case is not significant. In a non-interactive terminal, normal destroy refuses rather than skipping that confirmation.
 
 `--force`, or `-f`, is the only non-interactive bypass: it skips data-protection and active-session checks and does not prompt for confirmation. It does not make data recoverable. Use it only when you have independently confirmed that the sandbox contains nothing to preserve.
 

@@ -5,7 +5,7 @@ use super::ConfirmPrompt;
 
 impl ConfirmPrompt for PromptUi {
     /// 貼り付けによる前後の空白は、入力そのものの一部として扱わない。
-    fn read_sandbox_name(&mut self, heading: &Msg) -> Result<String> {
+    fn read_confirmation(&mut self, heading: &Msg) -> Result<String> {
         Ok(self.exact(heading)?.trim().to_string())
     }
 }

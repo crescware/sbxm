@@ -361,22 +361,6 @@ fn home_with_project() -> Checked<(TempHome, PathBuf, PathBuf)> {
     Ok((home, base, bin))
 }
 
-/// 表示されたSandbox名。
-///
-/// 名前はsbxmが案件から導く値である。testが同じ導出を書き直すと、導出そのものを
-/// 確かめられない。画面に現れた値をそのまま打ち返す。
-fn shown_sandbox_name(text: &str) -> Checked<String> {
-    let start = text
-        .find("sbxm-")
-        .required_because("the plan shows the sandbox name")?;
-    Ok(text[start..]
-        .chars()
-        .take_while(|character| {
-            character.is_ascii_lowercase() || character.is_ascii_digit() || *character == '-'
-        })
-        .collect())
-}
-
 #[test]
 fn the_language_chosen_at_the_prompt_decides_what_the_next_prompt_speaks() -> Checked {
     let home = temp_home()?;
@@ -533,14 +517,20 @@ fn a_multiple_selection_takes_nothing_until_the_space_key_marks_it() -> Checked 
 }
 
 #[test]
-fn a_name_that_is_not_the_sandbox_name_destroys_nothing() -> Checked {
+fn an_answer_that_names_nothing_destroys_nothing_even_after_being_asked_again() -> Checked {
     let (home, base, bin) = home_with_project()?;
     without_sandboxes(&bin)?;
 
     let mut session = Session::start(home.path(), &base, &bin, &["destroy", "owner/repo"])?;
     // 確認は空欄で始まる。消すものが無い打鍵は何も消さない。
     session.press(BACKSPACE)?;
-    session.press("not-the-sandbox")?;
+    session.press("not-the-project")?;
+    session.press(ENTER)?;
+    // 打ち間違いは計画からのやり直しではなく、同じ計画のまま訊き直す。
+    session.wait_for("That is not owner/repo")?;
+    session.press("still-not-the-project")?;
+    session.press(ENTER)?;
+    session.press("nor-this")?;
     session.press(ENTER)?;
     let ended = session.finish()?;
 
@@ -561,15 +551,16 @@ fn a_name_that_is_not_the_sandbox_name_destroys_nothing() -> Checked {
 }
 
 #[test]
-fn the_sandbox_name_typed_exactly_is_what_destroys_the_project() -> Checked {
+fn a_mistyped_answer_can_be_typed_again_without_starting_over() -> Checked {
     let (home, base, bin) = home_with_project()?;
     without_sandboxes(&bin)?;
 
     let mut session = Session::start(home.path(), &base, &bin, &["destroy", "owner/repo"])?;
-    // 何を打てば続くかは画面が示す。示された名前をそのまま打ち返す。
-    session.wait_for("Type the sandbox name to confirm the deletion")?;
-    let name = shown_sandbox_name(&visible(&session.seen).join("\n"))?;
-    session.press(&name)?;
+    session.wait_for("Type owner/repo to confirm the deletion")?;
+    session.press("owner/rep")?;
+    session.press(ENTER)?;
+    session.wait_for("That is not owner/repo")?;
+    session.press("owner/repo")?;
     session.press(ENTER)?;
     let ended = session.finish()?;
 
@@ -580,7 +571,31 @@ fn the_sandbox_name_typed_exactly_is_what_destroys_the_project() -> Checked {
             .join(".sbxm")
             .join("project.yaml")
             .exists(),
-        "an exact match removes the managed state"
+        "the answer typed after the miss is the one that counts"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_project_id_typed_at_the_prompt_is_what_destroys_the_project() -> Checked {
+    let (home, base, bin) = home_with_project()?;
+    without_sandboxes(&bin)?;
+
+    let mut session = Session::start(home.path(), &base, &bin, &["destroy", "owner/repo"])?;
+    // 何を打てば続くかは画面が示す。sandbox名の内部hashを覚えている必要はない。
+    session.wait_for("Type owner/repo to confirm the deletion")?;
+    session.press("owner/repo")?;
+    session.press(ENTER)?;
+    let ended = session.finish()?;
+
+    assert_eq!(ended.code, 0, "{}", ended.text());
+    assert!(
+        !base
+            .join("repo.project")
+            .join(".sbxm")
+            .join("project.yaml")
+            .exists(),
+        "an answer that names the project removes the managed state"
     );
     let registry = std::fs::read_to_string(home.path().join(".sbxm").join("registry.yaml"))
         .required_because("the registry is readable")?;

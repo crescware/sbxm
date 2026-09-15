@@ -34,8 +34,13 @@ fn rebuild(
     workspace_root: &Path,
 ) -> Result<RebuildOutput> {
     let (prepared, snapshot) = prepare(target, host, workspace_root, poll(), &mut SilentProgress)?;
-    let sandbox = prepared.plan.sandbox.clone();
-    let confirmation = confirm(snapshot, true, &mut ScriptedConfirm::typing(&sandbox))?;
+    let project = prepared.plan.project.clone();
+    let confirmation = confirm(
+        snapshot,
+        &project,
+        true,
+        &mut ScriptedConfirm::typing(&project),
+    )?;
     execute(
         host,
         prepared,
@@ -622,7 +627,7 @@ fn unsaved_work_stops_the_rebuild_before_anything_is_built() -> Checked {
 }
 
 #[test]
-fn only_the_exact_sandbox_name_confirms_an_interactive_rebuild() -> Checked {
+fn only_a_name_of_the_target_confirms_an_interactive_rebuild() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -641,13 +646,38 @@ fn only_the_exact_sandbox_name_confirms_an_interactive_rebuild() -> Checked {
     )
     .required_because("prepare")?;
     let sandbox = prepared.plan.sandbox.clone();
+    let project = prepared.plan.project.clone();
 
+    // 打ち直しの回数を使い切るまで、同じ計画のまま訊き直す。
     let mut wrong = ScriptedConfirm::typing("yes");
-    let error = confirm(snapshot, true, &mut wrong)
-        .refused_because("only the sandbox name confirms a rebuild")?;
+    let error = confirm(snapshot, &project, true, &mut wrong)
+        .refused_because("only a name of the target confirms a rebuild")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProtectionNotConfirmed));
+    assert_eq!(wrong.asked(), 3);
     assert!(!host.ran("rm "), "nothing is removed without confirmation");
-    let _ = sandbox;
+
+    // 画面に出ているsandbox名も、同じ対象を名指す答えとして受け取る。
+    drop(prepared);
+    let (prepared, snapshot) = prepare(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .required_because("prepare")?;
+    assert_eq!(prepared.plan.sandbox, sandbox);
+    confirm(
+        snapshot,
+        &prepared.plan.project,
+        true,
+        &mut ScriptedConfirm::typing(&sandbox),
+    )
+    .required_because("the sandbox name names the same target")?;
     Ok(())
 }
 
@@ -673,8 +703,13 @@ fn a_non_interactive_run_is_refused_rather_than_skipped() -> Checked {
     .required_because("prepare")?;
 
     let mut without_terminal = ScriptedConfirm::canceling();
-    let error = confirm(snapshot, false, &mut without_terminal)
-        .refused_because("a non-interactive run cannot confirm a rebuild")?;
+    let error = confirm(
+        snapshot,
+        "example-org/example-repo",
+        false,
+        &mut without_terminal,
+    )
+    .refused_because("a non-interactive run cannot confirm a rebuild")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProtectionNotConfirmed));
     assert_eq!(
         without_terminal.asked(),
@@ -716,8 +751,8 @@ fn a_resume_with_an_intent_still_shows_the_plan_and_asks_again() -> Checked {
 
     // canceling the confirmation must not touch anything, even on a resume.
     let mut canceled = ScriptedConfirm::canceling();
-    let error =
-        confirm(snapshot, true, &mut canceled).refused_because("a resume still asks again")?;
+    let error = confirm(snapshot, &prepared.plan.project, true, &mut canceled)
+        .refused_because("a resume still asks again")?;
     assert_eq!(error.exit_code(), crate::diagnostics::ExitCode::Canceled);
     assert!(
         !host.ran("build") && !host.ran("rm "),

@@ -11,6 +11,8 @@ sbxm destroy <project-id>
 
 Before deleting anything, sbxm shows what will be removed and what remains. It checks dirty worktrees, unpublished commits, repository-level refs, active sessions, and other conditions that could make data disappear unexpectedly.
 
+Choosing a project at the prompt deletes nothing on its own. After the plan, sbxm asks you to type the project ID — `<owner>/<repository>`, what you would pass on the command line, not the internal sandbox name. The prompt shows what to type, asks again when the answer names something else, and Esc cancels the whole thing.
+
 ## Removed
 
 - the Docker Sandbox

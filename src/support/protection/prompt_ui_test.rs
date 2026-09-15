@@ -20,7 +20,7 @@ fn prompt(keys: ScriptedKeys) -> PromptUi {
 #[test]
 fn the_typed_line_is_returned_as_it_was_read() -> Checked {
     let typed = prompt(ScriptedKeys::typing("owner-repo"))
-        .read_sandbox_name(&msg!("destroy-confirm-prompt"))
+        .read_confirmation(&msg!("destroy-confirm-prompt", project = "owner/repo"))
         .required_because("the prompt answered")?;
     assert_eq!(typed, "owner-repo");
     Ok(())
@@ -29,7 +29,7 @@ fn the_typed_line_is_returned_as_it_was_read() -> Checked {
 #[test]
 fn surrounding_whitespace_from_a_paste_is_not_part_of_the_answer() -> Checked {
     let typed = prompt(ScriptedKeys::typing("  owner-repo  "))
-        .read_sandbox_name(&msg!("destroy-confirm-prompt"))
+        .read_confirmation(&msg!("destroy-confirm-prompt", project = "owner/repo"))
         .required_because("the prompt answered")?;
     assert_eq!(typed, "owner-repo");
     Ok(())
