@@ -6,7 +6,7 @@ use crate::msg;
 use crate::support::Observed;
 use crate::support::sandbox;
 
-use super::{TOKEN_ENV_FILE, TOKEN_ENV_MARKER, expected_token_env, observe_token_env};
+use super::{TOKEN_ENV_FILE, expected_token_env, is_sbxm_token_env, observe_token_env};
 
 /// shellが一切解釈しない形で1行ずつ書き出す。値はargvで渡し、fileへは`printf`が
 /// そのまま入れる。
@@ -30,7 +30,7 @@ pub fn configure_token_env(
     match observe_token_env(host, sandbox, placeholder)? {
         Observed::Matching => Ok(()),
         Observed::Missing => write(host, sandbox, placeholder),
-        Observed::Mismatch { evidence } if evidence.starts_with(TOKEN_ENV_MARKER) => {
+        Observed::Mismatch { evidence } if is_sbxm_token_env(&evidence) => {
             write(host, sandbox, placeholder)
         }
         Observed::Mismatch { .. } => Err(unusable(

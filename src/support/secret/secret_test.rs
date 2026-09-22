@@ -732,6 +732,25 @@ fn a_token_env_file_sbxm_wrote_earlier_is_brought_up_to_the_current_placeholder(
 }
 
 #[test]
+fn a_token_env_file_with_an_added_setting_is_never_replaced() -> Checked {
+    let content = format!(
+        "{}export ANOTHER_SETTING=keep-me\n",
+        token_env("sbx-cs-example")
+    );
+    let host = FakeSbx::listing("").inside("exec cat", 0, Box::leak(content.into_boxed_str()), "");
+    let error = configure_token_env(&host, "sbxm-example", "sbx-cs-example")
+        .refused_because("the marker does not grant ownership of added lines")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxTokenEnvUnusable));
+    assert_eq!(
+        host.calls.borrow().len(),
+        1,
+        "the added setting is not discarded: {:?}",
+        host.calls.borrow()
+    );
+    Ok(())
+}
+
+#[test]
 fn a_token_env_file_sbxm_did_not_write_is_refused() -> Checked {
     // 同じ名前で誰かが置いたfileを上書きしない。
     let host =
