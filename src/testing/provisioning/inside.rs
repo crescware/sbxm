@@ -50,10 +50,13 @@ impl World {
     fn probe(&self, inner: &[&str], _sandbox: &str) -> Option<(i32, String)> {
         match inner {
             // login shellが読むtoken環境変数file。sbxmが書いた内容をそのまま返す。
-            ["cat", path] => Some(match self.settings.borrow().get(*path) {
-                Some(content) => (0, content.clone()),
-                None => missing(),
-            }),
+            ["sh", "-c", script, "sh", path] if script.contains("exec cat") => {
+                Some(match self.settings.borrow().get(*path) {
+                    Some(content) => (0, content.clone()),
+                    // token環境変数fileのprobeが不在を示す専用status。
+                    None => (44, String::new()),
+                })
+            }
             // sbxmがそのfileを書く。argvで渡った行をそのまま持つ。
             ["sh", "-c", script, "sh", first, second, third, path] if script.contains("printf") => {
                 self.settings
