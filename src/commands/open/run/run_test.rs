@@ -157,7 +157,7 @@ fn interior_ready(host: FakeSbx, project: &Registered, layout: &SandboxLayout) -
     );
     let host = host.answering(
         &format!(
-            "exec {} -- cat /etc/profile.d/sbxm-github-token.sh",
+            "exec {} -- sh -c if [ ! -e \"$1\" ] && [ ! -L \"$1\" ]; then exit 44; fi; exec cat -- \"$1\" sh /etc/profile.d/sbxm-github-token.sh",
             project.sandbox
         ),
         0,

@@ -157,6 +157,12 @@ cat)
 sh)
 	# installed toolの一覧、GitHubの認証確認、token環境変数fileの書き込み。
 	case "$3" in
+	*"exec cat --"*)
+		# token環境変数fileのprobeは、不在だけを専用statusで答える。
+		[ -e "$fake/token-env" ] || exit 44
+		cat "$fake/token-env"
+		exit 0
+		;;
 	"GIT_TERMINAL_PROMPT=0 "*)
 		# GitHubはcredentialを受け付ける。
 		exit 0

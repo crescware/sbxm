@@ -693,7 +693,7 @@ fn the_variables_gh_reads_are_set_to_the_placeholder() -> Checked {
 #[test]
 fn a_matching_token_env_file_is_left_untouched() -> Checked {
     let host = FakeSbx::listing("").inside(
-        "cat /etc/profile.d",
+        "exec cat",
         0,
         Box::leak(token_env("sbx-cs-example").into_boxed_str()),
         "",
@@ -713,7 +713,7 @@ fn a_matching_token_env_file_is_left_untouched() -> Checked {
 fn a_token_env_file_sbxm_wrote_earlier_is_brought_up_to_the_current_placeholder() -> Checked {
     // tokenを登録し直すとplaceholderが変わる。古い値のままでは`gh`が401になる。
     let host = FakeSbx::listing("").inside(
-        "cat /etc/profile.d",
+        "exec cat",
         0,
         Box::leak(token_env("sbx-cs-old").into_boxed_str()),
         "",
@@ -734,12 +734,8 @@ fn a_token_env_file_sbxm_wrote_earlier_is_brought_up_to_the_current_placeholder(
 #[test]
 fn a_token_env_file_sbxm_did_not_write_is_refused() -> Checked {
     // 同じ名前で誰かが置いたfileを上書きしない。
-    let host = FakeSbx::listing("").inside(
-        "cat /etc/profile.d",
-        0,
-        "export GH_TOKEN=someone-elses-value\n",
-        "",
-    );
+    let host =
+        FakeSbx::listing("").inside("exec cat", 0, "export GH_TOKEN=someone-elses-value\n", "");
     let error = configure_token_env(&host, "sbxm-example", "sbx-cs-example")
         .refused_because("a file with unknown content is not overwritten")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxTokenEnvUnusable));
@@ -754,19 +750,55 @@ fn a_token_env_file_sbxm_did_not_write_is_refused() -> Checked {
 
 #[test]
 fn an_empty_token_env_file_is_treated_as_absent_and_written() -> Checked {
-    // 中身の無いfileには残すべきものが無い。読めた・読めないにかかわらず書く。
-    for code in [0, 1] {
-        let host = FakeSbx::listing("").inside("cat /etc/profile.d", code, "", "");
-        configure_token_env(&host, "sbxm-example", "sbx-cs-example")
-            .required_because("an empty file is not a foreign one")?;
-        assert!(
-            host.calls
-                .borrow()
-                .iter()
-                .any(|call| call.join(" ").contains("printf")),
-            "the file is written: {:?}",
-            host.calls.borrow()
-        );
-    }
+    // 正常に読めた空fileには残すべきものが無い。
+    let host = FakeSbx::listing("").inside("exec cat", 0, "", "");
+    configure_token_env(&host, "sbxm-example", "sbx-cs-example")
+        .required_because("an empty file is not a foreign one")?;
+    assert!(
+        host.calls
+            .borrow()
+            .iter()
+            .any(|call| call.join(" ").contains("printf")),
+        "the file is written: {:?}",
+        host.calls.borrow()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_missing_token_env_file_is_written() -> Checked {
+    let host = FakeSbx::listing("").inside("exec cat", 44, "", "");
+    configure_token_env(&host, "sbxm-example", "sbx-cs-example")
+        .required_because("the probe confirmed the file is absent")?;
+    assert!(
+        host.calls
+            .borrow()
+            .iter()
+            .any(|call| call.join(" ").contains("printf")),
+        "the missing file is written: {:?}",
+        host.calls.borrow()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_token_env_file_that_cannot_be_read_is_never_overwritten_as_root() -> Checked {
+    // 空stdoutだけでは不在を証明できない。通常userのcatがpermissionで拒まれても、rootの
+    // 書き込みは通るため、ここから上書きへ進むと未確認のfileを切り詰めてしまう。
+    let host = FakeSbx::listing("").inside(
+        "exec cat",
+        1,
+        "",
+        "cat: /etc/profile.d/sbxm-github-token.sh: Permission denied\n",
+    );
+    let error = configure_token_env(&host, "sbxm-example", "sbx-cs-example")
+        .refused_because("a failed read cannot authorize an overwrite")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxTokenEnvUnusable));
+    assert_eq!(
+        host.calls.borrow().len(),
+        1,
+        "nothing is written after the failed read: {:?}",
+        host.calls.borrow()
+    );
     Ok(())
 }
