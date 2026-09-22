@@ -174,17 +174,18 @@ fn observe_sandbox(
     // 登録が読めなければ、helperが正しい値を持つかどうかも判定できない。推測せず、
     // どちらも足りないものとして扱う。
     match secret::require_github(host, sandbox) {
-        Ok(placeholder) => {
+        Ok(registration) => {
             observation.secret = Observed::Matching;
             observation.credential_helper =
-                match secret::observe_git_credential(host, sandbox, &placeholder) {
+                match secret::observe_git_credential(host, sandbox, registration.placeholder()) {
                     Ok(observed) => observed,
                     Err(error) => blocked(blocking, error),
                 };
-            observation.token_env = match secret::observe_token_env(host, sandbox, &placeholder) {
-                Ok(observed) => observed,
-                Err(error) => blocked(blocking, error),
-            };
+            observation.token_env =
+                match secret::observe_token_env(host, sandbox, registration.placeholder()) {
+                    Ok(observed) => observed,
+                    Err(error) => blocked(blocking, error),
+                };
         }
         Err(error) if error.contains_id(crate::diagnostics::ErrorId::GithubSecretMissing) => {
             observation.secret = Observed::Missing;

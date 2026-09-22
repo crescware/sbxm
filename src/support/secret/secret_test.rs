@@ -110,9 +110,10 @@ fn project() -> Checked<ProjectId> {
 #[test]
 fn a_registered_custom_secret_lets_the_build_continue_and_names_its_placeholder() -> Checked {
     let host = FakeSbx::listing(&registered());
-    let placeholder =
+    let registration =
         require_github(&host, "sbxm-example").required_because("the secret is there")?;
-    assert_eq!(placeholder, "sbx-cs-example");
+    assert_eq!(registration.scope(), "sbxm-example");
+    assert_eq!(registration.placeholder(), "sbx-cs-example");
 
     let calls = host.calls.borrow();
     assert_eq!(
@@ -250,9 +251,10 @@ fn a_registration_bound_to_another_sandbox_does_not_count() -> Checked {
 #[test]
 fn a_global_registration_counts_for_this_sandbox() -> Checked {
     let host = FakeSbx::listing(&scoped("(global)", "sbx-cs-global"));
-    let placeholder = require_github(&host, "sbxm-example")
+    let registration = require_github(&host, "sbxm-example")
         .required_because("a global registration reaches every sandbox")?;
-    assert_eq!(placeholder, "sbx-cs-global");
+    assert_eq!(registration.scope(), "(global)");
+    assert_eq!(registration.placeholder(), "sbx-cs-global");
     Ok(())
 }
 
@@ -268,10 +270,10 @@ fn a_sandbox_scoped_registration_wins_over_a_global_one() -> Checked {
         GITHUB_HOSTS.join(" "),
         GITHUB_HOSTS.join(" ")
     ));
-    assert_eq!(
-        require_github(&host, "sbxm-example").required_because("the scoped one is chosen")?,
-        "sbx-cs-scoped"
-    );
+    let registration =
+        require_github(&host, "sbxm-example").required_because("the scoped one is chosen")?;
+    assert_eq!(registration.scope(), "sbxm-example");
+    assert_eq!(registration.placeholder(), "sbx-cs-scoped");
     Ok(())
 }
 
@@ -562,7 +564,8 @@ fn configure_refuses_a_credential_helper_it_cannot_observe() -> Checked {
 #[test]
 fn github_accepting_the_credential_lets_the_build_continue() -> Checked {
     let host = FakeSbx::listing("");
-    require_github_accepts(&host, "sbxm-example", &project()?, "sbx-cs-example")
+    let registration = GithubRegistration::new("sbxm-example", "sbx-cs-example");
+    require_github_accepts(&host, "sbxm-example", &project()?, &registration)
         .required_because("GitHub answered the probe")?;
     let probe = host.calls.borrow()[0].join(" ");
     assert!(
@@ -590,9 +593,9 @@ fn a_credential_github_rejects_is_updated_with_its_existing_placeholder() -> Che
             &scoped("sbxm-example", "sbx-cs-replaced"),
         ])
         .inside("ls-remote", 128, "", stderr);
-        let placeholder = require_github(&host, "sbxm-example")
+        let registration = require_github(&host, "sbxm-example")
             .required_because("the registered placeholder is used for authentication")?;
-        let error = require_github_accepts(&host, "sbxm-example", &project()?, &placeholder)
+        let error = require_github_accepts(&host, "sbxm-example", &project()?, &registration)
             .refused_because("a rejected credential stops the build before the fetch")?;
         assert_eq!(error.first_id(), Some(ErrorId::GithubCredentialRejected));
         let diagnostic = &error.diagnostics()[0];
@@ -634,6 +637,32 @@ fn a_credential_github_rejects_is_updated_with_its_existing_placeholder() -> Che
 }
 
 #[test]
+fn a_rejected_global_registration_is_updated_in_global_scope() -> Checked {
+    let host = FakeSbx::listing(&scoped("(global)", "sbx-cs-global")).inside(
+        "ls-remote",
+        128,
+        "",
+        "remote: Invalid username or token.\nfatal: Authentication failed\n",
+    );
+    let registration = require_github(&host, "sbxm-example")
+        .required_because("the global registration is selected")?;
+    let error = require_github_accepts(&host, "sbxm-example", &project()?, &registration)
+        .refused_because("the global credential was rejected")?;
+    let command = error.diagnostics()[0]
+        .remediation
+        .as_ref()
+        .and_then(|remediation| remediation.commands.first())
+        .map(crate::design::text::CommandLine::as_str)
+        .required_because("the update command is shown")?;
+    assert_eq!(
+        command,
+        "sbx secret set-custom --host 'github.com' --host '**.github.com' --host '**.githubusercontent.com' --host 'ghcr.io' --placeholder sbx-cs-global --env GH_TOKEN --value <token>",
+        "global is the default scope, so no sandbox name is supplied"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_failure_that_is_not_a_rejection_is_reported_as_the_command_that_failed() -> Checked {
     // 到達できない、repositoryが無いといった失敗は、tokenを登録し直しても直らない。
     let host = FakeSbx::listing("").inside(
@@ -642,7 +671,8 @@ fn a_failure_that_is_not_a_rejection_is_reported_as_the_command_that_failed() ->
         "",
         "fatal: unable to access 'https://github.com/example-org/example-repo.git/': Could not resolve host: github.com\n",
     );
-    let error = require_github_accepts(&host, "sbxm-example", &project()?, "sbx-cs-example")
+    let registration = GithubRegistration::new("sbxm-example", "sbx-cs-example");
+    let error = require_github_accepts(&host, "sbxm-example", &project()?, &registration)
         .refused_because("the probe failed for another reason")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     Ok(())

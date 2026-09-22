@@ -3,16 +3,19 @@ use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-use super::{GITHUB_HOSTS, GITHUB_TOKEN_ENV, forget_command, register_command, registered_github};
+use super::{
+    GITHUB_HOSTS, GITHUB_TOKEN_ENV, GithubRegistration, forget_command, register_command,
+    registered_github,
+};
 
-/// `GitHubのcustom` secretが登録済みであることを確認し、そのplaceholderを返す。
+/// `GitHubのcustom` secretが登録済みであることを確認し、その識別情報を返す。
 ///
-/// 未登録なら、発行条件と登録commandを示して前提条件不足として停止する。返すのは
-/// tokenではなくplaceholderであり、`sbx secret ls`が誰にでも示す公開の値である。
-pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<String> {
+/// 未登録なら、発行条件と登録commandを示して前提条件不足として停止する。返すscopeと
+/// placeholderは`sbx secret ls`が示す公開の値であり、tokenそのものは持たない。
+pub fn require_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<GithubRegistration> {
     let registered = registered_github(host, sandbox)?;
     match registered.as_slice() {
-        [single] => Ok(single.placeholder.clone()),
+        [single] => Ok(GithubRegistration::new(&single.scope, &single.placeholder)),
         [] => Err(missing(host, sandbox)),
         several => Err(ambiguous(sandbox, several.len())),
     }

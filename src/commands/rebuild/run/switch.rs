@@ -58,7 +58,7 @@ impl Switch<'_> {
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。tokenの
         // ないままimageを組み直してSandboxを作らないよう、作り直す前に確認する。
-        let placeholder = secret::require_github(host, name.as_str())?;
+        let registration = secret::require_github(host, name.as_str())?;
 
         let ready = sandbox::ensure(host, name, template, workspace_root, progress)?;
 
@@ -68,9 +68,11 @@ impl Switch<'_> {
 
         identity::ensure(host, &ready.name, &metadata.git_identity).map_err(decorate)?;
         tools::SandboxReady::announce(host, &ready.name).map_err(decorate)?;
-        secret::configure_git_credential(host, &ready.name, &placeholder).map_err(decorate)?;
-        secret::configure_token_env(host, &ready.name, &placeholder).map_err(decorate)?;
-        secret::require_github_accepts(host, &ready.name, project, &placeholder)?;
+        secret::configure_git_credential(host, &ready.name, registration.placeholder())
+            .map_err(decorate)?;
+        secret::configure_token_env(host, &ready.name, registration.placeholder())
+            .map_err(decorate)?;
+        secret::require_github_accepts(host, &ready.name, project, &registration)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)
             .map_err(decorate)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout, progress)

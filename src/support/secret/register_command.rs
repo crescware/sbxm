@@ -1,4 +1,4 @@
-use super::{GITHUB_HOSTS, GITHUB_TOKEN_ENV};
+use super::{GITHUB_HOSTS, GITHUB_TOKEN_ENV, is_global_scope};
 
 /// tokenを登録するcommand。
 ///
@@ -11,10 +11,13 @@ use super::{GITHUB_HOSTS, GITHUB_TOKEN_ENV};
 /// 使わず、placeholderをcredential helperへ直接持たせるため、この変数が届かなくても
 /// clone、fetch、pushは通る。
 ///
+/// `scope`がglobalなら、scope引数を渡さない。globalは`set-custom`の既定であり、Sandbox名を
+/// 渡すと同じplaceholderでも別scopeの登録を作ろうとしてしまう。
+///
 /// 同じenvのcustom secretが既にある場合、`set-custom`はそれを重複として拒否する。
 /// 既存のplaceholderを`--placeholder`で明示すると更新として通り、しかもSandboxが
 /// 持つ値が変わらないため、作り直さずに済む。
-pub fn register_command(sandbox: &str, placeholder: Option<&str>) -> String {
+pub fn register_command(scope: &str, placeholder: Option<&str>) -> String {
     let hosts = GITHUB_HOSTS
         .iter()
         .map(|host| format!("--host '{host}'"))
@@ -24,7 +27,10 @@ pub fn register_command(sandbox: &str, placeholder: Option<&str>) -> String {
         Some(placeholder) => format!(" --placeholder {placeholder}"),
         None => String::new(),
     };
-    format!(
-        "sbx secret set-custom {sandbox} {hosts}{keep} --env {GITHUB_TOKEN_ENV} --value <token>"
-    )
+    let scope = if is_global_scope(scope) {
+        String::new()
+    } else {
+        format!("{scope} ")
+    };
+    format!("sbx secret set-custom {scope}{hosts}{keep} --env {GITHUB_TOKEN_ENV} --value <token>")
 }
