@@ -22,6 +22,10 @@ cli-apply-project-help = 適用先案件のowner/repository形式の登録ID
 cli-apply-files-help = global設定で宣言したfileを再配置し、配置先を上書きします
 cli-apply-worktrees-help = 追加後のmanaged worktree総数 (1〜32、現在より減らせません)
 
+cli-guide-about = 状態を変更せずcredentialも受け取らず、目的に応じた手順を案内します
+cli-guide-topic-help = 案内を求める目的 (credential-rotation)
+cli-guide-project-help = 案内の対象とする案件のowner/repository形式の登録ID
+
 
 cli-repair-about = SSH接続を開かず、途中または未完成の案件を明示的に準備します
 cli-repair-project-help = 復旧する案件のowner/repository形式の登録ID
@@ -34,6 +38,19 @@ cli-open-project-help = SSH接続する案件のowner/repository形式の登録I
 cli-open-index-help = repository rootではなくN番目のmanaged worktreeを起点にします（0始まり）
 warning-open-worktree-not-found = managed worktree { $index } が見つからないため、repository rootを開きます。
 warning-open-worktree-index-clamped = この案件にmanaged worktree { $requested } は存在しないため、managed worktree { $index } を開きます。
+
+select-guide-topic-heading = 何について案内しますか？
+select-guide-project-heading = どの案件について案内しますか？
+guide-topic-credential-rotation = GitHub credentialを交換する
+guide-credential-rotation-summary = { $project } のGitHub credential交換手順です。
+guide-field-project = 案件 (Project)
+guide-field-sandbox = Sandbox
+guide-next-heading = 次に行うこと (Next):
+guide-credential-rotation-issue = このrepositoryをread/writeできる新しいpersonal access tokenを発行します。fine-grainedならContents read/writeとMetadata read、classicならrepo scopeが必要です。
+guide-credential-rotation-register = 次のcommandで新しいtokenをDocker Sandboxesへ渡します。<token>だけを置き換え、ほかの引数は変えないでください。
+guide-credential-boundary = sbxmが読んだのは登録の公開scopeとplaceholderだけです。既存tokenを読まず、交換後のtokenも受け取りません。
+guide-credential-rotation-verify = GitHub accessを必要とする操作をもう一度実行します。placeholderを維持するため、Sandboxの再構築は不要です。
+guide-credential-rotation-revoke = accessが成功したあと、古いtokenがまだ有効ならGitHub上で失効させます。
 
 cli-stop-about = 1件以上の案件のSandboxを、削除せず停止します
 cli-stop-project-help = 停止する案件のowner/repository形式の登録ID（複数指定可）

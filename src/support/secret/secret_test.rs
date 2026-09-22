@@ -259,6 +259,45 @@ fn a_global_registration_counts_for_this_sandbox() -> Checked {
 }
 
 #[test]
+fn replacement_keeps_the_selected_registration_scope_and_placeholder() -> Checked {
+    for (scope, expected_prefix) in [
+        (
+            "sbxm-example",
+            "sbx secret set-custom sbxm-example --host 'github.com'",
+        ),
+        ("(global)", "sbx secret set-custom --host 'github.com'"),
+    ] {
+        let host = FakeSbx::listing(&scoped(scope, "sbx-cs-existing"));
+        let command = replace_github_command(&host, "sbxm-example")
+            .required_because("the selected registration can be replaced")?;
+
+        assert!(command.starts_with(expected_prefix), "{scope}: {command}");
+        assert!(
+            command.contains("--placeholder sbx-cs-existing"),
+            "{scope}: {command}"
+        );
+        assert!(command.ends_with("--value <token>"), "{scope}: {command}");
+        assert!(
+            !command.contains("ghp_example"),
+            "the SECRET column is never copied: {command}"
+        );
+    }
+
+    let host = FakeSbx::listing(&format!(
+        "CUSTOM SECRETS\n\
+         SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
+         sbxm-example   {}   GH_TOKEN   sbx-cs-one   ghp_one\n\
+         sbxm-example   {}   OTHER      sbx-cs-two   ghp_two\n",
+        GITHUB_HOSTS.join(" "),
+        GITHUB_HOSTS.join(" ")
+    ));
+    let error = replace_github_command(&host, "sbxm-example")
+        .refused_because("two registrations cannot be rotated as if they were one")?;
+    assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+    Ok(())
+}
+
+#[test]
 fn a_sandbox_scoped_registration_wins_over_a_global_one() -> Checked {
     // 両方ある場合、Sandboxへ結び付いた側が使われる。案件ごとのtokenを、ほかの案件と
     // 共有するglobalの登録で上書きしない。

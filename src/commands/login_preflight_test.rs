@@ -10,7 +10,7 @@ use crate::testing::global_status::FakeHost;
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::{Fixture, project_id};
 
-use super::{Command, Context, apply, destroy, open, status};
+use super::{Command, Context, apply, destroy, guide, open, status};
 
 struct RecordingHost {
     host: FakeHost,
@@ -46,6 +46,10 @@ fn commands(explicit: bool) -> Checked<Vec<Command>> {
             files: true,
             worktrees: None,
         }),
+        Command::Guide(guide::Args {
+            topic: explicit.then_some(guide::Topic::CredentialRotation),
+            project: project.clone(),
+        }),
         Command::Repair(project.clone()),
         Command::Rebuild(project.clone()),
         Command::Stop(project.clone().into_iter().collect()),
@@ -72,6 +76,7 @@ fn execute(
     match command {
         Command::Open(args) => open::exec(args, context, ui, host, prompt),
         Command::Apply(args) => apply::exec(args, context, ui, host, prompt),
+        Command::Guide(args) => guide::exec(args, context, ui, host, prompt),
         Command::Repair(project) => {
             super::repair::exec(project.as_ref(), context, ui, host, prompt)
         }

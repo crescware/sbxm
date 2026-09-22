@@ -47,6 +47,9 @@ pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitC
         Command::Apply(args) => {
             crate::commands::apply::exec(&args, &context, &mut ui, host, &mut prompt)
         }
+        Command::Guide(args) => {
+            crate::commands::guide::exec(&args, &context, &mut ui, host, &mut prompt)
+        }
         Command::Repair(project) => {
             crate::commands::repair::exec(project.as_ref(), &context, &mut ui, host, &mut prompt)
         }

@@ -22,6 +22,10 @@ cli-apply-project-help = Registered owner/repository ID of the project to update
 cli-apply-files-help = Place the globally declared files again, overwriting their destinations
 cli-apply-worktrees-help = Desired number of managed worktrees (1-32; cannot be lower than the current count)
 
+cli-guide-about = Show state-aware guidance for a goal without making changes or receiving credentials
+cli-guide-topic-help = Goal to ask about (credential-rotation)
+cli-guide-project-help = Registered owner/repository ID of the project the guidance is for
+
 
 cli-repair-about = Explicitly prepare an interrupted or incomplete project without opening SSH
 cli-repair-project-help = Registered owner/repository ID of the project to repair
@@ -34,6 +38,19 @@ cli-open-project-help = Registered owner/repository ID of the project to open
 cli-open-index-help = Start in the Nth managed worktree instead of the repository root (zero-based)
 warning-open-worktree-not-found = Managed worktree { $index } was not found; opening the repository root instead.
 warning-open-worktree-index-clamped = This project has no managed worktree { $requested }; opening managed worktree { $index } instead.
+
+select-guide-topic-heading = What do you need guidance for?
+select-guide-project-heading = Which project is this guidance for?
+guide-topic-credential-rotation = Rotate a GitHub credential
+guide-credential-rotation-summary = GitHub credential rotation guidance for { $project }.
+guide-field-project = Project
+guide-field-sandbox = Sandbox
+guide-next-heading = Next:
+guide-credential-rotation-issue = Issue a new personal access token that can read and write this repository. A fine-grained token needs Contents read and write plus Metadata read; a classic token needs the repo scope.
+guide-credential-rotation-register = Give the new token to Docker Sandboxes with this command. Replace <token> only; keep every other argument unchanged.
+guide-credential-boundary = sbxm read only the registration's public scope and placeholder. It did not read the existing token and does not receive the replacement.
+guide-credential-rotation-verify = Repeat the operation that needs GitHub access. The preserved placeholder takes effect without rebuilding the Sandbox.
+guide-credential-rotation-revoke = After access succeeds, revoke the old token on GitHub if it is still active.
 
 cli-stop-about = Stop one or more project sandboxes without deleting them
 cli-stop-project-help = Registered owner/repository IDs of the projects to stop

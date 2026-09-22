@@ -13,8 +13,8 @@ use temp_home::{TempHome, temp_home};
 use std::path::Path;
 use std::process::{Command, Output};
 
-const COMMANDS: [&str; 9] = [
-    "add", "apply", "repair", "rebuild", "open", "stop", "ls", "status", "destroy",
+const COMMANDS: [&str; 10] = [
+    "add", "apply", "guide", "repair", "rebuild", "open", "stop", "ls", "status", "destroy",
 ];
 
 /// 実行結果。
@@ -547,6 +547,8 @@ fn parser_failures_map_to_exit_code_one() -> Checked {
         vec!["add", "git@github.com:owner/repo.git", "--worktrees", "2"],
         vec!["status"],
         vec!["status", "--global", "owner/repo"],
+        vec!["guide"],
+        vec!["guide", "credential-rotation"],
     ] {
         let run = sbxm(home.path(), &arguments)?;
         assert_eq!(
@@ -585,6 +587,7 @@ fn diagnostics_name_a_stable_error_id() -> Checked {
             "invalid-project-id",
         ),
         (vec!["apply", "owner/repo"], "apply-scope-required"),
+        (vec!["guide"], "missing-required-argument"),
     ] {
         let run = sbxm(home.path(), &arguments)?;
         assert!(
@@ -608,6 +611,14 @@ fn a_non_interactive_run_that_omits_the_target_is_a_usage_error() -> Checked {
             run.stderr
         );
     }
+
+    let run = sbxm(home.path(), &["guide", "credential-rotation"])?;
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    assert!(
+        run.stderr.contains("project-argument-required"),
+        "{}",
+        run.stderr
+    );
     Ok(())
 }
 

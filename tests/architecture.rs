@@ -551,7 +551,7 @@ const INVOCATIONS: [(&str, &[&str]); 5] = [
     (
         "sbxm ",
         &[
-            "init", "add", "apply", "prepare", "rebuild", "open", "stop", "ls", "status",
+            "init", "add", "apply", "guide", "prepare", "rebuild", "open", "stop", "ls", "status",
             "destroy", "--",
         ],
     ),

@@ -186,11 +186,12 @@ Inside the sandbox, worktrees are located at:
 
 ## Daily use
 
-`open`, `apply`, `repair`, `rebuild`, `stop`, `destroy`, `ls`, and project or
-interactive `status` check Docker Sandboxes authentication before selecting a
-project. If sign-in is required, sbxm reports `sbx-login-missing` and asks you to
-run `sbx login`. `status --global` remains available to diagnose login and other
-host requirements together. `add` does not require Docker Sandboxes login.
+`open`, `apply`, `repair`, `rebuild`, `stop`, `destroy`, `ls`, `guide`, and
+project or interactive `status` check Docker Sandboxes authentication before
+selecting a project. If sign-in is required, sbxm reports `sbx-login-missing`
+and asks you to run `sbx login`. `status --global` remains available to diagnose
+login and other host requirements together. `add` does not require Docker
+Sandboxes login.
 
 ```sh
 # See every managed project and its sandbox state
@@ -207,6 +208,29 @@ sbxm stop <project-id>
 sbxm stop <project-id> ...
 ```
 
+### Get guided maintenance steps
+
+`guide` starts from what you need to do, selects the affected project, and uses
+its current state to produce the next steps. For example, use the credential
+rotation guide when a GitHub token is expiring or has been replaced:
+
+```sh
+# Select a guide topic, then a project
+sbxm guide
+
+# Select only the project
+sbxm guide credential-rotation
+
+# Start immediately for one project
+sbxm guide credential-rotation <project-id>
+```
+
+The credential rotation guide reads the existing registration's public scope
+and placeholder, then prints an `sbx secret set-custom` command that updates the
+same registration. sbxm never accepts or prints either the old token or its
+replacement: replace only `<token>` in the displayed `sbx` command. Because the
+placeholder stays the same, the Sandbox does not need to be rebuilt.
+
 The `STATE` column answers whether `sbxm open` can connect immediately: `stopped`
 means opening starts the sandbox, while `open-blocked` means preparation remains,
 including a first provisioning that started and did not finish. Use
@@ -218,12 +242,15 @@ When run in an interactive terminal, `repair`, `apply`, `rebuild`, `open`,
 `stop`, `destroy`, and `status` can prompt you to select a target if the
 project argument is omitted. For `status`, the first choice is `global`,
 followed by registered project IDs.
+`guide` first prompts for a topic when it is omitted, then prompts for a project.
+If `credential-rotation` is given, it starts at the project prompt.
 In a non-interactive terminal, provide an explicit project argument for these
-commands; `status` accepts either a project ID or `--global`. Normal `rebuild`
-and `destroy` still refuse in a non-interactive terminal because their protected
-flows require an interactive confirmation typed by hand. `destroy --force`
-is the only non-interactive bypass for destroy; it skips those checks
-and does not make the discarded data recoverable.
+commands; `guide` also requires an explicit topic, and `status` accepts either a
+project ID or `--global`. Normal `rebuild` and `destroy` still refuse in a
+non-interactive terminal because their protected flows require an interactive
+confirmation typed by hand. `destroy --force` is the only non-interactive bypass
+for destroy; it skips those checks and does not make the discarded data
+recoverable.
 
 ## Customize a project
 
@@ -420,6 +447,8 @@ rather than sbxm guessing at the new location.
 | `sbxm open [<project-id>] [--index N]` | Open an SSH session to a project sandbox, building it on the first run and starting it if needed; `N` selects a zero-based managed worktree |
 | `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
 | `sbxm ls` | List managed projects and unmanaged sandboxes with their states |
+| `sbxm guide` | Select a goal and project interactively, then show state-aware next steps without accepting credentials or changing the project |
+| `sbxm guide credential-rotation [<project-id>]` | Show how to replace the selected project's GitHub credential while preserving its scope and placeholder |
 | `sbxm status` | Select and show the host or a project's status interactively; `global` is first |
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
