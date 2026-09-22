@@ -221,7 +221,7 @@ followed by registered project IDs.
 In a non-interactive terminal, provide an explicit project argument for these
 commands; `status` accepts either a project ID or `--global`. Normal `rebuild`
 and `destroy` still refuse in a non-interactive terminal because their protected
-flows require an interactive, exact sandbox-name confirmation. `destroy --force`
+flows require an interactive confirmation typed by hand. `destroy --force`
 is the only non-interactive bypass for destroy; it skips those checks
 and does not make the discarded data recoverable.
 
@@ -246,8 +246,8 @@ does not show by itself: local branches kept out of the checkout, tags, notes,
 stash entries, extra remotes, and reflog-only commits. Save or resolve any
 reported Layer A blocker before retrying. `status` keeps the worktree's
 `STATE` and its origin recovery evidence in a separate `REMOTE` column.
-Normal rebuild always requires an interactive plan and exact sandbox-name
-confirmation; it refuses rather than silently skipping that confirmation in a
+Normal rebuild always requires an interactive plan and a typed confirmation of
+the project ID; it refuses rather than silently skipping that confirmation in a
 non-interactive terminal.
 
 ### Choose the sandbox root size
@@ -367,11 +367,11 @@ sbxm destroy <project-id>
 Before deleting anything, sbxm shows what will be removed and what will remain.
 Normal teardown checks for dirty worktrees, unpublished commits, repository-level
 refs, and active sbxm sessions. In an interactive terminal, it then asks you to
-type the sandbox name. Removing the sandbox itself also respects Docker
-Sandboxes' own runtime check for anything still attached to it (a session sbxm
-did not start) — sbxm answers that confirmation internally, so you are not
-asked twice. A normal destroy in a non-interactive terminal refuses rather than
-skipping the exact-name confirmation.
+type the project ID, and asks again when what you typed names something else.
+Removing the sandbox itself also respects Docker Sandboxes' own runtime check
+for anything still attached to it (a session sbxm did not start) — sbxm answers
+that confirmation internally, so you are not asked twice. A normal destroy in a
+non-interactive terminal refuses rather than skipping that confirmation.
 
 The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
 registered for that sandbox are deleted. A registration left behind would make
