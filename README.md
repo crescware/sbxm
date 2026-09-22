@@ -366,8 +366,11 @@ sbxm destroy <project-id>
 
 Before deleting anything, sbxm shows what will be removed and what will remain.
 Normal teardown checks for dirty worktrees, unpublished commits, repository-level
-refs, and active sbxm sessions. In an interactive terminal, it then asks you to
-type the project ID, and asks again when what you typed names something else.
+refs, and active sbxm sessions. A stopped sandbox is started so those checks can
+read it, and a notice says so next to the plan; the start prepares nothing else,
+and cancelling the confirmation leaves the sandbox running. In an interactive
+terminal, it then asks you to type the project ID, and asks again when what you
+typed names something else.
 Removing the sandbox itself also respects Docker Sandboxes' own runtime check
 for anything still attached to it (a session sbxm did not start) — sbxm answers
 that confirmation internally, so you are not asked twice. A normal destroy in a
