@@ -739,6 +739,15 @@ fn a_token_env_file_sbxm_did_not_write_is_refused() -> Checked {
     let error = configure_token_env(&host, "sbxm-example", "sbx-cs-example")
         .refused_because("a file with unknown content is not overwritten")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxTokenEnvUnusable));
+    let diagnostic = format!("{error:?}");
+    assert!(
+        diagnostic.contains("cause-token-env-unexpected-content"),
+        "the diagnosis classifies the refusal without repeating the content: {diagnostic}"
+    );
+    assert!(
+        !diagnostic.contains("someone-elses-value"),
+        "credential file content never reaches the diagnosis: {diagnostic}"
+    );
     assert_eq!(
         host.calls.borrow().len(),
         1,
@@ -794,11 +803,33 @@ fn a_token_env_file_that_cannot_be_read_is_never_overwritten_as_root() -> Checke
     let error = configure_token_env(&host, "sbxm-example", "sbx-cs-example")
         .refused_because("a failed read cannot authorize an overwrite")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxTokenEnvUnusable));
+    assert!(
+        format!("{error:?}").contains("cause-token-env-unreadable"),
+        "the diagnosis distinguishes a failed read from unexpected content: {error:?}"
+    );
     assert_eq!(
         host.calls.borrow().len(),
         1,
         "nothing is written after the failed read: {:?}",
         host.calls.borrow()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_partial_token_env_read_never_reaches_the_diagnosis() -> Checked {
+    let secret = "export GH_TOKEN=ghp_audit_fixture_only\n";
+    let host = FakeSbx::listing("").inside("exec cat", 1, secret, "Input/output error\n");
+    let error = configure_token_env(&host, "sbxm-example", "sbx-cs-example")
+        .refused_because("a partial read is still unobservable")?;
+    let diagnostic = format!("{error:?}");
+    assert!(
+        diagnostic.contains("cause-token-env-unreadable"),
+        "the failed read is classified: {diagnostic}"
+    );
+    assert!(
+        !diagnostic.contains("ghp_audit_fixture_only"),
+        "partially read credential material is not exposed: {diagnostic}"
     );
     Ok(())
 }

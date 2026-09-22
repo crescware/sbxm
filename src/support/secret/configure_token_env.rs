@@ -1,6 +1,6 @@
 use crate::boundary::host::HostEnvironment;
 use crate::design::Fact;
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 
 use crate::support::Observed;
@@ -33,9 +33,11 @@ pub fn configure_token_env(
         Observed::Mismatch { evidence } if evidence.starts_with(TOKEN_ENV_MARKER) => {
             write(host, sandbox, placeholder)
         }
-        Observed::Mismatch { evidence } | Observed::Unobservable { evidence } => {
-            Err(unusable(sandbox, &evidence))
-        }
+        Observed::Mismatch { .. } => Err(unusable(
+            sandbox,
+            msg!("cause-token-env-unexpected-content"),
+        )),
+        Observed::Unobservable { .. } => Err(unusable(sandbox, msg!("cause-token-env-unreadable"))),
     }
 }
 
@@ -65,7 +67,7 @@ fn write(host: &dyn HostEnvironment, sandbox: &str, placeholder: &str) -> Result
     Ok(())
 }
 
-fn unusable(sandbox: &str, observed: &str) -> Error {
+fn unusable(sandbox: &str, reason: Msg) -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::SandboxTokenEnvUnusable,
@@ -75,6 +77,6 @@ fn unusable(sandbox: &str, observed: &str) -> Error {
                 path = TOKEN_ENV_FILE
             ),
         )
-        .fact(Fact::cause(observed.trim())),
+        .fact(Fact::reason(reason)),
     )
 }
