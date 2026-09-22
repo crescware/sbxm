@@ -562,7 +562,7 @@ fn configure_refuses_a_credential_helper_it_cannot_observe() -> Checked {
 #[test]
 fn github_accepting_the_credential_lets_the_build_continue() -> Checked {
     let host = FakeSbx::listing("");
-    require_github_accepts(&host, "sbxm-example", &project()?)
+    require_github_accepts(&host, "sbxm-example", &project()?, "sbx-cs-example")
         .required_because("GitHub answered the probe")?;
     let probe = host.calls.borrow()[0].join(" ");
     assert!(
@@ -578,26 +578,56 @@ fn github_accepting_the_credential_lets_the_build_continue() -> Checked {
 }
 
 #[test]
-fn a_credential_github_rejects_is_named_before_the_fetch() -> Checked {
+fn a_credential_github_rejects_is_updated_with_its_existing_placeholder() -> Checked {
     // tokenが無効でも、proxyが差し替えずplaceholderがそのまま届いても、GitHubは同じ
     // 文で拒む。どちらも登録し直すところから始まる。
     for stderr in [
         "remote: Invalid username or token. Password authentication is not supported for Git operations.\nfatal: Authentication failed for 'https://github.com/example-org/example-repo.git/'\n",
         "fatal: could not read Username for 'https://github.com': No such device or address\n",
     ] {
-        let host = FakeSbx::listing("").inside("ls-remote", 128, "", stderr);
-        let error = require_github_accepts(&host, "sbxm-example", &project()?)
+        let host = FakeSbx::listings(&[
+            &scoped("sbxm-example", "sbx-cs-rejected"),
+            &scoped("sbxm-example", "sbx-cs-replaced"),
+        ])
+        .inside("ls-remote", 128, "", stderr);
+        let placeholder = require_github(&host, "sbxm-example")
+            .required_because("the registered placeholder is used for authentication")?;
+        let error = require_github_accepts(&host, "sbxm-example", &project()?, &placeholder)
             .refused_because("a rejected credential stops the build before the fetch")?;
         assert_eq!(error.first_id(), Some(ErrorId::GithubCredentialRejected));
-        let remediation = error.diagnostics()[0]
+        let diagnostic = &error.diagnostics()[0];
+        let remediation = diagnostic
             .remediation
             .as_ref()
-            .required_because("the user is told how to register the token again")?;
-        assert!(
+            .required_because("the user is told how to update the existing secret")?;
+        assert_eq!(
+            remediation.explanation[0].id,
+            "remediation-github-credential-rejected"
+        );
+        assert_eq!(
             remediation
                 .commands
                 .iter()
-                .any(|command| command.as_str() == register_command("sbxm-example", None))
+                .map(crate::design::text::CommandLine::as_str)
+                .collect::<Vec<_>>(),
+            [
+                "sbx secret set-custom sbxm-example --host 'github.com' --host '**.github.com' --host '**.githubusercontent.com' --host 'ghcr.io' --placeholder sbx-cs-rejected --env GH_TOKEN --value <token>"
+            ],
+            "the update preserves the placeholder used by git and needs no deletion or rebuild"
+        );
+        assert_eq!(
+            diagnostic
+                .external
+                .as_ref()
+                .required_because("the failed probe is preserved")?
+                .stderr,
+            stderr.as_bytes(),
+            "the original GitHub error remains available"
+        );
+        assert_eq!(
+            host.calls.borrow().len(),
+            2,
+            "the registration is read once; the rejection does not reread or mutate secrets"
         );
     }
     Ok(())
@@ -612,7 +642,7 @@ fn a_failure_that_is_not_a_rejection_is_reported_as_the_command_that_failed() ->
         "",
         "fatal: unable to access 'https://github.com/example-org/example-repo.git/': Could not resolve host: github.com\n",
     );
-    let error = require_github_accepts(&host, "sbxm-example", &project()?)
+    let error = require_github_accepts(&host, "sbxm-example", &project()?, "sbx-cs-example")
         .refused_because("the probe failed for another reason")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     Ok(())
