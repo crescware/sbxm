@@ -26,6 +26,9 @@ pub fn exec(
     };
     ui.set_locale(locale);
     prompt.set_locale(locale);
+    if let Err(error) = crate::support::login::require_signed_in(host) {
+        return report(ui, &error);
+    }
     let mut prepared = match super::run::prepare(
         context.location,
         args.project.as_ref(),

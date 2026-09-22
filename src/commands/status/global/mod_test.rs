@@ -728,7 +728,7 @@ fn a_state_directory_that_cannot_be_written_is_an_error_that_names_the_path() ->
 #[test]
 fn a_signed_in_host_is_ready_and_says_nothing_further() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().responding("sbx login status --json", r#"{"logged_in":true}"#);
+    let host = FakeHost::macos().responding("sbx ls --json", r#"{"sandboxes":[]}"#);
 
     let status = diagnose(&location, &host);
 
@@ -747,7 +747,11 @@ fn a_signed_in_host_is_ready_and_says_nothing_further() -> Checked {
 #[test]
 fn a_host_that_is_not_signed_in_is_missing_and_is_shown_the_command_that_signs_in() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().responding("sbx login status --json", r#"{"logged_in":false}"#);
+    let host = FakeHost::macos().failing(
+        "sbx ls --json",
+        "user is not authenticated to Docker: secret not found",
+        1,
+    );
 
     let status = diagnose(&location, &host);
 
@@ -765,17 +769,14 @@ fn a_host_that_is_not_signed_in_is_missing_and_is_shown_the_command_that_signs_i
 #[test]
 fn login_output_that_states_nothing_about_the_session_is_not_read_as_signed_in() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().responding("sbx login status --json", r#"{"user":"someone"}"#);
+    let host = FakeHost::macos().responding("sbx ls --json", "not JSON");
 
     let status = diagnose(&location, &host);
 
     assert_eq!(status_of(&status, "status-item-login")?, StatusValue::Error);
     // 解釈できない出力からlogin済みを推測しないため、parseの失敗をそのまま伝える。
     let diagnostic = diagnosed(&status, ErrorId::ExternalOutputUnparseable)?;
-    assert_eq!(
-        fact(diagnostic, "diagnostic-command-label")?,
-        "sbx login status"
-    );
+    assert_eq!(fact(diagnostic, "diagnostic-command-label")?, "sbx ls");
     assert!(
         !status
             .diagnostics
@@ -790,11 +791,7 @@ fn login_output_that_states_nothing_about_the_session_is_not_read_as_signed_in()
 #[test]
 fn a_login_probe_that_exits_non_zero_is_unobservable_and_keeps_the_original_stderr() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().failing(
-        "sbx login status --json",
-        "Error: the daemon is not running",
-        1,
-    );
+    let host = FakeHost::macos().failing("sbx ls --json", "Error: the daemon is not running", 1);
 
     let status = diagnose(&location, &host);
 
@@ -816,7 +813,7 @@ fn a_login_probe_that_exits_non_zero_is_unobservable_and_keeps_the_original_stde
 #[test]
 fn a_login_probe_that_times_out_is_unobservable_rather_than_signed_in() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().timing_out("sbx login status --json");
+    let host = FakeHost::macos().timing_out("sbx ls --json");
 
     let status = diagnose(&location, &host);
 

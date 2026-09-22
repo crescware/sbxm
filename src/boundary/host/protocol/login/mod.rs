@@ -1,8 +1,8 @@
-//! `sbx login status`の解釈。
+//! Docker Sandboxes自身が返した認証エラーの解釈。
 
-mod parse_login_status;
+mod is_login_missing;
 
-pub use parse_login_status::parse_login_status;
+pub use is_login_missing::is_login_missing;
 
 #[cfg(test)]
 #[path = "login_test.rs"]

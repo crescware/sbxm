@@ -772,8 +772,8 @@ fn open_refuses_a_project_that_was_never_registered() -> Checked {
     assert!(run.stderr.contains("project-not-managed"), "{}", run.stderr);
     assert_eq!(
         host.invocations()?,
-        "",
-        "nothing is asked of the host before the target is known to be managed"
+        "sbx ls --json\n",
+        "only authentication is checked before the target is known to be managed"
     );
     Ok(())
 }
