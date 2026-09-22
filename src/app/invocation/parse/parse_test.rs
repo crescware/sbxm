@@ -274,7 +274,7 @@ fn collect_strings(command: &ClapCommand, path: &str, out: &mut Vec<(String, Opt
 #[test]
 fn each_subcommand_renders_its_own_help() -> Checked {
     for name in [
-        "add", "repair", "apply", "rebuild", "open", "stop", "ls", "status", "destroy",
+        "add", "repair", "apply", "guide", "rebuild", "open", "stop", "ls", "status", "destroy",
     ] {
         let outcome =
             parse_argv(&[name, "--help"], tty()).required_because("subcommand help renders")?;
@@ -304,6 +304,7 @@ fn omitting_the_target_outside_a_terminal_is_a_usage_error() -> Checked {
         vec!["open"],
         vec!["stop"],
         vec!["destroy"],
+        vec!["guide", "credential-rotation"],
     ] {
         let error = parse_argv(&arguments, non_tty())
             .refused_because("a non-interactive run needs an explicit target")?;

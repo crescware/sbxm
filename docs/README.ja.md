@@ -165,7 +165,7 @@ Sandbox内のworktreeは次の場所にあります。
 
 ## 日常的な操作
 
-`open`、`apply`、`repair`、`rebuild`、`stop`、`destroy`、`ls`と、案件指定または
+`open`、`apply`、`repair`、`rebuild`、`stop`、`destroy`、`ls`、`guide`と、案件指定または
 対話実行の`status`は、案件選択前にDocker Sandboxesの認証を確認します。未loginなら
 `sbx-login-missing`と`sbx login`の案内を表示して終了します。`status --global`は
 未loginでもほかのhost要件と合わせて診断でき、`add`はDocker Sandboxesへのloginを必要としません。
@@ -185,6 +185,28 @@ sbxm stop <project-id>
 sbxm stop <project-id> ...
 ```
 
+### 保守手順を案内してもらう
+
+`guide`は、利用者が行いたいことを起点に対象案件を選び、その現在状態から次の手順を
+組み立てます。GitHub tokenの期限切れが近い場合や交換済みの場合は、credential交換の
+guideを使います。
+
+```sh
+# guideのtopicを選び、続いて案件を選ぶ
+sbxm guide
+
+# 案件だけを選ぶ
+sbxm guide credential-rotation
+
+# 1案件についてすぐ案内を始める
+sbxm guide credential-rotation <project-id>
+```
+
+credential交換guideは、現在の登録から公開情報であるscopeとplaceholderだけを読み、
+同じ登録を更新する`sbx secret set-custom`コマンドを表示します。古いtokenも交換後の
+tokenも`sbxm`へは渡しません。表示された`sbx`コマンドの`<token>`だけを置き換えて
+ください。placeholderを維持するため、Sandboxの再構築は不要です。
+
 `STATE`は`sbxm open`がすぐ接続できるかを示します。`stopped`は開くと
 Sandboxが起動し、`open-blocked`は接続前の準備が残っています。初回構築が始まったまま
 完了していない案件もここに含まれます。理由は`sbxm status <project-id>`で確認でき、
@@ -194,8 +216,10 @@ Sandboxが起動し、`open-blocked`は接続前の準備が残っています�
 対話端末で実行した場合、`repair`、`apply`、`rebuild`、`open`、`stop`、`destroy`、
 `status`はプロジェクト引数を省略すると対象を選択するpromptを表示できます。
 `status`では先頭に`global`を表示し、その後へ登録済みproject IDを並べます。
-非対話端末では、これらのcommandにプロジェクト引数を明示してください。`status`だけは
-project IDまたは`--global`をscopeとして指定できます。
+`guide`はtopicを省略すると最初にtopicを問い、続いて案件を問います。
+`credential-rotation`を指定した場合は案件選択から始めます。非対話端末では、これらの
+commandにプロジェクト引数を明示してください。`guide`にはtopicの明示も必要で、
+`status`だけはproject IDまたは`--global`をscopeとして指定できます。
 
 ただし`rebuild`と`destroy`は、引数を明示しても非対話端末では実行できません。どちらも
 削除計画を表示し、対象Sandbox名の完全一致入力を得た場合にだけ進むためです。`destroy`
@@ -382,6 +406,8 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm open [<project-id>] [--index N]` | SandboxへのSSH接続を開く。初回はSandboxを構築し、以降は必要なら先に起動する。`N`は0始まりのmanaged worktree index |
 | `sbxm stop [<project-id> ...]` | 1件以上の案件のSandboxを、削除せず停止する |
 | `sbxm ls` | 管理案件と管理外Sandboxを、その状態とともに一覧する |
+| `sbxm guide` | 目的と案件を対話選択し、credentialを受け取らず案件も変更せず、現在状態に応じた次の手順を示す |
+| `sbxm guide credential-rotation [<project-id>]` | 選んだ案件のscopeとplaceholderを維持してGitHub credentialを交換する手順を示す |
 | `sbxm status` | 対話端末でhostまたは案件を選択して診断する。`global`を先頭にpromptを表示する |
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |

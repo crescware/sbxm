@@ -96,6 +96,34 @@ fn add_reports_a_repeat_run_without_pretending_something_changed() -> Checked {
     Ok(())
 }
 
+#[test]
+fn guide_places_the_credential_boundary_next_to_the_external_command() -> Checked {
+    let document = super::guide::print::document(&super::guide::GuideOutput {
+        project: "owner/repo".to_string(),
+        sandbox: "sbxm-owner-repo".to_string(),
+        register_command:
+            "sbx secret set-custom sbxm-owner-repo --placeholder sbx-cs-example --value <token>"
+                .to_string(),
+    });
+
+    assert_eq!(
+        shape(&document),
+        vec!["summary", "fields", "guidance", "command", "guidance"]
+    );
+    assert_eq!(
+        commands(&document),
+        ["sbx secret set-custom sbxm-owner-repo --placeholder sbx-cs-example --value <token>"]
+    );
+
+    let drawn = plain(&document, Locale::En)?;
+    assert!(
+        drawn.contains("does not receive the replacement"),
+        "{drawn}"
+    );
+    assert!(!drawn.contains("ghp_"), "{drawn}");
+    Ok(())
+}
+
 fn placed() -> Vec<PlacedFile> {
     vec![PlacedFile {
         source: PathBuf::from("/home/user/.gitconfig"),

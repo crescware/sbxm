@@ -324,6 +324,25 @@ fn without_sandboxes(bin: &Path) -> Checked<()> {
     )
 }
 
+/// global scopeにGitHub custom secretが1件あるhostとして答える`sbx`を足す。
+fn with_global_github_secret(bin: &Path) -> Checked<()> {
+    install(
+        bin,
+        "sbx",
+        "#!/bin/sh\n\
+         case \"$1 $2\" in\n\
+         \"ls --json\") echo '{\"sandboxes\":[]}'; exit 0;;\n\
+         \"secret ls\")\n\
+           printf '%s\\n' \\
+             'CUSTOM SECRETS' \\
+             'SCOPE   TARGETS   ENV   PLACEHOLDER   SECRET' \\
+             '(global)   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-example   ghp_example'\n\
+           exit 0;;\n\
+         esac\n\
+         exit 1\n",
+    )
+}
+
 /// 案件を1件登録したHOMEを作る。
 ///
 /// `add`はcloneで止まるが、登録そのものは終わっている。端末を要さないため、
@@ -513,6 +532,43 @@ fn a_multiple_selection_takes_nothing_until_the_space_key_marks_it() -> Checked 
 }
 
 #[test]
+fn guide_selects_the_topic_then_the_project_before_showing_the_steps() -> Checked {
+    let (home, base, bin) = home_with_project()?;
+    with_global_github_secret(&bin)?;
+
+    let mut session = Session::start(home.path(), &base, &bin, &["guide"])?;
+    session.wait_for("What do you need guidance for?")?;
+    session.press(ENTER)?;
+    session.wait_for("Which project is this guidance for?")?;
+    session.press(ENTER)?;
+    let ended = session.finish()?;
+    let text = ended.text();
+
+    assert_eq!(ended.code, 0, "{text}");
+    let topic_at = text
+        .find("What do you need guidance for?")
+        .required_because("the topic prompt is shown")?;
+    let project_at = text
+        .find("Which project is this guidance for?")
+        .required_because("the project prompt is shown")?;
+    let guidance_at = text
+        .find("GitHub credential rotation guidance for owner/repo")
+        .required_because("the selected guide is shown")?;
+    assert!(topic_at < project_at && project_at < guidance_at, "{text}");
+    assert!(
+        text.contains(
+            "sbx secret set-custom --host 'github.com' --host '**.github.com' --host '**.githubusercontent.com' --host 'ghcr.io' --placeholder sbx-cs-example --env GH_TOKEN --value <token>"
+        ),
+        "{text}"
+    );
+    assert!(
+        !text.contains("ghp_example"),
+        "the credential value never reaches the guide output: {text}"
+    );
+    Ok(())
+}
+
+#[test]
 fn missing_login_is_reported_without_waiting_for_a_project_selection() -> Checked {
     let (home, base, bin) = home_with_project()?;
     install(
@@ -534,6 +590,7 @@ fn missing_login_is_reported_without_waiting_for_a_project_selection() -> Checke
         vec!["destroy"],
         vec!["ls"],
         vec!["status"],
+        vec!["guide"],
     ] {
         // 入力を1文字も送らない。未loginを検出したcommandはpromptで待たず終了する。
         let ended = Session::start(home.path(), &base, &bin, &args)?.finish()?;
