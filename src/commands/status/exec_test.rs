@@ -6,7 +6,7 @@ use crate::i18n::Locale;
 use crate::project::ProjectId;
 use crate::testing::global_status::FakeHost;
 use crate::testing::host::FakeSbx;
-use crate::testing::outcome::Checked;
+use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::Fixture;
 use crate::testing::prompt::ScriptedPrompt;
 
@@ -121,5 +121,44 @@ fn prompt_cancellation_returns_canceled() -> Checked {
     );
 
     assert_eq!(code, ExitCode::Canceled);
+    Ok(())
+}
+
+#[test]
+fn explicit_global_status_reports_login_alongside_other_host_checks() -> Checked {
+    let fixture = Fixture::new()?;
+    let host = FakeHost::macos().failing(
+        "sbx ls --json",
+        "user is not authenticated to Docker: secret not found",
+        1,
+    );
+    let screen = RecordedScreen::new();
+    let policy = RenderingPolicy::plain();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = {
+        let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
+        let mut prompt = PromptUi::new(
+            Locale::En,
+            policy.stderr,
+            Box::new(ScriptedKeys::canceling()),
+            Box::new(screen.clone()),
+        );
+        let context = Context {
+            location: &fixture.location,
+            workspace_root: &fixture.workspace_root,
+            locale: Locale::En,
+            can_prompt: false,
+        };
+        super::exec(&Scope::Global, &context, &mut ui, &host, &mut prompt)
+    };
+    assert_eq!(code, ExitCode::Failure);
+    let stdout = String::from_utf8(stdout).required()?;
+    let stderr = String::from_utf8(stderr).required()?;
+    assert!(stdout.contains("Docker Sandboxes login"), "{stdout}");
+    assert!(stdout.contains("Platform"), "{stdout}");
+    assert!(stderr.contains("sbx-login-missing"), "{stderr}");
+    assert!(stderr.contains("sbx login"), "{stderr}");
+    assert!(screen.drawn().is_empty());
     Ok(())
 }

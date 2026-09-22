@@ -70,7 +70,7 @@ impl Switch<'_> {
         tools::SandboxReady::announce(host, &ready.name).map_err(decorate)?;
         secret::configure_git_credential(host, &ready.name, &placeholder).map_err(decorate)?;
         secret::configure_token_env(host, &ready.name, &placeholder).map_err(decorate)?;
-        secret::require_github_accepts(host, &ready.name, project)?;
+        secret::require_github_accepts(host, &ready.name, project, &placeholder)?;
         files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)
             .map_err(decorate)?;
         repository::ensure_bare_clone(host, &ready.name, project, &layout, progress)

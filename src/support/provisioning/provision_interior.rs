@@ -46,7 +46,7 @@ pub(crate) fn provision_interior(
     secret::configure_git_credential(host, &ready_name, &placeholder).map_err(decorate)?;
     secret::configure_token_env(host, &ready_name, &placeholder).map_err(decorate)?;
     // 数分かかるfetchへ進む前に、実物と同じ経路で認証だけを確かめる。
-    secret::require_github_accepts(host, &ready_name, &project)?;
+    secret::require_github_accepts(host, &ready_name, &project, &placeholder)?;
 
     repository::ensure_bare_clone(host, &ready_name, &project, &layout, progress)
         .map_err(decorate)?;

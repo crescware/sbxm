@@ -1,45 +1,26 @@
-use crate::testing::outcome::{Checked, Refused, Required};
-
 use super::*;
-use crate::diagnostics::ErrorId;
 
 #[test]
-fn the_login_parser_reads_whichever_field_states_the_answer() -> Checked {
-    // 対象versionはfield名を変えてきた。読める綴りをすべて受け、真偽をそのまま返す。
-    for key in ["logged_in", "loggedIn", "authenticated", "signed_in"] {
-        assert!(parse_login_status(&format!("{{\"{key}\": true}}")).required()?);
-        assert!(!parse_login_status(&format!("{{\"{key}\": false}}")).required()?);
+fn docker_authentication_failures_are_recognized() {
+    for output in [
+        "ERROR: list sandboxes: list local runtimes: list runtimes: request failed: 401 Unauthorized: user is not authenticated to Docker: secret not found\nno valid user session found, please sign in to Docker to proceed\n\nSign in with: sbx login\n",
+        "You are not authenticated to Docker. Please sign in again.",
+        "no valid user session found, please sign in to Docker to proceed",
+    ] {
+        assert!(is_login_missing(output.as_bytes()), "{output}");
     }
-
-    // 先に現れる綴りを正本とする。後ろのfieldで上書きしない。
-    assert!(
-        parse_login_status(r#"{"authenticated": false, "logged_in": true}"#).required()?,
-        "the first spelling that appears decides the answer"
-    );
-
-    // 周囲の空白は出力の体裁であり、documentの一部ではない。
-    assert!(parse_login_status("\n  {\"logged_in\": true}\n").required()?);
-    Ok(())
 }
 
 #[test]
-fn a_login_is_never_inferred_from_an_output_that_does_not_state_it() -> Checked {
+fn unrelated_failures_are_not_treated_as_missing_docker_login() {
     for output in [
         "",
-        "Logged in as user@example.com\n",
-        "[]",
-        r#""logged_in""#,
-        r#"{"user": "user@example.com"}"#,
-        r#"{"logged_in": "yes"}"#,
-        r#"{"logged_in": null}"#,
+        "401 Unauthorized",
+        "secret not found",
+        "the daemon is not running",
+        "user is not authenticated to GitHub",
+        "Run sbx login to sign in",
     ] {
-        let error =
-            parse_login_status(output).refused_because("a signed-in host is not guessed")?;
-        assert_eq!(
-            error.first_id(),
-            Some(ErrorId::ExternalOutputUnparseable),
-            "{output:?} produced the wrong error"
-        );
+        assert!(!is_login_missing(output.as_bytes()), "{output}");
     }
-    Ok(())
 }

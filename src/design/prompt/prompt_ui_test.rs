@@ -285,7 +285,7 @@ fn backspace_clears_one_wide_character_from_the_screen() -> Checked {
     let screen = RecordedScreen::new();
     let keys = [Key::Char('a'), Key::Char('界'), Key::Backspace, Key::Enter];
     let typed = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .exact(&msg!("destroy-confirm-prompt"))
+        .exact(&msg!("destroy-confirm-prompt", project = "owner/repo"))
         .required_because("the wide character is removed")?;
 
     assert_eq!(typed, "a");
@@ -301,14 +301,14 @@ fn backspace_clears_one_wide_character_from_the_screen() -> Checked {
 fn an_exact_answer_starts_from_an_empty_field() -> Checked {
     let screen = RecordedScreen::new();
     let typed = prompt(ScriptedKeys::typing("owner-repo"), &screen)
-        .exact(&msg!("destroy-confirm-prompt"))
+        .exact(&msg!("destroy-confirm-prompt", project = "owner/repo"))
         .required_because("the name is typed in full")?;
 
     assert_eq!(typed, "owner-repo");
     assert_eq!(
         screen.lines(),
         vec![
-            "Type the sandbox name to confirm the deletion".to_string(),
+            "Type owner/repo to confirm the deletion".to_string(),
             "owner-repo".to_string(),
         ]
     );
@@ -327,7 +327,7 @@ fn an_input_takes_only_the_keys_it_needs() -> Checked {
         Key::Enter,
     ];
     let typed = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .exact(&msg!("destroy-confirm-prompt"))
+        .exact(&msg!("destroy-confirm-prompt", project = "owner/repo"))
         .required_because("the answer is confirmed")?;
 
     assert_eq!(typed, "a");
@@ -339,7 +339,7 @@ fn a_cancelled_input_returns_nothing_that_could_be_taken_as_an_answer() -> Check
     for key in [Key::Escape, Key::CtrlC] {
         let screen = RecordedScreen::new();
         let error = prompt(ScriptedKeys::pressing(std::slice::from_ref(&key)), &screen)
-            .exact(&msg!("destroy-confirm-prompt"))
+            .exact(&msg!("destroy-confirm-prompt", project = "owner/repo"))
             .refused_because("Esc and Ctrl-C change nothing")?;
 
         assert_eq!(error.exit_code(), ExitCode::Canceled, "{key:?}");
@@ -353,12 +353,12 @@ fn the_language_the_prompt_asks_in_follows_the_one_that_was_settled_on() -> Chec
     let mut prompt = prompt(ScriptedKeys::confirming(), &screen);
     prompt.set_locale(Locale::Ja);
     prompt
-        .exact(&msg!("destroy-confirm-prompt"))
+        .exact(&msg!("destroy-confirm-prompt", project = "owner/repo"))
         .required_because("the answer is confirmed")?;
 
     assert_eq!(
         screen.lines().first().map(String::as_str),
-        Some("削除を確認するため、Sandbox名を入力してください")
+        Some("削除を確認するため owner/repo と入力してください")
     );
     Ok(())
 }

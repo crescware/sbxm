@@ -14,6 +14,7 @@ pub mod generation;
 pub mod identity;
 pub mod image;
 pub mod inventory;
+pub mod login;
 mod observed;
 pub mod protection;
 pub mod provisioning;

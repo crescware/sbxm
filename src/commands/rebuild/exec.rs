@@ -26,6 +26,9 @@ pub fn exec(
     };
     ui.set_locale(locale);
     prompt.set_locale(locale);
+    if let Err(error) = crate::support::login::require_signed_in(host) {
+        return report(ui, &error);
+    }
     let target = Target {
         location: context.location,
         requested: project,
@@ -44,10 +47,11 @@ pub fn exec(
 
     ui.stdout(&print::plan_document(&prepared.plan));
 
-    let confirmation = match super::run::confirm(snapshot, context.can_prompt, prompt) {
-        Ok(confirmation) => confirmation,
-        Err(error) => return report(ui, &error),
-    };
+    let confirmation =
+        match super::run::confirm(snapshot, &prepared.plan.project, context.can_prompt, prompt) {
+            Ok(confirmation) => confirmation,
+            Err(error) => return report(ui, &error),
+        };
     ui.note_prompt_output();
 
     match super::run::execute(

@@ -42,7 +42,7 @@ pub fn prepare(
     progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
     let interactive_index = requested.is_none() && index.is_none();
-    // 対象が決まる前にhostの状態へ触れない。metadataもprompt表示前には待たないため、
+    // 認証はexecで確認済み。案件のmetadataはprompt表示前には待たないため、
     // interactiveなindexは設定上限相当の楽観的な値まで受け付ける。promptの裏で計算が終われば
     // 表示中の最大値へ反映し、最後はlock済みmetadataでclampする。clampした事実は
     // `Prepared`へ載せ、接続前に見せる。

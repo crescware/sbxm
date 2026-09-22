@@ -361,22 +361,6 @@ fn home_with_project() -> Checked<(TempHome, PathBuf, PathBuf)> {
     Ok((home, base, bin))
 }
 
-/// 表示されたSandbox名。
-///
-/// 名前はsbxmが案件から導く値である。testが同じ導出を書き直すと、導出そのものを
-/// 確かめられない。画面に現れた値をそのまま打ち返す。
-fn shown_sandbox_name(text: &str) -> Checked<String> {
-    let start = text
-        .find("sbxm-")
-        .required_because("the plan shows the sandbox name")?;
-    Ok(text[start..]
-        .chars()
-        .take_while(|character| {
-            character.is_ascii_lowercase() || character.is_ascii_digit() || *character == '-'
-        })
-        .collect())
-}
-
 #[test]
 fn the_language_chosen_at_the_prompt_decides_what_the_next_prompt_speaks() -> Checked {
     let home = temp_home()?;
@@ -503,6 +487,7 @@ fn escape_at_the_identity_prompt_keeps_the_language_and_registers_nothing() -> C
 #[test]
 fn a_multiple_selection_takes_nothing_until_the_space_key_marks_it() -> Checked {
     let (home, base, bin) = home_with_project()?;
+    without_sandboxes(&bin)?;
 
     let mut session = Session::start(home.path(), &base, &bin, &["stop"])?;
     // 未選択のまま確定しようとしても、promptは終わらない。
@@ -522,25 +507,67 @@ fn a_multiple_selection_takes_nothing_until_the_space_key_marks_it() -> Checked 
         "{}",
         ended.text()
     );
-    // 対象は決まり、実行はhost toolの不在で止まる。
-    assert_eq!(ended.code, 1, "{}", ended.text());
-    assert!(
-        ended.text().contains("external-command-not-found"),
-        "{}",
-        ended.text()
-    );
+    // 認証と選択を通過し、Sandboxが無い案件の停止は何も変えず成功する。
+    assert_eq!(ended.code, 0, "{}", ended.text());
     Ok(())
 }
 
 #[test]
-fn a_name_that_is_not_the_sandbox_name_destroys_nothing() -> Checked {
+fn missing_login_is_reported_without_waiting_for_a_project_selection() -> Checked {
+    let (home, base, bin) = home_with_project()?;
+    install(
+        &bin,
+        "sbx",
+        "#!/bin/sh\n\
+         printf '%s\\n' 'ERROR: list sandboxes: list local runtimes: list runtimes: request failed: 401 Unauthorized: user is not authenticated to Docker: secret not found' >&2\n\
+         printf '%s\\n' 'no valid user session found, please sign in to Docker to proceed' >&2\n\
+         printf '\\nSign in with: sbx login\\n' >&2\n\
+         exit 1\n",
+    )?;
+    for args in [
+        vec!["open"],
+        vec!["open", "--index", "0"],
+        vec!["apply", "--files"],
+        vec!["repair"],
+        vec!["rebuild"],
+        vec!["stop"],
+        vec!["destroy"],
+        vec!["ls"],
+        vec!["status"],
+    ] {
+        // 入力を1文字も送らない。未loginを検出したcommandはpromptで待たず終了する。
+        let ended = Session::start(home.path(), &base, &bin, &args)?.finish()?;
+        let text = ended.text();
+        assert_eq!(ended.code, 1, "{args:?}: {text}");
+        assert!(text.contains("sbx-login-missing"), "{args:?}: {text}");
+        assert!(text.contains("sbx login"), "{args:?}: {text}");
+        assert!(
+            !text.contains("external-command-failed"),
+            "{args:?}: {text}"
+        );
+        assert!(
+            !text.contains("owner/repo"),
+            "{args:?}: no project prompt: {text}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn an_answer_that_names_nothing_destroys_nothing_even_after_being_asked_again() -> Checked {
     let (home, base, bin) = home_with_project()?;
     without_sandboxes(&bin)?;
 
     let mut session = Session::start(home.path(), &base, &bin, &["destroy", "owner/repo"])?;
     // 確認は空欄で始まる。消すものが無い打鍵は何も消さない。
     session.press(BACKSPACE)?;
-    session.press("not-the-sandbox")?;
+    session.press("not-the-project")?;
+    session.press(ENTER)?;
+    // 打ち間違いは計画からのやり直しではなく、同じ計画のまま訊き直す。
+    session.wait_for("That is not owner/repo")?;
+    session.press("still-not-the-project")?;
+    session.press(ENTER)?;
+    session.press("nor-this")?;
     session.press(ENTER)?;
     let ended = session.finish()?;
 
@@ -561,15 +588,16 @@ fn a_name_that_is_not_the_sandbox_name_destroys_nothing() -> Checked {
 }
 
 #[test]
-fn the_sandbox_name_typed_exactly_is_what_destroys_the_project() -> Checked {
+fn a_mistyped_answer_can_be_typed_again_without_starting_over() -> Checked {
     let (home, base, bin) = home_with_project()?;
     without_sandboxes(&bin)?;
 
     let mut session = Session::start(home.path(), &base, &bin, &["destroy", "owner/repo"])?;
-    // 何を打てば続くかは画面が示す。示された名前をそのまま打ち返す。
-    session.wait_for("Type the sandbox name to confirm the deletion")?;
-    let name = shown_sandbox_name(&visible(&session.seen).join("\n"))?;
-    session.press(&name)?;
+    session.wait_for("Type owner/repo to confirm the deletion")?;
+    session.press("owner/rep")?;
+    session.press(ENTER)?;
+    session.wait_for("That is not owner/repo")?;
+    session.press("owner/repo")?;
     session.press(ENTER)?;
     let ended = session.finish()?;
 
@@ -580,7 +608,31 @@ fn the_sandbox_name_typed_exactly_is_what_destroys_the_project() -> Checked {
             .join(".sbxm")
             .join("project.yaml")
             .exists(),
-        "an exact match removes the managed state"
+        "the answer typed after the miss is the one that counts"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_project_id_typed_at_the_prompt_is_what_destroys_the_project() -> Checked {
+    let (home, base, bin) = home_with_project()?;
+    without_sandboxes(&bin)?;
+
+    let mut session = Session::start(home.path(), &base, &bin, &["destroy", "owner/repo"])?;
+    // 何を打てば続くかは画面が示す。sandbox名の内部hashを覚えている必要はない。
+    session.wait_for("Type owner/repo to confirm the deletion")?;
+    session.press("owner/repo")?;
+    session.press(ENTER)?;
+    let ended = session.finish()?;
+
+    assert_eq!(ended.code, 0, "{}", ended.text());
+    assert!(
+        !base
+            .join("repo.project")
+            .join(".sbxm")
+            .join("project.yaml")
+            .exists(),
+        "an answer that names the project removes the managed state"
     );
     let registry = std::fs::read_to_string(home.path().join(".sbxm").join("registry.yaml"))
         .required_because("the registry is readable")?;

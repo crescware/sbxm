@@ -28,10 +28,13 @@ const PROBE: &str = r#"GIT_TERMINAL_PROMPT=0 exec git ls-remote "$1" HEAD"#;
 /// 期限切れ、対象repositoryへの権限不足、proxyが覆っていないhostは、どれも登録の
 /// 観測では現れない。数分かかるfetchへ進む前に、実物と同じ経路で1回だけ問い合わせ、
 /// 拒まれたときは何を登録し直せばよいかを示す。
+/// `placeholder`はcredential helperへ設定した値を受け取り、更新commandでも維持する。
+/// 一覧を読み直さず、実際に認証を試した登録を更新対象にする。
 pub fn require_github_accepts(
     host: &dyn HostEnvironment,
     sandbox: &str,
     project: &ProjectId,
+    placeholder: &str,
 ) -> Result<()> {
     let url = git::https_remote_url(project.owner(), project.repository());
     let outcome = sandbox::exec(host, sandbox, &["sh", "-c", PROBE, "sh", &url])?;
@@ -52,7 +55,7 @@ pub fn require_github_accepts(
         .external(outcome.failure())
         .remediation(
             Remediation::text(msg!("remediation-github-credential-rejected"))
-                .try_run(register_command(sandbox, None)),
+                .try_run(register_command(sandbox, Some(placeholder))),
         ),
     ))
 }

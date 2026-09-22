@@ -81,3 +81,7 @@ use wait_with_limit::wait_with_limit;
 #[cfg(test)]
 #[path = "command_test.rs"]
 mod command_test;
+
+#[cfg(test)]
+#[path = "command_outcome_test.rs"]
+mod command_outcome_test;

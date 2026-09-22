@@ -149,8 +149,8 @@ cloneし、managed worktreeを作成してからSSHで接続します。2回目�
 0始まりのindexを指定します。たとえば`sbxm open <project-id> -i 0`です。
 
 対話端末でproject IDを省略すると、1つのpromptで上下キーから案件、左右キーから
-0始まりのmanaged worktree indexを選び、Enter 1回で両方を確定します。promptはすぐ表示するため、
-projectのmetadataを読まずに開きます。結果が届くまでのindex行は`(計算中)`と述べるだけで、
+0始まりのmanaged worktree indexを選び、Enter 1回で両方を確定します。認証を確認したら、
+projectのmetadataを待たずにpromptを開きます。結果が届くまでのindex行は`(計算中)`と述べるだけで、
 まだ分からない範囲を数として示しません。そのあいだもindexは動かせます。metadataは裏で計算し、
 選択中の案件の結果が届いたらその案件自身の範囲を表示して、indexをその中に収めます。
 確定時にもproject lockのmetadataで再確認し、下げた場合は接続前に警告します。
@@ -164,6 +164,11 @@ Sandbox内のworktreeは次の場所にあります。
 ```
 
 ## 日常的な操作
+
+`open`、`apply`、`repair`、`rebuild`、`stop`、`destroy`、`ls`と、案件指定または
+対話実行の`status`は、案件選択前にDocker Sandboxesの認証を確認します。未loginなら
+`sbx-login-missing`と`sbx login`の案内を表示して終了します。`status --global`は
+未loginでもほかのhost要件と合わせて診断でき、`add`はDocker Sandboxesへのloginを必要としません。
 
 ```sh
 # 管理対象の全プロジェクトとSandboxの状態を表示する

@@ -33,3 +33,7 @@ pub use report::report;
 #[cfg(test)]
 #[path = "command_line_test.rs"]
 mod command_line_test;
+
+#[cfg(test)]
+#[path = "login_preflight_test.rs"]
+mod login_preflight_test;

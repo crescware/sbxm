@@ -763,27 +763,71 @@ fn prepared_project(fixture: &Fixture, force: bool) -> Checked<(FakeSbx, Prepare
 }
 
 #[test]
-fn only_the_exact_sandbox_name_confirms_an_interactive_deletion() -> Checked {
+fn only_a_name_of_the_target_confirms_an_interactive_deletion() -> Checked {
     let fixture = Fixture::new()?;
     let (_host, mut prepared) = prepared_project(&fixture, false)?;
+    let project = prepared.plan.project.clone();
     let sandbox = prepared.plan.sandbox.clone();
 
-    let mut exact = ScriptedConfirm::typing(&sandbox);
+    // 訊くのは案件の登録IDである。sandbox名の末尾のhashは、sbxmが内部で使う値であり、
+    // 利用者が覚えて打ち返すものではない。
+    let mut typed = ScriptedConfirm::typing(&project);
     let confirmation =
-        confirm(&mut prepared, true, &mut exact).required_because("the name matched")?;
+        confirm(&mut prepared, true, &mut typed).required_because("the project ID matched")?;
     assert!(confirmation.is_some());
-    assert_eq!(exact.asked(), 1);
+    assert_eq!(typed.asked(), 1);
 
-    // yesでは削除しない。名前以外の入力はすべて不一致とする。confirmationは1回の
-    // snapshotだけを消費するため、それぞれ新しいpreparedで試す。
-    for answer in ["yes", "", &sandbox[..sandbox.len() - 1]] {
+    // 画面に出ているsandbox名も、同じ対象を名指す答えとして受け取る。大文字小文字は
+    // 登録IDの比較と同じく区別しない。confirmationは1回のsnapshotだけを消費するため、
+    // それぞれ新しいpreparedで試す。
+    for answer in [sandbox.as_str(), &project.to_ascii_uppercase()] {
+        let fixture = Fixture::new()?;
+        let (_host, mut prepared) = prepared_project(&fixture, false)?;
+        let confirmation = confirm(&mut prepared, true, &mut ScriptedConfirm::typing(answer))
+            .required_because("the answer names the same target")?;
+        assert!(confirmation.is_some());
+    }
+
+    // yesでは削除しない。対象を名指さない入力はすべて不一致とする。
+    for answer in ["yes", "", &sandbox[..sandbox.len() - 1], "owner/other"] {
         let fixture = Fixture::new()?;
         let (_host, mut prepared) = prepared_project(&fixture, false)?;
         let mut typed = ScriptedConfirm::typing(answer);
         let error = confirm(&mut prepared, true, &mut typed)
-            .refused_because("only the sandbox name confirms a deletion")?;
+            .refused_because("only a name of the target confirms a deletion")?;
         assert_eq!(error.first_id(), Some(ErrorId::ProtectionNotConfirmed));
     }
+    Ok(())
+}
+
+#[test]
+fn a_mistyped_answer_is_asked_again_on_the_same_plan() -> Checked {
+    // 1回で打ち切ると、打ち間違いのたびに観測からやり直すことになる。停止していた
+    // Sandboxを起動した実行では、その起動も含めてやり直しになる。
+    let fixture = Fixture::new()?;
+    let (host, mut prepared) = prepared_project(&fixture, false)?;
+    let project = prepared.plan.project.clone();
+    let listings = host.listing.borrow().len();
+
+    let mut typed = ScriptedConfirm::typing_in_turn(&["yes", &project]);
+    let confirmation = confirm(&mut prepared, true, &mut typed)
+        .required_because("the answer typed after the miss is the one that counts")?;
+    assert!(confirmation.is_some());
+    assert_eq!(typed.asked(), 2);
+    assert_eq!(
+        host.listing.borrow().len(),
+        listings,
+        "the plan is not observed again between the attempts: {:?}",
+        host.calls()
+    );
+
+    // 打ち直しは無限ではない。使い切れば、確認を作らずに拒否する。
+    let fixture = Fixture::new()?;
+    let (_host, mut prepared) = prepared_project(&fixture, false)?;
+    let mut wrong = ScriptedConfirm::typing("yes");
+    let error = confirm(&mut prepared, true, &mut wrong).refused_because("the attempts run out")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProtectionNotConfirmed));
+    assert_eq!(wrong.asked(), 3);
     Ok(())
 }
 

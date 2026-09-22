@@ -1,10 +1,11 @@
 //! `status`が診断を始める前に止まる実行の契約。
 //!
 //! `status`はhostも案件も変えない読み取りであり、答えられなかったことも結果として示す。
-//! ただし表を作る前に決まらないものが2つある。表示言語と、診断する案件そのものである。
-//! どちらも欠けたまま進めず、errorを見せて終わる。host toolへは一切問い合わせないため、
-//! `PATH`を空にしたまま実行できる。
+//! 表を作る前に表示言語と、診断する案件そのものを確定する。案件の検索に進む場合は、
+//! その前に認証を確認する。config不正のtestは空のPATH、案件不在のtestは認証probeだけに
+//! 答えるhostで、どの段階まで進んだかを確かめる。
 
+mod authenticated_host;
 mod outcome;
 mod temp_home;
 
@@ -27,16 +28,18 @@ struct Run {
 /// host toolの有無で結果が揺れないよう`PATH`は空にし、表示言語はconfigとargvだけで
 /// 決まるようにlocale環境変数を外す。
 fn sbxm(home: &Path, arguments: &[&str]) -> Checked<Run> {
-    let output = Command::new(env!("CARGO_BIN_EXE_sbxm"))
+    run(Command::new(env!("CARGO_BIN_EXE_sbxm"))
         .args(arguments)
         .current_dir(home)
         .env("HOME", home)
         .env("LC_ALL", "C")
         .env_remove("LC_MESSAGES")
         .env_remove("LANG")
-        .env("PATH", "")
-        .output()
-        .required_because("sbxm runs")?;
+        .env("PATH", ""))
+}
+
+fn run(command: &mut Command) -> Checked<Run> {
+    let output = command.output().required_because("sbxm runs")?;
     Ok(Run {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -107,7 +110,9 @@ fn a_project_that_was_never_added_is_refused_rather_than_shown_as_an_empty_repor
     let home = temp_home()?;
     write_config(home.path(), "version: 1\nlanguage: en\n", 0o600)?;
 
-    let run = sbxm(home.path(), &["status", "example-org/example-repo"])?;
+    let run = run(
+        authenticated_host::command(home.path())?.args(["status", "example-org/example-repo"])
+    )?;
 
     assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
     assert!(run.stderr.contains("project-not-managed"), "{}", run.stderr);

@@ -20,7 +20,7 @@ mod version;
 pub use daemon::{DaemonState, parse_daemon_status};
 pub use disk::{RootDiskUsage, parse_df};
 pub use image::{ImageIdentity, parse_image_inspect};
-pub use login::parse_login_status;
+pub use login::is_login_missing;
 pub use policy::{EXPECTED_NETWORK_POLICY, parse_network_policy};
 pub use sandbox::{SandboxEntry, SandboxState, parse_sandbox_list};
 pub use secret::{CustomSecret, parse_custom_secrets};

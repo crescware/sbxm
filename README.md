@@ -168,8 +168,8 @@ worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
 When the project ID is omitted in an interactive terminal, sbxm shows one
 prompt. Use the up and down cursor keys to choose a project, the left and right
 cursor keys to adjust its zero-based managed worktree index, and press Enter
-once to confirm both. So that it appears immediately, the prompt opens without
-reading project metadata. Until that project's result arrives, the index line
+once to confirm both. After authentication succeeds, the prompt opens without
+waiting for project metadata. Until that project's result arrives, the index line
 reads `(calculating)` rather than naming a range sbxm cannot yet know; the index
 still moves in the meantime. Metadata is calculated in the background, and when
 the result arrives the prompt shows that project's own range and holds the index
@@ -185,6 +185,12 @@ Inside the sandbox, worktrees are located at:
 ```
 
 ## Daily use
+
+`open`, `apply`, `repair`, `rebuild`, `stop`, `destroy`, `ls`, and project or
+interactive `status` check Docker Sandboxes authentication before selecting a
+project. If sign-in is required, sbxm reports `sbx-login-missing` and asks you to
+run `sbx login`. `status --global` remains available to diagnose login and other
+host requirements together. `add` does not require Docker Sandboxes login.
 
 ```sh
 # See every managed project and its sandbox state
@@ -215,7 +221,7 @@ followed by registered project IDs.
 In a non-interactive terminal, provide an explicit project argument for these
 commands; `status` accepts either a project ID or `--global`. Normal `rebuild`
 and `destroy` still refuse in a non-interactive terminal because their protected
-flows require an interactive, exact sandbox-name confirmation. `destroy --force`
+flows require an interactive confirmation typed by hand. `destroy --force`
 is the only non-interactive bypass for destroy; it skips those checks
 and does not make the discarded data recoverable.
 
@@ -240,8 +246,8 @@ does not show by itself: local branches kept out of the checkout, tags, notes,
 stash entries, extra remotes, and reflog-only commits. Save or resolve any
 reported Layer A blocker before retrying. `status` keeps the worktree's
 `STATE` and its origin recovery evidence in a separate `REMOTE` column.
-Normal rebuild always requires an interactive plan and exact sandbox-name
-confirmation; it refuses rather than silently skipping that confirmation in a
+Normal rebuild always requires an interactive plan and a typed confirmation of
+the project ID; it refuses rather than silently skipping that confirmation in a
 non-interactive terminal.
 
 ### Choose the sandbox root size
@@ -363,11 +369,12 @@ Normal teardown checks for dirty worktrees, unpublished commits, repository-leve
 refs, and active sbxm sessions. A stopped sandbox is started so those checks can
 read it, and a notice says so next to the plan; the start prepares nothing else,
 and cancelling the confirmation leaves the sandbox running. In an interactive
-terminal, it then asks you to type the sandbox name. Removing the sandbox itself
-also respects Docker Sandboxes' own runtime check for anything still attached to
-it (a session sbxm did not start) — sbxm answers that confirmation internally,
-so you are not asked twice. A normal destroy in a non-interactive terminal
-refuses rather than skipping the exact-name confirmation.
+terminal, it then asks you to type the project ID, and asks again when what you
+typed names something else.
+Removing the sandbox itself also respects Docker Sandboxes' own runtime check
+for anything still attached to it (a session sbxm did not start) — sbxm answers
+that confirmation internally, so you are not asked twice. A normal destroy in a
+non-interactive terminal refuses rather than skipping that confirmation.
 
 The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
 registered for that sandbox are deleted. A registration left behind would make

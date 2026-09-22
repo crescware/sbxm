@@ -19,6 +19,18 @@ pub fn exec(
     host: &dyn HostEnvironment,
     prompt: &mut PromptUi,
 ) -> ExitCode {
+    // 明示したglobal診断は、未loginでもほかの前提をすべて報告する。
+    // 対話実行はglobalを含むscope選択そのものより前に確認する。
+    if !matches!(scope, Scope::Global) {
+        let locale = match context.tolerant_locale() {
+            Ok(locale) => locale,
+            Err(error) => return report(ui, &error),
+        };
+        ui.set_locale(locale);
+        if let Err(error) = crate::support::login::require_signed_in(host) {
+            return report(ui, &error);
+        }
+    }
     match scope {
         Scope::Global => global(context, ui, host),
         Scope::Project(project) => project_scope(project, context, ui, host),
