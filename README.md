@@ -168,8 +168,8 @@ worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
 When the project ID is omitted in an interactive terminal, sbxm shows one
 prompt. Use the up and down cursor keys to choose a project, the left and right
 cursor keys to adjust its zero-based managed worktree index, and press Enter
-once to confirm both. So that it appears immediately, the prompt opens without
-reading project metadata. Until that project's result arrives, the index line
+once to confirm both. After authentication succeeds, the prompt opens without
+waiting for project metadata. Until that project's result arrives, the index line
 reads `(calculating)` rather than naming a range sbxm cannot yet know; the index
 still moves in the meantime. Metadata is calculated in the background, and when
 the result arrives the prompt shows that project's own range and holds the index
@@ -185,6 +185,12 @@ Inside the sandbox, worktrees are located at:
 ```
 
 ## Daily use
+
+`open`, `apply`, `repair`, `rebuild`, `stop`, `destroy`, `ls`, and project or
+interactive `status` check Docker Sandboxes authentication before selecting a
+project. If sign-in is required, sbxm reports `sbx-login-missing` and asks you to
+run `sbx login`. `status --global` remains available to diagnose login and other
+host requirements together. `add` does not require Docker Sandboxes login.
 
 ```sh
 # See every managed project and its sandbox state

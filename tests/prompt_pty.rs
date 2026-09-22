@@ -503,6 +503,7 @@ fn escape_at_the_identity_prompt_keeps_the_language_and_registers_nothing() -> C
 #[test]
 fn a_multiple_selection_takes_nothing_until_the_space_key_marks_it() -> Checked {
     let (home, base, bin) = home_with_project()?;
+    without_sandboxes(&bin)?;
 
     let mut session = Session::start(home.path(), &base, &bin, &["stop"])?;
     // 未選択のまま確定しようとしても、promptは終わらない。
@@ -522,13 +523,49 @@ fn a_multiple_selection_takes_nothing_until_the_space_key_marks_it() -> Checked 
         "{}",
         ended.text()
     );
-    // 対象は決まり、実行はhost toolの不在で止まる。
-    assert_eq!(ended.code, 1, "{}", ended.text());
-    assert!(
-        ended.text().contains("external-command-not-found"),
-        "{}",
-        ended.text()
-    );
+    // 認証と選択を通過し、Sandboxが無い案件の停止は何も変えず成功する。
+    assert_eq!(ended.code, 0, "{}", ended.text());
+    Ok(())
+}
+
+#[test]
+fn missing_login_is_reported_without_waiting_for_a_project_selection() -> Checked {
+    let (home, base, bin) = home_with_project()?;
+    install(
+        &bin,
+        "sbx",
+        "#!/bin/sh\n\
+         printf '%s\\n' 'ERROR: list sandboxes: list local runtimes: list runtimes: request failed: 401 Unauthorized: user is not authenticated to Docker: secret not found' >&2\n\
+         printf '%s\\n' 'no valid user session found, please sign in to Docker to proceed' >&2\n\
+         printf '\\nSign in with: sbx login\\n' >&2\n\
+         exit 1\n",
+    )?;
+    for args in [
+        vec!["open"],
+        vec!["open", "--index", "0"],
+        vec!["apply", "--files"],
+        vec!["repair"],
+        vec!["rebuild"],
+        vec!["stop"],
+        vec!["destroy"],
+        vec!["ls"],
+        vec!["status"],
+    ] {
+        // 入力を1文字も送らない。未loginを検出したcommandはpromptで待たず終了する。
+        let ended = Session::start(home.path(), &base, &bin, &args)?.finish()?;
+        let text = ended.text();
+        assert_eq!(ended.code, 1, "{args:?}: {text}");
+        assert!(text.contains("sbx-login-missing"), "{args:?}: {text}");
+        assert!(text.contains("sbx login"), "{args:?}: {text}");
+        assert!(
+            !text.contains("external-command-failed"),
+            "{args:?}: {text}"
+        );
+        assert!(
+            !text.contains("owner/repo"),
+            "{args:?}: no project prompt: {text}"
+        );
+    }
     Ok(())
 }
 

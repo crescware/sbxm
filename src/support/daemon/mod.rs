@@ -7,8 +7,10 @@
 //! 作成したSandboxの中から観測する（`sandbox::require_credentials_isolated`）。
 
 mod list;
+mod list_with_timeout;
 
 pub use list::list;
+pub use list_with_timeout::list_with_timeout;
 
 #[cfg(test)]
 #[path = "daemon_test.rs"]

@@ -49,6 +49,7 @@ impl FakeHost {
             .responding("uname -m", "arm64\n")
             .responding("docker version --format {{.Server.Version}}", "27.0.3\n")
             .responding("sbx version", "sbx version 0.42.1\n")
+            .responding("sbx ls --json", r#"{"sandboxes":[]}"#)
             .responding("git config --global --get-all user.name", "Example User\n")
             .responding(
                 "git config --global --get-all user.email",

@@ -103,6 +103,7 @@ fn a_sandbox_that_disappeared_after_it_was_confirmed_is_reported_instead_of_rebu
     *host.listing.borrow_mut() = vec![
         r#"{"sandboxes":[]}"#.to_string(),
         running(&fixture, &project)?,
+        running(&fixture, &project)?,
     ];
 
     let ran = run(&fixture, &host, project.sandbox.as_str())?;

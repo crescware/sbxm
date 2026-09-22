@@ -46,6 +46,19 @@ impl CommandOutcome {
             return Ok(self);
         }
         let failure = self.failure();
+        if self.program == "sbx" && super::protocol::is_login_missing(&self.stderr) {
+            return Err(Error::single(
+                crate::diagnostics::Diagnostic::new(
+                    ErrorId::SbxLoginMissing,
+                    msg!("error-sbx-login-missing"),
+                )
+                .remediation(
+                    crate::design::Remediation::text(msg!("remediation-sbx-login"))
+                        .try_run("sbx login"),
+                )
+                .external(failure),
+            ));
+        }
         Err(Error::single(
             crate::diagnostics::Diagnostic::new(
                 ErrorId::ExternalCommandFailed,

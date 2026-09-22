@@ -3,6 +3,7 @@
 //! exit codeは`0`、`1`、`130`だけを使う。CLI parserを含む内部libraryの既定exit codeを
 //! 公開契約へ透過しない。helpとusageは選択したlocaleで生成する。
 
+mod authenticated_host;
 mod outcome;
 mod temp_home;
 
@@ -41,6 +42,14 @@ impl Run {
 /// 実行のたびにHOMEを差し替えるため、利用者のconfigには触れない。
 fn sbxm(home: &Path, arguments: &[&str]) -> Checked<Run> {
     sbxm_in(home, home, arguments)
+}
+
+fn sbxm_after_login(home: &Path, arguments: &[&str]) -> Checked<Run> {
+    let output = authenticated_host::command(home)?
+        .args(arguments)
+        .output()
+        .required_because("sbxm runs after a successful authentication probe")?;
+    Run::from(&output)
 }
 
 /// 親directoryを明示してsbxmを実行する。
@@ -777,8 +786,8 @@ fn first_column(table: &str) -> Vec<String> {
 fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() -> Checked {
     let (home, _base) = home_with_project("owner/repo")?;
 
-    // host toolが無い環境でも、取得できた項目は後続検査の失敗にかかわらず表示する。
-    let run = sbxm(home.path(), &["--lang", "en", "status", "owner/repo"])?;
+    // 認証を確認した後の観測が失敗しても、取得できた項目は表示する。
+    let run = sbxm_after_login(home.path(), &["--lang", "en", "status", "owner/repo"])?;
     assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
 
     let (project, worktrees) = run
@@ -829,7 +838,7 @@ fn project_status_keeps_the_items_it_could_read_and_names_the_global_command() -
 fn the_japanese_project_status_translates_the_labels_and_keeps_the_values() -> Checked {
     let (home, _base) = home_with_project("owner/repo")?;
 
-    let run = sbxm(home.path(), &["--lang", "ja", "status", "owner/repo"])?;
+    let run = sbxm_after_login(home.path(), &["--lang", "ja", "status", "owner/repo"])?;
     assert_eq!(run.code, 1, "{}{}", run.stdout, run.stderr);
     // section名と項目名は訳し、状態値は訳さない。
     assert!(run.stdout.contains("案件 (PROJECT)"), "{}", run.stdout);
@@ -846,7 +855,7 @@ fn apply_refuses_a_project_that_was_never_added() -> Checked {
     std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
     write_config(home.path(), "en")?;
 
-    let run = sbxm(
+    let run = sbxm_after_login(
         home.path(),
         &["--lang", "en", "apply", "--files", "owner/repo"],
     )?;
@@ -870,10 +879,9 @@ fn every_command_that_targets_a_project_refuses_one_that_was_never_added() -> Ch
     std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
     write_config(home.path(), "en")?;
 
-    // 対象が決まる前にhostの状態へ触れない。host toolが1つも無い環境でも、
-    // 未登録であることだけを理由として断る。
+    // 認証を確認した後は、未登録の案件に対してruntime操作へ進まない。
     for command in PROJECT_COMMANDS {
-        let run = sbxm(home.path(), &["--lang", "en", command, "owner/repo"])?;
+        let run = sbxm_after_login(home.path(), &["--lang", "en", command, "owner/repo"])?;
         assert_eq!(run.code, 1, "{command}: {}", run.stderr);
         assert!(
             run.stdout.is_empty(),
