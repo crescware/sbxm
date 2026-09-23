@@ -107,6 +107,14 @@ impl ProjectPaths {
             .join(format!("template-{short_hash}.tar.tmp"))
     }
 
+    /// `<project-root>/.sbxm/incoming`
+    ///
+    /// Sandboxから受け取ったbyte列を置く隔離領域。受け取った内容は信用せず、利用者の
+    /// fileへ採用するまでここから出さない。
+    pub fn incoming_dir(&self) -> PathBuf {
+        self.sbxm_dir().join("incoming")
+    }
+
     /// `<project-root>/.sbxm/.snapshot`
     ///
     /// 初回構築の1回の実行中だけ生きる、private な入力snapshot置き場。
