@@ -5,7 +5,6 @@ use std::fs;
 use std::path::Path;
 
 use crate::boundary::host::CommandSpec;
-use crate::hash::sha256_hex;
 use crate::paths;
 use crate::testing::archive::{image_archive_bytes, index_id};
 
@@ -185,19 +184,11 @@ impl World {
                 );
                 (0, table)
             }
-            ["cp", "--follow-link", source, target] => {
-                let (Ok(bytes), Some((_, path))) = (fs::read(source), target.split_once(':'))
-                else {
-                    return (1, String::new());
-                };
-                let digest = sha256_hex(&bytes);
-                let path = path.to_string();
-                self.present.borrow_mut().insert(path.clone());
-                self.digests.borrow_mut().insert(path, digest);
-                (0, String::new())
-            }
             ["daemon", ..] => (0, String::new()),
-            _ => self.sandbox_exec(&args),
+            _ => match spec.input() {
+                Some(input) => self.receive(&args, input),
+                None => self.sandbox_exec(&args),
+            },
         }
     }
 }

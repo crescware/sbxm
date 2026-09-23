@@ -65,6 +65,7 @@ fn capture<O: Read + AsFd, E: Read + AsFd>(
         spec,
         limit,
         signal,
+        None::<InputFeed<'_, std::io::Sink>>,
         stdout,
         stderr,
         &mut |stream, bytes| match stream {
@@ -420,6 +421,7 @@ fn a_relay_hands_both_streams_to_one_receiver_in_the_order_they_arrive() -> Chec
         relayed.spec(),
         None,
         None,
+        None::<InputFeed<'_, std::io::Sink>>,
         ScriptedPipe::new([ReadStep::Bytes(b"out")])?,
         ScriptedPipe::new([ReadStep::Bytes(b"err")])?,
         &mut |_, bytes| output.relay(bytes),
@@ -428,5 +430,125 @@ fn a_relay_hands_both_streams_to_one_receiver_in_the_order_they_arrive() -> Chec
 
     assert!(status.success());
     assert_eq!(output.text(), "outerr");
+    Ok(())
+}
+
+// --- stdinへ渡すbyte列 ---
+
+/// 書き込みの答えを順に返すstdin。
+struct ScriptedWriter {
+    answers: Vec<std::io::Result<usize>>,
+    written: Vec<u8>,
+}
+
+impl ScriptedWriter {
+    fn answering(answers: Vec<std::io::Result<usize>>) -> ScriptedWriter {
+        ScriptedWriter {
+            answers: answers.into_iter().rev().collect(),
+            written: Vec::new(),
+        }
+    }
+}
+
+impl std::io::Write for ScriptedWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        match self.answers.pop() {
+            Some(Ok(accepted)) => {
+                let accepted = accepted.min(bytes.len());
+                self.written.extend_from_slice(&bytes[..accepted]);
+                Ok(accepted)
+            }
+            Some(Err(error)) => Err(error),
+            None => Ok(0),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn input_is_written_a_piece_at_a_time_and_closed_once_it_is_all_written() -> Checked {
+    use std::io::{Error as IoError, ErrorKind};
+
+    let writer = ScriptedWriter::answering(vec![
+        Ok(2),
+        Err(IoError::from(ErrorKind::WouldBlock)),
+        Err(IoError::from(ErrorKind::Interrupted)),
+        Ok(3),
+    ]);
+    let mut feed = InputFeed::new(writer, b"hello");
+    // 子がまだ読んでいない間は、書けた分だけ進めて戻る。
+    feed.feed().required()?;
+    feed.feed().required()?;
+    feed.feed().required()?;
+    // 残りを書き終えたら書き込み端を閉じ、それ以上は書かない。
+    feed.feed().required()?;
+    feed.feed().required()?;
+    Ok(())
+}
+
+#[test]
+fn a_child_that_stopped_reading_ends_the_input_without_an_error() -> Checked {
+    use std::io::{Error as IoError, ErrorKind};
+
+    let writer = ScriptedWriter::answering(vec![Err(IoError::from(ErrorKind::BrokenPipe))]);
+    let mut feed = InputFeed::new(writer, b"hello");
+    // 結果は子の終了statusが決める。書けなかったことだけで実行を失敗にしない。
+    feed.feed().required()?;
+    feed.feed().required()?;
+
+    // 何も受け付けない書き込み端も、次に書ける時まで待つだけである。
+    let mut stalled = InputFeed::new(ScriptedWriter::answering(Vec::new()), b"hello");
+    stalled.feed().required()?;
+    Ok(())
+}
+
+#[test]
+fn input_that_cannot_be_written_ends_the_child_and_keeps_what_the_os_said() -> Checked {
+    use std::io::Error as IoError;
+
+    let mut child = waiting_child()?;
+    let pid = rustix::process::Pid::from_child(&child);
+    let signal = signal()?;
+    let writer =
+        ScriptedWriter::answering(vec![Err(IoError::other("the pipe could not be written"))]);
+
+    let error = pump(
+        &mut child,
+        &spec(),
+        None,
+        Some(&signal),
+        Some(InputFeed::new(writer, b"hello")),
+        ScriptedPipe::new([])?,
+        ScriptedPipe::new([])?,
+        &mut |_, _| {},
+    )
+    .refused_because("input that cannot be written refuses the run")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandInputUnwritable)
+    );
+    assert_eq!(cause(&error)?, "the pipe could not be written");
+    assert!(is_collected(pid), "the child does not outlive its input");
+    Ok(())
+}
+
+#[test]
+fn input_for_a_child_started_without_an_input_pipe_is_refused() -> Checked {
+    let mut child = child(Stdio::piped(), Stdio::piped())?;
+    let pid = rustix::process::Pid::from_child(&child);
+    let signal = signal()?;
+    let spec = spec().with_input(b"hello".to_vec());
+
+    let error = pump_until_exit(&mut child, &spec, None, Some(&signal), &mut |_, _| {})
+        .refused_because("there is nowhere to write the input")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandInputUnwritable)
+    );
+    assert!(is_collected(pid));
     Ok(())
 }

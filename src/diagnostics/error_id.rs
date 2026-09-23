@@ -117,6 +117,7 @@ error_ids! {
     DeclaredFileUnusable => "declared-file-unusable",
     DeclaredFileConflict => "declared-file-conflict",
     DeclaredFileModified => "declared-file-modified",
+    DeclaredFileTransferIncomplete => "declared-file-transfer-incomplete",
     SandboxIdentityMismatch => "sandbox-identity-mismatch",
     GithubSecretMissing => "github-secret-missing",
     GithubCredentialRejected => "github-credential-rejected",
@@ -199,6 +200,7 @@ error_ids! {
     ExternalCommandFailed => "external-command-failed",
     ExternalCommandTimeout => "external-command-timeout",
     ExternalCommandOutputUnreadable => "external-command-output-unreadable",
+    ExternalCommandInputUnwritable => "external-command-input-unwritable",
     ExternalCommandNotConfirmed => "external-command-not-confirmed",
     ExternalOutputUnparseable => "external-output-unparseable",
 

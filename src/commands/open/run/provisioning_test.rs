@@ -298,7 +298,7 @@ fn a_declared_file_edited_inside_the_sandbox_is_neither_refused_nor_placed_again
         !world
             .since(mark)
             .iter()
-            .any(|call| call.contains("cp --follow-link")),
+            .any(|call| call.contains("exec -i")),
         "the edit is not overwritten: {:?}",
         world.since(mark)
     );

@@ -164,7 +164,7 @@ fn a_declared_file_edited_after_the_snapshot_does_not_change_what_is_copied() ->
         fs::read(&source).required_because("read the original declared file before editing it")?;
 
     let edited = source.clone();
-    world.mutate_before("cp --follow-link", move || {
+    world.mutate_before("exec -i", move || {
         let _ = fs::write(&edited, b"changed = true # raced the copy\n");
     });
 

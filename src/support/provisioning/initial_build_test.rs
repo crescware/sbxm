@@ -327,7 +327,7 @@ fn a_sandbox_side_mutation_failure_carries_the_disk_state_at_that_moment() -> Ch
     for step in [
         "docker image save",
         "template load",
-        "sbx cp --follow-link",
+        "sbx exec -i",
         "config --global user.name",
         "gh config set git_protocol",
         "credential.https://github.com.helper",

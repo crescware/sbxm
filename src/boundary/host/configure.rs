@@ -17,7 +17,12 @@ pub(super) fn configure(spec: &CommandSpec) -> Command {
     }
     match spec.output() {
         OutputPolicy::Capture | OutputPolicy::Relay => {
-            command.stdin(Stdio::null());
+            // 渡すbyte列が無ければ、stdinを待つ子にもすぐEOFを届ける。
+            if spec.input.is_some() {
+                command.stdin(Stdio::piped());
+            } else {
+                command.stdin(Stdio::null());
+            }
             command.stdout(Stdio::piped());
             command.stderr(Stdio::piped());
         }

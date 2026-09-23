@@ -278,7 +278,7 @@ fn the_declared_files_placed_into_the_new_sandbox_become_the_baseline() -> Check
     )
     .required_because("the rebuild places the declared file")?;
 
-    assert!(host.ran("cp --follow-link"), "{:?}", host.calls());
+    assert!(host.ran("exec -i"), "{:?}", host.calls());
     // 以後の`apply`は、この内容のままのfileだけを置き換える。
     let stored = metadata::load(&project.paths)
         .required()?

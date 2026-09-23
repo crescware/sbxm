@@ -16,8 +16,8 @@ pub fn plan_all(
 ) -> Result<Vec<PlannedFile>> {
     let mut planned = Vec::with_capacity(declarations.len());
     let mut refused = Vec::new();
-    for (index, declaration) in declarations.iter().enumerate() {
-        match plan(host, sandbox, index, declaration, conflict)? {
+    for declaration in declarations {
+        match plan(host, sandbox, declaration, conflict)? {
             Ok(file) => planned.push(file),
             Err(diagnostic) => refused.push(diagnostic),
         }

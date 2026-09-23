@@ -265,8 +265,13 @@ fn an_interactive_command_is_handed_the_terminal_and_waited_for_without_a_limit(
     // 終える時期を決めるのは利用者であり、sbxmは待ち切る。
     assert_eq!(command.spec().timeout.duration(), None);
     let mut output = RecordedOutput::new();
-    let outcome = retrying(|| run_with_terminal(&command, &mut output))
-        .required_because("the fake tool runs")?;
+    // 書いたばかりのfake executableは起動に失敗してやり直すことがある。数えるのは
+    // 成立した1回の実行だけにする。
+    let outcome = retrying(|| {
+        output = RecordedOutput::new();
+        run_with_terminal(&command, &mut output)
+    })
+    .required_because("the fake tool runs")?;
 
     assert_eq!(fs::read_to_string(&record).required()?, "ran");
     assert!(outcome.success());
@@ -622,4 +627,44 @@ fn path_lookup_finds_an_executable_placed_at_the_front_of_path() -> Checked {
     assert!(!exists_in_path_value("sbxm-fake-on-path", &original));
     assert!(!exists_on_path("sbxm-fake-on-path"));
     Ok(())
+}
+
+#[test]
+fn input_reaches_the_child_and_ends_with_an_eof() -> Checked {
+    let spec = CommandSpec::capture("sh", &["-c", "cat"]).with_input(b"declared = true\n".to_vec());
+    let outcome = run_fake(&spec).required()?;
+    assert!(outcome.status.success());
+    assert_eq!(outcome.stdout, b"declared = true\n");
+    Ok(())
+}
+
+#[test]
+fn input_larger_than_a_pipe_is_written_while_the_output_is_read() -> Checked {
+    // 子は読んだ分だけ書き返す。書き込みと読み取りのどちらかが待つと、互いに止まる。
+    let input: Vec<u8> = (0..=u8::MAX).cycle().take(1024 * 1024).collect();
+    let spec = CommandSpec::capture("sh", &["-c", "cat"]).with_input(input.clone());
+    let outcome = run_fake(&spec).required()?;
+    assert!(outcome.status.success());
+    assert_eq!(outcome.stdout.len(), input.len());
+    assert!(outcome.stdout == input, "the bytes arrive unchanged");
+    Ok(())
+}
+
+#[test]
+fn a_child_that_never_reads_its_input_still_ends_with_its_own_status() -> Checked {
+    let input = vec![0_u8; 1024 * 1024];
+    let spec = CommandSpec::capture("sh", &["-c", "exit 3"]).with_input(input);
+    let outcome = run_fake(&spec).required()?;
+    assert_eq!(outcome.status.code(), Some(3));
+    Ok(())
+}
+
+#[test]
+fn the_input_never_reaches_a_debug_representation() {
+    // 宣言fileの中身を運ぶ。表示や記録へ出る経路を作らない。
+    let spec = CommandSpec::capture("sh", &["-c", "cat"]).with_input(b"token=secret".to_vec());
+    let shown = format!("{spec:?}");
+    assert!(!shown.contains("secret"), "{shown}");
+    assert!(shown.contains("12 bytes"), "{shown}");
+    assert_eq!(spec.input(), Some(b"token=secret".as_slice()));
 }

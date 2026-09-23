@@ -1,14 +1,14 @@
 use std::io::Read;
 use std::os::fd::AsFd;
-use std::process::{Child, ChildStderr, ChildStdout, ExitStatus};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, ExitStatus};
 use std::time::{Duration, Instant};
 
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 
 use super::{
-    CommandSpec, SignalGuard, Stream, drain_pipe, poll_pipes, set_nonblocking, spawn_failure,
-    terminate_child, unreadable,
+    CommandSpec, InputFeed, SignalGuard, Stream, drain_pipe, poll_pipes, set_nonblocking,
+    spawn_failure, terminate_child, unreadable, unwritable,
 };
 
 /// 直接の子が終わるまで2本のstreamを読み続け、届いたbyteを渡す。
@@ -28,7 +28,30 @@ pub(super) fn pump_until_exit(
     receive: &mut dyn FnMut(Stream, &[u8]),
 ) -> Result<ExitStatus> {
     let (stdout, stderr) = take_pipes(child, spec)?;
-    pump(child, spec, limit, signal, stdout, stderr, receive)
+    let input = take_input(child, spec)?;
+    pump(child, spec, limit, signal, input, stdout, stderr, receive)
+}
+
+/// 渡すbyte列があれば、子の書き込み端を引き取り、待たずに書ける状態にする。
+fn take_input<'a>(
+    child: &mut Child,
+    spec: &'a CommandSpec,
+) -> Result<Option<InputFeed<'a, ChildStdin>>> {
+    let Some(bytes) = spec.input() else {
+        return Ok(None);
+    };
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| std::io::Error::other("the input pipe was not created"))
+        .and_then(|stdin| set_nonblocking(&stdin).map(|()| stdin));
+    match stdin {
+        Ok(stdin) => Ok(Some(InputFeed::new(stdin, bytes))),
+        Err(error) => {
+            terminate_child(child);
+            Err(unwritable(spec, &error.to_string()))
+        }
+    }
 }
 
 /// 子の読み取り端を引き取り、待たずに読める状態にする。
@@ -45,11 +68,13 @@ fn take_pipes(child: &mut Child, spec: &CommandSpec) -> Result<(ChildStdout, Chi
 }
 
 /// 読む相手を型で受け取り、pipeの生死をOSに委ねずに決められるようにする。
-fn pump<O: Read + AsFd, E: Read + AsFd>(
+#[allow(clippy::too_many_arguments)]
+fn pump<O: Read + AsFd, E: Read + AsFd, I: std::io::Write>(
     child: &mut Child,
     spec: &CommandSpec,
     limit: Option<Duration>,
     signal: Option<&SignalGuard>,
+    mut input: Option<InputFeed<'_, I>>,
     stdout: O,
     stderr: E,
     receive: &mut dyn FnMut(Stream, &[u8]),
@@ -63,6 +88,14 @@ fn pump<O: Read + AsFd, E: Read + AsFd>(
         if interrupted() {
             terminate_child(child);
             return Err(Error::Canceled);
+        }
+
+        // 子が読んだ分だけ書き足す。書き終えればstdinを閉じ、子へEOFを届ける。
+        if let Some(feed) = input.as_mut()
+            && let Err(error) = feed.feed()
+        {
+            terminate_child(child);
+            return Err(unwritable(spec, &error.to_string()));
         }
 
         let (stdout_ready, stderr_ready) =
