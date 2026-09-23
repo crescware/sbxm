@@ -11,6 +11,7 @@ mod command;
 mod command_line_values;
 mod context;
 pub mod destroy;
+pub mod files;
 pub mod guide;
 pub mod ls;
 pub mod open;

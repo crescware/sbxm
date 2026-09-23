@@ -73,6 +73,9 @@ error_ids! {
     GlobalStateUnusable => "global-state-unusable",
     FileDeclarationInvalidSource => "file-declaration-invalid-source",
     FileDeclarationInvalidDestination => "file-declaration-invalid-destination",
+    FileAlreadyDeclared => "file-already-declared",
+    FileNotDeclared => "file-not-declared",
+    FileDestinationRequired => "file-destination-required",
 
     // --- Global registry ---
     RegistryUnreadable => "registry-unreadable",

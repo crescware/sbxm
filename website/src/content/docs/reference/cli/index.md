@@ -17,6 +17,7 @@ Commands that use Docker Sandboxes (`open`, `apply`, `repair`, `rebuild`, `stop`
 | [`ls`](./ls/) | List managed projects and unmanaged sandboxes with their states |
 | [`status`](./status/) | Show host or project status without changing it |
 | [`apply`](./apply/) | Apply declared files or add managed worktrees |
+| [`files`](./files/) | Declare host files to place in every sandbox, list them, or remove a declaration |
 | [`rebuild`](./rebuild/) | Rebuild a project sandbox from its Dockerfile; the old writable layer is lost |
 | [`stop`](./stop/) | Stop one or more project sandboxes without deleting them |
 | [`destroy`](./destroy/) | Destroy a project sandbox and stop managing the project |

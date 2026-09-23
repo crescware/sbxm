@@ -8,13 +8,14 @@ use super::edit_config;
 pub(super) fn set_top_level(text: &str, entries: &[(&str, &str)]) -> Option<String> {
     edit_config(
         text,
-        |root| {
+        |file, root| {
             // 足すkeyはどれも`version`の直後へ入り、あとから足したkeyが前のkeyを押し
             // 下げる。`entries`の順に並ぶよう逆から足す。
             entries
                 .iter()
                 .rev()
                 .all(|(key, value)| root.insert_after("version", *key, *value))
+                .then(|| file.to_string())
         },
         |expected| {
             for (key, value) in entries {

@@ -324,7 +324,21 @@ worktree数は増やすことだけができます。デフォルトのattached 
 
 ### 設定ファイルを配置する
 
-ホスト側のファイルを`~/.sbxm/config.yaml`に宣言します。
+すべてのSandboxへ配置するホスト側のファイルを宣言します。
+
+```sh
+sbxm files add ~/.claude/CLAUDE.md
+```
+
+配置先を省略すると、home directoryからの相対pathをそのまま使います。この例では
+Sandboxのhomeの`.claude/CLAUDE.md`へ配置します。別の場所へ置く場合は`--dest`を
+指定します。sbxmは、通常のファイルでサイズの上限内であることを確かめ、認証情報に
+よく使われる名前には警告を出します。対話端末では、続けて登録済みのすべての案件へ
+今すぐ配置するかを訊きます。`sbxm files ls`で宣言を一覧し、`sbxm files rm <配置先>`で
+宣言を外します。Sandboxへ配置済みのファイルはそのまま残ります。
+
+宣言は`~/.sbxm/config.yaml`に保存され、手で編集することもできます。sbxmはこのファイルを
+編集するとき、コメントや書き方をそのまま残します。
 
 ```yaml
 version: 1
@@ -433,6 +447,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm status` | 対話端末でhostまたは案件を選択して診断する。`global`を先頭にpromptを表示する |
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
+| `sbxm files add\|ls\|rm ...` | すべてのSandboxへ配置するホスト側のファイルを宣言、一覧、または宣言を外す |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する。`--files --all`で登録済みのすべての案件へ配置する |
 | `sbxm repair [<project-id>]` | SSH接続を開かず、中断または未完成の案件を明示的に準備する。接続時は`open`が同じ復旧を行う |
 | `sbxm rebuild [<project-id>]` | Dockerfileから案件のSandboxを作り直す（元の書き込み可能な層は失われる） |
