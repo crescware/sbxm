@@ -19,6 +19,24 @@ the detailed observations in `sbxm status <project-id>`.
 `not-observed` is different from `missing`: absence is an observation, while
 `not-observed` means that the check itself could not produce an answer.
 
+## Declared files
+
+The `DECLARED FILES` section of a project's status compares every current
+declaration with what sbxm placed at that destination last, once on the host and
+once in the sandbox.
+
+| Value | Column | Meaning | What to do |
+| --- | --- | --- | --- |
+| `unchanged` | both | The same content sbxm placed last. In a sandbox without a record, the same as the host file. | Nothing. |
+| `updated` | HOST | The host file changed after sbxm placed it. | Run `sbxm apply <project-id> --files`. |
+| `unplaced` | HOST | sbxm has not placed this declaration in this project yet. | Run `sbxm apply <project-id> --files`; a project without a sandbox gets it from its first build. |
+| `unreadable` | HOST | The host file cannot be placed as it is. The diagnostic below the table says why. | Fix the file or remove the declaration with `sbxm files rm`. |
+| `modified` | SANDBOX | The sandbox copy was changed after sbxm placed it. `apply --files` leaves it alone. | Save what you need from it before replacing it with `--force`. |
+| `unrecorded` | SANDBOX | The sandbox copy differs from the host file, and sbxm has no record of placing it. | The same as `modified`. |
+| `missing` | SANDBOX | The sandbox has no file at the destination. | Run `sbxm apply <project-id> --files`. |
+
+A stopped sandbox is reported as `not-observed-stopped` and is not started to be read.
+
 ## The next command
 
 `sbxm status <project-id>` ends with at most one command, chosen from the same observation

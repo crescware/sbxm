@@ -5,7 +5,7 @@ use crate::design::Remediation;
 use crate::support::disk::DiskObservation;
 use crate::support::provisioning::NextAction;
 
-use super::{Item, Value, WorktreeRow};
+use super::{FileRow, Item, Value, WorktreeRow};
 
 /// 診断結果。
 #[derive(Debug, Clone)]
@@ -13,6 +13,8 @@ pub struct ProjectStatus {
     pub project: String,
     pub items: Vec<Item>,
     pub worktrees: Vec<WorktreeRow>,
+    /// 現在の宣言fileごとの、hostとSandboxの状態。
+    pub files: Vec<FileRow>,
     /// root filesystemの使用量。`items`とは別に持ち、payloadを持てない`Value`には
     /// 押し込まない。
     pub disk: DiskObservation,

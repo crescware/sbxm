@@ -44,6 +44,10 @@ sbxm apply <project-id> --files --force
 
 Editing a declared file inside the sandbox is not treated as damage: `open` and `repair` neither refuse the project nor put the declared file back over the edit.
 
+## See what changed
+
+`sbxm status <project-id>` lists every declared file with two states: whether the host file changed since sbxm placed it, and whether the sandbox copy was edited. See [Declared files](../../reference/status-values/#declared-files) for the values.
+
 ## Apply to every project
 
 ```sh

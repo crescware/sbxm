@@ -333,6 +333,7 @@ fn bare_status() -> ProjectStatus {
         project: "example-org/example-repo".to_string(),
         items: Vec::new(),
         worktrees: Vec::new(),
+        files: Vec::new(),
         disk: crate::support::disk::DiskObservation::NotObservedMismatch,
         diagnostics: Vec::new(),
         next: None,

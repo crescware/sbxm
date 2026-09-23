@@ -404,6 +404,10 @@ Editing a declared file inside the sandbox does not make `open` or `repair`
 refuse the project, and neither command puts the declared file back over the
 edit.
 
+`sbxm status <project-id>` shows, for every declared file, whether the host file
+changed since sbxm placed it (`updated`) and whether the sandbox copy was edited
+(`modified`).
+
 To place the declarations in every registered project at once:
 
 ```sh
