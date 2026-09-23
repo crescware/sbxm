@@ -221,6 +221,7 @@ error-external-command-spawn-failed = commandを起動できません
 error-external-command-failed = commandが { $exit_status } で失敗しました。
 error-external-command-timeout = command { $program } が { $seconds } 秒以内に終了しなかったため停止しました。
 error-external-command-output-unreadable = commandの出力を最後まで読めません
+error-external-command-output-too-large = commandの出力が { $limit } byteを超えたため、残りを受け取りませんでした
 error-external-command-input-unwritable = commandへの入力を最後まで書けません
 error-external-command-not-confirmed = { $subject } を安全に確認できません。
 error-external-output-unparseable = 出力を解釈できません

@@ -201,6 +201,7 @@ error_ids! {
     ExternalCommandTimeout => "external-command-timeout",
     ExternalCommandOutputUnreadable => "external-command-output-unreadable",
     ExternalCommandInputUnwritable => "external-command-input-unwritable",
+    ExternalCommandOutputTooLarge => "external-command-output-too-large",
     ExternalCommandNotConfirmed => "external-command-not-confirmed",
     ExternalOutputUnparseable => "external-output-unparseable",
 

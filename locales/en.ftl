@@ -221,6 +221,7 @@ error-external-command-spawn-failed = The command could not be started
 error-external-command-failed = The command failed with { $exit_status }.
 error-external-command-timeout = The command { $program } did not finish within { $seconds } seconds and was terminated.
 error-external-command-output-unreadable = The output of the command could not be read to the end
+error-external-command-output-too-large = The output of the command exceeded { $limit } bytes, so the rest was not received
 error-external-command-input-unwritable = The input for the command could not be written to the end
 error-external-command-not-confirmed = { $subject } could not be confirmed safely.
 error-external-output-unparseable = The output could not be interpreted

@@ -38,15 +38,12 @@ fn capture(
 ) -> Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
-    let status = pump_until_exit(
-        child,
-        spec,
-        limit,
-        Some(signal),
-        &mut |stream, bytes| match stream {
+    let status = pump_until_exit(child, spec, limit, Some(signal), &mut |stream, bytes| {
+        match stream {
             Stream::Stdout => stdout.extend_from_slice(bytes),
             Stream::Stderr => stderr.extend_from_slice(bytes),
-        },
-    )?;
+        }
+        Ok(())
+    })?;
     Ok((status, stdout, stderr))
 }

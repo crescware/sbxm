@@ -1,7 +1,9 @@
+use std::io::Write;
+
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
-use super::{CommandOutcome, CommandSpec, PtyConfirmedCommand, TerminalCommand};
+use super::{CommandOutcome, CommandSpec, PtyConfirmedCommand, TerminalCommand, output_too_large};
 
 /// hostに対する外部commandの実行。testでは差し替える。
 pub trait HostEnvironment {
@@ -23,6 +25,26 @@ pub trait HostEnvironment {
         output.relay(&outcome.stdout);
         output.relay(&outcome.stderr);
         output.finished();
+        Ok(outcome)
+    }
+
+    /// 出力をcaptureして実行し、stdoutだけを`sink`へ流す。`limit`byteを超えたら拒否する。
+    ///
+    /// 返す結果のstdoutは空である。既定は`run`へ委ね、captureできたstdoutをまとめて渡す。
+    /// 実際のhostだけが、届いた順に流し、上限を超えた時点で子を終わらせる。
+    fn run_streaming(
+        &self,
+        spec: &CommandSpec,
+        sink: &mut dyn Write,
+        limit: u64,
+    ) -> Result<CommandOutcome> {
+        let mut outcome = self.run(spec)?;
+        if u64::try_from(outcome.stdout.len()).unwrap_or(u64::MAX) > limit {
+            return Err(output_too_large(spec, limit));
+        }
+        sink.write_all(&outcome.stdout)
+            .map_err(|error| super::unreadable(spec, &error.to_string()))?;
+        outcome.stdout.clear();
         Ok(outcome)
     }
 

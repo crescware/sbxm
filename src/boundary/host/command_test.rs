@@ -76,7 +76,10 @@ fn run_capture_after_ready(
         spec,
         Some(limit),
         Some(&signal),
-        &mut |_, bytes| output.extend_from_slice(bytes),
+        &mut |_, bytes| {
+            output.extend_from_slice(bytes);
+            Ok(())
+        },
     )?;
     Ok(())
 }
@@ -667,4 +670,114 @@ fn the_input_never_reaches_a_debug_representation() {
     assert!(!shown.contains("secret"), "{shown}");
     assert!(shown.contains("12 bytes"), "{shown}");
     assert_eq!(spec.input(), Some(b"token=secret".as_slice()));
+}
+
+// --- stdoutを流して受け取る実行 ---
+
+#[test]
+fn a_streamed_run_hands_stdout_to_the_sink_and_keeps_stderr() -> Checked {
+    let spec = CommandSpec::capture("sh", &["-c", "printf received; printf noted >&2"]);
+    let mut sink = Vec::new();
+    let outcome = retrying(|| run_streaming(&spec, &mut sink, 1024)).required()?;
+    assert!(outcome.status.success());
+    assert_eq!(sink, b"received");
+    assert!(outcome.stdout.is_empty(), "stdout is not kept twice");
+    assert_eq!(outcome.stderr, b"noted");
+    Ok(())
+}
+
+#[test]
+fn a_streamed_run_carries_more_than_a_pipe_holds() -> Checked {
+    let spec = CommandSpec::capture("head", &["-c", "2097152", "/dev/zero"]);
+    let mut sink = Vec::new();
+    let outcome = retrying(|| run_streaming(&spec, &mut sink, 4 * 1024 * 1024)).required()?;
+    assert!(outcome.status.success());
+    assert_eq!(sink.len(), 2 * 1024 * 1024);
+    Ok(())
+}
+
+#[test]
+fn output_beyond_the_limit_ends_the_child_and_is_refused() -> Checked {
+    // 終わらない出力でも、上限を超えた時点で子を終わらせる。
+    let spec = CommandSpec::capture("yes", &[]);
+    let mut sink = Vec::new();
+    let started = Instant::now();
+    let error = retrying(|| run_streaming(&spec, &mut sink, 4096))
+        .refused_because("the output never ends")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandOutputTooLarge)
+    );
+    assert!(sink.len() <= 4096, "nothing beyond the limit is kept");
+    assert!(started.elapsed() < Duration::from_secs(5));
+    Ok(())
+}
+
+/// 受け取れないと答える書き込み先。
+struct RefusingSink;
+
+impl std::io::Write for RefusingSink {
+    fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("no space left for the output"))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_sink_that_cannot_take_the_output_refuses_the_run() -> Checked {
+    let spec = CommandSpec::capture("sh", &["-c", "printf received"]);
+    let error = retrying(|| run_streaming(&spec, &mut RefusingSink, 1024))
+        .refused_because("the output has nowhere to go")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandOutputUnreadable)
+    );
+    Ok(())
+}
+
+/// captureしたstdoutを決め打ちで返すhost。既定の`run_streaming`を確かめる。
+struct AnsweringHost(Vec<u8>);
+
+impl HostEnvironment for AnsweringHost {
+    fn command_exists(&self, _program: &str) -> bool {
+        true
+    }
+
+    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+        Ok(crate::testing::command::outcome(
+            spec,
+            0,
+            &String::from_utf8_lossy(&self.0),
+        ))
+    }
+}
+
+#[test]
+fn a_host_without_streaming_hands_over_what_it_captured() -> Checked {
+    let spec = CommandSpec::capture("sbx", &["exec"]);
+    let mut sink = Vec::new();
+    let outcome = AnsweringHost(b"bundle".to_vec())
+        .run_streaming(&spec, &mut sink, 1024)
+        .required()?;
+    assert_eq!(sink, b"bundle");
+    assert!(outcome.stdout.is_empty());
+
+    let error = AnsweringHost(b"bundle".to_vec())
+        .run_streaming(&spec, &mut Vec::new(), 3)
+        .refused_because("the captured output is larger than allowed")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandOutputTooLarge)
+    );
+    let error = AnsweringHost(b"bundle".to_vec())
+        .run_streaming(&spec, &mut RefusingSink, 1024)
+        .refused_because("the output has nowhere to go")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandOutputUnreadable)
+    );
+    Ok(())
 }
