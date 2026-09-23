@@ -79,3 +79,49 @@ fn force_is_accepted_only_together_with_files() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ApplyForceWithoutFiles));
     Ok(())
 }
+
+#[test]
+fn all_takes_the_place_of_a_project_and_needs_no_terminal() -> Checked {
+    // 全案件が対象であり、選ぶ案件が無い。非対話端末でもそのまま受け付ける。
+    for interactivity in [tty(), crate::testing::cli::non_tty()] {
+        assert!(matches!(
+            command(&["apply", "--files", "--all"], interactivity)?,
+            Command::Apply(Args {
+                project: None,
+                all: true,
+                files: true,
+                ..
+            })
+        ));
+    }
+    assert!(matches!(
+        command(&["apply", "--files", "--all", "--force"], tty())?,
+        Command::Apply(Args {
+            all: true,
+            force: true,
+            ..
+        })
+    ));
+    Ok(())
+}
+
+#[test]
+fn all_cannot_be_combined_with_a_project_or_a_worktree_count() -> Checked {
+    for arguments in [
+        vec!["apply", "owner/repo", "--files", "--all"],
+        vec!["apply", "--files", "--all", "--worktrees", "3"],
+    ] {
+        let error =
+            parse_argv(&arguments, tty()).refused_because(&format!("{arguments:?} is refused"))?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ConflictingArguments),
+            "{arguments:?}"
+        );
+    }
+    // 何を配置するかは`--all`だけでは決まらない。
+    let error = parse_argv(&["apply", "--all"], tty())
+        .refused_because("--all alone names nothing to apply")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ApplyScopeRequired));
+    Ok(())
+}

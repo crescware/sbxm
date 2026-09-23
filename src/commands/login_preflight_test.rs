@@ -43,6 +43,15 @@ fn commands(explicit: bool) -> Checked<Vec<Command>> {
         }),
         Command::Apply(apply::Args {
             project: project.clone(),
+            all: false,
+            files: true,
+            force: false,
+            worktrees: None,
+        }),
+        // 全案件への配置も、案件を1件も読む前に認証を確かめる。
+        Command::Apply(apply::Args {
+            project: None,
+            all: true,
             files: true,
             force: false,
             worktrees: None,
@@ -160,7 +169,11 @@ fn authenticated_commands_reach_selection_and_can_be_canceled() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("owner/repo")?;
     for command in commands(false)? {
-        if matches!(command, Command::Ls) {
+        // 全案件が対象の実行には、選ぶ案件が無い。
+        if matches!(
+            command,
+            Command::Ls | Command::Apply(apply::Args { all: true, .. })
+        ) {
             continue;
         }
         let host = RecordingHost {

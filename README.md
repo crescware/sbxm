@@ -389,6 +389,18 @@ Editing a declared file inside the sandbox does not make `open` or `repair`
 refuse the project, and neither command puts the declared file back over the
 edit.
 
+To place the declarations in every registered project at once:
+
+```sh
+sbxm apply --files --all
+```
+
+Each project is locked and handled on its own under the same rules, and one
+project that cannot be applied does not stop the others. Stopped sandboxes are
+not started, and a project without a sandbox gets the declarations from its
+first build; both are listed in the result. The exit status is `1` when any
+project could not be applied.
+
 Keep tokens, private keys, and other credentials out of these files; use Docker
 Sandboxes secrets for those.
 
@@ -465,7 +477,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status` | Select and show the host or a project's status interactively; `global` is first |
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
-| `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees |
+| `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees; `--files --all` places the declared files in every registered project |
 | `sbxm repair [<project-id>]` | Explicitly prepare an interrupted or incomplete project without opening SSH; `open` performs the same recovery when connecting |
 | `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its Dockerfile; the old writable layer is lost |
 | `sbxm destroy [<project-id>]` | Destroy a project's sandbox and stop managing the project, keeping its host clone and Dockerfile |

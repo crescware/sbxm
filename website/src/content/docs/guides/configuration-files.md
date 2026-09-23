@@ -34,6 +34,14 @@ sbxm apply <project-id> --files --force
 
 Editing a declared file inside the sandbox is not treated as damage: `open` and `repair` neither refuse the project nor put the declared file back over the edit.
 
+## Apply to every project
+
+```sh
+sbxm apply --files --all
+```
+
+Each registered project is locked and handled on its own under the same rules. One project that cannot be applied does not stop the others. Stopped sandboxes are not started, and a project without a sandbox gets the declarations from its first build; both appear in the result table. The exit status is `1` when any project could not be applied.
+
 Both apply scopes may be requested together:
 
 ```sh

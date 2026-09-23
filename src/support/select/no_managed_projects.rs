@@ -4,7 +4,7 @@ use crate::msg;
 use crate::repository::CLONE_URL_PLACEHOLDER;
 
 /// 選択候補となる管理案件が0件であることを、対象選択を開始できないerrorとして返す。
-pub(super) fn no_managed_projects() -> Error {
+pub fn no_managed_projects() -> Error {
     Error::single(
         Diagnostic::new(
             ErrorId::NoManagedProjects,

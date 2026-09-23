@@ -9,11 +9,13 @@ use crate::msg;
 use crate::support::files::Placement;
 use crate::support::status::StatusValue;
 
+use crate::commands::apply::ProjectResult;
 use crate::commands::status::project::Value as ProjectValue;
 use crate::commands::stop::StopResult;
 
 use super::{
-    ListState, creation_mode, global_status, placement, project_status, sandbox_state, stop_result,
+    ListState, apply_result, creation_mode, global_status, placement, project_status,
+    sandbox_state, stop_result,
 };
 
 /// Sandboxの状態を説明するmessage ID。host serviceの説明を流用しない。
@@ -85,6 +87,10 @@ impl Legend {
 
     pub fn stop_result(&mut self, result: StopResult) -> Inline {
         self.cell(stop_result(result), result.legend_id())
+    }
+
+    pub fn apply_result(&mut self, result: ProjectResult) -> Inline {
+        self.cell(apply_result(result), result.legend_id())
     }
 
     pub fn creation_mode(&mut self, mode: CreationMode) -> Inline {
