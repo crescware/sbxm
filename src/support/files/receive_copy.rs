@@ -46,9 +46,10 @@ pub fn receive_copy(
         MAX_SOURCE_BYTES,
         TimeoutClass::SandboxLifecycle,
     )?;
-    let received =
-        fs::read(&path).map_err(|error| paths::atomic_write_failed(&path, &error.to_string()))?;
-    let sha256 = sha256_hex(&received);
+    let sha256 = match fs::read(&path) {
+        Ok(received) => sha256_hex(&received),
+        Err(error) => return Err(paths::atomic_write_failed(&path, &error.to_string())),
+    };
     if sha256 != observed {
         let _ = fs::remove_file(&path);
         return Err(Error::single(

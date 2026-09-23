@@ -1,6 +1,6 @@
-use std::fs;
+use std::fs::{self, Permissions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -18,43 +18,18 @@ use super::Pulled;
 /// 置き換えたあとは、hostとSandboxが同じ内容になったことをこの案件のbaselineへ記録する。
 pub fn adopt(pulled: &mut Pulled) -> Result<PathBuf> {
     let source = pulled.declaration.source.as_path().to_path_buf();
-    let changed = |reason| {
-        Error::single(
+    if files::read_source(&source)? != pulled.host_sha256 {
+        return Err(Error::single(
             Diagnostic::new(
                 ErrorId::DeclaredFileUnusable,
                 msg!("error-declared-file-unusable"),
             )
             .fact(Fact::source(&paths::display(&source)))
-            .fact(Fact::reason(reason)),
-        )
-    };
-    if files::read_source(&source)? != pulled.host_sha256 {
-        return Err(changed(msg!("cause-host-file-changed-while-deciding")));
+            .fact(Fact::reason(msg!("cause-host-file-changed-while-deciding"))),
+        ));
     }
-    let failed =
-        |error: &dyn std::fmt::Display| paths::atomic_write_failed(&source, &error.to_string());
-    let bytes = fs::read(&pulled.copy.path).map_err(|error| failed(&error))?;
-    let permissions = fs::metadata(&source)
-        .map_err(|error| failed(&error))?
-        .permissions();
-    let parent = source
-        .parent()
-        .ok_or_else(|| failed(&"the file has no parent directory"))?;
-    let mut temporary = tempfile::Builder::new()
-        .prefix(".sbxm-adopting-")
-        .tempfile_in(parent)
-        .map_err(|error| failed(&error))?;
-    temporary
-        .as_file()
-        .set_permissions(permissions)
-        .map_err(|error| failed(&error))?;
-    temporary
-        .write_all(&bytes)
-        .and_then(|()| temporary.as_file().sync_all())
-        .map_err(|error| failed(&error))?;
-    temporary
-        .persist(&source)
-        .map_err(|error| failed(&error.error))?;
+    replace(&source, &pulled.copy.path)
+        .map_err(|error| paths::atomic_write_failed(&source, &error.to_string()))?;
 
     let recorded = InitialProvisioningFile {
         source: paths::display(&source),
@@ -76,4 +51,21 @@ pub fn adopt(pulled: &mut Pulled) -> Result<PathBuf> {
     pulled.locked.metadata.declared_files = Some(baseline);
     metadata::update(&pulled.locked.paths, &pulled.locked.metadata)?;
     Ok(source)
+}
+
+/// `target`を`received`の内容で置き換える。元のpermissionを保ち、renameで入れ替える。
+fn replace(target: &Path, received: &Path) -> std::io::Result<()> {
+    let bytes = fs::read(received)?;
+    let permissions: Permissions = fs::metadata(target)?.permissions();
+    let parent = target
+        .parent()
+        .ok_or_else(|| std::io::Error::other("the file has no parent directory"))?;
+    let mut temporary = tempfile::Builder::new()
+        .prefix(".sbxm-adopting-")
+        .tempfile_in(parent)?;
+    temporary.as_file().set_permissions(permissions)?;
+    temporary.write_all(&bytes)?;
+    temporary.as_file().sync_all()?;
+    temporary.persist(target).map_err(|error| error.error)?;
+    Ok(())
 }

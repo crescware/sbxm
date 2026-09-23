@@ -281,3 +281,43 @@ fn what_cannot_be_pulled_is_refused_by_its_own_reason() -> Checked {
     assert!(ran.stderr.contains("sandbox-not-running"), "{}", ran.stderr);
     Ok(())
 }
+
+#[test]
+fn a_destination_outside_the_sandbox_home_or_a_project_without_a_sandbox_is_refused() -> Checked {
+    let (bench, world, project) = built()?;
+    let config = config::load(&bench.location).required()?.settings();
+    let error = pull(
+        &bench.location,
+        &config,
+        "../outside",
+        Some(&project),
+        &mut ScriptedPrompt::choosing(0),
+        &world,
+        bench.workspace_root.path(),
+    )
+    .err()
+    .required_because("the destination leaves the sandbox home")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::FileDeclarationInvalidDestination)
+    );
+
+    // 登録しただけの案件には、取り出すSandboxが無い。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench.register(&world, &request).required()?;
+    let error = pull(
+        &bench.location,
+        &bench.config,
+        DESTINATION,
+        Some(&project_of(&request)?),
+        &mut ScriptedPrompt::choosing(0),
+        &world,
+        bench.workspace_root.path(),
+    )
+    .err()
+    .required_because("there is no sandbox yet")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
+    Ok(())
+}

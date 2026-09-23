@@ -22,12 +22,23 @@ pub fn add(
     source: &Path,
     destination: Option<&str>,
 ) -> Result<Added> {
+    let source_text = paths::display(source);
+    let source = HostFileSource::new(&source_text).map_err(|reason| {
+        Error::single(
+            Diagnostic::new(
+                ErrorId::FileDeclarationInvalidSource,
+                msg!("error-file-declaration-invalid-source"),
+            )
+            .fact(Fact::source(&source_text))
+            .fact(Fact::reason(reason)),
+        )
+    })?;
     // 配置と同じ検査を通す。symbolic link、通常fileでないもの、上限を超える大きさは、
     // 宣言した時点で分かる。
-    files::read_source_bytes(source)?;
+    files::read_source_bytes(source.as_path())?;
     let given = match destination {
         Some(given) => given.to_string(),
-        None => home_relative(location, source)?,
+        None => home_relative(location, source.as_path())?,
     };
     // 検証してから`./`などを除く。`.`のように、除くと何も残らない値もここで拒否する。
     let destination = SandboxHomeRelativePath::new(&given)
@@ -42,17 +53,6 @@ pub fn add(
                 .fact(Fact::reason(reason)),
             )
         })?;
-    let source_text = paths::display(source);
-    let source = HostFileSource::new(&source_text).map_err(|reason| {
-        Error::single(
-            Diagnostic::new(
-                ErrorId::FileDeclarationInvalidSource,
-                msg!("error-file-declaration-invalid-source"),
-            )
-            .fact(Fact::source(&source_text))
-            .fact(Fact::reason(reason)),
-        )
-    })?;
     let declaration = FileDeclaration {
         source,
         destination,
@@ -107,7 +107,11 @@ pub fn add(
 /// home directoryからの相対path。homeの外にあるfileは、配置先を決められない。
 fn home_relative(location: &ConfigLocation, source: &Path) -> Result<String> {
     // sourceの親はすでに実体のpathへ解決してある。homeも同じ形にしてから比べる。
-    let home = std::fs::canonicalize(location.home()).unwrap_or_else(|_| location.home().into());
+    let home = match std::fs::canonicalize(location.home()) {
+        Ok(home) => home,
+        // 実体を解決できないhomeも、そのままの綴りで比べる。
+        Err(_) => location.home().to_path_buf(),
+    };
     match source.strip_prefix(&home) {
         Ok(relative) if !relative.as_os_str().is_empty() => Ok(paths::display(relative)),
         _ => {

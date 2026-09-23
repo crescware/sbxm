@@ -9,10 +9,9 @@ use crate::support::select::ProjectPrompt;
 /// 足している。配置しない選択も同じ画面で選べる。
 pub fn ask_to_apply(prompt: &mut dyn ProjectPrompt, count: usize, locale: Locale) -> Result<bool> {
     let catalog = Catalog::new(locale);
-    let label = |id: &str| {
-        catalog
-            .text(id)
-            .unwrap_or_else(|failure| failure.to_string())
+    let label = |id: &str| match catalog.text(id) {
+        Ok(text) => text,
+        Err(failure) => failure.to_string(),
     };
     let choices = [
         label("prompt-files-apply-now"),

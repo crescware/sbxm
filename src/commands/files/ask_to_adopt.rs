@@ -11,10 +11,9 @@ use crate::support::select::ProjectPrompt;
 /// hostのfileを書き換える選択であるため、残す選択を先頭に置く。
 pub fn ask_to_adopt(prompt: &mut dyn ProjectPrompt, source: &Path, locale: Locale) -> Result<bool> {
     let catalog = Catalog::new(locale);
-    let label = |id: &str| {
-        catalog
-            .text(id)
-            .unwrap_or_else(|failure| failure.to_string())
+    let label = |id: &str| match catalog.text(id) {
+        Ok(text) => text,
+        Err(failure) => failure.to_string(),
     };
     let choices = [
         label("prompt-files-pull-keep"),

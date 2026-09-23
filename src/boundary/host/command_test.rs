@@ -781,3 +781,38 @@ fn a_host_without_streaming_hands_over_what_it_captured() -> Checked {
     );
     Ok(())
 }
+
+/// 受け取れるが、書き終えられない書き込み先。
+struct UnflushableSink(Vec<u8>);
+
+impl std::io::Write for UnflushableSink {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Err(std::io::Error::other("the output could not be finished"))
+    }
+}
+
+#[test]
+fn a_sink_that_cannot_finish_the_output_refuses_the_run() -> Checked {
+    let spec = CommandSpec::capture("sh", &["-c", "printf received"]);
+    let error = retrying(|| run_streaming(&spec, &mut UnflushableSink(Vec::new()), 1024))
+        .refused_because("the output was not finished")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandOutputUnreadable)
+    );
+    Ok(())
+}
+
+#[test]
+fn the_real_host_streams_stdout_itself() -> Checked {
+    let spec = CommandSpec::capture("sh", &["-c", "printf received"]);
+    let mut sink = Vec::new();
+    retrying(|| RealHost.run_streaming(&spec, &mut sink, 1024)).required()?;
+    assert_eq!(sink, b"received");
+    Ok(())
+}

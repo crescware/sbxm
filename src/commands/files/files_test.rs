@@ -296,3 +296,41 @@ fn the_host_git_shows_how_two_files_differ() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     Ok(())
 }
+
+#[test]
+fn adopting_is_asked_with_keeping_the_host_file_first() -> Checked {
+    use crate::i18n::Locale;
+    use crate::testing::prompt::ScriptedPrompt;
+
+    let source = Path::new("/Users/example/.claude/CLAUDE.md");
+    assert!(!ask_to_adopt(&mut ScriptedPrompt::choosing(0), source, Locale::En).required()?);
+    assert!(ask_to_adopt(&mut ScriptedPrompt::choosing(1), source, Locale::Ja).required()?);
+    let error = ask_to_adopt(&mut ScriptedPrompt::choosing(2), source, Locale::En)
+        .refused_because("an index outside the choices is refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
+    Ok(())
+}
+
+#[test]
+fn a_relative_source_or_an_unresolvable_home_is_never_guessed_at() -> Checked {
+    let (_home, location, _) = home_with("placeholder", b"")?;
+    let error = add(
+        &location,
+        &GlobalConfig::default(),
+        Path::new("relative/notes.md"),
+        Some(".config/notes.md"),
+    )
+    .refused_because("a relative source names no single file")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::FileDeclarationInvalidSource)
+    );
+
+    // homeの実体を解決できなくても、そのままの綴りで比べる。外にあるfileは外である。
+    let (_elsewhere, _, outside) = home_with("notes.md", b"notes\n")?;
+    let missing = ConfigLocation::from_home(PathBuf::from("/nonexistent-sbxm-home"));
+    let error = add(&missing, &GlobalConfig::default(), &outside, None)
+        .refused_because("the file is not under that home")?;
+    assert_eq!(error.first_id(), Some(ErrorId::FileDestinationRequired));
+    Ok(())
+}
