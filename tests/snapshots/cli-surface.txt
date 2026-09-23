@@ -23,8 +23,9 @@ sbxm
     id=color --color value=auto|always|never args=1 global action=Set order=901
   files
     id=help --help -h args=0 action=Help order=1000
-    id=action positional value=add|ls|rm args=1 action=Set order=999
+    id=action positional value=add|ls|rm|pull args=1 action=Set order=999
     id=path positional value=path args=1 action=Set order=999
+    id=project positional value=project-id args=1 action=Set order=999
     id=dest --dest value=destination args=1 action=Set order=1
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901

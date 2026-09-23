@@ -933,3 +933,36 @@ fn every_file_that_cannot_be_placed_is_named_before_anything_is_placed() -> Chec
     assert!(!host.placed(), "nothing is copied: {:?}", host.calls());
     Ok(())
 }
+
+#[test]
+fn a_sandbox_copy_that_changes_while_it_is_read_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
+    let incoming = dir.path().join("incoming");
+    // 観測したdigestと、`cat`が返した内容が一致しない。
+    let host = FakeSbx::holding("/home/agent/.gitconfig", b"observed\n");
+
+    let error = receive_copy(
+        &host,
+        "sbxm-example",
+        &declaration(&source, ".gitconfig")?,
+        &incoming,
+    )
+    .refused_because("the copy changed while it was read")?;
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileUnusable));
+    assert!(
+        fs::read_dir(&incoming).required()?.next().is_none(),
+        "nothing is kept"
+    );
+
+    // Sandboxに無いfileは、受け取るものが無い。
+    let absent = receive_copy(
+        &FakeSbx::empty(),
+        "sbxm-example",
+        &declaration(&source, ".gitconfig")?,
+        &incoming,
+    )
+    .required()?;
+    assert!(absent.is_none());
+    Ok(())
+}

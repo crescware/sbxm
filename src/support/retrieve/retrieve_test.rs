@@ -39,7 +39,7 @@ fn answering(stdout: &[u8], code: i32) -> Answering {
 fn leftovers(directory: &std::path::Path) -> Checked<Vec<String>> {
     Ok(fs::read_dir(directory)
         .required()?
-        .filter_map(|entry| entry.ok())
+        .filter_map(std::result::Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect())
 }

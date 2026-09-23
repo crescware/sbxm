@@ -262,3 +262,37 @@ fn the_question_is_answered_by_which_of_its_two_choices_was_taken() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
     Ok(())
 }
+
+#[test]
+fn control_and_direction_characters_are_shown_rather_than_obeyed() {
+    assert_eq!(visible("plain\ttext\n"), "plain\ttext\n");
+    assert_eq!(visible("日本語 🙂"), "日本語 🙂");
+    assert_eq!(visible("\u{1b}[2Kgone"), "\\u{1b}[2Kgone");
+    assert_eq!(
+        visible("a\u{202e}b\u{2066}c\u{200f}"),
+        "a\\u{202e}b\\u{2066}c\\u{200f}"
+    );
+    assert_eq!(visible("bell\u{7}\r"), "bell\\u{7}\\u{d}");
+}
+
+#[test]
+fn the_host_git_shows_how_two_files_differ() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let before = dir.path().join("before.md");
+    let after = dir.path().join("after.md");
+    fs::write(&before, b"line\nold\n").required()?;
+    fs::write(&after, b"line\nnew\n").required()?;
+    let host = crate::boundary::host::RealHost;
+
+    let diff = host_diff(&host, &before, &after).required()?;
+    assert!(diff.contains("-old") && diff.contains("+new"), "{diff}");
+
+    // 同じ内容には差分が無い。
+    assert!(host_diff(&host, &before, &before).required()?.is_empty());
+
+    // gitが比べられなければ、差分が無いとは読まない。
+    let error = host_diff(&host, &before, &dir.path().join("absent.md"))
+        .refused_because("there is nothing to compare")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    Ok(())
+}

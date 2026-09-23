@@ -58,7 +58,7 @@ impl Command {
                     &arguments, prompt,
                 )?)),
                 "files" => Ok(Command::Files(files::CommandLineParser::interpret(
-                    &arguments,
+                    &arguments, prompt,
                 )?)),
                 "guide" => Ok(Command::Guide(guide::CommandLineParser::interpret(
                     &arguments, prompt,

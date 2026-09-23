@@ -75,6 +75,7 @@ error_ids! {
     FileDeclarationInvalidDestination => "file-declaration-invalid-destination",
     FileAlreadyDeclared => "file-already-declared",
     FileNotDeclared => "file-not-declared",
+    FileNotInSandbox => "file-not-in-sandbox",
     FileDestinationRequired => "file-destination-required",
 
     // --- Global registry ---

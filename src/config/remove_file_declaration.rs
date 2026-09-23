@@ -1,13 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths::{self};
 
 use super::{
-    ConfigLocation, ConfigState, FileDeclaration, SandboxHomeRelativePath, parse, read_existing,
-    remove_file_entry, write_config,
+    ConfigLocation, ConfigState, FileDeclaration, SandboxHomeRelativePath, file_not_declared,
+    parse, read_existing, remove_file_entry, write_config,
 };
 
 /// 配置先が`destination`である宣言を、configの`files`から外す。
@@ -21,7 +20,7 @@ pub fn remove_file_declaration(
 ) -> Result<(PathBuf, FileDeclaration)> {
     let path = location.config_file();
     let Some(text) = read_existing(&path)? else {
-        return Err(not_declared(destination));
+        return Err(file_not_declared(destination));
     };
     let config = parse(&text, &path)?.settings();
     let Some(index) = config
@@ -29,7 +28,7 @@ pub fn remove_file_declaration(
         .iter()
         .position(|declared| declared.destination.names_same_place(destination))
     else {
-        return Err(not_declared(destination));
+        return Err(file_not_declared(destination));
     };
     let mut expected = config.files.clone();
     let removed = expected.remove(index);
@@ -42,21 +41,6 @@ pub fn remove_file_declaration(
         return Ok((path, removed));
     }
     Err(not_removable(&path, &removed))
-}
-
-fn not_declared(destination: &SandboxHomeRelativePath) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::FileNotDeclared,
-            msg!(
-                "error-file-not-declared",
-                destination = paths::display(destination.as_path())
-            ),
-        )
-        .remediation(
-            Remediation::text(msg!("remediation-file-not-declared")).try_run("sbxm files ls"),
-        ),
-    )
 }
 
 fn not_removable(path: &Path, removed: &FileDeclaration) -> Error {
