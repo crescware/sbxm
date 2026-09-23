@@ -356,6 +356,16 @@ sbxm apply <project-id> --files --force
 宣言したファイルをSandboxの中で編集しても、`open`と`repair`はその案件を拒否せず、
 編集した内容を宣言ファイルで置き戻すこともしません。
 
+登録済みのすべての案件へまとめて配置する場合は、次を実行します。
+
+```sh
+sbxm apply --files --all
+```
+
+案件ごとにlockを取り、同じ規則で1件ずつ配置します。1件を配置できなくても、ほかの案件は
+続けます。停止中のSandboxは起動せず、Sandboxのない案件には初回構築で宣言が配置されます。
+どちらも結果に示します。配置できなかった案件が1件でもあれば、終了statusは`1`です。
+
 token、private keyなどの認証情報はこれらのファイルに含めず、Docker Sandboxesの
 secretを使用してください。
 
@@ -423,7 +433,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm status` | 対話端末でhostまたは案件を選択して診断する。`global`を先頭にpromptを表示する |
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
-| `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する |
+| `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する。`--files --all`で登録済みのすべての案件へ配置する |
 | `sbxm repair [<project-id>]` | SSH接続を開かず、中断または未完成の案件を明示的に準備する。接続時は`open`が同じ復旧を行う |
 | `sbxm rebuild [<project-id>]` | Dockerfileから案件のSandboxを作り直す（元の書き込み可能な層は失われる） |
 | `sbxm destroy [<project-id>]` | Sandboxを破棄して案件を管理対象から外し、host cloneとDockerfileは残す |

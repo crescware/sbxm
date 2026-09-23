@@ -324,6 +324,7 @@ fn omitting_the_target_on_a_terminal_defers_to_the_selection_prompt() -> Checked
         command(&["apply", "--files"], tty())?,
         Command::Apply(commands::apply::Args {
             project: None,
+            all: false,
             files: true,
             force: false,
             worktrees: None,

@@ -20,6 +20,7 @@ impl CommandLine {
             )
             .arg(ArgumentSyntax::flag("files", builder.text("cli-apply-files-help")?).long("files"))
             .arg(ArgumentSyntax::flag("force", builder.text("cli-apply-force-help")?).long("force"))
+            .arg(ArgumentSyntax::flag("all", builder.text("cli-apply-all-help")?).long("all"))
             .arg(
                 ArgumentSyntax::value("worktrees", builder.text("cli-apply-worktrees-help")?)
                     .long("worktrees")
@@ -45,8 +46,34 @@ impl CommandLine {
                 msg!("error-apply-force-without-files"),
             );
         }
+        let all = arguments.flag("all");
+        if all {
+            // 全案件へ一律に適用できるのは宣言fileだけである。worktreeの本数は案件ごとに違う。
+            let conflicting = match (arguments.value("project"), worktrees) {
+                (Some(_), _) => Some(format!(
+                    "<{}>, --all",
+                    CommandLineValues::PROJECT_VALUE_NAME
+                )),
+                (None, Some(_)) => Some("--all, --worktrees".to_string()),
+                (None, None) => None,
+            };
+            if let Some(arguments) = conflicting {
+                return fail(
+                    ErrorId::ConflictingArguments,
+                    msg!("error-conflicting-arguments", arguments = arguments),
+                );
+            }
+            return Ok(Args {
+                project: None,
+                all,
+                files,
+                force,
+                worktrees,
+            });
+        }
         Ok(Args {
             project: CommandLineValues::optional_project(arguments, prompt, "sbxm apply")?,
+            all,
             files,
             force,
             worktrees,

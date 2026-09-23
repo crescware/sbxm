@@ -33,7 +33,7 @@ pub use inconsistent_registration::inconsistent_registration;
 use labels::labels;
 pub use locked::Locked;
 pub use many::many;
-use no_managed_projects::no_managed_projects;
+pub use no_managed_projects::no_managed_projects;
 pub use not_managed::not_managed;
 pub use one::one;
 pub use open::open;

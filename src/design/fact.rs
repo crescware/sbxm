@@ -100,6 +100,11 @@ impl Fact {
         Fact::new(Msg::new("diagnostic-entry-label"), Inline::important(name))
     }
 
+    /// `Project:`。複数の案件をまとめて扱ったとき、診断が属する案件。
+    pub fn project(id: &str) -> Fact {
+        Fact::new(Msg::new("diagnostic-project-label"), Inline::important(id))
+    }
+
     /// `Source:`。宣言fileの取得元。
     pub fn source(path: &str) -> Fact {
         Fact::new(Msg::new("diagnostic-source-label"), Inline::path(path))

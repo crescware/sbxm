@@ -98,6 +98,7 @@ fn every_normal_command_reaches_the_command_that_reads_the_configuration() -> Ch
         }),
         Command::Apply(apply::Args {
             project: Some(project.clone()),
+            all: false,
             files: true,
             force: false,
             worktrees: None,

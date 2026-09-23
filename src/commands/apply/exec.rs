@@ -25,6 +25,19 @@ pub fn exec(
     if let Err(error) = crate::support::login::require_signed_in(host) {
         return report(ui, &error);
     }
+    if args.all {
+        return match super::run_all(
+            context.location,
+            &config,
+            args.force,
+            host,
+            context.workspace_root,
+            ui,
+        ) {
+            Ok(applied) => print::all_report(ui, &applied),
+            Err(error) => report(ui, &error),
+        };
+    }
     let scope = Scope {
         files: args.files,
         force: args.force,
@@ -43,3 +56,7 @@ pub fn exec(
         Err(error) => report(ui, &error),
     }
 }
+
+#[cfg(test)]
+#[path = "exec_test.rs"]
+mod exec_test;
