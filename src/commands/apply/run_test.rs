@@ -18,6 +18,7 @@ use std::os::unix::fs::PermissionsExt;
 /// 既存testは宣言fileの配置を確かめる。
 const FILES_ONLY: Scope = Scope {
     files: true,
+    force: false,
     worktrees: None,
 };
 
@@ -104,6 +105,7 @@ fn asking_for_the_number_the_project_already_targets_rewrites_nothing() -> Check
 
     let scope = Scope {
         files: false,
+        force: false,
         worktrees: Some(1),
     };
     let output = run(
@@ -264,6 +266,7 @@ fn a_failure_with_both_scopes_active_still_checks_disk_only_once() -> Checked {
 
     let scope = Scope {
         files: true,
+        force: false,
         worktrees: Some(3),
     };
     let mark = host.calls().len();
@@ -339,6 +342,7 @@ fn a_number_below_what_the_project_has_is_refused() -> Checked {
 
     let scope = Scope {
         files: false,
+        force: false,
         worktrees: Some(2),
     };
     let error = run(
@@ -735,5 +739,205 @@ fn a_sandbox_that_belongs_to_another_project_is_refused() -> Checked {
     )
     .refused_because("a sandbox that cannot be identified is not written to")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
+    Ok(())
+}
+
+const DESTINATION: &str = "/home/agent/.config/example/settings.yaml";
+
+/// sbxmが宣言fileを最後に`placed`の内容で置いた、という記録を持たせる。
+fn record_placed(paths: &ProjectPaths, placed: &[u8]) -> Checked {
+    let mut stored = metadata::load(paths)
+        .required_because("load metadata")?
+        .required_because("metadata exists")?;
+    stored.declared_files = Some(vec![crate::metadata::InitialProvisioningFile {
+        source: "/Users/example/declared.yaml".to_string(),
+        destination: ".config/example/settings.yaml".to_string(),
+        sha256: sha256_hex(placed),
+    }]);
+    metadata::update(paths, &stored).required_because("record the baseline")?;
+    Ok(())
+}
+
+/// Sandboxの宣言file先が`contents`を持つ。
+fn sandbox_holding(workspace_root: &std::path::Path, contents: &[u8]) -> Checked<FakeSbx> {
+    Ok(FakeSbx::listing(&listing(workspace_root, "running")?)
+        .holding(&[DESTINATION])
+        .answering(
+            &format!("sha256sum {DESTINATION}"),
+            &format!("{}  {DESTINATION}\n", sha256_hex(contents)),
+        ))
+}
+
+fn recorded_digest(paths: &ProjectPaths) -> Checked<Option<String>> {
+    Ok(metadata::load(paths)
+        .required_because("load metadata")?
+        .required_because("metadata exists")?
+        .declared_files
+        .and_then(|files| files.first().map(|file| file.sha256.clone())))
+}
+
+fn apply_files(
+    location: &crate::config::ConfigLocation,
+    config: &crate::config::GlobalConfig,
+    force: bool,
+    host: &FakeSbx,
+    workspace_root: &std::path::Path,
+) -> crate::diagnostics::Result<crate::commands::apply::ApplyOutput> {
+    run(
+        Target {
+            location,
+            requested: Some(&project().map_err(|_| crate::diagnostics::Error::Canceled)?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        config,
+        Scope {
+            files: true,
+            force,
+            worktrees: None,
+        },
+        host,
+        workspace_root,
+        &mut SilentProgress,
+    )
+}
+
+#[test]
+fn a_declared_file_still_as_sbxm_placed_it_is_replaced_by_the_new_host_copy() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = dir.path().join("declared.yaml");
+    std::fs::write(&source, b"new contents\n").required()?;
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
+    let paths = write_metadata(&location, &parent, None)?;
+    record_placed(&paths, b"older\n")?;
+    let host = sandbox_holding(&workspace_root, b"older\n")?;
+
+    let output = apply_files(&location, &config, false, &host, &workspace_root)
+        .required_because("nothing would be lost")?;
+
+    assert!(host.ran("cp --follow-link"));
+    // sbxmはsnapshotから置くが、結果には利用者が宣言したfileを示す。
+    assert_eq!(output.files[0].source, source);
+    assert_eq!(
+        recorded_digest(&paths)?,
+        Some(sha256_hex(b"new contents\n")),
+        "the new content becomes what sbxm placed last"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_declared_file_changed_inside_the_sandbox_is_left_alone_without_force() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = dir.path().join("declared.yaml");
+    std::fs::write(&source, b"new contents\n").required()?;
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
+    let paths = write_metadata(&location, &parent, None)?;
+    record_placed(&paths, b"older\n")?;
+    let before = std::fs::read_to_string(paths.metadata_file()).required()?;
+    let host = sandbox_holding(&workspace_root, b"edited inside the sandbox\n")?;
+
+    let error = apply_files(&location, &config, false, &host, &workspace_root)
+        .refused_because("replacing it would lose the edit")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileModified));
+    assert!(
+        !host.ran("cp --follow-link"),
+        "nothing is copied: {:?}",
+        host.calls()
+    );
+    assert_eq!(
+        std::fs::read_to_string(paths.metadata_file()).required()?,
+        before,
+        "the record of what sbxm placed stays as it was"
+    );
+    Ok(())
+}
+
+#[test]
+fn force_replaces_a_declared_file_changed_inside_the_sandbox() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = dir.path().join("declared.yaml");
+    std::fs::write(&source, b"new contents\n").required()?;
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
+    let paths = write_metadata(&location, &parent, None)?;
+    record_placed(&paths, b"older\n")?;
+    let host = sandbox_holding(&workspace_root, b"edited inside the sandbox\n")?;
+
+    apply_files(&location, &config, true, &host, &workspace_root)
+        .required_because("the user chose to replace it")?;
+
+    assert!(host.ran("cp --follow-link"));
+    assert_eq!(
+        recorded_digest(&paths)?,
+        Some(sha256_hex(b"new contents\n"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_failure_part_way_keeps_the_record_of_what_was_already_placed() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let first = dir.path().join("first.yaml");
+    std::fs::write(&first, b"first\n").required()?;
+    let second = dir.path().join("second.yaml");
+    std::fs::write(&second, b"second\n").required()?;
+    let declarations = vec![
+        crate::config::FileDeclaration {
+            source: crate::config::HostFileSource::new(&crate::paths::display(&first))
+                .required()?,
+            destination: crate::config::SandboxHomeRelativePath::new(".config/first.yaml")
+                .required()?,
+        },
+        crate::config::FileDeclaration {
+            source: crate::config::HostFileSource::new(&crate::paths::display(&second))
+                .required()?,
+            destination: crate::config::SandboxHomeRelativePath::new(".config/second.yaml")
+                .required()?,
+        },
+    ];
+    let (_home, location, parent, config, workspace_root) = setup(declarations)?;
+    let paths = write_metadata(&location, &parent, None)?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?)
+        .failing("mv -f /home/agent/.config/second.yaml.sbxm-new /home/agent/.config/second.yaml");
+
+    apply_files(&location, &config, false, &host, &workspace_root)
+        .refused_because("the second rename fails")?;
+
+    // 1件目はSandboxへ置かれている。記録が無いままだと、次の`apply`はそれを
+    // sbxmが置いたものと認められない。
+    let recorded = metadata::load(&paths)
+        .required_because("load metadata")?
+        .required_because("metadata exists")?
+        .declared_files
+        .required_because("the first file was recorded")?;
+    assert_eq!(
+        recorded,
+        vec![crate::metadata::InitialProvisioningFile {
+            source: crate::paths::display(&first),
+            destination: ".config/first.yaml".to_string(),
+            sha256: sha256_hex(b"first\n"),
+        }]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_declaration_taken_out_of_the_configuration_leaves_the_record() -> Checked {
+    let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
+    let paths = write_metadata(&location, &parent, None)?;
+    record_placed(&paths, b"older\n")?;
+    let host = FakeSbx::listing(&listing(&workspace_root, "running")?);
+
+    apply_files(&location, &config, false, &host, &workspace_root)
+        .required_because("there is nothing left to place")?;
+
+    // 宣言から外したfileは、もう`apply`が置き換えない。記録も残さない。
+    assert_eq!(
+        metadata::load(&paths)
+            .required_because("load metadata")?
+            .required_because("metadata exists")?
+            .declared_files,
+        Some(Vec::new())
+    );
     Ok(())
 }

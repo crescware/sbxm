@@ -228,6 +228,103 @@ fn a_stale_archive_left_by_an_earlier_crash_is_swept_before_rebuilding() -> Chec
     Ok(())
 }
 
+/// fixtureのhome直下に置いた宣言file 1件。
+fn declared_file(fixture: &Fixture, name: &str) -> Checked<crate::config::FileDeclaration> {
+    Ok(crate::config::FileDeclaration {
+        source: crate::config::HostFileSource::new(&paths::display(&fixture.dir.path().join(name)))
+            .required()?,
+        destination: crate::config::SandboxHomeRelativePath::new(".config/example.yaml")
+            .required()?,
+    })
+}
+
+#[test]
+fn the_declared_files_placed_into_the_new_sandbox_become_the_baseline() -> Checked {
+    let (mut fixture, project, host) = switched_sandbox()?;
+    std::fs::write(
+        fixture.dir.path().join("declared.yaml"),
+        b"declared = true\n",
+    )
+    .required()?;
+    fixture.config.files = vec![declared_file(&fixture, "declared.yaml")?];
+    // 作り直したSandboxには、まだ何も置かれていない。
+    let name = project.sandbox.as_str();
+    let host = host
+        .answering(
+            &format!("exec {name} -- test -h /home/agent/.config"),
+            1,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- test -h /home/agent/.config/example.yaml"),
+            1,
+            "",
+        )
+        .answering(
+            &format!("exec {name} -- test -e /home/agent/.config/example.yaml"),
+            1,
+            "",
+        );
+
+    rebuild(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("the rebuild places the declared file")?;
+
+    assert!(host.ran("cp --follow-link"), "{:?}", host.calls());
+    // 以後の`apply`は、この内容のままのfileだけを置き換える。
+    let stored = metadata::load(&project.paths)
+        .required()?
+        .required_because("metadata exists")?;
+    assert_eq!(
+        stored.declared_files,
+        Some(vec![crate::metadata::InitialProvisioningFile {
+            source: paths::display(&fixture.dir.path().join("declared.yaml")),
+            destination: ".config/example.yaml".to_string(),
+            sha256: sha256_hex(b"declared = true\n"),
+        }])
+    );
+    Ok(())
+}
+
+#[test]
+fn a_declared_file_that_cannot_be_read_stops_the_rebuild_before_the_old_sandbox_goes() -> Checked {
+    let (mut fixture, _project, host) = switched_sandbox()?;
+    // 宣言したfileがhostに無い。
+    fixture.config.files = vec![declared_file(&fixture, "absent.yaml")?];
+
+    let error = rebuild(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        &host,
+        &fixture.workspace_root,
+    )
+    .refused_because("a file that cannot be read is found before anything is removed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileUnusable));
+    assert!(
+        !host
+            .calls()
+            .iter()
+            .any(|args| args.first().is_some_and(|arg| arg == "rm")),
+        "the old sandbox is kept: {:?}",
+        host.calls()
+    );
+    assert!(!host.ran("create --name"));
+    Ok(())
+}
+
 #[test]
 fn a_bare_repository_fetch_failure_carries_the_disk_state_at_that_moment() -> Checked {
     let (fixture, project, host) = switched_sandbox()?;

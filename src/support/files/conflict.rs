@@ -1,8 +1,15 @@
+use crate::metadata::InitialProvisioningFile;
+
 /// 既存のdestinationと内容が異なる場合の扱い。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Conflict {
-    /// `add`。構築の途中で利用者のfileを上書きしない。
+pub enum Conflict<'a> {
+    /// 構築。構築の途中で利用者のfileを上書きしない。
     Refuse,
-    /// `sync-files`。現在のglobal configを明示的な再配置要求として扱う。
+    /// 作り直したSandboxへの配置、または利用者が明示した上書き。
     Overwrite,
+    /// `apply`。sbxmが最後に置いた内容のままのfileだけを置き換える。
+    ///
+    /// Sandbox側で書き換えられたfileを上書きすると、書き換えた内容は取り戻せない。
+    /// baselineに記録が無いfileも、sbxmが置いたものかどうか分からないため置き換えない。
+    Protect(&'a [InitialProvisioningFile]),
 }

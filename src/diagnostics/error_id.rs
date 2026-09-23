@@ -48,6 +48,7 @@ error_ids! {
     WorktreesRequireDetach => "worktrees-require-detach",
     WorktreesNotReducible => "worktrees-not-reducible",
     ApplyScopeRequired => "apply-scope-required",
+    ApplyForceWithoutFiles => "apply-force-without-files",
     ProjectArgumentRequired => "project-argument-required",
     StatusScopeRequired => "status-scope-required",
 
@@ -112,6 +113,7 @@ error_ids! {
     SandboxUnusable => "sandbox-unusable",
     DeclaredFileUnusable => "declared-file-unusable",
     DeclaredFileConflict => "declared-file-conflict",
+    DeclaredFileModified => "declared-file-modified",
     SandboxIdentityMismatch => "sandbox-identity-mismatch",
     GithubSecretMissing => "github-secret-missing",
     GithubCredentialRejected => "github-credential-rejected",

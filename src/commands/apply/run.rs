@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use crate::boundary::host::HostEnvironment;
 use crate::boundary::host::protocol::SandboxState;
@@ -12,7 +12,8 @@ use crate::project::{ProjectId, SandboxName};
 use crate::design::ProgressSink;
 use crate::design::Remediation;
 use crate::project::SandboxLayout;
-use crate::support::files::{self};
+use crate::support::files::{self, PlacedFile};
+use crate::support::select::Locked;
 use crate::support::{
     daemon, disk, generation, inventory, provisioning, repository, sandbox, select,
 };
@@ -80,19 +81,14 @@ pub fn run(
 
     let mut files = Vec::new();
     if scope.files {
-        let inputs = provisioning::ProvisioningInputs::capture_files(&locked.paths, config)?;
-        files = files::place_all(
+        files = apply_files(
+            &mut locked,
+            config,
+            scope.force,
             host,
             &entry.name,
-            &inputs
-                .iter()
-                .map(|input| input.declaration.clone())
-                .collect::<Vec<_>>(),
-            files::Conflict::Overwrite,
-        )
-        .map_err(decorate)?;
-        locked.metadata.declared_files = Some(provisioning::recorded_files(&inputs));
-        metadata::update(&locked.paths, &locked.metadata)?;
+            &decorate,
+        )?;
     }
 
     let mut worktrees = None;
@@ -127,6 +123,69 @@ pub fn run(
         files,
         worktrees,
     })
+}
+
+/// 宣言fileを置き、置いた1件ごとにbaselineを記録する。
+///
+/// baselineは、sbxmが各destinationへ最後に置いた内容である。それと異なるfileは
+/// Sandboxの中で書き換えられたものであり、`force`が無ければ1件も置く前に拒否する。
+/// 途中で失敗しても、それまでに置いたfileの記録は残す。記録が置いた内容より古いままだと、
+/// 次の`apply`はsbxmが置いたfileをSandbox側の変更と読み違える。
+fn apply_files(
+    locked: &mut Locked,
+    config: &GlobalConfig,
+    force: bool,
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    decorate: &dyn Fn(Error) -> Error,
+) -> Result<Vec<PlacedFile>> {
+    let inputs = provisioning::ProvisioningInputs::capture_files(&locked.paths, config)?;
+    let declarations: Vec<_> = inputs
+        .iter()
+        .map(|input| input.declaration.clone())
+        .collect();
+    let mut baseline = locked.metadata.declared_files.clone().unwrap_or_default();
+    let conflict = if force {
+        files::Conflict::Overwrite
+    } else {
+        files::Conflict::Protect(&baseline)
+    };
+    let planned = files::plan_all(host, sandbox, &declarations, conflict).map_err(decorate)?;
+
+    let mut placed = Vec::with_capacity(planned.len());
+    for (file, input) in planned.iter().zip(&inputs) {
+        let mut result = file.carry_out(host, sandbox).map_err(decorate)?;
+        // 置いたのはsnapshotだが、利用者に示すのは宣言したfileである。
+        result.source = PathBuf::from(&input.original_source);
+        placed.push(result);
+        let recorded = provisioning::recorded_file(input);
+        if !baseline.contains(&recorded) {
+            baseline.retain(|entry| !same_destination(&entry.destination, &recorded.destination));
+            baseline.push(recorded);
+            locked.metadata.declared_files = Some(baseline.clone());
+            metadata::update(&locked.paths, &locked.metadata)?;
+        }
+    }
+
+    // 宣言から外したfileの記録は残さない。そのfileはもう`apply`が置き換えない。
+    let current = provisioning::recorded_files(&inputs);
+    if locked.metadata.declared_files.as_ref() != Some(&current) {
+        locked.metadata.declared_files = Some(current);
+        metadata::update(&locked.paths, &locked.metadata)?;
+    }
+    Ok(placed)
+}
+
+/// 2つの記録が同じdestinationを指すか。`./`の有無のような綴りの違いは同じとみなす。
+fn same_destination(left: &str, right: &str) -> bool {
+    let parts = |value: &str| -> Vec<std::ffi::OsString> {
+        Path::new(value)
+            .components()
+            .filter(|component| *component != Component::CurDir)
+            .map(|component| component.as_os_str().to_os_string())
+            .collect()
+    };
+    parts(left) == parts(right)
 }
 
 /// 目標worktree数を引き上げる。

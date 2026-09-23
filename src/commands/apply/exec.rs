@@ -27,6 +27,7 @@ pub fn exec(
     }
     let scope = Scope {
         files: args.files,
+        force: args.force,
         worktrees: args.worktrees,
     };
     let target = Target {

@@ -6,6 +6,7 @@ pub fn placement(placement: Placement) -> Inline {
     let visual = match placement {
         Placement::Placed => VisualState::Positive,
         Placement::Unchanged => VisualState::Neutral,
+        Placement::Modified => VisualState::Attention,
     };
     Inline::state(placement.as_str(), visual)
 }

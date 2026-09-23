@@ -344,8 +344,20 @@ Sandboxの初回構築時に配置されます。あとから加えた変更は�
 sbxm apply <project-id> --files
 ```
 
-`--files`は宣言された配置先を上書きします。token、private keyなどの認証情報は
-これらのファイルに含めず、Docker Sandboxesのsecretを使用してください。
+`--files`が置き換えるのは、sbxmが前回配置した内容のままの配置先だけです。Sandboxの
+中で編集されたファイルや、sbxmが配置した記録のないファイルがあれば、`apply`は1件も
+配置する前に拒否し、該当するファイルをすべて示します。Sandbox側の内容で必要なものを
+退避してから、明示的に置き換えてください。
+
+```sh
+sbxm apply <project-id> --files --force
+```
+
+宣言したファイルをSandboxの中で編集しても、`open`と`repair`はその案件を拒否せず、
+編集した内容を宣言ファイルで置き戻すこともしません。
+
+token、private keyなどの認証情報はこれらのファイルに含めず、Docker Sandboxesの
+secretを使用してください。
 
 2つのapply対象は同時に指定できます。
 

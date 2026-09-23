@@ -161,7 +161,7 @@ fn observations_for(observation: &Observation) -> Vec<Field> {
                 "repair-observation-declared-file",
                 destination = file.destination.clone()
             ),
-            Inline::important(placement_label(file.placement == Placement::Unchanged)),
+            Inline::important(placement_label(file.placement)),
         ));
     }
     fields.push(artifact_field(
@@ -189,6 +189,10 @@ fn artifact_field(label: &'static str, observed: &Observed) -> Field {
 }
 
 /// 翻訳しない安定した表記。
-fn placement_label(matching: bool) -> &'static str {
-    if matching { "matching" } else { "missing" }
+fn placement_label(placement: Placement) -> &'static str {
+    match placement {
+        Placement::Placed => "missing",
+        Placement::Unchanged => "matching",
+        Placement::Modified => "modified",
+    }
 }

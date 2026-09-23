@@ -455,10 +455,11 @@ fn the_content_of_a_declared_file_never_reaches_a_diagnostic() -> Checked {
 }
 
 #[test]
-fn the_two_placement_results_keep_two_distinct_untranslated_spellings() {
+fn the_placement_results_keep_distinct_untranslated_spellings() {
     // 表示層はこの語をそのまま出す。訳語ではなく値であるため、ここで固定する。
     assert_eq!(Placement::Placed.as_str(), "placed");
     assert_eq!(Placement::Unchanged.as_str(), "unchanged");
+    assert_eq!(Placement::Modified.as_str(), "modified");
     assert_ne!(
         Placement::Placed.as_str(),
         Placement::Unchanged.as_str(),
@@ -649,7 +650,7 @@ fn baseline_entry(destination: &str, sha256: &str) -> crate::metadata::InitialPr
 fn a_baseline_entry_absent_from_the_sandbox_is_observed_as_missing() -> Checked {
     let host = FakeSbx::empty();
     let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
-    let observed = observe_against_baseline(&host, "sbxm-example", &baseline)
+    let observed = observe_against_baseline(&host, "sbxm-example", &baseline, Divergence::Conflict)
         .required_because("an absent destination is observed, not an error")?;
     assert_eq!(observed[0].placement, Placement::Placed);
     Ok(())
@@ -660,7 +661,7 @@ fn a_baseline_entry_matching_the_sandboxs_digest_is_unchanged() -> Checked {
     // baselineの照合はSandbox内のdigestとだけ行い、生きているsourceは一切読まない。
     let host = FakeSbx::holding("/home/agent/.gitconfig", b"original\n");
     let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
-    let observed = observe_against_baseline(&host, "sbxm-example", &baseline)
+    let observed = observe_against_baseline(&host, "sbxm-example", &baseline, Divergence::Conflict)
         .required_because("a digest that matches the baseline is unchanged")?;
     assert_eq!(observed[0].placement, Placement::Unchanged);
     assert!(
@@ -675,8 +676,170 @@ fn a_baseline_entry_matching_the_sandboxs_digest_is_unchanged() -> Checked {
 fn a_baseline_entry_that_differs_from_the_sandbox_is_a_conflict() -> Checked {
     let host = FakeSbx::holding("/home/agent/.gitconfig", b"different in the sandbox\n");
     let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
-    let error = observe_against_baseline(&host, "sbxm-example", &baseline)
+    let error = observe_against_baseline(&host, "sbxm-example", &baseline, Divergence::Conflict)
         .refused_because("existing different content is not silently overwritten")?;
     assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    Ok(())
+}
+
+#[test]
+fn a_baseline_entry_changed_after_completion_is_reported_as_modified() -> Checked {
+    // 完成後のbaselineはsbxmが最後に置いた内容である。異なる内容は利用者の編集である。
+    let host = FakeSbx::holding("/home/agent/.gitconfig", b"edited in the sandbox\n");
+    let baseline = vec![baseline_entry(".gitconfig", &sha256_hex(b"original\n"))];
+    let observed = observe_against_baseline(&host, "sbxm-example", &baseline, Divergence::Modified)
+        .required_because("an edited file is observed, not refused")?;
+    assert_eq!(observed[0].placement, Placement::Modified);
+    assert!(!host.ran("cp"), "observation never mutates the sandbox");
+    Ok(())
+}
+
+/// sbxmが`.config/example/settings.yaml`へ最後に置いた内容を`placed`とするbaseline。
+fn placed_last(placed: &[u8]) -> Vec<crate::metadata::InitialProvisioningFile> {
+    vec![baseline_entry(
+        ".config/example/settings.yaml",
+        &sha256_hex(placed),
+    )]
+}
+
+#[test]
+fn a_file_still_as_sbxm_placed_it_is_replaced_by_the_new_declaration() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"new contents\n")?;
+    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
+    let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", b"older\n");
+    let baseline = placed_last(b"older\n");
+
+    let placed = place_all(
+        &host,
+        "sbxm-example",
+        &declarations,
+        Conflict::Protect(&baseline),
+    )
+    .required_because("nothing would be lost by replacing what sbxm placed")?;
+    assert_eq!(placed[0].placement, Placement::Placed);
+    assert!(host.ran("mv"));
+    Ok(())
+}
+
+#[test]
+fn a_file_changed_inside_the_sandbox_is_not_replaced_while_protected() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"new contents\n")?;
+    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
+    let host = FakeSbx::holding(
+        "/home/agent/.config/example/settings.yaml",
+        b"edited in the sandbox\n",
+    );
+    let baseline = placed_last(b"older\n");
+
+    let error = place_all(
+        &host,
+        "sbxm-example",
+        &declarations,
+        Conflict::Protect(&baseline),
+    )
+    .refused_because("replacing it would lose the edit")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one refusal")?;
+    assert_eq!(diagnostic.id, ErrorId::DeclaredFileModified);
+    assert_eq!(
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
+        Some("remediation-declared-file-overwrite"),
+        "only the user can decide to replace it"
+    );
+    assert!(!host.ran("cp"), "nothing is copied: {:?}", host.calls());
+    Ok(())
+}
+
+#[test]
+fn a_file_sbxm_has_no_record_of_placing_is_not_replaced_while_protected() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"new contents\n")?;
+    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
+    let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", b"older\n");
+
+    // 記録が無ければ、その内容をsbxmが置いたのかどうか分からない。
+    let error = place_all(&host, "sbxm-example", &declarations, Conflict::Protect(&[]))
+        .refused_because("an unknown file is not replaced")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one refusal")?;
+    assert_eq!(diagnostic.id, ErrorId::DeclaredFileConflict);
+    assert_eq!(diagnostic.description.id, "error-declared-file-unrecorded");
+    assert_eq!(
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
+        Some("remediation-declared-file-overwrite")
+    );
+    assert!(!host.ran("cp"));
+    Ok(())
+}
+
+#[test]
+fn a_baseline_spelled_with_a_leading_dot_segment_still_names_the_same_destination() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"new contents\n")?;
+    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
+    let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", b"older\n");
+    let baseline = vec![baseline_entry(
+        "./.config/example/settings.yaml",
+        &sha256_hex(b"older\n"),
+    )];
+
+    let placed = place_all(
+        &host,
+        "sbxm-example",
+        &declarations,
+        Conflict::Protect(&baseline),
+    )
+    .required_because("the record names the same file")?;
+    assert_eq!(placed[0].placement, Placement::Placed);
+    Ok(())
+}
+
+#[test]
+fn every_file_that_cannot_be_placed_is_named_before_anything_is_placed() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let fresh = dir.path().join("fresh.yaml");
+    fs::write(&fresh, b"fresh\n").required()?;
+    let first = dir.path().join("first.yaml");
+    fs::write(&first, b"first\n").required()?;
+    let second = dir.path().join("second.yaml");
+    fs::write(&second, b"second\n").required()?;
+    let declarations = [
+        declaration(&fresh, ".config/fresh.yaml")?,
+        declaration(&first, ".config/first.yaml")?,
+        declaration(&second, ".config/second.yaml")?,
+    ];
+    let mut host = FakeSbx::empty();
+    for destination in [
+        "/home/agent/.config/first.yaml",
+        "/home/agent/.config/second.yaml",
+    ] {
+        host.files
+            .insert(destination.to_string(), sha256_hex(b"something else\n"));
+    }
+
+    let error = place_all(&host, "sbxm-example", &declarations, Conflict::Refuse)
+        .refused_because("two destinations hold other content")?;
+    let refused: Vec<ErrorId> = error.diagnostics().iter().map(|d| d.id).collect();
+    assert_eq!(
+        refused,
+        vec![ErrorId::DeclaredFileConflict, ErrorId::DeclaredFileConflict],
+        "both refusals are shown at once"
+    );
+    // 置ける宣言があっても、ほかの宣言を置けないと分かった時点で1件も置かない。
+    assert!(!host.ran("cp"), "nothing is copied: {:?}", host.calls());
     Ok(())
 }

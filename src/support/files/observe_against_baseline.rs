@@ -6,7 +6,7 @@ use crate::metadata::InitialProvisioningFile;
 use crate::msg;
 
 use super::{
-    AGENT_HOME, PlacedFile, Placement, destination_path, digest_in_sandbox,
+    AGENT_HOME, Divergence, PlacedFile, Placement, destination_path, digest_in_sandbox,
     require_no_symlink_in_sandbox,
 };
 
@@ -15,11 +15,12 @@ use super::{
 /// `repair`が復旧対象にするのは、初回構築が固定したbaselineであり、現在のglobal
 /// configではない。baselineは`source`・`destination`・digestだけを保存済みの記録
 /// として持つため、この照合はhost上のsource pathへ一切触れない。sandboxが別内容を
-/// 持っている場合は、上書きせず既存fileの衝突として拒否する。
+/// 持っている場合の読み方は`divergence`が決める。どちらの場合も上書きはしない。
 pub fn observe_against_baseline(
     host: &dyn HostEnvironment,
     sandbox: &str,
     baseline: &[InitialProvisioningFile],
+    divergence: Divergence,
 ) -> Result<Vec<PlacedFile>> {
     let mut observed = Vec::with_capacity(baseline.len());
     for entry in baseline {
@@ -29,6 +30,7 @@ pub fn observe_against_baseline(
         let placement = match digest_in_sandbox(host, sandbox, &full)? {
             None => Placement::Placed,
             Some(digest) if digest == entry.sha256 => Placement::Unchanged,
+            Some(_) if divergence == Divergence::Modified => Placement::Modified,
             Some(_) => {
                 return Err(Error::single(
                     Diagnostic::new(

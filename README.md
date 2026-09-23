@@ -376,8 +376,21 @@ are placed while the sandbox is first built; apply later changes explicitly:
 sbxm apply <project-id> --files
 ```
 
-`--files` overwrites the declared destinations. Keep tokens, private keys, and
-other credentials out of these files; use Docker Sandboxes secrets for those.
+`--files` replaces a destination only while it still holds what sbxm placed
+there last. If a file was edited inside the sandbox, or sbxm has no record of
+placing it, `apply` refuses before placing anything and names every such file.
+Save what you need from the sandbox copy, then replace it explicitly:
+
+```sh
+sbxm apply <project-id> --files --force
+```
+
+Editing a declared file inside the sandbox does not make `open` or `repair`
+refuse the project, and neither command puts the declared file back over the
+edit.
+
+Keep tokens, private keys, and other credentials out of these files; use Docker
+Sandboxes secrets for those.
 
 Both apply scopes may be requested together:
 

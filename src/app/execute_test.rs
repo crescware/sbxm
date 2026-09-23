@@ -99,6 +99,7 @@ fn every_normal_command_reaches_the_command_that_reads_the_configuration() -> Ch
         Command::Apply(apply::Args {
             project: Some(project.clone()),
             files: true,
+            force: false,
             worktrees: None,
         }),
         Command::Guide(guide::Args {

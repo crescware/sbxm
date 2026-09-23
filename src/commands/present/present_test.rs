@@ -260,6 +260,11 @@ fn a_file_the_sandbox_already_held_is_not_reported_as_a_change() {
         placement(Placement::Unchanged),
         Inline::state("unchanged", VisualState::Neutral)
     );
+    // Sandboxの中で書き換えられたfileは壊れていないが、次の`apply`が置き換えない。
+    assert_eq!(
+        placement(Placement::Modified),
+        Inline::state("modified", VisualState::Attention)
+    );
 }
 
 #[test]
@@ -274,7 +279,7 @@ fn every_sandbox_state_mode_and_placement_carries_its_own_explanation() -> Check
     for mode in [CreationMode::Attached, CreationMode::Detached] {
         assert_eq!(legend.creation_mode(mode), creation_mode(mode));
     }
-    for value in [Placement::Placed, Placement::Unchanged] {
+    for value in [Placement::Placed, Placement::Unchanged, Placement::Modified] {
         assert_eq!(legend.placement(value), placement(value));
     }
 
@@ -288,6 +293,7 @@ fn every_sandbox_state_mode_and_placement_carries_its_own_explanation() -> Check
         vec![
             ("attached", "legend-attached"),
             ("detached", "legend-detached"),
+            ("modified", "legend-modified"),
             ("placed", "legend-placed"),
             ("running", "legend-sandbox-running"),
             ("stopped", "legend-sandbox-stopped"),

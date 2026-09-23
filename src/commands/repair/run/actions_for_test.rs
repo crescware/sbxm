@@ -94,7 +94,7 @@ fn a_present_template_is_reused_rather_than_loaded() -> Checked {
 }
 
 #[test]
-fn a_declared_file_that_is_not_unchanged_is_named_by_its_destination() -> Checked {
+fn only_a_declared_file_that_is_missing_is_named_by_its_destination() -> Checked {
     let metadata = attached("example-org", "example-repo")?;
     let mut observation = incomplete_observation();
     observation.files = vec![
@@ -108,6 +108,11 @@ fn a_declared_file_that_is_not_unchanged_is_named_by_its_destination() -> Checke
             destination: ".config/example.yaml".to_string(),
             placement: Placement::Placed,
         },
+        PlacedFile {
+            source: PathBuf::from("/home/user/.claude/CLAUDE.md"),
+            destination: ".claude/CLAUDE.md".to_string(),
+            placement: Placement::Modified,
+        },
     ];
 
     let actions = actions_for(&metadata, &observation, true);
@@ -116,6 +121,10 @@ fn a_declared_file_that_is_not_unchanged_is_named_by_its_destination() -> Checke
     }));
     assert!(!actions.contains(&RepairAction::PlaceDeclaredFile {
         destination: ".gitconfig".to_string()
+    }));
+    // Sandboxの中で書き換えられたfileを置き直すと、書き換えた内容が失われる。
+    assert!(!actions.contains(&RepairAction::PlaceDeclaredFile {
+        destination: ".claude/CLAUDE.md".to_string()
     }));
     Ok(())
 }

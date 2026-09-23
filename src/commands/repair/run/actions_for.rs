@@ -51,8 +51,10 @@ pub(super) fn actions_for(
         actions.push(RepairAction::StartSandbox);
         actions.push(RepairAction::ProvisionInterior);
     } else {
+        // Sandboxの中で書き換えられたfileは置き直さない。置き直すと書き換えた内容が
+        // 失われる。置き換えるかどうかは`apply --files`で利用者が決める。
         for file in &observation.files {
-            if file.placement != Placement::Unchanged {
+            if file.placement == Placement::Placed {
                 actions.push(RepairAction::PlaceDeclaredFile {
                     destination: file.destination.clone(),
                 });

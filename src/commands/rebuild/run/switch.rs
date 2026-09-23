@@ -11,7 +11,7 @@ use crate::design::ProgressSink;
 use crate::support::files::{self, Conflict};
 use crate::support::inventory::{self, Poll};
 use crate::support::protection::ProtectionPermit;
-use crate::support::{disk, identity, repository, sandbox, secret, template, tools};
+use crate::support::{disk, identity, provisioning, repository, sandbox, secret, template, tools};
 
 /// Sandboxの切り替えが最初から最後まで使う文脈。
 ///
@@ -49,6 +49,8 @@ impl Switch<'_> {
             poll,
         } = *self;
         let layout = SandboxLayout::new(metadata.canonical_id());
+        // 宣言fileは古いSandboxを消す前に読む。読めないfileがあれば、何も消さずに止まる。
+        let inputs = provisioning::ProvisioningInputs::capture_files(paths, config)?;
 
         if existed {
             // rebuildに`--force`は無く、常にsbx自身の確認とactive-session検査を経る。
@@ -73,8 +75,14 @@ impl Switch<'_> {
         secret::configure_token_env(host, &ready.name, registration.placeholder())
             .map_err(decorate)?;
         secret::require_github_accepts(host, &ready.name, project, &registration)?;
-        files::place_all(host, &ready.name, &config.files, Conflict::Overwrite)
+        let declarations: Vec<_> = inputs
+            .iter()
+            .map(|input| input.declaration.clone())
+            .collect();
+        files::place_all(host, &ready.name, &declarations, Conflict::Overwrite)
             .map_err(decorate)?;
+        // 作り直したSandboxへ置いた内容が、以後の`apply`が置き換えてよい基準になる。
+        metadata.declared_files = Some(provisioning::recorded_files(&inputs));
         repository::ensure_bare_clone(host, &ready.name, project, &layout, progress)
             .map_err(decorate)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;

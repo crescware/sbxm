@@ -325,6 +325,7 @@ fn omitting_the_target_on_a_terminal_defers_to_the_selection_prompt() -> Checked
         Command::Apply(commands::apply::Args {
             project: None,
             files: true,
+            force: false,
             worktrees: None,
         })
     );
