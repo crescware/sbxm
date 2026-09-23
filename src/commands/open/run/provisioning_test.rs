@@ -276,6 +276,37 @@ fn an_open_after_a_successful_build_connects_without_building_again() -> Checked
 }
 
 #[test]
+fn a_declared_file_edited_inside_the_sandbox_is_neither_refused_nor_placed_again() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = registered(&bench, &world, None)?;
+    open(&bench, &world, &project, None).required_because("the first open builds")?;
+
+    // 利用者がSandboxの中で設定fileを書き換えた。
+    let destination = "/home/agent/.config/example/settings.yaml";
+    let edited = crate::hash::sha256_hex(b"edited inside the sandbox\n");
+    world
+        .digests
+        .borrow_mut()
+        .insert(destination.to_string(), edited.clone());
+    let mark = world.mark();
+
+    open(&bench, &world, &project, None)
+        .required_because("an edited file is not a broken artifact")?;
+
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("cp --follow-link")),
+        "the edit is not overwritten: {:?}",
+        world.since(mark)
+    );
+    assert_eq!(world.digests.borrow().get(destination), Some(&edited));
+    Ok(())
+}
+
+#[test]
 fn open_recreates_only_a_missing_managed_worktree() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

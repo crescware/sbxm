@@ -54,3 +54,28 @@ fn the_short_form_requests_the_same_worktree_count() -> Checked {
     ));
     Ok(())
 }
+
+#[test]
+fn force_is_accepted_only_together_with_files() -> Checked {
+    assert!(matches!(
+        command(&["apply", "owner/repo", "--files", "--force"], tty())?,
+        Command::Apply(Args {
+            files: true,
+            force: true,
+            ..
+        })
+    ));
+    assert!(matches!(
+        command(&["apply", "owner/repo", "--files"], tty())?,
+        Command::Apply(Args { force: false, .. })
+    ));
+
+    // worktreeだけを適用する実行には、置き換えを許す宣言fileが無い。
+    let error = parse_argv(
+        &["apply", "owner/repo", "--worktrees", "3", "--force"],
+        tty(),
+    )
+    .refused_because("--force without --files is refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ApplyForceWithoutFiles));
+    Ok(())
+}

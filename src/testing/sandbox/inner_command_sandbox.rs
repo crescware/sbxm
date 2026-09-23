@@ -85,10 +85,10 @@ impl HostEnvironment for InnerCommandSandbox {
 
         let (code, stdout) = if inner.first().is_some_and(|arg| *arg == "test") {
             let target = inner.last().copied().unwrap_or_default();
-            (
-                i32::from(!self.present.borrow().iter().any(|known| known == target)),
-                String::new(),
-            )
+            // 模したSandboxにsymlinkは存在しない。在るpathはどれも実体である。
+            let symlink = inner.get(1).is_some_and(|flag| *flag == "-h");
+            let present = self.present.borrow().iter().any(|known| known == target);
+            (i32::from(symlink || !present), String::new())
         } else if key.starts_with(&format!("sh -c {BARE_GIT_DIR_PROBE} ")) {
             // 内側のshellが実際に走ったSandbox。印をstdoutへ書いてから`test`が答える。
             let target = inner.last().copied().unwrap_or_default();

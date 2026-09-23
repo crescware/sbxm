@@ -44,6 +44,7 @@ fn commands(explicit: bool) -> Checked<Vec<Command>> {
         Command::Apply(apply::Args {
             project: project.clone(),
             files: true,
+            force: false,
             worktrees: None,
         }),
         Command::Guide(guide::Args {

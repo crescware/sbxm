@@ -12,6 +12,10 @@ use crate::support::files::{self, PlacedFile};
 /// 現在のglobal configそのものではない。completed projectへ後から宣言を足しても、
 /// この観測はそれを欠落として報告しない。新しい宣言の配置は`apply`の責務である。
 ///
+/// baselineはsbxmが最後に置いた内容であり、それと異なるfileはSandboxの中で書き換え
+/// られたものとして報告する。利用者が編集した設定fileは壊れた成果物ではない。intentの
+/// snapshotはこれから置く内容であり、異なるfileはどこから来たか分からないため拒否する。
+///
 /// baselineが無い案件（この機能より前に完成した案件）は、現在の宣言と実際に一致する
 /// 場合だけ健全とみなす。一致しない場合、それが本当に壊れているのか、後から宣言が
 /// 増えただけなのかをこの観測だけでは一意に決められないため拒否する。
@@ -22,10 +26,20 @@ pub(crate) fn declared_files(
     config: &GlobalConfig,
 ) -> Result<Vec<PlacedFile>> {
     if let Some(intent) = &metadata.initial_provisioning {
-        return files::observe_against_baseline(host, sandbox, &intent.files);
+        return files::observe_against_baseline(
+            host,
+            sandbox,
+            &intent.files,
+            files::Divergence::Conflict,
+        );
     }
     if let Some(baseline) = &metadata.declared_files {
-        return files::observe_against_baseline(host, sandbox, baseline);
+        return files::observe_against_baseline(
+            host,
+            sandbox,
+            baseline,
+            files::Divergence::Modified,
+        );
     }
     let observed = files::observe(host, sandbox, &config.files)?;
     if observed

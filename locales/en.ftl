@@ -19,7 +19,8 @@ cli-add-git-user-email-help = Git user email for this project's commits; require
 
 cli-apply-about = Apply declared files or add managed worktrees without rebuilding the sandbox
 cli-apply-project-help = Registered owner/repository ID of the project to update
-cli-apply-files-help = Place the globally declared files again, overwriting their destinations
+cli-apply-files-help = Place the globally declared files again, replacing only what sbxm placed there last
+cli-apply-force-help = With --files, also replace declared files that were changed inside the sandbox
 cli-apply-worktrees-help = Desired number of managed worktrees (1-32; cannot be lower than the current count)
 
 cli-guide-about = Show state-aware guidance for a goal without making changes or receiving credentials
@@ -77,6 +78,7 @@ error-worktrees-out-of-range = The number of managed worktrees must be between {
 error-worktrees-require-detach = Creating more than one managed worktree requires an explicit start branch.
 error-worktrees-not-reducible = { $project } has { $current } managed worktrees, and { $requested } is fewer.
 error-apply-scope-required = Name what to apply: the declared files, a number of managed worktrees, or both.
+error-apply-force-without-files = --force only changes how --files replaces declared files, so it needs --files.
 error-project-argument-required = { $subcommand } needs an explicit project ID when the session is not interactive.
 error-status-scope-required = Specify exactly one scope: either the global environment or one project ID.
 
@@ -135,6 +137,8 @@ error-template-unusable = The template cannot be used
 error-sandbox-unusable = The sandbox cannot be used for this project
 error-declared-file-unusable = The declared file cannot be placed
 error-declared-file-conflict = { $destination } already holds different content, so { $source } was not placed.
+error-declared-file-modified = { $destination } was changed inside the sandbox after sbxm placed it, so it was not replaced.
+error-declared-file-unrecorded = sbxm has no record of placing what { $destination } holds, so it was not replaced.
 error-sandbox-identity-mismatch = { $sandbox } already sets { $key } to { $observed }, and this project expects { $expected }.
 error-github-secret-missing = The sandbox { $sandbox } has no single custom secret covering { $hosts }, so it cannot reach the repository.
 error-github-credential-rejected = GitHub did not accept the credential the git inside { $sandbox } presented.
@@ -348,6 +352,7 @@ error-remote-ssh-unobservable = The SSH configuration for sandboxes could not be
 remediation-run-help = See the arguments this command accepts.
 remediation-host-clone-unusable = Inspect { $path } yourself, then move it aside or fix its origin before running the command again.
 remediation-declared-file-conflict = Compare the two yourself, then replace what the sandbox holds with the declared file.
+remediation-declared-file-overwrite = Save anything you need from the sandbox copy, then run the command again with --force to replace it.
 remediation-sandbox-identity-mismatch = Check whose sandbox this is. sbxm does not overwrite a value that is already set.
 github-token-scopes = Issue a personal access token that can read and write this repository. A fine-grained token needs Contents read and write plus Metadata read; a classic token needs the repo scope. The token stays with the proxy and never enters the sandbox.
 remediation-github-secret-missing = { github-token-scopes } Register it, then run the same command again.
@@ -506,6 +511,7 @@ legend-unreachable = no ref on the remote was last observed to reach this commit
 legend-unobservable = whether the remote reaches this commit could not be checked; the value shows the reason
 legend-placed = the file was written into the sandbox
 legend-unchanged = the sandbox already held the same content
+legend-modified = the sandbox copy was changed after sbxm placed it
 
 status-item-login = Docker Sandboxes login
 open-connecting = Connecting to { $sandbox } for { $project }.

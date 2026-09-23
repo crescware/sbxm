@@ -24,7 +24,15 @@ The destination is relative to the sandbox user’s home directory. Declarations
 sbxm apply <project-id> --files
 ```
 
-`--files` re-places the declared destinations and overwrites what is there. If a destination contains different content, sbxm refuses the conflict instead of deciding which file should win.
+`--files` replaces a destination only while it still holds what sbxm placed there last. sbxm records the content of every file it places, per project. If a file was edited inside the sandbox, or sbxm has no record of placing it, `apply` refuses before placing anything and names every such file instead of deciding which version should win.
+
+Save what you need from the sandbox copy, then replace it explicitly:
+
+```sh
+sbxm apply <project-id> --files --force
+```
+
+Editing a declared file inside the sandbox is not treated as damage: `open` and `repair` neither refuse the project nor put the declared file back over the edit.
 
 Both apply scopes may be requested together:
 

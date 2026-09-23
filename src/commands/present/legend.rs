@@ -35,6 +35,7 @@ fn placement_legend(placement: Placement) -> &'static str {
     match placement {
         Placement::Placed => "legend-placed",
         Placement::Unchanged => "legend-unchanged",
+        Placement::Modified => "legend-modified",
     }
 }
 

@@ -19,6 +19,7 @@ impl CommandLine {
                     .value_name(CommandLineValues::PROJECT_VALUE_NAME),
             )
             .arg(ArgumentSyntax::flag("files", builder.text("cli-apply-files-help")?).long("files"))
+            .arg(ArgumentSyntax::flag("force", builder.text("cli-apply-force-help")?).long("force"))
             .arg(
                 ArgumentSyntax::value("worktrees", builder.text("cli-apply-worktrees-help")?)
                     .long("worktrees")
@@ -29,6 +30,7 @@ impl CommandLine {
 
     pub(crate) fn interpret(arguments: &Arguments, prompt: PromptCapability) -> Result<Args> {
         let files = arguments.flag("files");
+        let force = arguments.flag("force");
         let worktrees = CommandLineValues::optional_u32(arguments, "worktrees", "--worktrees")?;
         if !files && worktrees.is_none() {
             return fail(
@@ -36,9 +38,17 @@ impl CommandLine {
                 msg!("error-apply-scope-required"),
             );
         }
+        // 置き換えを許す対象が無いまま受け付けると、何を許したのかが読み手に分からない。
+        if force && !files {
+            return fail(
+                ErrorId::ApplyForceWithoutFiles,
+                msg!("error-apply-force-without-files"),
+            );
+        }
         Ok(Args {
             project: CommandLineValues::optional_project(arguments, prompt, "sbxm apply")?,
             files,
+            force,
             worktrees,
         })
     }

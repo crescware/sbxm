@@ -6,6 +6,8 @@
 pub struct Scope {
     /// global configが宣言するfileを再配置する。
     pub files: bool,
+    /// Sandboxの中で変更された宣言fileも置き換える。`files`が無ければ意味を持たない。
+    pub force: bool,
     /// managed worktreeの目標本数。現在より多い値だけを受け付ける。
     pub worktrees: Option<u32>,
 }

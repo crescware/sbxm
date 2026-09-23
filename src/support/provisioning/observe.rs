@@ -200,9 +200,11 @@ fn observe_sandbox(
     }
     match declared_files(host, sandbox, metadata, config) {
         Ok(files) => {
+            // Sandboxの中で書き換えられたfileも置かれてはいる。欠けているのは、まだ
+            // 置かれていないfileだけである。
             observation.files_placed = if files
                 .iter()
-                .all(|file| file.placement == crate::support::files::Placement::Unchanged)
+                .all(|file| file.placement != crate::support::files::Placement::Placed)
             {
                 Observed::Matching
             } else {

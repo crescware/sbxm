@@ -163,3 +163,42 @@ fn an_unsafe_artifact_is_recorded_without_ending_the_observation() -> Checked {
     assert!(error.contains_id(ErrorId::SandboxUnusable));
     Ok(())
 }
+
+#[test]
+fn a_declared_file_edited_inside_the_sandbox_is_modified_rather_than_unsafe() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first build completes")?;
+
+    // 利用者がSandboxの中で設定fileを書き換えた。壊れた成果物ではない。
+    world.digests.borrow_mut().insert(
+        "/home/agent/.config/example/settings.yaml".to_string(),
+        crate::hash::sha256_hex(b"edited inside the sandbox\n"),
+    );
+    let project = project_of(&request)?;
+    let candidate = select::find(&bench.location, &project).required_because("find the project")?;
+    let metadata = candidate.reload().required_because("read the metadata")?;
+
+    let observation = observe(
+        &world,
+        &candidate.paths,
+        &bench.config,
+        &metadata,
+        bench.workspace_root.path(),
+    )
+    .required_because("observe the edited project")?;
+
+    assert_eq!(observation.state, ProvisioningState::Ready);
+    assert_eq!(observation.files_placed, Observed::Matching);
+    assert_eq!(
+        observation.files[0].placement,
+        crate::support::files::Placement::Modified
+    );
+    observation
+        .require_safe()
+        .required_because("an edited file does not stop a mutation")?;
+    Ok(())
+}

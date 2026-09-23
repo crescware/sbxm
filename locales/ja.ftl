@@ -19,7 +19,8 @@ cli-add-git-user-email-help = この案件のGit commitに使うemail。--git-us
 
 cli-apply-about = Sandboxを再構築せず、宣言fileの再配置またはmanaged worktreeの追加を適用します
 cli-apply-project-help = 適用先案件のowner/repository形式の登録ID
-cli-apply-files-help = global設定で宣言したfileを再配置し、配置先を上書きします
+cli-apply-files-help = global設定で宣言したfileを再配置します。置き換えるのはsbxmが前回配置した内容のままのfileだけです
+cli-apply-force-help = --filesと併せて、Sandboxの中で変更された宣言fileも置き換えます
 cli-apply-worktrees-help = 追加後のmanaged worktree総数 (1〜32、現在より減らせません)
 
 cli-guide-about = 状態を変更せずcredentialも受け取らず、目的に応じた手順を案内します
@@ -77,6 +78,7 @@ error-worktrees-out-of-range = managed worktreeの数は { $minimum } 以上 { $
 error-worktrees-require-detach = managed worktreeを2個以上作る場合は起点branchの明示が必要です。
 error-worktrees-not-reducible = { $project } のmanaged worktreeは { $current } 本で、{ $requested } 本はそれより少ない指定です。
 error-apply-scope-required = 何を適用するかを指定してください。宣言file、managed worktreeの本数、またはその両方です。
+error-apply-force-without-files = --forceは--filesによる宣言fileの置き換え方だけを変えるため、--filesと併せて指定してください。
 error-project-argument-required = 対話端末ではない実行では、{ $subcommand } に案件IDの完全指定が必要です。
 error-status-scope-required = global環境か1件の案件IDのどちらか一方だけを指定してください。
 
@@ -135,6 +137,8 @@ error-template-unusable = このTemplateは使用できません
 error-sandbox-unusable = このSandboxはこの案件には使用できません
 error-declared-file-unusable = この宣言fileは配置できません
 error-declared-file-conflict = { $destination } には別の内容があるため、{ $source } を配置しませんでした。
+error-declared-file-modified = { $destination } はsbxmが配置したあとにSandboxの中で変更されているため、置き換えませんでした。
+error-declared-file-unrecorded = { $destination } の内容はsbxmが配置した記録がないため、置き換えませんでした。
 error-sandbox-identity-mismatch = { $sandbox } では { $key } が既に { $observed } であり、この案件が期待する値は { $expected } です。
 error-github-secret-missing = Sandbox { $sandbox } に { $hosts } を1件でまとめて覆うcustom secretがないため、repositoryへaccessできません。
 error-github-credential-rejected = { $sandbox } の中のgitが提示したcredentialを、GitHubが受け付けませんでした。
@@ -348,6 +352,7 @@ error-remote-ssh-unobservable = Sandbox向けのSSH設定を読み取れませ�
 remediation-run-help = このcommandが受け付ける引数を確認します。
 remediation-host-clone-unusable = { $path } を確認し、退避するかoriginを直してから、もう一度実行してください。
 remediation-declared-file-conflict = 両者を確認したうえで、Sandbox側を宣言fileで置き換えます。
+remediation-declared-file-overwrite = Sandbox側の内容のうち必要なものを退避してから、--forceを付けてもう一度実行してください。
 remediation-sandbox-identity-mismatch = 誰のSandboxかを確認してください。sbxmは設定済みの値を上書きしません。
 github-token-scopes = 対象repositoryをread/writeできるpersonal access tokenを発行します。fine-grainedならContents read/writeとMetadata read、classicならrepo scopeです。tokenはproxyに留まり、Sandboxへは入りません。
 remediation-github-secret-missing = { github-token-scopes } 登録してから、同じcommandをもう一度実行してください。
@@ -506,6 +511,7 @@ legend-unreachable = remoteのどのrefも、最後に観測できた時点で�
 legend-unobservable = remoteがこのcommitへ到達できるかを確認できませんでした。値の括弧内に理由を示します
 legend-placed = Sandboxへ書き込みました
 legend-unchanged = Sandboxに同じ内容が既にありました
+legend-modified = sbxmが配置したあとにSandboxの中で変更されています
 
 status-item-login = Docker Sandboxesへのlogin (Docker Sandboxes login)
 open-connecting = { $project } のSandbox { $sandbox } へ接続します。
