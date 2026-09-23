@@ -7,26 +7,19 @@ use crate::paths::{self};
 
 use super::{
     ConfigLocation, ConfigState, GlobalConfig, declaration, ensure_config_dir, parse,
-    read_existing, render, replace_line, write_config,
+    read_existing, render, set_top_level, write_config,
 };
 
 /// 選ばれたGit identityだけをconfigへ保存する。
 ///
-/// `save_language`と同じ契約で、既存configの原文を保ったまま2行だけを足すか差し替える。
-/// 名義は2つで1つの意図であるため、片方だけが書かれた状態を残さない。
+/// `save_language`と同じ契約で、既存configの原文を保ったまま2つのkeyだけを足すか差し
+/// 替える。名義は2つで1つの意図であるため、片方だけが書かれた状態を残さない。
 pub fn save_git_identity(location: &ConfigLocation, git: &GitIdentity) -> Result<PathBuf> {
     ensure_config_dir(location)?;
     let path = location.config_file();
 
     let updated = match read_existing(&path)? {
-        Some(text) => {
-            // 新しく足す行は`version`の直後へ入る。あとの呼び出しが前の行を押し下げる
-            // ため、読み手が期待する名前・mail addressの順に並ぶよう逆から書く。
-            let updated = replace_line(&text, "git_user_email:", &email_line(git)?);
-            let updated = replace_line(&updated, "git_user_name:", &name_line(git)?);
-            require_declares_git_identity(&updated, &path, git)?;
-            updated
-        }
+        Some(text) => edited(&text, &path, git)?,
         None => render(&GlobalConfig {
             language: None,
             git_identity: Some(git.clone()),
@@ -38,12 +31,19 @@ pub fn save_git_identity(location: &ConfigLocation, git: &GitIdentity) -> Result
     Ok(path)
 }
 
-/// 編集結果が、意図した名義だけを足した有効なconfigになっているか。
-fn require_declares_git_identity(updated: &str, path: &Path, git: &GitIdentity) -> Result<()> {
-    if let Ok(ConfigState::Valid { config, .. }) = parse(updated, path)
+/// 既存configの原文へ名義を書き込む。意図した名義だけを足した有効なconfigにならなければ
+/// 拒否する。
+fn edited(text: &str, path: &Path, git: &GitIdentity) -> Result<String> {
+    // 読み手が期待する名前・mail addressの順に並べる。
+    let entries = [
+        ("git_user_name", git.user_name.as_str()),
+        ("git_user_email", git.user_email.as_str()),
+    ];
+    if let Some(updated) = set_top_level(text, &entries)
+        && let Ok(ConfigState::Valid { config, .. }) = parse(&updated, path)
         && config.git_identity.as_ref() == Some(git)
     {
-        return Ok(());
+        return Ok(updated);
     }
     Err(Error::single(
         Diagnostic::new(

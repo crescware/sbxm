@@ -39,6 +39,9 @@ sha2 = { version = "0.11.0", default-features = false }
 signal-hook = "0.3.18"
 tempfile = "3.27.0"
 unic-langid = "0.9.6"
+# 利用者が手で書いたconfigを、コメントや書き方を保ったまま編集する。読み込みと検証は
+# `yaml_serde`が担い、このcrateは書き込みにだけ使う。
+yaml-edit = { version = "0.3.2", default-features = false }
 yaml_serde = "0.10"
 
 [dev-dependencies]

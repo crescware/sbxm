@@ -2,13 +2,14 @@ use crate::diagnostics::Result;
 
 use super::serialized;
 
-/// 名義の1行を、YAML自身の引用規則で組み立てる。
+/// 利用者へ手で書き足してもらう名義の1行を、YAML自身の引用規則で組み立てる。
 ///
 /// 名前もmail addressも利用者が打った任意の文字列であり、`#`や`:`のようにYAMLの
-/// 意味を持つ文字を含みうる。行を自分で足す以上、引用もserializerへ決めさせる。
+/// 意味を持つ文字を含みうる。そのまま貼れば同じ値として読めるよう、引用もserializerへ
+/// 決めさせる。
 ///
 /// `validate_git_identity_value`が改行を拒むため、値は必ず1行に収まる。1 keyの
-/// mappingは1行として描かれ、その行がそのまま差し替える単位になる。
+/// mappingは1行として描かれる。
 pub(super) fn declaration(key: &str, value: &str) -> Result<String> {
     let mut mapping = yaml_serde::Mapping::new();
     mapping.insert(

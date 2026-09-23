@@ -601,21 +601,129 @@ fn rendering_quotes_values_that_need_escaping() -> Checked {
 }
 
 #[test]
-fn a_configuration_that_cannot_be_edited_one_line_at_a_time_is_left_alone() -> Checked {
+fn settings_are_saved_into_whatever_style_the_user_wrote() -> Checked {
     let (_dir, location) = location()?;
-    // 有効だが行指向ではない書き方。行単位の編集では安全に足せない。
-    write_config(&location, "{version: 1}\n")?;
+    // 行末のcomment、引用したkey、flow style、4 spaceの字下げ、document markerなど、
+    // sbxmが描かない書き方をまとめて置く。
+    let handwritten = "\
+%YAML 1.2
+---
+# my settings
+version: 1 # schema
 
-    let error = save_language(&location, Locale::Ja)
-        .refused_because("a configuration sbxm cannot edit is never rewritten")?;
-    assert_eq!(error.first_id(), Some(ErrorId::ConfigNotRewritable));
+'language': en   # chosen once
+
+files:
+    -   source: /Users/example/.gitconfig
+        destination: .gitconfig
+    # keep this one for later
+    - {source: /Users/example/.vimrc, destination: .vimrc}
+future_option: [a, b] # not known yet
+...
+";
+    write_config(&location, handwritten)?;
+
+    save_language(&location, Locale::Ja).required_because("the language is replaced")?;
+    save_git_identity(&location, &example_identity()).required_because("the identity is added")?;
+
+    // 既にあるkeyはその位置と書き方のまま値だけが変わり、無いkeyは`version`の直後に
+    // 入る。ほかの記述は1文字も変わらない。
     assert_eq!(
         fs::read_to_string(location.config_file()).required()?,
-        "{version: 1}\n",
-        "the user's configuration is untouched"
+        "\
+%YAML 1.2
+---
+# my settings
+version: 1 # schema
+git_user_name: Example User
+git_user_email: user@example.com
+
+'language': ja   # chosen once
+
+files:
+    -   source: /Users/example/.gitconfig
+        destination: .gitconfig
+    # keep this one for later
+    - {source: /Users/example/.vimrc, destination: .vimrc}
+future_option: [a, b] # not known yet
+...
+"
     );
-    // 拒否したあとも、そのconfigはそのまま読める。
-    assert_eq!(loaded(&location)?.language, None);
+    let config = loaded(&location)?;
+    assert_eq!(config.language, Some(Locale::Ja));
+    assert_eq!(config.git_identity, Some(example_identity()));
+    assert_eq!(config.files.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_flow_style_configuration_is_edited_in_its_own_style() -> Checked {
+    let (_dir, location) = location()?;
+    // 行指向ではない書き方でも、構文木の上でならその書き方のまま足せる。
+    write_config(&location, "{version: 1}\n")?;
+
+    save_language(&location, Locale::Ja).required_because("the language is added")?;
+    assert_eq!(
+        fs::read_to_string(location.config_file()).required()?,
+        "{version: 1, language: \"ja\"}\n"
+    );
+    assert_eq!(loaded(&location)?.language, Some(Locale::Ja));
+    Ok(())
+}
+
+#[test]
+fn a_configuration_that_cannot_be_edited_safely_is_left_alone() -> Checked {
+    for (text, reason) in [
+        // 構文errorを含む木は、壊れた部分をどう描き戻すか分からない。
+        (
+            "version: 1\nlanguage: \"en\n",
+            "the configuration is not valid YAML",
+        ),
+        // 言語を変えれば、同じanchorを参照する別のkeyも変わる。
+        (
+            "version: 1\nlanguage: &chosen en\nfuture_option: *chosen\n",
+            "another key shares the value through an alias",
+        ),
+        (
+            "version: 1\nlanguage: en\nlanguage: en\n",
+            "the same key is written twice",
+        ),
+        (
+            "version: 1\n---\nversion: 1\n",
+            "the configuration holds two documents",
+        ),
+        ("- version: 1\n", "the configuration is not a mapping"),
+        ("language: en\n", "the configuration has no version"),
+        ("version: 99\n", "the version is unknown"),
+    ] {
+        let (_dir, location) = location()?;
+        write_config(&location, text)?;
+
+        let error = save_language(&location, Locale::Ja)
+            .refused_because(&format!("{reason}, so it is never rewritten"))?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ConfigNotRewritable),
+            "{reason}"
+        );
+        assert_eq!(
+            fs::read_to_string(location.config_file()).required()?,
+            text,
+            "{reason}: the user's configuration is untouched"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_refused_language_leaves_a_configuration_that_still_loads() -> Checked {
+    let (_dir, location) = location()?;
+    let text = "version: 1\nlanguage: &chosen en\nfuture_option: *chosen\n";
+    write_config(&location, text)?;
+
+    save_language(&location, Locale::Ja).refused_because("the alias would change as well")?;
+    // 拒否したあとも、そのconfigはそのまま読める。保存済みの言語も変わらない。
+    assert_eq!(loaded(&location)?.language, Some(Locale::En));
     Ok(())
 }
 
@@ -703,10 +811,16 @@ fn saving_the_identity_creates_a_private_configuration_when_there_is_none() -> C
 }
 
 #[test]
-fn an_identity_that_cannot_be_added_line_by_line_leaves_the_configuration_alone() -> Checked {
+fn an_identity_that_cannot_be_written_safely_leaves_the_configuration_alone() -> Checked {
     let (_dir, location) = location()?;
-    // 有効だが行指向ではない書き方。2行を足しても意図した設定にならない。
-    write_config(&location, "{version: 1}\n")?;
+    // 名前を変えれば、同じanchorを参照する別のkeyも変わる。
+    let text = "\
+version: 1
+git_user_name: &me Someone Else
+git_user_email: someone@example.com
+future_option: *me
+";
+    write_config(&location, text)?;
 
     let error = save_git_identity(&location, &example_identity())
         .refused_because("a configuration sbxm cannot edit is never rewritten")?;
@@ -745,11 +859,42 @@ fn an_identity_that_cannot_be_added_line_by_line_leaves_the_configuration_alone(
 
     assert_eq!(
         fs::read_to_string(location.config_file()).required()?,
-        "{version: 1}\n",
+        text,
         "the user's configuration is untouched"
     );
-    // 拒否したあとも、そのconfigはそのまま読める。名義は保存されていない。
-    assert_eq!(loaded(&location)?.git_identity, None);
+    // 拒否したあとも、そのconfigはそのまま読める。保存済みの名義も変わらない。
+    assert_eq!(
+        loaded(&location)?.git_identity,
+        Some(GitIdentity {
+            user_name: "Someone Else".to_string(),
+            user_email: "someone@example.com".to_string(),
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn saved_identity_values_survive_editing_even_when_they_look_like_yaml_syntax() -> Checked {
+    for value in yaml_lookalike_values() {
+        let (_dir, location) = location()?;
+        write_config(&location, "# my settings\nversion: 1\nlanguage: en\n")?;
+        let git = GitIdentity {
+            user_name: value.clone(),
+            user_email: format!("{value}@example.com"),
+        };
+
+        // 引用はyaml-editが決める。どの値も、読み直せば打ったとおりの値に戻る。
+        save_git_identity(&location, &git).required_because(&format!(
+            "{value:?} is saved into an existing configuration"
+        ))?;
+        let config = loaded(&location)?;
+        assert_eq!(config.git_identity, Some(git), "{value:?} did not survive");
+        assert_eq!(
+            config.language,
+            Some(Locale::En),
+            "{value:?} moved another key"
+        );
+    }
     Ok(())
 }
 
