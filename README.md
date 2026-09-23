@@ -408,6 +408,18 @@ edit.
 changed since sbxm placed it (`updated`) and whether the sandbox copy was edited
 (`modified`).
 
+To bring an edit made inside a sandbox back to the host file:
+
+```sh
+sbxm files pull .claude/CLAUDE.md <project-id>
+```
+
+sbxm copies the sandbox file into the project's `.sbxm/incoming` area, shows how
+it differs from the host file, and asks whether to adopt it. Nothing is merged
+automatically, and a non-interactive run only shows the differences. Control
+characters from the sandbox are shown as `\u{...}` instead of reaching your
+terminal.
+
 To place the declarations in every registered project at once:
 
 ```sh

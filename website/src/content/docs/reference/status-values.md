@@ -31,7 +31,7 @@ once in the sandbox.
 | `updated` | HOST | The host file changed after sbxm placed it. | Run `sbxm apply <project-id> --files`. |
 | `unplaced` | HOST | sbxm has not placed this declaration in this project yet. | Run `sbxm apply <project-id> --files`; a project without a sandbox gets it from its first build. |
 | `unreadable` | HOST | The host file cannot be placed as it is. The diagnostic below the table says why. | Fix the file or remove the declaration with `sbxm files rm`. |
-| `modified` | SANDBOX | The sandbox copy was changed after sbxm placed it. `apply --files` leaves it alone. | Save what you need from it before replacing it with `--force`. |
+| `modified` | SANDBOX | The sandbox copy was changed after sbxm placed it. `apply --files` leaves it alone. | Bring the change back with `sbxm files pull`, or save what you need from it before replacing it with `--force`. |
 | `unrecorded` | SANDBOX | The sandbox copy differs from the host file, and sbxm has no record of placing it. | The same as `modified`. |
 | `missing` | SANDBOX | The sandbox has no file at the destination. | Run `sbxm apply <project-id> --files`. |
 
