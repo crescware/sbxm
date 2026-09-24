@@ -53,6 +53,9 @@ pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitC
         Command::Fetch(project) => {
             crate::commands::fetch::exec(project.as_ref(), &context, &mut ui, host, &mut prompt)
         }
+        Command::Send(project) => {
+            crate::commands::send::exec(project.as_ref(), &context, &mut ui, host, &mut prompt)
+        }
         Command::Guide(args) => {
             crate::commands::guide::exec(&args, &context, &mut ui, host, &mut prompt)
         }

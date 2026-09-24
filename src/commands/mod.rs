@@ -26,6 +26,7 @@ pub mod rebuild;
 mod recovery_test;
 pub mod repair;
 mod report;
+pub mod send;
 pub mod status;
 pub mod stop;
 
