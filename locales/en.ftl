@@ -105,6 +105,7 @@ error-file-declaration-invalid-source = A declared file has an invalid source
 error-file-declaration-invalid-destination = A declared file has an invalid destination
 warning-config-unknown-key = Unknown key { $key } in { $path } was ignored.
 warning-config-unknown-file-key = Unknown key { $key } in files entry { $entry } of { $path } was ignored.
+warning-files-apply-not-offered = The declaration was saved, but the registered projects could not be read, so it was not placed in them yet.
 error-file-already-declared = { $destination } is already declared, with { $source } as its source.
 error-file-not-declared = No declared file is placed at { $destination }.
 error-file-destination-required = { $source } is outside the home directory, so no destination can be derived from it.

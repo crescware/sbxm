@@ -10,6 +10,7 @@ mod args;
 mod ask_to_apply;
 mod command_line;
 mod exec;
+mod invalid_destination;
 mod looks_like_credential;
 pub mod print;
 mod remove;
@@ -21,6 +22,7 @@ pub use args::Args;
 pub use ask_to_apply::ask_to_apply;
 pub(crate) use command_line::CommandLine as CommandLineParser;
 pub use exec::exec;
+pub use invalid_destination::invalid_destination;
 pub use looks_like_credential::looks_like_credential;
 pub use remove::remove;
 
