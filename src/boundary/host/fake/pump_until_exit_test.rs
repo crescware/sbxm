@@ -65,7 +65,7 @@ fn capture<O: Read + AsFd, E: Read + AsFd>(
         spec,
         limit,
         signal,
-        None::<InputFeed<'_, std::io::Sink>>,
+        None::<InputFeed<'_, std::fs::File>>,
         stdout,
         stderr,
         &mut |stream, bytes| match stream {
@@ -402,7 +402,7 @@ fn drain_pipe_handles_empty_and_read_errors() -> Checked {
 #[test]
 fn poll_pipes_accepts_missing_streams() -> Checked {
     assert_eq!(
-        poll_pipes::<ChildStdout, ChildStderr>(None, None)
+        poll_pipes::<ChildStdout, ChildStderr>(None, None, None)
             .required_because("polling no pipes must work")?,
         (false, false)
     );
@@ -421,7 +421,7 @@ fn a_relay_hands_both_streams_to_one_receiver_in_the_order_they_arrive() -> Chec
         relayed.spec(),
         None,
         None,
-        None::<InputFeed<'_, std::io::Sink>>,
+        None::<InputFeed<'_, std::fs::File>>,
         ScriptedPipe::new([ReadStep::Bytes(b"out")])?,
         ScriptedPipe::new([ReadStep::Bytes(b"err")])?,
         &mut |_, bytes| output.relay(bytes),
@@ -436,17 +436,27 @@ fn a_relay_hands_both_streams_to_one_receiver_in_the_order_they_arrive() -> Chec
 // --- stdinへ渡すbyte列 ---
 
 /// 書き込みの答えを順に返すstdin。
+/// 書けた量をtestが決める書き込み端。書けたbyteと、閉じられたかどうかを残す。
+///
+/// pollが問い合わせる相手は本物のfdのままにする。`/dev/null`は常に書き込み可能と答える。
 struct ScriptedWriter {
+    ready: std::fs::File,
     answers: Vec<std::io::Result<usize>>,
-    written: Vec<u8>,
+    written: std::rc::Rc<std::cell::RefCell<Vec<u8>>>,
+    closed: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 impl ScriptedWriter {
-    fn answering(answers: Vec<std::io::Result<usize>>) -> ScriptedWriter {
-        ScriptedWriter {
+    fn answering(answers: Vec<std::io::Result<usize>>) -> Checked<ScriptedWriter> {
+        Ok(ScriptedWriter {
+            ready: std::fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/null")
+                .required_because("a descriptor that always polls writable")?,
             answers: answers.into_iter().rev().collect(),
-            written: Vec::new(),
-        }
+            written: std::rc::Rc::default(),
+            closed: std::rc::Rc::default(),
+        })
     }
 }
 
@@ -455,7 +465,9 @@ impl std::io::Write for ScriptedWriter {
         match self.answers.pop() {
             Some(Ok(accepted)) => {
                 let accepted = accepted.min(bytes.len());
-                self.written.extend_from_slice(&bytes[..accepted]);
+                self.written
+                    .borrow_mut()
+                    .extend_from_slice(&bytes[..accepted]);
                 Ok(accepted)
             }
             Some(Err(error)) => Err(error),
@@ -468,6 +480,18 @@ impl std::io::Write for ScriptedWriter {
     }
 }
 
+impl AsFd for ScriptedWriter {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+        self.ready.as_fd()
+    }
+}
+
+impl Drop for ScriptedWriter {
+    fn drop(&mut self) {
+        self.closed.set(true);
+    }
+}
+
 #[test]
 fn input_is_written_a_piece_at_a_time_and_closed_once_it_is_all_written() -> Checked {
     use std::io::{Error as IoError, ErrorKind};
@@ -477,14 +501,21 @@ fn input_is_written_a_piece_at_a_time_and_closed_once_it_is_all_written() -> Che
         Err(IoError::from(ErrorKind::WouldBlock)),
         Err(IoError::from(ErrorKind::Interrupted)),
         Ok(3),
-    ]);
+    ])?;
+    let written = std::rc::Rc::clone(&writer.written);
+    let closed = std::rc::Rc::clone(&writer.closed);
     let mut feed = InputFeed::new(writer, b"hello");
     // 子がまだ読んでいない間は、書けた分だけ進めて戻る。
     feed.feed().required()?;
+    assert_eq!(written.borrow().as_slice(), b"he");
+    assert!(feed.waiting().is_some(), "the rest is still waiting");
     feed.feed().required()?;
     feed.feed().required()?;
     // 残りを書き終えたら書き込み端を閉じ、それ以上は書かない。
     feed.feed().required()?;
+    assert_eq!(written.borrow().as_slice(), b"hello");
+    assert!(closed.get(), "the child sees the end of its input");
+    assert!(feed.waiting().is_none(), "nothing is left to wait for");
     feed.feed().required()?;
     Ok(())
 }
@@ -493,15 +524,26 @@ fn input_is_written_a_piece_at_a_time_and_closed_once_it_is_all_written() -> Che
 fn a_child_that_stopped_reading_ends_the_input_without_an_error() -> Checked {
     use std::io::{Error as IoError, ErrorKind};
 
-    let writer = ScriptedWriter::answering(vec![Err(IoError::from(ErrorKind::BrokenPipe))]);
+    let writer = ScriptedWriter::answering(vec![Err(IoError::from(ErrorKind::BrokenPipe))])?;
+    let closed = std::rc::Rc::clone(&writer.closed);
     let mut feed = InputFeed::new(writer, b"hello");
     // 結果は子の終了statusが決める。書けなかったことだけで実行を失敗にしない。
     feed.feed().required()?;
+    assert!(
+        closed.get(),
+        "a child that stopped reading gets no more input"
+    );
     feed.feed().required()?;
 
     // 何も受け付けない書き込み端も、次に書ける時まで待つだけである。
-    let mut stalled = InputFeed::new(ScriptedWriter::answering(Vec::new()), b"hello");
+    let stalled_writer = ScriptedWriter::answering(Vec::new())?;
+    let stalled_closed = std::rc::Rc::clone(&stalled_writer.closed);
+    let mut stalled = InputFeed::new(stalled_writer, b"hello");
     stalled.feed().required()?;
+    assert!(
+        !stalled_closed.get(),
+        "the input stays open until it is written"
+    );
     Ok(())
 }
 
@@ -513,7 +555,7 @@ fn input_that_cannot_be_written_ends_the_child_and_keeps_what_the_os_said() -> C
     let pid = rustix::process::Pid::from_child(&child);
     let signal = signal()?;
     let writer =
-        ScriptedWriter::answering(vec![Err(IoError::other("the pipe could not be written"))]);
+        ScriptedWriter::answering(vec![Err(IoError::other("the pipe could not be written"))])?;
 
     let error = pump(
         &mut child,

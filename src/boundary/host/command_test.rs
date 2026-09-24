@@ -668,3 +668,22 @@ fn the_input_never_reaches_a_debug_representation() {
     assert!(shown.contains("12 bytes"), "{shown}");
     assert_eq!(spec.input(), Some(b"token=secret".as_slice()));
 }
+
+#[test]
+fn a_large_input_reaches_a_child_that_writes_nothing_without_waiting_on_polls() -> Checked {
+    // 子が出力を書かないあいだも、読んだ分だけすぐに書き足す。出力を待つ間隔ごとに
+    // 書き足していた頃は、8 MiBに0.7秒ほどかかった。今は数msで終わる。
+    let input = vec![b'x'; 8 * 1024 * 1024];
+    let spec = CommandSpec::capture("sh", &["-c", "cat > /dev/null"]).with_input(input);
+    let started = Instant::now();
+
+    let outcome = RealHost.run(&spec).required()?;
+
+    assert!(outcome.success());
+    assert!(
+        started.elapsed() < Duration::from_millis(300),
+        "{:?}",
+        started.elapsed()
+    );
+    Ok(())
+}
