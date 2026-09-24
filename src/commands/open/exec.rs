@@ -90,12 +90,24 @@ pub fn exec(
     ui.stderr(&present::disk_section(connecting, &prepared.disk));
 
     let project = ProjectId::parse(&prepared.project);
-    let connected = super::run::connect(host, prepared, ui);
-    // hostにあるrepositoryの案件は、sessionを閉じたあとに保存しておく。
-    if let Ok(project) = project {
+    // hostにあるrepositoryの案件は、sessionのあいだも保存しておく。端末はSSHが持つため、
+    // 結果は示さない。保存できなかったことは、sessionを閉じたあとの保存が伝える。
+    let mut save = || {
+        if let Ok(project) = &project {
+            let _ = fetch::save_first(context.location, project, host, context.workspace_root);
+        }
+    };
+    let during: Option<&mut dyn FnMut()> = if prepared.from_host {
+        Some(&mut save)
+    } else {
+        None
+    };
+    let connected = super::run::connect(host, prepared, ui, during);
+    // sessionを閉じたあとにも保存しておく。
+    if let Ok(project) = &project {
         fetch::print::auto_saved(
             ui,
-            &fetch::save_first(context.location, &project, host, context.workspace_root),
+            &fetch::save_first(context.location, project, host, context.workspace_root),
         );
     }
     match connected {

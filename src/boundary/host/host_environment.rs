@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::time::Duration;
 
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
@@ -25,6 +26,23 @@ pub trait HostEnvironment {
         output.relay(&outcome.stdout);
         output.relay(&outcome.stderr);
         output.finished();
+        Ok(outcome)
+    }
+
+    /// 端末を引き渡したcommandを実行し、終わるのを待つあいだ`every`ごとに`tick`を呼ぶ。
+    ///
+    /// `tick`は端末へ何も書かない手続きとする。既定は`run_with_terminal`で実行したあとに
+    /// `tick`を1回だけ呼ぶ。実際のhostだけが、実行中に時間を測って呼ぶ。testのhostは、
+    /// 実行中の手続きが走ることをこの既定で観測できる。
+    fn run_with_terminal_ticking(
+        &self,
+        command: &TerminalCommand,
+        output: &mut dyn ExternalOutput,
+        _every: Duration,
+        tick: &mut dyn FnMut(),
+    ) -> Result<CommandOutcome> {
+        let outcome = self.run_with_terminal(command, output)?;
+        tick();
         Ok(outcome)
     }
 

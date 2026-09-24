@@ -1,11 +1,12 @@
 use std::io::Write;
+use std::time::Duration;
 
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
 use super::{
     CommandOutcome, CommandSpec, HostEnvironment, PtyConfirmedCommand, TerminalCommand,
-    exists_on_path, run, run_pty_confirmed, run_streaming, run_with_terminal,
+    exists_on_path, run, run_pty_confirmed, run_streaming, run_terminal_ticking, run_with_terminal,
 };
 
 /// 実際のhost。
@@ -26,6 +27,16 @@ impl HostEnvironment for RealHost {
         output: &mut dyn ExternalOutput,
     ) -> Result<CommandOutcome> {
         run_with_terminal(command, output)
+    }
+
+    fn run_with_terminal_ticking(
+        &self,
+        command: &TerminalCommand,
+        output: &mut dyn ExternalOutput,
+        every: Duration,
+        tick: &mut dyn FnMut(),
+    ) -> Result<CommandOutcome> {
+        run_terminal_ticking(command, output, every, tick)
     }
 
     fn run_streaming(

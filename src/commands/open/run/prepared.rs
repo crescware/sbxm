@@ -9,6 +9,8 @@ use super::ClampedIndex;
 #[derive(Debug)]
 pub struct Prepared {
     pub project: String,
+    /// hostにあるrepositoryを登録した案件か。sessionのあいだにhostへ保存する。
+    pub from_host: bool,
     pub sandbox: String,
     /// 接続先のSSH host名。
     pub ssh_host: String,

@@ -788,7 +788,7 @@ fn the_connection_hands_the_terminal_to_ssh() -> Checked {
     let host = ready(FakeSbx::listing(&running), &project)?;
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 
-    connect(&host, prepared, &mut RecordedOutput::new()).required_because("connect")?;
+    connect(&host, prepared, &mut RecordedOutput::new(), None).required_because("connect")?;
     let ssh = host.spec(&format!("{}.sbx", project.sandbox))?;
     assert_eq!(ssh.program, "ssh");
     assert_eq!(
@@ -830,7 +830,7 @@ fn the_session_lease_is_released_before_a_connection_error_is_reported() -> Chec
     );
     let prepared = prepare_for(&fixture, &host).required_because("prepare")?;
 
-    connect(&host, prepared, &mut RecordedOutput::new())
+    connect(&host, prepared, &mut RecordedOutput::new(), None)
         .refused_because("a failed SSH child is reported")?;
     paths::acquire_exclusive_lock(
         &project.paths.session_lease_file(),

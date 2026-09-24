@@ -7,6 +7,7 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata, last_worktree_index};
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
+use crate::repository::Provider;
 
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
@@ -97,6 +98,7 @@ pub fn prepare(
 
     Ok(Prepared {
         project: metadata.display_id(),
+        from_host: metadata.repository.provider() == Provider::Local,
         sandbox: name.as_str().to_string(),
         ssh_host: format!("{name}.sbx"),
         working_directory,

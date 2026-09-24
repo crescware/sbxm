@@ -455,3 +455,81 @@ fn a_failed_handover_after_a_successful_build_does_not_return_to_pending() -> Ch
     );
     Ok(())
 }
+
+#[test]
+fn a_local_project_is_saved_during_and_after_the_session() -> Checked {
+    // 模したhostは、sessionが終わったあとで途中の保存を1回だけ走らせる。実物は間隔ごとに
+    // 走らせる。どちらも、端末へ何も書かずに保存を試みる。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = crate::commands::add::AddRequest {
+        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
+            .required_because("a local repository")?,
+        worktrees: None,
+        detach: None,
+        start_branch: Some("main".to_string()),
+    };
+    bench.build(&world, &request).required()?;
+    let mark = world.mark();
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = exec(
+        &bench,
+        &world,
+        ProjectId::parse("local/app").required()?,
+        &mut stdout,
+        &mut stderr,
+    );
+
+    assert_eq!(
+        code,
+        ExitCode::Success,
+        "{}",
+        String::from_utf8_lossy(&stderr)
+    );
+    let calls = world.since(mark);
+    let session = calls
+        .iter()
+        .position(|call| call.starts_with("ssh "))
+        .required_because("the session starts")?;
+    let saves = calls
+        .iter()
+        .skip(session)
+        .filter(|call| call.contains("bundle create"))
+        .count();
+    assert_eq!(
+        saves, 2,
+        "once during and once after the session: {calls:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_github_project_is_not_saved_to_the_host_around_the_session() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = registered(&bench, &world, None)?;
+    open(&bench, &world, &project, None).required()?;
+    let mark = world.mark();
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = exec(&bench, &world, project, &mut stdout, &mut stderr);
+
+    assert_eq!(
+        code,
+        ExitCode::Success,
+        "{}",
+        String::from_utf8_lossy(&stderr)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("bundle create")),
+        "{:?}",
+        world.since(mark)
+    );
+    Ok(())
+}

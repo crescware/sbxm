@@ -854,3 +854,44 @@ fn a_missing_input_file_stops_before_the_child_is_started() -> Checked {
     assert!(!marker.exists(), "the child is never started");
     Ok(())
 }
+
+#[test]
+fn a_handed_over_command_lets_the_caller_work_while_it_runs() -> Checked {
+    let command = TerminalCommand::handed_over("sh", &["-c", "sleep 0.3"]);
+    let mut ticks = 0;
+
+    let outcome = RealHost
+        .run_with_terminal_ticking(
+            &command,
+            &mut RecordedOutput::new(),
+            Duration::from_millis(50),
+            &mut || ticks += 1,
+        )
+        .required()?;
+
+    assert!(outcome.success());
+    assert!(
+        ticks >= 2,
+        "the caller worked while the command ran: {ticks}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_command_that_keeps_its_output_is_not_interrupted_to_tick() -> Checked {
+    let command = TerminalCommand::relayed("sh", &["-c", "sleep 0.1"]);
+    let mut ticks = 0;
+
+    let outcome = RealHost
+        .run_with_terminal_ticking(
+            &command,
+            &mut RecordedOutput::new(),
+            Duration::from_millis(10),
+            &mut || ticks += 1,
+        )
+        .required()?;
+
+    assert!(outcome.success());
+    assert_eq!(ticks, 0);
+    Ok(())
+}
