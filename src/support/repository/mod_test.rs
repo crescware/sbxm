@@ -382,3 +382,19 @@ fn a_host_repository_that_is_gone_does_not_lead_git_to_the_one_around_it() -> Ch
     assert!(!outcome.success(), "{}", outcome.stdout_text());
     Ok(())
 }
+
+#[test]
+fn a_host_repository_that_was_moved_away_is_named_as_missing() -> Checked {
+    // 無いのはgitではなく、登録したrepositoryである。
+    let root = tempfile::tempdir().required()?;
+    let error = host_git(
+        &crate::boundary::host::RealHost,
+        &root.path().join("moved-away"),
+        &["rev-parse", "--show-toplevel"],
+        None,
+        crate::boundary::host::TimeoutClass::LocalFilesystem,
+    )
+    .refused_because("the repository is gone")?;
+    assert_eq!(error.first_id(), Some(ErrorId::HostRepositoryMissing));
+    Ok(())
+}

@@ -113,6 +113,7 @@ error_ids! {
     LocalRepositoryUnusable => "local-repository-unusable",
     LocalNameUnusable => "local-name-unusable",
     HostRepositoryDetached => "host-repository-detached",
+    HostRepositoryMissing => "host-repository-missing",
 
     // --- Image ---
     ImageUnusable => "image-unusable",
@@ -207,6 +208,7 @@ error_ids! {
     // --- 外部command ---
     ExternalCommandNotFound => "external-command-not-found",
     ExternalCommandSpawnFailed => "external-command-spawn-failed",
+    ExternalCommandDirectoryMissing => "external-command-directory-missing",
     ExternalCommandFailed => "external-command-failed",
     ExternalCommandTimeout => "external-command-timeout",
     ExternalCommandOutputUnreadable => "external-command-output-unreadable",

@@ -603,6 +603,19 @@ fn a_missing_program_is_distinguished_from_other_spawn_failures() -> Checked {
 }
 
 #[test]
+fn a_missing_working_directory_is_not_mistaken_for_a_missing_program() -> Checked {
+    // OSはどちらも`NotFound`で答える。無いのはprogramではなくdirectoryだと名指しする。
+    let dir = tempfile::tempdir().required()?;
+    let spec = CommandSpec::probe("true", &[]).working_dir(&dir.path().join("gone"));
+    let error = run(&spec).refused_because("the directory is gone")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandDirectoryMissing)
+    );
+    Ok(())
+}
+
+#[test]
 fn a_spawn_failure_that_is_not_a_missing_program_keeps_what_was_observed() -> Checked {
     let dir = tempfile::tempdir().required()?;
 
