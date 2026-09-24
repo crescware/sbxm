@@ -4,7 +4,7 @@ use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 use crate::project::ProjectId;
 
-use super::{add, apply, destroy, files, guide, ls, open, rebuild, repair, status, stop};
+use super::{add, apply, destroy, fetch, files, guide, ls, open, rebuild, repair, status, stop};
 
 /// 実行するcommand。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +16,7 @@ pub enum Command {
     Add(crate::commands::add::Args),
     Apply(crate::commands::apply::Args),
     Files(crate::commands::files::Args),
+    Fetch(Option<ProjectId>),
     Guide(crate::commands::guide::Args),
     Repair(Option<ProjectId>),
     Rebuild(Option<ProjectId>),
@@ -34,6 +35,7 @@ impl Command {
             add::CommandLineParser::syntax(builder)?,
             apply::CommandLineParser::syntax(builder)?,
             files::CommandLineParser::syntax(builder)?,
+            fetch::CommandLineParser::syntax(builder)?,
             guide::CommandLineParser::syntax(builder)?,
             repair::CommandLineParser::syntax(builder)?,
             rebuild::CommandLineParser::syntax(builder)?,
@@ -58,6 +60,9 @@ impl Command {
                     &arguments, prompt,
                 )?)),
                 "files" => Ok(Command::Files(files::CommandLineParser::interpret(
+                    &arguments, prompt,
+                )?)),
+                "fetch" => Ok(Command::Fetch(fetch::CommandLineParser::interpret(
                     &arguments, prompt,
                 )?)),
                 "guide" => Ok(Command::Guide(guide::CommandLineParser::interpret(

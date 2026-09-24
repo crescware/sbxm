@@ -5,6 +5,7 @@
 
 mod ensure_bare_clone;
 mod fetch_refspec;
+mod host_repository;
 #[cfg(test)]
 #[path = "mod_test.rs"]
 mod mod_test;
@@ -18,6 +19,7 @@ mod worktree;
 
 pub use ensure_bare_clone::ensure_bare_clone;
 pub(crate) use fetch_refspec::FETCH_REFSPEC;
+pub use host_repository::host_repository;
 pub use refresh_origin::refresh_origin;
 pub use refresh_origin_all_refs::refresh_origin_all_refs;
 pub use start_ref::resolve_start_ref;

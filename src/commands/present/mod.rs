@@ -22,6 +22,7 @@ mod placement;
 mod project_state;
 mod project_status;
 mod provisioning_output;
+mod ref_change;
 mod sandbox_state;
 mod stop_result;
 
@@ -39,6 +40,7 @@ pub use placement::placement;
 pub use project_state::project_state;
 pub use project_status::project_status;
 pub use provisioning_output::provisioning_output;
+pub use ref_change::ref_change;
 pub use sandbox_state::sandbox_state;
 pub use stop_result::stop_result;
 

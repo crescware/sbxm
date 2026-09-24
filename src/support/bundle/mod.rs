@@ -12,6 +12,7 @@ mod prune_bundles;
 mod receive_bundle;
 mod received_bundle;
 mod ref_change;
+mod save_to_host;
 mod stamp;
 
 use create_bundle::CREATE_BUNDLE;
@@ -22,6 +23,7 @@ pub use prune_bundles::prune_bundles;
 pub use receive_bundle::receive_bundle;
 pub use received_bundle::ReceivedBundle;
 pub use ref_change::RefChange;
+pub use save_to_host::save_to_host;
 pub use stamp::stamp;
 
 #[cfg(test)]

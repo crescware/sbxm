@@ -13,8 +13,8 @@ use temp_home::{TempHome, temp_home};
 use std::path::Path;
 use std::process::{Command, Output};
 
-const COMMANDS: [&str; 11] = [
-    "add", "apply", "files", "guide", "repair", "rebuild", "open", "stop", "ls", "status",
+const COMMANDS: [&str; 12] = [
+    "add", "apply", "files", "fetch", "guide", "repair", "rebuild", "open", "stop", "ls", "status",
     "destroy",
 ];
 

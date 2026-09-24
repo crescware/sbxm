@@ -284,3 +284,36 @@ fn only_the_newest_bundles_are_kept() -> Checked {
     prune_bundles(&root.path().join("absent"), 2).required()?;
     Ok(())
 }
+
+#[test]
+fn saving_to_the_host_keeps_the_bundle_in_the_project_and_prunes_old_ones() -> Checked {
+    let repositories = Repositories::new()?;
+    let parent = tempfile::tempdir().required()?;
+    let canonical = crate::project::ProjectId::parse("Example-Org/Example-Repo")
+        .required()?
+        .canonical();
+    let paths = crate::paths::ProjectPaths::at(parent.path(), &canonical);
+    let sandbox = crate::project::SandboxName::derive(&canonical);
+
+    for round in 0..=KEPT_BUNDLES {
+        repositories.commit(&format!("round {round}"))?;
+        let changes = save_to_host(
+            &LocalSandbox,
+            &paths,
+            &sandbox,
+            &repositories.git_dir(),
+            &repositories.host,
+        )
+        .required()?
+        .required_because("the sandbox has refs to save")?;
+        assert!(!changes.is_empty(), "round {round} saved something");
+        // 同じ秒に続けて受け取っても、名前は重ならない。
+    }
+    assert_eq!(
+        repositories.host_ref(&format!("refs/sbx/{}/heads/main", sandbox.as_str()))?,
+        git_in(&repositories.worktree, &["rev-parse", "HEAD"])?
+    );
+    let kept = fs::read_dir(paths.bundles_dir()).required()?.count();
+    assert_eq!(kept, KEPT_BUNDLES, "only the newest bundles are kept");
+    Ok(())
+}

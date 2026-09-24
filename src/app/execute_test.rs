@@ -142,6 +142,7 @@ fn every_command_variant_is_routed_to_its_own_command_once() {
         ("Command::Add(", "commands::add::exec("),
         ("Command::Apply(", "commands::apply::exec("),
         ("Command::Files(", "commands::files::exec("),
+        ("Command::Fetch(", "commands::fetch::exec("),
         ("Command::Guide(", "commands::guide::exec("),
         ("Command::Repair(", "commands::repair::exec("),
         ("Command::Rebuild(", "commands::rebuild::exec("),
