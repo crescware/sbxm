@@ -2,8 +2,8 @@
 /// stdoutへ書く手順。引数は`$1`がbare repositoryのgit directory。
 ///
 /// worktreeのHEADはbranchに載っていないcommitを指しうる。`refs/sbxm/save/`へ一時refとして
-/// 置いてからbundleへ含め、成否にかかわらず消す。名前がrefとして使えないworktreeや、
-/// 別の場所にある同じ名前のworktreeは通し番号で呼ぶ。
+/// 置いてからbundleへ含め、成否にかかわらず消す。signalで止められても消す。名前がref
+/// として使えないworktreeや、別の場所にある同じ名前のworktreeは通し番号で呼ぶ。
 /// refが1つも無ければ何も書かずに終わる。
 ///
 /// gitの失敗は、pipeや`[ ]`の中で読み落とさず、その場で止める。読み落とすと、
@@ -18,6 +18,7 @@ clear() {
 }
 clear
 trap clear EXIT
+trap 'exit 143' HUP INT TERM
 worktrees=$(git worktree list --porcelain)
 n=0
 while IFS= read -r line; do

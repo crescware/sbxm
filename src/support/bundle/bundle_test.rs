@@ -607,3 +607,30 @@ fn a_git_failure_while_gathering_refs_is_not_taken_as_nothing_to_save() -> Check
     }
     Ok(())
 }
+
+#[test]
+fn a_bundle_stopped_by_a_signal_leaves_no_temporary_refs() -> Checked {
+    // worktreeのHEADを置いた一時refは、止められても残さない。
+    let repositories = Repositories::new()?;
+    let creating = Creating::new(r#"*" bundle create "*) : > "$MARK"; cat > /dev/null ;;"#)?;
+    let mut child = creating
+        .command(&repositories)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .required()?;
+    let mark = creating.dir.path().join("mark");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !mark.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(mark.exists(), "the script started bundling");
+    let saved = || git_in(&repositories.worktree, &["for-each-ref", "refs/sbxm/save/"]);
+    assert!(!saved()?.is_empty(), "the worktree heads were placed");
+
+    let pid = rustix::process::Pid::from_child(&child);
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;
+    child.wait().required()?;
+
+    assert!(saved()?.is_empty());
+    Ok(())
+}
