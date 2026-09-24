@@ -394,3 +394,44 @@ fn a_branch_renamed_into_its_own_directory_is_saved_in_both_directions() -> Chec
     assert!(repositories.fetch("20260923T100300Z")?.is_empty());
     Ok(())
 }
+
+#[test]
+fn a_host_repository_with_submodules_is_saved_to_without_reaching_their_remotes() -> Checked {
+    // 取り込みはbundleだけを読む。hostのrepositoryがsubmoduleを辿る設定でも、
+    // submoduleのremoteへ取りに行かない。行けば、届かないremoteで保存が失敗する。
+    let repositories = Repositories::new()?;
+    let library = repositories.host.with_file_name("library");
+    fs::create_dir(&library).required()?;
+    git_in(&library, &["init", "--quiet"])?;
+    git_in(
+        &library,
+        &["commit", "--quiet", "--allow-empty", "-m", "library"],
+    )?;
+    git_in(
+        &repositories.host,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--quiet",
+            &library.to_string_lossy(),
+            "library",
+        ],
+    )?;
+    git_in(&repositories.host, &["commit", "--quiet", "-m", "library"])?;
+    git_in(
+        &repositories.host,
+        &["config", "fetch.recurseSubmodules", "true"],
+    )?;
+    fs::remove_dir_all(&library).required()?;
+
+    let changes = repositories.fetch("20260923T100000Z")?;
+    assert!(
+        changes.contains(&RefChange::Created {
+            reference: reference("heads/main")
+        }),
+        "{changes:?}"
+    );
+    Ok(())
+}

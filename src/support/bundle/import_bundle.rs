@@ -21,6 +21,9 @@ use super::{REF_KINDS, RefChange, saved_namespace, saved_refs};
 /// 済んだ場合も、前の先端は退避済みであり、次の取り込みが残りを作る。
 ///
 /// Sandboxのrefの名前は種類ごとに決めた場所へだけ写す。`archive/`へ届く写し方は無い。
+///
+/// 取り込みはbundleだけを読む。hostのrepositoryがsubmoduleを辿る設定でも、submoduleの
+/// remoteへは取りに行かない。
 pub fn import_bundle(
     host: &dyn HostEnvironment,
     repository: &Path,
@@ -66,6 +69,7 @@ fn import_through(
         "transfer.fsckObjects=true",
         "fetch",
         "--no-tags",
+        "--no-recurse-submodules",
         "--no-write-fetch-head",
         "--quiet",
         bundle,
