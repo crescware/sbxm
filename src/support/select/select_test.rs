@@ -479,3 +479,29 @@ fn a_stale_session_lease_file_alone_does_not_count_as_an_open_session() -> Check
         .required_because("a stale file with no OS lock held blocks nothing")?;
     Ok(())
 }
+
+#[test]
+fn a_two_way_question_answers_which_of_the_two_was_chosen() -> Checked {
+    use crate::i18n::Locale;
+    use crate::testing::prompt::ScriptedPrompt;
+
+    let heading = crate::msg!("prompt-files-apply-heading", count = 1);
+    let ask = |index: usize| {
+        chooses_first(
+            &mut ScriptedPrompt::choosing(index),
+            &heading,
+            "prompt-files-apply-now",
+            "prompt-files-apply-later",
+            Locale::En,
+        )
+    };
+    assert!(ask(0).required()?);
+    assert!(!ask(1).required()?);
+    // 候補に対応しない選択はcancelではない。
+    let error = ask(2).refused_because("there is no third choice")?;
+    assert_eq!(
+        error.first_id(),
+        Some(crate::diagnostics::ErrorId::SelectionUnresolved)
+    );
+    Ok(())
+}
