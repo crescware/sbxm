@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::paths;
-use crate::support::host_git::host_git;
+use crate::support::repository::host_git;
 
 use super::RefChange;
 
@@ -197,12 +197,11 @@ fn clear(host: &dyn HostEnvironment, repository: &Path, prefix: &str) -> Result<
     if names.is_empty() {
         return Ok(());
     }
-    let mut input: String = names
-        .keys()
-        .map(|name| format!("delete {prefix}{name}\n"))
-        .collect();
-    input.insert_str(0, "start\n");
-    input.push_str("commit\n");
+    let mut lines = vec!["start".to_string()];
+    lines.extend(names.keys().map(|name| format!("delete {prefix}{name}")));
+    lines.push("commit".to_string());
+    let mut input = lines.join("\n");
+    input.push('\n');
     host_git(
         host,
         repository,

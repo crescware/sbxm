@@ -12,7 +12,6 @@ pub mod disk;
 pub mod docker;
 pub mod files;
 pub mod generation;
-pub mod host_git;
 pub mod identity;
 pub mod image;
 pub mod inventory;
