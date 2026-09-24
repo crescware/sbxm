@@ -59,3 +59,46 @@ fn a_stopped_sandbox_is_not_started_to_fetch_from() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn fetching_from_the_entry_point_prints_what_was_saved() -> Checked {
+    use crate::commands::Context;
+    use crate::design::prompt::{RecordedScreen, ScriptedKeys};
+    use crate::design::{PromptUi, RenderingPolicy, Ui};
+    use crate::diagnostics::ExitCode;
+    use crate::i18n::Locale;
+
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench.build(&world, &request).required()?;
+
+    let mut stdout: Vec<u8> = Vec::new();
+    let policy = RenderingPolicy::plain();
+    let code = {
+        let mut ui = Ui::capture(Locale::En, policy, &mut stdout, std::io::sink());
+        let mut prompt = PromptUi::new(
+            Locale::En,
+            policy.stderr,
+            Box::new(ScriptedKeys::confirming()),
+            Box::new(RecordedScreen::new()),
+        );
+        let context = Context {
+            location: &bench.location,
+            workspace_root: bench.workspace_root.path(),
+            locale: Locale::En,
+            can_prompt: false,
+        };
+        super::super::exec(
+            Some(&project_of(&request)?),
+            &context,
+            &mut ui,
+            &world,
+            &mut prompt,
+        )
+    };
+    assert_eq!(code, ExitCode::Success);
+    let stdout = String::from_utf8(stdout).required()?;
+    assert!(stdout.contains("no branch or tag"), "{stdout}");
+    Ok(())
+}

@@ -61,6 +61,7 @@ fn commands(explicit: bool) -> Checked<Vec<Command>> {
             project: project.clone(),
         }),
         Command::Repair(project.clone()),
+        Command::Fetch(project.clone()),
         Command::Rebuild(project.clone()),
         Command::Stop(project.clone().into_iter().collect()),
         Command::Destroy(destroy::Args {
@@ -86,6 +87,7 @@ fn execute(
     match command {
         Command::Open(args) => open::exec(args, context, ui, host, prompt),
         Command::Apply(args) => apply::exec(args, context, ui, host, prompt),
+        Command::Fetch(project) => super::fetch::exec(project.as_ref(), context, ui, host, prompt),
         Command::Guide(args) => guide::exec(args, context, ui, host, prompt),
         Command::Repair(project) => {
             super::repair::exec(project.as_ref(), context, ui, host, prompt)
