@@ -1,15 +1,21 @@
 /// Sandboxの中で、bare repositoryのbranch、tag、各worktreeのHEADを1つのbundleにして
-/// stdoutへ書く手順。引数は`$1`がbare repositoryのgit directory。
+/// stdoutへ書く手順。引数は`$1`がbare repositoryのgit directory、`$2`がhostに保存済みの
+/// refの一覧のdigest。
 ///
 /// worktreeのHEADはbranchに載っていないcommitを指しうる。`refs/sbxm/save/`へ一時refとして
 /// 置いてからbundleへ含め、成否にかかわらず消す。signalで止められても消す。名前がref
 /// として使えないworktreeや、別の場所にある同じ名前のworktreeは通し番号で呼ぶ。
 /// refが1つも無ければ何も書かずに終わる。
 ///
+/// bundleは履歴全体を運ぶ。refの一覧（`<object名> <ref名>`の行をref名の順に並べたもの）の
+/// digestが`$2`と同じなら、bundleを作らずに`unchanged`とだけ書く。何も変えていない
+/// Sandboxの保存に、履歴全体を運ばない。
+///
 /// gitの失敗は、pipeや`[ ]`の中で読み落とさず、その場で止める。読み落とすと、
 /// worktreeのHEADを欠いたbundleや、保存するものが無いという答えになる。
 pub(super) const CREATE_BUNDLE: &str = r#"set -eu
 git_dir=$1
+known=${2-}
 save=refs/sbxm/save
 git() { command git --git-dir "$git_dir" "$@"; }
 clear() {
@@ -36,8 +42,13 @@ while IFS= read -r line; do
 done <<EOF
 $worktrees
 EOF
-refs=$(git for-each-ref --count=1 refs/heads/ refs/tags/ "$save/")
-if [ -z "$refs" ]; then
+listed=$(git for-each-ref --format='%(objectname) %(refname)' refs/heads/ refs/tags/ "$save/")
+if [ -z "$listed" ]; then
+  exit 0
+fi
+digest=$(printf '%s\n' "$listed" | sha256sum)
+if [ "${digest%% *}" = "$known" ]; then
+  echo unchanged
   exit 0
 fi
 git bundle create --quiet - --branches --tags --glob="$save/*""#;
