@@ -399,6 +399,7 @@ remediation-worktree-tracked-changes = Open the sandbox and look at what changed
 remediation-worktree-untracked-paths = Review the untracked paths listed above. Add, commit, and push what you want to keep; move or remove what you do not, after checking its contents yourself.
 remediation-git-operation-in-progress = Look at what that worktree reports and follow its guidance to continue or abort the operation. Commit and push anything you want to keep, then run this command again once no Git operation is in progress.
 remediation-origin-commit-unreachable = Push a branch that reaches this commit to the origin, then run this command again once the commit is reachable from there.
+remediation-origin-commit-save = Or save the sandbox's commits into the host repository first; a commit saved there is kept even after the sandbox is removed.
 remediation-origin-missing = Restore the origin configuration for this project, then run this command again. The remote URL is not shown here.
 remediation-origin-refresh-failed = Fix the network or credential problem that kept the origin from refreshing, then run this command again once the origin can be reached.
 remediation-origin-advertisement-invalid = Check that the origin and this build of sbxm agree on the Git protocol, then run this command again once the origin's ref list can be read.

@@ -317,3 +317,53 @@ fn saving_to_the_host_keeps_the_bundle_in_the_project_and_prunes_old_ones() -> C
     assert_eq!(kept, KEPT_BUNDLES, "only the newest bundles are kept");
     Ok(())
 }
+
+#[test]
+fn every_tip_saved_on_the_host_is_listed_including_archived_ones() -> Checked {
+    let repositories = Repositories::new()?;
+    repositories.fetch("20260923T100000Z")?;
+    let first = git_in(&repositories.worktree, &["rev-parse", "HEAD"])?;
+    git_in(
+        &repositories.worktree,
+        &[
+            "commit",
+            "--quiet",
+            "--amend",
+            "--allow-empty",
+            "-m",
+            "amended",
+        ],
+    )?;
+    repositories.fetch("20260923T100100Z")?;
+
+    let sandbox = crate::project::SandboxName::derive(
+        &crate::project::ProjectId::parse("Example-Org/Example-Repo")
+            .required()?
+            .canonical(),
+    );
+    assert_eq!(sandbox.as_str(), NAMESPACE);
+    let tips = saved_tips(&LocalSandbox, &repositories.host, &sandbox).required()?;
+    assert!(
+        tips.iter().any(
+            |tip| tip.reference == reference("archive/20260923T100100Z/heads/main")
+                && tip.commit == first
+        ),
+        "{tips:?}"
+    );
+    assert!(
+        tips.iter()
+            .any(|tip| tip.reference == reference("heads/main"))
+    );
+
+    // 読めないrepositoryは、保存済みの先端を持たないものとして扱う。
+    let missing = crate::paths::ProjectPaths::at(
+        &repositories.host.join("absent-project"),
+        &crate::project::ProjectId::parse("Example-Org/Example-Repo")
+            .required()?
+            .canonical(),
+    );
+    let metadata =
+        crate::testing::repository::metadata(crate::metadata::CreationMode::Attached, None, 1)?;
+    assert!(saved_on_host(&LocalSandbox, &missing, &metadata).is_empty());
+    Ok(())
+}

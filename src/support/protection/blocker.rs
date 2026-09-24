@@ -92,7 +92,12 @@ impl Blocker {
             )
             .fact(Fact::reference(reference))
             .fact(Fact::commit(commit))
-            .remediation(open(project, msg!("remediation-origin-commit-unreachable"))),
+            // originへpushするか、hostのrepositoryへ保存すれば、Sandboxを消しても残る。
+            .remediation(
+                open(project, msg!("remediation-origin-commit-unreachable"))
+                    .explain(msg!("remediation-origin-commit-save"))
+                    .try_run(format!("sbxm fetch {project}")),
+            ),
             Blocker::OriginUnobservable { references, reason } => {
                 origin_unobservable_diagnostic(project, references, *reason)
             }

@@ -42,7 +42,7 @@ fn a_command_that_could_not_even_launch_is_an_error_at_every_stage() -> Checked 
     ];
     for step in steps {
         let host = InnerCommandSandbox::new().timing_out(&step);
-        let error = observe_for_mutation(&host, &sandbox, &layout()?, &candidates)
+        let error = observe_for_mutation(&host, &sandbox, &layout()?, &candidates, &[])
             .refused_because("a step that did not run is never read as observed")?;
         assert_eq!(
             error.first_id(),
@@ -63,7 +63,7 @@ fn an_origin_configuration_that_answers_oddly_is_unobservable_not_missing() -> C
         "",
     );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .refused_because("an answer that is neither 0 nor 1 is not a clean yes or no")?;
     assert_eq!(
         error.first_id(),
@@ -90,7 +90,7 @@ fn a_fetch_that_answered_but_could_not_launch_the_inner_command_is_unobservable(
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .refused_because(
             "an exit code sbx exec reserves for its own launch failure is never read as an answer",
         )?;
@@ -126,7 +126,7 @@ fn a_tip_listing_that_answered_but_could_not_launch_the_inner_command_is_unobser
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .refused_because(
             "an exit code sbx exec reserves for its own launch failure is never read as an answer",
         )?;
@@ -162,7 +162,7 @@ fn a_tip_listing_with_a_missing_field_is_an_invalid_advertisement() -> Checked {
             "refs/sbxm/origin/heads/main\t\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .required_because(
             "a malformed advertisement is a collected reason, not an outright failure",
         )?;
@@ -273,6 +273,7 @@ fn mutation_observation_includes_origin_tags_and_custom_refs_in_isolation() -> C
         &sandbox()?,
         &layout()?,
         &[candidate(), tag_candidate, custom_candidate],
+        &[],
     )
     .required_because("all advertised origin namespaces are observed")?;
     assert_eq!(
@@ -336,7 +337,7 @@ fn a_reachability_probe_with_a_blank_line_is_an_invalid_advertisement() -> Check
             "\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .required_because("a blank ref name is a collected reason, not an outright failure")?;
     assert_eq!(
         observation,
@@ -389,7 +390,7 @@ fn host_after_a_failed_contains_check(cat_file_exit: i32) -> Checked<FakeSbx> {
 fn a_contains_failure_confirmed_by_cat_file_as_missing_is_object_missing() -> Checked {
     let host = host_after_a_failed_contains_check(1)?;
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .required_because("an object verified missing by cat-file is a collected reason")?;
     assert_eq!(
         observation,
@@ -407,7 +408,7 @@ fn a_contains_failure_that_cat_file_cannot_confirm_is_not_object_missing() -> Ch
     // 起動失敗として報告する。
     let host = host_after_a_failed_contains_check(0)?;
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .refused_because("a confirmed-present object is never reported as missing")?;
     assert_eq!(
         error.first_id(),
@@ -814,7 +815,7 @@ fn a_cleanup_listing_that_answered_but_failed_is_unobservable() -> Checked {
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .refused_because("a cleanup listing that failed to launch is not a completed cleanup")?;
     assert_eq!(
         error.first_id(),
@@ -863,7 +864,7 @@ fn a_cleanup_ref_outside_the_temporary_namespace_is_unobservable() -> Checked {
             "refs/heads/main\n",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .refused_because("a ref outside the isolated namespace is never deleted as cleanup")?;
     assert_eq!(
         error.first_id(),
@@ -924,7 +925,7 @@ fn a_cleanup_deletion_that_answered_but_failed_is_unobservable() -> Checked {
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .refused_because("a deletion that failed to launch does not leave a clean namespace")?;
     assert_eq!(
         error.first_id(),
@@ -960,7 +961,7 @@ fn a_tip_listing_reference_outside_the_temporary_namespace_is_an_invalid_adverti
             &format!("refs/heads/main\t{COMMIT}\n"),
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .required_because(
             "an advertised ref outside the isolated namespace is a collected reason",
         )?;
@@ -1002,7 +1003,7 @@ fn a_tip_listing_with_a_duplicate_reference_is_an_invalid_advertisement() -> Che
             ),
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .required_because("a duplicate observed reference is a collected reason")?;
     assert_eq!(
         observation,
@@ -1047,7 +1048,7 @@ fn a_reachability_probe_reference_outside_the_temporary_namespace_is_an_invalid_
             "refs/heads/main\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
+    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &[])
         .required_because(
             "a reachability answer outside the isolated namespace is a collected reason",
         )?;
@@ -1151,4 +1152,77 @@ fn read_only_host_with_contains(
         0,
         contains_stdout,
     ))
+}
+
+#[test]
+fn a_commit_saved_on_the_host_is_reachable_even_when_origin_lacks_it() -> Checked {
+    const MISSING: &str = "3333333333333333333333333333333333333333";
+
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let saved = format!("refs/sbx/{name}/heads/main");
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} update-ref refs/sbxm/saved/0 {COMMIT}"),
+            0,
+            "",
+        )
+        // Sandboxに無いobjectを指す先端は置けない。
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} update-ref refs/sbxm/saved/1 {MISSING}"
+            ),
+            128,
+            "",
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/saved/"
+            ),
+            0,
+            &format!("refs/sbxm/saved/0\t{COMMIT}\n"),
+        )
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/ refs/sbxm/saved/"
+            ),
+            0,
+            "refs/sbxm/saved/0\n",
+        );
+    let preserved = [
+        crate::support::bundle::SavedTip {
+            reference: saved.clone(),
+            commit: COMMIT.to_string(),
+        },
+        crate::support::bundle::SavedTip {
+            reference: format!("refs/sbx/{name}/heads/gone"),
+            commit: MISSING.to_string(),
+        },
+    ];
+
+    let observation =
+        observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()], &preserved)
+            .required_because("the saved tip is observed with origin")?;
+
+    let label = format!("host:{saved}");
+    assert_eq!(
+        observation,
+        OriginObservation::Observed {
+            tips: BTreeMap::from([(label.clone(), COMMIT.to_string())]),
+            reachable_from: BTreeMap::from([(COMMIT.to_string(), BTreeSet::from([label.clone()]))]),
+        }
+    );
+    // hostに残っているcommitは、Sandboxを消しても失われない。
+    assert_eq!(
+        crate::support::protection::Reachability::classify(&candidate(), &observation),
+        crate::support::protection::Reachability::Reachable {
+            origins: vec![label]
+        }
+    );
+    Ok(())
 }

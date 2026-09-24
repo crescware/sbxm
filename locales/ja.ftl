@@ -399,6 +399,7 @@ remediation-worktree-tracked-changes = Sandboxへ入り、そのworktreeで何�
 remediation-worktree-untracked-paths = 上に列挙された未追跡pathを確認してください。残すfileはadd・commit・pushし、残さないfileは内容を確認してから移すか削除してください。
 remediation-git-operation-in-progress = そのworktreeが示す案内に従い、操作をcontinueまたはabortしてください。残す変更はcommitしてpushし、Git操作中でなくなってから、もう一度実行してください。
 remediation-origin-commit-unreachable = このcommitへ到達できるbranchをoriginへpushし、そこから到達できるようになってから、もう一度実行してください。
+remediation-origin-commit-save = または、先にSandboxのcommitをhostのrepositoryへ保存してください。hostへ保存したcommitは、Sandboxを消しても残ります。
 remediation-origin-missing = この案件のorigin設定を復元してから、もう一度実行してください。remote URLはここには表示しません。
 remediation-origin-refresh-failed = originのrefreshを妨げているnetworkまたはcredentialの問題を直し、originへ到達できるようになってから、もう一度実行してください。
 remediation-origin-advertisement-invalid = originとこのsbxmのbuildがGit protocolで合意しているか確認してください。originのref一覧を読み取れるようになってから、もう一度実行してください。

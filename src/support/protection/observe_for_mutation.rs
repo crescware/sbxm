@@ -6,6 +6,7 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::project::{SandboxLayout, SandboxName};
 
+use crate::support::bundle::SavedTip;
 use crate::support::repository;
 use crate::support::sandbox;
 
@@ -18,12 +19,21 @@ const OBSERVATION_REFS_NAMESPACE: &str = "refs/sbxm/origin/";
 /// `OriginObservation`へ載せるbranchの表記。既存のupstream表記と一致させる。
 const ORIGIN_REFS_NAMESPACE: &str = "refs/remotes/origin/";
 
+/// hostへ保存済みの先端を、観測の間だけ置くnamespace。
+const PRESERVED_REFS_NAMESPACE: &str = "refs/sbxm/saved/";
+
+/// hostへ保存済みの先端を示す表記の接頭辞。originのref名と取り違えない。
+const HOST_LABEL_PREFIX: &str = "host:";
+
 /// 破壊操作の直前に、originを権威ある状態としてrefreshしてから観測する。
 ///
 /// 1. bare repositoryにoriginが設定されているかを確かめる。
 /// 2. `fetch --prune`でoriginが広告する全refを隔離namespaceへ最新化する。
 /// 3. refresh後のorigin refを完全なref名とtip commit IDで列挙する。
-/// 4. `candidates`が指すcommitごとに、どのorigin refから到達できるかを1回だけ求める。
+/// 4. `preserved`のうちSandboxに在る先端を、一時namespaceへ置く。hostへ保存済みの
+///    commitは、originへ届いていなくてもSandboxを消して失われない。
+/// 5. `candidates`が指すcommitごとに、どのorigin refと保存済みの先端から到達できるかを
+///    1回だけ求める。保存済みの先端は`host:<ref>`と表す。
 ///
 /// Gitが正常に応答した結果として観測不能と判定した場合は
 /// `OriginObservation::Unobservable`を返す。command自体を起動できない失敗は`Err`とする。
@@ -34,6 +44,7 @@ pub fn observe_for_mutation(
     sandbox: &SandboxName,
     layout: &SandboxLayout,
     candidates: &[CommitCandidate],
+    preserved: &[SavedTip],
 ) -> Result<OriginObservation> {
     let scope = ObservationScope {
         sandbox: sandbox.as_str(),
@@ -55,33 +66,77 @@ pub fn observe_for_mutation(
     .map_err(|error| reclassify(&error, &scope))?;
     let fetch_status = sandbox::inner_exit_code(&fetch);
     if fetch_status != Some(0) {
-        cleanup_temporary_refs(host, &scope)?;
+        cleanup_temporary_refs(host, &scope, OBSERVATION_REFS_NAMESPACE)?;
         return match fetch_status {
             Some(_) => Ok(unobservable(UnobservableReason::RefreshFailed)),
             None => Err(unobservable_command(&fetch, &scope)),
         };
     }
 
-    let observation = observe_temporary_refs(host, &scope, candidates);
-    let cleanup = cleanup_temporary_refs(host, &scope);
+    let observation = place_preserved(host, &scope, preserved)
+        .and_then(|labels| observe_temporary_refs(host, &scope, candidates, &labels));
+    let cleanup = cleanup_temporary_refs(host, &scope, OBSERVATION_REFS_NAMESPACE).and(
+        cleanup_temporary_refs(host, &scope, PRESERVED_REFS_NAMESPACE),
+    );
+    let observation = observation?;
     cleanup?;
-    observation
+    Ok(observation)
+}
+
+/// 保存済みの先端のうちSandboxに在るものを一時namespaceへ置き、一時refから表記への
+/// 対応を返す。Sandboxに無い先端は置けない。置けない先端から辿れることは確かめられない
+/// ため、辿れないものとして扱う。
+fn place_preserved(
+    host: &dyn HostEnvironment,
+    scope: &ObservationScope<'_>,
+    preserved: &[SavedTip],
+) -> Result<BTreeMap<String, String>> {
+    // 前の観測が途中で終わって残した一時refを、今回の先端と混ぜない。
+    cleanup_temporary_refs(host, scope, PRESERVED_REFS_NAMESPACE)?;
+    let mut labels = BTreeMap::new();
+    for (index, tip) in preserved.iter().enumerate() {
+        let reference = format!("{PRESERVED_REFS_NAMESPACE}{index}");
+        let placed = sandbox::exec(
+            host,
+            scope.sandbox,
+            &[
+                "git",
+                "--git-dir",
+                &scope.git_dir,
+                "update-ref",
+                &reference,
+                &tip.commit,
+            ],
+        )
+        .map_err(|error| reclassify(&error, scope))?;
+        match sandbox::inner_exit_code(&placed) {
+            Some(0) => {
+                labels.insert(reference, format!("{HOST_LABEL_PREFIX}{}", tip.reference));
+            }
+            Some(_) => {}
+            None => return Err(unobservable_command(&placed, scope)),
+        }
+    }
+    Ok(labels)
 }
 
 fn observe_temporary_refs(
     host: &dyn HostEnvironment,
     scope: &ObservationScope<'_>,
     candidates: &[CommitCandidate],
+    labels: &BTreeMap<String, String>,
 ) -> Result<OriginObservation> {
-    let tips = match origin_tips(host, scope)? {
+    let mut tips = match origin_tips(host, scope)? {
         Ok(tips) => tips,
         Err(reason) => return Ok(unobservable(reason)),
     };
+    // 保存済みの先端も、確認から削除までのあいだに動けば別の状態として扱う。
+    tips.extend(preserved_tips(host, scope, labels)?);
 
     let mut reachable_from: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let unique_commits: BTreeSet<&str> = candidates.iter().map(CommitCandidate::commit).collect();
     for commit in unique_commits {
-        match reaching_origin_refs(host, scope, commit)? {
+        match reaching_origin_refs(host, scope, commit, labels)? {
             Ok(origins) => {
                 reachable_from.insert(commit.to_string(), origins);
             }
@@ -95,9 +150,50 @@ fn observe_temporary_refs(
     })
 }
 
+/// 置いた保存済みの先端を、表記からcommitへ写す。
+fn preserved_tips(
+    host: &dyn HostEnvironment,
+    scope: &ObservationScope<'_>,
+    labels: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>> {
+    if labels.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let outcome = sandbox::exec(
+        host,
+        scope.sandbox,
+        &[
+            "git",
+            "--git-dir",
+            &scope.git_dir,
+            "for-each-ref",
+            "--format=%(refname)%09%(objectname)",
+            PRESERVED_REFS_NAMESPACE,
+        ],
+    )
+    .map_err(|error| reclassify(&error, scope))?;
+    if sandbox::inner_exit_code(&outcome) != Some(0) {
+        return Err(unobservable_command(&outcome, scope));
+    }
+    Ok(outcome
+        .stdout_text()
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .filter_map(|(reference, commit)| {
+            labels
+                .get(reference)
+                .map(|label| (label.clone(), commit.to_string()))
+        })
+        .collect())
+}
+
 /// 観測後に一時namespaceを確実に削除する。列挙できない場合も、残ったrefを無視して
 /// 成功扱いにしない。
-fn cleanup_temporary_refs(host: &dyn HostEnvironment, scope: &ObservationScope<'_>) -> Result<()> {
+fn cleanup_temporary_refs(
+    host: &dyn HostEnvironment,
+    scope: &ObservationScope<'_>,
+    namespace: &str,
+) -> Result<()> {
     let listed = sandbox::exec(
         host,
         scope.sandbox,
@@ -107,7 +203,7 @@ fn cleanup_temporary_refs(host: &dyn HostEnvironment, scope: &ObservationScope<'
             &scope.git_dir,
             "for-each-ref",
             "--format=%(refname)",
-            OBSERVATION_REFS_NAMESPACE,
+            namespace,
         ],
     )
     .map_err(|error| reclassify(&error, scope))?;
@@ -116,9 +212,7 @@ fn cleanup_temporary_refs(host: &dyn HostEnvironment, scope: &ObservationScope<'
     }
 
     for reference in listed.stdout_text().lines() {
-        if !reference.starts_with(OBSERVATION_REFS_NAMESPACE)
-            || reference == OBSERVATION_REFS_NAMESPACE
-        {
+        if !reference.starts_with(namespace) || reference == namespace {
             return Err(unobservable_command(&listed, scope));
         }
         let deleted = sandbox::exec(
@@ -227,21 +321,23 @@ fn reaching_origin_refs(
     host: &dyn HostEnvironment,
     scope: &ObservationScope<'_>,
     commit: &str,
+    labels: &BTreeMap<String, String>,
 ) -> Result<std::result::Result<BTreeSet<String>, UnobservableReason>> {
-    let outcome = sandbox::exec(
-        host,
-        scope.sandbox,
-        &[
-            "git",
-            "--git-dir",
-            &scope.git_dir,
-            "for-each-ref",
-            "--format=%(refname)",
-            &format!("--contains={commit}"),
-            OBSERVATION_REFS_NAMESPACE,
-        ],
-    )
-    .map_err(|error| reclassify(&error, scope))?;
+    let contains = format!("--contains={commit}");
+    let mut args = vec![
+        "git",
+        "--git-dir",
+        &scope.git_dir,
+        "for-each-ref",
+        "--format=%(refname)",
+        &contains,
+        OBSERVATION_REFS_NAMESPACE,
+    ];
+    if !labels.is_empty() {
+        args.push(PRESERVED_REFS_NAMESPACE);
+    }
+    let outcome =
+        sandbox::exec(host, scope.sandbox, &args).map_err(|error| reclassify(&error, scope))?;
     match sandbox::inner_exit_code(&outcome) {
         Some(0) => {}
         Some(_) => return classify_contains_failure(host, scope, commit, &outcome),
@@ -253,6 +349,10 @@ fn reaching_origin_refs(
         let line = line.trim();
         if line.is_empty() {
             return Ok(Err(UnobservableReason::AdvertisementInvalid));
+        }
+        if let Some(label) = labels.get(line) {
+            origins.insert(label.clone());
+            continue;
         }
         let Some(reference) = observed_origin_ref(line) else {
             return Ok(Err(UnobservableReason::AdvertisementInvalid));

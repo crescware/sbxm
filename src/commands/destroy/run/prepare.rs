@@ -6,10 +6,10 @@ use crate::msg;
 use crate::project::SandboxLayout;
 
 use crate::design::ProgressSink;
-use crate::support::daemon;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, DestructiveOperation, Request};
 use crate::support::select;
+use crate::support::{bundle, daemon};
 
 use crate::commands::destroy::Selection;
 
@@ -78,12 +78,14 @@ pub fn prepare(
             )
         } else {
             let layout = SandboxLayout::new(metadata.canonical_id());
+            let preserved = bundle::saved_on_host(host, &paths, metadata);
             let request = Request::new(
                 DestructiveOperation::Destroy,
                 &name,
                 workspace_root,
                 &layout,
                 metadata,
+                &preserved,
             );
             protection::gate::assess(host, &request)?
         };

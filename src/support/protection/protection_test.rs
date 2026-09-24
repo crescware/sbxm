@@ -28,6 +28,7 @@ fn snapshot(
         &fixture.workspace_root,
         &layout,
         &project.metadata,
+        &[],
     );
     gate::assess(host, &request)
 }
@@ -181,13 +182,17 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         "sbxm status example-org/example-repo",
         &["diagnostic-path-label", "diagnostic-root-label"],
     )?;
-    assert_protection_diagnostic(
+    // originへpushするほかに、hostのrepositoryへ保存しても失われなくなる。
+    assert_protection_diagnostic_with_commands(
         Blocker::OriginUnreachable {
             reference: "HEAD".to_string(),
             commit: COMMIT.to_string(),
         },
         ErrorId::OriginCommitUnreachable,
-        "sbxm open example-org/example-repo",
+        &[
+            "sbxm open example-org/example-repo",
+            "sbxm fetch example-org/example-repo",
+        ],
         &["diagnostic-reference-label", "diagnostic-commit-label"],
     )?;
     for (reason, id) in [
