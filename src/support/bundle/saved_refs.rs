@@ -10,7 +10,8 @@ use super::{REF_KINDS, saved_namespace};
 /// hostの`repository`が`sandbox`のために保存している、種類ごとのref。
 ///
 /// 名前は名前空間を除いた`heads/<branch>`のような形で返す。退避した`archive/`は、どの
-/// 種類の下にも無いため含まない。
+/// 種類の下にも無いため含まない。種類の下にある`archive/`で始まる名前は、Sandboxの
+/// branchやtagであり、ほかのrefと同じく突き合わせる。
 pub(super) fn saved_refs(
     host: &dyn HostEnvironment,
     repository: &Path,
@@ -32,8 +33,7 @@ pub(super) fn saved_refs(
         saved.extend(listed.lines().filter_map(|line| {
             let (tip, reference) = line.split_once(' ')?;
             let name = reference.strip_prefix(&prefix)?;
-            // 退避したrefは、Sandboxから届いたrefと突き合わせない。
-            (!name.starts_with("archive/")).then(|| (format!("{kind}{name}"), tip.to_string()))
+            Some((format!("{kind}{name}"), tip.to_string()))
         }));
     }
     Ok(saved)

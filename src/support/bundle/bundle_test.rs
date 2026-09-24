@@ -317,3 +317,35 @@ fn saving_to_the_host_keeps_the_bundle_in_the_project_and_prunes_old_ones() -> C
     assert_eq!(kept, KEPT_BUNDLES, "only the newest bundles are kept");
     Ok(())
 }
+
+#[test]
+fn a_sandbox_branch_named_like_the_archive_is_saved_again_and_again() -> Checked {
+    // `archive/`で始まるbranchも、Sandboxの作業である。退避先と取り違えると、2度目の
+    // 取り込みが同じrefをもう一度作ろうとして、以後の保存がすべて失敗した。
+    let repositories = Repositories::new()?;
+    git_in(
+        &repositories.worktree,
+        &["branch", "--quiet", "archive/old"],
+    )?;
+    repositories.fetch("20260923T100000Z")?;
+
+    git_in(
+        &repositories.worktree,
+        &["checkout", "--quiet", "archive/old"],
+    )?;
+    let moved = repositories.commit("moved")?;
+    let changes = repositories.fetch("20260923T100100Z")?;
+
+    assert!(
+        changes.contains(&RefChange::Updated {
+            reference: reference("heads/archive/old")
+        }),
+        "{changes:?}"
+    );
+    assert_eq!(
+        repositories.host_ref(&reference("heads/archive/old"))?,
+        moved
+    );
+    assert!(repositories.fetch("20260923T100200Z")?.is_empty());
+    Ok(())
+}

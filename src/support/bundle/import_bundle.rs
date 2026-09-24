@@ -155,8 +155,6 @@ fn refs_under(
                 .strip_prefix(prefix)
                 .map(|name| (name.to_string(), tip.to_string()))
         })
-        // 退避したrefは、Sandboxから届いたrefと突き合わせない。
-        .filter(|(name, _)| !name.starts_with("archive/"))
         .collect())
 }
 
