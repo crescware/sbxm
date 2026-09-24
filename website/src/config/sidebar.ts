@@ -15,6 +15,7 @@ export const sidebar = [
 			{ slug: 'guides/worktrees' },
 			{ slug: 'guides/custom-image' },
 			{ slug: 'guides/configuration-files' },
+			{ slug: 'guides/local-repository' },
 			{ slug: 'guides/teardown' },
 		],
 	},

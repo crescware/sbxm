@@ -423,6 +423,35 @@ commitと同じく、失われないものとして数えます。originに無�
 destroyが拒否された場合、対話端末ではホスト側のrepositoryへ保存してから続けるかを訊きます。
 止める選択では何も変えません。
 
+## GitHubを使わずに開発する
+
+このhostにすでにあるrepositoryも、プロジェクトにできます。sbxmはcloneしません。
+そのrepositoryの`.git`がoriginの役を持ち、Sandboxは作業のための使い捨ての場所になります。
+
+```sh
+cd ~/Projects
+sbxm add --local ~/code/<repository>
+sbxm open local/<repository>
+```
+
+pathはGit working treeの最上位でなければなりません。プロジェクトIDは`local/<name>`で、
+名前は`--name <name>`を渡さなければdirectory名です。Sandboxは、hostのrepositoryが今いる
+branch、または`--detach`で渡したbranchから始まります。
+
+GitHub tokenは関わらないため、登録の手順は要りません。`open`がSandboxを構築するとき、
+sbxmはhostのrepositoryのbranchとtagを1つの`git bundle`にし、`sbx exec`越しにSandboxへ
+送り、Sandboxの`origin`をそのbundleへ向けます。Sandboxの中からhostのrepositoryへ届く
+経路はありません。
+
+作業は`sbxm fetch local/<name>`で持ち帰ります。commitはhostのrepositoryの
+`refs/sbx/<sandbox>/`へ入るので、たとえば`git merge refs/sbx/<sandbox>/heads/main`で
+自分のbranchへ取り込みます。
+
+Sandboxの中のbundleはSandboxと一緒に消えるため、rebuildとdestroyは、hostのrepositoryから
+辿れるcommitだけを失われないものとして数えます。hostのbranchやtag、または`sbxm fetch`が
+`refs/sbx/<sandbox>/`へ保存したものから辿れる必要があります。hostに無いcommitがあれば止まり、
+対話端末では先にfetchするかを訊きます。
+
 ## プロジェクトを破棄する
 
 ```sh
@@ -463,6 +492,9 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 └── .sbxm/              # metadata、Dockerfile、lock、cache
 ```
 
+`--local`で追加したプロジェクトは、このディレクトリの中にホスト側のcloneを持ちません。
+repositoryは追加したときの場所に残ります。
+
 `~/.sbxm`には、登録済みプロジェクトとその場所の索引である`registry.yaml`を置きます。
 表示言語か名義を選ぶか、配置するファイルを宣言した時点で`config.yaml`も作られます。
 プロジェクトの場所を知っているのはregistryだけであるため、プロジェクトのディレクトリを
@@ -473,6 +505,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | コマンド | 用途 |
 |---|---|
 | `sbxm add <github-clone-url>` | GitHub repositoryをsbxmへ追加し、このhostへcloneする |
+| `sbxm add --local <path> [--name <name>]` | このhostにあるGit repositoryを、cloneせずに`local/<name>`として追加する。その`.git`がoriginの役を持つ |
 | `sbxm open [<project-id>] [--index N]` | SandboxへのSSH接続を開く。初回はSandboxを構築し、以降は必要なら先に起動する。`N`は0始まりのmanaged worktree index |
 | `sbxm stop [<project-id> ...]` | 1件以上の案件のSandboxを、削除せず停止する |
 | `sbxm ls` | 管理案件と管理外Sandboxを、その状態とともに一覧する |

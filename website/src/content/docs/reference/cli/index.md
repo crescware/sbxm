@@ -11,7 +11,7 @@ Commands that use Docker Sandboxes (`open`, `apply`, `fetch`, `repair`, `rebuild
 
 | Command | Purpose |
 | --- | --- |
-| [`add`](./add/) | Add a GitHub repository to sbxm and clone it onto this host |
+| [`add`](./add/) | Add a GitHub repository to sbxm and clone it onto this host, or add a Git repository already on this host with `--local` |
 | [`repair`](./repair/) | Explicitly recover an interrupted or incomplete initial provisioning |
 | [`open`](./open/) | Open an SSH session to a project sandbox, building it on the first run and starting it if needed |
 | [`ls`](./ls/) | List managed projects and unmanaged sandboxes with their states |
