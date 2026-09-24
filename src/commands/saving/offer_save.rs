@@ -9,10 +9,7 @@ use crate::project::ProjectId;
 use crate::support::protection;
 use crate::support::select::ProjectPrompt;
 
-use super::{
-    super::{Context, report},
-    print,
-};
+use super::super::{Context, fetch, report};
 
 /// 保護の検査が、保存で解けるoriginに無いcommitだけを理由に断ったとき、hostへ保存して
 /// 続けるかを訊く。stashやnotesのように保存が運ばないrefが理由に含まれれば訊かない。
@@ -43,7 +40,7 @@ pub fn offer_save(
         Ok(false) => return ControlFlow::Break(error.exit_code()),
         Err(failure) => return ControlFlow::Break(report(ui, &failure)),
     }
-    match super::run(
+    match fetch::run(
         context.location,
         Some(project),
         prompt,
@@ -51,7 +48,7 @@ pub fn offer_save(
         context.workspace_root,
     ) {
         Ok(output) => {
-            ui.stdout(&print::document(&output, ui.locale()));
+            ui.stdout(&fetch::print::document(&output, ui.locale()));
             ControlFlow::Continue(())
         }
         Err(failure) => ControlFlow::Break(report(ui, &failure)),
