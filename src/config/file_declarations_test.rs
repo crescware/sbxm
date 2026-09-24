@@ -262,6 +262,14 @@ fn an_unknown_key_in_a_declared_file_is_a_warning() -> Checked {
         .find_map(|(name, value)| (*name == "key").then(|| value.clone()))
         .required()?;
     assert_eq!(key, "sync");
+    // 利用者が数える順に、先頭の宣言を1番目と呼ぶ。
+    let entry = warnings[0]
+        .description
+        .args
+        .iter()
+        .find_map(|(name, value)| (*name == "entry").then(|| value.clone()))
+        .required()?;
+    assert_eq!(entry, "1");
     Ok(())
 }
 

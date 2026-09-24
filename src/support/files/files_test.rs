@@ -934,6 +934,115 @@ fn every_file_that_cannot_be_placed_is_named_before_anything_is_placed() -> Chec
     Ok(())
 }
 
+/// `PLACE_FROM_STDIN`をこのhostのshellで走らせる場所。
+///
+/// ownerを変える`install`はrootでしか通らないため、写すだけの`install`を`PATH`の先頭へ
+/// 置く。一時fileは`TMPDIR`へ作らせ、残ったかどうかを確かめる。
+struct Placing {
+    dir: tempfile::TempDir,
+}
+
+impl Placing {
+    fn new() -> Checked<Placing> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().required()?;
+        fs::create_dir(dir.path().join("bin")).required()?;
+        fs::create_dir(dir.path().join("tmp")).required()?;
+        let install = dir.path().join("bin/install");
+        fs::write(
+            &install,
+            "#!/bin/sh\nwhile [ $# -gt 2 ]; do case \"$1\" in -o|-g|-m) shift 2 ;; *) break ;; esac; done\ncp \"$1\" \"$2\"\n",
+        )
+        .required()?;
+        fs::set_permissions(&install, fs::Permissions::from_mode(0o755)).required()?;
+        Ok(Placing { dir })
+    }
+
+    fn destination(&self) -> PathBuf {
+        self.dir.path().join("settings.yaml")
+    }
+
+    fn command(&self, digest: &str) -> std::process::Command {
+        let destination = self.destination();
+        let mut command = std::process::Command::new("sh");
+        command
+            .args(["-c", PLACE_FROM_STDIN, "sh"])
+            .arg(&destination)
+            .arg(destination.with_extension("sbxm-new"))
+            .arg(digest)
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    self.dir.path().join("bin").display(),
+                    std::env::var("PATH").unwrap_or_default()
+                ),
+            )
+            .env("TMPDIR", self.dir.path().join("tmp"))
+            .stdin(std::process::Stdio::piped());
+        command
+    }
+
+    /// 一時fileの置き場に残ったもの。
+    fn staged(&self) -> Checked<usize> {
+        Ok(fs::read_dir(self.dir.path().join("tmp"))
+            .required()?
+            .count())
+    }
+
+    fn run(&self, digest: &str, input: &[u8]) -> Checked<std::process::ExitStatus> {
+        use std::io::Write;
+
+        let mut child = self.command(digest).spawn().required()?;
+        child.stdin.take().required()?.write_all(input).required()?;
+        child.wait().required()
+    }
+}
+
+#[test]
+fn the_placement_script_places_only_bytes_that_arrived_whole() -> Checked {
+    let placing = Placing::new()?;
+    let body = b"declared = true\n";
+
+    let status = placing.run(&sha256_hex(body), body)?;
+    assert!(status.success(), "{status:?}");
+    assert_eq!(fs::read(placing.destination()).required()?, body);
+    assert_eq!(
+        placing.staged()?,
+        0,
+        "nothing is left in the temporary place"
+    );
+    assert!(!placing.destination().with_extension("sbxm-new").exists());
+
+    // 欠けて届いた内容では、置いてあるfileを置き換えない。
+    let status = placing.run(&sha256_hex(body), b"declared")?;
+    assert_eq!(status.code(), Some(TRANSFER_INCOMPLETE));
+    assert_eq!(fs::read(placing.destination()).required()?, body);
+    assert_eq!(placing.staged()?, 0);
+    Ok(())
+}
+
+#[test]
+fn a_placement_stopped_by_a_signal_leaves_nothing_behind() -> Checked {
+    // 受け取りの途中でsignalを受けても、秘密を含みうる一時fileを残さない。
+    let placing = Placing::new()?;
+    let mut child = placing.command(&sha256_hex(b"x")).spawn().required()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while placing.staged()? == 0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(placing.staged()?, 1, "the script started receiving");
+
+    let pid = rustix::process::Pid::from_child(&child);
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;
+    child.wait().required()?;
+
+    assert_eq!(placing.staged()?, 0);
+    assert!(!placing.destination().exists());
+    Ok(())
+}
+
 #[test]
 fn a_sandbox_copy_that_changes_while_it_is_read_is_refused() -> Checked {
     let dir = tempfile::tempdir().required()?;
