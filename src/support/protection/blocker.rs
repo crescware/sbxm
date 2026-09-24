@@ -33,6 +33,11 @@ pub enum Blocker {
     WorktreeOutsideRepository { path: String, root: String },
     /// refresh済みoriginのどのrefからもcommitへ到達できない。
     OriginUnreachable { reference: String, commit: String },
+    /// hostにあるrepositoryを登録した案件で、hostのrepositoryからcommitへ到達できない。
+    ///
+    /// 同じ事実を`OriginUnreachable`と同じerror IDで示す。対処はhostへの保存だけであり、
+    /// Sandboxのoriginへpushしても残らない。
+    HostUnreachable { reference: String, commit: String },
     /// originを権威ある状態として観測できず、commitを回収できるか判定できない。
     ///
     /// 観測不能はrepositoryへの観測1回につき1つの原因であり、影響するreferenceの数だけ
@@ -98,6 +103,16 @@ impl Blocker {
                     .explain(msg!("remediation-origin-commit-save"))
                     .try_run(format!("sbxm fetch {project}")),
             ),
+            Blocker::HostUnreachable { reference, commit } => Diagnostic::new(
+                ErrorId::OriginCommitUnreachable,
+                msg!("error-host-commit-unreachable"),
+            )
+            .fact(Fact::reference(reference))
+            .fact(Fact::commit(commit))
+            .remediation(
+                Remediation::text(msg!("remediation-host-commit-unreachable"))
+                    .try_run(format!("sbxm fetch {project}")),
+            ),
             Blocker::OriginUnobservable { references, reason } => {
                 origin_unobservable_diagnostic(project, references, *reason)
             }
@@ -155,6 +170,9 @@ impl Blocker {
             }
             Blocker::OriginUnreachable { reference, commit } => {
                 format!("origin-unreachable\u{1f}{reference}\u{1f}{commit}")
+            }
+            Blocker::HostUnreachable { reference, commit } => {
+                format!("host-unreachable\u{1f}{reference}\u{1f}{commit}")
             }
             Blocker::OriginUnobservable { references, reason } => {
                 let mut sorted = references.clone();

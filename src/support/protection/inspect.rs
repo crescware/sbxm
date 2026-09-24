@@ -6,15 +6,14 @@ use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::paths;
-use crate::repository::Provider;
 
 use crate::support::sandbox;
 use crate::support::worktree;
 
 use super::{
     Assessment, BARE_GIT_DIR_PROBE, Blocker, CommitCandidate, ConfirmableLoss,
-    DestructiveOperation, Kind, Mode, OriginObservation, Reachability, Request, UnobservableReason,
-    WorktreeReport, answered, observe_for_mutation, observe_host_origin,
+    DestructiveOperation, Kind, Mode, OriginKind, OriginObservation, Reachability, Request,
+    UnobservableReason, WorktreeReport, answered, observe_for_mutation, observe_host_origin,
 };
 
 /// 進行中のGit操作を示すfile。1つでもあれば削除しない。
@@ -149,7 +148,8 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         .map(|pending| pending.primary.clone())
         .chain(pending_refs.iter().map(|pending| pending.candidate.clone()))
         .collect();
-    let observation = match observe_origin(host, request, &candidates) {
+    let origin = OriginKind::of(request.metadata);
+    let observation = match observe_origin(host, request, origin, &candidates) {
         Ok(observation) => observation,
         Err(error) => {
             return observation_command_failure(
@@ -159,6 +159,7 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
                 confirmable_losses,
                 repository_losses,
                 &error,
+                origin,
             );
         }
     };
@@ -167,6 +168,7 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         pending_worktrees,
         pending_refs,
         &observation,
+        origin,
         &mut blockers,
         &mut confirmable_losses,
     );
@@ -189,17 +191,18 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
 fn observe_origin(
     host: &dyn HostEnvironment,
     request: &Request<'_>,
+    origin: OriginKind,
     candidates: &[CommitCandidate],
 ) -> Result<OriginObservation> {
-    match request.metadata.repository.provider() {
-        Provider::Github => observe_for_mutation(
+    match origin {
+        OriginKind::Remote => observe_for_mutation(
             host,
             request.sandbox,
             request.layout,
             candidates,
             request.preserved,
         ),
-        Provider::Local => observe_host_origin(
+        OriginKind::Host => observe_host_origin(
             host,
             Path::new(request.metadata.repository.clone_url()),
             request.sandbox,
@@ -304,14 +307,22 @@ fn finalize_origin_reachability(
     pending_worktrees: Vec<PendingWorktree>,
     pending_refs: Vec<PendingLocalRef>,
     observation: &OriginObservation,
+    origin: OriginKind,
     blockers: &mut Vec<Blocker>,
     confirmable_losses: &mut Vec<ConfirmableLoss>,
 ) -> Vec<WorktreeReport> {
     let mut unobservable = UnobservableAccumulator::default();
-    let worktrees = finalize_worktrees(pending_worktrees, observation, blockers, &mut unobservable);
+    let worktrees = finalize_worktrees(
+        pending_worktrees,
+        observation,
+        origin,
+        blockers,
+        &mut unobservable,
+    );
     finalize_local_refs(
         pending_refs,
         observation,
+        origin,
         blockers,
         &mut unobservable,
         confirmable_losses,
@@ -326,13 +337,20 @@ fn finalize_origin_reachability(
 fn finalize_worktrees(
     pending_worktrees: Vec<PendingWorktree>,
     observation: &OriginObservation,
+    origin: OriginKind,
     blockers: &mut Vec<Blocker>,
     unobservable: &mut UnobservableAccumulator,
 ) -> Vec<WorktreeReport> {
     let mut worktrees = Vec::with_capacity(pending_worktrees.len());
     for pending in pending_worktrees {
         let reachability = Reachability::classify(&pending.primary, observation);
-        record_origin_blocker(&pending.primary, &reachability, blockers, unobservable);
+        record_origin_blocker(
+            &pending.primary,
+            &reachability,
+            origin,
+            blockers,
+            unobservable,
+        );
         worktrees.push(WorktreeReport {
             relative: pending.relative,
             kind: pending.kind,
@@ -352,13 +370,20 @@ fn finalize_worktrees(
 fn finalize_local_refs(
     pending_refs: Vec<PendingLocalRef>,
     observation: &OriginObservation,
+    origin: OriginKind,
     blockers: &mut Vec<Blocker>,
     unobservable: &mut UnobservableAccumulator,
     confirmable_losses: &mut Vec<ConfirmableLoss>,
 ) {
     for pending in pending_refs {
         let reachability = Reachability::classify(&pending.candidate, observation);
-        if record_origin_blocker(&pending.candidate, &reachability, blockers, unobservable) {
+        if record_origin_blocker(
+            &pending.candidate,
+            &reachability,
+            origin,
+            blockers,
+            unobservable,
+        ) {
             continue;
         }
         confirmable_losses.push(pending.loss);
@@ -398,17 +423,21 @@ impl UnobservableAccumulator {
 /// 分類結果を拒否理由へ変換する。`Unreachable`はcandidateごとに固有の事実を持つため
 /// 即座にblockerを積む。`Unobservable`は観測1回につき1件へ畳むため、ref名だけを
 /// `unobservable`へ集める。回収できる結果（`Pushed`/`Reachable`）でなければ`true`を返す。
+/// 回収できないcommitの拒否は、読んだoriginによって説明と対処を変える。
 fn record_origin_blocker(
     candidate: &CommitCandidate,
     reachability: &Reachability,
+    origin: OriginKind,
     blockers: &mut Vec<Blocker>,
     unobservable: &mut UnobservableAccumulator,
 ) -> bool {
     match reachability {
         Reachability::Unreachable => {
-            blockers.push(Blocker::OriginUnreachable {
-                reference: candidate.reference().to_string(),
-                commit: candidate.commit().to_string(),
+            let reference = candidate.reference().to_string();
+            let commit = candidate.commit().to_string();
+            blockers.push(match origin {
+                OriginKind::Remote => Blocker::OriginUnreachable { reference, commit },
+                OriginKind::Host => Blocker::HostUnreachable { reference, commit },
             });
             true
         }
@@ -1398,8 +1427,11 @@ fn observation_command_failure(
     mut confirmable_losses: Vec<ConfirmableLoss>,
     repository_losses: Vec<ConfirmableLoss>,
     error: &Error,
+    origin: OriginKind,
 ) -> Assessment {
-    blockers.push(origin_observation_command_unobservable(error, &project));
+    blockers.push(origin_observation_command_unobservable(
+        error, &project, origin,
+    ));
     confirmable_losses.extend(repository_losses);
     Assessment::new(
         request.operation,
@@ -1426,7 +1458,11 @@ fn observation_blocker(error: &Error) -> Blocker {
 /// origin観測command自体の起動に失敗した場合の変換。
 ///
 /// `observe_for_mutation`はprojectを知らないため、remediationはここで足す。
-fn origin_observation_command_unobservable(error: &Error, project: &str) -> Blocker {
+fn origin_observation_command_unobservable(
+    error: &Error,
+    project: &str,
+    origin: OriginKind,
+) -> Blocker {
     let diagnostic = match error.diagnostics().first() {
         Some(diagnostic) => diagnostic.clone(),
         None => Diagnostic::new(
@@ -1434,10 +1470,17 @@ fn origin_observation_command_unobservable(error: &Error, project: &str) -> Bloc
             msg!("error-origin-observation-unobservable"),
         ),
     };
-    Blocker::unobservable(diagnostic.remediation(open_remediation(
-        project,
-        msg!("remediation-origin-observation-unobservable"),
-    )))
+    // hostのrepositoryを読むcommandが起動できないのは、Sandboxではなくhostの問題である。
+    let remediation = match origin {
+        OriginKind::Remote => {
+            open_remediation(project, msg!("remediation-origin-observation-unobservable"))
+        }
+        OriginKind::Host => status_remediation(
+            project,
+            msg!("remediation-origin-host-repository-unreadable"),
+        ),
+    };
+    Blocker::unobservable(diagnostic.remediation(remediation))
 }
 
 fn open_remediation(project: &str, explanation: Msg) -> Remediation {

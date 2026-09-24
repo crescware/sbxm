@@ -195,6 +195,17 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         ],
         &["diagnostic-reference-label", "diagnostic-commit-label"],
     )?;
+    // hostのrepositoryをoriginとする案件は、Sandboxのoriginへpushしても残らない。
+    // 対処はhostへの保存だけを示す。
+    assert_protection_diagnostic(
+        Blocker::HostUnreachable {
+            reference: "HEAD".to_string(),
+            commit: COMMIT.to_string(),
+        },
+        ErrorId::OriginCommitUnreachable,
+        "sbxm fetch example-org/example-repo",
+        &["diagnostic-reference-label", "diagnostic-commit-label"],
+    )?;
     for (reason, id) in [
         (UnobservableReason::OriginMissing, ErrorId::OriginMissing),
         (
@@ -1997,10 +2008,74 @@ fn a_local_project_commit_the_host_does_not_reach_stops_the_run() -> Checked {
     let host = host_reaching(clean_host(&fixture, &project)?, &project, "");
     as_local(&mut project)?;
 
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("the host was read")?;
+    assert_eq!(
+        assessment.blockers(),
+        [Blocker::HostUnreachable {
+            reference: "refs/heads/main".to_string(),
+            commit: COMMIT.to_string(),
+        }]
+    );
+    let error = gate::require_no_blockers(&assessment)
+        .refused_because("the host does not keep the commit")?;
+    assert_eq!(error.first_id(), Some(ErrorId::OriginCommitUnreachable));
+    Ok(())
+}
+
+/// hostの`git`だけを起動できないhost。Sandboxの中のcommandは`inner`が答える。
+struct HostGitMissing {
+    inner: FakeSbx,
+}
+
+impl HostEnvironment for HostGitMissing {
+    fn command_exists(&self, program: &str) -> bool {
+        program != "git"
+    }
+
+    fn run(
+        &self,
+        spec: &crate::boundary::host::CommandSpec,
+    ) -> Result<crate::boundary::host::CommandOutcome> {
+        if spec.program == "git" {
+            return Err(crate::diagnostics::Error::new(
+                ErrorId::ExternalCommandNotFound,
+                crate::msg!("error-external-command-not-found", program = "git"),
+            ));
+        }
+        self.inner.run(spec)
+    }
+}
+
+#[test]
+fn a_host_repository_that_cannot_be_read_points_at_the_host_not_the_sandbox() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let host = HostGitMissing {
+        inner: clean_host(&fixture, &project)?,
+    };
+    as_local(&mut project)?;
+
     let error = snapshot(&host, &fixture, &project, DestructiveOperation::Destroy)
         .and_then(|snapshot| gate::require_no_blockers(snapshot.assessment()))
-        .refused_because("the host does not keep the commit")?;
+        .refused_because("the host repository could not be read")?;
 
-    assert_eq!(error.first_id(), Some(ErrorId::OriginCommitUnreachable));
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::ExternalCommandNotFound);
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .required_because("a remediation")?;
+    assert_eq!(
+        remediation
+            .commands
+            .iter()
+            .map(crate::design::text::CommandLine::as_str)
+            .collect::<Vec<_>>(),
+        ["sbxm status local/example-repo"]
+    );
     Ok(())
 }
