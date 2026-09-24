@@ -1,7 +1,7 @@
 /// artifact 1件の観測結果。
 ///
 /// 「present/matchesの2つのbool」のような場当たり的な組み合わせを避け、欠落・一致・
-/// 食い違い・観測不能の4状態を型で分ける。`Mismatch`と`Unobservable`はevidenceを
+/// 食い違い・観測不能と、案件に要らないことを型で分ける。`Mismatch`と`Unobservable`はevidenceを
 /// 持ち、診断へそのまま転記できる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Observed {
@@ -13,11 +13,18 @@ pub enum Observed {
     Mismatch { evidence: String },
     /// 存在するかどうか、または値が一致するかどうかを確認できなかった。
     Unobservable { evidence: String },
+    /// この案件には無いものである。欠けているのではなく、要らない。
+    NotApplicable,
 }
 
 impl Observed {
     pub fn is_matching(&self) -> bool {
         matches!(self, Observed::Matching)
+    }
+
+    /// 揃っている、または要らない。どちらも、作り直したり足したりするものが無い。
+    pub fn is_satisfied(&self) -> bool {
+        matches!(self, Observed::Matching | Observed::NotApplicable)
     }
 
     /// 無いことを確認できた。観測できなかった場合と混ぜない。
@@ -32,6 +39,7 @@ impl Observed {
             Observed::Matching => "matching",
             Observed::Mismatch { .. } => "mismatch",
             Observed::Unobservable { .. } => "not-observed",
+            Observed::NotApplicable => "not-applicable",
         }
     }
 }
