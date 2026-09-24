@@ -51,7 +51,7 @@ pub use receive_copy::receive_copy;
 pub use received_copy::ReceivedCopy;
 use require_no_symlink_in_sandbox::require_no_symlink_in_sandbox;
 pub use sandbox_digest::sandbox_digest;
-use transfer_incomplete::TRANSFER_INCOMPLETE;
+pub use transfer_incomplete::TRANSFER_INCOMPLETE;
 
 #[cfg(test)]
 #[path = "files_test.rs"]

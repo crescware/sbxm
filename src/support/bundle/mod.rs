@@ -1,13 +1,15 @@
-//! git bundleによるSandboxからhostへのcommitの受け取り。
+//! git bundleによるSandboxとhostのあいだのcommitの受け渡し。
 //!
 //! `.git`を丸ごと写さない。hookやconfigが混ざり、git操作の途中で写したものは整合しない
 //! ことがある。bundleが運ぶのはobjectとrefだけである。受け取ったbundleは検証してから、
-//! hostのrepositoryのsbxm専用の名前空間へだけ取り込む。
+//! hostのrepositoryのsbxm専用の名前空間へだけ取り込む。hostにあるrepositoryを登録した
+//! 案件では、逆向きにhostのbranchとtagをbundleにしてSandboxのoriginとして置く。
 
 mod create_bundle;
 mod import_bundle;
 mod kept_bundles;
 mod max_bundle_bytes;
+mod place_bundle;
 mod prune_bundles;
 mod receive_bundle;
 mod received_bundle;
@@ -16,12 +18,14 @@ mod save_to_host;
 mod saved_on_host;
 mod saved_tip;
 mod saved_tips;
+mod send_to_sandbox;
 mod stamp;
 
 use create_bundle::CREATE_BUNDLE;
 pub use import_bundle::import_bundle;
 pub use kept_bundles::KEPT_BUNDLES;
 pub use max_bundle_bytes::MAX_BUNDLE_BYTES;
+use place_bundle::PLACE_BUNDLE;
 pub use prune_bundles::prune_bundles;
 pub use receive_bundle::receive_bundle;
 pub use received_bundle::ReceivedBundle;
@@ -30,6 +34,7 @@ pub use save_to_host::save_to_host;
 pub use saved_on_host::saved_on_host;
 pub use saved_tip::SavedTip;
 pub use saved_tips::saved_tips;
+pub use send_to_sandbox::send_to_sandbox;
 pub use stamp::stamp;
 
 #[cfg(test)]

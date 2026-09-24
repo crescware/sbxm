@@ -37,7 +37,6 @@ pub fn prepare(
     )?;
     // 観測は最後まで並べたうえで、安全と確認できなかった事実があれば計画を作らない。
     first.require_safe()?;
-    let name = locked.metadata.sandbox_name();
 
     // 中を読めば起動してしまうSandboxを、repairの計画のためだけに動かさない。欠けた
     // 工程を推測せず、観測できない事実として拒否する。
@@ -84,7 +83,7 @@ pub fn prepare(
     if second.state != first.state || second_target != target {
         return Err(state_changed(&locked.metadata, first.state, second.state));
     }
-    let preconditions = provisioning::verify_external_preconditions(host, &name)?;
+    let preconditions = provisioning::verify_external_preconditions(host, &locked.metadata)?;
     let plan = plan(
         &locked.metadata,
         &second,

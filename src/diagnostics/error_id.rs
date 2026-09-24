@@ -124,6 +124,8 @@ error_ids! {
     DeclaredFileConflict => "declared-file-conflict",
     DeclaredFileModified => "declared-file-modified",
     DeclaredFileTransferIncomplete => "declared-file-transfer-incomplete",
+    BundleTransferIncomplete => "bundle-transfer-incomplete",
+    HostRepositoryEmpty => "host-repository-empty",
     SandboxIdentityMismatch => "sandbox-identity-mismatch",
     GithubSecretMissing => "github-secret-missing",
     GithubCredentialRejected => "github-credential-rejected",

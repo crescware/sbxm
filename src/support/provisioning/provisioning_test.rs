@@ -50,8 +50,7 @@ fn provisioning_reuses_verified_artifacts_and_reports_a_restored_workspace() -> 
         .join(locked.metadata.sandbox_name().as_str());
     fs::remove_dir_all(&workspace).required_because("remove the neutral workspace")?;
 
-    let name = locked.metadata.sandbox_name();
-    let preconditions = verify_external_preconditions(&world, &name)
+    let preconditions = verify_external_preconditions(&world, &locked.metadata)
         .required_because("secret and docker preconditions are met")?;
     let inputs = ProvisioningInputs::capture(&locked.paths, &bench.config, Some(&generation))
         .required_because("capture the snapshot that fixes this attempt")?;

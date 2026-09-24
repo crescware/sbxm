@@ -19,6 +19,8 @@ pub struct CommandSpec {
     pub working_dir: Option<PathBuf>,
     /// stdinへ渡すbyte列。無ければstdinは空である。
     pub(super) input: Option<InputBytes>,
+    /// stdinへつなぐfile。memoryへ読み込まずに渡す、大きな入力のために使う。
+    pub input_file: Option<PathBuf>,
 }
 
 impl CommandSpec {
@@ -37,6 +39,7 @@ impl CommandSpec {
             output: OutputPolicy::Capture,
             working_dir: None,
             input: None,
+            input_file: None,
         }
     }
 
@@ -64,6 +67,12 @@ impl CommandSpec {
     /// stdinへ渡すbyte列。
     pub fn input(&self) -> Option<&[u8]> {
         self.input.as_ref().map(InputBytes::as_slice)
+    }
+
+    /// stdinへ`path`のfileをつなぐ。sbxmはその中身を読まず、子が読み切ればEOFになる。
+    pub fn with_input_file(mut self, path: &Path) -> CommandSpec {
+        self.input_file = Some(path.to_path_buf());
+        self
     }
 
     pub fn working_dir(mut self, directory: &Path) -> CommandSpec {

@@ -27,12 +27,10 @@ pub(crate) fn build_initial(
     progress: &mut dyn ProgressSink,
     target: Option<&str>,
 ) -> Result<ProvisioningOutput> {
-    let name = locked.metadata.sandbox_name();
-
     // custom secretはSandboxの作成時に結び付く。あとから登録しても既存のSandboxには
     // 届かないため、作成より前に、そしてimageを組む前に確認する。Dockerの到達性も
     // ここで一度だけ確認し、以降の`provision`の中では再確認しない。
-    let preconditions = verify_external_preconditions(host, &name)?;
+    let preconditions = verify_external_preconditions(host, &locked.metadata)?;
 
     // Dockerfileと宣言fileを1回だけ読み、privateなsnapshotへ複製する。以降はこの
     // snapshotだけを使い、生きているhost pathを二度と読まない。`target`が`Some`の

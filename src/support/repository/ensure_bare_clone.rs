@@ -1,22 +1,22 @@
 use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
-use crate::git;
 use crate::msg;
-use crate::project::{ProjectId, SandboxLayout};
+use crate::project::SandboxLayout;
 
 use crate::design::ProgressSink;
 use crate::support::sandbox;
 
-use super::{FETCH_REFSPEC, TagFollowing, verify_bare_clone};
+use super::{FETCH_REFSPEC, SandboxOrigin, TagFollowing, verify_bare_clone};
 
 /// bare repositoryを用意する。
 ///
 /// 既存のdirectoryは、対象repositoryのbare cloneであると証明できた場合だけ再利用し、
-/// 条件を満たさない場合は自動削除せずに停止する。
+/// 条件を満たさない場合は自動削除せずに停止する。hostにあるrepositoryは、fetchの
+/// 前にhostからbundleを送る。
 pub fn ensure_bare_clone(
     host: &dyn HostEnvironment,
     sandbox: &str,
-    project: &ProjectId,
+    origin: &SandboxOrigin,
     layout: &SandboxLayout,
     progress: &mut dyn ProgressSink,
 ) -> Result<()> {
@@ -24,11 +24,11 @@ pub fn ensure_bare_clone(
 
     if sandbox::path_exists(host, sandbox, &git_dir)? {
         progress.step(msg!("progress-checking-repository"));
-        complete_empty_initialization(host, sandbox, project, &git_dir)?;
+        complete_empty_initialization(host, sandbox, origin, &git_dir)?;
     } else {
         progress.step(msg!("progress-preparing-repository"));
         sandbox::exec(host, sandbox, &["mkdir", "-p", &layout.bare_root()])?.require_success()?;
-        let url = git::https_remote_url(project.owner(), project.repository());
+        let url = origin.url();
         // `git clone --bare`はremoteのbranchを`refs/heads/*`へ複製する。そのbranchは
         // worktreeを作るときに同じ名前で作ろうとするものと衝突する。bare repositoryは
         // remote-tracking refだけを持つ入れ物として始める。
@@ -61,10 +61,11 @@ pub fn ensure_bare_clone(
         )?
         .require_success()?;
     }
-    verify_bare_clone(host, sandbox, project, &git_dir)?;
+    verify_bare_clone(host, sandbox, origin, &git_dir)?;
 
     // remote-tracking refを現在の状態にしてから、起点refを解決する。
     progress.step(msg!("progress-fetching-repository"));
+    origin.deliver(host, sandbox)?;
     super::refresh_origin(host, sandbox, &git_dir, TagFollowing::Auto, Some(progress))?
         .require_success()?;
     Ok(())
@@ -75,7 +76,7 @@ pub fn ensure_bare_clone(
 fn complete_empty_initialization(
     host: &dyn HostEnvironment,
     sandbox_name: &str,
-    project: &ProjectId,
+    origin: &SandboxOrigin,
     git_dir: &str,
 ) -> Result<()> {
     let bare = sandbox::read(
@@ -92,7 +93,7 @@ fn complete_empty_initialization(
     if bare != "true" {
         return Ok(());
     }
-    let origin = sandbox::exec(
+    let configured = sandbox::exec(
         host,
         sandbox_name,
         &[
@@ -104,9 +105,9 @@ fn complete_empty_initialization(
             "remote.origin.url",
         ],
     )?;
-    let origin_urls = origin.stdout_text();
+    let origin_urls = configured.stdout_text();
     if !origin_urls.trim().is_empty() {
-        return complete_missing_fetch_refspec(host, sandbox_name, project, git_dir, &origin_urls);
+        return complete_missing_fetch_refspec(host, sandbox_name, origin, git_dir, &origin_urls);
     }
     let refs = sandbox::exec(
         host,
@@ -134,7 +135,7 @@ fn complete_empty_initialization(
     if !refs.stdout_text().trim().is_empty() || !empty_objects {
         return Ok(());
     }
-    let url = git::https_remote_url(project.owner(), project.repository());
+    let url = origin.url();
     sandbox::exec(
         host,
         sandbox_name,
@@ -166,7 +167,7 @@ fn complete_empty_initialization(
 fn complete_missing_fetch_refspec(
     host: &dyn HostEnvironment,
     sandbox_name: &str,
-    project: &ProjectId,
+    origin: &SandboxOrigin,
     git_dir: &str,
     origin_urls: &str,
 ) -> Result<()> {
@@ -177,7 +178,7 @@ fn complete_missing_fetch_refspec(
     let [url] = urls.as_slice() else {
         return Ok(());
     };
-    if git::canonical_id_of_remote(url).as_deref() != Some(project.canonical().as_str()) {
+    if origin.verify(url).is_err() {
         return Ok(());
     }
     let fetch = sandbox::exec(

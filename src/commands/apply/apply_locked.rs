@@ -7,7 +7,7 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
 use crate::paths::ProjectPaths;
-use crate::project::{ProjectId, SandboxName};
+use crate::project::SandboxName;
 
 use crate::design::ProgressSink;
 use crate::design::Remediation;
@@ -84,8 +84,8 @@ pub(super) fn apply_locked(
     if let Some(count) = scope.worktrees {
         raise_worktrees(&locked.paths, &mut locked.metadata, count)?;
         let layout = SandboxLayout::new(&canonical);
-        let project = ProjectId::parse(&locked.metadata.display_id())?;
-        repository::ensure_bare_clone(host, &entry.name, &project, &layout, progress)
+        let origin = repository::SandboxOrigin::of(&locked.paths, &locked.metadata)?;
+        repository::ensure_bare_clone(host, &entry.name, &origin, &layout, progress)
             .map_err(decorate)?;
         let branch = repository::resolve_start_ref(
             host,

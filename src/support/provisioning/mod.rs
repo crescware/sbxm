@@ -77,6 +77,10 @@ mod initial_intent_test;
 mod initial_output_test;
 
 #[cfg(test)]
+#[path = "initial_local_test.rs"]
+mod initial_local_test;
+
+#[cfg(test)]
 #[path = "initial_secret_test.rs"]
 mod initial_secret_test;
 

@@ -28,7 +28,7 @@ fn a_missing_repository_is_cloned_bare_over_https_and_then_verified() -> Checked
     ensure_bare_clone(
         &host,
         "sbxm-example",
-        &project()?,
+        &SandboxOrigin::Github(project()?),
         &layout()?,
         &mut SilentProgress,
     )
@@ -56,7 +56,7 @@ fn an_existing_repository_of_the_same_project_is_reused() -> Checked {
     ensure_bare_clone(
         &host,
         "sbxm-example",
-        &project()?,
+        &SandboxOrigin::Github(project()?),
         &layout()?,
         &mut SilentProgress,
     )
@@ -80,7 +80,7 @@ fn an_empty_repository_left_after_git_init_gets_its_missing_origin() -> Checked 
     ensure_bare_clone(
         &world,
         "sbxm-example",
-        &project()?,
+        &SandboxOrigin::Github(project()?),
         &layout()?,
         &mut SilentProgress,
     )
@@ -111,7 +111,7 @@ fn a_repository_with_a_matching_origin_but_no_fetch_refspec_gets_it_completed() 
     ensure_bare_clone(
         &world,
         "sbxm-example",
-        &project()?,
+        &SandboxOrigin::Github(project()?),
         &layout()?,
         &mut SilentProgress,
     )
@@ -158,7 +158,7 @@ fn a_repository_that_does_not_match_is_refused_instead_of_being_replaced() -> Ch
         let error = ensure_bare_clone(
             &host,
             "sbxm-example",
-            &project()?,
+            &SandboxOrigin::Github(project()?),
             &layout()?,
             &mut SilentProgress,
         )
@@ -197,7 +197,7 @@ fn an_origin_that_is_not_exactly_one_url_is_refused_with_the_number_that_was_fou
         let error = ensure_bare_clone(
             &host,
             "sbxm-example",
-            &project()?,
+            &SandboxOrigin::Github(project()?),
             &layout()?,
             &mut SilentProgress,
         )
@@ -238,7 +238,7 @@ fn an_origin_that_is_not_a_github_repository_is_quoted_as_it_stands() -> Checked
     let error = ensure_bare_clone(
         &host,
         "sbxm-example",
-        &project()?,
+        &SandboxOrigin::Github(project()?),
         &layout()?,
         &mut SilentProgress,
     )
@@ -284,7 +284,7 @@ fn a_step_the_host_could_not_run_is_not_read_as_a_repository_that_must_be_replac
         let error = ensure_bare_clone(
             &host,
             "sbxm-example",
-            &project()?,
+            &SandboxOrigin::Github(project()?),
             &layout()?,
             &mut SilentProgress,
         )
@@ -295,5 +295,69 @@ fn a_step_the_host_could_not_run_is_not_read_as_a_repository_that_must_be_replac
             "{step} was reported as something other than the host failure it was"
         );
     }
+    Ok(())
+}
+
+fn local_metadata() -> Checked<crate::metadata::ProjectMetadata> {
+    Ok(crate::metadata::ProjectMetadata {
+        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
+            .required_because("a local repository")?,
+        ..crate::testing::metadata::attached("example-org", "example-repo")?
+    })
+}
+
+#[test]
+fn a_github_repository_is_fetched_over_https_from_inside_the_sandbox() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let metadata = crate::testing::metadata::attached("Example-Org", "Example-Repo")?;
+    let origin = SandboxOrigin::of(&project_paths(dir.path())?, &metadata).required()?;
+
+    assert_eq!(
+        origin.url(),
+        "https://github.com/Example-Org/Example-Repo.git"
+    );
+    origin
+        .verify("git@github.com:example-org/example-repo.git")
+        .required()?;
+    let elsewhere = origin
+        .verify("https://github.com/other/repo.git")
+        .err()
+        .required_because("another repository")?;
+    assert_eq!(elsewhere.id, "cause-origin-elsewhere");
+    let unknown = origin
+        .verify("/srv/repo.git")
+        .err()
+        .required_because("not a GitHub repository")?;
+    assert_eq!(unknown.id, "cause-origin-not-a-github-repository");
+
+    // GitHubへはSandboxから取りに行く。hostからは何も送らない。
+    let host = crate::testing::host::FakeSbx::listing("");
+    origin.deliver(&host, "sbxm-example").required()?;
+    assert!(host.calls().is_empty(), "{:?}", host.calls());
+    Ok(())
+}
+
+#[test]
+fn a_host_repository_is_read_from_the_bundle_inside_the_sandbox() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let origin = SandboxOrigin::of(&paths, &local_metadata()?).required()?;
+
+    let bundle = "/home/agent/work/app/.git/sbxm/origin.bundle";
+    assert_eq!(origin.url(), bundle);
+    assert_eq!(
+        origin,
+        SandboxOrigin::Host {
+            repository: std::path::PathBuf::from("/home/user/code/app"),
+            bundle: bundle.to_string(),
+            staging: paths.bundles_dir(),
+        }
+    );
+    origin.verify(bundle).required()?;
+    let elsewhere = origin
+        .verify("https://github.com/local/app.git")
+        .err()
+        .required_because("not the bundle")?;
+    assert_eq!(elsewhere.id, "cause-origin-elsewhere");
     Ok(())
 }

@@ -56,7 +56,7 @@ pub(crate) fn resume_initial(
         }
         provision_interior(locked, &inputs, host, progress, warnings)?
     } else {
-        let preconditions = verify_external_preconditions(host, &locked.metadata.sandbox_name())?;
+        let preconditions = verify_external_preconditions(host, &locked.metadata)?;
         provision(
             locked,
             &inputs,

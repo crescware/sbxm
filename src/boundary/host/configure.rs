@@ -1,9 +1,15 @@
+use std::fs::File;
 use std::process::{Command, Stdio};
 
-use super::{CommandSpec, EnvPolicy, OutputPolicy};
+use crate::diagnostics::Result;
+use crate::paths;
+
+use super::{CommandSpec, EnvPolicy, OutputPolicy, unwritable};
 
 /// program、argument、environment、作業directory、streamの向き先を決める。
-pub(super) fn configure(spec: &CommandSpec) -> Command {
+///
+/// stdinへつなぐfileを開けなければ、子を起動せずに失敗する。
+pub(super) fn configure(spec: &CommandSpec) -> Result<Command> {
     let mut command = Command::new(&spec.program);
     command.args(&spec.args);
     // defaultで現在processのenvironmentを継承する。`env_clear`や`envs`は呼ばない。
@@ -20,6 +26,11 @@ pub(super) fn configure(spec: &CommandSpec) -> Command {
             // 渡すbyte列が無ければ、stdinを待つ子にもすぐEOFを届ける。
             if spec.input.is_some() {
                 command.stdin(Stdio::piped());
+            } else if let Some(path) = &spec.input_file {
+                let file = File::open(path).map_err(|error| {
+                    unwritable(spec, &format!("{}: {error}", paths::display(path)))
+                })?;
+                command.stdin(Stdio::from(file));
             } else {
                 command.stdin(Stdio::null());
             }
@@ -33,5 +44,5 @@ pub(super) fn configure(spec: &CommandSpec) -> Command {
             command.stderr(Stdio::inherit());
         }
     }
-    command
+    Ok(command)
 }
