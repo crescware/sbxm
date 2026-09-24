@@ -138,6 +138,35 @@ fn assert_protection_diagnostic_with_commands(
 }
 
 #[test]
+fn only_a_commit_the_save_carries_is_offered_the_save() -> Checked {
+    // stashのcommitは保存しても辿れるようにならず、保存を勧めない。
+    assert_protection_diagnostic(
+        Blocker::OriginUnreachable {
+            reference: "refs/stash".to_string(),
+            commit: COMMIT.to_string(),
+        },
+        ErrorId::OriginCommitUnreachable,
+        "sbxm open example-org/example-repo",
+        &["diagnostic-reference-label", "diagnostic-commit-label"],
+    )?;
+    for (reference, resolves) in [
+        ("HEAD", true),
+        ("refs/heads/main", true),
+        ("refs/tags/v1", true),
+        ("refs/stash", false),
+        ("refs/notes/commits", false),
+    ] {
+        let diagnostic = Blocker::OriginUnreachable {
+            reference: reference.to_string(),
+            commit: COMMIT.to_string(),
+        }
+        .diagnostic("example-org/example-repo");
+        assert_eq!(saving_resolves(&diagnostic), resolves, "{reference}");
+    }
+    Ok(())
+}
+
+#[test]
 fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales() -> Checked {
     assert_protection_diagnostic(
         Blocker::TrackedChanges {

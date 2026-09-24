@@ -60,6 +60,7 @@ mod protection_permit;
 mod protection_snapshot;
 mod reachability;
 mod request;
+mod saving_resolves;
 mod unobservable_reason;
 mod worktree_report;
 
@@ -82,6 +83,7 @@ pub use protection_permit::ProtectionPermit;
 pub use protection_snapshot::ProtectionSnapshot;
 pub use reachability::Reachability;
 pub use request::Request;
+pub use saving_resolves::saving_resolves;
 pub use unobservable_reason::UnobservableReason;
 pub use worktree_report::WorktreeReport;
 
