@@ -89,8 +89,11 @@ fn identity(path: &str, name: Option<&str>) -> Result<RepositoryIdentity> {
 }
 
 /// branchの上にいれば、その名前。
+///
+/// 完全なref名から`refs/heads/`を外して得る。`--short`は、同じ名前のtagがあると
+/// `heads/main`のように曖昧さを避けた名前を返す。
 fn current_branch(host: &dyn HostEnvironment, repository: &Path) -> Result<Option<String>> {
-    let spec = CommandSpec::capture("git", &["symbolic-ref", "--quiet", "--short", "HEAD"])
+    let spec = CommandSpec::capture("git", &["symbolic-ref", "--quiet", "HEAD"])
         .timeout(TimeoutClass::LocalFilesystem)
         .working_dir(repository);
     let outcome = host.run(&spec)?;
@@ -98,8 +101,11 @@ fn current_branch(host: &dyn HostEnvironment, repository: &Path) -> Result<Optio
     if outcome.status.code() == Some(1) {
         return Ok(None);
     }
+    let reference = outcome.require_success()?.stdout_text().trim().to_string();
     Ok(Some(
-        outcome.require_success()?.stdout_text().trim().to_string(),
+        reference
+            .strip_prefix("refs/heads/")
+            .map_or(reference.clone(), str::to_string),
     ))
 }
 

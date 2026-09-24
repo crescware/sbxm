@@ -123,3 +123,17 @@ fn a_path_that_is_not_the_top_of_a_work_tree_is_refused() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_branch_that_shares_its_name_with_a_tag_is_recorded_by_its_branch_name() -> Checked {
+    // 短い名前が曖昧なとき、gitは`heads/main`と答える。そのまま記録すると、originに
+    // `heads/main`というbranchを探して構築が失敗する。
+    let dir = tempfile::tempdir().required()?;
+    let repository = work_tree(dir.path(), "app")?;
+    git_in(&repository, &["tag", "main"])?;
+
+    let resolved = resolve(dir.path(), &repository, None).required()?;
+
+    assert_eq!(resolved.branch.as_deref(), Some("main"));
+    Ok(())
+}
