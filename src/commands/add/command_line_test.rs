@@ -217,8 +217,16 @@ fn a_clone_url_and_a_host_path_cannot_be_added_together() -> Checked {
     .refused_because("a name only belongs to a host repository")?;
     assert_eq!(error.first_id(), Some(ErrorId::NameWithoutLocal));
 
+    // clone URLだけを求めると、hostにあるrepositoryも登録できることが伝わらない。
     let error = parse_argv(&["add"], tty()).refused_because("nothing to add")?;
     assert_eq!(error.first_id(), Some(ErrorId::MissingRequiredArgument));
+    assert_eq!(
+        error.diagnostics()[0].description,
+        crate::msg!(
+            "error-missing-required-argument",
+            argument = "<github-clone-url> | --local <PATH>"
+        )
+    );
     Ok(())
 }
 

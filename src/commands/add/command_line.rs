@@ -123,6 +123,17 @@ fn target(arguments: &Arguments) -> Result<AddTarget> {
             name,
         }),
         _ if name.is_some() => fail(ErrorId::NameWithoutLocal, msg!("error-name-without-local")),
+        // clone URLだけを求めると、hostにあるrepositoryも登録できることが伝わらない。
+        (None, None) => fail(
+            ErrorId::MissingRequiredArgument,
+            msg!(
+                "error-missing-required-argument",
+                argument = format!(
+                    "<{}> | --local <PATH>",
+                    CommandLineValues::CLONE_URL_VALUE_NAME
+                )
+            ),
+        ),
         _ => Ok(AddTarget::Clone(CommandLineValues::required_clone_url(
             arguments,
         )?)),
