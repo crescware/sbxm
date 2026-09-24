@@ -9,7 +9,7 @@ use crate::support::files::TRANSFER_INCOMPLETE;
 use crate::support::repository::host_git;
 use crate::support::sandbox;
 
-use super::PLACE_BUNDLE;
+use super::{PLACE_BUNDLE, require_something_to_send};
 
 /// hostの`repository`の`revisions`を1つのbundleにして、Sandboxの`destination`へ置く。
 ///
@@ -67,36 +67,5 @@ pub fn send_to_sandbox(
         ));
     }
     outcome.require_success()?;
-    Ok(())
-}
-
-/// branchもtagも無いrepositoryからは、gitがbundleを作らない。理由を名指しして断る。
-fn require_something_to_send(host: &dyn HostEnvironment, repository: &Path) -> Result<()> {
-    let listed = host_git(
-        host,
-        repository,
-        &[
-            "for-each-ref",
-            "--count=1",
-            "--format=%(refname)",
-            "refs/heads/",
-            "refs/tags/",
-        ],
-        None,
-        TimeoutClass::LocalFilesystem,
-    )?
-    .require_success()?;
-    if listed.stdout_text().trim().is_empty() {
-        return Err(Error::single(
-            Diagnostic::new(
-                ErrorId::HostRepositoryEmpty,
-                msg!(
-                    "error-host-repository-empty",
-                    repository = paths::display(repository)
-                ),
-            )
-            .remediation(msg!("remediation-host-repository-empty")),
-        ));
-    }
     Ok(())
 }
