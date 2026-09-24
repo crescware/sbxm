@@ -16,5 +16,7 @@ pub struct ProvisioningOutput {
     pub files: Vec<crate::support::files::PlacedFile>,
     /// 既に構築済みで、この実行が何も変更しなかったか。
     pub already_built: bool,
+    /// hostへ保存してあったため、新しく作ったSandboxへ戻したbranch。
+    pub restored: Vec<String>,
     pub warnings: Vec<Warning>,
 }

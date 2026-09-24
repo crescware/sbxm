@@ -549,6 +549,7 @@ add-next-token = { github-token-scopes }
 add-next-secret = Register the secret that carries the GitHub token.
 add-next-open = Open it. The first run builds the sandbox, then connects over SSH.
 provisioning-done = { $project } is built, and { $sandbox } is ready to use.
+provisioning-restored = The branches saved on the host are back in the new sandbox: { $branches }
 provisioning-already-built = { $project } is already built, so nothing was changed.
 files-added = Declared { $source } to be placed at { $destination } in { $path }.
 files-already-declared = { $source } is already declared to be placed at { $destination }.

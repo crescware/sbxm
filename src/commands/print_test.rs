@@ -165,6 +165,7 @@ fn provisioning_output() -> crate::support::provisioning::ProvisioningOutput {
         }],
         files: placed(),
         already_built: false,
+        restored: Vec::new(),
         warnings: Vec::new(),
     }
 }

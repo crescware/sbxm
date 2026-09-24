@@ -11,9 +11,7 @@ use crate::design::ProgressSink;
 use crate::support::files::{self, Conflict};
 use crate::support::inventory::{self, Poll};
 use crate::support::protection::ProtectionPermit;
-use crate::support::{
-    bundle, disk, identity, provisioning, repository, sandbox, secret, template, tools,
-};
+use crate::support::{disk, identity, provisioning, repository, sandbox, secret, template, tools};
 
 /// Sandboxの切り替えが最初から最後まで使う文脈。
 ///
@@ -98,21 +96,9 @@ impl Switch<'_> {
             .map_err(decorate)?;
         // hostにあるrepositoryは、hostへ保存したbranchをworktreeより先に戻す。起点branchも
         // 戻したものがあれば、その先端からworktreeを作り直す。
-        let restored = match &origin {
-            repository::SandboxOrigin::Host {
-                repository,
-                staging,
-                ..
-            } => bundle::restore_saved_branches(
-                host,
-                repository,
-                staging,
-                ready.name.as_str(),
-                &layout.bare_git_dir(),
-            )
-            .map_err(decorate)?,
-            repository::SandboxOrigin::Github(_) => Vec::new(),
-        };
+        let restored = origin
+            .restore_saved_branches(host, ready.name.as_str(), &layout.bare_git_dir())
+            .map_err(decorate)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
         repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch, progress)
             .map_err(decorate)?;

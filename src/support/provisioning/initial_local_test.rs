@@ -101,3 +101,36 @@ fn a_built_host_repository_is_observed_as_ready() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_lost_sandbox_is_built_again_with_the_branches_saved_on_the_host() -> Checked {
+    // Sandboxがsbxmの外で消えても、hostへ保存したbranchはhostに残っている。新しく作る
+    // bare repositoryへ、worktreeより先に戻す。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let saved = "refs/sbx/sbxm-local-app-a888dc9878c3/heads";
+    world.answering(
+        "--format=%(refname) refs/sbx/",
+        0,
+        &format!("{saved}/main\n{saved}/topic\n"),
+    );
+
+    let output = bench
+        .build(&world, &local_request()?)
+        .required_because("the build completes")?;
+
+    assert_eq!(output.restored, ["main", "topic"]);
+    let calls = world.invocations();
+    let position = |needle: &str| {
+        calls
+            .iter()
+            .position(|call| call.contains(needle))
+            .required_because(&format!("no command matched {needle}: {calls:?}"))
+    };
+    assert!(
+        position("fetch --prune --progress origin")? < position("sbxm/restore.bundle")?
+            && position("sbxm/restore.bundle")? < position("worktree add")?,
+        "the branches come back after the origin is read and before the worktrees"
+    );
+    Ok(())
+}

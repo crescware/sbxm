@@ -57,8 +57,19 @@ pub(crate) fn provision_interior(
         secret::require_github_accepts(host, &ready_name, &project, registration)?;
     }
 
+    // 無かったbare repositoryを作る場合は、失われたSandboxを作り直している場合もある。
+    // hostにあるrepositoryは、hostへ保存したbranchをworktreeより先に戻す。
+    let fresh = matches!(origin, repository::SandboxOrigin::Host { .. })
+        && !sandbox::path_exists(host, &ready_name, &layout.bare_git_dir())?;
     repository::ensure_bare_clone(host, &ready_name, &origin, &layout, progress)
         .map_err(decorate)?;
+    let restored = if fresh {
+        origin
+            .restore_saved_branches(host, &ready_name, &layout.bare_git_dir())
+            .map_err(decorate)?
+    } else {
+        Vec::new()
+    };
     let branch = repository::resolve_start_ref(
         host,
         &ready_name,
@@ -93,6 +104,7 @@ pub(crate) fn provision_interior(
         worktrees,
         files: placed_files,
         already_built: false,
+        restored,
         warnings,
     })
 }
