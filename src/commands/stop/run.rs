@@ -12,7 +12,7 @@ use crate::project::{ProjectId, SandboxName};
 
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{daemon, generation, sandbox};
+use crate::support::{bundle, daemon, generation, sandbox};
 
 use super::{StopReport, StopResult, Target};
 
@@ -47,6 +47,7 @@ pub fn run(
     // 5. lock取得後のmetadataとstateでpreconditionを判定し直す。
     let entries = daemon::list(host)?;
     let mut targets: Vec<Target> = Vec::with_capacity(selected.len());
+    let mut loaded = Vec::with_capacity(selected.len());
     for candidate in &selected {
         let metadata = candidate.reload()?;
         let state = validate(&metadata, &entries, workspace_root)?;
@@ -55,14 +56,17 @@ pub fn run(
             sandbox: metadata.sandbox_name(),
             state,
         });
+        loaded.push(metadata);
     }
 
-    // 6. runningだけを停止する。
+    // 6. runningだけを停止する。hostにあるrepositoryの案件は、止める前に保存しておく。
     let mut outcomes = Vec::with_capacity(targets.len());
     let mut failures = Vec::new();
-    for target in &targets {
+    let mut saved = Vec::new();
+    for ((target, candidate), metadata) in targets.iter().zip(&selected).zip(&loaded) {
         // 失敗した時点で、後続の対象は停止せずそのままにする。
         if failures.is_empty() && target.state == ProjectState::Running {
+            saved.push(bundle::auto_save(host, &candidate.paths, metadata));
             match stop_one(host, &target.sandbox, poll, output) {
                 Ok(()) => outcomes.push(target.outcome(StopResult::Stopped)),
                 Err(error) => {
@@ -76,7 +80,11 @@ pub fn run(
     }
 
     drop(locks);
-    Ok(StopReport { outcomes, failures })
+    Ok(StopReport {
+        outcomes,
+        failures,
+        saved,
+    })
 }
 
 /// 停止して良い状態であることを確かめ、現在のstateを返す。

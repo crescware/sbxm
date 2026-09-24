@@ -5,6 +5,8 @@
 //! hostのrepositoryのsbxm専用の名前空間へだけ取り込む。hostにあるrepositoryを登録した
 //! 案件では、逆向きにhostのbranchとtagをbundleにしてSandboxのoriginとして置く。
 
+mod auto_save;
+mod auto_saved;
 mod create_bundle;
 mod import_bundle;
 mod kept_bundles;
@@ -23,6 +25,8 @@ mod saved_tips;
 mod send_to_sandbox;
 mod stamp;
 
+pub use auto_save::auto_save;
+pub use auto_saved::AutoSaved;
 use create_bundle::CREATE_BUNDLE;
 pub use import_bundle::import_bundle;
 pub use kept_bundles::KEPT_BUNDLES;

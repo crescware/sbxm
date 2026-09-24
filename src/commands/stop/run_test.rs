@@ -250,3 +250,54 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
     assert_eq!(report.outcomes[0].project, "alpha/alfa");
     Ok(())
 }
+
+#[test]
+fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked {
+    let fixture = Fixture::new()?;
+    let local = fixture.register_local("/srv/code/app", "app")?;
+    let github = fixture.register("zeta/zulu")?;
+    let running = format!(
+        r#"{{"sandboxes":[{},{}]}}"#,
+        fixture.entry(&local, "running")?,
+        fixture.entry(&github, "running")?
+    );
+    let after = format!(
+        r#"{{"sandboxes":[{},{}]}}"#,
+        fixture.entry(&local, "stopped")?,
+        fixture.entry(&github, "stopped")?
+    );
+    let host = FakeSbx::listings(&[&running, &running, &after]);
+
+    let report = run(
+        &fixture.location,
+        &[project_id("local/app")?, project_id("zeta/zulu")?],
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+        poll(),
+        &mut RecordedOutput::new(),
+    )
+    .required_because("stop")?;
+
+    assert_eq!(report.saved.len(), 2, "one save attempt per running target");
+    let calls: Vec<String> = host.calls().iter().map(|call| call.join(" ")).collect();
+    let saving = calls
+        .iter()
+        .position(|call| {
+            call.contains(&format!("exec {}", local.sandbox)) && call.contains("bundle create")
+        })
+        .required_because("the local sandbox is asked for a bundle")?;
+    let stopping = calls
+        .iter()
+        .position(|call| call.contains(&format!("stop {}", local.sandbox)))
+        .required_because("the local sandbox is stopped")?;
+    assert!(saving < stopping, "{calls:?}");
+    // GitHubの案件は、originへpushした作業を持つ。hostへは保存しない。
+    assert!(
+        !calls
+            .iter()
+            .any(|call| call.contains(&format!("exec {}", github.sandbox))),
+        "{calls:?}"
+    );
+    Ok(())
+}

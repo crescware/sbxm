@@ -14,7 +14,7 @@ const NAMESPACE: &str = "sbxm-example-org-example-repo-99a40327a69b";
 
 /// Sandboxの中を模したbare repositoryと、hostのrepository。
 struct Repositories {
-    _root: tempfile::TempDir,
+    root: tempfile::TempDir,
     /// bare repositoryのgit directory。
     sandbox: PathBuf,
     /// Sandbox内のmanaged worktree。
@@ -56,7 +56,7 @@ impl Repositories {
         )?;
         Ok(Repositories {
             bundles: root.path().join("bundles"),
-            _root: root,
+            root,
             sandbox,
             worktree,
             host,
@@ -666,5 +666,122 @@ fn a_sandbox_without_saved_branches_receives_nothing() -> Checked {
         rebuilt.sandbox_git(&["for-each-ref", "--format=%(refname)", "refs/heads/"])?,
         ""
     );
+    Ok(())
+}
+
+/// Sandboxのbundleの手順だけに、用意したbundleのbyte列で答えるhost。gitはこのhostで走らせる。
+struct ServingBundle {
+    bundle: Option<Vec<u8>>,
+}
+
+impl crate::boundary::host::HostEnvironment for ServingBundle {
+    fn command_exists(&self, _program: &str) -> bool {
+        true
+    }
+
+    fn run(
+        &self,
+        spec: &crate::boundary::host::CommandSpec,
+    ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {
+        use std::os::unix::process::ExitStatusExt;
+
+        if spec.program != "sbx" {
+            return crate::boundary::host::RealHost.run(spec);
+        }
+        let (status, stdout) = match &self.bundle {
+            Some(bytes) => (0, bytes.clone()),
+            None => (1 << 8, Vec::new()),
+        };
+        Ok(crate::boundary::host::CommandOutcome {
+            program: spec.program.clone(),
+            args: spec.args.clone(),
+            working_dir: spec.working_dir.clone(),
+            status: std::process::ExitStatus::from_raw(status),
+            stdout,
+            stderr: Vec::new(),
+            stderr_lossy: false,
+        })
+    }
+}
+
+/// hostのrepositoryを、`host`の場所に登録した案件のmetadata。
+fn local_metadata(host: &std::path::Path) -> Checked<crate::metadata::ProjectMetadata> {
+    Ok(crate::metadata::ProjectMetadata {
+        repository: crate::repository::RepositoryIdentity::local(host.to_str().required()?, "host")
+            .required_because("a local repository")?,
+        ..crate::testing::metadata::attached("example-org", "example-repo")?
+    })
+}
+
+#[test]
+fn a_local_project_saves_its_commits_on_its_own_before_the_sandbox_goes() -> Checked {
+    let repositories = Repositories::new()?;
+    let bundle = repositories.root.path().join("sandbox.bundle");
+    git_in(
+        repositories.root.path(),
+        &[
+            "--git-dir",
+            &repositories.git_dir(),
+            "bundle",
+            "create",
+            "--quiet",
+            &bundle.to_string_lossy(),
+            "--branches",
+        ],
+    )?;
+    let bytes = fs::read(&bundle).required()?;
+    let paths = crate::testing::repository::project_paths(repositories.root.path())?;
+    let metadata = local_metadata(&repositories.host)?;
+
+    let saved = auto_save(
+        &ServingBundle {
+            bundle: Some(bytes),
+        },
+        &paths,
+        &metadata,
+    );
+
+    let AutoSaved::Saved(message) = saved else {
+        return Err(crate::testing::outcome::Unmet::new(format!("{saved:?}")));
+    };
+    assert_eq!(message.id, "auto-save-done");
+    let namespace = metadata.sandbox_name();
+    git_in(
+        &repositories.host,
+        &[
+            "rev-parse",
+            "--verify",
+            &format!("refs/sbx/{}/heads/main", namespace.as_str()),
+        ],
+    )?;
+    Ok(())
+}
+
+#[test]
+fn a_save_that_fails_is_a_warning_with_the_command_to_retry() -> Checked {
+    let repositories = Repositories::new()?;
+    let paths = crate::testing::repository::project_paths(repositories.root.path())?;
+    let metadata = local_metadata(&repositories.host)?;
+
+    let saved = auto_save(&ServingBundle { bundle: None }, &paths, &metadata);
+
+    let AutoSaved::Failed(warning) = saved else {
+        return Err(crate::testing::outcome::Unmet::new(format!("{saved:?}")));
+    };
+    assert_eq!(warning.description.id, "auto-save-failed");
+    assert_eq!(warning.commands.len(), 1, "{warning:?}");
+    assert!(!warning.facts.is_empty(), "{warning:?}");
+    Ok(())
+}
+
+#[test]
+fn a_github_project_is_left_to_its_origin() -> Checked {
+    let repositories = Repositories::new()?;
+    let paths = crate::testing::repository::project_paths(repositories.root.path())?;
+    let metadata = crate::testing::metadata::attached("example-org", "example-repo")?;
+
+    let saved = auto_save(&ServingBundle { bundle: None }, &paths, &metadata);
+
+    assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
     Ok(())
 }

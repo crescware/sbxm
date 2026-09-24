@@ -4,9 +4,10 @@ use crate::boundary::host::HostEnvironment;
 use crate::design::{Document, Inline, PromptUi, Ui, Warning};
 use crate::diagnostics::ExitCode;
 use crate::msg;
+use crate::project::ProjectId;
 use crate::support::inventory;
 
-use crate::commands::present;
+use crate::commands::{fetch, present};
 
 use super::super::{Context, report};
 use super::Args;
@@ -88,7 +89,16 @@ pub fn exec(
         );
     ui.stderr(&present::disk_section(connecting, &prepared.disk));
 
-    match super::run::connect(host, prepared, ui) {
+    let project = ProjectId::parse(&prepared.project);
+    let connected = super::run::connect(host, prepared, ui);
+    // hostにあるrepositoryの案件は、sessionを閉じたあとに保存しておく。
+    if let Ok(project) = project {
+        fetch::print::auto_saved(
+            ui,
+            &fetch::save_first(context.location, &project, host, context.workspace_root),
+        );
+    }
+    match connected {
         Ok(()) => ExitCode::Success,
         Err(error) => report(ui, &error),
     }

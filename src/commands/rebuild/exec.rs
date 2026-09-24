@@ -43,6 +43,11 @@ pub fn exec(
         Ok(chosen) => chosen,
         Err(error) => return report(ui, &error),
     };
+    // hostにあるrepositoryの案件は、作り直す前に保存しておく。
+    fetch::print::auto_saved(
+        ui,
+        &fetch::save_first(context.location, &chosen, host, context.workspace_root),
+    );
     let mut offered = false;
     let (prepared, snapshot) = loop {
         let target = Target {

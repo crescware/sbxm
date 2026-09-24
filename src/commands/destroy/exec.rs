@@ -43,6 +43,12 @@ pub fn exec(
         Ok(chosen) => chosen,
         Err(error) => return report(ui, &error),
     };
+    // hostにあるrepositoryの案件は、消す前に保存しておく。保護の検査を迂回する
+    // `--force`でも、保存できるものは保存する。
+    fetch::print::auto_saved(
+        ui,
+        &fetch::save_first(context.location, &chosen, host, context.workspace_root),
+    );
     let mut offered = false;
     let mut prepared = loop {
         let selection = Selection {
