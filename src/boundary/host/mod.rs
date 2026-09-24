@@ -12,6 +12,7 @@
 pub mod protocol;
 
 mod apply_env;
+mod command_input;
 mod command_outcome;
 mod command_spec;
 mod configure;
@@ -23,6 +24,7 @@ mod hiding_lines;
 mod host_environment;
 mod input_bytes;
 mod input_feed;
+mod input_unavailable;
 mod is_executable;
 mod max_kept_stderr;
 mod outcome;
@@ -54,6 +56,7 @@ mod wait_poll_interval;
 mod wait_with_limit;
 
 use apply_env::apply_env;
+use command_input::CommandInput;
 pub use command_outcome::CommandOutcome;
 pub use command_spec::CommandSpec;
 use configure::configure;
@@ -63,8 +66,9 @@ use exists_in_path_value::exists_in_path_value;
 pub use exists_on_path::exists_on_path;
 use hiding_lines::HidingLines;
 pub use host_environment::HostEnvironment;
-pub use input_bytes::InputBytes;
+use input_bytes::InputBytes;
 use input_feed::InputFeed;
+use input_unavailable::input_unavailable;
 use is_executable::is_executable;
 use max_kept_stderr::MAX_KEPT_STDERR;
 use outcome::outcome;

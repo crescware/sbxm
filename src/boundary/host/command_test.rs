@@ -870,7 +870,8 @@ fn a_file_connected_to_stdin_reaches_the_child_without_being_read_by_sbxm() -> C
 
     assert!(outcome.success());
     assert_eq!(outcome.stdout, bytes);
-    assert_eq!(spec.input_file.as_deref(), Some(path.as_path()));
+    assert_eq!(spec.input_file(), Some(path.as_path()));
+    assert_eq!(spec.input(), None);
     Ok(())
 }
 
@@ -886,9 +887,10 @@ fn a_missing_input_file_stops_before_the_child_is_started() -> Checked {
         .run(&spec)
         .refused_because("the input file is missing")?;
 
+    // 書き込みが途中で止まったのではない。開けなかったことを名指しする。
     assert_eq!(
         error.first_id(),
-        Some(ErrorId::ExternalCommandInputUnwritable)
+        Some(ErrorId::ExternalCommandInputUnavailable)
     );
     assert!(!marker.exists(), "the child is never started");
     Ok(())

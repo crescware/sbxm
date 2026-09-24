@@ -243,6 +243,7 @@ error-external-command-output-unreadable = The output of the command could not b
 error-external-command-output-unstored = The output of the command could not be stored on this host
 error-external-command-output-too-large = The output of the command exceeded { $limit } bytes, so the rest was not received
 error-external-command-input-unwritable = The input for the command could not be written to the end
+error-external-command-input-unavailable = The input for the command could not be opened
 error-external-command-not-confirmed = { $subject } could not be confirmed safely.
 error-external-output-unparseable = The output could not be interpreted
 warning-external-output-lossy = The { $stream } output of { $program } was not valid UTF-8 and was converted with replacement characters.

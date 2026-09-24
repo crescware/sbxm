@@ -215,6 +215,7 @@ error_ids! {
     ExternalCommandOutputUnreadable => "external-command-output-unreadable",
     ExternalCommandOutputUnstored => "external-command-output-unstored",
     ExternalCommandInputUnwritable => "external-command-input-unwritable",
+    ExternalCommandInputUnavailable => "external-command-input-unavailable",
     ExternalCommandOutputTooLarge => "external-command-output-too-large",
     ExternalCommandNotConfirmed => "external-command-not-confirmed",
     ExternalOutputUnparseable => "external-output-unparseable",
