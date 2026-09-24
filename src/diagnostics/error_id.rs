@@ -114,6 +114,7 @@ error_ids! {
     LocalNameUnusable => "local-name-unusable",
     HostRepositoryDetached => "host-repository-detached",
     HostRepositoryMissing => "host-repository-missing",
+    ProjectInsideRepository => "project-inside-repository",
 
     // --- Image ---
     ImageUnusable => "image-unusable",

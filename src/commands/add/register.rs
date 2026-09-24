@@ -10,7 +10,7 @@ use crate::paths::{
 };
 use crate::project::{CanonicalProjectId, SandboxName};
 use crate::registry::{Index, RegistryEntry, RegistryGuard};
-use crate::repository::RepositoryIdentity;
+use crate::repository::{Provider, RepositoryIdentity};
 
 use crate::support::generation;
 
@@ -62,6 +62,7 @@ pub fn register(
     } else {
         // cwdを使うのは新規canonical project IDの登録時だけである。
         let candidate = ProjectPaths::derive(parent, &canonical);
+        require_outside_repository(parent, &candidate, &request.repository)?;
         check_new_registration(guard.registry(), &candidate, &canonical)?;
         guard.insert(RegistryEntry::new(
             candidate.root(),
@@ -121,6 +122,34 @@ pub fn register(
         metadata,
         _lock: lock,
     })
+}
+
+/// hostにあるrepositoryを、その中に作る案件directoryで登録させない。
+///
+/// 案件directoryはDockerfile、metadata、lock、bundleを持つ。利用者のworking treeの中に
+/// 作ると、`git status`に現れ、commitされ、`git clean`で消されうる。
+fn require_outside_repository(
+    parent: &ProjectParent,
+    candidate: &ProjectPaths,
+    repository: &RepositoryIdentity,
+) -> Result<()> {
+    if repository.provider() != Provider::Local {
+        return Ok(());
+    }
+    let inside = paths::real_path(parent.as_path()).starts_with(repository.clone_url());
+    if !inside {
+        return Ok(());
+    }
+    Err(Error::single(
+        Diagnostic::new(
+            ErrorId::ProjectInsideRepository,
+            msg!(
+                "error-project-inside-repository",
+                path = paths::display(candidate.root())
+            ),
+        )
+        .remediation(msg!("remediation-project-inside-repository")),
+    ))
 }
 
 /// 新規登録として、この候補pathを使ってよいかを判定する。

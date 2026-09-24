@@ -873,3 +873,34 @@ fn a_repository_on_the_host_is_registered_without_being_cloned() -> Checked {
     assert!(!setup.dir.path().join("app.project").join("app").exists());
     Ok(())
 }
+
+#[test]
+fn a_repository_on_the_host_is_not_added_from_inside_itself() -> Checked {
+    // 案件directoryを利用者のworking treeの中に作らない。
+    let setup = setup()?;
+    let repository = fs::canonicalize(setup.dir.path()).required()?.join("app");
+    fs::create_dir_all(repository.join("src")).required()?;
+    let local =
+        crate::repository::RepositoryIdentity::local(repository.to_str().required()?, "app")
+            .required_because("a local repository")?;
+    let mut request = from(local, None, None);
+    request.start_branch = Some("main".to_string());
+
+    for cwd in [repository.clone(), repository.join("src")] {
+        let parent = ProjectParent::at(&cwd).required()?;
+        let error = register(&setup.location, &parent, &request, &identity())
+            .refused_because("the project would sit inside the repository")?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ProjectInsideRepository),
+            "{}",
+            cwd.display()
+        );
+        assert!(!cwd.join("app.project").exists(), "{}", cwd.display());
+    }
+    assert!(
+        !was_already_registered(&setup.location, &request.repository).required()?,
+        "nothing is recorded"
+    );
+    Ok(())
+}
