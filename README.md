@@ -492,6 +492,12 @@ Bring work back with `sbxm fetch local/<name>`. The commits land in
 `refs/sbx/<sandbox>/` of the host repository, and you merge them into your own
 branches, for example with `git merge refs/sbx/<sandbox>/heads/main`.
 
+Send what the host repository gained since then with `sbxm send local/<name>`.
+sbxm sends a fresh bundle and runs `git fetch --prune origin` inside the
+sandbox, so `origin/<branch>` there matches the host. The sandbox's worktrees
+and branches are left alone; merge or rebase onto `origin/<branch>` inside the
+sandbox when you want the changes.
+
 Because the bundle inside the sandbox disappears with it, rebuild and destroy
 count a commit as kept only when the host repository reaches it: from one of
 its branches or tags, or from what `sbxm fetch` saved under
@@ -570,6 +576,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
 | `sbxm fetch [<project-id>]` | Save a project sandbox's commits into its host repository under `refs/sbx/<sandbox>/`, without touching your branches |
+| `sbxm send [<project-id>]` | Send the host repository's branches and tags to the sandbox of a project added with `--local`, without touching the sandbox's branches |
 | `sbxm files add\|ls\|rm ...` | Declare host files to place in every sandbox, list them, or remove a declaration |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees; `--files --all` places the declared files in every registered project |
 | `sbxm repair [<project-id>]` | Explicitly prepare an interrupted or incomplete project without opening SSH; `open` performs the same recovery when connecting |

@@ -447,6 +447,11 @@ sbxmはhostのrepositoryのbranchとtagを1つの`git bundle`にし、`sbx exec`
 `refs/sbx/<sandbox>/`へ入るので、たとえば`git merge refs/sbx/<sandbox>/heads/main`で
 自分のbranchへ取り込みます。
 
+そのあとhostのrepositoryに増えたものは`sbxm send local/<name>`で送ります。sbxmは新しい
+bundleを送ってSandboxの中で`git fetch --prune origin`を行うので、そこでの`origin/<branch>`が
+hostと揃います。Sandboxのworktreeとbranchはそのままです。取り込むときは、Sandboxの中で
+`origin/<branch>`をmergeするかrebaseしてください。
+
 Sandboxの中のbundleはSandboxと一緒に消えるため、rebuildとdestroyは、hostのrepositoryから
 辿れるcommitだけを失われないものとして数えます。hostのbranchやtag、または`sbxm fetch`が
 `refs/sbx/<sandbox>/`へ保存したものから辿れる必要があります。hostに無いcommitがあれば止まり、
@@ -515,6 +520,7 @@ repositoryは追加したときの場所に残ります。
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
 | `sbxm fetch [<project-id>]` | 案件のSandboxのcommitを、ホスト側のrepositoryの`refs/sbx/<sandbox>/`へ保存する。branchには触れない |
+| `sbxm send [<project-id>]` | `--local`で追加した案件のSandboxへ、ホスト側のrepositoryのbranchとtagを送る。Sandboxのbranchには触れない |
 | `sbxm files add\|ls\|rm ...` | すべてのSandboxへ配置するホスト側のファイルを宣言、一覧、または宣言を外す |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する。`--files --all`で登録済みのすべての案件へ配置する |
 | `sbxm repair [<project-id>]` | SSH接続を開かず、中断または未完成の案件を明示的に準備する。接続時は`open`が同じ復旧を行う |

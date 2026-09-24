@@ -29,6 +29,10 @@ Run [`sbxm fetch`](../../reference/cli/fetch/) to save the sandbox's commits int
 git merge refs/sbx/<sandbox>/heads/main
 ```
 
+## Sending what the host gained
+
+Run [`sbxm send`](../../reference/cli/send/) to send the host repository's current branches and tags. sbxm sends a fresh bundle and runs `git fetch --prune origin` inside the sandbox, so `origin/<branch>` there matches the host, and a branch deleted on the host disappears from the sandbox's origin too. The sandbox's worktrees and branches are left alone. Merge or rebase onto `origin/<branch>` inside the sandbox when you want the changes.
+
 ## What rebuild and destroy protect
 
 The bundle inside the sandbox disappears with the sandbox. So for a project added with `--local`, [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) count a commit as kept only when the host repository reaches it: from one of its branches or tags, or from what `sbxm fetch` saved under `refs/sbx/<sandbox>/`. A commit the host does not have stops them. An interactive terminal offers to fetch it and continue.
