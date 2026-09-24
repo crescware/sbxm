@@ -887,3 +887,33 @@ fn an_incomplete_transfer_is_reported_by_its_own_reason() -> Checked {
     assert_eq!(names_in(&sending.staging()), Vec::<String>::new());
     Ok(())
 }
+
+#[test]
+fn a_bundle_stopped_by_a_signal_while_arriving_leaves_nothing_behind() -> Checked {
+    // 受け取りの途中でsignalを受けても、書きかけの一時fileを残さない。dashはsignalで
+    // 終わるshellのEXIT trapを走らせない。
+    let sending = Sending::new()?;
+    let destination = sending.destination();
+    let parent = destination.parent().required()?.to_path_buf();
+    let mut child = std::process::Command::new("sh")
+        .args(["-c", PLACE_BUNDLE, "sh"])
+        .arg(&destination)
+        .arg(crate::hash::sha256_hex(b"whole"))
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .required()?;
+    let staged = || -> usize { fs::read_dir(&parent).map_or(0, Iterator::count) };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while staged() == 0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(staged(), 1, "the script started receiving");
+
+    let pid = rustix::process::Pid::from_child(&child);
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;
+    child.wait().required()?;
+
+    assert_eq!(staged(), 0);
+    assert!(!destination.exists());
+    Ok(())
+}
