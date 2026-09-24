@@ -1350,3 +1350,32 @@ fn no_route_points_at_a_command_the_surface_no_longer_has() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_host_path_that_cannot_be_added_is_refused_before_anything_is_asked() -> Checked {
+    // clone URLと同じく、登録する対象の誤りは名義や言語を決める前に示す。名義を持たない
+    // 実行でも、答えるのは対象の誤りである。
+    let home = temp_home()?;
+    let base = home.path().join("Projects");
+    std::fs::create_dir_all(&base).required_because("the fixture directory is created")?;
+    write_config(home.path(), "en")?;
+    let missing = home.path().join("no-such-repository");
+
+    let run = sbxm_in(
+        home.path(),
+        &base,
+        &[
+            "add",
+            "--local",
+            missing.to_str().required_because("a UTF-8 path")?,
+        ],
+    )?;
+
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    assert!(
+        run.stderr.contains("local-repository-unusable"),
+        "{}",
+        run.stderr
+    );
+    Ok(())
+}
