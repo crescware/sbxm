@@ -11,8 +11,9 @@ use super::{
 
 /// 登録対象の不変なrepository identity。
 ///
-/// 表示にはGitHub上の表記を、突き合わせにはcanonical project `IDとtransportを使う`。
-/// clone URLはこの構造から組み立て直すため、保存値と表示値が食い違わない。
+/// 表示には入力の表記を、突き合わせにはcanonical project `IDとtransportを使う`。
+/// GitHubのrepositoryでは、clone URLをこの構造から組み立て直すため、保存値と表示値が
+/// 食い違わない。hostにあるrepositoryでは、そのpathをclone URLとして持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepositoryIdentity {
     pub(super) provider: Provider,
@@ -144,12 +145,14 @@ impl RepositoryIdentity {
         self.provider
     }
 
-    /// `GitHub上の表記のままのowner`。
+    /// 表示上のowner。GitHubのrepositoryではGitHub上の表記のまま、hostにある
+    /// repositoryでは`local`である。
     pub fn owner(&self) -> &str {
         &self.owner
     }
 
-    /// `GitHub上の表記のままのrepository`。
+    /// 表示上のrepository名。GitHubのrepositoryではGitHub上の表記のまま、hostにある
+    /// repositoryでは案件の名前である。
     pub fn name(&self) -> &str {
         &self.name
     }

@@ -865,7 +865,8 @@ fn a_repository_on_the_host_is_registered_without_being_cloned() -> Checked {
     .required()?;
 
     assert_eq!(output.project, "local/app");
-    assert_eq!(output.host_clone, Path::new("/home/user/code/app"));
+    assert_eq!(output.host_repository, Path::new("/home/user/code/app"));
+    assert!(!output.cloned);
     assert_eq!(output.start_ref.as_deref(), Some("main"));
     assert!(!output.needs_github_token);
     assert!(host.calls().is_empty(), "{:?}", host.calls());
