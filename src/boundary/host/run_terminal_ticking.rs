@@ -5,7 +5,7 @@ use crate::diagnostics::Result;
 
 use super::{
     CommandOutcome, OutputPolicy, TerminalCommand, WAIT_POLL_INTERVAL, configure, outcome,
-    run_terminal_inner, spawn, spawn_failure, terminate_child,
+    run_terminal_inner, spawn, unwaitable,
 };
 
 /// 端末を引き渡したcommandを実行し、終わるのを待つあいだ`every`ごとに`tick`を呼ぶ。
@@ -35,11 +35,7 @@ pub(super) fn run_terminal_ticking(
                 next = Instant::now() + every;
             }
             Ok(None) => std::thread::sleep(WAIT_POLL_INTERVAL),
-            Err(error) => {
-                // 終わりを確かめられない相手を残さない。
-                terminate_child(&mut child);
-                break Err(spawn_failure(spec, &error));
-            }
+            Err(error) => break Err(unwaitable(&mut child, spec, &error)),
         }
     };
     output.finished();

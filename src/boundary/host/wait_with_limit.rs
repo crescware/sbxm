@@ -1,10 +1,10 @@
 use std::process::{Child, ExitStatus};
 use std::time::{Duration, Instant};
 
-use crate::diagnostics::{Error, ErrorId, Result, fail};
+use crate::diagnostics::{ErrorId, Result, fail};
 use crate::msg;
 
-use super::{CommandSpec, WAIT_POLL_INTERVAL, spawn_failure, terminate_child};
+use super::{CommandSpec, WAIT_POLL_INTERVAL, terminate_child, unwaitable};
 
 pub(super) fn wait_with_limit(
     child: &mut Child,
@@ -42,13 +42,4 @@ pub(super) fn wait_with_limit(
             }
         }
     }
-}
-
-/// 待てなくなった子processを終わらせ、待てなかったことを報告する。
-///
-/// 終わりを確かめられない相手をそのままにすると、出力を読むthreadはEOFに達しない。
-/// 報告より先に、こちらから終わらせる。原因はOSが書いた原文である。
-fn unwaitable(child: &mut Child, spec: &CommandSpec, error: &std::io::Error) -> Error {
-    terminate_child(child);
-    spawn_failure(spec, error)
 }
