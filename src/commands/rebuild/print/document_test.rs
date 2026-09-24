@@ -44,3 +44,17 @@ fn the_summary_names_the_project_the_sandbox_and_the_generation_it_applied() -> 
     assert!(!text.contains(APPLIED), "{text}");
     Ok(())
 }
+
+#[test]
+fn the_branches_brought_back_from_the_host_are_named() -> Checked {
+    let output = RebuildOutput {
+        restored: vec!["main".to_string(), "topic".to_string()],
+        ..output()
+    };
+    let text = rendered(&output)?;
+    assert!(
+        text.contains("saved on the host are back in the new sandbox: main, topic"),
+        "{text}"
+    );
+    Ok(())
+}
