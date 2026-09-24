@@ -21,6 +21,8 @@ The sandbox starts from the branch the host repository is on. When the host repo
 
 When `open` builds the sandbox, sbxm writes the host repository's branches and tags into one `git bundle`. It streams the bundle into the sandbox through the standard input of `sbx exec` and places it at `<repository>/.git/sbxm/origin.bundle` after checking its digest. The sandbox's `origin` points at that file, so the managed worktrees are created from `origin/<branch>` as they are for a GitHub project. Nothing in the sandbox can reach the host repository.
 
+[`sbxm apply --worktrees`](../../reference/cli/apply/) sends the host repository again before it adds worktrees, so the new worktrees start from the host's current branches.
+
 ## Bringing work back
 
 Run [`sbxm fetch`](../../reference/cli/fetch/) to save the sandbox's commits into `refs/sbx/<sandbox>/` of the host repository. Your branches are never touched; merge what you want yourself, for example:
