@@ -6,14 +6,7 @@ use crate::diagnostics::Result;
 use crate::paths;
 use crate::support::repository::host_git;
 
-use super::RefChange;
-
-/// bundleが運ぶrefの種類と、host側でそれを置く名前空間の中の名前。
-const KINDS: [(&str, &str); 3] = [
-    ("refs/heads/", "heads/"),
-    ("refs/tags/", "tags/"),
-    ("refs/sbxm/save/", "worktrees/"),
-];
+use super::{REF_KINDS, RefChange, saved_namespace, saved_refs};
 
 /// bundleを、hostの`repository`の`refs/sbx/<namespace>/`へ取り込む。
 ///
@@ -41,9 +34,8 @@ pub fn import_bundle(
     .require_success()?;
 
     let incoming = format!("refs/sbx-incoming/{namespace}/");
-    let destination = format!("refs/sbx/{namespace}/");
     clear(host, repository, &incoming)?;
-    let imported = import_through(host, repository, &bundle, &incoming, &destination, label);
+    let imported = import_through(host, repository, &bundle, &incoming, namespace, label);
     // 一時的な名前空間は、取り込めても取り込めなくても残さない。
     let cleared = clear(host, repository, &incoming);
     let changes = imported?;
@@ -56,10 +48,11 @@ fn import_through(
     repository: &Path,
     bundle: &str,
     incoming: &str,
-    destination: &str,
+    namespace: &str,
     label: &str,
 ) -> Result<Vec<RefChange>> {
-    let refspecs: Vec<String> = KINDS
+    let destination = saved_namespace(namespace);
+    let refspecs: Vec<String> = REF_KINDS
         .iter()
         .map(|(source, kind)| format!("+{source}*:{incoming}{kind}*"))
         .collect();
@@ -83,14 +76,7 @@ fn import_through(
     .require_success()?;
 
     let arrived = refs_under(host, repository, incoming)?;
-    let mut existing = BTreeMap::new();
-    for (_, kind) in KINDS {
-        existing.extend(
-            refs_under(host, repository, &format!("{destination}{kind}"))?
-                .into_iter()
-                .map(|(name, tip)| (format!("{kind}{name}"), tip)),
-        );
-    }
+    let existing = saved_refs(host, repository, namespace)?;
 
     let mut commands = vec!["start".to_string()];
     let mut changes = Vec::new();
