@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::{self, ConfigLocation, GlobalConfig, SandboxHomeRelativePath};
-use crate::design::{Fact, Remediation};
+use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
@@ -12,7 +12,7 @@ use crate::support::inventory::{self, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{daemon, generation};
 
-use super::Pulled;
+use super::{Pulled, invalid_destination};
 
 /// 宣言fileのSandbox側の内容を、案件の隔離領域へ取り出す。
 ///
@@ -27,16 +27,8 @@ pub fn pull(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
 ) -> Result<Pulled> {
-    let destination = SandboxHomeRelativePath::new(destination).map_err(|reason| {
-        Error::single(
-            Diagnostic::new(
-                ErrorId::FileDeclarationInvalidDestination,
-                msg!("error-file-declaration-invalid-destination"),
-            )
-            .fact(Fact::destination(destination))
-            .fact(Fact::reason(reason)),
-        )
-    })?;
+    let destination = SandboxHomeRelativePath::new(destination)
+        .map_err(|reason| invalid_destination(destination, reason))?;
     let Some(declaration) = config
         .files
         .iter()
