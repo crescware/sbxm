@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::boundary::host::{CommandSpec, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
@@ -93,10 +93,7 @@ fn identity(path: &str, name: Option<&str>) -> Result<RepositoryIdentity> {
 /// 完全なref名から`refs/heads/`を外して得る。`--short`は、同じ名前のtagがあると
 /// `heads/main`のように曖昧さを避けた名前を返す。
 fn current_branch(host: &dyn HostEnvironment, repository: &Path) -> Result<Option<String>> {
-    let spec = CommandSpec::capture("git", &["symbolic-ref", "--quiet", "HEAD"])
-        .timeout(TimeoutClass::LocalFilesystem)
-        .working_dir(repository);
-    let outcome = host.run(&spec)?;
+    let outcome = host.run(&git(repository, &["symbolic-ref", "--quiet", "HEAD"]))?;
     // detached HEADは終了status 1で答える。それ以外の失敗はgitの失敗として伝える。
     if outcome.status.code() == Some(1) {
         return Ok(None);
@@ -109,18 +106,29 @@ fn current_branch(host: &dyn HostEnvironment, repository: &Path) -> Result<Optio
     ))
 }
 
-/// 作業directoryを`repository`に固定してgitの結果を読む。
+/// `repository`でgitの結果を読む。
 fn read_git(host: &dyn HostEnvironment, repository: &Path, args: &[&str]) -> Result<String> {
-    let spec = CommandSpec::capture("git", args)
-        .timeout(TimeoutClass::LocalFilesystem)
-        .working_dir(repository);
-    let outcome = host.run(&spec)?;
+    let outcome = host.run(&git(repository, args))?;
     if !outcome.success() {
         // gitが読めないpathは、repositoryではないものとして理由ごと示す。
         let stderr = String::from_utf8_lossy(&outcome.stderr);
         return Err(unusable(repository, Fact::cause(stderr.trim())));
     }
     Ok(outcome.stdout_text().trim().to_string())
+}
+
+/// `repository`で走らせるgit。
+///
+/// 登録したrepositoryを読む`host_git`と同じく、呼び出し元が設定したrepositoryの場所を
+/// 引き継がない。ただし上のdirectoryのrepositoryは探させる。working treeの途中を
+/// 指されたとき、その最上位を示して断るためである。作業directoryを固定せず`-C`で渡す。
+fn git(repository: &Path, args: &[&str]) -> CommandSpec {
+    let directory = repository.to_string_lossy();
+    let mut full = vec!["-C", directory.as_ref()];
+    full.extend_from_slice(args);
+    CommandSpec::capture("git", &full)
+        .env(EnvPolicy::HostRepository)
+        .timeout(TimeoutClass::LocalFilesystem)
 }
 
 fn unusable(path: &Path, reason: Fact) -> Error {

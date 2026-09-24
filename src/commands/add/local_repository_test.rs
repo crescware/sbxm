@@ -137,3 +137,27 @@ fn a_branch_that_shares_its_name_with_a_tag_is_recorded_by_its_branch_name() -> 
     assert_eq!(resolved.branch.as_deref(), Some("main"));
     Ok(())
 }
+
+#[test]
+fn a_directory_inside_a_work_tree_is_refused_by_naming_the_top() -> Checked {
+    // 呼び出し元の`GIT_DIR`は引き継がないが、上のdirectoryのrepositoryは探す。途中を
+    // 指されたら、最上位を示して断る。
+    let dir = tempfile::tempdir().required()?;
+    let repository = work_tree(dir.path(), "app")?;
+    let inside = repository.join("src");
+    std::fs::create_dir_all(&inside).required()?;
+
+    let error = resolve(dir.path(), &inside, None).refused_because("not the top")?;
+
+    let reason = crate::design::Fact::reason(crate::msg!(
+        "cause-working-tree-elsewhere",
+        expected = crate::paths::display(&inside),
+        observed = crate::paths::display(&repository)
+    ));
+    assert!(
+        error.diagnostics()[0].facts.contains(&reason),
+        "{:?}",
+        error.diagnostics()[0].facts
+    );
+    Ok(())
+}
