@@ -1,12 +1,16 @@
 use std::io::Result as IoResult;
-use std::os::fd::AsFd;
+use std::os::fd::{AsFd, BorrowedFd};
 
 use super::WAIT_POLL_INTERVAL;
 
 /// 2本の読み取り端のどちらが読めるかを、短い待ちで確かめる。
+///
+/// 書き残しのある書き込み端も一緒に待ち、書けるようになれば待ちを切り上げる。書けるか
+/// どうかは返さない。次に書いてみれば分かる。
 pub(super) fn poll_pipes<O: AsFd, E: AsFd>(
     stdout: Option<&O>,
     stderr: Option<&E>,
+    input: Option<BorrowedFd<'_>>,
 ) -> IoResult<(bool, bool)> {
     let mut poll_fds = Vec::new();
     let mut stdout_index = None;
@@ -22,6 +26,14 @@ pub(super) fn poll_pipes<O: AsFd, E: AsFd>(
     if let Some(stderr) = stderr {
         stderr_index = Some(poll_fds.len());
         poll_fds.push(rustix::event::PollFd::new(stderr, events));
+    }
+    if let Some(input) = &input {
+        poll_fds.push(rustix::event::PollFd::new(
+            input,
+            rustix::event::PollFlags::OUT
+                | rustix::event::PollFlags::HUP
+                | rustix::event::PollFlags::ERR,
+        ));
     }
 
     match rustix::event::poll(

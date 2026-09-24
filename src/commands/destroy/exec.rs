@@ -13,7 +13,7 @@ use crate::msg;
 use crate::support::{inventory, select};
 
 use super::{
-    super::{Context, fetch, report},
+    super::{Context, report, saving},
     Args, Selection, print,
 };
 
@@ -43,33 +43,25 @@ pub fn exec(
         Ok(chosen) => chosen,
         Err(error) => return report(ui, &error),
     };
-    let mut offered = false;
-    let mut prepared = loop {
-        let selection = Selection {
-            location: context.location,
-            requested: Some(&chosen),
-            prompt,
-        };
-        match super::run::prepare(
-            selection,
-            args.force,
-            host,
-            context.workspace_root,
-            inventory::Poll::default(),
-            ui,
-        ) {
-            Ok(prepared) => break prepared,
-            // 保存したあとの準備がまだ断るなら、もう訊かずにそのまま報告する。
-            Err(error) if offered => return report(ui, &error),
-            Err(error) => {
-                offered = true;
-                if let ControlFlow::Break(code) =
-                    fetch::offer_save(&error, &chosen, context, host, prompt, ui)
-                {
-                    return code;
-                }
-            }
-        }
+    let prepared =
+        saving::prepare_offering_save(&chosen, context, host, prompt, ui, |prompt, ui| {
+            let selection = Selection {
+                location: context.location,
+                requested: Some(&chosen),
+                prompt,
+            };
+            super::run::prepare(
+                selection,
+                args.force,
+                host,
+                context.workspace_root,
+                inventory::Poll::default(),
+                ui,
+            )
+        });
+    let mut prepared = match prepared {
+        ControlFlow::Continue(prepared) => prepared,
+        ControlFlow::Break(code) => return code,
     };
 
     ui.stdout(&print::plan_document(&prepared.plan, locale));

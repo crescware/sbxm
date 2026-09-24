@@ -5,7 +5,7 @@ use crate::project::SandboxLayout;
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll};
 use crate::support::protection::{self, DestructiveOperation, ProtectionConfirmation, Request};
-use crate::support::{bundle, daemon};
+use crate::support::{daemon, repository};
 
 use super::{DestroyOutcome, Prepared, finish_removal};
 
@@ -25,14 +25,14 @@ pub fn execute_confirmed(
     let present = inventory::single(&daemon::list(host)?, prepared.name.as_str())?.is_some();
     let current = if present {
         let layout = SandboxLayout::new(metadata.canonical_id());
-        let preserved = bundle::saved_on_host(host, &prepared.paths, metadata);
+        let host_repository = repository::host_repository(&prepared.paths, metadata);
         let request = Request::new(
             DestructiveOperation::Destroy,
             &prepared.name,
             &prepared.workspace_root,
             &layout,
             metadata,
-            &preserved,
+            &host_repository,
         );
         protection::gate::assess(host, &request)?
     } else {

@@ -70,7 +70,7 @@ fn take_pipes(child: &mut Child, spec: &CommandSpec) -> Result<(ChildStdout, Chi
 
 /// 読む相手を型で受け取り、pipeの生死をOSに委ねずに決められるようにする。
 #[allow(clippy::too_many_arguments)]
-fn pump<O: Read + AsFd, E: Read + AsFd, I: std::io::Write>(
+fn pump<O: Read + AsFd, E: Read + AsFd, I: std::io::Write + AsFd>(
     child: &mut Child,
     spec: &CommandSpec,
     limit: Option<Duration>,
@@ -99,8 +99,9 @@ fn pump<O: Read + AsFd, E: Read + AsFd, I: std::io::Write>(
             return Err(unwritable(spec, &error.to_string()));
         }
 
-        let (stdout_ready, stderr_ready) =
-            poll_pipes(stdout.as_ref(), stderr.as_ref()).map_err(|error| {
+        let waiting = input.as_ref().and_then(InputFeed::waiting);
+        let (stdout_ready, stderr_ready) = poll_pipes(stdout.as_ref(), stderr.as_ref(), waiting)
+            .map_err(|error| {
                 terminate_child(child);
                 unreadable(spec, &error.to_string())
             })?;

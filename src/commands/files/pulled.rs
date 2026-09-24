@@ -12,5 +12,7 @@ pub struct Pulled {
     pub copy: ReceivedCopy,
     /// 取り出した時点の、hostの宣言fileのdigest。
     pub host_sha256: String,
+    /// 取り出した案件のほかに登録されている案件の数。
+    pub others: usize,
     pub locked: Locked,
 }

@@ -361,3 +361,24 @@ fn a_host_repository_is_read_from_the_bundle_inside_the_sandbox() -> Checked {
     assert_eq!(elsewhere.id, "cause-origin-elsewhere");
     Ok(())
 }
+
+#[test]
+fn a_host_repository_that_is_gone_does_not_lead_git_to_the_one_around_it() -> Checked {
+    // 利用者の`$HOME`がrepositoryであることは珍しくない。案件のrepositoryが無くなった
+    // とき、その外側のrepositoryへsbxmのrefを書き込まない。
+    let root = tempfile::tempdir().required()?;
+    git_in(root.path(), &["init", "--quiet"])?;
+    let gone = root.path().join("project");
+    std::fs::create_dir(&gone).required()?;
+
+    let outcome = host_git(
+        &crate::boundary::host::RealHost,
+        &gone,
+        &["rev-parse", "--show-toplevel"],
+        None,
+        crate::boundary::host::TimeoutClass::LocalFilesystem,
+    )
+    .required()?;
+    assert!(!outcome.success(), "{}", outcome.stdout_text());
+    Ok(())
+}

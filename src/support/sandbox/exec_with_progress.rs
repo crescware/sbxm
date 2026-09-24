@@ -13,7 +13,7 @@ pub fn exec_with_progress(
     args: &[&str],
     progress: &mut dyn ProgressSink,
 ) -> Result<CommandOutcome> {
-    let full = exec_arguments(sandbox, None, args);
+    let full = exec_arguments(sandbox, None, false, args);
     let borrowed: Vec<&str> = full.iter().map(String::as_str).collect();
     let command = relayed(&borrowed).timeout(TimeoutClass::RepositoryTransfer);
     host.run_with_terminal(&command, progress)

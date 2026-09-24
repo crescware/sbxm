@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 use crate::diagnostics::Result;
 use crate::paths;
 
-use super::{CommandSpec, EnvPolicy, OutputPolicy, unwritable};
+use super::{CommandSpec, OutputPolicy, apply_env, unwritable};
 
 /// program、argument、environment、作業directory、streamの向き先を決める。
 ///
@@ -12,12 +12,7 @@ use super::{CommandSpec, EnvPolicy, OutputPolicy, unwritable};
 pub(super) fn configure(spec: &CommandSpec) -> Result<Command> {
     let mut command = Command::new(&spec.program);
     command.args(&spec.args);
-    // defaultで現在processのenvironmentを継承する。`env_clear`や`envs`は呼ばない。
-    // `InheritWithoutSshAgent`は`SSH_AUTH_SOCK`だけを取り除き、それ以外の変数
-    // （`DOCKER_SANDBOXES_ROOT_SIZE`を含む）はそのまま子processへ渡る。
-    if spec.env == EnvPolicy::InheritWithoutSshAgent {
-        command.env_remove("SSH_AUTH_SOCK");
-    }
+    apply_env(&mut command, spec.env, spec.working_dir.as_deref());
     if let Some(directory) = &spec.working_dir {
         command.current_dir(directory);
     }

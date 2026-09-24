@@ -11,6 +11,7 @@
 
 mod candidate;
 mod candidates;
+mod chooses_first;
 mod chosen;
 mod find;
 mod incomplete_registration;
@@ -28,6 +29,7 @@ mod unresolved;
 
 pub use candidate::Candidate;
 pub use candidates::candidates;
+pub use chooses_first::chooses_first;
 pub use chosen::chosen;
 pub use find::find;
 pub use incomplete_registration::incomplete_registration;
