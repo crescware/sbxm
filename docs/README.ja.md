@@ -458,8 +458,8 @@ Sandboxの中のbundleはSandboxと一緒に消えるため、rebuildとdestroy�
 対話端末では先にfetchするかを訊きます。
 
 失われうるのは最後のfetchのあとにcommitした作業だけなので、sbxmは自分でもfetchします。
-`stop`、`rebuild`、`destroy`（`--force`を含む）がSandboxを止める前と、`open`のsessionを
-閉じたあとです。このために停止中のSandboxを起動することはありません。fetchに失敗しても
+`stop`、`rebuild`、`destroy`（`--force`を含む）がSandboxを止める前、`open`のsessionが
+つながっているあいだの10分ごと、そしてsessionを閉じたあとです。このために停止中のSandboxを起動することはありません。fetchに失敗しても
 操作は続き、Sandboxにだけ残っているものがあることをwarningで伝えます。
 
 `sbxm rebuild local/<name>`は、hostのrepositoryからSandboxを作り直し、

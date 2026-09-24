@@ -506,7 +506,8 @@ interactive terminal offers to fetch it first.
 
 Only work committed since the last fetch can be lost, so sbxm also fetches on
 its own: before `stop`, `rebuild`, and `destroy` (including `--force`) take the
-sandbox down, and after an `open` session closes. A stopped sandbox is never
+sandbox down, every 10 minutes while an `open` session is connected, and after
+it closes. A stopped sandbox is never
 started just for this. When a fetch fails, the command still goes on and a
 warning says what remains only in the sandbox.
 
