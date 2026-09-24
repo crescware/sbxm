@@ -33,6 +33,16 @@ git merge refs/sbx/<sandbox>/heads/main
 
 Run [`sbxm send`](../../reference/cli/send/) to send the host repository's current branches and tags. sbxm sends a fresh bundle and runs `git fetch --prune origin` inside the sandbox, so `origin/<branch>` there matches the host, and a branch deleted on the host disappears from the sandbox's origin too. The sandbox's worktrees and branches are left alone. Merge or rebase onto `origin/<branch>` inside the sandbox when you want the changes.
 
+## Automatic fetch
+
+Only work committed since the last fetch can be lost, so sbxm narrows that window by fetching on its own:
+
+- before [`stop`](../../reference/cli/stop/) stops a running sandbox,
+- before [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) check what would be lost, including `destroy --force`,
+- after an [`open`](../../reference/cli/open/) session closes, with the project lock taken again.
+
+A stopped sandbox is never started just for this. When something was saved, a line says so on stderr. When the fetch fails, the command still goes on, and a warning says that anything committed since the last fetch is only in the sandbox, with the `sbxm fetch` command to retry. Uncommitted changes are not fetched; commit them first.
+
 ## What rebuild and destroy protect
 
 The bundle inside the sandbox disappears with the sandbox. So for a project added with `--local`, [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) count a commit as kept only when the host repository reaches it: from one of its branches or tags, or from what `sbxm fetch` saved under `refs/sbx/<sandbox>/`. A commit the host does not have stops them. An interactive terminal offers to fetch it and continue.

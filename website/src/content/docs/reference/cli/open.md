@@ -18,3 +18,5 @@ When a project ID is supplied without `--index`, the SSH session starts in `/hom
 Starting a stopped sandbox requires the [neutral workspace directory](../../filesystem/#neutral-workspace) its record names. `open` verifies the sandbox identity, restores that private empty mount point when it is absent, reports the restoration, and then starts the sandbox. A sandbox that is already running is not started again.
 
 The Docker Sandboxes Remote SSH integration must be configured on the host.
+
+For a project added with `--local`, the sandbox's commits are saved into the host repository after the session closes; see [Develop without GitHub](../../../guides/local-repository/#automatic-fetch).

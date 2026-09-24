@@ -504,6 +504,12 @@ its branches or tags, or from what `sbxm fetch` saved under
 `refs/sbx/<sandbox>/`. A commit the host does not have stops them, and an
 interactive terminal offers to fetch it first.
 
+Only work committed since the last fetch can be lost, so sbxm also fetches on
+its own: before `stop`, `rebuild`, and `destroy` (including `--force`) take the
+sandbox down, and after an `open` session closes. A stopped sandbox is never
+started just for this. When a fetch fails, the command still goes on and a
+warning says what remains only in the sandbox.
+
 `sbxm rebuild local/<name>` recreates the sandbox from the host repository and
 brings back the branches saved under `refs/sbx/<sandbox>/heads/` as sandbox
 branches, tracking `origin/<branch>` when the host has it. The worktree on the
