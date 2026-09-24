@@ -4,14 +4,14 @@ use std::os::unix::process::CommandExt;
 use crate::diagnostics::Result;
 
 use super::{
-    CommandOutcome, CommandSpec, SignalGuard, Stream, configure, outcome, output_too_large,
-    pump_until_exit, spawn, spawn_failure, unstored,
+    CommandOutcome, CommandSpec, MAX_KEPT_STDERR, SignalGuard, Stream, configure, outcome,
+    output_too_large, pump_until_exit, spawn, spawn_failure, unstored,
 };
 
 /// 出力をcaptureして実行し、stdoutだけを届いた順に`sink`へ流す。
 ///
 /// stdoutを溜めないため、大きな出力でもmemoryを使い切らない。`limit`byteを超えた時点で
-/// 子を終わらせ、それ以上は受け取らない。stderrは診断に使うため溜める。
+/// 子を終わらせ、それ以上は受け取らない。stderrは診断に使うため、上限までだけ溜める。
 /// `sink`へ書けなかった場合は、出力を読めなかったのではなく、hostで残せなかったと報告する。
 pub(super) fn run_streaming(
     spec: &CommandSpec,
@@ -47,7 +47,8 @@ pub(super) fn run_streaming(
                 written
             }
             Stream::Stderr => {
-                stderr.extend_from_slice(bytes);
+                let room = MAX_KEPT_STDERR.saturating_sub(stderr.len());
+                stderr.extend_from_slice(&bytes[..bytes.len().min(room)]);
                 Ok(())
             }
         },

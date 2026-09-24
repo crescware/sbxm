@@ -818,6 +818,17 @@ fn the_real_host_streams_stdout_itself() -> Checked {
 }
 
 #[test]
+fn only_the_first_part_of_a_flood_of_diagnostics_is_kept() -> Checked {
+    // 流す実行が読む相手は信用しない。stderrは診断に使う分だけ溜め、残りは読んで捨てる。
+    let spec = CommandSpec::capture("sh", &["-c", "head -c 300000 /dev/zero >&2; printf done"]);
+    let mut sink = Vec::new();
+    let outcome = retrying(|| RealHost.run_streaming(&spec, &mut sink, 1024)).required()?;
+    assert_eq!(sink, b"done");
+    assert_eq!(outcome.stderr.len(), 64 * 1024);
+    Ok(())
+}
+
+#[test]
 fn a_large_input_reaches_a_child_that_writes_nothing_without_waiting_on_polls() -> Checked {
     // 子が出力を書かないあいだも、読んだ分だけすぐに書き足す。出力を待つ間隔ごとに
     // 書き足していた頃は、8 MiBに0.7秒ほどかかった。今は数msで終わる。
