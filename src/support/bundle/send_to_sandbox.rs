@@ -5,7 +5,6 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::hash;
 use crate::msg;
 use crate::paths::{self, PRIVATE_DIR_MODE, PathScope};
-use crate::support::files::TRANSFER_INCOMPLETE;
 use crate::support::repository::host_git;
 use crate::support::sandbox;
 
@@ -57,7 +56,7 @@ pub fn send_to_sandbox(
         &["sh", "-c", PLACE_BUNDLE, "sh", destination, &digest],
         bundle,
     )?;
-    if sandbox::inner_exit_code(&outcome) == Some(TRANSFER_INCOMPLETE) {
+    if sandbox::inner_exit_code(&outcome) == Some(sandbox::TRANSFER_INCOMPLETE) {
         return Err(Error::single(
             Diagnostic::new(
                 ErrorId::BundleTransferIncomplete,

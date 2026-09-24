@@ -841,7 +841,7 @@ fn a_bundle_that_does_not_arrive_whole_replaces_nothing() -> Checked {
 
     assert_eq!(
         outcome.status.code(),
-        Some(crate::support::files::TRANSFER_INCOMPLETE)
+        Some(crate::support::sandbox::TRANSFER_INCOMPLETE)
     );
     assert_eq!(fs::read_to_string(&destination).required()?, "previous\n");
     assert_eq!(names_in(parent), ["origin.bundle"]);
@@ -863,7 +863,7 @@ impl crate::boundary::host::HostEnvironment for Truncating {
         if spec.program == "sbx" {
             return Ok(crate::testing::command::outcome(
                 spec,
-                crate::support::files::TRANSFER_INCOMPLETE,
+                crate::support::sandbox::TRANSFER_INCOMPLETE,
                 "",
             ));
         }

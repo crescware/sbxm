@@ -12,6 +12,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use super::*;
 use crate::boundary::host::{CommandOutcome, CommandSpec};
 use crate::config::{HostFileSource, SandboxHomeRelativePath};
+use crate::support::sandbox::TRANSFER_INCOMPLETE;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
