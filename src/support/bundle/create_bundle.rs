@@ -2,8 +2,9 @@
 /// stdoutへ書く手順。引数は`$1`がbare repositoryのgit directory。
 ///
 /// worktreeのHEADはbranchに載っていないcommitを指しうる。`refs/sbxm/save/`へ一時refとして
-/// 置いてからbundleへ含め、成否にかかわらず消す。名前がrefとして使えないworktreeは
-/// 通し番号で呼ぶ。refが1つも無ければ何も書かずに終わる。
+/// 置いてからbundleへ含め、成否にかかわらず消す。名前がrefとして使えないworktreeや、
+/// 別の場所にある同じ名前のworktreeは通し番号で呼ぶ。
+/// refが1つも無ければ何も書かずに終わる。
 ///
 /// gitの失敗は、pipeや`[ ]`の中で読み落とさず、その場で止める。読み落とすと、
 /// worktreeのHEADを欠いたbundleや、保存するものが無いという答えになる。
@@ -24,9 +25,11 @@ while IFS= read -r line; do
     "worktree "*) path=${line#worktree } ;;
     "HEAD "*)
       n=$((n + 1))
+      head=${line#HEAD }
       ref="$save/${path##*/}"
       git check-ref-format "$ref" || ref="$save/worktree-$n"
-      git update-ref "$ref" "${line#HEAD }"
+      git update-ref "$ref" "$head" "" 2>/dev/null ||
+        git update-ref "$save/worktree-$n" "$head" ""
       ;;
   esac
 done <<EOF

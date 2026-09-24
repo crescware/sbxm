@@ -500,6 +500,50 @@ fn bundles_received_in_the_same_second_are_pruned_in_the_order_they_arrived() ->
     Ok(())
 }
 
+#[test]
+fn worktrees_sharing_a_directory_name_each_keep_their_head() -> Checked {
+    // 別の場所にある同じ名前のworktreeが、先に置いたHEADのrefを上書きしない。
+    let repositories = Repositories::new()?;
+    let elsewhere = repositories
+        .sandbox
+        .parent()
+        .required()?
+        .with_file_name("elsewhere")
+        .join("example-repo.tree-0");
+    git_in(
+        &repositories.worktree,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "--detach",
+            &elsewhere.to_string_lossy(),
+        ],
+    )?;
+    git_in(
+        &elsewhere,
+        &["commit", "--quiet", "--allow-empty", "-m", "detached"],
+    )?;
+    let detached = git_in(&elsewhere, &["rev-parse", "HEAD"])?;
+    let main = git_in(&repositories.worktree, &["rev-parse", "HEAD"])?;
+
+    repositories.fetch("20260923T100000Z")?;
+    let saved = git_in(
+        &repositories.host,
+        &[
+            "for-each-ref",
+            "--format=%(objectname)",
+            &reference("worktrees/"),
+        ],
+    )?;
+    let mut tips: Vec<&str> = saved.lines().collect();
+    tips.sort_unstable();
+    let mut expected = vec![main.as_str(), detached.as_str()];
+    expected.sort_unstable();
+    assert_eq!(tips, expected);
+    Ok(())
+}
+
 /// `CREATE_BUNDLE`を、一部の起動だけ振る舞いを変える`git`を`PATH`の先頭に置いて走らせる。
 ///
 /// `case`は、`git`へ渡った引数全体に対する`sh`の`case`の枝である。どの枝にも
