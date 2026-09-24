@@ -349,3 +349,48 @@ fn a_sandbox_branch_named_like_the_archive_is_saved_again_and_again() -> Checked
     assert!(repositories.fetch("20260923T100200Z")?.is_empty());
     Ok(())
 }
+
+#[test]
+fn a_branch_renamed_into_its_own_directory_is_saved_in_both_directions() -> Checked {
+    // `topic`を消して`topic/part`を作ると、消す名前と作る名前がfileとdirectoryで
+    // 重なる。1回のtransactionでは、gitは`topic`がまだあるとして作成を拒んだ。
+    let repositories = Repositories::new()?;
+    git_in(&repositories.worktree, &["branch", "--quiet", "topic"])?;
+    repositories.fetch("20260923T100000Z")?;
+    let topic = repositories.host_ref(&reference("heads/topic"))?;
+
+    git_in(
+        &repositories.worktree,
+        &["branch", "--quiet", "-m", "topic", "topic/part"],
+    )?;
+    let changes = repositories.fetch("20260923T100100Z")?;
+    assert!(
+        changes.contains(&RefChange::Created {
+            reference: reference("heads/topic/part")
+        }),
+        "{changes:?}"
+    );
+    assert_eq!(
+        repositories.host_ref(&reference("heads/topic/part"))?,
+        topic
+    );
+    assert_eq!(
+        repositories.host_ref(&reference("archive/20260923T100100Z/heads/topic"))?,
+        topic
+    );
+
+    git_in(
+        &repositories.worktree,
+        &["branch", "--quiet", "-m", "topic/part", "topic"],
+    )?;
+    let changes = repositories.fetch("20260923T100200Z")?;
+    assert!(
+        changes.contains(&RefChange::Created {
+            reference: reference("heads/topic")
+        }),
+        "{changes:?}"
+    );
+    assert_eq!(repositories.host_ref(&reference("heads/topic"))?, topic);
+    assert!(repositories.fetch("20260923T100300Z")?.is_empty());
+    Ok(())
+}
