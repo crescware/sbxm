@@ -7,6 +7,7 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::{ProjectId, SandboxName};
+use crate::repository::Provider;
 use crate::support::Observed;
 use crate::support::files::Placement;
 use crate::support::provisioning::{self, Observation, ProvisioningState};
@@ -143,13 +144,13 @@ fn plan(
         sandbox: SandboxName::derive(metadata.canonical_id()).to_string(),
         state: observation.state,
         target_generation: target.to_string(),
-        observations: observations_for(observation),
+        observations: observations_for(metadata, observation),
         actions: actions_for(metadata, observation, has_intent),
     }
 }
 
 /// artifactごとの観測結果を、変更対象と分けて表示するための一覧。
-fn observations_for(observation: &Observation) -> Vec<Field> {
+fn observations_for(metadata: &ProjectMetadata, observation: &Observation) -> Vec<Field> {
     let mut fields = vec![
         artifact_field("repair-observation-sandbox", &observation.sandbox),
         artifact_field("repair-observation-workspace", &observation.workspace),
@@ -167,10 +168,13 @@ fn observations_for(observation: &Observation) -> Vec<Field> {
         "repair-observation-identity",
         &observation.identity,
     ));
-    fields.push(artifact_field(
-        "repair-observation-credential-helper",
-        &observation.credential_helper,
-    ));
+    // hostから送るrepositoryには、tokenを使うhelperが無い。
+    if metadata.repository.provider() == Provider::Github {
+        fields.push(artifact_field(
+            "repair-observation-credential-helper",
+            &observation.credential_helper,
+        ));
+    }
     fields.push(artifact_field(
         "repair-observation-repository",
         &observation.repository,

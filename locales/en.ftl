@@ -166,6 +166,7 @@ error-sandbox-identity-mismatch = { $sandbox } already sets { $key } to { $obser
 error-github-secret-missing = The sandbox { $sandbox } has no single custom secret covering { $hosts }, so it cannot reach the repository.
 error-github-credential-rejected = GitHub did not accept the credential the git inside { $sandbox } presented.
 error-sandbox-token-env-unusable = The GitHub token variables cannot be safely set from { $path } in the sandbox { $sandbox }.
+error-no-github-token = { $project } was added from a repository on this host, so it uses no GitHub token to rotate.
 error-sandbox-credential-helper-unusable = The git credential helper inside { $sandbox } cannot be safely configured
 error-secret-still-registered = The custom secret carrying { $env } was still registered for { $sandbox } after it was removed.
 error-sandbox-repository-unusable = This path in the sandbox cannot be used for this project

@@ -540,3 +540,35 @@ fn a_sandbox_that_works_somewhere_else_is_not_taken_for_this_projects() -> Check
     );
     Ok(())
 }
+
+#[test]
+fn a_local_project_has_no_github_secret_to_look_for() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register_local("/srv/code/app", "app")?;
+    for state in ["running", "stopped"] {
+        let host = without_image(
+            FakeSbx::listing(&format!(
+                r#"{{"sandboxes":[{}]}}"#,
+                fixture.entry(&project, state)?
+            )),
+            &project,
+        );
+
+        let status = diagnose(
+            &fixture.location,
+            &fixture.config,
+            &project_id("local/app")?,
+            &host,
+            &fixture.workspace_root,
+        )
+        .required_because("diagnose")?;
+
+        assert_eq!(
+            value_of(&status, "status-item-secret")?,
+            Value::NotApplicable,
+            "{state}"
+        );
+        assert!(!host.ran("secret"), "{state}: {:?}", host.calls());
+    }
+    Ok(())
+}

@@ -18,24 +18,42 @@ use crate::testing::project::{Fixture, project_id};
 use crate::testing::value::IMAGE_ID;
 
 #[test]
+fn a_local_project_is_ready_when_its_host_repository_holds_a_git_directory() -> Checked {
+    let fixture = Fixture::new()?;
+    let repository = fixture.dir.path().join("code/app");
+    let project = fixture.register_local(repository.to_str().required()?, "app")?;
+
+    let mut status = bare_status();
+    check_directory(&project.paths, &project.metadata, &mut status);
+    assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Missing);
+
+    // 登録したそのrepositoryを見る。案件directoryの中にcloneは作らない。
+    std::fs::create_dir_all(repository.join(".git")).required()?;
+    let mut status = bare_status();
+    check_directory(&project.paths, &project.metadata, &mut status);
+    assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Ready);
+    Ok(())
+}
+
+#[test]
 fn a_host_clone_is_ready_only_once_it_holds_a_git_directory() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
 
     let mut status = bare_status();
-    check_directory(&project.paths, &mut status);
+    check_directory(&project.paths, &project.metadata, &mut status);
     assert_eq!(value_of(&status, "status-item-project-root")?, Value::Ready);
     assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Missing);
 
     // cloneが済んだことは`.git`の有無でだけ言える。空のdirectoryでは作業できない。
     std::fs::create_dir_all(project.paths.host_clone()).required()?;
     let mut status = bare_status();
-    check_directory(&project.paths, &mut status);
+    check_directory(&project.paths, &project.metadata, &mut status);
     assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Missing);
 
     std::fs::create_dir_all(project.paths.host_clone().join(".git")).required()?;
     let mut status = bare_status();
-    check_directory(&project.paths, &mut status);
+    check_directory(&project.paths, &project.metadata, &mut status);
     assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Ready);
     assert!(
         status.is_healthy(),
@@ -53,7 +71,7 @@ fn a_project_root_that_is_not_there_is_reported_as_missing_rather_than_failing()
     std::fs::remove_dir_all(project.paths.root()).required()?;
 
     let mut status = bare_status();
-    check_directory(&project.paths, &mut status);
+    check_directory(&project.paths, &project.metadata, &mut status);
     assert_eq!(
         value_of(&status, "status-item-project-root")?,
         Value::Missing

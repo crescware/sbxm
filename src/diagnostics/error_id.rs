@@ -131,6 +131,7 @@ error_ids! {
     GithubCredentialRejected => "github-credential-rejected",
     SandboxTokenEnvUnusable => "sandbox-token-env-unusable",
     SecretStillRegistered => "secret-still-registered",
+    NoGithubToken => "no-github-token",
     SandboxRepositoryUnusable => "sandbox-repository-unusable",
     StartRefUnresolved => "start-ref-unresolved",
     ProjectNotManaged => "project-not-managed",
