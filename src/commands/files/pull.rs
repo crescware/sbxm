@@ -88,11 +88,14 @@ pub fn pull(
             ),
         )));
     };
+    // 置き換えた内容を広げる先があるかどうかを、結果の案内に使う。
+    let others = select::candidates(location)?.len().saturating_sub(1);
     Ok(Pulled {
         declaration,
         project: locked.metadata.display_id(),
         copy,
         host_sha256,
+        others,
         locked,
     })
 }
