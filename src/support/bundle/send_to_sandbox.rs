@@ -27,10 +27,13 @@ pub fn send_to_sandbox(
     require_something_to_send(host, repository)?;
     paths::ensure_private_dir(directory, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
     // 一時fileはdropで消える。gitはこのpathへ書き直す。
-    let temporary = tempfile::Builder::new()
+    let temporary = match tempfile::Builder::new()
         .prefix(".sending-")
         .tempfile_in(directory)
-        .map_err(|error| paths::atomic_write_failed(directory, &error.to_string()))?;
+    {
+        Ok(temporary) => temporary,
+        Err(error) => return Err(paths::atomic_write_failed(directory, &error.to_string())),
+    };
     let bundle = temporary.path();
     let bundle_text = paths::display(bundle);
     let mut args = vec!["bundle", "create", "--quiet", bundle_text.as_str()];
@@ -43,8 +46,10 @@ pub fn send_to_sandbox(
         TimeoutClass::RepositoryTransfer,
     )?
     .require_success()?;
-    let digest = hash::sha256_file_hex(bundle)
-        .map_err(|error| paths::atomic_write_failed(bundle, &error.to_string()))?;
+    let digest = match hash::sha256_file_hex(bundle) {
+        Ok(digest) => digest,
+        Err(error) => return Err(paths::atomic_write_failed(bundle, &error.to_string())),
+    };
 
     let outcome = sandbox::exec_with_input_file(
         host,

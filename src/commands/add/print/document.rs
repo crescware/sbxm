@@ -64,7 +64,11 @@ pub fn document(output: &AddOutput) -> Document {
     };
     // 初回構築は`open`が同じ実行の中で行う。構築だけを行う手順を間に挟まない。
     // 案件IDを打ち直させない。次のcommandはそのままcopyできる形で出す。
-    let heading = (open_number == 1).then(|| msg!("add-next-heading"));
+    let heading = if open_number == 1 {
+        Some(msg!("add-next-heading"))
+    } else {
+        None
+    };
     document
         .guidance(
             heading,
