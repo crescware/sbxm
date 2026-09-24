@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
@@ -155,9 +157,25 @@ impl RepositoryIdentity {
         self.transport
     }
 
-    /// 正規化したclone URL。
+    /// 正規化したclone URL。hostにあるrepositoryでは、そのpathである。
     pub fn clone_url(&self) -> &str {
         &self.clone_url
+    }
+
+    /// GitHub tokenをsbxmへ登録し、Sandboxのcloneに使うか。
+    ///
+    /// GitHubのrepositoryはSandboxからcloneするため、tokenを要する。hostにある
+    /// repositoryはhostから送るため、要らない。
+    pub fn uses_github_token(&self) -> bool {
+        self.provider == Provider::Github
+    }
+
+    /// hostにあるrepositoryのpath。GitHubのrepositoryには無い。
+    pub fn host_path(&self) -> Option<&Path> {
+        match self.provider {
+            Provider::Github => None,
+            Provider::Local => Some(Path::new(&self.clone_url)),
+        }
     }
 
     /// 表示に使う`<owner>/<repository>`。

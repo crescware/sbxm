@@ -1,9 +1,6 @@
-use std::path::Path;
-
 use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
-use crate::repository::Provider;
 
 use crate::support::{bundle, docker, secret};
 
@@ -18,14 +15,11 @@ pub(crate) fn verify_external_preconditions(
     host: &dyn HostEnvironment,
     metadata: &ProjectMetadata,
 ) -> Result<ExternalPreconditions> {
-    match metadata.repository.provider() {
-        Provider::Github => {
-            secret::require_github(host, metadata.sandbox_name().as_str())?;
-        }
-        Provider::Local => {
-            let repository = Path::new(metadata.repository.clone_url());
-            bundle::require_something_to_send(host, repository)?;
-        }
+    if metadata.repository.uses_github_token() {
+        secret::require_github(host, metadata.sandbox_name().as_str())?;
+    }
+    if let Some(repository) = metadata.repository.host_path() {
+        bundle::require_something_to_send(host, repository)?;
     }
     docker::require_reachable(host)?;
     Ok(ExternalPreconditions(()))

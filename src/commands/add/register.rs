@@ -10,7 +10,7 @@ use crate::paths::{
 };
 use crate::project::{CanonicalProjectId, SandboxName};
 use crate::registry::{Index, RegistryEntry, RegistryGuard};
-use crate::repository::{Provider, RepositoryIdentity};
+use crate::repository::RepositoryIdentity;
 
 use crate::support::generation;
 
@@ -136,7 +136,7 @@ fn require_start_branch(
     repository: &RepositoryIdentity,
 ) -> Result<()> {
     let detached = target.mode == CreationMode::Attached && target.start_ref.is_none();
-    if !detached || repository.provider() != Provider::Local {
+    if !detached || repository.host_path().is_none() {
         return Ok(());
     }
     Err(Error::single(
@@ -157,11 +157,10 @@ fn require_outside_repository(
     candidate: &ProjectPaths,
     repository: &RepositoryIdentity,
 ) -> Result<()> {
-    if repository.provider() != Provider::Local {
+    let Some(host_path) = repository.host_path() else {
         return Ok(());
-    }
-    let inside = paths::real_path(parent.as_path()).starts_with(repository.clone_url());
-    if !inside {
+    };
+    if !paths::real_path(parent.as_path()).starts_with(host_path) {
         return Ok(());
     }
     Err(Error::single(

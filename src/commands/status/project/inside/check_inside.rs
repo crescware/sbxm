@@ -3,7 +3,6 @@ use std::path::Path;
 use crate::boundary::host::HostEnvironment;
 use crate::metadata::ProjectMetadata;
 use crate::project::{SandboxLayout, SandboxName};
-use crate::repository::Provider;
 
 use crate::support::inventory::ProjectState;
 
@@ -39,7 +38,7 @@ pub fn check_inside(
         Some(ProjectState::Running) => None,
     };
     // hostから送るrepositoryには、登録するtokenが無い。
-    let without_token = metadata.repository.provider() == Provider::Local;
+    let without_token = !metadata.repository.uses_github_token();
     if let Some(value) = uniform {
         for item in inner {
             if without_token && item == "status-item-secret" {
