@@ -904,3 +904,30 @@ fn a_repository_on_the_host_is_not_added_from_inside_itself() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_detached_host_repository_is_not_recorded_but_a_registered_one_resumes() -> Checked {
+    // 新しく記録するなら起点が要る。登録済みの案件は、hostのrepositoryが今detachedでも
+    // 保存済みの起点で続ける。
+    let setup = setup()?;
+    let local = crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
+        .required_because("a local repository")?;
+    let detached = from(local.clone(), None, None);
+
+    let error = register(&setup.location, &setup.parent, &detached, &identity())
+        .refused_because("there is no branch to start from")?;
+    assert_eq!(error.first_id(), Some(ErrorId::HostRepositoryDetached));
+    assert!(!was_already_registered(&setup.location, &local).required()?);
+
+    let mut on_branch = from(local, None, None);
+    on_branch.start_branch = Some("main".to_string());
+    drop(register(&setup.location, &setup.parent, &on_branch, &identity()).required()?);
+
+    let resumed = register(&setup.location, &setup.parent, &detached, &identity())
+        .required_because("a registered project resumes from its stored start")?;
+    assert_eq!(
+        resumed.metadata.provisioning.start_ref.as_deref(),
+        Some("main")
+    );
+    Ok(())
+}
