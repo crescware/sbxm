@@ -10,7 +10,8 @@ use super::{KEPT_BUNDLES, RefChange, import_bundle, prune_bundles, receive_bundl
 
 /// Sandboxの`git_dir`のcommitを、hostの`repository`の`refs/sbx/<sandbox>/`へ保存する。
 ///
-/// bundleは案件の`.sbxm/bundles`へ受け取り、取り込んだあとは直近の数件だけを残す。
+/// bundleは案件の`.sbxm/bundles`へ受け取り、取り込めたかどうかによらず、直近の
+/// 数件だけを残す。
 /// Sandboxが保存するrefを1つも持たなければ`None`を返す。Sandboxは動いていることを
 /// 呼び出し側が確かめておく。
 pub fn save_to_host(
@@ -30,13 +31,16 @@ pub fn save_to_host(
     else {
         return Ok(None);
     };
-    let changes = import_bundle(
+    let imported = import_bundle(
         host,
         repository,
         &received.path,
         sandbox.as_str(),
         &received.label,
-    )?;
-    prune_bundles(&paths.bundles_dir(), KEPT_BUNDLES)?;
+    );
+    // 取り込めなかったbundleも数えて整理する。取り込めない状態が続いても溜まらない。
+    let pruned = prune_bundles(&paths.bundles_dir(), KEPT_BUNDLES);
+    let changes = imported?;
+    pruned?;
     Ok(Some(changes))
 }

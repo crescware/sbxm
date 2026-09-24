@@ -435,3 +435,32 @@ fn a_host_repository_with_submodules_is_saved_to_without_reaching_their_remotes(
     );
     Ok(())
 }
+
+#[test]
+fn bundles_that_could_not_be_imported_do_not_pile_up() -> Checked {
+    // 取り込めない状態が続いても、受け取ったbundleは直近の数件だけを残す。
+    let repositories = Repositories::new()?;
+    let parent = tempfile::tempdir().required()?;
+    let canonical = crate::project::ProjectId::parse("Example-Org/Example-Repo")
+        .required()?
+        .canonical();
+    let paths = crate::paths::ProjectPaths::at(parent.path(), &canonical);
+    let sandbox = crate::project::SandboxName::derive(&canonical);
+    let not_a_repository = parent.path().join("not-a-repository");
+    fs::create_dir(&not_a_repository).required()?;
+
+    for round in 0..=KEPT_BUNDLES {
+        repositories.commit(&format!("round {round}"))?;
+        save_to_host(
+            &LocalSandbox,
+            &paths,
+            &sandbox,
+            &repositories.git_dir(),
+            &not_a_repository,
+        )
+        .refused_because("the host has no repository to import into")?;
+    }
+    let kept = fs::read_dir(paths.bundles_dir()).required()?.count();
+    assert_eq!(kept, KEPT_BUNDLES, "only the newest bundles are kept");
+    Ok(())
+}
