@@ -180,6 +180,7 @@ error_ids! {
     OriginObjectMissing => "origin-object-missing",
     OriginObservationUnobservable => "origin-observation-unobservable",
     OriginReadOnlyDataInsufficient => "origin-read-only-data-insufficient",
+    OriginHostRepositoryUnreadable => "origin-host-repository-unreadable",
 
     // --- sessionのhost lease（#80） ---
     OpenSessionActive => "open-session-active",

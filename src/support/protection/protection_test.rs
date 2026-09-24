@@ -1936,3 +1936,71 @@ fn a_workspace_that_vanishes_between_the_host_check_and_the_repository_probe_is_
     );
     Ok(())
 }
+
+/// hostにあるrepositoryを登録した案件として観測する。Sandboxの中は`clean_host`が答える。
+fn as_local(project: &mut Registered) -> Checked {
+    project.metadata.repository =
+        crate::repository::RepositoryIdentity::local("/srv/code/example-repo", "example-repo")
+            .required_because("a local repository")?;
+    Ok(())
+}
+
+/// hostのrepositoryが`reaching`のrefから`COMMIT`へ届くと答える。
+fn host_reaching(host: FakeSbx, project: &Registered, reaching: &str) -> FakeSbx {
+    let scopes = format!("refs/heads/ refs/tags/ refs/sbx/{}/", project.sandbox);
+    host.answering(
+        &format!("for-each-ref --format=%(refname) %(objectname) {scopes}"),
+        0,
+        &format!("refs/heads/main {COMMIT}\n"),
+    )
+    .answering(
+        &format!("for-each-ref --format=%(refname) --contains={COMMIT} {scopes}"),
+        0,
+        reaching,
+    )
+}
+
+#[test]
+fn a_local_project_reads_its_host_repository_as_the_origin() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let host = host_reaching(
+        clean_host(&fixture, &project)?,
+        &project,
+        "refs/heads/main\n",
+    );
+    as_local(&mut project)?;
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("a commit on the host branch passes")?;
+
+    assert!(
+        assessment.blockers().is_empty(),
+        "{:?}",
+        assessment.blockers()
+    );
+    assert_eq!(
+        assessment.worktrees()[0].reachability,
+        Reachability::Pushed {
+            upstream: "refs/remotes/origin/main".to_string(),
+        }
+    );
+    // Sandboxのoriginは送ったbundleにすぎない。そこからは取り直さない。
+    assert!(!host.ran("refs/sbxm/origin"), "{:?}", host.calls());
+    Ok(())
+}
+
+#[test]
+fn a_local_project_commit_the_host_does_not_reach_stops_the_run() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let host = host_reaching(clean_host(&fixture, &project)?, &project, "");
+    as_local(&mut project)?;
+
+    let error = snapshot(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .and_then(|snapshot| gate::require_no_blockers(snapshot.assessment()))
+        .refused_because("the host does not keep the commit")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::OriginCommitUnreachable));
+    Ok(())
+}

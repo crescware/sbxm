@@ -1,10 +1,12 @@
 use std::collections::{BTreeSet, HashSet};
+use std::path::Path;
 
 use crate::boundary::host::{CommandOutcome, HostEnvironment};
 use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::paths;
+use crate::repository::Provider;
 
 use crate::support::sandbox;
 use crate::support::worktree;
@@ -12,7 +14,7 @@ use crate::support::worktree;
 use super::{
     Assessment, BARE_GIT_DIR_PROBE, Blocker, CommitCandidate, ConfirmableLoss,
     DestructiveOperation, Kind, Mode, OriginObservation, Reachability, Request, UnobservableReason,
-    WorktreeReport, answered, observe_for_mutation,
+    WorktreeReport, answered, observe_for_mutation, observe_host_origin,
 };
 
 /// 進行中のGit操作を示すfile。1つでもあれば削除しない。
@@ -69,6 +71,8 @@ struct StatusReport {
 /// origin回収可能性だけは、集めたcommitを1回の[`observe_for_mutation`]へまとめて渡し、
 /// その1つの観測結果から各refの[`Reachability`]を副作用なく決める。refs/remotes/origin/*
 /// をそのまま信じると、消えたupstreamが誤って拒否になり、古い写しが誤って許可になる。
+/// hostにあるrepositoryを登録した案件は、[`observe_host_origin`]がhostのrepositoryを
+/// 直接読む。
 pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment {
     let layout = request.layout;
     let sandbox_name = request.sandbox.as_str();
@@ -145,13 +149,7 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         .map(|pending| pending.primary.clone())
         .chain(pending_refs.iter().map(|pending| pending.candidate.clone()))
         .collect();
-    let observation = match observe_for_mutation(
-        host,
-        request.sandbox,
-        layout,
-        &candidates,
-        request.preserved,
-    ) {
+    let observation = match observe_origin(host, request, &candidates) {
         Ok(observation) => observation,
         Err(error) => {
             return observation_command_failure(
@@ -183,6 +181,31 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         confirmable_losses,
         Some(observation),
     )
+}
+
+/// candidateごとに、originのどのrefから辿れるかを1回で観測する。
+///
+/// hostにあるrepositoryを登録した案件は、hostのrepositoryそのものをoriginとして読む。
+fn observe_origin(
+    host: &dyn HostEnvironment,
+    request: &Request<'_>,
+    candidates: &[CommitCandidate],
+) -> Result<OriginObservation> {
+    match request.metadata.repository.provider() {
+        Provider::Github => observe_for_mutation(
+            host,
+            request.sandbox,
+            request.layout,
+            candidates,
+            request.preserved,
+        ),
+        Provider::Local => observe_host_origin(
+            host,
+            Path::new(request.metadata.repository.clone_url()),
+            request.sandbox,
+            candidates,
+        ),
+    }
 }
 
 /// bare rootの下にある各worktreeを検査し、origin観測を待つ状態にして集める。

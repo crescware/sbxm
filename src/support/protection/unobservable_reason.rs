@@ -14,6 +14,8 @@ pub enum UnobservableReason {
     ObjectMissing,
     /// fetchをしない読み取り専用観測だけでは、必要なremote objectを確かめられない。
     ReadOnlyDataInsufficient,
+    /// originの役を持つhostのrepositoryを読めなかった。
+    HostRepositoryUnreadable,
 }
 
 impl UnobservableReason {
@@ -25,6 +27,7 @@ impl UnobservableReason {
             UnobservableReason::AdvertisementInvalid => "advertisement-invalid",
             UnobservableReason::ObjectMissing => "object-missing",
             UnobservableReason::ReadOnlyDataInsufficient => "read-only-data-insufficient",
+            UnobservableReason::HostRepositoryUnreadable => "host-repository-unreadable",
         }
     }
 

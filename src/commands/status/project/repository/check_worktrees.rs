@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::design::{Fact, Remediation};
@@ -6,6 +7,7 @@ use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::{SandboxLayout, SandboxName};
+use crate::repository::Provider;
 
 use crate::support::protection::{self, CommitCandidate, Reachability, UnobservableReason};
 use crate::support::sandbox;
@@ -41,7 +43,7 @@ pub fn check_worktrees(
     let project = status.project.clone();
     let (pending, value) =
         collect_pending_worktrees(host, name, layout, metadata, entries, &project, status);
-    let observation = observe_candidates(host, name, layout, &pending, status);
+    let observation = observe_candidates(host, name, layout, metadata, &pending, status);
     append_worktree_rows(&project, pending, observation.as_ref(), status);
     status.push("status-item-worktrees", value);
 }
@@ -173,6 +175,7 @@ fn observe_candidates(
     host: &dyn HostEnvironment,
     name: &SandboxName,
     layout: &SandboxLayout,
+    metadata: &ProjectMetadata,
     pending: &[PendingWorktree],
     status: &mut ProjectStatus,
 ) -> Option<protection::OriginObservation> {
@@ -183,7 +186,17 @@ fn observe_candidates(
     if candidates.is_empty() {
         return None;
     }
-    match protection::observe_read_only(host, name, layout, &candidates) {
+    // hostにあるrepositoryを登録した案件は、hostのrepositoryを読む。fetchは要らない。
+    let observed = match metadata.repository.provider() {
+        Provider::Github => protection::observe_read_only(host, name, layout, &candidates),
+        Provider::Local => protection::observe_host_origin(
+            host,
+            Path::new(metadata.repository.clone_url()),
+            name,
+            &candidates,
+        ),
+    };
+    match observed {
         Ok(observation) => Some(observation),
         Err(error) => {
             status
