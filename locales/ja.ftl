@@ -622,6 +622,7 @@ column-branch = branch (BRANCH)
 column-remote = remote (REMOTE)
 select-destroy-heading = どの案件を破棄しますか? 選んだ時点では何も消えません
 rebuild-applied = { $project } を再構築しました。{ $sandbox } は世代 { $generation } で動作します。
+rebuild-restored = hostへ保存してあったbranchを、作り直したSandboxへ戻しました: { $branches }
 rebuild-confirm-prompt = 再構築を確認するため { $project } と入力してください
 rebuild-plan-current-generation = 現在の世代
 rebuild-plan-target-generation = 適用する世代

@@ -533,3 +533,138 @@ fn an_incomplete_transfer_is_reported_by_its_own_reason() -> Checked {
     assert_eq!(names_in(&sending.staging()), Vec::<String>::new());
     Ok(())
 }
+
+/// hostのrepositoryと、originを読み終えたばかりの作り直したSandboxを模したrepository。
+struct Rebuilt {
+    root: tempfile::TempDir,
+    host: PathBuf,
+    sandbox: PathBuf,
+}
+
+impl Rebuilt {
+    fn new() -> Checked<Rebuilt> {
+        let root = tempfile::tempdir().required()?;
+        let host = root.path().join("host");
+        fs::create_dir(&host).required()?;
+        git_in(&host, &["init", "--quiet"])?;
+        git_in(
+            &host,
+            &["commit", "--quiet", "--allow-empty", "-m", "published"],
+        )?;
+        let sandbox = root.path().join("sandbox.git");
+        let git_dir = sandbox.to_string_lossy().into_owned();
+        git_in(root.path(), &["init", "--quiet", "--bare", &git_dir])?;
+        git_in(
+            root.path(),
+            &[
+                "--git-dir",
+                &git_dir,
+                "remote",
+                "add",
+                "origin",
+                &host.to_string_lossy(),
+            ],
+        )?;
+        git_in(
+            root.path(),
+            &["--git-dir", &git_dir, "fetch", "--quiet", "origin"],
+        )?;
+        Ok(Rebuilt {
+            root,
+            host,
+            sandbox,
+        })
+    }
+
+    /// hostで`name`のbranchへcommitを1つ積み、Sandboxから保存した先端として残す。
+    fn save(&self, name: &str) -> Checked<String> {
+        git_in(
+            &self.host,
+            &["checkout", "--quiet", "-B", &format!("work-{name}")],
+        )?;
+        git_in(
+            &self.host,
+            &["commit", "--quiet", "--allow-empty", "-m", name],
+        )?;
+        let tip = git_in(&self.host, &["rev-parse", "HEAD"])?;
+        git_in(
+            &self.host,
+            &[
+                "update-ref",
+                &format!("refs/sbx/{NAMESPACE}/heads/{name}"),
+                &tip,
+            ],
+        )?;
+        git_in(&self.host, &["checkout", "--quiet", "main"])?;
+        git_in(
+            &self.host,
+            &["branch", "--quiet", "-D", &format!("work-{name}")],
+        )?;
+        Ok(tip)
+    }
+
+    fn restore(&self) -> crate::diagnostics::Result<Vec<String>> {
+        restore_saved_branches(
+            &LocalSandbox,
+            &self.host,
+            &self.root.path().join("bundles"),
+            NAMESPACE,
+            &self.sandbox.to_string_lossy(),
+        )
+    }
+
+    fn sandbox_git(&self, args: &[&str]) -> Checked<String> {
+        let git_dir = self.sandbox.to_string_lossy().into_owned();
+        let mut full = vec!["--git-dir", git_dir.as_str()];
+        full.extend_from_slice(args);
+        git_in(self.root.path(), &full)
+    }
+}
+
+#[test]
+fn branches_saved_on_the_host_come_back_as_sandbox_branches() -> Checked {
+    let rebuilt = Rebuilt::new()?;
+    let main = rebuilt.save("main")?;
+    let topic = rebuilt.save("topic")?;
+
+    let restored = rebuilt.restore().required()?;
+
+    assert_eq!(restored, ["main", "topic"]);
+    assert_eq!(
+        rebuilt.sandbox_git(&["rev-parse", "refs/heads/main"])?,
+        main
+    );
+    assert_eq!(
+        rebuilt.sandbox_git(&["rev-parse", "refs/heads/topic"])?,
+        topic
+    );
+    // originに同じ名前があるbranchだけが、それをupstreamにする。
+    assert_eq!(
+        rebuilt.sandbox_git(&["rev-parse", "--symbolic-full-name", "main@{upstream}"])?,
+        "refs/remotes/origin/main"
+    );
+    assert!(
+        rebuilt
+            .sandbox_git(&["config", "--get-regexp", "^branch\\.topic\\."])
+            .is_err(),
+        "topic has no upstream"
+    );
+    // 送ったbundleは残さない。
+    assert!(!rebuilt.sandbox.join("sbxm/restore.bundle").exists());
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_without_saved_branches_receives_nothing() -> Checked {
+    let rebuilt = Rebuilt::new()?;
+
+    let restored = rebuilt.restore().required()?;
+
+    assert!(restored.is_empty());
+    assert!(!rebuilt.sandbox.join("sbxm").exists());
+    assert_eq!(
+        rebuilt.sandbox_git(&["for-each-ref", "--format=%(refname)", "refs/heads/"])?,
+        ""
+    );
+    Ok(())
+}

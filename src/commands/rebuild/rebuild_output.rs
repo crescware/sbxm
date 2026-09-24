@@ -7,5 +7,7 @@ pub struct RebuildOutput {
     pub sandbox: String,
     /// 適用済みになったDockerfile hash。
     pub applied: String,
+    /// hostへ保存してあったため、作り直したSandboxへ戻したbranch。
+    pub restored: Vec<String>,
     pub warnings: Vec<Warning>,
 }

@@ -511,3 +511,50 @@ fn a_mode_that_could_not_be_asked_for_is_not_read_as_a_detached_head() -> Checke
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
     Ok(())
 }
+
+#[test]
+fn a_branch_already_in_the_sandbox_starts_the_attached_worktree_at_its_own_tip() -> Checked {
+    // 作り直したSandboxへhostから戻したbranchは、originより先にいることがある。attachedの
+    // worktreeはそのbranchをcheckoutし、その先端に立つ。
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let git_dir = layout()?.bare_git_dir();
+    let path = layout()?.worktree(0);
+    let host = worktree_host(CreationMode::Attached, 1)?
+        .answering(
+            &format!(
+                "git --git-dir {git_dir} rev-parse --verify --quiet refs/heads/develop^{{commit}}"
+            ),
+            &format!("{MOVED}\n"),
+        )
+        .answering(
+            &format!("git --git-dir {git_dir} show-ref --verify --quiet refs/heads/develop"),
+            "",
+        )
+        .answering(
+            &format!("git -C {path} rev-parse HEAD"),
+            &format!("{MOVED}\n"),
+        );
+
+    let project = metadata(CreationMode::Attached, Some("develop"), 1)?;
+    metadata::create(&paths, &project).required_because("write the metadata")?;
+
+    ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout()?,
+        &project,
+        "develop",
+        &mut SilentProgress,
+    )
+    .required_because("the restored branch is checked out as it is")?;
+
+    assert!(
+        host.ran(&format!(
+            "git --git-dir {git_dir} worktree add {path} develop"
+        )),
+        "{:?}",
+        host.calls()
+    );
+    Ok(())
+}

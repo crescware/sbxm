@@ -622,6 +622,7 @@ column-branch = BRANCH
 column-remote = REMOTE
 select-destroy-heading = Which project do you want to destroy? Nothing is deleted before you confirm
 rebuild-applied = { $project } was rebuilt: { $sandbox } now runs generation { $generation }.
+rebuild-restored = The branches saved on the host are back in the new sandbox: { $branches }
 rebuild-confirm-prompt = Type { $project } to confirm the rebuild
 rebuild-plan-current-generation = Current generation
 rebuild-plan-target-generation = Target generation

@@ -13,6 +13,7 @@ fn output() -> RebuildOutput {
         project: "Example-Org/Example-Repo".to_string(),
         sandbox: "sbxm-example-org-example-repo-99a40327a69b".to_string(),
         applied: APPLIED.to_string(),
+        restored: Vec::new(),
         warnings: Vec::new(),
     }
 }
