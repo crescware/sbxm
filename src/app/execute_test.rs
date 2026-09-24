@@ -107,6 +107,8 @@ fn every_normal_command_reaches_the_command_that_reads_the_configuration() -> Ch
             topic: Some(guide::Topic::CredentialRotation),
             project: Some(project.clone()),
         }),
+        Command::Fetch(Some(project.clone())),
+        Command::Send(Some(project.clone())),
         Command::Repair(Some(project.clone())),
         Command::Rebuild(Some(project.clone())),
         Command::Open(open::Args {
