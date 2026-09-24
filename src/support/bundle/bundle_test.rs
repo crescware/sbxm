@@ -268,7 +268,15 @@ fn a_damaged_bundle_is_refused_before_anything_is_imported() -> Checked {
 #[test]
 fn only_the_newest_bundles_are_kept() -> Checked {
     let root = tempfile::tempdir().required()?;
-    for name in ["1.bundle", "2.bundle", "3.bundle", "4.bundle", "notes.txt"] {
+    // 番号でない`-`の後ろは、名前の一部として並べる。
+    for name in [
+        "0-copy.bundle",
+        "1.bundle",
+        "2.bundle",
+        "3.bundle",
+        "4.bundle",
+        "notes.txt",
+    ] {
         fs::write(root.path().join(name), b"").required()?;
     }
     prune_bundles(root.path(), 2).required()?;
@@ -462,5 +470,32 @@ fn bundles_that_could_not_be_imported_do_not_pile_up() -> Checked {
     }
     let kept = fs::read_dir(paths.bundles_dir()).required()?.count();
     assert_eq!(kept, KEPT_BUNDLES, "only the newest bundles are kept");
+    Ok(())
+}
+
+#[test]
+fn bundles_received_in_the_same_second_are_pruned_in_the_order_they_arrived() -> Checked {
+    // 同じ秒に受け取ったbundleは番号で並ぶ。名前の文字順では`-2`が番号の無い最初の
+    // ものより前に、`-10`が`-2`より前に来て、新しいものを消していた。
+    let root = tempfile::tempdir().required()?;
+    for name in [
+        "20260923T100000Z.bundle",
+        "20260923T100000Z-2.bundle",
+        "20260923T100000Z-10.bundle",
+        "20260923T100001Z.bundle",
+    ] {
+        fs::write(root.path().join(name), b"").required()?;
+    }
+    prune_bundles(root.path(), 2).required()?;
+    let mut left: Vec<String> = fs::read_dir(root.path())
+        .required()?
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        vec!["20260923T100000Z-10.bundle", "20260923T100001Z.bundle"]
+    );
     Ok(())
 }
