@@ -11,6 +11,7 @@
 
 pub mod protocol;
 
+mod apply_env;
 mod command_outcome;
 mod command_spec;
 mod configure;
@@ -23,6 +24,7 @@ mod host_environment;
 mod input_bytes;
 mod input_feed;
 mod is_executable;
+mod max_kept_stderr;
 mod outcome;
 mod output_policy;
 mod output_too_large;
@@ -46,10 +48,12 @@ mod terminal_command;
 mod terminate_child;
 mod timeout_class;
 mod unreadable;
+mod unstored;
 mod unwritable;
 mod wait_poll_interval;
 mod wait_with_limit;
 
+use apply_env::apply_env;
 pub use command_outcome::CommandOutcome;
 pub use command_spec::CommandSpec;
 use configure::configure;
@@ -62,6 +66,7 @@ pub use host_environment::HostEnvironment;
 pub use input_bytes::InputBytes;
 use input_feed::InputFeed;
 use is_executable::is_executable;
+use max_kept_stderr::MAX_KEPT_STDERR;
 use outcome::outcome;
 pub use output_policy::OutputPolicy;
 use output_too_large::output_too_large;
@@ -85,6 +90,7 @@ pub use terminal_command::TerminalCommand;
 use terminate_child::terminate_child;
 pub use timeout_class::TimeoutClass;
 use unreadable::unreadable;
+use unstored::unstored;
 use unwritable::unwritable;
 use wait_poll_interval::WAIT_POLL_INTERVAL;
 use wait_with_limit::wait_with_limit;

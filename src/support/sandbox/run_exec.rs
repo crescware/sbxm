@@ -1,9 +1,7 @@
-use crate::boundary::host::{
-    CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass,
-};
+use crate::boundary::host::{CommandOutcome, HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 
-use super::exec_arguments;
+use super::exec_spec;
 
 pub(super) fn run_exec(
     host: &dyn HostEnvironment,
@@ -12,10 +10,5 @@ pub(super) fn run_exec(
     args: &[&str],
     timeout: TimeoutClass,
 ) -> Result<CommandOutcome> {
-    let full = exec_arguments(sandbox, user, args);
-    let borrowed: Vec<&str> = full.iter().map(String::as_str).collect();
-    let spec = CommandSpec::capture("sbx", &borrowed)
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(timeout);
-    host.run(&spec)
+    host.run(&exec_spec(sandbox, user, false, args, timeout))
 }

@@ -534,6 +534,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status <project-id>` | Show a project's status without changing it |
 | `sbxm fetch [<project-id>]` | Save a project sandbox's commits into its host repository under `refs/sbx/<sandbox>/`, without touching your branches |
 | `sbxm files add\|ls\|rm ...` | Declare host files to place in every sandbox, list them, or remove a declaration |
+| `sbxm files pull <destination> [<project-id>]` | Show how a project sandbox's copy of a declared file differs from the host file, and adopt it into the host file if you choose |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees; `--files --all` places the declared files in every registered project |
 | `sbxm repair [<project-id>]` | Explicitly prepare an interrupted or incomplete project without opening SSH; `open` performs the same recovery when connecting |
 | `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its Dockerfile; the old writable layer is lost |
