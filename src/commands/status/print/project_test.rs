@@ -307,8 +307,13 @@ fn each_declared_file_shows_its_host_and_sandbox_state() -> Checked {
         .find(|line| line.contains(".claude/CLAUDE.md"))
         .required_because("the file has a row")?;
     assert!(row.contains("updated") && row.contains("modified"), "{row}");
-    // Sandboxで書き換えたfileは`apply --files`が置き換えない。置き換えるには--forceが要る。
-    assert!(printed.stdout.contains("--force"), "{}", printed.stdout);
+    // Sandboxで書き換えたfileは`apply --files`が置き換えない。置き換えを強制する前に
+    // 退避するよう述べる。
+    assert!(
+        printed.stdout.contains("before forcing a replacement"),
+        "{}",
+        printed.stdout
+    );
     // hostで変わったfileは、置く手順を案件IDごと示す。
     assert!(
         printed
