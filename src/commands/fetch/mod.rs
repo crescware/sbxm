@@ -6,12 +6,14 @@
 mod command_line;
 mod exec;
 mod fetch_output;
+mod offer_save;
 pub mod print;
 mod run;
 
 pub(crate) use command_line::CommandLine as CommandLineParser;
 pub use exec::exec;
 pub use fetch_output::FetchOutput;
+pub use offer_save::offer_save;
 pub use run::run;
 
 #[cfg(test)]
