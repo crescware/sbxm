@@ -465,7 +465,8 @@ Sandboxの中のbundleはSandboxと一緒に消えるため、rebuildとdestroy�
 `sbxm rebuild local/<name>`は、hostのrepositoryからSandboxを作り直し、
 `refs/sbx/<sandbox>/heads/`へ保存したbranchをSandboxのbranchとして戻します。hostに
 同じ名前のbranchがあれば、`origin/<branch>`をupstreamにします。起点branchのworktreeは
-保存した先端から作り直すので、fetchしたところから作業を続けられます。
+保存した先端から作り直すので、fetchしたところから作業を続けられます。Sandboxがsbxmの
+外で消えた場合のように、`open`や`repair`が新しいSandboxを作るときも同じです。
 
 ## プロジェクトを破棄する
 
