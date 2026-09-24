@@ -733,7 +733,7 @@ fn a_sink_that_cannot_take_the_output_refuses_the_run() -> Checked {
         .refused_because("the output has nowhere to go")?;
     assert_eq!(
         error.first_id(),
-        Some(ErrorId::ExternalCommandOutputUnreadable)
+        Some(ErrorId::ExternalCommandOutputUnstored)
     );
     Ok(())
 }
@@ -777,7 +777,7 @@ fn a_host_without_streaming_hands_over_what_it_captured() -> Checked {
         .refused_because("the output has nowhere to go")?;
     assert_eq!(
         error.first_id(),
-        Some(ErrorId::ExternalCommandOutputUnreadable)
+        Some(ErrorId::ExternalCommandOutputUnstored)
     );
     Ok(())
 }
@@ -803,7 +803,7 @@ fn a_sink_that_cannot_finish_the_output_refuses_the_run() -> Checked {
         .refused_because("the output was not finished")?;
     assert_eq!(
         error.first_id(),
-        Some(ErrorId::ExternalCommandOutputUnreadable)
+        Some(ErrorId::ExternalCommandOutputUnstored)
     );
     Ok(())
 }
@@ -816,6 +816,7 @@ fn the_real_host_streams_stdout_itself() -> Checked {
     assert_eq!(sink, b"received");
     Ok(())
 }
+
 #[test]
 fn a_large_input_reaches_a_child_that_writes_nothing_without_waiting_on_polls() -> Checked {
     // 子が出力を書かないあいだも、読んだ分だけすぐに書き足す。出力を待つ間隔ごとに

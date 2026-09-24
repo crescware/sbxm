@@ -5,13 +5,14 @@ use crate::diagnostics::Result;
 
 use super::{
     CommandOutcome, CommandSpec, SignalGuard, Stream, configure, outcome, output_too_large,
-    pump_until_exit, spawn, spawn_failure,
+    pump_until_exit, spawn, spawn_failure, unstored,
 };
 
 /// 出力をcaptureして実行し、stdoutだけを届いた順に`sink`へ流す。
 ///
 /// stdoutを溜めないため、大きな出力でもmemoryを使い切らない。`limit`byteを超えた時点で
 /// 子を終わらせ、それ以上は受け取らない。stderrは診断に使うため溜める。
+/// `sink`へ書けなかった場合は、出力を読めなかったのではなく、hostで残せなかったと報告する。
 pub(super) fn run_streaming(
     spec: &CommandSpec,
     sink: &mut dyn Write,
@@ -25,6 +26,7 @@ pub(super) fn run_streaming(
 
     let mut received: u64 = 0;
     let mut exceeded = false;
+    let mut unstored_cause = None;
     let mut stderr = Vec::new();
     let status = pump_until_exit(
         &mut child,
@@ -38,7 +40,11 @@ pub(super) fn run_streaming(
                     exceeded = true;
                     return Err(std::io::Error::other("the output exceeded its limit"));
                 }
-                sink.write_all(bytes)
+                let written = sink.write_all(bytes);
+                if let Err(error) = &written {
+                    unstored_cause = Some(error.to_string());
+                }
+                written
             }
             Stream::Stderr => {
                 stderr.extend_from_slice(bytes);
@@ -46,12 +52,14 @@ pub(super) fn run_streaming(
             }
         },
     );
-    let status = match status {
-        Ok(status) => status,
-        Err(_) if exceeded => return Err(output_too_large(spec, limit)),
-        Err(error) => return Err(error),
+    let status = match (status, unstored_cause) {
+        (Ok(status), _) => status,
+        (Err(_), _) if exceeded => return Err(output_too_large(spec, limit)),
+        (Err(_), Some(cause)) => return Err(unstored(spec, &cause)),
+        (Err(error), None) => return Err(error),
     };
-    sink.flush()
-        .map_err(|error| super::unreadable(spec, &error.to_string()))?;
+    if let Err(error) = sink.flush() {
+        return Err(unstored(spec, &error.to_string()));
+    }
     Ok(outcome(spec, status, Vec::new(), stderr))
 }
