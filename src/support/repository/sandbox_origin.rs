@@ -84,14 +84,18 @@ impl SandboxOrigin {
                 repository,
                 bundle,
                 staging,
-            } => bundle::send_to_sandbox(
-                host,
-                repository,
-                &["--branches", "--tags"],
-                staging,
-                sandbox,
-                bundle,
-            ),
+            } => {
+                // branchもtagも無いrepositoryからは、gitがbundleを作らない。
+                bundle::require_something_to_send(host, repository)?;
+                bundle::send_to_sandbox(
+                    host,
+                    repository,
+                    &["--branches", "--tags"],
+                    staging,
+                    sandbox,
+                    bundle,
+                )
+            }
         }
     }
 }

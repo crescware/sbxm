@@ -449,12 +449,15 @@ fn the_host_branches_and_tags_reach_the_sandbox_as_one_bundle() -> Checked {
 fn a_host_repository_without_commits_sends_nothing() -> Checked {
     let sending = Sending::new()?;
 
-    let error = sending
-        .send(&LocalSandbox)
+    let error = require_something_to_send(&LocalSandbox, &sending.host)
         .refused_because("nothing to send")?;
-
     assert_eq!(error.first_id(), Some(ErrorId::HostRepositoryEmpty));
-    assert!(!sending.destination().exists());
+
+    git_in(
+        &sending.host,
+        &["commit", "--quiet", "--allow-empty", "-m", "first"],
+    )?;
+    require_something_to_send(&LocalSandbox, &sending.host).required()?;
     Ok(())
 }
 
