@@ -504,6 +504,12 @@ its branches or tags, or from what `sbxm fetch` saved under
 `refs/sbx/<sandbox>/`. A commit the host does not have stops them, and an
 interactive terminal offers to fetch it first.
 
+`sbxm rebuild local/<name>` recreates the sandbox from the host repository and
+brings back the branches saved under `refs/sbx/<sandbox>/heads/` as sandbox
+branches, tracking `origin/<branch>` when the host has it. The worktree on the
+start branch is recreated at the saved tip, so work continues where it was
+fetched.
+
 ## Tear down a project
 
 ```sh

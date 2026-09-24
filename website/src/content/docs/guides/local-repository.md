@@ -38,3 +38,7 @@ Run [`sbxm send`](../../reference/cli/send/) to send the host repository's curre
 The bundle inside the sandbox disappears with the sandbox. So for a project added with `--local`, [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) count a commit as kept only when the host repository reaches it: from one of its branches or tags, or from what `sbxm fetch` saved under `refs/sbx/<sandbox>/`. A commit the host does not have stops them. An interactive terminal offers to fetch it and continue.
 
 Uncommitted changes stop them the same way as for a GitHub project. Commit them in the sandbox first.
+
+## Rebuilding
+
+`sbxm rebuild` recreates the sandbox from the host repository. After the new sandbox has read its origin, sbxm sends the branches saved under `refs/sbx/<sandbox>/heads/` as one more bundle, brings them back as sandbox branches of the same names, and removes that bundle. A restored branch tracks `origin/<branch>` when the host has a branch of that name. The worktree on the start branch is then recreated at the saved tip, so work continues where it was fetched. Detached worktrees start from `origin/<branch>` as usual; the heads they had are still on the host under `refs/sbx/<sandbox>/worktrees/`. The result lists the branches that came back.
