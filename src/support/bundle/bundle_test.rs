@@ -499,3 +499,67 @@ fn bundles_received_in_the_same_second_are_pruned_in_the_order_they_arrived() ->
     );
     Ok(())
 }
+
+/// `CREATE_BUNDLE`を、一部の起動だけ振る舞いを変える`git`を`PATH`の先頭に置いて走らせる。
+///
+/// `case`は、`git`へ渡った引数全体に対する`sh`の`case`の枝である。どの枝にも
+/// 当たらなければ、本物の`git`を走らせる。
+struct Creating {
+    dir: tempfile::TempDir,
+}
+
+impl Creating {
+    fn new(case: &str) -> Checked<Creating> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().required()?;
+        fs::create_dir(dir.path().join("bin")).required()?;
+        let git = dir.path().join("bin/git");
+        fs::write(
+            &git,
+            format!(
+                "#!/bin/sh\ncase \" $* \" in\n{case}\nesac\nPATH=${{PATH#*:}}\nexec git \"$@\"\n"
+            ),
+        )
+        .required()?;
+        fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).required()?;
+        Ok(Creating { dir })
+    }
+
+    fn command(&self, repositories: &Repositories) -> std::process::Command {
+        let mut command = std::process::Command::new("sh");
+        command
+            .args(["-c", CREATE_BUNDLE, "sh"])
+            .arg(repositories.git_dir())
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    self.dir.path().join("bin").display(),
+                    std::env::var("PATH").unwrap_or_default()
+                ),
+            )
+            .env("MARK", self.dir.path().join("mark"))
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        command
+    }
+}
+
+#[test]
+fn a_git_failure_while_gathering_refs_is_not_taken_as_nothing_to_save() -> Checked {
+    // 失敗を読み落とすと、worktreeのHEADを欠いたbundleや、保存するものが無いという
+    // 答えになる。どちらも、保存できていないことを隠す。
+    let repositories = Repositories::new()?;
+    for case in [
+        r#"*" worktree list "*) exit 1 ;;"#,
+        r#"*" for-each-ref --count=1 "*) exit 1 ;;"#,
+    ] {
+        let status = Creating::new(case)?
+            .command(&repositories)
+            .status()
+            .required()?;
+        assert!(!status.success(), "{case}: {status:?}");
+    }
+    Ok(())
+}
