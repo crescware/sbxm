@@ -242,7 +242,8 @@ rebuildはDockerfileの変更有無にかかわらずSandboxを作り直し、�
 
 cleanなworktreeだけでは見えないrepository単位の状態も検査します。checkoutしていない
 local branch、tag、note、stash、追加remote、reflogだけに残るcommitも対象です。表示された
-Layer Aのblockerを保存または解決してから、もう一度実行してください。`status`ではworktreeの
+Layer Aのblockerを保存または解決してから、もう一度実行してください。originに無いcommitは、
+`sbxm fetch`でホスト側のrepositoryへ保存しても構いません。`status`ではworktreeの
 `STATE`とoriginからの回収根拠を、別の`REMOTE`列に表示します。
 
 拒否しない場合も、作り直しで何が失われるかを先に表示します。無視対象のpath、
@@ -416,6 +417,11 @@ objectの検査を有効にして、ホスト側のrepositoryの`refs/sbx/<sandb
 ホスト側のbranchとtagには触れません。Sandboxで書き換えたbranchや消したbranchの前の先端は
 `refs/sbx/<sandbox>/archive/<時刻>/`へ退避し、自動では消さないため、一度取り込んだ
 commitはどれも辿れ続けます。Sandboxは動いている必要があり、停止中のSandboxは起動しません。
+
+こうして保存したcommitはSandboxを消しても残るため、rebuildとdestroyはoriginから辿れる
+commitと同じく、失われないものとして数えます。originに無いcommitだけを理由にrebuildや
+destroyが拒否された場合、対話端末ではホスト側のrepositoryへ保存してから続けるかを訊きます。
+止める選択では何も変えません。
 
 ## プロジェクトを破棄する
 

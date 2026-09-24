@@ -24,3 +24,5 @@ In an interactive terminal the project ID may be omitted and selected. The sandb
 When a ref was rewritten so that its new tip does not contain the previous one, or was deleted in the sandbox, the previous tip is first kept under `refs/sbx/<sandbox>/archive/<time>/` and is never removed automatically. Every commit that was ever fetched therefore stays reachable. No sandbox ref is mapped into `archive/`.
 
 The result lists each ref that was `created`, `updated`, `replaced`, or `deleted`, with where a previous tip was kept.
+
+Every tip under `refs/sbx/<sandbox>/`, including the kept ones, outlives the sandbox. [`rebuild`](../rebuild/) and [`destroy`](../destroy/) therefore count a commit reachable from them as published, the same as a commit reachable from the origin, and offer to run the same save when unpublished commits are the only thing stopping them.
