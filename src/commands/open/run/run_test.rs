@@ -323,6 +323,27 @@ fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
     Ok(())
 }
 
+/// Enterを返す直前に、案件のmetadataを書き換えるkey source。
+///
+/// promptは、案件のmetadataを裏のthreadで読みながら表示する。その読み込みがいつ届くかに
+/// 依らず、promptが受け付けた値とlock後のmetadataが食い違う状況を作る。
+struct RewritingOnEnter {
+    keys: ScriptedKeys,
+    rewrite: Option<Box<dyn FnOnce()>>,
+}
+
+impl crate::design::prompt::Keys for RewritingOnEnter {
+    fn read_key(&mut self) -> std::io::Result<Key> {
+        let key = crate::design::prompt::Keys::read_key(&mut self.keys)?;
+        if key == Key::Enter
+            && let Some(rewrite) = self.rewrite.take()
+        {
+            rewrite();
+        }
+        Ok(key)
+    }
+}
+
 #[test]
 fn an_index_beyond_the_project_is_reported_before_the_terminal_is_handed_over() -> Checked {
     let fixture = Fixture::new()?;
@@ -333,10 +354,24 @@ fn an_index_beyond_the_project_is_reported_before_the_terminal_is_handed_over() 
     );
     let host = ready(FakeSbx::listing(&running), &project)?;
 
-    // promptはmetadataを待たずに設定上限まで受け付ける。案件が持つ範囲まで下げた事実は、
-    // 接続先を見せる前に述べる。
+    // promptを開いた時点の案件は8本のworktreeを持つ。裏の読み込みが先に届いても、
+    // 5番目まで進める。確定した直後に1本へ戻し、lock後のmetadataで範囲へ収めさせる。
+    let original = project.metadata.clone();
+    let mut wider = original.clone();
+    wider.provisioning.mode = crate::metadata::CreationMode::Detached;
+    wider.provisioning.requested_worktrees = 8;
+    metadata::update(&project.paths, &wider).required()?;
+    let paths = project.paths.clone();
+    let rewrite: Box<dyn FnOnce()> = Box::new(move || {
+        assert!(metadata::update(&paths, &original).is_ok());
+    });
+
     let mut keys = vec![Key::ArrowRight; 5];
     keys.push(Key::Enter);
+    let keys = RewritingOnEnter {
+        keys: ScriptedKeys::pressing(&keys),
+        rewrite: Some(rewrite),
+    };
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -346,7 +381,7 @@ fn an_index_beyond_the_project_is_reported_before_the_terminal_is_handed_over() 
         let mut prompt = PromptUi::new(
             Locale::En,
             policy.stderr,
-            Box::new(ScriptedKeys::pressing(&keys)),
+            Box::new(keys),
             Box::new(RecordedScreen::new()),
         );
         let context = Context {
