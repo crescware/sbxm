@@ -69,7 +69,12 @@ fn offer_to_apply(
 ) -> ExitCode {
     let count = match select::candidates(context.location) {
         Ok(candidates) => candidates.len(),
-        Err(error) => return report(ui, &error),
+        // 宣言は保存済みである。案件を読めなければ訊かず、あとで配置する手順を示す。
+        Err(error) => {
+            ui.warning(&print::not_offered(&error));
+            ui.stdout(&print::apply_hint());
+            return ExitCode::Success;
+        }
     };
     if count == 0 {
         return ExitCode::Success;

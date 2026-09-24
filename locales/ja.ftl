@@ -105,6 +105,7 @@ error-file-declaration-invalid-source = 宣言fileのsourceが不正です
 error-file-declaration-invalid-destination = 宣言fileのdestinationが不正です
 warning-config-unknown-key = { $path } の未知のkey { $key } を無視しました。
 warning-config-unknown-file-key = { $path } のfiles宣言 { $entry } にある未知のkey { $key } を無視しました。
+warning-files-apply-not-offered = 宣言は保存しましたが、登録済みの案件を読めなかったため、まだ配置していません。
 error-file-already-declared = { $destination } は、{ $source } を配置元として既に宣言されています。
 error-file-not-declared = { $destination } へ配置する宣言fileはありません。
 error-file-destination-required = { $source } はhome directoryの外にあるため、配置先を決められません。

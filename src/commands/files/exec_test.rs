@@ -312,3 +312,36 @@ fn a_declaration_is_removed_and_a_refused_one_fails_the_run() -> Checked {
     assert_eq!(refused.code, ExitCode::Failure);
     Ok(())
 }
+
+#[test]
+fn a_declaration_saved_while_the_projects_cannot_be_read_still_succeeds() -> Checked {
+    // 宣言は保存済みである。配置するかを訊けなかったことは警告で伝え、あとで配置する
+    // 手順を示して成功として終える。
+    let fixture = Fixture::new()?;
+    fixture.register("owner/repo")?;
+    fs::write(fixture.location.registry_file(), "version: [\n").required()?;
+    let host = nothing_running();
+
+    let ran = run(
+        &fixture,
+        &adding(&fixture, ".claude/CLAUDE.md")?,
+        true,
+        ScriptedKeys::confirming(),
+        &host,
+    )?;
+
+    assert_eq!(ran.code, ExitCode::Success, "{}", ran.stderr);
+    assert!(
+        ran.stderr.contains("not placed in them yet"),
+        "{}",
+        ran.stderr
+    );
+    assert!(
+        ran.stdout.contains("sbxm apply --files --all"),
+        "{}",
+        ran.stdout
+    );
+    assert!(ran.drawn.is_empty(), "nothing is asked");
+    assert_eq!(declared_count(&fixture)?, 1);
+    Ok(())
+}
