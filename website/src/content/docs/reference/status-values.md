@@ -35,6 +35,8 @@ once in the sandbox.
 | `unrecorded` | SANDBOX | The sandbox copy differs from the host file, and sbxm has no record of placing it. | The same as `modified`. |
 | `missing` | SANDBOX | The sandbox has no file at the destination. | Run `sbxm apply <project-id> --files`. |
 
+Status shows the `apply --files` command only while it can be run as it is: the sandbox is running and was looked into, and no other next step is shown. A next step such as `open` or `repair` places the declared files itself.
+
 A stopped sandbox is reported as `not-observed-stopped` and is not started to be read.
 
 ## The next command

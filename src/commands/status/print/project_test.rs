@@ -307,8 +307,13 @@ fn each_declared_file_shows_its_host_and_sandbox_state() -> Checked {
         .find(|line| line.contains(".claude/CLAUDE.md"))
         .required_because("the file has a row")?;
     assert!(row.contains("updated") && row.contains("modified"), "{row}");
-    // Sandboxで書き換えたfileは`apply --files`が置き換えない。置き換えるには--forceが要る。
-    assert!(printed.stdout.contains("--force"), "{}", printed.stdout);
+    // Sandboxで書き換えたfileは`apply --files`が置き換えない。置き換えを強制する前に
+    // 退避するよう述べる。
+    assert!(
+        printed.stdout.contains("before forcing a replacement"),
+        "{}",
+        printed.stdout
+    );
     // hostで変わったfileは、置く手順を案件IDごと示す。
     assert!(
         printed
@@ -339,5 +344,58 @@ fn nothing_is_suggested_when_every_file_is_where_sbxm_left_it() -> Checked {
         FileState::NotApplicable,
     )]))?;
     assert!(!printed.stdout.contains("sbxm apply"), "{}", printed.stdout);
+    Ok(())
+}
+
+#[test]
+fn placing_is_suggested_only_where_the_sandbox_was_looked_into() -> Checked {
+    // 停止中や観測できなかったSandboxへは`apply --files`が通らない。
+    for sandbox in [FileState::NotObservedStopped, FileState::NotObserved] {
+        let printed = print(&with_files(vec![(
+            ".gitconfig",
+            FileState::Updated,
+            sandbox,
+        )]))?;
+        assert!(
+            !printed.stdout.contains("--files"),
+            "{sandbox:?}: {}",
+            printed.stdout
+        );
+    }
+    // Sandboxから消えたfileは、hostで変わっていなくても置き直せる。
+    let printed = print(&with_files(vec![(
+        ".gitconfig",
+        FileState::Unchanged,
+        FileState::Missing,
+    )]))?;
+    assert!(
+        printed
+            .stdout
+            .contains("sbxm apply example-org/example-repo --files"),
+        "{}",
+        printed.stdout
+    );
+    Ok(())
+}
+
+#[test]
+fn placing_is_not_suggested_beside_another_next_command() -> Checked {
+    // 先に行う1手が宣言fileも置く。相反しうる手順を並べない。
+    let status = ProjectStatus {
+        files: with_files(vec![(
+            ".gitconfig",
+            FileState::Updated,
+            FileState::Unchanged,
+        )])
+        .files,
+        ..needing(NextAction::RebuildChanged)
+    };
+    let printed = print(&status)?;
+    assert!(!printed.stdout.contains("--files"), "{}", printed.stdout);
+    assert!(
+        printed.stdout.contains("sbxm rebuild"),
+        "{}",
+        printed.stdout
+    );
     Ok(())
 }

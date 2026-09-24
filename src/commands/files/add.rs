@@ -9,7 +9,7 @@ use crate::msg;
 use crate::paths;
 use crate::support::files;
 
-use super::{Added, looks_like_credential};
+use super::{Added, invalid_destination, looks_like_credential};
 
 /// 宣言fileを1件、global configへ足す。
 ///
@@ -32,16 +32,7 @@ pub fn add(
     // 検証してから`./`などを除く。`.`のように、除くと何も残らない値もここで拒否する。
     let destination = SandboxHomeRelativePath::new(&given)
         .and_then(|valid| SandboxHomeRelativePath::new(&normalized(valid.as_path())))
-        .map_err(|reason| {
-            Error::single(
-                Diagnostic::new(
-                    ErrorId::FileDeclarationInvalidDestination,
-                    msg!("error-file-declaration-invalid-destination"),
-                )
-                .fact(Fact::destination(&given))
-                .fact(Fact::reason(reason)),
-            )
-        })?;
+        .map_err(|reason| invalid_destination(&given, reason))?;
     let source_text = paths::display(source);
     let source = HostFileSource::new(&source_text).map_err(|reason| {
         Error::single(
