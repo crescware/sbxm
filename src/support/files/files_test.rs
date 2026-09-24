@@ -1022,3 +1022,23 @@ fn the_placement_script_places_only_bytes_that_arrived_whole() -> Checked {
     assert_eq!(placing.staged()?, 0);
     Ok(())
 }
+
+#[test]
+fn a_placement_stopped_by_a_signal_leaves_nothing_behind() -> Checked {
+    // 受け取りの途中でsignalを受けても、秘密を含みうる一時fileを残さない。
+    let placing = Placing::new()?;
+    let mut child = placing.command(&sha256_hex(b"x")).spawn().required()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while placing.staged()? == 0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(placing.staged()?, 1, "the script started receiving");
+
+    let pid = rustix::process::Pid::from_child(&child);
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;
+    child.wait().required()?;
+
+    assert_eq!(placing.staged()?, 0);
+    assert!(!placing.destination().exists());
+    Ok(())
+}
