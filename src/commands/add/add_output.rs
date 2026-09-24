@@ -19,7 +19,10 @@ pub struct AddOutput {
     /// 起点branch。attached modeは構築時にremoteから解決するため`None`のことがある。
     pub start_ref: Option<String>,
     pub requested_worktrees: u32,
+    /// host clone。hostにあるrepositoryを登録した案件では、そのrepositoryの場所。
     pub host_clone: PathBuf,
+    /// GitHub tokenの登録が、構築の前に要るか。hostにあるrepositoryには要らない。
+    pub needs_github_token: bool,
     /// 既に登録済みで、この実行が目標構成を変えなかったか。
     pub already_registered: bool,
 }

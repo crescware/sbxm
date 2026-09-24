@@ -173,3 +173,51 @@ fn a_declared_value_that_git_cannot_use_is_refused() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_repository_on_the_host_is_added_by_its_path_and_an_optional_name() -> Checked {
+    use crate::commands::add::AddTarget;
+    use std::path::PathBuf;
+
+    assert!(matches!(
+        command(&["add", "--local", "../app"], tty())?,
+        Command::Add(Args {
+            target: AddTarget::Local { path, name: None },
+            ..
+        }) if path == PathBuf::from("../app")
+    ));
+    assert!(matches!(
+        command(&["add", "--local", "/code/app", "--name", "tool"], tty())?,
+        Command::Add(Args {
+            target: AddTarget::Local { name: Some(name), .. },
+            ..
+        }) if name == "tool"
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_clone_url_and_a_host_path_cannot_be_added_together() -> Checked {
+    let error = parse_argv(
+        &[
+            "add",
+            "git@github.com:owner/repo.git",
+            "--local",
+            "/code/app",
+        ],
+        tty(),
+    )
+    .refused_because("two repositories")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ConflictingArguments));
+
+    let error = parse_argv(
+        &["add", "git@github.com:owner/repo.git", "--name", "tool"],
+        tty(),
+    )
+    .refused_because("a name only belongs to a host repository")?;
+    assert_eq!(error.first_id(), Some(ErrorId::NameWithoutLocal));
+
+    let error = parse_argv(&["add"], tty()).refused_because("nothing to add")?;
+    assert_eq!(error.first_id(), Some(ErrorId::MissingRequiredArgument));
+    Ok(())
+}

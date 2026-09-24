@@ -253,3 +253,137 @@ fn stored_fields_that_disagree_with_the_clone_url_are_refused() -> Checked {
     .refused_because("a clone URL that is not one of the accepted forms is refused")?;
     Ok(())
 }
+
+fn local(path: &str, name: &str) -> Checked<RepositoryIdentity> {
+    RepositoryIdentity::local(path, name).required_because("the local repository is accepted")
+}
+
+#[test]
+fn a_repository_on_the_host_is_registered_under_the_local_owner() -> Checked {
+    let identity = local("/home/user/code/Example-Repo", "Example-Repo")?;
+
+    assert_eq!(identity.provider(), Provider::Local);
+    assert_eq!(identity.owner(), LOCAL_OWNER);
+    assert_eq!(identity.name(), "Example-Repo");
+    assert_eq!(identity.canonical_id().as_str(), "local/example-repo");
+    assert_eq!(identity.transport(), CloneTransport::File);
+    assert_eq!(identity.clone_url(), "/home/user/code/Example-Repo");
+    assert_eq!(identity.display_id(), "local/Example-Repo");
+    Ok(())
+}
+
+#[test]
+fn a_local_project_named_apart_from_its_directory_is_shown_by_its_canonical_name() -> Checked {
+    // 索引は表示用の名前を持たない。読み直せる綴りだけを表示に使う。
+    let identity = local("/home/user/code/app", "Tool")?;
+    assert_eq!(identity.name(), "tool");
+    assert_eq!(identity.display_id(), "local/tool");
+    Ok(())
+}
+
+#[test]
+fn a_local_identity_is_read_back_from_the_index_and_the_metadata() -> Checked {
+    for (path, name) in [
+        ("/home/user/code/Example-Repo", "Example-Repo"),
+        ("/home/user/code/app", "tool"),
+    ] {
+        let identity = local(path, name)?;
+        let indexed = RepositoryIdentity::from_index_parts(
+            "local",
+            identity.canonical_id().as_str(),
+            "file",
+            path,
+        )
+        .required_because("the index fields agree")?;
+        assert_eq!(indexed, identity);
+        let stored = RepositoryIdentity::from_parts(
+            "local",
+            identity.owner(),
+            identity.name(),
+            identity.canonical_id().as_str(),
+            "file",
+            path,
+        )
+        .required_because("the metadata fields agree")?;
+        assert_eq!(stored, identity);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_path_that_could_name_the_repository_another_way_is_refused() -> Checked {
+    for path in [
+        "relative/app",
+        "/",
+        "/home/user/app/",
+        "/home/user//app",
+        "/home/user/./app",
+        "/home/user/../app",
+        "/home/user/a\npp",
+    ] {
+        let error = RepositoryIdentity::local(path, "app")
+            .refused_because("a path that is not normalized is refused")?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::InvalidLocalRepositoryPath),
+            "{path:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_local_name_follows_the_repository_name_rules() -> Checked {
+    let error =
+        RepositoryIdentity::local("/home/user/my app", "my app").refused_because("a space")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InvalidProjectId));
+    let error =
+        RepositoryIdentity::local("/home/user/.sbxm", ".sbxm").refused_because("reserved")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ReservedRepositoryName));
+    Ok(())
+}
+
+#[test]
+fn stored_local_fields_that_disagree_are_refused() -> Checked {
+    for (canonical, transport, path) in [
+        ("local/app", "ssh", "/home/user/app"),
+        ("other/app", "file", "/home/user/app"),
+        ("local/app", "file", "home/user/app"),
+        ("local/my app", "file", "/home/user/app"),
+    ] {
+        RepositoryIdentity::from_index_parts("local", canonical, transport, path)
+            .refused_because("a disagreeing field set is refused")?;
+    }
+    Ok(())
+}
+
+#[test]
+fn local_projects_at_different_paths_are_different_targets() -> Checked {
+    let here = local("/home/user/a/app", "app")?;
+    let there = local("/home/user/b/app", "app")?;
+    assert!(!here.same_target(&there));
+    assert!(here.same_target(&local("/home/user/a/app", "app")?));
+    Ok(())
+}
+
+#[test]
+fn the_add_arguments_register_the_same_project_again() -> Checked {
+    assert_eq!(
+        parsed("git@github.com:Example-Org/Example-Repo.git")?.add_arguments(),
+        "git@github.com:Example-Org/Example-Repo.git"
+    );
+    assert_eq!(
+        local("/home/user/code/App", "App")?.add_arguments(),
+        "--local /home/user/code/App"
+    );
+    // directory名と別の名前は`--name`で添える。shellが分けるpathは囲む。
+    assert_eq!(
+        local("/home/user/my code/app", "tool")?.add_arguments(),
+        "--local '/home/user/my code/app' --name tool"
+    );
+    assert_eq!(
+        local("/home/user/it's/app", "app")?.add_arguments(),
+        "--local '/home/user/it'\\''s/app'"
+    );
+    Ok(())
+}

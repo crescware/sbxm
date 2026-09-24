@@ -17,6 +17,7 @@ impl TargetConfiguration {
     /// | 指定 | mode | start_ref | managed数 |
     /// |---|---|---|---:|
     /// | 指定なし | attached | remote default branch | 1 |
+    /// | `--local PATH` | attached | hostのrepositoryが今いるbranch | 1 |
     /// | `--detach BRANCH` | detached | BRANCH | 1 |
     /// | `--worktrees N --detach BRANCH` | detached | BRANCH | N |
     pub fn from_request(request: &AddRequest) -> Result<TargetConfiguration> {
@@ -47,10 +48,13 @@ impl TargetConfiguration {
                     msg!("error-worktrees-require-detach"),
                 );
             }
+            if let Some(branch) = &request.start_branch {
+                git::validate_branch_name(branch)?;
+            }
             Ok(TargetConfiguration {
-                // attached modeのstart refはremote default branchを解決してから確定する。
+                // GitHubのrepositoryは、remote default branchを解決してから確定する。
                 mode: CreationMode::Attached,
-                start_ref: None,
+                start_ref: request.start_branch.clone(),
                 requested_worktrees,
             })
         }

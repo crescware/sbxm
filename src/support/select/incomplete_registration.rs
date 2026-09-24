@@ -20,7 +20,7 @@ pub fn incomplete_registration(candidate: &Candidate) -> Error {
         )
         .remediation(
             Remediation::text(msg!("remediation-project-incomplete"))
-                .try_run(format!("sbxm add {}", candidate.repository.clone_url())),
+                .try_run(format!("sbxm add {}", candidate.repository.add_arguments())),
         ),
     )
 }

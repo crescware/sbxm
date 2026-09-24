@@ -167,7 +167,9 @@ fn identity() -> GitIdentity {
 
 fn add_args(git_identity: Option<GitIdentity>) -> Checked<Args> {
     Ok(Args {
-        repository: crate::testing::project::ssh_repository("Example-Org/Example-Repo")?,
+        target: crate::commands::add::AddTarget::Clone(crate::testing::project::ssh_repository(
+            "Example-Org/Example-Repo",
+        )?),
         worktrees: None,
         detach: None,
         git_identity,

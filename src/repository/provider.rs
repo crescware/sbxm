@@ -1,9 +1,11 @@
 /// repositoryをhostしているservice。
 ///
-/// 初期versionはGitHubだけを持つ。値はconfigやmetadataへ保存するため翻訳しない。
+/// 値はconfigやmetadataへ保存するため翻訳しない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provider {
     Github,
+    /// 利用者のhostにあるrepository。hostの`.git`がoriginの役を持つ。
+    Local,
 }
 
 impl Provider {
@@ -11,6 +13,7 @@ impl Provider {
     pub fn as_str(self) -> &'static str {
         match self {
             Provider::Github => "github",
+            Provider::Local => "local",
         }
     }
 
@@ -18,6 +21,7 @@ impl Provider {
     pub fn parse(value: &str) -> Option<Provider> {
         match value {
             "github" => Some(Provider::Github),
+            "local" => Some(Provider::Local),
             _ => None,
         }
     }

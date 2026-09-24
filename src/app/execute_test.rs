@@ -91,7 +91,7 @@ fn every_normal_command_reaches_the_command_that_reads_the_configuration() -> Ch
 
     for command in [
         Command::Add(add::Args {
-            repository: https_repository("owner/repo")?,
+            target: add::AddTarget::Clone(https_repository("owner/repo")?),
             worktrees: None,
             detach: None,
             git_identity: None,

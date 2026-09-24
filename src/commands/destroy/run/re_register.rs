@@ -10,10 +10,10 @@ use crate::paths::{self, ProjectPaths};
 /// 別の結果になるcommandとして見せない。
 pub(super) fn re_register(paths: &ProjectPaths, metadata: &ProjectMetadata) -> Result<String> {
     let provisioning = &metadata.provisioning;
-    // 登録時と同じclone URLを示す。transportを暗黙に変えるcommandを案内しない。
+    // 登録時と同じclone URLやpathを示す。transportを暗黙に変えるcommandを案内しない。
     let command = format!(
         "sbxm add {} --worktrees {}",
-        metadata.repository.clone_url(),
+        metadata.repository.add_arguments(),
         provisioning.requested_worktrees
     );
     match provisioning.mode {

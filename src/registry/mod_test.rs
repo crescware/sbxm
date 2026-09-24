@@ -480,3 +480,27 @@ fn concurrent_registrations_of_different_projects_lose_no_entry() -> Checked {
     assert_eq!(recorded, projects);
     Ok(())
 }
+
+#[test]
+fn a_local_project_is_recorded_and_read_back_with_its_host_path() -> Checked {
+    let (_dir, location) = home()?;
+    let repository = crate::repository::RepositoryIdentity::local("/home/user/code/Alpha", "Alpha")
+        .required_because("a local repository")?;
+    let mut guard = RegistryGuard::acquire(&location).required_because("acquire")?;
+    guard
+        .insert(
+            RegistryEntry::new(
+                Path::new("/home/user/Projects/alpha.project"),
+                repository.clone(),
+            )
+            .required_because("a valid entry")?,
+        )
+        .required_because("record the registration intent")?;
+    drop(guard);
+
+    let registry = load(&location).required_because("the document is valid")?;
+    let entries = registry.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].repository(), &repository);
+    Ok(())
+}

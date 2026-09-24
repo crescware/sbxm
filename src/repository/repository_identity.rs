@@ -3,7 +3,9 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::project::CanonicalProjectId;
 
-use super::{CloneTransport, Provider, Rejection, accepted_clone_url_forms, interpret};
+use super::{
+    CloneTransport, Provider, Rejection, accepted_clone_url_forms, interpret, interpret_local,
+};
 
 /// 登録対象の不変なrepository identity。
 ///
@@ -37,6 +39,21 @@ impl RepositoryIdentity {
         }
     }
 
+    /// hostにあるrepositoryを、そのpathと案件の名前から組み立てる。
+    ///
+    /// `path`は呼び出し側が実在を確かめ、正規化した絶対pathとする。案件IDは
+    /// `local/<name>`になる。
+    pub fn local(path: &str, name: &str) -> Result<RepositoryIdentity> {
+        match interpret_local(path, name) {
+            Ok(identity) => Ok(identity),
+            Err(Rejection::Project(error)) => Err(error),
+            Err(Rejection::Form) => Err(Error::new(
+                ErrorId::InvalidLocalRepositoryPath,
+                msg!("error-invalid-local-repository-path", value = path),
+            )),
+        }
+    }
+
     /// 保存済みのfieldから復元する。
     ///
     /// clone URLを正本として読み直し、ほかのfieldがその解釈と一致することを確かめる。
@@ -66,26 +83,38 @@ impl RepositoryIdentity {
     /// 表示上の綴りはclone URLから読み直す。索引は表示用のownerとrepositoryを二重に
     /// 保存しない。
     ///
-    /// 保存されたproviderは綴りだけを検査する。[`Provider`]の変種は1つであり、
-    /// [`interpret`]が返す値も常にそれである以上、読み直した結果と食い違うことは
-    /// ない。突き合わせが要るのは、providerが2つ以上になったときである。
+    /// 保存されたproviderが、clone URLの読み方を決める。hostにあるrepositoryは
+    /// pathと、canonical IDが持つ名前から読み直す。
     pub fn from_index_parts(
         provider: &str,
         canonical_id: &str,
         transport: &str,
         clone_url: &str,
     ) -> std::result::Result<RepositoryIdentity, Msg> {
-        Provider::parse(provider)
+        let provider = Provider::parse(provider)
             .ok_or_else(|| msg!("cause-provider-unsupported", observed = provider))?;
         let declared_transport = CloneTransport::parse(transport)
             .ok_or_else(|| msg!("cause-clone-transport-unsupported", observed = transport))?;
-        let identity = interpret(clone_url).map_err(|_| {
-            msg!(
-                "cause-clone-url-unrecognized",
-                observed = clone_url,
-                accepted = accepted_clone_url_forms()
-            )
-        })?;
+        let identity = match provider {
+            Provider::Github => interpret(clone_url).map_err(|_| {
+                msg!(
+                    "cause-clone-url-unrecognized",
+                    observed = clone_url,
+                    accepted = accepted_clone_url_forms()
+                )
+            })?,
+            Provider::Local => {
+                let name = canonical_id
+                    .split_once('/')
+                    .map_or(canonical_id, |(_, name)| name);
+                interpret_local(clone_url, name).map_err(|_| {
+                    msg!(
+                        "cause-local-repository-path-unrecognized",
+                        observed = clone_url
+                    )
+                })?
+            }
+        };
 
         if identity.transport != declared_transport {
             return Err(msg!(
@@ -136,20 +165,57 @@ impl RepositoryIdentity {
         format!("{}/{}", self.owner, self.name)
     }
 
+    /// 同じ案件をもう一度登録する`sbxm add`の引数。
+    ///
+    /// GitHub repositoryには登録時と同じclone URLを示す。
+    /// hostにあるrepositoryにはpathを示し、directory名と別の名前で登録した案件には
+    /// `--name`を添える。
+    pub fn add_arguments(&self) -> String {
+        match self.provider {
+            Provider::Github => self.clone_url.clone(),
+            Provider::Local => {
+                let path = shell_word(&self.clone_url);
+                let directory = std::path::Path::new(&self.clone_url)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(str::to_ascii_lowercase);
+                if directory.as_deref() == Some(self.canonical_id.repository()) {
+                    format!("--local {path}")
+                } else {
+                    format!("--local {path} --name {}", self.canonical_id.repository())
+                }
+            }
+        }
+    }
+
     /// 同じrepositoryを同じ方式でcloneする構成か。
     ///
     /// `GitHubではownerとrepositoryの表示上の大文字小文字だけが異なっても同じidentity`
-    /// として扱う。transportとproviderの差異は同一構成とみなさない。
+    /// として扱う。transportとproviderの差異は同一構成とみなさない。hostにある
+    /// repositoryは、同じ名前でも別のpathなら別の構成とする。
     pub fn same_target(&self, other: &RepositoryIdentity) -> bool {
         self.provider == other.provider
             && self.transport == other.transport
             && self.canonical_id == other.canonical_id
+            && (self.provider != Provider::Local || self.clone_url == other.clone_url)
     }
 }
 
 impl std::fmt::Display for RepositoryIdentity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.clone_url)
+    }
+}
+
+/// shellへそのまま貼れる1語。安全な文字だけのpathは囲まない。
+fn shell_word(value: &str) -> String {
+    let plain = value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/._-+@%:,=~".contains(c));
+    if plain {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
     }
 }
 

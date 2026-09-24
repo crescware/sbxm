@@ -42,10 +42,9 @@ pub fn exec(
         Err(error) => return report(ui, &error),
     };
 
-    let request = AddRequest {
-        repository: args.repository.clone(),
-        worktrees: args.worktrees,
-        detach: args.detach.clone(),
+    let request = match AddRequest::resolve(args, &parent, host) {
+        Ok(request) => request,
+        Err(error) => return report(ui, &error),
     };
     match crate::commands::add::run::run(
         context.location,

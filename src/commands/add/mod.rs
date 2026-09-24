@@ -2,6 +2,7 @@
 
 mod add_output;
 mod add_request;
+mod add_target;
 mod args;
 mod ask_git_identity;
 mod ask_language;
@@ -12,6 +13,7 @@ mod command_line;
 pub mod exec;
 mod host_clone;
 mod identity_prompt;
+mod local_repository;
 mod observe;
 mod presence;
 pub mod print;
@@ -24,6 +26,7 @@ mod was_already_registered;
 
 pub use add_output::AddOutput;
 pub use add_request::AddRequest;
+pub use add_target::AddTarget;
 pub use args::Args;
 pub(super) use ask_git_identity::ask_git_identity;
 pub(super) use ask_language::ask_language;
@@ -33,6 +36,7 @@ pub(super) use choose_language::choose_language;
 pub(crate) use command_line::CommandLine as CommandLineParser;
 pub use exec::exec;
 pub use identity_prompt::IdentityPrompt;
+pub use local_repository::LocalRepository;
 use observe::observe;
 use presence::Presence;
 pub use register::register;

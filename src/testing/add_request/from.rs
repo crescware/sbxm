@@ -11,5 +11,6 @@ pub fn from(
         repository,
         worktrees,
         detach: detach.map(std::string::ToString::to_string),
+        start_branch: None,
     }
 }

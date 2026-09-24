@@ -844,3 +844,32 @@ fn a_registered_root_is_observed_before_its_metadata_is_read() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_repository_on_the_host_is_registered_without_being_cloned() -> Checked {
+    let setup = setup()?;
+    let repository = crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
+        .required_because("a local repository")?;
+    let mut request = from(repository, None, None);
+    request.start_branch = Some("main".to_string());
+    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+
+    let output = super::run(
+        &setup.location,
+        &setup.parent,
+        &request,
+        &identity(),
+        &host,
+        &mut crate::design::SilentProgress,
+    )
+    .required()?;
+
+    assert_eq!(output.project, "local/app");
+    assert_eq!(output.host_clone, Path::new("/home/user/code/app"));
+    assert_eq!(output.start_ref.as_deref(), Some("main"));
+    assert!(!output.needs_github_token);
+    assert!(host.calls().is_empty(), "{:?}", host.calls());
+    // 案件directoryは作るが、その中へcloneしない。
+    assert!(!setup.dir.path().join("app.project").join("app").exists());
+    Ok(())
+}

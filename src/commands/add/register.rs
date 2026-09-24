@@ -187,7 +187,7 @@ fn require_same_registration(
         .remediation(
             Remediation::text(msg!("remediation-target-configuration-mismatch"))
                 // 保存済みの綴りをそのまま示す。再実行で登録内容を書き換えさせない。
-                .try_run(format!("sbxm add {}", registered.clone_url())),
+                .try_run(format!("sbxm add {}", registered.add_arguments())),
         ),
     ))
 }
@@ -198,7 +198,7 @@ fn require_same_registration(
 /// 登録済みのrepository identityは、transportまで含めた完全一致を要求する。
 fn check_continuable(stored: &ProjectMetadata, request: &AddRequest) -> Result<()> {
     let display_id = stored.display_id();
-    let registered_url = stored.repository.clone_url().to_string();
+    let registered_arguments = stored.repository.add_arguments();
 
     // 世代の切替中であり、初回構築の継続とは別の工程が必要になる。
     generation::require_no_rebuild(stored)?;
@@ -218,7 +218,7 @@ fn check_continuable(stored: &ProjectMetadata, request: &AddRequest) -> Result<(
             .remediation(
                 Remediation::text(msg!("remediation-target-configuration-mismatch"))
                     // 保存済みの綴りをそのまま示す。再実行で登録内容を書き換えさせない。
-                    .try_run(format!("sbxm add {registered_url}")),
+                    .try_run(format!("sbxm add {registered_arguments}")),
             ),
         ))
     };

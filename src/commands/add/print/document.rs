@@ -14,55 +14,62 @@ pub fn document(output: &AddOutput) -> Document {
         msg!("add-registered", project = output.project)
     };
 
-    Document::new()
-        .summary(summary)
-        .fields(
-            None,
-            vec![
-                Field::new(
-                    msg!("add-field-project"),
-                    Inline::important(output.project.clone()),
-                ),
-                Field::new(
-                    msg!("add-field-sandbox"),
-                    Inline::important(output.sandbox.clone()),
-                ),
-                Field::new(
-                    msg!("add-field-creation-mode"),
-                    present::creation_mode(output.mode),
-                ),
-                Field::new(
-                    msg!("add-field-start-branch"),
-                    Inline::text(output.start_ref.clone().unwrap_or_else(|| "-".to_string())),
-                ),
-                Field::new(
-                    msg!("add-field-managed-worktrees"),
-                    Inline::text(output.requested_worktrees.to_string()),
-                ),
-                Field::new(
-                    msg!("add-field-host-clone"),
-                    Inline::path(paths::display(&output.host_clone)),
-                ),
-            ],
-        )
+    let document = Document::new().summary(summary).fields(
+        None,
+        vec![
+            Field::new(
+                msg!("add-field-project"),
+                Inline::important(output.project.clone()),
+            ),
+            Field::new(
+                msg!("add-field-sandbox"),
+                Inline::important(output.sandbox.clone()),
+            ),
+            Field::new(
+                msg!("add-field-creation-mode"),
+                present::creation_mode(output.mode),
+            ),
+            Field::new(
+                msg!("add-field-start-branch"),
+                Inline::text(output.start_ref.clone().unwrap_or_else(|| "-".to_string())),
+            ),
+            Field::new(
+                msg!("add-field-managed-worktrees"),
+                Inline::text(output.requested_worktrees.to_string()),
+            ),
+            Field::new(
+                msg!("add-field-host-clone"),
+                Inline::path(paths::display(&output.host_clone)),
+            ),
+        ],
+    );
+    // hostにあるrepositoryは、Sandboxへhostから送る。登録するtokenが無い。
+    let (document, open_number) = if output.needs_github_token {
         // tokenの権限は、失敗したときだけでなくここでも示す。暗記させない。
+        let document = document
+            .guidance(
+                Some(msg!("add-next-heading")),
+                vec![
+                    GuidanceItem::Ordered {
+                        number: 1,
+                        text: msg!("add-next-secret"),
+                    },
+                    GuidanceItem::Plain(msg!("add-next-token")),
+                ],
+            )
+            .try_command(secret::register_command(&output.sandbox, None));
+        (document, 2)
+    } else {
+        (document, 1)
+    };
+    // 初回構築は`open`が同じ実行の中で行う。構築だけを行う手順を間に挟まない。
+    // 案件IDを打ち直させない。次のcommandはそのままcopyできる形で出す。
+    let heading = (open_number == 1).then(|| msg!("add-next-heading"));
+    document
         .guidance(
-            Some(msg!("add-next-heading")),
-            vec![
-                GuidanceItem::Ordered {
-                    number: 1,
-                    text: msg!("add-next-secret"),
-                },
-                GuidanceItem::Plain(msg!("add-next-token")),
-            ],
-        )
-        .try_command(secret::register_command(&output.sandbox, None))
-        // 初回構築は`open`が同じ実行の中で行う。構築だけを行う手順を間に挟まない。
-        // 案件IDを打ち直させない。次のcommandはそのままcopyできる形で出す。
-        .guidance(
-            None,
+            heading,
             vec![GuidanceItem::Ordered {
-                number: 2,
+                number: open_number,
                 text: msg!("add-next-open"),
             }],
         )

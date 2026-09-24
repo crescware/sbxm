@@ -49,6 +49,7 @@ error_ids! {
     WorktreesNotReducible => "worktrees-not-reducible",
     ApplyScopeRequired => "apply-scope-required",
     ApplyForceWithoutFiles => "apply-force-without-files",
+    NameWithoutLocal => "name-without-local",
     ProjectArgumentRequired => "project-argument-required",
     StatusScopeRequired => "status-scope-required",
 
@@ -56,6 +57,7 @@ error_ids! {
     InvalidProjectId => "invalid-project-id",
     ReservedRepositoryName => "reserved-repository-name",
     InvalidCloneUrl => "invalid-clone-url",
+    InvalidLocalRepositoryPath => "invalid-local-repository-path",
 
     // --- Global config ---
     ConfigUnreadable => "config-unreadable",
@@ -108,6 +110,9 @@ error_ids! {
 
     // --- Host clone ---
     HostCloneUnusable => "host-clone-unusable",
+    LocalRepositoryUnusable => "local-repository-unusable",
+    LocalNameUnusable => "local-name-unusable",
+    HostRepositoryDetached => "host-repository-detached",
 
     // --- Image ---
     ImageUnusable => "image-unusable",
