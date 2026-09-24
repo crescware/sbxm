@@ -368,6 +368,7 @@ cause-clone-url-transport-mismatch = the clone URL uses the { $observed } transp
 cause-clone-url-identity-mismatch = the clone URL folds to { $observed }, not { $declared }
 cause-clone-url-name-mismatch = the clone URL names { $observed }, not { $declared }
 cause-local-repository-path-unrecognized = { $observed } is not a normalized absolute path
+cause-local-project-name-unrecognized = { $observed } does not name a project
 cause-not-writable = the directory is not writable by the current user
 cause-value-empty = the value is empty
 cause-value-has-line-break = the value contains a line break

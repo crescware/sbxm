@@ -368,6 +368,7 @@ cause-clone-url-transport-mismatch = clone URLが使うtransportは { $declared 
 cause-clone-url-identity-mismatch = clone URLは { $declared } ではなく { $observed } へ畳み込まれます
 cause-clone-url-name-mismatch = clone URLが示すのは { $declared } ではなく { $observed } です
 cause-local-repository-path-unrecognized = { $observed } は正規化された絶対pathではありません
+cause-local-project-name-unrecognized = { $observed } は案件の名前になりません
 cause-not-writable = 現在の利用者がこのdirectoryへ書き込めません
 cause-value-empty = 値が空です
 cause-value-has-line-break = 値に改行が含まれます

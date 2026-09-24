@@ -109,11 +109,16 @@ impl RepositoryIdentity {
                 let name = canonical_id
                     .split_once('/')
                     .map_or(canonical_id, |(_, name)| name);
-                interpret_local(clone_url, name).map_err(|_| {
-                    msg!(
+                // pathの形の誤りと、名前が案件の名前にならないことを分けて示す。
+                interpret_local(clone_url, name).map_err(|rejection| match rejection {
+                    Rejection::Form => msg!(
                         "cause-local-repository-path-unrecognized",
                         observed = clone_url
-                    )
+                    ),
+                    Rejection::Project(_) => msg!(
+                        "cause-local-project-name-unrecognized",
+                        observed = canonical_id
+                    ),
                 })?
             }
         };
