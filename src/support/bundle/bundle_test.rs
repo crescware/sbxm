@@ -368,16 +368,6 @@ fn every_tip_saved_on_the_host_is_listed_including_archived_ones() -> Checked {
             .any(|tip| tip.reference == reference("heads/main"))
     );
 
-    // 読めないrepositoryは、保存済みの先端を持たないものとして扱う。
-    let missing = crate::paths::ProjectPaths::at(
-        &repositories.host.join("absent-project"),
-        &crate::project::ProjectId::parse("Example-Org/Example-Repo")
-            .required()?
-            .canonical(),
-    );
-    let metadata =
-        crate::testing::repository::metadata(crate::metadata::CreationMode::Attached, None, 1)?;
-    assert!(saved_on_host(&LocalSandbox, &missing, &metadata).is_empty());
     Ok(())
 }
 

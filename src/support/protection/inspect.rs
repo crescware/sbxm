@@ -150,7 +150,7 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         request.sandbox,
         layout,
         &candidates,
-        request.preserved,
+        request.host_repository,
     ) {
         Ok(observation) => observation,
         Err(error) => {

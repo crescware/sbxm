@@ -37,6 +37,7 @@
 //! どちらも[`Blocker`]として確認を求めずに拒否する。checkout中のbranchだけでなく、
 //! HEAD以外の全ローカル所有ref（branch、tag、notes、stash）にも同じ観測結果を適用する。
 
+mod add_saved;
 mod answered;
 mod assessment;
 mod bare_git_dir_probe;
@@ -64,6 +65,7 @@ mod saving_resolves;
 mod unobservable_reason;
 mod worktree_report;
 
+use add_saved::add_saved;
 use answered::answered;
 pub use assessment::Assessment;
 pub(crate) use bare_git_dir_probe::BARE_GIT_DIR_PROBE;
