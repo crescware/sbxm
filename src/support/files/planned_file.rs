@@ -11,8 +11,9 @@ use super::{AGENT_HOME, PlacedFile, Placement, copy_into_sandbox};
 /// 1件も置く前に拒否できる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedFile {
-    pub(super) index: usize,
     pub(super) source: PathBuf,
+    /// 扱いを決めたときに読んだsourceのdigest。送る直前にもう一度確かめる。
+    pub(super) digest: String,
     /// `agent` homeからの相対path。
     pub(super) destination: String,
     /// `Placed`ならcopyし、`Unchanged`なら何もしない。
@@ -24,7 +25,7 @@ impl PlannedFile {
     pub fn carry_out(&self, host: &dyn HostEnvironment, sandbox: &str) -> Result<PlacedFile> {
         if self.placement == Placement::Placed {
             let full = format!("{AGENT_HOME}/{}", self.destination);
-            copy_into_sandbox(host, sandbox, self.index, &self.source, &full)?;
+            copy_into_sandbox(host, sandbox, &self.source, &self.digest, &full)?;
         }
         Ok(PlacedFile {
             source: self.source.clone(),

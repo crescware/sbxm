@@ -50,7 +50,7 @@ fn asking_for_worktrees_leaves_the_declared_files_alone() -> Checked {
     assert!(output.files.is_empty());
     // 宣言fileの配置は既存のfileを上書きする。名指していない対象へは触れない。
     assert!(
-        !host.ran("cp --follow-link"),
+        !host.ran("exec -i"),
         "the declared files were not asked for"
     );
 
@@ -87,7 +87,7 @@ fn duplicate_sandbox_names_are_refused_before_apply_changes_either_one() -> Chec
 
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
     assert!(
-        !host.ran("exec") && !host.ran("cp --follow-link"),
+        !host.ran("exec") && !host.ran("exec -i"),
         "neither ambiguous sandbox is changed: {:?}",
         host.calls()
     );
@@ -396,7 +396,7 @@ fn a_running_project_gets_the_declared_files_replaced() -> Checked {
     .required_because("sync")?;
     assert_eq!(output.project, "Example-Org/Example-Repo");
     assert_eq!(output.files.len(), 1);
-    assert!(host.ran("cp --follow-link"));
+    assert!(host.ran("exec -i"));
     Ok(())
 }
 
@@ -814,7 +814,7 @@ fn a_declared_file_still_as_sbxm_placed_it_is_replaced_by_the_new_host_copy() ->
     let output = apply_files(&location, &config, false, &host, &workspace_root)
         .required_because("nothing would be lost")?;
 
-    assert!(host.ran("cp --follow-link"));
+    assert!(host.ran("exec -i"));
     // sbxmはsnapshotから置くが、結果には利用者が宣言したfileを示す。
     assert_eq!(output.files[0].source, source);
     assert_eq!(
@@ -841,7 +841,7 @@ fn a_declared_file_changed_inside_the_sandbox_is_left_alone_without_force() -> C
 
     assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileModified));
     assert!(
-        !host.ran("cp --follow-link"),
+        !host.ran("exec -i"),
         "nothing is copied: {:?}",
         host.calls()
     );
@@ -866,7 +866,7 @@ fn force_replaces_a_declared_file_changed_inside_the_sandbox() -> Checked {
     apply_files(&location, &config, true, &host, &workspace_root)
         .required_because("the user chose to replace it")?;
 
-    assert!(host.ran("cp --follow-link"));
+    assert!(host.ran("exec -i"));
     assert_eq!(
         recorded_digest(&paths)?,
         Some(sha256_hex(b"new contents\n"))
@@ -891,17 +891,18 @@ fn a_failure_part_way_keeps_the_record_of_what_was_already_placed() -> Checked {
         crate::config::FileDeclaration {
             source: crate::config::HostFileSource::new(&crate::paths::display(&second))
                 .required()?,
-            destination: crate::config::SandboxHomeRelativePath::new(".config/second.yaml")
+            destination: crate::config::SandboxHomeRelativePath::new(".config/other/second.yaml")
                 .required()?,
         },
     ];
     let (_home, location, parent, config, workspace_root) = setup(declarations)?;
     let paths = write_metadata(&location, &parent, None)?;
+    // 2件目の親directoryだけが作れない。1件目は置き終えている。
     let host = FakeSbx::listing(&listing(&workspace_root, "running")?)
-        .failing("mv -f /home/agent/.config/second.yaml.sbxm-new /home/agent/.config/second.yaml");
+        .failing("install -d -o agent -g agent -m 0700 /home/agent/.config/other");
 
     apply_files(&location, &config, false, &host, &workspace_root)
-        .refused_because("the second rename fails")?;
+        .refused_because("the second placement fails")?;
 
     // 1件目はSandboxへ置かれている。記録が無いままだと、次の`apply`はそれを
     // sbxmが置いたものと認められない。

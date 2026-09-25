@@ -1,7 +1,8 @@
 //! 外部commandの実行。
 //!
 //! shellを介さず、secret値をargumentやdebug表示へ渡さない。stdoutとstderrは
-//! それぞれ独立にcaptureし、structured outputのparseと診断表示に使う。
+//! それぞれ独立にcaptureし、structured outputのparseと診断表示に使う。stdinへ渡すbyte列を
+//! 持つCapture commandだけが、stdinをpipeにする。
 //!
 //! 1回の実行がどう終わるかは、この module の中で決め切る。Capture commandのpipeは親thread
 //! がnonblockingで読み、直接の子が終わった時点で読み取り端を閉じるため、子孫がpipeを握った
@@ -19,6 +20,8 @@ mod exists_in_path_value;
 mod exists_on_path;
 mod hiding_lines;
 mod host_environment;
+mod input_bytes;
+mod input_feed;
 mod is_executable;
 mod outcome;
 mod output_policy;
@@ -41,6 +44,7 @@ mod terminal_command;
 mod terminate_child;
 mod timeout_class;
 mod unreadable;
+mod unwritable;
 mod wait_poll_interval;
 mod wait_with_limit;
 
@@ -53,6 +57,8 @@ use exists_in_path_value::exists_in_path_value;
 pub use exists_on_path::exists_on_path;
 use hiding_lines::HidingLines;
 pub use host_environment::HostEnvironment;
+pub use input_bytes::InputBytes;
+use input_feed::InputFeed;
 use is_executable::is_executable;
 use outcome::outcome;
 pub use output_policy::OutputPolicy;
@@ -75,6 +81,7 @@ pub use terminal_command::TerminalCommand;
 use terminate_child::terminate_child;
 pub use timeout_class::TimeoutClass;
 use unreadable::unreadable;
+use unwritable::unwritable;
 use wait_poll_interval::WAIT_POLL_INTERVAL;
 use wait_with_limit::wait_with_limit;
 

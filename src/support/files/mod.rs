@@ -14,6 +14,7 @@ mod max_source_bytes;
 mod observe;
 mod observe_against_baseline;
 mod place_all;
+mod place_from_stdin;
 mod placed_file;
 mod placement;
 mod plan;
@@ -23,6 +24,7 @@ mod read_source;
 mod read_source_bytes;
 mod require_no_symlink_in_sandbox;
 mod sandbox_digest;
+mod transfer_incomplete;
 
 use agent_home::AGENT_HOME;
 pub use conflict::Conflict;
@@ -35,6 +37,7 @@ use max_source_bytes::MAX_SOURCE_BYTES;
 pub use observe::observe;
 pub use observe_against_baseline::observe_against_baseline;
 pub use place_all::place_all;
+use place_from_stdin::PLACE_FROM_STDIN;
 pub use placed_file::PlacedFile;
 pub use placement::Placement;
 use plan::plan;
@@ -44,6 +47,7 @@ pub use read_source::read_source;
 pub use read_source_bytes::read_source_bytes;
 use require_no_symlink_in_sandbox::require_no_symlink_in_sandbox;
 pub use sandbox_digest::sandbox_digest;
+use transfer_incomplete::TRANSFER_INCOMPLETE;
 
 #[cfg(test)]
 #[path = "files_test.rs"]

@@ -46,6 +46,26 @@ impl World {
             .unwrap_or_else(ok)
     }
 
+    /// `sbx exec -i`のstdinで受け取ったbyte列を、宣言fileとして置く起動。
+    ///
+    /// 実物の手順と同じく、受け取ったbyte列のdigestが期待と一致した場合だけ置き、一致
+    /// しなければ何も置かずに失敗する。
+    pub fn receive(&self, args: &[&str], input: &[u8]) -> (i32, String) {
+        let Some(position) = args.iter().position(|arg| *arg == "--") else {
+            return missing();
+        };
+        match &args[position + 1..] {
+            ["sh", "-c", _script, "sh", destination, _pending, digest] => {
+                if crate::hash::sha256_hex(input) != *digest {
+                    return (65, String::new());
+                }
+                self.place(Some((*digest).to_string()), destination);
+                ok()
+            }
+            _ => missing(),
+        }
+    }
+
     /// Sandboxの状態を訊くだけの起動。
     fn probe(&self, inner: &[&str], _sandbox: &str) -> Option<(i32, String)> {
         match inner {

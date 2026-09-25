@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::{EnvPolicy, OutputPolicy, TimeoutClass};
+use super::{EnvPolicy, InputBytes, OutputPolicy, TimeoutClass};
 
 /// 1回の外部command実行の指定。
 ///
@@ -17,6 +17,8 @@ pub struct CommandSpec {
     pub(super) output: OutputPolicy,
     /// 作業directory。指定しない場合は現在processのcurrent directoryを継承する。
     pub working_dir: Option<PathBuf>,
+    /// stdinへ渡すbyte列。無ければstdinは空である。
+    pub(super) input: Option<InputBytes>,
 }
 
 impl CommandSpec {
@@ -34,6 +36,7 @@ impl CommandSpec {
             timeout: TimeoutClass::Probe,
             output: OutputPolicy::Capture,
             working_dir: None,
+            input: None,
         }
     }
 
@@ -50,6 +53,17 @@ impl CommandSpec {
     pub fn timeout(mut self, class: TimeoutClass) -> CommandSpec {
         self.timeout = class;
         self
+    }
+
+    /// stdinへ`bytes`を渡す。書き終えたらstdinを閉じる。
+    pub fn with_input(mut self, bytes: Vec<u8>) -> CommandSpec {
+        self.input = Some(InputBytes::new(bytes));
+        self
+    }
+
+    /// stdinへ渡すbyte列。
+    pub fn input(&self) -> Option<&[u8]> {
+        self.input.as_ref().map(InputBytes::as_slice)
     }
 
     pub fn working_dir(mut self, directory: &Path) -> CommandSpec {

@@ -20,7 +20,6 @@ use super::{
 pub(super) fn plan(
     host: &dyn HostEnvironment,
     sandbox: &str,
-    index: usize,
     declaration: &FileDeclaration,
     conflict: Conflict,
 ) -> Result<std::result::Result<PlannedFile, Diagnostic>> {
@@ -33,8 +32,8 @@ pub(super) fn plan(
 
     let planned = |placement| {
         Ok(Ok(PlannedFile {
-            index,
             source: source.to_path_buf(),
+            digest: digest.clone(),
             destination: destination.clone(),
             placement,
         }))

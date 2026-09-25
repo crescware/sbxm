@@ -69,8 +69,11 @@ fn the_declared_file_is_placed_once_and_left_alone_afterwards() -> Checked {
         "the declared file reaches the destination it was declared for"
     );
     assert!(
-        !world.present.borrow().contains("/tmp/sbxm-file-0"),
-        "the staged copy does not survive the placement"
+        !world
+            .present
+            .borrow()
+            .contains("/home/agent/.config/example/settings.yaml.sbxm-new"),
+        "the pending copy does not survive the placement"
     );
 
     // 同じ内容の再配置は、Sandboxへ書き込まない。完了済みの同じworldを

@@ -118,7 +118,7 @@ fn a_sandbox_that_already_holds_every_file_is_reported_as_unchanged() -> Checked
         results(&report),
         vec![("Example-Org/Example-Repo", ProjectResult::Unchanged)]
     );
-    assert!(!host.ran("cp --follow-link"));
+    assert!(!host.ran("exec -i"));
     Ok(())
 }
 

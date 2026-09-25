@@ -25,6 +25,8 @@ struct FakeSbx {
     /// `sha256sum`が返す出力そのもの。digestを含まない答えを与えるために使う。
     reported: Option<String>,
     calls: RefCell<Vec<Vec<String>>>,
+    /// stdinで受け取ったbyte列。
+    inputs: RefCell<Vec<Vec<u8>>>,
 }
 
 impl FakeSbx {
@@ -35,6 +37,7 @@ impl FakeSbx {
             answering: None,
             reported: None,
             calls: RefCell::new(Vec::new()),
+            inputs: RefCell::new(Vec::new()),
         }
     }
 
@@ -47,6 +50,7 @@ impl FakeSbx {
             answering: None,
             reported: None,
             calls: RefCell::new(Vec::new()),
+            inputs: RefCell::new(Vec::new()),
         }
     }
 
@@ -60,6 +64,7 @@ impl FakeSbx {
             answering: None,
             reported: Some(output.to_string()),
             calls: RefCell::new(Vec::new()),
+            inputs: RefCell::new(Vec::new()),
         }
     }
 
@@ -85,6 +90,15 @@ impl FakeSbx {
         self.calls.borrow().clone()
     }
 
+    fn inputs(&self) -> Vec<Vec<u8>> {
+        self.inputs.borrow().clone()
+    }
+
+    /// 宣言fileをstdinで受け取って置いたか。
+    fn placed(&self) -> bool {
+        !self.inputs().is_empty()
+    }
+
     fn ran(&self, needle: &str) -> bool {
         self.calls()
             .iter()
@@ -103,6 +117,9 @@ impl HostEnvironment for FakeSbx {
         let mut stdout = String::new();
 
         let inner = crate::testing::command::inner_args(spec);
+        if let Some(input) = spec.input() {
+            self.inputs.borrow_mut().push(input.to_vec());
+        }
         match inner.first().copied() {
             Some("test") => {
                 let target = inner.last().copied().unwrap_or_default();
@@ -148,7 +165,7 @@ fn source_file(dir: &Path, contents: &[u8]) -> Checked<PathBuf> {
 }
 
 #[test]
-fn a_declared_file_is_staged_installed_and_moved_into_place() -> Checked {
+fn a_declared_file_is_sent_through_stdin_and_moved_into_place() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let source = source_file(dir.path(), b"declared = true\n")?;
     let host = FakeSbx::empty();
@@ -172,16 +189,6 @@ fn a_declared_file_is_staged_installed_and_moved_into_place() -> Checked {
 
     let calls = host.calls();
     assert!(
-        calls.iter().any(|args| args
-            == &vec![
-                "cp".to_string(),
-                "--follow-link".to_string(),
-                paths::display(&source),
-                "sbxm-example:/tmp/sbxm-file-0".to_string()
-            ]),
-        "{calls:?}"
-    );
-    assert!(
         calls
             .iter()
             .any(|args| args.contains(&"install".to_string())
@@ -189,31 +196,49 @@ fn a_declared_file_is_staged_installed_and_moved_into_place() -> Checked {
                 && args.contains(&"/home/agent/.config/example".to_string())),
         "the parent directory is private: {calls:?}"
     );
-    assert!(
-        calls
-            .iter()
-            .any(|args| args.contains(&"install".to_string())
-                && args.contains(&"0600".to_string())
-                && args.contains(&"agent".to_string())),
-        "the file belongs to the agent and is private: {calls:?}"
-    );
-    assert!(
-        calls.iter().any(|args| args.contains(&"mv".to_string())
-            && args.contains(&"/home/agent/.config/example/settings.yaml".to_string())),
-        "the destination is replaced by a rename: {calls:?}"
-    );
-    assert!(
-        host.ran("/tmp/sbxm-file-0"),
-        "the staged copy is removed afterwards: {calls:?}"
-    );
+    // 中身はhostからSandboxへ、`sbx exec`のstdinだけで運ぶ。
+    let destination = "/home/agent/.config/example/settings.yaml".to_string();
+    let expected: Vec<String> = [
+        "exec",
+        "-i",
+        "--user",
+        "root",
+        "sbxm-example",
+        "--",
+        "sh",
+        "-c",
+        PLACE_FROM_STDIN,
+        "sh",
+        &destination,
+        &format!("{destination}.sbxm-new"),
+        &sha256_hex(b"declared = true\n"),
+    ]
+    .iter()
+    .map(|arg| (*arg).to_string())
+    .collect();
+    assert!(calls.contains(&expected), "{calls:?}");
+    assert_eq!(host.inputs(), vec![b"declared = true\n".to_vec()]);
     Ok(())
 }
 
 #[test]
-fn a_failed_placement_still_removes_what_it_staged() -> Checked {
+fn the_sandbox_side_steps_keep_the_file_private_and_replace_it_by_a_rename() {
+    // 受け取ったbyte列は、rootだけが読める推測できない名前の一時fileへ書く。
+    assert!(PLACE_FROM_STDIN.contains("umask 077"));
+    assert!(PLACE_FROM_STDIN.contains("mktemp"));
+    // 中身のdigestが一致した場合だけ、agentだけが読めるfileとして置く。
+    assert!(PLACE_FROM_STDIN.contains("sha256sum"));
+    assert!(PLACE_FROM_STDIN.contains("install -o agent -g agent -m 0600"));
+    // 読み手へ半端な内容を見せない。
+    assert!(PLACE_FROM_STDIN.ends_with(r#"mv -f "$2" "$1""#));
+    assert!(PLACE_FROM_STDIN.contains(&format!("exit {TRANSFER_INCOMPLETE}")));
+}
+
+#[test]
+fn a_failed_placement_still_removes_what_it_left_pending() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let source = source_file(dir.path(), b"declared = true\n")?;
-    let host = FakeSbx::empty().failing("mv");
+    let host = FakeSbx::empty().failing("mktemp");
 
     let error = place_all(
         &host,
@@ -221,21 +246,86 @@ fn a_failed_placement_still_removes_what_it_staged() -> Checked {
         &[declaration(&source, ".config/example/settings.yaml")?],
         Conflict::Refuse,
     )
-    .refused_because("the rename is the last step and it failed")?;
+    .refused_because("the placement failed inside the sandbox")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
 
     let pending = "/home/agent/.config/example/settings.yaml.sbxm-new".to_string();
-    let staged = "/tmp/sbxm-file-0".to_string();
     assert!(
         host.calls()
             .iter()
-            .any(|args| args.contains(&"rm".to_string())
-                && args.contains(&staged)
-                && args.contains(&pending)),
-        "both temporary files are removed on the way out: {:?}",
+            .any(|args| args.contains(&"rm".to_string()) && args.contains(&pending)),
+        "the pending copy is removed on the way out: {:?}",
         host.calls()
     );
     Ok(())
+}
+
+#[test]
+fn content_that_did_not_arrive_whole_is_refused_by_its_own_reason() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
+    // Sandboxの中で受け取ったbyte列のdigestが一致しなかった。
+    let host = FakeSbx::empty().answering("mktemp", TRANSFER_INCOMPLETE);
+
+    let error = place_all(
+        &host,
+        "sbxm-example",
+        &[declaration(&source, ".config/example/settings.yaml")?],
+        Conflict::Refuse,
+    )
+    .refused_because("a partial file is never put in place")?;
+    let diagnostic = error.diagnostics().first().required()?;
+    assert_eq!(diagnostic.id, ErrorId::DeclaredFileTransferIncomplete);
+    assert_eq!(
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
+        Some("remediation-declared-file-transfer-incomplete")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_source_that_changed_after_its_placement_was_decided_is_not_sent() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
+    let host = FakeSbx::empty();
+    let planned = plan_all(
+        &host,
+        "sbxm-example",
+        &[declaration(&source, ".config/example/settings.yaml")?],
+        Conflict::Refuse,
+    )
+    .required()?;
+    fs::write(&source, b"changed afterwards\n").required()?;
+
+    let error = planned[0]
+        .carry_out(&host, "sbxm-example")
+        .refused_because("the decision was made for other content")?;
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileUnusable));
+    assert_eq!(
+        refused_reason_of(&error)?,
+        "cause-declared-file-changed-while-placing"
+    );
+    assert!(!host.placed(), "nothing is sent: {:?}", host.calls());
+    Ok(())
+}
+
+/// 診断が示した、sbxm自身が観測した理由のmessage ID。
+fn refused_reason_of(error: &crate::diagnostics::Error) -> Checked<&'static str> {
+    error
+        .diagnostics()
+        .first()
+        .required()?
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            crate::design::Fact::Translated { value, .. } => Some(value.id),
+            _ => None,
+        })
+        .required_because("the observed reason is named")
 }
 
 #[test]
@@ -255,7 +345,7 @@ fn a_destination_that_already_holds_the_same_content_is_left_alone() -> Checked 
 
     assert_eq!(placed[0].placement, Placement::Unchanged);
     assert!(
-        !host.ran("cp"),
+        !host.placed(),
         "nothing is copied when the content already matches"
     );
     Ok(())
@@ -288,7 +378,7 @@ fn read_only_observation_distinguishes_missing_matching_and_conflicting_files() 
     let error = observe(&host, "sbxm-example", &declarations)
         .refused_because("a conflicting destination is never overwritten")?;
     assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
-    assert!(!host.ran("cp"), "observation never mutates the sandbox");
+    assert!(!host.placed(), "observation never mutates the sandbox");
     Ok(())
 }
 
@@ -316,13 +406,13 @@ fn add_refuses_to_overwrite_a_different_file_while_sync_files_replaces_it() -> C
     let error = place_all(&host, "sbxm-example", &declarations, Conflict::Refuse)
         .refused_because("a build never overwrites what is already there")?;
     assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
-    assert!(!host.ran("cp"));
+    assert!(!host.placed());
 
     let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", b"older\n");
     let placed = place_all(&host, "sbxm-example", &declarations, Conflict::Overwrite)
         .required_because("an explicit re-placement replaces it")?;
     assert_eq!(placed[0].placement, Placement::Placed);
-    assert!(host.ran("mv"));
+    assert!(host.placed());
     Ok(())
 }
 
@@ -381,7 +471,7 @@ fn a_destination_reached_through_a_symbolic_link_is_refused() -> Checked {
                 "{link} produced the wrong error"
             );
             assert!(
-                !host.ran("cp") && !host.ran("install") && !host.ran("mv"),
+                !host.placed() && !host.ran("install"),
                 "nothing is copied or installed through {link}: {:?}",
                 host.calls()
             );
@@ -544,7 +634,7 @@ fn a_destination_probe_that_did_not_answer_never_permits_a_copy() -> Checked {
 
         assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
         assert!(
-            !host.ran("cp") && !host.ran("install") && !host.ran("mv"),
+            !host.placed() && !host.ran("install"),
             "exit {code} stops before every mutation: {:?}",
             host.calls()
         );
@@ -569,7 +659,7 @@ fn a_symlink_probe_that_did_not_answer_never_permits_a_copy() -> Checked {
 
         assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
         assert!(
-            !host.ran("cp") && !host.ran("install") && !host.ran("mv"),
+            !host.placed() && !host.ran("install"),
             "exit {code} stops before every mutation: {:?}",
             host.calls()
         );
@@ -690,7 +780,7 @@ fn a_baseline_entry_changed_after_completion_is_reported_as_modified() -> Checke
     let observed = observe_against_baseline(&host, "sbxm-example", &baseline, Divergence::Modified)
         .required_because("an edited file is observed, not refused")?;
     assert_eq!(observed[0].placement, Placement::Modified);
-    assert!(!host.ran("cp"), "observation never mutates the sandbox");
+    assert!(!host.placed(), "observation never mutates the sandbox");
     Ok(())
 }
 
@@ -718,7 +808,7 @@ fn a_file_still_as_sbxm_placed_it_is_replaced_by_the_new_declaration() -> Checke
     )
     .required_because("nothing would be lost by replacing what sbxm placed")?;
     assert_eq!(placed[0].placement, Placement::Placed);
-    assert!(host.ran("mv"));
+    assert!(host.placed());
     Ok(())
 }
 
@@ -754,7 +844,7 @@ fn a_file_changed_inside_the_sandbox_is_not_replaced_while_protected() -> Checke
         Some("remediation-declared-file-overwrite"),
         "only the user can decide to replace it"
     );
-    assert!(!host.ran("cp"), "nothing is copied: {:?}", host.calls());
+    assert!(!host.placed(), "nothing is copied: {:?}", host.calls());
     Ok(())
 }
 
@@ -782,7 +872,7 @@ fn a_file_sbxm_has_no_record_of_placing_is_not_replaced_while_protected() -> Che
             .map(|message| message.id),
         Some("remediation-declared-file-overwrite")
     );
-    assert!(!host.ran("cp"));
+    assert!(!host.placed());
     Ok(())
 }
 
@@ -840,6 +930,115 @@ fn every_file_that_cannot_be_placed_is_named_before_anything_is_placed() -> Chec
         "both refusals are shown at once"
     );
     // 置ける宣言があっても、ほかの宣言を置けないと分かった時点で1件も置かない。
-    assert!(!host.ran("cp"), "nothing is copied: {:?}", host.calls());
+    assert!(!host.placed(), "nothing is copied: {:?}", host.calls());
+    Ok(())
+}
+
+/// `PLACE_FROM_STDIN`をこのhostのshellで走らせる場所。
+///
+/// ownerを変える`install`はrootでしか通らないため、写すだけの`install`を`PATH`の先頭へ
+/// 置く。一時fileは`TMPDIR`へ作らせ、残ったかどうかを確かめる。
+struct Placing {
+    dir: tempfile::TempDir,
+}
+
+impl Placing {
+    fn new() -> Checked<Placing> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().required()?;
+        fs::create_dir(dir.path().join("bin")).required()?;
+        fs::create_dir(dir.path().join("tmp")).required()?;
+        let install = dir.path().join("bin/install");
+        fs::write(
+            &install,
+            "#!/bin/sh\nwhile [ $# -gt 2 ]; do case \"$1\" in -o|-g|-m) shift 2 ;; *) break ;; esac; done\ncp \"$1\" \"$2\"\n",
+        )
+        .required()?;
+        fs::set_permissions(&install, fs::Permissions::from_mode(0o755)).required()?;
+        Ok(Placing { dir })
+    }
+
+    fn destination(&self) -> PathBuf {
+        self.dir.path().join("settings.yaml")
+    }
+
+    fn command(&self, digest: &str) -> std::process::Command {
+        let destination = self.destination();
+        let mut command = std::process::Command::new("sh");
+        command
+            .args(["-c", PLACE_FROM_STDIN, "sh"])
+            .arg(&destination)
+            .arg(destination.with_extension("sbxm-new"))
+            .arg(digest)
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    self.dir.path().join("bin").display(),
+                    std::env::var("PATH").unwrap_or_default()
+                ),
+            )
+            .env("TMPDIR", self.dir.path().join("tmp"))
+            .stdin(std::process::Stdio::piped());
+        command
+    }
+
+    /// 一時fileの置き場に残ったもの。
+    fn staged(&self) -> Checked<usize> {
+        Ok(fs::read_dir(self.dir.path().join("tmp"))
+            .required()?
+            .count())
+    }
+
+    fn run(&self, digest: &str, input: &[u8]) -> Checked<std::process::ExitStatus> {
+        use std::io::Write;
+
+        let mut child = self.command(digest).spawn().required()?;
+        child.stdin.take().required()?.write_all(input).required()?;
+        child.wait().required()
+    }
+}
+
+#[test]
+fn the_placement_script_places_only_bytes_that_arrived_whole() -> Checked {
+    let placing = Placing::new()?;
+    let body = b"declared = true\n";
+
+    let status = placing.run(&sha256_hex(body), body)?;
+    assert!(status.success(), "{status:?}");
+    assert_eq!(fs::read(placing.destination()).required()?, body);
+    assert_eq!(
+        placing.staged()?,
+        0,
+        "nothing is left in the temporary place"
+    );
+    assert!(!placing.destination().with_extension("sbxm-new").exists());
+
+    // 欠けて届いた内容では、置いてあるfileを置き換えない。
+    let status = placing.run(&sha256_hex(body), b"declared")?;
+    assert_eq!(status.code(), Some(TRANSFER_INCOMPLETE));
+    assert_eq!(fs::read(placing.destination()).required()?, body);
+    assert_eq!(placing.staged()?, 0);
+    Ok(())
+}
+
+#[test]
+fn a_placement_stopped_by_a_signal_leaves_nothing_behind() -> Checked {
+    // 受け取りの途中でsignalを受けても、秘密を含みうる一時fileを残さない。
+    let placing = Placing::new()?;
+    let mut child = placing.command(&sha256_hex(b"x")).spawn().required()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while placing.staged()? == 0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(placing.staged()?, 1, "the script started receiving");
+
+    let pid = rustix::process::Pid::from_child(&child);
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;
+    child.wait().required()?;
+
+    assert_eq!(placing.staged()?, 0);
+    assert!(!placing.destination().exists());
     Ok(())
 }
