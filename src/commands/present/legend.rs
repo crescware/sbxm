@@ -11,12 +11,13 @@ use crate::support::files::Placement;
 use crate::support::status::StatusValue;
 
 use crate::commands::apply::ProjectResult;
+use crate::commands::send::SentChange;
 use crate::commands::status::project::{FileState, Value as ProjectValue};
 use crate::commands::stop::StopResult;
 
 use super::{
     ListState, apply_result, creation_mode, file_state, global_status, placement, project_status,
-    ref_change, sandbox_state, stop_result,
+    ref_change, sandbox_state, sent_change, stop_result,
 };
 
 /// Sandboxの状態を説明するmessage ID。host serviceの説明を流用しない。
@@ -98,6 +99,15 @@ impl Legend {
             RefChange::Deleted { .. } => "legend-ref-deleted",
         };
         self.cell(ref_change(change), description)
+    }
+
+    pub fn sent_change(&mut self, change: &SentChange) -> Inline {
+        let description = match change {
+            SentChange::Created { .. } => "legend-sent-created",
+            SentChange::Updated { .. } => "legend-sent-updated",
+            SentChange::Removed { .. } => "legend-sent-removed",
+        };
+        self.cell(sent_change(change), description)
     }
 
     pub fn stop_result(&mut self, result: StopResult) -> Inline {

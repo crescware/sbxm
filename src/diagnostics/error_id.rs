@@ -128,6 +128,7 @@ error_ids! {
     DeclaredFileTransferIncomplete => "declared-file-transfer-incomplete",
     BundleTransferIncomplete => "bundle-transfer-incomplete",
     HostRepositoryEmpty => "host-repository-empty",
+    SendRequiresLocal => "send-requires-local",
     SandboxIdentityMismatch => "sandbox-identity-mismatch",
     GithubSecretMissing => "github-secret-missing",
     GithubCredentialRejected => "github-credential-rejected",

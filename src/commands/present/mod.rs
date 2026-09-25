@@ -24,6 +24,7 @@ mod project_status;
 mod provisioning_output;
 mod ref_change;
 mod sandbox_state;
+mod sent_change;
 mod stop_result;
 
 pub use apply_result::apply_result;
@@ -42,6 +43,7 @@ pub use project_status::project_status;
 pub use provisioning_output::provisioning_output;
 pub use ref_change::ref_change;
 pub use sandbox_state::sandbox_state;
+pub use sent_change::sent_change;
 pub use stop_result::stop_result;
 
 #[cfg(test)]

@@ -21,7 +21,7 @@ The sandbox starts from the branch the host repository is on. When the host repo
 
 When `open` builds the sandbox, sbxm writes the host repository's branches and tags into one `git bundle`. It streams the bundle into the sandbox through the standard input of `sbx exec` and places it at `<repository>/.git/sbxm/origin.bundle` after checking its digest. The sandbox's `origin` points at that file, so the managed worktrees are created from `origin/<branch>` as they are for a GitHub project. Nothing in the sandbox can reach the host repository.
 
-[`sbxm apply --worktrees`](../../reference/cli/apply/) sends the host repository again before it adds worktrees, so the new worktrees start from the host's current branches.
+[`sbxm apply --worktrees`](../../reference/cli/apply/) sends the host repository again before it adds worktrees, as `sbxm send` does, so the new worktrees start from the host's current branches.
 
 ## Bringing work back
 
@@ -30,6 +30,10 @@ Run [`sbxm fetch`](../../reference/cli/fetch/) to save the sandbox's commits int
 ```sh
 git merge refs/sbx/<sandbox>/heads/main
 ```
+
+## Sending what the host gained
+
+Run [`sbxm send`](../../reference/cli/send/) to send the host repository's current branches and tags. sbxm sends a fresh bundle and runs `git fetch --prune origin` inside the sandbox, so `origin/<branch>` there matches the host, and a branch deleted on the host disappears from the sandbox's origin too. The sandbox's worktrees and branches are left alone. Merge or rebase onto `origin/<branch>` inside the sandbox when you want the changes.
 
 ## What rebuild and destroy protect
 
