@@ -4,7 +4,6 @@ use crate::boundary::host::HostEnvironment;
 use crate::design::{Document, Inline, PromptUi, SilentProgress, Ui, Warning};
 use crate::diagnostics::ExitCode;
 use crate::msg;
-use crate::project::ProjectId;
 use crate::support::inventory;
 
 use crate::commands::{present, saving};
@@ -89,29 +88,28 @@ pub fn exec(
         );
     ui.stderr(&present::disk_section(connecting, &prepared.disk));
 
-    let project = ProjectId::parse(&prepared.project);
     // hostにあるrepositoryの案件は、sessionのあいだも保存しておく。端末はSSHが持つため、
     // 進捗も結果も示さない。保存できなかったことは、sessionを閉じたあとの保存が伝える。
+    let saves_to_host = prepared.saves_to_host.clone();
     let mut save = || {
-        if let Ok(project) = &project {
-            let _ = saving::save_first(
-                context.location,
-                project,
+        if let Some(candidate) = &saves_to_host {
+            let _ = saving::save_selected(
+                candidate.clone(),
                 host,
                 context.workspace_root,
                 &mut SilentProgress,
             );
         }
     };
-    let during: Option<&mut dyn FnMut()> = if prepared.from_host {
+    let during: Option<&mut dyn FnMut()> = if saves_to_host.is_some() {
         Some(&mut save)
     } else {
         None
     };
     let connected = super::run::connect(host, prepared, ui, during);
     // sessionを閉じたあとにも保存しておく。
-    if let Ok(project) = &project {
-        let saved = saving::save_first(context.location, project, host, context.workspace_root, ui);
+    if let Some(candidate) = saves_to_host {
+        let saved = saving::save_selected(candidate, host, context.workspace_root, ui);
         saving::auto_saved(ui, &saved);
     }
     match connected {

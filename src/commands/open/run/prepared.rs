@@ -2,6 +2,7 @@ use crate::design::Warning;
 use crate::paths::SharedLock;
 use crate::support::disk::DiskObservation;
 use crate::support::provisioning::ProvisioningOutput;
+use crate::support::select::Candidate;
 
 use super::ClampedIndex;
 
@@ -9,8 +10,9 @@ use super::ClampedIndex;
 #[derive(Debug)]
 pub struct Prepared {
     pub project: String,
-    /// hostにあるrepositoryを登録した案件か。sessionのあいだにhostへ保存する。
-    pub from_host: bool,
+    /// hostにあるrepositoryを登録した案件なら、その案件。sessionのあいだと閉じたあとに、
+    /// その案件のcommitをhostへ保存する。GitHubの案件では`None`である。
+    pub saves_to_host: Option<Candidate>,
     pub sandbox: String,
     /// 接続先のSSH host名。
     pub ssh_host: String,
