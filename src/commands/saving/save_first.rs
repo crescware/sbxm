@@ -3,7 +3,6 @@ use std::path::Path;
 use crate::boundary::host::HostEnvironment;
 use crate::config::ConfigLocation;
 use crate::project::ProjectId;
-use crate::repository::Provider;
 use crate::support::bundle::{self, AutoSaved};
 use crate::support::{inventory, select};
 
@@ -22,7 +21,7 @@ pub fn save_first(
         return AutoSaved::Nothing;
     };
     // GitHubの案件にはlockも取らない。
-    if candidate.repository.provider() != Provider::Local {
+    if candidate.repository.host_path().is_none() {
         return AutoSaved::Nothing;
     }
     let Ok(locked) = candidate.lock() else {

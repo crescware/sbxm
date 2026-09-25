@@ -4,7 +4,6 @@ use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::{self, ProjectPaths};
 use crate::project::SandboxLayout;
-use crate::repository::Provider;
 use crate::support::repository;
 
 use super::{AutoSaved, save_to_host};
@@ -21,7 +20,7 @@ pub fn auto_save(
     paths: &ProjectPaths,
     metadata: &ProjectMetadata,
 ) -> AutoSaved {
-    if metadata.repository.provider() != Provider::Local {
+    if metadata.repository.host_path().is_none() {
         return AutoSaved::Nothing;
     }
     let sandbox = metadata.sandbox_name();
