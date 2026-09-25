@@ -10,9 +10,11 @@ use crate::msg;
 use crate::paths::ExclusiveLock;
 use crate::project::{ProjectId, SandboxName};
 
+use crate::commands::saving;
+use crate::support::bundle::AutoSaved;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{bundle, daemon, generation, sandbox};
+use crate::support::{daemon, generation, sandbox};
 
 use super::{StopReport, StopResult, Target};
 
@@ -34,9 +36,20 @@ pub fn run(
 
     // 2-3. 1回の一覧取得で全stateを解決し、進められない状態が1件でもあれば止める。
     let entries = daemon::list(host)?;
+    let mut running = Vec::new();
     for candidate in &selected {
-        validate(&candidate.reload()?, &entries, workspace_root)?;
+        if validate(&candidate.reload()?, &entries, workspace_root)? == ProjectState::Running {
+            running.push(candidate.clone());
+        }
     }
+
+    // hostにあるrepositoryの案件は、止める前に保存しておく。保存は1件ずつ、その案件の
+    // lockだけを持って行う。全対象のlockを持ったまま保存すると、そのあいだ全対象で
+    // ほかのcommandが待たされる。
+    let saved: Vec<AutoSaved> = running
+        .into_iter()
+        .map(|candidate| saving::save_selected(candidate, host, workspace_root))
+        .collect();
 
     // 4. 複数lockはcanonical ID昇順に取得する。
     let mut locks: Vec<ExclusiveLock> = Vec::with_capacity(selected.len());
@@ -47,7 +60,6 @@ pub fn run(
     // 5. lock取得後のmetadataとstateでpreconditionを判定し直す。
     let entries = daemon::list(host)?;
     let mut targets: Vec<Target> = Vec::with_capacity(selected.len());
-    let mut loaded = Vec::with_capacity(selected.len());
     for candidate in &selected {
         let metadata = candidate.reload()?;
         let state = validate(&metadata, &entries, workspace_root)?;
@@ -56,17 +68,14 @@ pub fn run(
             sandbox: metadata.sandbox_name(),
             state,
         });
-        loaded.push(metadata);
     }
 
-    // 6. runningだけを停止する。hostにあるrepositoryの案件は、止める前に保存しておく。
+    // 6. runningだけを停止する。
     let mut outcomes = Vec::with_capacity(targets.len());
     let mut failures = Vec::new();
-    let mut saved = Vec::new();
-    for ((target, candidate), metadata) in targets.iter().zip(&selected).zip(&loaded) {
+    for target in &targets {
         // 失敗した時点で、後続の対象は停止せずそのままにする。
         if failures.is_empty() && target.state == ProjectState::Running {
-            saved.push(bundle::auto_save(host, &candidate.paths, metadata));
             match stop_one(host, &target.sandbox, poll, output) {
                 Ok(()) => outcomes.push(target.outcome(StopResult::Stopped)),
                 Err(error) => {
