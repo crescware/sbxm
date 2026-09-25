@@ -7,7 +7,7 @@ use crate::msg;
 use crate::project::ProjectId;
 use crate::support::inventory;
 
-use crate::commands::{fetch, present};
+use crate::commands::{present, saving};
 
 use super::super::{Context, report};
 use super::Args;
@@ -93,9 +93,9 @@ pub fn exec(
     let connected = super::run::connect(host, prepared, ui);
     // hostにあるrepositoryの案件は、sessionを閉じたあとに保存しておく。
     if let Ok(project) = project {
-        fetch::print::auto_saved(
+        saving::auto_saved(
             ui,
-            &fetch::save_first(context.location, &project, host, context.workspace_root),
+            &saving::save_first(context.location, &project, host, context.workspace_root),
         );
     }
     match connected {

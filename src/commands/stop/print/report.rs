@@ -11,7 +11,7 @@ use super::document;
 pub fn report(ui: &mut Ui, stopped: &StopReport) -> ExitCode {
     // 保存は止める前に行った。結果もその順に示す。
     for saved in &stopped.saved {
-        crate::commands::fetch::print::auto_saved(ui, saved);
+        crate::commands::saving::auto_saved(ui, saved);
     }
     ui.stdout(&document(stopped, ui.locale()));
 

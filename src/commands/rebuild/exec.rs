@@ -13,7 +13,7 @@ use crate::project::ProjectId;
 use crate::support::{inventory, select};
 
 use super::{
-    super::{Context, fetch, report, saving},
+    super::{Context, report, saving},
     Target, print,
 };
 
@@ -44,9 +44,9 @@ pub fn exec(
         Err(error) => return report(ui, &error),
     };
     // hostにあるrepositoryの案件は、作り直す前に保存しておく。
-    fetch::print::auto_saved(
+    saving::auto_saved(
         ui,
-        &fetch::save_first(context.location, &chosen, host, context.workspace_root),
+        &saving::save_first(context.location, &chosen, host, context.workspace_root),
     );
     let prepared =
         saving::prepare_offering_save(&chosen, context, host, prompt, ui, |prompt, ui| {

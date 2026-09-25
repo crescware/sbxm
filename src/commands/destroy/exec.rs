@@ -13,7 +13,7 @@ use crate::msg;
 use crate::support::{inventory, select};
 
 use super::{
-    super::{Context, fetch, report, saving},
+    super::{Context, report, saving},
     Args, Selection, print,
 };
 
@@ -45,9 +45,9 @@ pub fn exec(
     };
     // hostにあるrepositoryの案件は、消す前に保存しておく。保護の検査を迂回する
     // `--force`でも、保存できるものは保存する。
-    fetch::print::auto_saved(
+    saving::auto_saved(
         ui,
-        &fetch::save_first(context.location, &chosen, host, context.workspace_root),
+        &saving::save_first(context.location, &chosen, host, context.workspace_root),
     );
     let prepared =
         saving::prepare_offering_save(&chosen, context, host, prompt, ui, |prompt, ui| {

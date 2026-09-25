@@ -8,13 +8,11 @@ mod exec;
 mod fetch_output;
 pub mod print;
 mod run;
-mod save_first;
 
 pub(crate) use command_line::CommandLine as CommandLineParser;
 pub use exec::exec;
 pub use fetch_output::FetchOutput;
 pub use run::run;
-pub use save_first::save_first;
 
 #[cfg(test)]
 #[path = "command_line_test.rs"]
