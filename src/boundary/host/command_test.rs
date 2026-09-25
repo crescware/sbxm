@@ -823,6 +823,22 @@ fn a_host_without_streaming_hands_over_what_it_captured() -> Checked {
     Ok(())
 }
 
+#[test]
+fn a_host_without_ticking_runs_the_command_and_leaves_the_tick_alone() -> Checked {
+    // 既定は途中の手続きを呼ばない。実物と違う順序で呼べば、testが実物の経路を見誤る。
+    let command = TerminalCommand::handed_over("ssh", &["example.sbx"]);
+    let mut output = RecordedOutput::new();
+    let mut ticks = 0;
+    let mut tick = || ticks += 1;
+    let outcome = AnsweringHost(b"session".to_vec())
+        .run_with_terminal_ticking(&command, &mut output, Duration::from_millis(1), &mut tick)
+        .required()?;
+    assert!(outcome.success());
+    assert_eq!(ticks, 0);
+    assert_eq!(output.finished, 1);
+    Ok(())
+}
+
 /// 受け取れるが、書き終えられない書き込み先。
 struct UnflushableSink(Vec<u8>);
 

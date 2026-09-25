@@ -31,19 +31,18 @@ pub trait HostEnvironment {
 
     /// 端末を引き渡したcommandを実行し、終わるのを待つあいだ`every`ごとに`tick`を呼ぶ。
     ///
-    /// `tick`は端末へ何も書かない手続きとする。既定は`run_with_terminal`で実行したあとに
-    /// `tick`を1回だけ呼ぶ。実際のhostだけが、実行中に時間を測って呼ぶ。testのhostは、
-    /// 実行中の手続きが走ることをこの既定で観測できる。
+    /// `tick`は端末へ何も書かない手続きとする。既定は`tick`を呼ばずに`run_with_terminal`で
+    /// 実行する。実際のhostだけが、実行中に時間を測って呼ぶ。実物と違う順序で呼ぶ既定を
+    /// 置くと、それに頼ったtestは実物の経路が壊れても気付けない。実行中の手続きを観測する
+    /// testのhostは、自分で呼ぶ。
     fn run_with_terminal_ticking(
         &self,
         command: &TerminalCommand,
         output: &mut dyn ExternalOutput,
         _every: Duration,
-        tick: &mut dyn FnMut(),
+        _tick: &mut dyn FnMut(),
     ) -> Result<CommandOutcome> {
-        let outcome = self.run_with_terminal(command, output)?;
-        tick();
-        Ok(outcome)
+        self.run_with_terminal(command, output)
     }
 
     /// 出力をcaptureして実行し、stdoutだけを`sink`へ流す。`limit`byteを超えたら拒否する。
