@@ -36,3 +36,7 @@ jobs:
 
       - name: Run fmt, lint, tests, coverage, and the release script tests
         run: mise run check
+
+      - name: "一時: macOSでtestを繰り返し、安定して通るか確かめる"
+        if: matrix.os == 'macos-latest'
+        run: for i in 1 2 3 4 5; do echo "== round $i"; mise run coverage || exit 1; done
