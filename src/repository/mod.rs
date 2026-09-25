@@ -3,13 +3,14 @@
 //! GitHub repositoryは、`利用者がGitHubからそのままcopyできるclone` URLだけを
 //! 入力として受け取り、provider、表示上のowner・repository、canonical project ID、
 //! clone transport、正規化したclone URLへ分離する。hostにあるrepositoryは、その
-//! pathと案件の名前から組み立てる。
+//! git directoryのpathと案件の名前から組み立てる。
 //!
 //! 入力を寛容に推測して未対応形式へ対応しない。未対応形式は、受理する2形式を示して
 //! 拒否する。Sandbox内で使うremoteは`crate::git`が別に組み立てる。本moduleが扱うのは
 //! 登録対象そのものの不変なidentityである。
 
 mod accepted_clone_url_forms;
+mod clone_directory_name;
 mod clone_transport;
 mod clone_url_placeholder;
 mod git_suffix;
@@ -29,6 +30,7 @@ mod ssh_clone_url_form;
 mod ssh_user;
 
 pub use accepted_clone_url_forms::accepted_clone_url_forms;
+pub use clone_directory_name::clone_directory_name;
 pub use clone_transport::CloneTransport;
 pub use clone_url_placeholder::CLONE_URL_PLACEHOLDER;
 use git_suffix::GIT_SUFFIX;

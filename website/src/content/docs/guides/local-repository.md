@@ -3,19 +3,21 @@ title: Develop without GitHub
 description: Use a Git repository on this host as the origin of a disposable sandbox.
 ---
 
-A repository that already lives on this host can be a project. sbxm does not clone it. The repository's `.git` acts as the origin, and the sandbox is a disposable place to work in that you can recreate from the host.
+A repository that already lives on this host can be a project. sbxm does not clone it. The repository itself acts as the origin, and the sandbox is a disposable place to work in that you can recreate from the host. Pass the repository's Git directory, not its working tree.
 
 ```sh
 cd ~/Projects
-sbxm add --local ~/code/<repository>
+sbxm add --local ~/code/<repository>/.git
 sbxm open local/<repository>
 ```
 
 ## Registering
 
-The path must be the top of a Git working tree. A symlink is resolved, and the real path is recorded. Like any project, the project directory is created in the directory you run `add` from, so run it from outside the repository; `add` refuses to create it inside the working tree. The project ID is `local/<name>`, where the name is the directory name unless you pass `--name <name>`. When the directory name cannot name a project, `add` asks for `--name`.
+The path must be a Git directory: the `.git` of a working tree, a bare repository, or the `.git` file of a worktree created with `git worktree add` or of a submodule. A working-tree directory is refused, because a directory can hold more than one repository and does not say which one it means; Git does not search upward from the path either. A symlink or a `.git` file is resolved, and the real path of the repository is recorded. For a worktree, that is the repository its worktrees share, so every worktree of one repository adds the same project.
 
-The sandbox starts from the branch the host repository is on. When the host repository is detached, pass the starting branch with `--detach`. No GitHub token is involved, so there is nothing to register before `open`.
+Like any project, the project directory is created in the directory you run `add` from, so run it from outside the repository; `add` refuses to create it inside any working tree of the repository or inside its Git directory. The project ID is `local/<name>`, where the name is the directory name `git clone` would use — `<repository>` for `~/code/<repository>/.git`, `app` for `app.git` — unless you pass `--name <name>`. When that name cannot name a project, `add` asks for `--name`.
+
+The sandbox starts from the branch the Git directory you passed is on; for a worktree's `.git`, that is the branch of that worktree. When it is detached, pass the starting branch with `--detach`. No GitHub token is involved, so there is nothing to register before `open`.
 
 ## Getting the host's history into the sandbox
 

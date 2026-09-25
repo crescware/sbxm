@@ -11,11 +11,12 @@ use super::save_first;
 
 fn local_request() -> Checked<AddRequest> {
     Ok(AddRequest {
-        repository: RepositoryIdentity::local("/home/user/code/app", "app")
+        repository: RepositoryIdentity::local("/home/user/code/app/.git", "app")
             .required_because("a local repository")?,
         worktrees: None,
         detach: None,
         start_branch: Some("main".to_string()),
+        parent_inside_repository: false,
     })
 }
 

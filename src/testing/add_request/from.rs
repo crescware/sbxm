@@ -12,5 +12,6 @@ pub fn from(
         worktrees,
         detach: detach.map(std::string::ToString::to_string),
         start_branch: None,
+        parent_inside_repository: false,
     }
 }

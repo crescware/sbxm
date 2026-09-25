@@ -18,10 +18,10 @@ use crate::testing::project::{Fixture, project_id};
 use crate::testing::value::IMAGE_ID;
 
 #[test]
-fn a_local_project_is_ready_when_its_host_repository_holds_a_git_directory() -> Checked {
+fn a_local_project_is_ready_when_its_git_directory_is_there() -> Checked {
     let fixture = Fixture::new()?;
     let repository = fixture.dir.path().join("code/app");
-    let project = fixture.register_local(repository.to_str().required()?, "app")?;
+    let project = fixture.register_local(repository.join(".git").to_str().required()?, "app")?;
 
     let mut status = bare_status();
     check_directory(&project.paths, &project.metadata, &mut status);

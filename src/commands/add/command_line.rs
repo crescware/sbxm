@@ -11,6 +11,9 @@ use crate::msg;
 
 use super::{AddTarget, Args};
 
+/// `--local`が受け取る値の名前。gitの`--git-dir`と同じく、git directoryを渡す。
+const LOCAL_VALUE_NAME: &str = "GIT_DIR";
+
 pub(crate) struct CommandLine;
 
 impl CommandLine {
@@ -24,7 +27,7 @@ impl CommandLine {
             .arg(
                 ArgumentSyntax::value("local", builder.text("cli-add-local-help")?)
                     .long("local")
-                    .value_name("PATH"),
+                    .value_name(LOCAL_VALUE_NAME),
             )
             .arg(
                 ArgumentSyntax::value("name", builder.text("cli-add-name-help")?)
@@ -115,7 +118,7 @@ fn target(arguments: &Arguments) -> Result<AddTarget> {
             ErrorId::MissingRequiredArgument,
             msg!(
                 "error-missing-required-argument",
-                argument = "--local <PATH>"
+                argument = format!("--local <{LOCAL_VALUE_NAME}>")
             ),
         ),
         (None, Some(path)) => Ok(AddTarget::Local {
@@ -129,7 +132,7 @@ fn target(arguments: &Arguments) -> Result<AddTarget> {
             msg!(
                 "error-missing-required-argument",
                 argument = format!(
-                    "<{}> | --local <PATH>",
+                    "<{}> | --local <{LOCAL_VALUE_NAME}>",
                     CommandLineValues::CLONE_URL_VALUE_NAME
                 )
             ),

@@ -11,11 +11,12 @@ use super::*;
 
 fn local_request() -> Checked<AddRequest> {
     Ok(AddRequest {
-        repository: RepositoryIdentity::local("/home/user/code/app", "app")
+        repository: RepositoryIdentity::local("/home/user/code/app/.git", "app")
             .required_because("a local repository")?,
         worktrees: None,
         detach: None,
         start_branch: Some("main".to_string()),
+        parent_inside_repository: false,
     })
 }
 
@@ -42,7 +43,7 @@ fn the_host_branches_are_sent_and_fetched_into_the_sandbox_origin() -> Checked {
     assert_eq!(output.project, "local/app");
     assert_eq!(
         output.repository,
-        std::path::Path::new("/home/user/code/app")
+        std::path::Path::new("/home/user/code/app/.git")
     );
     let calls = world.since(mark);
     let position = |needle: &str| {

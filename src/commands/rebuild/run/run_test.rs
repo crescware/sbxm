@@ -1586,7 +1586,7 @@ fn local_host_to_rebuild(
 #[test]
 fn a_local_project_is_rebuilt_from_the_host_with_its_saved_branches_back() -> Checked {
     let fixture = Fixture::new()?;
-    let mut project = fixture.register_local("/srv/code/example-repo", "example-repo")?;
+    let mut project = fixture.register_local("/srv/code/example-repo/.git", "example-repo")?;
     std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
     let target = sha256_hex(b"unchanged\n");
     project.metadata.provisioning.dockerfile_sha256 = target.clone();

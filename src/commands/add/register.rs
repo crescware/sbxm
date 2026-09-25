@@ -63,7 +63,7 @@ pub fn register(
         require_start_branch(&target, &request.repository)?;
         // cwdを使うのは新規canonical project IDの登録時だけである。
         let candidate = ProjectPaths::derive(parent, &canonical);
-        require_outside_repository(parent, &candidate, &request.repository)?;
+        require_outside_repository(&candidate, request)?;
         check_new_registration(guard.registry(), &candidate, &canonical)?;
         guard.insert(RegistryEntry::new(
             candidate.root(),
@@ -152,15 +152,8 @@ fn require_start_branch(
 ///
 /// 案件directoryはDockerfile、metadata、lock、bundleを持つ。利用者のworking treeの中に
 /// 作ると、`git status`に現れ、commitされ、`git clean`で消されうる。
-fn require_outside_repository(
-    parent: &ProjectParent,
-    candidate: &ProjectPaths,
-    repository: &RepositoryIdentity,
-) -> Result<()> {
-    let Some(host_path) = repository.host_path() else {
-        return Ok(());
-    };
-    if !paths::real_path(parent.as_path()).starts_with(host_path) {
+fn require_outside_repository(candidate: &ProjectPaths, request: &AddRequest) -> Result<()> {
+    if !request.parent_inside_repository {
         return Ok(());
     }
     Err(Error::single(

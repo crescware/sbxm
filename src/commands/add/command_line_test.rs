@@ -180,14 +180,14 @@ fn a_repository_on_the_host_is_added_by_its_path_and_an_optional_name() -> Check
     use std::path::PathBuf;
 
     assert!(matches!(
-        command(&["add", "--local", "../app"], tty())?,
+        command(&["add", "--local", "../app/.git"], tty())?,
         Command::Add(Args {
             target: AddTarget::Local { path, name: None },
             ..
-        }) if path == PathBuf::from("../app")
+        }) if path == PathBuf::from("../app/.git")
     ));
     assert!(matches!(
-        command(&["add", "--local", "/code/app", "--name", "tool"], tty())?,
+        command(&["add", "--local", "/code/app/.git", "--name", "tool"], tty())?,
         Command::Add(Args {
             target: AddTarget::Local { name: Some(name), .. },
             ..
@@ -203,7 +203,7 @@ fn a_clone_url_and_a_host_path_cannot_be_added_together() -> Checked {
             "add",
             "git@github.com:owner/repo.git",
             "--local",
-            "/code/app",
+            "/code/app/.git",
         ],
         tty(),
     )
@@ -224,7 +224,7 @@ fn a_clone_url_and_a_host_path_cannot_be_added_together() -> Checked {
         error.diagnostics()[0].description,
         crate::msg!(
             "error-missing-required-argument",
-            argument = "<github-clone-url> | --local <PATH>"
+            argument = "<github-clone-url> | --local <GIT_DIR>"
         )
     );
     Ok(())

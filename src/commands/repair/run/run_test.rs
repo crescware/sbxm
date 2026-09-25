@@ -649,11 +649,12 @@ fn an_interrupted_local_project_is_repaired_without_a_token() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = crate::commands::add::AddRequest {
-        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
+        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app/.git", "app")
             .required_because("a local repository")?,
         worktrees: None,
         detach: None,
         start_branch: Some("main".to_string()),
+        parent_inside_repository: false,
     };
     world.failing("worktree add");
     bench

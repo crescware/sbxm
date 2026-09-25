@@ -6,14 +6,15 @@ use crate::msg;
 use crate::project::CanonicalProjectId;
 
 use super::{
-    CloneTransport, Provider, Rejection, accepted_clone_url_forms, interpret, interpret_local,
+    CloneTransport, Provider, Rejection, accepted_clone_url_forms, clone_directory_name, interpret,
+    interpret_local,
 };
 
 /// 登録対象の不変なrepository identity。
 ///
 /// 表示には入力の表記を、突き合わせにはcanonical project `IDとtransportを使う`。
 /// GitHubのrepositoryでは、clone URLをこの構造から組み立て直すため、保存値と表示値が
-/// 食い違わない。hostにあるrepositoryでは、そのpathをclone URLとして持つ。
+/// 食い違わない。hostにあるrepositoryでは、そのgit directoryのpathをclone URLとして持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepositoryIdentity {
     pub(super) provider: Provider,
@@ -42,7 +43,7 @@ impl RepositoryIdentity {
         }
     }
 
-    /// hostにあるrepositoryを、そのpathと案件の名前から組み立てる。
+    /// hostにあるrepositoryを、そのgit directoryのpathと案件の名前から組み立てる。
     ///
     /// `path`は呼び出し側が実在を確かめ、正規化した絶対pathとする。案件IDは
     /// `local/<name>`になる。
@@ -178,7 +179,7 @@ impl RepositoryIdentity {
         self.provider == Provider::Github
     }
 
-    /// hostにあるrepositoryのpath。GitHubのrepositoryには無い。
+    /// hostにあるrepositoryのgit directory。GitHubのrepositoryには無い。
     pub fn host_path(&self) -> Option<&Path> {
         match self.provider {
             Provider::Github => None,
@@ -194,17 +195,14 @@ impl RepositoryIdentity {
     /// 同じ案件をもう一度登録する`sbxm add`の引数。
     ///
     /// GitHub repositoryには登録時と同じclone URLを示す。
-    /// hostにあるrepositoryにはpathを示し、directory名と別の名前で登録した案件には
-    /// `--name`を添える。
+    /// hostにあるrepositoryにはgit directoryのpathを示し、`git clone`が作るdirectoryの
+    /// 名前と別の名前で登録した案件には`--name`を添える。
     pub fn add_arguments(&self) -> String {
         match self.provider {
             Provider::Github => self.clone_url.clone(),
             Provider::Local => {
                 let path = shell_word(&self.clone_url);
-                let directory = std::path::Path::new(&self.clone_url)
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .map(str::to_ascii_lowercase);
+                let directory = clone_directory_name(&self.clone_url).map(str::to_ascii_lowercase);
                 if directory.as_deref() == Some(self.canonical_id.repository()) {
                     format!("--local {path}")
                 } else {

@@ -254,7 +254,7 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
 #[test]
 fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked {
     let fixture = Fixture::new()?;
-    let local = fixture.register_local("/srv/code/app", "app")?;
+    let local = fixture.register_local("/srv/code/app/.git", "app")?;
     let github = fixture.register("zeta/zulu")?;
     let running = format!(
         r#"{{"sandboxes":[{},{}]}}"#,
@@ -348,7 +348,7 @@ impl crate::boundary::host::HostEnvironment for ProbingLock {
 fn saving_one_target_leaves_the_others_free_for_other_commands() -> Checked {
     // 保存は時間がかかる。そのあいだ、止める対象すべてのlockを持ち続けない。
     let fixture = Fixture::new()?;
-    let local = fixture.register_local("/srv/code/app", "app")?;
+    let local = fixture.register_local("/srv/code/app/.git", "app")?;
     let github = fixture.register("zeta/zulu")?;
     let running = format!(
         r#"{{"sandboxes":[{},{}]}}"#,

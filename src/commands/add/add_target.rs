@@ -7,10 +7,10 @@ use crate::repository::RepositoryIdentity;
 pub enum AddTarget {
     /// GitHub repositoryのclone URLを解釈したもの。
     Clone(RepositoryIdentity),
-    /// hostにあるrepositoryのpath。実在を確かめて正規化するのは登録の直前である。
+    /// hostにあるrepositoryのgit directory。実在を確かめて正規化するのは登録の直前である。
     Local {
         path: PathBuf,
-        /// 案件の名前。省略すればdirectory名を使う。
+        /// 案件の名前。省略すれば`git clone`が作るdirectoryの名前を使う。
         name: Option<String>,
     },
 }

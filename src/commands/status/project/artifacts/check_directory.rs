@@ -1,6 +1,5 @@
 use crate::metadata::ProjectMetadata;
 use crate::paths::ProjectPaths;
-use crate::support::repository;
 
 use crate::commands::status::project::{ProjectStatus, Value};
 
@@ -21,17 +20,18 @@ pub fn check_directory(
             Value::Missing
         },
     );
-    let item = if metadata.repository.host_path().is_some() {
-        "status-item-host-repository"
-    } else {
-        "status-item-host-clone"
+    // hostにあるrepositoryは、登録したgit directoryそのものを見る。host cloneは、
+    // cloneが済んだことを`.git`の有無でだけ言える。
+    let (item, present) = match metadata.repository.host_path() {
+        Some(repository) => ("status-item-host-repository", repository.is_dir()),
+        None => (
+            "status-item-host-clone",
+            paths.host_clone().join(".git").exists(),
+        ),
     };
     status.push(
         item,
-        if repository::host_repository(paths, metadata)
-            .join(".git")
-            .exists()
-        {
+        if present {
             Value::Ready
         } else {
             Value::Missing

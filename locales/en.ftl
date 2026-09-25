@@ -12,8 +12,9 @@ cli-version-help = Print version
 
 cli-add-about = Add a GitHub repository, or a repository already on this host, to sbxm
 cli-add-repository-help = GitHub SSH or HTTPS clone URL of the repository to add
-cli-add-local-help = Path of a Git repository on this host to add instead of a GitHub repository; its .git acts as the origin
-cli-add-name-help = Project name for --local, used as local/<name>; defaults to the repository's directory name
+cli-add-local-help = Git directory of a repository on this host to add instead of a GitHub repository, such as its .git or a bare repository; it acts as the origin
+# architecture-test-disable-next-line no_resource_embeds_a_command_the_user_is_meant_to_run -- 名前の決め方をgit cloneの規則として説明しており、実行は求めていない
+cli-add-name-help = Project name for --local, used as local/<name>; defaults to the directory name git clone would use
 cli-add-worktrees-help = Target number of managed worktrees for the sandbox (1-32)
 cli-add-detach-help = Remote branch to use as the detached start point for every managed worktree
 cli-add-git-user-name-help = Git user name for this project's commits; requires --git-user-email
@@ -149,7 +150,7 @@ error-initial-provisioning-unobservable = Whether { $project } finished its firs
 
 error-host-clone-unusable = The clone cannot be used for this project
 error-local-repository-unusable = The path cannot be added as a repository on this host
-error-local-name-unusable = The directory name { $name } cannot be used as a project name.
+error-local-name-unusable = The name { $name } taken from the repository path cannot be used as a project name.
 error-host-repository-detached = The host repository is not on a branch, so there is no branch to start the sandbox from.
 error-image-collision = An image with this name already exists and declares something else, so this generation cannot take that name
 error-image-unusable = The image cannot be used for this project
@@ -395,7 +396,7 @@ error-remote-ssh-unconfigured = ssh has no proxy configuration for { $host }, so
 error-remote-ssh-unobservable = The SSH configuration for sandboxes could not be read
 remediation-run-help = See the arguments this command accepts.
 remediation-host-clone-unusable = Inspect { $path } yourself, then move it aside or fix its origin before running the command again.
-remediation-local-repository-unusable = Pass the top-level directory of a Git working tree on this host.
+remediation-local-repository-unusable = Pass the Git directory of a repository on this host: the .git of a working tree, or a bare repository.
 remediation-local-name-unusable = Choose a project name made of letters, digits, '.', '-', and '_', and pass it with --name.
 remediation-host-repository-detached = Check out a branch in the host repository, or pass --detach with the branch to start from.
 remediation-declared-file-conflict = Compare the two yourself, then replace what the sandbox holds with the declared file.
