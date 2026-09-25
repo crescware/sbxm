@@ -4,7 +4,6 @@ use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths::{self, PathScope};
-use crate::repository::Provider;
 
 use crate::design::{Fact, Warning};
 use crate::support::secret;
@@ -22,7 +21,7 @@ pub(super) fn finish_removal(
     // Sandboxがplaceholderを持ったまま動き続ける状態を作らないためである。commit pointの
     // 前に行うため、失敗したときは案件が管理下に残り、同じcommandでやり直せる。
     // hostにあるrepositoryを登録した案件は、tokenを登録しない。
-    if prepared.locked.metadata.repository.provider() == Provider::Github {
+    if prepared.locked.metadata.repository.uses_github_token() {
         secret::forget_github(host, prepared.name.as_str())?;
     }
 

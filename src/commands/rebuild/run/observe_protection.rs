@@ -7,9 +7,9 @@ use crate::paths::ProjectPaths;
 use crate::project::{SandboxLayout, SandboxName};
 
 use crate::design::ProgressSink;
-use crate::support::bundle;
 use crate::support::inventory::{Poll, ProjectState};
 use crate::support::protection::{self, DestructiveOperation, ProtectionSnapshot, Request};
+use crate::support::repository;
 
 use super::start_to_read_saved_state;
 
@@ -45,14 +45,14 @@ pub(super) fn observe_protection(
         progress,
     )?;
     let layout = SandboxLayout::new(metadata.canonical_id());
-    let preserved = bundle::saved_on_host(host, paths, metadata);
+    let host_repository = repository::host_repository(paths, metadata);
     let request = Request::new(
         DestructiveOperation::Rebuild,
         name,
         workspace_root,
         &layout,
         metadata,
-        &preserved,
+        &host_repository,
     );
     protection::gate::assess(host, &request)
 }

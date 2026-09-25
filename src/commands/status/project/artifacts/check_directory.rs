@@ -6,7 +6,8 @@ use crate::commands::status::project::{ProjectStatus, Value};
 
 /// project rootとhost cloneの有無。
 ///
-/// hostにあるrepositoryを登録した案件は、登録したそのrepositoryを見る。
+/// hostにあるrepositoryを登録した案件は、登録したそのrepositoryを見る。利用者の
+/// repositoryであり、sbxmが取ったcloneではないため、host repositoryとして示す。
 pub fn check_directory(
     paths: &ProjectPaths,
     metadata: &ProjectMetadata,
@@ -20,8 +21,13 @@ pub fn check_directory(
             Value::Missing
         },
     );
+    let item = if metadata.repository.host_path().is_some() {
+        "status-item-host-repository"
+    } else {
+        "status-item-host-clone"
+    };
     status.push(
-        "status-item-host-clone",
+        item,
         if repository::host_repository(paths, metadata)
             .join(".git")
             .exists()

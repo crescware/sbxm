@@ -28,10 +28,11 @@ The normal rebuild protects work by checking for:
 - a Dockerfile or artifact that belongs to another project
 
 Commit and push what you want to keep, remove what you do not need, and
-inspect unmanaged worktrees yourself. Commits you do not want to push yet can
-be saved into the host repository with [`sbxm fetch`](../../reference/cli/fetch/)
-instead; when they are the only thing stopping the rebuild, sbxm offers to do
-that for you and continue. A clean worktree does not prove that the
+inspect unmanaged worktrees yourself. Commits on branches, tags, or worktree
+`HEAD`s that you do not want to push yet can be saved into the host repository
+with [`sbxm fetch`](../../reference/cli/fetch/) instead; when they are the only
+thing stopping the rebuild, sbxm offers to do that for you and continue. Stash
+and notes commits are not saved this way. A clean worktree does not prove that the
 repository has no Layer A blocker. sbxm does not delete unrelated work to make
 a rebuild fit.
 

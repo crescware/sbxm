@@ -28,7 +28,7 @@ pub fn configure_token_env(
     placeholder: &str,
 ) -> Result<()> {
     match observe_token_env(host, sandbox, placeholder)? {
-        Observed::Matching => Ok(()),
+        Observed::Matching | Observed::NotApplicable => Ok(()),
         Observed::Missing => write(host, sandbox, placeholder),
         Observed::Mismatch { evidence } if is_sbxm_token_env(&evidence) => {
             write(host, sandbox, placeholder)

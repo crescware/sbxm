@@ -13,13 +13,15 @@ sbxm open local/<repository>
 
 ## Registering
 
-The path must be the top of a Git working tree. A symlink is resolved, and the real path is recorded. The project ID is `local/<name>`, where the name is the directory name unless you pass `--name <name>`. When the directory name cannot name a project, `add` asks for `--name`.
+The path must be the top of a Git working tree. A symlink is resolved, and the real path is recorded. Like any project, the project directory is created in the directory you run `add` from, so run it from outside the repository; `add` refuses to create it inside the working tree. The project ID is `local/<name>`, where the name is the directory name unless you pass `--name <name>`. When the directory name cannot name a project, `add` asks for `--name`.
 
 The sandbox starts from the branch the host repository is on. When the host repository is detached, pass the starting branch with `--detach`. No GitHub token is involved, so there is nothing to register before `open`.
 
 ## Getting the host's history into the sandbox
 
 When `open` builds the sandbox, sbxm writes the host repository's branches and tags into one `git bundle`. It streams the bundle into the sandbox through the standard input of `sbx exec` and places it at `<repository>/.git/sbxm/origin.bundle` after checking its digest. The sandbox's `origin` points at that file, so the managed worktrees are created from `origin/<branch>` as they are for a GitHub project. Nothing in the sandbox can reach the host repository.
+
+[`sbxm apply --worktrees`](../../reference/cli/apply/) sends the host repository again before it adds worktrees, as `sbxm send` does, so the new worktrees start from the host's current branches.
 
 ## Bringing work back
 

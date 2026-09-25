@@ -1,4 +1,5 @@
 use std::io::{ErrorKind, Result as IoResult, Write};
+use std::os::fd::{AsFd, BorrowedFd};
 
 /// 子のstdinへ渡すbyte列と、そのうち書き終えた位置。
 ///
@@ -42,5 +43,15 @@ impl<'a, W: Write> InputFeed<'a, W> {
         }
         self.pipe = None;
         Ok(())
+    }
+}
+
+impl<W: Write + AsFd> InputFeed<'_, W> {
+    /// まだ書き残しがあれば、書けるようになるのを待つ書き込み端。
+    ///
+    /// 子が出力を書かないあいだも、子が読んだ分だけすぐに書き足せるよう、読み取り端と
+    /// 一緒に待つ。
+    pub(super) fn waiting(&self) -> Option<BorrowedFd<'_>> {
+        self.pipe.as_ref().map(AsFd::as_fd)
     }
 }

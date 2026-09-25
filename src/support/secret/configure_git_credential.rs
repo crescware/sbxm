@@ -22,7 +22,7 @@ pub fn configure_git_credential(
     placeholder: &str,
 ) -> Result<()> {
     match observe_git_credential(host, sandbox, placeholder)? {
-        Observed::Matching => Ok(()),
+        Observed::Matching | Observed::NotApplicable => Ok(()),
         Observed::Missing => write(host, sandbox, placeholder),
         Observed::Mismatch { evidence } if is_sbxm_helper(&evidence) => {
             write(host, sandbox, placeholder)

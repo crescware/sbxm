@@ -28,7 +28,7 @@ fn snapshot(
         &fixture.workspace_root,
         &layout,
         &project.metadata,
-        &[],
+        std::path::Path::new("/work/example-repo"),
     );
     gate::assess(host, &request)
 }
@@ -133,6 +133,35 @@ fn assert_protection_diagnostic_with_commands(
         assert!(!drawn.contains("destroy --force"), "{drawn:?}");
         assert!(!drawn.contains("git clean"), "{drawn:?}");
         assert!(!drawn.contains("git reset --hard"), "{drawn:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn only_a_commit_the_save_carries_is_offered_the_save() -> Checked {
+    // stashのcommitは保存しても辿れるようにならず、保存を勧めない。
+    assert_protection_diagnostic(
+        Blocker::OriginUnreachable {
+            reference: "refs/stash".to_string(),
+            commit: COMMIT.to_string(),
+        },
+        ErrorId::OriginCommitUnreachable,
+        "sbxm open example-org/example-repo",
+        &["diagnostic-reference-label", "diagnostic-commit-label"],
+    )?;
+    for (reference, resolves) in [
+        ("HEAD", true),
+        ("refs/heads/main", true),
+        ("refs/tags/v1", true),
+        ("refs/stash", false),
+        ("refs/notes/commits", false),
+    ] {
+        let diagnostic = Blocker::OriginUnreachable {
+            reference: reference.to_string(),
+            commit: COMMIT.to_string(),
+        }
+        .diagnostic("example-org/example-repo");
+        assert_eq!(saving_resolves(&diagnostic), resolves, "{reference}");
     }
     Ok(())
 }
@@ -2002,5 +2031,76 @@ fn a_local_project_commit_the_host_does_not_reach_stops_the_run() -> Checked {
         .refused_because("the host does not keep the commit")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::OriginCommitUnreachable));
+    Ok(())
+}
+
+#[test]
+fn a_commit_saved_to_the_host_is_found_there_and_a_later_one_is_not() -> Checked {
+    // 保存したcommitへ届くかは、hostのrepositoryで実物のgitに求める。保存した後に
+    // Sandboxで積んだcommitは、まだhostに無い。
+    use crate::support::bundle;
+    use crate::testing::repository::git_in;
+    use crate::testing::sandbox::LocalSandbox;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let root = tempfile::tempdir().required()?;
+    let sandbox_repository = root.path().join("sandbox");
+    let host_repository = root.path().join("host");
+    for repository in [&sandbox_repository, &host_repository] {
+        std::fs::create_dir(repository).required()?;
+        git_in(repository, &["init", "--quiet"])?;
+    }
+    git_in(
+        &sandbox_repository,
+        &["commit", "--quiet", "--allow-empty", "-m", "saved"],
+    )?;
+    let saved = git_in(&sandbox_repository, &["rev-parse", "HEAD"])?;
+    let canonical = crate::project::ProjectId::parse("Example-Org/Example-Repo")
+        .required()?
+        .canonical();
+    let name = SandboxName::derive(&canonical);
+    bundle::save_to_host(
+        &LocalSandbox,
+        &crate::paths::ProjectPaths::at(root.path(), &canonical),
+        &name,
+        &sandbox_repository.join(".git").to_string_lossy(),
+        &host_repository,
+    )
+    .required()?;
+    git_in(
+        &sandbox_repository,
+        &["commit", "--quiet", "--allow-empty", "-m", "later"],
+    )?;
+    let later = git_in(&sandbox_repository, &["rev-parse", "HEAD"])?;
+
+    let observation = add_saved(
+        &LocalSandbox,
+        &host_repository,
+        &name,
+        OriginObservation::Observed {
+            tips: BTreeMap::new(),
+            reachable_from: BTreeMap::from([
+                (saved.clone(), BTreeSet::new()),
+                (later.clone(), BTreeSet::new()),
+            ]),
+        },
+    );
+
+    let label = format!("host:refs/sbx/{}/heads/main", name.as_str());
+    let OriginObservation::Observed {
+        tips,
+        reachable_from,
+    } = observation
+    else {
+        return Err(crate::testing::outcome::Unmet::new(
+            "an observed origin stays observed",
+        ));
+    };
+    assert_eq!(tips.get(&label), Some(&saved));
+    assert!(
+        reachable_from[&saved].contains(&label),
+        "{reachable_from:?}"
+    );
+    assert!(reachable_from[&later].is_empty());
     Ok(())
 }

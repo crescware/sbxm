@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use crate::boundary::host::{CommandOutcome, HostEnvironment};
 use crate::design::Fact;
@@ -8,7 +9,7 @@ use crate::project::{SandboxLayout, SandboxName};
 
 use crate::support::sandbox;
 
-use super::{CommitCandidate, OriginObservation, UnobservableReason};
+use super::{CommitCandidate, OriginObservation, UnobservableReason, add_saved};
 
 const ORIGIN_REFS_NAMESPACE: &str = "refs/remotes/origin/";
 
@@ -17,7 +18,21 @@ const ORIGIN_REFS_NAMESPACE: &str = "refs/remotes/origin/";
 /// statusから呼ばれるため、originへfetchしない。local remote-tracking refが無い、
 /// そのtip objectが無い、candidateのobject graphを検査できない、といった場合は
 /// Unreachableへ丸めず、ReadOnlyDataInsufficientを返す。
+///
+/// 破壊操作の直前の観測と同じく、hostの`host_repository`へ保存済みの先端を`host:<ref>`
+/// として足す。保存済みのcommitは、originへ届いていなくてもSandboxを消して失われない。
 pub fn observe_read_only(
+    host: &dyn HostEnvironment,
+    sandbox: &SandboxName,
+    layout: &SandboxLayout,
+    candidates: &[CommitCandidate],
+    host_repository: &Path,
+) -> Result<OriginObservation> {
+    let observation = observe_origin(host, sandbox, layout, candidates)?;
+    Ok(add_saved(host, host_repository, sandbox, observation))
+}
+
+fn observe_origin(
     host: &dyn HostEnvironment,
     sandbox: &SandboxName,
     layout: &SandboxLayout,

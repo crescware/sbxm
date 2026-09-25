@@ -26,6 +26,7 @@ pub(super) fn unknown_key_warnings(document: &yaml_serde::Value, path: &Path) ->
     let files = mapping
         .get("files")
         .and_then(yaml_serde::Value::as_sequence);
+    // 利用者が数える順に、先頭の宣言を1番目とする。
     for (index, entry) in files.into_iter().flatten().enumerate() {
         let Some(entry) = entry.as_mapping() else {
             continue;
@@ -34,7 +35,7 @@ pub(super) fn unknown_key_warnings(document: &yaml_serde::Value, path: &Path) ->
             warnings.push(Warning::text(msg!(
                 "warning-config-unknown-file-key",
                 path = paths::display(path),
-                entry = index,
+                entry = index + 1,
                 key = name
             )));
         }

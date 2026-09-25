@@ -65,7 +65,8 @@ fn add_output() -> super::add::AddOutput {
         mode: CreationMode::Attached,
         start_ref: Some("main".to_string()),
         requested_worktrees: 1,
-        host_clone: PathBuf::from("/tmp/owner-repo"),
+        host_repository: PathBuf::from("/tmp/owner-repo"),
+        cloned: true,
         needs_github_token: true,
         already_registered: false,
     }
@@ -91,6 +92,7 @@ fn add_of_a_host_repository_goes_straight_to_open() -> Checked {
     let mut output = add_output();
     output.project = "local/repo".to_string();
     output.needs_github_token = false;
+    output.cloned = false;
     let document = super::add::print::document(&output);
     assert_eq!(
         shape(&document),
@@ -99,6 +101,9 @@ fn add_of_a_host_repository_goes_straight_to_open() -> Checked {
     assert_eq!(commands(&document), ["sbxm open local/repo"]);
     let drawn = plain(&document, Locale::En)?;
     assert!(!drawn.contains("secret"), "{drawn}");
+    // 利用者のrepositoryを、sbxmが取ったcloneとは呼ばない。
+    assert!(drawn.contains("Host repository"), "{drawn}");
+    assert!(!drawn.contains("Host clone"), "{drawn}");
     Ok(())
 }
 
