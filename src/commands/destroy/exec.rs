@@ -13,7 +13,7 @@ use crate::msg;
 use crate::support::{inventory, select};
 
 use super::{
-    super::{Context, fetch, report},
+    super::{Context, report, saving},
     Args, Selection, print,
 };
 
@@ -45,37 +45,27 @@ pub fn exec(
     };
     // hostにあるrepositoryの案件は、消す前に保存しておく。保護の検査を迂回する
     // `--force`でも、保存できるものは保存する。
-    fetch::print::auto_saved(
-        ui,
-        &fetch::save_first(context.location, &chosen, host, context.workspace_root),
-    );
-    let mut offered = false;
-    let mut prepared = loop {
-        let selection = Selection {
-            location: context.location,
-            requested: Some(&chosen),
-            prompt,
-        };
-        match super::run::prepare(
-            selection,
-            args.force,
-            host,
-            context.workspace_root,
-            inventory::Poll::default(),
-            ui,
-        ) {
-            Ok(prepared) => break prepared,
-            // 保存したあとの準備がまだ断るなら、もう訊かずにそのまま報告する。
-            Err(error) if offered => return report(ui, &error),
-            Err(error) => {
-                offered = true;
-                if let ControlFlow::Break(code) =
-                    fetch::offer_save(&error, &chosen, context, host, prompt, ui)
-                {
-                    return code;
-                }
-            }
-        }
+    let saved = saving::save_first(context.location, &chosen, host, context.workspace_root, ui);
+    saving::auto_saved(ui, &saved);
+    let prepared =
+        saving::prepare_offering_save(&chosen, context, host, prompt, ui, |prompt, ui| {
+            let selection = Selection {
+                location: context.location,
+                requested: Some(&chosen),
+                prompt,
+            };
+            super::run::prepare(
+                selection,
+                args.force,
+                host,
+                context.workspace_root,
+                inventory::Poll::default(),
+                ui,
+            )
+        });
+    let mut prepared = match prepared {
+        ControlFlow::Continue(prepared) => prepared,
+        ControlFlow::Break(code) => return code,
     };
 
     ui.stdout(&print::plan_document(&prepared.plan, locale));

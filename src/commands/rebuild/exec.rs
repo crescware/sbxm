@@ -13,7 +13,7 @@ use crate::project::ProjectId;
 use crate::support::{inventory, select};
 
 use super::{
-    super::{Context, fetch, report},
+    super::{Context, report, saving},
     Target, print,
 };
 
@@ -44,36 +44,26 @@ pub fn exec(
         Err(error) => return report(ui, &error),
     };
     // hostにあるrepositoryの案件は、作り直す前に保存しておく。
-    fetch::print::auto_saved(
-        ui,
-        &fetch::save_first(context.location, &chosen, host, context.workspace_root),
-    );
-    let mut offered = false;
-    let (prepared, snapshot) = loop {
-        let target = Target {
-            location: context.location,
-            requested: Some(&chosen),
-            prompt,
-        };
-        match super::run::prepare(
-            target,
-            host,
-            context.workspace_root,
-            inventory::Poll::default(),
-            ui,
-        ) {
-            Ok(pair) => break pair,
-            // 保存したあとの準備がまだ断るなら、もう訊かずにそのまま報告する。
-            Err(error) if offered => return report(ui, &error),
-            Err(error) => {
-                offered = true;
-                if let ControlFlow::Break(code) =
-                    fetch::offer_save(&error, &chosen, context, host, prompt, ui)
-                {
-                    return code;
-                }
-            }
-        }
+    let saved = saving::save_first(context.location, &chosen, host, context.workspace_root, ui);
+    saving::auto_saved(ui, &saved);
+    let prepared =
+        saving::prepare_offering_save(&chosen, context, host, prompt, ui, |prompt, ui| {
+            let target = Target {
+                location: context.location,
+                requested: Some(&chosen),
+                prompt,
+            };
+            super::run::prepare(
+                target,
+                host,
+                context.workspace_root,
+                inventory::Poll::default(),
+                ui,
+            )
+        });
+    let (prepared, snapshot) = match prepared {
+        ControlFlow::Continue(pair) => pair,
+        ControlFlow::Break(code) => return code,
     };
 
     ui.stdout(&print::plan_document(&prepared.plan));

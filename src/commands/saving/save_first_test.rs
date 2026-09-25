@@ -43,6 +43,7 @@ fn a_running_local_sandbox_is_asked_for_its_commits() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     );
 
     assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
@@ -69,6 +70,7 @@ fn nothing_is_saved_where_there_is_nothing_to_save_from() -> Checked {
             &project,
             &world,
             bench.workspace_root.path(),
+            &mut crate::design::SilentProgress,
         );
         assert!(matches!(saved, AutoSaved::Nothing), "{project}: {saved:?}");
     }
@@ -85,6 +87,7 @@ fn nothing_is_saved_where_there_is_nothing_to_save_from() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     );
     assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
     assert!(!tried_to_save(&world, mark), "{:?}", world.since(mark));
@@ -104,9 +107,36 @@ fn a_stopped_local_sandbox_is_not_started_to_save_from() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     );
 
     assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
     assert!(!tried_to_save(&world, mark), "{:?}", world.since(mark));
+    Ok(())
+}
+
+#[test]
+fn a_lock_that_cannot_be_taken_is_a_warning_rather_than_silence() -> Checked {
+    // 保存できなかったことを黙らない。続く操作が同じ理由で断るとは限らない。
+    let bench = Bench::new()?;
+    let world = World::new();
+    bench.build(&world, &local_request()?).required()?;
+    let stored = bench.stored("local/app")?;
+    let paths = crate::paths::ProjectPaths::derive(&bench.parent, stored.canonical_id());
+    std::fs::remove_file(paths.lock_file()).required()?;
+    std::os::unix::fs::symlink("/dev/null", paths.lock_file()).required()?;
+
+    let saved = save_first(
+        &bench.location,
+        &local_project()?,
+        &world,
+        bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
+    );
+
+    let AutoSaved::Failed(warning) = saved else {
+        return Err(crate::testing::outcome::Unmet::new(format!("{saved:?}")));
+    };
+    assert_eq!(warning.description.id, "auto-save-failed");
     Ok(())
 }

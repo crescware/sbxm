@@ -4,7 +4,7 @@ use crate::msg;
 
 use crate::support::sandbox;
 
-use super::{AGENT_HOME, PLACE_FROM_STDIN, TRANSFER_INCOMPLETE};
+use super::{AGENT_HOME, PLACE_FROM_STDIN};
 
 /// 親directoryを用意し、`bytes`を`sbx exec`のstdinで送って`destination`を置き換える。
 pub(super) fn copy_steps(
@@ -42,7 +42,7 @@ pub(super) fn copy_steps(
         ],
         bytes,
     )?;
-    if sandbox::inner_exit_code(&outcome) == Some(TRANSFER_INCOMPLETE) {
+    if sandbox::inner_exit_code(&outcome) == Some(sandbox::TRANSFER_INCOMPLETE) {
         return Err(Error::single(
             Diagnostic::new(
                 ErrorId::DeclaredFileTransferIncomplete,

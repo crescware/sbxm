@@ -1,6 +1,7 @@
 use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
+use crate::support::bundle;
 
 use super::UnobservableReason;
 
@@ -92,12 +93,7 @@ impl Blocker {
             )
             .fact(Fact::reference(reference))
             .fact(Fact::commit(commit))
-            // originへpushするか、hostのrepositoryへ保存すれば、Sandboxを消しても残る。
-            .remediation(
-                open(project, msg!("remediation-origin-commit-unreachable"))
-                    .explain(msg!("remediation-origin-commit-save"))
-                    .try_run(format!("sbxm fetch {project}")),
-            ),
+            .remediation(unreachable_remediation(project, reference)),
             Blocker::OriginUnobservable { references, reason } => {
                 origin_unobservable_diagnostic(project, references, *reason)
             }
@@ -186,6 +182,19 @@ fn untracked_paths_diagnostic(project: &str, worktree: &str, paths: &[String]) -
 
 fn open(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {
     Remediation::text(explanation).try_run(format!("sbxm open {project}"))
+}
+
+/// originへpushするか、hostのrepositoryへ保存すれば、Sandboxを消しても残る。
+///
+/// 保存を勧めるのは、保存が運ぶrefだけとする。stashやnotesのcommitは、保存しても
+/// 辿れるようにならない。
+fn unreachable_remediation(project: &str, reference: &str) -> Remediation {
+    let push = open(project, msg!("remediation-origin-commit-unreachable"));
+    if !bundle::carries(reference) {
+        return push;
+    }
+    push.explain(msg!("remediation-origin-commit-save"))
+        .try_run(format!("sbxm fetch {project}"))
 }
 
 fn status(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {

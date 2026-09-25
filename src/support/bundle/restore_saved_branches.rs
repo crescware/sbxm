@@ -6,7 +6,7 @@ use crate::diagnostics::Result;
 use crate::support::repository::host_git;
 use crate::support::sandbox;
 
-use super::send_to_sandbox;
+use super::{saved_namespace, send_to_sandbox};
 
 /// hostへ保存したbranchを、作り直したSandboxのbranchとして戻す。
 ///
@@ -23,7 +23,7 @@ pub fn restore_saved_branches(
     sandbox_name: &str,
     git_dir: &str,
 ) -> Result<Vec<String>> {
-    let saved = format!("refs/sbx/{sandbox_name}/heads/");
+    let saved = format!("{}heads/", saved_namespace(sandbox_name));
     let listed = host_git(
         host,
         repository,

@@ -38,8 +38,12 @@ pub fn document(output: &AddOutput) -> Document {
                 Inline::text(output.requested_worktrees.to_string()),
             ),
             Field::new(
-                msg!("add-field-host-clone"),
-                Inline::path(paths::display(&output.host_clone)),
+                if output.cloned {
+                    msg!("add-field-host-clone")
+                } else {
+                    msg!("add-field-host-repository")
+                },
+                Inline::path(paths::display(&output.host_repository)),
             ),
         ],
     );

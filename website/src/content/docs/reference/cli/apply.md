@@ -22,3 +22,5 @@ Without `--force`, `--files` refuses before placing anything when a destination 
 `--all` cannot be combined with a project ID or `--worktrees`. It handles each registered project on its own and continues after a project that cannot be applied. Stopped sandboxes are not started. The result lists every project as `applied`, `unchanged`, `stopped`, `not-created`, or `failed`, and the exit status is `1` when any project failed.
 
 The worktree count can increase but not decrease. Removing a worktree is not performed as a side effect because its contents may need preservation.
+
+Adding worktrees first brings the sandbox's repository up to date with its origin. For a project added with `--local`, that means the host repository's branches and tags are sent into the sandbox again, so the new worktrees start from what the host has now.

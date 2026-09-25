@@ -266,7 +266,9 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
         fixture.entry(&local, "stopped")?,
         fixture.entry(&github, "stopped")?
     );
-    let host = FakeSbx::listings(&[&running, &running, &after]);
+    // 保存の前に動いていることを確かめる一覧も読む。
+    let host = FakeSbx::listings(&[&running, &running, &running, &after]);
+    let mut output = RecordedOutput::new();
 
     let report = run(
         &fixture.location,
@@ -275,11 +277,22 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
-        &mut RecordedOutput::new(),
+        &mut output,
     )
     .required_because("stop")?;
 
     assert_eq!(report.saved.len(), 2, "one save attempt per running target");
+    // 保存のあいだ黙って待たせない。
+    assert_eq!(
+        output
+            .steps
+            .iter()
+            .filter(|step| step.id == "progress-saving-to-host")
+            .count(),
+        1,
+        "{:?}",
+        output.steps
+    );
     let calls: Vec<String> = host.calls().iter().map(|call| call.join(" ")).collect();
     let saving = calls
         .iter()
@@ -299,5 +312,71 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
             .any(|call| call.contains(&format!("exec {}", github.sandbox))),
         "{calls:?}"
     );
+    Ok(())
+}
+
+/// Sandboxがbundleを作っているあいだに、別の案件のproject lockを取れるかを確かめるhost。
+struct ProbingLock {
+    inner: FakeSbx,
+    lock: std::path::PathBuf,
+    free: std::cell::Cell<Option<bool>>,
+}
+
+impl crate::boundary::host::HostEnvironment for ProbingLock {
+    fn command_exists(&self, program: &str) -> bool {
+        self.inner.command_exists(program)
+    }
+
+    fn run(
+        &self,
+        spec: &crate::boundary::host::CommandSpec,
+    ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {
+        if spec.args.join(" ").contains("bundle create") {
+            let taken = crate::paths::acquire_exclusive_lock(
+                &self.lock,
+                std::time::Duration::from_millis(10),
+                crate::paths::PRIVATE_FILE_MODE,
+                crate::paths::PathScope::ProjectPath,
+            );
+            self.free.set(Some(taken.is_ok()));
+        }
+        self.inner.run(spec)
+    }
+}
+
+#[test]
+fn saving_one_target_leaves_the_others_free_for_other_commands() -> Checked {
+    // 保存は時間がかかる。そのあいだ、止める対象すべてのlockを持ち続けない。
+    let fixture = Fixture::new()?;
+    let local = fixture.register_local("/srv/code/app", "app")?;
+    let github = fixture.register("zeta/zulu")?;
+    let running = format!(
+        r#"{{"sandboxes":[{},{}]}}"#,
+        fixture.entry(&local, "running")?,
+        fixture.entry(&github, "running")?
+    );
+    let after = format!(
+        r#"{{"sandboxes":[{},{}]}}"#,
+        fixture.entry(&local, "stopped")?,
+        fixture.entry(&github, "stopped")?
+    );
+    let host = ProbingLock {
+        inner: FakeSbx::listings(&[&running, &running, &running, &after]),
+        lock: github.paths.lock_file(),
+        free: std::cell::Cell::new(None),
+    };
+
+    run(
+        &fixture.location,
+        &[project_id("local/app")?, project_id("zeta/zulu")?],
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+        poll(),
+        &mut RecordedOutput::new(),
+    )
+    .required_because("stop")?;
+
+    assert_eq!(host.free.get(), Some(true), "{:?}", host.inner.calls());
     Ok(())
 }

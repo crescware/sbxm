@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
@@ -9,8 +11,9 @@ use super::{
 
 /// 登録対象の不変なrepository identity。
 ///
-/// 表示にはGitHub上の表記を、突き合わせにはcanonical project `IDとtransportを使う`。
-/// clone URLはこの構造から組み立て直すため、保存値と表示値が食い違わない。
+/// 表示には入力の表記を、突き合わせにはcanonical project `IDとtransportを使う`。
+/// GitHubのrepositoryでは、clone URLをこの構造から組み立て直すため、保存値と表示値が
+/// 食い違わない。hostにあるrepositoryでは、そのpathをclone URLとして持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepositoryIdentity {
     pub(super) provider: Provider,
@@ -107,11 +110,16 @@ impl RepositoryIdentity {
                 let name = canonical_id
                     .split_once('/')
                     .map_or(canonical_id, |(_, name)| name);
-                interpret_local(clone_url, name).map_err(|_| {
-                    msg!(
+                // pathの形の誤りと、名前が案件の名前にならないことを分けて示す。
+                interpret_local(clone_url, name).map_err(|rejection| match rejection {
+                    Rejection::Form => msg!(
                         "cause-local-repository-path-unrecognized",
                         observed = clone_url
-                    )
+                    ),
+                    Rejection::Project(_) => msg!(
+                        "cause-local-project-name-unrecognized",
+                        observed = canonical_id
+                    ),
                 })?
             }
         };
@@ -137,12 +145,14 @@ impl RepositoryIdentity {
         self.provider
     }
 
-    /// `GitHub上の表記のままのowner`。
+    /// 表示上のowner。GitHubのrepositoryではGitHub上の表記のまま、hostにある
+    /// repositoryでは`local`である。
     pub fn owner(&self) -> &str {
         &self.owner
     }
 
-    /// `GitHub上の表記のままのrepository`。
+    /// 表示上のrepository名。GitHubのrepositoryではGitHub上の表記のまま、hostにある
+    /// repositoryでは案件の名前である。
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -155,9 +165,25 @@ impl RepositoryIdentity {
         self.transport
     }
 
-    /// 正規化したclone URL。
+    /// 正規化したclone URL。hostにあるrepositoryでは、そのpathである。
     pub fn clone_url(&self) -> &str {
         &self.clone_url
+    }
+
+    /// GitHub tokenをsbxmへ登録し、Sandboxのcloneに使うか。
+    ///
+    /// GitHubのrepositoryはSandboxからcloneするため、tokenを要する。hostにある
+    /// repositoryはhostから送るため、要らない。
+    pub fn uses_github_token(&self) -> bool {
+        self.provider == Provider::Github
+    }
+
+    /// hostにあるrepositoryのpath。GitHubのrepositoryには無い。
+    pub fn host_path(&self) -> Option<&Path> {
+        match self.provider {
+            Provider::Github => None,
+            Provider::Local => Some(Path::new(&self.clone_url)),
+        }
     }
 
     /// 表示に使う`<owner>/<repository>`。

@@ -60,8 +60,9 @@ pub trait HostEnvironment {
         if u64::try_from(outcome.stdout.len()).unwrap_or(u64::MAX) > limit {
             return Err(output_too_large(spec, limit));
         }
-        sink.write_all(&outcome.stdout)
-            .map_err(|error| super::unreadable(spec, &error.to_string()))?;
+        if let Err(error) = sink.write_all(&outcome.stdout) {
+            return Err(super::unstored(spec, &error.to_string()));
+        }
         outcome.stdout.clear();
         Ok(outcome)
     }

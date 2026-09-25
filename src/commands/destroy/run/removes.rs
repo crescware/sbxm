@@ -1,7 +1,6 @@
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::{self, ProjectPaths};
-use crate::repository::Provider;
 
 use crate::support::inventory::ProjectState;
 use crate::support::secret;
@@ -26,7 +25,7 @@ pub(super) fn removes(
         )));
     }
     // hostにあるrepositoryを登録した案件は、tokenを登録しない。
-    if metadata.repository.provider() == Provider::Github {
+    if metadata.repository.uses_github_token() {
         removes.push(Target::Described(msg!(
             "destroy-target-secret",
             sandbox = name,
