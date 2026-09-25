@@ -1128,6 +1128,8 @@ fn a_save_that_fails_is_a_warning_with_the_command_to_retry() -> Checked {
     assert_eq!(warning.description.id, "auto-save-failed");
     assert_eq!(warning.commands.len(), 1, "{warning:?}");
     assert!(!warning.facts.is_empty(), "{warning:?}");
+    // 何が起きたかは、ErrorIdだけでなく診断の一文で示す。
+    assert!(!warning.guidance.is_empty(), "{warning:?}");
     Ok(())
 }
 

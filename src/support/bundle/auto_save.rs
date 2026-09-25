@@ -36,9 +36,12 @@ pub fn auto_save(
         )),
         Ok(_) => AutoSaved::Nothing,
         Err(error) => {
+            // ErrorIdだけでは何が起きたかが伝わらない。診断の一文も添える。
             let mut warning = Warning::text(msg!("auto-save-failed", project = project.clone()));
-            if let Some(diagnostic) = error.diagnostics().first() {
-                warning = warning.fact(Fact::cause(diagnostic.id.as_str()));
+            for diagnostic in error.diagnostics() {
+                warning = warning
+                    .fact(Fact::cause(diagnostic.id.as_str()))
+                    .explain(diagnostic.description.clone());
             }
             AutoSaved::Failed(warning.try_run(format!("sbxm fetch {project}")))
         }
