@@ -8,13 +8,13 @@ use crate::paths::{self, PRIVATE_DIR_MODE, PathScope};
 use crate::support::repository::host_git;
 use crate::support::sandbox;
 
-use super::{PLACE_BUNDLE, require_something_to_send};
+use super::PLACE_BUNDLE;
 
 /// hostの`repository`の`revisions`を1つのbundleにして、Sandboxの`destination`へ置く。
 ///
-/// `revisions`は`git bundle create`へ渡す範囲の指定である。bundleは案件の`directory`へ
-/// 一時fileとして作り、Sandboxへ置けたかどうかにかかわらず消す。branchもtagも無い
-/// repositoryは送らない。
+/// `revisions`は`git bundle create`へ渡す範囲の指定であり、何かを指すことを呼び出し側が
+/// 確かめておく。bundleは案件の`directory`へ一時fileとして作り、Sandboxへ置けたか
+/// どうかにかかわらず消す。
 pub fn send_to_sandbox(
     host: &dyn HostEnvironment,
     repository: &Path,
@@ -23,7 +23,6 @@ pub fn send_to_sandbox(
     sandbox_name: &str,
     destination: &str,
 ) -> Result<()> {
-    require_something_to_send(host, repository)?;
     paths::ensure_private_dir(directory, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
     // 一時fileはdropで消える。gitはこのpathへ書き直す。
     let temporary = match tempfile::Builder::new()

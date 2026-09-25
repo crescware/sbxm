@@ -72,6 +72,7 @@ pub(crate) fn provision_interior(
         &layout,
         &locked.metadata,
         &branch,
+        &[],
         progress,
     )
     .map_err(decorate)?;

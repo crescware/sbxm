@@ -96,7 +96,7 @@ pub fn execute(
         workspace_root,
         poll,
     };
-    switch.run(
+    let restored = switch.run(
         host,
         &prepared.name,
         &mut prepared.locked.metadata,
@@ -119,6 +119,7 @@ pub fn execute(
         project: prepared.locked.metadata.display_id(),
         sandbox: prepared.name.as_str().to_string(),
         applied: prepared.target.clone(),
+        restored,
         warnings,
     })
 }

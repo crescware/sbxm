@@ -1500,3 +1500,157 @@ fn an_engine_that_does_not_answer_stops_the_rebuild_before_anything_is_read() ->
     );
     Ok(())
 }
+
+/// 保存したbranchを2本持ち、作り直したSandboxへ戻せるlocal案件のhost。
+fn local_host_to_rebuild(
+    fixture: &Fixture,
+    project: &Registered,
+    image: &str,
+    target: &str,
+) -> Checked<FakeSbx> {
+    use crate::testing::value::{COMMIT, MOVED};
+
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let git_dir = layout.bare_git_dir();
+    let worktree = layout.worktree(0);
+    let name = project.sandbox.as_str().to_string();
+    let saved = format!("refs/sbx/{name}/heads/");
+    let scopes = format!("refs/heads/ refs/tags/ refs/sbx/{name}/");
+    Ok(ready_to_switch(
+        clean_host(fixture, project)?
+            .answering(&format!("image ls --quiet {image}"), 0, "sha256:existing\n")
+            .answering(
+                &format!("image inspect {image}"),
+                0,
+                &format!(
+                    r#"[{{"Id":"sha256:existing","Config":{{"Labels":{{"io.crescware.sbxm.canonical-id":"local/example-repo","io.crescware.sbxm.dockerfile-sha256":"{target}","io.crescware.sbxm.metadata-version":"1"}}}}}}]"#
+                ),
+            )
+            .answering("template ls --json", 0, &template_listing(image)?),
+        &name,
+        &git_dir,
+        &worktree,
+    )
+    // hostのmainが、作り直す前のworktreeのcommitへ届く。
+    .answering(
+        &format!("for-each-ref --format=%(refname) --contains={COMMIT} {scopes}"),
+        0,
+        "refs/heads/main\n",
+    )
+    .answering(
+        &format!("for-each-ref --format=%(refname) --contains={MOVED} {scopes}"),
+        0,
+        &format!("refs/sbx/{name}/heads/main\n"),
+    )
+    // 新しいSandboxのoriginは、hostから送ったbundleを指す。
+    .answering(
+        "for-each-ref --count=1 --format=%(refname) refs/heads/ refs/tags/",
+        0,
+        "refs/heads/main\n",
+    )
+    .answering(
+        &format!("exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.url"),
+        0,
+        &format!("{git_dir}/sbxm/origin.bundle\n"),
+    )
+    // hostへ保存したbranchが2本ある。
+    .answering(
+        &format!("for-each-ref --format=%(refname) {saved}"),
+        0,
+        &format!("{saved}main\n{saved}topic\n"),
+    )
+    .answering(
+        &format!(
+            "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) refs/remotes/origin/"
+        ),
+        0,
+        "refs/remotes/origin/main\n",
+    )
+    // 戻したmainは、originより先にいる。
+    .answering(
+        &format!(
+            "exec {name} -- git --git-dir {git_dir} rev-parse --verify refs/heads/main^{{commit}}"
+        ),
+        0,
+        &format!("{MOVED}\n"),
+    )
+    .answering(
+        &format!("exec {name} -- git -C {worktree} rev-parse HEAD"),
+        0,
+        &format!("{MOVED}\n"),
+    )
+    // 作り直したSandboxには、まだworktreeが無い。
+    .answering(&format!("exec {name} -- test -e {worktree}"), 1, ""))
+}
+
+#[test]
+fn a_local_project_is_rebuilt_from_the_host_with_its_saved_branches_back() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register_local("/srv/code/example-repo", "example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
+    let target = sha256_hex(b"unchanged\n");
+    project.metadata.provisioning.dockerfile_sha256 = target.clone();
+    metadata::update(&project.paths, &project.metadata).required()?;
+
+    let image = image::image_name(&project.sandbox, &target);
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    std::fs::create_dir_all(&workspace).required()?;
+    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
+
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let git_dir = layout.bare_git_dir();
+    let worktree = layout.worktree(0);
+    let name = project.sandbox.as_str().to_string();
+    let saved = format!("refs/sbx/{name}/heads/");
+    let host = local_host_to_rebuild(&fixture, &project, &image, &target)?;
+
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let created = format!(
+        r#"{{"sandboxes":[{{"name":"{name}","status":"running","workspaces":["{}"]}}]}}"#,
+        workspace.display()
+    );
+    *host.listing.borrow_mut() = vec![
+        created,
+        r#"{"sandboxes":[]}"#.to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
+        running.clone(),
+        running,
+    ];
+
+    let output = rebuild(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("local/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("the local project is rebuilt")?;
+
+    assert_eq!(output.restored, ["main", "topic"]);
+    assert!(
+        host.ran(&format!(
+            "fetch --quiet --no-tags {git_dir}/sbxm/restore.bundle {saved}*:refs/heads/*"
+        )),
+        "{:?}",
+        host.calls()
+    );
+    assert!(
+        host.ran("--set-upstream-to=refs/remotes/origin/main main")
+            && !host.ran("--set-upstream-to=refs/remotes/origin/topic"),
+        "{:?}",
+        host.calls()
+    );
+    assert!(
+        host.ran(&format!("worktree add {worktree} main")),
+        "the worktree checks out the branch that came back: {:?}",
+        host.calls()
+    );
+    assert!(!host.ran("secret"), "{:?}", host.calls());
+    Ok(())
+}

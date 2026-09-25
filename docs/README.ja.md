@@ -459,6 +459,11 @@ Sandboxの中のbundleはSandboxと一緒に消えるため、rebuildとdestroy�
 `refs/sbx/<sandbox>/`へ保存したものから辿れる必要があります。hostに無いcommitがあれば止まり、
 対話端末では先にfetchするかを訊きます。
 
+`sbxm rebuild local/<name>`は、hostのrepositoryからSandboxを作り直し、
+`refs/sbx/<sandbox>/heads/`へ保存したbranchをSandboxのbranchとして戻します。hostに
+同じ名前のbranchがあれば、`origin/<branch>`をupstreamにします。起点branchのworktreeは
+保存した先端から作り直すので、fetchしたところから作業を続けられます。
+
 ## プロジェクトを破棄する
 
 ```sh

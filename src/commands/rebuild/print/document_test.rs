@@ -13,6 +13,7 @@ fn output() -> RebuildOutput {
         project: "Example-Org/Example-Repo".to_string(),
         sandbox: "sbxm-example-org-example-repo-99a40327a69b".to_string(),
         applied: APPLIED.to_string(),
+        restored: Vec::new(),
         warnings: Vec::new(),
     }
 }
@@ -41,5 +42,19 @@ fn the_summary_names_the_project_the_sandbox_and_the_generation_it_applied() -> 
     // 世代はimage名と同じ短縮表記で示す。hash全体は読み手の役に立たない。
     assert!(text.contains("4a0f8d41e27e"), "{text}");
     assert!(!text.contains(APPLIED), "{text}");
+    Ok(())
+}
+
+#[test]
+fn the_branches_brought_back_from_the_host_are_named() -> Checked {
+    let output = RebuildOutput {
+        restored: vec!["main".to_string(), "topic".to_string()],
+        ..output()
+    };
+    let text = rendered(&output)?;
+    assert!(
+        text.contains("saved on the host are back in the new sandbox: main, topic"),
+        "{text}"
+    );
     Ok(())
 }

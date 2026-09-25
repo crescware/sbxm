@@ -11,7 +11,9 @@ use crate::design::ProgressSink;
 use crate::support::files::{self, Conflict};
 use crate::support::inventory::{self, Poll};
 use crate::support::protection::ProtectionPermit;
-use crate::support::{disk, identity, provisioning, repository, sandbox, secret, template, tools};
+use crate::support::{
+    bundle, disk, identity, provisioning, repository, sandbox, secret, template, tools,
+};
 
 /// Sandboxの切り替えが最初から最後まで使う文脈。
 ///
@@ -29,7 +31,7 @@ impl Switch<'_> {
     ///
     /// `permit`は呼び出し側の`gate::authorize`が発行した、この1回のremoveだけに使う
     /// 許可証である。`existed`が示す通り、そもそも削除するSandboxが無い場合は使わず
-    /// 破棄する。
+    /// 破棄する。hostへ保存したbranchを戻した場合は、その名前を返す。
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn run(
         &self,
@@ -40,7 +42,7 @@ impl Switch<'_> {
         existed: bool,
         permit: ProtectionPermit,
         progress: &mut dyn ProgressSink,
-    ) -> Result<()> {
+    ) -> Result<Vec<String>> {
         let Switch {
             config,
             paths,
@@ -94,10 +96,35 @@ impl Switch<'_> {
         metadata.declared_files = Some(provisioning::recorded_files(&inputs));
         repository::ensure_bare_clone(host, &ready.name, &origin, &layout, progress)
             .map_err(decorate)?;
+        // hostにあるrepositoryは、hostへ保存したbranchをworktreeより先に戻す。起点branchも
+        // 戻したものがあれば、その先端からworktreeを作り直す。
+        let restored = match &origin {
+            repository::SandboxOrigin::Host {
+                repository,
+                staging,
+                ..
+            } => bundle::restore_saved_branches(
+                host,
+                repository,
+                staging,
+                ready.name.as_str(),
+                &layout.bare_git_dir(),
+            )
+            .map_err(decorate)?,
+            repository::SandboxOrigin::Github(_) => Vec::new(),
+        };
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
-        repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch, progress)
-            .map_err(decorate)?;
+        repository::ensure_worktrees(
+            host,
+            &ready.name,
+            &layout,
+            metadata,
+            &branch,
+            &restored,
+            progress,
+        )
+        .map_err(decorate)?;
         sandbox::require_credentials_isolated(host, &ready.name)?;
-        Ok(())
+        Ok(restored)
     }
 }
