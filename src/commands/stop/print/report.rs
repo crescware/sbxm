@@ -9,9 +9,10 @@ use super::document;
 ///
 /// 1件でも失敗していればexit code `1`とする。
 pub fn report(ui: &mut Ui, stopped: &StopReport) -> ExitCode {
-    // 保存は止める前に行った。結果もその順に示す。
+    // 保存は止める前に1件ずつ行った。保存の結果は、止めた結果の前にまとめて示す。
+    // 保存の進捗と、止めるあいだの外部toolの出力は、実行の途中で既に端末へ出ている。
     for saved in &stopped.saved {
-        crate::commands::fetch::print::auto_saved(ui, saved);
+        crate::commands::saving::auto_saved(ui, saved);
     }
     ui.stdout(&document(stopped, ui.locale()));
 

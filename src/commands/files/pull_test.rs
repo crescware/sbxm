@@ -156,8 +156,9 @@ fn choosing_to_adopt_replaces_the_host_file_and_records_it_as_placed() -> Checke
         "the host file keeps its permissions"
     );
     assert!(ran.stdout.contains("Adopted"), "{}", ran.stdout);
+    // ほかに案件が無ければ、広げる先も無い。
     assert!(
-        ran.stdout.contains("sbxm apply --files --all"),
+        !ran.stdout.contains("sbxm apply --files --all"),
         "{}",
         ran.stdout
     );
@@ -319,5 +320,37 @@ fn a_destination_outside_the_sandbox_home_or_a_project_without_a_sandbox_is_refu
     .err()
     .required_because("there is no sandbox yet")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotCreated));
+    Ok(())
+}
+
+#[test]
+fn an_adopted_copy_can_be_spread_to_the_other_projects() -> Checked {
+    let (bench, world, project) = built()?;
+    // もう1件を登録する。host cloneは、その案件のoriginを持つものとして答える。
+    world.answering(
+        "remote.origin.url",
+        0,
+        "git@github.com:Example-Org/Other-Repo.git\n",
+    );
+    bench
+        .register(&world, &request("Example-Org/Other-Repo", None, None)?)
+        .required()?;
+    world.nothing_fails();
+    world.edited_inside(IN_SANDBOX, b"edited inside\n");
+
+    let ran = run(
+        &bench,
+        &world,
+        &pulling(&project),
+        true,
+        ScriptedKeys::choosing(1),
+    )?;
+
+    assert_eq!(ran.code, ExitCode::Success, "{}", ran.stderr);
+    assert!(
+        ran.stdout.contains("sbxm apply --files --all"),
+        "{}",
+        ran.stdout
+    );
     Ok(())
 }

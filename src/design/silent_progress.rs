@@ -1,7 +1,9 @@
 use crate::design::{ExternalOutput, ProgressSink, Warning};
 use crate::diagnostics::Msg;
 
-/// 何も表示しないsink。出力を持たない経路が使う。
+/// 何も表示しないsink。
+///
+/// 端末を別のprocessへ渡しているあいだの工程や、出力を持たない経路が使う。
 pub struct SilentProgress;
 
 impl ProgressSink for SilentProgress {

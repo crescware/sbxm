@@ -7,7 +7,6 @@ use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout};
-use crate::repository::Provider;
 use crate::support::bundle;
 
 /// Sandboxのbare repositoryが`origin`として読むもの。
@@ -27,12 +26,12 @@ pub enum SandboxOrigin {
 
 impl SandboxOrigin {
     pub fn of(paths: &ProjectPaths, metadata: &ProjectMetadata) -> Result<SandboxOrigin> {
-        match metadata.repository.provider() {
-            Provider::Github => Ok(SandboxOrigin::Github(ProjectId::parse(
+        match metadata.repository.host_path() {
+            None => Ok(SandboxOrigin::Github(ProjectId::parse(
                 &metadata.display_id(),
             )?)),
-            Provider::Local => Ok(SandboxOrigin::Host {
-                repository: PathBuf::from(metadata.repository.clone_url()),
+            Some(repository) => Ok(SandboxOrigin::Host {
+                repository: repository.to_path_buf(),
                 bundle: SandboxLayout::new(metadata.canonical_id()).origin_bundle(),
                 staging: paths.bundles_dir(),
             }),

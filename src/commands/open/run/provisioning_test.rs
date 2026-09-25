@@ -458,7 +458,7 @@ fn a_failed_handover_after_a_successful_build_does_not_return_to_pending() -> Ch
 
 #[test]
 fn a_local_project_is_saved_during_and_after_the_session() -> Checked {
-    // 模したhostは、sessionが終わったあとで途中の保存を1回だけ走らせる。実物は間隔ごとに
+    // 模したhostは、sessionを記録したあとに途中の保存を1回だけ走らせる。実物は間隔ごとに
     // 走らせる。どちらも、端末へ何も書かずに保存を試みる。
     let bench = Bench::new()?;
     let world = World::new();

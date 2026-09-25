@@ -256,6 +256,8 @@ impl World {
                 })
             }
             ["git", "--git-dir", _, "rev-parse", _] => Some((0, format!("{COMMIT}\n"))),
+            // hostから戻したbranchの先端。模したhostはoriginと同じcommitに保存している。
+            ["git", "--git-dir", _, "rev-parse", "--verify", _] => Some((0, format!("{COMMIT}\n"))),
             _ => None,
         }
     }

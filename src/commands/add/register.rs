@@ -60,8 +60,10 @@ pub fn register(
         }
         (paths, registered)
     } else {
+        require_start_branch(&target, &request.repository)?;
         // cwdを使うのは新規canonical project IDの登録時だけである。
         let candidate = ProjectPaths::derive(parent, &canonical);
+        require_outside_repository(parent, &candidate, &request.repository)?;
         check_new_registration(guard.registry(), &candidate, &canonical)?;
         guard.insert(RegistryEntry::new(
             candidate.root(),
@@ -94,6 +96,7 @@ pub fn register(
     let metadata = if let Some(stored) = stored {
         stored
     } else {
+        require_start_branch(&target, &request.repository)?;
         let metadata = ProjectMetadata {
             repository: request.repository.clone(),
             provisioning: Provisioning {
@@ -121,6 +124,55 @@ pub fn register(
         metadata,
         _lock: lock,
     })
+}
+
+/// hostにあるrepositoryをattached modeで新しく記録するには、起点のbranchが要る。
+///
+/// 起点はhostのrepositoryが今いるbranchであり、detachedなら無い。登録済みの案件は
+/// 保存済みの起点で続けるため、この確認を記録するときだけに限る。hostのrepositoryが
+/// 今detachedでも、登録済みの案件の再開は妨げない。
+fn require_start_branch(
+    target: &TargetConfiguration,
+    repository: &RepositoryIdentity,
+) -> Result<()> {
+    let detached = target.mode == CreationMode::Attached && target.start_ref.is_none();
+    if !detached || repository.host_path().is_none() {
+        return Ok(());
+    }
+    Err(Error::single(
+        Diagnostic::new(
+            ErrorId::HostRepositoryDetached,
+            msg!("error-host-repository-detached"),
+        )
+        .remediation(msg!("remediation-host-repository-detached")),
+    ))
+}
+
+/// hostにあるrepositoryを、その中に作る案件directoryで登録させない。
+///
+/// 案件directoryはDockerfile、metadata、lock、bundleを持つ。利用者のworking treeの中に
+/// 作ると、`git status`に現れ、commitされ、`git clean`で消されうる。
+fn require_outside_repository(
+    parent: &ProjectParent,
+    candidate: &ProjectPaths,
+    repository: &RepositoryIdentity,
+) -> Result<()> {
+    let Some(host_path) = repository.host_path() else {
+        return Ok(());
+    };
+    if !paths::real_path(parent.as_path()).starts_with(host_path) {
+        return Ok(());
+    }
+    Err(Error::single(
+        Diagnostic::new(
+            ErrorId::ProjectInsideRepository,
+            msg!(
+                "error-project-inside-repository",
+                path = paths::display(candidate.root())
+            ),
+        )
+        .remediation(msg!("remediation-project-inside-repository")),
+    ))
 }
 
 /// 新規登録として、この候補pathを使ってよいかを判定する。

@@ -387,3 +387,20 @@ fn the_add_arguments_register_the_same_project_again() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_stored_local_name_that_cannot_name_a_project_is_not_blamed_on_the_path() -> Checked {
+    // pathは正しい。名前が案件の名前にならないことを、pathの誤りとして示さない。
+    let named =
+        RepositoryIdentity::from_index_parts("local", "local/my app", "file", "/home/user/app")
+            .err()
+            .required_because("the name cannot name a project")?;
+    assert_eq!(named.id, "cause-local-project-name-unrecognized");
+
+    let placed =
+        RepositoryIdentity::from_index_parts("local", "local/app", "file", "home/user/app")
+            .err()
+            .required_because("the path is not absolute")?;
+    assert_eq!(placed.id, "cause-local-repository-path-unrecognized");
+    Ok(())
+}

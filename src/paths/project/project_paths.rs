@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::diagnostics::Result;
 use crate::project::CanonicalProjectId;
@@ -68,9 +69,14 @@ impl ProjectPaths {
 
     /// 案件のlockを取る。timeout、mode、scopeは全workflowで共通とする。
     pub fn acquire_lock(&self) -> Result<ExclusiveLock> {
+        self.acquire_lock_within(LOCK_TIMEOUT)
+    }
+
+    /// project lockを、`wait`だけ待って取る。`Duration::ZERO`なら1度だけ試す。
+    pub fn acquire_lock_within(&self, wait: Duration) -> Result<ExclusiveLock> {
         acquire_exclusive_lock(
             &self.lock_file(),
-            LOCK_TIMEOUT,
+            wait,
             PRIVATE_FILE_MODE,
             PathScope::ProjectPath,
         )

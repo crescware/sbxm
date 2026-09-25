@@ -1,11 +1,8 @@
-use std::path::PathBuf;
-
 use crate::boundary::host::HostEnvironment;
 use crate::config::ConfigLocation;
 use crate::diagnostics::Result;
 use crate::metadata::GitIdentity;
 use crate::paths::ProjectParent;
-use crate::repository::Provider;
 
 use crate::commands::add::host_clone::HostClone;
 use crate::design::ProgressSink;
@@ -30,11 +27,10 @@ pub fn run(
     // Sandbox内で使うidentityは、案件を作る前に呼び出し側が決めている。
     let registration = register(location, parent, request, git_identity)?;
     let repository = &registration.metadata.repository;
-    let host_clone = if repository.provider() == Provider::Local {
-        PathBuf::from(repository.clone_url())
-    } else {
+    let host_repository = match repository.host_path() {
+        Some(path) => path.to_path_buf(),
         // host cloneは、validation済みの入力と同じtransportとclone URLで取る。
-        HostClone::ensure(host, &registration.paths, repository, progress)?.path
+        None => HostClone::ensure(host, &registration.paths, repository, progress)?.path,
     };
 
     let provisioning = &registration.metadata.provisioning;
@@ -44,8 +40,9 @@ pub fn run(
         mode: provisioning.mode,
         start_ref: provisioning.start_ref.clone(),
         requested_worktrees: provisioning.requested_worktrees,
-        host_clone,
-        needs_github_token: repository.provider() == Provider::Github,
+        host_repository,
+        cloned: repository.host_path().is_none(),
+        needs_github_token: repository.uses_github_token(),
         already_registered,
     })
 }

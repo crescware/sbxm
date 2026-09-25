@@ -1,6 +1,8 @@
 use crate::diagnostics::Result;
 use crate::metadata::{self, ProjectMetadata};
-use crate::paths::{self, PathScope, ProjectPaths};
+use std::time::Duration;
+
+use crate::paths::{self, LOCK_TIMEOUT, PathScope, ProjectPaths};
 use crate::repository::RepositoryIdentity;
 
 use super::{Locked, incomplete_registration, inconsistent_registration};
@@ -49,8 +51,13 @@ impl Candidate {
 
     /// project lockを取り、lock後の内容で読み直す。
     pub fn lock(self) -> Result<Locked> {
+        self.lock_within(LOCK_TIMEOUT)
+    }
+
+    /// project lockを`wait`だけ待って取り、lock後の内容で読み直す。
+    pub fn lock_within(self, wait: Duration) -> Result<Locked> {
         self.verify_root()?;
-        let lock = self.paths.acquire_lock()?;
+        let lock = self.paths.acquire_lock_within(wait)?;
         let metadata = self.reload()?;
         Ok(Locked {
             paths: self.paths,

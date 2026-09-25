@@ -31,6 +31,7 @@ fn a_project_that_asks_for_more_worktrees_gets_the_missing_ones_and_keeps_the_re
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .required_because("the worktrees that are missing are the ones that get made")?;
@@ -78,6 +79,7 @@ fn an_attached_project_keeps_its_branch_and_gets_detached_worktrees_beside_it() 
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .required_because("an attached worktree does not stop the others from being made")?;
@@ -120,6 +122,7 @@ fn detached_worktrees_are_created_from_one_commit_and_recorded_one_by_one() -> C
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .required_because("create")?;
@@ -159,6 +162,7 @@ fn an_attached_project_gets_one_tracking_branch() -> Checked {
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .required_because("create")?;
@@ -192,6 +196,7 @@ fn an_attached_branch_left_by_an_interruption_is_reused() -> Checked {
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .required_because("attach the existing branch")?;
@@ -219,6 +224,7 @@ fn a_worktree_that_is_already_there_and_correct_is_adopted_without_recreating_it
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .required_because("adopt")?;
@@ -253,6 +259,7 @@ fn a_worktree_of_another_repository_is_not_taken_for_this_project() -> Checked {
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .refused_because("a worktree of another repository is not this project's")?;
@@ -279,6 +286,7 @@ fn a_worktree_that_was_just_made_is_refused_when_it_is_not_on_the_starting_commi
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .refused_because("a worktree that is not on the starting commit is not this run's")?;
@@ -326,6 +334,7 @@ fn an_attached_worktree_that_sits_on_another_branch_is_refused() -> Checked {
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .refused_because("an attached worktree that took another branch is not the declared one")?;
@@ -370,6 +379,7 @@ fn a_detached_worktree_that_ended_up_on_a_branch_is_refused() -> Checked {
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .refused_because("a detached worktree that holds a branch is not the declared one")?;
@@ -448,6 +458,7 @@ fn a_question_the_host_could_not_ask_is_not_read_as_a_worktree_that_belongs_else
             &layout()?,
             &project,
             "develop",
+            &[],
             &mut SilentProgress,
         )
         .refused_because("a question that went unanswered stops the run")?;
@@ -505,6 +516,7 @@ fn a_mode_that_could_not_be_asked_for_is_not_read_as_a_detached_head() -> Checke
         &layout()?,
         &project,
         "develop",
+        &[],
         &mut SilentProgress,
     )
     .refused_because("a mode that could not be observed is not a mode that matched")?;
@@ -513,7 +525,7 @@ fn a_mode_that_could_not_be_asked_for_is_not_read_as_a_detached_head() -> Checke
 }
 
 #[test]
-fn a_branch_already_in_the_sandbox_starts_the_attached_worktree_at_its_own_tip() -> Checked {
+fn a_restored_branch_starts_the_attached_worktree_at_its_own_tip() -> Checked {
     // 作り直したSandboxへhostから戻したbranchは、originより先にいることがある。attachedの
     // worktreeはそのbranchをcheckoutし、その先端に立つ。
     let dir = tempfile::tempdir().required()?;
@@ -522,9 +534,7 @@ fn a_branch_already_in_the_sandbox_starts_the_attached_worktree_at_its_own_tip()
     let path = layout()?.worktree(0);
     let host = worktree_host(CreationMode::Attached, 1)?
         .answering(
-            &format!(
-                "git --git-dir {git_dir} rev-parse --verify --quiet refs/heads/develop^{{commit}}"
-            ),
+            &format!("git --git-dir {git_dir} rev-parse --verify refs/heads/develop^{{commit}}"),
             &format!("{MOVED}\n"),
         )
         .answering(
@@ -545,6 +555,7 @@ fn a_branch_already_in_the_sandbox_starts_the_attached_worktree_at_its_own_tip()
         &layout()?,
         &project,
         "develop",
+        &["develop".to_string()],
         &mut SilentProgress,
     )
     .required_because("the restored branch is checked out as it is")?;
@@ -556,5 +567,51 @@ fn a_branch_already_in_the_sandbox_starts_the_attached_worktree_at_its_own_tip()
         "{:?}",
         host.calls()
     );
+    Ok(())
+}
+
+#[test]
+fn a_branch_left_in_the_sandbox_that_was_not_restored_does_not_move_the_start() -> Checked {
+    // 中断した作成が残したbranchは、hostから戻したものではない。originが進んでいれば、
+    // その上に立つworktreeを案件の成果物として受け取らない。
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let git_dir = layout()?.bare_git_dir();
+    let path = layout()?.worktree(0);
+    let host = worktree_host(CreationMode::Attached, 1)?
+        .answering(
+            &format!("git --git-dir {git_dir} rev-parse --verify refs/heads/develop^{{commit}}"),
+            &format!("{MOVED}\n"),
+        )
+        .answering(
+            &format!(
+                "git --git-dir {git_dir} rev-parse --verify --quiet refs/heads/develop^{{commit}}"
+            ),
+            &format!("{MOVED}\n"),
+        )
+        .answering(
+            &format!("git --git-dir {git_dir} show-ref --verify --quiet refs/heads/develop"),
+            "",
+        )
+        .answering(
+            &format!("git -C {path} rev-parse HEAD"),
+            &format!("{MOVED}\n"),
+        );
+
+    let project = metadata(CreationMode::Attached, Some("develop"), 1)?;
+    metadata::create(&paths, &project).required_because("write the metadata")?;
+
+    let error = ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout()?,
+        &project,
+        "develop",
+        &[],
+        &mut SilentProgress,
+    )
+    .refused_because("the leftover branch is not at the start commit")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     Ok(())
 }

@@ -6,23 +6,24 @@ use crate::diagnostics::Result;
 use crate::paths;
 use crate::support::repository::host_git;
 
-use super::RefChange;
-
-/// bundleが運ぶrefの種類と、host側でそれを置く名前空間の中の名前。
-const KINDS: [(&str, &str); 3] = [
-    ("refs/heads/", "heads/"),
-    ("refs/tags/", "tags/"),
-    ("refs/sbxm/save/", "worktrees/"),
-];
+use super::{REF_KINDS, RefChange, saved_namespace, saved_refs};
 
 /// bundleを、hostの`repository`の`refs/sbx/<namespace>/`へ取り込む。
 ///
 /// hostのbranchやtagには触れない。bundleはobjectを確かめながら一時的な名前空間へ
-/// 取り込み、そこから名前空間の中のrefを1回のtransactionで書き換える。早送りでない
-/// 更新と、Sandboxに無くなったrefは、前の先端を`archive/<label>/`へ退避してから書き換え、
-/// 退避したrefは消さない。一度取り込んだcommitは、どれかのrefから辿れ続ける。
+/// 取り込み、そこから名前空間の中のrefを書き換える。早送りでない更新と、Sandboxに
+/// 無くなったrefは、前の先端を`archive/<label>/`へ退避してから書き換え、退避した
+/// refは消さない。一度取り込んだcommitは、どれかのrefから辿れ続ける。
+///
+/// 書き換えは2回のtransactionに分ける。先に前の先端の退避と消えたrefの削除を、次に
+/// 更新と作成を行う。`foo`から`foo/bar`への改名のように、消す名前と作る名前が
+/// fileとdirectoryで重なっても、同じtransactionの中でぶつからない。先の分だけ
+/// 済んだ場合も、前の先端は退避済みであり、次の取り込みが残りを作る。
 ///
 /// Sandboxのrefの名前は種類ごとに決めた場所へだけ写す。`archive/`へ届く写し方は無い。
+///
+/// 取り込みはbundleだけを読む。hostのrepositoryがsubmoduleを辿る設定でも、submoduleの
+/// remoteへは取りに行かない。
 pub fn import_bundle(
     host: &dyn HostEnvironment,
     repository: &Path,
@@ -41,9 +42,8 @@ pub fn import_bundle(
     .require_success()?;
 
     let incoming = format!("refs/sbx-incoming/{namespace}/");
-    let destination = format!("refs/sbx/{namespace}/");
     clear(host, repository, &incoming)?;
-    let imported = import_through(host, repository, &bundle, &incoming, &destination, label);
+    let imported = import_through(host, repository, &bundle, &incoming, namespace, label);
     // 一時的な名前空間は、取り込めても取り込めなくても残さない。
     let cleared = clear(host, repository, &incoming);
     let changes = imported?;
@@ -56,10 +56,11 @@ fn import_through(
     repository: &Path,
     bundle: &str,
     incoming: &str,
-    destination: &str,
+    namespace: &str,
     label: &str,
 ) -> Result<Vec<RefChange>> {
-    let refspecs: Vec<String> = KINDS
+    let destination = saved_namespace(namespace);
+    let refspecs: Vec<String> = REF_KINDS
         .iter()
         .map(|(source, kind)| format!("+{source}*:{incoming}{kind}*"))
         .collect();
@@ -68,6 +69,7 @@ fn import_through(
         "transfer.fsckObjects=true",
         "fetch",
         "--no-tags",
+        "--no-recurse-submodules",
         "--no-write-fetch-head",
         "--quiet",
         bundle,
@@ -83,16 +85,11 @@ fn import_through(
     .require_success()?;
 
     let arrived = refs_under(host, repository, incoming)?;
-    let mut existing = BTreeMap::new();
-    for (_, kind) in KINDS {
-        existing.extend(
-            refs_under(host, repository, &format!("{destination}{kind}"))?
-                .into_iter()
-                .map(|(name, tip)| (format!("{kind}{name}"), tip)),
-        );
-    }
+    let existing = saved_refs(host, repository, namespace)?;
 
-    let mut commands = vec!["start".to_string()];
+    // 先に退避と削除を、次に更新と作成を行う。
+    let mut retire = Vec::new();
+    let mut advance = Vec::new();
     let mut changes = Vec::new();
     for (name, old) in &existing {
         let reference = format!("{destination}{name}");
@@ -100,20 +97,20 @@ fn import_through(
         match arrived.get(name) {
             Some(new) if new == old => {}
             Some(new) if fast_forward(host, repository, old, new)? => {
-                commands.push(format!("update {reference} {new} {old}"));
+                advance.push(format!("update {reference} {new} {old}"));
                 changes.push(RefChange::Updated { reference });
             }
             Some(new) => {
-                commands.push(format!("create {archived} {old}"));
-                commands.push(format!("update {reference} {new} {old}"));
+                retire.push(format!("create {archived} {old}"));
+                advance.push(format!("update {reference} {new} {old}"));
                 changes.push(RefChange::Replaced {
                     reference,
                     archived,
                 });
             }
             None => {
-                commands.push(format!("create {archived} {old}"));
-                commands.push(format!("delete {reference} {old}"));
+                retire.push(format!("create {archived} {old}"));
+                retire.push(format!("delete {reference} {old}"));
                 changes.push(RefChange::Deleted {
                     reference,
                     archived,
@@ -124,16 +121,27 @@ fn import_through(
     for (name, new) in &arrived {
         if !existing.contains_key(name) {
             let reference = format!("{destination}{name}");
-            commands.push(format!("create {reference} {new}"));
+            advance.push(format!("create {reference} {new}"));
             changes.push(RefChange::Created { reference });
         }
     }
-    if changes.is_empty() {
-        return Ok(changes);
+    transaction(host, repository, retire)?;
+    transaction(host, repository, advance)?;
+    changes.sort_by(|left, right| left.reference().cmp(right.reference()));
+    Ok(changes)
+}
+
+/// `commands`を1回の`update-ref`のtransactionで行う。空なら何もしない。
+fn transaction(host: &dyn HostEnvironment, repository: &Path, commands: Vec<String>) -> Result<()> {
+    if commands.is_empty() {
+        return Ok(());
     }
-    commands.push("commit".to_string());
-    let mut input = commands.join("\n");
-    input.push('\n');
+    let mut input = String::from("start\n");
+    for command in commands {
+        input.push_str(&command);
+        input.push('\n');
+    }
+    input.push_str("commit\n");
     host_git(
         host,
         repository,
@@ -142,8 +150,7 @@ fn import_through(
         TimeoutClass::LocalFilesystem,
     )?
     .require_success()?;
-    changes.sort_by(|left, right| left.reference().cmp(right.reference()));
-    Ok(changes)
+    Ok(())
 }
 
 /// `prefix`の下にあるref。名前は`prefix`を除いた残りで返す。
@@ -169,8 +176,6 @@ fn refs_under(
                 .strip_prefix(prefix)
                 .map(|name| (name.to_string(), tip.to_string()))
         })
-        // 退避したrefは、Sandboxから届いたrefと突き合わせない。
-        .filter(|(name, _)| !name.starts_with("archive/"))
         .collect())
 }
 
@@ -194,21 +199,12 @@ fn fast_forward(
 /// `prefix`の下のrefをすべて消す。
 fn clear(host: &dyn HostEnvironment, repository: &Path, prefix: &str) -> Result<()> {
     let names = refs_under(host, repository, prefix)?;
-    if names.is_empty() {
-        return Ok(());
-    }
-    let mut lines = vec!["start".to_string()];
-    lines.extend(names.keys().map(|name| format!("delete {prefix}{name}")));
-    lines.push("commit".to_string());
-    let mut input = lines.join("\n");
-    input.push('\n');
-    host_git(
+    transaction(
         host,
         repository,
-        &["update-ref", "--stdin"],
-        Some(input.into_bytes()),
-        TimeoutClass::LocalFilesystem,
-    )?
-    .require_success()?;
-    Ok(())
+        names
+            .keys()
+            .map(|name| format!("delete {prefix}{name}"))
+            .collect(),
+    )
 }

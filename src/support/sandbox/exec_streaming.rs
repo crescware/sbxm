@@ -1,11 +1,9 @@
 use std::io::Write;
 
-use crate::boundary::host::{
-    CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass,
-};
+use crate::boundary::host::{CommandOutcome, HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 
-use super::exec_arguments;
+use super::exec_spec;
 
 /// Sandbox内でcommandを実行し、stdoutを`sink`へ流す。`limit`byteを超えたら拒否する。
 ///
@@ -19,10 +17,5 @@ pub fn exec_streaming(
     limit: u64,
     timeout: TimeoutClass,
 ) -> Result<CommandOutcome> {
-    let full = exec_arguments(sandbox, None, args);
-    let borrowed: Vec<&str> = full.iter().map(String::as_str).collect();
-    let spec = CommandSpec::capture("sbx", &borrowed)
-        .env(EnvPolicy::InheritWithoutSshAgent)
-        .timeout(timeout);
-    host.run_streaming(&spec, sink, limit)
+    host.run_streaming(&exec_spec(sandbox, None, false, args, timeout), sink, limit)
 }

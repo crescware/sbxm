@@ -6,7 +6,7 @@ use crate::diagnostics::Result;
 
 use super::{
     CommandOutcome, CommandSpec, HostEnvironment, PtyConfirmedCommand, TerminalCommand,
-    exists_on_path, run, run_pty_confirmed, run_streaming, run_terminal_ticking, run_with_terminal,
+    exists_on_path, run, run_pty_confirmed, run_streaming, run_terminal_inner, run_with_terminal,
 };
 
 /// 実際のhost。
@@ -36,7 +36,7 @@ impl HostEnvironment for RealHost {
         every: Duration,
         tick: &mut dyn FnMut(),
     ) -> Result<CommandOutcome> {
-        run_terminal_ticking(command, output, every, tick)
+        run_terminal_inner(command, output, Some((every, tick)))
     }
 
     fn run_streaming(

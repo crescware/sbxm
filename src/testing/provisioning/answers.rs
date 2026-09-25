@@ -210,9 +210,7 @@ impl World {
             ["daemon", ..] => (0, String::new()),
             _ => match spec.input().map(<[u8]>::to_vec).or_else(|| {
                 // 実物と同じく、つながれたfileは読み切った中身として届く。
-                spec.input_file
-                    .as_deref()
-                    .and_then(|path| std::fs::read(path).ok())
+                spec.input_file().and_then(|path| std::fs::read(path).ok())
             }) {
                 Some(input) => self.receive(&args, &input),
                 None => self.sandbox_exec(&args),

@@ -178,11 +178,11 @@ fn observe_sandbox(
             observe_github_credential(host, sandbox, observation, blocking);
         }
         // hostから送るrepositoryには、登録するtokenも、それを使うhelperも無い。
-        // 欠けているものが無いため、揃っているものとして数える。
+        // 在るものとして記録せず、要らないものとして記録する。
         repository::SandboxOrigin::Host { .. } => {
-            observation.secret = Observed::Matching;
-            observation.credential_helper = Observed::Matching;
-            observation.token_env = Observed::Matching;
+            observation.secret = Observed::NotApplicable;
+            observation.credential_helper = Observed::NotApplicable;
+            observation.token_env = Observed::NotApplicable;
         }
     }
     match declared_files(host, sandbox, metadata, config) {

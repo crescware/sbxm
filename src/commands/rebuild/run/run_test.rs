@@ -1569,7 +1569,7 @@ fn local_host_to_rebuild(
     // 戻したmainは、originより先にいる。
     .answering(
         &format!(
-            "exec {name} -- git --git-dir {git_dir} rev-parse --verify --quiet refs/heads/main^{{commit}}"
+            "exec {name} -- git --git-dir {git_dir} rev-parse --verify refs/heads/main^{{commit}}"
         ),
         0,
         &format!("{MOVED}\n"),

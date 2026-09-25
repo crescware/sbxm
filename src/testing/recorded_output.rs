@@ -1,4 +1,5 @@
-use crate::design::ExternalOutput;
+use crate::design::{ExternalOutput, ProgressSink, Warning};
+use crate::diagnostics::Msg;
 
 /// 外部toolが端末まで届けたものを記録するsink。
 #[derive(Debug, Default)]
@@ -6,6 +7,8 @@ pub struct RecordedOutput {
     pub relayed: Vec<u8>,
     pub handed_over: usize,
     pub finished: usize,
+    /// 示した工程。
+    pub steps: Vec<Msg>,
 }
 
 impl RecordedOutput {
@@ -15,6 +18,16 @@ impl RecordedOutput {
 
     pub fn text(&self) -> String {
         String::from_utf8_lossy(&self.relayed).into_owned()
+    }
+}
+
+impl ProgressSink for RecordedOutput {
+    fn step(&mut self, message: Msg) {
+        self.steps.push(message);
+    }
+
+    fn warn(&mut self, warning: Warning) {
+        let _ = warning;
     }
 }
 
