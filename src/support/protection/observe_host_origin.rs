@@ -5,15 +5,13 @@ use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::project::SandboxName;
 
+use crate::support::bundle;
 use crate::support::repository::host_git;
 
-use super::{CommitCandidate, OriginObservation, UnobservableReason};
+use super::{CommitCandidate, OriginObservation, UnobservableReason, host_label};
 
 /// hostのbranchを示す表記。Sandboxのupstreamと同じ`refs/remotes/origin/`へ揃える。
 const ORIGIN_REFS_NAMESPACE: &str = "refs/remotes/origin/";
-
-/// sbxmがhostへ保存した先端を示す表記の接頭辞。
-const HOST_LABEL_PREFIX: &str = "host:";
 
 /// hostにあるrepositoryを登録した案件で、hostのrepositoryをoriginとして観測する。
 ///
@@ -30,7 +28,7 @@ pub fn observe_host_origin(
     sandbox: &SandboxName,
     candidates: &[CommitCandidate],
 ) -> Result<OriginObservation> {
-    let saved = format!("refs/sbx/{}/", sandbox.as_str());
+    let saved = bundle::saved_namespace(sandbox.as_str());
     let scopes = ["refs/heads/", "refs/tags/", saved.as_str()];
 
     let mut listing = vec!["for-each-ref", "--format=%(refname) %(objectname)"];
@@ -104,7 +102,7 @@ fn label(reference: &str) -> String {
     } else if reference.starts_with("refs/tags/") {
         reference.to_string()
     } else {
-        format!("{HOST_LABEL_PREFIX}{reference}")
+        host_label(reference)
     }
 }
 

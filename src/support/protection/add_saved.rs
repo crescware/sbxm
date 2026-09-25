@@ -6,10 +6,7 @@ use crate::project::SandboxName;
 use crate::support::bundle;
 use crate::support::repository::host_git;
 
-use super::OriginObservation;
-
-/// hostへ保存済みの先端を示す表記の接頭辞。originのref名と取り違えない。
-const HOST_LABEL_PREFIX: &str = "host:";
+use super::{OriginObservation, host_label};
 
 /// originの観測へ、hostのrepositoryの`refs/sbx/<sandbox>/`に保存済みの先端を足す。
 ///
@@ -34,7 +31,7 @@ pub(super) fn add_saved(
     if !saved.is_empty() {
         let namespace = bundle::saved_namespace(sandbox.as_str());
         for tip in saved {
-            tips.insert(format!("{HOST_LABEL_PREFIX}{}", tip.reference), tip.commit);
+            tips.insert(host_label(&tip.reference), tip.commit);
         }
         for (commit, origins) in &mut reachable_from {
             origins.extend(saved_reaching(host, repository, &namespace, commit));
@@ -67,7 +64,7 @@ fn saved_reaching(
             .stdout_text()
             .lines()
             .filter(|line| !line.is_empty())
-            .map(|reference| format!("{HOST_LABEL_PREFIX}{reference}"))
+            .map(host_label)
             .collect(),
         _ => BTreeSet::new(),
     }
