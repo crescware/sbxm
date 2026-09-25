@@ -1158,6 +1158,8 @@ fn a_github_project_is_left_to_its_origin() -> Checked {
 
 #[test]
 fn a_bundle_stopped_by_a_signal_while_arriving_leaves_nothing_behind() -> Checked {
+    use std::io::Write;
+
     // 受け取りの途中でsignalを受けても、書きかけの一時fileを残さない。dashはsignalで
     // 終わるshellのEXIT trapを走らせない。
     let sending = Sending::new()?;
@@ -1171,11 +1173,33 @@ fn a_bundle_stopped_by_a_signal_while_arriving_leaves_nothing_behind() -> Checke
         .spawn()
         .required()?;
     let staged = || -> usize { fs::read_dir(&parent).map_or(0, Iterator::count) };
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while staged() == 0 && std::time::Instant::now() < deadline {
+    let received = || -> u64 {
+        fs::read_dir(&parent).map_or(0, |entries| {
+            entries
+                .flatten()
+                .filter_map(|entry| entry.metadata().ok())
+                .map(|metadata| metadata.len())
+                .sum()
+        })
+    };
+    // 一時fileができただけでは、まだtrapを置いていないことがある。`cat`が1 byteを
+    // 書いたのを見てから止める。負荷のかかったmachineでも打ち切らないよう長く待つ。
+    child
+        .stdin
+        .as_mut()
+        .required()?
+        .write_all(b"w")
+        .required()?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while received() == 0 && std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(staged(), 1, "the script started receiving");
+    assert_eq!(
+        received(),
+        1,
+        "the script started receiving: {:?}",
+        child.try_wait()
+    );
 
     let pid = rustix::process::Pid::from_child(&child);
     rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;

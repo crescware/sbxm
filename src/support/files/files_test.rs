@@ -997,6 +997,15 @@ impl Placing {
             .count())
     }
 
+    /// 一時fileの置き場へ書かれたbyte数。
+    fn received(&self) -> Checked<u64> {
+        let mut received = 0;
+        for entry in fs::read_dir(self.dir.path().join("tmp")).required()? {
+            received += entry.required()?.metadata().required()?.len();
+        }
+        Ok(received)
+    }
+
     fn run(&self, digest: &str, input: &[u8]) -> Checked<std::process::ExitStatus> {
         use std::io::Write;
 
@@ -1031,14 +1040,29 @@ fn the_placement_script_places_only_bytes_that_arrived_whole() -> Checked {
 
 #[test]
 fn a_placement_stopped_by_a_signal_leaves_nothing_behind() -> Checked {
+    use std::io::Write;
+
     // 受け取りの途中でsignalを受けても、秘密を含みうる一時fileを残さない。
     let placing = Placing::new()?;
     let mut child = placing.command(&sha256_hex(b"x")).spawn().required()?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while placing.staged()? == 0 && std::time::Instant::now() < deadline {
+    // 一時fileができただけでは、まだtrapを置いていないことがある。`cat`が1 byteを
+    // 書いたのを見てから止める。負荷のかかったmachineでも打ち切らないよう長く待つ。
+    child
+        .stdin
+        .as_mut()
+        .required()?
+        .write_all(b"x")
+        .required()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while placing.received()? == 0 && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    assert_eq!(placing.staged()?, 1, "the script started receiving");
+    assert_eq!(
+        placing.received()?,
+        1,
+        "the script started receiving: {:?}",
+        child.try_wait()
+    );
 
     let pid = rustix::process::Pid::from_child(&child);
     rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;
