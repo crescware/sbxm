@@ -2,7 +2,7 @@ use crate::project::ProjectId;
 
 use super::{CloneTransport, LOCAL_OWNER, Provider, Rejection, RepositoryIdentity, local_name};
 
-/// hostにあるrepositoryのpathと案件の名前を、identityへまとめる。
+/// hostにあるrepositoryのgit directoryのpathと案件の名前を、identityへまとめる。
 ///
 /// pathは正規化済みの絶対pathだけを受け取る。`.`や`..`を含むpath、末尾がslashのpath、
 /// 制御文字を含むpathは、同じrepositoryを別の綴りで指せてしまうため拒否する。

@@ -300,7 +300,7 @@ fn a_step_the_host_could_not_run_is_not_read_as_a_repository_that_must_be_replac
 
 fn local_metadata() -> Checked<crate::metadata::ProjectMetadata> {
     Ok(crate::metadata::ProjectMetadata {
-        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
+        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app/.git", "app")
             .required_because("a local repository")?,
         ..crate::testing::metadata::attached("example-org", "example-repo")?
     })
@@ -348,7 +348,7 @@ fn a_host_repository_is_read_from_the_bundle_inside_the_sandbox() -> Checked {
     assert_eq!(
         origin,
         SandboxOrigin::Host {
-            repository: std::path::PathBuf::from("/home/user/code/app"),
+            repository: std::path::PathBuf::from("/home/user/code/app/.git"),
             bundle: bundle.to_string(),
             staging: paths.bundles_dir(),
         }

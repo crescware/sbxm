@@ -2020,7 +2020,7 @@ fn a_workspace_that_vanishes_between_the_host_check_and_the_repository_probe_is_
 /// hostにあるrepositoryを登録した案件として観測する。Sandboxの中は`clean_host`が答える。
 fn as_local(project: &mut Registered) -> Checked {
     project.metadata.repository =
-        crate::repository::RepositoryIdentity::local("/srv/code/example-repo", "example-repo")
+        crate::repository::RepositoryIdentity::local("/srv/code/example-repo/.git", "example-repo")
             .required_because("a local repository")?;
     Ok(())
 }

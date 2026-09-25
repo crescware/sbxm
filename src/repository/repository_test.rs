@@ -260,22 +260,43 @@ fn local(path: &str, name: &str) -> Checked<RepositoryIdentity> {
 
 #[test]
 fn a_repository_on_the_host_is_registered_under_the_local_owner() -> Checked {
-    let identity = local("/home/user/code/Example-Repo", "Example-Repo")?;
+    let identity = local("/home/user/code/Example-Repo/.git", "Example-Repo")?;
 
     assert_eq!(identity.provider(), Provider::Local);
     assert_eq!(identity.owner(), LOCAL_OWNER);
     assert_eq!(identity.name(), "Example-Repo");
     assert_eq!(identity.canonical_id().as_str(), "local/example-repo");
     assert_eq!(identity.transport(), CloneTransport::File);
-    assert_eq!(identity.clone_url(), "/home/user/code/Example-Repo");
+    assert_eq!(identity.clone_url(), "/home/user/code/Example-Repo/.git");
     assert_eq!(identity.display_id(), "local/Example-Repo");
+    Ok(())
+}
+
+#[test]
+fn a_local_repository_takes_the_directory_name_git_clone_would_use() -> Checked {
+    // `git clone`と同じく、末尾の`/.git`を外し、残った名前から`.git`を外す。
+    for (path, expected) in [
+        ("/home/user/code/app/.git", Some("app")),
+        ("/srv/git/app.git", Some("app")),
+        ("/srv/git/app.git/.git", Some("app")),
+        ("/home/user/code/app/.git/modules/lib", Some("lib")),
+        ("/home/user/code/app", Some("app")),
+        ("/.git", None),
+        ("/", None),
+    ] {
+        assert_eq!(clone_directory_name(path), expected, "{path}");
+    }
+    assert_eq!(
+        local("/srv/git/Tool.git", "Tool")?.display_id(),
+        "local/Tool"
+    );
     Ok(())
 }
 
 #[test]
 fn a_local_project_named_apart_from_its_directory_is_shown_by_its_canonical_name() -> Checked {
     // 索引は表示用の名前を持たない。読み直せる綴りだけを表示に使う。
-    let identity = local("/home/user/code/app", "Tool")?;
+    let identity = local("/home/user/code/app/.git", "Tool")?;
     assert_eq!(identity.name(), "tool");
     assert_eq!(identity.display_id(), "local/tool");
     Ok(())
@@ -284,8 +305,9 @@ fn a_local_project_named_apart_from_its_directory_is_shown_by_its_canonical_name
 #[test]
 fn a_local_identity_is_read_back_from_the_index_and_the_metadata() -> Checked {
     for (path, name) in [
-        ("/home/user/code/Example-Repo", "Example-Repo"),
-        ("/home/user/code/app", "tool"),
+        ("/home/user/code/Example-Repo/.git", "Example-Repo"),
+        ("/home/user/code/app/.git", "tool"),
+        ("/srv/git/Tool.git", "Tool"),
     ] {
         let identity = local(path, name)?;
         let indexed = RepositoryIdentity::from_index_parts(
@@ -359,10 +381,10 @@ fn stored_local_fields_that_disagree_are_refused() -> Checked {
 
 #[test]
 fn local_projects_at_different_paths_are_different_targets() -> Checked {
-    let here = local("/home/user/a/app", "app")?;
-    let there = local("/home/user/b/app", "app")?;
+    let here = local("/home/user/a/app/.git", "app")?;
+    let there = local("/home/user/b/app/.git", "app")?;
     assert!(!here.same_target(&there));
-    assert!(here.same_target(&local("/home/user/a/app", "app")?));
+    assert!(here.same_target(&local("/home/user/a/app/.git", "app")?));
     Ok(())
 }
 
@@ -373,17 +395,22 @@ fn the_add_arguments_register_the_same_project_again() -> Checked {
         "git@github.com:Example-Org/Example-Repo.git"
     );
     assert_eq!(
-        local("/home/user/code/App", "App")?.add_arguments(),
-        "--local /home/user/code/App"
-    );
-    // directory名と別の名前は`--name`で添える。shellが分けるpathは囲む。
-    assert_eq!(
-        local("/home/user/my code/app", "tool")?.add_arguments(),
-        "--local '/home/user/my code/app' --name tool"
+        local("/home/user/code/App/.git", "App")?.add_arguments(),
+        "--local /home/user/code/App/.git"
     );
     assert_eq!(
-        local("/home/user/it's/app", "app")?.add_arguments(),
-        "--local '/home/user/it'\\''s/app'"
+        local("/srv/git/app.git", "app")?.add_arguments(),
+        "--local /srv/git/app.git"
+    );
+    // `git clone`が作るdirectoryの名前と別の名前は`--name`で添える。shellが分けるpathは
+    // 囲む。
+    assert_eq!(
+        local("/home/user/my code/app/.git", "tool")?.add_arguments(),
+        "--local '/home/user/my code/app/.git' --name tool"
+    );
+    assert_eq!(
+        local("/home/user/it's/app/.git", "app")?.add_arguments(),
+        "--local '/home/user/it'\\''s/app/.git'"
     );
     Ok(())
 }

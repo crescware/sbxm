@@ -470,19 +470,22 @@ this way, so it still has to be pushed or dropped.
 ## Develop without GitHub
 
 A repository that already lives on this host can be a project too. sbxm does
-not clone it: the repository's `.git` acts as the origin, and the sandbox is a
-disposable place to work in.
+not clone it: the repository itself acts as the origin, and the sandbox is a
+disposable place to work in. Pass its Git directory, not its working tree.
 
 ```sh
 cd ~/Projects
-sbxm add --local ~/code/<repository>
+sbxm add --local ~/code/<repository>/.git
 sbxm open local/<repository>
 ```
 
-The path must be the top of a Git working tree. The project ID is
-`local/<name>`, where the name is the directory name unless you pass
-`--name <name>`. The sandbox starts from the branch the host repository is on,
-or from the branch given with `--detach`.
+The path must be a Git directory: the `.git` of a working tree, a bare
+repository, or the `.git` file of a worktree or submodule. A working-tree
+directory is refused, because it can hold more than one repository. The project
+ID is `local/<name>`, where the name is the directory name `git clone` would
+use unless you pass `--name <name>`. The sandbox starts from the branch the Git
+directory is on — for a worktree's `.git`, that worktree's branch — or from the
+branch given with `--detach`.
 
 No GitHub token is involved, so skip registering one. When `open` builds the
 sandbox, sbxm writes the host repository's branches and tags into one
@@ -582,7 +585,7 @@ rather than sbxm guessing at the new location.
 | Command | Purpose |
 |---|---|
 | `sbxm add <github-clone-url>` | Add a GitHub repository to sbxm and clone it onto this host |
-| `sbxm add --local <path> [--name <name>]` | Add a Git repository on this host as `local/<name>` without cloning it; its `.git` acts as the origin |
+| `sbxm add --local <git-dir> [--name <name>]` | Add a Git repository on this host as `local/<name>` without cloning it; pass its Git directory, such as `.git`, which acts as the origin |
 | `sbxm open [<project-id>] [--index N]` | Open an SSH session to a project sandbox, building it on the first run and starting it if needed; `N` selects a zero-based managed worktree |
 | `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
 | `sbxm ls` | List managed projects and unmanaged sandboxes with their states |

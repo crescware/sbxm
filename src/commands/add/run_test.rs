@@ -848,8 +848,9 @@ fn a_registered_root_is_observed_before_its_metadata_is_read() -> Checked {
 #[test]
 fn a_repository_on_the_host_is_registered_without_being_cloned() -> Checked {
     let setup = setup()?;
-    let repository = crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
-        .required_because("a local repository")?;
+    let repository =
+        crate::repository::RepositoryIdentity::local("/home/user/code/app/.git", "app")
+            .required_because("a local repository")?;
     let mut request = from(repository, None, None);
     request.start_branch = Some("main".to_string());
     let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
@@ -865,7 +866,10 @@ fn a_repository_on_the_host_is_registered_without_being_cloned() -> Checked {
     .required()?;
 
     assert_eq!(output.project, "local/app");
-    assert_eq!(output.host_repository, Path::new("/home/user/code/app"));
+    assert_eq!(
+        output.host_repository,
+        Path::new("/home/user/code/app/.git")
+    );
     assert!(!output.cloned);
     assert_eq!(output.start_ref.as_deref(), Some("main"));
     assert!(!output.needs_github_token);
@@ -877,32 +881,38 @@ fn a_repository_on_the_host_is_registered_without_being_cloned() -> Checked {
 
 #[test]
 fn a_repository_on_the_host_is_not_added_from_inside_itself() -> Checked {
-    // 案件directoryを利用者のworking treeの中に作らない。
+    // 案件directoryを利用者のworking treeの中に作らない。登録済みの案件は、repositoryの
+    // 中から続けても案件directoryを新しく作らないため、そのまま続ける。
     let setup = setup()?;
     let repository = fs::canonicalize(setup.dir.path()).required()?.join("app");
-    fs::create_dir_all(repository.join("src")).required()?;
-    let local =
-        crate::repository::RepositoryIdentity::local(repository.to_str().required()?, "app")
-            .required_because("a local repository")?;
-    let mut request = from(local, None, None);
-    request.start_branch = Some("main".to_string());
+    fs::create_dir_all(&repository).required()?;
+    let local = crate::repository::RepositoryIdentity::local(
+        repository.join(".git").to_str().required()?,
+        "app",
+    )
+    .required_because("a local repository")?;
+    let mut inside = from(local, None, None);
+    inside.start_branch = Some("main".to_string());
+    inside.parent_inside_repository = true;
+    let parent = ProjectParent::at(&repository).required()?;
 
-    for cwd in [repository.clone(), repository.join("src")] {
-        let parent = ProjectParent::at(&cwd).required()?;
-        let error = register(&setup.location, &parent, &request, &identity())
-            .refused_because("the project would sit inside the repository")?;
-        assert_eq!(
-            error.first_id(),
-            Some(ErrorId::ProjectInsideRepository),
-            "{}",
-            cwd.display()
-        );
-        assert!(!cwd.join("app.project").exists(), "{}", cwd.display());
-    }
+    let error = register(&setup.location, &parent, &inside, &identity())
+        .refused_because("the project would sit inside the repository")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectInsideRepository));
+    assert!(!repository.join("app.project").exists());
     assert!(
-        !was_already_registered(&setup.location, &request.repository).required()?,
+        !was_already_registered(&setup.location, &inside.repository).required()?,
         "nothing is recorded"
     );
+
+    let mut outside = inside.clone();
+    outside.parent_inside_repository = false;
+    drop(register(&setup.location, &setup.parent, &outside, &identity()).required()?);
+    drop(
+        register(&setup.location, &parent, &inside, &identity())
+            .required_because("a registered project resumes where it was recorded")?,
+    );
+    assert!(!repository.join("app.project").exists());
     Ok(())
 }
 
@@ -911,7 +921,7 @@ fn a_detached_host_repository_is_not_recorded_but_a_registered_one_resumes() -> 
     // 新しく記録するなら起点が要る。登録済みの案件は、hostのrepositoryが今detachedでも
     // 保存済みの起点で続ける。
     let setup = setup()?;
-    let local = crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
+    let local = crate::repository::RepositoryIdentity::local("/home/user/code/app/.git", "app")
         .required_because("a local repository")?;
     let detached = from(local.clone(), None, None);
 

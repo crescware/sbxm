@@ -17,6 +17,11 @@ pub struct AddRequest {
     /// hostにあるrepositoryは、そのrepositoryが今いるbranchから始める。GitHubの
     /// repositoryは構築時にremote default branchを解決するため`None`とする。
     pub start_branch: Option<String>,
+    /// 案件directoryを作るdirectoryが、hostにある登録対象のrepositoryの中にあるか。
+    ///
+    /// working treeやgit directoryの中には、新しい案件directoryを作らせない。GitHubの
+    /// repositoryでは`false`とする。
+    pub parent_inside_repository: bool,
 }
 
 impl AddRequest {
@@ -24,14 +29,15 @@ impl AddRequest {
     ///
     /// hostにあるrepositoryは、ここで実在を確かめて正規化する。branchの上にいれば、
     /// attached modeの起点としてそのbranchを持つ。detachedでも、ここでは断らない。
-    /// 登録済みの案件は、保存済みの起点で続けられるためである。
+    /// 登録済みの案件は、保存済みの起点で続けられるためである。`parent`がrepositoryの
+    /// 中にあることも同じ理由で断らず、新しく記録するときに断る。
     pub fn resolve(
         args: &Args,
         parent: &ProjectParent,
         host: &dyn HostEnvironment,
     ) -> Result<AddRequest> {
-        let (repository, start_branch) = match &args.target {
-            AddTarget::Clone(repository) => (repository.clone(), None),
+        let (repository, start_branch, parent_inside_repository) = match &args.target {
+            AddTarget::Clone(repository) => (repository.clone(), None, false),
             AddTarget::Local { path, name } => {
                 let local = LocalRepository::resolve(host, parent, path, name.as_deref())?;
                 let start_branch = if args.detach.is_some() {
@@ -39,7 +45,7 @@ impl AddRequest {
                 } else {
                     local.branch
                 };
-                (local.identity, start_branch)
+                (local.identity, start_branch, local.encloses_parent)
             }
         };
         Ok(AddRequest {
@@ -47,6 +53,7 @@ impl AddRequest {
             worktrees: args.worktrees,
             detach: args.detach.clone(),
             start_branch,
+            parent_inside_repository,
         })
     }
 }

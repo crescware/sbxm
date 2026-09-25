@@ -12,8 +12,9 @@ cli-version-help = versionを表示する
 
 cli-add-about = GitHub repository、またはこのhostにあるrepositoryをsbxmへ追加します
 cli-add-repository-help = 追加するrepositoryのGitHub SSHまたはHTTPS clone URL
-cli-add-local-help = GitHub repositoryの代わりに追加する、このhostにあるGit repositoryのpath。その.gitがoriginの役を持ちます
-cli-add-name-help = --localで追加する案件の名前。local/<name>として使い、省略するとrepositoryのdirectory名になります
+cli-add-local-help = GitHub repositoryの代わりに追加する、このhostにあるrepositoryのgit directory。.gitやbare repositoryを渡し、それがoriginの役を持ちます
+# architecture-test-disable-next-line no_resource_embeds_a_command_the_user_is_meant_to_run -- 名前の決め方をgit cloneの規則として説明しており、実行は求めていない
+cli-add-name-help = --localで追加する案件の名前。local/<name>として使い、省略するとgit cloneが使うdirectory名になります
 cli-add-worktrees-help = Sandboxに用意するmanaged worktreeの目標本数 (1〜32)
 cli-add-detach-help = 全managed worktreeをdetachedで開始する起点のremote branch
 cli-add-git-user-name-help = この案件のGit commitに使う名前。--git-user-emailと同時指定します
@@ -149,7 +150,7 @@ error-initial-provisioning-unobservable = { $project } の初回構築が完了�
 
 error-host-clone-unusable = このcloneはこの案件には使用できません
 error-local-repository-unusable = このpathは、このhostのrepositoryとして追加できません
-error-local-name-unusable = directory名 { $name } は案件の名前として使えません。
+error-local-name-unusable = repositoryのpathから取った名前 { $name } は案件の名前として使えません。
 error-host-repository-detached = hostのrepositoryがbranchの上にないため、Sandboxの起点にするbranchがありません。
 error-image-collision = 同じ名前のimageが既に存在し、別の内容を宣言しているため、この世代はその名前を使えません
 error-image-unusable = このimageはこの案件には使用できません
@@ -395,7 +396,7 @@ error-remote-ssh-unconfigured = sshに { $host } 向けのproxy設定がない�
 error-remote-ssh-unobservable = Sandbox向けのSSH設定を読み取れません
 remediation-run-help = このcommandが受け付ける引数を確認します。
 remediation-host-clone-unusable = { $path } を確認し、退避するかoriginを直してから、もう一度実行してください。
-remediation-local-repository-unusable = このhostにあるGit working treeの最上位directoryを渡してください。
+remediation-local-repository-unusable = このhostにあるrepositoryのgit directoryを渡してください。working treeの.gitか、bare repositoryです。
 remediation-local-name-unusable = 英数字、'.'、'-'、'_'からなる案件の名前を決め、--nameで渡してください。
 remediation-host-repository-detached = hostのrepositoryでbranchをcheckoutするか、起点にするbranchを--detachで渡してください。
 remediation-declared-file-conflict = 両者を確認したうえで、Sandbox側を宣言fileで置き換えます。

@@ -484,8 +484,9 @@ fn concurrent_registrations_of_different_projects_lose_no_entry() -> Checked {
 #[test]
 fn a_local_project_is_recorded_and_read_back_with_its_host_path() -> Checked {
     let (_dir, location) = home()?;
-    let repository = crate::repository::RepositoryIdentity::local("/home/user/code/Alpha", "Alpha")
-        .required_because("a local repository")?;
+    let repository =
+        crate::repository::RepositoryIdentity::local("/home/user/code/Alpha/.git", "Alpha")
+            .required_because("a local repository")?;
     let mut guard = RegistryGuard::acquire(&location).required_because("acquire")?;
     guard
         .insert(

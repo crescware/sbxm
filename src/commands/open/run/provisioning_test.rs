@@ -463,11 +463,12 @@ fn a_local_project_is_saved_during_and_after_the_session() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let request = crate::commands::add::AddRequest {
-        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
+        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app/.git", "app")
             .required_because("a local repository")?,
         worktrees: None,
         detach: None,
         start_branch: Some("main".to_string()),
+        parent_inside_repository: false,
     };
     bench.build(&world, &request).required()?;
     let mark = world.mark();

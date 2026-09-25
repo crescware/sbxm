@@ -544,7 +544,7 @@ fn a_sandbox_that_works_somewhere_else_is_not_taken_for_this_projects() -> Check
 #[test]
 fn a_local_project_has_no_github_secret_to_look_for() -> Checked {
     let fixture = Fixture::new()?;
-    let project = fixture.register_local("/srv/code/app", "app")?;
+    let project = fixture.register_local("/srv/code/app/.git", "app")?;
     for state in ["running", "stopped"] {
         let host = without_image(
             FakeSbx::listing(&format!(

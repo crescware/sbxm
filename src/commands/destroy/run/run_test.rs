@@ -1450,7 +1450,7 @@ fn an_entry_left_behind_by_a_crash_after_the_commit_point_is_tolerated() -> Chec
 #[test]
 fn a_local_project_is_removed_without_a_token_and_keeps_its_host_repository() -> Checked {
     let fixture = Fixture::new()?;
-    let project = fixture.register_local("/srv/code/app", "app")?;
+    let project = fixture.register_local("/srv/code/app/.git", "app")?;
     let scopes = format!("refs/heads/ refs/tags/ refs/sbx/{}/", project.sandbox);
     // hostのmainがworktreeのcommitへ届く。
     let host = clean_host(&fixture, &project)?.answering(
@@ -1480,12 +1480,12 @@ fn a_local_project_is_removed_without_a_token_and_keeps_its_host_repository() ->
     );
     assert_eq!(
         prepared.plan.keeps.first().and_then(path_of),
-        Some("/srv/code/app"),
+        Some("/srv/code/app/.git"),
         "the host repository is kept where it was added"
     );
     assert_eq!(
         prepared.plan.re_register,
-        "sbxm add --local /srv/code/app --worktrees 1"
+        "sbxm add --local /srv/code/app/.git --worktrees 1"
     );
 
     destroy(&host, &mut prepared).required_because("destroy")?;

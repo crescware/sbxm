@@ -4,7 +4,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provider {
     Github,
-    /// 利用者のhostにあるrepository。hostの`.git`がoriginの役を持つ。
+    /// 利用者のhostにあるrepository。そのgit directoryがoriginの役を持つ。
     Local,
 }
 

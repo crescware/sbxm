@@ -428,17 +428,21 @@ pushするか捨てる必要があります。
 ## GitHubを使わずに開発する
 
 このhostにすでにあるrepositoryも、プロジェクトにできます。sbxmはcloneしません。
-そのrepositoryの`.git`がoriginの役を持ち、Sandboxは作業のための使い捨ての場所になります。
+そのrepository自身がoriginの役を持ち、Sandboxは作業のための使い捨ての場所になります。
+working treeではなく、repositoryのgit directoryを渡します。
 
 ```sh
 cd ~/Projects
-sbxm add --local ~/code/<repository>
+sbxm add --local ~/code/<repository>/.git
 sbxm open local/<repository>
 ```
 
-pathはGit working treeの最上位でなければなりません。プロジェクトIDは`local/<name>`で、
-名前は`--name <name>`を渡さなければdirectory名です。Sandboxは、hostのrepositoryが今いる
-branch、または`--detach`で渡したbranchから始まります。
+pathはgit directoryでなければなりません。working treeの`.git`、bare repository、
+worktreeやsubmoduleの`.git` fileを渡せます。working treeのdirectoryは、その中に
+repositoryがいくつあってもよく、どれを指すのかが決まらないため断ります。プロジェクトIDは
+`local/<name>`で、名前は`--name <name>`を渡さなければ`git clone`が使うdirectory名です。
+Sandboxは、渡したgit directoryが今いるbranch（worktreeの`.git`なら、そのworktreeの
+branch）、または`--detach`で渡したbranchから始まります。
 
 GitHub tokenは関わらないため、登録の手順は要りません。`open`がSandboxを構築するとき、
 sbxmはhostのrepositoryのbranchとtagを1つの`git bundle`にし、`sbx exec`越しにSandboxへ
@@ -523,7 +527,7 @@ repositoryは追加したときの場所に残ります。
 | コマンド | 用途 |
 |---|---|
 | `sbxm add <github-clone-url>` | GitHub repositoryをsbxmへ追加し、このhostへcloneする |
-| `sbxm add --local <path> [--name <name>]` | このhostにあるGit repositoryを、cloneせずに`local/<name>`として追加する。その`.git`がoriginの役を持つ |
+| `sbxm add --local <git-dir> [--name <name>]` | このhostにあるGit repositoryを、cloneせずに`local/<name>`として追加する。`.git`などのgit directoryを渡し、それがoriginの役を持つ |
 | `sbxm open [<project-id>] [--index N]` | SandboxへのSSH接続を開く。初回はSandboxを構築し、以降は必要なら先に起動する。`N`は0始まりのmanaged worktree index |
 | `sbxm stop [<project-id> ...]` | 1件以上の案件のSandboxを、削除せず停止する |
 | `sbxm ls` | 管理案件と管理外Sandboxを、その状態とともに一覧する |

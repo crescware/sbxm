@@ -201,7 +201,7 @@ fn canceling_the_topic_selection_cancels_the_guide() -> Checked {
 #[test]
 fn a_local_project_has_no_token_to_rotate() -> Checked {
     let fixture = Fixture::new()?;
-    fixture.register_local("/srv/code/app", "app")?;
+    fixture.register_local("/srv/code/app/.git", "app")?;
     let host = FakeSbx::listing("");
 
     let error = super::run::run(

@@ -6,7 +6,7 @@ sbxm
   add
     id=help --help -h args=0 action=Help order=1000
     id=repository positional value=github-clone-url args=1 action=Set order=999
-    id=local --local value=PATH args=1 action=Set order=1
+    id=local --local value=GIT_DIR args=1 action=Set order=1
     id=name --name value=NAME args=1 action=Set order=2
     id=worktrees --worktrees -t value=N args=1 action=Set order=3
     id=detach --detach value=BRANCH args=1 action=Set order=4
