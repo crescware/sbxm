@@ -65,9 +65,6 @@ fn argument_syntax(syntax: &ArgumentSyntax) -> Arg {
     if let Some(value_name) = syntax.value_name {
         argument = argument.value_name(value_name);
     }
-    if syntax.required {
-        argument = argument.required(true);
-    }
     match syntax.action {
         ArgumentAction::Value => argument,
         ArgumentAction::Flag => argument.action(ArgAction::SetTrue),

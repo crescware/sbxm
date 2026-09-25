@@ -30,6 +30,9 @@ impl LocalSandbox {
         if let Some(input) = spec.input() {
             local = local.with_input(input.to_vec());
         }
+        if let Some(path) = spec.input_file() {
+            local = local.with_input_file(path);
+        }
         local
     }
 }

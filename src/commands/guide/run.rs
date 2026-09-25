@@ -53,6 +53,12 @@ fn credential_rotation(
         prompt,
     )?;
     let project = candidate.display_id();
+    if !candidate.repository.uses_github_token() {
+        return Err(Error::new(
+            ErrorId::NoGithubToken,
+            msg!("error-no-github-token", project = project),
+        ));
+    }
     let sandbox = SandboxName::derive(candidate.repository.canonical_id());
     let register_command = secret::replace_github_command(host, sandbox.as_str())?;
 

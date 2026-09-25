@@ -5,6 +5,8 @@
 pub enum CloneTransport {
     Ssh,
     Https,
+    /// hostのfile systemにあるrepositoryをそのまま使う。cloneしない。
+    File,
 }
 
 impl CloneTransport {
@@ -13,6 +15,7 @@ impl CloneTransport {
         match self {
             CloneTransport::Ssh => "ssh",
             CloneTransport::Https => "https",
+            CloneTransport::File => "file",
         }
     }
 
@@ -21,6 +24,7 @@ impl CloneTransport {
         match value {
             "ssh" => Some(CloneTransport::Ssh),
             "https" => Some(CloneTransport::Https),
+            "file" => Some(CloneTransport::File),
             _ => None,
         }
     }

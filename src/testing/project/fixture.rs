@@ -52,7 +52,17 @@ impl Fixture {
 
     /// 案件を、registry entryとmetadataの両方が揃った状態にする。
     pub fn register(&self, project: &str) -> Checked<Registered> {
-        let repository = ssh_repository(project)?;
+        self.register_repository(ssh_repository(project)?)
+    }
+
+    /// hostにあるrepositoryの案件を、registry entryとmetadataの両方が揃った状態にする。
+    pub fn register_local(&self, path: &str, name: &str) -> Checked<Registered> {
+        self.register_repository(
+            RepositoryIdentity::local(path, name).required_because("a local repository")?,
+        )
+    }
+
+    fn register_repository(&self, repository: RepositoryIdentity) -> Checked<Registered> {
         let canonical = repository.canonical_id().clone();
         let paths = ProjectPaths::derive(&self.parent, &canonical);
         std::fs::create_dir_all(paths.sbxm_dir()).required_because("create .sbxm")?;

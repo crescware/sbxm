@@ -643,3 +643,57 @@ fn repair_asks_for_another_repair_when_completion_cannot_be_reverified_after_pro
     );
     Ok(())
 }
+
+#[test]
+fn an_interrupted_local_project_is_repaired_without_a_token() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = crate::commands::add::AddRequest {
+        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app", "app")
+            .required_because("a local repository")?,
+        worktrees: None,
+        detach: None,
+        start_branch: Some("main".to_string()),
+    };
+    world.failing("worktree add");
+    bench
+        .build(&world, &request)
+        .refused_because("the first build stopped before the worktree")?;
+    world.nothing_fails();
+
+    let project = crate::project::ProjectId::parse("local/app").required()?;
+    let prepared = prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        &world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .required_because("an interrupted local build is repairable")?;
+    // hostから送るrepositoryには、tokenを使うhelperが無い。
+    assert!(
+        prepared
+            .plan
+            .observations
+            .iter()
+            .all(|field| field.label.id != "repair-observation-credential-helper"),
+        "{:?}",
+        prepared.plan.observations
+    );
+    let mark = world.mark();
+    execute(
+        &world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+    .required_because("repair completes the local build")?;
+    assert!(
+        !world.since(mark).iter().any(|call| call.contains("secret")),
+        "{:?}",
+        world.since(mark)
+    );
+    Ok(())
+}

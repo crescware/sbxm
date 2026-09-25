@@ -37,14 +37,24 @@ pub fn check_inside(
         None => Some(Value::NotObserved),
         Some(ProjectState::Running) => None,
     };
+    // hostから送るrepositoryには、登録するtokenが無い。
+    let without_token = !metadata.repository.uses_github_token();
     if let Some(value) = uniform {
         for item in inner {
-            status.push(item, value);
+            if without_token && item == "status-item-secret" {
+                status.push(item, Value::NotApplicable);
+            } else {
+                status.push(item, value);
+            }
         }
         return;
     }
 
-    check_secret(host, name, status);
+    if without_token {
+        status.push("status-item-secret", Value::NotApplicable);
+    } else {
+        check_secret(host, name, status);
+    }
     let layout = SandboxLayout::new(metadata.canonical_id());
     check_bare_repository(host, name, &layout, status);
     check_worktrees(host, name, &layout, metadata, host_repository, status);

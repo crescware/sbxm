@@ -6,7 +6,7 @@ use crate::config::GlobalConfig;
 use crate::diagnostics::{Error, Result};
 use crate::metadata::ProjectMetadata;
 use crate::paths::ProjectPaths;
-use crate::project::{ProjectId, SandboxLayout, SandboxName};
+use crate::project::{SandboxLayout, SandboxName};
 use crate::support::Observed;
 
 use crate::support::{
@@ -73,15 +73,17 @@ pub(crate) fn observe(
             && observation.workspace.is_matching()
             && entry.state == SandboxState::Running
         {
+            let origin = repository::SandboxOrigin::of(paths, metadata)?;
             observe_sandbox(
                 host,
                 entry,
                 config,
                 metadata,
+                &origin,
                 &layout,
                 &mut observation,
                 &mut blocking,
-            )?;
+            );
         } else {
             // 停止中のSandboxの中は、起動せずには読めない。読まなかったことを欠落と
             // 書かず、観測不能として残す。
@@ -160,17 +162,64 @@ fn observe_sandbox(
     entry: &SandboxEntry,
     config: &GlobalConfig,
     metadata: &ProjectMetadata,
+    origin: &repository::SandboxOrigin,
     layout: &SandboxLayout,
     observation: &mut Observation,
     blocking: &mut Blocking,
-) -> Result<()> {
-    let project = ProjectId::parse(&metadata.display_id())?;
+) {
     let sandbox = &entry.name;
 
     observation.credentials = match sandbox::require_credentials_isolated(host, sandbox) {
         Ok(()) => Observed::Matching,
         Err(error) => blocked(blocking, error),
     };
+    match origin {
+        repository::SandboxOrigin::Github(_) => {
+            observe_github_credential(host, sandbox, observation, blocking);
+        }
+        // hostから送るrepositoryには、登録するtokenも、それを使うhelperも無い。
+        // 在るものとして記録せず、要らないものとして記録する。
+        repository::SandboxOrigin::Host { .. } => {
+            observation.secret = Observed::NotApplicable;
+            observation.credential_helper = Observed::NotApplicable;
+            observation.token_env = Observed::NotApplicable;
+        }
+    }
+    match declared_files(host, sandbox, metadata, config) {
+        Ok(files) => {
+            // Sandboxの中で書き換えられたfileも置かれてはいる。欠けているのは、まだ
+            // 置かれていないfileだけである。
+            observation.files_placed = if files
+                .iter()
+                .all(|file| file.placement != crate::support::files::Placement::Placed)
+            {
+                Observed::Matching
+            } else {
+                Observed::Missing
+            };
+            observation.files = files;
+        }
+        Err(error) => observation.files_placed = blocked(blocking, error),
+    }
+    observation.identity = match identity::observe(host, sandbox, &metadata.git_identity) {
+        Ok(true) => Observed::Matching,
+        Ok(false) => Observed::Missing,
+        Err(error) => blocked(blocking, error),
+    };
+    observation.tools = observe_tools(host, sandbox, blocking);
+    observation.repository = observe_repository(host, sandbox, origin, layout, blocking);
+    if observation.repository.is_matching() {
+        observe_worktrees(host, sandbox, layout, metadata, observation, blocking);
+    }
+}
+
+/// GitHub tokenの登録と、それを使うcredential helperとtoken環境変数file。
+fn observe_github_credential(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    observation: &mut Observation,
+    blocking: &mut Blocking,
+) {
     // 登録が読めなければ、helperが正しい値を持つかどうかも判定できない。推測せず、
     // どちらも足りないものとして扱う。
     match secret::require_github(host, sandbox) {
@@ -198,33 +247,6 @@ fn observe_sandbox(
             observation.token_env = Observed::Missing;
         }
     }
-    match declared_files(host, sandbox, metadata, config) {
-        Ok(files) => {
-            // Sandboxの中で書き換えられたfileも置かれてはいる。欠けているのは、まだ
-            // 置かれていないfileだけである。
-            observation.files_placed = if files
-                .iter()
-                .all(|file| file.placement != crate::support::files::Placement::Placed)
-            {
-                Observed::Matching
-            } else {
-                Observed::Missing
-            };
-            observation.files = files;
-        }
-        Err(error) => observation.files_placed = blocked(blocking, error),
-    }
-    observation.identity = match identity::observe(host, sandbox, &metadata.git_identity) {
-        Ok(true) => Observed::Matching,
-        Ok(false) => Observed::Missing,
-        Err(error) => blocked(blocking, error),
-    };
-    observation.tools = observe_tools(host, sandbox, blocking);
-    observation.repository = observe_repository(host, sandbox, &project, layout, blocking);
-    if observation.repository.is_matching() {
-        observe_worktrees(host, sandbox, layout, metadata, observation, blocking);
-    }
-    Ok(())
 }
 
 fn observe_tools(host: &dyn HostEnvironment, sandbox: &str, blocking: &mut Blocking) -> Observed {
@@ -245,14 +267,14 @@ fn observe_tools(host: &dyn HostEnvironment, sandbox: &str, blocking: &mut Block
 fn observe_repository(
     host: &dyn HostEnvironment,
     sandbox: &str,
-    project: &ProjectId,
+    origin: &repository::SandboxOrigin,
     layout: &SandboxLayout,
     blocking: &mut Blocking,
 ) -> Observed {
     let git_dir = layout.bare_git_dir();
     match sandbox::path_exists(host, sandbox, &git_dir) {
         Ok(false) => Observed::Missing,
-        Ok(true) => match repository::verify_bare_clone(host, sandbox, project, &git_dir) {
+        Ok(true) => match repository::verify_bare_clone(host, sandbox, origin, &git_dir) {
             Ok(()) => Observed::Matching,
             Err(error) => blocked(blocking, error),
         },

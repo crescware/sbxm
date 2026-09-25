@@ -20,6 +20,19 @@ pub fn exec(
         Ok(pair) => pair,
         Err(error) => return report(ui, &error),
     };
+    ui.set_locale(locale);
+
+    // cwdはsbxmが選ぶ場所ではない。project rootを足す親directoryとして受け取る。
+    let parent = match ProjectParent::current() {
+        Ok(parent) => parent,
+        Err(error) => return report(ui, &error),
+    };
+    // 登録する対象は、clone URLと同じく何かを訊く前に確かめる。対象の誤りを、言語や
+    // 名義を決めたあとで知らせない。
+    let request = match AddRequest::resolve(args, &parent, host) {
+        Ok(request) => request,
+        Err(error) => return report(ui, &error),
+    };
 
     let locale = match choose_language(context, &config, locale, prompt) {
         Ok(chosen) => chosen,
@@ -36,17 +49,6 @@ pub fn exec(
     };
     ui.note_prompt_output();
 
-    // cwdはsbxmが選ぶ場所ではない。project rootを足す親directoryとして受け取る。
-    let parent = match ProjectParent::current() {
-        Ok(parent) => parent,
-        Err(error) => return report(ui, &error),
-    };
-
-    let request = AddRequest {
-        repository: args.repository.clone(),
-        worktrees: args.worktrees,
-        detach: args.detach.clone(),
-    };
     match crate::commands::add::run::run(
         context.location,
         &parent,

@@ -724,3 +724,196 @@ fn a_save_with_nothing_new_carries_no_bundle() -> Checked {
     assert_eq!(bundles()?, 2);
     Ok(())
 }
+
+/// hostのrepositoryと、Sandboxの中のbundleの置き場所を模したdirectory。
+struct Sending {
+    root: tempfile::TempDir,
+    host: PathBuf,
+}
+
+impl Sending {
+    fn new() -> Checked<Sending> {
+        let root = tempfile::tempdir().required()?;
+        let host = root.path().join("host");
+        fs::create_dir(&host).required()?;
+        git_in(&host, &["init", "--quiet"])?;
+        Ok(Sending { root, host })
+    }
+
+    fn staging(&self) -> PathBuf {
+        self.root.path().join("bundles")
+    }
+
+    fn destination(&self) -> PathBuf {
+        self.root.path().join("sandbox/.git/sbxm/origin.bundle")
+    }
+
+    fn send(
+        &self,
+        host: &dyn crate::boundary::host::HostEnvironment,
+    ) -> crate::diagnostics::Result<()> {
+        send_to_sandbox(
+            host,
+            &self.host,
+            &["--branches", "--tags"],
+            &self.staging(),
+            "sandbox",
+            &self.destination().to_string_lossy(),
+        )
+    }
+}
+
+/// directoryに残ったfileの名前。
+fn names_in(directory: &std::path::Path) -> Vec<String> {
+    fs::read_dir(directory)
+        .map(|entries| {
+            entries
+                .filter_map(std::result::Result::ok)
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_host_branches_and_tags_reach_the_sandbox_as_one_bundle() -> Checked {
+    let sending = Sending::new()?;
+    git_in(
+        &sending.host,
+        &["commit", "--quiet", "--allow-empty", "-m", "first"],
+    )?;
+    git_in(&sending.host, &["tag", "v1"])?;
+    git_in(&sending.host, &["branch", "feature"])?;
+
+    sending.send(&LocalSandbox).required()?;
+
+    let destination = sending.destination();
+    let heads = git_in(
+        sending.root.path(),
+        &["bundle", "list-heads", &destination.to_string_lossy()],
+    )?;
+    for reference in ["refs/heads/main", "refs/heads/feature", "refs/tags/v1"] {
+        assert!(heads.contains(reference), "{reference}: {heads}");
+    }
+    // 送るためのbundleも、受け取りかけのfileも残さない。
+    assert_eq!(names_in(&sending.staging()), Vec::<String>::new());
+    let placed = destination.parent().required()?;
+    assert_eq!(names_in(placed), ["origin.bundle"]);
+    Ok(())
+}
+
+#[test]
+fn a_host_repository_without_commits_sends_nothing() -> Checked {
+    let sending = Sending::new()?;
+
+    let error = sending
+        .send(&LocalSandbox)
+        .refused_because("nothing to send")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::HostRepositoryEmpty));
+    assert!(!sending.destination().exists());
+    Ok(())
+}
+
+#[test]
+fn a_bundle_that_does_not_arrive_whole_replaces_nothing() -> Checked {
+    // Sandboxの中の手順は、受け取った中身のdigestが違えば何も置かない。
+    let sending = Sending::new()?;
+    let destination = sending.destination();
+    let parent = destination.parent().required()?;
+    fs::create_dir_all(parent).required()?;
+    fs::write(&destination, "previous\n").required()?;
+    let input = sending.root.path().join("input");
+    fs::write(&input, "partial").required()?;
+
+    let spec = crate::boundary::host::CommandSpec::capture(
+        "sh",
+        &[
+            "-c",
+            PLACE_BUNDLE,
+            "sh",
+            &destination.to_string_lossy(),
+            &crate::hash::sha256_hex(b"whole"),
+        ],
+    )
+    .with_input_file(&input);
+    let outcome = crate::boundary::host::HostEnvironment::run(&LocalSandbox, &spec).required()?;
+
+    assert_eq!(
+        outcome.status.code(),
+        Some(crate::support::sandbox::TRANSFER_INCOMPLETE)
+    );
+    assert_eq!(fs::read_to_string(&destination).required()?, "previous\n");
+    assert_eq!(names_in(parent), ["origin.bundle"]);
+    Ok(())
+}
+
+/// `sbx exec`だけが、届いた中身が欠けていたと答えるhost。gitはこのhostで走らせる。
+struct Truncating;
+
+impl crate::boundary::host::HostEnvironment for Truncating {
+    fn command_exists(&self, _program: &str) -> bool {
+        true
+    }
+
+    fn run(
+        &self,
+        spec: &crate::boundary::host::CommandSpec,
+    ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {
+        if spec.program == "sbx" {
+            return Ok(crate::testing::command::outcome(
+                spec,
+                crate::support::sandbox::TRANSFER_INCOMPLETE,
+                "",
+            ));
+        }
+        crate::boundary::host::RealHost.run(spec)
+    }
+}
+
+#[test]
+fn an_incomplete_transfer_is_reported_by_its_own_reason() -> Checked {
+    let sending = Sending::new()?;
+    git_in(
+        &sending.host,
+        &["commit", "--quiet", "--allow-empty", "-m", "first"],
+    )?;
+
+    let error = sending
+        .send(&Truncating)
+        .refused_because("the bundle did not arrive whole")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::BundleTransferIncomplete));
+    assert_eq!(names_in(&sending.staging()), Vec::<String>::new());
+    Ok(())
+}
+
+#[test]
+fn a_bundle_stopped_by_a_signal_while_arriving_leaves_nothing_behind() -> Checked {
+    // 受け取りの途中でsignalを受けても、書きかけの一時fileを残さない。dashはsignalで
+    // 終わるshellのEXIT trapを走らせない。
+    let sending = Sending::new()?;
+    let destination = sending.destination();
+    let parent = destination.parent().required()?.to_path_buf();
+    let mut child = std::process::Command::new("sh")
+        .args(["-c", PLACE_BUNDLE, "sh"])
+        .arg(&destination)
+        .arg(crate::hash::sha256_hex(b"whole"))
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .required()?;
+    let staged = || -> usize { fs::read_dir(&parent).map_or(0, Iterator::count) };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while staged() == 0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(staged(), 1, "the script started receiving");
+
+    let pid = rustix::process::Pid::from_child(&child);
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;
+    child.wait().required()?;
+
+    assert_eq!(staged(), 0);
+    assert!(!destination.exists());
+    Ok(())
+}

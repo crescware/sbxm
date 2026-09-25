@@ -20,7 +20,10 @@ pub(super) fn finish_removal(
     // tokenの登録はSandboxを消しても残る。Sandboxが消えたあとに解くのは、消し損ねた
     // Sandboxがplaceholderを持ったまま動き続ける状態を作らないためである。commit pointの
     // 前に行うため、失敗したときは案件が管理下に残り、同じcommandでやり直せる。
-    secret::forget_github(host, prepared.name.as_str())?;
+    // hostにあるrepositoryを登録した案件は、tokenを登録しない。
+    if prepared.locked.metadata.repository.uses_github_token() {
+        secret::forget_github(host, prepared.name.as_str())?;
+    }
 
     // 削除もほかのmutationと同じ規則で行う。symlinkの先を消さない。
     let cache = prepared.paths.cache_dir();

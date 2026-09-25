@@ -467,6 +467,39 @@ offers to save them into the host repository and continue. Choosing to stop
 changes nothing. A stash or notes commit missing from the origin is not saved
 this way, so it still has to be pushed or dropped.
 
+## Develop without GitHub
+
+A repository that already lives on this host can be a project too. sbxm does
+not clone it: the repository's `.git` acts as the origin, and the sandbox is a
+disposable place to work in.
+
+```sh
+cd ~/Projects
+sbxm add --local ~/code/<repository>
+sbxm open local/<repository>
+```
+
+The path must be the top of a Git working tree. The project ID is
+`local/<name>`, where the name is the directory name unless you pass
+`--name <name>`. The sandbox starts from the branch the host repository is on,
+or from the branch given with `--detach`.
+
+No GitHub token is involved, so skip registering one. When `open` builds the
+sandbox, sbxm writes the host repository's branches and tags into one
+`git bundle`, streams it into the sandbox through `sbx exec`, and points the
+sandbox's `origin` at that bundle. Nothing in the sandbox can reach the host
+repository.
+
+Bring work back with `sbxm fetch local/<name>`. The commits land in
+`refs/sbx/<sandbox>/` of the host repository, and you merge them into your own
+branches, for example with `git merge refs/sbx/<sandbox>/heads/main`.
+
+Because the bundle inside the sandbox disappears with it, rebuild and destroy
+count a commit as kept only when the host repository reaches it: from one of
+its branches or tags, or from what `sbxm fetch` saved under
+`refs/sbx/<sandbox>/`. A commit the host does not have stops them, and an
+interactive terminal offers to fetch it first.
+
 ## Tear down a project
 
 ```sh
@@ -515,6 +548,9 @@ A project lives entirely in the directory you registered it from:
 └── .sbxm/              # metadata, Dockerfile, lock, cache
 ```
 
+A project added with `--local` has no host clone inside that directory. Its
+repository stays where it was added.
+
 Under `~/.sbxm`, sbxm keeps `registry.yaml` — the index of registered projects
 and where each one lives — and, once you have chosen a display language or an
 identity, or declared files, `config.yaml`. The registry is the only thing that knows where
@@ -526,6 +562,7 @@ rather than sbxm guessing at the new location.
 | Command | Purpose |
 |---|---|
 | `sbxm add <github-clone-url>` | Add a GitHub repository to sbxm and clone it onto this host |
+| `sbxm add --local <path> [--name <name>]` | Add a Git repository on this host as `local/<name>` without cloning it; its `.git` acts as the origin |
 | `sbxm open [<project-id>] [--index N]` | Open an SSH session to a project sandbox, building it on the first run and starting it if needed; `N` selects a zero-based managed worktree |
 | `sbxm stop [<project-id> ...]` | Stop one or more project sandboxes without deleting them |
 | `sbxm ls` | List managed projects and unmanaged sandboxes with their states |

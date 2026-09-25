@@ -15,6 +15,8 @@ pub(super) fn interpret(value: &str) -> std::result::Result<RepositoryIdentity, 
     let clone_url = match transport {
         CloneTransport::Ssh => format!("{SSH_USER}@{GITHUB_HOST}:{owner}/{name}{GIT_SUFFIX}"),
         CloneTransport::Https => format!("https://{GITHUB_HOST}/{owner}/{name}{GIT_SUFFIX}"),
+        // `split_transport`はGitHubのclone URLの形だけを読む。pathは別の入口から来る。
+        CloneTransport::File => return Err(Rejection::Form),
     };
 
     Ok(RepositoryIdentity {

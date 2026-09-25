@@ -32,6 +32,21 @@ impl World {
                 None => (128, String::new()),
                 Some(directory) => (0, format!("{}\n", paths::display(directory))),
             },
+            // hostにあるrepositoryは、送るbranchを持つ。
+            [
+                "for-each-ref",
+                "--count=1",
+                "--format=%(refname)",
+                "refs/heads/",
+                "refs/tags/",
+            ] => (0, "refs/heads/main\n".to_string()),
+            // bundleは中身を読まれない。送った範囲だけを書いておく。
+            ["bundle", "create", "--quiet", path, revisions @ ..] => {
+                match fs::write(path, format!("bundle of {}\n", revisions.join(" "))) {
+                    Ok(()) => (0, String::new()),
+                    Err(_) => (128, String::new()),
+                }
+            }
             ["config", "--get-all", "remote.origin.url"] => (
                 0,
                 "git@github.com:Example-Org/Example-Repo.git\n".to_string(),
@@ -193,8 +208,11 @@ impl World {
                 (0, table)
             }
             ["daemon", ..] => (0, String::new()),
-            _ => match spec.input() {
-                Some(input) => self.receive(&args, input),
+            _ => match spec.input().map(<[u8]>::to_vec).or_else(|| {
+                // 実物と同じく、つながれたfileは読み切った中身として届く。
+                spec.input_file().and_then(|path| std::fs::read(path).ok())
+            }) {
+                Some(input) => self.receive(&args, &input),
                 None => self.sandbox_exec(&args),
             },
         }

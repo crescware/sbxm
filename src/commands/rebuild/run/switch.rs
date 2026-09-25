@@ -60,7 +60,14 @@ impl Switch<'_> {
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。tokenの
         // ないままimageを組み直してSandboxを作らないよう、作り直す前に確認する。
-        let registration = secret::require_github(host, name.as_str())?;
+        // hostにあるrepositoryはhostから送るため、tokenを使わない。
+        let origin = repository::SandboxOrigin::of(paths, metadata)?;
+        let registration = match origin {
+            repository::SandboxOrigin::Github(_) => {
+                Some(secret::require_github(host, name.as_str())?)
+            }
+            repository::SandboxOrigin::Host { .. } => None,
+        };
 
         let ready = sandbox::ensure(host, name, template, workspace_root, progress)?;
 
@@ -70,11 +77,13 @@ impl Switch<'_> {
 
         identity::ensure(host, &ready.name, &metadata.git_identity).map_err(decorate)?;
         tools::SandboxReady::announce(host, &ready.name).map_err(decorate)?;
-        secret::configure_git_credential(host, &ready.name, registration.placeholder())
-            .map_err(decorate)?;
-        secret::configure_token_env(host, &ready.name, registration.placeholder())
-            .map_err(decorate)?;
-        secret::require_github_accepts(host, &ready.name, project, &registration)?;
+        if let Some(registration) = &registration {
+            secret::configure_git_credential(host, &ready.name, registration.placeholder())
+                .map_err(decorate)?;
+            secret::configure_token_env(host, &ready.name, registration.placeholder())
+                .map_err(decorate)?;
+            secret::require_github_accepts(host, &ready.name, project, registration)?;
+        }
         let declarations: Vec<_> = inputs
             .iter()
             .map(|input| input.declaration.clone())
@@ -83,7 +92,7 @@ impl Switch<'_> {
             .map_err(decorate)?;
         // 作り直したSandboxへ置いた内容が、以後の`apply`が置き換えてよい基準になる。
         metadata.declared_files = Some(provisioning::recorded_files(&inputs));
-        repository::ensure_bare_clone(host, &ready.name, project, &layout, progress)
+        repository::ensure_bare_clone(host, &ready.name, &origin, &layout, progress)
             .map_err(decorate)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
         repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch, progress)

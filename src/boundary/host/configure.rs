@@ -1,9 +1,14 @@
+use std::fs::File;
 use std::process::{Command, Stdio};
 
-use super::{CommandSpec, OutputPolicy, apply_env};
+use crate::diagnostics::Result;
+
+use super::{CommandSpec, OutputPolicy, apply_env, input_unavailable};
 
 /// program、argument、environment、作業directory、streamの向き先を決める。
-pub(super) fn configure(spec: &CommandSpec) -> Command {
+///
+/// stdinへつなぐfileを開けなければ、子を起動せずに失敗する。
+pub(super) fn configure(spec: &CommandSpec) -> Result<Command> {
     let mut command = Command::new(&spec.program);
     command.args(&spec.args);
     apply_env(&mut command, spec.env, spec.working_dir.as_deref());
@@ -12,8 +17,12 @@ pub(super) fn configure(spec: &CommandSpec) -> Command {
     }
     match spec.output() {
         OutputPolicy::Capture | OutputPolicy::Relay => {
-            // 渡すbyte列が無ければ、stdinを待つ子にもすぐEOFを届ける。
-            if spec.input.is_some() {
+            // 渡すものが無ければ、stdinを待つ子にもすぐEOFを届ける。
+            if let Some(path) = spec.input_file() {
+                let file = File::open(path)
+                    .map_err(|error| input_unavailable(spec, path, &error.to_string()))?;
+                command.stdin(Stdio::from(file));
+            } else if spec.input().is_some() {
                 command.stdin(Stdio::piped());
             } else {
                 command.stdin(Stdio::null());
@@ -28,5 +37,5 @@ pub(super) fn configure(spec: &CommandSpec) -> Command {
             command.stderr(Stdio::inherit());
         }
     }
-    command
+    Ok(command)
 }

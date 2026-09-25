@@ -120,7 +120,7 @@ impl Observation {
     pub(crate) fn is_complete(&self) -> bool {
         self.required()
             .iter()
-            .all(|observed| observed.is_matching())
+            .all(|observed| observed.is_satisfied())
     }
 
     /// Sandboxを起動しないため、内部のartifactを1件も観測しなかった。

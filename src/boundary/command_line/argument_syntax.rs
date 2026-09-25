@@ -8,7 +8,6 @@ pub struct ArgumentSyntax {
     pub(crate) short: Option<char>,
     pub(crate) value_name: Option<&'static str>,
     pub(crate) action: ArgumentAction,
-    pub(crate) required: bool,
     pub(crate) help: String,
 }
 
@@ -20,7 +19,6 @@ impl ArgumentSyntax {
             short: None,
             value_name: None,
             action: ArgumentAction::Value,
-            required: false,
             help,
         }
     }
@@ -32,7 +30,6 @@ impl ArgumentSyntax {
             short: None,
             value_name: None,
             action: ArgumentAction::Flag,
-            required: false,
             help,
         }
     }
@@ -56,11 +53,6 @@ impl ArgumentSyntax {
 
     pub fn value_name(mut self, name: &'static str) -> Self {
         self.value_name = Some(name);
-        self
-    }
-
-    pub fn required(mut self) -> Self {
-        self.required = true;
         self
     }
 

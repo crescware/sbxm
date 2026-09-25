@@ -49,6 +49,7 @@ error_ids! {
     WorktreesNotReducible => "worktrees-not-reducible",
     ApplyScopeRequired => "apply-scope-required",
     ApplyForceWithoutFiles => "apply-force-without-files",
+    NameWithoutLocal => "name-without-local",
     ProjectArgumentRequired => "project-argument-required",
     StatusScopeRequired => "status-scope-required",
 
@@ -56,6 +57,7 @@ error_ids! {
     InvalidProjectId => "invalid-project-id",
     ReservedRepositoryName => "reserved-repository-name",
     InvalidCloneUrl => "invalid-clone-url",
+    InvalidLocalRepositoryPath => "invalid-local-repository-path",
 
     // --- Global config ---
     ConfigUnreadable => "config-unreadable",
@@ -108,6 +110,11 @@ error_ids! {
 
     // --- Host clone ---
     HostCloneUnusable => "host-clone-unusable",
+    LocalRepositoryUnusable => "local-repository-unusable",
+    LocalNameUnusable => "local-name-unusable",
+    HostRepositoryDetached => "host-repository-detached",
+    HostRepositoryMissing => "host-repository-missing",
+    ProjectInsideRepository => "project-inside-repository",
 
     // --- Image ---
     ImageUnusable => "image-unusable",
@@ -119,11 +126,14 @@ error_ids! {
     DeclaredFileConflict => "declared-file-conflict",
     DeclaredFileModified => "declared-file-modified",
     DeclaredFileTransferIncomplete => "declared-file-transfer-incomplete",
+    BundleTransferIncomplete => "bundle-transfer-incomplete",
+    HostRepositoryEmpty => "host-repository-empty",
     SandboxIdentityMismatch => "sandbox-identity-mismatch",
     GithubSecretMissing => "github-secret-missing",
     GithubCredentialRejected => "github-credential-rejected",
     SandboxTokenEnvUnusable => "sandbox-token-env-unusable",
     SecretStillRegistered => "secret-still-registered",
+    NoGithubToken => "no-github-token",
     SandboxRepositoryUnusable => "sandbox-repository-unusable",
     StartRefUnresolved => "start-ref-unresolved",
     ProjectNotManaged => "project-not-managed",
@@ -173,6 +183,7 @@ error_ids! {
     OriginObjectMissing => "origin-object-missing",
     OriginObservationUnobservable => "origin-observation-unobservable",
     OriginReadOnlyDataInsufficient => "origin-read-only-data-insufficient",
+    OriginHostRepositoryUnreadable => "origin-host-repository-unreadable",
 
     // --- sessionのhost lease（#80） ---
     OpenSessionActive => "open-session-active",
@@ -198,11 +209,13 @@ error_ids! {
     // --- 外部command ---
     ExternalCommandNotFound => "external-command-not-found",
     ExternalCommandSpawnFailed => "external-command-spawn-failed",
+    ExternalCommandDirectoryMissing => "external-command-directory-missing",
     ExternalCommandFailed => "external-command-failed",
     ExternalCommandTimeout => "external-command-timeout",
     ExternalCommandOutputUnreadable => "external-command-output-unreadable",
     ExternalCommandOutputUnstored => "external-command-output-unstored",
     ExternalCommandInputUnwritable => "external-command-input-unwritable",
+    ExternalCommandInputUnavailable => "external-command-input-unavailable",
     ExternalCommandOutputTooLarge => "external-command-output-too-large",
     ExternalCommandNotConfirmed => "external-command-not-confirmed",
     ExternalOutputUnparseable => "external-output-unparseable",

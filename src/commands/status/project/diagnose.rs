@@ -43,7 +43,7 @@ pub fn diagnose(
     status.push("status-item-metadata", Value::Ready);
 
     // 2. project rootとhost clone
-    check_directory(&paths, &mut status);
+    check_directory(&paths, &metadata, &mut status);
 
     // 3. Dockerfileの世代
     check_dockerfile(&paths, &metadata, &mut status);

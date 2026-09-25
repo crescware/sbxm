@@ -1,5 +1,7 @@
 //! `add`のparser非依存command-line解釈。
 
+use std::path::PathBuf;
+
 use crate::boundary::command_line::{ArgumentSyntax, Arguments, Builder, CommandSyntax};
 use crate::commands::command_line_values::CommandLineValues;
 use crate::design::Fact;
@@ -7,7 +9,7 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result, fail};
 use crate::metadata::{GitIdentity, MAX_WORKTREES, MIN_WORKTREES, validate_git_identity_value};
 use crate::msg;
 
-use super::Args;
+use super::{AddTarget, Args};
 
 pub(crate) struct CommandLine;
 
@@ -17,8 +19,17 @@ impl CommandLine {
             .command("add", "cli-add-about")?
             .arg(
                 ArgumentSyntax::value("repository", builder.text("cli-add-repository-help")?)
-                    .value_name(CommandLineValues::CLONE_URL_VALUE_NAME)
-                    .required(),
+                    .value_name(CommandLineValues::CLONE_URL_VALUE_NAME),
+            )
+            .arg(
+                ArgumentSyntax::value("local", builder.text("cli-add-local-help")?)
+                    .long("local")
+                    .value_name("PATH"),
+            )
+            .arg(
+                ArgumentSyntax::value("name", builder.text("cli-add-name-help")?)
+                    .long("name")
+                    .value_name("NAME"),
             )
             .arg(
                 ArgumentSyntax::value("worktrees", builder.text("cli-add-worktrees-help")?)
@@ -47,7 +58,7 @@ impl CommandLine {
     }
 
     pub(crate) fn interpret(arguments: &Arguments) -> Result<Args> {
-        let repository = CommandLineValues::required_clone_url(arguments)?;
+        let target = target(arguments)?;
         let detach = arguments.value("detach").map(str::to_owned);
         let git_identity = declared_git_identity(arguments)?;
 
@@ -80,11 +91,52 @@ impl CommandLine {
         }
 
         Ok(Args {
-            repository,
+            target,
             worktrees,
             detach,
             git_identity,
         })
+    }
+}
+
+/// clone URLと`--local`のどちらか一方を、登録するrepositoryとして読む。
+fn target(arguments: &Arguments) -> Result<AddTarget> {
+    let name = arguments.value("name").map(str::to_owned);
+    match (arguments.value("repository"), arguments.value("local")) {
+        (Some(_), Some(_)) => fail(
+            ErrorId::ConflictingArguments,
+            msg!(
+                "error-conflicting-arguments",
+                arguments = format!("<{}>, --local", CommandLineValues::CLONE_URL_VALUE_NAME)
+            ),
+        ),
+        // 空のpathはcwdへ解決される。書き忘れた値を、cwdの登録として受け取らない。
+        (None, Some("")) => fail(
+            ErrorId::MissingRequiredArgument,
+            msg!(
+                "error-missing-required-argument",
+                argument = "--local <PATH>"
+            ),
+        ),
+        (None, Some(path)) => Ok(AddTarget::Local {
+            path: PathBuf::from(path),
+            name,
+        }),
+        _ if name.is_some() => fail(ErrorId::NameWithoutLocal, msg!("error-name-without-local")),
+        // clone URLだけを求めると、hostにあるrepositoryも登録できることが伝わらない。
+        (None, None) => fail(
+            ErrorId::MissingRequiredArgument,
+            msg!(
+                "error-missing-required-argument",
+                argument = format!(
+                    "<{}> | --local <PATH>",
+                    CommandLineValues::CLONE_URL_VALUE_NAME
+                )
+            ),
+        ),
+        _ => Ok(AddTarget::Clone(CommandLineValues::required_clone_url(
+            arguments,
+        )?)),
     }
 }
 

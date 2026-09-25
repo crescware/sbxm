@@ -206,3 +206,20 @@ fn a_failure_without_a_usage_line_still_offers_help() -> Checked {
     assert_eq!(explained, vec!["remediation-run-help"]);
     Ok(())
 }
+
+#[test]
+fn a_required_argument_that_is_missing_is_named() -> Checked {
+    // sbxmの文法は必須の引数を宣言しない。省略の扱いは各commandの解釈が決める。
+    // 必須を宣言したparserを別に組み、libraryが返すerrorの写像だけを確かめる。
+    let error = ClapCommand::new("probe")
+        .arg(Arg::new("target").value_name("TARGET").required(true))
+        .try_get_matches_from(["probe"])
+        .refused_because("the argument is declared as required")?;
+    let diagnostic = diagnostic_for(&error)?;
+    assert_eq!(diagnostic.id, ErrorId::MissingRequiredArgument);
+    assert!(
+        described(&diagnostic, "argument")?.contains("TARGET"),
+        "{diagnostic:?}"
+    );
+    Ok(())
+}

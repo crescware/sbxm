@@ -118,8 +118,8 @@ pub fn prepare(
         force,
         worktrees,
         confirmable_losses,
-        removes: removes(&paths, &name, state),
-        keeps: keeps(&paths),
+        removes: removes(&paths, metadata, state),
+        keeps: keeps(&paths, metadata),
         re_register: re_register(&paths, metadata)?,
     };
 

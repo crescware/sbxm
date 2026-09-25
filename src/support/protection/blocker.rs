@@ -248,6 +248,14 @@ fn origin_unobservable_diagnostic(
             Remediation::text(msg!("remediation-origin-read-only-data-insufficient"))
                 .try_run(format!("sbxm open {project}")),
         ),
+        UnobservableReason::HostRepositoryUnreadable => (
+            ErrorId::OriginHostRepositoryUnreadable,
+            msg!("error-origin-host-repository-unreadable"),
+            status(
+                project,
+                msg!("remediation-origin-host-repository-unreadable"),
+            ),
+        ),
     };
     let shown = &references[..references.len().min(MAX_LISTED_PATHS)];
     let mut diagnostic = Diagnostic::new(id, description).fact(Fact::references(shown));

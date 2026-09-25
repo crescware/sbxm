@@ -274,6 +274,13 @@ fn metadata_round_trips_through_the_rendered_form() -> Checked {
         ..attached("example-org", "example-repo")?
     };
     assert_eq!(round_trip(&detached)?, detached);
+
+    let local = ProjectMetadata {
+        repository: crate::repository::RepositoryIdentity::local("/home/user/code/Tool", "Tool")
+            .required_because("a local repository")?,
+        ..attached("example-org", "example-repo")?
+    };
+    assert_eq!(round_trip(&local)?, local);
     Ok(())
 }
 

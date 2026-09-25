@@ -28,6 +28,14 @@ impl SandboxLayout {
         format!("{}/.git", self.bare_root())
     }
 
+    /// `<bare-git-dir>/sbxm/origin.bundle`
+    ///
+    /// hostにあるrepositoryを登録した案件で、hostから送ったbundleを置く場所。Sandboxの
+    /// originはこのfileを指す。
+    pub fn origin_bundle(&self) -> String {
+        format!("{}/sbxm/origin.bundle", self.bare_git_dir())
+    }
+
     /// `<repository-lower>.tree-<index>`。metadataが持つmanaged worktreeの名前。
     pub fn worktree_name(&self, index: u32) -> String {
         format!("{}.tree-{index}", self.repository)

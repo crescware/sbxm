@@ -30,3 +30,19 @@ fn the_short_form_keeps_the_leading_twelve_digits() {
     assert_eq!(short_hex(&full).len(), SHORT_HEX_LENGTH);
     assert_eq!(short_hex("abc"), "abc");
 }
+
+#[test]
+fn a_file_digest_matches_the_digest_of_its_bytes() -> crate::testing::outcome::Checked {
+    use crate::testing::outcome::{Refused, Required};
+
+    let dir = tempfile::tempdir().required()?;
+    let path = dir.path().join("large.bundle");
+    let bytes: Vec<u8> = (0..=255u8).cycle().take(200_000).collect();
+    std::fs::write(&path, &bytes).required()?;
+    assert_eq!(
+        super::sha256_file_hex(&path).required()?,
+        super::sha256_hex(&bytes)
+    );
+    super::sha256_file_hex(&dir.path().join("missing")).refused_because("no such file")?;
+    Ok(())
+}

@@ -17,7 +17,7 @@ pub(super) fn run_terminal_inner(
 ) -> Result<CommandOutcome> {
     let spec = command.spec();
     let limit = spec.timeout.duration();
-    let mut process = configure(spec);
+    let mut process = configure(spec)?;
 
     match spec.output() {
         // 何を書くか観測できないため、境界の空行を先に置く。

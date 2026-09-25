@@ -1,6 +1,6 @@
+use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::{self, ProjectPaths};
-use crate::project::SandboxName;
 
 use crate::support::inventory::ProjectState;
 use crate::support::secret;
@@ -13,9 +13,10 @@ use super::Target;
 /// 分けると、確認の前に見せる内容がhostへの問い合わせの成否に左右される。
 pub(super) fn removes(
     paths: &ProjectPaths,
-    name: &SandboxName,
+    metadata: &ProjectMetadata,
     state: ProjectState,
 ) -> Vec<Target> {
+    let name = metadata.sandbox_name();
     let mut removes = Vec::new();
     if state != ProjectState::NotCreated {
         removes.push(Target::Described(msg!(
@@ -23,11 +24,14 @@ pub(super) fn removes(
             sandbox = name
         )));
     }
-    removes.push(Target::Described(msg!(
-        "destroy-target-secret",
-        sandbox = name,
-        env = secret::GITHUB_TOKEN_ENV
-    )));
+    // hostにあるrepositoryを登録した案件は、tokenを登録しない。
+    if metadata.repository.uses_github_token() {
+        removes.push(Target::Described(msg!(
+            "destroy-target-secret",
+            sandbox = name,
+            env = secret::GITHUB_TOKEN_ENV
+        )));
+    }
     removes.push(Target::Path(paths::display(&paths.metadata_file())));
     removes.push(Target::Path(paths::display(&paths.lock_file())));
     removes.push(Target::Path(paths::display(&paths.cache_dir())));

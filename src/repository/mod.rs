@@ -1,8 +1,9 @@
-//! GitHub repository identity。
+//! 登録対象のrepository identity。
 //!
-//! `利用者がGitHubからそのままcopyできるclone` URLだけを入力として受け取り、provider、
-//! 表示上のowner・repository、canonical project ID、clone transport、正規化した
-//! clone URLへ分離する。
+//! GitHub repositoryは、`利用者がGitHubからそのままcopyできるclone` URLだけを
+//! 入力として受け取り、provider、表示上のowner・repository、canonical project ID、
+//! clone transport、正規化したclone URLへ分離する。hostにあるrepositoryは、その
+//! pathと案件の名前から組み立てる。
 //!
 //! 入力を寛容に推測して未対応形式へ対応しない。未対応形式は、受理する2形式を示して
 //! 拒否する。Sandbox内で使うremoteは`crate::git`が別に組み立てる。本moduleが扱うのは
@@ -15,6 +16,9 @@ mod git_suffix;
 mod github_host;
 mod https_clone_url_form;
 mod interpret;
+mod interpret_local;
+mod local_name;
+mod local_owner;
 mod provider;
 mod rejection;
 mod repository_identity;
@@ -31,6 +35,9 @@ use git_suffix::GIT_SUFFIX;
 use github_host::GITHUB_HOST;
 pub use https_clone_url_form::HTTPS_CLONE_URL_FORM;
 use interpret::interpret;
+use interpret_local::interpret_local;
+use local_name::local_name;
+pub use local_owner::LOCAL_OWNER;
 pub use provider::Provider;
 use rejection::Rejection;
 pub use repository_identity::RepositoryIdentity;

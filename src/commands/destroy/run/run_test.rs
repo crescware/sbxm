@@ -21,6 +21,7 @@ use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::prompt::{ScriptedConfirm, ScriptedPrompt};
 use crate::testing::protection::clean_host;
+use crate::testing::value::COMMIT;
 use std::os::unix::fs::PermissionsExt;
 
 fn path_of(target: &Target) -> Option<&str> {
@@ -1443,5 +1444,53 @@ fn an_entry_left_behind_by_a_crash_after_the_commit_point_is_tolerated() -> Chec
         .and_then(select::Candidate::lock)
         .refused_because("the project cannot be worked on")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectIncomplete));
+    Ok(())
+}
+
+#[test]
+fn a_local_project_is_removed_without_a_token_and_keeps_its_host_repository() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register_local("/srv/code/app", "app")?;
+    let scopes = format!("refs/heads/ refs/tags/ refs/sbx/{}/", project.sandbox);
+    // hostのmainがworktreeのcommitへ届く。
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("for-each-ref --format=%(refname) --contains={COMMIT} {scopes}"),
+        0,
+        "refs/heads/main\n",
+    );
+    expect_successful_removal(&host);
+
+    let mut prepared = prepare(
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("local/app")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        false,
+        &host,
+        &fixture.workspace_root,
+        poll(),
+        &mut SilentProgress,
+    )
+    .required_because("prepare")?;
+
+    assert!(
+        !describes(&prepared.plan, "destroy-target-secret"),
+        "no token is registered for a host repository"
+    );
+    assert_eq!(
+        prepared.plan.keeps.first().and_then(path_of),
+        Some("/srv/code/app"),
+        "the host repository is kept where it was added"
+    );
+    assert_eq!(
+        prepared.plan.re_register,
+        "sbxm add --local /srv/code/app --worktrees 1"
+    );
+
+    destroy(&host, &mut prepared).required_because("destroy")?;
+    assert!(host.ran(&format!("rm {}", project.sandbox)));
+    assert!(!host.ran("secret"), "{:?}", host.calls());
+    assert!(!project.paths.metadata_file().exists());
     Ok(())
 }

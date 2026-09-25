@@ -1,18 +1,16 @@
 use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
-use crate::git;
 use crate::msg;
-use crate::project::ProjectId;
 
 use crate::support::sandbox;
 
-use super::{FETCH_REFSPEC, unusable};
+use super::{FETCH_REFSPEC, SandboxOrigin, unusable};
 
 /// 既存のbare repositoryが案件のrepositoryとして再利用できるかを観測する。
 pub fn verify_bare_clone(
     host: &dyn HostEnvironment,
     sandbox: &str,
-    project: &ProjectId,
+    origin: &SandboxOrigin,
     git_dir: &str,
 ) -> Result<()> {
     let bare = sandbox::read(
@@ -52,26 +50,9 @@ pub fn verify_bare_clone(
             msg!("cause-origin-ambiguous", count = urls.len()),
         ));
     };
-    let canonical = project.canonical();
-    match git::canonical_id_of_remote(url) {
-        Some(observed) if observed == canonical.as_str() => {}
-        Some(observed) => {
-            return Err(unusable(
-                git_dir,
-                msg!(
-                    "cause-origin-elsewhere",
-                    observed = observed,
-                    declared = canonical
-                ),
-            ));
-        }
-        None => {
-            return Err(unusable(
-                git_dir,
-                msg!("cause-origin-not-a-github-repository", observed = url),
-            ));
-        }
-    }
+    origin
+        .verify(url)
+        .map_err(|reason| unusable(git_dir, reason))?;
 
     let refspecs = sandbox::read(
         host,

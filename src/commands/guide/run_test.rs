@@ -197,3 +197,23 @@ fn canceling_the_topic_selection_cancels_the_guide() -> Checked {
     assert!(matches!(result, Err(crate::diagnostics::Error::Canceled)));
     Ok(())
 }
+
+#[test]
+fn a_local_project_has_no_token_to_rotate() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register_local("/srv/code/app", "app")?;
+    let host = FakeSbx::listing("");
+
+    let error = super::run::run(
+        &explicit("local/app")?,
+        &fixture.location,
+        Locale::En,
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .refused_because("a host repository uses no GitHub token")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::NoGithubToken));
+    assert!(host.calls().is_empty(), "{:?}", host.calls());
+    Ok(())
+}

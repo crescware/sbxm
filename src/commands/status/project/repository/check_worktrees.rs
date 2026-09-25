@@ -7,6 +7,7 @@ use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::{SandboxLayout, SandboxName};
+use crate::repository::Provider;
 
 use crate::support::protection::{self, CommitCandidate, Reachability, UnobservableReason};
 use crate::support::sandbox;
@@ -44,7 +45,15 @@ pub fn check_worktrees(
     let project = status.project.clone();
     let (pending, value) =
         collect_pending_worktrees(host, name, layout, metadata, entries, &project, status);
-    let observation = observe_candidates(host, name, layout, host_repository, &pending, status);
+    let observation = observe_candidates(
+        host,
+        name,
+        layout,
+        metadata,
+        host_repository,
+        &pending,
+        status,
+    );
     append_worktree_rows(&project, pending, observation.as_ref(), status);
     status.push("status-item-worktrees", value);
 }
@@ -176,6 +185,7 @@ fn observe_candidates(
     host: &dyn HostEnvironment,
     name: &SandboxName,
     layout: &SandboxLayout,
+    metadata: &ProjectMetadata,
     host_repository: &Path,
     pending: &[PendingWorktree],
     status: &mut ProjectStatus,
@@ -187,7 +197,16 @@ fn observe_candidates(
     if candidates.is_empty() {
         return None;
     }
-    match protection::observe_read_only(host, name, layout, &candidates, host_repository) {
+    // hostにあるrepositoryを登録した案件は、hostのrepositoryを読む。fetchは要らない。
+    let observed = match metadata.repository.provider() {
+        Provider::Github => {
+            protection::observe_read_only(host, name, layout, &candidates, host_repository)
+        }
+        Provider::Local => {
+            protection::observe_host_origin(host, host_repository, name, &candidates)
+        }
+    };
+    match observed {
         Ok(observation) => Some(observation),
         Err(error) => {
             status

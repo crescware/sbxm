@@ -65,7 +65,9 @@ fn add_output() -> super::add::AddOutput {
         mode: CreationMode::Attached,
         start_ref: Some("main".to_string()),
         requested_worktrees: 1,
-        host_clone: PathBuf::from("/tmp/owner-repo"),
+        host_repository: PathBuf::from("/tmp/owner-repo"),
+        cloned: true,
+        needs_github_token: true,
         already_registered: false,
     }
 }
@@ -82,6 +84,27 @@ fn add_separates_each_next_step_from_the_command_it_asks_for() {
     // 初回構築は`open`が同じ実行の中で行う。構築だけを行う手順を間に挟まない。
     // 案件IDを打ち直させないため、次のcommandはそのままcopyできる形で並べる。
     assert_eq!(commands(&document)[1..], ["sbxm open owner/repo"]);
+}
+
+#[test]
+fn add_of_a_host_repository_goes_straight_to_open() -> Checked {
+    // hostから送るrepositoryには、登録するtokenが無い。
+    let mut output = add_output();
+    output.project = "local/repo".to_string();
+    output.needs_github_token = false;
+    output.cloned = false;
+    let document = super::add::print::document(&output);
+    assert_eq!(
+        shape(&document),
+        vec!["summary", "fields", "guidance", "command"]
+    );
+    assert_eq!(commands(&document), ["sbxm open local/repo"]);
+    let drawn = plain(&document, Locale::En)?;
+    assert!(!drawn.contains("secret"), "{drawn}");
+    // 利用者のrepositoryを、sbxmが取ったcloneとは呼ばない。
+    assert!(drawn.contains("Host repository"), "{drawn}");
+    assert!(!drawn.contains("Host clone"), "{drawn}");
+    Ok(())
 }
 
 #[test]
