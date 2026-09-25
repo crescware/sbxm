@@ -26,7 +26,6 @@ mod receive_copy;
 mod received_copy;
 mod require_no_symlink_in_sandbox;
 mod sandbox_digest;
-mod transfer_incomplete;
 
 use agent_home::AGENT_HOME;
 pub use conflict::Conflict;
@@ -51,7 +50,6 @@ pub use receive_copy::receive_copy;
 pub use received_copy::ReceivedCopy;
 use require_no_symlink_in_sandbox::require_no_symlink_in_sandbox;
 pub use sandbox_digest::sandbox_digest;
-pub use transfer_incomplete::TRANSFER_INCOMPLETE;
 
 #[cfg(test)]
 #[path = "files_test.rs"]

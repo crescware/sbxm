@@ -1,9 +1,8 @@
 use std::path::Path;
 
 use crate::boundary::host::RealHost;
-use crate::diagnostics::ErrorId;
 use crate::paths::ProjectParent;
-use crate::testing::outcome::{Checked, Refused, Required};
+use crate::testing::outcome::{Checked, Required};
 use crate::testing::repository::git_in;
 
 use super::super::{AddTarget, Args};
@@ -51,16 +50,15 @@ fn a_host_repository_starts_from_the_branch_it_is_on() -> Checked {
 }
 
 #[test]
-fn a_detached_host_repository_needs_an_explicit_start_branch() -> Checked {
+fn a_detached_host_repository_carries_no_start_branch() -> Checked {
+    // 起点が無いことを断るのは、新しく記録するときである。登録済みの案件は、保存済みの
+    // 起点で続けられる。
     let dir = tempfile::tempdir().required()?;
     let path = repository(dir.path())?;
     git_in(&path, &["checkout", "--quiet", "--detach"])?;
     let parent = ProjectParent::at(dir.path()).required()?;
 
-    let error = AddRequest::resolve(&local_args(&path, None), &parent, &RealHost)
-        .refused_because("there is no branch to start from")?;
-    assert_eq!(error.first_id(), Some(ErrorId::HostRepositoryDetached));
-
-    AddRequest::resolve(&local_args(&path, Some("main")), &parent, &RealHost).required()?;
+    let request = AddRequest::resolve(&local_args(&path, None), &parent, &RealHost).required()?;
+    assert_eq!(request.start_branch, None);
     Ok(())
 }

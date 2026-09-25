@@ -271,8 +271,9 @@ commits, in-progress Git operations, or unmanaged worktrees.
 The protection pass also checks repository-level state that a clean worktree
 does not show by itself: local branches kept out of the checkout, tags, notes,
 stash entries, extra remotes, and reflog-only commits. Save or resolve any
-reported Layer A blocker before retrying. A commit missing from the origin can
-also be saved into the host repository with `sbxm fetch`. `status` keeps the worktree's
+reported Layer A blocker before retrying. A commit on a branch, a tag, or a
+worktree's `HEAD` that is missing from the origin can also be saved into the host
+repository with `sbxm fetch`; a stash or notes commit cannot. `status` keeps the worktree's
 `STATE` and its origin recovery evidence in a separate `REMOTE` column.
 Normal rebuild always requires an interactive plan and a typed confirmation of
 the project ID; it refuses rather than silently skipping that confirmation in a
@@ -460,10 +461,11 @@ removed automatically, so every commit that was ever fetched stays reachable.
 The sandbox must be running; a stopped sandbox is not started.
 
 A commit saved this way outlives the sandbox, so rebuild and destroy count it as
-kept, the same as a commit reachable from the origin. When commits missing from
-the origin are the only reason a rebuild or destroy is refused, an interactive
-terminal offers to save them into the host repository and continue. Choosing to
-stop changes nothing.
+kept, the same as a commit reachable from the origin. When commits it can save
+are the only reason a rebuild or destroy is refused, an interactive terminal
+offers to save them into the host repository and continue. Choosing to stop
+changes nothing. A stash or notes commit missing from the origin is not saved
+this way, so it still has to be pushed or dropped.
 
 ## Develop without GitHub
 
@@ -578,6 +580,7 @@ rather than sbxm guessing at the new location.
 | `sbxm fetch [<project-id>]` | Save a project sandbox's commits into its host repository under `refs/sbx/<sandbox>/`, without touching your branches |
 | `sbxm send [<project-id>]` | Send the host repository's branches and tags to the sandbox of a project added with `--local`, without touching the sandbox's branches |
 | `sbxm files add\|ls\|rm ...` | Declare host files to place in every sandbox, list them, or remove a declaration |
+| `sbxm files pull <destination> [<project-id>]` | Show how a project sandbox's copy of a declared file differs from the host file, and adopt it into the host file if you choose |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees; `--files --all` places the declared files in every registered project |
 | `sbxm repair [<project-id>]` | Explicitly prepare an interrupted or incomplete project without opening SSH; `open` performs the same recovery when connecting |
 | `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its Dockerfile; the old writable layer is lost |

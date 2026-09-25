@@ -25,13 +25,20 @@ fn a_local_project_is_ready_when_its_host_repository_holds_a_git_directory() -> 
 
     let mut status = bare_status();
     check_directory(&project.paths, &project.metadata, &mut status);
-    assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Missing);
+    assert_eq!(
+        value_of(&status, "status-item-host-repository")?,
+        Value::Missing
+    );
 
-    // 登録したそのrepositoryを見る。案件directoryの中にcloneは作らない。
+    // 登録したそのrepositoryを見る。案件directoryの中にcloneは作らず、cloneとも呼ばない。
     std::fs::create_dir_all(repository.join(".git")).required()?;
     let mut status = bare_status();
     check_directory(&project.paths, &project.metadata, &mut status);
-    assert_eq!(value_of(&status, "status-item-host-clone")?, Value::Ready);
+    assert_eq!(
+        value_of(&status, "status-item-host-repository")?,
+        Value::Ready
+    );
+    assert!(value_of(&status, "status-item-host-clone").is_err());
     Ok(())
 }
 

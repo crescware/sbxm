@@ -6,7 +6,7 @@ use crate::diagnostics::Result;
 use crate::project::ProjectId;
 
 use crate::support::provisioning::{self, NextAction};
-use crate::support::{disk, select};
+use crate::support::{disk, repository, select};
 
 use crate::commands::status::project::artifacts::{check_directory, check_dockerfile, check_image};
 use crate::commands::status::project::inside::{check_inside, check_sandbox};
@@ -53,7 +53,8 @@ pub fn diagnose(
     let state = check_sandbox(host, &metadata, workspace_root, &mut status);
 
     // 5-9. Sandbox内部の検査
-    check_inside(host, &name, &metadata, state, &mut status);
+    let host_repository = repository::host_repository(&paths, &metadata);
+    check_inside(host, &name, &metadata, &host_repository, state, &mut status);
 
     // 10. 宣言file
     check_files(host, &name, &metadata, config, state, &mut status);
