@@ -22,6 +22,7 @@ mod planned_file;
 mod read_source;
 mod read_source_bytes;
 mod require_no_symlink_in_sandbox;
+mod sandbox_digest;
 
 use agent_home::AGENT_HOME;
 pub use conflict::Conflict;
@@ -42,6 +43,7 @@ pub use planned_file::PlannedFile;
 pub use read_source::read_source;
 pub use read_source_bytes::read_source_bytes;
 use require_no_symlink_in_sandbox::require_no_symlink_in_sandbox;
+pub use sandbox_digest::sandbox_digest;
 
 #[cfg(test)]
 #[path = "files_test.rs"]

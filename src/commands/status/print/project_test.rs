@@ -12,7 +12,7 @@ use crate::support::disk::DiskObservation;
 use crate::support::protection::{Reachability, UnobservableReason};
 use crate::support::provisioning::NextAction;
 
-use crate::commands::status::project::{Item, Value, WorktreeRow};
+use crate::commands::status::project::{FileRow, FileState, Item, Value, WorktreeRow};
 
 use crate::testing::outcome::{Checked, Required};
 
@@ -60,6 +60,7 @@ fn healthy() -> ProjectStatus {
                 upstream: "refs/remotes/origin/main".to_string(),
             },
         }],
+        files: Vec::new(),
         disk: DiskObservation::Observed(RootDiskUsage {
             free_kib: 4_898_320,
             usable_kib: 19_401_296,
@@ -256,6 +257,144 @@ fn a_project_that_needs_nothing_is_not_given_a_command() -> Checked {
     assert!(
         !printed.stdout.contains("sbxm "),
         "a healthy project has no next command: {:?}",
+        printed.stdout
+    );
+    Ok(())
+}
+
+// --- 宣言file ---
+
+fn with_files(files: Vec<(&str, FileState, FileState)>) -> ProjectStatus {
+    ProjectStatus {
+        files: files
+            .into_iter()
+            .map(|(destination, host, sandbox)| FileRow {
+                destination: destination.to_string(),
+                host,
+                sandbox,
+            })
+            .collect(),
+        ..healthy()
+    }
+}
+
+#[test]
+fn a_project_without_declared_files_shows_no_files_section() -> Checked {
+    let printed = print(&healthy())?;
+    assert!(
+        !printed.stdout.contains("DECLARED FILES"),
+        "{}",
+        printed.stdout
+    );
+    Ok(())
+}
+
+#[test]
+fn each_declared_file_shows_its_host_and_sandbox_state() -> Checked {
+    let printed = print(&with_files(vec![
+        (".gitconfig", FileState::Unchanged, FileState::Unchanged),
+        (".claude/CLAUDE.md", FileState::Updated, FileState::Modified),
+    ]))?;
+
+    assert!(
+        printed.stdout.contains("DECLARED FILES"),
+        "{}",
+        printed.stdout
+    );
+    let row = printed
+        .stdout
+        .lines()
+        .find(|line| line.contains(".claude/CLAUDE.md"))
+        .required_because("the file has a row")?;
+    assert!(row.contains("updated") && row.contains("modified"), "{row}");
+    // Sandboxで書き換えたfileは`apply --files`が置き換えない。置き換えを強制する前に
+    // 退避するよう述べる。
+    assert!(
+        printed.stdout.contains("before forcing a replacement"),
+        "{}",
+        printed.stdout
+    );
+    // hostで変わったfileは、置く手順を案件IDごと示す。
+    assert!(
+        printed
+            .stdout
+            .contains("sbxm apply example-org/example-repo --files"),
+        "{}",
+        printed.stdout
+    );
+    // どちらも壊れてはいない。
+    assert_eq!(printed.code, ExitCode::Success);
+    Ok(())
+}
+
+#[test]
+fn nothing_is_suggested_when_every_file_is_where_sbxm_left_it() -> Checked {
+    let printed = print(&with_files(vec![(
+        ".gitconfig",
+        FileState::Unchanged,
+        FileState::Unchanged,
+    )]))?;
+    assert!(!printed.stdout.contains("sbxm apply"), "{}", printed.stdout);
+    assert!(!printed.stdout.contains("--force"), "{}", printed.stdout);
+
+    // Sandboxの無い案件には、初回構築が宣言を置く。今すぐ置く手順は要らない。
+    let printed = print(&with_files(vec![(
+        ".gitconfig",
+        FileState::Unplaced,
+        FileState::NotApplicable,
+    )]))?;
+    assert!(!printed.stdout.contains("sbxm apply"), "{}", printed.stdout);
+    Ok(())
+}
+
+#[test]
+fn placing_is_suggested_only_where_the_sandbox_was_looked_into() -> Checked {
+    // 停止中や観測できなかったSandboxへは`apply --files`が通らない。
+    for sandbox in [FileState::NotObservedStopped, FileState::NotObserved] {
+        let printed = print(&with_files(vec![(
+            ".gitconfig",
+            FileState::Updated,
+            sandbox,
+        )]))?;
+        assert!(
+            !printed.stdout.contains("--files"),
+            "{sandbox:?}: {}",
+            printed.stdout
+        );
+    }
+    // Sandboxから消えたfileは、hostで変わっていなくても置き直せる。
+    let printed = print(&with_files(vec![(
+        ".gitconfig",
+        FileState::Unchanged,
+        FileState::Missing,
+    )]))?;
+    assert!(
+        printed
+            .stdout
+            .contains("sbxm apply example-org/example-repo --files"),
+        "{}",
+        printed.stdout
+    );
+    Ok(())
+}
+
+#[test]
+fn placing_is_not_suggested_beside_another_next_command() -> Checked {
+    // 先に行う1手が宣言fileも置く。相反しうる手順を並べない。
+    let status = ProjectStatus {
+        files: with_files(vec![(
+            ".gitconfig",
+            FileState::Updated,
+            FileState::Unchanged,
+        )])
+        .files,
+        ..needing(NextAction::RebuildChanged)
+    };
+    let printed = print(&status)?;
+    assert!(!printed.stdout.contains("--files"), "{}", printed.stdout);
+    assert!(
+        printed.stdout.contains("sbxm rebuild"),
+        "{}",
         printed.stdout
     );
     Ok(())

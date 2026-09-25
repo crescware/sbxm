@@ -366,6 +366,7 @@ fn project_status(
             value: super::status::project::Value::Ready,
         }],
         worktrees,
+        files: Vec::new(),
         disk: crate::support::disk::DiskObservation::NotObservedMismatch,
         next: None,
         diagnostics: vec![Diagnostic::new(

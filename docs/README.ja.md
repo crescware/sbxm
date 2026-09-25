@@ -370,6 +370,9 @@ sbxm apply <project-id> --files --force
 宣言したファイルをSandboxの中で編集しても、`open`と`repair`はその案件を拒否せず、
 編集した内容を宣言ファイルで置き戻すこともしません。
 
+`sbxm status <project-id>`は宣言ファイルごとに、sbxmが配置したあとにホスト側の
+ファイルが変わったか（`updated`）と、Sandbox側で編集されたか（`modified`）を示します。
+
 登録済みのすべての案件へまとめて配置する場合は、次を実行します。
 
 ```sh

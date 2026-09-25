@@ -16,6 +16,8 @@ When the observation points to exactly one thing to do next, status ends with th
 See [Status values](../../status-values/) for the meaning and next action for each
 state value.
 
+The project `DECLARED FILES` table compares every declared file with what sbxm placed there last: `HOST` says whether the host file changed or was never placed, and `SANDBOX` says whether the sandbox copy was edited, is missing, or differs without a record. When a host file changed, status shows the `sbxm apply <project-id> --files` command that places it. See [Declared files](../../status-values/#declared-files) for each value.
+
 In the project `WORKTREES` table, `STATE` describes the worktree itself and
 `REMOTE` separately describes whether the current commit is pushed, reachable
 from an origin ref, unreachable, or `unobservable(reason)`. Status does not

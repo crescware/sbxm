@@ -4,9 +4,12 @@
 //! 停止、file更新を行わない。作成元やsbxm独自のmarkerは検査せず、現在の状態だけを見る。
 
 mod artifacts;
+mod check_files;
 mod diagnose;
 #[cfg(test)]
 mod fake;
+mod file_row;
+mod file_state;
 mod inside;
 mod item;
 #[cfg(test)]
@@ -17,7 +20,10 @@ mod repository;
 mod value;
 mod worktree_row;
 
+pub use check_files::check_files;
 pub use diagnose::diagnose;
+pub use file_row::FileRow;
+pub use file_state::FileState;
 pub use item::Item;
 pub use project_status::ProjectStatus;
 pub use value::Value;

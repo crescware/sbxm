@@ -10,11 +10,11 @@ use crate::support::files::Placement;
 use crate::support::status::StatusValue;
 
 use crate::commands::apply::ProjectResult;
-use crate::commands::status::project::Value as ProjectValue;
+use crate::commands::status::project::{FileState, Value as ProjectValue};
 use crate::commands::stop::StopResult;
 
 use super::{
-    ListState, apply_result, creation_mode, global_status, placement, project_status,
+    ListState, apply_result, creation_mode, file_state, global_status, placement, project_status,
     sandbox_state, stop_result,
 };
 
@@ -83,6 +83,10 @@ impl Legend {
 
     pub fn sandbox_state(&mut self, state: SandboxState) -> Inline {
         self.cell(sandbox_state(state), sandbox_state_legend(state))
+    }
+
+    pub fn file_state(&mut self, state: FileState) -> Inline {
+        self.cell(file_state(state), state.legend_id())
     }
 
     pub fn stop_result(&mut self, result: StopResult) -> Inline {

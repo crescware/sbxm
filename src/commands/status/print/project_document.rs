@@ -3,7 +3,7 @@ use crate::i18n::Locale;
 use crate::msg;
 
 use crate::commands::present::{self, Legend};
-use crate::commands::status::project::ProjectStatus;
+use crate::commands::status::project::{FileRow, FileState, ProjectStatus};
 
 /// project scopeの`status`が並べるもの。
 ///
@@ -49,9 +49,61 @@ pub fn project_document(status: &ProjectStatus, locale: Locale) -> Document {
     } else {
         document.table(Some(heading), worktrees)
     };
+    let document = declared_files(document, status, &mut legend);
     let document = present::disk_section(document, &status.disk);
     let document = document.legend(Legend::heading(), legend.entries());
     next_step(document, status)
+}
+
+/// 宣言fileごとの、hostとSandboxの状態。宣言が無ければsectionごと省く。
+///
+/// hostで変わったfileがあれば、それを置く手順を示す。Sandboxで書き換えられたfileは
+/// `apply --files`が置き換えないことも述べる。
+///
+/// 置く手順は、Sandboxの中を観測できて、そのまま`apply --files`が通る場合だけ示す。
+/// 停止中や観測できなかったSandboxへは置けない。先に行う1手が別にあれば、その1手が
+/// 宣言fileも置くため、手順を重ねて示さない。
+fn declared_files(document: Document, status: &ProjectStatus, legend: &mut Legend) -> Document {
+    if status.files.is_empty() {
+        return document;
+    }
+    let mut table = Table::new(vec![
+        msg!("column-destination"),
+        msg!("column-host"),
+        msg!("column-sandbox"),
+    ]);
+    for file in &status.files {
+        table.push(vec![
+            Inline::path(file.destination.clone()).into(),
+            legend.file_state(file.host).into(),
+            legend.file_state(file.sandbox).into(),
+        ]);
+    }
+    let mut document = document.table(Some(msg!("status-files-section")), table);
+    if status
+        .files
+        .iter()
+        .any(|file| matches!(file.sandbox, FileState::Modified | FileState::Unrecorded))
+    {
+        document = document.note(msg!("status-files-modified-note"));
+    }
+    if status.next.is_none() && status.files.iter().any(placeable) {
+        document = document
+            .note(msg!("status-files-apply-note"))
+            .try_command(format!("sbxm apply {} --files", status.project));
+    }
+    document
+}
+
+/// `apply --files`が今すぐ置けるfileか。
+fn placeable(file: &FileRow) -> bool {
+    let observed = matches!(
+        file.sandbox,
+        FileState::Unchanged | FileState::Modified | FileState::Unrecorded | FileState::Missing
+    );
+    observed
+        && (matches!(file.host, FileState::Updated | FileState::Unplaced)
+            || file.sandbox == FileState::Missing)
 }
 
 /// 今すぐ実行できる1手を、末尾に1回だけ示す。

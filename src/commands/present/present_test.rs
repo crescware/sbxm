@@ -268,6 +268,47 @@ fn a_file_the_sandbox_already_held_is_not_reported_as_a_change() {
 }
 
 #[test]
+fn every_declared_file_state_carries_its_own_explanation() -> Checked {
+    use crate::commands::status::project::FileState;
+
+    let catalog = crate::i18n::Catalog::new(Locale::Ja);
+    let mut legend = Legend::new(Locale::Ja);
+    let states = [
+        FileState::Unchanged,
+        FileState::Updated,
+        FileState::Unplaced,
+        FileState::Unreadable,
+        FileState::Modified,
+        FileState::Unrecorded,
+        FileState::Missing,
+        FileState::NotObserved,
+        FileState::NotObservedStopped,
+        FileState::NotApplicable,
+    ];
+    for state in states {
+        assert_eq!(legend.file_state(state), file_state(state));
+    }
+    let entries = legend.entries();
+    assert_eq!(entries.len(), states.len(), "every state has its own value");
+    for entry in &entries {
+        let text = catalog
+            .text(entry.description.id)
+            .required_because(&format!("{} has a legend", entry.value))?;
+        assert!(!text.is_empty(), "{} has an empty legend", entry.value);
+    }
+    // 置けないhost fileだけが、`apply --files`を止める。
+    assert_eq!(
+        file_state(FileState::Unreadable),
+        Inline::state("unreadable", VisualState::Negative)
+    );
+    assert_eq!(
+        file_state(FileState::Unchanged),
+        Inline::state("unchanged", VisualState::Positive)
+    );
+    Ok(())
+}
+
+#[test]
 fn every_sandbox_state_mode_and_placement_carries_its_own_explanation() -> Checked {
     // 状態値は翻訳しない。翻訳先で読めるのは凡例だけであり、表へ出した値には
     // その値を説明するmessageが要る。Sandboxの状態はhost serviceの説明を流用しない。
