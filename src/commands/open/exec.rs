@@ -93,10 +93,9 @@ pub fn exec(
     let connected = super::run::connect(host, prepared, ui);
     // hostにあるrepositoryの案件は、sessionを閉じたあとに保存しておく。
     if let Ok(project) = project {
-        saving::auto_saved(
-            ui,
-            &saving::save_first(context.location, &project, host, context.workspace_root),
-        );
+        let saved =
+            saving::save_first(context.location, &project, host, context.workspace_root, ui);
+        saving::auto_saved(ui, &saved);
     }
     match connected {
         Ok(()) => ExitCode::Success,

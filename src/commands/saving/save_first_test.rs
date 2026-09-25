@@ -43,6 +43,7 @@ fn a_running_local_sandbox_is_asked_for_its_commits() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     );
 
     assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
@@ -69,6 +70,7 @@ fn nothing_is_saved_where_there_is_nothing_to_save_from() -> Checked {
             &project,
             &world,
             bench.workspace_root.path(),
+            &mut crate::design::SilentProgress,
         );
         assert!(matches!(saved, AutoSaved::Nothing), "{project}: {saved:?}");
     }
@@ -85,6 +87,7 @@ fn nothing_is_saved_where_there_is_nothing_to_save_from() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     );
     assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
     assert!(!tried_to_save(&world, mark), "{:?}", world.since(mark));
@@ -104,6 +107,7 @@ fn a_stopped_local_sandbox_is_not_started_to_save_from() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     );
 
     assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
@@ -127,6 +131,7 @@ fn a_lock_that_cannot_be_taken_is_a_warning_rather_than_silence() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     );
 
     let AutoSaved::Failed(warning) = saved else {

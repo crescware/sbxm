@@ -1096,6 +1096,7 @@ fn a_local_project_saves_its_commits_on_its_own_before_the_sandbox_goes() -> Che
         },
         &paths,
         &metadata,
+        &mut crate::design::SilentProgress,
     );
 
     let AutoSaved::Saved(message) = saved else {
@@ -1120,7 +1121,12 @@ fn a_save_that_fails_is_a_warning_with_the_command_to_retry() -> Checked {
     let paths = crate::testing::repository::project_paths(repositories.root.path())?;
     let metadata = local_metadata(&repositories.host)?;
 
-    let saved = auto_save(&ServingBundle { bundle: None }, &paths, &metadata);
+    let saved = auto_save(
+        &ServingBundle { bundle: None },
+        &paths,
+        &metadata,
+        &mut crate::design::SilentProgress,
+    );
 
     let AutoSaved::Failed(warning) = saved else {
         return Err(crate::testing::outcome::Unmet::new(format!("{saved:?}")));
@@ -1139,7 +1145,12 @@ fn a_github_project_is_left_to_its_origin() -> Checked {
     let paths = crate::testing::repository::project_paths(repositories.root.path())?;
     let metadata = crate::testing::metadata::attached("example-org", "example-repo")?;
 
-    let saved = auto_save(&ServingBundle { bundle: None }, &paths, &metadata);
+    let saved = auto_save(
+        &ServingBundle { bundle: None },
+        &paths,
+        &metadata,
+        &mut crate::design::SilentProgress,
+    );
 
     assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
     Ok(())

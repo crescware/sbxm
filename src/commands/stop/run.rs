@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
-use crate::design::ExternalOutput;
+use crate::design::{ExternalOutput, ProgressSink};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -29,7 +29,7 @@ pub fn run(
     prompt: &mut dyn ProjectPrompt,
     workspace_root: &Path,
     poll: Poll,
-    output: &mut dyn ExternalOutput,
+    output: &mut dyn ProgressSink,
 ) -> Result<StopReport> {
     // 1. 全対象のmetadataを解決する。canonical ID昇順で返る。
     let selected = select::many(location, requested, &msg!("select-stop-heading"), prompt)?;
@@ -48,7 +48,7 @@ pub fn run(
     // ほかのcommandが待たされる。
     let saved: Vec<AutoSaved> = running
         .into_iter()
-        .map(|candidate| saving::save_selected(candidate, host, workspace_root))
+        .map(|candidate| saving::save_selected(candidate, host, workspace_root, output))
         .collect();
 
     // 4. 複数lockはcanonical ID昇順に取得する。

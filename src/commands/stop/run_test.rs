@@ -268,6 +268,7 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
     );
     // 保存の前に動いていることを確かめる一覧も読む。
     let host = FakeSbx::listings(&[&running, &running, &running, &after]);
+    let mut output = RecordedOutput::new();
 
     let report = run(
         &fixture.location,
@@ -276,11 +277,22 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
         poll(),
-        &mut RecordedOutput::new(),
+        &mut output,
     )
     .required_because("stop")?;
 
     assert_eq!(report.saved.len(), 2, "one save attempt per running target");
+    // 保存のあいだ黙って待たせない。
+    assert_eq!(
+        output
+            .steps
+            .iter()
+            .filter(|step| step.id == "progress-saving-to-host")
+            .count(),
+        1,
+        "{:?}",
+        output.steps
+    );
     let calls: Vec<String> = host.calls().iter().map(|call| call.join(" ")).collect();
     let saving = calls
         .iter()

@@ -1,4 +1,5 @@
 use crate::boundary::host::HostEnvironment;
+use crate::design::ProgressSink;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::{self, ProjectPaths};
@@ -18,6 +19,7 @@ pub fn auto_save(
     host: &dyn HostEnvironment,
     paths: &ProjectPaths,
     metadata: &ProjectMetadata,
+    progress: &mut dyn ProgressSink,
 ) -> AutoSaved {
     if metadata.repository.host_path().is_none() {
         return AutoSaved::Nothing;
@@ -26,6 +28,8 @@ pub fn auto_save(
     let target = repository::host_repository(paths, metadata);
     let git_dir = SandboxLayout::new(metadata.canonical_id()).bare_git_dir();
     let project = metadata.display_id();
+    // 保存は履歴全体を運ぶことがある。黙って待たせず、何をしているかを先に示す。
+    progress.step(msg!("progress-saving-to-host", project = project.clone()));
     match save_to_host(host, paths, &sandbox, &git_dir, &target) {
         Ok(Some(changes)) if !changes.is_empty() => AutoSaved::Saved(msg!(
             "auto-save-done",

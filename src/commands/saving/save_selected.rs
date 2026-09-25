@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
+use crate::design::ProgressSink;
 use crate::support::bundle::{self, AutoSaved};
 use crate::support::inventory;
 use crate::support::select::Candidate;
@@ -16,6 +17,7 @@ pub fn save_selected(
     candidate: Candidate,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> AutoSaved {
     // GitHubの案件にはlockも取らない。
     if candidate.repository.host_path().is_none() {
@@ -32,5 +34,5 @@ pub fn save_selected(
     {
         return AutoSaved::Nothing;
     }
-    bundle::auto_save(host, &locked.paths, &locked.metadata)
+    bundle::auto_save(host, &locked.paths, &locked.metadata, progress)
 }

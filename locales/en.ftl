@@ -749,6 +749,7 @@ progress-loading-template = Loading the template into the sandbox runtime.
 progress-creating-sandbox = Creating the sandbox.
 progress-starting-sandbox = Starting the sandbox.
 progress-removing-sandbox = Removing the existing sandbox.
+progress-saving-to-host = Saving the sandbox's commits of { $project } into the host repository.
 progress-preparing-repository = Preparing the repository inside the sandbox.
 progress-checking-repository = Checking the repository already inside the sandbox. For a large repository this can take a few minutes.
 progress-fetching-repository = Fetching the repository inside the sandbox. For a large repository this can take several minutes.
