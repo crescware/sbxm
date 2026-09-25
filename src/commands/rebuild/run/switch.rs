@@ -114,8 +114,16 @@ impl Switch<'_> {
             repository::SandboxOrigin::Github(_) => Vec::new(),
         };
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
-        repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch, progress)
-            .map_err(decorate)?;
+        repository::ensure_worktrees(
+            host,
+            &ready.name,
+            &layout,
+            metadata,
+            &branch,
+            &restored,
+            progress,
+        )
+        .map_err(decorate)?;
         sandbox::require_credentials_isolated(host, &ready.name)?;
         Ok(restored)
     }

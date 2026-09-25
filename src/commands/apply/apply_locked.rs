@@ -100,6 +100,7 @@ pub(super) fn apply_locked(
             &layout,
             &locked.metadata,
             &branch,
+            &[],
             progress,
         )
         .map_err(decorate)?;
