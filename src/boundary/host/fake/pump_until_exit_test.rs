@@ -68,9 +68,12 @@ fn capture<O: Read + AsFd, E: Read + AsFd>(
         None::<InputFeed<'_, std::fs::File>>,
         stdout,
         stderr,
-        &mut |stream, bytes| match stream {
-            Stream::Stdout => out.extend_from_slice(bytes),
-            Stream::Stderr => err.extend_from_slice(bytes),
+        &mut |stream, bytes| {
+            match stream {
+                Stream::Stdout => out.extend_from_slice(bytes),
+                Stream::Stderr => err.extend_from_slice(bytes),
+            }
+            Ok(())
         },
     )?;
     Ok((status, out, err))
@@ -123,7 +126,7 @@ fn labels(error: &Error) -> Checked<Vec<String>> {
 fn a_missing_stdout_pipe_is_reported() -> Checked {
     let mut child = child(Stdio::null(), Stdio::piped())?;
     let signal = signal()?;
-    let error = pump_until_exit(&mut child, &spec(), None, Some(&signal), &mut |_, _| {})
+    let error = pump_until_exit(&mut child, &spec(), None, Some(&signal), &mut |_, _| Ok(()))
         .refused_because("a missing stdout pipe must be refused")?;
 
     assert_eq!(
@@ -137,7 +140,7 @@ fn a_missing_stdout_pipe_is_reported() -> Checked {
 fn a_missing_stderr_pipe_is_reported() -> Checked {
     let mut child = child(Stdio::piped(), Stdio::null())?;
     let signal = signal()?;
-    let error = pump_until_exit(&mut child, &spec(), None, Some(&signal), &mut |_, _| {})
+    let error = pump_until_exit(&mut child, &spec(), None, Some(&signal), &mut |_, _| Ok(()))
         .refused_because("a missing stderr pipe must be refused")?;
 
     assert_eq!(
@@ -153,7 +156,7 @@ fn an_interrupted_capture_is_canceled_before_waiting() -> Checked {
     let signal =
         SignalGuard::interrupted_for_test().required_because("SIGINT registration must succeed")?;
 
-    let error = pump_until_exit(&mut child, &spec(), None, Some(&signal), &mut |_, _| {})
+    let error = pump_until_exit(&mut child, &spec(), None, Some(&signal), &mut |_, _| Ok(()))
         .refused_because("an interrupted capture must be canceled")?;
 
     assert!(matches!(error, Error::Canceled));
@@ -371,31 +374,61 @@ fn a_child_reaped_before_capture_is_reported_as_a_wait_failure() -> Checked {
 fn drain_pipe_handles_empty_and_read_errors() -> Checked {
     let mut collected = Vec::new();
     let mut absent: Option<ScriptedPipe> = None;
-    assert!(drain_pipe(&mut absent, &mut |bytes| collected.extend_from_slice(bytes)).is_ok());
+    assert!(
+        drain_pipe(&mut absent, &mut |bytes| {
+            collected.extend_from_slice(bytes);
+            Ok(())
+        })
+        .is_ok()
+    );
 
     let mut pipe = Some(ScriptedPipe::new([
         ReadStep::Interrupted,
         ReadStep::Bytes(b"out"),
         ReadStep::WouldBlock,
     ])?);
-    assert!(drain_pipe(&mut pipe, &mut |bytes| collected.extend_from_slice(bytes)).is_ok());
+    assert!(
+        drain_pipe(&mut pipe, &mut |bytes| {
+            collected.extend_from_slice(bytes);
+            Ok(())
+        })
+        .is_ok()
+    );
     assert!(
         pipe.is_some(),
         "an interrupted read leaves the pipe available"
     );
     assert_eq!(collected, b"");
 
-    assert!(drain_pipe(&mut pipe, &mut |bytes| collected.extend_from_slice(bytes)).is_ok());
+    assert!(
+        drain_pipe(&mut pipe, &mut |bytes| {
+            collected.extend_from_slice(bytes);
+            Ok(())
+        })
+        .is_ok()
+    );
     assert_eq!(collected, b"out");
     assert!(pipe.is_some(), "a read that would block leaves the pipe");
 
     let mut ended = Some(ScriptedPipe::new([ReadStep::Bytes(b"last")])?);
-    assert!(drain_pipe(&mut ended, &mut |bytes| collected.extend_from_slice(bytes)).is_ok());
+    assert!(
+        drain_pipe(&mut ended, &mut |bytes| {
+            collected.extend_from_slice(bytes);
+            Ok(())
+        })
+        .is_ok()
+    );
     assert_eq!(collected, b"outlast");
     assert!(ended.is_none(), "a pipe that reached its end is closed");
 
     let mut failed = Some(ScriptedPipe::new([ReadStep::Failed])?);
-    assert!(drain_pipe(&mut failed, &mut |bytes| collected.extend_from_slice(bytes)).is_err());
+    assert!(
+        drain_pipe(&mut failed, &mut |bytes| {
+            collected.extend_from_slice(bytes);
+            Ok(())
+        })
+        .is_err()
+    );
     Ok(())
 }
 
@@ -424,7 +457,10 @@ fn a_relay_hands_both_streams_to_one_receiver_in_the_order_they_arrive() -> Chec
         None::<InputFeed<'_, std::fs::File>>,
         ScriptedPipe::new([ReadStep::Bytes(b"out")])?,
         ScriptedPipe::new([ReadStep::Bytes(b"err")])?,
-        &mut |_, bytes| output.relay(bytes),
+        &mut |_, bytes| {
+            output.relay(bytes);
+            Ok(())
+        },
     )
     .required_because("a child that has exited ends the relay")?;
 
@@ -565,7 +601,7 @@ fn input_that_cannot_be_written_ends_the_child_and_keeps_what_the_os_said() -> C
         Some(InputFeed::new(writer, b"hello")),
         ScriptedPipe::new([])?,
         ScriptedPipe::new([])?,
-        &mut |_, _| {},
+        &mut |_, _| Ok(()),
     )
     .refused_because("input that cannot be written refuses the run")?;
 
@@ -585,7 +621,7 @@ fn input_for_a_child_started_without_an_input_pipe_is_refused() -> Checked {
     let signal = signal()?;
     let spec = spec().with_input(b"hello".to_vec());
 
-    let error = pump_until_exit(&mut child, &spec, None, Some(&signal), &mut |_, _| {})
+    let error = pump_until_exit(&mut child, &spec, None, Some(&signal), &mut |_, _| Ok(()))
         .refused_because("there is nowhere to write the input")?;
     assert_eq!(
         error.first_id(),

@@ -48,6 +48,14 @@ Editing a declared file inside the sandbox is not treated as damage: `open` and 
 
 `sbxm status <project-id>` lists every declared file with two states: whether the host file changed since sbxm placed it, and whether the sandbox copy was edited. See [Declared files](../../reference/status-values/#declared-files) for the values.
 
+## Bring a sandbox edit back
+
+```sh
+sbxm files pull .claude/CLAUDE.md <project-id>
+```
+
+`pull` shows how the sandbox copy differs from the host file and asks whether to adopt it. It never merges on its own. See [`sbxm files`](../../reference/cli/files/#pull) for the checks it makes.
+
 ## Apply to every project
 
 ```sh

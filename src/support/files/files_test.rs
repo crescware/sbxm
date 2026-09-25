@@ -560,11 +560,16 @@ fn the_placement_results_keep_distinct_untranslated_spellings() {
 #[test]
 fn an_answer_from_sha256sum_without_a_digest_is_refused_rather_than_read_as_one() -> Checked {
     let destination = "/home/agent/.config/example/settings.yaml";
-    // 空でも、短くても、digestを含まない行でも、それはdigestではない。
+    // 空でも、短くても、digestを含まない行でも、それはdigestではない。長さが合っていても、
+    // 小文字16進でなければ受け取らない。答えはhostのfile名に使う。
+    let traversal = format!("../../{}", "a".repeat(58));
+    let upper = "A".repeat(64);
     for reported in [
         "",
         "d41d8cd98f00b204  /home/agent/.config/example/settings.yaml\n",
         "sha256sum: standard input: Input/output error\n",
+        traversal.as_str(),
+        upper.as_str(),
     ] {
         let host = FakeSbx::reporting(destination, reported);
         let error = digest_in_sandbox(&host, "sbxm-example", destination)
@@ -1040,5 +1045,38 @@ fn a_placement_stopped_by_a_signal_leaves_nothing_behind() -> Checked {
 
     assert_eq!(placing.staged()?, 0);
     assert!(!placing.destination().exists());
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_copy_that_changes_while_it_is_read_is_refused() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let source = source_file(dir.path(), b"declared = true\n")?;
+    let incoming = dir.path().join("incoming");
+    // 観測したdigestと、`cat`が返した内容が一致しない。
+    let host = FakeSbx::holding("/home/agent/.gitconfig", b"observed\n");
+
+    let error = receive_copy(
+        &host,
+        "sbxm-example",
+        &declaration(&source, ".gitconfig")?,
+        &incoming,
+    )
+    .refused_because("the copy changed while it was read")?;
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileUnusable));
+    assert!(
+        fs::read_dir(&incoming).required()?.next().is_none(),
+        "nothing is kept"
+    );
+
+    // Sandboxに無いfileは、受け取るものが無い。
+    let absent = receive_copy(
+        &FakeSbx::empty(),
+        "sbxm-example",
+        &declaration(&source, ".gitconfig")?,
+        &incoming,
+    )
+    .required()?;
+    assert!(absent.is_none());
     Ok(())
 }

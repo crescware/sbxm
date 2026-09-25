@@ -36,6 +36,14 @@ impl World {
                 0,
                 "git@github.com:Example-Org/Example-Repo.git\n".to_string(),
             ),
+            // 2つのfileの差分。実物のgitと同じく、差分があれば`1`で答える。
+            [.., "diff", "--no-index", _, _, _, "--", before, after] => {
+                match (fs::read_to_string(before), fs::read_to_string(after)) {
+                    (Ok(old), Ok(new)) if old == new => (0, String::new()),
+                    (Ok(old), Ok(new)) => (1, format!("--- {before}\n+++ {after}\n-{old}+{new}")),
+                    _ => (128, String::new()),
+                }
+            }
             _ => (0, String::new()),
         }
     }

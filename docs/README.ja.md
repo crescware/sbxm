@@ -373,6 +373,16 @@ sbxm apply <project-id> --files --force
 `sbxm status <project-id>`は宣言ファイルごとに、sbxmが配置したあとにホスト側の
 ファイルが変わったか（`updated`）と、Sandbox側で編集されたか（`modified`）を示します。
 
+Sandboxの中で編集した内容をホスト側のファイルへ持ち帰るには、次を実行します。
+
+```sh
+sbxm files pull .claude/CLAUDE.md <project-id>
+```
+
+sbxmはSandbox側のファイルを案件の`.sbxm/incoming`へ取り出し、ホスト側のファイルとの
+差分を示してから、採用するかを訊きます。自動では混ぜず、対話端末でない実行では差分を
+示すだけです。Sandboxから来た制御文字は端末へ届けず、`\u{...}`の形で示します。
+
 登録済みのすべての案件へまとめて配置する場合は、次を実行します。
 
 ```sh
@@ -451,6 +461,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
 | `sbxm files add\|ls\|rm ...` | すべてのSandboxへ配置するホスト側のファイルを宣言、一覧、または宣言を外す |
+| `sbxm files pull <destination> [<project-id>]` | 宣言ファイルについて、案件のSandbox側の内容とホスト側のファイルの差分を示し、選べばホスト側のファイルへ採用する |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する。`--files --all`で登録済みのすべての案件へ配置する |
 | `sbxm repair [<project-id>]` | SSH接続を開かず、中断または未完成の案件を明示的に準備する。接続時は`open`が同じ復旧を行う |
 | `sbxm rebuild [<project-id>]` | Dockerfileから案件のSandboxを作り直す（元の書き込み可能な層は失われる） |

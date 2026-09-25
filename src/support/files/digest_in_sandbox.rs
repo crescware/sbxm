@@ -19,7 +19,11 @@ pub(super) fn digest_in_sandbox(
     let outcome = sandbox::exec(host, sandbox, &["sha256sum", destination])?.require_success()?;
     let text = outcome.stdout_text();
     let digest = text.split_whitespace().next().unwrap_or_default();
-    if digest.len() != 64 {
+    // Sandboxが答えた値はhostのfile名にも使う。小文字16進の64桁以外は信用しない。
+    let hex = digest
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    if digest.len() != 64 || !hex {
         return Err(unparseable(
             "sha256sum",
             &format!("no digest was reported for {destination}"),

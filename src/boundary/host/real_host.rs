@@ -1,9 +1,11 @@
+use std::io::Write;
+
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
 use super::{
     CommandOutcome, CommandSpec, HostEnvironment, PtyConfirmedCommand, TerminalCommand,
-    exists_on_path, run, run_pty_confirmed, run_with_terminal,
+    exists_on_path, run, run_pty_confirmed, run_streaming, run_with_terminal,
 };
 
 /// 実際のhost。
@@ -24,6 +26,15 @@ impl HostEnvironment for RealHost {
         output: &mut dyn ExternalOutput,
     ) -> Result<CommandOutcome> {
         run_with_terminal(command, output)
+    }
+
+    fn run_streaming(
+        &self,
+        spec: &CommandSpec,
+        sink: &mut dyn Write,
+        limit: u64,
+    ) -> Result<CommandOutcome> {
+        run_streaming(spec, sink, limit)
     }
 
     fn run_pty_confirmed(&self, command: &PtyConfirmedCommand) -> Result<CommandOutcome> {

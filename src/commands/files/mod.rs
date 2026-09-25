@@ -6,25 +6,39 @@
 mod absolute_source;
 mod add;
 mod added;
+mod adopt;
 mod args;
+mod ask_to_adopt;
 mod ask_to_apply;
 mod command_line;
 mod exec;
+mod host_diff;
 mod invalid_destination;
 mod looks_like_credential;
 pub mod print;
+mod pull;
+mod pull_outcome;
+mod pulled;
 mod remove;
+mod visible;
 
 pub use absolute_source::absolute_source;
 pub use add::add;
 pub use added::Added;
+pub use adopt::adopt;
 pub use args::Args;
+pub use ask_to_adopt::ask_to_adopt;
 pub use ask_to_apply::ask_to_apply;
 pub(crate) use command_line::CommandLine as CommandLineParser;
 pub use exec::exec;
+pub use host_diff::host_diff;
 pub use invalid_destination::invalid_destination;
 pub use looks_like_credential::looks_like_credential;
+pub use pull::pull;
+pub use pull_outcome::PullOutcome;
+pub use pulled::Pulled;
 pub use remove::remove;
+pub use visible::visible;
 
 #[cfg(test)]
 #[path = "command_line_test.rs"]

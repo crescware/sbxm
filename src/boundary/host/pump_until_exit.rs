@@ -19,13 +19,14 @@ use super::{
 ///
 /// 読んだbyteを溜めるか端末へ流すかは呼び出し側が決める。どちらであっても、読めなくなった
 /// 相手をどう扱うか——まだ動いている子は終わらせてから報告し、既に終わった子の残りは
-/// 諦める——は変わらない。
+/// 諦める——は変わらない。受け手が受け取れないと答えた場合も、読めなくなった場合と同じく
+/// 扱う。
 pub(super) fn pump_until_exit(
     child: &mut Child,
     spec: &CommandSpec,
     limit: Option<Duration>,
     signal: Option<&SignalGuard>,
-    receive: &mut dyn FnMut(Stream, &[u8]),
+    receive: &mut dyn FnMut(Stream, &[u8]) -> std::io::Result<()>,
 ) -> Result<ExitStatus> {
     let (stdout, stderr) = take_pipes(child, spec)?;
     let input = take_input(child, spec)?;
@@ -77,7 +78,7 @@ fn pump<O: Read + AsFd, E: Read + AsFd, I: std::io::Write + AsFd>(
     mut input: Option<InputFeed<'_, I>>,
     stdout: O,
     stderr: E,
-    receive: &mut dyn FnMut(Stream, &[u8]),
+    receive: &mut dyn FnMut(Stream, &[u8]) -> std::io::Result<()>,
 ) -> Result<ExitStatus> {
     let mut stdout = Some(stdout);
     let mut stderr = Some(stderr);
@@ -155,7 +156,7 @@ fn pump<O: Read + AsFd, E: Read + AsFd, I: std::io::Write + AsFd>(
 fn read<P: Read>(
     pipe: &mut Option<P>,
     stream: Stream,
-    receive: &mut dyn FnMut(Stream, &[u8]),
+    receive: &mut dyn FnMut(Stream, &[u8]) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     drain_pipe(pipe, &mut |bytes| receive(stream, bytes))
 }

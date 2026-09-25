@@ -19,6 +19,7 @@ mod observed;
 pub mod protection;
 pub mod provisioning;
 pub mod repository;
+pub mod retrieve;
 pub mod sandbox;
 pub mod secret;
 pub mod select;

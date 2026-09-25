@@ -24,6 +24,8 @@ pub struct World {
     pub present: RefCell<BTreeSet<String>>,
     /// Sandbox内のfileのdigest。
     pub digests: RefCell<BTreeMap<String, String>>,
+    /// 中身まで分かっているSandbox内のfile。`cat`はこれを答える。
+    pub contents: RefCell<BTreeMap<String, Vec<u8>>>,
     /// Sandbox内のgitとghの設定。
     pub settings: RefCell<BTreeMap<String, String>>,
     /// bare repositoryの設定値。
@@ -58,6 +60,7 @@ impl World {
             ),
             present: RefCell::new(BTreeSet::new()),
             digests: RefCell::new(BTreeMap::new()),
+            contents: RefCell::new(BTreeMap::new()),
             settings: RefCell::new(BTreeMap::new()),
             repository: RefCell::new(BTreeMap::new()),
             bare_git_dir: RefCell::new(None),
@@ -92,6 +95,17 @@ impl World {
         for row in self.sandboxes.borrow_mut().iter_mut() {
             row.running = false;
         }
+    }
+
+    /// Sandbox内のfileを、利用者が中で書き換えた内容にする。
+    pub fn edited_inside(&self, path: &str, contents: &[u8]) {
+        self.present.borrow_mut().insert(path.to_string());
+        self.digests
+            .borrow_mut()
+            .insert(path.to_string(), crate::hash::sha256_hex(contents));
+        self.contents
+            .borrow_mut()
+            .insert(path.to_string(), contents.to_vec());
     }
 
     /// Sandbox内に既にあるfile。cloneした案件が持ち込むものを表す。

@@ -60,6 +60,9 @@ impl World {
                     return (65, String::new());
                 }
                 self.place(Some((*digest).to_string()), destination);
+                self.contents
+                    .borrow_mut()
+                    .insert((*destination).to_string(), input.to_vec());
                 ok()
             }
             _ => missing(),
@@ -130,6 +133,10 @@ impl World {
                 self.present.borrow_mut().insert((*path).to_string());
                 Some(ok())
             }
+            ["cat", "--", path] => Some(match self.contents.borrow().get(*path) {
+                Some(contents) => (0, String::from_utf8_lossy(contents).into_owned()),
+                None => missing(),
+            }),
             ["sha256sum", path] => Some(match self.digests.borrow().get(*path) {
                 Some(digest) => (0, format!("{digest}  {path}\n")),
                 None => missing(),

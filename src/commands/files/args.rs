@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::project::ProjectId;
+
 /// `files`の引数。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Args {
@@ -14,4 +16,10 @@ pub enum Args {
     Ls,
     /// 配置先で指定した宣言を外す。
     Rm { destination: String },
+    /// Sandboxで書き換えられた宣言fileを取り出し、差分を見てからhostへ採用する。
+    Pull {
+        destination: String,
+        /// 取り出す案件。省略時は対話端末で選ぶ。
+        project: Option<ProjectId>,
+    },
 }

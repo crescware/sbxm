@@ -7,7 +7,8 @@ use crate::support::select;
 
 use super::{
     super::{Context, apply, report},
-    Args, absolute_source, add, ask_to_apply, print, remove,
+    Args, PullOutcome, Pulled, absolute_source, add, adopt, ask_to_adopt, ask_to_apply, host_diff,
+    print, pull, remove, visible,
 };
 
 pub fn exec(
@@ -35,6 +36,36 @@ pub fn exec(
             }
             Err(error) => report(ui, &error),
         },
+        Args::Pull {
+            destination,
+            project,
+        } => {
+            if let Err(error) = crate::support::login::require_signed_in(host) {
+                return report(ui, &error);
+            }
+            let mut pulled = match pull(
+                context.location,
+                &config,
+                destination,
+                project.as_ref(),
+                prompt,
+                host,
+                context.workspace_root,
+            ) {
+                Ok(pulled) => pulled,
+                Err(error) => return report(ui, &error),
+            };
+            let code = match decide(&mut pulled, context, ui, host, prompt) {
+                Ok(outcome) => {
+                    ui.stdout(&print::pull_result(&pulled, &outcome));
+                    ExitCode::Success
+                }
+                Err(error) => report(ui, &error),
+            };
+            // 取り出した内容は、採用してもしなくても隔離領域に残さない。
+            let _ = std::fs::remove_file(&pulled.copy.path);
+            code
+        }
         Args::Add {
             source,
             destination,
@@ -54,6 +85,30 @@ pub fn exec(
             }
             offer_to_apply(context, ui, host, prompt)
         }
+    }
+}
+
+/// 取り出したSandbox側の内容を、差分を見せてから採用するかを決める。自動では混ぜない。
+fn decide(
+    pulled: &mut Pulled,
+    context: &Context,
+    ui: &mut Ui,
+    host: &dyn HostEnvironment,
+    prompt: &mut PromptUi,
+) -> crate::diagnostics::Result<PullOutcome> {
+    if pulled.copy.sha256 == pulled.host_sha256 {
+        return Ok(PullOutcome::Same);
+    }
+    let source = pulled.declaration.source.as_path().to_path_buf();
+    let diff = host_diff(host, &source, &pulled.copy.path)?;
+    ui.stdout(&print::pull_diff(pulled, &visible(&diff)));
+    if !context.can_prompt {
+        return Ok(PullOutcome::Undecided);
+    }
+    match ask_to_adopt(prompt, &source, ui.locale()) {
+        Ok(true) => Ok(PullOutcome::Adopted(adopt(pulled)?)),
+        Ok(false) | Err(Error::Canceled) => Ok(PullOutcome::Kept),
+        Err(error) => Err(error),
     }
 }
 

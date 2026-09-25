@@ -22,5 +22,6 @@ pub(super) fn run_relay(
 ) -> Result<ExitStatus> {
     pump_until_exit(child, spec, limit, None, &mut |_, bytes| {
         output.relay(bytes);
+        Ok(())
     })
 }

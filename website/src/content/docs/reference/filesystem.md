@@ -11,7 +11,10 @@ Registering a repository from a parent directory creates:
 <parent>/<repository>.project/
 ├── <repository>/       # host-side clone
 └── .sbxm/              # metadata, Dockerfile, lock, and cache
+    └── incoming/       # copies received from the sandbox by files pull
 ```
+
+`.sbxm/incoming/` is a private area that only sbxm writes. A copy received from the sandbox lands there first, never over a file of yours, and is removed once you have decided whether to adopt it.
 
 ## Global state
 

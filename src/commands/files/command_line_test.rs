@@ -63,3 +63,46 @@ fn an_action_without_what_it_needs_or_with_what_it_ignores_is_refused() -> Check
     }
     Ok(())
 }
+
+#[test]
+fn pull_takes_a_destination_and_the_project_to_pull_from() -> Checked {
+    assert_eq!(
+        command(
+            &["files", "pull", ".claude/CLAUDE.md", "owner/repo"],
+            non_tty()
+        )?,
+        Command::Files(Args::Pull {
+            destination: ".claude/CLAUDE.md".to_string(),
+            project: Some(crate::project::ProjectId::parse("owner/repo")?),
+        })
+    );
+    // 対話端末では案件を選べる。
+    assert_eq!(
+        command(&["files", "pull", ".claude/CLAUDE.md"], tty())?,
+        Command::Files(Args::Pull {
+            destination: ".claude/CLAUDE.md".to_string(),
+            project: None,
+        })
+    );
+    for (arguments, expected) in [
+        (vec!["files", "pull"], ErrorId::MissingRequiredArgument),
+        (
+            vec!["files", "pull", ".claude/CLAUDE.md"],
+            ErrorId::ProjectArgumentRequired,
+        ),
+        (
+            vec!["files", "pull", ".claude/CLAUDE.md", "--dest", "x"],
+            ErrorId::ConflictingArguments,
+        ),
+        // 案件を選ぶのはSandboxから取り出すときだけである。
+        (
+            vec!["files", "rm", ".claude/CLAUDE.md", "owner/repo"],
+            ErrorId::UnknownArgument,
+        ),
+    ] {
+        let error = parse_argv(&arguments, non_tty())
+            .refused_because(&format!("{arguments:?} is refused"))?;
+        assert_eq!(error.first_id(), Some(expected), "{arguments:?}");
+    }
+    Ok(())
+}
