@@ -34,7 +34,10 @@ fn unreachable_commit() -> Diagnostic {
         ErrorId::OriginCommitUnreachable,
         msg!("error-origin-commit-unreachable"),
     )
-    .remediation(Remediation::text(msg!("remediation-origin-commit-save")))
+    .remediation(
+        Remediation::text(msg!("remediation-origin-commit-save"))
+            .try_run("sbxm fetch example-org/example-repo".to_string()),
+    )
 }
 
 /// stashのcommitがoriginに無い。保存しても辿れるようにならず、保存を勧めない。

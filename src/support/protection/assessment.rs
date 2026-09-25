@@ -1,6 +1,8 @@
 use crate::project::SandboxName;
 
-use super::{Blocker, ConfirmableLoss, DestructiveOperation, OriginObservation, WorktreeReport};
+use super::{
+    Blocker, ConfirmableLoss, DestructiveOperation, OriginKind, OriginObservation, WorktreeReport,
+};
 
 /// 保護ゲートが観測した結果。
 ///
@@ -15,6 +17,8 @@ pub struct Assessment {
     confirmable_losses: Vec<ConfirmableLoss>,
     /// origin観測結果。何も観測しなかった`empty`では`None`。
     origin: Option<OriginObservation>,
+    /// 検査がcommitを回収できる先として読んだもの。拒否理由の説明と対処を言い分ける。
+    origin_kind: OriginKind,
 }
 
 impl Assessment {
@@ -35,9 +39,13 @@ impl Assessment {
             Vec::new(),
             Vec::new(),
             None,
+            // 拒否理由を持たないため、どちらを読んだとしても描くものは変わらない。
+            OriginKind::Remote,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         operation: DestructiveOperation,
         project: String,
@@ -46,6 +54,7 @@ impl Assessment {
         blockers: Vec<Blocker>,
         confirmable_losses: Vec<ConfirmableLoss>,
         origin: Option<OriginObservation>,
+        origin_kind: OriginKind,
     ) -> Assessment {
         Assessment {
             operation,
@@ -55,7 +64,13 @@ impl Assessment {
             blockers,
             confirmable_losses,
             origin,
+            origin_kind,
         }
+    }
+
+    /// 検査がcommitを回収できる先として読んだもの。
+    pub(super) fn origin_kind(&self) -> OriginKind {
+        self.origin_kind
     }
 
     pub fn operation(&self) -> DestructiveOperation {

@@ -3,7 +3,7 @@ use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 use crate::support::bundle;
 
-use super::UnobservableReason;
+use super::{OriginKind, UnobservableReason};
 
 /// 表示するpathの上限。これを超える件数は総数だけ`Fact::count`で示す。
 ///
@@ -32,7 +32,10 @@ pub enum Blocker {
     UnmanagedWorktree { worktree: String },
     /// worktreeが共有bare repositoryの外を指す。
     WorktreeOutsideRepository { path: String, root: String },
-    /// refresh済みoriginのどのrefからもcommitへ到達できない。
+    /// originのどのrefからも、hostへ保存した先端からも、commitへ到達できない。
+    ///
+    /// hostにあるrepositoryを登録した案件では、hostのrepositoryがoriginにあたる。説明と
+    /// 対処は、描くときに`OriginKind`で言い分ける。
     OriginUnreachable { reference: String, commit: String },
     /// originを権威ある状態として観測できず、commitを回収できるか判定できない。
     ///
@@ -46,7 +49,9 @@ pub enum Blocker {
 
 impl Blocker {
     /// 利用者へ表示する診断へ変換する。
-    pub(super) fn diagnostic(&self, project: &str) -> Diagnostic {
+    ///
+    /// `origin`は、検査がcommitを回収できる先として読んだもの。説明と対処はそれで変わる。
+    pub(super) fn diagnostic(&self, project: &str, origin: OriginKind) -> Diagnostic {
         match self {
             Blocker::Unobservable { diagnostic } => diagnostic.clone(),
             Blocker::TrackedChanges { worktree } => Diagnostic::new(
@@ -54,9 +59,15 @@ impl Blocker {
                 msg!("error-worktree-tracked-changes"),
             )
             .fact(Fact::worktree(worktree))
-            .remediation(open(project, msg!("remediation-worktree-tracked-changes"))),
+            .remediation(open(
+                project,
+                match origin {
+                    OriginKind::Remote => msg!("remediation-worktree-tracked-changes"),
+                    OriginKind::Host => msg!("remediation-worktree-tracked-changes-host"),
+                },
+            )),
             Blocker::UntrackedPaths { worktree, paths } => {
-                untracked_paths_diagnostic(project, worktree, paths)
+                untracked_paths_diagnostic(project, worktree, paths, origin)
             }
             Blocker::GitOperationInProgress {
                 worktree,
@@ -67,7 +78,13 @@ impl Blocker {
             )
             .fact(Fact::worktree(worktree))
             .fact(Fact::operation(operation))
-            .remediation(open(project, msg!("remediation-git-operation-in-progress"))),
+            .remediation(open(
+                project,
+                match origin {
+                    OriginKind::Remote => msg!("remediation-git-operation-in-progress"),
+                    OriginKind::Host => msg!("remediation-git-operation-in-progress-host"),
+                },
+            )),
             Blocker::UnmanagedWorktree { worktree } => Diagnostic::new(
                 ErrorId::UnmanagedWorktreePresent,
                 msg!("error-unmanaged-worktree-present"),
@@ -89,11 +106,14 @@ impl Blocker {
             )),
             Blocker::OriginUnreachable { reference, commit } => Diagnostic::new(
                 ErrorId::OriginCommitUnreachable,
-                msg!("error-origin-commit-unreachable"),
+                match origin {
+                    OriginKind::Remote => msg!("error-origin-commit-unreachable"),
+                    OriginKind::Host => msg!("error-host-commit-unreachable"),
+                },
             )
             .fact(Fact::reference(reference))
             .fact(Fact::commit(commit))
-            .remediation(unreachable_remediation(project, reference)),
+            .remediation(unreachable_remediation(project, reference, origin)),
             Blocker::OriginUnobservable { references, reason } => {
                 origin_unobservable_diagnostic(project, references, *reason)
             }
@@ -166,7 +186,12 @@ impl Blocker {
 }
 
 /// 未追跡pathの一覧を`MAX_LISTED_PATHS`件までに絞り、総数を別のFactで示す。
-fn untracked_paths_diagnostic(project: &str, worktree: &str, paths: &[String]) -> Diagnostic {
+fn untracked_paths_diagnostic(
+    project: &str,
+    worktree: &str,
+    paths: &[String],
+    origin: OriginKind,
+) -> Diagnostic {
     let shown = &paths[..paths.len().min(MAX_LISTED_PATHS)];
     let mut diagnostic = Diagnostic::new(
         ErrorId::WorktreeUntrackedPaths,
@@ -177,7 +202,11 @@ fn untracked_paths_diagnostic(project: &str, worktree: &str, paths: &[String]) -
     if paths.len() > MAX_LISTED_PATHS {
         diagnostic = diagnostic.fact(Fact::count(paths.len()));
     }
-    diagnostic.remediation(open(project, msg!("remediation-worktree-untracked-paths")))
+    let explanation = match origin {
+        OriginKind::Remote => msg!("remediation-worktree-untracked-paths"),
+        OriginKind::Host => msg!("remediation-worktree-untracked-paths-host"),
+    };
+    diagnostic.remediation(open(project, explanation))
 }
 
 fn open(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {
@@ -187,14 +216,22 @@ fn open(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {
 /// originへpushするか、hostのrepositoryへ保存すれば、Sandboxを消しても残る。
 ///
 /// 保存を勧めるのは、保存が運ぶrefだけとする。stashやnotesのcommitは、保存しても
-/// 辿れるようにならない。
-fn unreachable_remediation(project: &str, reference: &str) -> Remediation {
-    let push = open(project, msg!("remediation-origin-commit-unreachable"));
-    if !bundle::carries(reference) {
-        return push;
-    }
-    push.explain(msg!("remediation-origin-commit-save"))
-        .try_run(format!("sbxm fetch {project}"))
+/// 辿れるようにならない。hostにあるrepositoryの案件では、Sandboxのoriginはhostから
+/// 送ったbundleであり、pushしても残らない。保存だけを勧める。
+fn unreachable_remediation(project: &str, reference: &str, origin: OriginKind) -> Remediation {
+    let carried = bundle::carries(reference);
+    let explained = match (origin, carried) {
+        (OriginKind::Remote, false) => {
+            return open(project, msg!("remediation-origin-commit-unreachable"));
+        }
+        (OriginKind::Host, false) => {
+            return open(project, msg!("remediation-host-ref-unsaveable"));
+        }
+        (OriginKind::Remote, true) => open(project, msg!("remediation-origin-commit-unreachable"))
+            .explain(msg!("remediation-origin-commit-save")),
+        (OriginKind::Host, true) => Remediation::text(msg!("remediation-host-commit-unreachable")),
+    };
+    explained.try_run(format!("sbxm fetch {project}"))
 }
 
 fn status(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {

@@ -11,6 +11,12 @@ work is disposable. A clean worktree does not cover repository-level local
 branches, tags, notes, stash entries, extra remotes, or reflog-only commits;
 save or resolve those Layer A blockers independently.
 
+For a project added with `--local`, pushing inside the sandbox does not help:
+its origin is a bundle sent from the host and disappears with the sandbox.
+Save the commits into the host repository with
+[`sbxm fetch`](../../reference/cli/fetch/) instead. An interactive rebuild or
+destroy offers to do that and continue.
+
 ### Active session
 
 Close the sandbox session, then retry the normal command. Use `--force` only for destroy when you have independently confirmed that no session work needs preservation.

@@ -57,6 +57,7 @@ fn assessment(
         blockers,
         confirmable_losses,
         Some(observed("abc123")),
+        crate::support::protection::OriginKind::Remote,
     ))
 }
 
@@ -142,6 +143,7 @@ fn a_change_in_the_origin_observation_alone_changes_the_fingerprint() -> Checked
         Vec::new(),
         Vec::new(),
         Some(observed("def456")),
+        crate::support::protection::OriginKind::Remote,
     );
 
     assert_ne!(

@@ -5,15 +5,14 @@ use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::paths;
-use crate::repository::Provider;
 
 use crate::support::sandbox;
 use crate::support::worktree;
 
 use super::{
     Assessment, BARE_GIT_DIR_PROBE, Blocker, CommitCandidate, ConfirmableLoss,
-    DestructiveOperation, Kind, Mode, OriginObservation, Reachability, Request, UnobservableReason,
-    WorktreeReport, answered, observe_for_mutation, observe_host_origin,
+    DestructiveOperation, Kind, Mode, OriginKind, OriginObservation, Reachability, Request,
+    UnobservableReason, WorktreeReport, answered, observe_for_mutation, observe_host_origin,
 };
 
 /// 進行中のGit操作を示すfile。1つでもあれば削除しない。
@@ -148,7 +147,8 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         .map(|pending| pending.primary.clone())
         .chain(pending_refs.iter().map(|pending| pending.candidate.clone()))
         .collect();
-    let observation = match observe_origin(host, request, &candidates) {
+    let origin = OriginKind::of(request.metadata);
+    let observation = match observe_origin(host, request, origin, &candidates) {
         Ok(observation) => observation,
         Err(error) => {
             return observation_command_failure(
@@ -158,6 +158,7 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
                 confirmable_losses,
                 repository_losses,
                 &error,
+                origin,
             );
         }
     };
@@ -179,6 +180,7 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         blockers,
         confirmable_losses,
         Some(observation),
+        origin,
     )
 }
 
@@ -188,17 +190,18 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
 fn observe_origin(
     host: &dyn HostEnvironment,
     request: &Request<'_>,
+    origin: OriginKind,
     candidates: &[CommitCandidate],
 ) -> Result<OriginObservation> {
-    match request.metadata.repository.provider() {
-        Provider::Github => observe_for_mutation(
+    match origin {
+        OriginKind::Remote => observe_for_mutation(
             host,
             request.sandbox,
             request.layout,
             candidates,
             request.host_repository,
         ),
-        Provider::Local => {
+        OriginKind::Host => {
             observe_host_origin(host, request.host_repository, request.sandbox, candidates)
         }
     }
@@ -1380,6 +1383,7 @@ fn observation_failure(
         blocker.into_iter().collect(),
         confirmable_losses,
         None,
+        OriginKind::of(request.metadata),
     )
 }
 
@@ -1394,8 +1398,11 @@ fn observation_command_failure(
     mut confirmable_losses: Vec<ConfirmableLoss>,
     repository_losses: Vec<ConfirmableLoss>,
     error: &Error,
+    origin: OriginKind,
 ) -> Assessment {
-    blockers.push(origin_observation_command_unobservable(error, &project));
+    blockers.push(origin_observation_command_unobservable(
+        error, &project, origin,
+    ));
     confirmable_losses.extend(repository_losses);
     Assessment::new(
         request.operation,
@@ -1405,6 +1412,7 @@ fn observation_command_failure(
         blockers,
         confirmable_losses,
         None,
+        origin,
     )
 }
 
@@ -1422,7 +1430,11 @@ fn observation_blocker(error: &Error) -> Blocker {
 /// origin観測command自体の起動に失敗した場合の変換。
 ///
 /// `observe_for_mutation`はprojectを知らないため、remediationはここで足す。
-fn origin_observation_command_unobservable(error: &Error, project: &str) -> Blocker {
+fn origin_observation_command_unobservable(
+    error: &Error,
+    project: &str,
+    origin: OriginKind,
+) -> Blocker {
     let diagnostic = match error.diagnostics().first() {
         Some(diagnostic) => diagnostic.clone(),
         None => Diagnostic::new(
@@ -1430,10 +1442,17 @@ fn origin_observation_command_unobservable(error: &Error, project: &str) -> Bloc
             msg!("error-origin-observation-unobservable"),
         ),
     };
-    Blocker::unobservable(diagnostic.remediation(open_remediation(
-        project,
-        msg!("remediation-origin-observation-unobservable"),
-    )))
+    // hostのrepositoryを読むcommandが起動できないのは、Sandboxではなくhostの問題である。
+    let remediation = match origin {
+        OriginKind::Remote => {
+            open_remediation(project, msg!("remediation-origin-observation-unobservable"))
+        }
+        OriginKind::Host => status_remediation(
+            project,
+            msg!("remediation-origin-host-repository-unreadable"),
+        ),
+    };
+    Blocker::unobservable(diagnostic.remediation(remediation))
 }
 
 fn open_remediation(project: &str, explanation: Msg) -> Remediation {
