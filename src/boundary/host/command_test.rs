@@ -54,7 +54,7 @@ fn run_capture_after_ready(
     let signal = SignalGuard::new().map_err(|error| spawn_failure(spec, &error))?;
     let mut child = spawn(&mut command, spec)?;
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !ready.exists() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -503,7 +503,7 @@ sleep 30"#,
         "the reader must not wait for a descendant that outlives the direct child"
     );
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !survivor.exists() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }

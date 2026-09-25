@@ -667,7 +667,7 @@ fn a_bundle_stopped_by_a_signal_leaves_no_temporary_refs() -> Checked {
         .spawn()
         .required()?;
     let mark = creating.dir.path().join("mark");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while !mark.exists() && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }

@@ -483,9 +483,10 @@ impl Host {
     }
 }
 
-/// lifecycle testがchildの実行開始を待つ。
+/// lifecycle testがchildの実行開始を待つ。macOSや負荷のかかったmachineでは起動が遅いため、
+/// 長く待つ。条件を満たせばすぐ抜ける。
 fn wait_for_file(path: &Path) -> Checked<()> {
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !path.exists() {
         if Instant::now() >= deadline {
             return Err(Unmet::new(format!(

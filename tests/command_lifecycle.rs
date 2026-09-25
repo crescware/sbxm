@@ -37,7 +37,7 @@ fn ctrl_c_does_not_reach_a_capture_descendant() -> Result<(), Box<dyn std::error
         "the interrupted diagnostic should report the canceled command"
     );
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !survivor.exists() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }

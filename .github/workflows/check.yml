@@ -14,7 +14,12 @@ permissions: {}
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # sbxmが動くのはmacOSだけ。hostのtoolや速さの違いで落ちるtestを、releaseの前に見つける。
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     steps:
