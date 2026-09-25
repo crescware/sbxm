@@ -13,7 +13,7 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use super::{
-    CommandOutcome, EnvPolicy, PtyConfirmedCommand, spawn, spawn_failure, terminate_child,
+    CommandOutcome, PtyConfirmedCommand, apply_env, spawn, spawn_failure, terminate_child,
     unreadable,
 };
 
@@ -35,9 +35,7 @@ pub(super) fn run_pty_confirmed(command: &PtyConfirmedCommand) -> Result<Command
 
     let mut process = Command::new(&command.program);
     process.args(&command.args);
-    if command.env == EnvPolicy::InheritWithoutSshAgent {
-        process.env_remove("SSH_AUTH_SOCK");
-    }
+    apply_env(&mut process, command.env, None);
     let stdin = terminal
         .try_clone()
         .map_err(|error| spawn_failure(&spec, &error))?;

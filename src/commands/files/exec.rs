@@ -1,7 +1,5 @@
 //! `files`の実行。
 
-use std::path::Path;
-
 use crate::boundary::host::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::{Error, ExitCode};
@@ -126,7 +124,12 @@ fn offer_to_apply(
 ) -> ExitCode {
     let count = match select::candidates(context.location) {
         Ok(candidates) => candidates.len(),
-        Err(error) => return report(ui, &error),
+        // 宣言は保存済みである。案件を読めなければ訊かず、あとで配置する手順を示す。
+        Err(error) => {
+            ui.warning(&print::not_offered(&error));
+            ui.stdout(&print::apply_hint());
+            return ExitCode::Success;
+        }
     };
     if count == 0 {
         return ExitCode::Success;
@@ -144,27 +147,27 @@ fn offer_to_apply(
         ui.stdout(&print::apply_hint());
         return ExitCode::Success;
     }
-    apply_everywhere(context, ui, host, context.workspace_root)
+    apply_everywhere(context, ui, host, prompt)
 }
 
 /// 足したあとのconfigで、全案件へ宣言fileを配置する。
+///
+/// `sbxm apply --files --all`と同じ入口を通す。認証の確認、configの読み直し、結果の
+/// 示し方を、ここで別に持たない。
 fn apply_everywhere(
     context: &Context,
     ui: &mut Ui,
     host: &dyn HostEnvironment,
-    workspace_root: &Path,
+    prompt: &mut PromptUi,
 ) -> ExitCode {
-    if let Err(error) = crate::support::login::require_signed_in(host) {
-        return report(ui, &error);
-    }
-    let config = match context.settings() {
-        Ok((config, _)) => config,
-        Err(error) => return report(ui, &error),
+    let everywhere = apply::Args {
+        project: None,
+        all: true,
+        files: true,
+        force: false,
+        worktrees: None,
     };
-    match apply::run_all(context.location, &config, false, host, workspace_root, ui) {
-        Ok(applied) => apply::print::all_report(ui, &applied),
-        Err(error) => report(ui, &error),
-    }
+    apply::exec(&everywhere, context, ui, host, prompt)
 }
 
 #[cfg(test)]

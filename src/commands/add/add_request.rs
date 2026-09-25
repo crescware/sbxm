@@ -1,6 +1,5 @@
 use crate::boundary::host::HostEnvironment;
-use crate::diagnostics::{Error, ErrorId, Result};
-use crate::msg;
+use crate::diagnostics::Result;
 use crate::paths::ProjectParent;
 use crate::repository::RepositoryIdentity;
 
@@ -23,8 +22,9 @@ pub struct AddRequest {
 impl AddRequest {
     /// command lineの指定を、登録できる要求にする。
     ///
-    /// hostにあるrepositoryは、ここで実在を確かめて正規化する。attached modeで始める
-    /// なら、そのrepositoryがbranchの上にいることを求める。
+    /// hostにあるrepositoryは、ここで実在を確かめて正規化する。branchの上にいれば、
+    /// attached modeの起点としてそのbranchを持つ。detachedでも、ここでは断らない。
+    /// 登録済みの案件は、保存済みの起点で続けられるためである。
     pub fn resolve(
         args: &Args,
         parent: &ProjectParent,
@@ -34,19 +34,12 @@ impl AddRequest {
             AddTarget::Clone(repository) => (repository.clone(), None),
             AddTarget::Local { path, name } => {
                 let local = LocalRepository::resolve(host, parent, path, name.as_deref())?;
-                match (&args.detach, local.branch) {
-                    (Some(_), _) => (local.identity, None),
-                    (None, Some(branch)) => (local.identity, Some(branch)),
-                    (None, None) => {
-                        return Err(Error::single(
-                            crate::diagnostics::Diagnostic::new(
-                                ErrorId::HostRepositoryDetached,
-                                msg!("error-host-repository-detached"),
-                            )
-                            .remediation(msg!("remediation-host-repository-detached")),
-                        ));
-                    }
-                }
+                let start_branch = if args.detach.is_some() {
+                    None
+                } else {
+                    local.branch
+                };
+                (local.identity, start_branch)
             }
         };
         Ok(AddRequest {

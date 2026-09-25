@@ -2,7 +2,6 @@ use std::path::Path;
 
 use crate::metadata::ProjectMetadata;
 use crate::project::{SandboxLayout, SandboxName};
-use crate::support::bundle::SavedTip;
 
 use super::DestructiveOperation;
 
@@ -18,9 +17,9 @@ pub struct Request<'a> {
     pub(super) workspace_root: &'a Path,
     pub(super) layout: &'a SandboxLayout,
     pub(super) metadata: &'a ProjectMetadata,
-    /// hostのrepositoryへ保存済みの先端。ここから辿れるcommitは、Sandboxを消しても
-    /// 失われない。
-    pub(super) preserved: &'a [SavedTip],
+    /// 案件のhost側のrepository。sbxmがここへ保存した先端から辿れるcommitは、Sandboxを
+    /// 消しても失われない。
+    pub(super) host_repository: &'a Path,
 }
 
 impl<'a> Request<'a> {
@@ -30,7 +29,7 @@ impl<'a> Request<'a> {
         workspace_root: &'a Path,
         layout: &'a SandboxLayout,
         metadata: &'a ProjectMetadata,
-        preserved: &'a [SavedTip],
+        host_repository: &'a Path,
     ) -> Request<'a> {
         Request {
             operation,
@@ -38,7 +37,7 @@ impl<'a> Request<'a> {
             workspace_root,
             layout,
             metadata,
-            preserved,
+            host_repository,
         }
     }
 }

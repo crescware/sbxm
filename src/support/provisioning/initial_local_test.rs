@@ -101,3 +101,38 @@ fn a_built_host_repository_is_observed_as_ready() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_host_repository_records_the_token_it_does_not_need_as_not_applicable() -> Checked {
+    // 無いtokenやhelperを、在るものとして記録しない。要らないものであり、欠けてもいない。
+    use crate::support::observed::Observed;
+
+    let bench = Bench::new()?;
+    let world = World::new();
+    bench
+        .build(&world, &local_request()?)
+        .required_because("the build completes")?;
+    let project = crate::project::ProjectId::parse("local/app").required()?;
+    let candidate = crate::support::select::find(&bench.location, &project).required()?;
+    let metadata = candidate.reload().required()?;
+
+    let observation = super::observe(
+        &world,
+        &candidate.paths,
+        &bench.config,
+        &metadata,
+        bench.workspace_root.path(),
+    )
+    .required()?;
+
+    for observed in [
+        &observation.secret,
+        &observation.credential_helper,
+        &observation.token_env,
+    ] {
+        assert_eq!(observed, &Observed::NotApplicable);
+    }
+    assert!(observation.is_complete(), "{observation:?}");
+    assert_eq!(Observed::NotApplicable.as_str(), "not-applicable");
+    Ok(())
+}

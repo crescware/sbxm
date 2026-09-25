@@ -2,7 +2,6 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::{self, ConfigLocation, GlobalConfig, SandboxHomeRelativePath};
-use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
@@ -12,7 +11,7 @@ use crate::support::generation;
 use crate::support::inventory;
 use crate::support::select::{self, ProjectPrompt};
 
-use super::Pulled;
+use super::{Pulled, invalid_destination};
 
 /// 宣言fileのSandbox側の内容を、案件の隔離領域へ取り出す。
 ///
@@ -27,16 +26,8 @@ pub fn pull(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
 ) -> Result<Pulled> {
-    let destination = SandboxHomeRelativePath::new(destination).map_err(|reason| {
-        Error::single(
-            Diagnostic::new(
-                ErrorId::FileDeclarationInvalidDestination,
-                msg!("error-file-declaration-invalid-destination"),
-            )
-            .fact(Fact::destination(destination))
-            .fact(Fact::reason(reason)),
-        )
-    })?;
+    let destination = SandboxHomeRelativePath::new(destination)
+        .map_err(|reason| invalid_destination(destination, reason))?;
     let Some(declaration) = config
         .files
         .iter()
@@ -74,11 +65,14 @@ pub fn pull(
             ),
         )));
     };
+    // 置き換えた内容を広げる先があるかどうかを、結果の案内に使う。
+    let others = select::candidates(location)?.len().saturating_sub(1);
     Ok(Pulled {
         declaration,
         project: locked.metadata.display_id(),
         copy,
         host_sha256,
+        others,
         locked,
     })
 }

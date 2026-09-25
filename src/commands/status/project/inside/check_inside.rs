@@ -1,7 +1,8 @@
+use std::path::Path;
+
 use crate::boundary::host::HostEnvironment;
 use crate::metadata::ProjectMetadata;
 use crate::project::{SandboxLayout, SandboxName};
-use crate::repository::Provider;
 
 use crate::support::inventory::ProjectState;
 
@@ -19,6 +20,7 @@ pub fn check_inside(
     host: &dyn HostEnvironment,
     name: &SandboxName,
     metadata: &ProjectMetadata,
+    host_repository: &Path,
     state: Option<ProjectState>,
     status: &mut ProjectStatus,
 ) {
@@ -36,7 +38,7 @@ pub fn check_inside(
         Some(ProjectState::Running) => None,
     };
     // hostから送るrepositoryには、登録するtokenが無い。
-    let without_token = metadata.repository.provider() == Provider::Local;
+    let without_token = !metadata.repository.uses_github_token();
     if let Some(value) = uniform {
         for item in inner {
             if without_token && item == "status-item-secret" {
@@ -55,6 +57,6 @@ pub fn check_inside(
     }
     let layout = SandboxLayout::new(metadata.canonical_id());
     check_bare_repository(host, name, &layout, status);
-    check_worktrees(host, name, &layout, metadata, status);
+    check_worktrees(host, name, &layout, metadata, host_repository, status);
     check_ssh_agent(host, name, status);
 }

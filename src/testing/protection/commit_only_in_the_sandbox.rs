@@ -5,11 +5,12 @@ use crate::testing::value::COMMIT;
 
 /// `clean_host`のworktreeのHEADを、originに無くhostへ保存すれば検査を通すcommitにする。
 ///
-/// 最初の検査では、HEADはoriginのどのrefからも届かない。hostの名前空間に保存した
-/// commitが現れたあとは、Sandboxへ一時refとして置いたそのcommitから届く。
+/// HEADはoriginのどのrefからも届かない。最初の検査では、hostの名前空間にも保存済みの
+/// 先端が無い。保存したあとは、hostのrepositoryでその先端から届く。
 pub fn commit_only_in_the_sandbox(host: FakeSbx, project: &Registered) -> FakeSbx {
     let name = project.sandbox.as_str();
     let git_dir = SandboxLayout::new(project.metadata.canonical_id()).bare_git_dir();
+    let saved = format!("refs/sbx/{name}/heads/main");
     host.answering(
         &format!(
             "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
@@ -17,15 +18,13 @@ pub fn commit_only_in_the_sandbox(host: FakeSbx, project: &Registered) -> FakeSb
         0,
         "",
     )
-    .answering(
-        &format!(
-            "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/ refs/sbxm/saved/"
-        ),
-        0,
-        "refs/sbxm/saved/0\n",
-    )
     .answering_in_turn(
         &format!("for-each-ref --format=%(refname) %(objectname) refs/sbx/{name}/"),
-        &[(0, ""), (0, &format!("refs/sbx/{name}/heads/main {COMMIT}\n"))],
+        &[(0, ""), (0, &format!("{saved} {COMMIT}\n"))],
+    )
+    .answering(
+        &format!("for-each-ref --format=%(refname) --contains={COMMIT} refs/sbx/{name}/"),
+        0,
+        &format!("{saved}\n"),
     )
 }
