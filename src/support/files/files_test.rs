@@ -943,7 +943,9 @@ fn every_file_that_cannot_be_placed_is_named_before_anything_is_placed() -> Chec
 /// `PLACE_FROM_STDIN`をこのhostのshellで走らせる場所。
 ///
 /// ownerを変える`install`はrootでしか通らないため、写すだけの`install`を`PATH`の先頭へ
-/// 置く。一時fileは`TMPDIR`へ作らせ、残ったかどうかを確かめる。
+/// 置く。一時fileは`TMPDIR`へ作らせ、残ったかどうかを確かめる。macOSの`mktemp`は
+/// templateを渡されないと`TMPDIR`より利用者ごとの一時directoryを使うため、`TMPDIR`の
+/// templateを渡す`mktemp`も`PATH`の先頭へ置く。
 struct Placing {
     dir: tempfile::TempDir,
 }
@@ -955,13 +957,21 @@ impl Placing {
         let dir = tempfile::tempdir().required()?;
         fs::create_dir(dir.path().join("bin")).required()?;
         fs::create_dir(dir.path().join("tmp")).required()?;
-        let install = dir.path().join("bin/install");
-        fs::write(
-            &install,
-            "#!/bin/sh\nwhile [ $# -gt 2 ]; do case \"$1\" in -o|-g|-m) shift 2 ;; *) break ;; esac; done\ncp \"$1\" \"$2\"\n",
-        )
-        .required()?;
-        fs::set_permissions(&install, fs::Permissions::from_mode(0o755)).required()?;
+        for (name, script) in [
+            (
+                "install",
+                "#!/bin/sh\nwhile [ $# -gt 2 ]; do case \"$1\" in -o|-g|-m) shift 2 ;; *) break ;; esac; done\ncp \"$1\" \"$2\"\n",
+            ),
+            // 先頭の`PATH`はこの`bin`なので、外して本物の`mktemp`を呼ぶ。
+            (
+                "mktemp",
+                "#!/bin/sh\nPATH=${PATH#*:}\nexec mktemp \"$TMPDIR/tmp.XXXXXXXXXX\"\n",
+            ),
+        ] {
+            let path = dir.path().join("bin").join(name);
+            fs::write(&path, script).required()?;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).required()?;
+        }
         Ok(Placing { dir })
     }
 
