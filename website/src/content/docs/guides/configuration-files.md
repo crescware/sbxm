@@ -3,7 +3,17 @@ title: Place configuration files
 description: Declare safe host files and apply them inside sbxm sandboxes.
 ---
 
-Declare host files in `~/.sbxm/config.yaml`:
+Declare a host file with `sbxm files add`:
+
+```sh
+sbxm files add ~/.claude/CLAUDE.md
+sbxm files ls
+sbxm files rm .claude/CLAUDE.md
+```
+
+The destination defaults to the file's path relative to your home directory; use `--dest` to choose another place in the sandbox home. After adding, an interactive terminal offers to place the declared files in every registered project right away. See [`sbxm files`](../../reference/cli/files/) for the checks it makes.
+
+The declarations live in `~/.sbxm/config.yaml`, which you can also edit by hand:
 
 ```yaml
 version: 1

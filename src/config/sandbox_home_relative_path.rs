@@ -29,4 +29,15 @@ impl SandboxHomeRelativePath {
     pub fn as_path(&self) -> &Path {
         &self.0
     }
+
+    /// 2つのpathが同じ配置先を指すか。`./`の有無のような綴りの違いは同じとみなす。
+    pub fn names_same_place(&self, other: &SandboxHomeRelativePath) -> bool {
+        self.parts().eq(other.parts())
+    }
+
+    fn parts(&self) -> impl Iterator<Item = Component<'_>> {
+        self.0
+            .components()
+            .filter(|component| *component != Component::CurDir)
+    }
 }

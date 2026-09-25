@@ -13,8 +13,9 @@ use temp_home::{TempHome, temp_home};
 use std::path::Path;
 use std::process::{Command, Output};
 
-const COMMANDS: [&str; 10] = [
-    "add", "apply", "guide", "repair", "rebuild", "open", "stop", "ls", "status", "destroy",
+const COMMANDS: [&str; 11] = [
+    "add", "apply", "files", "guide", "repair", "rebuild", "open", "stop", "ls", "status",
+    "destroy",
 ];
 
 /// 実行結果。

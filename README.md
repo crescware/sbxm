@@ -356,7 +356,22 @@ are detached. Here too, `--worktrees` may be shortened to `-t`.
 
 ### Place configuration files
 
-Declare host files in `~/.sbxm/config.yaml`:
+Declare a host file to place in every sandbox:
+
+```sh
+sbxm files add ~/.claude/CLAUDE.md
+```
+
+The destination defaults to the file's path relative to your home directory, so
+this places it at `.claude/CLAUDE.md` in the sandbox home; use `--dest` to put it
+elsewhere. sbxm checks that the file is a regular file within the size limit
+and warns about names that often hold credentials. In an interactive terminal it
+then offers to place the declared files in every registered project right away.
+`sbxm files ls` lists the declarations and `sbxm files rm <destination>` removes
+one; copies already placed in sandboxes are left as they are.
+
+The declarations live in `~/.sbxm/config.yaml`, which you can also edit by hand.
+sbxm keeps your comments and formatting when it edits the file:
 
 ```yaml
 version: 1
@@ -477,6 +492,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status` | Select and show the host or a project's status interactively; `global` is first |
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
+| `sbxm files add\|ls\|rm ...` | Declare host files to place in every sandbox, list them, or remove a declaration |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees; `--files --all` places the declared files in every registered project |
 | `sbxm repair [<project-id>]` | Explicitly prepare an interrupted or incomplete project without opening SSH; `open` performs the same recovery when connecting |
 | `sbxm rebuild [<project-id>]` | Rebuild a project's sandbox from its Dockerfile; the old writable layer is lost |

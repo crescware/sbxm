@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -32,6 +32,11 @@ impl ConfigLocation {
             )
         })?;
         Ok(ConfigLocation { home })
+    }
+
+    /// home directory。宣言fileの配置先を、sourceのhomeからの相対pathで決めるために使う。
+    pub fn home(&self) -> &Path {
+        &self.home
     }
 
     /// `~/.sbxm`

@@ -21,6 +21,13 @@ sbxm
     id=worktrees --worktrees -t value=N args=1 action=Set order=4
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+  files
+    id=help --help -h args=0 action=Help order=1000
+    id=action positional value=add|ls|rm args=1 action=Set order=999
+    id=path positional value=path args=1 action=Set order=999
+    id=dest --dest value=destination args=1 action=Set order=1
+    id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
+    id=color --color value=auto|always|never args=1 global action=Set order=901
   guide
     id=help --help -h args=0 action=Help order=1000
     id=topic positional value=topic args=1 action=Set order=999
