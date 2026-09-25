@@ -63,7 +63,7 @@ pub(super) fn actions_for(
         if !observation.identity.is_matching() {
             actions.push(RepairAction::ConfigureIdentity);
         }
-        if !observation.credential_helper.is_matching() {
+        if !observation.credential_helper.is_satisfied() {
             actions.push(RepairAction::ConfigureCredentialHelper);
         }
         if !observation.repository.is_matching() {

@@ -110,11 +110,30 @@ fn target(arguments: &Arguments) -> Result<AddTarget> {
                 arguments = format!("<{}>, --local", CommandLineValues::CLONE_URL_VALUE_NAME)
             ),
         ),
+        // 空のpathはcwdへ解決される。書き忘れた値を、cwdの登録として受け取らない。
+        (None, Some("")) => fail(
+            ErrorId::MissingRequiredArgument,
+            msg!(
+                "error-missing-required-argument",
+                argument = "--local <PATH>"
+            ),
+        ),
         (None, Some(path)) => Ok(AddTarget::Local {
             path: PathBuf::from(path),
             name,
         }),
         _ if name.is_some() => fail(ErrorId::NameWithoutLocal, msg!("error-name-without-local")),
+        // clone URLだけを求めると、hostにあるrepositoryも登録できることが伝わらない。
+        (None, None) => fail(
+            ErrorId::MissingRequiredArgument,
+            msg!(
+                "error-missing-required-argument",
+                argument = format!(
+                    "<{}> | --local <PATH>",
+                    CommandLineValues::CLONE_URL_VALUE_NAME
+                )
+            ),
+        ),
         _ => Ok(AddTarget::Clone(CommandLineValues::required_clone_url(
             arguments,
         )?)),

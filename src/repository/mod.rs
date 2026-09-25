@@ -1,8 +1,9 @@
 //! 登録対象のrepository identity。
 //!
-//! `利用者がGitHubからそのままcopyできるclone` URLだけを入力として受け取り、provider、
-//! 表示上のowner・repository、canonical project ID、clone transport、正規化した
-//! clone URLへ分離する。hostにあるrepositoryは、そのpathと案件の名前から組み立てる。
+//! GitHub repositoryは、`利用者がGitHubからそのままcopyできるclone` URLだけを
+//! 入力として受け取り、provider、表示上のowner・repository、canonical project ID、
+//! clone transport、正規化したclone URLへ分離する。hostにあるrepositoryは、その
+//! pathと案件の名前から組み立てる。
 //!
 //! 入力を寛容に推測して未対応形式へ対応しない。未対応形式は、受理する2形式を示して
 //! 拒否する。Sandbox内で使うremoteは`crate::git`が別に組み立てる。本moduleが扱うのは

@@ -5,7 +5,7 @@ use crate::diagnostics::Result;
 use crate::project::SandboxName;
 use crate::support::repository::host_git;
 
-use super::SavedTip;
+use super::{SavedTip, saved_namespace};
 
 /// hostの`repository`が`refs/sbx/<sandbox>/`に持つ、保存済みのrefの先端。
 ///
@@ -21,7 +21,7 @@ pub fn saved_tips(
         &[
             "for-each-ref",
             "--format=%(refname) %(objectname)",
-            &format!("refs/sbx/{}/", sandbox.as_str()),
+            &saved_namespace(sandbox.as_str()),
         ],
         None,
         TimeoutClass::LocalFilesystem,

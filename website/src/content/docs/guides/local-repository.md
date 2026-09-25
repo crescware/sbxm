@@ -13,13 +13,15 @@ sbxm open local/<repository>
 
 ## Registering
 
-The path must be the top of a Git working tree. A symlink is resolved, and the real path is recorded. The project ID is `local/<name>`, where the name is the directory name unless you pass `--name <name>`. When the directory name cannot name a project, `add` asks for `--name`.
+The path must be the top of a Git working tree. A symlink is resolved, and the real path is recorded. Like any project, the project directory is created in the directory you run `add` from, so run it from outside the repository; `add` refuses to create it inside the working tree. The project ID is `local/<name>`, where the name is the directory name unless you pass `--name <name>`. When the directory name cannot name a project, `add` asks for `--name`.
 
 The sandbox starts from the branch the host repository is on. When the host repository is detached, pass the starting branch with `--detach`. No GitHub token is involved, so there is nothing to register before `open`.
 
 ## Getting the host's history into the sandbox
 
 When `open` builds the sandbox, sbxm writes the host repository's branches and tags into one `git bundle`. It streams the bundle into the sandbox through the standard input of `sbx exec` and places it at `<repository>/.git/sbxm/origin.bundle` after checking its digest. The sandbox's `origin` points at that file, so the managed worktrees are created from `origin/<branch>` as they are for a GitHub project. Nothing in the sandbox can reach the host repository.
+
+[`sbxm apply --worktrees`](../../reference/cli/apply/) sends the host repository again before it adds worktrees, as `sbxm send` does, so the new worktrees start from the host's current branches.
 
 ## Bringing work back
 
@@ -52,4 +54,4 @@ Uncommitted changes stop them the same way as for a GitHub project. Commit them 
 
 ## Rebuilding and recovering
 
-`sbxm rebuild` recreates the sandbox from the host repository. The same restoring happens whenever `open` or `repair` builds a new sandbox repository for the project, for example after the sandbox was removed outside sbxm. After the new sandbox has read its origin, sbxm sends the branches saved under `refs/sbx/<sandbox>/heads/` as one more bundle, brings them back as sandbox branches of the same names, and removes that bundle. A restored branch tracks `origin/<branch>` when the host has a branch of that name. The worktree on the start branch is then recreated at the saved tip, so work continues where it was fetched. Detached worktrees start from `origin/<branch>` as usual; the heads they had are still on the host under `refs/sbx/<sandbox>/worktrees/`. The result lists the branches that came back. A sandbox repository that already exists is taken over as it is, and nothing is restored into it.
+`sbxm rebuild` recreates the sandbox from the host repository. The same restoring happens whenever `open` or `repair` builds the sandbox again for a project that was built before, for example after the sandbox was removed outside sbxm. The first build of a newly added project restores nothing, even when a project of the same name added earlier left saved branches on the host. After the new sandbox has read its origin, sbxm sends the branches saved under `refs/sbx/<sandbox>/heads/` as one more bundle, brings them back as sandbox branches of the same names, and removes that bundle. A restored branch tracks `origin/<branch>` when the host has a branch of that name. The worktree on the start branch is then recreated at the saved tip, so work continues where it was fetched. Detached worktrees start from `origin/<branch>` as usual; the heads they had are still on the host under `refs/sbx/<sandbox>/worktrees/`. The result lists the branches that came back. A sandbox repository that already has branches is taken over as it is, and nothing is restored into it; one that stopped before any branch came back gets them on the next `open` or `repair`.

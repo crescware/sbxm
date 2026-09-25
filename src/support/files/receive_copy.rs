@@ -5,7 +5,7 @@ use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::FileDeclaration;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
-use crate::hash::sha256_hex;
+use crate::hash::sha256_file_hex;
 use crate::msg;
 use crate::paths;
 use crate::support::retrieve;
@@ -46,8 +46,8 @@ pub fn receive_copy(
         MAX_SOURCE_BYTES,
         TimeoutClass::SandboxLifecycle,
     )?;
-    let sha256 = match fs::read(&path) {
-        Ok(received) => sha256_hex(&received),
+    let sha256 = match sha256_file_hex(&path) {
+        Ok(sha256) => sha256,
         Err(error) => return Err(paths::atomic_write_failed(&path, &error.to_string())),
     };
     if sha256 != observed {

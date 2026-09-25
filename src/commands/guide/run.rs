@@ -3,7 +3,6 @@ use crate::diagnostics::{Error, ErrorId, Result};
 use crate::i18n::Locale;
 use crate::msg;
 use crate::project::SandboxName;
-use crate::repository::Provider;
 use crate::support::{secret, select};
 
 use super::{Args, GuideOutput, Topic};
@@ -54,7 +53,7 @@ fn credential_rotation(
         prompt,
     )?;
     let project = candidate.display_id();
-    if candidate.repository.provider() == Provider::Local {
+    if !candidate.repository.uses_github_token() {
         return Err(Error::new(
             ErrorId::NoGithubToken,
             msg!("error-no-github-token", project = project),

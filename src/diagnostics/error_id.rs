@@ -113,6 +113,8 @@ error_ids! {
     LocalRepositoryUnusable => "local-repository-unusable",
     LocalNameUnusable => "local-name-unusable",
     HostRepositoryDetached => "host-repository-detached",
+    HostRepositoryMissing => "host-repository-missing",
+    ProjectInsideRepository => "project-inside-repository",
 
     // --- Image ---
     ImageUnusable => "image-unusable",
@@ -208,10 +210,13 @@ error_ids! {
     // --- 外部command ---
     ExternalCommandNotFound => "external-command-not-found",
     ExternalCommandSpawnFailed => "external-command-spawn-failed",
+    ExternalCommandDirectoryMissing => "external-command-directory-missing",
     ExternalCommandFailed => "external-command-failed",
     ExternalCommandTimeout => "external-command-timeout",
     ExternalCommandOutputUnreadable => "external-command-output-unreadable",
+    ExternalCommandOutputUnstored => "external-command-output-unstored",
     ExternalCommandInputUnwritable => "external-command-input-unwritable",
+    ExternalCommandInputUnavailable => "external-command-input-unavailable",
     ExternalCommandOutputTooLarge => "external-command-output-too-large",
     ExternalCommandNotConfirmed => "external-command-not-confirmed",
     ExternalOutputUnparseable => "external-output-unparseable",

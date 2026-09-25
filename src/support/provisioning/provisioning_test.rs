@@ -1,6 +1,7 @@
 use super::*;
 
 use crate::design::SilentProgress;
+use crate::diagnostics::ErrorId;
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
 use crate::support::select;
 use crate::testing::add_request::request;
@@ -152,5 +153,34 @@ fn construction_holds_exclusive_then_connection_holds_shared() -> Checked {
         PathScope::ProjectPath,
     )
     .required_because("the session lease releases once the session ends")?;
+    Ok(())
+}
+
+#[test]
+fn a_host_repository_that_is_gone_or_empty_is_refused_before_anything_is_built() -> Checked {
+    // imageやSandboxを作ってから送れないと分かるのでは遅い。Docker Engineへ触れる前に断る。
+    let dir = tempfile::tempdir().required()?;
+    let empty = dir.path().join("empty");
+    fs::create_dir(&empty).required()?;
+    crate::testing::repository::git_in(&empty, &["init", "--quiet"])?;
+    let gone = dir.path().join("gone");
+
+    for (path, id) in [
+        (gone, ErrorId::HostRepositoryMissing),
+        (empty, ErrorId::HostRepositoryEmpty),
+    ] {
+        let metadata = crate::metadata::ProjectMetadata {
+            repository: crate::repository::RepositoryIdentity::local(
+                path.to_str().required()?,
+                "app",
+            )
+            .required()?,
+            ..crate::testing::metadata::attached("example-org", "example-repo")?
+        };
+        let error = verify_external_preconditions(&crate::boundary::host::RealHost, &metadata)
+            .err()
+            .required_because("the host repository has nothing to send")?;
+        assert_eq!(error.first_id(), Some(id), "{}", path.display());
+    }
     Ok(())
 }

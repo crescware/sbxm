@@ -1,13 +1,12 @@
 use crate::boundary::host::HostEnvironment;
-use crate::design::{Fact, Warning};
+use crate::design::ProgressSink;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::{self, ProjectPaths};
 use crate::project::SandboxLayout;
-use crate::repository::Provider;
 use crate::support::repository;
 
-use super::{AutoSaved, save_to_host};
+use super::{AutoSaved, save_failed, save_to_host};
 
 /// hostにあるrepositoryを登録した案件で、Sandboxのcommitをhostへ保存しておく。
 ///
@@ -20,14 +19,17 @@ pub fn auto_save(
     host: &dyn HostEnvironment,
     paths: &ProjectPaths,
     metadata: &ProjectMetadata,
+    progress: &mut dyn ProgressSink,
 ) -> AutoSaved {
-    if metadata.repository.provider() != Provider::Local {
+    if metadata.repository.host_path().is_none() {
         return AutoSaved::Nothing;
     }
     let sandbox = metadata.sandbox_name();
     let target = repository::host_repository(paths, metadata);
     let git_dir = SandboxLayout::new(metadata.canonical_id()).bare_git_dir();
     let project = metadata.display_id();
+    // 保存は履歴全体を運ぶことがある。黙って待たせず、何をしているかを先に示す。
+    progress.step(msg!("progress-saving-to-host", project = project.clone()));
     match save_to_host(host, paths, &sandbox, &git_dir, &target) {
         Ok(Some(changes)) if !changes.is_empty() => AutoSaved::Saved(msg!(
             "auto-save-done",
@@ -36,12 +38,6 @@ pub fn auto_save(
             namespace = sandbox.as_str()
         )),
         Ok(_) => AutoSaved::Nothing,
-        Err(error) => {
-            let mut warning = Warning::text(msg!("auto-save-failed", project = project.clone()));
-            if let Some(diagnostic) = error.diagnostics().first() {
-                warning = warning.fact(Fact::cause(diagnostic.id.as_str()));
-            }
-            AutoSaved::Failed(warning.try_run(format!("sbxm fetch {project}")))
-        }
+        Err(error) => AutoSaved::Failed(save_failed(&project, &error)),
     }
 }

@@ -100,8 +100,16 @@ impl Switch<'_> {
             .restore_saved_branches(host, ready.name.as_str(), &layout.bare_git_dir())
             .map_err(decorate)?;
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
-        repository::ensure_worktrees(host, &ready.name, &layout, metadata, &branch, progress)
-            .map_err(decorate)?;
+        repository::ensure_worktrees(
+            host,
+            &ready.name,
+            &layout,
+            metadata,
+            &branch,
+            &restored,
+            progress,
+        )
+        .map_err(decorate)?;
         sandbox::require_credentials_isolated(host, &ready.name)?;
         Ok(restored)
     }

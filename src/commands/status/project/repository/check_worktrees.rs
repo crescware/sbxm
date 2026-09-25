@@ -22,11 +22,13 @@ use super::worktree_state;
 /// 作業状態とRemoteの回収可能性は別の軸である。前者はworktreeごとに読み、後者は
 /// 全worktreeのcandidateをまとめて一度だけread-only観測へ渡す。read-only観測はfetchを
 /// 行わないため、手元のremote objectが不足している場合も`unobservable`のまま表示する。
+/// hostの`host_repository`へ保存済みのcommitは、破壊操作の検査と同じく回収できるものとする。
 pub fn check_worktrees(
     host: &dyn HostEnvironment,
     name: &SandboxName,
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
+    host_repository: &Path,
     status: &mut ProjectStatus,
 ) {
     let entries = match worktree::list(host, name.as_str(), layout) {
@@ -43,7 +45,15 @@ pub fn check_worktrees(
     let project = status.project.clone();
     let (pending, value) =
         collect_pending_worktrees(host, name, layout, metadata, entries, &project, status);
-    let observation = observe_candidates(host, name, layout, metadata, &pending, status);
+    let observation = observe_candidates(
+        host,
+        name,
+        layout,
+        metadata,
+        host_repository,
+        &pending,
+        status,
+    );
     append_worktree_rows(&project, pending, observation.as_ref(), status);
     status.push("status-item-worktrees", value);
 }
@@ -176,6 +186,7 @@ fn observe_candidates(
     name: &SandboxName,
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
+    host_repository: &Path,
     pending: &[PendingWorktree],
     status: &mut ProjectStatus,
 ) -> Option<protection::OriginObservation> {
@@ -188,13 +199,12 @@ fn observe_candidates(
     }
     // hostにあるrepositoryを登録した案件は、hostのrepositoryを読む。fetchは要らない。
     let observed = match metadata.repository.provider() {
-        Provider::Github => protection::observe_read_only(host, name, layout, &candidates),
-        Provider::Local => protection::observe_host_origin(
-            host,
-            Path::new(metadata.repository.clone_url()),
-            name,
-            &candidates,
-        ),
+        Provider::Github => {
+            protection::observe_read_only(host, name, layout, &candidates, host_repository)
+        }
+        Provider::Local => {
+            protection::observe_host_origin(host, host_repository, name, &candidates)
+        }
     };
     match observed {
         Ok(observation) => Some(observation),

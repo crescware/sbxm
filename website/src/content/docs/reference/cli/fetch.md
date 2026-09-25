@@ -25,4 +25,4 @@ When a ref was rewritten so that its new tip does not contain the previous one, 
 
 The result lists each ref that was `created`, `updated`, `replaced`, or `deleted`, with where a previous tip was kept.
 
-Every tip under `refs/sbx/<sandbox>/`, including the kept ones, outlives the sandbox. [`rebuild`](../rebuild/) and [`destroy`](../destroy/) therefore count a commit reachable from them as published, the same as a commit reachable from the origin, and offer to run the same save when unpublished commits are the only thing stopping them.
+Every tip under `refs/sbx/<sandbox>/`, including the kept ones, outlives the sandbox. [`rebuild`](../rebuild/) and [`destroy`](../destroy/) therefore count a commit reachable from them as published, the same as a commit reachable from the origin, and offer to run the same save when unpublished commits on branches, tags, or worktree `HEAD`s are the only thing stopping them. A stash or notes commit is not carried by the bundle, so saving does not keep it.

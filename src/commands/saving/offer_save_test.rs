@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::commands::Context;
-use crate::design::{RenderingPolicy, Ui};
+use crate::design::{Remediation, RenderingPolicy, Ui};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, ExitCode};
 use crate::i18n::Locale;
 use crate::msg;
@@ -28,7 +28,17 @@ fn built() -> Checked<(Bench, World, ProjectId)> {
     Ok((bench, world, project))
 }
 
+/// 保存が運ぶbranchのcommitがoriginに無い。保護の検査と同じく、保存を勧める。
 fn unreachable_commit() -> Diagnostic {
+    Diagnostic::new(
+        ErrorId::OriginCommitUnreachable,
+        msg!("error-origin-commit-unreachable"),
+    )
+    .remediation(Remediation::text(msg!("remediation-origin-commit-save")))
+}
+
+/// stashのcommitがoriginに無い。保存しても辿れるようにならず、保存を勧めない。
+fn unreachable_stash() -> Diagnostic {
     Diagnostic::new(
         ErrorId::OriginCommitUnreachable,
         msg!("error-origin-commit-unreachable"),
@@ -236,5 +246,26 @@ fn a_save_that_fails_is_reported_and_does_not_continue() -> Checked {
         "{}",
         offered.stderr
     );
+    Ok(())
+}
+
+#[test]
+fn a_refusal_over_a_commit_the_save_does_not_carry_is_reported_without_asking() -> Checked {
+    // stashのcommitは、hostへ保存しても辿れるようにならない。保存を選んでも同じ理由で
+    // 断られるだけであり、訊かない。
+    let (bench, world, project) = built()?;
+    let error = Error::Diagnostics(vec![unreachable_commit(), unreachable_stash()]);
+
+    let offered = offer(
+        &bench,
+        &world,
+        &project,
+        &error,
+        true,
+        &mut ScriptedPrompt::canceling(),
+    )?;
+
+    assert_eq!(offered.flow, ControlFlow::Break(ExitCode::Failure));
+    assert!(!world.ran("bundle create"), "{:?}", world.invocations());
     Ok(())
 }

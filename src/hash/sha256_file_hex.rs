@@ -1,9 +1,10 @@
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
+
+use super::lowercase_hex;
 
 /// fileの中身のSHA-256のlowercase hex。
 ///
@@ -19,10 +20,5 @@ pub fn sha256_file_hex(path: &Path) -> io::Result<String> {
         }
         hasher.update(&buffer[..read]);
     }
-    let mut out = String::with_capacity(64);
-    for byte in hasher.finalize() {
-        // Stringへの書き込みは失敗しない。
-        let _ = write!(out, "{byte:02x}");
-    }
-    Ok(out)
+    Ok(lowercase_hex(&hasher.finalize()))
 }

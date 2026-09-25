@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::{EnvPolicy, InputBytes, OutputPolicy, TimeoutClass};
+use super::{CommandInput, EnvPolicy, InputBytes, OutputPolicy, TimeoutClass};
 
 /// 1回の外部command実行の指定。
 ///
@@ -17,10 +17,8 @@ pub struct CommandSpec {
     pub(super) output: OutputPolicy,
     /// 作業directory。指定しない場合は現在processのcurrent directoryを継承する。
     pub working_dir: Option<PathBuf>,
-    /// stdinへ渡すbyte列。無ければstdinは空である。
-    pub(super) input: Option<InputBytes>,
-    /// stdinへつなぐfile。memoryへ読み込まずに渡す、大きな入力のために使う。
-    pub input_file: Option<PathBuf>,
+    /// stdinへ渡すもの。
+    pub(super) input: CommandInput,
 }
 
 impl CommandSpec {
@@ -38,8 +36,7 @@ impl CommandSpec {
             timeout: TimeoutClass::Probe,
             output: OutputPolicy::Capture,
             working_dir: None,
-            input: None,
-            input_file: None,
+            input: CommandInput::Empty,
         }
     }
 
@@ -60,19 +57,32 @@ impl CommandSpec {
 
     /// stdinへ`bytes`を渡す。書き終えたらstdinを閉じる。
     pub fn with_input(mut self, bytes: Vec<u8>) -> CommandSpec {
-        self.input = Some(InputBytes::new(bytes));
+        self.input = CommandInput::Bytes(InputBytes::new(bytes));
         self
     }
 
     /// stdinへ渡すbyte列。
     pub fn input(&self) -> Option<&[u8]> {
-        self.input.as_ref().map(InputBytes::as_slice)
+        match &self.input {
+            CommandInput::Bytes(bytes) => Some(bytes.as_slice()),
+            CommandInput::Empty | CommandInput::File(_) => None,
+        }
     }
 
     /// stdinへ`path`のfileをつなぐ。sbxmはその中身を読まず、子が読み切ればEOFになる。
+    ///
+    /// memoryへ読み込まずに渡す、大きな入力のために使う。
     pub fn with_input_file(mut self, path: &Path) -> CommandSpec {
-        self.input_file = Some(path.to_path_buf());
+        self.input = CommandInput::File(path.to_path_buf());
         self
+    }
+
+    /// stdinへつなぐfile。
+    pub fn input_file(&self) -> Option<&Path> {
+        match &self.input {
+            CommandInput::File(path) => Some(path),
+            CommandInput::Empty | CommandInput::Bytes(_) => None,
+        }
     }
 
     pub fn working_dir(mut self, directory: &Path) -> CommandSpec {

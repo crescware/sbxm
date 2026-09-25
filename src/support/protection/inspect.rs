@@ -1,5 +1,4 @@
 use std::collections::{BTreeSet, HashSet};
-use std::path::Path;
 
 use crate::boundary::host::{CommandOutcome, HostEnvironment};
 use crate::design::{Fact, Remediation};
@@ -200,14 +199,11 @@ fn observe_origin(
             request.sandbox,
             request.layout,
             candidates,
-            request.preserved,
+            request.host_repository,
         ),
-        OriginKind::Host => observe_host_origin(
-            host,
-            Path::new(request.metadata.repository.clone_url()),
-            request.sandbox,
-            candidates,
-        ),
+        OriginKind::Host => {
+            observe_host_origin(host, request.host_repository, request.sandbox, candidates)
+        }
     }
 }
 

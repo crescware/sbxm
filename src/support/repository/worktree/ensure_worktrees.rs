@@ -17,15 +17,18 @@ use super::{adopt_worktree, mode_for, provision_worktree};
 /// worktreeであり、commitすればHEADは動き、branchを切ればmodeも変わる。どちらもsbxmが
 /// 作るときの事後条件であって、既にあるものへの要件ではない。
 ///
-/// 起点branchがすでにSandboxのbranchとしてあれば、attachedのworktreeはその先端に立つ。
-/// 作り直したSandboxへhostから戻したbranchがこれにあたる。detachedのworktreeは常に
-/// originの先端から始める。
+/// attachedのworktreeは、originの起点branchの先端から始める。`restored`は作り直した
+/// Sandboxへhostから戻したbranchであり、起点branchがその中にあれば、戻したbranchの
+/// 先端に立つ。戻したbranchはoriginより先にいることがある。それ以外のbranchが
+/// Sandboxに残っていても、originの先端にいなければこの案件の成果物とはみなさない。
+/// detachedのworktreeは常にoriginの先端から始める。
 pub fn ensure_worktrees(
     host: &dyn HostEnvironment,
     sandbox: &str,
     layout: &SandboxLayout,
     project: &ProjectMetadata,
     branch: &str,
+    restored: &[String],
     progress: &mut dyn ProgressSink,
 ) -> Result<Vec<String>> {
     let git_dir = layout.bare_git_dir();
@@ -35,8 +38,24 @@ pub fn ensure_worktrees(
         sandbox,
         &["git", "--git-dir", &git_dir, "rev-parse", &reference],
     )?;
-    let branch_commit =
-        local_branch_tip(host, sandbox, &git_dir, branch)?.unwrap_or_else(|| origin_commit.clone());
+    let branch_commit = if restored.iter().any(|name| name == branch) {
+        // 戻したばかりのbranchであり、読めなければ無いのではなく読めなかったのである。
+        let local = format!("refs/heads/{branch}^{{commit}}");
+        sandbox::read(
+            host,
+            sandbox,
+            &[
+                "git",
+                "--git-dir",
+                &git_dir,
+                "rev-parse",
+                "--verify",
+                &local,
+            ],
+        )?
+    } else {
+        origin_commit.clone()
+    };
     progress.step(msg!("progress-creating-worktrees"));
     for index in 0..project.provisioning.requested_worktrees {
         let path = layout.worktree(index);
@@ -60,30 +79,4 @@ pub fn ensure_worktrees(
         )?;
     }
     Ok(layout.worktree_names(project.provisioning.requested_worktrees))
-}
-
-/// 起点branchがSandboxのbranchとしてあれば、その先端。
-fn local_branch_tip(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
-    git_dir: &str,
-    branch: &str,
-) -> Result<Option<String>> {
-    let local = format!("refs/heads/{branch}^{{commit}}");
-    let outcome = sandbox::exec(
-        host,
-        sandbox,
-        &[
-            "git",
-            "--git-dir",
-            git_dir,
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            &local,
-        ],
-    )?;
-    let tip = outcome.stdout_text().trim().to_string();
-    // 無いbranchは、終了statusと空の出力で答える。
-    Ok((outcome.success() && !tip.is_empty()).then_some(tip))
 }
