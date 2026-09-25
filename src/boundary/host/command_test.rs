@@ -525,7 +525,7 @@ fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> 
     let pid = rustix::process::Pid::from_child(&child);
 
     let started = Instant::now();
-    let error = wait_with_limit(&mut child, spec, Some(Duration::from_millis(200)))
+    let error = wait_with_limit(&mut child, spec, Some(Duration::from_millis(200)), None)
         .refused_because("the limit must end the wait")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
@@ -562,7 +562,7 @@ fn a_child_that_cannot_be_waited_for_is_ended_and_reported_with_what_the_os_said
     let mut child = sleeping_child("0")?;
     reaped_outside_the_handle(&child)?;
 
-    let error = wait_with_limit(&mut child, spec, None)
+    let error = wait_with_limit(&mut child, spec, None, None)
         .refused_because("a child that cannot be waited for must not be waited for forever")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
@@ -583,7 +583,7 @@ fn a_limited_wait_reports_the_same_failure_when_the_child_can_no_longer_be_obser
     reaped_outside_the_handle(&child)?;
 
     let started = Instant::now();
-    let error = wait_with_limit(&mut child, spec, Some(Duration::from_secs(30)))
+    let error = wait_with_limit(&mut child, spec, Some(Duration::from_secs(30)), None)
         .refused_because("a child that cannot be waited for is not waited for")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
@@ -823,6 +823,22 @@ fn a_host_without_streaming_hands_over_what_it_captured() -> Checked {
     Ok(())
 }
 
+#[test]
+fn a_host_without_ticking_runs_the_command_and_leaves_the_tick_alone() -> Checked {
+    // 既定は途中の手続きを呼ばない。実物と違う順序で呼べば、testが実物の経路を見誤る。
+    let command = TerminalCommand::handed_over("ssh", &["example.sbx"]);
+    let mut output = RecordedOutput::new();
+    let mut ticks = 0;
+    let mut tick = || ticks += 1;
+    let outcome = AnsweringHost(b"session".to_vec())
+        .run_with_terminal_ticking(&command, &mut output, Duration::from_millis(1), &mut tick)
+        .required()?;
+    assert!(outcome.success());
+    assert_eq!(ticks, 0);
+    assert_eq!(output.finished, 1);
+    Ok(())
+}
+
 /// 受け取れるが、書き終えられない書き込み先。
 struct UnflushableSink(Vec<u8>);
 
@@ -897,6 +913,47 @@ fn a_missing_input_file_stops_before_the_child_is_started() -> Checked {
 }
 
 #[test]
+fn a_handed_over_command_lets_the_caller_work_while_it_runs() -> Checked {
+    let command = TerminalCommand::handed_over("sh", &["-c", "sleep 0.3"]);
+    let mut ticks = 0;
+
+    let outcome = RealHost
+        .run_with_terminal_ticking(
+            &command,
+            &mut RecordedOutput::new(),
+            Duration::from_millis(50),
+            &mut || ticks += 1,
+        )
+        .required()?;
+
+    assert!(outcome.success());
+    assert!(
+        ticks >= 2,
+        "the caller worked while the command ran: {ticks}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_command_that_keeps_its_output_is_not_interrupted_to_tick() -> Checked {
+    let command = TerminalCommand::relayed("sh", &["-c", "sleep 0.1"]);
+    let mut ticks = 0;
+
+    let outcome = RealHost
+        .run_with_terminal_ticking(
+            &command,
+            &mut RecordedOutput::new(),
+            Duration::from_millis(10),
+            &mut || ticks += 1,
+        )
+        .required()?;
+
+    assert!(outcome.success());
+    assert_eq!(ticks, 0);
+    Ok(())
+}
+
+#[test]
 fn only_the_first_part_of_a_flood_of_diagnostics_is_kept() -> Checked {
     // 流す実行が読む相手は信用しない。stderrは診断に使う分だけ溜め、残りは読んで捨てる。
     let spec = CommandSpec::capture("sh", &["-c", "head -c 300000 /dev/zero >&2; printf done"]);
@@ -923,5 +980,28 @@ fn a_large_input_reaches_a_child_that_writes_nothing_without_waiting_on_polls() 
         "{:?}",
         started.elapsed()
     );
+    Ok(())
+}
+
+#[test]
+fn a_wait_that_ticks_still_ends_a_child_that_outlives_its_limit() -> Checked {
+    // 待つあいだ手続きを呼ぶ経路でも、上限は守る。
+    let handed_over = TerminalCommand::handed_over("sleep", &["30"]);
+    let spec = handed_over.spec();
+    let mut child = sleeping_child("30")?;
+    let mut ticks = 0;
+
+    let started = Instant::now();
+    let error = wait_with_limit(
+        &mut child,
+        spec,
+        Some(Duration::from_millis(200)),
+        Some((Duration::from_millis(20), &mut || ticks += 1)),
+    )
+    .refused_because("the limit must end the wait")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(ticks >= 1, "the caller worked while waiting: {ticks}");
     Ok(())
 }

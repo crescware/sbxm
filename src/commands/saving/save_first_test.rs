@@ -140,3 +140,32 @@ fn a_lock_that_cannot_be_taken_is_a_warning_rather_than_silence() -> Checked {
     assert_eq!(warning.description.id, "auto-save-failed");
     Ok(())
 }
+
+#[test]
+fn a_save_that_must_not_wait_gives_up_at_once_on_a_held_lock() -> Checked {
+    // sessionのあいだの保存は、lockを待つあいだSSHの終了に気付けない。取れなければ
+    // すぐに諦め、次の機会に保存する。
+    let bench = Bench::new()?;
+    let world = World::new();
+    bench.build(&world, &local_request()?).required()?;
+    let candidate = crate::support::select::find(&bench.location, &local_project()?).required()?;
+    let held = candidate.paths.acquire_lock().required()?;
+
+    let started = std::time::Instant::now();
+    let saved = super::save_selected(
+        candidate,
+        &world,
+        bench.workspace_root.path(),
+        std::time::Duration::ZERO,
+        &mut crate::design::SilentProgress,
+    );
+
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(matches!(saved, AutoSaved::Failed(_)), "{saved:?}");
+    drop(held);
+    Ok(())
+}

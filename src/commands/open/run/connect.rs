@@ -1,18 +1,30 @@
+use std::time::Duration;
+
 use crate::boundary::host::{HostEnvironment, TerminalCommand};
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
 use super::Prepared;
 
+/// sessionのあいだに、hostへ保存する間隔。
+///
+/// 失われうるのは最後に保存したあとの作業だけである。保存はSandboxの全履歴をbundleにする
+/// ため、短くしすぎると作業中のSandboxに負荷をかける。
+const SESSION_SAVE_INTERVAL: Duration = Duration::from_secs(10 * 60);
+
 /// terminalをSSHへ引き渡す。
 ///
 /// `SSHのexit` statusが0なら成功とし、非ゼロは理由を推測せず外部command失敗とする。
 /// `Prepared`を所有することで、SSHの直接の子processが終了した直後にsession leaseを
 /// 解放し、呼び出し側が結果を表示するときまで保持しない。
+///
+/// `during`があれば、sessionのあいだ[`SESSION_SAVE_INTERVAL`]ごとに呼ぶ。端末はSSHが
+/// 持っているため、`during`は端末へ何も書かない。
 pub fn connect(
     host: &dyn HostEnvironment,
     prepared: Prepared,
     output: &mut dyn ExternalOutput,
+    during: Option<&mut dyn FnMut()>,
 ) -> Result<()> {
     let remote_command = format!(
         "cd {} && exec \"${{SHELL:-/bin/sh}}\" -l",
@@ -20,7 +32,10 @@ pub fn connect(
     );
     let args = ["-t", prepared.ssh_host.as_str(), remote_command.as_str()];
     let command = TerminalCommand::handed_over("ssh", &args);
-    let outcome = host.run_with_terminal(&command, output);
+    let outcome = match during {
+        Some(tick) => host.run_with_terminal_ticking(&command, output, SESSION_SAVE_INTERVAL, tick),
+        None => host.run_with_terminal(&command, output),
+    };
     // SSHの直接の子processが終了した時点でleaseを解放し、statusの検査や呼び出し側の
     // 表示より前に`Prepared`を消費する。
     drop(prepared);

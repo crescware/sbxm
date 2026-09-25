@@ -7,7 +7,7 @@ use crate::design::{ExternalOutput, ProgressSink};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
-use crate::paths::ExclusiveLock;
+use crate::paths::{ExclusiveLock, LOCK_TIMEOUT};
 use crate::project::{ProjectId, SandboxName};
 
 use crate::commands::saving;
@@ -48,7 +48,9 @@ pub fn run(
     // ほかのcommandが待たされる。
     let saved: Vec<AutoSaved> = running
         .into_iter()
-        .map(|candidate| saving::save_selected(candidate, host, workspace_root, output))
+        .map(|candidate| {
+            saving::save_selected(candidate, host, workspace_root, LOCK_TIMEOUT, output)
+        })
         .collect();
 
     // 4. 複数lockはcanonical ID昇順に取得する。

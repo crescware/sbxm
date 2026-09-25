@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::boundary::host::HostEnvironment;
 use crate::config::ConfigLocation;
 use crate::design::ProgressSink;
+use crate::paths::LOCK_TIMEOUT;
 use crate::project::ProjectId;
 use crate::support::bundle::AutoSaved;
 use crate::support::select;
@@ -21,7 +22,7 @@ pub fn save_first(
     progress: &mut dyn ProgressSink,
 ) -> AutoSaved {
     match select::find(location, project) {
-        Ok(candidate) => save_selected(candidate, host, workspace_root, progress),
+        Ok(candidate) => save_selected(candidate, host, workspace_root, LOCK_TIMEOUT, progress),
         Err(_) => AutoSaved::Nothing,
     }
 }

@@ -8,5 +8,5 @@ pub fn run_with_terminal(
     command: &TerminalCommand,
     output: &mut dyn ExternalOutput,
 ) -> Result<CommandOutcome> {
-    run_terminal_inner(command, output)
+    run_terminal_inner(command, output, None)
 }

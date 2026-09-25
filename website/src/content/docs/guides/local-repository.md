@@ -41,7 +41,8 @@ Only work committed since the last fetch can be lost, so sbxm narrows that windo
 
 - before [`stop`](../../reference/cli/stop/) stops a running sandbox,
 - before [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) check what would be lost, including `destroy --force`,
-- after an [`open`](../../reference/cli/open/) session closes, with the project lock taken again.
+- every 10 minutes while an [`open`](../../reference/cli/open/) session is connected, silently, since the terminal belongs to SSH,
+- after the session closes, with the project lock taken again.
 
 A stopped sandbox is never started just for this. When something was saved, a line says so on stderr. When the fetch fails, the command still goes on, and a warning says that anything committed since the last fetch is only in the sandbox, with the `sbxm fetch` command to retry. Uncommitted changes are not fetched; commit them first.
 

@@ -97,6 +97,10 @@ pub fn prepare(
 
     Ok(Prepared {
         project: metadata.display_id(),
+        saves_to_host: metadata.repository.host_path().map(|_| select::Candidate {
+            paths: locked.paths.clone(),
+            repository: metadata.repository.clone(),
+        }),
         sandbox: name.as_str().to_string(),
         ssh_host: format!("{name}.sbx"),
         working_directory,

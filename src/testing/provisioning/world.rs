@@ -182,6 +182,20 @@ impl crate::boundary::host::HostEnvironment for World {
         true
     }
 
+    /// 模したsessionは瞬時に終わる。実物が間隔ごとに呼ぶ途中の手続きを、sessionを
+    /// 記録したあとに1回だけ呼び、終わる前に走ったものとして扱う。
+    fn run_with_terminal_ticking(
+        &self,
+        command: &crate::boundary::host::TerminalCommand,
+        output: &mut dyn crate::design::ExternalOutput,
+        _every: std::time::Duration,
+        tick: &mut dyn FnMut(),
+    ) -> Result<CommandOutcome> {
+        let outcome = self.run_with_terminal(command, output)?;
+        tick();
+        Ok(outcome)
+    }
+
     fn run(&self, spec: &crate::boundary::host::CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let invocation = format!("{} {}", spec.program, spec.args.join(" "));
