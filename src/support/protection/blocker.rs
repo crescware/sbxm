@@ -3,7 +3,7 @@ use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 use crate::support::bundle;
 
-use super::UnobservableReason;
+use super::{OriginKind, UnobservableReason};
 
 /// 表示するpathの上限。これを超える件数は総数だけ`Fact::count`で示す。
 ///
@@ -32,13 +32,11 @@ pub enum Blocker {
     UnmanagedWorktree { worktree: String },
     /// worktreeが共有bare repositoryの外を指す。
     WorktreeOutsideRepository { path: String, root: String },
-    /// refresh済みoriginのどのrefからもcommitへ到達できない。
-    OriginUnreachable { reference: String, commit: String },
-    /// hostにあるrepositoryを登録した案件で、hostのrepositoryからcommitへ到達できない。
+    /// originのどのrefからも、hostへ保存した先端からも、commitへ到達できない。
     ///
-    /// 同じ事実を`OriginUnreachable`と同じerror IDで示す。対処はhostへの保存だけであり、
-    /// Sandboxのoriginへpushしても残らない。
-    HostUnreachable { reference: String, commit: String },
+    /// hostにあるrepositoryを登録した案件では、hostのrepositoryがoriginにあたる。説明と
+    /// 対処は、描くときに`OriginKind`で言い分ける。
+    OriginUnreachable { reference: String, commit: String },
     /// originを権威ある状態として観測できず、commitを回収できるか判定できない。
     ///
     /// 観測不能はrepositoryへの観測1回につき1つの原因であり、影響するreferenceの数だけ
@@ -51,7 +49,9 @@ pub enum Blocker {
 
 impl Blocker {
     /// 利用者へ表示する診断へ変換する。
-    pub(super) fn diagnostic(&self, project: &str) -> Diagnostic {
+    ///
+    /// `origin`は、検査がcommitを回収できる先として読んだもの。説明と対処はそれで変わる。
+    pub(super) fn diagnostic(&self, project: &str, origin: OriginKind) -> Diagnostic {
         match self {
             Blocker::Unobservable { diagnostic } => diagnostic.clone(),
             Blocker::TrackedChanges { worktree } => Diagnostic::new(
@@ -94,21 +94,14 @@ impl Blocker {
             )),
             Blocker::OriginUnreachable { reference, commit } => Diagnostic::new(
                 ErrorId::OriginCommitUnreachable,
-                msg!("error-origin-commit-unreachable"),
+                match origin {
+                    OriginKind::Remote => msg!("error-origin-commit-unreachable"),
+                    OriginKind::Host => msg!("error-host-commit-unreachable"),
+                },
             )
             .fact(Fact::reference(reference))
             .fact(Fact::commit(commit))
-            .remediation(unreachable_remediation(project, reference)),
-            Blocker::HostUnreachable { reference, commit } => Diagnostic::new(
-                ErrorId::OriginCommitUnreachable,
-                msg!("error-host-commit-unreachable"),
-            )
-            .fact(Fact::reference(reference))
-            .fact(Fact::commit(commit))
-            .remediation(
-                Remediation::text(msg!("remediation-host-commit-unreachable"))
-                    .try_run(format!("sbxm fetch {project}")),
-            ),
+            .remediation(unreachable_remediation(project, reference, origin)),
             Blocker::OriginUnobservable { references, reason } => {
                 origin_unobservable_diagnostic(project, references, *reason)
             }
@@ -167,9 +160,6 @@ impl Blocker {
             Blocker::OriginUnreachable { reference, commit } => {
                 format!("origin-unreachable\u{1f}{reference}\u{1f}{commit}")
             }
-            Blocker::HostUnreachable { reference, commit } => {
-                format!("host-unreachable\u{1f}{reference}\u{1f}{commit}")
-            }
             Blocker::OriginUnobservable { references, reason } => {
                 let mut sorted = references.clone();
                 sorted.sort();
@@ -205,14 +195,22 @@ fn open(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {
 /// originへpushするか、hostのrepositoryへ保存すれば、Sandboxを消しても残る。
 ///
 /// 保存を勧めるのは、保存が運ぶrefだけとする。stashやnotesのcommitは、保存しても
-/// 辿れるようにならない。
-fn unreachable_remediation(project: &str, reference: &str) -> Remediation {
-    let push = open(project, msg!("remediation-origin-commit-unreachable"));
-    if !bundle::carries(reference) {
-        return push;
-    }
-    push.explain(msg!("remediation-origin-commit-save"))
-        .try_run(format!("sbxm fetch {project}"))
+/// 辿れるようにならない。hostにあるrepositoryの案件では、Sandboxのoriginはhostから
+/// 送ったbundleであり、pushしても残らない。保存だけを勧める。
+fn unreachable_remediation(project: &str, reference: &str, origin: OriginKind) -> Remediation {
+    let carried = bundle::carries(reference);
+    let explained = match (origin, carried) {
+        (OriginKind::Remote, false) => {
+            return open(project, msg!("remediation-origin-commit-unreachable"));
+        }
+        (OriginKind::Host, false) => {
+            return open(project, msg!("remediation-host-ref-unsaveable"));
+        }
+        (OriginKind::Remote, true) => open(project, msg!("remediation-origin-commit-unreachable"))
+            .explain(msg!("remediation-origin-commit-save")),
+        (OriginKind::Host, true) => Remediation::text(msg!("remediation-host-commit-unreachable")),
+    };
+    explained.try_run(format!("sbxm fetch {project}"))
 }
 
 fn status(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {

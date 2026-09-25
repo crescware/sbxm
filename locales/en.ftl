@@ -432,6 +432,7 @@ remediation-worktree-untracked-paths = Review the untracked paths listed above. 
 remediation-git-operation-in-progress = Look at what that worktree reports and follow its guidance to continue or abort the operation. Commit and push anything you want to keep, then run this command again once no Git operation is in progress.
 remediation-origin-commit-unreachable = Push a branch that reaches this commit to the origin, then run this command again once the commit is reachable from there.
 remediation-origin-commit-save = Or save the sandbox's commits into the host repository first; a commit saved there is kept even after the sandbox is removed.
+remediation-host-ref-unsaveable = Saving into the host repository keeps branches, tags, and each worktree's HEAD, not this ref. Open the sandbox, put the commits you want to keep on a branch and save them, or remove the ref after checking it, then run this command again.
 remediation-host-commit-unreachable = Save the sandbox's commits into the host repository, then run this command again. A commit saved there is kept even after the sandbox is removed.
 remediation-origin-missing = Restore the origin configuration for this project, then run this command again. The remote URL is not shown here.
 remediation-origin-refresh-failed = Fix the network or credential problem that kept the origin from refreshing, then run this command again once the origin can be reached.

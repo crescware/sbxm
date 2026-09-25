@@ -167,7 +167,6 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         pending_worktrees,
         pending_refs,
         &observation,
-        origin,
         &mut blockers,
         &mut confirmable_losses,
     );
@@ -181,6 +180,7 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         blockers,
         confirmable_losses,
         Some(observation),
+        origin,
     )
 }
 
@@ -303,22 +303,14 @@ fn finalize_origin_reachability(
     pending_worktrees: Vec<PendingWorktree>,
     pending_refs: Vec<PendingLocalRef>,
     observation: &OriginObservation,
-    origin: OriginKind,
     blockers: &mut Vec<Blocker>,
     confirmable_losses: &mut Vec<ConfirmableLoss>,
 ) -> Vec<WorktreeReport> {
     let mut unobservable = UnobservableAccumulator::default();
-    let worktrees = finalize_worktrees(
-        pending_worktrees,
-        observation,
-        origin,
-        blockers,
-        &mut unobservable,
-    );
+    let worktrees = finalize_worktrees(pending_worktrees, observation, blockers, &mut unobservable);
     finalize_local_refs(
         pending_refs,
         observation,
-        origin,
         blockers,
         &mut unobservable,
         confirmable_losses,
@@ -333,20 +325,13 @@ fn finalize_origin_reachability(
 fn finalize_worktrees(
     pending_worktrees: Vec<PendingWorktree>,
     observation: &OriginObservation,
-    origin: OriginKind,
     blockers: &mut Vec<Blocker>,
     unobservable: &mut UnobservableAccumulator,
 ) -> Vec<WorktreeReport> {
     let mut worktrees = Vec::with_capacity(pending_worktrees.len());
     for pending in pending_worktrees {
         let reachability = Reachability::classify(&pending.primary, observation);
-        record_origin_blocker(
-            &pending.primary,
-            &reachability,
-            origin,
-            blockers,
-            unobservable,
-        );
+        record_origin_blocker(&pending.primary, &reachability, blockers, unobservable);
         worktrees.push(WorktreeReport {
             relative: pending.relative,
             kind: pending.kind,
@@ -366,20 +351,13 @@ fn finalize_worktrees(
 fn finalize_local_refs(
     pending_refs: Vec<PendingLocalRef>,
     observation: &OriginObservation,
-    origin: OriginKind,
     blockers: &mut Vec<Blocker>,
     unobservable: &mut UnobservableAccumulator,
     confirmable_losses: &mut Vec<ConfirmableLoss>,
 ) {
     for pending in pending_refs {
         let reachability = Reachability::classify(&pending.candidate, observation);
-        if record_origin_blocker(
-            &pending.candidate,
-            &reachability,
-            origin,
-            blockers,
-            unobservable,
-        ) {
+        if record_origin_blocker(&pending.candidate, &reachability, blockers, unobservable) {
             continue;
         }
         confirmable_losses.push(pending.loss);
@@ -419,21 +397,17 @@ impl UnobservableAccumulator {
 /// 分類結果を拒否理由へ変換する。`Unreachable`はcandidateごとに固有の事実を持つため
 /// 即座にblockerを積む。`Unobservable`は観測1回につき1件へ畳むため、ref名だけを
 /// `unobservable`へ集める。回収できる結果（`Pushed`/`Reachable`）でなければ`true`を返す。
-/// 回収できないcommitの拒否は、読んだoriginによって説明と対処を変える。
 fn record_origin_blocker(
     candidate: &CommitCandidate,
     reachability: &Reachability,
-    origin: OriginKind,
     blockers: &mut Vec<Blocker>,
     unobservable: &mut UnobservableAccumulator,
 ) -> bool {
     match reachability {
         Reachability::Unreachable => {
-            let reference = candidate.reference().to_string();
-            let commit = candidate.commit().to_string();
-            blockers.push(match origin {
-                OriginKind::Remote => Blocker::OriginUnreachable { reference, commit },
-                OriginKind::Host => Blocker::HostUnreachable { reference, commit },
+            blockers.push(Blocker::OriginUnreachable {
+                reference: candidate.reference().to_string(),
+                commit: candidate.commit().to_string(),
             });
             true
         }
@@ -1409,6 +1383,7 @@ fn observation_failure(
         blocker.into_iter().collect(),
         confirmable_losses,
         None,
+        OriginKind::of(request.metadata),
     )
 }
 
@@ -1437,6 +1412,7 @@ fn observation_command_failure(
         blockers,
         confirmable_losses,
         None,
+        origin,
     )
 }
 

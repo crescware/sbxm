@@ -61,7 +61,10 @@ fn render_diagnostic(
     String::from_utf8(bytes).required_because("the diagnostic renderer writes UTF-8")
 }
 
-fn blocker_diagnostic(blocker: Blocker) -> Checked<crate::diagnostics::Diagnostic> {
+fn blocker_diagnostic(
+    blocker: Blocker,
+    origin: OriginKind,
+) -> Checked<crate::diagnostics::Diagnostic> {
     let sandbox = SandboxName::derive(&project_id("example-org/example-repo")?.canonical());
     let assessment = Assessment::new(
         DestructiveOperation::Destroy,
@@ -71,6 +74,7 @@ fn blocker_diagnostic(blocker: Blocker) -> Checked<crate::diagnostics::Diagnosti
         vec![blocker],
         Vec::new(),
         None,
+        origin,
     );
     let error =
         gate::require_no_blockers(&assessment).refused_because("the blocker is rendered")?;
@@ -96,7 +100,18 @@ fn assert_protection_diagnostic_with_commands(
     commands: &[&str],
     labels: &[&str],
 ) -> Checked {
-    let diagnostic = blocker_diagnostic(blocker)?;
+    assert_protection_diagnostic_for(OriginKind::Remote, blocker, id, commands, labels)
+}
+
+/// `origin`を読んだ検査として描いた診断を確かめる。
+fn assert_protection_diagnostic_for(
+    origin: OriginKind,
+    blocker: Blocker,
+    id: ErrorId,
+    commands: &[&str],
+    labels: &[&str],
+) -> Checked {
+    let diagnostic = blocker_diagnostic(blocker, origin)?;
     assert_eq!(diagnostic.id, id);
     assert!(
         diagnostic.description.args.is_empty(),
@@ -156,13 +171,31 @@ fn only_a_commit_the_save_carries_is_offered_the_save() -> Checked {
         ("refs/stash", false),
         ("refs/notes/commits", false),
     ] {
-        let diagnostic = Blocker::OriginUnreachable {
-            reference: reference.to_string(),
-            commit: COMMIT.to_string(),
+        for origin in [OriginKind::Remote, OriginKind::Host] {
+            let diagnostic = Blocker::OriginUnreachable {
+                reference: reference.to_string(),
+                commit: COMMIT.to_string(),
+            }
+            .diagnostic("example-org/example-repo", origin);
+            assert_eq!(
+                saving_resolves(&diagnostic),
+                resolves,
+                "{origin:?} {reference}"
+            );
         }
-        .diagnostic("example-org/example-repo");
-        assert_eq!(saving_resolves(&diagnostic), resolves, "{reference}");
     }
+    // hostにあるrepositoryの案件でも、stashのcommitには保存を勧めない。Sandboxへ入って
+    // 片付けることを示す。
+    assert_protection_diagnostic_for(
+        OriginKind::Host,
+        Blocker::OriginUnreachable {
+            reference: "refs/stash".to_string(),
+            commit: COMMIT.to_string(),
+        },
+        ErrorId::OriginCommitUnreachable,
+        &["sbxm open example-org/example-repo"],
+        &["diagnostic-reference-label", "diagnostic-commit-label"],
+    )?;
     Ok(())
 }
 
@@ -226,13 +259,14 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
     )?;
     // hostのrepositoryをoriginとする案件は、Sandboxのoriginへpushしても残らない。
     // 対処はhostへの保存だけを示す。
-    assert_protection_diagnostic(
-        Blocker::HostUnreachable {
+    assert_protection_diagnostic_for(
+        OriginKind::Host,
+        Blocker::OriginUnreachable {
             reference: "HEAD".to_string(),
             commit: COMMIT.to_string(),
         },
         ErrorId::OriginCommitUnreachable,
-        "sbxm fetch example-org/example-repo",
+        &["sbxm fetch example-org/example-repo"],
         &["diagnostic-reference-label", "diagnostic-commit-label"],
     )?;
     for (reason, id) in [
@@ -278,10 +312,13 @@ fn an_unobservable_blocker_beyond_the_listing_cap_adds_a_count_fact() -> Checked
     let references: Vec<String> = (0..25)
         .map(|index| format!("refs/heads/f{index}"))
         .collect();
-    let diagnostic = blocker_diagnostic(Blocker::OriginUnobservable {
-        references,
-        reason: UnobservableReason::OriginMissing,
-    })?;
+    let diagnostic = blocker_diagnostic(
+        Blocker::OriginUnobservable {
+            references,
+            reason: UnobservableReason::OriginMissing,
+        },
+        OriginKind::Remote,
+    )?;
     let fact_labels: Vec<&str> = diagnostic
         .facts
         .iter()
@@ -787,10 +824,13 @@ fn untracked_paths_beyond_the_display_cap_are_summarized_by_count() -> Checked {
     let paths: Vec<String> = (0..25)
         .map(|index| format!("generated-{index}.txt"))
         .collect();
-    let diagnostic = blocker_diagnostic(Blocker::UntrackedPaths {
-        worktree: "example-repo.tree-0".to_string(),
-        paths: paths.clone(),
-    })?;
+    let diagnostic = blocker_diagnostic(
+        Blocker::UntrackedPaths {
+            worktree: "example-repo.tree-0".to_string(),
+            paths: paths.clone(),
+        },
+        OriginKind::Remote,
+    )?;
     let drawn = render_diagnostic(&diagnostic, Locale::En)?;
     assert!(drawn.contains(&paths[0]), "{drawn:?}");
     assert!(drawn.contains(&paths[19]), "{drawn:?}");
@@ -2041,7 +2081,7 @@ fn a_local_project_commit_the_host_does_not_reach_stops_the_run() -> Checked {
         .required_because("the host was read")?;
     assert_eq!(
         assessment.blockers(),
-        [Blocker::HostUnreachable {
+        [Blocker::OriginUnreachable {
             reference: "refs/heads/main".to_string(),
             commit: COMMIT.to_string(),
         }]
@@ -2049,6 +2089,10 @@ fn a_local_project_commit_the_host_does_not_reach_stops_the_run() -> Checked {
     let error = gate::require_no_blockers(&assessment)
         .refused_because("the host does not keep the commit")?;
     assert_eq!(error.first_id(), Some(ErrorId::OriginCommitUnreachable));
+    // hostのrepositoryの言葉で示し、保存で解けるものとして申し出の対象にする。
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(diagnostic.description.id, "error-host-commit-unreachable");
+    assert!(saving_resolves(diagnostic), "{diagnostic:?}");
     Ok(())
 }
 

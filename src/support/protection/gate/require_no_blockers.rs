@@ -14,7 +14,7 @@ pub fn require_no_blockers(assessment: &Assessment) -> Result<()> {
         assessment
             .blockers()
             .iter()
-            .map(|blocker| blocker.diagnostic(assessment.project()))
+            .map(|blocker| blocker.diagnostic(assessment.project(), assessment.origin_kind()))
             .collect(),
     ))
 }
