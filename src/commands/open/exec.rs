@@ -111,8 +111,7 @@ pub fn exec(
     let connected = super::run::connect(host, prepared, ui, during);
     // sessionを閉じたあとにも保存しておく。
     if let Ok(project) = &project {
-        let saved =
-            saving::save_first(context.location, project, host, context.workspace_root, ui);
+        let saved = saving::save_first(context.location, project, host, context.workspace_root, ui);
         saving::auto_saved(ui, &saved);
     }
     match connected {

@@ -525,7 +525,7 @@ fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> 
     let pid = rustix::process::Pid::from_child(&child);
 
     let started = Instant::now();
-    let error = wait_with_limit(&mut child, spec, Some(Duration::from_millis(200)))
+    let error = wait_with_limit(&mut child, spec, Some(Duration::from_millis(200)), None)
         .refused_because("the limit must end the wait")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
@@ -562,7 +562,7 @@ fn a_child_that_cannot_be_waited_for_is_ended_and_reported_with_what_the_os_said
     let mut child = sleeping_child("0")?;
     reaped_outside_the_handle(&child)?;
 
-    let error = wait_with_limit(&mut child, spec, None)
+    let error = wait_with_limit(&mut child, spec, None, None)
         .refused_because("a child that cannot be waited for must not be waited for forever")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
@@ -583,7 +583,7 @@ fn a_limited_wait_reports_the_same_failure_when_the_child_can_no_longer_be_obser
     reaped_outside_the_handle(&child)?;
 
     let started = Instant::now();
-    let error = wait_with_limit(&mut child, spec, Some(Duration::from_secs(30)))
+    let error = wait_with_limit(&mut child, spec, Some(Duration::from_secs(30)), None)
         .refused_because("a child that cannot be waited for is not waited for")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
@@ -964,5 +964,28 @@ fn a_large_input_reaches_a_child_that_writes_nothing_without_waiting_on_polls() 
         "{:?}",
         started.elapsed()
     );
+    Ok(())
+}
+
+#[test]
+fn a_wait_that_ticks_still_ends_a_child_that_outlives_its_limit() -> Checked {
+    // 待つあいだ手続きを呼ぶ経路でも、上限は守る。
+    let handed_over = TerminalCommand::handed_over("sleep", &["30"]);
+    let spec = handed_over.spec();
+    let mut child = sleeping_child("30")?;
+    let mut ticks = 0;
+
+    let started = Instant::now();
+    let error = wait_with_limit(
+        &mut child,
+        spec,
+        Some(Duration::from_millis(200)),
+        Some((Duration::from_millis(20), &mut || ticks += 1)),
+    )
+    .refused_because("the limit must end the wait")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(ticks >= 1, "the caller worked while waiting: {ticks}");
     Ok(())
 }
