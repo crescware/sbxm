@@ -445,6 +445,7 @@ fn stop_report(result: super::stop::StopResult) -> super::stop::StopReport {
             result,
         }],
         failures: Vec::new(),
+        saved: Vec::new(),
     }
 }
 

@@ -3,13 +3,15 @@ use std::time::Instant;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
-use crate::design::ExternalOutput;
+use crate::design::{ExternalOutput, ProgressSink};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::ExclusiveLock;
 use crate::project::{ProjectId, SandboxName};
 
+use crate::commands::saving;
+use crate::support::bundle::AutoSaved;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{daemon, generation, sandbox};
@@ -27,16 +29,27 @@ pub fn run(
     prompt: &mut dyn ProjectPrompt,
     workspace_root: &Path,
     poll: Poll,
-    output: &mut dyn ExternalOutput,
+    output: &mut dyn ProgressSink,
 ) -> Result<StopReport> {
     // 1. 全対象のmetadataを解決する。canonical ID昇順で返る。
     let selected = select::many(location, requested, &msg!("select-stop-heading"), prompt)?;
 
     // 2-3. 1回の一覧取得で全stateを解決し、進められない状態が1件でもあれば止める。
     let entries = daemon::list(host)?;
+    let mut running = Vec::new();
     for candidate in &selected {
-        validate(&candidate.reload()?, &entries, workspace_root)?;
+        if validate(&candidate.reload()?, &entries, workspace_root)? == ProjectState::Running {
+            running.push(candidate.clone());
+        }
     }
+
+    // hostにあるrepositoryの案件は、止める前に保存しておく。保存は1件ずつ、その案件の
+    // lockだけを持って行う。全対象のlockを持ったまま保存すると、そのあいだ全対象で
+    // ほかのcommandが待たされる。
+    let saved: Vec<AutoSaved> = running
+        .into_iter()
+        .map(|candidate| saving::save_selected(candidate, host, workspace_root, output))
+        .collect();
 
     // 4. 複数lockはcanonical ID昇順に取得する。
     let mut locks: Vec<ExclusiveLock> = Vec::with_capacity(selected.len());
@@ -76,7 +89,11 @@ pub fn run(
     }
 
     drop(locks);
-    Ok(StopReport { outcomes, failures })
+    Ok(StopReport {
+        outcomes,
+        failures,
+        saved,
+    })
 }
 
 /// 停止して良い状態であることを確かめ、現在のstateを返す。

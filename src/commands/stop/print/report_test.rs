@@ -63,6 +63,7 @@ fn a_run_without_failures_succeeds_and_leaves_stderr_untouched() -> Checked {
             outcome("owner/bravo", "sbxm-owner-bravo", StopResult::Unchanged),
         ],
         failures: Vec::new(),
+        saved: Vec::new(),
     };
 
     let printed = print(&stopped)?;
@@ -81,6 +82,7 @@ fn every_target_reaches_stdout_with_the_result_it_was_given() -> Checked {
             outcome("owner/bravo", "sbxm-owner-bravo", StopResult::Unchanged),
         ],
         failures: Vec::new(),
+        saved: Vec::new(),
     };
 
     let printed = print(&stopped)?;
@@ -105,6 +107,7 @@ fn one_failed_target_decides_the_exit_code() -> Checked {
             outcome("owner/bravo", "sbxm-owner-bravo", StopResult::Unchanged),
         ],
         failures: vec![still_running("sbxm-owner-alpha")],
+        saved: Vec::new(),
     };
 
     let printed = print(&stopped)?;
@@ -122,6 +125,7 @@ fn a_failure_is_reported_without_hiding_the_results() -> Checked {
             StopResult::Failed,
         )],
         failures: vec![still_running("sbxm-owner-alpha")],
+        saved: Vec::new(),
     };
 
     let printed = print(&stopped)?;
@@ -159,6 +163,7 @@ fn every_failure_is_written_as_its_own_diagnostic() -> Checked {
             still_running("sbxm-owner-alpha"),
             still_running("sbxm-owner-bravo"),
         ],
+        saved: Vec::new(),
     };
 
     let printed = print(&stopped)?;
@@ -168,6 +173,50 @@ fn every_failure_is_written_as_its_own_diagnostic() -> Checked {
         2,
         "{:?}",
         printed.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn what_was_saved_before_stopping_is_shown_first_on_stderr() -> Checked {
+    use crate::design::Warning;
+    use crate::support::bundle::AutoSaved;
+
+    let stopped = StopReport {
+        outcomes: vec![outcome("local/app", "sbxm-local-app", StopResult::Stopped)],
+        failures: Vec::new(),
+        saved: vec![
+            AutoSaved::Saved(crate::msg!(
+                "auto-save-done",
+                project = "local/app",
+                repository = "/srv/code/app",
+                namespace = "sbxm-local-app"
+            )),
+            AutoSaved::Failed(Warning::text(crate::msg!(
+                "auto-save-failed",
+                project = "local/tool"
+            ))),
+            AutoSaved::Nothing,
+        ],
+    };
+
+    let printed = print(&stopped)?;
+
+    assert_eq!(printed.code, ExitCode::Success);
+    assert!(
+        printed.stderr.contains("Saved the commits of local/app"),
+        "{}",
+        printed.stderr
+    );
+    assert!(
+        printed.stderr.contains("could not be saved"),
+        "{}",
+        printed.stderr
+    );
+    assert!(
+        row(&printed.stdout, "local/app").is_ok(),
+        "{}",
+        printed.stdout
     );
     Ok(())
 }
