@@ -6,8 +6,10 @@
 //! 検出は禁止APIと明確なprefixに限る。文字列検索だけでは`docker`のような語と実行
 //! commandを完全には区別できないため、曖昧な判定を足して誤検出を増やさない。
 
+mod disable_directive;
 mod outcome;
 
+use disable_directive::DISABLE_NEXT_LINE;
 use outcome::{Checked, Required};
 
 use std::path::{Path, PathBuf};
@@ -580,32 +582,179 @@ const INVOCATIONS: [(&str, &[&str]); 5] = [
     ("mise ", &["trust", "install", "use"]),
 ];
 
+/// 実行を求めるcommandをresourceへ書かせない検査の名前。検査の関数名と一致させる。
+const EMBEDDED_COMMAND: &str = "no_resource_embeds_a_command_the_user_is_meant_to_run";
+
+/// 宣言で次の1行だけ無効にできる検査。
+///
+/// 文字列検索では、commandの実行を求める文と、commandに言及する文を区別できない。
+/// 区別できない検査だけが宣言を受け付ける。綴りだけで判定が決まる検査は受け付けない。
+const DISABLEABLE: [&str; 1] = [EMBEDDED_COMMAND];
+
 #[test]
 fn no_resource_embeds_a_command_the_user_is_meant_to_run() -> Checked {
+    // 宣言はこの関数名で検査を名指しする。関数名だけを変えると、古い名前の宣言が効き続ける。
+    fn here() {}
+    assert!(
+        std::any::type_name_of_val(&here).ends_with(&format!("::{EMBEDDED_COMMAND}::here")),
+        "EMBEDDED_COMMAND must name this check: {}",
+        std::any::type_name_of_val(&here)
+    );
+
     let mut offenders = Vec::new();
     for (name, text) in resources()? {
-        for (index, line) in text.lines().enumerate() {
-            for (program, subcommands) in INVOCATIONS {
-                let Some(position) = line.find(program) else {
-                    continue;
-                };
-                let rest = &line[position + program.len()..];
-                let named = subcommands.is_empty()
-                    || subcommands
-                        .iter()
-                        .any(|subcommand| rest.starts_with(subcommand));
-                if named {
-                    offenders.push(format!("{name}:{}: {}", index + 1, line.trim()));
-                }
-            }
-        }
+        offenders.extend(embedded_commands(&name, &text));
     }
     assert!(
         offenders.is_empty(),
-        "the resource explains and the model supplies the command:\n{}",
+        "the resource explains and the model supplies the command. A line that only mentions \
+         a command may disable this check with a directive and a reason; see locales/README.md:\n{}",
         offenders.join("\n")
     );
     Ok(())
+}
+
+#[test]
+fn every_disable_directive_names_a_disableable_rule_and_a_reason() -> Checked {
+    let mut problems = Vec::new();
+    for (name, text) in resources()? {
+        problems.extend(directive_problems(&name, &text));
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+    Ok(())
+}
+
+#[test]
+fn a_directive_disables_the_command_check_for_the_next_line_only() {
+    let text = format!(
+        "{DISABLE_NEXT_LINE} {EMBEDDED_COMMAND} -- git cloneの規則を説明する\n\
+         a = named as git clone names it\n\
+         b = run git clone first\n"
+    );
+    assert_eq!(
+        embedded_commands("t.ftl", &text),
+        vec!["t.ftl:3: b = run git clone first".to_string()]
+    );
+}
+
+#[test]
+fn a_directive_that_disables_nothing_is_reported() {
+    // 文言を直してcommandが無くなれば、宣言も消す。
+    for text in [
+        format!("{DISABLE_NEXT_LINE} {EMBEDDED_COMMAND} -- 説明する\na = no command here\n"),
+        format!("a = no command here\n{DISABLE_NEXT_LINE} {EMBEDDED_COMMAND} -- 説明する\n"),
+    ] {
+        let offenders = embedded_commands("t.ftl", &text);
+        assert_eq!(offenders.len(), 1, "{text}");
+        assert!(offenders[0].contains("disables nothing"), "{offenders:?}");
+    }
+}
+
+#[test]
+fn a_directive_names_one_disableable_rule_and_gives_a_reason() {
+    let next = "\na = run git clone first\n";
+    assert!(
+        directive_problems(
+            "t.ftl",
+            &format!("{DISABLE_NEXT_LINE} {EMBEDDED_COMMAND} -- 説明する{next}")
+        )
+        .is_empty()
+    );
+    for directive in [
+        DISABLE_NEXT_LINE.to_string(),
+        format!("{DISABLE_NEXT_LINE} {EMBEDDED_COMMAND}"),
+        format!("{DISABLE_NEXT_LINE} {EMBEDDED_COMMAND} -- "),
+        format!("{DISABLE_NEXT_LINE} two rules -- 説明する"),
+        format!("{DISABLE_NEXT_LINE} no_resource_carries_an_emoji -- 説明する"),
+    ] {
+        assert_eq!(
+            directive_problems("t.ftl", &format!("{directive}{next}")).len(),
+            1,
+            "{directive}"
+        );
+    }
+}
+
+/// `text`のうち、実行を求めるcommandを書いた行。
+///
+/// 宣言で無効にした行は数えない。無効にした行がcommandを書いていなければ、宣言が何も
+/// 無効にしていないことを示す。宣言の行はcommentであり表示されないため、読まない。
+fn embedded_commands(name: &str, text: &str) -> Vec<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut offenders = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let at = format!("{name}:{}", index + 1);
+        if directive(line).is_some() {
+            let disabled = lines
+                .get(index + 1)
+                .is_some_and(|next| directive(next).is_none() && embeds_command(next));
+            if disables(line, EMBEDDED_COMMAND) && !disabled {
+                offenders.push(format!("{at}: the directive disables nothing: {line}"));
+            }
+            continue;
+        }
+        let disabled = index
+            .checked_sub(1)
+            .is_some_and(|previous| disables(lines[previous], EMBEDDED_COMMAND));
+        if !disabled && embeds_command(line) {
+            offenders.push(format!("{at}: {}", line.trim()));
+        }
+    }
+    offenders
+}
+
+/// `line`が、実行を求めるcommandだと確実に分かる綴りを持つか。
+fn embeds_command(line: &str) -> bool {
+    INVOCATIONS.iter().any(|(program, subcommands)| {
+        line.find(program).is_some_and(|position| {
+            let rest = &line[position + program.len()..];
+            subcommands.is_empty()
+                || subcommands
+                    .iter()
+                    .any(|subcommand| rest.starts_with(subcommand))
+        })
+    })
+}
+
+/// `text`の宣言のうち、形が崩れているもの、または無効にできない検査を名指しするもの。
+fn directive_problems(name: &str, text: &str) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let at = format!("{name}:{}", index + 1);
+        match directive(line) {
+            Some(Err(reason)) => problems.push(format!("{at}: {reason}: {line}")),
+            Some(Ok(rule)) if !DISABLEABLE.contains(&rule) => {
+                problems.push(format!("{at}: {rule} cannot be disabled: {line}"));
+            }
+            None | Some(Ok(_)) => {}
+        }
+    }
+    problems
+}
+
+/// `line`が`rule`を無効にする正しい宣言か。
+fn disables(line: &str, rule: &str) -> bool {
+    matches!(directive(line), Some(Ok(named)) if named == rule)
+}
+
+/// `line`が宣言なら、無効にする検査の名前。宣言でなければ`None`、形が崩れていれば理由。
+///
+/// 宣言は`# architecture-test-disable-next-line <検査名> -- <理由>`の形だけとする。
+fn directive(line: &str) -> Option<Result<&str, &'static str>> {
+    let rest = line.strip_prefix(DISABLE_NEXT_LINE)?;
+    let Some(rest) = rest.strip_prefix(' ') else {
+        return Some(Err("the directive names no rule"));
+    };
+    let Some((rule, reason)) = rest.split_once(" --") else {
+        return Some(Err("the directive gives no reason after --"));
+    };
+    if rule.is_empty() || rule.contains(char::is_whitespace) {
+        return Some(Err("the directive does not name exactly one rule"));
+    }
+    if reason.trim().is_empty() {
+        return Some(Err("the directive gives no reason after --"));
+    }
+    Some(Ok(rule))
 }
 
 #[test]

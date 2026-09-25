@@ -4,8 +4,10 @@
 //! 検査対象のlocaleは`locales/`にあるresourceから決めるため、言語を増やしても
 //! 本fileを編集しない。規約は`locales/README.md`が持つ。
 
+mod disable_directive;
 mod outcome;
 
+use disable_directive::DISABLE_NEXT_LINE;
 use outcome::{Checked, Required, Unmet};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -288,10 +290,14 @@ fn security_messages_provide_a_description_and_a_remediation() -> Checked {
 fn resources_carry_content_only() -> Checked {
     // 規約は`locales/README.md`が1箇所で持つ。resourceへコメントや見出しを書くと、
     // 言語の数だけ同じ規約を維持することになる。
+    //
+    // architecture testの検査を次の1行だけ無効にする宣言は、規約ではなく、その行の
+    // 内容についての注記である。行ごとに理由が異なるため、resourceの中に置く。宣言の
+    // 形は`tests/architecture.rs`が確かめる。
     for locale in locales()? {
         for (index, line) in source(&locale)?.lines().enumerate() {
             assert!(
-                !line.starts_with('#'),
+                !line.starts_with('#') || line.starts_with(DISABLE_NEXT_LINE),
                 "{locale}.ftl:{} is a comment; conventions belong in locales/README.md: {line}",
                 index + 1
             );
