@@ -6,6 +6,7 @@
 //! 利用者向けの描画は持たない。表示の語彙、色、blockの間隔、promptは`crate::design`が
 //! application全体のinterfaceとして持つ。
 
+pub mod bundle;
 pub mod daemon;
 pub mod disk;
 pub mod docker;

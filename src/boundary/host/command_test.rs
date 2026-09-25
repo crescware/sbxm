@@ -392,6 +392,31 @@ fn security_sensitive_runs_touch_no_environment_variable_other_than_the_ssh_agen
 }
 
 #[test]
+fn git_in_a_host_repository_forgets_where_the_caller_pointed_git() {
+    // gitのhookやaliasから起動されると、`GIT_DIR`などが利用者のrepositoryと別の場所を
+    // 指している。hostのrepositoryで走らせるgitは、それを引き継がない。
+    let spec = CommandSpec::probe("git", &[])
+        .env(EnvPolicy::HostRepository)
+        .working_dir(Path::new("/work/example-repo"));
+    let command = configure(&spec);
+    let envs: Vec<(&std::ffi::OsStr, Option<&std::ffi::OsStr>)> = command.get_envs().collect();
+    let removed = |name: &str| envs.contains(&(std::ffi::OsStr::new(name), None));
+    for name in [
+        "SSH_AUTH_SOCK",
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+    ] {
+        assert!(removed(name), "{name}: {envs:?}");
+    }
+    assert!(envs.contains(&(
+        std::ffi::OsStr::new("GIT_CEILING_DIRECTORIES"),
+        Some(std::ffi::OsStr::new("/work"))
+    )));
+}
+
+#[test]
 fn capture_keeps_both_streams_separately() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let fake = fake_executable(

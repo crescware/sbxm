@@ -2,15 +2,14 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::{self, ConfigLocation, GlobalConfig, SandboxHomeRelativePath};
-use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
 use crate::project::ProjectId;
 use crate::support::files;
-use crate::support::inventory::{self, ProjectState};
+use crate::support::generation;
+use crate::support::inventory;
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{daemon, generation};
 
 use super::{Pulled, invalid_destination};
 
@@ -47,30 +46,8 @@ pub fn pull(
     )?
     .lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
+    inventory::require_running(host, &locked.metadata, workspace_root)?;
     let sandbox = locked.metadata.sandbox_name();
-    let entries = daemon::list(host)?;
-    match inventory::state_of(&entries, &locked.metadata, workspace_root)? {
-        ProjectState::Running => {}
-        ProjectState::NotCreated => {
-            return Err(inventory::not_created(&locked.metadata, sandbox.as_str()));
-        }
-        ProjectState::Stopped => {
-            return Err(Error::single(
-                Diagnostic::new(
-                    ErrorId::SandboxNotRunning,
-                    msg!(
-                        "error-sandbox-not-running",
-                        sandbox = sandbox.as_str(),
-                        observed = ProjectState::Stopped.as_str()
-                    ),
-                )
-                .remediation(
-                    Remediation::text(msg!("remediation-sandbox-not-running"))
-                        .try_run(format!("sbxm open {}", locked.metadata.display_id())),
-                ),
-            ));
-        }
-    }
 
     let Some(copy) = files::receive_copy(
         host,

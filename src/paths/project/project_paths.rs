@@ -115,6 +115,14 @@ impl ProjectPaths {
         self.sbxm_dir().join("incoming")
     }
 
+    /// `<project-root>/.sbxm/bundles`
+    ///
+    /// Sandboxから受け取ったgit bundleを置く。取り込んだ内容はrepositoryのrefが持ち、
+    /// ここのbundleは直近の数件だけを残す。
+    pub fn bundles_dir(&self) -> PathBuf {
+        self.sbxm_dir().join("bundles")
+    }
+
     /// `<project-root>/.sbxm/.snapshot`
     ///
     /// 初回構築の1回の実行中だけ生きる、private な入力snapshot置き場。

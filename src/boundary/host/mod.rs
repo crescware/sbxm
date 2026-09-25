@@ -11,6 +11,7 @@
 
 pub mod protocol;
 
+mod apply_env;
 mod command_outcome;
 mod command_spec;
 mod configure;
@@ -52,6 +53,7 @@ mod unwritable;
 mod wait_poll_interval;
 mod wait_with_limit;
 
+use apply_env::apply_env;
 pub use command_outcome::CommandOutcome;
 pub use command_spec::CommandSpec;
 use configure::configure;

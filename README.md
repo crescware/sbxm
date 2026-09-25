@@ -441,6 +441,23 @@ Both apply scopes may be requested together:
 sbxm apply <project-id> --files --worktrees 4
 ```
 
+### Save sandbox commits to the host
+
+Copy the commits of a project sandbox into its host repository:
+
+```sh
+sbxm fetch <project-id>
+```
+
+sbxm streams a `git bundle` of the sandbox's branches, tags, and each worktree's
+`HEAD` out through `sbx exec`, keeps it under the project's `.sbxm/bundles`, and
+checks it with `git bundle verify`. It then imports it with object checks turned
+on into `refs/sbx/<sandbox>/` of the host repository only. Your host branches
+and tags are never touched. When a sandbox branch was rewritten or deleted, its
+previous tip is kept under `refs/sbx/<sandbox>/archive/<time>/` and is never
+removed automatically, so every commit that was ever fetched stays reachable.
+The sandbox must be running; a stopped sandbox is not started.
+
 ## Tear down a project
 
 ```sh
@@ -508,6 +525,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status` | Select and show the host or a project's status interactively; `global` is first |
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
+| `sbxm fetch [<project-id>]` | Save a project sandbox's commits into its host repository under `refs/sbx/<sandbox>/`, without touching your branches |
 | `sbxm files add\|ls\|rm ...` | Declare host files to place in every sandbox, list them, or remove a declaration |
 | `sbxm files pull <destination> [<project-id>]` | Show how a project sandbox's copy of a declared file differs from the host file, and adopt it into the host file if you choose |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees; `--files --all` places the declared files in every registered project |

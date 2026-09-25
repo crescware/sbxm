@@ -402,6 +402,21 @@ secretを使用してください。
 sbxm apply <project-id> --files --worktrees 4
 ```
 
+### Sandboxのcommitをホストへ保存する
+
+案件のSandboxのcommitを、ホスト側のrepositoryへ写します。
+
+```sh
+sbxm fetch <project-id>
+```
+
+sbxmはSandboxのbranch、tag、各worktreeの`HEAD`を`git bundle`にして`sbx exec`越しに
+取り出し、案件の`.sbxm/bundles`へ置いて`git bundle verify`で確かめます。そのうえで
+objectの検査を有効にして、ホスト側のrepositoryの`refs/sbx/<sandbox>/`へだけ取り込みます。
+ホスト側のbranchとtagには触れません。Sandboxで書き換えたbranchや消したbranchの前の先端は
+`refs/sbx/<sandbox>/archive/<時刻>/`へ退避し、自動では消さないため、一度取り込んだ
+commitはどれも辿れ続けます。Sandboxは動いている必要があり、停止中のSandboxは起動しません。
+
 ## プロジェクトを破棄する
 
 ```sh
@@ -460,6 +475,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 | `sbxm status` | 対話端末でhostまたは案件を選択して診断する。`global`を先頭にpromptを表示する |
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
+| `sbxm fetch [<project-id>]` | 案件のSandboxのcommitを、ホスト側のrepositoryの`refs/sbx/<sandbox>/`へ保存する。branchには触れない |
 | `sbxm files add\|ls\|rm ...` | すべてのSandboxへ配置するホスト側のファイルを宣言、一覧、または宣言を外す |
 | `sbxm files pull <destination> [<project-id>]` | 宣言ファイルについて、案件のSandbox側の内容とホスト側のファイルの差分を示し、選べばホスト側のファイルへ採用する |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する。`--files --all`で登録済みのすべての案件へ配置する |

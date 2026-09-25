@@ -6,6 +6,7 @@ use crate::diagnostics::Msg;
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::msg;
+use crate::support::bundle::RefChange;
 use crate::support::files::Placement;
 use crate::support::status::StatusValue;
 
@@ -15,7 +16,7 @@ use crate::commands::stop::StopResult;
 
 use super::{
     ListState, apply_result, creation_mode, file_state, global_status, placement, project_status,
-    sandbox_state, stop_result,
+    ref_change, sandbox_state, stop_result,
 };
 
 /// Sandboxの状態を説明するmessage ID。host serviceの説明を流用しない。
@@ -87,6 +88,16 @@ impl Legend {
 
     pub fn file_state(&mut self, state: FileState) -> Inline {
         self.cell(file_state(state), state.legend_id())
+    }
+
+    pub fn ref_change(&mut self, change: &RefChange) -> Inline {
+        let description = match change {
+            RefChange::Created { .. } => "legend-ref-created",
+            RefChange::Updated { .. } => "legend-ref-updated",
+            RefChange::Replaced { .. } => "legend-ref-replaced",
+            RefChange::Deleted { .. } => "legend-ref-deleted",
+        };
+        self.cell(ref_change(change), description)
     }
 
     pub fn stop_result(&mut self, result: StopResult) -> Inline {
