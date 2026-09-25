@@ -17,6 +17,9 @@ pub struct Request<'a> {
     pub(super) workspace_root: &'a Path,
     pub(super) layout: &'a SandboxLayout,
     pub(super) metadata: &'a ProjectMetadata,
+    /// 案件のhost側のrepository。sbxmがここへ保存した先端から辿れるcommitは、Sandboxを
+    /// 消しても失われない。
+    pub(super) host_repository: &'a Path,
 }
 
 impl<'a> Request<'a> {
@@ -26,6 +29,7 @@ impl<'a> Request<'a> {
         workspace_root: &'a Path,
         layout: &'a SandboxLayout,
         metadata: &'a ProjectMetadata,
+        host_repository: &'a Path,
     ) -> Request<'a> {
         Request {
             operation,
@@ -33,6 +37,7 @@ impl<'a> Request<'a> {
             workspace_root,
             layout,
             metadata,
+            host_repository,
         }
     }
 }

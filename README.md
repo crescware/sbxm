@@ -271,7 +271,9 @@ commits, in-progress Git operations, or unmanaged worktrees.
 The protection pass also checks repository-level state that a clean worktree
 does not show by itself: local branches kept out of the checkout, tags, notes,
 stash entries, extra remotes, and reflog-only commits. Save or resolve any
-reported Layer A blocker before retrying. `status` keeps the worktree's
+reported Layer A blocker before retrying. A commit on a branch, a tag, or a
+worktree's `HEAD` that is missing from the origin can also be saved into the host
+repository with `sbxm fetch`; a stash or notes commit cannot. `status` keeps the worktree's
 `STATE` and its origin recovery evidence in a separate `REMOTE` column.
 Normal rebuild always requires an interactive plan and a typed confirmation of
 the project ID; it refuses rather than silently skipping that confirmation in a
@@ -457,6 +459,13 @@ and tags are never touched. When a sandbox branch was rewritten or deleted, its
 previous tip is kept under `refs/sbx/<sandbox>/archive/<time>/` and is never
 removed automatically, so every commit that was ever fetched stays reachable.
 The sandbox must be running; a stopped sandbox is not started.
+
+A commit saved this way outlives the sandbox, so rebuild and destroy count it as
+kept, the same as a commit reachable from the origin. When commits it can save
+are the only reason a rebuild or destroy is refused, an interactive terminal
+offers to save them into the host repository and continue. Choosing to stop
+changes nothing. A stash or notes commit missing from the origin is not saved
+this way, so it still has to be pushed or dropped.
 
 ## Tear down a project
 

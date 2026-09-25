@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use crate::diagnostics::ErrorId;
 use crate::project::SandboxName;
@@ -15,6 +16,11 @@ use crate::support::protection::{CommitCandidate, OriginObservation, Unobservabl
 
 fn sandbox() -> Checked<SandboxName> {
     Ok(SandboxName::derive(&canonical()?))
+}
+
+/// 案件のhost側のrepository。模したhostは、ここで走るgitにも答える。
+fn host_repository() -> &'static Path {
+    Path::new("/work/example-repo")
 }
 
 fn candidate() -> CommitCandidate {
@@ -42,8 +48,9 @@ fn a_command_that_could_not_even_launch_is_an_error_at_every_stage() -> Checked 
     ];
     for step in steps {
         let host = InnerCommandSandbox::new().timing_out(&step);
-        let error = observe_for_mutation(&host, &sandbox, &layout()?, &candidates)
-            .refused_because("a step that did not run is never read as observed")?;
+        let error =
+            observe_for_mutation(&host, &sandbox, &layout()?, &candidates, host_repository())
+                .refused_because("a step that did not run is never read as observed")?;
         assert_eq!(
             error.first_id(),
             Some(ErrorId::OriginObservationUnobservable),
@@ -63,8 +70,14 @@ fn an_origin_configuration_that_answers_oddly_is_unobservable_not_missing() -> C
         "",
     );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .refused_because("an answer that is neither 0 nor 1 is not a clean yes or no")?;
+    let error = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because("an answer that is neither 0 nor 1 is not a clean yes or no")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
@@ -90,10 +103,16 @@ fn a_fetch_that_answered_but_could_not_launch_the_inner_command_is_unobservable(
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .refused_because(
-            "an exit code sbx exec reserves for its own launch failure is never read as an answer",
-        )?;
+    let error = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because(
+        "an exit code sbx exec reserves for its own launch failure is never read as an answer",
+    )?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
@@ -126,10 +145,16 @@ fn a_tip_listing_that_answered_but_could_not_launch_the_inner_command_is_unobser
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .refused_because(
-            "an exit code sbx exec reserves for its own launch failure is never read as an answer",
-        )?;
+    let error = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because(
+        "an exit code sbx exec reserves for its own launch failure is never read as an answer",
+    )?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
@@ -162,10 +187,14 @@ fn a_tip_listing_with_a_missing_field_is_an_invalid_advertisement() -> Checked {
             "refs/sbxm/origin/heads/main\t\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because(
-            "a malformed advertisement is a collected reason, not an outright failure",
-        )?;
+    let observation = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a malformed advertisement is a collected reason, not an outright failure")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -273,6 +302,7 @@ fn mutation_observation_includes_origin_tags_and_custom_refs_in_isolation() -> C
         &sandbox()?,
         &layout()?,
         &[candidate(), tag_candidate, custom_candidate],
+        host_repository(),
     )
     .required_because("all advertised origin namespaces are observed")?;
     assert_eq!(
@@ -336,8 +366,14 @@ fn a_reachability_probe_with_a_blank_line_is_an_invalid_advertisement() -> Check
             "\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because("a blank ref name is a collected reason, not an outright failure")?;
+    let observation = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a blank ref name is a collected reason, not an outright failure")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -389,8 +425,14 @@ fn host_after_a_failed_contains_check(cat_file_exit: i32) -> Checked<FakeSbx> {
 fn a_contains_failure_confirmed_by_cat_file_as_missing_is_object_missing() -> Checked {
     let host = host_after_a_failed_contains_check(1)?;
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because("an object verified missing by cat-file is a collected reason")?;
+    let observation = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("an object verified missing by cat-file is a collected reason")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -407,8 +449,14 @@ fn a_contains_failure_that_cat_file_cannot_confirm_is_not_object_missing() -> Ch
     // 起動失敗として報告する。
     let host = host_after_a_failed_contains_check(0)?;
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .refused_because("a confirmed-present object is never reported as missing")?;
+    let error = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because("a confirmed-present object is never reported as missing")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
@@ -452,8 +500,11 @@ fn read_only_observation_reuses_local_refs_without_fetching() -> Checked {
     let sandbox = sandbox()?;
     let layout = layout()?;
 
-    let observation = observe_read_only(&host, &sandbox, &layout, &[candidate()])
-        .required_because("local origin refs and objects are enough for a read-only observation")?;
+    let observation =
+        observe_read_only(&host, &sandbox, &layout, &[candidate()], host_repository())
+            .required_because(
+                "local origin refs and objects are enough for a read-only observation",
+            )?;
 
     assert_eq!(
         observation,
@@ -476,6 +527,51 @@ fn read_only_observation_reuses_local_refs_without_fetching() -> Checked {
 }
 
 #[test]
+fn read_only_observation_counts_a_commit_saved_on_the_host_as_recoverable() -> Checked {
+    // statusのREMOTEは、破壊操作の検査と同じ根拠で読む。`sbxm fetch`で保存したcommitを
+    // 失われうると示せば、検査が通すものをstatusだけが危ないと言うことになる。
+    const OTHER: &str = "2222222222222222222222222222222222222222";
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let saved = format!("refs/sbx/{name}/heads/main");
+    let host = read_only_host(&format!("refs/remotes/origin/main\t{OTHER}\n"), 0)?
+        .answering(
+            &format!(
+                "exec {name} -- git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
+            ),
+            0,
+            "",
+        )
+        .answering(
+            &format!("for-each-ref --format=%(refname) %(objectname) refs/sbx/{name}/"),
+            0,
+            &format!("{saved} {COMMIT}\n"),
+        )
+        .answering(
+            &format!("for-each-ref --format=%(refname) --contains={COMMIT} refs/sbx/{name}/"),
+            0,
+            &format!("{saved}\n"),
+        );
+
+    let observation = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("local origin refs and the host are enough to read")?;
+
+    assert_eq!(
+        crate::support::protection::Reachability::classify(&candidate(), &observation),
+        crate::support::protection::Reachability::Reachable {
+            origins: vec![format!("host:{saved}")]
+        }
+    );
+    Ok(())
+}
+
+#[test]
 fn read_only_observation_keeps_a_missing_origin_distinct_from_missing_data() -> Checked {
     let git_dir = layout()?.bare_git_dir();
     let name = sandbox()?.as_str().to_string();
@@ -485,8 +581,14 @@ fn read_only_observation_keeps_a_missing_origin_distinct_from_missing_data() -> 
         "",
     );
 
-    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because("a missing origin is a distinct read-only observation")?;
+    let observation = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a missing origin is a distinct read-only observation")?;
 
     assert_eq!(
         observation,
@@ -505,8 +607,14 @@ fn read_only_observation_keeps_a_missing_origin_distinct_from_missing_data() -> 
 fn read_only_observation_does_not_round_missing_local_data_to_unreachable() -> Checked {
     let host = read_only_host("", 0)?;
 
-    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because("an empty local origin advertisement is insufficient data")?;
+    let observation = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("an empty local origin advertisement is insufficient data")?;
 
     assert_eq!(
         observation,
@@ -525,8 +633,14 @@ fn read_only_observation_does_not_round_missing_local_data_to_unreachable() -> C
 fn read_only_observation_does_not_call_a_missing_commit_unreachable() -> Checked {
     let host = read_only_host(&format!("refs/remotes/origin/main\t{COMMIT}\n"), 1)?;
 
-    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because("a missing local object leaves recovery unknown")?;
+    let observation = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a missing local object leaves recovery unknown")?;
 
     assert_eq!(
         observation,
@@ -551,7 +665,7 @@ fn a_read_only_command_that_could_not_even_launch_is_an_error_at_every_stage() -
     ];
     for step in steps {
         let host = InnerCommandSandbox::new().timing_out(&step);
-        let error = observe_read_only(&host, &sandbox, &layout()?, &candidates)
+        let error = observe_read_only(&host, &sandbox, &layout()?, &candidates, host_repository())
             .refused_because("a step that did not run is never read as observed")?;
         assert_eq!(
             error.first_id(),
@@ -572,8 +686,14 @@ fn a_read_only_origin_configuration_that_answers_oddly_is_unobservable_not_missi
         "",
     );
 
-    let error = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .refused_because("an answer that is neither 0 nor 1 is not a clean yes or no")?;
+    let error = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because("an answer that is neither 0 nor 1 is not a clean yes or no")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
@@ -600,7 +720,14 @@ fn a_read_only_tip_listing_that_answered_but_could_not_launch_the_inner_command_
             "",
         );
 
-    let error = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()]).refused_because(
+    let error = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because(
         "an exit code sbx exec reserves for its own launch failure is never read as an answer",
     )?;
     assert_eq!(
@@ -631,10 +758,14 @@ fn a_read_only_tip_listing_with_a_missing_field_is_an_invalid_advertisement_not_
 
     // 空のtipsとadvertisementの解釈失敗は別の理由である。前者は「fetchしていないだけ」
     // かもしれないが、後者はoriginが返した内容そのものを解釈できていない。
-    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because(
-            "a malformed advertisement is a distinct reason from missing local data",
-        )?;
+    let observation = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a malformed advertisement is a distinct reason from missing local data")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -668,8 +799,14 @@ fn a_read_only_tip_object_that_cannot_be_confirmed_present_is_an_unobservable_la
             "",
         );
 
-    let error = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .refused_because("an object presence check that answers neither 0 nor 1 is not observed")?;
+    let error = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because("an object presence check that answers neither 0 nor 1 is not observed")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
@@ -707,8 +844,14 @@ fn a_read_only_candidate_object_missing_locally_is_insufficient_data_not_unreach
             "",
         );
 
-    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because("a candidate object missing locally leaves recovery unknown")?;
+    let observation = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a candidate object missing locally leaves recovery unknown")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -723,8 +866,14 @@ fn a_read_only_contains_query_with_a_blank_line_is_an_invalid_advertisement() ->
     let host =
         read_only_host_with_contains(&format!("refs/remotes/origin/main\t{COMMIT}\n"), 0, "\n")?;
 
-    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because("a blank ref name is a collected reason, not an outright failure")?;
+    let observation = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a blank ref name is a collected reason, not an outright failure")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -764,7 +913,14 @@ fn a_read_only_contains_query_that_could_not_launch_is_unobservable() -> Checked
             "",
         );
 
-    let error = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()]).refused_because(
+    let error = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because(
         "an exit code sbx exec reserves for its own launch failure is never read as an answer",
     )?;
     assert_eq!(
@@ -814,8 +970,14 @@ fn a_cleanup_listing_that_answered_but_failed_is_unobservable() -> Checked {
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .refused_because("a cleanup listing that failed to launch is not a completed cleanup")?;
+    let error = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because("a cleanup listing that failed to launch is not a completed cleanup")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
@@ -863,8 +1025,14 @@ fn a_cleanup_ref_outside_the_temporary_namespace_is_unobservable() -> Checked {
             "refs/heads/main\n",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .refused_because("a ref outside the isolated namespace is never deleted as cleanup")?;
+    let error = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because("a ref outside the isolated namespace is never deleted as cleanup")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
@@ -924,8 +1092,14 @@ fn a_cleanup_deletion_that_answered_but_failed_is_unobservable() -> Checked {
             "",
         );
 
-    let error = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .refused_because("a deletion that failed to launch does not leave a clean namespace")?;
+    let error = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because("a deletion that failed to launch does not leave a clean namespace")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::OriginObservationUnobservable)
@@ -960,10 +1134,14 @@ fn a_tip_listing_reference_outside_the_temporary_namespace_is_an_invalid_adverti
             &format!("refs/heads/main\t{COMMIT}\n"),
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because(
-            "an advertised ref outside the isolated namespace is a collected reason",
-        )?;
+    let observation = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("an advertised ref outside the isolated namespace is a collected reason")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -1002,8 +1180,14 @@ fn a_tip_listing_with_a_duplicate_reference_is_an_invalid_advertisement() -> Che
             ),
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because("a duplicate observed reference is a collected reason")?;
+    let observation = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a duplicate observed reference is a collected reason")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -1047,10 +1231,16 @@ fn a_reachability_probe_reference_outside_the_temporary_namespace_is_an_invalid_
             "refs/heads/main\n",
         );
 
-    let observation = observe_for_mutation(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because(
-            "a reachability answer outside the isolated namespace is a collected reason",
-        )?;
+    let observation = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because(
+        "a reachability answer outside the isolated namespace is a collected reason",
+    )?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -1079,8 +1269,14 @@ fn a_read_only_tip_listing_with_an_extra_field_is_an_invalid_advertisement() -> 
             &format!("refs/remotes/origin/main\t{COMMIT}\textra\n"),
         );
 
-    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because("a line with an unexpected extra field is a collected reason")?;
+    let observation = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a line with an unexpected extra field is a collected reason")?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -1123,10 +1319,16 @@ fn a_read_only_contains_query_that_fails_without_a_launch_failure_is_insufficien
             "",
         );
 
-    let observation = observe_read_only(&host, &sandbox()?, &layout()?, &[candidate()])
-        .required_because(
-            "a contains query that failed without a launch failure is insufficient read-only data",
-        )?;
+    let observation = observe_read_only(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because(
+        "a contains query that failed without a launch failure is insufficient read-only data",
+    )?;
     assert_eq!(
         observation,
         OriginObservation::Unobservable {
@@ -1151,4 +1353,74 @@ fn read_only_host_with_contains(
         0,
         contains_stdout,
     ))
+}
+
+#[test]
+fn a_commit_saved_on_the_host_is_reachable_even_when_origin_lacks_it() -> Checked {
+    const MISSING: &str = "3333333333333333333333333333333333333333";
+
+    let git_dir = layout()?.bare_git_dir();
+    let name = sandbox()?.as_str().to_string();
+    let saved = format!("refs/sbx/{name}/heads/main");
+    let gone = format!("refs/sbx/{name}/heads/gone");
+    let host = FakeSbx::listing("[]")
+        .answering(
+            &format!("exec {name} -- git --git-dir {git_dir} config --get remote.origin.url"),
+            0,
+            "https://github.com/Example-Org/Example-Repo.git\n",
+        )
+        // hostのrepositoryが保存済みの先端。Sandboxに無いcommitを指すものもある。
+        .answering(
+            &format!("for-each-ref --format=%(refname) %(objectname) refs/sbx/{name}/"),
+            0,
+            &format!("{saved} {COMMIT}\n{gone} {MISSING}\n"),
+        )
+        .answering(
+            &format!("for-each-ref --format=%(refname) --contains={COMMIT} refs/sbx/{name}/"),
+            0,
+            &format!("{saved}\n"),
+        );
+
+    let observation = observe_for_mutation(
+        &host,
+        &sandbox()?,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("the saved tip is observed with origin")?;
+
+    let label = format!("host:{saved}");
+    assert_eq!(
+        observation,
+        OriginObservation::Observed {
+            tips: BTreeMap::from([
+                (label.clone(), COMMIT.to_string()),
+                (format!("host:{gone}"), MISSING.to_string()),
+            ]),
+            reachable_from: BTreeMap::from([(COMMIT.to_string(), BTreeSet::from([label.clone()]))]),
+        }
+    );
+    // hostに残っているcommitは、Sandboxを消しても失われない。
+    assert_eq!(
+        crate::support::protection::Reachability::classify(&candidate(), &observation),
+        crate::support::protection::Reachability::Reachable {
+            origins: vec![label]
+        }
+    );
+    // 保存済みの先端は、hostのrepositoryで調べる。Sandboxへは何も置かない。
+    let host_calls: Vec<String> = host
+        .calls()
+        .iter()
+        .map(|args| args.join(" "))
+        .filter(|call| !call.starts_with("exec ") && call != "ls --json")
+        .collect();
+    assert!(
+        host_calls
+            .iter()
+            .all(|call| call.contains(&format!("refs/sbx/{name}/"))),
+        "{host_calls:?}"
+    );
+    assert!(!host.ran("update-ref refs/sbxm/"), "{:?}", host.calls());
+    Ok(())
 }

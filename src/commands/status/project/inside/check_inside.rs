@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::boundary::host::HostEnvironment;
 use crate::metadata::ProjectMetadata;
 use crate::project::{SandboxLayout, SandboxName};
@@ -18,6 +20,7 @@ pub fn check_inside(
     host: &dyn HostEnvironment,
     name: &SandboxName,
     metadata: &ProjectMetadata,
+    host_repository: &Path,
     state: Option<ProjectState>,
     status: &mut ProjectStatus,
 ) {
@@ -44,6 +47,6 @@ pub fn check_inside(
     check_secret(host, name, status);
     let layout = SandboxLayout::new(metadata.canonical_id());
     check_bare_repository(host, name, &layout, status);
-    check_worktrees(host, name, &layout, metadata, status);
+    check_worktrees(host, name, &layout, metadata, host_repository, status);
     check_ssh_agent(host, name, status);
 }

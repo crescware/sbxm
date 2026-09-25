@@ -332,6 +332,46 @@ fn saving_to_the_host_keeps_the_bundle_in_the_project_and_prunes_old_ones() -> C
 }
 
 #[test]
+fn every_tip_saved_on_the_host_is_listed_including_archived_ones() -> Checked {
+    let repositories = Repositories::new()?;
+    repositories.fetch("20260923T100000Z")?;
+    let first = git_in(&repositories.worktree, &["rev-parse", "HEAD"])?;
+    git_in(
+        &repositories.worktree,
+        &[
+            "commit",
+            "--quiet",
+            "--amend",
+            "--allow-empty",
+            "-m",
+            "amended",
+        ],
+    )?;
+    repositories.fetch("20260923T100100Z")?;
+
+    let sandbox = crate::project::SandboxName::derive(
+        &crate::project::ProjectId::parse("Example-Org/Example-Repo")
+            .required()?
+            .canonical(),
+    );
+    assert_eq!(sandbox.as_str(), NAMESPACE);
+    let tips = saved_tips(&LocalSandbox, &repositories.host, &sandbox).required()?;
+    assert!(
+        tips.iter().any(
+            |tip| tip.reference == reference("archive/20260923T100100Z/heads/main")
+                && tip.commit == first
+        ),
+        "{tips:?}"
+    );
+    assert!(
+        tips.iter()
+            .any(|tip| tip.reference == reference("heads/main"))
+    );
+
+    Ok(())
+}
+
+#[test]
 fn a_sandbox_branch_named_like_the_archive_is_saved_again_and_again() -> Checked {
     // `archive/`で始まるbranchも、Sandboxの作業である。退避先と取り違えると、2度目の
     // 取り込みが同じrefをもう一度作ろうとして、以後の保存がすべて失敗した。

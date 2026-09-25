@@ -1,6 +1,6 @@
 use crate::boundary::host::HostEnvironment;
 use crate::commands::Context;
-use crate::design::prompt::{RecordedScreen, ScriptedKeys};
+use crate::design::prompt::{Key, RecordedScreen, ScriptedKeys};
 use crate::design::{PromptUi, RenderingPolicy, Ui};
 use crate::diagnostics::ExitCode;
 use crate::hash::sha256_hex;
@@ -12,7 +12,7 @@ use crate::testing::host::FakeSbx;
 use crate::testing::image::template_listing;
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::{Fixture, Registered, project_id};
-use crate::testing::protection::clean_host;
+use crate::testing::protection::{clean_host, commit_only_in_the_sandbox};
 
 /// `exec`が書いたstdoutとstderr、そして終了statusを取り出す。
 ///
@@ -25,6 +25,15 @@ struct Ran {
 }
 
 fn run(fixture: &Fixture, host: &dyn HostEnvironment, typed: &str) -> Checked<Ran> {
+    run_with(fixture, host, ScriptedKeys::typing(typed))
+}
+
+/// 打鍵をそのまま並べて`exec`を通す。
+fn run_pressing(fixture: &Fixture, host: &dyn HostEnvironment, keys: &[Key]) -> Checked<Ran> {
+    run_with(fixture, host, ScriptedKeys::pressing(keys))
+}
+
+fn run_with(fixture: &Fixture, host: &dyn HostEnvironment, keys: ScriptedKeys) -> Checked<Ran> {
     let policy = RenderingPolicy::plain();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -33,7 +42,7 @@ fn run(fixture: &Fixture, host: &dyn HostEnvironment, typed: &str) -> Checked<Ra
         let mut prompt = PromptUi::new(
             Locale::En,
             policy.stderr,
-            Box::new(ScriptedKeys::typing(typed)),
+            Box::new(keys),
             Box::new(RecordedScreen::new()),
         );
         let context = Context {
@@ -174,6 +183,81 @@ fn a_project_that_is_not_managed_is_reported_before_the_plan_is_drawn() -> Check
         !host.ran("rm ") && !host.ran("create --name") && !host.ran("exec "),
         "{:?}",
         host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_commit_saved_to_the_host_on_request_lets_the_plan_be_drawn() -> Checked {
+    // 保護の検査が止めたあと、hostへ保存する選択をすれば、同じ案件をもう一度準備して
+    // 計画と確認へ進む。確認はcancelし、作り直しには進ませない。
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let host = commit_only_in_the_sandbox(
+        host_with_the_applied_generation(&fixture, &mut project)?,
+        &project,
+    );
+    *host.listing.borrow_mut() = vec![running(&fixture, &project)?];
+
+    let ran = run_pressing(&fixture, &host, &[Key::Enter, Key::Escape])?;
+
+    assert_eq!(ran.code, ExitCode::Canceled, "{}{}", ran.stdout, ran.stderr);
+    assert!(
+        ran.stderr.contains("origin-commit-unreachable"),
+        "the refusal is shown before the offer: {}",
+        ran.stderr
+    );
+    assert!(
+        host.ran("bundle create"),
+        "the commits are saved to the host: {:?}",
+        host.calls()
+    );
+    assert!(
+        ran.stdout.contains("Target generation"),
+        "the plan is drawn once the commits are saved: {}",
+        ran.stdout
+    );
+    assert!(
+        !host.ran("rm ") && !host.ran("create --name"),
+        "{:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_refusal_that_remains_after_saving_is_reported_without_asking_again() -> Checked {
+    // 保存しても届かないcommitが残るなら、同じ問いを繰り返さずに断る。打鍵は1問分しか
+    // 用意しない。2度目を訊けば、打鍵が尽きた失敗として現れる。
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let host = commit_only_in_the_sandbox(
+        host_with_the_applied_generation(&fixture, &mut project)?,
+        &project,
+    )
+    .answering_in_turn(
+        &format!(
+            "for-each-ref --format=%(refname) %(objectname) refs/sbx/{}/",
+            project.sandbox.as_str()
+        ),
+        &[(0, "")],
+    );
+    *host.listing.borrow_mut() = vec![running(&fixture, &project)?];
+
+    let ran = run_pressing(&fixture, &host, &[Key::Enter])?;
+
+    assert_eq!(ran.code, ExitCode::Failure, "{}{}", ran.stdout, ran.stderr);
+    assert_eq!(
+        ran.stderr.matches("origin-commit-unreachable").count(),
+        2,
+        "{}",
+        ran.stderr
+    );
+    assert!(!ran.stderr.contains("prompt-unreadable"), "{}", ran.stderr);
+    assert!(
+        !ran.stdout.contains("Target generation"),
+        "no plan is drawn while the refusal remains: {}",
+        ran.stdout
     );
     Ok(())
 }

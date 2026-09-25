@@ -4,6 +4,7 @@
 //! ことがある。bundleが運ぶのはobjectとrefだけである。受け取ったbundleは検証してから、
 //! hostのrepositoryのsbxm専用の名前空間へだけ取り込む。
 
+mod carries;
 mod create_bundle;
 mod import_bundle;
 mod kept_bundles;
@@ -17,8 +18,11 @@ mod ref_kinds;
 mod save_to_host;
 mod saved_namespace;
 mod saved_refs;
+mod saved_tip;
+mod saved_tips;
 mod stamp;
 
+pub use carries::carries;
 use create_bundle::CREATE_BUNDLE;
 pub use import_bundle::import_bundle;
 pub use kept_bundles::KEPT_BUNDLES;
@@ -32,6 +36,8 @@ use ref_kinds::REF_KINDS;
 pub use save_to_host::save_to_host;
 pub use saved_namespace::saved_namespace;
 use saved_refs::saved_refs;
+pub use saved_tip::SavedTip;
+pub use saved_tips::saved_tips;
 pub use stamp::stamp;
 
 #[cfg(test)]

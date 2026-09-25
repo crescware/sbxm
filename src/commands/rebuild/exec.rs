@@ -1,15 +1,19 @@
 //! `rebuild`の実行。
 //!
-//! 作り直す前に計画を見せ、確認を取ってから実行する。
+//! 作り直す前に計画を見せ、確認を取ってから実行する。originに無いcommitが作り直しを
+//! 止めた場合は、hostのrepositoryへ保存してから続けるかを訊く。
+
+use std::ops::ControlFlow;
 
 use crate::boundary::host::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
+use crate::msg;
 use crate::project::ProjectId;
-use crate::support::inventory;
+use crate::support::{inventory, select};
 
 use super::{
-    super::{Context, report},
+    super::{Context, report, saving},
     Target, print,
 };
 
@@ -29,20 +33,34 @@ pub fn exec(
     if let Err(error) = crate::support::login::require_signed_in(host) {
         return report(ui, &error);
     }
-    let target = Target {
-        location: context.location,
-        requested: project,
+    // hostへ保存してから準備をやり直す場合に、対象を選び直させない。
+    let chosen = match select::chosen(
+        context.location,
+        project,
+        &msg!("select-rebuild-heading"),
         prompt,
-    };
-    let (prepared, snapshot) = match super::run::prepare(
-        target,
-        host,
-        context.workspace_root,
-        inventory::Poll::default(),
-        ui,
     ) {
-        Ok(pair) => pair,
+        Ok(chosen) => chosen,
         Err(error) => return report(ui, &error),
+    };
+    let prepared =
+        saving::prepare_offering_save(&chosen, context, host, prompt, ui, |prompt, ui| {
+            let target = Target {
+                location: context.location,
+                requested: Some(&chosen),
+                prompt,
+            };
+            super::run::prepare(
+                target,
+                host,
+                context.workspace_root,
+                inventory::Poll::default(),
+                ui,
+            )
+        });
+    let (prepared, snapshot) = match prepared {
+        ControlFlow::Continue(pair) => pair,
+        ControlFlow::Break(code) => return code,
     };
 
     ui.stdout(&print::plan_document(&prepared.plan));

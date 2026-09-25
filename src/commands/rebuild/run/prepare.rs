@@ -73,6 +73,7 @@ pub fn prepare(
 
     let snapshot = observe_protection(
         host,
+        &locked.paths,
         &locked.metadata,
         &name,
         state,

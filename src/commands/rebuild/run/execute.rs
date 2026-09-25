@@ -48,6 +48,7 @@ pub fn execute(
     let existed = state != inventory::ProjectState::NotCreated;
     let current_snapshot = observe_protection(
         host,
+        &prepared.locked.paths,
         &prepared.locked.metadata,
         &prepared.name,
         state,

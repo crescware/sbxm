@@ -1,15 +1,19 @@
 //! `destroy`の実行。
 //!
 //! 消す前に計画を見せ、確認を取ってから実行する。確認前の計画と実行後の結果は
-//! 別のdocumentとして作り、同じ画面のなかで混ざらないようにする。
+//! 別のdocumentとして作り、同じ画面のなかで混ざらないようにする。originに無いcommitが
+//! 削除を止めた場合は、hostのrepositoryへ保存してから続けるかを訊く。
+
+use std::ops::ControlFlow;
 
 use crate::boundary::host::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
-use crate::support::inventory;
+use crate::msg;
+use crate::support::{inventory, select};
 
 use super::{
-    super::{Context, report},
+    super::{Context, report, saving},
     Args, Selection, print,
 };
 
@@ -29,21 +33,35 @@ pub fn exec(
     if let Err(error) = crate::support::login::require_signed_in(host) {
         return report(ui, &error);
     }
-    let selection = Selection {
-        location: context.location,
-        requested: args.project.as_ref(),
+    // hostへ保存してから準備をやり直す場合に、対象を選び直させない。
+    let chosen = match select::chosen(
+        context.location,
+        args.project.as_ref(),
+        &msg!("select-destroy-heading"),
         prompt,
-    };
-    let mut prepared = match super::run::prepare(
-        selection,
-        args.force,
-        host,
-        context.workspace_root,
-        inventory::Poll::default(),
-        ui,
     ) {
-        Ok(prepared) => prepared,
+        Ok(chosen) => chosen,
         Err(error) => return report(ui, &error),
+    };
+    let prepared =
+        saving::prepare_offering_save(&chosen, context, host, prompt, ui, |prompt, ui| {
+            let selection = Selection {
+                location: context.location,
+                requested: Some(&chosen),
+                prompt,
+            };
+            super::run::prepare(
+                selection,
+                args.force,
+                host,
+                context.workspace_root,
+                inventory::Poll::default(),
+                ui,
+            )
+        });
+    let mut prepared = match prepared {
+        ControlFlow::Continue(prepared) => prepared,
+        ControlFlow::Break(code) => return code,
     };
 
     ui.stdout(&print::plan_document(&prepared.plan, locale));
@@ -90,3 +108,7 @@ pub fn exec(
     ui.stdout(&print::outcome_document(&outcome));
     ExitCode::Success
 }
+
+#[cfg(test)]
+#[path = "exec_test.rs"]
+mod exec_test;

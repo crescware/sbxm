@@ -145,7 +145,13 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         .map(|pending| pending.primary.clone())
         .chain(pending_refs.iter().map(|pending| pending.candidate.clone()))
         .collect();
-    let observation = match observe_for_mutation(host, request.sandbox, layout, &candidates) {
+    let observation = match observe_for_mutation(
+        host,
+        request.sandbox,
+        layout,
+        &candidates,
+        request.host_repository,
+    ) {
         Ok(observation) => observation,
         Err(error) => {
             return observation_command_failure(

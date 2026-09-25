@@ -3,11 +3,13 @@ use std::path::Path;
 use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
+use crate::paths::ProjectPaths;
 use crate::project::{SandboxLayout, SandboxName};
 
 use crate::design::ProgressSink;
 use crate::support::inventory::{Poll, ProjectState};
 use crate::support::protection::{self, DestructiveOperation, ProtectionSnapshot, Request};
+use crate::support::repository;
 
 use super::start_to_read_saved_state;
 
@@ -16,8 +18,10 @@ use super::start_to_read_saved_state;
 /// Sandboxが無ければ何も観測せず空のsnapshotを返す。停止していれば、保存されていない
 /// 作業を読むために先に起動する。`prepare`と`execute`の両方が、それぞれの時点の最新
 /// stateからこの関数を呼ぶ。
+#[allow(clippy::too_many_arguments)]
 pub(super) fn observe_protection(
     host: &dyn HostEnvironment,
+    paths: &ProjectPaths,
     metadata: &ProjectMetadata,
     name: &SandboxName,
     state: ProjectState,
@@ -41,12 +45,14 @@ pub(super) fn observe_protection(
         progress,
     )?;
     let layout = SandboxLayout::new(metadata.canonical_id());
+    let host_repository = repository::host_repository(paths, metadata);
     let request = Request::new(
         DestructiveOperation::Rebuild,
         name,
         workspace_root,
         &layout,
         metadata,
+        &host_repository,
     );
     protection::gate::assess(host, &request)
 }

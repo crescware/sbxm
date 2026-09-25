@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use crate::boundary::host::{CommandOutcome, HostEnvironment};
 use crate::design::Fact;
@@ -9,7 +10,7 @@ use crate::project::{SandboxLayout, SandboxName};
 use crate::support::repository;
 use crate::support::sandbox;
 
-use super::{CommitCandidate, OriginObservation, UnobservableReason};
+use super::{CommitCandidate, OriginObservation, UnobservableReason, add_saved};
 
 /// originの権威ある広告を一時保存するnamespace。通常のremote-tracking refやlocal tagは
 /// fetchで変更しない。
@@ -24,6 +25,8 @@ const ORIGIN_REFS_NAMESPACE: &str = "refs/remotes/origin/";
 /// 2. `fetch --prune`でoriginが広告する全refを隔離namespaceへ最新化する。
 /// 3. refresh後のorigin refを完全なref名とtip commit IDで列挙する。
 /// 4. `candidates`が指すcommitごとに、どのorigin refから到達できるかを1回だけ求める。
+/// 5. hostの`host_repository`へ保存済みの先端を足す。保存済みのcommitは、originへ
+///    届いていなくてもSandboxを消して失われない。先端は`host:<ref>`と表す。
 ///
 /// Gitが正常に応答した結果として観測不能と判定した場合は
 /// `OriginObservation::Unobservable`を返す。command自体を起動できない失敗は`Err`とする。
@@ -34,6 +37,7 @@ pub fn observe_for_mutation(
     sandbox: &SandboxName,
     layout: &SandboxLayout,
     candidates: &[CommitCandidate],
+    host_repository: &Path,
 ) -> Result<OriginObservation> {
     let scope = ObservationScope {
         sandbox: sandbox.as_str(),
@@ -65,7 +69,7 @@ pub fn observe_for_mutation(
     let observation = observe_temporary_refs(host, &scope, candidates);
     let cleanup = cleanup_temporary_refs(host, &scope);
     cleanup?;
-    observation
+    Ok(add_saved(host, host_repository, sandbox, observation?))
 }
 
 fn observe_temporary_refs(
