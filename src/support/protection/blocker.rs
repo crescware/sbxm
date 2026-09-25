@@ -59,9 +59,15 @@ impl Blocker {
                 msg!("error-worktree-tracked-changes"),
             )
             .fact(Fact::worktree(worktree))
-            .remediation(open(project, msg!("remediation-worktree-tracked-changes"))),
+            .remediation(open(
+                project,
+                match origin {
+                    OriginKind::Remote => msg!("remediation-worktree-tracked-changes"),
+                    OriginKind::Host => msg!("remediation-worktree-tracked-changes-host"),
+                },
+            )),
             Blocker::UntrackedPaths { worktree, paths } => {
-                untracked_paths_diagnostic(project, worktree, paths)
+                untracked_paths_diagnostic(project, worktree, paths, origin)
             }
             Blocker::GitOperationInProgress {
                 worktree,
@@ -72,7 +78,13 @@ impl Blocker {
             )
             .fact(Fact::worktree(worktree))
             .fact(Fact::operation(operation))
-            .remediation(open(project, msg!("remediation-git-operation-in-progress"))),
+            .remediation(open(
+                project,
+                match origin {
+                    OriginKind::Remote => msg!("remediation-git-operation-in-progress"),
+                    OriginKind::Host => msg!("remediation-git-operation-in-progress-host"),
+                },
+            )),
             Blocker::UnmanagedWorktree { worktree } => Diagnostic::new(
                 ErrorId::UnmanagedWorktreePresent,
                 msg!("error-unmanaged-worktree-present"),
@@ -174,7 +186,12 @@ impl Blocker {
 }
 
 /// 未追跡pathの一覧を`MAX_LISTED_PATHS`件までに絞り、総数を別のFactで示す。
-fn untracked_paths_diagnostic(project: &str, worktree: &str, paths: &[String]) -> Diagnostic {
+fn untracked_paths_diagnostic(
+    project: &str,
+    worktree: &str,
+    paths: &[String],
+    origin: OriginKind,
+) -> Diagnostic {
     let shown = &paths[..paths.len().min(MAX_LISTED_PATHS)];
     let mut diagnostic = Diagnostic::new(
         ErrorId::WorktreeUntrackedPaths,
@@ -185,7 +202,11 @@ fn untracked_paths_diagnostic(project: &str, worktree: &str, paths: &[String]) -
     if paths.len() > MAX_LISTED_PATHS {
         diagnostic = diagnostic.fact(Fact::count(paths.len()));
     }
-    diagnostic.remediation(open(project, msg!("remediation-worktree-untracked-paths")))
+    let explanation = match origin {
+        OriginKind::Remote => msg!("remediation-worktree-untracked-paths"),
+        OriginKind::Host => msg!("remediation-worktree-untracked-paths-host"),
+    };
+    diagnostic.remediation(open(project, explanation))
 }
 
 fn open(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {

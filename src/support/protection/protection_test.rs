@@ -2223,3 +2223,32 @@ fn a_commit_saved_to_the_host_is_found_there_and_a_later_one_is_not() -> Checked
     assert!(reachable_from[&later].is_empty());
     Ok(())
 }
+
+#[test]
+fn a_local_project_is_told_to_save_rather_than_push() -> Checked {
+    // hostにあるrepositoryの案件は、Sandboxのoriginへpushしても残らない。
+    for blocker in [
+        Blocker::TrackedChanges {
+            worktree: "example-repo.tree-0".to_string(),
+        },
+        Blocker::UntrackedPaths {
+            worktree: "example-repo.tree-0".to_string(),
+            paths: vec!["one.txt".to_string()],
+        },
+        Blocker::GitOperationInProgress {
+            worktree: "example-repo.tree-0".to_string(),
+            operation: "MERGE_HEAD".to_string(),
+        },
+    ] {
+        let diagnostic = blocker_diagnostic(blocker, OriginKind::Host)?;
+        let remediation = diagnostic.remediation.required()?;
+        assert!(
+            remediation
+                .explanation
+                .iter()
+                .all(|explanation| explanation.id.ends_with("-host")),
+            "{remediation:?}"
+        );
+    }
+    Ok(())
+}
