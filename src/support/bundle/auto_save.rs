@@ -1,12 +1,11 @@
 use crate::boundary::host::HostEnvironment;
-use crate::design::{Fact, Warning};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::paths::{self, ProjectPaths};
 use crate::project::SandboxLayout;
 use crate::support::repository;
 
-use super::{AutoSaved, save_to_host};
+use super::{AutoSaved, save_failed, save_to_host};
 
 /// hostにあるrepositoryを登録した案件で、Sandboxのcommitをhostへ保存しておく。
 ///
@@ -35,15 +34,6 @@ pub fn auto_save(
             namespace = sandbox.as_str()
         )),
         Ok(_) => AutoSaved::Nothing,
-        Err(error) => {
-            // ErrorIdだけでは何が起きたかが伝わらない。診断の一文も添える。
-            let mut warning = Warning::text(msg!("auto-save-failed", project = project.clone()));
-            for diagnostic in error.diagnostics() {
-                warning = warning
-                    .fact(Fact::cause(diagnostic.id.as_str()))
-                    .explain(diagnostic.description.clone());
-            }
-            AutoSaved::Failed(warning.try_run(format!("sbxm fetch {project}")))
-        }
+        Err(error) => AutoSaved::Failed(save_failed(&project, &error)),
     }
 }
