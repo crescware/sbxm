@@ -20,6 +20,7 @@ pub(crate) fn ready_output(
         worktrees: observation.worktrees.clone(),
         files: observation.files.clone(),
         already_built: true,
+        restored: Vec::new(),
         warnings: Vec::new(),
     }
 }

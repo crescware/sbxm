@@ -28,6 +28,7 @@ fn output() -> ProvisioningOutput {
         }],
         files: Vec::new(),
         already_built: false,
+        restored: Vec::new(),
         warnings: Vec::new(),
     }
 }
@@ -69,5 +70,30 @@ fn the_completed_run_says_what_it_built_instead_of_naming_a_missing_message() ->
             "the summary names the project and the sandbox it built, {locale:?}: {summary}"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn the_branches_brought_back_from_the_host_are_named() -> Checked {
+    let restored = ProvisioningOutput {
+        restored: vec!["main".to_string(), "topic".to_string()],
+        ..output()
+    };
+    let document = provisioning_output(&restored, Locale::En);
+    let mut written: Vec<u8> = Vec::new();
+    {
+        let mut ui = crate::design::Ui::capture(
+            Locale::En,
+            crate::design::RenderingPolicy::plain(),
+            &mut written,
+            std::io::sink(),
+        );
+        ui.stdout(&document);
+    }
+    let text = String::from_utf8(written).required()?;
+    assert!(
+        text.contains("saved on the host are back in the new sandbox: main, topic"),
+        "{text}"
+    );
     Ok(())
 }

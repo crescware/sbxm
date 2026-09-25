@@ -72,6 +72,26 @@ impl SandboxOrigin {
         }
     }
 
+    /// hostへ保存したbranchを、作り直したSandboxのbranchとして戻す。
+    ///
+    /// hostにあるrepositoryだけが、Sandboxから保存したbranchをhostに持つ。GitHubの案件では
+    /// 何もしない。戻したbranchの名前を返す。
+    pub fn restore_saved_branches(
+        &self,
+        host: &dyn HostEnvironment,
+        sandbox: &str,
+        git_dir: &str,
+    ) -> Result<Vec<String>> {
+        match self {
+            SandboxOrigin::Github(_) => Ok(Vec::new()),
+            SandboxOrigin::Host {
+                repository,
+                staging,
+                ..
+            } => bundle::restore_saved_branches(host, repository, staging, sandbox, git_dir),
+        }
+    }
+
     /// fetchの前に、originが読むものを用意する。
     ///
     /// hostにあるrepositoryは、そのbranchとtagをbundleにして送る。GitHubのrepository

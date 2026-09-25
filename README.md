@@ -517,7 +517,8 @@ warning says what remains only in the sandbox.
 brings back the branches saved under `refs/sbx/<sandbox>/heads/` as sandbox
 branches, tracking `origin/<branch>` when the host has it. The worktree on the
 start branch is recreated at the saved tip, so work continues where it was
-fetched.
+fetched. The same happens whenever `open` or `repair` builds a new sandbox for
+the project, for example after the sandbox was removed outside sbxm.
 
 ## Tear down a project
 

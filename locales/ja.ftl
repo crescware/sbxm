@@ -559,6 +559,7 @@ add-next-token = { github-token-scopes }
 add-next-secret = GitHub tokenを運ぶsecretを登録します。
 add-next-open = 開きます。最初の実行ではSandboxを構築してからSSHで接続します。
 provisioning-done = { $project } を構築し、{ $sandbox } が使える状態になりました。
+provisioning-restored = hostへ保存してあったbranchを、新しいSandboxへ戻しました: { $branches }
 provisioning-already-built = { $project } は構築済みのため、何も変更しませんでした。
 files-added = { $source } を { $destination } へ配置する宣言を { $path } に足しました。
 files-already-declared = { $source } は { $destination } へ配置する宣言が既にあります。

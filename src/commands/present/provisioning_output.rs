@@ -70,10 +70,18 @@ pub fn provisioning_output(output: &ProvisioningOutput, locale: Locale) -> Docum
         ]);
     }
 
-    document
+    let document = document
         .table(Some(msg!("status-worktrees-section")), worktrees)
-        .concat(placed_files(&output.files, &mut legend))
-        .legend(Legend::heading(), legend.entries())
+        .concat(placed_files(&output.files, &mut legend));
+    let document = if output.restored.is_empty() {
+        document
+    } else {
+        document.note(msg!(
+            "provisioning-restored",
+            branches = output.restored.join(", ")
+        ))
+    };
+    document.legend(Legend::heading(), legend.entries())
 }
 
 #[cfg(test)]
