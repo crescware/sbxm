@@ -57,13 +57,17 @@ pub(crate) fn provision_interior(
         secret::require_github_accepts(host, &ready_name, &project, registration)?;
     }
 
-    // 無かったbare repositoryを作る場合は、失われたSandboxを作り直している場合もある。
-    // hostにあるrepositoryは、hostへ保存したbranchをworktreeより先に戻す。
-    let fresh = matches!(origin, repository::SandboxOrigin::Host { .. })
-        && !sandbox::path_exists(host, &ready_name, &layout.bare_git_dir())?;
+    // 一度完成した案件のSandboxを作り直すなら、hostにあるrepositoryは、hostへ保存した
+    // branchをworktreeより先に戻す。登録したばかりの案件は作り直しではなく、同じ名前で
+    // 前に登録した案件が保存したbranchを戻さない。戻す前に止まった復元は、branchが
+    // まだ無いことから、次の実行でやり直す。
+    let recreating =
+        matches!(origin, repository::SandboxOrigin::Host { .. }) && locked.metadata.was_built();
     repository::ensure_bare_clone(host, &ready_name, &origin, &layout, progress)
         .map_err(decorate)?;
-    let restored = if fresh {
+    let restored = if recreating
+        && !repository::has_local_branches(host, &ready_name, &layout).map_err(decorate)?
+    {
         origin
             .restore_saved_branches(host, &ready_name, &layout.bare_git_dir())
             .map_err(decorate)?

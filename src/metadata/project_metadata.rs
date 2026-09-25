@@ -40,4 +40,12 @@ impl ProjectMetadata {
     pub fn sandbox_name(&self) -> SandboxName {
         SandboxName::derive(self.canonical_id())
     }
+
+    /// 一度でも構築を完成させた案件か。
+    ///
+    /// 宣言fileの基準は、構築が完成したときに初めて記録し、以後は消さない。消えた
+    /// Sandboxを作り直す構築と、登録したばかりの案件の初回構築を、これで見分ける。
+    pub fn was_built(&self) -> bool {
+        self.declared_files.is_some()
+    }
 }
