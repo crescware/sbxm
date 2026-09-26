@@ -128,6 +128,7 @@ error_ids! {
     DeclaredFileTransferIncomplete => "declared-file-transfer-incomplete",
     BundleTransferIncomplete => "bundle-transfer-incomplete",
     SandboxRepositoryUnreadable => "sandbox-repository-unreadable",
+    SandboxRepositoryUnwritable => "sandbox-repository-unwritable",
     HostRepositoryEmpty => "host-repository-empty",
     SyncRequiresLocal => "sync-requires-local",
     SandboxIdentityMismatch => "sandbox-identity-mismatch",

@@ -1635,7 +1635,7 @@ fn a_local_project_is_rebuilt_from_the_host_with_its_saved_branches_back() -> Ch
     assert_eq!(output.restored, ["main", "topic"]);
     assert!(
         host.ran(&format!(
-            "fetch --quiet --no-tags {git_dir}/sbxm/restore.bundle {saved}*:refs/heads/*"
+            "push --quiet --no-verify ssh://{name}.sbx{git_dir} {saved}*:refs/heads/*"
         )),
         "{:?}",
         host.calls()

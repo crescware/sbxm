@@ -175,9 +175,10 @@ fn a_lost_sandbox_is_built_again_with_the_branches_saved_on_the_host() -> Checke
             .position(|call| call.contains(needle))
             .required_because(&format!("no command matched {needle}: {calls:?}"))
     };
+    let restored = position("push --quiet --no-verify ssh://")?;
     assert!(
-        position("fetch --prune --progress origin")? < position("sbxm/restore.bundle")?
-            && position("sbxm/restore.bundle")? < position("worktree add")?,
+        position("fetch --prune --progress origin")? < restored
+            && restored < position("worktree add")?,
         "the branches come back after the origin is read and before the worktrees"
     );
     Ok(())

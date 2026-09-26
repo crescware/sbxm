@@ -928,7 +928,6 @@ impl Rebuilt {
         restore_saved_branches(
             &LocalSandbox,
             &self.host,
-            &self.root.path().join("bundles"),
             NAMESPACE,
             &self.sandbox.to_string_lossy(),
         )
@@ -972,6 +971,25 @@ fn branches_saved_on_the_host_come_back_as_sandbox_branches() -> Checked {
     );
     // 送ったbundleは残さない。
     assert!(!rebuilt.sandbox.join("sbxm/restore.bundle").exists());
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_the_host_cannot_write_to_is_reported_by_its_own_reason() -> Checked {
+    let rebuilt = Rebuilt::new()?;
+    rebuilt.save("topic")?;
+    let missing = rebuilt.root.path().join("missing.git");
+
+    let error = restore_saved_branches(
+        &LocalSandbox,
+        &rebuilt.host,
+        NAMESPACE,
+        &missing.to_string_lossy(),
+    )
+    .refused_because("there is no repository to write to")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnwritable));
+    assert!(!error.diagnostics()[0].facts.is_empty());
     Ok(())
 }
 
