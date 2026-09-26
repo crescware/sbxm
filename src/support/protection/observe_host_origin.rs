@@ -5,7 +5,7 @@ use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::project::SandboxName;
 
-use crate::support::bundle;
+use crate::support::host_sync;
 use crate::support::repository::host_git;
 
 use super::{CommitCandidate, OriginObservation, UnobservableReason, host_label};
@@ -28,7 +28,7 @@ pub fn observe_host_origin(
     sandbox: &SandboxName,
     candidates: &[CommitCandidate],
 ) -> Result<OriginObservation> {
-    let saved = bundle::saved_namespace(sandbox.as_str());
+    let saved = host_sync::saved_namespace(sandbox.as_str());
     let scopes = ["refs/heads/", "refs/tags/", saved.as_str()];
 
     let mut listing = vec!["for-each-ref", "--format=%(refname) %(objectname)"];

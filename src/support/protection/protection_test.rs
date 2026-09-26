@@ -2155,7 +2155,7 @@ fn a_host_repository_that_cannot_be_read_points_at_the_host_not_the_sandbox() ->
 fn a_commit_saved_to_the_host_is_found_there_and_a_later_one_is_not() -> Checked {
     // 保存したcommitへ届くかは、hostのrepositoryで実物のgitに求める。保存した後に
     // Sandboxで積んだcommitは、まだhostに無い。
-    use crate::support::bundle;
+    use crate::support::host_sync;
     use crate::testing::repository::git_in;
     use crate::testing::sandbox::LocalSandbox;
     use std::collections::{BTreeMap, BTreeSet};
@@ -2176,7 +2176,7 @@ fn a_commit_saved_to_the_host_is_found_there_and_a_later_one_is_not() -> Checked
         .required()?
         .canonical();
     let name = SandboxName::derive(&canonical);
-    bundle::save_to_host(
+    host_sync::save_to_host(
         &LocalSandbox,
         &name,
         &sandbox_repository.join(".git").to_string_lossy(),

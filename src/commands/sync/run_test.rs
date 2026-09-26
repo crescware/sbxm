@@ -2,7 +2,7 @@ use crate::commands::add::AddRequest;
 use crate::diagnostics::ErrorId;
 use crate::project::ProjectId;
 use crate::repository::RepositoryIdentity;
-use crate::support::bundle::PLACE_SAVE_REFS;
+use crate::support::host_sync::PLACE_SAVE_REFS;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::prompt::ScriptedPrompt;

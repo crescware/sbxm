@@ -121,7 +121,7 @@ impl HostEnvironment for FakeSbx {
                 None if spec
                     .args
                     .iter()
-                    .any(|arg| arg == crate::support::bundle::PLACE_SAVE_REFS) =>
+                    .any(|arg| arg == crate::support::host_sync::PLACE_SAVE_REFS) =>
                 {
                     (0, "empty\n".to_string())
                 }

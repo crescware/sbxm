@@ -1,5 +1,5 @@
 use crate::design::{Inline, VisualState};
-use crate::support::bundle::ReflectResult;
+use crate::support::host_sync::ReflectResult;
 
 /// Sandboxのbranchやtagを、hostのbranchやtagへ反映した結果。
 ///

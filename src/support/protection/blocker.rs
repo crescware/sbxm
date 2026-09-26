@@ -1,7 +1,7 @@
 use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
-use crate::support::bundle;
+use crate::support::host_sync;
 
 use super::{OriginKind, UnobservableReason};
 
@@ -220,7 +220,7 @@ fn open(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {
 /// originへpushできない。同期を勧める。stashやnotesのcommitは、同期しても辿れるように
 /// ならない。
 fn unreachable_remediation(project: &str, reference: &str, origin: OriginKind) -> Remediation {
-    match (origin, bundle::carries(reference)) {
+    match (origin, host_sync::carries(reference)) {
         (OriginKind::Remote, _) => open(project, msg!("remediation-origin-commit-unreachable")),
         (OriginKind::Host, false) => open(project, msg!("remediation-host-ref-unsaveable")),
         (OriginKind::Host, true) => Remediation::text(msg!("remediation-host-commit-unreachable"))

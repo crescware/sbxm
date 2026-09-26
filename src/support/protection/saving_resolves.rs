@@ -1,6 +1,6 @@
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
-use crate::support::bundle;
+use crate::support::host_sync;
 
 /// hostのrepositoryへ保存すれば解ける診断か。
 ///
@@ -12,5 +12,5 @@ pub fn saving_resolves(diagnostic: &Diagnostic) -> bool {
             .facts
             .iter()
             .filter_map(Fact::as_reference)
-            .any(bundle::carries)
+            .any(host_sync::carries)
 }

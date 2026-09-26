@@ -52,5 +52,5 @@ pub use saved_tips::saved_tips;
 pub use stamp::stamp;
 
 #[cfg(test)]
-#[path = "bundle_test.rs"]
-mod bundle_test;
+#[path = "host_sync_test.rs"]
+mod host_sync_test;

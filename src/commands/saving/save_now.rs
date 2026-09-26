@@ -6,7 +6,7 @@ use crate::diagnostics::Result;
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{bundle, generation, inventory, repository};
+use crate::support::{generation, host_sync, inventory, repository};
 
 use super::SaveOutput;
 
@@ -27,7 +27,7 @@ pub(super) fn save_now(
     inventory::require_running(host, &locked.metadata, workspace_root)?;
     let sandbox = locked.metadata.sandbox_name();
     let target = repository::host_repository(&locked.paths, &locked.metadata);
-    let changes = bundle::save_to_host(
+    let changes = host_sync::save_to_host(
         host,
         &sandbox,
         &SandboxLayout::new(locked.metadata.canonical_id()).bare_git_dir(),

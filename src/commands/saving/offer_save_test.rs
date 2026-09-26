@@ -104,7 +104,7 @@ fn choosing_to_save_fetches_and_lets_the_caller_prepare_again() -> Checked {
         offered.stdout
     );
     assert!(
-        world.ran(crate::support::bundle::PLACE_SAVE_REFS),
+        world.ran(crate::support::host_sync::PLACE_SAVE_REFS),
         "{:?}",
         world.invocations()
     );
@@ -196,7 +196,7 @@ fn a_refusal_that_saving_cannot_resolve_is_reported_without_asking() -> Checked 
 
     assert_eq!(offered.flow, ControlFlow::Break(ExitCode::Failure));
     assert!(
-        !world.ran(crate::support::bundle::PLACE_SAVE_REFS),
+        !world.ran(crate::support::host_sync::PLACE_SAVE_REFS),
         "{:?}",
         world.invocations()
     );
@@ -218,7 +218,7 @@ fn a_cancel_is_reported_without_asking() -> Checked {
 
     assert_eq!(offered.flow, ControlFlow::Break(ExitCode::Canceled));
     assert!(
-        !world.ran(crate::support::bundle::PLACE_SAVE_REFS),
+        !world.ran(crate::support::host_sync::PLACE_SAVE_REFS),
         "{:?}",
         world.invocations()
     );
@@ -240,7 +240,7 @@ fn without_a_terminal_the_refusal_is_reported_without_asking() -> Checked {
 
     assert_eq!(offered.flow, ControlFlow::Break(ExitCode::Failure));
     assert!(
-        !world.ran(crate::support::bundle::PLACE_SAVE_REFS),
+        !world.ran(crate::support::host_sync::PLACE_SAVE_REFS),
         "{:?}",
         world.invocations()
     );
@@ -288,7 +288,7 @@ fn a_refusal_over_a_commit_the_save_does_not_carry_is_reported_without_asking() 
 
     assert_eq!(offered.flow, ControlFlow::Break(ExitCode::Failure));
     assert!(
-        !world.ran(crate::support::bundle::PLACE_SAVE_REFS),
+        !world.ran(crate::support::host_sync::PLACE_SAVE_REFS),
         "{:?}",
         world.invocations()
     );

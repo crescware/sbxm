@@ -180,7 +180,7 @@ fn every_failure_is_written_as_its_own_diagnostic() -> Checked {
 #[test]
 fn what_was_saved_before_stopping_is_shown_first_on_stderr() -> Checked {
     use crate::design::Warning;
-    use crate::support::bundle::AutoSaved;
+    use crate::support::host_sync::AutoSaved;
 
     let stopped = StopReport {
         outcomes: vec![outcome("local/app", "sbxm-local-app", StopResult::Stopped)],

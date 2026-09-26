@@ -2,7 +2,7 @@ use crate::design::{Document, Inline, Table};
 use crate::i18n::Locale;
 use crate::msg;
 use crate::paths;
-use crate::support::bundle::{ReflectResult, Reflected};
+use crate::support::host_sync::{ReflectResult, Reflected};
 
 use crate::commands::present::Legend;
 use crate::commands::sync::{SentChange, SyncOutput};

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::support::bundle::Reflected;
+use crate::support::host_sync::Reflected;
 
 use super::SentChange;
 

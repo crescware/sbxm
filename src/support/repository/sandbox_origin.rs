@@ -7,7 +7,7 @@ use crate::git;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::ProjectId;
-use crate::support::bundle;
+use crate::support::host_sync;
 
 use super::{PushRefusal, TagFollowing, push_to_sandbox, refresh_origin};
 
@@ -92,7 +92,7 @@ impl SandboxOrigin {
         match self {
             SandboxOrigin::Github(_) => Ok(Vec::new()),
             SandboxOrigin::Host { repository, .. } => {
-                bundle::restore_saved_branches(host, repository, sandbox, git_dir)
+                host_sync::restore_saved_branches(host, repository, sandbox, git_dir)
             }
         }
     }
@@ -116,7 +116,7 @@ impl SandboxOrigin {
                 Ok(Vec::new())
             }
             SandboxOrigin::Host { repository, .. } => {
-                bundle::require_something_to_send(host, repository)?;
+                host_sync::require_something_to_send(host, repository)?;
                 push_to_sandbox(host, repository, sandbox, git_dir)
             }
         }

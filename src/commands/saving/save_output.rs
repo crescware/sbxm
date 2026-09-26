@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::support::bundle::RefChange;
+use crate::support::host_sync::RefChange;
 
 /// 保存の結果。
 #[derive(Debug, Clone, PartialEq, Eq)]

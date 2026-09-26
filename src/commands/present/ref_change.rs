@@ -1,5 +1,5 @@
 use crate::design::{Inline, VisualState};
-use crate::support::bundle::RefChange;
+use crate::support::host_sync::RefChange;
 
 /// Sandboxから取り込んだrefの変化。前の先端を退避した変化は、良し悪しではなく注意である。
 pub fn ref_change(change: &RefChange) -> Inline {

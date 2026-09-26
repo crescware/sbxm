@@ -1,5 +1,5 @@
 use crate::diagnostics::Diagnostic;
-use crate::support::bundle::AutoSaved;
+use crate::support::host_sync::AutoSaved;
 
 use super::StopOutcome;
 

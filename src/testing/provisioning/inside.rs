@@ -89,7 +89,9 @@ impl World {
                 Some(ok())
             }
             // 保存の前にworktreeのHEADを置く手順。このfakeのSandboxは保存するものを持たない。
-            ["sh", "-c", script, "sh", _] if *script == crate::support::bundle::PLACE_SAVE_REFS => {
+            ["sh", "-c", script, "sh", _]
+                if *script == crate::support::host_sync::PLACE_SAVE_REFS =>
+            {
                 Some((0, "empty\n".to_string()))
             }
             // fetchの前の認証確認。登録があればGitHubは受け付ける。
