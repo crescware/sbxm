@@ -3,14 +3,14 @@ use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-use super::ssh_host;
+use super::{proxy_command_configured, ssh_host};
 
 /// `sandbox`へsshでつながる設定があることを、接続せずに確かめる。
 ///
 /// sbxが用意するProxyCommandが、`<sandbox>.sbx`をSandboxへつなぐ。`ssh -G`は接続せず、
-/// その宛先に対する実効設定だけを表示する。判定は`status --global`のRemote SSHと同じで
-/// ある。hostにあるrepositoryは、このsshでSandboxのoriginを書き込むため、Sandboxを作る
-/// 前に確かめる。作ってから届かないと分かるのでは遅い。
+/// その宛先に対する実効設定だけを表示する。判定は`status --global`のRemote SSHと共有する。
+/// hostにあるrepositoryは、このsshでSandboxのoriginを書き込むため、Sandboxを作る前に
+/// 確かめる。作ってから届かないと分かるのでは遅い。
 pub fn require_ssh(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     let destination = ssh_host(sandbox);
     let spec = CommandSpec::probe("ssh", &["-G", &destination])
@@ -27,11 +27,7 @@ pub fn require_ssh(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
             .fact(Fact::cause(stderr.trim())),
         ));
     }
-    let configured = outcome
-        .stdout_text()
-        .lines()
-        .any(|line| line.trim().to_ascii_lowercase().starts_with("proxycommand"));
-    if configured {
+    if proxy_command_configured(&outcome.stdout_text()) {
         return Ok(());
     }
     Err(Error::single(
