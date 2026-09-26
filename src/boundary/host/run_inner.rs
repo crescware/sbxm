@@ -13,7 +13,7 @@ use super::{
 ///
 /// 捕捉した出力を読むのはsbxmだけなので、利用者の端末はこの実行の影響を受けない。
 pub(super) fn run_inner(spec: &CommandSpec, limit: Option<Duration>) -> Result<CommandOutcome> {
-    let mut command = configure(spec)?;
+    let mut command = configure(spec);
 
     // Capture commandを専用のprocess groupへ置く。ただし打ち切りでgroupへsignalは送らず、
     // `terminate_child`は直接の子だけを終わらせる。専用groupの目的は、端末からforeground

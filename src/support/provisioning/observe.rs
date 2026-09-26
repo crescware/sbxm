@@ -73,7 +73,7 @@ pub(crate) fn observe(
             && observation.workspace.is_matching()
             && entry.state == SandboxState::Running
         {
-            let origin = repository::SandboxOrigin::of(paths, metadata)?;
+            let origin = repository::SandboxOrigin::of(metadata)?;
             observe_sandbox(
                 host,
                 entry,

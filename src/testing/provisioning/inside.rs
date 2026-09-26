@@ -46,7 +46,7 @@ impl World {
             .unwrap_or_else(ok)
     }
 
-    /// `sbx exec -i`のstdinで受け取ったbyte列を、宣言fileまたはbundleとして置く起動。
+    /// `sbx exec -i`のstdinで受け取ったbyte列を、宣言fileとして置く起動。
     ///
     /// 実物の手順と同じく、受け取ったbyte列のdigestが期待と一致した場合だけ置き、一致
     /// しなければ何も置かずに失敗する。
@@ -89,7 +89,9 @@ impl World {
                 Some(ok())
             }
             // 保存の前にworktreeのHEADを置く手順。このfakeのSandboxは保存するものを持たない。
-            ["sh", "-c", script, "sh", _] if *script == crate::support::bundle::PLACE_SAVE_REFS => {
+            ["sh", "-c", script, "sh", _]
+                if *script == crate::support::host_sync::PLACE_SAVE_REFS =>
+            {
                 Some((0, "empty\n".to_string()))
             }
             // fetchの前の認証確認。登録があればGitHubは受け付ける。

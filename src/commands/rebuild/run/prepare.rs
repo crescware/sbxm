@@ -9,7 +9,7 @@ use crate::project::SandboxName;
 use crate::design::ProgressSink;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::protection::{self, ProtectionSnapshot};
-use crate::support::{daemon, docker, generation, image, provisioning, select};
+use crate::support::{daemon, docker, generation, host_sync, image, provisioning, sandbox, select};
 
 use crate::commands::rebuild::Target;
 
@@ -60,6 +60,12 @@ pub fn prepare(
     docker::require_reachable(host)?;
 
     let name = SandboxName::derive(locked.metadata.canonical_id());
+    // hostにあるrepositoryは、作り直したSandboxへhostのgitがsshで書き込む。古いSandboxを
+    // 消してから、書き込めないと分かるのでは遅い。構築の前の確認と同じものを確かめる。
+    if let Some(repository) = locked.metadata.repository.host_path() {
+        host_sync::require_something_to_send(host, repository)?;
+        sandbox::require_ssh(host, name.as_str())?;
+    }
     let current = generation::current_dockerfile_hash(&locked.paths)?;
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;

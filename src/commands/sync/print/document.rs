@@ -2,10 +2,10 @@ use crate::design::{Document, Inline, Table};
 use crate::i18n::Locale;
 use crate::msg;
 use crate::paths;
-use crate::support::bundle::{ReflectResult, Reflected};
+use crate::support::host_sync::{ReflectResult, Reflected};
 
 use crate::commands::present::Legend;
-use crate::commands::sync::SyncOutput;
+use crate::commands::sync::{SentChange, SyncOutput};
 
 /// `sync`が並べるもの。
 ///
@@ -60,6 +60,15 @@ pub fn document(output: &SyncOutput, locale: Locale) -> Document {
             document = document.note(msg!(
                 "sync-refused-because",
                 reference = entry.reference.clone(),
+                reason = reason.clone()
+            ));
+        }
+    }
+    for change in &output.sent {
+        if let SentChange::Refused { reference, reason } = change {
+            document = document.note(msg!(
+                "sync-refused-because",
+                reference = reference.clone(),
                 reason = reason.clone()
             ));
         }

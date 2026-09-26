@@ -8,7 +8,7 @@ use crate::support::repository::host_git;
 
 /// hostの`repository`に、Sandboxへ送るbranchかtagがあることを確かめる。
 ///
-/// branchもtagも無いrepositoryからは、gitがbundleを作らない。理由を名指しして断る。
+/// branchもtagも無いrepositoryからは、Sandboxのoriginへ送るものが無い。理由を名指しして断る。
 /// 無くなったrepositoryも、ここで名指しして断る。
 pub fn require_something_to_send(host: &dyn HostEnvironment, repository: &Path) -> Result<()> {
     let listed = host_git(

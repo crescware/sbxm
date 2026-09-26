@@ -1542,7 +1542,7 @@ fn local_host_to_rebuild(
         0,
         &format!("refs/sbx/{name}/heads/main\n"),
     )
-    // 新しいSandboxのoriginは、hostから送ったbundleを指す。
+    // 新しいSandboxのoriginは、hostのgitが書き込む。Sandboxの中からは届かない。
     .answering(
         "for-each-ref --count=1 --format=%(refname) refs/heads/ refs/tags/",
         0,
@@ -1551,7 +1551,7 @@ fn local_host_to_rebuild(
     .answering(
         &format!("exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.url"),
         0,
-        &format!("{git_dir}/sbxm/origin.bundle\n"),
+        &format!("sbxm-host::{}\n", project.metadata.display_id()),
     )
     // hostへ保存したbranchが2本ある。
     .answering(
@@ -1581,6 +1581,62 @@ fn local_host_to_rebuild(
     )
     // 作り直したSandboxには、まだworktreeが無い。
     .answering(&format!("exec {name} -- test -e {worktree}"), 1, ""))
+}
+
+#[test]
+fn a_local_project_the_host_cannot_write_into_stops_before_the_old_sandbox_goes() -> Checked {
+    // 作り直したSandboxのoriginは、hostのgitがsshで書き込む。書き込めないと分かるのが
+    // 古いSandboxを消したあとでは遅い。
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register_local("/srv/code/example-repo/.git", "example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
+    let target = sha256_hex(b"unchanged\n");
+    project.metadata.provisioning.dockerfile_sha256 = target.clone();
+    metadata::update(&project.paths, &project.metadata).required()?;
+    let image = image::image_name(&project.sandbox, &target);
+    let name = project.sandbox.as_str().to_string();
+
+    let cases = [
+        (
+            format!("-G {name}.sbx"),
+            "hostname example\n",
+            ErrorId::RemoteSshUnconfigured,
+        ),
+        (
+            "for-each-ref --count=1 --format=%(refname) refs/heads/ refs/tags/".to_string(),
+            "",
+            ErrorId::HostRepositoryEmpty,
+        ),
+    ];
+    for (needle, answer, id) in cases {
+        let host = local_host_to_rebuild(&fixture, &project, &image, &target)?
+            .answering(&needle, 0, answer);
+
+        let error = prepare(
+            Target {
+                location: &fixture.location,
+                requested: Some(&project_id("local/example-repo")?),
+                prompt: &mut ScriptedPrompt::choosing(0),
+            },
+            &host,
+            &fixture.workspace_root,
+            poll(),
+            &mut SilentProgress,
+        )
+        .refused_because("the host cannot write into a new sandbox")?;
+
+        assert_eq!(error.first_id(), Some(id), "{needle}");
+        assert!(
+            !host
+                .calls()
+                .iter()
+                .any(|args| args.first().is_some_and(|arg| arg == "rm")),
+            "the old sandbox is kept: {:?}",
+            host.calls()
+        );
+        assert!(!host.ran("create --name"), "{:?}", host.calls());
+    }
+    Ok(())
 }
 
 #[test]

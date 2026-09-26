@@ -440,10 +440,12 @@ repositoryがいくつあってもよく、どれを指すのかが決まらな�
 Sandboxは、渡したgit directoryが今いるbranch（worktreeの`.git`なら、そのworktreeの
 branch）、または`--detach`で渡したbranchから始まります。
 
-GitHub tokenは関わらないため、登録の手順は要りません。`open`がSandboxを構築するとき、
-sbxmはhostのrepositoryのbranchとtagを1つの`git bundle`にし、`sbx exec`越しにSandboxへ
-送り、Sandboxの`origin`をそのbundleへ向けます。Sandboxの中からhostのrepositoryへ届く
-経路はありません。
+GitHub tokenは関わらないため、登録の手順は要りません。hostのrepositoryは`sbxm open`と
+同じ`ssh <sandbox>.sbx`でSandboxへ届くため、Docker SandboxesのRemote SSHの設定が要ります。
+設定があるかは`sbxm status --global`が示します。`open`がSandboxを構築するとき、hostの
+repositoryがこの接続で、branchとtagをSandboxの`origin/*`へpushします。接続はhostから始まり、
+Sandboxの中からhostのrepositoryへ届く経路はありません。Sandboxの中で`git fetch origin`を
+しても、何も変えずに失敗します。
 
 hostのrepositoryとSandboxは`sbxm sync local/<name>`で同期します。hostのrepositoryは、
 GitHubの案件でのGitHubの役を持ちます。Sandboxのbranchとtagは`git push`と同じ規則でhostへ、
@@ -453,7 +455,7 @@ branch、hostでcheckoutしているbranch、別の先を指す同じ名前のta
 です。GitHubへもう一度pushする前と同じく、Sandboxの中で`origin/<branch>`をmergeするか
 rebaseしてから、もう一度同期してください。
 
-Sandboxの中のbundleはSandboxと一緒に消えるため、rebuildとdestroyは、hostのrepositoryから
+Sandboxの`origin`はSandboxと一緒に消える写しにすぎないため、rebuildとdestroyは、hostのrepositoryから
 辿れるcommitだけを失われないものとして数えます。hostのbranchやtag、または
 `refs/sbx/<sandbox>/`へ保存したものから辿れる必要があります。hostに無いcommitがあれば止まり、
 対話端末では先に保存するかを訊きます。

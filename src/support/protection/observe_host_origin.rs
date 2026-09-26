@@ -5,7 +5,7 @@ use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::project::SandboxName;
 
-use crate::support::bundle;
+use crate::support::host_sync;
 use crate::support::repository::host_git;
 
 use super::{CommitCandidate, OriginObservation, UnobservableReason, host_label};
@@ -15,8 +15,8 @@ const ORIGIN_REFS_NAMESPACE: &str = "refs/remotes/origin/";
 
 /// hostにあるrepositoryを登録した案件で、hostのrepositoryをoriginとして観測する。
 ///
-/// Sandboxのoriginはhostから送ったbundleであり、送ったあとにhostで消したbranchも
-/// 持ち続ける。bundleから辿れても、Sandboxを消したあとに残るとは限らない。hostの
+/// Sandboxのoriginは、hostが最後に書き込んだときの写しであり、Sandboxと一緒に消える。
+/// Sandboxのoriginから辿れても、Sandboxを消したあとに残るとは限らない。hostの
 /// branch、tag、sbxmが`refs/sbx/<sandbox>/`へ保存した先端から辿れるcommitだけを、
 /// 失われないものとする。hostに無いcommitは、どこからも辿れないものとする。
 ///
@@ -28,7 +28,7 @@ pub fn observe_host_origin(
     sandbox: &SandboxName,
     candidates: &[CommitCandidate],
 ) -> Result<OriginObservation> {
-    let saved = bundle::saved_namespace(sandbox.as_str());
+    let saved = host_sync::saved_namespace(sandbox.as_str());
     let scopes = ["refs/heads/", "refs/tags/", saved.as_str()];
 
     let mut listing = vec!["for-each-ref", "--format=%(refname) %(objectname)"];

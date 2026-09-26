@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::project::SandboxName;
-use crate::support::bundle;
+use crate::support::host_sync;
 use crate::support::repository::host_git;
 
 use super::{OriginObservation, host_label};
@@ -27,9 +27,9 @@ pub(super) fn add_saved(
     else {
         return observation;
     };
-    let saved = bundle::saved_tips(host, repository, sandbox).unwrap_or_default();
+    let saved = host_sync::saved_tips(host, repository, sandbox).unwrap_or_default();
     if !saved.is_empty() {
-        let namespace = bundle::saved_namespace(sandbox.as_str());
+        let namespace = host_sync::saved_namespace(sandbox.as_str());
         for tip in saved {
             tips.insert(host_label(&tip.reference), tip.commit);
         }

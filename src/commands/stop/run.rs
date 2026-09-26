@@ -11,7 +11,7 @@ use crate::paths::{ExclusiveLock, LOCK_TIMEOUT};
 use crate::project::{ProjectId, SandboxName};
 
 use crate::commands::saving;
-use crate::support::bundle::AutoSaved;
+use crate::support::host_sync::AutoSaved;
 use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{daemon, generation, sandbox};

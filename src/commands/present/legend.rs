@@ -6,8 +6,8 @@ use crate::diagnostics::Msg;
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::msg;
-use crate::support::bundle::{RefChange, ReflectResult};
 use crate::support::files::Placement;
+use crate::support::host_sync::{RefChange, ReflectResult};
 use crate::support::status::StatusValue;
 
 use crate::commands::apply::ProjectResult;
@@ -119,6 +119,7 @@ impl Legend {
             SentChange::Created { .. } => "legend-sent-created",
             SentChange::Updated { .. } => "legend-sent-updated",
             SentChange::Removed { .. } => "legend-sent-removed",
+            SentChange::Refused { .. } => "legend-sent-refused",
         };
         self.cell(sent_change(change), description)
     }

@@ -1,20 +1,28 @@
 use std::path::PathBuf;
 
+use crate::commands::sync::SentChange;
 use crate::design::RenderingPolicy;
 use crate::i18n::Locale;
-use crate::support::bundle::{ReflectResult, Reflected};
+use crate::support::host_sync::{ReflectResult, Reflected};
 
 use crate::testing::outcome::{Checked, Required};
 
 use super::*;
 
 fn printed(reflected: Option<Vec<Reflected>>) -> Checked<(ExitCode, String)> {
+    printed_with(reflected, Vec::new())
+}
+
+fn printed_with(
+    reflected: Option<Vec<Reflected>>,
+    sent: Vec<SentChange>,
+) -> Checked<(ExitCode, String)> {
     let output = SyncOutput {
         project: "local/app".to_string(),
         repository: PathBuf::from("/Users/example/code/app/.git"),
         namespace: "sbxm-local-app-0123456789ab".to_string(),
         reflected,
-        sent: Vec::new(),
+        sent,
     };
     let mut stdout: Vec<u8> = Vec::new();
     let code = {
@@ -73,5 +81,36 @@ fn a_sandbox_branch_that_is_only_behind_does_not_fail_the_sync() -> Checked {
         let (code, _) = printed(reflected_refs.clone())?;
         assert_eq!(code, ExitCode::Success, "{reflected_refs:?}");
     }
+    Ok(())
+}
+
+#[test]
+fn a_tag_the_sandbox_kept_ends_the_sync_with_a_failure_too() -> Checked {
+    // Sandboxの中の`git fetch`も、既存のtagを上書きできなければ失敗で終わる。
+    let (code, stdout) = printed_with(
+        Some(Vec::new()),
+        vec![SentChange::Refused {
+            reference: "refs/tags/v1".to_string(),
+            reason: "already exists".to_string(),
+        }],
+    )?;
+    assert_eq!(code, ExitCode::Failure);
+    assert!(stdout.contains("refs/tags/v1"), "{stdout}");
+
+    let (code, _) = printed_with(
+        Some(Vec::new()),
+        vec![
+            SentChange::Created {
+                reference: "refs/remotes/origin/topic".to_string(),
+            },
+            SentChange::Updated {
+                reference: "refs/remotes/origin/main".to_string(),
+            },
+            SentChange::Removed {
+                reference: "refs/remotes/origin/old".to_string(),
+            },
+        ],
+    )?;
+    assert_eq!(code, ExitCode::Success);
     Ok(())
 }

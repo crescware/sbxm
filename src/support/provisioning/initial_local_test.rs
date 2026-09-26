@@ -1,11 +1,9 @@
-//! hostにあるrepositoryの案件は、hostから送ったbundleをoriginとしてSandboxを作る。
+//! hostにあるrepositoryの案件は、hostのgitがssh越しにoriginを書き込んでSandboxを作る。
 
 use crate::commands::add::AddRequest;
 use crate::repository::RepositoryIdentity;
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::provisioning::{Bench, World};
-
-const BUNDLE: &str = "/home/agent/work/app/.git/sbxm/origin.bundle";
 
 fn local_request() -> Checked<AddRequest> {
     Ok(AddRequest {
@@ -19,7 +17,7 @@ fn local_request() -> Checked<AddRequest> {
 }
 
 #[test]
-fn a_host_repository_is_built_from_a_bundle_sent_from_the_host() -> Checked {
+fn a_host_repository_is_pushed_into_the_sandbox_origin_from_the_host() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let output = bench
@@ -35,19 +33,41 @@ fn a_host_repository_is_built_from_a_bundle_sent_from_the_host() -> Checked {
             .position(|call| call.contains(needle))
             .required_because(&format!("no command matched {needle}: {calls:?}"))
     };
-    // originはSandboxの中に置いたbundleであり、hostのbranchとtagを送ってから取る。
-    position(&format!("remote add origin {BUNDLE}"))?;
+    // Sandboxの中から届くoriginは無い。hostのgitが、sshでbranchとtagを書き込む。
+    // 書き込む先のsshは、Sandboxを作る前に確かめる。
+    let origin = position("remote add origin sbxm-host::local/app")?;
+    let branches = position(".git +refs/heads/*:refs/remotes/origin/*")?;
+    let tags = position("refs/tags/*:refs/tags/*")?;
+    assert!(position("-G sbxm-local-app-")? < origin, "{calls:?}");
+    assert!(origin < branches && branches < tags, "{calls:?}");
     assert!(
-        position("bundle create --quiet")? < position("fetch --prune --progress origin")?,
-        "the bundle reaches the sandbox before it is fetched"
+        calls[branches].contains("push --porcelain --no-verify ssh://sbxm-local-app-"),
+        "{calls:?}"
     );
     assert!(
-        world
-            .contents
-            .borrow()
-            .get(BUNDLE)
-            .is_some_and(|bytes| { String::from_utf8_lossy(bytes).contains("--branches --tags") }),
-        "the sandbox holds the bundle of the host branches and tags"
+        !calls
+            .iter()
+            .any(|call| call.contains("fetch --prune --progress origin")),
+        "the sandbox does not fetch from an origin it cannot reach: {calls:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn building_a_host_repository_says_the_host_writes_into_the_sandbox() -> Checked {
+    // Sandboxの中ではfetchしない。進捗も、hostから書き込むことを示す。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = bench.register(&world, &local_request()?).required()?;
+    let mut progress = crate::testing::recorded_output::RecordedOutput::new();
+
+    bench.ensure(&world, &project, &mut progress).required()?;
+
+    let steps: Vec<&str> = progress.steps.iter().map(|step| step.id).collect();
+    assert!(steps.contains(&"progress-sending-repository"), "{steps:?}");
+    assert!(
+        !steps.contains(&"progress-fetching-repository"),
+        "{steps:?}"
     );
     Ok(())
 }
@@ -177,7 +197,7 @@ fn a_lost_sandbox_is_built_again_with_the_branches_saved_on_the_host() -> Checke
     };
     let restored = position("push --quiet --no-verify ssh://")?;
     assert!(
-        position("fetch --prune --progress origin")? < restored
+        position(".git +refs/heads/*:refs/remotes/origin/*")? < restored
             && restored < position("worktree add")?,
         "the branches come back after the origin is read and before the worktrees"
     );

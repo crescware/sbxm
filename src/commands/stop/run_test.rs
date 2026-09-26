@@ -298,7 +298,7 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
         .iter()
         .position(|call| {
             call.contains(&format!("exec {}", local.sandbox))
-                && call.contains(crate::support::bundle::PLACE_SAVE_REFS)
+                && call.contains(crate::support::host_sync::PLACE_SAVE_REFS)
         })
         .required_because("the local sandbox is asked for its commits")?;
     let stopping = calls
@@ -335,7 +335,7 @@ impl crate::boundary::host::HostEnvironment for ProbingLock {
         if spec
             .args
             .iter()
-            .any(|arg| arg == crate::support::bundle::PLACE_SAVE_REFS)
+            .any(|arg| arg == crate::support::host_sync::PLACE_SAVE_REFS)
         {
             let taken = crate::paths::acquire_exclusive_lock(
                 &self.lock,

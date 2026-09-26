@@ -5,7 +5,7 @@ use crate::config::ConfigLocation;
 use crate::design::ProgressSink;
 use crate::paths::LOCK_TIMEOUT;
 use crate::project::ProjectId;
-use crate::support::bundle::AutoSaved;
+use crate::support::host_sync::AutoSaved;
 use crate::support::select;
 
 use super::save_selected;

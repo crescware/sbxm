@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::boundary::host::HostEnvironment;
 use crate::design::ProgressSink;
-use crate::support::bundle::{self, AutoSaved};
+use crate::support::host_sync::{self, AutoSaved};
 use crate::support::inventory;
 use crate::support::select::Candidate;
 
@@ -28,7 +28,7 @@ pub fn save_selected(
     let display_id = candidate.display_id();
     let locked = match candidate.lock_within(wait) {
         Ok(locked) => locked,
-        Err(error) => return AutoSaved::Failed(bundle::save_failed(&display_id, &error)),
+        Err(error) => return AutoSaved::Failed(host_sync::save_failed(&display_id, &error)),
     };
     // 世代の切替の途中は保存しない。続きの`rebuild`へ任せる。
     if locked.metadata.rebuild.is_some()
@@ -36,5 +36,5 @@ pub fn save_selected(
     {
         return AutoSaved::Nothing;
     }
-    bundle::auto_save(host, &locked.paths, &locked.metadata, progress)
+    host_sync::auto_save(host, &locked.paths, &locked.metadata, progress)
 }

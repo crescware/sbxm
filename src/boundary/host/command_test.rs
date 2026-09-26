@@ -49,7 +49,7 @@ fn run_capture_after_ready(
     limit: Duration,
     started: &mut Option<Instant>,
 ) -> Result<()> {
-    let mut command = configure(spec)?;
+    let mut command = configure(spec);
     command.process_group(0);
     let signal = SignalGuard::new().map_err(|error| spawn_failure(spec, &error))?;
     let mut child = spawn(&mut command, spec)?;
@@ -380,27 +380,25 @@ fn security_sensitive_runs_drop_the_ssh_agent_socket() -> Checked {
 }
 
 #[test]
-fn security_sensitive_runs_touch_no_environment_variable_other_than_the_ssh_agent_socket() -> Checked
-{
+fn security_sensitive_runs_touch_no_environment_variable_other_than_the_ssh_agent_socket() {
     // `env` / `env_remove`による明示的な変更は`get_envs()`に現れ、
     // `env_clear`を呼んだ場合もこのassertionの結果が変わる。
     // `DOCKER_SANDBOXES_ROOT_SIZE`のような他の変数は、実際のprocess environmentを
     // 動かさずとも、この一覧が`SSH_AUTH_SOCK`の除去だけであることで素通りすると示せる。
     let spec = CommandSpec::probe("true", &[]).env(EnvPolicy::InheritWithoutSshAgent);
-    let command = configure(&spec).required()?;
+    let command = configure(&spec);
     let envs: Vec<(&std::ffi::OsStr, Option<&std::ffi::OsStr>)> = command.get_envs().collect();
     assert_eq!(envs, [(std::ffi::OsStr::new("SSH_AUTH_SOCK"), None)]);
-    Ok(())
 }
 
 #[test]
-fn git_in_a_host_repository_forgets_where_the_caller_pointed_git() -> Checked {
+fn git_in_a_host_repository_forgets_where_the_caller_pointed_git() {
     // gitのhookやaliasから起動されると、`GIT_DIR`などが利用者のrepositoryと別の場所を
     // 指している。hostのrepositoryで走らせるgitは、それを引き継がない。
     let spec = CommandSpec::probe("git", &[])
         .env(EnvPolicy::HostRepository)
         .working_dir(Path::new("/work/example-repo"));
-    let command = configure(&spec).required()?;
+    let command = configure(&spec);
     let envs: Vec<(&std::ffi::OsStr, Option<&std::ffi::OsStr>)> = command.get_envs().collect();
     let removed = |name: &str| envs.contains(&(std::ffi::OsStr::new(name), None));
     for name in [
@@ -420,7 +418,6 @@ fn git_in_a_host_repository_forgets_where_the_caller_pointed_git() -> Checked {
         std::ffi::OsStr::new("GIT_CEILING_DIRECTORIES"),
         Some(std::ffi::OsStr::new("/work"))
     )));
-    Ok(())
 }
 
 #[test]
@@ -875,44 +872,6 @@ fn the_real_host_streams_stdout_itself() -> Checked {
     let mut sink = Vec::new();
     retrying(|| RealHost.run_streaming(&spec, &mut sink, 1024)).required()?;
     assert_eq!(sink, b"received");
-    Ok(())
-}
-
-#[test]
-fn a_file_connected_to_stdin_reaches_the_child_without_being_read_by_sbxm() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let path = dir.path().join("input.bundle");
-    let bytes: Vec<u8> = (0..=255u8).cycle().take(300_000).collect();
-    std::fs::write(&path, &bytes).required()?;
-    let spec = CommandSpec::capture("sh", &["-c", "cat"]).with_input_file(&path);
-
-    let outcome = RealHost.run(&spec).required()?;
-
-    assert!(outcome.success());
-    assert_eq!(outcome.stdout, bytes);
-    assert_eq!(spec.input_file(), Some(path.as_path()));
-    assert_eq!(spec.input(), None);
-    Ok(())
-}
-
-#[test]
-fn a_missing_input_file_stops_before_the_child_is_started() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let marker = dir.path().join("started");
-    let marker_text = marker.display().to_string();
-    let spec = CommandSpec::capture("sh", &["-c", "touch \"$1\"", "sh", &marker_text])
-        .with_input_file(&dir.path().join("missing.bundle"));
-
-    let error = RealHost
-        .run(&spec)
-        .refused_because("the input file is missing")?;
-
-    // 書き込みが途中で止まったのではない。開けなかったことを名指しする。
-    assert_eq!(
-        error.first_id(),
-        Some(ErrorId::ExternalCommandInputUnavailable)
-    );
-    assert!(!marker.exists(), "the child is never started");
     Ok(())
 }
 

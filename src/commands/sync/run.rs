@@ -8,7 +8,7 @@ use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
 use crate::support::repository::{self, SandboxOrigin};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{bundle, generation, inventory};
+use crate::support::{generation, host_sync, inventory};
 
 use super::{SyncOutput, send_host_refs};
 
@@ -29,7 +29,7 @@ pub fn run(
 ) -> Result<SyncOutput> {
     let locked = select::one(location, requested, &msg!("select-sync-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
-    let origin = SandboxOrigin::of(&locked.paths, &locked.metadata)?;
+    let origin = SandboxOrigin::of(&locked.metadata)?;
     let SandboxOrigin::Host { repository, .. } = &origin else {
         let project = locked.metadata.display_id();
         return Err(Error::single(
@@ -50,8 +50,12 @@ pub fn run(
     // 案件のbare repositoryである。
     repository::verify_bare_clone(host, sandbox.as_str(), &origin, &git_dir)?;
 
-    let reflected = match bundle::save_to_host(host, &sandbox, &git_dir, repository)? {
-        Some(_) => Some(bundle::reflect_saved(host, repository, sandbox.as_str())?),
+    let reflected = match host_sync::save_to_host(host, &sandbox, &git_dir, repository)? {
+        Some(_) => Some(host_sync::reflect_saved(
+            host,
+            repository,
+            sandbox.as_str(),
+        )?),
         None => None,
     };
     let sent = send_host_refs(host, &origin, sandbox.as_str(), &git_dir)?;

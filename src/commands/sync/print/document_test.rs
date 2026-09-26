@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::design::{RenderingPolicy, Ui};
 use crate::i18n::Locale;
-use crate::support::bundle::{ReflectResult, Reflected};
+use crate::support::host_sync::{ReflectResult, Reflected};
 
 use crate::testing::outcome::{Checked, Required};
 
@@ -128,6 +128,28 @@ fn a_branch_that_is_only_behind_loses_nothing_and_is_not_said_to_be_kept() -> Ch
     )?;
     assert!(text.contains("behind"), "{text}");
     assert!(!text.contains("refs/sbx/"), "{text}");
+    Ok(())
+}
+
+#[test]
+fn a_tag_the_sandbox_kept_is_listed_with_why_git_refused_it() -> Checked {
+    let text = rendered(
+        &output(
+            None,
+            vec![SentChange::Refused {
+                reference: "refs/tags/v1".to_string(),
+                reason: "already exists".to_string(),
+            }],
+        ),
+        Locale::En,
+    )?;
+    for expected in [
+        "refs/tags/v1",
+        "refused",
+        "Git refused refs/tags/v1: already exists",
+    ] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
     Ok(())
 }
 

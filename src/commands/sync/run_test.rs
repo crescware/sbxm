@@ -2,7 +2,7 @@ use crate::commands::add::AddRequest;
 use crate::diagnostics::ErrorId;
 use crate::project::ProjectId;
 use crate::repository::RepositoryIdentity;
-use crate::support::bundle::PLACE_SAVE_REFS;
+use crate::support::host_sync::PLACE_SAVE_REFS;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::prompt::ScriptedPrompt;
@@ -65,13 +65,9 @@ fn the_sandbox_is_saved_and_reflected_before_the_host_is_sent_back() -> Checked 
         output.namespace
     ))?;
     let reflected = position("push --porcelain --no-verify .")?;
-    let sent = position("bundle create --quiet")?;
-    let fetched = position("fetch --prune origin")?;
+    let sent = position(".git +refs/heads/*:refs/remotes/origin/*")?;
     assert!(position(PLACE_SAVE_REFS)? < saved, "{calls:?}");
-    assert!(
-        saved < reflected && reflected < sent && sent < fetched,
-        "{calls:?}"
-    );
+    assert!(saved < reflected && reflected < sent, "{calls:?}");
     Ok(())
 }
 
@@ -86,14 +82,17 @@ fn a_sandbox_with_nothing_to_save_is_still_sent_the_host() -> Checked {
 
     assert_eq!(output.reflected, None);
     let calls = world.since(mark);
+    // 保存するものが無ければ、hostのbranchへの反映も無い。
     assert!(
-        !calls.iter().any(|call| call.contains("push --porcelain")),
+        !calls
+            .iter()
+            .any(|call| call.contains("push --porcelain --no-verify . ")),
         "{calls:?}"
     );
     assert!(
         calls
             .iter()
-            .any(|call| call.contains("fetch --prune origin")),
+            .any(|call| call.contains(".git +refs/heads/*:refs/remotes/origin/*")),
         "{calls:?}"
     );
     Ok(())
@@ -136,7 +135,7 @@ fn a_stopped_sandbox_is_not_started_to_sync_with() -> Checked {
         !world
             .since(mark)
             .iter()
-            .any(|call| call.contains(PLACE_SAVE_REFS) || call.contains("bundle")),
+            .any(|call| call.contains(PLACE_SAVE_REFS) || call.contains("ssh://")),
         "{:?}",
         world.since(mark)
     );
@@ -160,7 +159,7 @@ fn a_sandbox_whose_repository_is_not_set_up_is_neither_read_nor_sent_to() -> Che
         !world
             .since(mark)
             .iter()
-            .any(|call| call.contains(PLACE_SAVE_REFS) || call.contains("bundle")),
+            .any(|call| call.contains(PLACE_SAVE_REFS) || call.contains("ssh://")),
         "{:?}",
         world.since(mark)
     );

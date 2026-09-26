@@ -11,7 +11,7 @@ sbxm sync [<project-id>]
 
 1. The sandbox's branches, tags, and each worktree's `HEAD` are saved under `refs/sbx/<sandbox>/` of the host repository. The host repository fetches them over `ssh <sandbox>.sbx`, the same connection that [`open`](../open/) uses, with `transfer.fsckObjects`. Only objects the host does not have yet are carried. The connection starts from the host; nothing in the sandbox can reach it. A branch rewritten or deleted in the sandbox keeps its previous tip under `refs/sbx/<sandbox>/archive/<time>/`, which is never removed automatically.
 2. The host repository pushes what was saved into its own branches and tags: `refs/sbx/<sandbox>/heads/*` to `refs/heads/*` and `refs/sbx/<sandbox>/tags/*` to `refs/tags/*`. The host repository's own receive hooks run; its `pre-push` hook does not, since nothing leaves the repository.
-3. The host repository's branches and tags are sent to the sandbox, which then runs `git fetch --prune origin`.
+3. The host repository pushes its branches into the sandbox's `origin/*`, removing those deleted on the host, and its tags to the same names, over the same connection.
 
 Because the host is brought up to date before it is sent back, `origin/<branch>` in the sandbox shows the host as it is after the sync.
 
@@ -31,10 +31,12 @@ Because deletions do not travel, a tag you delete on the host comes back at the 
 | `exists` | A tag of this name already points elsewhere in the host repository |
 | `refused` | Git refused the update for another reason, such as a receive hook; the reason is shown |
 
+In the sandbox's `origin`, a ref is `created`, `updated`, or `removed`, or `refused` when the sandbox already has a tag of that name pointing elsewhere; the sandbox's own tag is left.
+
 A branch checked out on the host moves along with its files when the host repository sets `receive.denyCurrentBranch` to `updateInstead` and has no uncommitted changes, as for any push into it.
 
 Whatever Git refused stays as it was, and its commits are kept under `refs/sbx/<sandbox>/`. To bring such a branch in, merge or rebase onto `origin/<branch>` inside the sandbox, then sync again, the same as you would before pushing to GitHub again. The sandbox's worktrees and branches are never touched by `sync`.
 
-When Git left any ref as it was, that is, any result other than `created`, `updated`, or `behind`, `sync` still shows the whole result and then exits with status `1`, as `git push` does. A sandbox branch that is only `behind` does not count: the host already has its commits.
+When Git left any ref as it was, that is, any result other than `created`, `updated`, or `behind` in the host repository, or `refused` in the sandbox's `origin`, `sync` still shows the whole result and then exits with status `1`, as `git push` and `git fetch` do. A sandbox branch that is only `behind` does not count: the host already has its commits.
 
 A project added from GitHub is refused: its sandbox fetches from and pushes to GitHub itself.

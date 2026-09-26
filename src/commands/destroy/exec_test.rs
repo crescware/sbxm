@@ -79,7 +79,7 @@ fn a_commit_saved_to_the_host_on_request_lets_the_plan_be_drawn() -> Checked {
         ran.stderr
     );
     assert!(
-        host.ran(crate::support::bundle::PLACE_SAVE_REFS),
+        host.ran(crate::support::host_sync::PLACE_SAVE_REFS),
         "the commits are saved to the host: {:?}",
         host.calls()
     );
@@ -105,7 +105,7 @@ fn choosing_not_to_save_stops_before_the_plan() -> Checked {
 
     assert_eq!(ran.code, ExitCode::Failure, "{}{}", ran.stdout, ran.stderr);
     assert!(
-        !host.ran(crate::support::bundle::PLACE_SAVE_REFS),
+        !host.ran(crate::support::host_sync::PLACE_SAVE_REFS),
         "{:?}",
         host.calls()
     );

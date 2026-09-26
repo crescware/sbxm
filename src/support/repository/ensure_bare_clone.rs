@@ -6,13 +6,13 @@ use crate::project::SandboxLayout;
 use crate::design::ProgressSink;
 use crate::support::sandbox;
 
-use super::{FETCH_REFSPEC, SandboxOrigin, TagFollowing, verify_bare_clone};
+use super::{FETCH_REFSPEC, SandboxOrigin, settle_refusals, verify_bare_clone};
 
 /// bare repositoryを用意する。
 ///
 /// 既存のdirectoryは、対象repositoryのbare cloneであると証明できた場合だけ再利用し、
-/// 条件を満たさない場合は自動削除せずに停止する。hostにあるrepositoryは、fetchの
-/// 前にhostからbundleを送る。
+/// 条件を満たさない場合は自動削除せずに停止する。hostにあるrepositoryは、hostのgitが
+/// ssh越しにoriginを書き込む。
 pub fn ensure_bare_clone(
     host: &dyn HostEnvironment,
     sandbox: &str,
@@ -63,12 +63,14 @@ pub fn ensure_bare_clone(
     }
     verify_bare_clone(host, sandbox, origin, &git_dir)?;
 
-    // remote-tracking refを現在の状態にしてから、起点refを解決する。
-    progress.step(msg!("progress-fetching-repository"));
-    origin.deliver(host, sandbox)?;
-    super::refresh_origin(host, sandbox, &git_dir, TagFollowing::Auto, Some(progress))?
-        .require_success()?;
-    Ok(())
+    // remote-tracking refを現在の状態にしてから、起点refを解決する。hostにあるrepositoryは、
+    // Sandboxの中でfetchせず、hostのgitが書き込む。
+    progress.step(match origin {
+        SandboxOrigin::Github(_) => msg!("progress-fetching-repository"),
+        SandboxOrigin::Host { .. } => msg!("progress-sending-repository"),
+    });
+    let refused = origin.refresh(host, sandbox, &git_dir, Some(&mut *progress))?;
+    settle_refusals(sandbox, &refused, progress)
 }
 
 /// `git init --bare`の直後に中断した、まだ利用者のrefもobjectも無いrepositoryだけを

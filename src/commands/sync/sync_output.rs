@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::support::bundle::{ReflectResult, Reflected};
+use crate::support::host_sync::{ReflectResult, Reflected};
 
 use super::SentChange;
 
@@ -30,5 +30,18 @@ impl SyncOutput {
                 ReflectResult::Created | ReflectResult::Updated | ReflectResult::Behind
             )
         })
+    }
+
+    /// gitが断ったrefが、hostの側かSandboxのoriginの側にあるか。
+    ///
+    /// hostの側は`left_as_it_was`と同じである。Sandboxのoriginの側は、同じ名前で別の先を
+    /// 指すtagのように、Sandboxが自分の側を残したものである。Sandboxの中の`git fetch`も、
+    /// 既存のtagを上書きできなければ失敗で終わる。
+    pub fn refused_any(&self) -> bool {
+        self.left_as_it_was()
+            || self
+                .sent
+                .iter()
+                .any(|change| matches!(change, SentChange::Refused { .. }))
     }
 }

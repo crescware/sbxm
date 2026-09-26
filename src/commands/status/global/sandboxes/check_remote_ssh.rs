@@ -4,6 +4,7 @@ use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
 use crate::support::StatusValue;
+use crate::support::sandbox::proxy_command_configured;
 
 use crate::commands::status::global::external::{describe, external_of, read_stdout};
 use crate::commands::status::global::{GlobalStatus, push};
@@ -17,10 +18,7 @@ pub fn check_remote_ssh(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
     // `ssh -G`は接続せず、その宛先に対する実効設定だけを表示する。
     match read_stdout(host, "ssh", &["-G", "sbxm-probe.sbx"]) {
         Ok(output) => {
-            let configured = output
-                .lines()
-                .any(|line| line.trim().to_ascii_lowercase().starts_with("proxycommand"));
-            if configured {
+            if proxy_command_configured(&output) {
                 push(status, "status-item-remote-ssh", StatusValue::Ready);
             } else {
                 push(status, "status-item-remote-ssh", StatusValue::Missing);

@@ -18,7 +18,7 @@ pub(super) fn run_streaming(
     sink: &mut dyn Write,
     limit: u64,
 ) -> Result<CommandOutcome> {
-    let mut command = configure(spec)?;
+    let mut command = configure(spec);
     // `run_inner`と同じく専用のprocess groupへ置き、端末からのCtrl-Cを子孫へ届けない。
     command.process_group(0);
     let signal = SignalGuard::new().map_err(|error| spawn_failure(spec, &error))?;

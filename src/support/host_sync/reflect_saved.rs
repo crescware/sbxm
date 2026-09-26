@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::{Result, unparseable};
-use crate::support::repository::host_git;
+use crate::support::repository::{host_git, refusal_reason};
 
 use super::{ReflectResult, Reflected, saved_namespace};
 
@@ -86,10 +86,7 @@ fn rejection(
     reference: &str,
     summary: &str,
 ) -> Result<ReflectResult> {
-    let reason = summary
-        .rsplit_once(" (")
-        .and_then(|(_, reason)| reason.strip_suffix(')'))
-        .unwrap_or(summary);
+    let reason = refusal_reason(summary);
     Ok(match reason {
         "non-fast-forward" if contains(host, repository, reference, source)? => {
             ReflectResult::Behind

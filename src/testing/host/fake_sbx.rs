@@ -121,9 +121,15 @@ impl HostEnvironment for FakeSbx {
                 None if spec
                     .args
                     .iter()
-                    .any(|arg| arg == crate::support::bundle::PLACE_SAVE_REFS) =>
+                    .any(|arg| arg == crate::support::host_sync::PLACE_SAVE_REFS) =>
                 {
                     (0, "empty\n".to_string())
+                }
+                // 指定が無ければ、sbxが用意するRemote SSHの設定がある。
+                None if spec.program == "ssh"
+                    && spec.args.first().is_some_and(|arg| arg == "-G") =>
+                {
+                    (0, "proxycommand sbx ssh-proxy %h\n".to_string())
                 }
                 None => (0, String::new()),
             }

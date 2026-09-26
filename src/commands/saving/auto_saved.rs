@@ -1,5 +1,5 @@
 use crate::design::{Document, Ui};
-use crate::support::bundle::AutoSaved;
+use crate::support::host_sync::AutoSaved;
 
 /// 自動で保存した結果を示す。保存できなかった場合はwarningとし、操作は止めない。
 ///

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::design::{RenderingPolicy, Ui};
 use crate::i18n::Locale;
-use crate::support::bundle::RefChange;
+use crate::support::host_sync::RefChange;
 
 use crate::testing::outcome::{Checked, Required};
 

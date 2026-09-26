@@ -2,7 +2,7 @@ use crate::commands::add::AddRequest;
 use crate::metadata;
 use crate::project::ProjectId;
 use crate::repository::RepositoryIdentity;
-use crate::support::bundle::AutoSaved;
+use crate::support::host_sync::AutoSaved;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::provisioning::{Bench, World};
@@ -28,7 +28,7 @@ fn tried_to_save(world: &World, mark: usize) -> bool {
     world
         .since(mark)
         .iter()
-        .any(|call| call.contains(crate::support::bundle::PLACE_SAVE_REFS))
+        .any(|call| call.contains(crate::support::host_sync::PLACE_SAVE_REFS))
 }
 
 #[test]

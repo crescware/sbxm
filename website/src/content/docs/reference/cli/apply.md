@@ -23,4 +23,4 @@ Without `--force`, `--files` refuses before placing anything when a destination 
 
 The worktree count can increase but not decrease. Removing a worktree is not performed as a side effect because its contents may need preservation.
 
-Adding worktrees first brings the sandbox's repository up to date with its origin. For a project added with `--local`, that means the host repository's branches and tags are sent into the sandbox again, so the new worktrees start from what the host has now.
+Adding worktrees first brings the sandbox's repository up to date with its origin. For a project added with `--local`, that means the host repository pushes its branches and tags into the sandbox again, so the new worktrees start from what the host has now.
