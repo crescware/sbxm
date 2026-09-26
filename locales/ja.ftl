@@ -415,6 +415,7 @@ remediation-github-credential-rejected = { github-token-scopes } tokenが有効�
 remediation-github-secret-incomplete = { github-token-scopes } この環境変数のsecretは既にあり、placeholderを指定しない登録は重複として拒否されます。次の形で登録すると、Sandboxが持っているplaceholderを保ったまま更新されます。そのあと同じcommandをもう一度実行してください。
 remediation-secret-still-registered = 登録が残ると、この案件の次の登録が重複として拒否されます。削除してから、同じcommandをもう一度実行してください。
 remediation-sandbox-repository-unusable = Sandbox内の { $path } を確認してください。sbxmは場所を空けるためにrepositoryやworktreeを削除しません。
+remediation-sandbox-host-origin-differs = このSandboxのoriginは今はhostがsshで書き込むもので、以前のversionのsbxmが作ったSandboxは別の場所を指しています。Sandboxを作り直してください。作り直しは、何かを消す前に、Sandboxのcommitがすべてhostにあることを確かめます。
 remediation-start-ref-unresolved = GitHub上のbranch名を確認し、branchが存在する状態でもう一度実行してください。
 remediation-project-incomplete = 登録をもう一度実行し、中断した工程から続けてください。
 remediation-project-inconsistent = registryと案件directoryを自分で突き合わせてください。sbxmは一方を他方に合わせて書き換えることはしません。

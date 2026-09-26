@@ -656,6 +656,41 @@ fn a_reason_the_sandbox_wrote_reaches_the_host_without_its_control_characters() 
 }
 
 #[test]
+fn a_sandbox_built_with_an_earlier_origin_is_pointed_at_a_rebuild() -> Checked {
+    // 以前のsbxmは、hostから送ったbundleをoriginにしていた。作り直せば揃うことを示す。
+    let git_dir = layout()?.bare_git_dir();
+    let host = healthy_clone()?.answering(
+        &format!("git --git-dir {git_dir} config --get-all remote.origin.url"),
+        &format!("{git_dir}/sbxm/origin.bundle\n"),
+    );
+    let origin = SandboxOrigin::Host {
+        repository: std::path::PathBuf::from("/home/user/code/app/.git"),
+        project: "local/app".to_string(),
+    };
+
+    let error = verify_bare_clone(&host, "sbxm-example", &origin, &git_dir)
+        .refused_because("the origin is not the one the host writes")?;
+
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::SandboxRepositoryUnusable);
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .required_because("the refusal says what to do")?;
+    assert!(
+        remediation
+            .commands
+            .iter()
+            .any(|command| command.as_str() == "sbxm rebuild local/app"),
+        "{remediation:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_host_repository_without_commits_sends_nothing() -> Checked {
     let root = tempfile::tempdir().required()?;
     let host = root.path().join("empty");

@@ -415,6 +415,7 @@ remediation-github-credential-rejected = { github-token-scopes } Check that the 
 remediation-github-secret-incomplete = { github-token-scopes } A secret for this environment variable is already there, and registering it again without naming its placeholder is refused as a duplicate. Registering it this way keeps the placeholder the sandbox already holds. Then run the same command again.
 remediation-secret-still-registered = A registration that stays behind makes the next registration for this project refused as a duplicate. Remove it, then run the same command again.
 remediation-sandbox-repository-unusable = Inspect { $path } inside the sandbox yourself. sbxm never deletes a repository or a worktree to make room.
+remediation-sandbox-host-origin-differs = The host now writes this sandbox's origin over SSH, and a sandbox built by an earlier version of sbxm points it elsewhere. Rebuild the sandbox; before removing anything, the rebuild checks that the host has every commit the sandbox holds.
 remediation-start-ref-unresolved = Check the branch name on GitHub, then run the command again once the branch exists.
 remediation-project-incomplete = Run the registration again to continue from where it stopped.
 remediation-project-inconsistent = Compare the registry with the project directory yourself. sbxm never rewrites one to match the other.

@@ -25,6 +25,7 @@ mod settle_refusals;
 mod start_ref;
 mod tag_following;
 mod unusable;
+mod unusable_host_origin;
 mod verify_bare_clone;
 mod worktree;
 
@@ -47,5 +48,6 @@ use settle_refusals::settle_refusals;
 pub use start_ref::resolve_start_ref;
 pub use tag_following::TagFollowing;
 use unusable::unusable;
+use unusable_host_origin::unusable_host_origin;
 pub use verify_bare_clone::verify_bare_clone;
 pub use worktree::{adopt_worktree, ensure_worktrees};

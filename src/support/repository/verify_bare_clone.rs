@@ -4,7 +4,7 @@ use crate::msg;
 
 use crate::support::sandbox;
 
-use super::{FETCH_REFSPEC, SandboxOrigin, unusable};
+use super::{FETCH_REFSPEC, SandboxOrigin, unusable, unusable_host_origin};
 
 /// 既存のbare repositoryが案件のrepositoryとして再利用できるかを観測する。
 pub fn verify_bare_clone(
@@ -50,9 +50,12 @@ pub fn verify_bare_clone(
             msg!("cause-origin-ambiguous", count = urls.len()),
         ));
     };
-    origin
-        .verify(url)
-        .map_err(|reason| unusable(git_dir, reason))?;
+    // hostにあるrepositoryの案件でoriginが違えば、作り直しを案内する。以前のsbxmが作った
+    // Sandboxは、originを別の場所へ向けている。
+    origin.verify(url).map_err(|reason| match origin {
+        SandboxOrigin::Host { project, .. } => unusable_host_origin(git_dir, reason, project),
+        SandboxOrigin::Github(_) => unusable(git_dir, reason),
+    })?;
 
     let refspecs = sandbox::read(
         host,
