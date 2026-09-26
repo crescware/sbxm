@@ -15,6 +15,9 @@ permissions: {}
 jobs:
   check:
     runs-on: ubuntu-latest
+    # 平常は3分ほどで終わる。testの中の待ち合わせの上限はhangを防ぐためにあり、この上限は
+    # その外側で、完了まで待つだけの外部command実行が戻らない場合を止める。
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -31,3 +34,25 @@ jobs:
 
       - name: Run fmt, lint, tests, coverage, and the release script tests
         run: mise run check
+
+  # sbxmが動くのはmacOSだけである。OSに依る差はtestの結果にしか現れないため、macOSでは
+  # testだけを走らせる。整形・lint・辞書・coverageの下限はOSに依らず、ubuntuの1回で足りる。
+  test-macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up toolchain
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4
+        with:
+          install: true
+          # testに要るのはRustだけである。zigはLinuxのlinkerで、cargo-llvm-covはcoverageで使う。
+          install_args: rust
+          cache: false
+
+      - name: Run tests
+        run: cargo test --workspace --all-features
