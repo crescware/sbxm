@@ -65,7 +65,7 @@ fn the_sandbox_is_saved_and_reflected_before_the_host_is_sent_back() -> Checked 
         output.namespace
     ))?;
     let reflected = position("push --porcelain --no-verify .")?;
-    let sent = position("--prune +refs/heads/*:refs/remotes/origin/*")?;
+    let sent = position(".git +refs/heads/*:refs/remotes/origin/*")?;
     assert!(position(PLACE_SAVE_REFS)? < saved, "{calls:?}");
     assert!(saved < reflected && reflected < sent, "{calls:?}");
     Ok(())
@@ -92,7 +92,7 @@ fn a_sandbox_with_nothing_to_save_is_still_sent_the_host() -> Checked {
     assert!(
         calls
             .iter()
-            .any(|call| call.contains("+refs/heads/*:refs/remotes/origin/*")),
+            .any(|call| call.contains(".git +refs/heads/*:refs/remotes/origin/*")),
         "{calls:?}"
     );
     Ok(())

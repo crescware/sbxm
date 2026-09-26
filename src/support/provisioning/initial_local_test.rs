@@ -36,7 +36,7 @@ fn a_host_repository_is_pushed_into_the_sandbox_origin_from_the_host() -> Checke
     // Sandboxの中から届くoriginは無い。hostのgitが、sshでbranchとtagを書き込む。
     // 書き込む先のsshは、Sandboxを作る前に確かめる。
     let origin = position("remote add origin sbxm-host::local/app")?;
-    let branches = position("--prune +refs/heads/*:refs/remotes/origin/*")?;
+    let branches = position(".git +refs/heads/*:refs/remotes/origin/*")?;
     let tags = position("refs/tags/*:refs/tags/*")?;
     assert!(position("-G sbxm-local-app-")? < origin, "{calls:?}");
     assert!(origin < branches && branches < tags, "{calls:?}");
@@ -178,7 +178,7 @@ fn a_lost_sandbox_is_built_again_with_the_branches_saved_on_the_host() -> Checke
     };
     let restored = position("push --quiet --no-verify ssh://")?;
     assert!(
-        position("+refs/heads/*:refs/remotes/origin/*")? < restored
+        position(".git +refs/heads/*:refs/remotes/origin/*")? < restored
             && restored < position("worktree add")?,
         "the branches come back after the origin is read and before the worktrees"
     );

@@ -471,6 +471,37 @@ fn the_host_reaches_the_sandbox_origin_the_way_a_fetch_would() -> Checked {
 }
 
 #[test]
+fn a_symbolic_ref_in_the_sandbox_origin_is_left_with_the_branch_it_names() -> Checked {
+    // `git push --prune`は`origin/HEAD`を消そうとし、受け取るgitはsymrefを辿って
+    // `origin/main`まで消す。`git fetch --prune`と同じく、symrefは残す。
+    let pushing = Pushing::new()?;
+    pushing.push().required()?;
+    git_in(
+        std::path::Path::new("/"),
+        &[
+            "--git-dir",
+            &pushing.sandbox,
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ],
+    )?;
+    git_in(&pushing.host, &["branch", "--quiet", "-D", "topic"])?;
+
+    assert!(pushing.push().required()?.is_empty());
+
+    let refs = pushing.sandbox_refs()?;
+    for kept in ["refs/remotes/origin/HEAD", "refs/remotes/origin/main"] {
+        assert!(refs.lines().any(|line| line == kept), "{kept}: {refs}");
+    }
+    assert!(
+        !refs.lines().any(|line| line == "refs/remotes/origin/topic"),
+        "{refs}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_tag_the_sandbox_already_has_elsewhere_is_left_and_reported() -> Checked {
     let pushing = Pushing::new()?;
     pushing.push().required()?;
@@ -494,14 +525,23 @@ fn a_tag_the_sandbox_already_has_elsewhere_is_left_and_reported() -> Checked {
 
 #[test]
 fn a_sandbox_the_host_cannot_write_to_is_named() -> Checked {
-    let pushing = Pushing {
-        sandbox: "/nonexistent/sandbox.git".to_string(),
-        ..Pushing::new()?
-    };
+    // sshで届かなければ、gitはrefごとの答えを持たずに終わる。Sandboxのoriginは`sbx exec`で
+    // 読めても、書き込めなかったことを名指しする。
+    let git_dir = "/home/agent/work/example-repo/.git";
+    let push = format!(
+        "-c {} push --porcelain --no-verify {} +refs/heads/*:refs/remotes/origin/*",
+        sandbox_ssh_config(),
+        sandbox_remote("sbxm-example", git_dir)
+    );
+    let host = crate::testing::host::FakeSbx::listing("").answering(&push, 128, "");
 
-    let error = pushing
-        .push()
-        .refused_because("there is no repository to write to")?;
+    let error = push_to_sandbox(
+        &host,
+        std::path::Path::new("/home/user/code/app/.git"),
+        "sbxm-example",
+        git_dir,
+    )
+    .refused_because("the host cannot reach the sandbox repository")?;
 
     assert_eq!(
         error.first_id(),
