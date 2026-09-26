@@ -171,6 +171,70 @@ fn no_managed_project_is_an_error_rather_than_an_empty_prompt() -> Checked {
 }
 
 #[test]
+fn a_local_command_offers_only_the_projects_added_with_local() -> Checked {
+    // GitHubの案件を選ばせてから断らない。
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    fixture.register_local("/srv/code/app/.git", "app")?;
+    fixture.register_local("/srv/code/tool/.git", "tool")?;
+
+    let mut prompt = ScriptedPrompt::choosing(1);
+    let chosen = one_local(
+        &fixture.location,
+        None,
+        &msg!("select-sync-heading"),
+        &mut prompt,
+    )
+    .required_because("a local project is chosen")?;
+
+    assert_eq!(chosen.display_id(), "local/tool");
+    assert_eq!(
+        prompt.asked.borrow()[0],
+        vec!["local/app".to_string(), "local/tool".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_local_command_refuses_before_asking_when_no_project_was_added_with_local() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+
+    let mut prompt = ScriptedPrompt::choosing(0);
+    let error = one_local(
+        &fixture.location,
+        None,
+        &msg!("select-sync-heading"),
+        &mut prompt,
+    )
+    .refused_because("there is no local project to choose from")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::NoLocalProjects));
+    assert!(prompt.asked.borrow().is_empty(), "no empty prompt is shown");
+    Ok(())
+}
+
+#[test]
+fn a_local_command_still_finds_a_named_github_project_for_its_own_refusal() -> Checked {
+    // 名指しされた案件は種類を問わずに返す。断る理由は、呼び出し側が案件に即して示す。
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+
+    let mut prompt = ScriptedPrompt::choosing(0);
+    let chosen = one_local(
+        &fixture.location,
+        Some(&project_id("example-org/example-repo")?),
+        &msg!("select-sync-heading"),
+        &mut prompt,
+    )
+    .required_because("the named project is found")?;
+
+    assert_eq!(chosen.display_id(), "example-org/example-repo");
+    assert!(prompt.asked.borrow().is_empty());
+    Ok(())
+}
+
+#[test]
 fn a_selection_that_matches_no_candidate_is_not_a_cancel() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("example-org/example-repo")?;

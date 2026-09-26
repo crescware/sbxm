@@ -170,6 +170,8 @@ fn all_sandbox_commands_report_missing_login_before_any_prompt_or_mutation() -> 
 fn authenticated_commands_reach_selection_and_can_be_canceled() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("owner/repo")?;
+    // `sync`は`--local`の案件だけを並べる。選ぶ案件が無ければ、選ばせる前に断る。
+    fixture.register_local("/srv/code/app/.git", "app")?;
     for command in commands(false)? {
         // 全案件が対象の実行には、選ぶ案件が無い。
         if matches!(
