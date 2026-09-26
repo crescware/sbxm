@@ -92,7 +92,7 @@ fn choosing_to_save_fetches_and_lets_the_caller_prepare_again() -> Checked {
     )?;
 
     assert_eq!(offered.flow, ControlFlow::Continue(()));
-    // 何を失うのかを見せてから訊き、`sbxm fetch`と同じ結果を示す。
+    // 何を失うのかを見せてから訊き、保存した結果を示す。
     assert!(
         offered.stderr.contains("not reachable"),
         "{}",
