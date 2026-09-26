@@ -6,10 +6,10 @@ use crate::support::bundle::RefChange;
 
 use crate::testing::outcome::{Checked, Required};
 
+use super::super::SaveOutput;
 use super::*;
-use crate::commands::fetch::FetchOutput;
 
-fn rendered(output: &FetchOutput, locale: Locale) -> Checked<String> {
+fn rendered(output: &SaveOutput, locale: Locale) -> Checked<String> {
     let mut written: Vec<u8> = Vec::new();
     {
         let mut ui = Ui::capture(
@@ -18,13 +18,13 @@ fn rendered(output: &FetchOutput, locale: Locale) -> Checked<String> {
             &mut written,
             std::io::sink(),
         );
-        ui.stdout(&document(output, locale));
+        ui.stdout(&saved_document(output, locale));
     }
     String::from_utf8(written).required_because("UTF-8")
 }
 
-fn output(changes: Option<Vec<RefChange>>) -> FetchOutput {
-    FetchOutput {
+fn output(changes: Option<Vec<RefChange>>) -> SaveOutput {
+    SaveOutput {
         project: "Example-Org/Example-Repo".to_string(),
         repository: PathBuf::from("/Users/example/Projects/example-repo.project/example-repo"),
         namespace: "sbxm-example".to_string(),

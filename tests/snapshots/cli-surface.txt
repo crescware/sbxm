@@ -31,16 +31,6 @@ sbxm
     id=dest --dest value=destination args=1 action=Set order=1
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
-  fetch
-    id=help --help -h args=0 action=Help order=1000
-    id=project positional value=project-id args=1 action=Set order=999
-    id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
-    id=color --color value=auto|always|never args=1 global action=Set order=901
-  send
-    id=help --help -h args=0 action=Help order=1000
-    id=project positional value=project-id args=1 action=Set order=999
-    id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
-    id=color --color value=auto|always|never args=1 global action=Set order=901
   sync
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=1 action=Set order=999

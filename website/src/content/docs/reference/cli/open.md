@@ -19,4 +19,4 @@ Starting a stopped sandbox requires the [neutral workspace directory](../../file
 
 The Docker Sandboxes Remote SSH integration must be configured on the host.
 
-For a project added with `--local`, the sandbox's commits are saved into the host repository every 10 minutes while the session is connected and again after it closes; see [Develop without GitHub](../../../guides/local-repository/#automatic-fetch).
+For a project added with `--local`, the sandbox's commits are saved into the host repository every 10 minutes while the session is connected and again after it closes; see [Develop without GitHub](../../../guides/local-repository/#automatic-save).

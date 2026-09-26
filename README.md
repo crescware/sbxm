@@ -273,7 +273,7 @@ does not show by itself: local branches kept out of the checkout, tags, notes,
 stash entries, extra remotes, and reflog-only commits. Save or resolve any
 reported Layer A blocker before retrying. A commit on a branch, a tag, or a
 worktree's `HEAD` that is missing from the origin can also be saved into the host
-repository with `sbxm fetch`; a stash or notes commit cannot. `status` keeps the worktree's
+repository when rebuild offers it; a stash or notes commit cannot. `status` keeps the worktree's
 `STATE` and its origin recovery evidence in a separate `REMOTE` column.
 Normal rebuild always requires an interactive plan and a typed confirmation of
 the project ID; it refuses rather than silently skipping that confirmation in a
@@ -443,13 +443,12 @@ Both apply scopes may be requested together:
 sbxm apply <project-id> --files --worktrees 4
 ```
 
-### Save sandbox commits to the host
+### Keep sandbox commits in the host repository
 
-Copy the commits of a project sandbox into its host repository:
-
-```sh
-sbxm fetch <project-id>
-```
+When commits on branches, tags, or worktree `HEAD`s that the origin does not
+have are the only reason a rebuild or destroy is refused, an interactive
+terminal offers to save them into the host repository and continue. Choosing to
+stop changes nothing.
 
 The host repository fetches the sandbox's branches, tags, and each worktree's
 `HEAD` over the same SSH connection that `sbxm open` uses, with object checks
@@ -457,15 +456,13 @@ turned on, into `refs/sbx/<sandbox>/` only. Only the objects the host does not
 have yet are carried. Your host branches and tags are never touched. When a
 sandbox branch was rewritten or deleted, its previous tip is kept under
 `refs/sbx/<sandbox>/archive/<time>/` and is never removed automatically, so
-every commit that was ever fetched stays reachable. The sandbox must be
-running; a stopped sandbox is not started.
+every commit that was ever saved stays reachable. The sandbox must be running;
+a stopped sandbox is not started.
 
 A commit saved this way outlives the sandbox, so rebuild and destroy count it as
-kept, the same as a commit reachable from the origin. When commits it can save
-are the only reason a rebuild or destroy is refused, an interactive terminal
-offers to save them into the host repository and continue. Choosing to stop
-changes nothing. A stash or notes commit missing from the origin is not saved
-this way, so it still has to be pushed or dropped.
+kept, the same as a commit reachable from the origin. A stash or notes commit
+missing from the origin is not saved this way, so it still has to be pushed or
+dropped.
 
 ## Develop without GitHub
 
@@ -500,35 +497,28 @@ and tags reach the sandbox's `origin` the way `git fetch --prune` would bring
 them. Git refuses what it would refuse in a push, such as a branch that is not
 a fast-forward, the branch checked out on the host, or a tag that already
 points elsewhere, and the refused commits stay under `refs/sbx/<sandbox>/`.
-
-Bring work back with `sbxm fetch local/<name>`. The commits land in
-`refs/sbx/<sandbox>/` of the host repository, and you merge them into your own
-branches, for example with `git merge refs/sbx/<sandbox>/heads/main`.
-
-Send what the host repository gained since then with `sbxm send local/<name>`.
-sbxm sends a fresh bundle and runs `git fetch --prune origin` inside the
-sandbox, so `origin/<branch>` there matches the host. The sandbox's worktrees
-and branches are left alone; merge or rebase onto `origin/<branch>` inside the
-sandbox when you want the changes.
+The sandbox's worktrees and branches are left alone; merge or rebase onto
+`origin/<branch>` inside the sandbox and sync again, as you would before
+pushing to GitHub again.
 
 Because the bundle inside the sandbox disappears with it, rebuild and destroy
 count a commit as kept only when the host repository reaches it: from one of
-its branches or tags, or from what `sbxm fetch` saved under
-`refs/sbx/<sandbox>/`. A commit the host does not have stops them, and an
-interactive terminal offers to fetch it first.
+its branches or tags, or from what was saved under `refs/sbx/<sandbox>/`. A
+commit the host does not have stops them, and an interactive terminal offers
+to save it first.
 
-Only work committed since the last fetch can be lost, so sbxm also fetches on
-its own: before `stop`, `rebuild`, and `destroy` (including `--force`) take the
-sandbox down, every 10 minutes while an `open` session is connected, and after
-it closes. A stopped sandbox is never
-started just for this. When a fetch fails, the command still goes on and a
-warning says what remains only in the sandbox.
+Only work committed since the last save can be lost, so sbxm also saves on its
+own into `refs/sbx/<sandbox>/`, without moving your branches: before `stop`,
+`rebuild`, and `destroy` (including `--force`) take the sandbox down, every 10
+minutes while an `open` session is connected, and after it closes. A stopped
+sandbox is never started just for this. When a save fails, the command still
+goes on and a warning says what remains only in the sandbox.
 
 `sbxm rebuild local/<name>` recreates the sandbox from the host repository and
 brings back the branches saved under `refs/sbx/<sandbox>/heads/` as sandbox
 branches, tracking `origin/<branch>` when the host has it. The worktree on the
 start branch is recreated at the saved tip, so work continues where it was
-fetched. The same happens whenever `open` or `repair` builds a new sandbox for
+saved. The same happens whenever `open` or `repair` builds a new sandbox for
 the project, for example after the sandbox was removed outside sbxm.
 
 ## Tear down a project
@@ -602,8 +592,6 @@ rather than sbxm guessing at the new location.
 | `sbxm status` | Select and show the host or a project's status interactively; `global` is first |
 | `sbxm status --global` | Show the host environment status without changing it |
 | `sbxm status <project-id>` | Show a project's status without changing it |
-| `sbxm fetch [<project-id>]` | Save a project sandbox's commits into its host repository under `refs/sbx/<sandbox>/`, without touching your branches |
-| `sbxm send [<project-id>]` | Send the host repository's branches and tags to the sandbox of a project added with `--local`, without touching the sandbox's branches |
 | `sbxm sync [<project-id>]` | Sync the host repository and the sandbox of a project added with `--local`, by Git's own rules for a push and a fetch |
 | `sbxm files add\|ls\|rm ...` | Declare host files to place in every sandbox, list them, or remove a declaration |
 | `sbxm files pull <destination> [<project-id>]` | Show how a project sandbox's copy of a declared file differs from the host file, and adopt it into the host file if you choose |

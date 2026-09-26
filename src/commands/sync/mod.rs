@@ -16,7 +16,7 @@ mod sync_output;
 pub(crate) use command_line::CommandLine as CommandLineParser;
 pub use exec::exec;
 pub use run::run;
-pub(crate) use send_host_refs::send_host_refs;
+use send_host_refs::send_host_refs;
 pub use sent_change::SentChange;
 use sent_changes::sent_changes;
 pub use sync_output::SyncOutput;

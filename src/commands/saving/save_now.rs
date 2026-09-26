@@ -8,20 +8,21 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{bundle, generation, inventory, repository};
 
-use super::FetchOutput;
+use super::SaveOutput;
 
-/// 対象を引数またはpromptで解決し、そのSandboxのcommitをhostへ保存する。
+/// 対象の案件のSandboxのcommitを、hostのrepositoryの`refs/sbx/<sandbox>/`へ保存する。
 ///
-/// hostのrepositoryの名前空間を書き換えるため、project lockを持って行う。動いている
-/// Sandboxからだけ受け取り、停止中のSandboxを起動しない。
-pub fn run(
+/// 保存の申し出に答えたときに使う。hostのbranchとtagは動かさない。hostのrepositoryの
+/// 名前空間を書き換えるため、project lockを取り直して行う。動いているSandboxからだけ
+/// 受け取り、停止中のSandboxを起動しない。
+pub(super) fn save_now(
     location: &ConfigLocation,
     requested: Option<&ProjectId>,
     prompt: &mut dyn ProjectPrompt,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
-) -> Result<FetchOutput> {
-    let locked = select::one(location, requested, &msg!("select-fetch-heading"), prompt)?.lock()?;
+) -> Result<SaveOutput> {
+    let locked = select::one(location, requested, &msg!("select-save-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
     inventory::require_running(host, &locked.metadata, workspace_root)?;
     let sandbox = locked.metadata.sandbox_name();
@@ -32,7 +33,7 @@ pub fn run(
         &SandboxLayout::new(locked.metadata.canonical_id()).bare_git_dir(),
         &target,
     )?;
-    Ok(FetchOutput {
+    Ok(SaveOutput {
         project: locked.metadata.display_id(),
         repository: target,
         namespace: sandbox.as_str().to_string(),
@@ -41,5 +42,5 @@ pub fn run(
 }
 
 #[cfg(test)]
-#[path = "run_test.rs"]
-mod run_test;
+#[path = "save_now_test.rs"]
+mod save_now_test;

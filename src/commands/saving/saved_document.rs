@@ -4,20 +4,21 @@ use crate::msg;
 use crate::paths;
 use crate::support::bundle::RefChange;
 
-use crate::commands::fetch::FetchOutput;
 use crate::commands::present::Legend;
 
-/// `fetch`が並べるもの。
+use super::SaveOutput;
+
+/// 保存が並べるもの。
 ///
 /// 書き換えたrefだけを並べる。退避したrefは、置き換えたrefと同じ行に示す。
-pub fn document(output: &FetchOutput, locale: Locale) -> Document {
+pub fn saved_document(output: &SaveOutput, locale: Locale) -> Document {
     let repository = paths::display(&output.repository);
     let Some(changes) = &output.changes else {
-        return Document::new().summary(msg!("fetch-nothing", project = output.project.clone()));
+        return Document::new().summary(msg!("save-nothing", project = output.project.clone()));
     };
     if changes.is_empty() {
         return Document::new().summary(msg!(
-            "fetch-unchanged",
+            "save-unchanged",
             project = output.project.clone(),
             repository = repository
         ));
@@ -43,12 +44,16 @@ pub fn document(output: &FetchOutput, locale: Locale) -> Document {
     }
     Document::new()
         .summary(msg!(
-            "fetch-done",
+            "save-done",
             project = output.project.clone(),
             repository = repository,
             namespace = output.namespace.clone()
         ))
         .table(None, table)
-        .note(msg!("fetch-branches-untouched"))
+        .note(msg!("save-branches-untouched"))
         .legend(Legend::heading(), legend.entries())
 }
+
+#[cfg(test)]
+#[path = "saved_document_test.rs"]
+mod saved_document_test;

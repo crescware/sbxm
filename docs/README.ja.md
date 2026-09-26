@@ -243,7 +243,7 @@ rebuildはDockerfileの変更有無にかかわらずSandboxを作り直し、�
 cleanなworktreeだけでは見えないrepository単位の状態も検査します。checkoutしていない
 local branch、tag、note、stash、追加remote、reflogだけに残るcommitも対象です。表示された
 Layer Aのblockerを保存または解決してから、もう一度実行してください。originに無いbranch、
-tag、worktreeの`HEAD`のcommitは、`sbxm fetch`でホスト側のrepositoryへ保存しても構いません。
+tag、worktreeの`HEAD`のcommitは、rebuildが申し出たときにホスト側のrepositoryへ保存しても構いません。
 stashやnotesのcommitは保存できません。`status`ではworktreeの
 `STATE`とoriginからの回収根拠を、別の`REMOTE`列に表示します。
 
@@ -404,26 +404,22 @@ secretを使用してください。
 sbxm apply <project-id> --files --worktrees 4
 ```
 
-### Sandboxのcommitをホストへ保存する
+### Sandboxのcommitをホスト側のrepositoryに残す
 
-案件のSandboxのcommitを、ホスト側のrepositoryへ写します。
-
-```sh
-sbxm fetch <project-id>
-```
+originに無いbranch、tag、worktreeの`HEAD`のcommitだけを理由にrebuildやdestroyが拒否された
+場合、対話端末ではホスト側のrepositoryへ保存してから続けるかを訊きます。止める選択では何も
+変えません。
 
 ホスト側のrepositoryが、`sbxm open`と同じSSHの接続でSandboxのbranch、tag、各worktreeの
 `HEAD`をfetchし、objectの検査を有効にして`refs/sbx/<sandbox>/`へだけ取り込みます。運ぶのは、
 ホスト側にまだ無いobjectだけです。ホスト側のbranchとtagには触れません。Sandboxで書き換えた
 branchや消したbranchの前の先端は`refs/sbx/<sandbox>/archive/<時刻>/`へ退避し、自動では消さない
-ため、一度取り込んだcommitはどれも辿れ続けます。Sandboxは動いている必要があり、停止中の
+ため、一度保存したcommitはどれも辿れ続けます。Sandboxは動いている必要があり、停止中の
 Sandboxは起動しません。
 
 こうして保存したcommitはSandboxを消しても残るため、rebuildとdestroyはoriginから辿れる
-commitと同じく、失われないものとして数えます。保存できるcommitだけを理由にrebuildや
-destroyが拒否された場合、対話端末ではホスト側のrepositoryへ保存してから続けるかを訊きます。
-止める選択では何も変えません。originに無いstashやnotesのcommitはこの方法では保存されず、
-pushするか捨てる必要があります。
+commitと同じく、失われないものとして数えます。originに無いstashやnotesのcommitはこの方法では
+保存されず、pushするか捨てる必要があります。
 
 ## GitHubを使わずに開発する
 
@@ -453,31 +449,25 @@ hostのrepositoryとSandboxは`sbxm sync local/<name>`で同期します。host�
 GitHubの案件でのGitHubの役を持ちます。Sandboxのbranchとtagは`git push`と同じ規則でhostへ、
 hostのbranchとtagは`git fetch --prune`と同じ規則でSandboxの`origin`へ届きます。早送りでない
 branch、hostでcheckoutしているbranch、別の先を指す同じ名前のtagのように、pushでGitが断るものは
-動かさず、そのcommitは`refs/sbx/<sandbox>/`に残ります。
-
-作業は`sbxm fetch local/<name>`で持ち帰ります。commitはhostのrepositoryの
-`refs/sbx/<sandbox>/`へ入るので、たとえば`git merge refs/sbx/<sandbox>/heads/main`で
-自分のbranchへ取り込みます。
-
-そのあとhostのrepositoryに増えたものは`sbxm send local/<name>`で送ります。sbxmは新しい
-bundleを送ってSandboxの中で`git fetch --prune origin`を行うので、そこでの`origin/<branch>`が
-hostと揃います。Sandboxのworktreeとbranchはそのままです。取り込むときは、Sandboxの中で
-`origin/<branch>`をmergeするかrebaseしてください。
+動かさず、そのcommitは`refs/sbx/<sandbox>/`に残ります。Sandboxのworktreeとbranchはそのまま
+です。GitHubへもう一度pushする前と同じく、Sandboxの中で`origin/<branch>`をmergeするか
+rebaseしてから、もう一度同期してください。
 
 Sandboxの中のbundleはSandboxと一緒に消えるため、rebuildとdestroyは、hostのrepositoryから
-辿れるcommitだけを失われないものとして数えます。hostのbranchやtag、または`sbxm fetch`が
+辿れるcommitだけを失われないものとして数えます。hostのbranchやtag、または
 `refs/sbx/<sandbox>/`へ保存したものから辿れる必要があります。hostに無いcommitがあれば止まり、
-対話端末では先にfetchするかを訊きます。
+対話端末では先に保存するかを訊きます。
 
-失われうるのは最後のfetchのあとにcommitした作業だけなので、sbxmは自分でもfetchします。
-`stop`、`rebuild`、`destroy`（`--force`を含む）がSandboxを止める前、`open`のsessionが
-つながっているあいだの10分ごと、そしてsessionを閉じたあとです。このために停止中のSandboxを起動することはありません。fetchに失敗しても
-操作は続き、Sandboxにだけ残っているものがあることをwarningで伝えます。
+失われうるのは最後に保存したあとにcommitした作業だけなので、sbxmは自分でも、branchを動かさずに
+`refs/sbx/<sandbox>/`へ保存します。`stop`、`rebuild`、`destroy`（`--force`を含む）がSandboxを
+止める前、`open`のsessionがつながっているあいだの10分ごと、そしてsessionを閉じたあとです。
+このために停止中のSandboxを起動することはありません。保存に失敗しても操作は続き、Sandboxに
+だけ残っているものがあることをwarningで伝えます。
 
 `sbxm rebuild local/<name>`は、hostのrepositoryからSandboxを作り直し、
 `refs/sbx/<sandbox>/heads/`へ保存したbranchをSandboxのbranchとして戻します。hostに
 同じ名前のbranchがあれば、`origin/<branch>`をupstreamにします。起点branchのworktreeは
-保存した先端から作り直すので、fetchしたところから作業を続けられます。Sandboxがsbxmの
+保存した先端から作り直すので、保存したところから作業を続けられます。Sandboxがsbxmの
 外で消えた場合のように、`open`や`repair`が新しいSandboxを作るときも同じです。
 
 ## プロジェクトを破棄する
@@ -542,8 +532,6 @@ repositoryは追加したときの場所に残ります。
 | `sbxm status` | 対話端末でhostまたは案件を選択して診断する。`global`を先頭にpromptを表示する |
 | `sbxm status --global` | hostの状態を変更せずに診断する |
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
-| `sbxm fetch [<project-id>]` | 案件のSandboxのcommitを、ホスト側のrepositoryの`refs/sbx/<sandbox>/`へ保存する。branchには触れない |
-| `sbxm send [<project-id>]` | `--local`で追加した案件のSandboxへ、ホスト側のrepositoryのbranchとtagを送る。Sandboxのbranchには触れない |
 | `sbxm sync [<project-id>]` | `--local`で追加した案件のSandboxとホスト側のrepositoryを、Gitのpushとfetchの規則で同期する |
 | `sbxm files add\|ls\|rm ...` | すべてのSandboxへ配置するホスト側のファイルを宣言、一覧、または宣言を外す |
 | `sbxm files pull <destination> [<project-id>]` | 宣言ファイルについて、案件のSandbox側の内容とホスト側のファイルの差分を示し、選べばホスト側のファイルへ採用する |

@@ -27,37 +27,25 @@ Run [`sbxm sync`](../../reference/cli/sync/) to sync the host repository and the
 
 When `open` builds the sandbox, sbxm writes the host repository's branches and tags into one `git bundle`. It streams the bundle into the sandbox through the standard input of `sbx exec` and places it at `<repository>/.git/sbxm/origin.bundle` after checking its digest. The sandbox's `origin` points at that file, so the managed worktrees are created from `origin/<branch>` as they are for a GitHub project. Nothing in the sandbox can reach the host repository.
 
-[`sbxm apply --worktrees`](../../reference/cli/apply/) sends the host repository again before it adds worktrees, as `sbxm send` does, so the new worktrees start from the host's current branches.
+[`sbxm apply --worktrees`](../../reference/cli/apply/) sends the host repository again before it adds worktrees, as `sbxm sync` does, so the new worktrees start from the host's current branches.
 
-## Bringing work back
+## Automatic save
 
-Run [`sbxm fetch`](../../reference/cli/fetch/) to save the sandbox's commits into `refs/sbx/<sandbox>/` of the host repository. Your branches are never touched; merge what you want yourself, for example:
-
-```sh
-git merge refs/sbx/<sandbox>/heads/main
-```
-
-## Sending what the host gained
-
-Run [`sbxm send`](../../reference/cli/send/) to send the host repository's current branches and tags. sbxm sends a fresh bundle and runs `git fetch --prune origin` inside the sandbox, so `origin/<branch>` there matches the host, and a branch deleted on the host disappears from the sandbox's origin too. The sandbox's worktrees and branches are left alone. Merge or rebase onto `origin/<branch>` inside the sandbox when you want the changes.
-
-## Automatic fetch
-
-Only work committed since the last fetch can be lost, so sbxm narrows that window by fetching on its own:
+Only work committed since the last save can be lost, so sbxm narrows that window by saving the sandbox's commits on its own into `refs/sbx/<sandbox>/` of the host repository. An automatic save never moves your branches or tags; only [`sbxm sync`](../../reference/cli/sync/) does, by Git's rules. It saves:
 
 - before [`stop`](../../reference/cli/stop/) stops a running sandbox,
 - before [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) check what would be lost, including `destroy --force`,
 - every 10 minutes while an [`open`](../../reference/cli/open/) session is connected, silently, since the terminal belongs to SSH,
 - after the session closes, with the project lock taken again.
 
-A stopped sandbox is never started just for this. When something was saved, a line says so on stderr. When the fetch fails, the command still goes on, and a warning says that anything committed since the last fetch is only in the sandbox, with the `sbxm fetch` command to retry. Uncommitted changes are not fetched; commit them first.
+A stopped sandbox is never started just for this. When something was saved, a line says so on stderr. When the save fails, the command still goes on, and a warning says that anything committed since the last save is only in the sandbox, with the `sbxm sync` command to retry. Uncommitted changes are not saved; commit them first.
 
 ## What rebuild and destroy protect
 
-The bundle inside the sandbox disappears with the sandbox. So for a project added with `--local`, [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) count a commit as kept only when the host repository reaches it: from one of its branches or tags, or from what `sbxm fetch` saved under `refs/sbx/<sandbox>/`. A commit the host does not have stops them. An interactive terminal offers to fetch it and continue.
+The bundle inside the sandbox disappears with the sandbox. So for a project added with `--local`, [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) count a commit as kept only when the host repository reaches it: from one of its branches or tags, or from what was saved under `refs/sbx/<sandbox>/`. A commit the host does not have stops them. An interactive terminal offers to save it and continue.
 
 Uncommitted changes stop them the same way as for a GitHub project. Commit them in the sandbox first.
 
 ## Rebuilding and recovering
 
-`sbxm rebuild` recreates the sandbox from the host repository. The same restoring happens whenever `open` or `repair` builds the sandbox again for a project that was built before, for example after the sandbox was removed outside sbxm. The first build of a newly added project restores nothing, even when a project of the same name added earlier left saved branches on the host. After the new sandbox has read its origin, sbxm sends the branches saved under `refs/sbx/<sandbox>/heads/` as one more bundle, brings them back as sandbox branches of the same names, and removes that bundle. A restored branch tracks `origin/<branch>` when the host has a branch of that name. The worktree on the start branch is then recreated at the saved tip, so work continues where it was fetched. Detached worktrees start from `origin/<branch>` as usual; the heads they had are still on the host under `refs/sbx/<sandbox>/worktrees/`. The result lists the branches that came back. A sandbox repository that already has branches is taken over as it is, and nothing is restored into it; one that stopped before any branch came back gets them on the next `open` or `repair`.
+`sbxm rebuild` recreates the sandbox from the host repository. The same restoring happens whenever `open` or `repair` builds the sandbox again for a project that was built before, for example after the sandbox was removed outside sbxm. The first build of a newly added project restores nothing, even when a project of the same name added earlier left saved branches on the host. After the new sandbox has read its origin, sbxm sends the branches saved under `refs/sbx/<sandbox>/heads/` as one more bundle, brings them back as sandbox branches of the same names, and removes that bundle. A restored branch tracks `origin/<branch>` when the host has a branch of that name. The worktree on the start branch is then recreated at the saved tip, so work continues where it was saved. Detached worktrees start from `origin/<branch>` as usual; the heads they had are still on the host under `refs/sbx/<sandbox>/worktrees/`. The result lists the branches that came back. A sandbox repository that already has branches is taken over as it is, and nothing is restored into it; one that stopped before any branch came back gets them on the next `open` or `repair`.

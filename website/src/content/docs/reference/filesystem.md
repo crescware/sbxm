@@ -16,7 +16,7 @@ Registering a repository from a parent directory creates:
 
 `.sbxm/incoming/` is a private area that only sbxm writes. A copy received from the sandbox lands there first, never over a file of yours, and is removed once you have decided whether to adopt it.
 
-What `sbxm fetch` saves lives in the host-side clone under `refs/sbx/<sandbox>/`:
+What sbxm saves from the sandbox lives in the host-side clone under `refs/sbx/<sandbox>/`:
 
 ```text
 refs/sbx/<sandbox>/

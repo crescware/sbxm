@@ -2,6 +2,9 @@ use crate::diagnostics::Msg;
 
 use crate::design::text::Inline;
 
+/// `reference`で作った事実の項目名。
+const REFERENCE_LABEL: &str = "diagnostic-reference-label";
+
 /// 診断が示す事実1件。項目名と、翻訳しない値。
 ///
 /// 説明文から変数を追い出すための単位である。`sbx ls`のような値を地の文へ混ぜると、
@@ -56,10 +59,17 @@ impl Fact {
 
     /// `Reference:`。回収可能性を検査したGit ref。
     pub fn reference(reference: &str) -> Fact {
-        Fact::new(
-            Msg::new("diagnostic-reference-label"),
-            Inline::important(reference),
-        )
+        Fact::new(Msg::new(REFERENCE_LABEL), Inline::important(reference))
+    }
+
+    /// `reference`で作った事実なら、そのGit ref。
+    ///
+    /// 診断を受け取った側が、表示の文言ではなく、対象のrefで判断するために使う。
+    pub fn as_reference(&self) -> Option<&str> {
+        match self {
+            Fact::OneLine { label, value } if label.id == REFERENCE_LABEL => Some(value.as_str()),
+            _ => None,
+        }
     }
 
     /// `Commit:`。回収可能性を検査したGit commit。

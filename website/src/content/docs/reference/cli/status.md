@@ -21,6 +21,6 @@ The project `DECLARED FILES` table compares every declared file with what sbxm p
 In the project `WORKTREES` table, `STATE` describes the worktree itself and
 `REMOTE` separately describes whether the current commit is pushed, reachable
 from an origin ref, unreachable, or `unobservable(reason)`. A commit saved into
-the host repository by [`sbxm fetch`](../fetch/) counts as reachable, as it does
+the host repository under `refs/sbx/<sandbox>/` counts as reachable, as it does
 for rebuild and destroy. Status does not fetch; when its local refs or objects
 are insufficient, it keeps the result unknown and explains the recovery action.

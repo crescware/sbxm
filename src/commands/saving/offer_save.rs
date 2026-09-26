@@ -9,17 +9,18 @@ use crate::project::ProjectId;
 use crate::support::protection;
 use crate::support::select::ProjectPrompt;
 
-use super::super::{Context, fetch, report};
+use super::super::{Context, report};
+use super::{save_now, saved_document};
 
 /// 保護の検査が、保存で解けるoriginに無いcommitだけを理由に断ったとき、hostへ保存して
 /// 続けるかを訊く。stashやnotesのように保存が運ばないrefが理由に含まれれば訊かない。
 ///
-/// 保存を選べば`sbxm fetch`と同じ処理を行い、`Continue`を返す。呼び出し側はもう一度
-/// 準備する。hostへ保存したcommitは、保護の検査で失われないものとして数えられる。
+/// 保存を選べば、Sandboxのcommitをhostの`refs/sbx/<sandbox>/`へ保存し、`Continue`を返す。
+/// 呼び出し側はもう一度準備する。hostへ保存したcommitは、保護の検査で失われないものと
+/// して数えられる。hostのbranchとtagは動かさない。
 /// ほかの理由を含む失敗や、訊けない場面では訊かずに元の失敗を報告する。
 ///
-/// 準備が返した失敗はproject lockをもう手放している。保存は`sbxm fetch`と同じく
-/// lockを取り直して行う。
+/// 準備が返した失敗はproject lockをもう手放している。保存はlockを取り直して行う。
 pub fn offer_save(
     error: &Error,
     project: &ProjectId,
@@ -40,7 +41,7 @@ pub fn offer_save(
         Ok(false) => return ControlFlow::Break(error.exit_code()),
         Err(failure) => return ControlFlow::Break(report(ui, &failure)),
     }
-    match fetch::run(
+    match save_now(
         context.location,
         Some(project),
         prompt,
@@ -48,7 +49,7 @@ pub fn offer_save(
         context.workspace_root,
     ) {
         Ok(output) => {
-            ui.stdout(&fetch::print::document(&output, ui.locale()));
+            ui.stdout(&saved_document(&output, ui.locale()));
             ControlFlow::Continue(())
         }
         Err(failure) => ControlFlow::Break(report(ui, &failure)),

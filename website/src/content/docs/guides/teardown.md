@@ -11,7 +11,7 @@ sbxm destroy <project-id>
 
 Before deleting anything, sbxm shows what will be removed and what remains. It checks dirty worktrees, unpublished commits, repository-level refs, active sessions, and other conditions that could make data disappear unexpectedly.
 
-A commit on a branch, a tag, or a worktree's `HEAD` that is not on the origin is kept once it is saved into the host repository with [`sbxm fetch`](../../reference/cli/fetch/). When such commits are the only thing stopping the teardown, sbxm offers to save them and continue. Stash and notes commits are not saved this way.
+A commit on a branch, a tag, or a worktree's `HEAD` that is not on the origin is kept once it is saved into the host repository. When such commits are the only thing stopping the teardown, an interactive terminal offers to save them and continue. Stash and notes commits are not saved this way.
 
 A stopped sandbox is started so those checks can read it, and a notice says so next to the plan. The start prepares nothing else, and cancelling the confirmation leaves the sandbox running. Destroy never sends you to `open` first: a project whose first build was interrupted is removable exactly as it is.
 
