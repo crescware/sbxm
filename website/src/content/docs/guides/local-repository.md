@@ -13,7 +13,7 @@ sbxm open local/<repository>
 
 ## Registering
 
-The Remote SSH integration of Docker Sandboxes must be set up on this host, since the host repository reaches the sandbox over SSH; [`sbxm status --global`](../../reference/cli/status/) shows whether it is, and `open` checks it before it builds anything.
+The Remote SSH integration of Docker Sandboxes must be set up on this host, since the host repository reaches the sandbox over SSH; [`sbxm status --global`](../../reference/cli/status/) shows whether it is, and `open` and `rebuild` check it before they build anything.
 
 The path must be a Git directory: the `.git` of a working tree, a bare repository, or the `.git` file of a worktree created with `git worktree add` or of a submodule. A working-tree directory is refused, because a directory can hold more than one repository and does not say which one it means; Git does not search upward from the path either. A symlink or a `.git` file is resolved, and the real path of the repository is recorded. For a worktree, that is the repository its worktrees share, so every worktree of one repository adds the same project.
 

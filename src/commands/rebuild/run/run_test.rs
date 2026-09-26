@@ -1584,6 +1584,62 @@ fn local_host_to_rebuild(
 }
 
 #[test]
+fn a_local_project_the_host_cannot_write_into_stops_before_the_old_sandbox_goes() -> Checked {
+    // 作り直したSandboxのoriginは、hostのgitがsshで書き込む。書き込めないと分かるのが
+    // 古いSandboxを消したあとでは遅い。
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register_local("/srv/code/example-repo/.git", "example-repo")?;
+    std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
+    let target = sha256_hex(b"unchanged\n");
+    project.metadata.provisioning.dockerfile_sha256 = target.clone();
+    metadata::update(&project.paths, &project.metadata).required()?;
+    let image = image::image_name(&project.sandbox, &target);
+    let name = project.sandbox.as_str().to_string();
+
+    let cases = [
+        (
+            format!("-G {name}.sbx"),
+            "hostname example\n",
+            ErrorId::RemoteSshUnconfigured,
+        ),
+        (
+            "for-each-ref --count=1 --format=%(refname) refs/heads/ refs/tags/".to_string(),
+            "",
+            ErrorId::HostRepositoryEmpty,
+        ),
+    ];
+    for (needle, answer, id) in cases {
+        let host = local_host_to_rebuild(&fixture, &project, &image, &target)?
+            .answering(&needle, 0, answer);
+
+        let error = prepare(
+            Target {
+                location: &fixture.location,
+                requested: Some(&project_id("local/example-repo")?),
+                prompt: &mut ScriptedPrompt::choosing(0),
+            },
+            &host,
+            &fixture.workspace_root,
+            poll(),
+            &mut SilentProgress,
+        )
+        .refused_because("the host cannot write into a new sandbox")?;
+
+        assert_eq!(error.first_id(), Some(id), "{needle}");
+        assert!(
+            !host
+                .calls()
+                .iter()
+                .any(|args| args.first().is_some_and(|arg| arg == "rm")),
+            "the old sandbox is kept: {:?}",
+            host.calls()
+        );
+        assert!(!host.ran("create --name"), "{:?}", host.calls());
+    }
+    Ok(())
+}
+
+#[test]
 fn a_local_project_is_rebuilt_from_the_host_with_its_saved_branches_back() -> Checked {
     let fixture = Fixture::new()?;
     let mut project = fixture.register_local("/srv/code/example-repo/.git", "example-repo")?;
