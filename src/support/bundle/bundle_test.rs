@@ -1484,3 +1484,29 @@ fn a_branch_deleted_in_the_sandbox_stays_on_the_host_after_it_is_saved_and_refle
     assert_eq!(repos.host_ref("refs/heads/topic")?, tip);
     Ok(())
 }
+
+#[test]
+fn a_tag_deleted_on_the_host_comes_back_while_the_sandbox_still_has_it() -> Checked {
+    // 削除は運ばず、tagはどちらの側でも消さない。Sandboxに残るtagは、次の保存と反映で
+    // hostへもう一度届く。`git push --tags`と同じである。
+    let repos = Repositories::new()?;
+    git_in(&repos.worktree, &["tag", "v1"])?;
+    repos.fetch("20260101T000000Z")?;
+    reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+    let tip = repos.host_ref("refs/tags/v1")?;
+
+    git_in(&repos.host, &["tag", "--delete", "v1"])?;
+    repos.fetch("20260101T000001Z")?;
+    let reflected = reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+
+    // hostとSandboxの`main`は、fixtureで別々に作ったため分かれている。見るのはtagだけである。
+    assert!(
+        reflected.contains(&Reflected {
+            reference: "refs/tags/v1".to_string(),
+            result: ReflectResult::Created,
+        }),
+        "{reflected:?}"
+    );
+    assert_eq!(repos.host_ref("refs/tags/v1")?, tip);
+    Ok(())
+}

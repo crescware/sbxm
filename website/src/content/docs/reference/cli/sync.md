@@ -19,6 +19,8 @@ Because the host is brought up to date before it is sent back, `origin/<branch>`
 
 Git moves a host branch only when the move is a fast-forward, never moves the branch checked out in the host repository, and never moves a tag that already points elsewhere. A branch deleted in the sandbox stays on the host, as a remote branch stays on GitHub when you delete your own. A branch deleted on the host disappears from the sandbox's `origin`. Tags are never removed on either side.
 
+Because deletions do not travel, a tag you delete on the host comes back at the next sync while the sandbox still has it, as it would after `git push --tags` from a clone that has it; delete it inside the sandbox as well. The same goes for a branch deleted on the host while the sandbox has its own branch of that name.
+
 | Result | Meaning |
 | --- | --- |
 | `created` | The branch or tag did not exist in the host repository and was created |
