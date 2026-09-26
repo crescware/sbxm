@@ -84,11 +84,9 @@ impl SandboxOrigin {
     ) -> Result<Vec<String>> {
         match self {
             SandboxOrigin::Github(_) => Ok(Vec::new()),
-            SandboxOrigin::Host {
-                repository,
-                staging,
-                ..
-            } => bundle::restore_saved_branches(host, repository, staging, sandbox, git_dir),
+            SandboxOrigin::Host { repository, .. } => {
+                bundle::restore_saved_branches(host, repository, sandbox, git_dir)
+            }
         }
     }
 
