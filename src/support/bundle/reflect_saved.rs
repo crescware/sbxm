@@ -30,7 +30,9 @@ pub fn reflect_saved(
         repository,
         &["push", "--porcelain", "--no-verify", ".", &heads, &tags],
         None,
-        TimeoutClass::LocalFilesystem,
+        // hostのrepositoryのreceive hookと、`updateInstead`での作業treeの更新が、この
+        // pushの中で走る。どちらも手元のfileの読み書きだけでは終わらない。
+        TimeoutClass::RepositoryTransfer,
     )?;
     // 断ったrefがあれば1で終わる。それ以外の失敗は、refごとの答えを持たない。
     let pushed = if matches!(pushed.status.code(), Some(0 | 1)) {
@@ -39,6 +41,7 @@ pub fn reflect_saved(
         pushed.require_success()?
     };
     let mut reflected = Vec::new();
+    let mut rejected = false;
     for line in pushed.stdout_text().lines() {
         let mut fields = line.split('\t');
         let (Some(flag), Some(refspec), Some(summary)) =
@@ -56,13 +59,21 @@ pub fn reflect_saved(
             " " | "+" => ReflectResult::Updated,
             "*" => ReflectResult::Created,
             "=" | "-" => continue,
-            "!" => rejection(host, repository, source, reference, summary)?,
+            "!" => {
+                rejected = true;
+                rejection(host, repository, source, reference, summary)?
+            }
             _ => return Err(unparseable("git push", "a ref line had an unknown flag")),
         };
         reflected.push(Reflected {
             reference: reference.to_string(),
             result,
         });
+    }
+    // 1で終わったのに断ったrefを1つも読めない失敗は、refごとの答えではない。何も
+    // 反映しなかった成功とは読まない。
+    if !rejected && !pushed.success() {
+        pushed.require_success()?;
     }
     Ok(reflected)
 }

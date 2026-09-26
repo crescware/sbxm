@@ -1407,3 +1407,49 @@ fn a_ref_line_git_did_not_write_is_not_read_as_a_result() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_push_that_failed_without_refusing_any_ref_is_an_error_rather_than_nothing_reflected() -> Checked
+{
+    // gitは断ったrefがあれば1で終わる。1で終わったのに断ったrefが1つも無ければ、refごとの
+    // 答えではない。何も反映しなかった成功とは読まない。
+    let push = format!(
+        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
+    );
+    for output in [
+        "",
+        "To .\nDone\n",
+        "To .\n=\trefs/sbx/x/heads/main:refs/heads/main\t[up to date]\nDone\n",
+    ] {
+        let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#)
+            .answering(&push, 1, output);
+
+        let error = reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE)
+            .refused_because("a failure without a refused ref is not a result")?;
+
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandFailed),
+            "{output:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn reflecting_waits_for_the_host_repository_hooks_as_long_as_a_transfer() -> Checked {
+    // 反映のpushの中で、hostのrepositoryのreceive hookと、`updateInstead`での作業treeの
+    // 更新が走る。手元のfileの読み書きの時間では打ち切らない。
+    let push = format!(
+        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
+    );
+    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+
+    reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE).required()?;
+
+    assert_eq!(
+        host.spec(&push)?.timeout,
+        crate::boundary::host::TimeoutClass::RepositoryTransfer
+    );
+    Ok(())
+}
