@@ -1453,3 +1453,34 @@ fn reflecting_waits_for_the_host_repository_hooks_as_long_as_a_transfer() -> Che
     );
     Ok(())
 }
+
+#[test]
+fn a_branch_deleted_in_the_sandbox_stays_on_the_host_after_it_is_saved_and_reflected() -> Checked {
+    // 削除は運ばない。GitHubで手元のbranchを消しても、remoteのbranchが残るのと同じである。
+    // 保存は消えたbranchを`archive/`へ退避し、反映はhostのbranchに触れない。
+    let repos = Repositories::new()?;
+    git_in(&repos.worktree, &["branch", "topic"])?;
+    repos.fetch("20260101T000000Z")?;
+    reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+    let tip = repos.host_ref("refs/heads/topic")?;
+
+    git_in(&repos.worktree, &["branch", "--quiet", "-D", "topic"])?;
+    let saved = repos.fetch("20260101T000001Z")?;
+    let reflected = reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+
+    assert!(
+        saved.contains(&RefChange::Deleted {
+            reference: reference("heads/topic"),
+            archived: reference("archive/20260101T000001Z/heads/topic"),
+        }),
+        "{saved:?}"
+    );
+    assert!(
+        !reflected
+            .iter()
+            .any(|entry| entry.reference == "refs/heads/topic"),
+        "{reflected:?}"
+    );
+    assert_eq!(repos.host_ref("refs/heads/topic")?, tip);
+    Ok(())
+}
