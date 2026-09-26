@@ -577,3 +577,12 @@ fn a_sandbox_is_reached_over_the_ssh_that_docker_sandboxes_sets_up() -> Checked 
     );
     Ok(())
 }
+
+#[test]
+fn text_from_the_sandbox_keeps_its_lines_but_shows_other_control_characters() {
+    assert_eq!(
+        super::neutralized("remote: \u{1b}[31mred\u{1b}[0m\r\nnext\tline\u{7}"),
+        "remote: \\u{1b}[31mred\\u{1b}[0m\\r\nnext\tline\\u{7}"
+    );
+    assert_eq!(super::neutralized("plain テキスト"), "plain テキスト");
+}

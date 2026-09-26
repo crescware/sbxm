@@ -5,7 +5,9 @@ use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::{Result, unparseable};
 use crate::support::sandbox;
 
-use super::{PushRefusal, host_git, sandbox_remote, sandbox_ssh_config, sandbox_unwritable};
+use super::{
+    PushRefusal, host_git, refusal_reason, sandbox_remote, sandbox_ssh_config, sandbox_unwritable,
+};
 
 /// hostのbranchが届く、Sandboxのremote-tracking ref。
 const ORIGIN_BRANCHES: &str = "refs/remotes/origin/";
@@ -89,13 +91,10 @@ fn push(
                 "a ref line had no source and destination",
             ));
         };
-        let reason = summary
-            .rsplit_once(" (")
-            .and_then(|(_, reason)| reason.strip_suffix(')'))
-            .unwrap_or(summary);
+        // Sandboxが断った理由は、Sandboxのgitやhookが決めた文字列である。
         refused.push(PushRefusal {
             reference: reference.to_string(),
-            reason: reason.to_string(),
+            reason: sandbox::neutralized(refusal_reason(summary)),
         });
     }
     // 断ったrefが1つも読めない失敗は、refごとの答えではない。

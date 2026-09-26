@@ -605,6 +605,57 @@ fn a_tag_the_sandbox_keeps_is_a_warning_and_a_refused_branch_stops_the_build() -
 }
 
 #[test]
+fn a_reason_git_reports_is_read_whole_even_when_it_holds_parentheses() {
+    for (summary, reason) in [
+        ("[rejected] (non-fast-forward)", "non-fast-forward"),
+        ("[rejected] (already exists)", "already exists"),
+        (
+            "[remote rejected] (pre-receive hook declined)",
+            "pre-receive hook declined",
+        ),
+        ("[remote rejected] (foo (bar))", "foo (bar)"),
+        ("[remote rejected] (see [docs] (here))", "see [docs] (here)"),
+        ("odd", "odd"),
+    ] {
+        assert_eq!(refusal_reason(summary), reason, "{summary}");
+    }
+}
+
+#[test]
+fn a_reason_the_sandbox_wrote_reaches_the_host_without_its_control_characters() -> Checked {
+    // `[remote rejected]`の理由は、Sandboxのgitやhookが決める。hostの端末を操作する
+    // 文字は、見える形にしてから渡す。
+    let git_dir = "/home/agent/work/example-repo/.git";
+    let push = format!(
+        "-c {} push --porcelain --no-verify {} refs/tags/*:refs/tags/*",
+        sandbox_ssh_config(),
+        sandbox_remote("sbxm-example", git_dir)
+    );
+    let host = crate::testing::host::FakeSbx::listing("").answering(
+        &push,
+        1,
+        "To x\n!\trefs/tags/v1:refs/tags/v1\t[remote rejected] (hook \u{1b}]0;x\u{7} said (no))\nDone\n",
+    );
+
+    let refused = push_to_sandbox(
+        &host,
+        std::path::Path::new("/home/user/code/app/.git"),
+        "sbxm-example",
+        git_dir,
+    )
+    .required()?;
+
+    assert_eq!(
+        refused,
+        vec![PushRefusal {
+            reference: "refs/tags/v1".to_string(),
+            reason: "hook \\u{1b}]0;x\\u{7} said (no)".to_string(),
+        }]
+    );
+    Ok(())
+}
+
+#[test]
 fn a_host_repository_without_commits_sends_nothing() -> Checked {
     let root = tempfile::tempdir().required()?;
     let host = root.path().join("empty");
