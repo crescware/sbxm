@@ -7,28 +7,18 @@ use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
 
-/// 実行内容を記録するfake executableを作る。
-fn fake_executable(dir: &Path, name: &str, body: &str) -> Checked<PathBuf> {
+/// 実行内容を記録するscriptを置く。
+///
+/// scriptは`sh <path>`で起動し、書いたfileそのものをexecしない。書いた直後のfileをexecすると、
+/// 別threadのtestがforkした子が書き込み端を持ったままの間は`ETXTBSY`で起動できない。
+/// interpreterがfileを読むだけなら、この競合は起きない。
+fn fake_script(dir: &Path, name: &str, body: &str) -> Checked<String> {
     let path = dir.join(name);
-    {
-        let mut file = fs::File::create(&path).required_because("create fake executable")?;
-        file.write_all(format!("#!/bin/sh\n{body}\n").as_bytes())
-            .required_because("write fake executable")?;
-        file.sync_all().required_because("flush fake executable")?;
-    }
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-        .required_because("make executable")?;
-    Ok(path)
-}
-
-/// 作りたてのfake executableを、timeout classの既定値で実行する。
-fn run_fake(spec: &CommandSpec) -> Result<CommandOutcome> {
-    retrying(|| run(spec))
+    fs::write(&path, format!("{body}\n")).required_because("write the fake script")?;
+    Ok(path.to_str().required()?.to_string())
 }
 
 /// timeout classの既定値ではない待ち時間で実行する。
@@ -84,27 +74,10 @@ fn run_capture_after_ready(
     Ok(())
 }
 
-/// spawnに失敗した試行だけをやり直す。
-///
-/// 別threadのtestがforkしている最中は、書き込み直後のfileが`ETXTBSY`で起動できない
-/// ことがある。実装ではなくtest環境の競合なので、短い間だけ繰り返す。
-fn retrying<T>(mut attempt: impl FnMut() -> Result<T>) -> Result<T> {
-    for _ in 0..50 {
-        match attempt() {
-            Err(error) if error.contains_id(ErrorId::ExternalCommandSpawnFailed) => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            other => return other,
-        }
-    }
-    attempt()
-}
-
 /// 待つ相手だけを用意する。
 ///
 /// `wait_with_limit`はpipeもprocess groupも前提にしないため、待機と打ち切りだけを
-/// 見るtestは、直接の子を1つ起動して渡す。`sleep`は書き込み直後のfileではないため、
-/// `ETXTBSY`でやり直す必要もない。
+/// 見るtestは、直接の子を1つ起動して渡す。
 fn sleeping_child(seconds: &str) -> Checked<std::process::Child> {
     std::process::Command::new("sleep")
         .arg(seconds)
@@ -179,14 +152,14 @@ fn a_command_runs_in_the_working_directory_it_was_given() -> Checked {
     let workspace = dir.path().join("workspace");
     fs::create_dir(&workspace).required()?;
     let record = dir.path().join("record");
-    let fake = fake_executable(
+    let fake = fake_script(
         dir.path(),
         "fake-tool",
         &format!(r#"pwd > "{}""#, record.display()),
     )?;
 
-    let spec = CommandSpec::capture(fake.to_str().required()?, &[]).working_dir(&workspace);
-    run_fake(&spec).required_because("the fake tool runs")?;
+    let spec = CommandSpec::capture("sh", &[&fake]).working_dir(&workspace);
+    run(&spec).required_because("the fake tool runs")?;
 
     let observed = fs::read_to_string(&record).required()?;
     assert_eq!(
@@ -200,7 +173,7 @@ fn a_command_runs_in_the_working_directory_it_was_given() -> Checked {
 fn a_relayed_command_sends_both_streams_to_the_external_output_instead_of_a_buffer() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
-    let fake = fake_executable(
+    let fake = fake_script(
         dir.path(),
         "fake-tool",
         &format!(
@@ -209,10 +182,10 @@ fn a_relayed_command_sends_both_streams_to_the_external_output_instead_of_a_buff
         ),
     )?;
 
-    let command = TerminalCommand::relayed(fake.to_str().required()?, &[]);
+    let command = TerminalCommand::relayed("sh", &[&fake]);
     let mut output = RecordedOutput::new();
-    let outcome = retrying(|| run_with_terminal(&command, &mut output))
-        .required_because("the fake tool runs")?;
+    let outcome =
+        run_with_terminal(&command, &mut output).required_because("the fake tool runs")?;
 
     assert_eq!(
         fs::read_to_string(&record).required()?,
@@ -243,11 +216,11 @@ fn a_relayed_command_sends_both_streams_to_the_external_output_instead_of_a_buff
 #[test]
 fn a_relayed_command_that_says_nothing_does_not_announce_any_external_output() -> Checked {
     let dir = tempfile::tempdir().required()?;
-    let fake = fake_executable(dir.path(), "fake-tool", "exit 0")?;
+    let fake = fake_script(dir.path(), "fake-tool", "exit 0")?;
 
-    let command = TerminalCommand::relayed(fake.to_str().required()?, &[]);
+    let command = TerminalCommand::relayed("sh", &[&fake]);
     let mut output = RecordedOutput::new();
-    retrying(|| run_with_terminal(&command, &mut output)).required_because("the fake tool runs")?;
+    run_with_terminal(&command, &mut output).required_because("the fake tool runs")?;
 
     // 空のbyte列は届くことがある。境界を置くかどうかは描画側が中身で決める。
     assert!(output.relayed.is_empty(), "nothing was written");
@@ -258,23 +231,18 @@ fn a_relayed_command_that_says_nothing_does_not_announce_any_external_output() -
 fn an_interactive_command_is_handed_the_terminal_and_waited_for_without_a_limit() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
-    let fake = fake_executable(
+    let fake = fake_script(
         dir.path(),
         "fake-tool",
         &format!(r#"printf 'ran' > "{}""#, record.display()),
     )?;
 
-    let command = TerminalCommand::handed_over(fake.to_str().required()?, &[]);
+    let command = TerminalCommand::handed_over("sh", &[&fake]);
     // 終える時期を決めるのは利用者であり、sbxmは待ち切る。
     assert_eq!(command.spec().timeout.duration(), None);
     let mut output = RecordedOutput::new();
-    // 書いたばかりのfake executableは起動に失敗してやり直すことがある。数えるのは
-    // 成立した1回の実行だけにする。
-    let outcome = retrying(|| {
-        output = RecordedOutput::new();
-        run_with_terminal(&command, &mut output)
-    })
-    .required_because("the fake tool runs")?;
+    let outcome =
+        run_with_terminal(&command, &mut output).required_because("the fake tool runs")?;
 
     assert_eq!(fs::read_to_string(&record).required()?, "ran");
     assert!(outcome.success());
@@ -295,13 +263,12 @@ fn a_failure_keeps_the_invocation_that_produced_it() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let workspace = dir.path().join("workspace");
     fs::create_dir(&workspace).required()?;
-    let fake = fake_executable(dir.path(), "fake-tool", "exit 2")?;
+    let fake = fake_script(dir.path(), "fake-tool", "exit 2")?;
 
-    let spec = CommandSpec::capture(fake.to_str().required()?, &["clone", "--bare"])
-        .working_dir(&workspace);
-    let failure = run_fake(&spec).required_because("runs")?.failure();
+    let spec = CommandSpec::capture("sh", &[&fake, "clone", "--bare"]).working_dir(&workspace);
+    let failure = run(&spec).required_because("runs")?.failure();
 
-    assert_eq!(failure.safe_args, vec!["clone", "--bare"]);
+    assert_eq!(failure.safe_args, vec![fake.as_str(), "clone", "--bare"]);
     assert_eq!(failure.working_dir.as_deref(), Some(workspace.as_path()));
     assert!(failure.exit_status.contains('2'));
     Ok(())
@@ -311,7 +278,7 @@ fn a_failure_keeps_the_invocation_that_produced_it() -> Checked {
 fn every_argument_reaches_the_program_in_order() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
-    let fake = fake_executable(
+    let fake = fake_script(
         dir.path(),
         "fake-tool",
         &format!(
@@ -320,8 +287,8 @@ fn every_argument_reaches_the_program_in_order() -> Checked {
         ),
     )?;
 
-    let spec = CommandSpec::probe(fake.to_str().required()?, &["ls", "--json"]);
-    let outcome = run_fake(&spec).required_because("the fake tool runs")?;
+    let spec = CommandSpec::probe("sh", &[&fake, "ls", "--json"]);
+    let outcome = run(&spec).required_because("the fake tool runs")?;
     assert!(outcome.success());
 
     assert_eq!(
@@ -335,7 +302,7 @@ fn every_argument_reaches_the_program_in_order() -> Checked {
 fn arguments_are_passed_without_a_shell() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
-    let fake = fake_executable(
+    let fake = fake_script(
         dir.path(),
         "fake-tool",
         &format!(r#"printf '%s' "$1" > "{}""#, record.display()),
@@ -343,8 +310,8 @@ fn arguments_are_passed_without_a_shell() -> Checked {
 
     // shellを介さないため、metacharacterはそのまま1個のargumentとして届く。
     let dangerous = "; rm -rf / #$(whoami)";
-    let spec = CommandSpec::probe(fake.to_str().required()?, &[dangerous]);
-    run_fake(&spec).required_because("the fake tool runs")?;
+    let spec = CommandSpec::probe("sh", &[&fake, dangerous]);
+    run(&spec).required_because("the fake tool runs")?;
 
     assert_eq!(fs::read_to_string(&record).required()?, dangerous);
     Ok(())
@@ -354,7 +321,7 @@ fn arguments_are_passed_without_a_shell() -> Checked {
 fn security_sensitive_runs_drop_the_ssh_agent_socket() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let record = dir.path().join("record");
-    let fake = fake_executable(
+    let fake = fake_script(
         dir.path(),
         "fake-sbx",
         &format!(
@@ -364,13 +331,12 @@ fn security_sensitive_runs_drop_the_ssh_agent_socket() -> Checked {
     )?;
 
     // 親processのenvironmentは継承されるが、SSH_AUTH_SOCKだけは除外される。
-    let inherited = CommandSpec::probe(fake.to_str().required()?, &[]);
-    run_fake(&inherited).required_because("run with inherited environment")?;
+    let inherited = CommandSpec::probe("sh", &[&fake]);
+    run(&inherited).required_because("run with inherited environment")?;
     let with_agent = fs::read_to_string(&record).required()?;
 
-    let stripped =
-        CommandSpec::probe(fake.to_str().required()?, &[]).env(EnvPolicy::InheritWithoutSshAgent);
-    run_fake(&stripped).required_because("run without the agent socket")?;
+    let stripped = CommandSpec::probe("sh", &[&fake]).env(EnvPolicy::InheritWithoutSshAgent);
+    run(&stripped).required_because("run without the agent socket")?;
     let without_agent = fs::read_to_string(&record).required()?;
 
     assert_eq!(without_agent, "ssh=<unset>\n");
@@ -423,14 +389,13 @@ fn git_in_a_host_repository_forgets_where_the_caller_pointed_git() {
 #[test]
 fn capture_keeps_both_streams_separately() -> Checked {
     let dir = tempfile::tempdir().required()?;
-    let fake = fake_executable(
+    let fake = fake_script(
         dir.path(),
         "fake-tool",
         "printf 'to stdout'; printf 'to stderr' >&2; exit 3",
     )?;
 
-    let outcome =
-        run_fake(&CommandSpec::probe(fake.to_str().required()?, &[])).required_because("runs")?;
+    let outcome = run(&CommandSpec::probe("sh", &[&fake])).required_because("runs")?;
     assert_eq!(outcome.stdout_text(), "to stdout");
     assert_eq!(outcome.failure().stderr_text(), "to stderr");
     assert!(!outcome.success());
@@ -441,10 +406,9 @@ fn capture_keeps_both_streams_separately() -> Checked {
 #[test]
 fn invalid_utf8_output_is_kept_as_bytes_and_reported_as_lossy() -> Checked {
     let dir = tempfile::tempdir().required()?;
-    let fake = fake_executable(dir.path(), "fake-tool", r"printf '\377\376' >&2")?;
+    let fake = fake_script(dir.path(), "fake-tool", r"printf '\377\376' >&2")?;
 
-    let outcome =
-        run_fake(&CommandSpec::probe(fake.to_str().required()?, &[])).required_because("runs")?;
+    let outcome = run(&CommandSpec::probe("sh", &[&fake])).required_because("runs")?;
     assert_eq!(outcome.stderr, vec![0xff, 0xfe]);
     assert!(
         outcome.stderr_lossy,
@@ -456,12 +420,12 @@ fn invalid_utf8_output_is_kept_as_bytes_and_reported_as_lossy() -> Checked {
 #[test]
 fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
     let dir = tempfile::tempdir().required()?;
-    let fake = fake_executable(dir.path(), "fake-tool", "sleep 30")?;
+    let fake = fake_script(dir.path(), "fake-tool", "sleep 30")?;
 
-    let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
+    let spec = CommandSpec::probe("sh", &[&fake]);
     // probeの10秒を待たずに判定するため、直接短いdeadlineを使う。
     let started = Instant::now();
-    let error = retrying(|| run_with_limit(&spec, Duration::from_millis(200)))
+    let error = run_with_limit(&spec, Duration::from_millis(200))
         .refused_because("the command must be terminated")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     assert!(
@@ -476,7 +440,7 @@ fn a_descendant_outliving_the_direct_child_cannot_hold_capture_open_after_timeou
     let dir = tempfile::tempdir().required()?;
     let ready = dir.path().join("ready");
     let survivor = dir.path().join("survivor");
-    let fake = fake_executable(
+    let fake = fake_script(
         dir.path(),
         "fake-tool",
         &format!(
@@ -489,12 +453,10 @@ sleep 30"#,
         ),
     )?;
 
-    let spec = CommandSpec::probe(fake.to_str().required()?, &[]);
+    let spec = CommandSpec::probe("sh", &[&fake]);
     let mut started = None;
-    let error = retrying(|| {
-        run_capture_after_ready(&spec, &ready, Duration::from_millis(200), &mut started)
-    })
-    .refused_because("the command must be terminated")?;
+    let error = run_capture_after_ready(&spec, &ready, Duration::from_millis(200), &mut started)
+        .refused_because("the command must be terminated")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     assert!(
         started
@@ -636,10 +598,9 @@ fn a_spawn_failure_that_is_not_a_missing_program_keeps_what_was_observed() -> Ch
 #[test]
 fn a_non_zero_status_maps_to_one_while_keeping_the_original_value() -> Checked {
     let dir = tempfile::tempdir().required()?;
-    let fake = fake_executable(dir.path(), "fake-tool", "printf 'boom' >&2; exit 42")?;
+    let fake = fake_script(dir.path(), "fake-tool", "printf 'boom' >&2; exit 42")?;
 
-    let outcome =
-        run_fake(&CommandSpec::probe(fake.to_str().required()?, &[])).required_because("runs")?;
+    let outcome = run(&CommandSpec::probe("sh", &[&fake])).required_because("runs")?;
     let error = outcome
         .require_success()
         .refused_because("a non-zero status is a failure")?;
@@ -657,7 +618,11 @@ fn a_non_zero_status_maps_to_one_while_keeping_the_original_value() -> Checked {
 #[test]
 fn path_lookup_finds_an_executable_placed_at_the_front_of_path() -> Checked {
     let dir = tempfile::tempdir().required()?;
-    fake_executable(dir.path(), "sbxm-fake-on-path", "exit 0")?;
+    // 探すだけで起動しないため、実行可能fileを書いてよい。
+    let path = dir.path().join("sbxm-fake-on-path");
+    fs::write(&path, "exit 0\n").required_because("write the fake executable")?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+        .required_because("make it executable")?;
 
     let original = std::env::var_os("PATH").unwrap_or_default();
     let mut entries = vec![dir.path().to_path_buf()];
@@ -677,7 +642,7 @@ fn path_lookup_finds_an_executable_placed_at_the_front_of_path() -> Checked {
 #[test]
 fn input_reaches_the_child_and_ends_with_an_eof() -> Checked {
     let spec = CommandSpec::capture("sh", &["-c", "cat"]).with_input(b"declared = true\n".to_vec());
-    let outcome = run_fake(&spec).required()?;
+    let outcome = run(&spec).required()?;
     assert!(outcome.status.success());
     assert_eq!(outcome.stdout, b"declared = true\n");
     Ok(())
@@ -688,7 +653,7 @@ fn input_larger_than_a_pipe_is_written_while_the_output_is_read() -> Checked {
     // 子は読んだ分だけ書き返す。書き込みと読み取りのどちらかが待つと、互いに止まる。
     let input: Vec<u8> = (0..=u8::MAX).cycle().take(1024 * 1024).collect();
     let spec = CommandSpec::capture("sh", &["-c", "cat"]).with_input(input.clone());
-    let outcome = run_fake(&spec).required()?;
+    let outcome = run(&spec).required()?;
     assert!(outcome.status.success());
     assert_eq!(outcome.stdout.len(), input.len());
     assert!(outcome.stdout == input, "the bytes arrive unchanged");
@@ -699,7 +664,7 @@ fn input_larger_than_a_pipe_is_written_while_the_output_is_read() -> Checked {
 fn a_child_that_never_reads_its_input_still_ends_with_its_own_status() -> Checked {
     let input = vec![0_u8; 1024 * 1024];
     let spec = CommandSpec::capture("sh", &["-c", "exit 3"]).with_input(input);
-    let outcome = run_fake(&spec).required()?;
+    let outcome = run(&spec).required()?;
     assert_eq!(outcome.status.code(), Some(3));
     Ok(())
 }
@@ -720,7 +685,7 @@ fn the_input_never_reaches_a_debug_representation() {
 fn a_streamed_run_hands_stdout_to_the_sink_and_keeps_stderr() -> Checked {
     let spec = CommandSpec::capture("sh", &["-c", "printf received; printf noted >&2"]);
     let mut sink = Vec::new();
-    let outcome = retrying(|| run_streaming(&spec, &mut sink, 1024)).required()?;
+    let outcome = run_streaming(&spec, &mut sink, 1024).required()?;
     assert!(outcome.status.success());
     assert_eq!(sink, b"received");
     assert!(outcome.stdout.is_empty(), "stdout is not kept twice");
@@ -732,7 +697,7 @@ fn a_streamed_run_hands_stdout_to_the_sink_and_keeps_stderr() -> Checked {
 fn a_streamed_run_carries_more_than_a_pipe_holds() -> Checked {
     let spec = CommandSpec::capture("head", &["-c", "2097152", "/dev/zero"]);
     let mut sink = Vec::new();
-    let outcome = retrying(|| run_streaming(&spec, &mut sink, 4 * 1024 * 1024)).required()?;
+    let outcome = run_streaming(&spec, &mut sink, 4 * 1024 * 1024).required()?;
     assert!(outcome.status.success());
     assert_eq!(sink.len(), 2 * 1024 * 1024);
     Ok(())
@@ -744,8 +709,7 @@ fn output_beyond_the_limit_ends_the_child_and_is_refused() -> Checked {
     let spec = CommandSpec::capture("yes", &[]);
     let mut sink = Vec::new();
     let started = Instant::now();
-    let error = retrying(|| run_streaming(&spec, &mut sink, 4096))
-        .refused_because("the output never ends")?;
+    let error = run_streaming(&spec, &mut sink, 4096).refused_because("the output never ends")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::ExternalCommandOutputTooLarge)
@@ -771,7 +735,7 @@ impl std::io::Write for RefusingSink {
 #[test]
 fn a_sink_that_cannot_take_the_output_refuses_the_run() -> Checked {
     let spec = CommandSpec::capture("sh", &["-c", "printf received"]);
-    let error = retrying(|| run_streaming(&spec, &mut RefusingSink, 1024))
+    let error = run_streaming(&spec, &mut RefusingSink, 1024)
         .refused_because("the output has nowhere to go")?;
     assert_eq!(
         error.first_id(),
@@ -857,7 +821,7 @@ impl std::io::Write for UnflushableSink {
 #[test]
 fn a_sink_that_cannot_finish_the_output_refuses_the_run() -> Checked {
     let spec = CommandSpec::capture("sh", &["-c", "printf received"]);
-    let error = retrying(|| run_streaming(&spec, &mut UnflushableSink(Vec::new()), 1024))
+    let error = run_streaming(&spec, &mut UnflushableSink(Vec::new()), 1024)
         .refused_because("the output was not finished")?;
     assert_eq!(
         error.first_id(),
@@ -870,7 +834,7 @@ fn a_sink_that_cannot_finish_the_output_refuses_the_run() -> Checked {
 fn the_real_host_streams_stdout_itself() -> Checked {
     let spec = CommandSpec::capture("sh", &["-c", "printf received"]);
     let mut sink = Vec::new();
-    retrying(|| RealHost.run_streaming(&spec, &mut sink, 1024)).required()?;
+    RealHost.run_streaming(&spec, &mut sink, 1024).required()?;
     assert_eq!(sink, b"received");
     Ok(())
 }
@@ -921,7 +885,7 @@ fn only_the_first_part_of_a_flood_of_diagnostics_is_kept() -> Checked {
     // 流す実行が読む相手は信用しない。stderrは診断に使う分だけ溜め、残りは読んで捨てる。
     let spec = CommandSpec::capture("sh", &["-c", "head -c 300000 /dev/zero >&2; printf done"]);
     let mut sink = Vec::new();
-    let outcome = retrying(|| RealHost.run_streaming(&spec, &mut sink, 1024)).required()?;
+    let outcome = RealHost.run_streaming(&spec, &mut sink, 1024).required()?;
     assert_eq!(sink, b"done");
     assert_eq!(outcome.stderr.len(), 64 * 1024);
     Ok(())
