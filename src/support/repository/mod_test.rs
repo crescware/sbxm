@@ -551,6 +551,60 @@ fn a_sandbox_the_host_cannot_write_to_is_named() -> Checked {
 }
 
 #[test]
+fn a_tag_the_sandbox_keeps_is_a_warning_and_a_refused_branch_stops_the_build() -> Checked {
+    // tagは上書きしないため、Sandboxの側を残して示す。branchは強制して書き込むため、
+    // 断られたら古い`origin/*`のままworktreeを作らない。
+    let tag = PushRefusal {
+        reference: "refs/tags/v1".to_string(),
+        reason: "already exists".to_string(),
+    };
+    let branch = PushRefusal {
+        reference: "refs/remotes/origin/main".to_string(),
+        reason: "pre-receive hook declined".to_string(),
+    };
+
+    let mut quiet = crate::testing::recorded_output::RecordedOutput::new();
+    settle_refusals("sbxm-example", &[], &mut quiet).required()?;
+    assert!(quiet.warnings.is_empty());
+
+    let mut warned = crate::testing::recorded_output::RecordedOutput::new();
+    settle_refusals("sbxm-example", std::slice::from_ref(&tag), &mut warned).required()?;
+    let [warning] = warned.warnings.as_slice() else {
+        return Err(crate::testing::outcome::Unmet::new(format!(
+            "one warning: {:?}",
+            warned.warnings
+        )));
+    };
+    assert_eq!(warning.description.id, "warning-sandbox-tags-kept");
+    assert!(warning.facts.contains(&Fact::reference("refs/tags/v1")));
+
+    let error = settle_refusals(
+        "sbxm-example",
+        &[tag, branch],
+        &mut crate::testing::recorded_output::RecordedOutput::new(),
+    )
+    .refused_because("a branch the sandbox refused is not left behind")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::SandboxRepositoryUnwritable);
+    assert!(
+        diagnostic
+            .facts
+            .contains(&Fact::reference("refs/remotes/origin/main")),
+        "{:?}",
+        diagnostic.facts
+    );
+    assert!(
+        !diagnostic.facts.contains(&Fact::reference("refs/tags/v1")),
+        "{:?}",
+        diagnostic.facts
+    );
+    Ok(())
+}
+
+#[test]
 fn a_host_repository_without_commits_sends_nothing() -> Checked {
     let root = tempfile::tempdir().required()?;
     let host = root.path().join("empty");

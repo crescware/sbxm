@@ -9,6 +9,8 @@ pub struct RecordedOutput {
     pub finished: usize,
     /// 示した工程。
     pub steps: Vec<Msg>,
+    /// 示した注意。
+    pub warnings: Vec<Warning>,
 }
 
 impl RecordedOutput {
@@ -27,7 +29,7 @@ impl ProgressSink for RecordedOutput {
     }
 
     fn warn(&mut self, warning: Warning) {
-        let _ = warning;
+        self.warnings.push(warning);
     }
 }
 

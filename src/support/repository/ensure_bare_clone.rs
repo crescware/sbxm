@@ -6,7 +6,7 @@ use crate::project::SandboxLayout;
 use crate::design::ProgressSink;
 use crate::support::sandbox;
 
-use super::{FETCH_REFSPEC, SandboxOrigin, verify_bare_clone};
+use super::{FETCH_REFSPEC, SandboxOrigin, settle_refusals, verify_bare_clone};
 
 /// bare repositoryを用意する。
 ///
@@ -63,11 +63,14 @@ pub fn ensure_bare_clone(
     }
     verify_bare_clone(host, sandbox, origin, &git_dir)?;
 
-    // remote-tracking refを現在の状態にしてから、起点refを解決する。同じ名前で別の先を
-    // 指すtagは、Sandboxの側を残す。どれが残ったかは`sbxm sync`が示す。
-    progress.step(msg!("progress-fetching-repository"));
-    origin.refresh(host, sandbox, &git_dir, Some(progress))?;
-    Ok(())
+    // remote-tracking refを現在の状態にしてから、起点refを解決する。hostにあるrepositoryは、
+    // Sandboxの中でfetchせず、hostのgitが書き込む。
+    progress.step(match origin {
+        SandboxOrigin::Github(_) => msg!("progress-fetching-repository"),
+        SandboxOrigin::Host { .. } => msg!("progress-sending-repository"),
+    });
+    let refused = origin.refresh(host, sandbox, &git_dir, Some(&mut *progress))?;
+    settle_refusals(sandbox, &refused, progress)
 }
 
 /// `git init --bare`の直後に中断した、まだ利用者のrefもobjectも無いrepositoryだけを

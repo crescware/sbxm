@@ -54,6 +54,25 @@ fn a_host_repository_is_pushed_into_the_sandbox_origin_from_the_host() -> Checke
 }
 
 #[test]
+fn building_a_host_repository_says_the_host_writes_into_the_sandbox() -> Checked {
+    // Sandboxの中ではfetchしない。進捗も、hostから書き込むことを示す。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = bench.register(&world, &local_request()?).required()?;
+    let mut progress = crate::testing::recorded_output::RecordedOutput::new();
+
+    bench.ensure(&world, &project, &mut progress).required()?;
+
+    let steps: Vec<&str> = progress.steps.iter().map(|step| step.id).collect();
+    assert!(steps.contains(&"progress-sending-repository"), "{steps:?}");
+    assert!(
+        !steps.contains(&"progress-fetching-repository"),
+        "{steps:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_host_repository_needs_no_github_token() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
