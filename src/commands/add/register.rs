@@ -150,7 +150,7 @@ fn require_start_branch(
 
 /// hostにあるrepositoryを、その中に作る案件directoryで登録させない。
 ///
-/// 案件directoryはDockerfile、metadata、lock、bundleを持つ。利用者のworking treeの中に
+/// 案件directoryはDockerfile、metadata、lockを持つ。利用者のworking treeの中に
 /// 作ると、`git status`に現れ、commitされ、`git clean`で消されうる。
 fn require_outside_repository(candidate: &ProjectPaths, request: &AddRequest) -> Result<()> {
     if !request.parent_inside_repository {

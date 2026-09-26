@@ -61,7 +61,7 @@ impl Switch<'_> {
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。tokenの
         // ないままimageを組み直してSandboxを作らないよう、作り直す前に確認する。
         // hostにあるrepositoryはhostから送るため、tokenを使わない。
-        let origin = repository::SandboxOrigin::of(paths, metadata)?;
+        let origin = repository::SandboxOrigin::of(metadata)?;
         let registration = match origin {
             repository::SandboxOrigin::Github(_) => {
                 Some(secret::require_github(host, name.as_str())?)

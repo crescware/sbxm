@@ -11,7 +11,7 @@ sbxm sync [<project-id>]
 
 1. The sandbox's branches, tags, and each worktree's `HEAD` are saved under `refs/sbx/<sandbox>/` of the host repository. The host repository fetches them over `ssh <sandbox>.sbx`, the same connection that [`open`](../open/) uses, with `transfer.fsckObjects`. Only objects the host does not have yet are carried. The connection starts from the host; nothing in the sandbox can reach it. A branch rewritten or deleted in the sandbox keeps its previous tip under `refs/sbx/<sandbox>/archive/<time>/`, which is never removed automatically.
 2. The host repository pushes what was saved into its own branches and tags: `refs/sbx/<sandbox>/heads/*` to `refs/heads/*` and `refs/sbx/<sandbox>/tags/*` to `refs/tags/*`. The host repository's own receive hooks run; its `pre-push` hook does not, since nothing leaves the repository.
-3. The host repository's branches and tags are sent to the sandbox, which then runs `git fetch --prune origin`.
+3. The host repository pushes its branches into the sandbox's `origin/*`, removing those deleted on the host, and its tags to the same names, over the same connection.
 
 Because the host is brought up to date before it is sent back, `origin/<branch>` in the sandbox shows the host as it is after the sync.
 
@@ -28,6 +28,8 @@ Git moves a host branch only when the move is a fast-forward, never moves the br
 | `checked-out` | The branch is checked out in the host repository, so Git did not move it |
 | `exists` | A tag of this name already points elsewhere in the host repository |
 | `refused` | Git refused the update for another reason, such as a receive hook; the reason is shown |
+
+In the sandbox's `origin`, a ref is `created`, `updated`, or `removed`, or `refused` when the sandbox already has a tag of that name pointing elsewhere; the sandbox's own tag is left.
 
 A branch checked out on the host moves along with its files when the host repository sets `receive.denyCurrentBranch` to `updateInstead` and has no uncommitted changes, as for any push into it.
 

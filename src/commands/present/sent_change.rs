@@ -7,6 +7,7 @@ pub fn sent_change(change: &SentChange) -> Inline {
         SentChange::Created { .. } => ("created", VisualState::Positive),
         SentChange::Updated { .. } => ("updated", VisualState::Positive),
         SentChange::Removed { .. } => ("removed", VisualState::Attention),
+        SentChange::Refused { .. } => ("refused", VisualState::Attention),
     };
     Inline::state(value, visual)
 }

@@ -7,6 +7,8 @@ pub enum SentChange {
     Updated { reference: String },
     /// hostに無くなったため、Sandboxのoriginからも消えた。
     Removed { reference: String },
+    /// gitが断り、Sandboxの側がそのまま残った。同じ名前で別の先を指すtagなど。
+    Refused { reference: String, reason: String },
 }
 
 impl SentChange {
@@ -14,7 +16,8 @@ impl SentChange {
         match self {
             SentChange::Created { reference }
             | SentChange::Updated { reference }
-            | SentChange::Removed { reference } => reference,
+            | SentChange::Removed { reference }
+            | SentChange::Refused { reference, .. } => reference,
         }
     }
 }

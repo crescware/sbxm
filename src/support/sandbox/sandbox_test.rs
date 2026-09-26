@@ -544,3 +544,36 @@ fn a_path_check_that_could_not_run_is_not_read_as_absence() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
     Ok(())
 }
+
+#[test]
+fn a_sandbox_is_reached_over_the_ssh_that_docker_sandboxes_sets_up() -> Checked {
+    // `ssh -G`は接続せず、宛先の実効設定だけを表示する。
+    let configured = crate::testing::host::FakeSbx::listing("").answering(
+        "-G sbxm-example.sbx",
+        0,
+        "hostname sbxm-example.sbx\nproxycommand sbx ssh-proxy %h\n",
+    );
+    super::require_ssh(&configured, "sbxm-example").required()?;
+
+    let unconfigured = crate::testing::host::FakeSbx::listing("").answering(
+        "-G sbxm-example.sbx",
+        0,
+        "hostname sbxm-example.sbx\n",
+    );
+    let error = super::require_ssh(&unconfigured, "sbxm-example")
+        .refused_because("nothing connects the name to the sandbox")?;
+    assert_eq!(
+        error.first_id(),
+        Some(crate::diagnostics::ErrorId::RemoteSshUnconfigured)
+    );
+
+    let unreadable =
+        crate::testing::host::FakeSbx::listing("").answering("-G sbxm-example.sbx", 255, "");
+    let error = super::require_ssh(&unreadable, "sbxm-example")
+        .refused_because("ssh could not read its configuration")?;
+    assert_eq!(
+        error.first_id(),
+        Some(crate::diagnostics::ErrorId::RemoteSshUnobservable)
+    );
+    Ok(())
+}

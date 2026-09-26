@@ -119,6 +119,7 @@ impl Legend {
             SentChange::Created { .. } => "legend-sent-created",
             SentChange::Updated { .. } => "legend-sent-updated",
             SentChange::Removed { .. } => "legend-sent-removed",
+            SentChange::Refused { .. } => "legend-sent-refused",
         };
         self.cell(sent_change(change), description)
     }

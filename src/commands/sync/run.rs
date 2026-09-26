@@ -29,7 +29,7 @@ pub fn run(
 ) -> Result<SyncOutput> {
     let locked = select::one(location, requested, &msg!("select-sync-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
-    let origin = SandboxOrigin::of(&locked.paths, &locked.metadata)?;
+    let origin = SandboxOrigin::of(&locked.metadata)?;
     let SandboxOrigin::Host { repository, .. } = &origin else {
         let project = locked.metadata.display_id();
         return Err(Error::single(

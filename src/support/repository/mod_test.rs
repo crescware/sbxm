@@ -308,9 +308,8 @@ fn local_metadata() -> Checked<crate::metadata::ProjectMetadata> {
 
 #[test]
 fn a_github_repository_is_fetched_over_https_from_inside_the_sandbox() -> Checked {
-    let dir = tempfile::tempdir().required()?;
     let metadata = crate::testing::metadata::attached("Example-Org", "Example-Repo")?;
-    let origin = SandboxOrigin::of(&project_paths(dir.path())?, &metadata).required()?;
+    let origin = SandboxOrigin::of(&metadata).required()?;
 
     assert_eq!(
         origin.url(),
@@ -330,35 +329,213 @@ fn a_github_repository_is_fetched_over_https_from_inside_the_sandbox() -> Checke
         .required_because("not a GitHub repository")?;
     assert_eq!(unknown.id, "cause-origin-not-a-github-repository");
 
-    // GitHubへはSandboxから取りに行く。hostからは何も送らない。
+    // GitHubへはSandboxから取りに行く。hostのgitは何も書き込まない。
     let host = crate::testing::host::FakeSbx::listing("");
-    origin.deliver(&host, "sbxm-example").required()?;
-    assert!(host.calls().is_empty(), "{:?}", host.calls());
+    origin
+        .refresh(
+            &host,
+            "sbxm-example",
+            "/home/agent/work/example-repo/.git",
+            None,
+        )
+        .required()?;
+    assert!(
+        host.calls()
+            .iter()
+            .all(|call| call.first().is_some_and(|arg| arg == "exec")),
+        "{:?}",
+        host.calls()
+    );
+    assert!(host.ran("fetch --prune origin"), "{:?}", host.calls());
     Ok(())
 }
 
 #[test]
-fn a_host_repository_is_read_from_the_bundle_inside_the_sandbox() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let paths = project_paths(dir.path())?;
-    let origin = SandboxOrigin::of(&paths, &local_metadata()?).required()?;
+fn a_host_repository_is_named_in_the_sandbox_without_its_host_path() -> Checked {
+    // Sandboxの中から届くremoteは無い。hostの実pathもSandboxへ書かない。
+    let origin = SandboxOrigin::of(&local_metadata()?).required()?;
 
-    let bundle = "/home/agent/work/app/.git/sbxm/origin.bundle";
-    assert_eq!(origin.url(), bundle);
+    assert_eq!(origin.url(), "sbxm-host::local/app");
     assert_eq!(
         origin,
         SandboxOrigin::Host {
             repository: std::path::PathBuf::from("/home/user/code/app/.git"),
-            bundle: bundle.to_string(),
-            staging: paths.bundles_dir(),
+            project: "local/app".to_string(),
         }
     );
-    origin.verify(bundle).required()?;
+    origin.verify("sbxm-host::local/app").required()?;
     let elsewhere = origin
-        .verify("https://github.com/local/app.git")
+        .verify("/home/agent/work/app/.git/sbxm/origin.bundle")
         .err()
-        .required_because("not the bundle")?;
+        .required_because("an origin of an earlier build")?;
     assert_eq!(elsewhere.id, "cause-origin-elsewhere");
+    Ok(())
+}
+
+/// hostのrepositoryと、Sandboxの中を模したbare repository。
+struct Pushing {
+    _root: tempfile::TempDir,
+    host: std::path::PathBuf,
+    sandbox: String,
+}
+
+impl Pushing {
+    fn new() -> Checked<Pushing> {
+        let root = tempfile::tempdir().required()?;
+        let host = root.path().join("host");
+        std::fs::create_dir(&host).required()?;
+        git_in(&host, &["init", "--quiet"])?;
+        git_in(
+            &host,
+            &["commit", "--quiet", "--allow-empty", "-m", "first"],
+        )?;
+        git_in(&host, &["branch", "--quiet", "topic"])?;
+        git_in(&host, &["tag", "v1"])?;
+        git_in(root.path(), &["init", "--quiet", "--bare", "sandbox.git"])?;
+        let sandbox = root
+            .path()
+            .join("sandbox.git")
+            .to_string_lossy()
+            .into_owned();
+        Ok(Pushing {
+            _root: root,
+            host,
+            sandbox,
+        })
+    }
+
+    fn push(&self) -> crate::diagnostics::Result<Vec<PushRefusal>> {
+        push_to_sandbox(
+            &crate::testing::sandbox::LocalSandbox,
+            &self.host,
+            "sbxm-example",
+            &self.sandbox,
+        )
+    }
+
+    fn sandbox_refs(&self) -> Checked<String> {
+        git_in(
+            std::path::Path::new("/"),
+            &[
+                "--git-dir",
+                &self.sandbox,
+                "for-each-ref",
+                "--format=%(refname)",
+            ],
+        )
+    }
+}
+
+#[test]
+fn the_host_reaches_the_sandbox_origin_the_way_a_fetch_would() -> Checked {
+    // Sandboxの中で`git fetch --prune origin`をしたときと同じものを、hostから書き込む。
+    let pushing = Pushing::new()?;
+    assert!(pushing.push().required()?.is_empty());
+    let refs = pushing.sandbox_refs()?;
+    for expected in [
+        "refs/remotes/origin/main",
+        "refs/remotes/origin/topic",
+        "refs/tags/v1",
+    ] {
+        assert!(
+            refs.lines().any(|line| line == expected),
+            "{expected}: {refs}"
+        );
+    }
+    // branchは運ばない。worktreeが同じ名前で作るものと衝突する。
+    assert!(
+        !refs.lines().any(|line| line.starts_with("refs/heads/")),
+        "{refs}"
+    );
+
+    // hostで消したbranchはSandboxのoriginから消える。Sandboxで作ったtagは残る。
+    git_in(&pushing.host, &["branch", "--quiet", "-D", "topic"])?;
+    git_in(
+        std::path::Path::new("/"),
+        &[
+            "--git-dir",
+            &pushing.sandbox,
+            "tag",
+            "own",
+            "refs/remotes/origin/main",
+        ],
+    )?;
+    assert!(pushing.push().required()?.is_empty());
+    let refs = pushing.sandbox_refs()?;
+    assert!(
+        !refs.lines().any(|line| line == "refs/remotes/origin/topic"),
+        "{refs}"
+    );
+    assert!(refs.lines().any(|line| line == "refs/tags/own"), "{refs}");
+    Ok(())
+}
+
+#[test]
+fn a_tag_the_sandbox_already_has_elsewhere_is_left_and_reported() -> Checked {
+    let pushing = Pushing::new()?;
+    pushing.push().required()?;
+    git_in(
+        &pushing.host,
+        &["commit", "--quiet", "--allow-empty", "-m", "second"],
+    )?;
+    git_in(&pushing.host, &["tag", "--force", "v1"])?;
+
+    let refused = pushing.push().required()?;
+
+    assert_eq!(
+        refused,
+        vec![PushRefusal {
+            reference: "refs/tags/v1".to_string(),
+            reason: "already exists".to_string(),
+        }]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_the_host_cannot_write_to_is_named() -> Checked {
+    let pushing = Pushing {
+        sandbox: "/nonexistent/sandbox.git".to_string(),
+        ..Pushing::new()?
+    };
+
+    let error = pushing
+        .push()
+        .refused_because("there is no repository to write to")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(crate::diagnostics::ErrorId::SandboxRepositoryUnwritable)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_host_repository_without_commits_sends_nothing() -> Checked {
+    let root = tempfile::tempdir().required()?;
+    let host = root.path().join("empty");
+    std::fs::create_dir(&host).required()?;
+    git_in(&host, &["init", "--quiet"])?;
+    let origin = SandboxOrigin::Host {
+        repository: host,
+        project: "local/empty".to_string(),
+    };
+    let recorded = crate::testing::host::FakeSbx::listing("");
+
+    let error = origin
+        .refresh(
+            &recorded,
+            "sbxm-example",
+            "/home/agent/work/empty/.git",
+            None,
+        )
+        .refused_because("there is nothing to send")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(crate::diagnostics::ErrorId::HostRepositoryEmpty)
+    );
+    assert!(!recorded.ran("push"), "{:?}", recorded.calls());
     Ok(())
 }
 

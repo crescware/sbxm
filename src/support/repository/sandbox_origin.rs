@@ -1,39 +1,46 @@
 use std::path::PathBuf;
 
 use crate::boundary::host::HostEnvironment;
+use crate::design::ProgressSink;
 use crate::diagnostics::{Msg, Result};
 use crate::git;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
-use crate::paths::ProjectPaths;
-use crate::project::{ProjectId, SandboxLayout};
+use crate::project::ProjectId;
 use crate::support::bundle;
 
-/// Sandboxのbare repositoryが`origin`として読むもの。
+use super::{PushRefusal, TagFollowing, push_to_sandbox, refresh_origin};
+
+/// hostにあるrepositoryを`origin`とするSandboxで、`remote.origin.url`の書き出し。
+///
+/// Sandboxの中から届くremoteは無い。`git fetch origin`や`git push origin`は、この名前の
+/// remote helperが無いため、何も変えずに失敗する。
+const HOST_ORIGIN: &str = "sbxm-host::";
+
+/// Sandboxのbare repositoryの`origin`。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SandboxOrigin {
     /// GitHubのrepository。Sandboxからhttpsで取る。
     Github(ProjectId),
-    /// hostにあるrepository。hostから送ったbundleを、Sandboxの中のfileとして読む。
+    /// hostにあるrepository。hostのgitが、ssh越しにSandboxのoriginを書き込む。
     ///
-    /// Sandboxからhostへの経路は作らない。送るbundleは案件の`staging`で作る。
+    /// Sandboxからhostへの経路は作らない。`project`は`remote.origin.url`に使う案件ID
+    /// であり、hostの実pathはSandboxへ書かない。
     Host {
         repository: PathBuf,
-        bundle: String,
-        staging: PathBuf,
+        project: String,
     },
 }
 
 impl SandboxOrigin {
-    pub fn of(paths: &ProjectPaths, metadata: &ProjectMetadata) -> Result<SandboxOrigin> {
+    pub fn of(metadata: &ProjectMetadata) -> Result<SandboxOrigin> {
         match metadata.repository.host_path() {
             None => Ok(SandboxOrigin::Github(ProjectId::parse(
                 &metadata.display_id(),
             )?)),
             Some(repository) => Ok(SandboxOrigin::Host {
                 repository: repository.to_path_buf(),
-                bundle: SandboxLayout::new(metadata.canonical_id()).origin_bundle(),
-                staging: paths.bundles_dir(),
+                project: metadata.display_id(),
             }),
         }
     }
@@ -44,7 +51,7 @@ impl SandboxOrigin {
             SandboxOrigin::Github(project) => {
                 git::https_remote_url(project.owner(), project.repository())
             }
-            SandboxOrigin::Host { bundle, .. } => bundle.clone(),
+            SandboxOrigin::Host { project, .. } => format!("{HOST_ORIGIN}{project}"),
         }
     }
 
@@ -63,11 +70,11 @@ impl SandboxOrigin {
                     None => Err(msg!("cause-origin-not-a-github-repository", observed = url)),
                 }
             }
-            SandboxOrigin::Host { bundle, .. } if url == bundle => Ok(()),
-            SandboxOrigin::Host { bundle, .. } => Err(msg!(
+            SandboxOrigin::Host { .. } if url == self.url() => Ok(()),
+            SandboxOrigin::Host { .. } => Err(msg!(
                 "cause-origin-elsewhere",
                 observed = url,
-                declared = bundle
+                declared = self.url()
             )),
         }
     }
@@ -90,28 +97,27 @@ impl SandboxOrigin {
         }
     }
 
-    /// fetchの前に、originが読むものを用意する。
+    /// Sandboxのoriginを、今の状態にする。gitが断ったrefを返す。
     ///
-    /// hostにあるrepositoryは、そのbranchとtagをbundleにして送る。GitHubのrepository
-    /// にはSandboxから取りに行くため、何もしない。
-    pub fn deliver(&self, host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
+    /// GitHubのrepositoryは、Sandboxの中で`git fetch --prune origin`を行う。hostにある
+    /// repositoryは、hostのgitがそのbranchとtagをssh越しにSandboxのoriginへ書き込む。
+    /// 送るbranchもtagも無いrepositoryは、何も書き込まずに断る。
+    pub fn refresh(
+        &self,
+        host: &dyn HostEnvironment,
+        sandbox: &str,
+        git_dir: &str,
+        progress: Option<&mut dyn ProgressSink>,
+    ) -> Result<Vec<PushRefusal>> {
         match self {
-            SandboxOrigin::Github(_) => Ok(()),
-            SandboxOrigin::Host {
-                repository,
-                bundle,
-                staging,
-            } => {
-                // branchもtagも無いrepositoryからは、gitがbundleを作らない。
+            SandboxOrigin::Github(_) => {
+                refresh_origin(host, sandbox, git_dir, TagFollowing::Auto, progress)?
+                    .require_success()?;
+                Ok(Vec::new())
+            }
+            SandboxOrigin::Host { repository, .. } => {
                 bundle::require_something_to_send(host, repository)?;
-                bundle::send_to_sandbox(
-                    host,
-                    repository,
-                    &["--branches", "--tags"],
-                    staging,
-                    sandbox,
-                    bundle,
-                )
+                push_to_sandbox(host, repository, sandbox, git_dir)
             }
         }
     }

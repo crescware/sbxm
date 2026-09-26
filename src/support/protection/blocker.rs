@@ -216,9 +216,9 @@ fn open(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {
 /// originへpushするか、hostのrepositoryと同期すれば、Sandboxを消しても残る。
 ///
 /// GitHubの案件では、Sandboxの中からoriginへpushすることを勧める。hostへの保存は、
-/// 対話端末での申し出だけが行う。hostにあるrepositoryの案件では、Sandboxのoriginは
-/// hostから送ったbundleであり、pushしても残らない。同期を勧める。stashやnotesの
-/// commitは、同期しても辿れるようにならない。
+/// 対話端末での申し出だけが行う。hostにあるrepositoryの案件では、Sandboxの中から
+/// originへpushできない。同期を勧める。stashやnotesのcommitは、同期しても辿れるように
+/// ならない。
 fn unreachable_remediation(project: &str, reference: &str, origin: OriginKind) -> Remediation {
     match (origin, bundle::carries(reference)) {
         (OriginKind::Remote, _) => open(project, msg!("remediation-origin-commit-unreachable")),

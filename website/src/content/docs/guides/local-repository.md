@@ -13,6 +13,8 @@ sbxm open local/<repository>
 
 ## Registering
 
+The Remote SSH integration of Docker Sandboxes must be set up on this host, since the host repository reaches the sandbox over SSH; [`sbxm status --global`](../../reference/cli/status/) shows whether it is, and `open` checks it before it builds anything.
+
 The path must be a Git directory: the `.git` of a working tree, a bare repository, or the `.git` file of a worktree created with `git worktree add` or of a submodule. A working-tree directory is refused, because a directory can hold more than one repository and does not say which one it means; Git does not search upward from the path either. A symlink or a `.git` file is resolved, and the real path of the repository is recorded. For a worktree, that is the repository its worktrees share, so every worktree of one repository adds the same project.
 
 Like any project, the project directory is created in the directory you run `add` from, so run it from outside the repository; `add` refuses to create it inside any working tree of the repository or inside its Git directory. The project ID is `local/<name>`, where the name is the directory name `git clone` would use — `<repository>` for `~/code/<repository>/.git`, `app` for `app.git` — unless you pass `--name <name>`. When that name cannot name a project, `add` asks for `--name`.
@@ -25,7 +27,7 @@ Run [`sbxm sync`](../../reference/cli/sync/) to sync the host repository and the
 
 ## Getting the host's history into the sandbox
 
-When `open` builds the sandbox, sbxm writes the host repository's branches and tags into one `git bundle`. It streams the bundle into the sandbox through the standard input of `sbx exec` and places it at `<repository>/.git/sbxm/origin.bundle` after checking its digest. The sandbox's `origin` points at that file, so the managed worktrees are created from `origin/<branch>` as they are for a GitHub project. Nothing in the sandbox can reach the host repository.
+When `open` builds the sandbox, the host repository pushes its branches into the sandbox's `origin/*` and its tags to the same names, over `ssh <sandbox>.sbx`, the same connection that [`open`](../../reference/cli/open/) uses. The managed worktrees are then created from `origin/<branch>` as they are for a GitHub project. The connection starts from the host, never prompts, and never forwards the host's SSH agent; nothing in the sandbox can reach the host repository. The sandbox's `origin` is set to `sbxm-host::<project-id>`, so `git fetch origin` or `git push origin` inside the sandbox fails without changing anything; run `sbxm sync` on the host instead.
 
 [`sbxm apply --worktrees`](../../reference/cli/apply/) sends the host repository again before it adds worktrees, as `sbxm sync` does, so the new worktrees start from the host's current branches.
 
@@ -42,7 +44,7 @@ A stopped sandbox is never started just for this. When something was saved, a li
 
 ## What rebuild and destroy protect
 
-The bundle inside the sandbox disappears with the sandbox. So for a project added with `--local`, [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) count a commit as kept only when the host repository reaches it: from one of its branches or tags, or from what was saved under `refs/sbx/<sandbox>/`. A commit the host does not have stops them. An interactive terminal offers to save it and continue.
+The sandbox's `origin` is only a copy of the host repository, and it disappears with the sandbox. So for a project added with `--local`, [`rebuild`](../../reference/cli/rebuild/) and [`destroy`](../../reference/cli/destroy/) count a commit as kept only when the host repository reaches it: from one of its branches or tags, or from what was saved under `refs/sbx/<sandbox>/`. A commit the host does not have stops them. An interactive terminal offers to save it and continue.
 
 Uncommitted changes stop them the same way as for a GitHub project. Commit them in the sandbox first.
 

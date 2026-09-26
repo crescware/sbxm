@@ -15,8 +15,8 @@ const ORIGIN_REFS_NAMESPACE: &str = "refs/remotes/origin/";
 
 /// hostにあるrepositoryを登録した案件で、hostのrepositoryをoriginとして観測する。
 ///
-/// Sandboxのoriginはhostから送ったbundleであり、送ったあとにhostで消したbranchも
-/// 持ち続ける。bundleから辿れても、Sandboxを消したあとに残るとは限らない。hostの
+/// Sandboxのoriginは、hostが最後に書き込んだときの写しであり、Sandboxと一緒に消える。
+/// Sandboxのoriginから辿れても、Sandboxを消したあとに残るとは限らない。hostの
 /// branch、tag、sbxmが`refs/sbx/<sandbox>/`へ保存した先端から辿れるcommitだけを、
 /// 失われないものとする。hostに無いcommitは、どこからも辿れないものとする。
 ///

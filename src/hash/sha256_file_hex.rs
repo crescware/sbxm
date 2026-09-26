@@ -8,7 +8,7 @@ use super::lowercase_hex;
 
 /// fileの中身のSHA-256のlowercase hex。
 ///
-/// bundleのように大きなfileを、memoryへ読み込まずに少しずつ数える。
+/// Sandboxから受け取った大きなfileを、memoryへ読み込まずに少しずつ数える。
 pub fn sha256_file_hex(path: &Path) -> io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();

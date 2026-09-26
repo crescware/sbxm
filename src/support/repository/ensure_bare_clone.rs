@@ -6,13 +6,13 @@ use crate::project::SandboxLayout;
 use crate::design::ProgressSink;
 use crate::support::sandbox;
 
-use super::{FETCH_REFSPEC, SandboxOrigin, TagFollowing, verify_bare_clone};
+use super::{FETCH_REFSPEC, SandboxOrigin, verify_bare_clone};
 
 /// bare repositoryを用意する。
 ///
 /// 既存のdirectoryは、対象repositoryのbare cloneであると証明できた場合だけ再利用し、
-/// 条件を満たさない場合は自動削除せずに停止する。hostにあるrepositoryは、fetchの
-/// 前にhostからbundleを送る。
+/// 条件を満たさない場合は自動削除せずに停止する。hostにあるrepositoryは、hostのgitが
+/// ssh越しにoriginを書き込む。
 pub fn ensure_bare_clone(
     host: &dyn HostEnvironment,
     sandbox: &str,
@@ -63,11 +63,10 @@ pub fn ensure_bare_clone(
     }
     verify_bare_clone(host, sandbox, origin, &git_dir)?;
 
-    // remote-tracking refを現在の状態にしてから、起点refを解決する。
+    // remote-tracking refを現在の状態にしてから、起点refを解決する。同じ名前で別の先を
+    // 指すtagは、Sandboxの側を残す。どれが残ったかは`sbxm sync`が示す。
     progress.step(msg!("progress-fetching-repository"));
-    origin.deliver(host, sandbox)?;
-    super::refresh_origin(host, sandbox, &git_dir, TagFollowing::Auto, Some(progress))?
-        .require_success()?;
+    origin.refresh(host, sandbox, &git_dir, Some(progress))?;
     Ok(())
 }
 

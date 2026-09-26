@@ -1542,7 +1542,7 @@ fn local_host_to_rebuild(
         0,
         &format!("refs/sbx/{name}/heads/main\n"),
     )
-    // 新しいSandboxのoriginは、hostから送ったbundleを指す。
+    // 新しいSandboxのoriginは、hostのgitが書き込む。Sandboxの中からは届かない。
     .answering(
         "for-each-ref --count=1 --format=%(refname) refs/heads/ refs/tags/",
         0,
@@ -1551,7 +1551,7 @@ fn local_host_to_rebuild(
     .answering(
         &format!("exec {name} -- git --git-dir {git_dir} config --get-all remote.origin.url"),
         0,
-        &format!("{git_dir}/sbxm/origin.bundle\n"),
+        &format!("sbxm-host::{}\n", project.metadata.display_id()),
     )
     // hostへ保存したbranchが2本ある。
     .answering(

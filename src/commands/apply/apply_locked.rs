@@ -84,7 +84,7 @@ pub(super) fn apply_locked(
     if let Some(count) = scope.worktrees {
         raise_worktrees(&locked.paths, &mut locked.metadata, count)?;
         let layout = SandboxLayout::new(&canonical);
-        let origin = repository::SandboxOrigin::of(&locked.paths, &locked.metadata)?;
+        let origin = repository::SandboxOrigin::of(&locked.metadata)?;
         repository::ensure_bare_clone(host, &entry.name, &origin, &layout, progress)
             .map_err(decorate)?;
         let branch = repository::resolve_start_ref(

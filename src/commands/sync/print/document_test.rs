@@ -132,6 +132,28 @@ fn a_branch_that_is_only_behind_loses_nothing_and_is_not_said_to_be_kept() -> Ch
 }
 
 #[test]
+fn a_tag_the_sandbox_kept_is_listed_with_why_git_refused_it() -> Checked {
+    let text = rendered(
+        &output(
+            None,
+            vec![SentChange::Refused {
+                reference: "refs/tags/v1".to_string(),
+                reason: "already exists".to_string(),
+            }],
+        ),
+        Locale::En,
+    )?;
+    for expected in [
+        "refs/tags/v1",
+        "refused",
+        "Git refused refs/tags/v1: already exists",
+    ] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+    Ok(())
+}
+
+#[test]
 fn a_sync_that_changed_nothing_says_so() -> Checked {
     for reflected in [None, Some(Vec::new())] {
         let text = rendered(&output(reflected, Vec::new()), Locale::Ja)?;

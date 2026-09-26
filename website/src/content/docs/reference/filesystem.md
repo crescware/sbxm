@@ -28,7 +28,7 @@ refs/sbx/<sandbox>/
 
 sbxm writes nothing outside this namespace in your clone, and it never removes `archive/`.
 
-A project added with `--local` has no `<repository>/` clone inside the project directory: the registered repository plays that role, and `refs/sbx/<sandbox>/` is written there. `.sbxm/bundles/` holds, only while it is being sent, the bundle of the host repository's branches and tags that goes into the sandbox.
+A project added with `--local` has no `<repository>/` clone inside the project directory: the registered repository plays that role, and `refs/sbx/<sandbox>/` is written there.
 
 ## Global state
 
@@ -78,10 +78,4 @@ Inside a built sandbox, managed worktrees look like:
 
 The exact count and attached/detached mode come from the project registration and later `apply` changes.
 
-For a project added with `--local`, the sandbox's `origin` is the bundle sent from the host:
-
-```text
-/home/agent/work/<repository>/.git/sbxm/origin.bundle
-```
-
-It is replaced whenever the host repository is sent again, and it disappears with the sandbox.
+For a project added with `--local`, the sandbox's `origin` is `sbxm-host::<project-id>`. Nothing in the sandbox can reach it; the host repository writes `refs/remotes/origin/*` and tags into the sandbox over SSH, and they disappear with the sandbox.

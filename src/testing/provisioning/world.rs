@@ -220,6 +220,10 @@ impl crate::boundary::host::HostEnvironment for World {
             "git" => Self::host_git(spec),
             "docker" => self.docker(spec),
             "sbx" => self.sbx(spec),
+            // sbxが用意するRemote SSHの設定。Sandboxへsshでつながる。
+            "ssh" if spec.args.first().is_some_and(|arg| arg == "-G") => {
+                (0, "proxycommand sbx ssh-proxy %h\n".to_string())
+            }
             _ => (0, String::new()),
         };
         Ok(Self::outcome(spec, code, &stdout))

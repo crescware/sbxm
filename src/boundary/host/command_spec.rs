@@ -65,23 +65,7 @@ impl CommandSpec {
     pub fn input(&self) -> Option<&[u8]> {
         match &self.input {
             CommandInput::Bytes(bytes) => Some(bytes.as_slice()),
-            CommandInput::Empty | CommandInput::File(_) => None,
-        }
-    }
-
-    /// stdinへ`path`のfileをつなぐ。sbxmはその中身を読まず、子が読み切ればEOFになる。
-    ///
-    /// memoryへ読み込まずに渡す、大きな入力のために使う。
-    pub fn with_input_file(mut self, path: &Path) -> CommandSpec {
-        self.input = CommandInput::File(path.to_path_buf());
-        self
-    }
-
-    /// stdinへつなぐfile。
-    pub fn input_file(&self) -> Option<&Path> {
-        match &self.input {
-            CommandInput::File(path) => Some(path),
-            CommandInput::Empty | CommandInput::Bytes(_) => None,
+            CommandInput::Empty => None,
         }
     }
 

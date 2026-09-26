@@ -484,11 +484,14 @@ use unless you pass `--name <name>`. The sandbox starts from the branch the Git
 directory is on — for a worktree's `.git`, that worktree's branch — or from the
 branch given with `--detach`.
 
-No GitHub token is involved, so skip registering one. When `open` builds the
-sandbox, sbxm writes the host repository's branches and tags into one
-`git bundle`, streams it into the sandbox through `sbx exec`, and points the
-sandbox's `origin` at that bundle. Nothing in the sandbox can reach the host
-repository.
+No GitHub token is involved, so skip registering one. The Remote SSH
+integration of Docker Sandboxes must be set up, since the host repository
+reaches the sandbox over `ssh <sandbox>.sbx`, the same connection that
+`sbxm open` uses; `sbxm status --global` shows whether it is. When `open`
+builds the sandbox, the host repository pushes its branches and tags into the
+sandbox's `origin/*` over that connection. The connection starts from the
+host: nothing in the sandbox can reach the host repository, and `git fetch
+origin` inside the sandbox fails without changing anything.
 
 Sync the host repository and the sandbox with `sbxm sync local/<name>`. The
 host repository plays the part GitHub plays for a GitHub project: the sandbox's
@@ -501,8 +504,8 @@ The sandbox's worktrees and branches are left alone; merge or rebase onto
 `origin/<branch>` inside the sandbox and sync again, as you would before
 pushing to GitHub again.
 
-Because the bundle inside the sandbox disappears with it, rebuild and destroy
-count a commit as kept only when the host repository reaches it: from one of
+Because the sandbox's `origin` is only a copy that disappears with it, rebuild
+and destroy count a commit as kept only when the host repository reaches it: from one of
 its branches or tags, or from what was saved under `refs/sbx/<sandbox>/`. A
 commit the host does not have stops them, and an interactive terminal offers
 to save it first.

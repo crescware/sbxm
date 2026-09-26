@@ -27,7 +27,7 @@ pub(crate) fn provision_interior(
     let layout = SandboxLayout::new(&canonical);
 
     sandbox::require_credentials_isolated(host, &ready_name)?;
-    let origin = repository::SandboxOrigin::of(&locked.paths, &locked.metadata)?;
+    let origin = repository::SandboxOrigin::of(&locked.metadata)?;
     // credential helperへ書く直前に読む。事前条件の確認から時間が空くため、その間に
     // tokenを登録し直していれば、新しいplaceholderをそのまま持たせる。hostにある
     // repositoryはhostから送るため、tokenを使わない。
