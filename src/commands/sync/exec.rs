@@ -33,10 +33,7 @@ pub fn exec(
         host,
         context.workspace_root,
     ) {
-        Ok(output) => {
-            ui.stdout(&print::document(&output, locale));
-            ExitCode::Success
-        }
+        Ok(output) => print::report(ui, &output),
         Err(error) => report(ui, &error),
     }
 }

@@ -19,6 +19,8 @@ Because the host is brought up to date before it is sent back, `origin/<branch>`
 
 Git moves a host branch only when the move is a fast-forward, never moves the branch checked out in the host repository, and never moves a tag that already points elsewhere. A branch deleted in the sandbox stays on the host, as a remote branch stays on GitHub when you delete your own. A branch deleted on the host disappears from the sandbox's `origin`. Tags are never removed on either side.
 
+Because deletions do not travel, a tag you delete on the host comes back at the next sync while the sandbox still has it, as it would after `git push --tags` from a clone that has it; delete it inside the sandbox as well. The same goes for a branch deleted on the host while the sandbox has its own branch of that name.
+
 | Result | Meaning |
 | --- | --- |
 | `created` | The branch or tag did not exist in the host repository and was created |
@@ -34,5 +36,7 @@ In the sandbox's `origin`, a ref is `created`, `updated`, or `removed`, or `refu
 A branch checked out on the host moves along with its files when the host repository sets `receive.denyCurrentBranch` to `updateInstead` and has no uncommitted changes, as for any push into it.
 
 Whatever Git refused stays as it was, and its commits are kept under `refs/sbx/<sandbox>/`. To bring such a branch in, merge or rebase onto `origin/<branch>` inside the sandbox, then sync again, the same as you would before pushing to GitHub again. The sandbox's worktrees and branches are never touched by `sync`.
+
+When Git left any ref as it was, that is, any result other than `created`, `updated`, or `behind` in the host repository, or `refused` in the sandbox's `origin`, `sync` still shows the whole result and then exits with status `1`, as `git push` and `git fetch` do. A sandbox branch that is only `behind` does not count: the host already has its commits.
 
 A project added from GitHub is refused: its sandbox fetches from and pushes to GitHub itself.

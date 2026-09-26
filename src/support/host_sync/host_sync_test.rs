@@ -1205,3 +1205,106 @@ fn a_ref_line_git_did_not_write_is_not_read_as_a_result() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_push_that_failed_without_refusing_any_ref_is_an_error_rather_than_nothing_reflected() -> Checked
+{
+    // gitは断ったrefがあれば1で終わる。1で終わったのに断ったrefが1つも無ければ、refごとの
+    // 答えではない。何も反映しなかった成功とは読まない。
+    let push = format!(
+        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
+    );
+    for output in [
+        "",
+        "To .\nDone\n",
+        "To .\n=\trefs/sbx/x/heads/main:refs/heads/main\t[up to date]\nDone\n",
+    ] {
+        let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#)
+            .answering(&push, 1, output);
+
+        let error = reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE)
+            .refused_because("a failure without a refused ref is not a result")?;
+
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandFailed),
+            "{output:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn reflecting_waits_for_the_host_repository_hooks_as_long_as_a_transfer() -> Checked {
+    // 反映のpushの中で、hostのrepositoryのreceive hookと、`updateInstead`での作業treeの
+    // 更新が走る。手元のfileの読み書きの時間では打ち切らない。
+    let push = format!(
+        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
+    );
+    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+
+    reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE).required()?;
+
+    assert_eq!(
+        host.spec(&push)?.timeout,
+        crate::boundary::host::TimeoutClass::RepositoryTransfer
+    );
+    Ok(())
+}
+
+#[test]
+fn a_branch_deleted_in_the_sandbox_stays_on_the_host_after_it_is_saved_and_reflected() -> Checked {
+    // 削除は運ばない。GitHubで手元のbranchを消しても、remoteのbranchが残るのと同じである。
+    // 保存は消えたbranchを`archive/`へ退避し、反映はhostのbranchに触れない。
+    let repos = Repositories::new()?;
+    git_in(&repos.worktree, &["branch", "topic"])?;
+    repos.fetch("20260101T000000Z")?;
+    reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+    let tip = repos.host_ref("refs/heads/topic")?;
+
+    git_in(&repos.worktree, &["branch", "--quiet", "-D", "topic"])?;
+    let saved = repos.fetch("20260101T000001Z")?;
+    let reflected = reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+
+    assert!(
+        saved.contains(&RefChange::Deleted {
+            reference: reference("heads/topic"),
+            archived: reference("archive/20260101T000001Z/heads/topic"),
+        }),
+        "{saved:?}"
+    );
+    assert!(
+        !reflected
+            .iter()
+            .any(|entry| entry.reference == "refs/heads/topic"),
+        "{reflected:?}"
+    );
+    assert_eq!(repos.host_ref("refs/heads/topic")?, tip);
+    Ok(())
+}
+
+#[test]
+fn a_tag_deleted_on_the_host_comes_back_while_the_sandbox_still_has_it() -> Checked {
+    // 削除は運ばず、tagはどちらの側でも消さない。Sandboxに残るtagは、次の保存と反映で
+    // hostへもう一度届く。`git push --tags`と同じである。
+    let repos = Repositories::new()?;
+    git_in(&repos.worktree, &["tag", "v1"])?;
+    repos.fetch("20260101T000000Z")?;
+    reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+    let tip = repos.host_ref("refs/tags/v1")?;
+
+    git_in(&repos.host, &["tag", "--delete", "v1"])?;
+    repos.fetch("20260101T000001Z")?;
+    let reflected = reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+
+    // hostとSandboxの`main`は、fixtureで別々に作ったため分かれている。見るのはtagだけである。
+    assert!(
+        reflected.contains(&Reflected {
+            reference: "refs/tags/v1".to_string(),
+            result: ReflectResult::Created,
+        }),
+        "{reflected:?}"
+    );
+    assert_eq!(repos.host_ref("refs/tags/v1")?, tip);
+    Ok(())
+}
