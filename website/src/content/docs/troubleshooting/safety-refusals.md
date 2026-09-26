@@ -13,9 +13,9 @@ save or resolve those Layer A blockers independently.
 
 For a project added with `--local`, pushing inside the sandbox does not help:
 its origin is a bundle sent from the host and disappears with the sandbox.
-Save the commits into the host repository with
-[`sbxm fetch`](../../reference/cli/fetch/) instead. An interactive rebuild or
-destroy offers to do that and continue.
+Sync them into the host repository with
+[`sbxm sync`](../../reference/cli/sync/) instead. An interactive rebuild or
+destroy also offers to save them and continue.
 
 ### Active session
 

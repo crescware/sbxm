@@ -30,7 +30,7 @@ pub fn save_selected(
         Ok(locked) => locked,
         Err(error) => return AutoSaved::Failed(bundle::save_failed(&display_id, &error)),
     };
-    // 世代の切替の途中は`sbxm fetch`も断る。続きの`rebuild`へ任せる。
+    // 世代の切替の途中は保存しない。続きの`rebuild`へ任せる。
     if locked.metadata.rebuild.is_some()
         || inventory::require_running(host, &locked.metadata, workspace_root).is_err()
     {

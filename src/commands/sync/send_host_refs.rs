@@ -15,7 +15,7 @@ const COMPARED: [&str; 2] = ["refs/remotes/origin/", "refs/tags/"];
 /// Sandboxのoriginが読むものを送り直し、Sandboxの中で`git fetch --prune origin`を行う。
 /// worktreeとbranchには触れず、取り込むかどうかはSandboxの中で決める。`git_dir`が
 /// この案件のbare repositoryであることは、呼び出し側が確かめておく。
-pub(crate) fn send_host_refs(
+pub(super) fn send_host_refs(
     host: &dyn HostEnvironment,
     origin: &SandboxOrigin,
     sandbox: &str,

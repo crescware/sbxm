@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::commands::Context;
-use crate::design::{Remediation, RenderingPolicy, Ui};
+use crate::design::{Fact, Remediation, RenderingPolicy, Ui};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, ExitCode};
 use crate::i18n::Locale;
 use crate::msg;
@@ -28,15 +28,16 @@ fn built() -> Checked<(Bench, World, ProjectId)> {
     Ok((bench, world, project))
 }
 
-/// 保存が運ぶbranchのcommitがoriginに無い。保護の検査と同じく、保存を勧める。
+/// 保存が運ぶbranchのcommitがoriginに無い。保存すれば解ける。
 fn unreachable_commit() -> Diagnostic {
     Diagnostic::new(
         ErrorId::OriginCommitUnreachable,
         msg!("error-origin-commit-unreachable"),
     )
+    .fact(Fact::reference("refs/heads/main"))
     .remediation(
-        Remediation::text(msg!("remediation-origin-commit-save"))
-            .try_run("sbxm fetch example-org/example-repo".to_string()),
+        Remediation::text(msg!("remediation-origin-commit-unreachable"))
+            .try_run("sbxm open example-org/example-repo".to_string()),
     )
 }
 
@@ -46,6 +47,7 @@ fn unreachable_stash() -> Diagnostic {
         ErrorId::OriginCommitUnreachable,
         msg!("error-origin-commit-unreachable"),
     )
+    .fact(Fact::reference("refs/stash"))
 }
 
 fn offer(
@@ -90,7 +92,7 @@ fn choosing_to_save_fetches_and_lets_the_caller_prepare_again() -> Checked {
     )?;
 
     assert_eq!(offered.flow, ControlFlow::Continue(()));
-    // 何を失うのかを見せてから訊き、`sbxm fetch`と同じ結果を示す。
+    // 何を失うのかを見せてから訊き、保存した結果を示す。
     assert!(
         offered.stderr.contains("not reachable"),
         "{}",

@@ -13,5 +13,5 @@ pub fn save_failed(project: &str, error: &Error) -> Warning {
             .fact(Fact::cause(diagnostic.id.as_str()))
             .explain(diagnostic.description.clone());
     }
-    warning.try_run(format!("sbxm fetch {project}"))
+    warning.try_run(format!("sbxm sync {project}"))
 }

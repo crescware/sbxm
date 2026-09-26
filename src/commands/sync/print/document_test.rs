@@ -48,9 +48,17 @@ fn both_directions_are_listed_under_their_own_headings() -> Checked {
                 reflected("refs/heads/topic", ReflectResult::Created),
                 reflected("refs/heads/main", ReflectResult::Updated),
             ]),
-            vec![SentChange::Updated {
-                reference: "refs/remotes/origin/main".to_string(),
-            }],
+            vec![
+                SentChange::Created {
+                    reference: "refs/remotes/origin/topic".to_string(),
+                },
+                SentChange::Updated {
+                    reference: "refs/remotes/origin/main".to_string(),
+                },
+                SentChange::Removed {
+                    reference: "refs/remotes/origin/old".to_string(),
+                },
+            ],
         ),
         Locale::En,
     )?;
@@ -64,6 +72,8 @@ fn both_directions_are_listed_under_their_own_headings() -> Checked {
         "created",
         "Sandbox origin",
         "refs/remotes/origin/main",
+        "refs/remotes/origin/old",
+        "removed",
         "worktrees and branches in the sandbox were left as they were",
     ] {
         assert!(text.contains(expected), "{expected}: {text}");

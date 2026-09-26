@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use crate::support::bundle::RefChange;
 
-/// `fetch`の結果。
+/// 保存の結果。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FetchOutput {
+pub struct SaveOutput {
     pub project: String,
     /// 保存先のhostのrepository。
     pub repository: PathBuf,

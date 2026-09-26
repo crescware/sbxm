@@ -528,7 +528,7 @@ fn read_only_observation_reuses_local_refs_without_fetching() -> Checked {
 
 #[test]
 fn read_only_observation_counts_a_commit_saved_on_the_host_as_recoverable() -> Checked {
-    // statusのREMOTEは、破壊操作の検査と同じ根拠で読む。`sbxm fetch`で保存したcommitを
+    // statusのREMOTEは、破壊操作の検査と同じ根拠で読む。hostへ保存したcommitを
     // 失われうると示せば、検査が通すものをstatusだけが危ないと言うことになる。
     const OTHER: &str = "2222222222222222222222222222222222222222";
     let git_dir = layout()?.bare_git_dir();

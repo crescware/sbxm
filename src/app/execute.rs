@@ -50,12 +50,6 @@ pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitC
         Command::Files(args) => {
             crate::commands::files::exec(&args, &context, &mut ui, host, &mut prompt)
         }
-        Command::Fetch(project) => {
-            crate::commands::fetch::exec(project.as_ref(), &context, &mut ui, host, &mut prompt)
-        }
-        Command::Send(project) => {
-            crate::commands::send::exec(project.as_ref(), &context, &mut ui, host, &mut prompt)
-        }
         Command::Sync(project) => {
             crate::commands::sync::exec(project.as_ref(), &context, &mut ui, host, &mut prompt)
         }

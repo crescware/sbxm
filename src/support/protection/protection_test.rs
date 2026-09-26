@@ -244,21 +244,19 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
         "sbxm status example-org/example-repo",
         &["diagnostic-path-label", "diagnostic-root-label"],
     )?;
-    // originへpushするほかに、hostのrepositoryへ保存しても失われなくなる。
+    // GitHubの案件は、Sandboxの中からoriginへpushすれば失われなくなる。hostへの保存は、
+    // 対話端末での申し出だけが行う。
     assert_protection_diagnostic_with_commands(
         Blocker::OriginUnreachable {
             reference: "HEAD".to_string(),
             commit: COMMIT.to_string(),
         },
         ErrorId::OriginCommitUnreachable,
-        &[
-            "sbxm open example-org/example-repo",
-            "sbxm fetch example-org/example-repo",
-        ],
+        &["sbxm open example-org/example-repo"],
         &["diagnostic-reference-label", "diagnostic-commit-label"],
     )?;
     // hostのrepositoryをoriginとする案件は、Sandboxのoriginへpushしても残らない。
-    // 対処はhostへの保存だけを示す。
+    // 対処はhostとの同期だけを示す。
     assert_protection_diagnostic_for(
         OriginKind::Host,
         Blocker::OriginUnreachable {
@@ -266,7 +264,7 @@ fn protection_diagnostics_render_named_facts_and_safe_commands_in_both_locales()
             commit: COMMIT.to_string(),
         },
         ErrorId::OriginCommitUnreachable,
-        &["sbxm fetch example-org/example-repo"],
+        &["sbxm sync example-org/example-repo"],
         &["diagnostic-reference-label", "diagnostic-commit-label"],
     )?;
     for (reason, id) in [

@@ -213,25 +213,19 @@ fn open(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {
     Remediation::text(explanation).try_run(format!("sbxm open {project}"))
 }
 
-/// originへpushするか、hostのrepositoryへ保存すれば、Sandboxを消しても残る。
+/// originへpushするか、hostのrepositoryと同期すれば、Sandboxを消しても残る。
 ///
-/// 保存を勧めるのは、保存が運ぶrefだけとする。stashやnotesのcommitは、保存しても
-/// 辿れるようにならない。hostにあるrepositoryの案件では、Sandboxのoriginはhostから
-/// 送ったbundleであり、pushしても残らない。保存だけを勧める。
+/// GitHubの案件では、Sandboxの中からoriginへpushすることを勧める。hostへの保存は、
+/// 対話端末での申し出だけが行う。hostにあるrepositoryの案件では、Sandboxのoriginは
+/// hostから送ったbundleであり、pushしても残らない。同期を勧める。stashやnotesの
+/// commitは、同期しても辿れるようにならない。
 fn unreachable_remediation(project: &str, reference: &str, origin: OriginKind) -> Remediation {
-    let carried = bundle::carries(reference);
-    let explained = match (origin, carried) {
-        (OriginKind::Remote, false) => {
-            return open(project, msg!("remediation-origin-commit-unreachable"));
-        }
-        (OriginKind::Host, false) => {
-            return open(project, msg!("remediation-host-ref-unsaveable"));
-        }
-        (OriginKind::Remote, true) => open(project, msg!("remediation-origin-commit-unreachable"))
-            .explain(msg!("remediation-origin-commit-save")),
-        (OriginKind::Host, true) => Remediation::text(msg!("remediation-host-commit-unreachable")),
-    };
-    explained.try_run(format!("sbxm fetch {project}"))
+    match (origin, bundle::carries(reference)) {
+        (OriginKind::Remote, _) => open(project, msg!("remediation-origin-commit-unreachable")),
+        (OriginKind::Host, false) => open(project, msg!("remediation-host-ref-unsaveable")),
+        (OriginKind::Host, true) => Remediation::text(msg!("remediation-host-commit-unreachable"))
+            .try_run(format!("sbxm sync {project}")),
+    }
 }
 
 fn status(project: &str, explanation: crate::diagnostics::Msg) -> Remediation {

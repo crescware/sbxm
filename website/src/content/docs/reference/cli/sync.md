@@ -9,9 +9,9 @@ sbxm sync [<project-id>]
 
 `sync` is for projects added with [`sbxm add --local`](../add/). The host repository plays the part GitHub plays for a GitHub project: the sandbox's branches and tags reach it the way `git push` would take them, and its branches and tags reach the sandbox's `origin` the way `git fetch --prune` would bring them. Git and the host repository's settings decide what moves; sbxm adds no rule of its own. In an interactive terminal the project ID may be omitted and selected. The sandbox must be running; a stopped sandbox is not started.
 
-1. The sandbox's branches, tags, and each worktree's `HEAD` are saved under `refs/sbx/<sandbox>/` of the host repository, the same as [`fetch`](../fetch/) does.
+1. The sandbox's branches, tags, and each worktree's `HEAD` are saved under `refs/sbx/<sandbox>/` of the host repository. The host repository fetches them over `ssh <sandbox>.sbx`, the same connection that [`open`](../open/) uses, with `transfer.fsckObjects`. Only objects the host does not have yet are carried. The connection starts from the host; nothing in the sandbox can reach it. A branch rewritten or deleted in the sandbox keeps its previous tip under `refs/sbx/<sandbox>/archive/<time>/`, which is never removed automatically.
 2. The host repository pushes what was saved into its own branches and tags: `refs/sbx/<sandbox>/heads/*` to `refs/heads/*` and `refs/sbx/<sandbox>/tags/*` to `refs/tags/*`. The host repository's own receive hooks run; its `pre-push` hook does not, since nothing leaves the repository.
-3. The host repository's branches and tags are sent to the sandbox's `origin`, the same as [`send`](../send/) does.
+3. The host repository's branches and tags are sent to the sandbox, which then runs `git fetch --prune origin`.
 
 Because the host is brought up to date before it is sent back, `origin/<branch>` in the sandbox shows the host as it is after the sync.
 
