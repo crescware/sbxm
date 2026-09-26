@@ -30,6 +30,7 @@ mod saving;
 pub mod send;
 pub mod status;
 pub mod stop;
+pub mod sync;
 
 pub use command::Command;
 pub use context::Context;

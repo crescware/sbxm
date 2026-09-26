@@ -493,6 +493,14 @@ sandbox, sbxm writes the host repository's branches and tags into one
 sandbox's `origin` at that bundle. Nothing in the sandbox can reach the host
 repository.
 
+Sync the host repository and the sandbox with `sbxm sync local/<name>`. The
+host repository plays the part GitHub plays for a GitHub project: the sandbox's
+branches and tags reach it the way `git push` would take them, and its branches
+and tags reach the sandbox's `origin` the way `git fetch --prune` would bring
+them. Git refuses what it would refuse in a push, such as a branch that is not
+a fast-forward, the branch checked out on the host, or a tag that already
+points elsewhere, and the refused commits stay under `refs/sbx/<sandbox>/`.
+
 Bring work back with `sbxm fetch local/<name>`. The commits land in
 `refs/sbx/<sandbox>/` of the host repository, and you merge them into your own
 branches, for example with `git merge refs/sbx/<sandbox>/heads/main`.
@@ -596,6 +604,7 @@ rather than sbxm guessing at the new location.
 | `sbxm status <project-id>` | Show a project's status without changing it |
 | `sbxm fetch [<project-id>]` | Save a project sandbox's commits into its host repository under `refs/sbx/<sandbox>/`, without touching your branches |
 | `sbxm send [<project-id>]` | Send the host repository's branches and tags to the sandbox of a project added with `--local`, without touching the sandbox's branches |
+| `sbxm sync [<project-id>]` | Sync the host repository and the sandbox of a project added with `--local`, by Git's own rules for a push and a fetch |
 | `sbxm files add\|ls\|rm ...` | Declare host files to place in every sandbox, list them, or remove a declaration |
 | `sbxm files pull <destination> [<project-id>]` | Show how a project sandbox's copy of a declared file differs from the host file, and adopt it into the host file if you choose |
 | `sbxm apply [<project-id>] ...` | Apply declared files or add managed worktrees; `--files --all` places the declared files in every registered project |

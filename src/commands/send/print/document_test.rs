@@ -6,7 +6,8 @@ use crate::i18n::Locale;
 use crate::testing::outcome::{Checked, Required};
 
 use super::*;
-use crate::commands::send::{SendOutput, SentChange};
+use crate::commands::send::SendOutput;
+use crate::commands::sync::SentChange;
 
 fn rendered(output: &SendOutput, locale: Locale) -> Checked<String> {
     let mut written: Vec<u8> = Vec::new();

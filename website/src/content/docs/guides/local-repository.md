@@ -19,6 +19,10 @@ Like any project, the project directory is created in the directory you run `add
 
 The sandbox starts from the branch the Git directory you passed is on; for a worktree's `.git`, that is the branch of that worktree. When it is detached, pass the starting branch with `--detach`. No GitHub token is involved, so there is nothing to register before `open`.
 
+## Syncing with the host
+
+Run [`sbxm sync`](../../reference/cli/sync/) to sync the host repository and the sandbox. The host repository plays the part GitHub plays for a GitHub project: the sandbox's branches and tags reach it the way `git push` would take them, and its branches and tags reach the sandbox's `origin` the way `git fetch --prune` would bring them. Git refuses what it would refuse in a push, such as a branch that is not a fast-forward, the branch checked out on the host, or a tag that already points elsewhere, and the refused commits stay under `refs/sbx/<sandbox>/`. Merge or rebase onto `origin/<branch>` inside the sandbox and sync again, as you would before pushing to GitHub again.
+
 ## Getting the host's history into the sandbox
 
 When `open` builds the sandbox, sbxm writes the host repository's branches and tags into one `git bundle`. It streams the bundle into the sandbox through the standard input of `sbx exec` and places it at `<repository>/.git/sbxm/origin.bundle` after checking its digest. The sandbox's `origin` points at that file, so the managed worktrees are created from `origin/<branch>` as they are for a GitHub project. Nothing in the sandbox can reach the host repository.

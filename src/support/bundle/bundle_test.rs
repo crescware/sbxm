@@ -1171,3 +1171,342 @@ fn a_bundle_stopped_by_a_signal_while_arriving_leaves_nothing_behind() -> Checke
     assert!(!destination.exists());
     Ok(())
 }
+
+/// 保存済みの名前空間を持つhostのrepositoryと、そこに作る3つのcommit。
+///
+/// `main`をcheckoutしている。commitは`first`、`second`、`third`の順に積む。
+struct Reflecting {
+    _root: tempfile::TempDir,
+    host: PathBuf,
+    first: String,
+    second: String,
+    third: String,
+}
+
+impl Reflecting {
+    fn new() -> Checked<Reflecting> {
+        let root = tempfile::tempdir().required()?;
+        let host = root.path().join("host");
+        fs::create_dir(&host).required()?;
+        git_in(&host, &["init", "--quiet"])?;
+        let mut commits = Vec::new();
+        for message in ["first", "second", "third"] {
+            git_in(
+                &host,
+                &["commit", "--quiet", "--allow-empty", "-m", message],
+            )?;
+            commits.push(git_in(&host, &["rev-parse", "HEAD"])?);
+        }
+        let [first, second, third] = <[String; 3]>::try_from(commits)
+            .map_err(|_| crate::testing::outcome::Unmet::new("three commits".to_string()))?;
+        Ok(Reflecting {
+            _root: root,
+            host,
+            first,
+            second,
+            third,
+        })
+    }
+
+    /// Sandboxから保存したことにするref。`kind_and_name`は`heads/main`のような形。
+    fn saved(&self, kind_and_name: &str, commit: &str) -> Checked {
+        git_in(
+            &self.host,
+            &["update-ref", &reference(kind_and_name), commit],
+        )?;
+        Ok(())
+    }
+
+    /// hostのref。
+    fn set(&self, reference: &str, commit: &str) -> Checked {
+        git_in(&self.host, &["update-ref", reference, commit])?;
+        Ok(())
+    }
+
+    /// `parent`の上に、hostのどのbranchにも無いcommitを作る。
+    fn aside(&self, parent: &str, message: &str) -> Checked<String> {
+        let tree = git_in(&self.host, &["rev-parse", &format!("{parent}^{{tree}}")])?;
+        git_in(
+            &self.host,
+            &["commit-tree", &tree, "-p", parent, "-m", message],
+        )
+    }
+
+    fn reflect(&self) -> Checked<Vec<Reflected>> {
+        reflect_saved(&LocalSandbox, &self.host, NAMESPACE).required()
+    }
+
+    fn at(&self, reference: &str) -> Checked<String> {
+        git_in(&self.host, &["rev-parse", "--verify", reference])
+    }
+}
+
+fn reflected(reference: &str, result: ReflectResult) -> Reflected {
+    Reflected {
+        reference: reference.to_string(),
+        result,
+    }
+}
+
+#[test]
+fn saved_branches_and_tags_reach_the_host_by_the_rules_of_a_git_push() -> Checked {
+    let host = Reflecting::new()?;
+    // 新しいbranchとtag、早送り、遅れているだけ、分岐、同じ名前で別の先を指すtag。
+    host.saved("heads/topic", &host.third)?;
+    host.set("refs/heads/side", &host.first)?;
+    host.saved("heads/side", &host.third)?;
+    host.set("refs/heads/back", &host.third)?;
+    host.saved("heads/back", &host.first)?;
+    let forked = host.aside(&host.second, "forked")?;
+    host.set("refs/heads/fork", &host.third)?;
+    host.saved("heads/fork", &forked)?;
+    host.saved("tags/fresh", &host.second)?;
+    host.set("refs/tags/clash", &host.first)?;
+    host.saved("tags/clash", &host.second)?;
+    // 変わらないrefは返さない。
+    host.set("refs/heads/same", &host.second)?;
+    host.saved("heads/same", &host.second)?;
+
+    let mut results = host.reflect()?;
+    results.sort_by(|left, right| left.reference.cmp(&right.reference));
+
+    assert_eq!(
+        results,
+        vec![
+            reflected("refs/heads/back", ReflectResult::Behind),
+            reflected("refs/heads/fork", ReflectResult::Diverged),
+            reflected("refs/heads/side", ReflectResult::Updated),
+            reflected("refs/heads/topic", ReflectResult::Created),
+            reflected("refs/tags/clash", ReflectResult::Exists),
+            reflected("refs/tags/fresh", ReflectResult::Created),
+        ]
+    );
+    assert_eq!(host.at("refs/heads/side")?, host.third);
+    assert_eq!(host.at("refs/heads/topic")?, host.third);
+    assert_eq!(host.at("refs/heads/back")?, host.third);
+    assert_eq!(host.at("refs/heads/fork")?, host.third);
+    assert_eq!(host.at("refs/tags/clash")?, host.first);
+    Ok(())
+}
+
+#[test]
+fn the_checked_out_branch_follows_the_host_repository_settings() -> Checked {
+    // 既定では、hostのgitはcheckoutしているbranchを動かさない。hostのrepositoryが
+    // `updateInstead`を選んでいれば、変更の無い作業treeごと進める。
+    let host = Reflecting::new()?;
+    let ahead = host.aside(&host.third, "ahead")?;
+    host.saved("heads/master", &ahead)?;
+    host.saved("heads/main", &ahead)?;
+    let current = git_in(&host.host, &["symbolic-ref", "--short", "HEAD"])?;
+
+    let results = host.reflect()?;
+    assert!(
+        results.contains(&reflected(
+            &format!("refs/heads/{current}"),
+            ReflectResult::CheckedOut
+        )),
+        "{results:?}"
+    );
+    assert_eq!(host.at("HEAD")?, host.third);
+
+    git_in(
+        &host.host,
+        &["config", "receive.denyCurrentBranch", "updateInstead"],
+    )?;
+    let results = host.reflect()?;
+    assert!(
+        results.contains(&reflected(
+            &format!("refs/heads/{current}"),
+            ReflectResult::Updated
+        )),
+        "{results:?}"
+    );
+    assert_eq!(host.at("HEAD")?, ahead);
+    assert!(git_in(&host.host, &["status", "--porcelain"])?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn the_host_repository_hooks_decide_as_for_any_push_but_pre_push_does_not_run() -> Checked {
+    // 受け取る側のhookは、hostのrepositoryの規則である。送る側の`pre-push`は、別の
+    // repositoryへ送る前の確認であり、自分自身への反映には関わらない。
+    use std::os::unix::fs::PermissionsExt;
+
+    let host = Reflecting::new()?;
+    host.saved("heads/topic", &host.third)?;
+    let hooks = host.host.join(".git/hooks");
+    fs::create_dir_all(&hooks).required()?;
+    for hook in ["pre-push", "pre-receive"] {
+        let path = hooks.join(hook);
+        fs::write(&path, "#!/bin/sh\nexit 1\n").required()?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).required()?;
+    }
+
+    let results = host.reflect()?;
+
+    assert_eq!(
+        results,
+        vec![reflected(
+            "refs/heads/topic",
+            ReflectResult::Refused {
+                reason: "pre-receive hook declined".to_string()
+            }
+        )]
+    );
+    assert!(host.at("refs/heads/topic").is_err());
+    fs::remove_file(hooks.join("pre-receive")).required()?;
+    assert_eq!(
+        host.reflect()?,
+        vec![reflected("refs/heads/topic", ReflectResult::Created)]
+    );
+    Ok(())
+}
+
+#[test]
+fn nothing_saved_reflects_nothing() -> Checked {
+    let host = Reflecting::new()?;
+    assert!(host.reflect()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_push_git_could_not_run_is_an_error_rather_than_nothing_reflected() -> Checked {
+    // 名前空間をrefにできないSandbox名では、gitはrefごとの答えを持たずに終わる。
+    let host = Reflecting::new()?;
+
+    let error = reflect_saved(&LocalSandbox, &host.host, "not a ref name")
+        .refused_because("git cannot read the refspec")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    Ok(())
+}
+
+#[test]
+fn a_ref_line_git_did_not_write_is_not_read_as_a_result() -> Checked {
+    let push = format!(
+        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
+    );
+    for line in [
+        "!\trefs/heads/main\t[rejected] (non-fast-forward)\n",
+        "?\trefs/sbx/x/heads/main:refs/heads/main\t[odd]\n",
+    ] {
+        let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+            &push,
+            1,
+            &format!("To .\n{line}Done\n"),
+        );
+
+        let error = reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE)
+            .refused_because("the line cannot be read")?;
+
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalOutputUnparseable),
+            "{line}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_push_that_failed_without_refusing_any_ref_is_an_error_rather_than_nothing_reflected() -> Checked
+{
+    // gitは断ったrefがあれば1で終わる。1で終わったのに断ったrefが1つも無ければ、refごとの
+    // 答えではない。何も反映しなかった成功とは読まない。
+    let push = format!(
+        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
+    );
+    for output in [
+        "",
+        "To .\nDone\n",
+        "To .\n=\trefs/sbx/x/heads/main:refs/heads/main\t[up to date]\nDone\n",
+    ] {
+        let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#)
+            .answering(&push, 1, output);
+
+        let error = reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE)
+            .refused_because("a failure without a refused ref is not a result")?;
+
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandFailed),
+            "{output:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn reflecting_waits_for_the_host_repository_hooks_as_long_as_a_transfer() -> Checked {
+    // 反映のpushの中で、hostのrepositoryのreceive hookと、`updateInstead`での作業treeの
+    // 更新が走る。手元のfileの読み書きの時間では打ち切らない。
+    let push = format!(
+        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
+    );
+    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+
+    reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE).required()?;
+
+    assert_eq!(
+        host.spec(&push)?.timeout,
+        crate::boundary::host::TimeoutClass::RepositoryTransfer
+    );
+    Ok(())
+}
+
+#[test]
+fn a_branch_deleted_in_the_sandbox_stays_on_the_host_after_it_is_saved_and_reflected() -> Checked {
+    // 削除は運ばない。GitHubで手元のbranchを消しても、remoteのbranchが残るのと同じである。
+    // 保存は消えたbranchを`archive/`へ退避し、反映はhostのbranchに触れない。
+    let repos = Repositories::new()?;
+    git_in(&repos.worktree, &["branch", "topic"])?;
+    repos.fetch("20260101T000000Z")?;
+    reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+    let tip = repos.host_ref("refs/heads/topic")?;
+
+    git_in(&repos.worktree, &["branch", "--quiet", "-D", "topic"])?;
+    let saved = repos.fetch("20260101T000001Z")?;
+    let reflected = reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+
+    assert!(
+        saved.contains(&RefChange::Deleted {
+            reference: reference("heads/topic"),
+            archived: reference("archive/20260101T000001Z/heads/topic"),
+        }),
+        "{saved:?}"
+    );
+    assert!(
+        !reflected
+            .iter()
+            .any(|entry| entry.reference == "refs/heads/topic"),
+        "{reflected:?}"
+    );
+    assert_eq!(repos.host_ref("refs/heads/topic")?, tip);
+    Ok(())
+}
+
+#[test]
+fn a_tag_deleted_on_the_host_comes_back_while_the_sandbox_still_has_it() -> Checked {
+    // 削除は運ばず、tagはどちらの側でも消さない。Sandboxに残るtagは、次の保存と反映で
+    // hostへもう一度届く。`git push --tags`と同じである。
+    let repos = Repositories::new()?;
+    git_in(&repos.worktree, &["tag", "v1"])?;
+    repos.fetch("20260101T000000Z")?;
+    reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+    let tip = repos.host_ref("refs/tags/v1")?;
+
+    git_in(&repos.host, &["tag", "--delete", "v1"])?;
+    repos.fetch("20260101T000001Z")?;
+    let reflected = reflect_saved(&LocalSandbox, &repos.host, NAMESPACE).required()?;
+
+    // hostとSandboxの`main`は、fixtureで別々に作ったため分かれている。見るのはtagだけである。
+    assert!(
+        reflected.contains(&Reflected {
+            reference: "refs/tags/v1".to_string(),
+            result: ReflectResult::Created,
+        }),
+        "{reflected:?}"
+    );
+    assert_eq!(repos.host_ref("refs/tags/v1")?, tip);
+    Ok(())
+}

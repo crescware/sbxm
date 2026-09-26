@@ -1,4 +1,4 @@
-use crate::commands::send::SentChange;
+use crate::commands::sync::SentChange;
 use crate::design::{Inline, VisualState};
 
 /// hostから送ったことで起きたSandboxのorigin側の変化。消えたrefは注意である。

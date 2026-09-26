@@ -449,6 +449,12 @@ sbxmはhostのrepositoryのbranchとtagを1つの`git bundle`にし、`sbx exec`
 送り、Sandboxの`origin`をそのbundleへ向けます。Sandboxの中からhostのrepositoryへ届く
 経路はありません。
 
+hostのrepositoryとSandboxは`sbxm sync local/<name>`で同期します。hostのrepositoryは、
+GitHubの案件でのGitHubの役を持ちます。Sandboxのbranchとtagは`git push`と同じ規則でhostへ、
+hostのbranchとtagは`git fetch --prune`と同じ規則でSandboxの`origin`へ届きます。早送りでない
+branch、hostでcheckoutしているbranch、別の先を指す同じ名前のtagのように、pushでGitが断るものは
+動かさず、そのcommitは`refs/sbx/<sandbox>/`に残ります。
+
 作業は`sbxm fetch local/<name>`で持ち帰ります。commitはhostのrepositoryの
 `refs/sbx/<sandbox>/`へ入るので、たとえば`git merge refs/sbx/<sandbox>/heads/main`で
 自分のbranchへ取り込みます。
@@ -538,6 +544,7 @@ repositoryは追加したときの場所に残ります。
 | `sbxm status <project-id>` | 案件の状態を変更せずに診断する |
 | `sbxm fetch [<project-id>]` | 案件のSandboxのcommitを、ホスト側のrepositoryの`refs/sbx/<sandbox>/`へ保存する。branchには触れない |
 | `sbxm send [<project-id>]` | `--local`で追加した案件のSandboxへ、ホスト側のrepositoryのbranchとtagを送る。Sandboxのbranchには触れない |
+| `sbxm sync [<project-id>]` | `--local`で追加した案件のSandboxとホスト側のrepositoryを、Gitのpushとfetchの規則で同期する |
 | `sbxm files add\|ls\|rm ...` | すべてのSandboxへ配置するホスト側のファイルを宣言、一覧、または宣言を外す |
 | `sbxm files pull <destination> [<project-id>]` | 宣言ファイルについて、案件のSandbox側の内容とホスト側のファイルの差分を示し、選べばホスト側のファイルへ採用する |
 | `sbxm apply [<project-id>] ...` | 宣言済みファイルを配置するか、managed worktreeを追加する。`--files --all`で登録済みのすべての案件へ配置する |

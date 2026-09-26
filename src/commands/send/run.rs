@@ -1,20 +1,17 @@
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
+use crate::commands::sync::send_host_refs;
 use crate::config::ConfigLocation;
 use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
-use crate::support::repository::{self, SandboxOrigin, TagFollowing};
+use crate::support::repository::{self, SandboxOrigin};
 use crate::support::select::{self, ProjectPrompt};
-use crate::support::{generation, inventory, sandbox};
+use crate::support::{generation, inventory};
 
-use super::{SendOutput, sent_changes};
-
-/// 比べるSandboxのref。hostのbranchはremote-tracking refへ、tagは同じ名前へ届く。
-const COMPARED: [&str; 2] = ["refs/remotes/origin/", "refs/tags/"];
+use super::SendOutput;
 
 /// 対象を引数またはpromptで解決し、hostのbranchとtagをSandboxのoriginへ送る。
 ///
@@ -51,46 +48,13 @@ pub fn run(
     // 構築が終わっていないSandboxへ置くと、repositoryになる前の場所を塞ぐ。
     repository::verify_bare_clone(host, sandbox_name.as_str(), &origin, &git_dir)?;
 
-    let before = origin_refs(host, sandbox_name.as_str(), &git_dir)?;
-    origin.deliver(host, sandbox_name.as_str())?;
-    repository::refresh_origin(
-        host,
-        sandbox_name.as_str(),
-        &git_dir,
-        TagFollowing::Auto,
-        None,
-    )?
-    .require_success()?;
-    let after = origin_refs(host, sandbox_name.as_str(), &git_dir)?;
+    let changes = send_host_refs(host, &origin, sandbox_name.as_str(), &git_dir)?;
 
     Ok(SendOutput {
         project: locked.metadata.display_id(),
         repository: repository.clone(),
-        changes: sent_changes(&before, &after),
+        changes,
     })
-}
-
-/// Sandboxのremote-tracking refとtagの、ref名から先端への対応。
-fn origin_refs(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
-    git_dir: &str,
-) -> Result<BTreeMap<String, String>> {
-    let mut args = vec![
-        "git",
-        "--git-dir",
-        git_dir,
-        "for-each-ref",
-        "--format=%(refname) %(objectname)",
-    ];
-    args.extend(COMPARED);
-    let listed = sandbox::exec(host, sandbox_name, &args)?.require_success()?;
-    Ok(listed
-        .stdout_text()
-        .lines()
-        .filter_map(|line| line.split_once(' '))
-        .map(|(reference, tip)| (reference.to_string(), tip.to_string()))
-        .collect())
 }
 
 #[cfg(test)]
