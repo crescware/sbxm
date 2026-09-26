@@ -121,6 +121,47 @@ fn a_github_project_is_not_synced() -> Checked {
 }
 
 #[test]
+fn an_omitted_project_is_chosen_only_from_the_projects_added_with_local() -> Checked {
+    // GitHubの案件しか無ければ、選ばせる前に断る。
+    let bench = Bench::new()?;
+    let world = World::new();
+    bench
+        .build(&world, &request("Example-Org/Example-Repo", None, None)?)
+        .required()?;
+    let mut prompt = ScriptedPrompt::choosing(0);
+    let mark = world.mark();
+
+    let error = run(
+        &bench.location,
+        None,
+        &mut prompt,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .refused_because("there is no local project to sync")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::NoLocalProjects));
+    assert!(prompt.asked.borrow().is_empty(), "no prompt is shown");
+    assert!(world.since(mark).is_empty(), "{:?}", world.since(mark));
+
+    // localの案件を足せば、それだけが並ぶ。
+    bench.build(&world, &local_request()?).required()?;
+    let mut prompt = ScriptedPrompt::choosing(0);
+    let output = run(
+        &bench.location,
+        None,
+        &mut prompt,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .required_because("the local project is synced")?;
+
+    assert_eq!(output.project, "local/app");
+    assert_eq!(prompt.asked.borrow()[0], vec!["local/app".to_string()]);
+    Ok(())
+}
+
+#[test]
 fn a_stopped_sandbox_is_not_started_to_sync_with() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

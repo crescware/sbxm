@@ -27,7 +27,8 @@ pub fn run(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
 ) -> Result<SyncOutput> {
-    let locked = select::one(location, requested, &msg!("select-sync-heading"), prompt)?.lock()?;
+    let locked =
+        select::one_local(location, requested, &msg!("select-sync-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
     let origin = SandboxOrigin::of(&locked.metadata)?;
     let SandboxOrigin::Host { repository, .. } = &origin else {

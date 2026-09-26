@@ -142,6 +142,7 @@ error_ids! {
     ProjectIncomplete => "project-incomplete",
     ProjectInconsistent => "project-inconsistent",
     NoManagedProjects => "no-managed-projects",
+    NoLocalProjects => "no-local-projects",
     SelectionUnresolved => "selection-unresolved",
     SandboxNotCreated => "sandbox-not-created",
     SandboxNotRunning => "sandbox-not-running",
