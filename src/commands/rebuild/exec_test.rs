@@ -208,7 +208,7 @@ fn a_commit_saved_to_the_host_on_request_lets_the_plan_be_drawn() -> Checked {
         ran.stderr
     );
     assert!(
-        host.ran("bundle create"),
+        host.ran(crate::support::bundle::PLACE_SAVE_REFS),
         "the commits are saved to the host: {:?}",
         host.calls()
     );

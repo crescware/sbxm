@@ -116,6 +116,15 @@ impl HostEnvironment for FakeSbx {
         } else {
             match self.answers.get(&key) {
                 Some((code, stdout)) => (*code, stdout.clone()),
+                // 保存の前にworktreeのHEADを置く手順は、指定が無ければ保存するものが
+                // 無いと答える。実物は何も書かずに終わらないため、空の答えを返さない。
+                None if spec
+                    .args
+                    .iter()
+                    .any(|arg| arg == crate::support::bundle::PLACE_SAVE_REFS) =>
+                {
+                    (0, "empty\n".to_string())
+                }
                 None => (0, String::new()),
             }
         };

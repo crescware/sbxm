@@ -28,7 +28,7 @@ fn tried_to_save(world: &World, mark: usize) -> bool {
     world
         .since(mark)
         .iter()
-        .any(|call| call.contains("bundle create"))
+        .any(|call| call.contains(crate::support::bundle::PLACE_SAVE_REFS))
 }
 
 #[test]

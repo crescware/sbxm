@@ -412,12 +412,12 @@ sbxm apply <project-id> --files --worktrees 4
 sbxm fetch <project-id>
 ```
 
-sbxmはSandboxのbranch、tag、各worktreeの`HEAD`を`git bundle`にして`sbx exec`越しに
-取り出し、案件の`.sbxm/bundles`へ置いて`git bundle verify`で確かめます。そのうえで
-objectの検査を有効にして、ホスト側のrepositoryの`refs/sbx/<sandbox>/`へだけ取り込みます。
-ホスト側のbranchとtagには触れません。Sandboxで書き換えたbranchや消したbranchの前の先端は
-`refs/sbx/<sandbox>/archive/<時刻>/`へ退避し、自動では消さないため、一度取り込んだ
-commitはどれも辿れ続けます。Sandboxは動いている必要があり、停止中のSandboxは起動しません。
+ホスト側のrepositoryが、`sbxm open`と同じSSHの接続でSandboxのbranch、tag、各worktreeの
+`HEAD`をfetchし、objectの検査を有効にして`refs/sbx/<sandbox>/`へだけ取り込みます。運ぶのは、
+ホスト側にまだ無いobjectだけです。ホスト側のbranchとtagには触れません。Sandboxで書き換えた
+branchや消したbranchの前の先端は`refs/sbx/<sandbox>/archive/<時刻>/`へ退避し、自動では消さない
+ため、一度取り込んだcommitはどれも辿れ続けます。Sandboxは動いている必要があり、停止中の
+Sandboxは起動しません。
 
 こうして保存したcommitはSandboxを消しても残るため、rebuildとdestroyはoriginから辿れる
 commitと同じく、失われないものとして数えます。保存できるcommitだけを理由にrebuildや

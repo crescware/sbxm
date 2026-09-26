@@ -88,6 +88,10 @@ impl World {
                     .insert((*path).to_string(), format!("{first}\n{second}\n{third}\n"));
                 Some(ok())
             }
+            // 保存の前にworktreeのHEADを置く手順。このfakeのSandboxは保存するものを持たない。
+            ["sh", "-c", script, "sh", _] if *script == crate::support::bundle::PLACE_SAVE_REFS => {
+                Some((0, "empty\n".to_string()))
+            }
             // fetchの前の認証確認。登録があればGitHubは受け付ける。
             ["sh", "-c", script, "sh", _] if script.contains("ls-remote") => {
                 Some(if self.secrets.borrow().is_empty() {

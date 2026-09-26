@@ -28,9 +28,9 @@ pub fn auto_save(
     let target = repository::host_repository(paths, metadata);
     let git_dir = SandboxLayout::new(metadata.canonical_id()).bare_git_dir();
     let project = metadata.display_id();
-    // 保存は履歴全体を運ぶことがある。黙って待たせず、何をしているかを先に示す。
+    // 初めての保存は履歴全体を運ぶ。黙って待たせず、何をしているかを先に示す。
     progress.step(msg!("progress-saving-to-host", project = project.clone()));
-    match save_to_host(host, paths, &sandbox, &git_dir, &target) {
+    match save_to_host(host, &sandbox, &git_dir, &target) {
         Ok(Some(changes)) if !changes.is_empty() => AutoSaved::Saved(msg!(
             "auto-save-done",
             project = project,

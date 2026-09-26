@@ -497,7 +497,7 @@ fn a_local_project_is_saved_during_and_after_the_session() -> Checked {
     let saves = calls
         .iter()
         .skip(session)
-        .filter(|call| call.contains("bundle create"))
+        .filter(|call| call.contains(crate::support::bundle::PLACE_SAVE_REFS))
         .count();
     assert_eq!(
         saves, 2,
@@ -528,7 +528,7 @@ fn a_github_project_is_not_saved_to_the_host_around_the_session() -> Checked {
         !world
             .since(mark)
             .iter()
-            .any(|call| call.contains("bundle create")),
+            .any(|call| call.contains(crate::support::bundle::PLACE_SAVE_REFS)),
         "{:?}",
         world.since(mark)
     );

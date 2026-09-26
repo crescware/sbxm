@@ -24,6 +24,10 @@ const REPOSITORY_LOCATION: [&str; 16] = [
     "GIT_NAMESPACE",
 ];
 
+/// gitが起動するsshを選ぶ変数。Sandboxへつなぐsshは、sbxmが`core.sshCommand`で決める。
+/// 環境変数は`core.sshCommand`より先に効くため、残すと利用者のsshがそのまま使われる。
+const SSH_SELECTION: [&str; 3] = ["GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"];
+
 /// `policy`に従って、子processへ渡すenvironmentを変える。
 ///
 /// defaultで現在processのenvironmentを継承する。`env_clear`は呼ばない。取り除くのは
@@ -37,7 +41,7 @@ pub(super) fn apply_env(command: &mut Command, policy: EnvPolicy, working_dir: O
         }
         EnvPolicy::HostRepository => {
             command.env_remove("SSH_AUTH_SOCK");
-            for name in REPOSITORY_LOCATION {
+            for name in REPOSITORY_LOCATION.iter().chain(&SSH_SELECTION) {
                 command.env_remove(name);
             }
             // 作業directoryがrepositoryでなければ、上のdirectoryのrepositoryを使わずに失敗させる。

@@ -2180,7 +2180,6 @@ fn a_commit_saved_to_the_host_is_found_there_and_a_later_one_is_not() -> Checked
     let name = SandboxName::derive(&canonical);
     bundle::save_to_host(
         &LocalSandbox,
-        &crate::paths::ProjectPaths::at(root.path(), &canonical),
         &name,
         &sandbox_repository.join(".git").to_string_lossy(),
         &host_repository,

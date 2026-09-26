@@ -28,7 +28,6 @@ pub fn run(
     let target = repository::host_repository(&locked.paths, &locked.metadata);
     let changes = bundle::save_to_host(
         host,
-        &locked.paths,
         &sandbox,
         &SandboxLayout::new(locked.metadata.canonical_id()).bare_git_dir(),
         &target,

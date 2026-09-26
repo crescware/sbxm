@@ -1,22 +1,19 @@
-//! git bundleによるSandboxとhostのあいだのcommitの受け渡し。
+//! Sandboxとhostのあいだのcommitの受け渡し。
 //!
 //! `.git`を丸ごと写さない。hookやconfigが混ざり、git操作の途中で写したものは整合しない
-//! ことがある。bundleが運ぶのはobjectとrefだけである。受け取ったbundleは検証してから、
-//! hostのrepositoryのsbxm専用の名前空間へだけ取り込む。hostにあるrepositoryを登録した
-//! 案件では、逆向きにhostのbranchとtagをbundleにしてSandboxのoriginとして置く。
-
+//! ことがある。Sandboxからhostへは、hostのgitがssh越しにSandboxのrepositoryをfetchし、
+//! objectを確かめてからhostのrepositoryのsbxm専用の名前空間へだけ取り込む。hostにある
+//! repositoryを登録した案件では、逆向きにhostのbranchとtagをbundleにしてSandboxの
+//! originとして置く。
 mod auto_save;
 mod auto_saved;
 mod carries;
-mod create_bundle;
-mod import_bundle;
-mod kept_bundles;
-mod max_bundle_bytes;
+mod clear_save_refs;
+mod finish_save;
+mod import_from_sandbox;
 mod place_bundle;
-mod prune_bundles;
-mod receipt;
-mod receive_bundle;
-mod received_bundle;
+mod place_save_refs;
+mod prepare_save;
 mod ref_change;
 mod ref_kinds;
 mod require_something_to_send;
@@ -33,15 +30,12 @@ mod stamp;
 pub use auto_save::auto_save;
 pub use auto_saved::AutoSaved;
 pub use carries::carries;
-use create_bundle::CREATE_BUNDLE;
-pub use import_bundle::import_bundle;
-pub use kept_bundles::KEPT_BUNDLES;
-pub use max_bundle_bytes::MAX_BUNDLE_BYTES;
+use clear_save_refs::CLEAR_SAVE_REFS;
+use finish_save::finish_save;
+pub use import_from_sandbox::import_from_sandbox;
 use place_bundle::PLACE_BUNDLE;
-pub use prune_bundles::prune_bundles;
-pub use receipt::Receipt;
-pub use receive_bundle::receive_bundle;
-pub use received_bundle::ReceivedBundle;
+pub(crate) use place_save_refs::PLACE_SAVE_REFS;
+use prepare_save::prepare_save;
 pub use ref_change::RefChange;
 use ref_kinds::REF_KINDS;
 pub use require_something_to_send::require_something_to_send;
