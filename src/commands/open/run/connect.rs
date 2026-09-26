@@ -8,8 +8,9 @@ use super::Prepared;
 
 /// sessionのあいだに、hostへ保存する間隔。
 ///
-/// 失われうるのは最後に保存したあとの作業だけである。保存はSandboxの全履歴をbundleにする
-/// ため、短くしすぎると作業中のSandboxに負荷をかける。
+/// 失われうるのは最後に保存したあとの作業だけである。保存のたびに、Sandboxのworktreeと
+/// refを読み、hostのrepositoryへ取り込む。短くしすぎると、作業中のSandboxとhostの
+/// repositoryへ繰り返し負荷をかける。
 const SESSION_SAVE_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 /// terminalをSSHへ引き渡す。

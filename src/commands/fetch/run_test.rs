@@ -26,8 +26,8 @@ fn a_sandbox_without_anything_to_save_is_reported_as_such() -> Checked {
     assert_eq!(output.changes, None);
     assert_eq!(output.project, "Example-Org/Example-Repo");
     assert!(
-        world.ran("bundle create"),
-        "the bundle is asked for: {:?}",
+        world.ran(crate::support::bundle::PLACE_SAVE_REFS),
+        "the sandbox is asked for its commits: {:?}",
         world.invocations()
     );
     Ok(())

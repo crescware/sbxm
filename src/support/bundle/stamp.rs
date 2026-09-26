@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// `time`をUTCの`YYYYMMDDTHHMMSSZ`で表す。
 ///
-/// bundleのfile名と、退避したrefの名前に使う。名前の並びが時刻の並びになる。
+/// 退避したrefの名前に使う。名前の並びが時刻の並びになる。
 pub fn stamp(time: SystemTime) -> String {
     let seconds = time
         .duration_since(UNIX_EPOCH)

@@ -123,8 +123,7 @@ impl ProjectPaths {
 
     /// `<project-root>/.sbxm/bundles`
     ///
-    /// Sandboxから受け取ったgit bundleを置く。取り込んだ内容はrepositoryのrefが持ち、
-    /// ここのbundleは直近の数件だけを残す。
+    /// hostにあるrepositoryからSandboxへ送るgit bundleを、送るあいだだけ置く。
     pub fn bundles_dir(&self) -> PathBuf {
         self.sbxm_dir().join("bundles")
     }

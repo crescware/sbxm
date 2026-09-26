@@ -11,13 +11,12 @@ Registering a repository from a parent directory creates:
 <parent>/<repository>.project/
 ├── <repository>/       # host-side clone
 └── .sbxm/              # metadata, Dockerfile, lock, and cache
-    ├── incoming/       # copies received from the sandbox by files pull
-    └── bundles/        # the newest git bundles received by fetch
+    └── incoming/       # copies received from the sandbox by files pull
 ```
 
 `.sbxm/incoming/` is a private area that only sbxm writes. A copy received from the sandbox lands there first, never over a file of yours, and is removed once you have decided whether to adopt it.
 
-`.sbxm/bundles/` is another private area. It keeps only the few newest bundles `sbxm fetch` received, as a clue when one could not be imported, and removes older ones. What a bundle carried lives in the host-side clone under `refs/sbx/<sandbox>/`:
+What `sbxm fetch` saves lives in the host-side clone under `refs/sbx/<sandbox>/`:
 
 ```text
 refs/sbx/<sandbox>/
@@ -29,7 +28,7 @@ refs/sbx/<sandbox>/
 
 sbxm writes nothing outside this namespace in your clone, and it never removes `archive/`.
 
-A project added with `--local` has no `<repository>/` clone inside the project directory: the registered repository plays that role, and `refs/sbx/<sandbox>/` is written there. `.sbxm/bundles/` also holds, only while it is being sent, the bundle of the host repository's branches and tags that goes into the sandbox.
+A project added with `--local` has no `<repository>/` clone inside the project directory: the registered repository plays that role, and `refs/sbx/<sandbox>/` is written there. `.sbxm/bundles/` holds, only while it is being sent, the bundle of the host repository's branches and tags that goes into the sandbox.
 
 ## Global state
 

@@ -79,7 +79,7 @@ fn a_commit_saved_to_the_host_on_request_lets_the_plan_be_drawn() -> Checked {
         ran.stderr
     );
     assert!(
-        host.ran("bundle create"),
+        host.ran(crate::support::bundle::PLACE_SAVE_REFS),
         "the commits are saved to the host: {:?}",
         host.calls()
     );
@@ -104,7 +104,11 @@ fn choosing_not_to_save_stops_before_the_plan() -> Checked {
     let ran = run(&fixture, &host, &[Key::ArrowDown, Key::Enter])?;
 
     assert_eq!(ran.code, ExitCode::Failure, "{}{}", ran.stdout, ran.stderr);
-    assert!(!host.ran("bundle create"), "{:?}", host.calls());
+    assert!(
+        !host.ran(crate::support::bundle::PLACE_SAVE_REFS),
+        "{:?}",
+        host.calls()
+    );
     assert!(ran.stdout.is_empty(), "{}", ran.stdout);
     Ok(())
 }

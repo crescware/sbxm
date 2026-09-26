@@ -297,9 +297,10 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
     let saving = calls
         .iter()
         .position(|call| {
-            call.contains(&format!("exec {}", local.sandbox)) && call.contains("bundle create")
+            call.contains(&format!("exec {}", local.sandbox))
+                && call.contains(crate::support::bundle::PLACE_SAVE_REFS)
         })
-        .required_because("the local sandbox is asked for a bundle")?;
+        .required_because("the local sandbox is asked for its commits")?;
     let stopping = calls
         .iter()
         .position(|call| call.contains(&format!("stop {}", local.sandbox)))
@@ -315,7 +316,7 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
     Ok(())
 }
 
-/// Sandboxがbundleを作っているあいだに、別の案件のproject lockを取れるかを確かめるhost。
+/// 保存しているあいだに、別の案件のproject lockを取れるかを確かめるhost。
 struct ProbingLock {
     inner: FakeSbx,
     lock: std::path::PathBuf,
@@ -331,7 +332,11 @@ impl crate::boundary::host::HostEnvironment for ProbingLock {
         &self,
         spec: &crate::boundary::host::CommandSpec,
     ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {
-        if spec.args.join(" ").contains("bundle create") {
+        if spec
+            .args
+            .iter()
+            .any(|arg| arg == crate::support::bundle::PLACE_SAVE_REFS)
+        {
             let taken = crate::paths::acquire_exclusive_lock(
                 &self.lock,
                 std::time::Duration::from_millis(10),

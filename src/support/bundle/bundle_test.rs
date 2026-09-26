@@ -1,11 +1,10 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, UNIX_EPOCH};
 
 use crate::diagnostics::ErrorId;
 
-use crate::testing::outcome::{Checked, Refused, Required, Unmet};
+use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::repository::git_in;
 use crate::testing::sandbox::LocalSandbox;
 
@@ -21,7 +20,6 @@ struct Repositories {
     /// Sandbox内のmanaged worktree。
     worktree: PathBuf,
     host: PathBuf,
-    bundles: PathBuf,
 }
 
 impl Repositories {
@@ -56,7 +54,6 @@ impl Repositories {
             &["commit", "--quiet", "--allow-empty", "-m", "first"],
         )?;
         Ok(Repositories {
-            bundles: root.path().join("bundles"),
             root,
             sandbox,
             worktree,
@@ -76,43 +73,40 @@ impl Repositories {
         git_in(&self.worktree, &["rev-parse", "HEAD"])
     }
 
-    /// Sandboxからbundleを受け取る。
-    ///
-    /// 保存済みのものと比べず、毎回bundleを運ばせる。取り込みの振る舞いを確かめるため。
-    fn receive(&self, label: &str) -> Checked<ReceivedBundle> {
-        match receive_bundle(
-            &LocalSandbox,
-            "sbxm-example",
-            &self.git_dir(),
-            &self.bundles,
-            label,
-            &BTreeMap::new(),
-        )
-        .required()?
-        {
-            Receipt::Bundle(received) => Ok(received),
-            other => Err(Unmet::new(format!(
-                "the sandbox has refs to save: {other:?}"
-            ))),
-        }
+    /// Sandboxのrefをhostへ取り込む。`stamp`を退避の名前に使う。
+    fn fetch(&self, stamp: &str) -> Checked<Vec<RefChange>> {
+        let git_dir = self.git_dir();
+        let placed = prepare_save(&LocalSandbox, NAMESPACE, &git_dir)
+            .required_because("the worktree heads are placed")?;
+        assert!(placed, "the sandbox has refs to save");
+        let imported = import_from_sandbox(&LocalSandbox, &self.host, NAMESPACE, &git_dir, stamp);
+        finish_save(&LocalSandbox, NAMESPACE, &git_dir)
+            .required_because("the worktree heads are cleared")?;
+        imported.required_because("the sandbox refs are imported")
     }
 
-    /// Sandboxからbundleを受け取り、hostへ取り込む。
-    fn fetch(&self, label: &str) -> Checked<Vec<RefChange>> {
-        let received = self.receive(label)?;
-        import_bundle(
-            &LocalSandbox,
-            &self.host,
-            &received.path,
-            NAMESPACE,
-            &received.label,
-        )
-        .required_because("the bundle is imported")
+    /// `save_to_host`で保存する。
+    fn save(&self) -> crate::diagnostics::Result<Option<Vec<RefChange>>> {
+        save_to_host(&LocalSandbox, &sandbox_name()?, &self.git_dir(), &self.host)
     }
 
     fn host_ref(&self, reference: &str) -> Checked<String> {
         git_in(&self.host, &["rev-parse", "--verify", reference])
     }
+
+    /// Sandboxに残った一時ref。
+    fn save_refs(&self) -> Checked<String> {
+        git_in(&self.worktree, &["for-each-ref", "refs/sbxm/save/"])
+    }
+}
+
+/// `NAMESPACE`を名前に持つSandbox。
+fn sandbox_name() -> crate::diagnostics::Result<crate::project::SandboxName> {
+    let name = crate::project::SandboxName::derive(
+        &crate::project::ProjectId::parse("Example-Org/Example-Repo")?.canonical(),
+    );
+    assert_eq!(name.as_str(), NAMESPACE);
+    Ok(name)
 }
 
 fn reference(kind_and_name: &str) -> String {
@@ -135,6 +129,7 @@ fn stamps_follow_the_calendar_in_utc() {
 
 #[test]
 fn a_first_fetch_brings_branches_and_worktree_heads_under_the_sbxm_namespace() -> Checked {
+    // hostに保存済みのrefが1つも無い、最初の保存。
     let repositories = Repositories::new()?;
     let tip = git_in(&repositories.worktree, &["rev-parse", "HEAD"])?;
     let host_main = repositories.host_ref("refs/heads/main")?;
@@ -158,7 +153,45 @@ fn a_first_fetch_brings_branches_and_worktree_heads_under_the_sbxm_namespace() -
     assert!(git_in(&repositories.host, &["tag", "--list"])?.is_empty());
     // 一時的な名前空間も、Sandboxの一時refも残さない。
     assert!(git_in(&repositories.host, &["for-each-ref", "refs/sbx-incoming/"])?.is_empty());
-    assert!(git_in(&repositories.worktree, &["for-each-ref", "refs/sbxm/save/"])?.is_empty());
+    assert!(repositories.save_refs()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn the_host_reads_the_sandbox_over_the_ssh_that_open_uses() -> Checked {
+    // hostから始まるsshだけで届く。promptで止まらず、agentもforwardingも渡さない。
+    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    import_from_sandbox(
+        &host,
+        std::path::Path::new("/work/example-repo"),
+        NAMESPACE,
+        "/home/agent/work/example-repo/.git",
+        "20260923T100000Z",
+    )
+    .required()?;
+
+    let spec = host.spec(" fetch ")?;
+    assert!(
+        spec.args.contains(&format!(
+            "ssh://{NAMESPACE}.sbx/home/agent/work/example-repo/.git"
+        )),
+        "{:?}",
+        spec.args
+    );
+    assert!(
+        spec.args.contains(
+            &"core.sshCommand=ssh -o BatchMode=yes -o ForwardAgent=no -o ClearAllForwardings=yes"
+                .to_string()
+        ),
+        "{:?}",
+        spec.args
+    );
+    assert!(spec.args.contains(&"transfer.fsckObjects=true".to_string()));
+    assert_eq!(
+        spec.env,
+        crate::boundary::host::EnvPolicy::HostRepository,
+        "{spec:?}"
+    );
     Ok(())
 }
 
@@ -222,112 +255,109 @@ fn a_fetch_with_nothing_new_changes_nothing() -> Checked {
 }
 
 #[test]
-fn a_repository_without_refs_has_nothing_to_save() -> Checked {
-    let root = tempfile::tempdir().required()?;
-    git_in(root.path(), &["init", "--quiet", "--bare", "empty.git"])?;
-    let git_dir = root.path().join("empty.git").to_string_lossy().into_owned();
-    let bundles = root.path().join("bundles");
+fn a_repository_without_refs_has_nothing_to_save_and_keeps_what_was_saved() -> Checked {
+    // 保存するものが無いSandboxから、保存済みのrefを消えたものとして退避しない。
+    let repositories = Repositories::new()?;
+    repositories.fetch("20260923T100000Z")?;
+    let saved = repositories.host_ref(&reference("heads/main"))?;
+    let empty = repositories.root.path().join("empty.git");
+    git_in(
+        repositories.root.path(),
+        &["init", "--quiet", "--bare", "empty.git"],
+    )?;
 
-    let received = receive_bundle(
+    let answer = save_to_host(
         &LocalSandbox,
-        "sbxm-example",
-        &git_dir,
-        &bundles,
-        "stamp",
-        &BTreeMap::new(),
+        &sandbox_name()?,
+        &empty.to_string_lossy(),
+        &repositories.host,
     )
     .required()?;
-    assert_eq!(received, Receipt::Nothing);
+
+    assert_eq!(answer, None);
+    assert_eq!(repositories.host_ref(&reference("heads/main"))?, saved);
     assert!(
-        fs::read_dir(&bundles).required()?.next().is_none(),
-        "no empty bundle is kept"
+        git_in(
+            &repositories.host,
+            &["for-each-ref", &reference("archive/")]
+        )?
+        .is_empty()
     );
     Ok(())
 }
 
 #[test]
-fn a_bundle_received_in_the_same_second_gets_its_own_name() -> Checked {
+fn saves_in_the_same_second_archive_under_their_own_names() -> Checked {
+    // 退避の名前が重なると、前の退避と同じrefを作ろうとして取り込みが失敗する。
     let repositories = Repositories::new()?;
-    let first = repositories.receive("20260923T100000Z")?;
-    let second = repositories.receive("20260923T100000Z")?;
-    assert_eq!(first.label, "20260923T100000Z");
-    assert_eq!(second.label, "20260923T100000Z-2");
-    assert!(first.path.exists() && second.path.exists());
-    Ok(())
-}
-
-#[test]
-fn a_damaged_bundle_is_refused_before_anything_is_imported() -> Checked {
-    let repositories = Repositories::new()?;
-    fs::create_dir_all(&repositories.bundles).required()?;
-    let damaged = repositories.bundles.join("damaged.bundle");
-    fs::write(&damaged, b"# v2 git bundle\nnot really\n").required()?;
-
-    let error = import_bundle(&LocalSandbox, &repositories.host, &damaged, NAMESPACE, "x")
-        .refused_because("the bundle does not verify")?;
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
-    assert!(git_in(&repositories.host, &["for-each-ref", "refs/sbx"])?.is_empty());
-    Ok(())
-}
-
-#[test]
-fn only_the_newest_bundles_are_kept() -> Checked {
-    let root = tempfile::tempdir().required()?;
-    // 番号でない`-`の後ろは、名前の一部として並べる。
-    for name in [
-        "0-copy.bundle",
-        "1.bundle",
-        "2.bundle",
-        "3.bundle",
-        "4.bundle",
-        "notes.txt",
-    ] {
-        fs::write(root.path().join(name), b"").required()?;
+    repositories.fetch("20260923T100000Z")?;
+    let mut archived = Vec::new();
+    for round in 0..2 {
+        archived.push(repositories.host_ref(&reference("heads/main"))?);
+        git_in(
+            &repositories.worktree,
+            &[
+                "commit",
+                "--quiet",
+                "--amend",
+                "--allow-empty",
+                "-m",
+                &format!("amended {round}"),
+            ],
+        )?;
+        repositories.fetch("20260923T100100Z")?;
     }
-    prune_bundles(root.path(), 2).required()?;
-    let mut left: Vec<String> = fs::read_dir(root.path())
-        .required()?
-        .filter_map(std::result::Result::ok)
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect();
-    left.sort();
-    assert_eq!(left, vec!["3.bundle", "4.bundle", "notes.txt"]);
 
-    // まだ無いdirectoryには、消すものも無い。
-    prune_bundles(&root.path().join("absent"), 2).required()?;
+    assert_eq!(
+        repositories.host_ref(&reference("archive/20260923T100100Z/heads/main"))?,
+        archived[0]
+    );
+    assert_eq!(
+        repositories.host_ref(&reference("archive/20260923T100100Z-2/heads/main"))?,
+        archived[1]
+    );
     Ok(())
 }
 
 #[test]
-fn saving_to_the_host_keeps_the_bundle_in_the_project_and_prunes_old_ones() -> Checked {
+fn a_sandbox_the_host_cannot_read_is_reported_by_its_own_reason_and_imports_nothing() -> Checked {
     let repositories = Repositories::new()?;
-    let parent = tempfile::tempdir().required()?;
-    let canonical = crate::project::ProjectId::parse("Example-Org/Example-Repo")
-        .required()?
-        .canonical();
-    let paths = crate::paths::ProjectPaths::at(parent.path(), &canonical);
-    let sandbox = crate::project::SandboxName::derive(&canonical);
+    let missing = repositories.root.path().join("missing.git");
 
-    for round in 0..=KEPT_BUNDLES {
+    let error = import_from_sandbox(
+        &LocalSandbox,
+        &repositories.host,
+        NAMESPACE,
+        &missing.to_string_lossy(),
+        "20260923T100000Z",
+    )
+    .refused_because("there is no repository to read")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnreadable));
+    let diagnostic = &error.diagnostics()[0];
+    assert!(!diagnostic.facts.is_empty(), "{diagnostic:?}");
+    assert!(git_in(&repositories.host, &["for-each-ref", "refs/sbx"])?.is_empty());
+    assert!(git_in(&repositories.host, &["for-each-ref", "refs/sbx-incoming/"])?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn saving_to_the_host_leaves_no_temporary_refs_on_either_side() -> Checked {
+    let repositories = Repositories::new()?;
+    for round in 0..2 {
         repositories.commit(&format!("round {round}"))?;
-        let changes = save_to_host(
-            &LocalSandbox,
-            &paths,
-            &sandbox,
-            &repositories.git_dir(),
-            &repositories.host,
-        )
-        .required()?
-        .required_because("the sandbox has refs to save")?;
+        let changes = repositories
+            .save()
+            .required()?
+            .required_because("the sandbox has refs to save")?;
         assert!(!changes.is_empty(), "round {round} saved something");
-        // 同じ秒に続けて受け取っても、名前は重ならない。
     }
     assert_eq!(
-        repositories.host_ref(&format!("refs/sbx/{}/heads/main", sandbox.as_str()))?,
+        repositories.host_ref(&reference("heads/main"))?,
         git_in(&repositories.worktree, &["rev-parse", "HEAD"])?
     );
-    let kept = fs::read_dir(paths.bundles_dir()).required()?.count();
-    assert_eq!(kept, KEPT_BUNDLES, "only the newest bundles are kept");
+    assert!(repositories.save_refs()?.is_empty());
+    assert!(git_in(&repositories.host, &["for-each-ref", "refs/sbx-incoming/"])?.is_empty());
     Ok(())
 }
 
@@ -349,13 +379,7 @@ fn every_tip_saved_on_the_host_is_listed_including_archived_ones() -> Checked {
     )?;
     repositories.fetch("20260923T100100Z")?;
 
-    let sandbox = crate::project::SandboxName::derive(
-        &crate::project::ProjectId::parse("Example-Org/Example-Repo")
-            .required()?
-            .canonical(),
-    );
-    assert_eq!(sandbox.as_str(), NAMESPACE);
-    let tips = saved_tips(&LocalSandbox, &repositories.host, &sandbox).required()?;
+    let tips = saved_tips(&LocalSandbox, &repositories.host, &sandbox_name()?).required()?;
     assert!(
         tips.iter().any(
             |tip| tip.reference == reference("archive/20260923T100100Z/heads/main")
@@ -450,7 +474,7 @@ fn a_branch_renamed_into_its_own_directory_is_saved_in_both_directions() -> Chec
 
 #[test]
 fn a_host_repository_with_submodules_is_saved_to_without_reaching_their_remotes() -> Checked {
-    // 取り込みはbundleだけを読む。hostのrepositoryがsubmoduleを辿る設定でも、
+    // 取り込みはSandboxのrepositoryだけを読む。hostのrepositoryがsubmoduleを辿る設定でも、
     // submoduleのremoteへ取りに行かない。行けば、届かないremoteで保存が失敗する。
     let repositories = Repositories::new()?;
     let library = repositories.host.with_file_name("library");
@@ -490,61 +514,20 @@ fn a_host_repository_with_submodules_is_saved_to_without_reaching_their_remotes(
 }
 
 #[test]
-fn bundles_that_could_not_be_imported_do_not_pile_up() -> Checked {
-    // 取り込めない状態が続いても、受け取ったbundleは直近の数件だけを残す。
-    let repositories = Repositories::new()?;
-    let parent = tempfile::tempdir().required()?;
-    let canonical = crate::project::ProjectId::parse("Example-Org/Example-Repo")
-        .required()?
-        .canonical();
-    let paths = crate::paths::ProjectPaths::at(parent.path(), &canonical);
-    let sandbox = crate::project::SandboxName::derive(&canonical);
+fn a_save_that_cannot_be_imported_leaves_no_temporary_refs_in_the_sandbox() -> Checked {
     // 取り込みに使う一時的な名前空間を、同じ名前のrefが塞いでいる。
+    let repositories = Repositories::new()?;
     git_in(
         &repositories.host,
         &["update-ref", "refs/sbx-incoming", "HEAD"],
     )?;
 
-    for round in 0..=KEPT_BUNDLES {
-        repositories.commit(&format!("round {round}"))?;
-        save_to_host(
-            &LocalSandbox,
-            &paths,
-            &sandbox,
-            &repositories.git_dir(),
-            &repositories.host,
-        )
-        .refused_because("the bundle cannot be imported")?;
-    }
-    let kept = fs::read_dir(paths.bundles_dir()).required()?.count();
-    assert_eq!(kept, KEPT_BUNDLES, "only the newest bundles are kept");
-    Ok(())
-}
+    repositories
+        .save()
+        .refused_because("the refs cannot be imported")?;
 
-#[test]
-fn bundles_received_in_the_same_second_are_pruned_in_the_order_they_arrived() -> Checked {
-    // 同じ秒に受け取ったbundleは番号で並ぶ。名前の文字順では`-2`が番号の無い最初の
-    // ものより前に、`-10`が`-2`より前に来て、新しいものを消していた。
-    let root = tempfile::tempdir().required()?;
-    for name in [
-        "20260923T100000Z.bundle",
-        "20260923T100000Z-2.bundle",
-        "20260923T100000Z-10.bundle",
-        "20260923T100001Z.bundle",
-    ] {
-        fs::write(root.path().join(name), b"").required()?;
-    }
-    prune_bundles(root.path(), 2).required()?;
-    let mut left: Vec<String> = fs::read_dir(root.path())
-        .required()?
-        .filter_map(std::result::Result::ok)
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect();
-    left.sort();
-    assert_eq!(
-        left,
-        vec!["20260923T100000Z-10.bundle", "20260923T100001Z.bundle"]
-    );
+    assert!(repositories.save_refs()?.is_empty());
+    assert!(git_in(&repositories.host, &["for-each-ref", "refs/sbx/"])?.is_empty());
     Ok(())
 }
 
@@ -592,16 +575,38 @@ fn worktrees_sharing_a_directory_name_each_keep_their_head() -> Checked {
     Ok(())
 }
 
-/// `CREATE_BUNDLE`を、一部の起動だけ振る舞いを変える`git`を`PATH`の先頭に置いて走らせる。
+#[test]
+fn temporary_refs_left_by_an_interrupted_save_are_not_saved() -> Checked {
+    // 一時refを置いたあと、取り込む前に止まった保存が残したもの。次の保存は、今ある
+    // worktreeのHEADだけを置き直す。
+    let repositories = Repositories::new()?;
+    git_in(
+        &repositories.worktree,
+        &["update-ref", "refs/sbxm/save/gone", "HEAD"],
+    )?;
+
+    repositories.save().required()?;
+
+    assert!(repositories.host_ref(&reference("worktrees/gone")).is_err());
+    assert!(
+        repositories
+            .host_ref(&reference("worktrees/example-repo.tree-0"))
+            .is_ok()
+    );
+    assert!(repositories.save_refs()?.is_empty());
+    Ok(())
+}
+
+/// `PLACE_SAVE_REFS`を、一部の起動だけ振る舞いを変える`git`を`PATH`の先頭に置いて走らせる。
 ///
 /// `case`は、`git`へ渡った引数全体に対する`sh`の`case`の枝である。どの枝にも
 /// 当たらなければ、本物の`git`を走らせる。
-struct Creating {
+struct Placing {
     dir: tempfile::TempDir,
 }
 
-impl Creating {
-    fn new(case: &str) -> Checked<Creating> {
+impl Placing {
+    fn new(case: &str) -> Checked<Placing> {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().required()?;
@@ -615,13 +620,12 @@ impl Creating {
         )
         .required()?;
         fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).required()?;
-        Ok(Creating { dir })
+        Ok(Placing { dir })
     }
 
-    fn command(&self, repositories: &Repositories) -> std::process::Command {
-        let mut command = std::process::Command::new("sh");
-        command
-            .args(["-c", CREATE_BUNDLE, "sh"])
+    fn output(&self, repositories: &Repositories) -> Checked<std::process::Output> {
+        std::process::Command::new("sh")
+            .args(["-c", PLACE_SAVE_REFS, "sh"])
             .arg(repositories.git_dir())
             .env(
                 "PATH",
@@ -631,97 +635,57 @@ impl Creating {
                     std::env::var("PATH").unwrap_or_default()
                 ),
             )
-            .env("MARK", self.dir.path().join("mark"))
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        command
+            .output()
+            .required()
     }
 }
 
 #[test]
 fn a_git_failure_while_gathering_refs_is_not_taken_as_nothing_to_save() -> Checked {
-    // 失敗を読み落とすと、worktreeのHEADを欠いたbundleや、保存するものが無いという
+    // 失敗を読み落とすと、worktreeのHEADを欠いた保存や、保存するものが無いという
     // 答えになる。どちらも、保存できていないことを隠す。
     let repositories = Repositories::new()?;
     for case in [
         r#"*" worktree list "*) exit 1 ;;"#,
-        r#"*" for-each-ref --format=%(objectname) %(refname) "*) exit 1 ;;"#,
+        r#"*" for-each-ref --count=1 "*) exit 1 ;;"#,
     ] {
-        let status = Creating::new(case)?
-            .command(&repositories)
-            .status()
-            .required()?;
-        assert!(!status.success(), "{case}: {status:?}");
+        let output = Placing::new(case)?.output(&repositories)?;
+        assert!(!output.status.success(), "{case}: {output:?}");
+        assert!(output.stdout.is_empty(), "{case}: {output:?}");
     }
     Ok(())
 }
 
 #[test]
-fn a_bundle_stopped_by_a_signal_leaves_no_temporary_refs() -> Checked {
-    // worktreeのHEADを置いた一時refは、止められても残さない。
-    let repositories = Repositories::new()?;
-    let creating = Creating::new(r#"*" bundle create "*) : > "$MARK"; cat > /dev/null ;;"#)?;
-    let mut child = creating
-        .command(&repositories)
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .required()?;
-    let mark = creating.dir.path().join("mark");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !mark.exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    assert!(mark.exists(), "the script started bundling");
-    let saved = || git_in(&repositories.worktree, &["for-each-ref", "refs/sbxm/save/"]);
-    assert!(!saved()?.is_empty(), "the worktree heads were placed");
+fn an_answer_that_is_neither_ready_nor_empty_is_not_taken_as_nothing_to_save() -> Checked {
+    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+        &format!("exec {NAMESPACE} -- sh -c {PLACE_SAVE_REFS} sh /git"),
+        0,
+        "",
+    );
 
-    let pid = rustix::process::Pid::from_child(&child);
-    rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;
-    child.wait().required()?;
+    let error = prepare_save(&host, NAMESPACE, "/git").refused_because("an empty answer")?;
 
-    assert!(saved()?.is_empty());
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
     Ok(())
 }
 
 #[test]
-fn a_save_with_nothing_new_carries_no_bundle() -> Checked {
-    // bundleは履歴全体を運ぶ。何も変えていないSandboxの保存に、それを繰り返さない。
+fn a_save_with_nothing_new_changes_nothing_and_a_new_tag_is_saved() -> Checked {
     let repositories = Repositories::new()?;
-    let parent = tempfile::tempdir().required()?;
-    let canonical = crate::project::ProjectId::parse("Example-Org/Example-Repo")
-        .required()?
-        .canonical();
-    let paths = crate::paths::ProjectPaths::at(parent.path(), &canonical);
-    let sandbox = crate::project::SandboxName::derive(&canonical);
-    let save = || {
-        save_to_host(
-            &LocalSandbox,
-            &paths,
-            &sandbox,
-            &repositories.git_dir(),
-            &repositories.host,
-        )
-        .required()?
-        .required_because("the sandbox has refs to save")
-    };
-    let bundles =
-        || -> Checked<usize> { Ok(fs::read_dir(paths.bundles_dir()).required()?.count()) };
 
-    assert!(!save()?.is_empty());
-    assert_eq!(bundles()?, 1);
-    assert_eq!(save()?, Vec::new());
-    assert_eq!(bundles()?, 1, "no bundle is carried for nothing new");
-    assert!(git_in(&repositories.worktree, &["for-each-ref", "refs/sbxm/save/"])?.is_empty());
+    assert!(!repositories.save().required()?.required()?.is_empty());
+    assert_eq!(repositories.save().required()?, Some(Vec::new()));
+    assert!(repositories.save_refs()?.is_empty());
 
-    // objectが増えなくても、refの名前が変われば運ぶ。
+    // objectが増えなくても、refの名前が変われば保存する。
     git_in(&repositories.worktree, &["tag", "marked"])?;
     assert_eq!(
-        save()?,
-        vec![RefChange::Created {
-            reference: format!("refs/sbx/{}/tags/marked", sandbox.as_str())
-        }]
+        repositories.save().required()?,
+        Some(vec![RefChange::Created {
+            reference: reference("tags/marked")
+        }])
     );
-    assert_eq!(bundles()?, 2);
     Ok(())
 }
 
@@ -1026,12 +990,15 @@ fn a_sandbox_without_saved_branches_receives_nothing() -> Checked {
     Ok(())
 }
 
-/// Sandboxのbundleの手順だけに、用意したbundleのbyte列で答えるhost。gitはこのhostで走らせる。
-struct ServingBundle {
-    bundle: Option<Vec<u8>>,
+/// Sandboxのbare repositoryの場所（`from`）を、このhostの`to`へ読み替えて走らせるhost。
+///
+/// 起動は`LocalSandbox`へ渡す。`to`が無ければ、Sandboxの中の起動はすべて失敗する。
+struct Relocated {
+    from: String,
+    to: Option<String>,
 }
 
-impl crate::boundary::host::HostEnvironment for ServingBundle {
+impl crate::boundary::host::HostEnvironment for Relocated {
     fn command_exists(&self, _program: &str) -> bool {
         true
     }
@@ -1040,32 +1007,43 @@ impl crate::boundary::host::HostEnvironment for ServingBundle {
         &self,
         spec: &crate::boundary::host::CommandSpec,
     ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {
-        use std::os::unix::process::ExitStatusExt;
-
-        if spec.program != "sbx" {
-            return crate::boundary::host::RealHost.run(spec);
-        }
-        let (status, stdout) = match &self.bundle {
-            Some(bytes) => (0, bytes.clone()),
-            None => (1 << 8, Vec::new()),
+        let Some(to) = &self.to else {
+            if spec.program == "sbx" {
+                return Ok(crate::testing::command::outcome(spec, 1, ""));
+            }
+            return LocalSandbox.run(spec);
         };
-        Ok(crate::boundary::host::CommandOutcome {
-            program: spec.program.clone(),
-            args: spec.args.clone(),
-            working_dir: spec.working_dir.clone(),
-            status: std::process::ExitStatus::from_raw(status),
-            stdout,
-            stderr: Vec::new(),
-            stderr_lossy: false,
-        })
+        let mut moved = spec.clone();
+        moved.args = spec
+            .args
+            .iter()
+            .map(|arg| arg.replace(&self.from, to))
+            .collect();
+        LocalSandbox.run(&moved)
+    }
+}
+
+impl Relocated {
+    /// `metadata`のSandboxのbare repositoryを、`repositories`のものへ読み替える。
+    fn onto(
+        metadata: &crate::metadata::ProjectMetadata,
+        repositories: Option<&Repositories>,
+    ) -> Relocated {
+        Relocated {
+            from: crate::project::SandboxLayout::new(metadata.canonical_id()).bare_git_dir(),
+            to: repositories.map(Repositories::git_dir),
+        }
     }
 }
 
 /// hostのrepositoryを、`host`の場所に登録した案件のmetadata。
 fn local_metadata(host: &std::path::Path) -> Checked<crate::metadata::ProjectMetadata> {
     Ok(crate::metadata::ProjectMetadata {
-        repository: crate::repository::RepositoryIdentity::local(host.to_str().required()?, "host")
-            .required_because("a local repository")?,
+        repository: crate::repository::RepositoryIdentity::local(
+            host.join(".git").to_str().required()?,
+            "host",
+        )
+        .required_because("a local repository")?,
         ..crate::testing::metadata::attached("example-org", "example-repo")?
     })
 }
@@ -1073,27 +1051,11 @@ fn local_metadata(host: &std::path::Path) -> Checked<crate::metadata::ProjectMet
 #[test]
 fn a_local_project_saves_its_commits_on_its_own_before_the_sandbox_goes() -> Checked {
     let repositories = Repositories::new()?;
-    let bundle = repositories.root.path().join("sandbox.bundle");
-    git_in(
-        repositories.root.path(),
-        &[
-            "--git-dir",
-            &repositories.git_dir(),
-            "bundle",
-            "create",
-            "--quiet",
-            &bundle.to_string_lossy(),
-            "--branches",
-        ],
-    )?;
-    let bytes = fs::read(&bundle).required()?;
     let paths = crate::testing::repository::project_paths(repositories.root.path())?;
     let metadata = local_metadata(&repositories.host)?;
 
     let saved = auto_save(
-        &ServingBundle {
-            bundle: Some(bytes),
-        },
+        &Relocated::onto(&metadata, Some(&repositories)),
         &paths,
         &metadata,
         &mut crate::design::SilentProgress,
@@ -1122,7 +1084,7 @@ fn a_save_that_fails_is_a_warning_with_the_command_to_retry() -> Checked {
     let metadata = local_metadata(&repositories.host)?;
 
     let saved = auto_save(
-        &ServingBundle { bundle: None },
+        &Relocated::onto(&metadata, None),
         &paths,
         &metadata,
         &mut crate::design::SilentProgress,
@@ -1146,7 +1108,7 @@ fn a_github_project_is_left_to_its_origin() -> Checked {
     let metadata = crate::testing::metadata::attached("example-org", "example-repo")?;
 
     let saved = auto_save(
-        &ServingBundle { bundle: None },
+        &Relocated::onto(&metadata, None),
         &paths,
         &metadata,
         &mut crate::design::SilentProgress,

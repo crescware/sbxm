@@ -102,7 +102,7 @@ pub fn prepare(
             repository: metadata.repository.clone(),
         }),
         sandbox: name.as_str().to_string(),
-        ssh_host: format!("{name}.sbx"),
+        ssh_host: sandbox::ssh_host(name.as_str()),
         working_directory,
         missing_worktree_index,
         clamped_worktree_index,

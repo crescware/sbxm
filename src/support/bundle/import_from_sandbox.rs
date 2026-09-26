@@ -3,17 +3,19 @@ use std::path::Path;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
-use crate::paths;
-use crate::support::repository::host_git;
+use crate::support::repository::{
+    host_git, sandbox_remote, sandbox_ssh_config, sandbox_unreadable,
+};
 
 use super::{REF_KINDS, RefChange, saved_namespace, saved_refs};
 
-/// bundleを、hostの`repository`の`refs/sbx/<namespace>/`へ取り込む。
+/// Sandboxの`git_dir`のrefを、hostの`repository`の`refs/sbx/<sandbox>/`へ取り込む。
 ///
-/// hostのbranchやtagには触れない。bundleはobjectを確かめながら一時的な名前空間へ
-/// 取り込み、そこから名前空間の中のrefを書き換える。早送りでない更新と、Sandboxに
-/// 無くなったrefは、前の先端を`archive/<label>/`へ退避してから書き換え、退避した
-/// refは消さない。一度取り込んだcommitは、どれかのrefから辿れ続ける。
+/// hostのbranchやtagには触れない。Sandboxのrepositoryはssh越しにfetchし、objectを
+/// 確かめながら一時的な名前空間へ取り込み、そこから名前空間の中のrefを書き換える。
+/// 早送りでない更新と、Sandboxに無くなったrefは、前の先端を`archive/<label>/`へ退避
+/// してから書き換え、退避したrefは消さない。一度取り込んだcommitは、どれかのrefから
+/// 辿れ続ける。退避の名前は`stamp`とし、同じ名前の退避が既にあれば番号を足す。
 ///
 /// 書き換えは2回のtransactionに分ける。先に前の先端の退避と消えたrefの削除を、次に
 /// 更新と作成を行う。`foo`から`foo/bar`への改名のように、消す名前と作る名前が
@@ -22,28 +24,18 @@ use super::{REF_KINDS, RefChange, saved_namespace, saved_refs};
 ///
 /// Sandboxのrefの名前は種類ごとに決めた場所へだけ写す。`archive/`へ届く写し方は無い。
 ///
-/// 取り込みはbundleだけを読む。hostのrepositoryがsubmoduleを辿る設定でも、submoduleの
-/// remoteへは取りに行かない。
-pub fn import_bundle(
+/// 取り込みはSandboxのrepositoryだけを読む。hostのrepositoryがsubmoduleを辿る設定でも、
+/// submoduleのremoteへは取りに行かない。
+pub fn import_from_sandbox(
     host: &dyn HostEnvironment,
     repository: &Path,
-    bundle: &Path,
-    namespace: &str,
-    label: &str,
+    sandbox: &str,
+    git_dir: &str,
+    stamp: &str,
 ) -> Result<Vec<RefChange>> {
-    let bundle = paths::display(bundle);
-    host_git(
-        host,
-        repository,
-        &["bundle", "verify", "--quiet", &bundle],
-        None,
-        TimeoutClass::RepositoryTransfer,
-    )?
-    .require_success()?;
-
-    let incoming = format!("refs/sbx-incoming/{namespace}/");
+    let incoming = format!("refs/sbx-incoming/{sandbox}/");
     clear(host, repository, &incoming)?;
-    let imported = import_through(host, repository, &bundle, &incoming, namespace, label);
+    let imported = import_through(host, repository, sandbox, git_dir, &incoming, stamp);
     // 一時的な名前空間は、取り込めても取り込めなくても残さない。
     let cleared = clear(host, repository, &incoming);
     let changes = imported?;
@@ -54,17 +46,21 @@ pub fn import_bundle(
 fn import_through(
     host: &dyn HostEnvironment,
     repository: &Path,
-    bundle: &str,
+    sandbox: &str,
+    git_dir: &str,
     incoming: &str,
-    namespace: &str,
-    label: &str,
+    stamp: &str,
 ) -> Result<Vec<RefChange>> {
-    let destination = saved_namespace(namespace);
+    let destination = saved_namespace(sandbox);
+    let remote = sandbox_remote(sandbox, git_dir);
+    let ssh = sandbox_ssh_config();
     let refspecs: Vec<String> = REF_KINDS
         .iter()
         .map(|(source, kind)| format!("+{source}*:{incoming}{kind}*"))
         .collect();
     let mut args = vec![
+        "-c",
+        ssh.as_str(),
         "-c",
         "transfer.fsckObjects=true",
         "fetch",
@@ -72,20 +68,23 @@ fn import_through(
         "--no-recurse-submodules",
         "--no-write-fetch-head",
         "--quiet",
-        bundle,
+        remote.as_str(),
     ];
     args.extend(refspecs.iter().map(String::as_str));
-    host_git(
+    let fetched = host_git(
         host,
         repository,
         &args,
         None,
         TimeoutClass::RepositoryTransfer,
-    )?
-    .require_success()?;
+    )?;
+    if !fetched.success() {
+        return Err(sandbox_unreadable(sandbox, &fetched));
+    }
 
     let arrived = refs_under(host, repository, incoming)?;
-    let existing = saved_refs(host, repository, namespace)?;
+    let existing = saved_refs(host, repository, sandbox)?;
+    let label = archive_label(host, repository, &destination, stamp)?;
 
     // 先に退避と削除を、次に更新と作成を行う。
     let mut retire = Vec::new();
@@ -194,6 +193,30 @@ fn fast_forward(
         TimeoutClass::LocalFilesystem,
     )?;
     Ok(outcome.status.code() == Some(0))
+}
+
+/// 退避に使う`archive/`の下の名前。`stamp`の退避が既にあれば、`-2`から番号を足す。
+///
+/// 同じ秒の保存が続いても、前の退避と同じrefを作ろうとして取り込みが失敗しない。
+fn archive_label(
+    host: &dyn HostEnvironment,
+    repository: &Path,
+    destination: &str,
+    stamp: &str,
+) -> Result<String> {
+    let archive = format!("{destination}archive/");
+    let taken = refs_under(host, repository, &archive)?;
+    let used = |label: &str| {
+        let prefix = format!("{label}/");
+        taken.keys().any(|name| name.starts_with(&prefix))
+    };
+    let mut label = stamp.to_string();
+    let mut attempt = 1;
+    while used(&label) {
+        attempt += 1;
+        label = format!("{stamp}-{attempt}");
+    }
+    Ok(label)
 }
 
 /// `prefix`の下のrefをすべて消す。

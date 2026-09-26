@@ -1,6 +1,6 @@
 use super::REF_KINDS;
 
-/// Sandboxのrefのうち、bundleがhostへ運ぶものか。
+/// Sandboxのrefのうち、hostへの保存が運ぶものか。
 ///
 /// branchとtagに加えて、各worktreeのHEADを運ぶ。worktreeのHEADは`HEAD`と表す。stashや
 /// notesのようなrepository単位のrefは運ばない。

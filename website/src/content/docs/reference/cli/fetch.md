@@ -11,9 +11,9 @@ In an interactive terminal the project ID may be omitted and selected. The sandb
 
 `fetch` never copies the sandbox's `.git` directory: hooks and configuration would come with it, and a copy taken during a Git operation can be inconsistent. Instead:
 
-1. Inside the sandbox, the branches, tags, and each worktree's `HEAD` are written as one `git bundle` to standard output of `sbx exec`. A worktree's `HEAD` may point at a commit on no branch, so it is included under a temporary ref that is removed afterwards.
-2. The bundle is received into the project's `.sbxm/bundles/<time>.bundle`, never over an existing file, with a size limit. Only the newest few bundles are kept; the imported commits live in the repository refs.
-3. The bundle is checked with `git bundle verify`, then fetched with `transfer.fsckObjects` into `refs/sbx/<sandbox>/` of the host repository, with `--no-tags`. Host branches and tags are never touched.
+1. Inside the sandbox, each worktree's `HEAD` is placed under a temporary ref, because it may point at a commit on no branch. A temporary ref left by a save that stopped halfway is removed first.
+2. The host repository fetches the sandbox's branches, tags, and those temporary refs over `ssh <sandbox>.sbx`, the same connection that [`open`](../open/) uses, with `transfer.fsckObjects` and `--no-tags`, into `refs/sbx/<sandbox>/`. Only objects the host does not have yet are carried. The connection starts from the host; nothing in the sandbox can reach it. SSH never prompts and never forwards the host's SSH agent. Host branches and tags are never touched.
+3. The temporary refs in the sandbox are removed, whether the fetch succeeded or not.
 
 | Sandbox ref | Host ref |
 | --- | --- |
@@ -25,4 +25,4 @@ When a ref was rewritten so that its new tip does not contain the previous one, 
 
 The result lists each ref that was `created`, `updated`, `replaced`, or `deleted`, with where a previous tip was kept.
 
-Every tip under `refs/sbx/<sandbox>/`, including the kept ones, outlives the sandbox. [`rebuild`](../rebuild/) and [`destroy`](../destroy/) therefore count a commit reachable from them as published, the same as a commit reachable from the origin, and offer to run the same save when unpublished commits on branches, tags, or worktree `HEAD`s are the only thing stopping them. A stash or notes commit is not carried by the bundle, so saving does not keep it.
+Every tip under `refs/sbx/<sandbox>/`, including the kept ones, outlives the sandbox. [`rebuild`](../rebuild/) and [`destroy`](../destroy/) therefore count a commit reachable from them as published, the same as a commit reachable from the origin, and offer to run the same save when unpublished commits on branches, tags, or worktree `HEAD`s are the only thing stopping them. A stash or notes commit is not carried, so saving does not keep it.

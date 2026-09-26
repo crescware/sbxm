@@ -409,6 +409,10 @@ fn git_in_a_host_repository_forgets_where_the_caller_pointed_git() -> Checked {
         "GIT_WORK_TREE",
         "GIT_INDEX_FILE",
         "GIT_COMMON_DIR",
+        // Sandboxへつなぐsshは、sbxmが`core.sshCommand`で決める。
+        "GIT_SSH",
+        "GIT_SSH_COMMAND",
+        "GIT_SSH_VARIANT",
     ] {
         assert!(removed(name), "{name}: {envs:?}");
     }

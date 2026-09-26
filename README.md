@@ -451,14 +451,14 @@ Copy the commits of a project sandbox into its host repository:
 sbxm fetch <project-id>
 ```
 
-sbxm streams a `git bundle` of the sandbox's branches, tags, and each worktree's
-`HEAD` out through `sbx exec`, keeps it under the project's `.sbxm/bundles`, and
-checks it with `git bundle verify`. It then imports it with object checks turned
-on into `refs/sbx/<sandbox>/` of the host repository only. Your host branches
-and tags are never touched. When a sandbox branch was rewritten or deleted, its
-previous tip is kept under `refs/sbx/<sandbox>/archive/<time>/` and is never
-removed automatically, so every commit that was ever fetched stays reachable.
-The sandbox must be running; a stopped sandbox is not started.
+The host repository fetches the sandbox's branches, tags, and each worktree's
+`HEAD` over the same SSH connection that `sbxm open` uses, with object checks
+turned on, into `refs/sbx/<sandbox>/` only. Only the objects the host does not
+have yet are carried. Your host branches and tags are never touched. When a
+sandbox branch was rewritten or deleted, its previous tip is kept under
+`refs/sbx/<sandbox>/archive/<time>/` and is never removed automatically, so
+every commit that was ever fetched stays reachable. The sandbox must be
+running; a stopped sandbox is not started.
 
 A commit saved this way outlives the sandbox, so rebuild and destroy count it as
 kept, the same as a commit reachable from the origin. When commits it can save
