@@ -109,6 +109,7 @@ fn every_normal_command_reaches_the_command_that_reads_the_configuration() -> Ch
         }),
         Command::Fetch(Some(project.clone())),
         Command::Send(Some(project.clone())),
+        Command::Sync(Some(project.clone())),
         Command::Repair(Some(project.clone())),
         Command::Rebuild(Some(project.clone())),
         Command::Open(open::Args {
@@ -146,6 +147,7 @@ fn every_command_variant_is_routed_to_its_own_command_once() {
         ("Command::Files(", "commands::files::exec("),
         ("Command::Fetch(", "commands::fetch::exec("),
         ("Command::Send(", "commands::send::exec("),
+        ("Command::Sync(", "commands::sync::exec("),
         ("Command::Guide(", "commands::guide::exec("),
         ("Command::Repair(", "commands::repair::exec("),
         ("Command::Rebuild(", "commands::rebuild::exec("),

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::SentChange;
+use crate::commands::sync::SentChange;
 
 /// `send`の結果。
 #[derive(Debug, Clone, PartialEq, Eq)]

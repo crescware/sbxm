@@ -6,18 +6,18 @@ use crate::diagnostics::Msg;
 use crate::i18n::Locale;
 use crate::metadata::CreationMode;
 use crate::msg;
-use crate::support::bundle::RefChange;
+use crate::support::bundle::{RefChange, ReflectResult};
 use crate::support::files::Placement;
 use crate::support::status::StatusValue;
 
 use crate::commands::apply::ProjectResult;
-use crate::commands::send::SentChange;
 use crate::commands::status::project::{FileState, Value as ProjectValue};
 use crate::commands::stop::StopResult;
+use crate::commands::sync::SentChange;
 
 use super::{
     ListState, apply_result, creation_mode, file_state, global_status, placement, project_status,
-    ref_change, sandbox_state, sent_change, stop_result,
+    ref_change, reflect_result, sandbox_state, sent_change, stop_result,
 };
 
 /// Sandboxの状態を説明するmessage ID。host serviceの説明を流用しない。
@@ -99,6 +99,19 @@ impl Legend {
             RefChange::Deleted { .. } => "legend-ref-deleted",
         };
         self.cell(ref_change(change), description)
+    }
+
+    pub fn reflect_result(&mut self, result: &ReflectResult) -> Inline {
+        let description = match result {
+            ReflectResult::Created => "legend-reflect-created",
+            ReflectResult::Updated => "legend-reflect-updated",
+            ReflectResult::Behind => "legend-reflect-behind",
+            ReflectResult::Diverged => "legend-reflect-diverged",
+            ReflectResult::CheckedOut => "legend-reflect-checked-out",
+            ReflectResult::Exists => "legend-reflect-exists",
+            ReflectResult::Refused { .. } => "legend-reflect-refused",
+        };
+        self.cell(reflect_result(result), description)
     }
 
     pub fn sent_change(&mut self, change: &SentChange) -> Inline {

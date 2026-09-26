@@ -63,6 +63,7 @@ fn commands(explicit: bool) -> Checked<Vec<Command>> {
         Command::Repair(project.clone()),
         Command::Fetch(project.clone()),
         Command::Send(project.clone()),
+        Command::Sync(project.clone()),
         Command::Rebuild(project.clone()),
         Command::Stop(project.clone().into_iter().collect()),
         Command::Destroy(destroy::Args {
@@ -90,6 +91,7 @@ fn execute(
         Command::Apply(args) => apply::exec(args, context, ui, host, prompt),
         Command::Fetch(project) => super::fetch::exec(project.as_ref(), context, ui, host, prompt),
         Command::Send(project) => super::send::exec(project.as_ref(), context, ui, host, prompt),
+        Command::Sync(project) => super::sync::exec(project.as_ref(), context, ui, host, prompt),
         Command::Guide(args) => guide::exec(args, context, ui, host, prompt),
         Command::Repair(project) => {
             super::repair::exec(project.as_ref(), context, ui, host, prompt)

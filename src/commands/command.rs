@@ -5,7 +5,7 @@ use crate::msg;
 use crate::project::ProjectId;
 
 use super::{
-    add, apply, destroy, fetch, files, guide, ls, open, rebuild, repair, send, status, stop,
+    add, apply, destroy, fetch, files, guide, ls, open, rebuild, repair, send, status, stop, sync,
 };
 
 /// 実行するcommand。
@@ -20,6 +20,7 @@ pub enum Command {
     Files(crate::commands::files::Args),
     Fetch(Option<ProjectId>),
     Send(Option<ProjectId>),
+    Sync(Option<ProjectId>),
     Guide(crate::commands::guide::Args),
     Repair(Option<ProjectId>),
     Rebuild(Option<ProjectId>),
@@ -40,6 +41,7 @@ impl Command {
             files::CommandLineParser::syntax(builder)?,
             fetch::CommandLineParser::syntax(builder)?,
             send::CommandLineParser::syntax(builder)?,
+            sync::CommandLineParser::syntax(builder)?,
             guide::CommandLineParser::syntax(builder)?,
             repair::CommandLineParser::syntax(builder)?,
             rebuild::CommandLineParser::syntax(builder)?,
@@ -70,6 +72,9 @@ impl Command {
                     &arguments, prompt,
                 )?)),
                 "send" => Ok(Command::Send(send::CommandLineParser::interpret(
+                    &arguments, prompt,
+                )?)),
+                "sync" => Ok(Command::Sync(sync::CommandLineParser::interpret(
                     &arguments, prompt,
                 )?)),
                 "guide" => Ok(Command::Guide(guide::CommandLineParser::interpret(
