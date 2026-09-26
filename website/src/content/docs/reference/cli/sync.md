@@ -33,4 +33,6 @@ A branch checked out on the host moves along with its files when the host reposi
 
 Whatever Git refused stays as it was, and its commits are kept under `refs/sbx/<sandbox>/`. To bring such a branch in, merge or rebase onto `origin/<branch>` inside the sandbox, then sync again, the same as you would before pushing to GitHub again. The sandbox's worktrees and branches are never touched by `sync`.
 
+When Git left any ref as it was, that is, any result other than `created`, `updated`, or `behind`, `sync` still shows the whole result and then exits with status `1`, as `git push` does. A sandbox branch that is only `behind` does not count: the host already has its commits.
+
 A project added from GitHub is refused: its sandbox fetches from and pushes to GitHub itself.

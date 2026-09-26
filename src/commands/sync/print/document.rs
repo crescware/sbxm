@@ -48,13 +48,7 @@ pub fn document(output: &SyncOutput, locale: Locale) -> Document {
         .table(Some(msg!("sync-heading-sandbox")), sandbox);
     // 遅れているだけのbranchは、hostが既にそのcommitを持つ。残した場所を示すのは、Gitが
     // 断ったものがあるときだけである。
-    let left = reflected.iter().any(|entry| {
-        !matches!(
-            entry.result,
-            ReflectResult::Created | ReflectResult::Updated | ReflectResult::Behind
-        )
-    });
-    if left {
+    if output.left_as_it_was() {
         document = document.note(msg!(
             "sync-left-as-it-was",
             repository = repository,

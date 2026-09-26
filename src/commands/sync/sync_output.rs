@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::support::bundle::Reflected;
+use crate::support::bundle::{ReflectResult, Reflected};
 
 use super::SentChange;
 
@@ -17,4 +17,18 @@ pub struct SyncOutput {
     pub reflected: Option<Vec<Reflected>>,
     /// Sandboxのorigin側で変わったref。
     pub sent: Vec<SentChange>,
+}
+
+impl SyncOutput {
+    /// gitが断り、hostのbranchやtagがそのまま残ったものがあるか。
+    ///
+    /// Sandboxのbranchが遅れているだけのものは数えない。hostは既にそのcommitを持つ。
+    pub fn left_as_it_was(&self) -> bool {
+        self.reflected.iter().flatten().any(|entry| {
+            !matches!(
+                entry.result,
+                ReflectResult::Created | ReflectResult::Updated | ReflectResult::Behind
+            )
+        })
+    }
 }
