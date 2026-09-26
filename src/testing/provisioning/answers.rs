@@ -40,13 +40,6 @@ impl World {
                 "refs/heads/",
                 "refs/tags/",
             ] => (0, "refs/heads/main\n".to_string()),
-            // bundleは中身を読まれない。送った範囲だけを書いておく。
-            ["bundle", "create", "--quiet", path, revisions @ ..] => {
-                match fs::write(path, format!("bundle of {}\n", revisions.join(" "))) {
-                    Ok(()) => (0, String::new()),
-                    Err(_) => (128, String::new()),
-                }
-            }
             ["config", "--get-all", "remote.origin.url"] => (
                 0,
                 "git@github.com:Example-Org/Example-Repo.git\n".to_string(),

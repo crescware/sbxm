@@ -46,7 +46,7 @@ impl World {
             .unwrap_or_else(ok)
     }
 
-    /// `sbx exec -i`のstdinで受け取ったbyte列を、宣言fileまたはbundleとして置く起動。
+    /// `sbx exec -i`のstdinで受け取ったbyte列を、宣言fileとして置く起動。
     ///
     /// 実物の手順と同じく、受け取ったbyte列のdigestが期待と一致した場合だけ置き、一致
     /// しなければ何も置かずに失敗する。

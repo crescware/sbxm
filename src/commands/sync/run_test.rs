@@ -135,7 +135,7 @@ fn a_stopped_sandbox_is_not_started_to_sync_with() -> Checked {
         !world
             .since(mark)
             .iter()
-            .any(|call| call.contains(PLACE_SAVE_REFS) || call.contains("bundle")),
+            .any(|call| call.contains(PLACE_SAVE_REFS) || call.contains("ssh://")),
         "{:?}",
         world.since(mark)
     );
@@ -159,7 +159,7 @@ fn a_sandbox_whose_repository_is_not_set_up_is_neither_read_nor_sent_to() -> Che
         !world
             .since(mark)
             .iter()
-            .any(|call| call.contains(PLACE_SAVE_REFS) || call.contains("bundle")),
+            .any(|call| call.contains(PLACE_SAVE_REFS) || call.contains("ssh://")),
         "{:?}",
         world.since(mark)
     );
