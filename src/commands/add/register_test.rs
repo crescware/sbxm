@@ -178,3 +178,22 @@ fn a_registry_that_could_not_be_written_records_nothing_and_creates_no_root() ->
     );
     Ok(())
 }
+
+#[test]
+fn a_registry_that_cannot_be_written_leaves_the_new_project_unregistered() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let setup = setup()?;
+    let first = request("example-org/first", None, None)?;
+    register(&setup.location, &setup.parent, &first, &identity())?;
+    std::fs::set_permissions(setup.location.dir(), std::fs::Permissions::from_mode(0o500))
+        .required()?;
+
+    let second = request("example-org/second", None, None)?;
+    let error = register(&setup.location, &setup.parent, &second, &identity())
+        .refused_because("the registry cannot be written");
+    std::fs::set_permissions(setup.location.dir(), std::fs::Permissions::from_mode(0o700))
+        .required()?;
+
+    assert_eq!(error?.first_id(), Some(ErrorId::AtomicWriteFailed));
+    Ok(())
+}
