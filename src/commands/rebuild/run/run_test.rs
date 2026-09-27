@@ -2167,3 +2167,38 @@ fn a_rebuild_stops_at_any_step_that_does_not_answer() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_sandbox_stopped_after_the_plan_that_does_not_start_is_not_rebuilt() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    // 計画では動いていたSandboxが、実行の取り直しでは止まっていて、起動もできない。
+    *host.listing.borrow_mut() = vec![stopped, running(&fixture, &project)?];
+    let host = host.answering(&format!("exec {} -- /bin/true", project.sandbox), 1, "");
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    assert!(!host.ran(&format!("rm {}", project.sandbox)));
+    Ok(())
+}
+
+#[test]
+fn a_recreated_sandbox_that_points_elsewhere_is_not_accepted() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    let elsewhere = format!(
+        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["/elsewhere"]}}]}}"#,
+        project.sandbox
+    );
+    host.listing.borrow_mut()[0] = elsewhere;
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::SandboxUnusable)
+    );
+    Ok(())
+}

@@ -1895,3 +1895,90 @@ fn registrations_that_cannot_be_listed_after_the_removal_keep_the_project_manage
     assert!(project.paths.metadata_file().exists());
     Ok(())
 }
+
+/// 案件を1件登録し、`listings`の一覧を呼ばれる順に返すhostで消す。
+fn destroyed_seeing(
+    force: bool,
+    listings: impl Fn(&Fixture, &Registered) -> Checked<Vec<String>>,
+) -> Checked<(Fixture, Registered, FakeSbx, Result<DestroyOutcome>)> {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let mut listed = listings(&fixture, &project)?;
+    listed.reverse();
+    *host.listing.borrow_mut() = listed;
+    let mut prepared = planned(&fixture, &host, force).required()?;
+    let outcome = destroy(&host, &mut prepared);
+    Ok((fixture, project, host, outcome))
+}
+
+fn twice(fixture: &Fixture, project: &Registered) -> Checked<String> {
+    let entry = fixture.entry(project, "running")?;
+    Ok(format!(r#"{{"sandboxes":[{entry},{entry}]}}"#))
+}
+
+#[test]
+fn force_without_a_sandbox_stops_when_the_absence_is_ambiguous() -> Checked {
+    let (_fixture, project, host, outcome) = destroyed_seeing(true, |fixture, project| {
+        Ok(vec![
+            r#"{"sandboxes":[]}"#.to_string(),
+            twice(fixture, project)?,
+        ])
+    })?;
+
+    let error = outcome.refused_because("two sandboxes share the name")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    assert!(!host.ran("rm "));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_confirmed_destroy_stops_when_the_sandbox_is_listed_twice() -> Checked {
+    let (_fixture, project, host, outcome) = destroyed_seeing(false, |fixture, project| {
+        Ok(vec![
+            listed(fixture, project, "running")?,
+            twice(fixture, project)?,
+        ])
+    })?;
+
+    let error = outcome.refused_because("two sandboxes share the name")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    assert!(!host.ran("rm "));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_removal_whose_result_cannot_be_listed_keeps_the_project_managed() -> Checked {
+    let (_fixture, project, _, outcome) = destroyed_seeing(false, |fixture, project| {
+        Ok(vec![
+            listed(fixture, project, "running")?,
+            listed(fixture, project, "running")?,
+            "not json".to_string(),
+        ])
+    })?;
+
+    let error = outcome.refused_because("the removal is not confirmed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_forced_removal_that_does_not_answer_keeps_the_project_managed() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let prepared = planned(&fixture, &host, true).required()?;
+    let host = crate::testing::host::Unrunnable::timing_out(host, "rm --force");
+    let clock = ScriptedClock::default();
+
+    let error = execute_bypassed(&host, &prepared, poll(&clock), &mut SilentProgress)
+        .refused_because("the removal does not answer")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
