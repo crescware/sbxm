@@ -2,8 +2,10 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::boundary::host::RealHost;
+use crate::diagnostics::ErrorId;
 use crate::project::SandboxName;
-use crate::testing::outcome::{Checked, Required, Unmet};
+use crate::testing::host::{FakeSbx, Unrunnable};
+use crate::testing::outcome::{Checked, Refused, Required, Unmet};
 use crate::testing::repository::git_in;
 
 use super::super::{CommitCandidate, OriginObservation, Reachability, UnobservableReason};
@@ -187,5 +189,69 @@ fn a_host_repository_that_cannot_be_read_is_not_taken_as_empty() -> Checked {
             reason: UnobservableReason::HostRepositoryUnreadable
         }
     );
+    Ok(())
+}
+
+/// 模したhostのrepositoryが持つcommit。
+const HELD: &str = "1111111111111111111111111111111111111111";
+
+/// `commit`へ届くhostのrefを列挙する引数。
+fn contains(commit: &str) -> String {
+    format!(
+        "for-each-ref --format=%(refname) --contains={commit} refs/heads/ refs/tags/ refs/sbx/{SANDBOX}/"
+    )
+}
+
+#[test]
+fn a_commit_whose_reaching_refs_cannot_be_listed_is_not_reached_from_nowhere() -> Checked {
+    // hostにあるcommitでも、どのrefから届くかを読めなければ、どこからも届かないとは
+    // 言えない。hostのrepositoryを読めなかったこととして返す。
+    let host = FakeSbx::listing("").answering(&contains(HELD), 128, "");
+
+    let observation = observe_host_origin(
+        &host,
+        Path::new("/srv/code/app"),
+        &sandbox()?,
+        &[candidate(HELD, Some("refs/remotes/origin/main"))],
+    )
+    .required()?;
+
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::HostRepositoryUnreadable
+        }
+    );
+    assert!(
+        host.ran(&format!("cat-file -e {HELD}^{{commit}}")),
+        "{:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_question_the_host_git_could_not_answer_is_an_error_not_an_observation() -> Checked {
+    // hostのgitが答えなければ、commitの有無もrefの到達も観測していない。後続のcandidate
+    // へ進まずに止まる。
+    const LATER: &str = "2222222222222222222222222222222222222222";
+    let steps = [format!("cat-file -e {HELD}^{{commit}}"), contains(HELD)];
+
+    for step in steps {
+        let host = Unrunnable::timing_out(FakeSbx::listing(""), &step);
+        let error = observe_host_origin(
+            &host,
+            Path::new("/srv/code/app"),
+            &sandbox()?,
+            &[candidate(HELD, None), candidate(LATER, None)],
+        )
+        .refused_because("an unanswered host git is not an observation")?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandTimeout),
+            "{step}"
+        );
+        assert!(!host.inner.ran(LATER), "{step}: {:?}", host.inner.calls());
+    }
     Ok(())
 }
