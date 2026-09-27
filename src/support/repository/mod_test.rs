@@ -755,3 +755,361 @@ fn a_host_repository_that_was_moved_away_is_named_as_missing() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::HostRepositoryMissing));
     Ok(())
 }
+
+/// 工程に起こす故障。
+#[derive(Clone, Copy, Debug)]
+enum Fault {
+    /// 応答が返らない。
+    Unanswered,
+    /// 実行できて失敗した。
+    Failed,
+}
+
+impl Fault {
+    fn on(
+        self,
+        host: crate::testing::sandbox::InnerCommandSandbox,
+        step: &str,
+    ) -> crate::testing::sandbox::InnerCommandSandbox {
+        match self {
+            Fault::Unanswered => host.timing_out(step),
+            Fault::Failed => host.failing(step),
+        }
+    }
+
+    fn id(self) -> ErrorId {
+        match self {
+            Fault::Unanswered => ErrorId::ExternalCommandTimeout,
+            Fault::Failed => ErrorId::ExternalCommandFailed,
+        }
+    }
+}
+
+/// bare repositoryの用意を始める時点の、Sandboxの中の状態。
+#[derive(Clone, Copy, Debug)]
+enum Found {
+    /// repositoryが無い。
+    Nothing,
+    /// 検査を通るrepository。
+    Healthy,
+    /// `git init --bare`の直後に中断した、originもrefもobjectも無いrepository。
+    Empty,
+    /// originは宣言どおりだが、fetch refspecが無いrepository。
+    WithoutRefspec,
+}
+
+impl Found {
+    fn host(self) -> Checked<crate::testing::sandbox::InnerCommandSandbox> {
+        let git_dir = layout()?.bare_git_dir();
+        Ok(match self {
+            Found::Nothing => healthy_clone()?,
+            Found::Healthy => healthy_clone()?.holding(&[&git_dir]),
+            Found::Empty => healthy_clone()?
+                .holding(&[&git_dir])
+                .answering(
+                    &format!("git --git-dir {git_dir} config --get-all remote.origin.url"),
+                    "",
+                )
+                .answering(
+                    &format!("git --git-dir {git_dir} count-objects -v"),
+                    "count: 0\nin-pack: 0\n",
+                ),
+            Found::WithoutRefspec => healthy_clone()?.holding(&[&git_dir]).answering(
+                &format!("git --git-dir {git_dir} config --get-all remote.origin.fetch"),
+                "",
+            ),
+        })
+    }
+}
+
+#[test]
+fn preparing_the_repository_stops_at_the_step_that_failed_and_fetches_nothing() -> Checked {
+    // 用意の工程は前の工程が済んだことを前提にする。失敗した工程を越えて進めると、
+    // 半端なrepositoryへfetchし、実際の失敗とは別の不一致を告げることになる。
+    let git_dir = layout()?.bare_git_dir();
+    let set_fetch = format!("git --git-dir {git_dir} config remote.origin.fetch {FETCH_REFSPEC}");
+    let add = format!(
+        "git --git-dir {git_dir} remote add origin https://github.com/Example-Org/Example-Repo.git"
+    );
+    let both = [Fault::Unanswered, Fault::Failed];
+    // 終了statusを答えとして読む工程は、応答が返らない場合だけ止まる。
+    let unanswered = [Fault::Unanswered];
+    let cases = [
+        (
+            Found::Nothing,
+            format!("test -e {git_dir}"),
+            &unanswered[..],
+        ),
+        (
+            Found::Nothing,
+            format!("mkdir -p {}", layout()?.bare_root()),
+            &both[..],
+        ),
+        (
+            Found::Nothing,
+            format!("git init --bare {git_dir}"),
+            &both[..],
+        ),
+        (Found::Nothing, add.clone(), &both[..]),
+        (Found::Nothing, set_fetch.clone(), &both[..]),
+        (
+            Found::Empty,
+            format!("git --git-dir {git_dir} rev-parse --is-bare-repository"),
+            &both[..],
+        ),
+        (
+            Found::Healthy,
+            format!("git --git-dir {git_dir} config --get-all remote.origin.url"),
+            &unanswered[..],
+        ),
+        (
+            Found::Empty,
+            format!("git --git-dir {git_dir} for-each-ref --format=%(refname)"),
+            &both[..],
+        ),
+        (
+            Found::Empty,
+            format!("git --git-dir {git_dir} count-objects -v"),
+            &both[..],
+        ),
+        (Found::Empty, add.clone(), &both[..]),
+        (Found::Empty, set_fetch.clone(), &both[..]),
+        (
+            Found::Healthy,
+            format!("git --git-dir {git_dir} config --get-all remote.origin.fetch"),
+            &unanswered[..],
+        ),
+        (Found::WithoutRefspec, set_fetch.clone(), &both[..]),
+    ];
+
+    for (found, step, faults) in cases {
+        for fault in faults {
+            let host = fault.on(found.host()?, &step);
+            let error = ensure_bare_clone(
+                &host,
+                "sbxm-example",
+                &SandboxOrigin::Github(project()?),
+                &layout()?,
+                &mut SilentProgress,
+            )
+            .refused_because("a step that failed stops the preparation")?;
+            assert_eq!(
+                error.first_id(),
+                Some(fault.id()),
+                "{found:?} {fault:?} {step}"
+            );
+            let calls = host.calls();
+            let last = calls.last().required_because("the failed step was run")?;
+            assert!(
+                last.join(" ").ends_with(&step),
+                "{found:?} {fault:?} {step}: nothing runs after the step that failed: {calls:?}"
+            );
+            assert!(
+                !host.ran("fetch --prune"),
+                "{found:?} {fault:?} {step}: {calls:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn branches_that_could_not_be_listed_are_not_read_as_none() -> Checked {
+    // branchが無いと読むと、Sandboxに残るbranchを見落としたまま先へ進む。
+    let git_dir = layout()?.bare_git_dir();
+    let step =
+        format!("git --git-dir {git_dir} for-each-ref --count=1 --format=%(refname) refs/heads/");
+
+    for fault in [Fault::Unanswered, Fault::Failed] {
+        let host = fault.on(crate::testing::sandbox::InnerCommandSandbox::new(), &step);
+        let error = has_local_branches(&host, "sbxm-example", &layout()?)
+            .refused_because("a listing that did not answer is not an empty one")?;
+        assert_eq!(error.first_id(), Some(fault.id()), "{fault:?}");
+    }
+    Ok(())
+}
+
+/// hostのrepositoryからSandboxのoriginへ送る起動の引数。
+struct PushSteps {
+    git_dir: &'static str,
+}
+
+impl PushSteps {
+    const HOST_BRANCHES: &'static str = "for-each-ref --format=%(refname) refs/heads/";
+
+    fn new() -> PushSteps {
+        PushSteps {
+            git_dir: "/home/agent/work/example-repo/.git",
+        }
+    }
+
+    fn sandbox_branches(&self) -> String {
+        format!(
+            "exec sbxm-example -- git --git-dir {} for-each-ref --format=%(refname) %(symref) refs/remotes/origin/",
+            self.git_dir
+        )
+    }
+
+    fn push(&self, tail: &str) -> String {
+        format!(
+            "-c {} push --porcelain --no-verify {} {tail}",
+            sandbox_ssh_config(),
+            sandbox_remote("sbxm-example", self.git_dir)
+        )
+    }
+
+    fn branches(&self) -> String {
+        self.push("+refs/heads/*:refs/remotes/origin/*")
+    }
+
+    fn tags(&self) -> String {
+        self.push("refs/tags/*:refs/tags/*")
+    }
+
+    fn send(
+        &self,
+        host: &dyn crate::boundary::host::HostEnvironment,
+    ) -> crate::diagnostics::Result<Vec<PushRefusal>> {
+        push_to_sandbox(
+            host,
+            std::path::Path::new("/home/user/code/app/.git"),
+            "sbxm-example",
+            self.git_dir,
+        )
+    }
+}
+
+#[test]
+fn branches_to_prune_that_could_not_be_listed_send_nothing() -> Checked {
+    // 消すbranchを決められないまま送ると、hostで消したbranchがSandboxのoriginに残る。
+    // 送る前に止まり、どちらの一覧も読めたものとして扱わない。
+    let steps = PushSteps::new();
+
+    let unanswered = crate::testing::host::Unrunnable::timing_out(
+        crate::testing::host::FakeSbx::listing(""),
+        PushSteps::HOST_BRANCHES,
+    );
+    let error = steps
+        .send(&unanswered)
+        .refused_because("the host branches went unanswered")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        !unanswered.inner.ran("push"),
+        "{:?}",
+        unanswered.inner.calls()
+    );
+
+    for (step, code) in [
+        (PushSteps::HOST_BRANCHES.to_string(), 128),
+        (steps.sandbox_branches(), 1),
+    ] {
+        let host = crate::testing::host::FakeSbx::listing("").answering(&step, code, "");
+        let error = steps
+            .send(&host)
+            .refused_because("a listing that failed is not an empty one")?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandFailed),
+            "{step}"
+        );
+        assert!(!host.ran("push"), "{step}: {:?}", host.calls());
+    }
+    Ok(())
+}
+
+#[test]
+fn only_branches_under_the_sandbox_origin_are_pruned() -> Checked {
+    // `refs/remotes/origin/`の外にあるrefは、hostのbranchの写しではない。hostに同じ名前が
+    // 無いことを理由に消さない。
+    let steps = PushSteps::new();
+    let host = crate::testing::host::FakeSbx::listing("").answering(
+        &steps.sandbox_branches(),
+        0,
+        "refs/remotes/origin/gone \nrefs/remotes/upstream/topic \n",
+    );
+
+    steps.send(&host).required()?;
+
+    let pushed = host
+        .calls()
+        .into_iter()
+        .find(|args| args.contains(&"push".to_string()))
+        .required_because("the branches are pushed")?;
+    assert!(
+        pushed.contains(&":refs/remotes/origin/gone".to_string()),
+        "{pushed:?}"
+    );
+    assert!(
+        !pushed.iter().any(|arg| arg.contains("upstream/topic")),
+        "{pushed:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_push_that_could_not_run_is_not_read_as_one_that_was_refused_nothing() -> Checked {
+    // branchを送れなければtagへ進まない。tagを送れなければ、branchで断られたrefだけを
+    // 返して成功にしない。
+    let steps = PushSteps::new();
+
+    let branches = crate::testing::host::Unrunnable::timing_out(
+        crate::testing::host::FakeSbx::listing(""),
+        "+refs/heads/*:refs/remotes/origin/*",
+    );
+    let error = steps
+        .send(&branches)
+        .refused_because("the branches could not be sent")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        !branches.inner.ran(&steps.tags()),
+        "{:?}",
+        branches.inner.calls()
+    );
+
+    let tags = crate::testing::host::Unrunnable::timing_out(
+        crate::testing::host::FakeSbx::listing("").answering(
+            &steps.branches(),
+            1,
+            "To x\n!\trefs/heads/main:refs/remotes/origin/main\t[remote rejected] (hook declined)\nDone\n",
+        ),
+        &steps.tags(),
+    );
+    let error = steps
+        .send(&tags)
+        .refused_because("the tags could not be sent")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        tags.inner.ran(&steps.branches()),
+        "{:?}",
+        tags.inner.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_push_answer_that_cannot_be_read_ref_by_ref_is_not_success() -> Checked {
+    // 断られたrefの行が送り先を持たなければ、どのrefが断られたかを言えない。失敗したのに
+    // 断られたrefを1つも読めない答えも、refごとの答えではない。
+    let steps = PushSteps::new();
+    let cases = [
+        (
+            "To x\n!\trefs/heads/main\t[rejected] (non-fast-forward)\nDone\n",
+            ErrorId::ExternalOutputUnparseable,
+        ),
+        (
+            "To x\n=\trefs/heads/main:refs/remotes/origin/main\t[up to date]\nDone\n",
+            ErrorId::SandboxRepositoryUnwritable,
+        ),
+    ];
+
+    for (answer, id) in cases {
+        let host =
+            crate::testing::host::FakeSbx::listing("").answering(&steps.branches(), 1, answer);
+        let error = steps
+            .send(&host)
+            .refused_because("an answer without refusals to read is not a partial success")?;
+        assert_eq!(error.first_id(), Some(id), "{answer:?}");
+        assert!(!host.ran(&steps.tags()), "{answer:?}: {:?}", host.calls());
+    }
+    Ok(())
+}

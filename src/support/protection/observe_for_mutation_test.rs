@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use crate::design::Fact;
 use crate::diagnostics::ErrorId;
 use crate::project::SandboxName;
 
-use crate::testing::host::FakeSbx;
+use crate::testing::host::{FakeSbx, Unrunnable};
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::repository::{canonical, layout};
 use crate::testing::sandbox::InnerCommandSandbox;
@@ -31,31 +32,207 @@ fn candidate() -> CommitCandidate {
     )
 }
 
+/// 観測の各工程が使うinner command。
+struct MutationSteps {
+    configured: String,
+    fetch: String,
+    tips: String,
+    contains: String,
+    object: String,
+    cleanup: String,
+    delete: String,
+}
+
+impl MutationSteps {
+    fn new() -> Checked<MutationSteps> {
+        let git_dir = layout()?.bare_git_dir();
+        Ok(MutationSteps {
+            configured: format!("git --git-dir {git_dir} config --get remote.origin.url"),
+            fetch: format!(
+                "git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+            ),
+            tips: format!(
+                "git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
+            ),
+            contains: format!(
+                "git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/sbxm/origin/"
+            ),
+            object: format!("git --git-dir {git_dir} cat-file -e {COMMIT}"),
+            cleanup: format!(
+                "git --git-dir {git_dir} for-each-ref --format=%(refname) refs/sbxm/origin/"
+            ),
+            delete: format!("git --git-dir {git_dir} update-ref -d refs/sbxm/origin/heads/main"),
+        })
+    }
+
+    /// 最後の工程まで進むSandbox。fetchは一時namespaceへrefを1件置く。
+    fn reaching_every_step(&self) -> InnerCommandSandbox {
+        InnerCommandSandbox::new()
+            .answering(
+                &self.tips,
+                &format!("refs/sbxm/origin/heads/main\t{COMMIT}\n"),
+            )
+            .answering(&self.cleanup, "refs/sbxm/origin/heads/main\n")
+    }
+}
+
 #[test]
 fn a_command_that_could_not_even_launch_is_an_error_at_every_stage() -> Checked {
-    let git_dir = layout()?.bare_git_dir();
     let sandbox = sandbox()?;
     let candidates = [candidate()];
+    let steps = MutationSteps::new()?;
 
-    let steps = [
-        format!("git --git-dir {git_dir} config --get remote.origin.url"),
-        format!(
-            "git --git-dir {git_dir} fetch --prune --no-tags origin +refs/*:refs/sbxm/origin/*"
+    let cases = [
+        (steps.reaching_every_step(), &steps.configured),
+        (steps.reaching_every_step(), &steps.fetch),
+        (steps.reaching_every_step(), &steps.tips),
+        (steps.reaching_every_step(), &steps.contains),
+        // `--contains`が失敗したあとで、objectの有無を確かめる工程。
+        (
+            steps.reaching_every_step().failing(&steps.contains),
+            &steps.object,
         ),
-        format!(
-            "git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/sbxm/origin/"
-        ),
+        (steps.reaching_every_step(), &steps.cleanup),
+        (steps.reaching_every_step(), &steps.delete),
     ];
-    for step in steps {
-        let host = InnerCommandSandbox::new().timing_out(&step);
+    for (host, step) in cases {
+        let host = host.timing_out(step);
         let error =
             observe_for_mutation(&host, &sandbox, &layout()?, &candidates, host_repository())
                 .refused_because("a step that did not run is never read as observed")?;
+        let diagnostic = error
+            .diagnostics()
+            .first()
+            .required_because("one diagnostic")?;
         assert_eq!(
-            error.first_id(),
-            Some(ErrorId::OriginObservationUnobservable),
+            diagnostic.id,
+            ErrorId::OriginObservationUnobservable,
             "{step} was reported as something else"
         );
+        assert!(
+            diagnostic.facts.contains(&Fact::sandbox(sandbox.as_str())),
+            "{step}: {:?}",
+            diagnostic.facts
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn temporary_refs_are_removed_even_when_reachability_went_unanswered() -> Checked {
+    // fetchが一時namespaceへ置いたrefは、観測の答えが返らなかった場合も消す。
+    let sandbox = sandbox()?;
+    let steps = MutationSteps::new()?;
+    let cases = [
+        steps.reaching_every_step().timing_out(&steps.contains),
+        steps
+            .reaching_every_step()
+            .failing(&steps.contains)
+            .timing_out(&steps.object),
+    ];
+
+    for host in cases {
+        observe_for_mutation(
+            &host,
+            &sandbox,
+            &layout()?,
+            &[candidate()],
+            host_repository(),
+        )
+        .refused_because("an unanswered reachability is never read as observed")?;
+        assert!(host.ran(&steps.delete), "{:?}", host.calls());
+    }
+    Ok(())
+}
+
+#[test]
+fn a_failed_refresh_whose_temporary_refs_cannot_be_listed_is_not_only_a_failed_refresh() -> Checked
+{
+    // 失敗したfetchも、一時namespaceへ途中までrefを置きうる。消せたかを確かめられなければ、
+    // refreshの失敗として集めず、観測が成り立たなかったことを返す。
+    let sandbox = sandbox()?;
+    let steps = MutationSteps::new()?;
+
+    let cleaned = steps.reaching_every_step().failing(&steps.fetch);
+    let observation = observe_for_mutation(
+        &cleaned,
+        &sandbox,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .required_because("a refresh that failed after a clean removal is a collected reason")?;
+    assert_eq!(
+        observation,
+        OriginObservation::Unobservable {
+            reason: UnobservableReason::RefreshFailed
+        }
+    );
+    assert!(cleaned.ran(&steps.delete), "{:?}", cleaned.calls());
+
+    let uncleaned = steps
+        .reaching_every_step()
+        .failing(&steps.fetch)
+        .failing(&steps.cleanup);
+    let error = observe_for_mutation(
+        &uncleaned,
+        &sandbox,
+        &layout()?,
+        &[candidate()],
+        host_repository(),
+    )
+    .refused_because("refs that may be left behind are not hidden behind the failed refresh")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::OriginObservationUnobservable)
+    );
+    assert!(!uncleaned.ran(&steps.tips), "{:?}", uncleaned.calls());
+    Ok(())
+}
+
+#[test]
+fn an_observation_the_user_interrupted_names_only_the_sandbox() -> Checked {
+    // Ctrl-Cで中断した起動は、原因として引き継ぐ事実を持たない。観測できなかったことは、
+    // どのSandboxかとともに示す。
+    type Observe = fn(
+        &dyn crate::boundary::host::HostEnvironment,
+        &SandboxName,
+        &crate::project::SandboxLayout,
+        &[CommitCandidate],
+        &Path,
+    ) -> crate::diagnostics::Result<OriginObservation>;
+    let sandbox = sandbox()?;
+    let observers: [(&str, Observe); 2] = [
+        ("mutation", observe_for_mutation),
+        ("read-only", observe_read_only),
+    ];
+
+    for (kind, observe) in observers {
+        let host =
+            Unrunnable::canceled(InnerCommandSandbox::new(), "config --get remote.origin.url");
+        let error = observe(
+            &host,
+            &sandbox,
+            &layout()?,
+            &[candidate()],
+            host_repository(),
+        )
+        .refused_because("an interrupted observation is never read as observed")?;
+        let diagnostic = error
+            .diagnostics()
+            .first()
+            .required_because("one diagnostic")?;
+        assert_eq!(
+            diagnostic.id,
+            ErrorId::OriginObservationUnobservable,
+            "{kind}"
+        );
+        assert_eq!(
+            diagnostic.facts,
+            [Fact::sandbox(sandbox.as_str())],
+            "{kind}"
+        );
+        assert!(diagnostic.external.is_none(), "{kind}: {diagnostic:?}");
     }
     Ok(())
 }
@@ -653,24 +830,43 @@ fn read_only_observation_does_not_call_a_missing_commit_unreachable() -> Checked
 
 #[test]
 fn a_read_only_command_that_could_not_even_launch_is_an_error_at_every_stage() -> Checked {
+    // tipとcandidateを別のcommitにし、両方のobjectを確かめる工程まで進める。
+    const TIP: &str = "4444444444444444444444444444444444444444";
     let git_dir = layout()?.bare_git_dir();
     let sandbox = sandbox()?;
     let candidates = [candidate()];
+    let tips = format!(
+        "git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+    );
 
     let steps = [
         format!("git --git-dir {git_dir} config --get remote.origin.url"),
+        tips.clone(),
+        format!("git --git-dir {git_dir} cat-file -e {TIP}"),
+        format!("git --git-dir {git_dir} cat-file -e {COMMIT}"),
         format!(
-            "git --git-dir {git_dir} for-each-ref --format=%(refname)%09%(objectname) refs/remotes/origin/"
+            "git --git-dir {git_dir} for-each-ref --format=%(refname) --contains={COMMIT} refs/remotes/origin/"
         ),
     ];
     for step in steps {
-        let host = InnerCommandSandbox::new().timing_out(&step);
+        let host = InnerCommandSandbox::new()
+            .answering(&tips, &format!("refs/remotes/origin/main\t{TIP}\n"))
+            .timing_out(&step);
         let error = observe_read_only(&host, &sandbox, &layout()?, &candidates, host_repository())
             .refused_because("a step that did not run is never read as observed")?;
+        let diagnostic = error
+            .diagnostics()
+            .first()
+            .required_because("one diagnostic")?;
         assert_eq!(
-            error.first_id(),
-            Some(ErrorId::OriginObservationUnobservable),
+            diagnostic.id,
+            ErrorId::OriginObservationUnobservable,
             "{step} was reported as something else"
+        );
+        assert!(
+            diagnostic.facts.contains(&Fact::sandbox(sandbox.as_str())),
+            "{step}: {:?}",
+            diagnostic.facts
         );
     }
     Ok(())
