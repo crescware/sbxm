@@ -186,6 +186,10 @@ fn a_progress_sink_that_reports_nothing_is_still_a_valid_sink() {
     let mut silent = SilentProgress;
     silent.step(crate::msg!("progress-creating-sandbox"));
     silent.warn(Warning::text(crate::msg!("destroy-force-notice")));
+    // 端末を渡す工程も、外部toolの出力も、境界を作らずに受け取る。
+    silent.hand_over();
+    silent.relay(b"Sandbox started successfully\n");
+    silent.finished();
 }
 
 #[test]
@@ -298,5 +302,27 @@ fn a_result_on_stdout_and_a_relay_on_stderr_share_one_boundary() -> Checked {
         !streams.out()?.ends_with("\n\n"),
         "the boundary is written once, next to what follows it"
     );
+    Ok(())
+}
+
+#[test]
+fn an_external_tool_that_speaks_before_sbxm_has_no_blank_line_above_it() -> Checked {
+    // 境界の空行は、その上にsbxmが書いた行があるときだけ置く。
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
+        ui.relay(b"Sandbox started successfully\n");
+        ui.finished();
+    });
+    assert_eq!(streams.err()?, "Sandbox started successfully\n");
+
+    let streams = Streams::capture(RenderingPolicy::plain(), |ui| {
+        ui.hand_over();
+        ui.finished();
+    });
+    assert!(
+        streams.err()?.is_empty(),
+        "a terminal handed over first gets no boundary: {:?}",
+        streams.err()
+    );
+    assert!(streams.out()?.is_empty(), "{:?}", streams.out());
     Ok(())
 }
