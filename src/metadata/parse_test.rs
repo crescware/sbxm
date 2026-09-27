@@ -620,3 +620,20 @@ fn values_outside_the_documented_range_are_refused() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_start_branch_that_is_not_text_is_refused() -> Checked {
+    let full = render(&attached("example-org", "example-repo")?)?;
+    for value in ["[main]", "{name: main}"] {
+        assert_eq!(
+            refusal(&replaced(
+                &full,
+                "start_ref: main",
+                &format!("start_ref: {value}")
+            ))?,
+            Some(ErrorId::MetadataInvalidSyntax),
+            "{value} produced the wrong error"
+        );
+    }
+    Ok(())
+}

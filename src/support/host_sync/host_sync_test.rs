@@ -1468,3 +1468,31 @@ fn a_reflection_is_not_done_past_a_step_that_did_not_answer() -> Checked {
         Ok(reflect_saved(host, &reflecting.host, NAMESPACE))
     })
 }
+
+#[test]
+fn saved_tips_that_cannot_be_read_are_not_taken_as_none() -> Checked {
+    // 保存した先端が読めないことを、何も保存していないことと取り違えない。
+    let repositories = Repositories::new()?;
+    repositories.fetch("20260101T000000Z")?;
+    for host in [
+        FailingAt::timing_out(LocalSandbox, 0),
+        FailingAt::exiting(LocalSandbox, 0),
+    ] {
+        assert!(saved_tips(&host, &repositories.host, &sandbox_name()?).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn a_host_repository_that_cannot_be_listed_is_not_taken_as_empty() -> Checked {
+    let repositories = Repositories::new()?;
+    for host in [
+        FailingAt::timing_out(LocalSandbox, 0),
+        FailingAt::exiting(LocalSandbox, 0),
+    ] {
+        let error = require_something_to_send(&host, &repositories.host)
+            .refused_because("the refs are unknown")?;
+        assert_ne!(error.first_id(), Some(ErrorId::HostRepositoryEmpty));
+    }
+    Ok(())
+}

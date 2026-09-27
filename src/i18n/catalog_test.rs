@@ -19,10 +19,34 @@ impl Catalog {
                 kept.push('\n');
             }
         }
-        let resource = FluentResource::try_new(kept).unwrap_or_else(|(resource, _errors)| resource);
+        Catalog::from_source(locale, kept)
+    }
+
+    /// `source`のFTLだけを持つ辞書。
+    fn from_source(locale: Locale, source: String) -> Catalog {
+        let resource =
+            FluentResource::try_new(source).unwrap_or_else(|(resource, _errors)| resource);
         let mut bundle = FluentBundle::new(vec![locale.langid()]);
         bundle.set_use_isolating(false);
         let _ = bundle.add_resource(resource);
         Catalog { locale, bundle }
     }
+}
+
+#[test]
+fn a_message_that_has_only_attributes_is_reported_as_missing_its_value() {
+    let catalog = Catalog::from_source(
+        Locale::En,
+        "attributes-only =\n    .label = shown elsewhere\n".to_string(),
+    );
+
+    let failure = catalog.text("attributes-only");
+
+    assert!(
+        matches!(
+            failure.as_ref().map_err(|failure| &failure.reason),
+            Err(super::FormatFailureReason::MissingValue)
+        ),
+        "{failure:?}"
+    );
 }
