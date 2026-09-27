@@ -1413,3 +1413,117 @@ fn a_resumed_completion_that_cannot_be_recorded_keeps_the_intent() -> Checked {
     );
     Ok(())
 }
+
+// --- Sandboxの中を整える段 ---
+//
+// Sandboxを作ったあとの段が止まれば、それより先の段へ進まない。
+
+/// Sandboxを作った直後に、中を整える段が最初に確かめること。
+const INTERIOR_FIRST_STEP: &str = "printenv SSH_AUTH_SOCK";
+
+/// 1回の構築を走らせ、止まった理由と、止まったあとに走った起動を返す。
+fn stopped_build(
+    bench: &Bench,
+    world: &World,
+    project: &crate::project::ProjectId,
+) -> Checked<(crate::diagnostics::Error, Vec<String>)> {
+    let mark = world.mark();
+    let error = bench
+        .ensure(world, project, &mut SilentProgress)
+        .refused_because("the build stops inside the sandbox")?;
+    Ok((error, world.since(mark)))
+}
+
+#[test]
+fn a_sandbox_that_reaches_the_host_agent_is_not_prepared_further() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    world.answering(
+        "ssh-add -L",
+        0,
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 host-key\n",
+    );
+
+    let (error, calls) = stopped_build(&bench, &world, &project)?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::SshAgentExposed),
+        "{error:?}"
+    );
+    assert!(!calls.iter().any(|call| call.contains("git init --bare")));
+    Ok(())
+}
+
+#[test]
+fn a_token_that_cannot_be_listed_inside_stops_before_the_credential_is_written() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    // 作る前の確認は一覧を読めるが、中を整える段の読み直しで失敗する。
+    world.change_before(INTERIOR_FIRST_STEP, |world| world.failing("sbx secret ls"));
+
+    let (error, calls) = stopped_build(&bench, &world, &project)?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(
+        !calls
+            .iter()
+            .any(|call| call.contains("credential.https://github.com.helper"))
+    );
+    Ok(())
+}
+
+#[test]
+fn inputs_that_change_after_the_sandbox_is_created_are_not_placed() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = registered(&bench, &world)?;
+    // 写した入力が、Sandboxを作ったあと置く前に書き換わる。
+    let snapshot = paths.snapshot_dir();
+    world.change_before(INTERIOR_FIRST_STEP, move |_| {
+        if let Ok(entries) = fs::read_dir(snapshot.join("sha256")) {
+            for entry in entries.flatten() {
+                let _ = fs::write(entry.path(), b"tampered\n");
+            }
+        }
+    });
+
+    let (error, calls) = stopped_build(&bench, &world, &project)?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningSnapshotChanged)
+    );
+    assert!(!calls.iter().any(|call| call.contains("sh -c set -eu")));
+    Ok(())
+}
+
+#[test]
+fn a_token_environment_that_cannot_be_written_stops_before_the_repository() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    world.failing("then exit 44");
+
+    let (error, calls) = stopped_build(&bench, &world, &project)?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxTokenEnvUnusable));
+    assert!(!calls.iter().any(|call| call.contains("git init --bare")));
+    Ok(())
+}
+
+#[test]
+fn a_token_github_refuses_stops_before_the_repository_is_fetched() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    world.failing("exec git ls-remote");
+
+    let (error, calls) = stopped_build(&bench, &world, &project)?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(!calls.iter().any(|call| call.contains("git init --bare")));
+    Ok(())
+}
