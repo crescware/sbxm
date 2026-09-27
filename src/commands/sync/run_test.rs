@@ -291,3 +291,62 @@ fn a_sync_stops_at_any_step_that_does_not_answer() -> Checked {
     }
     Ok(())
 }
+
+/// 構築したhostの案件へ`change`を加えてから同期する。
+fn synced_after(
+    change: impl Fn(&Bench, &World, &crate::paths::ProjectPaths) -> Checked,
+) -> Checked<crate::diagnostics::Result<SyncOutput>> {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = local_request()?;
+    bench.build(&world, &request).required()?;
+    world.answering(PLACE_SAVE_REFS, 0, "ready\n");
+    let paths =
+        crate::paths::ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    change(&bench, &world, &paths)?;
+    Ok(sync(&bench, &world))
+}
+
+#[test]
+fn a_sync_does_not_take_a_lock_it_cannot_trust() -> Checked {
+    let error = synced_after(|_, _, paths| {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(paths.lock_file(), std::fs::Permissions::from_mode(0o644))
+            .required()
+    })?
+    .err()
+    .required_because("an unsafe lock")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sync_during_a_rebuild_is_refused() -> Checked {
+    let error = synced_after(|bench, _, paths| {
+        let mut stored = bench.stored("local/app")?;
+        stored.rebuild = Some(crate::metadata::RebuildIntent {
+            target_dockerfile_sha256: "2".repeat(64),
+            previous_dockerfile_sha256: stored.provisioning.dockerfile_sha256.clone(),
+        });
+        crate::metadata::update(paths, &stored).required()
+    })?
+    .err()
+    .required_because("a rebuild is pending")?;
+    assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
+    Ok(())
+}
+
+#[test]
+fn origin_refs_the_sandbox_cannot_list_are_not_read_as_none() -> Checked {
+    let error = synced_after(|_, world, _| {
+        world.failing("for-each-ref --format=%(refname) %(objectname)");
+        Ok(())
+    })?
+    .err()
+    .required_because("the origin refs are unknown")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    Ok(())
+}

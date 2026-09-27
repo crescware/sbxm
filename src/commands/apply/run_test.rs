@@ -995,3 +995,84 @@ fn an_apply_stops_at_any_step_that_does_not_answer() -> Checked {
     }
     Ok(())
 }
+
+/// 宣言fileを1つ持ち、Sandboxが動いている案件へ、`host`を通して宣言fileだけを適用する。
+fn files_applied_through(
+    host: impl Fn(
+        &std::path::Path,
+        &ProjectPaths,
+    ) -> Checked<Box<dyn crate::boundary::host::HostEnvironment>>,
+    change: impl Fn(&ProjectPaths) -> Checked,
+) -> Checked<crate::diagnostics::Result<crate::commands::apply::ApplyOutput>> {
+    let dir = tempfile::tempdir().required()?;
+    let source = dir.path().join("declared.yaml");
+    std::fs::write(&source, b"declared = true\n").required()?;
+    let (_home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
+    let paths = write_metadata(&location, &parent, None)?;
+    change(&paths)?;
+    let host = host(&workspace_root, &paths)?;
+    let applied = run(
+        Target {
+            location: &location,
+            requested: Some(&project()?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &config,
+        FILES_ONLY,
+        host.as_ref(),
+        &workspace_root,
+        &mut SilentProgress,
+    );
+    // 書けなくした置き場を戻し、一時directoryを片付けられるようにする。
+    std::fs::set_permissions(paths.sbxm_dir(), std::fs::Permissions::from_mode(0o700))
+        .required()?;
+    Ok(applied)
+}
+
+fn running_sandbox(
+    workspace_root: &std::path::Path,
+    _: &ProjectPaths,
+) -> Checked<Box<dyn crate::boundary::host::HostEnvironment>> {
+    Ok(Box::new(FakeSbx::listing(&listing(
+        workspace_root,
+        "running",
+    )?)))
+}
+
+#[test]
+fn an_apply_does_not_take_a_lock_it_cannot_trust() -> Checked {
+    let error = files_applied_through(running_sandbox, |paths| {
+        std::fs::write(paths.lock_file(), b"").required()?;
+        std::fs::set_permissions(paths.lock_file(), std::fs::Permissions::from_mode(0o644))
+            .required()
+    })?
+    .err()
+    .required_because("an unsafe lock")?;
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_placed_file_that_cannot_be_recorded_is_reported() -> Checked {
+    let error = files_applied_through(
+        |workspace_root, paths| {
+            let sbxm = paths.sbxm_dir();
+            // Sandboxへ置いた直後、記録を書く前にmetadataの置き場へ書けなくなる。
+            Ok(Box::new(crate::testing::host::ChangingBefore::new(
+                FakeSbx::listing(&listing(workspace_root, "running")?),
+                "exec -i",
+                move || {
+                    let _ = std::fs::set_permissions(&sbxm, std::fs::Permissions::from_mode(0o500));
+                },
+            )))
+        },
+        |_| Ok(()),
+    )?
+    .err()
+    .required_because("the placement cannot be recorded")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    Ok(())
+}
