@@ -1,6 +1,6 @@
 use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
 use crate::design::SilentProgress;
-use crate::diagnostics::ErrorId;
+use crate::diagnostics::{ErrorId, Result};
 use crate::metadata;
 use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
 use crate::testing::add_request::{project_of, request};
@@ -11,7 +11,10 @@ use std::cell::Cell;
 use std::fs;
 use std::path::PathBuf;
 
-use super::{RepairAction, execute, prepare};
+use crate::project::{ProjectId, SandboxLayout};
+
+use super::{Prepared, RepairAction, execute, prepare};
+use crate::commands::repair::RepairOutput;
 
 struct StateChangingHost<'a> {
     world: &'a World,
@@ -695,6 +698,431 @@ fn an_interrupted_local_project_is_repaired_without_a_token() -> Checked {
         !world.since(mark).iter().any(|call| call.contains("secret")),
         "{:?}",
         world.since(mark)
+    );
+    Ok(())
+}
+
+/// 古い版の構築がworktreeの手前で止まり、intentを持たない途中の状態として残った案件。
+fn legacy_incomplete(bench: &Bench, world: &World) -> Checked<(ProjectPaths, ProjectId)> {
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    world.failing("worktree add");
+    bench
+        .build(world, &request)
+        .refused_because("the old run stopped after reusable artifacts were made")?;
+    world.nothing_fails();
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    let mut stored = bench.stored("Example-Org/Example-Repo")?;
+    stored.initial_provisioning = None;
+    metadata::update(&paths, &stored).required_because("remove the intent")?;
+    Ok((paths, project_of(&request)?))
+}
+
+/// intentを持たない途中の状態では、観測の最後の起動はtemplateの一覧である。そのあと
+/// hostの起動を挟まずに、入力の固定とintentの記録へ進む。
+const LAST_OBSERVATION_STEP: &str = "sbx template ls";
+
+fn prepared(bench: &Bench, world: &World, project: &ProjectId) -> Result<Prepared> {
+    prepare(
+        &bench.location,
+        &bench.config,
+        Some(project),
+        world,
+        bench.workspace_root.path(),
+        &mut ScriptedPrompt::choosing(0),
+    )
+}
+
+fn executed(bench: &Bench, world: &World, prepared: Prepared) -> Result<RepairOutput> {
+    execute(
+        world,
+        prepared,
+        &bench.config,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+}
+
+fn set_mode(path: &std::path::Path, mode: u32) -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).required()
+}
+
+#[test]
+fn a_repair_whose_last_observation_cannot_finish_changes_nothing() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    world.timing_out("sbx ls");
+
+    let error = executed(&bench, &world, plan).refused_because("an unfinished observation")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_repair_whose_last_observation_is_unsafe_changes_nothing() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    world.answering(
+        "sha256sum",
+        0,
+        "0000000000000000000000000000000000000000000000000000000000000000  -\n",
+    );
+
+    let error = executed(&bench, &world, plan).refused_because("a declared file changed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_repair_whose_inputs_cannot_be_captured_records_nothing() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    let snapshot = paths.snapshot_dir();
+    world.change_before(LAST_OBSERVATION_STEP, move |_| {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&snapshot, fs::Permissions::from_mode(0o000));
+    });
+
+    let error = executed(&bench, &world, plan).refused_because("unreadable inputs")?;
+    set_mode(&paths.snapshot_dir(), 0o700)?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_repair_that_cannot_record_its_intent_changes_nothing() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    let sbxm = paths.sbxm_dir();
+    world.change_before(LAST_OBSERVATION_STEP, move |_| {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&sbxm, fs::Permissions::from_mode(0o500));
+    });
+    let mark = world.mark();
+
+    let error = executed(&bench, &world, plan).refused_because("an unwritable metadata")?;
+    set_mode(&paths.sbxm_dir(), 0o700)?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("worktree add"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_repair_whose_cache_became_a_symlink_stops_after_the_intent() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    let cache = paths.cache_dir();
+    let elsewhere = bench.workspace_root.path().join("elsewhere");
+    world.change_before(LAST_OBSERVATION_STEP, move |_| {
+        let _ = fs::create_dir_all(&elsewhere);
+        let _ = fs::remove_dir_all(&cache);
+        let _ = std::os::unix::fs::symlink(&elsewhere, &cache);
+    });
+
+    let error = executed(&bench, &world, plan).refused_because("a symlinked cache")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_repair_whose_completion_cannot_be_observed_keeps_the_intent() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    world.after_the_build(|world| world.timing_out("sbx ls"));
+
+    let error = executed(&bench, &world, plan).refused_because("an unfinished completion")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_repair_whose_completion_is_unsafe_keeps_the_intent() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    world.after_the_build(|world| {
+        world.answering(
+            "sha256sum",
+            0,
+            "0000000000000000000000000000000000000000000000000000000000000000  -\n",
+        );
+    });
+
+    let error = executed(&bench, &world, plan).refused_because("an unsafe completion")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_repair_that_cannot_clear_its_intent_reports_the_write() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    let sbxm = paths.sbxm_dir();
+    world.after_the_build(move |world| world.seal_before_the_final_record(sbxm.clone()));
+
+    let error = executed(&bench, &world, plan).refused_because("an unwritable metadata")?;
+    set_mode(&paths.sbxm_dir(), 0o700)?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn repair_does_not_take_a_lock_it_cannot_trust() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = legacy_incomplete(&bench, &world)?;
+    set_mode(&paths.lock_file(), 0o644)?;
+
+    let error = prepared(&bench, &world, &project).refused_because("an unsafe lock file")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    Ok(())
+}
+
+#[test]
+fn repair_leaves_a_pending_rebuild_to_rebuild() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = legacy_incomplete(&bench, &world)?;
+    let mut stored = bench.stored("Example-Org/Example-Repo")?;
+    stored.rebuild = Some(crate::metadata::RebuildIntent {
+        target_dockerfile_sha256: "2".repeat(64),
+        previous_dockerfile_sha256: stored.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&paths, &stored).required()?;
+
+    let error = prepared(&bench, &world, &project).refused_because("a rebuild is pending")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::RebuildIntentPending));
+    Ok(())
+}
+
+#[test]
+fn repair_plans_nothing_from_an_unfinished_first_observation() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    world.timing_out("sbx ls");
+
+    let error = prepared(&bench, &world, &project).refused_because("an unfinished observation")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    Ok(())
+}
+
+#[test]
+fn repair_plans_nothing_from_an_unfinished_second_observation() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    world.change_before("sbx ls", |world| {
+        world.change_before("sbx ls", |world| world.timing_out("sbx ls"));
+    });
+
+    let error = prepared(&bench, &world, &project).refused_because("an unfinished observation")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    Ok(())
+}
+
+#[test]
+fn repair_plans_nothing_when_the_second_observation_is_unsafe() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    world.change_before("sbx ls", |world| {
+        world.change_before("sbx ls", |world| {
+            world.answering(
+                "sha256sum",
+                0,
+                "0000000000000000000000000000000000000000000000000000000000000000  -\n",
+            );
+        });
+    });
+
+    let error = prepared(&bench, &world, &project).refused_because("an unsafe observation")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    Ok(())
+}
+
+#[test]
+fn repair_plans_nothing_when_docker_is_unreachable() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    world.failing("docker version");
+
+    let error = prepared(&bench, &world, &project).refused_because("an unreachable docker")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
+    Ok(())
+}
+
+#[test]
+fn repair_plans_nothing_when_neither_generation_has_its_image() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = legacy_incomplete(&bench, &world)?;
+    fs::write(paths.dockerfile(), b"FROM example:edited\n").required()?;
+    world.images.borrow_mut().clear();
+
+    let error = prepared(&bench, &world, &project).refused_because("no generation to select")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningGenerationMissing)
+    );
+    Ok(())
+}
+
+#[test]
+fn repair_plans_nothing_when_the_generation_is_lost_under_the_lease() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = legacy_incomplete(&bench, &world)?;
+    fs::write(paths.dockerfile(), b"FROM example:edited\n").required()?;
+    world.change_before("sbx ls", |world| {
+        world.change_before("sbx ls", |world| world.images.borrow_mut().clear());
+    });
+
+    let error = prepared(&bench, &world, &project).refused_because("no generation to select")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningGenerationMissing)
+    );
+    Ok(())
+}
+
+/// 完成した案件の宣言fileを変えたあと、repairが計画に示す観測。
+fn observed_after(change: impl Fn(&World)) -> Checked<String> {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench.build(&world, &request).required()?;
+    change(&world);
+    let plan = prepared(&bench, &world, &project_of(&request)?).required()?;
+    Ok(format!("{:?}", plan.plan.observations))
+}
+
+const DECLARED_FILE: &str = "/home/agent/.config/example/settings.yaml";
+
+#[test]
+fn repair_shows_a_declared_file_edited_inside_the_sandbox_as_modified() -> Checked {
+    let observed = observed_after(|world| world.edited_inside(DECLARED_FILE, b"edited\n"))?;
+
+    assert!(observed.contains("\"modified\""), "{observed}");
+    Ok(())
+}
+
+#[test]
+fn repair_shows_a_declared_file_removed_inside_the_sandbox_as_missing() -> Checked {
+    let observed = observed_after(|world| {
+        world.present.borrow_mut().remove(DECLARED_FILE);
+    })?;
+
+    assert!(observed.contains("\"missing\""), "{observed}");
+    Ok(())
+}
+
+#[test]
+fn a_repair_whose_completion_lost_a_worktree_keeps_the_intent() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    let worktree =
+        SandboxLayout::new(bench.stored("Example-Org/Example-Repo")?.canonical_id()).worktree(0);
+    world.after_the_build(move |world| {
+        let worktree = worktree.clone();
+        world.change_before("sbx ls", move |world| {
+            world.present.borrow_mut().remove(&worktree);
+            world.worktrees.borrow_mut().remove(&worktree);
+        });
+    });
+
+    let error = executed(&bench, &world, plan).refused_because("an incomplete completion")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
     );
     Ok(())
 }

@@ -1733,3 +1733,401 @@ fn a_local_project_is_rebuilt_from_the_host_with_its_saved_branches_back() -> Ch
     assert!(!host.ran("secret"), "{:?}", host.calls());
     Ok(())
 }
+
+/// 切り替えの途中で、指定した1つの起動だけが失敗するrebuild。
+fn rebuild_failing_at(command: impl Fn(&str) -> String, code: i32) -> Checked<Option<ErrorId>> {
+    let (fixture, project, host) = switched_sandbox()?;
+    let host = host.answering(&command(project.sandbox.as_str()), code, "");
+    rebuilt_with(&fixture, &host)
+}
+
+/// Sandboxの一覧を、呼ばれる順に左から返すrebuild。最後の1件は繰り返し使う。
+fn rebuild_listing(
+    listings: impl Fn(&Fixture, &Registered) -> Checked<Vec<String>>,
+) -> Checked<Option<ErrorId>> {
+    let (fixture, project, host) = switched_sandbox()?;
+    let mut listed = listings(&fixture, &project)?;
+    listed.reverse();
+    *host.listing.borrow_mut() = listed;
+    rebuilt_with(&fixture, &host)
+}
+
+fn rebuilt_with(fixture: &Fixture, host: &FakeSbx) -> Checked<Option<ErrorId>> {
+    Ok(rebuild(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        host,
+        &fixture.workspace_root,
+    )
+    .refused_because("a step of the rebuild fails")?
+    .first_id())
+}
+
+fn running(fixture: &Fixture, project: &Registered) -> Checked<String> {
+    Ok(format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(project, "running")?
+    ))
+}
+
+fn listed_twice(fixture: &Fixture, project: &Registered) -> Checked<String> {
+    let entry = fixture.entry(project, "running")?;
+    Ok(format!(r#"{{"sandboxes":[{entry},{entry}]}}"#))
+}
+
+#[test]
+fn a_sandbox_that_sbx_does_not_remove_is_not_recreated() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(|name| format!("rm {name}"), 1)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn an_unreadable_token_registration_stops_before_the_sandbox_is_created() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(|_| "secret ls".to_string(), 1)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_that_cannot_be_created_stops_the_rebuild() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    let image = image::image_name(&project.sandbox, &sha256_hex(b"unchanged\n"));
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    let host = host.answering(
+        &format!(
+            "create --name {} --template {image} shell {}",
+            project.sandbox,
+            workspace.display()
+        ),
+        1,
+        "",
+    );
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_git_identity_that_cannot_be_set_stops_the_rebuild() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(
+            |name| format!("exec {name} -- git config --global user.name Example User"),
+            1
+        )?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn tools_that_cannot_be_detected_stop_the_rebuild() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(
+            |name| {
+                format!(
+                    r#"exec {name} -- sh -c for c in gh mise claude codex; do command -v "$c" > /dev/null 2>&1 && printf '%s\n' "$c"; done"#
+                )
+            },
+            1
+        )?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_credential_helper_that_cannot_be_set_stops_the_rebuild() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(
+            |name| {
+                format!(
+                    "exec {name} -- git config --global credential.https://github.com.helper !f() {{ echo username=x; echo password=sbx-cs-example; }}; f"
+                )
+            },
+            1
+        )?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_token_environment_that_cannot_be_read_stops_the_rebuild() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(
+            |name| {
+                format!(
+                    r#"exec {name} -- sh -c if [ ! -e "$1" ] && [ ! -L "$1" ]; then exit 44; fi; exec cat -- "$1" sh /etc/profile.d/sbxm-github-token.sh"#
+                )
+            },
+            1
+        )?,
+        Some(ErrorId::SandboxTokenEnvUnusable)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_token_that_github_does_not_accept_stops_the_rebuild() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(
+            |name| {
+                format!(
+                    r#"exec {name} -- sh -c GIT_TERMINAL_PROMPT=0 exec git ls-remote "$1" HEAD sh https://github.com/example-org/example-repo.git"#
+                )
+            },
+            128
+        )?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_start_branch_git_rejects_stops_the_rebuild() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(
+            |name| format!("exec {name} -- git check-ref-format --branch main"),
+            2
+        )?,
+        Some(ErrorId::InvalidBranchName)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_worktree_that_cannot_be_observed_stops_the_rebuild() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(
+            |name| {
+                format!("exec {name} -- test -e /home/agent/work/example-repo/example-repo.tree-0")
+            },
+            2
+        )?,
+        Some(ErrorId::SandboxCheckUnobservable)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_rebuild_whose_first_listing_is_unreadable_touches_nothing() -> Checked {
+    assert_eq!(
+        rebuild_listing(|_, _| Ok(vec!["not json".to_string()]))?,
+        Some(ErrorId::ExternalOutputUnparseable)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_rebuild_whose_first_listing_names_the_sandbox_twice_touches_nothing() -> Checked {
+    assert_eq!(
+        rebuild_listing(|fixture, project| Ok(vec![listed_twice(fixture, project)?]))?,
+        Some(ErrorId::SandboxNameCollision)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_rebuild_whose_second_listing_is_unreadable_removes_nothing() -> Checked {
+    assert_eq!(
+        rebuild_listing(|fixture, project| {
+            Ok(vec![running(fixture, project)?, "not json".to_string()])
+        })?,
+        Some(ErrorId::ExternalOutputUnparseable)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_rebuild_whose_second_listing_names_the_sandbox_twice_removes_nothing() -> Checked {
+    assert_eq!(
+        rebuild_listing(|fixture, project| {
+            Ok(vec![
+                running(fixture, project)?,
+                listed_twice(fixture, project)?,
+            ])
+        })?,
+        Some(ErrorId::SandboxNameCollision)
+    );
+    Ok(())
+}
+
+/// 計画のあと、確認と実行の前に`between`で世界を変えるrebuild。
+fn rebuilt_after(
+    fixture: &Fixture,
+    host: &FakeSbx,
+    between: impl FnOnce() -> Checked,
+) -> Checked<Option<ErrorId>> {
+    let clock = ScriptedClock::default();
+    let project = project_id("example-org/example-repo")?;
+    let (prepared, snapshot) = prepare(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        host,
+        &fixture.workspace_root,
+        poll(&clock),
+        &mut SilentProgress,
+    )
+    .required_because("the rebuild is planned")?;
+    between()?;
+    let shown = prepared.plan.project.clone();
+    let confirmation = confirm(snapshot, &shown, true, &mut ScriptedConfirm::typing(&shown))
+        .required_because("the rebuild is confirmed")?;
+    Ok(execute(
+        host,
+        prepared,
+        confirmation,
+        &fixture.config,
+        &fixture.workspace_root,
+        poll(&clock),
+        &mut SilentProgress,
+    )
+    .refused_because("a step of the rebuild fails")?
+    .first_id())
+}
+
+fn set_mode(path: &Path, mode: u32) -> Checked {
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).required()
+}
+
+#[test]
+fn a_template_list_that_cannot_be_read_stops_the_rebuild() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(|_| "template ls --json".to_string(), 1)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn an_archive_that_the_engine_did_not_write_stops_the_rebuild() -> Checked {
+    let (fixture, _, host) = switched_sandbox()?;
+    let host = host.answering("template ls --json", 0, r#"{"images":[]}"#);
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ArchiveUnusable)
+    );
+    assert!(!host.ran("rm "));
+    Ok(())
+}
+
+#[test]
+fn a_pinned_generation_that_cannot_be_looked_up_stops_the_rebuild() -> Checked {
+    let (fixture, mut project, host) = switched_sandbox()?;
+    let target = "2".repeat(64);
+    project.metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: target.clone(),
+        previous_dockerfile_sha256: project.metadata.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&project.paths, &project.metadata).required()?;
+    let image = image::image_name(&project.sandbox, &target);
+    let host = host.answering(&format!("image ls --quiet {image}"), 1, "");
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_rebuild_that_cannot_record_its_intent_removes_nothing() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    let sbxm = project.paths.sbxm_dir();
+
+    let id = rebuilt_after(&fixture, &host, || set_mode(&sbxm, 0o500))?;
+    set_mode(&sbxm, 0o700)?;
+
+    assert_eq!(id, Some(ErrorId::AtomicWriteFailed));
+    assert!(!host.ran("rm "));
+    Ok(())
+}
+
+#[test]
+fn a_rebuild_that_cannot_clear_its_intent_reports_the_write() -> Checked {
+    let (fixture, mut project, host) = switched_sandbox()?;
+    project.metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: project.metadata.provisioning.dockerfile_sha256.clone(),
+        previous_dockerfile_sha256: project.metadata.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&project.paths, &project.metadata).required()?;
+    let sbxm = project.paths.sbxm_dir();
+
+    let id = rebuilt_after(&fixture, &host, || set_mode(&sbxm, 0o500))?;
+    set_mode(&sbxm, 0o700)?;
+
+    assert_eq!(id, Some(ErrorId::AtomicWriteFailed));
+    Ok(())
+}
+
+#[test]
+fn rebuild_does_not_take_a_lock_it_cannot_trust() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    std::fs::write(project.paths.lock_file(), b"").required()?;
+    set_mode(&project.paths.lock_file(), 0o644)?;
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_symlinked_cache_stops_the_rebuild_before_anything_is_swept() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    let cache = project.paths.cache_dir();
+    let elsewhere = fixture.workspace_root.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).required()?;
+    let _ = std::fs::remove_dir_all(&cache);
+    std::os::unix::fs::symlink(&elsewhere, &cache).required()?;
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ProjectPathSymlink)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_dockerfile_that_cannot_be_read_stops_the_rebuild() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    std::fs::remove_file(project.paths.dockerfile()).required()?;
+    std::fs::create_dir(project.paths.dockerfile()).required()?;
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ProjectPathUnexpectedType)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_that_never_runs_is_not_read_for_protection() -> Checked {
+    assert_eq!(
+        rebuild_listing(|fixture, project| {
+            Ok(vec![format!(
+                r#"{{"sandboxes":[{}]}}"#,
+                fixture.entry(project, "stopped")?
+            )])
+        })?,
+        Some(ErrorId::SandboxNotRunning)
+    );
+    Ok(())
+}

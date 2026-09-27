@@ -7,7 +7,7 @@ use crate::boundary::host::EnvPolicy;
 use crate::commands::Context;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::design::{PromptUi, RenderingPolicy, SilentProgress, Ui};
-use crate::diagnostics::{ExitCode, Result};
+use crate::diagnostics::{ErrorId, ExitCode, Result};
 use crate::i18n::Locale;
 use crate::paths::{PRIVATE_DIR_MODE, ProjectPaths};
 use crate::project::{ProjectId, SandboxLayout};
@@ -535,6 +535,395 @@ fn a_github_project_is_not_saved_to_the_host_around_the_session() -> Checked {
             .any(|call| call.contains(crate::support::host_sync::PLACE_SAVE_REFS)),
         "{:?}",
         world.since(mark)
+    );
+    Ok(())
+}
+
+const HOST_KEY: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 host-key\n";
+
+/// 一度開いて完成させた案件。
+fn built(
+    bench: &Bench,
+    world: &World,
+    worktrees: Option<u32>,
+) -> Checked<(ProjectPaths, ProjectId)> {
+    let project = registered(bench, world, worktrees)?;
+    open(bench, world, &project, None).required_because("the first open builds")?;
+    let paths = ProjectPaths::derive(&bench.parent, bench.stored(PROJECT)?.canonical_id());
+    Ok((paths, project))
+}
+
+/// 2本目のmanaged worktreeだけが欠けた、intentを持たない案件。
+fn missing_a_worktree(bench: &Bench, world: &World) -> Checked<(ProjectPaths, ProjectId)> {
+    let built = built(bench, world, Some(2))?;
+    let missing = SandboxLayout::new(bench.stored(PROJECT)?.canonical_id()).worktree(1);
+    world.present.borrow_mut().remove(&missing);
+    world.worktrees.borrow_mut().remove(&missing);
+    Ok(built)
+}
+
+fn set_mode(path: &std::path::Path, mode: u32) -> Checked {
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).required()
+}
+
+fn refused(bench: &Bench, world: &World, project: &ProjectId) -> Checked<Option<ErrorId>> {
+    Ok(open(bench, world, project, None)
+        .refused_because("open stops before the terminal is handed over")?
+        .first_id())
+}
+
+#[test]
+fn open_does_not_take_a_lock_it_cannot_trust() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = built(&bench, &world, None)?;
+    set_mode(&paths.lock_file(), 0o644)?;
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    Ok(())
+}
+
+#[test]
+fn open_does_not_connect_under_a_session_lease_it_cannot_trust() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = built(&bench, &world, None)?;
+    set_mode(&paths.session_lease_file(), 0o644)?;
+
+    let mark = world.mark();
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("worktree list"))
+    );
+    Ok(())
+}
+
+#[test]
+fn open_does_not_resume_a_build_under_a_session_lease_it_cannot_trust() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = registered(&bench, &world, None)?;
+    world.failing("sbx create");
+    open(&bench, &world, &project, None).refused_because("the build is interrupted")?;
+    world.nothing_fails();
+    let paths = ProjectPaths::derive(&bench.parent, bench.stored(PROJECT)?.canonical_id());
+    set_mode(&paths.session_lease_file(), 0o644)?;
+    let mark = world.mark();
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("sbx create"))
+    );
+    Ok(())
+}
+
+#[test]
+fn open_does_not_restore_a_worktree_under_a_session_lease_it_cannot_trust() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = missing_a_worktree(&bench, &world)?;
+    set_mode(&paths.session_lease_file(), 0o644)?;
+    let mark = world.mark();
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("worktree add"))
+    );
+    Ok(())
+}
+
+#[test]
+fn open_stops_when_the_sandboxes_cannot_be_listed() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = built(&bench, &world, None)?;
+    world.timing_out("sbx ls");
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ExternalCommandTimeout)
+    );
+    Ok(())
+}
+
+#[test]
+fn open_does_not_guess_between_two_sandboxes_of_the_same_name() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = built(&bench, &world, None)?;
+    let row = world.sandboxes.borrow().first().cloned();
+    world.sandboxes.borrow_mut().extend(row);
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::SandboxNameCollision)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_whose_workspace_became_a_symlink_is_not_started() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = built(&bench, &world, None)?;
+    world.stopped();
+    let workspace = bench
+        .workspace_root
+        .path()
+        .join(bench.stored(PROJECT)?.sandbox_name().as_str());
+    let elsewhere = bench.workspace_root.path().join("elsewhere");
+    fs::create_dir_all(&elsewhere).required()?;
+    fs::remove_dir_all(&workspace).required()?;
+    std::os::unix::fs::symlink(&elsewhere, &workspace).required()?;
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ProjectPathSymlink)
+    );
+    assert!(!world.ran("/bin/true"));
+    Ok(())
+}
+
+/// 初回構築がworktreeの手前で止まり、そのあとSandboxも止まった案件。
+fn interrupted_and_stopped(bench: &Bench, world: &World) -> Checked<ProjectId> {
+    let project = registered(bench, world, None)?;
+    world.failing("worktree add");
+    open(bench, world, &project, None).refused_because("the build is interrupted")?;
+    world.nothing_fails();
+    world.stopped();
+    Ok(project)
+}
+
+#[test]
+fn an_interrupted_build_whose_sandbox_does_not_start_is_not_resumed() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = interrupted_and_stopped(&bench, &world)?;
+    world.failing("/bin/true");
+    let mark = world.mark();
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("worktree add"))
+    );
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_build_whose_sandbox_is_not_seen_running_is_not_resumed() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = interrupted_and_stopped(&bench, &world)?;
+    world.change_before("/bin/true", |world| world.timing_out("sbx ls"));
+    let mark = world.mark();
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ExternalCommandTimeout)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("worktree add"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stopped_project_that_does_not_start_is_not_opened() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = built(&bench, &world, None)?;
+    world.stopped();
+    world.failing("/bin/true");
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_missing_worktree_is_not_restored_from_an_unfinished_observation() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = missing_a_worktree(&bench, &world)?;
+    // 1回目は一覧、2回目は起動の確認、3回目が欠落の観測である。
+    world.change_before("sbx ls", |world| {
+        world.change_before("sbx ls", |world| {
+            world.change_before("sbx ls", |world| world.timing_out("sbx ls"));
+        });
+    });
+    let mark = world.mark();
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ExternalCommandTimeout)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("worktree add"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_missing_worktree_is_not_restored_from_an_unreadable_record() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = missing_a_worktree(&bench, &world)?;
+    set_mode(&paths.snapshot_dir(), 0o000)?;
+    let mark = world.mark();
+
+    let id = refused(&bench, &world, &project)?;
+    set_mode(&paths.snapshot_dir(), 0o700)?;
+
+    assert_eq!(id, Some(ErrorId::ProjectPathUnreadable));
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("worktree add"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_missing_worktree_that_cannot_be_restored_stops_open() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = missing_a_worktree(&bench, &world)?;
+    world.failing("worktree add");
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_restored_worktree_whose_completion_cannot_be_observed_stops_open() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = missing_a_worktree(&bench, &world)?;
+    world.change_before("worktree add", |world| {
+        world.change_before("sbx ls", |world| world.timing_out("sbx ls"));
+    });
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ExternalCommandTimeout)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_restored_worktree_whose_completion_is_unsafe_stops_open() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = missing_a_worktree(&bench, &world)?;
+    world.change_before("worktree add", |world| {
+        world.answering("ssh-add -L", 0, HOST_KEY);
+    });
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::SshAgentExposed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_worktree_lost_again_after_the_restoration_stops_open() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = missing_a_worktree(&bench, &world)?;
+    let missing = SandboxLayout::new(bench.stored(PROJECT)?.canonical_id()).worktree(1);
+    world.change_before("worktree add", move |world| {
+        let missing = missing.clone();
+        world.change_before("sbx ls", move |world| {
+            world.present.borrow_mut().remove(&missing);
+            world.worktrees.borrow_mut().remove(&missing);
+        });
+    });
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::InitialProvisioningIncomplete)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_host_agent_that_appears_after_the_observation_stops_the_handover() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = built(&bench, &world, None)?;
+    // 1回目は観測の中、2回目が接続の直前の確認である。
+    world.change_before("printenv SSH_AUTH_SOCK", |world| {
+        world.change_before("printenv SSH_AUTH_SOCK", |world| {
+            world.answering("ssh-add -L", 0, HOST_KEY);
+        });
+    });
+
+    let mark = world.mark();
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::SshAgentExposed)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("worktree list"))
+    );
+    Ok(())
+}
+
+#[test]
+fn open_stops_when_the_worktrees_cannot_be_listed() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = built(&bench, &world, None)?;
+    world.failing("worktree list");
+
+    assert_eq!(
+        refused(&bench, &world, &project)?,
+        Some(ErrorId::ExternalCommandFailed)
     );
     Ok(())
 }

@@ -1540,3 +1540,246 @@ fn a_local_project_is_removed_without_a_token_and_keeps_its_host_repository() ->
     assert!(!project.paths.metadata_file().exists());
     Ok(())
 }
+
+fn planned(fixture: &Fixture, host: &FakeSbx, force: bool) -> Result<Prepared> {
+    let clock = ScriptedClock::default();
+    prepare(
+        Selection {
+            location: &fixture.location,
+            requested: Some(&crate::project::ProjectId::parse(
+                "example-org/example-repo",
+            )?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        force,
+        host,
+        &fixture.workspace_root,
+        poll(&clock),
+        &mut SilentProgress,
+    )
+}
+
+/// 検査を通る稼働中のSandboxを持つ案件と、そのhost。
+fn running_project(fixture: &Fixture) -> Checked<(Registered, FakeSbx)> {
+    let project = fixture.register("example-org/example-repo")?;
+    let host = no_secrets(clean_host(fixture, &project)?, project.sandbox.as_str());
+    Ok((project, host))
+}
+
+fn listed(fixture: &Fixture, project: &Registered, state: &str) -> Checked<String> {
+    Ok(format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(project, state)?
+    ))
+}
+
+fn set_mode(path: &std::path::Path, mode: u32) -> Checked {
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).required()
+}
+
+#[test]
+fn destroy_does_not_take_a_lock_it_cannot_trust() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    std::fs::write(project.paths.lock_file(), b"").required()?;
+    set_mode(&project.paths.lock_file(), 0o644)?;
+
+    let error = planned(&fixture, &host, false).refused_because("an unsafe lock")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert!(host.calls().is_empty());
+    Ok(())
+}
+
+#[test]
+fn an_unreadable_listing_stops_the_plan() -> Checked {
+    let fixture = Fixture::new()?;
+    let (_, host) = running_project(&fixture)?;
+    *host.listing.borrow_mut() = vec!["not json".to_string()];
+
+    let error = planned(&fixture, &host, false).refused_because("an unreadable listing")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_listed_twice_is_not_planned_for_removal() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let entry = fixture.entry(&project, "running")?;
+    *host.listing.borrow_mut() = vec![format!(r#"{{"sandboxes":[{entry},{entry}]}}"#)];
+
+    let error = planned(&fixture, &host, false).refused_because("two sandboxes")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_that_does_not_start_is_not_planned() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    *host.listing.borrow_mut() = vec![listed(&fixture, &project, "stopped")?];
+    let host = host.answering(&format!("exec {} -- /bin/true", project.sandbox), 1, "");
+
+    let error = planned(&fixture, &host, false).refused_because("the start fails")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_that_never_runs_is_not_planned() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    *host.listing.borrow_mut() = vec![listed(&fixture, &project, "stopped")?];
+
+    let error = planned(&fixture, &host, false).refused_because("it never runs")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
+    Ok(())
+}
+
+/// Sandbox内のbare repositoryの有無を確かめる起動。
+fn bare_probe(project: &Registered) -> String {
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    format!(
+        "exec {} -- sh -c {BARE_GIT_DIR_PROBE} sh {}",
+        project.sandbox,
+        layout.bare_git_dir()
+    )
+}
+
+#[test]
+fn a_sandbox_whose_repository_cannot_be_observed_is_not_planned() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let host = host.answering(&bare_probe(&project), 0, "");
+
+    let error = planned(&fixture, &host, false).refused_because("an unobservable repository")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::WorktreeInventoryUnobservable)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_detached_project_without_its_start_branch_is_not_planned() -> Checked {
+    let fixture = Fixture::new()?;
+    let (mut project, host) = running_project(&fixture)?;
+    project.metadata.provisioning.mode = CreationMode::Detached;
+    project.metadata.provisioning.start_ref = None;
+    metadata::update(&project.paths, &project.metadata).required()?;
+
+    let error = planned(&fixture, &host, false).refused_because("no start branch")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidValue));
+    Ok(())
+}
+
+#[test]
+fn an_unreadable_listing_after_the_confirmation_removes_nothing() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let mut prepared = planned(&fixture, &host, false).required()?;
+    *host.listing.borrow_mut() = vec!["not json".to_string()];
+
+    let error = destroy(&host, &mut prepared).refused_because("an unreadable listing")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    assert!(!host.ran(&format!("rm {}", project.sandbox)));
+    Ok(())
+}
+
+#[test]
+fn a_repository_that_cannot_be_observed_again_removes_nothing() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let host = host.answering_in_turn(&bare_probe(&project), &[(0, "probed"), (0, "")]);
+    let mut prepared = planned(&fixture, &host, false).required()?;
+
+    let error = destroy(&host, &mut prepared).refused_because("an unobservable repository")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::WorktreeInventoryUnobservable)
+    );
+    assert!(!host.ran(&format!("rm {}", project.sandbox)));
+    Ok(())
+}
+
+#[test]
+fn force_without_a_sandbox_stops_when_the_absence_cannot_be_read() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = no_secrets(
+        FakeSbx::listings(&[r#"{"sandboxes":[]}"#, "not json"]),
+        project.sandbox.as_str(),
+    );
+    let mut prepared = planned(&fixture, &host, true).required()?;
+
+    let error = destroy(&host, &mut prepared).refused_because("an unreadable listing")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn force_without_a_sandbox_stops_when_one_has_appeared() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let appeared = listed(&fixture, &project, "running")?;
+    let host = no_secrets(
+        FakeSbx::listings(&[r#"{"sandboxes":[]}"#, &appeared]),
+        project.sandbox.as_str(),
+    );
+    let mut prepared = planned(&fixture, &host, true).required()?;
+
+    let error = destroy(&host, &mut prepared).refused_because("a sandbox appeared")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxStillPresent));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+fn unregistration(project: &Registered) -> Unregistration {
+    Unregistration {
+        paths: project.paths.clone(),
+        repository: project.metadata.repository.clone(),
+    }
+}
+
+#[test]
+fn an_unsafe_registry_lock_keeps_the_entry() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let lock = fixture.location.registry_lock();
+    std::fs::write(&lock, b"").required()?;
+    set_mode(&lock, 0o644)?;
+
+    let error = unregister(&fixture.location, &unregistration(&project))
+        .refused_because("an unsafe registry lock")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigPermissionTooOpen));
+    Ok(())
+}
+
+#[test]
+fn an_unreadable_metadata_keeps_the_entry() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.metadata_file(), b"not: [valid").required()?;
+
+    let error = unregister(&fixture.location, &unregistration(&project))
+        .refused_because("the metadata cannot be read")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidSyntax));
+    Ok(())
+}

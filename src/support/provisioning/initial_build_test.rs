@@ -957,29 +957,9 @@ fn names_the_open_command(error: &crate::diagnostics::Error) -> bool {
     })
 }
 
-/// 構築の最後のworktree作成の直後から、完成の再観測が始まる。
-const LAST_BUILD_STEP: &str = "example-repo.tree-";
-
 fn set_mode(path: &std::path::Path, mode: u32) -> Checked {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).required()
-}
-
-/// 完成の観測が終わったあと、最後の記録の前にmetadataの置き場へ書けなくする。
-///
-/// 観測の中でもmetadataを書くことがある。観測の最後の起動は、宣言fileのdigestを読んだ
-/// あとの2回目の`git -C`である。
-fn seal_after_the_observation(world: &World, sbxm: std::path::PathBuf) {
-    world.change_before("sha256sum", move |world| {
-        let sbxm = sbxm.clone();
-        world.change_before("git -C", move |world| {
-            let sbxm = sbxm.clone();
-            world.change_before("git -C", move |_| {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&sbxm, fs::Permissions::from_mode(0o500));
-            });
-        });
-    });
 }
 
 #[test]
@@ -1099,7 +1079,7 @@ fn a_completion_that_cannot_be_observed_keeps_the_intent_and_names_the_open_comm
     let bench = Bench::new()?;
     let world = World::new();
     let (_, project) = registered(&bench, &world)?;
-    world.change_before(LAST_BUILD_STEP, |world| world.timing_out("sbx ls"));
+    world.after_the_build(|world| world.timing_out("sbx ls"));
 
     let error = bench
         .ensure(&world, &project, &mut SilentProgress)
@@ -1122,7 +1102,7 @@ fn a_completion_whose_declared_file_differs_is_refused_with_the_open_command() -
     let world = World::new();
     let (_, project) = registered(&bench, &world)?;
     // 置いたはずの宣言fileが、完成の再観測では別の中身に見える。
-    world.change_before(LAST_BUILD_STEP, |world| {
+    world.after_the_build(|world| {
         world.answering(
             "sha256sum",
             0,
@@ -1151,7 +1131,7 @@ fn a_completion_missing_a_worktree_stays_pending() -> Checked {
     let world = World::new();
     let (_, project) = registered(&bench, &world)?;
     // 作ったはずのworktreeが、完成の再観測では見えない。
-    world.change_before(LAST_BUILD_STEP, |world| {
+    world.after_the_build(|world| {
         world.change_before("sha256sum", |world| {
             world.failing("test -e /home/agent/work/example-repo/example-repo.tree");
         });
@@ -1176,7 +1156,7 @@ fn a_completion_that_cannot_be_recorded_keeps_the_intent_for_the_next_open() -> 
     let bench = Bench::new()?;
     let world = World::new();
     let (paths, project) = registered(&bench, &world)?;
-    seal_after_the_observation(&world, paths.sbxm_dir());
+    world.seal_before_the_final_record(paths.sbxm_dir());
 
     let result = bench.ensure(&world, &project, &mut SilentProgress);
     set_mode(&paths.sbxm_dir(), 0o700)?;
@@ -1227,7 +1207,7 @@ fn a_finished_resume_that_cannot_be_recorded_keeps_the_intent() -> Checked {
     let world = World::new();
     let (paths, project) = registered(&bench, &world)?;
     // 1回目は完成まで進み、最後の記録だけに失敗する。置き場は書けないまま残す。
-    seal_after_the_observation(&world, paths.sbxm_dir());
+    world.seal_before_the_final_record(paths.sbxm_dir());
     let first = bench.ensure(&world, &project, &mut SilentProgress);
     // 再開は完成を見て記録だけをやり直すが、まだ書けない。
     let second = bench.ensure(&world, &project, &mut SilentProgress);
@@ -1350,7 +1330,7 @@ fn a_resumed_completion_that_cannot_be_observed_keeps_the_intent() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (_, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
-    world.change_before(LAST_BUILD_STEP, |world| world.timing_out("sbx ls"));
+    world.after_the_build(|world| world.timing_out("sbx ls"));
 
     let error = bench
         .ensure(&world, &project, &mut SilentProgress)
@@ -1371,7 +1351,7 @@ fn a_resumed_completion_that_differs_is_refused() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (_, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
-    world.change_before(LAST_BUILD_STEP, |world| {
+    world.after_the_build(|world| {
         world.answering(
             "sha256sum",
             0,
@@ -1398,7 +1378,7 @@ fn a_resumed_completion_that_cannot_be_recorded_keeps_the_intent() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (paths, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
-    seal_after_the_observation(&world, paths.sbxm_dir());
+    world.seal_before_the_final_record(paths.sbxm_dir());
 
     let result = bench.ensure(&world, &project, &mut SilentProgress);
     set_mode(&paths.sbxm_dir(), 0o700)?;
