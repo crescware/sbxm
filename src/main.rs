@@ -6,6 +6,11 @@
 //!
 //! 利用者向けの描画はすべて`design`が行う。本fileはstreamへ直接書かない。
 
+// test harnessは、test 1件につき1つのpointerを並べた配列を生成する。unit testが2048件を
+// 超えるとその配列が16KiBを超え、`large_stack_arrays`が場所を示さずに警告する。本番の
+// codeには関わらないため、test buildでだけ外す。
+#![cfg_attr(test, allow(clippy::large_stack_arrays))]
+
 mod app;
 mod archive;
 mod boundary;

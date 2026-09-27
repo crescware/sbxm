@@ -419,7 +419,8 @@ fn gate(attributes: &[syn::Attribute]) -> Gate {
 /// `#[cfg_attr]`がtest buildでだけ属性を足すか。
 ///
 /// itemそのものは両方のbuildに存在しても、test buildでだけ`derive`が増えれば、そこで
-/// 生まれるimplはtestしか持たないcodeである。
+/// 生まれるimplはtestしか持たないcodeである。lintの水準だけを変える属性はcodeを生まない
+/// ため、test buildでだけ足しても母集団は変わらない。
 fn attribute_follows_the_test_build(attribute: &syn::Attribute) -> bool {
     if !attribute.path().is_ident("cfg_attr") {
         return false;
@@ -429,9 +430,18 @@ fn attribute_follows_the_test_build(attribute: &syn::Attribute) -> bool {
     ) else {
         return false;
     };
+    let mut arguments = arguments.iter();
     arguments
-        .first()
+        .next()
         .is_some_and(|predicate| evaluate(predicate, true) != evaluate(predicate, false))
+        && !arguments.all(sets_a_lint_level)
+}
+
+/// lintの水準を変えるだけの属性か。
+fn sets_a_lint_level(meta: &syn::Meta) -> bool {
+    ["allow", "expect", "warn", "deny", "forbid"]
+        .iter()
+        .any(|level| meta.path().is_ident(level))
 }
 
 /// `#[path = "..."]`が指すfile名。
@@ -1442,6 +1452,19 @@ fn a_compound_condition_in_a_macro_is_reported() -> Result<(), syn::Error> {
     assert_eq!(counted.violations.len(), 1);
     assert!(counted.violations[0].contains("test_helper"));
     Ok(())
+}
+
+/// test buildでだけlintの水準を変える属性はcodeを足さない。codeを足す属性と並べれば落ちる。
+#[test]
+fn only_attributes_that_add_code_follow_the_test_build() {
+    let lint: syn::Attribute =
+        syn::parse_quote!(#[cfg_attr(test, allow(clippy::large_stack_arrays))]);
+    let derive: syn::Attribute = syn::parse_quote!(#[cfg_attr(test, derive(Default))]);
+    let both: syn::Attribute =
+        syn::parse_quote!(#[cfg_attr(test, allow(dead_code), derive(Default))]);
+    assert!(!attribute_follows_the_test_build(&lint));
+    assert!(attribute_follows_the_test_build(&derive));
+    assert!(attribute_follows_the_test_build(&both));
 }
 
 #[test]
