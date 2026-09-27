@@ -237,3 +237,70 @@ fn a_refusal_that_remains_after_saving_is_reported_without_asking_again() -> Che
     assert!(!host.ran("rm "), "{:?}", host.calls());
     Ok(())
 }
+
+#[test]
+fn a_stopped_sandbox_started_for_the_plan_is_announced() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    // 一覧は末尾から取り出される。消す前の保存と計画の準備がそれぞれ停止を観測し、
+    // 起動して動いていることを確かめたあと、削除の直前にもう一度確かめ、消えたことを
+    // 確かめる。
+    *host.listing.borrow_mut() = vec![
+        r#"{"sandboxes":[]}"#.to_string(),
+        running.clone(),
+        running,
+        stopped.clone(),
+        stopped,
+    ];
+
+    let ran = run(&fixture, &host, &typed("example-org/example-repo"))?;
+
+    assert_eq!(ran.code, ExitCode::Success, "{}{}", ran.stdout, ran.stderr);
+    assert!(
+        ran.stderr
+            .contains("has been started so its contents could be inspected"),
+        "{}",
+        ran.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn a_lock_file_that_cannot_be_removed_is_a_warning_after_the_project_is_unmanaged() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let lock = project.paths.lock_file();
+    // 削除の最中に、lock fileの場所が中身のあるdirectoryに替わる。
+    let host = crate::testing::host::ChangingBefore::new(
+        removable(
+            &fixture,
+            &project,
+            no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str()),
+        )?,
+        &format!("rm {}", project.sandbox),
+        move || {
+            let _ = std::fs::remove_file(&lock);
+            let _ = std::fs::create_dir_all(lock.join("occupied"));
+        },
+    );
+
+    let ran = run(&fixture, &host, &typed("example-org/example-repo"))?;
+
+    assert_eq!(ran.code, ExitCode::Success, "{}{}", ran.stdout, ran.stderr);
+    assert!(!project.paths.metadata_file().exists());
+    assert!(
+        ran.stderr.contains("its lock file could not be removed"),
+        "{}",
+        ran.stderr
+    );
+    Ok(())
+}

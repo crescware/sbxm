@@ -2,7 +2,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use crate::app::invocation::{CommandLine, Invocation};
-use crate::commands::{Command, add, apply, destroy, guide, open, status};
+use crate::commands::{Command, add, apply, destroy, files, guide, open, status};
 use crate::config::{ConfigLocation, ConfigObservation};
 use crate::design::RenderingPolicy;
 use crate::diagnostics::{Error, ErrorId, ExitCode};
@@ -103,6 +103,7 @@ fn every_normal_command_reaches_the_command_that_reads_the_configuration() -> Ch
             force: false,
             worktrees: None,
         }),
+        Command::Files(files::Args::Ls),
         Command::Guide(guide::Args {
             topic: Some(guide::Topic::CredentialRotation),
             project: Some(project.clone()),
