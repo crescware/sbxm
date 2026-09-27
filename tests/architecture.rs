@@ -877,7 +877,7 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 ///
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 20] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 21] = [
     // OS層。分岐を持たず、coverageの母集団から外す。
     ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
     ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
@@ -922,10 +922,7 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 20] = [
         "tests/command_lifecycle.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
-    (
-        "tests/host.rs",
-        &[Element::RealTime, Element::ChildProcess, Element::Signal],
-    ),
+    ("tests/host.rs", &[Element::ChildProcess, Element::Signal]),
     (
         "tests/prompt_pty.rs",
         &[
@@ -937,8 +934,9 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 20] = [
     ),
     (
         "tests/prompt_terminal.rs",
-        &[Element::RealTime, Element::ChildProcess, Element::Signal],
+        &[Element::ChildProcess, Element::Signal],
     ),
+    ("tests/wait_until/mod.rs", &[Element::RealTime]),
 ];
 
 /// `src`と`tests`のRust source。
