@@ -13,9 +13,11 @@
 //! する。Ctrl-Cは打鍵として送らない。端末crateはこれを自分自身へのSIGINTへ変えるため、
 //! 子processがsignalで終わり、exit codeもcoverageも残らない。
 
+mod fake_tool;
 mod outcome;
 mod temp_home;
 
+use fake_tool::install_fake_tool;
 use outcome::{Checked, Required, Unmet};
 use temp_home::{TempHome, temp_home};
 
@@ -283,25 +285,16 @@ fn read_config(home: &Path) -> Checked<String> {
         .required_because("the configuration sbxm wrote is readable")
 }
 
-/// host toolを1つ置く。
-fn install(bin: &Path, program: &str, script: &str) -> Checked<()> {
-    let path = bin.join(program);
-    std::fs::write(&path, script).required_because("the fake tool is written")?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-        .required_because("the fake tool is executable")
-}
-
 /// hostのGit identityだけに答える`git`を置いたPATHを返す。
 ///
 /// hostの値はpromptへ置く候補にしかならない。cloneには答えないため、実行はcloneで止まる。
 fn host_tools(home: &Path) -> Checked<PathBuf> {
     let bin = home.join("bin");
     std::fs::create_dir_all(&bin).required_because("the fake bin directory is created")?;
-    install(
+    install_fake_tool(
         &bin,
         "git",
-        "#!/bin/sh\n\
-         case \"$1 $2 $3 $4\" in\n\
+        "case \"$1 $2 $3 $4\" in\n\
          \"config --global --get-all user.name\") echo 'Example User'; exit 0;;\n\
          \"config --global --get-all user.email\") echo 'user@example.com'; exit 0;;\n\
          esac\n\
@@ -312,11 +305,10 @@ fn host_tools(home: &Path) -> Checked<PathBuf> {
 
 /// Sandboxが1つも無いhostとして答える`sbx`を足す。
 fn without_sandboxes(bin: &Path) -> Checked<()> {
-    install(
+    install_fake_tool(
         bin,
         "sbx",
-        "#!/bin/sh\n\
-         case \"$1 $2\" in\n\
+        "case \"$1 $2\" in\n\
          \"ls --json\") echo '{\"sandboxes\":[]}'; exit 0;;\n\
          \"secret ls\") echo 'No secrets found'; exit 0;;\n\
          esac\n\
@@ -326,11 +318,10 @@ fn without_sandboxes(bin: &Path) -> Checked<()> {
 
 /// global scopeにGitHub custom secretが1件あるhostとして答える`sbx`を足す。
 fn with_global_github_secret(bin: &Path) -> Checked<()> {
-    install(
+    install_fake_tool(
         bin,
         "sbx",
-        "#!/bin/sh\n\
-         case \"$1 $2\" in\n\
+        "case \"$1 $2\" in\n\
          \"ls --json\") echo '{\"sandboxes\":[]}'; exit 0;;\n\
          \"secret ls\")\n\
            printf '%s\\n' \\
@@ -571,11 +562,10 @@ fn guide_selects_the_topic_then_the_project_before_showing_the_steps() -> Checke
 #[test]
 fn missing_login_is_reported_without_waiting_for_a_project_selection() -> Checked {
     let (home, base, bin) = home_with_project()?;
-    install(
+    install_fake_tool(
         &bin,
         "sbx",
-        "#!/bin/sh\n\
-         printf '%s\\n' 'ERROR: list sandboxes: list local runtimes: list runtimes: request failed: 401 Unauthorized: user is not authenticated to Docker: secret not found' >&2\n\
+        "printf '%s\\n' 'ERROR: list sandboxes: list local runtimes: list runtimes: request failed: 401 Unauthorized: user is not authenticated to Docker: secret not found' >&2\n\
          printf '%s\\n' 'no valid user session found, please sign in to Docker to proceed' >&2\n\
          printf '\\nSign in with: sbx login\\n' >&2\n\
          exit 1\n",

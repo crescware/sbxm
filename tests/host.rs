@@ -4,13 +4,15 @@
 //! 1つも無い実行は`tests/cli.rs`が持つ。ここでは答えるhostを置き、結果として何を見せ、
 //! どのexit codeで終わるかを固定する。
 //!
-//! hostは`bin`へ置く4つのscriptである。答えは`SBXM_FAKE`の下のfileが持ち、testはそこへ
+//! hostは`bin`へ置く4つの代役である。答えは`SBXM_FAKE`の下のfileが持ち、testはそこへ
 //! 書いてhostの見せ方を決める。scriptは必ず終わり、待つ相手を作らない。実行のたびにHOME、
 //! 案件の親directory、hostの答えを作り直すため、testの順序にも並列実行にも依らない。
 
+mod fake_tool;
 mod outcome;
 mod temp_home;
 
+use fake_tool::install_fake_tool;
 use outcome::{Checked, Required, Unmet};
 use temp_home::{TempHome, temp_home};
 
@@ -23,8 +25,7 @@ use std::time::{Duration, Instant};
 ///
 /// 答えられない起動は成功させず、非zeroで終わる。想定していない問い合わせが増えたことを、
 /// 静かな成功として見逃さないためである。
-const HOST_TOOL: &str = r#"#!/bin/sh
-PATH=/usr/bin:/bin
+const HOST_TOOL: &str = r#"PATH=/usr/bin:/bin
 export PATH
 
 fake=$SBXM_FAKE
@@ -340,10 +341,7 @@ impl Host {
             .required_because("the configuration is private")?;
 
         for program in ["git", "sbx", "docker", "ssh"] {
-            let tool = bin.join(program);
-            std::fs::write(&tool, HOST_TOOL).required_because("the host tool is written")?;
-            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755))
-                .required_because("the host tool is executable")?;
+            install_fake_tool(&bin, program, HOST_TOOL)?;
         }
         let host = Host {
             home,

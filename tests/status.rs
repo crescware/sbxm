@@ -6,6 +6,7 @@
 //! 答えるhostで、どの段階まで進んだかを確かめる。
 
 mod authenticated_host;
+mod fake_tool;
 mod outcome;
 mod temp_home;
 

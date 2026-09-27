@@ -156,6 +156,12 @@ coverageは繰り返し測っても同じ値になることを前提とする。
 長さの実時間を待つ。待つ回数にも上限があり、結果は待ちに依らないため、これを受け入れる。
 読み直しの判断そのものは、`list_retrying`のtestが台本の時計で確かめる。
 
+testは実行可能fileを実行時に書かない。書いた直後のfileは、別threadのtestがforkした子が
+書き込み端を持つ間、`ETXTBSY`でexecできない。`PATH`から起動させるhost toolの代役は、
+`install_fake_tool`（`tests/fake_tool/mod.rs`、`src/testing/install_fake_tool.rs`）で置く。
+道具の名前で`tests/fixtures/fake_tool.sh`へのsymlinkを置き、振る舞いは実行bitを持たない
+`<名前>.sh`へ書く。testが自分で走らせるscriptは`sh <path>`で起動する。
+
 ## flakyを疑ったとき
 
 1つのtestを単独で繰り返しても、時機の競合はほとんど再現しない。CIで出る競合は、同じprocessの

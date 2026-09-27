@@ -4,9 +4,11 @@
 //! 公開契約へ透過しない。helpとusageは選択したlocaleで生成する。
 
 mod authenticated_host;
+mod fake_tool;
 mod outcome;
 mod temp_home;
 
+use fake_tool::install_fake_tool;
 use outcome::{Checked, Required};
 use temp_home::{TempHome, temp_home};
 
@@ -78,22 +80,17 @@ fn sbxm_in(home: &Path, cwd: &Path, arguments: &[&str]) -> Checked<Run> {
 /// hostの値はpromptへ置く候補にしかならないため、名義を宣言する実行はこれを読まない。
 /// それでも`git`自体は必要である。cloneには答えないため、実行はcloneで止まる。
 fn fake_git(home: &Path) -> Checked<std::path::PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
     let bin = home.join("bin");
     std::fs::create_dir_all(&bin).required_because("create the fake bin directory")?;
-    let git = bin.join("git");
-    std::fs::write(
-        &git,
-        "#!/bin/sh\n\
-         case \"$1 $2 $3 $4\" in\n\
+    install_fake_tool(
+        &bin,
+        "git",
+        "case \"$1 $2 $3 $4\" in\n\
          \"config --global --get-all user.name\") echo 'Example User'; exit 0;;\n\
          \"config --global --get-all user.email\") echo 'user@example.com'; exit 0;;\n\
          esac\n\
          exit 1\n",
-    )
-    .required_because("write the fake git")?;
-    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755))
-        .required_because("mode")?;
+    )?;
     Ok(bin)
 }
 

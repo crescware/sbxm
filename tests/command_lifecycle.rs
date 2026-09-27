@@ -1,25 +1,28 @@
 //! Capture commandの中断時に、直接の子だけが終わることを確認する。
 
-use std::os::unix::fs::PermissionsExt;
+mod fake_tool;
+mod outcome;
+
+use fake_tool::install_fake_tool;
+use outcome::{Checked, Required};
+
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
 #[test]
-fn ctrl_c_does_not_reach_a_capture_descendant() -> Result<(), Box<dyn std::error::Error>> {
-    let home = tempfile::tempdir()?;
+fn ctrl_c_does_not_reach_a_capture_descendant() -> Checked {
+    let home = tempfile::tempdir().required_because("temporary home")?;
     let bin = home.path().join("bin");
-    std::fs::create_dir(&bin)?;
+    std::fs::create_dir(&bin).required_because("the fake bin directory is created")?;
     let survivor = home.path().join("survivor");
-    let sw_vers = bin.join("sw_vers");
-    std::fs::write(
-        &sw_vers,
-        "#!/bin/sh\n\
-         (sleep 1; printf alive > \"$SBXM_SURVIVOR\") &\n\
+    install_fake_tool(
+        &bin,
+        "sw_vers",
+        "(sleep 1; printf alive > \"$SBXM_SURVIVOR\") &\n\
          kill -INT -\"$PPID\"\n\
          sleep 30\n",
     )?;
-    std::fs::set_permissions(&sw_vers, std::fs::Permissions::from_mode(0o755))?;
 
     // sbxm自身をprocess group leaderにする。fake commandは`-$PPID`へsignalを送り、
     // 端末からforeground groupへ届くCtrl-Cと同じgroupを対象にする。
@@ -30,7 +33,8 @@ fn ctrl_c_does_not_reach_a_capture_descendant() -> Result<(), Box<dyn std::error
         .env("SBXM_SURVIVOR", &survivor)
         .env("NO_COLOR", "1")
         .process_group(0)
-        .output()?;
+        .output()
+        .required_because("sbxm runs")?;
 
     assert!(
         !output.status.success(),
@@ -42,7 +46,7 @@ fn ctrl_c_does_not_reach_a_capture_descendant() -> Result<(), Box<dyn std::error
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(
-        std::fs::read_to_string(&survivor)?,
+        std::fs::read_to_string(&survivor).required_because("the descendant left its marker")?,
         "alive",
         "Ctrl-C must not reach a capture descendant"
     );

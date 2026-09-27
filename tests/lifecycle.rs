@@ -4,13 +4,15 @@
 //! 設定を読み、決まったあとでhostへ問い合わせ、終わったら何をしたかを述べる。ここでは
 //! 答えるhostを置き、成功と失敗のそれぞれで何を見せ、host上に何が残るかを固定する。
 //!
-//! hostは`bin`へ置く4つのscriptである。答えは`SBXM_FAKE`の下のfileが持ち、`sbx`の
+//! hostは`bin`へ置く4つの代役である。答えは`SBXM_FAKE`の下のfileが持ち、`sbx`の
 //! mutationはその答えを書き換える。commandの戻り値ではなく一覧の変化で完了を判定する
 //! sbxmを、実機と同じ順序で通すためである。scriptは必ず終わり、待つ相手を作らない。
 
+mod fake_tool;
 mod outcome;
 mod temp_home;
 
+use fake_tool::install_fake_tool;
 use outcome::{Checked, Required};
 use temp_home::{TempHome, temp_home};
 
@@ -22,8 +24,7 @@ use std::process::{Command, Output};
 ///
 /// `sbx`のmutationは一覧のfileを書き換える。停止と削除の完了は、sbxmが一覧を読み直して
 /// 判定するためである。答えられない起動は成功させず、非zeroで終わる。
-const HOST_TOOL: &str = r#"#!/bin/sh
-PATH=/usr/bin:/bin
+const HOST_TOOL: &str = r#"PATH=/usr/bin:/bin
 export PATH
 
 fake=$SBXM_FAKE
@@ -171,10 +172,7 @@ impl Host {
         write_config(home.path(), "version: 1\nlanguage: en\n")?;
 
         for program in ["git", "sbx", "docker", "ssh"] {
-            let tool = bin.join(program);
-            std::fs::write(&tool, HOST_TOOL).required_because("the host tool is written")?;
-            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755))
-                .required_because("the host tool is executable")?;
+            install_fake_tool(&bin, program, HOST_TOOL)?;
         }
         let host = Host {
             home,
