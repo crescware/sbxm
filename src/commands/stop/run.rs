@@ -48,7 +48,14 @@ pub fn run(
     let saved: Vec<AutoSaved> = running
         .into_iter()
         .map(|candidate| {
-            saving::save_selected(candidate, host, workspace_root, LOCK_TIMEOUT, output)
+            saving::save_selected(
+                candidate,
+                host,
+                workspace_root,
+                LOCK_TIMEOUT,
+                poll.clock,
+                output,
+            )
         })
         .collect();
 

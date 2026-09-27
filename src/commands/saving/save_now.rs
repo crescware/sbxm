@@ -7,6 +7,7 @@ use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{generation, host_sync, inventory, repository};
+use crate::time::Clock;
 
 use super::SaveOutput;
 
@@ -21,6 +22,7 @@ pub(super) fn save_now(
     prompt: &mut dyn ProjectPrompt,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    clock: &dyn Clock,
 ) -> Result<SaveOutput> {
     let locked = select::one(location, requested, &msg!("select-save-heading"), prompt)?.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
@@ -32,6 +34,7 @@ pub(super) fn save_now(
         &sandbox,
         &SandboxLayout::new(locked.metadata.canonical_id()).bare_git_dir(),
         &target,
+        clock.wall(),
     )?;
     Ok(SaveOutput {
         project: locked.metadata.display_id(),

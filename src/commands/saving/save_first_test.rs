@@ -1,4 +1,6 @@
 use crate::commands::add::AddRequest;
+use crate::design::Fact;
+use crate::diagnostics::ErrorId;
 use crate::metadata;
 use crate::project::ProjectId;
 use crate::repository::RepositoryIdentity;
@@ -6,6 +8,7 @@ use crate::support::host_sync::AutoSaved;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::save_first;
 
@@ -33,6 +36,7 @@ fn tried_to_save(world: &World, mark: usize) -> bool {
 
 #[test]
 fn a_running_local_sandbox_is_asked_for_its_commits() -> Checked {
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     bench.build(&world, &local_request()?).required()?;
@@ -44,6 +48,7 @@ fn a_running_local_sandbox_is_asked_for_its_commits() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &clock,
         &mut crate::design::SilentProgress,
     );
 
@@ -55,6 +60,7 @@ fn a_running_local_sandbox_is_asked_for_its_commits() -> Checked {
 #[test]
 fn nothing_is_saved_where_there_is_nothing_to_save_from() -> Checked {
     // GitHubの案件、停止中のSandbox、管理していない案件、世代の切替の途中の案件。
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     let github = request("Example-Org/Example-Repo", None, None)?;
@@ -71,6 +77,7 @@ fn nothing_is_saved_where_there_is_nothing_to_save_from() -> Checked {
             &project,
             &world,
             bench.workspace_root.path(),
+            &clock,
             &mut crate::design::SilentProgress,
         );
         assert!(matches!(saved, AutoSaved::Nothing), "{project}: {saved:?}");
@@ -88,6 +95,7 @@ fn nothing_is_saved_where_there_is_nothing_to_save_from() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &clock,
         &mut crate::design::SilentProgress,
     );
     assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
@@ -97,6 +105,7 @@ fn nothing_is_saved_where_there_is_nothing_to_save_from() -> Checked {
 
 #[test]
 fn a_stopped_local_sandbox_is_not_started_to_save_from() -> Checked {
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     bench.build(&world, &local_request()?).required()?;
@@ -108,6 +117,7 @@ fn a_stopped_local_sandbox_is_not_started_to_save_from() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &clock,
         &mut crate::design::SilentProgress,
     );
 
@@ -119,6 +129,7 @@ fn a_stopped_local_sandbox_is_not_started_to_save_from() -> Checked {
 #[test]
 fn a_lock_that_cannot_be_taken_is_a_warning_rather_than_silence() -> Checked {
     // 保存できなかったことを黙らない。続く操作が同じ理由で断るとは限らない。
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     bench.build(&world, &local_request()?).required()?;
@@ -132,6 +143,7 @@ fn a_lock_that_cannot_be_taken_is_a_warning_rather_than_silence() -> Checked {
         &local_project()?,
         &world,
         bench.workspace_root.path(),
+        &clock,
         &mut crate::design::SilentProgress,
     );
 
@@ -146,27 +158,35 @@ fn a_lock_that_cannot_be_taken_is_a_warning_rather_than_silence() -> Checked {
 fn a_save_that_must_not_wait_gives_up_at_once_on_a_held_lock() -> Checked {
     // sessionのあいだの保存は、lockを待つあいだSSHの終了に気付けない。取れなければ
     // すぐに諦め、次の機会に保存する。
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     bench.build(&world, &local_request()?).required()?;
     let candidate = crate::support::select::find(&bench.location, &local_project()?).required()?;
     let held = candidate.paths.acquire_lock().required()?;
+    let mark = world.mark();
 
-    let started = std::time::Instant::now();
+    // 待たずに1度だけ試すことは、lockの取得のtestが確かめる。ここでは、取れなかったことが
+    // lockを待ちきれなかったこととして伝わるかを見る。
     let saved = super::save_selected(
         candidate,
         &world,
         bench.workspace_root.path(),
         std::time::Duration::ZERO,
+        &clock,
         &mut crate::design::SilentProgress,
     );
 
+    let AutoSaved::Failed(warning) = saved else {
+        return Err(crate::testing::outcome::Unmet::new(format!("{saved:?}")));
+    };
     assert!(
-        started.elapsed() < std::time::Duration::from_secs(1),
-        "{:?}",
-        started.elapsed()
+        warning
+            .facts
+            .contains(&Fact::cause(ErrorId::LockTimeout.as_str())),
+        "{warning:?}"
     );
-    assert!(matches!(saved, AutoSaved::Failed(_)), "{saved:?}");
+    assert!(!tried_to_save(&world, mark), "{:?}", world.since(mark));
     drop(held);
     Ok(())
 }

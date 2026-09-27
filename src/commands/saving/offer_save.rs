@@ -47,6 +47,7 @@ pub fn offer_save(
         prompt,
         host,
         context.workspace_root,
+        context.clock,
     ) {
         Ok(output) => {
             ui.stdout(&saved_document(&output, ui.locale()));

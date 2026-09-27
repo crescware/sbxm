@@ -45,7 +45,14 @@ pub fn exec(
     };
     // hostにあるrepositoryの案件は、消す前に保存しておく。保護の検査を迂回する
     // `--force`でも、保存できるものは保存する。
-    let saved = saving::save_first(context.location, &chosen, host, context.workspace_root, ui);
+    let saved = saving::save_first(
+        context.location,
+        &chosen,
+        host,
+        context.workspace_root,
+        context.clock,
+        ui,
+    );
     saving::auto_saved(ui, &saved);
     let prepared =
         saving::prepare_offering_save(&chosen, context, host, prompt, ui, |prompt, ui| {

@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use crate::boundary::host::HostEnvironment;
 use crate::design::ProgressSink;
 use crate::metadata::ProjectMetadata;
@@ -15,10 +17,12 @@ use super::{AutoSaved, save_failed, save_to_host};
 /// 呼び出し側の操作は止めず、warningとして伝える。GitHubの案件では何もしない。
 ///
 /// Sandboxが動いていることと、project lockを持っていることは呼び出し側が確かめておく。
+/// 退避したrefの名前には`at`を刻む。
 pub fn auto_save(
     host: &dyn HostEnvironment,
     paths: &ProjectPaths,
     metadata: &ProjectMetadata,
+    at: SystemTime,
     progress: &mut dyn ProgressSink,
 ) -> AutoSaved {
     if metadata.repository.host_path().is_none() {
@@ -30,7 +34,7 @@ pub fn auto_save(
     let project = metadata.display_id();
     // 初めての保存は履歴全体を運ぶ。黙って待たせず、何をしているかを先に示す。
     progress.step(msg!("progress-saving-to-host", project = project.clone()));
-    match save_to_host(host, &sandbox, &git_dir, &target) {
+    match save_to_host(host, &sandbox, &git_dir, &target, at) {
         Ok(Some(changes)) if !changes.is_empty() => AutoSaved::Saved(msg!(
             "auto-save-done",
             project = project,

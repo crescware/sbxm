@@ -4,11 +4,13 @@ use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::*;
 
 #[test]
 fn a_sandbox_without_anything_to_save_is_reported_as_such() -> Checked {
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -21,6 +23,7 @@ fn a_sandbox_without_anything_to_save_is_reported_as_such() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &world,
         bench.workspace_root.path(),
+        &clock,
     )
     .required()?;
     assert_eq!(output.changes, None);
@@ -35,6 +38,7 @@ fn a_sandbox_without_anything_to_save_is_reported_as_such() -> Checked {
 
 #[test]
 fn a_stopped_sandbox_is_not_started_to_save_from() -> Checked {
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -48,6 +52,7 @@ fn a_stopped_sandbox_is_not_started_to_save_from() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &world,
         bench.workspace_root.path(),
+        &clock,
     )
     .err()
     .required_because("a stopped sandbox is refused")?;

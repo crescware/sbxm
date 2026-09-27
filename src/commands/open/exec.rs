@@ -94,6 +94,7 @@ pub fn exec(
                 host,
                 context.workspace_root,
                 Duration::ZERO,
+                context.clock,
                 &mut SilentProgress,
             );
         }
@@ -106,8 +107,14 @@ pub fn exec(
     let connected = super::run::connect(host, prepared, ui, during);
     // sessionを閉じたあとにも保存しておく。
     if let Some(candidate) = saves_to_host {
-        let saved =
-            saving::save_selected(candidate, host, context.workspace_root, LOCK_TIMEOUT, ui);
+        let saved = saving::save_selected(
+            candidate,
+            host,
+            context.workspace_root,
+            LOCK_TIMEOUT,
+            context.clock,
+            ui,
+        );
         saving::auto_saved(ui, &saved);
     }
     match connected {

@@ -876,7 +876,7 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 ///
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 27] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 25] = [
     // OS層。分岐を持たず、coverageの母集団から外す。
     ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
     ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
@@ -908,10 +908,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 27] = [
         "src/support/daemon/list_with_timeout.rs",
         &[Element::RealTime],
     ),
-    (
-        "src/support/host_sync/save_to_host.rs",
-        &[Element::RealTime],
-    ),
     // test。
     (
         "src/boundary/host/command_test.rs",
@@ -924,10 +920,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 27] = [
     (
         "src/boundary/host/run_pty_confirmed_test.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],
-    ),
-    (
-        "src/commands/saving/save_first_test.rs",
-        &[Element::RealTime],
     ),
     (
         "src/support/files/files_test.rs",

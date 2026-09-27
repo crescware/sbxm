@@ -1,12 +1,12 @@
 use std::sync::LazyLock;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::time::{Clock, Moment};
 
 /// processの時計の起点。最初に読んだ時点を0とする。
 static ORIGIN: LazyLock<Instant> = LazyLock::new(Instant::now);
 
-/// OSの単調な時計と、threadを止める待ち。
+/// OSの単調な時計と、threadを止める待ちと、壁時計。
 pub struct SystemClock;
 
 impl Clock for SystemClock {
@@ -16,6 +16,10 @@ impl Clock for SystemClock {
 
     fn sleep(&self, duration: Duration) {
         std::thread::sleep(duration);
+    }
+
+    fn wall(&self) -> SystemTime {
+        SystemTime::now()
     }
 }
 

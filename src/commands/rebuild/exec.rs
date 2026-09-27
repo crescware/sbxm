@@ -44,7 +44,14 @@ pub fn exec(
         Err(error) => return report(ui, &error),
     };
     // hostにあるrepositoryの案件は、作り直す前に保存しておく。
-    let saved = saving::save_first(context.location, &chosen, host, context.workspace_root, ui);
+    let saved = saving::save_first(
+        context.location,
+        &chosen,
+        host,
+        context.workspace_root,
+        context.clock,
+        ui,
+    );
     saving::auto_saved(ui, &saved);
     let prepared =
         saving::prepare_offering_save(&chosen, context, host, prompt, ui, |prompt, ui| {

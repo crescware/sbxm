@@ -32,6 +32,7 @@ pub fn exec(
         prompt,
         host,
         context.workspace_root,
+        context.clock,
     ) {
         Ok(output) => print::report(ui, &output),
         Err(error) => report(ui, &error),

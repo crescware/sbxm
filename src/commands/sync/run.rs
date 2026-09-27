@@ -9,6 +9,7 @@ use crate::project::{ProjectId, SandboxLayout};
 use crate::support::repository::{self, SandboxOrigin};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{generation, host_sync, inventory};
+use crate::time::Clock;
 
 use super::{SyncOutput, send_host_refs};
 
@@ -26,6 +27,7 @@ pub fn run(
     prompt: &mut dyn ProjectPrompt,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    clock: &dyn Clock,
 ) -> Result<SyncOutput> {
     let locked =
         select::one_local(location, requested, &msg!("select-sync-heading"), prompt)?.lock()?;
@@ -51,7 +53,8 @@ pub fn run(
     // 案件のbare repositoryである。
     repository::verify_bare_clone(host, sandbox.as_str(), &origin, &git_dir)?;
 
-    let reflected = match host_sync::save_to_host(host, &sandbox, &git_dir, repository)? {
+    let saved = host_sync::save_to_host(host, &sandbox, &git_dir, repository, clock.wall())?;
+    let reflected = match saved {
         Some(_) => Some(host_sync::reflect_saved(
             host,
             repository,
