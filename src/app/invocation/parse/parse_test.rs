@@ -420,3 +420,51 @@ fn an_invalid_lang_value_is_reported_as_a_value_error_by_the_parser() -> Checked
     assert_eq!(error.first_id(), Some(ErrorId::InvalidValue));
     Ok(())
 }
+
+#[test]
+fn a_command_line_text_missing_from_the_catalog_stops_before_parsing() {
+    // CLIが使う鍵を1つずつ抜き、どの鍵が欠けても、組み立ての途中で推測せずに止まる。
+    let ids: Vec<&str> = Locale::En
+        .source()
+        .lines()
+        .filter_map(|line| line.split_once(" =").map(|(id, _)| id))
+        .filter(|id| id.starts_with("cli-"))
+        .collect();
+    let mut stopped = 0;
+    for id in &ids {
+        let catalog = Catalog::without(Locale::En, id);
+        if let Err(error) = parse(&argv(&["ls"]), &catalog, tty()) {
+            assert_eq!(error.first_id(), Some(ErrorId::MessageFormatFailed), "{id}");
+            stopped += 1;
+        }
+    }
+    assert!(stopped > 0, "{ids:?}");
+}
+
+#[test]
+fn a_command_name_no_syntax_declares_is_refused() -> Checked {
+    let parsed = crate::boundary::command_line::ParsedCommandLine::Command(
+        crate::boundary::command_line::ParsedCommand {
+            name: "unknown".to_string(),
+            arguments: crate::boundary::command_line::Arguments::default(),
+        },
+    );
+
+    let error = Command::interpret(
+        parsed,
+        crate::boundary::terminal::PromptCapability::from_available(false),
+    )
+    .refused_because("the name is not a command")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::UnknownSubcommand));
+    Ok(())
+}
+
+#[test]
+fn a_guide_for_an_unreadable_project_is_refused() -> Checked {
+    let error = parse_argv(&["guide", "credential-rotation", "not a project"], tty())
+        .refused_because("the project is not an identifier")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InvalidProjectId));
+    Ok(())
+}
