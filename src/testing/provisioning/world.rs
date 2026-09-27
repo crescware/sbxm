@@ -93,8 +93,9 @@ impl World {
 
     /// 構築が終わった直後、完成の観測より前に、この世界の応答を1回だけ変える。
     pub fn after_the_build(&self, action: impl Fn(&World) + 'static) {
-        // 構築の最後の段はworktreeを作る。その直後から、完成の観測が始まる。
-        self.change_before("example-repo.tree-", action);
+        // 構築の最後の段はworktreeを作る。その直後から、完成の観測が始まる。worktreeの
+        // 名前は構築前の観測にも現れるため、作成の起動で見分ける。
+        self.change_before("worktree add", action);
     }
 
     /// 観測の最後の起動の直前に、この世界を1回だけ変える。

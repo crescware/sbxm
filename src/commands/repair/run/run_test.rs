@@ -11,7 +11,7 @@ use std::cell::Cell;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::project::ProjectId;
+use crate::project::{ProjectId, SandboxLayout};
 
 use super::{Prepared, RepairAction, execute, prepare};
 use crate::commands::repair::RepairOutput;
@@ -1096,5 +1096,33 @@ fn repair_shows_a_declared_file_removed_inside_the_sandbox_as_missing() -> Check
     })?;
 
     assert!(observed.contains("\"missing\""), "{observed}");
+    Ok(())
+}
+
+#[test]
+fn a_repair_whose_completion_lost_a_worktree_keeps_the_intent() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    let plan = prepared(&bench, &world, &project).required()?;
+    let worktree =
+        SandboxLayout::new(bench.stored("Example-Org/Example-Repo")?.canonical_id()).worktree(0);
+    world.after_the_build(move |world| {
+        let worktree = worktree.clone();
+        world.change_before("sbx ls", move |world| {
+            world.present.borrow_mut().remove(&worktree);
+            world.worktrees.borrow_mut().remove(&worktree);
+        });
+    });
+
+    let error = executed(&bench, &world, plan).refused_because("an incomplete completion")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
     Ok(())
 }
