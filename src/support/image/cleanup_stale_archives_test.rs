@@ -243,3 +243,19 @@ fn a_stale_archive_that_cannot_be_removed_is_reported_as_a_warning() -> Checked 
     );
     Ok(())
 }
+
+#[test]
+fn a_cache_that_cannot_be_listed_is_a_warning_not_a_failure() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    std::fs::create_dir_all(paths.cache_dir()).required()?;
+    std::fs::set_permissions(paths.cache_dir(), std::fs::Permissions::from_mode(0o000))
+        .required()?;
+
+    let warnings = cleanup_stale_archives(&paths);
+    std::fs::set_permissions(paths.cache_dir(), std::fs::Permissions::from_mode(0o700))
+        .required()?;
+
+    assert_eq!(warnings.required()?.len(), 1);
+    Ok(())
+}

@@ -872,3 +872,57 @@ fn a_context_that_was_swapped_for_a_symlink_is_refused() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_cache_path_that_is_a_file_stops_the_save_before_the_engine_is_asked() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let base =
+        crate::paths::ProjectParent::at(dir.path()).required_because("valid parent directory")?;
+    let paths = ProjectPaths::derive(&base, &canonical()?);
+    let cache = paths.cache_dir();
+    fs::create_dir_all(cache.parent().required_because("the cache has a parent")?).required()?;
+    fs::write(&cache, b"not a directory").required()?;
+    let image = built_image()?;
+    let host = saving_host(&image);
+
+    ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress)
+        .refused_because("the cache is not a directory")?;
+
+    assert!(host.inner.calls().is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_temporary_archive_path_that_is_a_symlink_is_not_followed() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let elsewhere = dir.path().join("elsewhere");
+    fs::write(&elsewhere, b"someone else's file").required()?;
+    std::os::unix::fs::symlink(&elsewhere, paths.template_archive_temp(short_hex(DIGEST)))
+        .required()?;
+    let image = built_image()?;
+    let host = saving_host(&image);
+
+    let error = ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress)
+        .refused_because("the temporary path is a symlink")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    assert!(elsewhere.exists());
+    Ok(())
+}
+
+#[test]
+fn an_archive_that_cannot_be_moved_into_place_is_reported() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let target = paths.template_archive(short_hex(DIGEST));
+    fs::create_dir_all(target.join("occupied")).required()?;
+    let image = built_image()?;
+    let host = saving_host(&image);
+
+    ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress)
+        .refused_because("a directory occupies the archive path")?;
+
+    assert!(target.join("occupied").is_dir());
+    Ok(())
+}
