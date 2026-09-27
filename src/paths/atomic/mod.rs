@@ -10,6 +10,7 @@ mod atomic_replace_resumable;
 mod atomic_write_failed;
 mod atomic_write_with_precondition;
 mod replaceable_identity;
+mod resumable_write_with_precondition;
 mod temp_path_for;
 mod unchanged_identity;
 
@@ -20,6 +21,7 @@ pub use atomic_replace_resumable::atomic_replace_resumable;
 pub(crate) use atomic_write_failed::atomic_write_failed;
 use atomic_write_with_precondition::atomic_write_with_precondition;
 use replaceable_identity::replaceable_identity;
+use resumable_write_with_precondition::resumable_write_with_precondition;
 use temp_path_for::temp_path_for;
 use unchanged_identity::unchanged_identity;
 
