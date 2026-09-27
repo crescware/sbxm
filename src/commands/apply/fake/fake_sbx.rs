@@ -8,6 +8,7 @@ use crate::diagnostics::Result;
 use crate::metadata::MAX_WORKTREES;
 use crate::paths::{PRIVATE_FILE_MODE, PathScope};
 use crate::project::SandboxLayout;
+use crate::testing::host::AnsweredHost;
 use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::COMMIT;
 
@@ -105,12 +106,12 @@ impl FakeSbx {
     }
 }
 
-impl HostEnvironment for FakeSbx {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeSbx {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         if let Some(path) = &self.lock_path
             && self.lock_was_free.borrow().is_none()
         {

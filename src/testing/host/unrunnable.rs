@@ -1,6 +1,8 @@
-use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, TerminalCommand};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
+
+use super::AnsweredHost;
 
 /// 引数に`needle`を含む起動だけが、実行に至らずに終わるhost。ほかの起動は`inner`が答える。
 ///
@@ -32,16 +34,24 @@ impl<H> Unrunnable<H> {
     }
 }
 
-impl<H: HostEnvironment> HostEnvironment for Unrunnable<H> {
-    fn command_exists(&self, program: &str) -> bool {
-        self.inner.command_exists(program)
+impl<H: AnsweredHost> AnsweredHost for Unrunnable<H> {
+    fn has_command(&self, program: &str) -> bool {
+        self.inner.has_command(program)
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         if spec.args.join(" ").contains(&self.needle) {
             return Err((self.error)(spec));
         }
-        self.inner.run(spec)
+        self.inner.answer(spec)
+    }
+
+    fn session_length(
+        &self,
+        command: &TerminalCommand,
+        every: std::time::Duration,
+    ) -> std::time::Duration {
+        self.inner.session_length(command, every)
     }
 }
 

@@ -7,6 +7,7 @@ use crate::metadata::{self, InitialProvisioningIntent, RebuildIntent};
 use crate::msg;
 use crate::project::SandboxLayout;
 use crate::support::image;
+use crate::testing::host::AnsweredHost;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -1389,12 +1390,12 @@ struct SavingSbx {
     labels: Vec<(String, String)>,
 }
 
-impl HostEnvironment for SavingSbx {
-    fn command_exists(&self, program: &str) -> bool {
+impl AnsweredHost for SavingSbx {
+    fn has_command(&self, program: &str) -> bool {
         self.inner.command_exists(program)
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         let outcome = self.inner.run(spec)?;
         if spec.args.first().is_some_and(|arg| arg == "image")
             && spec.args.get(1).is_some_and(|arg| arg == "save")

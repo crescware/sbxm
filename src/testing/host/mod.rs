@@ -1,5 +1,6 @@
 //! Sandboxを持つhostのfake。
 
+mod answered_host;
 mod assert_lifecycle;
 mod custom_secret_listing;
 mod failing_at;
@@ -10,6 +11,7 @@ mod no_secrets;
 mod registered_secret;
 mod unrunnable;
 
+pub use answered_host::AnsweredHost;
 pub use assert_lifecycle::assert_lifecycle;
 pub use custom_secret_listing::custom_secret_listing;
 pub use failing_at::FailingAt;

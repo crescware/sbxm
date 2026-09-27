@@ -1,7 +1,7 @@
-use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::{ErrorId, Result};
 use crate::metadata::GitIdentity;
 use crate::msg;
+use crate::testing::host::AnsweredHost;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -46,12 +46,12 @@ impl FakeSbx {
     }
 }
 
-impl HostEnvironment for FakeSbx {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeSbx {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.args.clone());
         let inner = crate::testing::command::inner_args(spec);
 
@@ -274,12 +274,12 @@ impl FakeGitConfig {
     }
 }
 
-impl HostEnvironment for FakeGitConfig {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeGitConfig {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
         let (code, stdout) = match args.as_slice() {
             ["config", "--global", "--get-all", key] => self
@@ -341,12 +341,12 @@ fn a_host_that_cannot_be_observed_offers_no_candidate_rather_than_failing() {
 /// `git`そのものを実行できないhost。
 struct UnobservableHost;
 
-impl HostEnvironment for UnobservableHost {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for UnobservableHost {
+    fn has_command(&self, _program: &str) -> bool {
         false
     }
 
-    fn run(&self, _spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, _spec: &CommandSpec) -> Result<CommandOutcome> {
         Err(crate::diagnostics::Error::new(
             ErrorId::HostCommandMissing,
             msg!("error-host-command-missing", program = "git"),

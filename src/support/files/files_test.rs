@@ -1,8 +1,8 @@
-use crate::boundary::host::HostEnvironment;
 use crate::config::FileDeclaration;
 use crate::diagnostics::{ErrorId, Result};
 use crate::hash::sha256_hex;
 use crate::paths;
+use crate::testing::host::AnsweredHost;
 use std::fs;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
@@ -108,12 +108,12 @@ impl FakeSbx {
     }
 }
 
-impl HostEnvironment for FakeSbx {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeSbx {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.args.clone());
         let mut code = 0;
         let mut stdout = String::new();

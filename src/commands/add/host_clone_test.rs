@@ -1,9 +1,10 @@
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
-use crate::boundary::host::{CommandOutcome, HostEnvironment};
+use crate::boundary::host::CommandOutcome;
 use crate::design::SilentProgress;
 use crate::paths::ProjectParent;
+use crate::testing::host::AnsweredHost;
 use crate::testing::project::{https_repository, ssh_repository};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -63,12 +64,12 @@ impl FakeGit {
     }
 }
 
-impl HostEnvironment for FakeGit {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeGit {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let key = spec.args.join(" ");
         if self

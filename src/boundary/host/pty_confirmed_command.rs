@@ -57,11 +57,15 @@ impl PtyConfirmedCommand {
         self
     }
 
-    /// 本物のPTYを持たない`HostEnvironment`既定実装が、答えたものとして進めるための姿。
-    pub(super) fn as_capture_spec(&self) -> CommandSpec {
+    /// 本物のPTYを持たないtestのhostが、答えを求めるために使う姿。
+    pub(crate) fn as_capture_spec(&self) -> CommandSpec {
         let args: Vec<&str> = self.args.iter().map(String::as_str).collect();
         CommandSpec::capture(&self.program, &args)
             .env(self.env)
             .timeout(self.timeout)
     }
 }
+
+#[cfg(test)]
+#[path = "pty_confirmed_command_test.rs"]
+mod pty_confirmed_command_test;

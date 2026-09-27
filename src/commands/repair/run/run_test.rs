@@ -4,6 +4,7 @@ use crate::diagnostics::{ErrorId, Result};
 use crate::metadata;
 use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
 use crate::testing::add_request::{project_of, request};
+use crate::testing::host::AnsweredHost;
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
@@ -22,12 +23,12 @@ struct StateChangingHost<'a> {
     sandbox_listings: Cell<usize>,
 }
 
-impl HostEnvironment for StateChangingHost<'_> {
-    fn command_exists(&self, program: &str) -> bool {
+impl AnsweredHost for StateChangingHost<'_> {
+    fn has_command(&self, program: &str) -> bool {
         self.world.command_exists(program)
     }
 
-    fn run(&self, spec: &CommandSpec) -> crate::diagnostics::Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> crate::diagnostics::Result<CommandOutcome> {
         if spec.program == "sbx" && spec.args.as_slice() == ["ls", "--json"] {
             let listing = self.sandbox_listings.get();
             self.sandbox_listings.set(listing + 1);

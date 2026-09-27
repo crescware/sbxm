@@ -3,6 +3,7 @@ use crate::diagnostics::{ErrorId, Result};
 use crate::hash::short_hex;
 use crate::msg;
 use crate::paths::{self, PRIVATE_DIR_MODE, ProjectPaths};
+use crate::testing::host::AnsweredHost;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -473,12 +474,12 @@ struct SavingDocker {
     inner: FakeDocker,
 }
 
-impl HostEnvironment for SavingDocker {
-    fn command_exists(&self, program: &str) -> bool {
+impl AnsweredHost for SavingDocker {
+    fn has_command(&self, program: &str) -> bool {
         self.inner.command_exists(program)
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         let outcome = self.inner.run(spec)?;
         if spec.args.first().is_some_and(|arg| arg == "image")
             && spec.args.get(1).is_some_and(|arg| arg == "save")

@@ -1,8 +1,9 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandOutcome, CommandSpec, TimeoutClass};
 use crate::diagnostics::{ErrorId, Result};
+use crate::testing::host::AnsweredHost;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -14,12 +15,12 @@ struct Answering {
     code: i32,
 }
 
-impl HostEnvironment for Answering {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for Answering {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         Ok(crate::testing::command::outcome(
             spec,
             self.code,

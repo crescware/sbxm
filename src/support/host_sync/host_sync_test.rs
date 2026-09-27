@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::ErrorId;
 
 use crate::testing::host::FailingAt;
@@ -898,12 +899,12 @@ struct Relocated {
     to: Option<String>,
 }
 
-impl crate::boundary::host::HostEnvironment for Relocated {
-    fn command_exists(&self, _program: &str) -> bool {
+impl crate::testing::host::AnsweredHost for Relocated {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(
+    fn answer(
         &self,
         spec: &crate::boundary::host::CommandSpec,
     ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {

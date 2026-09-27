@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
+use crate::testing::host::AnsweredHost;
 
 pub struct FakeHost {
     present: Vec<String>,
@@ -58,12 +59,12 @@ impl FakeHost {
     }
 }
 
-impl HostEnvironment for FakeHost {
-    fn command_exists(&self, program: &str) -> bool {
+impl AnsweredHost for FakeHost {
+    fn has_command(&self, program: &str) -> bool {
         self.present.iter().any(|value| value == program)
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         let key = if spec.args.is_empty() {
             spec.program.clone()
         } else {

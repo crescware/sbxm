@@ -6,6 +6,7 @@ use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 use crate::project::SandboxLayout;
 use crate::support::protection::{Reachability, UnobservableReason};
+use crate::testing::host::AnsweredHost;
 
 use crate::testing::outcome::{Checked, Required};
 
@@ -880,12 +881,12 @@ struct UnrunnableCommand {
     needle: String,
 }
 
-impl HostEnvironment for UnrunnableCommand {
-    fn command_exists(&self, program: &str) -> bool {
+impl AnsweredHost for UnrunnableCommand {
+    fn has_command(&self, program: &str) -> bool {
         self.inner.command_exists(program)
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         if spec.args.join(" ").contains(&self.needle) {
             return Err(Error::new(
                 ErrorId::ExternalCommandTimeout,

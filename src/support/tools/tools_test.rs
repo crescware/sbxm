@@ -1,5 +1,5 @@
-use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
+use crate::testing::host::AnsweredHost;
 
 use std::fmt::Write as _;
 
@@ -38,12 +38,12 @@ impl FakeSbx {
     }
 }
 
-impl HostEnvironment for FakeSbx {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeSbx {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.args.clone());
         let inner = crate::testing::command::inner_args(spec);
 

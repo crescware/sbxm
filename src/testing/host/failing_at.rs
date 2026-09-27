@@ -1,8 +1,10 @@
 use std::cell::{Cell, RefCell};
 
-use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, TerminalCommand};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
+
+use super::AnsweredHost;
 
 /// `at`番目（0から数える）の起動だけが失敗するhost。ほかの起動は`inner`が答える。
 ///
@@ -50,19 +52,27 @@ impl<H> FailingAt<H> {
     }
 }
 
-impl<H: HostEnvironment> HostEnvironment for FailingAt<H> {
-    fn command_exists(&self, program: &str) -> bool {
-        self.inner.command_exists(program)
+impl<H: AnsweredHost> AnsweredHost for FailingAt<H> {
+    fn has_command(&self, program: &str) -> bool {
+        self.inner.has_command(program)
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn session_length(
+        &self,
+        command: &TerminalCommand,
+        every: std::time::Duration,
+    ) -> std::time::Duration {
+        self.inner.session_length(command, every)
+    }
+
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         let index = self.seen.get();
         self.seen.set(index + 1);
         self.calls
             .borrow_mut()
             .push(format!("{} {}", spec.program, spec.args.join(" ")));
         if self.at != Some(index) {
-            return self.inner.run(spec);
+            return self.inner.answer(spec);
         }
         if self.timing_out {
             return Err(Error::new(

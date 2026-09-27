@@ -7,6 +7,7 @@ use crate::diagnostics::{Error, ErrorId};
 use crate::metadata;
 use crate::metadata::CreationMode;
 use crate::msg;
+use crate::testing::host::AnsweredHost;
 use crate::testing::repository::*;
 use crate::testing::sandbox::InnerCommandSandbox;
 use crate::testing::value::{COMMIT, MOVED};
@@ -481,12 +482,12 @@ struct UnobservableMode {
     inner: InnerCommandSandbox,
 }
 
-impl HostEnvironment for UnobservableMode {
-    fn command_exists(&self, program: &str) -> bool {
+impl AnsweredHost for UnobservableMode {
+    fn has_command(&self, program: &str) -> bool {
         self.inner.command_exists(program)
     }
 
-    fn run(&self, spec: &CommandSpec) -> crate::diagnostics::Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> crate::diagnostics::Result<CommandOutcome> {
         if crate::testing::command::inner_args(spec).contains(&"symbolic-ref") {
             return Err(Error::new(
                 ErrorId::ExternalCommandNotFound,
