@@ -16,6 +16,11 @@
 //! 背景の`&`は並行して動く子process、`kill`はsignal、`#!`で始まる中身は書いた直後に実行する
 //! fileである。doc commentは読まない。
 //!
+//! `include_str!`・`include_bytes!`が読み込むfileの中身も、読み込んだ行の文字列literalとして
+//! 数える。ここは読み込むpathを返し、fileを開いて`script_elements`で読むのは呼び出し側
+//! （`tests/architecture.rs`）である。pathが文字列literalでなければ、どのfileかを決めずに
+//! `None`として返す。
+//!
 //! OS層（`crate::boundary::os`）を名指しすることは`OsLayer`として数える。`crate`から始まる
 //! pathは、このためだけに読む。
 //!
@@ -23,7 +28,8 @@
 //! 同じ値を与えることで守る。marker fileの出現を待つloopは、待つための実時間で検出する。
 //! `Mutex::lock`と綴りが同じ`File::lock`のmethod呼び出しは見ない。OS層の外で要素を包んで
 //! 公開すると、数えられるのは包んだfileだけである。OS層を包んだ本番codeを通して実OSを
-//! 動かすtestも、名指ししない限り数えられない。
+//! 動かすtestも、名指ししない限り数えられない。実行時にpathで開くfile
+//! （`tests/fixtures/fake_tool.sh`など）は読まない。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -57,6 +63,14 @@ pub struct Found {
     pub element: Element,
     pub line: usize,
     pub spelling: String,
+}
+
+/// `include_str!`・`include_bytes!`が読み込むfile1つ。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Included {
+    pub line: usize,
+    /// 書かれたままの相対path。文字列literalでなければ`None`。
+    pub path: Option<String>,
 }
 
 /// 完全修飾pathの先頭が一致すれば要素とみなすもの。上から順に照らし、最初の一致を採る。
@@ -248,12 +262,7 @@ fn element_of(full: &[String]) -> Option<Element> {
 
 /// Rust sourceに現れる要素。
 pub fn elements(text: &str) -> Result<Vec<Found>, syn::Error> {
-    let file = syn::parse_file(text)?;
-    let mut imports = Imports::default();
-    imports.visit_file(&file);
-    let tokens: TokenStream = text.parse().map_err(syn::Error::from)?;
-    let mut found = std::mem::take(&mut imports.found);
-    scan(&imports, tokens, &mut found);
+    let (mut found, _) = read(text)?;
     found.sort_by(|left, right| {
         (left.line, left.element, &left.spelling).cmp(&(right.line, right.element, &right.spelling))
     });
@@ -261,8 +270,32 @@ pub fn elements(text: &str) -> Result<Vec<Found>, syn::Error> {
     Ok(found)
 }
 
-/// token列を読み、pathとmethod呼び出しと文字列literalから要素を集める。
-fn scan(imports: &Imports, tokens: TokenStream, found: &mut Vec<Found>) {
+/// Rust sourceが`include_str!`・`include_bytes!`で読み込むfile。doc commentの中は読まない。
+pub fn included(text: &str) -> Result<Vec<Included>, syn::Error> {
+    let (_, included) = read(text)?;
+    Ok(included)
+}
+
+/// Rust sourceを読み、要素と、読み込むfileを集める。
+fn read(text: &str) -> Result<(Vec<Found>, Vec<Included>), syn::Error> {
+    let file = syn::parse_file(text)?;
+    let mut imports = Imports::default();
+    imports.visit_file(&file);
+    let tokens: TokenStream = text.parse().map_err(syn::Error::from)?;
+    let mut found = std::mem::take(&mut imports.found);
+    let mut included = Vec::new();
+    scan(&imports, tokens, &mut found, &mut included);
+    Ok((found, included))
+}
+
+/// token列を読み、pathとmethod呼び出しと文字列literalから要素を、`include_str!`・
+/// `include_bytes!`から読み込むfileを集める。
+fn scan(
+    imports: &Imports,
+    tokens: TokenStream,
+    found: &mut Vec<Found>,
+    included: &mut Vec<Included>,
+) {
     let tokens: Vec<TokenTree> = tokens.into_iter().collect();
     let mut index = 0;
     while index < tokens.len() {
@@ -316,7 +349,16 @@ fn scan(imports: &Imports, tokens: TokenStream, found: &mut Vec<Found>) {
                 }
                 index += 1;
             }
-            TokenTree::Ident(_) => {
+            TokenTree::Ident(ident) => {
+                if (ident == "include_str" || ident == "include_bytes")
+                    && matches!(tokens.get(index + 1), Some(TokenTree::Punct(bang)) if bang.as_char() == '!')
+                    && let Some(TokenTree::Group(arguments)) = tokens.get(index + 2)
+                {
+                    included.push(Included {
+                        line: ident.span().start().line,
+                        path: literal_path(&arguments.stream()),
+                    });
+                }
                 let (segments, line, end) = path_at(&tokens, index);
                 for candidate in imports.resolve(&segments) {
                     if let Some(element) = element_of(&candidate) {
@@ -343,11 +385,20 @@ fn scan(imports: &Imports, tokens: TokenStream, found: &mut Vec<Found>) {
                 index += 1;
             }
             TokenTree::Group(group) => {
-                scan(imports, group.stream(), found);
+                scan(imports, group.stream(), found, included);
                 index += 1;
             }
             TokenTree::Punct(_) => index += 1,
         }
+    }
+}
+
+/// macroの引数が文字列literal1つだけなら、その値。
+fn literal_path(stream: &TokenStream) -> Option<String> {
+    let arguments: Vec<TokenTree> = stream.clone().into_iter().collect();
+    match arguments.as_slice() {
+        [TokenTree::Literal(literal)] => string_value(&literal.to_string()),
+        _ => None,
     }
 }
 
@@ -609,6 +660,36 @@ mod tests {
         ] {
             assert!(script_elements(text).is_empty(), "{text}");
         }
+    }
+
+    #[test]
+    fn a_file_read_by_include_is_returned_with_its_line() -> Result<(), syn::Error> {
+        assert_eq!(
+            included(
+                "const S: &str = include_str!(\"a.sh\");\nconst B: &[u8] = include_bytes!(\"b.sh\");"
+            )?,
+            [
+                Included {
+                    line: 1,
+                    path: Some("a.sh".to_string()),
+                },
+                Included {
+                    line: 2,
+                    path: Some("b.sh".to_string()),
+                },
+            ]
+        );
+        // literalでなければ、どのfileかを決めない。
+        assert_eq!(
+            included("const S: &str = include_str!(concat!(\"a\", \".sh\"));")?,
+            [Included {
+                line: 1,
+                path: None,
+            }]
+        );
+        // doc commentとして読み込む文書はscriptではない。
+        assert!(included("#![doc = include_str!(\"README.md\")]\nfn f() {}")?.is_empty());
+        Ok(())
     }
 
     #[test]

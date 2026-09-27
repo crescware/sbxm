@@ -180,10 +180,11 @@ testは、要素を含むかどうかと、何を確かめるかで3種類に分
 判断とOSの呼び出しがまだ同じ関数にある`src/boundary/host`の本番codeと、要素をまだ含むunit
 testが残る。
 
-契約testもe2e testも速さを確かめない。e2e testが待つのは`tests/wait_until/mod.rs`の`wait_until`
-だけであり、上限は60秒の1つだけとする。上限はhangを止めるためにあり、平常の実行が近づく値では
-ない。待つ相手が来ないと分かれば、上限を待たずに失敗する。途中で失敗したtestも、終わらない
-子processを残さない。
+契約testもe2e testも速さを確かめない。e2e testが途中の状態を待つのは`tests/wait_until/mod.rs`の
+`wait_until`だけであり、上限は60秒の1つだけとする。上限はhangを止めるためにあり、平常の実行が
+近づく値ではない。待つ相手が来ないと分かれば、上限を待たずに失敗する。終わりまで待つだけの
+実行は`output()`で、killした子の回収は`wait`で待ち、`wait_until`を使わない。途中で失敗した
+testも、終わらない子processを残さない。
 
 ## flakyを疑ったとき
 
@@ -200,7 +201,9 @@ taskset -c 0,1 target/debug/deps/sbxm-<hash> --test-threads=16
 
 1行目が`Executable unittests src/main.rs (...)`として示すpathを、2行目へ渡す。修正前のtree
 （164c708）では、この条件でCIと同じ2件が落ちる。`tests/`の統合testは1 fileが1本のbinaryに
-なる。`cargo test --test <file名> --no-run`が示すpathを、同じように渡す。
+なり、targetの名前は`.rs`を除いたfile名である。`tests/host.rs`なら、
+`cargo test --test host --no-run`が`Executable tests/host.rs (...)`として示すpathを、同じように
+渡す。
 
 これは診断の道具であり、CIでもreleaseでも回さない。何回通っても、flakyでないことの根拠には
 ならない。flakyでないことは反復ではなく、flakyになりうる要素を含まない構造で言う。
