@@ -8,6 +8,10 @@
 //! がnonblockingで読み、直接の子が終わった時点で読み取り端を閉じるため、子孫がpipeを握った
 //! ままでも実行の外側へreaderが残らない。Capture commandは専用のprocess groupに置くが、
 //! timeoutまたはCtrl-Cで終わらせるのは直接の子だけである。
+//!
+//! 子process、pipe、signalへの基本操作は`Processes`・`Pipes`・`Signals`として、時計は
+//! `Clock`として差し込みで受け取り、ここは何をどの順で呼ぶかだけを決める。実物はOS層の
+//! `RealHost`と`SystemClock`であり、testは台本どおりに答えるものを渡す。
 
 pub mod protocol;
 
@@ -29,21 +33,20 @@ mod max_kept_stderr;
 mod outcome;
 mod output_policy;
 mod output_too_large;
+mod pipes;
 mod poll_pipes;
+mod processes;
 mod pty_confirmed_command;
 mod pump_until_exit;
-mod real_host;
-mod run;
 mod run_inner;
 mod run_pty_confirmed;
 mod run_relay;
 mod run_streaming;
 mod run_terminal_inner;
-mod run_with_terminal;
-mod set_nonblocking;
 mod signal_guard;
-mod spawn;
+mod signals;
 mod spawn_failure;
+mod start_child;
 mod stream;
 mod terminal_command;
 mod terminate_child;
@@ -55,6 +58,7 @@ mod unwritable;
 mod wait_poll_interval;
 mod wait_with_limit;
 
+pub use crate::boundary::os::RealHost;
 use apply_env::apply_env;
 use command_input::CommandInput;
 pub use command_outcome::CommandOutcome;
@@ -73,21 +77,20 @@ use max_kept_stderr::MAX_KEPT_STDERR;
 use outcome::outcome;
 pub use output_policy::OutputPolicy;
 use output_too_large::output_too_large;
+pub(crate) use pipes::Pipes;
 use poll_pipes::poll_pipes;
+pub(crate) use processes::Processes;
 pub use pty_confirmed_command::PtyConfirmedCommand;
 use pump_until_exit::pump_until_exit;
-pub use real_host::RealHost;
-pub use run::run;
-use run_inner::run_inner;
-use run_pty_confirmed::run_pty_confirmed;
+pub(crate) use run_inner::run_inner;
+pub(crate) use run_pty_confirmed::run_pty_confirmed;
 use run_relay::run_relay;
-use run_streaming::run_streaming;
-use run_terminal_inner::run_terminal_inner;
-pub use run_with_terminal::run_with_terminal;
-use set_nonblocking::set_nonblocking;
+pub(crate) use run_streaming::run_streaming;
+pub(crate) use run_terminal_inner::run_terminal_inner;
 use signal_guard::SignalGuard;
-use spawn::spawn;
+pub(crate) use signals::Signals;
 use spawn_failure::spawn_failure;
+use start_child::start_child;
 use stream::Stream;
 pub use terminal_command::TerminalCommand;
 use terminate_child::terminate_child;

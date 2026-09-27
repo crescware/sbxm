@@ -21,6 +21,11 @@ impl ScriptedClock {
     pub fn advance(&self, duration: Duration) {
         self.now.set(self.now.get() + duration);
     }
+
+    /// 時計を`at`まで進める。既に過ぎていれば動かさない。
+    pub fn advance_to(&self, at: Duration) {
+        self.now.set(self.now.get().max(at));
+    }
 }
 
 impl Clock for ScriptedClock {
