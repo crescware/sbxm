@@ -166,8 +166,8 @@ fn a_save_that_must_not_wait_gives_up_at_once_on_a_held_lock() -> Checked {
     let held = candidate.paths.acquire_lock().required()?;
     let mark = world.mark();
 
-    // 待たずに1度だけ試すことは、lockの取得のtestが確かめる。ここでは、取れなかったことが
-    // lockを待ちきれなかったこととして伝わるかを見る。
+    // 渡した期限0がlockの取得まで届くことは、待ちきれなかった旨の文面が挙げる秒数で見る。
+    // 期限0なら待たずに1度だけ試すことは、lockの取得のtestが台本の時計で確かめる。
     let saved = super::save_selected(
         candidate,
         &world,
@@ -184,6 +184,15 @@ fn a_save_that_must_not_wait_gives_up_at_once_on_a_held_lock() -> Checked {
         warning
             .facts
             .contains(&Fact::cause(ErrorId::LockTimeout.as_str())),
+        "{warning:?}"
+    );
+    // 期限を`LOCK_TIMEOUT`と取り違えれば、実時間を待ったうえで10秒と挙げる。
+    assert!(
+        warning
+            .guidance
+            .iter()
+            .any(|message| message.id == "error-lock-timeout"
+                && message.args.contains(&("seconds", "0".to_string()))),
         "{warning:?}"
     );
     assert!(!tried_to_save(&world, mark), "{:?}", world.since(mark));
