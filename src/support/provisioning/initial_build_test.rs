@@ -1667,3 +1667,11 @@ fn a_local_project_whose_ssh_settings_do_not_answer_is_not_built() -> Checked {
     assert!(!world.ran("sbx create"));
     Ok(())
 }
+
+#[test]
+fn a_declared_file_whose_digest_cannot_be_read_stops_the_build() -> Checked {
+    let (world, error) = built_after(|world| world.failing("sha256sum"))?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(world.ran("sha256sum"));
+    Ok(())
+}
