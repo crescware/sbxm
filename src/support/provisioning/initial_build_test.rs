@@ -1545,7 +1545,10 @@ fn a_snapshot_blob_that_already_holds_other_bytes_is_not_trusted() -> Checked {
         .ensure(&world, &project, &mut SilentProgress)
         .refused_because("a blob whose bytes differ from its name is not used")?;
 
-    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningSnapshotChanged));
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningSnapshotChanged)
+    );
     assert!(!world.ran("docker build"));
     Ok(())
 }
