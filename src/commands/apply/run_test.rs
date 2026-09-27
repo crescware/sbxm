@@ -943,3 +943,55 @@ fn a_declaration_taken_out_of_the_configuration_leaves_the_record() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn an_apply_stops_at_any_step_that_does_not_answer() -> Checked {
+    // 宣言fileとworktreeの両方を適用する案件を、毎回新しく整える。
+    let arrange = || -> Checked<_> {
+        let dir = tempfile::tempdir().required()?;
+        let source = dir.path().join("declared.yaml");
+        std::fs::write(&source, b"declared = true\n").required()?;
+        let (home, location, parent, config, workspace_root) = setup(vec![declaration(&source)?])?;
+        write_metadata(&location, &parent, None)?;
+        let host = FakeSbx::listing(&listing(&workspace_root, "running")?).holding_repository()?;
+        Ok((dir, home, location, config, workspace_root, host))
+    };
+    let applied = |host: &dyn crate::boundary::host::HostEnvironment,
+                   location: &crate::config::ConfigLocation,
+                   config: &crate::config::GlobalConfig,
+                   workspace_root: &std::path::Path|
+     -> Checked<crate::diagnostics::Result<crate::commands::apply::ApplyOutput>> {
+        Ok(run(
+            Target {
+                location,
+                requested: Some(&project()?),
+                prompt: &mut ScriptedPrompt::choosing(0),
+            },
+            config,
+            Scope {
+                files: true,
+                force: false,
+                worktrees: Some(3),
+            },
+            host,
+            workspace_root,
+            &mut SilentProgress,
+        ))
+    };
+    let (_dir, _home, location, config, workspace_root, host) = arrange()?;
+    let recorded = crate::testing::host::FailingAt::recording(host);
+    applied(&recorded, &location, &config, &workspace_root)?.required()?;
+    for (at, step) in recorded.calls().iter().enumerate() {
+        // 空き容量は、失敗の診断に添える事実である。読めなくても元の失敗を隠さない。
+        if step.contains("df -Pk") {
+            continue;
+        }
+        let (_dir, _home, location, config, workspace_root, host) = arrange()?;
+        let failing = crate::testing::host::FailingAt::timing_out(host, at);
+        assert!(
+            applied(&failing, &location, &config, &workspace_root)?.is_err(),
+            "{step}"
+        );
+    }
+    Ok(())
+}

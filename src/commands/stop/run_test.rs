@@ -469,3 +469,59 @@ fn saving_one_target_leaves_the_others_free_for_other_commands() -> Checked {
     assert_eq!(host.free.get(), Some(true), "{:?}", host.inner.calls());
     Ok(())
 }
+
+#[test]
+fn a_stop_does_not_report_success_past_a_step_that_did_not_answer() -> Checked {
+    let arrange = || -> Checked<(Fixture, FakeSbx)> {
+        let fixture = Fixture::new()?;
+        let project = fixture.register("alpha/alfa")?;
+        let running = format!(
+            r#"{{"sandboxes":[{}]}}"#,
+            fixture.entry(&project, "running")?
+        );
+        let after = format!(
+            r#"{{"sandboxes":[{}]}}"#,
+            fixture.entry(&project, "stopped")?
+        );
+        Ok((fixture, FakeSbx::listings(&[&running, &running, &after])))
+    };
+    let stopped = |host: &dyn crate::boundary::host::HostEnvironment,
+                   fixture: &Fixture|
+     -> Checked<crate::diagnostics::Result<Vec<StopResult>>> {
+        let clock = ScriptedClock::default();
+        Ok(run(
+            &fixture.location,
+            &[project_id("alpha/alfa")?],
+            host,
+            &mut ScriptedPrompt::choosing(0),
+            &fixture.workspace_root,
+            poll(&clock),
+            &mut RecordedOutput::new(),
+        )
+        .map(|report| {
+            if report.failures.is_empty() {
+                report
+                    .outcomes
+                    .iter()
+                    .map(|outcome| outcome.result)
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        }))
+    };
+    let (fixture, host) = arrange()?;
+    let recorded = crate::testing::host::FailingAt::recording(host);
+    let done = stopped(&recorded, &fixture)?.required()?;
+    assert_eq!(done, vec![StopResult::Stopped]);
+    for (at, step) in recorded.calls().iter().enumerate() {
+        let (fixture, host) = arrange()?;
+        let failing = crate::testing::host::FailingAt::timing_out(host, at);
+        let outcome = stopped(&failing, &fixture)?;
+        assert!(
+            outcome.as_ref().is_err() || outcome.as_ref().is_ok_and(Vec::is_empty),
+            "{step}: {outcome:?}"
+        );
+    }
+    Ok(())
+}
