@@ -1963,3 +1963,171 @@ fn a_rebuild_whose_second_listing_names_the_sandbox_twice_removes_nothing() -> C
     );
     Ok(())
 }
+
+/// 計画のあと、確認と実行の前に`between`で世界を変えるrebuild。
+fn rebuilt_after(
+    fixture: &Fixture,
+    host: &FakeSbx,
+    between: impl FnOnce() -> Checked,
+) -> Checked<Option<ErrorId>> {
+    let clock = ScriptedClock::default();
+    let project = project_id("example-org/example-repo")?;
+    let (prepared, snapshot) = prepare(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        host,
+        &fixture.workspace_root,
+        poll(&clock),
+        &mut SilentProgress,
+    )
+    .required_because("the rebuild is planned")?;
+    between()?;
+    let shown = prepared.plan.project.clone();
+    let confirmation = confirm(snapshot, &shown, true, &mut ScriptedConfirm::typing(&shown))
+        .required_because("the rebuild is confirmed")?;
+    Ok(execute(
+        host,
+        prepared,
+        confirmation,
+        &fixture.config,
+        &fixture.workspace_root,
+        poll(&clock),
+        &mut SilentProgress,
+    )
+    .refused_because("a step of the rebuild fails")?
+    .first_id())
+}
+
+fn set_mode(path: &Path, mode: u32) -> Checked {
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).required()
+}
+
+#[test]
+fn a_template_list_that_cannot_be_read_stops_the_rebuild() -> Checked {
+    assert_eq!(
+        rebuild_failing_at(|_| "template ls --json".to_string(), 1)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn an_archive_that_the_engine_did_not_write_stops_the_rebuild() -> Checked {
+    let (fixture, _, host) = switched_sandbox()?;
+    let host = host.answering("template ls --json", 0, r#"{"images":[]}"#);
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ArchiveUnusable)
+    );
+    assert!(!host.ran("rm "));
+    Ok(())
+}
+
+#[test]
+fn a_pinned_generation_that_cannot_be_looked_up_stops_the_rebuild() -> Checked {
+    let (fixture, mut project, host) = switched_sandbox()?;
+    let target = "2".repeat(64);
+    project.metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: target.clone(),
+        previous_dockerfile_sha256: project.metadata.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&project.paths, &project.metadata).required()?;
+    let image = image::image_name(&project.sandbox, &target);
+    let host = host.answering(&format!("image ls --quiet {image}"), 1, "");
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ExternalCommandFailed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_rebuild_that_cannot_record_its_intent_removes_nothing() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    let sbxm = project.paths.sbxm_dir();
+
+    let id = rebuilt_after(&fixture, &host, || set_mode(&sbxm, 0o500))?;
+    set_mode(&sbxm, 0o700)?;
+
+    assert_eq!(id, Some(ErrorId::AtomicWriteFailed));
+    assert!(!host.ran("rm "));
+    Ok(())
+}
+
+#[test]
+fn a_rebuild_that_cannot_clear_its_intent_reports_the_write() -> Checked {
+    let (fixture, mut project, host) = switched_sandbox()?;
+    project.metadata.rebuild = Some(RebuildIntent {
+        target_dockerfile_sha256: project.metadata.provisioning.dockerfile_sha256.clone(),
+        previous_dockerfile_sha256: project.metadata.provisioning.dockerfile_sha256.clone(),
+    });
+    metadata::update(&project.paths, &project.metadata).required()?;
+    let sbxm = project.paths.sbxm_dir();
+
+    let id = rebuilt_after(&fixture, &host, || set_mode(&sbxm, 0o500))?;
+    set_mode(&sbxm, 0o700)?;
+
+    assert_eq!(id, Some(ErrorId::AtomicWriteFailed));
+    Ok(())
+}
+
+#[test]
+fn rebuild_does_not_take_a_lock_it_cannot_trust() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    std::fs::write(project.paths.lock_file(), b"").required()?;
+    set_mode(&project.paths.lock_file(), 0o644)?;
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_symlinked_cache_stops_the_rebuild_before_anything_is_swept() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    let cache = project.paths.cache_dir();
+    let elsewhere = fixture.workspace_root.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).required()?;
+    let _ = std::fs::remove_dir_all(&cache);
+    std::os::unix::fs::symlink(&elsewhere, &cache).required()?;
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ProjectPathSymlink)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_dockerfile_that_cannot_be_read_stops_the_rebuild() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    std::fs::remove_file(project.paths.dockerfile()).required()?;
+    std::fs::create_dir(project.paths.dockerfile()).required()?;
+
+    assert_eq!(
+        rebuilt_with(&fixture, &host)?,
+        Some(ErrorId::ProjectPathUnexpectedType)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_that_never_runs_is_not_read_for_protection() -> Checked {
+    assert_eq!(
+        rebuild_listing(|fixture, project| {
+            Ok(vec![format!(
+                r#"{{"sandboxes":[{}]}}"#,
+                fixture.entry(project, "stopped")?
+            )])
+        })?,
+        Some(ErrorId::SandboxNotRunning)
+    );
+    Ok(())
+}
