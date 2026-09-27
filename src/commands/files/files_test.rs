@@ -367,3 +367,22 @@ fn a_git_that_cannot_be_started_is_not_read_as_no_difference() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
     Ok(())
 }
+
+#[test]
+fn a_declaration_that_cannot_be_saved_is_refused_and_leaves_the_way_blocked() -> Checked {
+    let (_home, location, file) = home_with(".claude/CLAUDE.md", b"# notes\n")?;
+    // global state directoryの場所を通常fileが塞いでいる。
+    fs::write(location.dir(), b"not a directory\n").required()?;
+
+    let error = add(&location, &GlobalConfig::default(), &file, None)
+        .refused_because("the declaration has nowhere to be saved")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    assert_eq!(
+        fs::read_to_string(location.dir()).required()?,
+        "not a directory\n",
+        "what stands in the way is left as it was"
+    );
+    assert_eq!(fs::read(&file).required()?, b"# notes\n");
+    Ok(())
+}

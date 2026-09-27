@@ -348,3 +348,57 @@ fn a_declaration_saved_while_the_projects_cannot_be_read_still_succeeds() -> Che
     assert_eq!(declared_count(&fixture)?, 1);
     Ok(())
 }
+
+#[test]
+fn a_configuration_that_cannot_be_read_stops_every_action_before_it_starts() -> Checked {
+    // 宣言を読めなければ、並べることも外すことも足すことも始めない。
+    let fixture = Fixture::new()?;
+    let added = adding(&fixture, ".claude/CLAUDE.md")?;
+    fs::create_dir_all(fixture.location.config_file()).required()?;
+    let host = nothing_running();
+
+    for args in [
+        Args::Ls,
+        Args::Rm {
+            destination: ".claude/CLAUDE.md".to_string(),
+        },
+        added,
+    ] {
+        let ran = run(&fixture, &args, true, ScriptedKeys::confirming(), &host)?;
+        assert_eq!(ran.code, ExitCode::Failure, "{args:?}");
+        assert!(
+            ran.stderr.contains("config-unreadable"),
+            "{args:?}: {}",
+            ran.stderr
+        );
+        assert!(ran.stdout.is_empty(), "{args:?}: {}", ran.stdout);
+        assert!(ran.drawn.is_empty(), "{args:?}: nothing is asked");
+    }
+    assert!(host.calls().is_empty(), "{:?}", host.calls());
+    assert!(fixture.location.config_file().is_dir());
+    Ok(())
+}
+
+#[test]
+fn a_keyboard_lost_while_offering_to_place_fails_the_run_but_keeps_the_declaration() -> Checked {
+    // 訊いている途中でやめた実行とは違い、答えを読めなかった実行は失敗として終える。
+    // 宣言は訊く前に保存してある。
+    let fixture = Fixture::new()?;
+    fixture.register("owner/repo")?;
+    let host = nothing_running();
+
+    let ran = run(
+        &fixture,
+        &adding(&fixture, ".claude/CLAUDE.md")?,
+        true,
+        ScriptedKeys::failing(std::io::ErrorKind::BrokenPipe),
+        &host,
+    )?;
+
+    assert_eq!(ran.code, ExitCode::Failure, "{}", ran.stderr);
+    assert!(ran.stderr.contains("prompt-unreadable"), "{}", ran.stderr);
+    assert!(ran.stdout.contains(".claude/CLAUDE.md"), "{}", ran.stdout);
+    assert!(host.calls().is_empty(), "{:?}", host.calls());
+    assert_eq!(declared_count(&fixture)?, 1);
+    Ok(())
+}
