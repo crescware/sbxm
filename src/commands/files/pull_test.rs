@@ -41,7 +41,7 @@ struct Ran {
 
 fn run(
     bench: &Bench,
-    world: &World,
+    world: &dyn crate::boundary::host::HostEnvironment,
     args: &Args,
     can_prompt: bool,
     keys: ScriptedKeys,
@@ -715,6 +715,71 @@ fn a_baseline_that_cannot_be_recorded_is_reported_after_the_host_file_was_replac
         bench.stored("Example-Org/Example-Repo")?,
         stored,
         "the baseline is not recorded"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_pull_adopts_nothing_past_a_step_that_did_not_answer() -> Checked {
+    let arrange = || -> Checked<(Bench, World, ProjectId)> {
+        let (bench, world, project) = built()?;
+        world.edited_inside(IN_SANDBOX, b"edited inside\n");
+        Ok((bench, world, project))
+    };
+    let (bench, world, project) = arrange()?;
+    let recorded = crate::testing::host::FailingAt::recording(world);
+    let ran = run(
+        &bench,
+        &recorded,
+        &pulling(&project),
+        true,
+        ScriptedKeys::confirming(),
+    )?;
+    assert_eq!(ran.code, ExitCode::Success, "{}", ran.stderr);
+    for (at, step) in recorded.calls().iter().enumerate() {
+        let (bench, world, project) = arrange()?;
+        let source = bench.config.files[0].source.as_path().to_path_buf();
+        let before = fs::read(&source).required()?;
+        let failing = crate::testing::host::FailingAt::timing_out(world, at);
+
+        let ran = run(
+            &bench,
+            &failing,
+            &pulling(&project),
+            true,
+            ScriptedKeys::confirming(),
+        )?;
+
+        assert_eq!(ran.code, ExitCode::Failure, "{step}: {}", ran.stdout);
+        assert_eq!(fs::read(&source).required()?, before, "{step}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_receiving_directory_others_can_enter_is_not_used() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let (bench, world, project) = built()?;
+    world.edited_inside(IN_SANDBOX, b"edited inside\n");
+    let candidate = crate::support::select::find(&bench.location, &project).required()?;
+    let incoming = candidate.paths.incoming_dir();
+    fs::create_dir_all(&incoming).required()?;
+    fs::set_permissions(&incoming, fs::Permissions::from_mode(0o755)).required()?;
+
+    let ran = run(
+        &bench,
+        &world,
+        &pulling(&project),
+        true,
+        ScriptedKeys::confirming(),
+    )?;
+
+    assert_eq!(ran.code, ExitCode::Failure, "{}", ran.stdout);
+    assert!(
+        ran.stderr
+            .contains("error: project-file-permission-too-open"),
+        "{}",
+        ran.stderr
     );
     Ok(())
 }

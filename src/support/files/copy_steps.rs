@@ -17,12 +17,12 @@ pub(super) fn copy_steps(
 ) -> Result<()> {
     let parent = destination
         .rsplit_once('/')
-        .map_or_else(|| AGENT_HOME.to_string(), |(parent, _)| parent.to_string());
+        .map_or(AGENT_HOME, |(parent, _)| parent);
     sandbox::exec_as_root(
         host,
         sandbox,
         &[
-            "install", "-d", "-o", "agent", "-g", "agent", "-m", "0700", &parent,
+            "install", "-d", "-o", "agent", "-g", "agent", "-m", "0700", parent,
         ],
     )?
     .require_success()?;

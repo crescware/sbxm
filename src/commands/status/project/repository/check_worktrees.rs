@@ -91,9 +91,8 @@ fn collect_pending_worktrees(
             value = Value::Mismatch;
             continue;
         };
-        if worktree.state == Value::Mismatch {
-            value = Value::Mismatch;
-        } else if worktree.state == Value::NotObserved && value == Value::Ready {
+        // 作業treeの状態は、clean・dirty・観測できないのいずれかである。
+        if worktree.state == Value::NotObserved && value == Value::Ready {
             value = Value::NotObserved;
         }
         seen.push(worktree.path.clone());

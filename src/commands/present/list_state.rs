@@ -59,7 +59,8 @@ impl ListState {
         workspace: WorkspaceState,
         recovery_pending: bool,
     ) -> Self {
-        if recovery_pending && matches!(observed, Observed::Registered(_)) {
+        // intentはmetadataを読めた案件にしか無い。登録を読めたかを先に見る。
+        if matches!(observed, Observed::Registered(_)) && recovery_pending {
             return ListState::OpenBlocked;
         }
         match observed {

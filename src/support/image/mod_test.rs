@@ -927,3 +927,46 @@ fn an_archive_that_cannot_be_moved_into_place_is_reported() -> Checked {
     assert!(target.join("occupied").is_dir());
     Ok(())
 }
+
+/// 保存したarchiveの`index.json`だけを、同じ長さのまま読めない文書に変えるhost。
+struct IndexBreaking(SavingDocker);
+
+impl AnsweredHost for IndexBreaking {
+    fn has_command(&self, program: &str) -> bool {
+        self.0.has_command(program)
+    }
+
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+        let outcome = self.0.answer(spec)?;
+        if let Some(output) = spec
+            .args
+            .iter()
+            .position(|arg| arg == "--output")
+            .and_then(|at| spec.args.get(at + 1))
+        {
+            let bytes = fs::read(output).unwrap_or_default();
+            let text = String::from_utf8_lossy(&bytes).replacen(
+                r#"{"schemaVersion""#,
+                r#"["schemaVersion""#,
+                1,
+            );
+            let _ = fs::write(output, text.as_bytes());
+        }
+        Ok(outcome)
+    }
+}
+
+#[test]
+fn an_archive_whose_index_cannot_be_read_is_not_used() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let image = built_image()?;
+    let host = IndexBreaking(saving_host(&image));
+
+    let error = ensure_archive(&host, &paths, &image, DIGEST, &mut SilentProgress)
+        .refused_because("the saved index cannot be read")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+    assert!(!paths.template_archive(short_hex(DIGEST)).exists());
+    Ok(())
+}

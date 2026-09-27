@@ -128,3 +128,11 @@ fn only_paths_under_the_bare_root_are_this_projects_worktrees() {
     };
     assert_eq!(sibling.relative_to(root), None);
 }
+
+#[test]
+fn an_empty_record_between_records_is_rejected() {
+    assert!(
+        parse_list("worktree /home/agent/work/repo\0bare\0\0\0\0").is_err(),
+        "a record with no field is not a worktree"
+    );
+}

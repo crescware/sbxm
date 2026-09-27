@@ -1667,3 +1667,122 @@ fn a_local_project_whose_ssh_settings_do_not_answer_is_not_built() -> Checked {
     assert!(!world.ran("sbx create"));
     Ok(())
 }
+
+#[test]
+fn a_declared_file_whose_digest_cannot_be_read_stops_the_build() -> Checked {
+    let (world, error) = built_after(|world| world.failing("sha256sum"))?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(world.ran("sha256sum"));
+    Ok(())
+}
+
+/// 構築を終えたhostのrepositoryの案件から、Sandboxだけが消えた世界。
+fn local_project_whose_sandbox_is_gone() -> Checked<(Bench, World, crate::project::ProjectId)> {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = crate::commands::add::AddRequest {
+        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app/.git", "app")
+            .required_because("a local repository")?,
+        worktrees: None,
+        detach: None,
+        start_branch: Some("main".to_string()),
+        parent_inside_repository: false,
+    };
+    bench
+        .build(&world, &request)
+        .required_because("the first build completes")?;
+    world.sandboxes.borrow_mut().clear();
+    world.present.borrow_mut().clear();
+    world.worktrees.borrow_mut().clear();
+    world.repository.borrow_mut().clear();
+    *world.bare_git_dir.borrow_mut() = None;
+    let project = crate::project::ProjectId::parse("local/app").required()?;
+    Ok((bench, world, project))
+}
+
+fn ensured_through(
+    bench: &Bench,
+    host: &dyn crate::boundary::host::HostEnvironment,
+    project: &crate::project::ProjectId,
+) -> crate::diagnostics::Result<crate::support::provisioning::ProvisioningOutput> {
+    let mut locked = crate::support::select::find(&bench.location, project)?.lock()?;
+    crate::support::provisioning::ensure_initial(
+        &mut locked,
+        &bench.config,
+        host,
+        bench.workspace_root.path(),
+        &mut SilentProgress,
+    )
+}
+
+#[test]
+fn recreating_a_local_projects_sandbox_stops_at_any_step_that_does_not_answer() -> Checked {
+    let (bench, world, project) = local_project_whose_sandbox_is_gone()?;
+    let recorded = crate::testing::host::FailingAt::recording(world);
+    ensured_through(&bench, &recorded, &project).required_because("the sandbox is recreated")?;
+    assert!(
+        recorded
+            .calls()
+            .iter()
+            .any(|call| call.contains("for-each-ref")),
+        "the saved branches are looked for: {:?}",
+        recorded.calls()
+    );
+    for (at, step) in recorded.calls().iter().enumerate() {
+        // 空き容量は、失敗の診断に添える事実である。読めなくても元の失敗を隠さない。
+        if step.contains("df -Pk") {
+            continue;
+        }
+        let (bench, world, project) = local_project_whose_sandbox_is_gone()?;
+        let failing = crate::testing::host::FailingAt::timing_out(world, at);
+        assert!(
+            ensured_through(&bench, &failing, &project).is_err(),
+            "{step}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_finished_project_whose_sandbox_is_gone_and_whose_generation_is_unknown_is_not_rebuilt()
+-> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = registered(&bench, &world)?;
+    bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .required()?;
+    world.sandboxes.borrow_mut().clear();
+    world.images.borrow_mut().clear();
+    world.templates.borrow_mut().clear();
+    fs::write(paths.dockerfile(), b"FROM example:edited\n").required()?;
+    let mark = world.mark();
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("neither generation can be chosen")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningGenerationMissing)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("docker build") || call.contains("sbx create")),
+        "{:?}",
+        world.since(mark)
+    );
+    Ok(())
+}
+
+#[test]
+fn an_image_that_cannot_be_looked_up_after_the_build_stops_the_build() -> Checked {
+    let (world, error) = built_after(|world| {
+        world.change_before("docker build", |world| world.timing_out("docker image ls"));
+    })?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(!world.ran("docker image save"));
+    Ok(())
+}
