@@ -9,17 +9,14 @@ pub struct CliVersion {
 impl CliVersion {
     /// `0.37.0`のような厳密な3要素表記だけを受け付ける。
     pub fn parse(value: &str) -> Option<CliVersion> {
-        let mut parts = value.trim().split('.');
-        let major = parts.next()?.parse().ok()?;
-        let minor = parts.next()?.parse().ok()?;
-        let patch = parts.next()?.parse().ok()?;
-        if parts.next().is_some() {
+        let parts: Vec<&str> = value.trim().split('.').collect();
+        let [major, minor, patch] = parts.as_slice() else {
             return None;
-        }
+        };
         Some(CliVersion {
-            major,
-            minor,
-            patch,
+            major: major.parse().ok()?,
+            minor: minor.parse().ok()?,
+            patch: patch.parse().ok()?,
         })
     }
 

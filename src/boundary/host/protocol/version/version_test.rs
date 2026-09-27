@@ -51,3 +51,18 @@ fn the_minimum_version_and_later_are_accepted() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn only_three_numeric_parts_make_a_cli_version() {
+    for value in ["1", "1.2", "1.2.3.4", "x.2.3", "1.x.3", "1.2.x", ""] {
+        assert_eq!(CliVersion::parse(value), None, "{value}");
+    }
+    assert_eq!(
+        CliVersion::parse(" 0.37.1\n"),
+        Some(CliVersion {
+            major: 0,
+            minor: 37,
+            patch: 1
+        })
+    );
+}

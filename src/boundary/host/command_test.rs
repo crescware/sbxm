@@ -890,3 +890,114 @@ fn a_wait_that_ticks_still_ends_a_child_that_outlives_its_limit() -> Checked {
     assert_eq!(ticks, 9, "the caller worked while waiting");
     Ok(())
 }
+
+// --- 起動の前後で止まる経路 ---
+
+/// Ctrl-Cの見張りを置けないOS。
+fn unwatchable() -> ScriptedOs {
+    ScriptedOs::default().failing(Step::WatchInterrupts, io::Error::other("no watch"))
+}
+
+#[test]
+fn a_capture_is_not_started_without_a_watch_for_interrupts() -> Checked {
+    let os = unwatchable();
+
+    let error = run_inner(&os, os.clock(), &spec(), None).refused_because("no watch")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    assert!(
+        !os.events().contains(&started(&spec())),
+        "{:?}",
+        os.events()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stream_is_not_started_without_a_watch_for_interrupts() -> Checked {
+    let os = unwatchable();
+
+    let error = run_streaming(&os, os.clock(), &spec(), &mut Vec::new(), 1024)
+        .refused_because("no watch")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    assert!(
+        !os.events().contains(&started(&spec())),
+        "{:?}",
+        os.events()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stream_whose_program_is_missing_is_reported_as_missing() -> Checked {
+    let os = ScriptedOs::default().failing(Step::Start, io::Error::from(ErrorKind::NotFound));
+
+    let error = run_streaming(&os, os.clock(), &spec(), &mut Vec::new(), 1024)
+        .refused_because("the program is missing")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
+    Ok(())
+}
+
+#[test]
+fn a_stream_that_outlives_its_limit_is_ended_and_reported() -> Checked {
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::held_open([]))
+        .stderr(ScriptedPipe::held_open([]));
+    let spec = spec().timeout(TimeoutClass::Probe);
+
+    let error = run_streaming(&os, os.clock(), &spec, &mut Vec::new(), 1024)
+        .refused_because("the limit ends the stream")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(ended(&os.events()), "{:?}", os.events());
+    Ok(())
+}
+
+#[test]
+fn a_terminal_command_whose_program_is_missing_is_reported_as_missing() -> Checked {
+    for command in [
+        TerminalCommand::handed_over("fake-tool", &[]),
+        TerminalCommand::relayed("fake-tool", &[]),
+    ] {
+        let os = ScriptedOs::default().failing(Step::Start, io::Error::from(ErrorKind::NotFound));
+        let mut output = RecordedOutput::new();
+
+        let error = run_terminal_inner(&os, os.clock(), &command, &mut output, None)
+            .refused_because("the program is missing")?;
+
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
+    }
+    Ok(())
+}
+
+#[test]
+fn a_handed_over_command_that_cannot_be_waited_for_is_reported() -> Checked {
+    let os = ScriptedOs::default().waits([Err(no_child())]);
+    let command = TerminalCommand::handed_over("fake-tool", &[]);
+    let mut output = RecordedOutput::new();
+
+    let error = run_terminal_inner(&os, os.clock(), &command, &mut output, None)
+        .refused_because("the child cannot be waited for")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    assert_eq!(output.finished, 1, "the terminal is taken back");
+    Ok(())
+}
+
+#[test]
+fn a_relayed_command_that_outlives_its_limit_is_ended_and_reported() -> Checked {
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::held_open([]))
+        .stderr(ScriptedPipe::held_open([]));
+    let command = TerminalCommand::relayed("fake-tool", &[]).timeout(TimeoutClass::Probe);
+    let mut output = RecordedOutput::new();
+
+    let error = run_terminal_inner(&os, os.clock(), &command, &mut output, None)
+        .refused_because("the limit ends the relay")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(ended(&os.events()), "{:?}", os.events());
+    Ok(())
+}
