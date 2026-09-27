@@ -1,7 +1,5 @@
 use std::fs;
-use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use crate::boundary::host::EnvPolicy;
@@ -11,44 +9,37 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 
-/// script1本を実行可能fileとして置く。
-fn fake_script(dir: &Path, body: &str) -> Checked<PathBuf> {
+/// script1本を置く。
+///
+/// scriptは`sh <path>`で起動し、書いたfileそのものをexecしない。書いた直後のfileをexecすると、
+/// 別threadのtestがforkした子が書き込み端を持ったままの間は`ETXTBSY`で起動できない。
+fn fake_script(dir: &Path, body: &str) -> Checked<String> {
     let path = dir.join("fake-sbx");
-    let mut file = fs::File::create(&path).required_because("create the fake script")?;
-    file.write_all(format!("#!/bin/sh\n{body}\n").as_bytes())
-        .required_because("write the fake script")?;
-    file.sync_all().required_because("flush the fake script")?;
-    drop(file);
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-        .required_because("make it executable")?;
-    Ok(path)
+    fs::write(&path, format!("{body}\n")).required_because("write the fake script")?;
+    Ok(path.to_str().required()?.to_string())
 }
 
 /// promptを短いtimeoutで待つ以外は既定のcommand。
-fn command(program: &Path, expected_prompt: &str) -> PtyConfirmedCommand {
-    command_with_prompt_timeout(program, expected_prompt, Duration::from_millis(500))
+fn command(script: &str, expected_prompt: &str) -> PtyConfirmedCommand {
+    command_with_prompt_timeout("sh", &[script], expected_prompt, Duration::from_millis(500))
 }
 
 /// coverage実行時のmacOSでも、shellが起動してpromptを出す時間を確保する。
 fn command_with_prompt_timeout(
-    program: &Path,
+    program: &str,
+    args: &[&str],
     expected_prompt: &str,
     prompt_timeout: Duration,
 ) -> PtyConfirmedCommand {
-    let mut command = PtyConfirmedCommand::new(
-        program.to_str().unwrap_or_default(),
-        &[],
-        "the sandbox",
-        expected_prompt,
-    );
+    let mut command = PtyConfirmedCommand::new(program, args, "the sandbox", expected_prompt);
     command.prompt_timeout = prompt_timeout;
     command
 }
 
-fn command_for_interactive_exchange(program: &Path, expected_prompt: &str) -> PtyConfirmedCommand {
+fn command_for_interactive_exchange(script: &str, expected_prompt: &str) -> PtyConfirmedCommand {
     // 正常系は、coverage buildでmacOSのshell起動が遅くなっても既定のprompt timeoutまで
     // 待つ。異常系の短いtimeoutは、promptが現れないことを確認するtestだけで使う。
-    command_with_prompt_timeout(program, expected_prompt, Duration::from_secs(20))
+    command_with_prompt_timeout("sh", &[script], expected_prompt, Duration::from_secs(20))
 }
 
 /// promptを待つloopだけを試すため、十分長く生きる直接の子processを用意する。
@@ -63,22 +54,7 @@ fn sleeping_child() -> Checked<std::process::Child> {
 }
 
 fn short_prompt_command() -> PtyConfirmedCommand {
-    command_with_prompt_timeout(Path::new("sleep"), "confirmation", Duration::from_millis(1))
-}
-
-/// 別`test`の`fork`と実行可能`file`の作成が重なる`macOS`の`ETXTBSY`だけを短く再試行する。
-fn run_pty_confirmed_retrying(
-    command: &PtyConfirmedCommand,
-) -> crate::diagnostics::Result<CommandOutcome> {
-    for _ in 0..50 {
-        match super::run_pty_confirmed(command) {
-            Err(error) if error.contains_id(ErrorId::ExternalCommandSpawnFailed) => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            other => return other,
-        }
-    }
-    super::run_pty_confirmed(command)
+    command_with_prompt_timeout("sleep", &[], "confirmation", Duration::from_millis(1))
 }
 
 #[test]
@@ -188,7 +164,7 @@ fn a_matched_prompt_is_answered_exactly_once() -> Checked {
          printf \"Sandbox 'x' removed\\n\"\n",
     )?;
 
-    let outcome = run_pty_confirmed_retrying(
+    let outcome = run_pty_confirmed(
         &command_for_interactive_exchange(
             &script,
             "Remove sandbox 'x'? This cannot be undone. (y/N):",
@@ -217,7 +193,7 @@ fn a_runtime_refusal_after_the_prompt_is_answered_is_still_reported() -> Checked
          exit 1\n",
     )?;
 
-    let outcome = run_pty_confirmed_retrying(&command_for_interactive_exchange(
+    let outcome = run_pty_confirmed(&command_for_interactive_exchange(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -246,7 +222,7 @@ fn a_runtime_refusal_past_one_read_chunk_is_still_reported_in_full() -> Checked 
          exit 1\n",
     )?;
 
-    let outcome = run_pty_confirmed_retrying(&command_for_interactive_exchange(
+    let outcome = run_pty_confirmed(&command_for_interactive_exchange(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -276,7 +252,7 @@ fn a_different_prompt_is_never_answered() -> Checked {
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed_retrying(&command(
+    let error = run_pty_confirmed(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -296,7 +272,7 @@ fn an_invalid_byte_right_after_the_expected_prompt_is_never_answered() -> Checke
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed_retrying(&command(
+    let error = run_pty_confirmed(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -316,7 +292,7 @@ fn a_prompt_that_drifts_past_the_expected_text_on_the_same_line_is_never_answere
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed_retrying(&command(
+    let error = run_pty_confirmed(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -337,7 +313,7 @@ fn an_additional_question_after_the_expected_prompt_is_never_answered() -> Check
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed_retrying(&command(
+    let error = run_pty_confirmed(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -356,7 +332,7 @@ fn prompt_suffix_is_not_accepted(suffix: &str, reason: &str) -> Checked {
         ),
     )?;
 
-    let error = run_pty_confirmed_retrying(&command(
+    let error = run_pty_confirmed(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -388,7 +364,7 @@ fn a_process_that_ends_before_the_prompt_appears_is_not_confirmed() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let script = fake_script(dir.path(), "exit 1\n")?;
 
-    let error = run_pty_confirmed_retrying(&command(
+    let error = run_pty_confirmed(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -407,7 +383,7 @@ fn invalid_utf8_never_satisfies_the_expected_prompt() -> Checked {
          sleep 5\n",
     )?;
 
-    let error = run_pty_confirmed_retrying(&command(
+    let error = run_pty_confirmed(&command(
         &script,
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
     ))
@@ -418,9 +394,11 @@ fn invalid_utf8_never_satisfies_the_expected_prompt() -> Checked {
 
 #[test]
 fn a_program_that_cannot_be_found_is_reported_without_opening_a_pty_forever() -> Checked {
-    let error = run_pty_confirmed_retrying(&command(
-        Path::new("/does/not/exist/sbx"),
+    let error = run_pty_confirmed(&command_with_prompt_timeout(
+        "/does/not/exist/sbx",
+        &[],
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
+        Duration::from_millis(500),
     ))
     .refused_because("a missing program is a spawn failure, not a confirmation failure")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
@@ -429,9 +407,11 @@ fn a_program_that_cannot_be_found_is_reported_without_opening_a_pty_forever() ->
 
 #[test]
 fn a_timeout_diagnostic_names_the_external_command() {
-    let error = timed_out(&command(
-        Path::new("sbx"),
+    let error = timed_out(&command_with_prompt_timeout(
+        "sbx",
+        &[],
         "Remove sandbox 'x'? This cannot be undone. (y/N):",
+        Duration::from_millis(500),
     ));
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
