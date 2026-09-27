@@ -91,6 +91,33 @@ impl World {
         self.change_before(needle, move |_| action());
     }
 
+    /// 構築が終わった直後、完成の観測より前に、この世界の応答を1回だけ変える。
+    pub fn after_the_build(&self, action: impl Fn(&World) + 'static) {
+        // 構築の最後の段はworktreeを作る。その直後から、完成の観測が始まる。
+        self.change_before("example-repo.tree-", action);
+    }
+
+    /// 観測の最後の起動の直前に、この世界を1回だけ変える。
+    ///
+    /// 観測の中でもmetadataを書くことがある。観測の最後の起動は、宣言fileのdigestを
+    /// 読んだあとの2回目の`git -C`であり、そのあとhostの起動を挟まずに記録へ進む。
+    pub fn at_the_end_of_the_observation(&self, action: impl Fn(&World) + Clone + 'static) {
+        self.change_before("sha256sum", move |world| {
+            let action = action.clone();
+            world.change_before("git -C", move |world| {
+                world.change_before("git -C", action.clone());
+            });
+        });
+    }
+
+    /// 観測が終わったあと、次の記録の前に`directory`へ書けなくする。
+    pub fn seal_before_the_final_record(&self, directory: std::path::PathBuf) {
+        self.at_the_end_of_the_observation(move |_| {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o500));
+        });
+    }
+
     /// 次に指定と一致する起動の直前に、この世界の応答を1回だけ変える。
     ///
     /// 同じ起動が工程の前半にも後半にも現れる場合に、前半を成功させたまま後半だけを
