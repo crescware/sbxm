@@ -10,22 +10,23 @@
 //! 取り消しとは区別する。利用者がEscを押したのではないため、exit codeは130ではなく1で
 //! あり、途中まで進めた選択は保存しない。
 //!
-//! testは止まらないことを優先する。読み取りも終了待ちも上限を置き、上限に達した実行は
-//! 子processを終わらせて失敗とする。
+//! testは止まらないことを優先する。画面も終了も`wait_until`で待ち、上限を置く。上限に
+//! 達した実行も途中で失敗した実行も、子processを終わらせてから失敗とする。
 
 mod fake_tool;
 mod outcome;
 mod temp_home;
+mod wait_until;
 
 use fake_tool::install_fake_tool;
 use outcome::{Checked, Required, Unmet};
 use temp_home::temp_home;
+use wait_until::wait_until;
 
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
 
 use rustix::fs::{Mode, OFlags, fcntl_getfl, fcntl_setfl};
 use rustix::io::{FdFlags, fcntl_setfd};
@@ -34,12 +35,6 @@ use rustix::termios::{OptionalActions, Winsize, tcgetattr, tcsetattr, tcsetwinsi
 
 /// 端末が送るbyteとしての打鍵。
 const ARROW_DOWN: &str = "\u{1b}[B";
-
-/// 1実行に許す時間。これを超えた実行は、待つ相手が来ないものとして終わらせる。
-const LIMIT: Duration = Duration::from_secs(60);
-
-/// 待ち時間を刻む幅。
-const TICK: Duration = Duration::from_millis(5);
 
 /// 端末の大きさ。値を固定して、一覧の高さを実行環境から切り離す。
 const ROWS: u16 = 40;
@@ -95,7 +90,7 @@ fn open_pty() -> Checked<Pty> {
     )
     .required_because("the terminal takes its size")?;
 
-    // 読み取りは待たずに戻す。待ち時間の上限をtest側が決めるためである。
+    // 読み取りは待たずに戻す。待つのは`wait_until`であり、読み取りそのものではない。
     let controller = File::from(controller);
     let flags = fcntl_getfl(&controller).required_because("the controller flags are readable")?;
     fcntl_setfl(&controller, flags | OFlags::NONBLOCK)
@@ -114,7 +109,6 @@ struct Run {
     /// 端末へ現れたbyteを読む側。`None`は、testが画面の端末を閉じたことを表す。
     screen: Option<File>,
     seen: String,
-    limit: Instant,
 }
 
 impl Run {
@@ -151,7 +145,6 @@ impl Run {
             keyboard: Some(keys.controller),
             screen: Some(display.controller),
             seen: String::new(),
-            limit: Instant::now() + LIMIT,
         })
     }
 
@@ -171,54 +164,64 @@ impl Run {
 
     /// その文字列が端末へ現れるまで読む。
     fn wait_for(&mut self, shown: &str) -> Checked<()> {
-        let limit = self.limit;
-        while !visible(&self.seen).join("\n").contains(shown) {
-            let screen = self
-                .screen
-                .as_mut()
-                .required_because("the screen terminal is still open")?;
-            match read_some(screen, limit)? {
-                Some(chunk) => self.seen.push_str(&String::from_utf8_lossy(&chunk)),
-                None => {
-                    return Err(Unmet::new(format!(
-                        "the run ended before {shown:?} appeared"
-                    )));
-                }
+        let screen = self
+            .screen
+            .as_mut()
+            .required_because("the screen terminal is still open")?;
+        let seen = &mut self.seen;
+        wait_until(&format!("{shown:?} to appear"), || {
+            if visible(seen).join("\n").contains(shown) {
+                return Ok(Some(()));
             }
-        }
-        Ok(())
+            match read_now(screen) {
+                Screen::Said(chunk) => {
+                    seen.push_str(&String::from_utf8_lossy(&chunk));
+                    Ok(None)
+                }
+                Screen::Quiet => Ok(None),
+                Screen::Gone => Err(Unmet::new(format!(
+                    "the run ended before {shown:?} appeared"
+                ))),
+            }
+        })
     }
 
     /// 実行が終わるまで待ち、端末に残った文字と終了codeを返す。
+    ///
+    /// 画面の端末が閉じるまで読み切ってから、終了を待つ。testが画面を閉じていれば、
+    /// 終了だけを待つ。
     fn finish(mut self) -> Checked<Ended> {
-        let limit = self.limit;
-        while let Some(screen) = self.screen.as_mut() {
-            match read_some(screen, limit)? {
-                Some(chunk) => self.seen.push_str(&String::from_utf8_lossy(&chunk)),
-                None => break,
-            }
+        if let Some(screen) = self.screen.as_mut() {
+            let seen = &mut self.seen;
+            wait_until("the terminal to close", || match read_now(screen) {
+                Screen::Said(chunk) => {
+                    seen.push_str(&String::from_utf8_lossy(&chunk));
+                    Ok(None)
+                }
+                Screen::Quiet => Ok(None),
+                Screen::Gone => Ok(Some(())),
+            })?;
         }
-        let code = loop {
-            if let Some(status) = self
-                .child
-                .try_wait()
-                .required_because("the process is reaped")?
-            {
-                break status
-                    .code()
-                    .required_because("the process exits by itself")?;
-            }
-            if Instant::now() >= limit {
-                let _ = self.child.kill();
-                let _ = self.child.wait();
-                return Err(Unmet::new("the run did not end once the terminal was gone"));
-            }
-            std::thread::sleep(TICK);
-        };
+        let child = &mut self.child;
+        let status = wait_until("sbxm to end", || {
+            child.try_wait().required_because("the process is reaped")
+        })?;
         Ok(Ended {
             text: visible(&self.seen).join("\n"),
-            code,
+            code: status
+                .code()
+                .required_because("the process exits by itself")?,
         })
+    }
+}
+
+impl Drop for Run {
+    /// 途中で失敗した実行も、子processを残さない。
+    ///
+    /// 終わりを見届けた子へは何も送らない。刈り取った子への`kill`は、signalを送らずに戻る。
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -228,21 +231,34 @@ struct Ended {
     code: i32,
 }
 
-/// 端末に届いたbyteを1度だけ取り込む。相手が閉じていれば`None`。
-fn read_some(screen: &mut File, limit: Instant) -> Checked<Option<Vec<u8>>> {
+/// 端末に届いたbyteを、待たずに1度だけ読んだ結果。
+enum Screen {
+    /// 届いたbyte。
+    Said(Vec<u8>),
+    /// まだ何も届いていない。
+    Quiet,
+    /// 端末側がすべて閉じた。
+    Gone,
+}
+
+/// 端末に届いたbyteを、待たずに1度だけ読む。
+///
+/// 端末側がすべて閉じると、Linuxは残りを読ませたあとEIOで答える。`0`で答えるplatformも
+/// ありうるため、`0`も、待てば読めるのではない失敗も、閉じたこととして扱う。
+fn read_now(screen: &mut File) -> Screen {
     let mut chunk = [0u8; 4096];
-    loop {
-        match screen.read(&mut chunk) {
-            Ok(0) => return Ok(None),
-            Ok(size) => return Ok(Some(chunk[..size].to_vec())),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-            // 子processが終わって端末側が閉じると、読み取りは失敗として終わる。
-            Err(_) => return Ok(None),
+    match screen.read(&mut chunk) {
+        Ok(0) => Screen::Gone,
+        Ok(size) => Screen::Said(chunk[..size].to_vec()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+            ) =>
+        {
+            Screen::Quiet
         }
-        if Instant::now() >= limit {
-            return Err(Unmet::new("the terminal never said anything more"));
-        }
-        std::thread::sleep(TICK);
+        Err(_) => Screen::Gone,
     }
 }
 

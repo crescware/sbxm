@@ -162,6 +162,30 @@ testは実行可能fileを実行時に書かない。書いた直後のfileは�
 道具の名前で`tests/fixtures/fake_tool.sh`へのsymlinkを置き、振る舞いは実行bitを持たない
 `<名前>.sh`へ書く。testが自分で走らせるscriptは`sh <path>`で起動する。
 
+## testの種類
+
+testは、要素を含むかどうかと、何を確かめるかで3種類に分ける。
+
+- 決定的なtest。要素を含まない。file名に`_test`を含むunit test、`fake/`、`src/testing/`と、
+  `tests/`のうち要素を含まないもの（sbxmを`output()`で終わりまで待つだけの`tests/cli.rs`
+  など）である。判断は、台本どおりに答える基本操作を渡して確かめる。
+- 契約test。`src/boundary/os/`の`_test` fileに置き、OS層が頼るOSの振る舞いを実OSで確かめる。
+  何を前提とするかをdoc commentに書く。
+- e2e test。`tests/`に置き、実processを動かして、終わる前の途中の状態を待つ。待つ相手は、
+  PTYに現れた文字、marker file、子processの終了である。sbxmがSandboxへ渡す手順を、選んだ段で
+  自分へsignalを送らせながらこのhostのshellで走らせる`tests/place_from_stdin.rs`もここに
+  置く。途中の状態は待たないが、signalを使う。
+
+要素を書いてよいのは、OS層と、契約testと、e2e testである。`FLAKY_ELEMENT_PLACES`にはほかに、
+判断とOSの呼び出しがまだ同じ関数にある`src/boundary/host`の本番codeと、要素をまだ含むunit
+testが残る。
+
+契約testもe2e testも速さを確かめない。e2e testが途中の状態を待つのは`tests/wait_until/mod.rs`の
+`wait_until`だけであり、上限は60秒の1つだけとする。上限はhangを止めるためにあり、平常の実行が
+近づく値ではない。待つ相手が来ないと分かれば、上限を待たずに失敗する。終わりまで待つだけの
+実行は`output()`で、killした子の回収は`wait`で待ち、`wait_until`を使わない。途中で失敗した
+testも、終わらない子processを残さない。
+
 ## flakyを疑ったとき
 
 1つのtestを単独で繰り返しても、時機の競合はほとんど再現しない。CIで出る競合は、同じprocessの
@@ -176,7 +200,10 @@ taskset -c 0,1 target/debug/deps/sbxm-<hash> --test-threads=16
 ```
 
 1行目が`Executable unittests src/main.rs (...)`として示すpathを、2行目へ渡す。修正前のtree
-（164c708）では、この条件でCIと同じ2件が落ちる。
+（164c708）では、この条件でCIと同じ2件が落ちる。`tests/`の統合testは1 fileが1本のbinaryに
+なり、targetの名前は`.rs`を除いたfile名である。`tests/host.rs`なら、
+`cargo test --test host --no-run`が`Executable tests/host.rs (...)`として示すpathを、同じように
+渡す。
 
 これは診断の道具であり、CIでもreleaseでも回さない。何回通っても、flakyでないことの根拠には
 ならない。flakyでないことは反復ではなく、flakyになりうる要素を含まない構造で言う。

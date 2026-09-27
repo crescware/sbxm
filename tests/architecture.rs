@@ -12,7 +12,7 @@ mod os_layer;
 mod outcome;
 
 use disable_directive::DISABLE_NEXT_LINE;
-use flaky_elements::Element;
+use flaky_elements::{Element, Found};
 use outcome::{Checked, Required};
 
 use std::path::{Path, PathBuf};
@@ -877,7 +877,7 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 ///
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 20] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 21] = [
     // OS層。分岐を持たず、coverageの母集団から外す。
     ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
     ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
@@ -917,28 +917,21 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 20] = [
         "src/boundary/host/run_pty_confirmed_test.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
-    ("src/support/files/files_test.rs", &[Element::Signal]),
     (
         "tests/command_lifecycle.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
-    (
-        "tests/host.rs",
-        &[Element::RealTime, Element::ChildProcess, Element::Signal],
-    ),
+    ("tests/host.rs", &[Element::ChildProcess, Element::Signal]),
+    ("tests/place_from_stdin.rs", &[Element::Signal]),
     (
         "tests/prompt_pty.rs",
-        &[
-            Element::RealTime,
-            Element::Thread,
-            Element::ChildProcess,
-            Element::Signal,
-        ],
+        &[Element::ChildProcess, Element::Signal],
     ),
     (
         "tests/prompt_terminal.rs",
-        &[Element::RealTime, Element::ChildProcess, Element::Signal],
+        &[Element::ChildProcess, Element::Signal],
     ),
+    ("tests/wait_until/mod.rs", &[Element::RealTime]),
 ];
 
 /// `src`と`tests`のRust source。
@@ -960,13 +953,51 @@ fn sources_and_tests() -> Checked<Vec<(String, String)>> {
     Ok(sources)
 }
 
+/// sourceが`include_str!`・`include_bytes!`で読み込むfileの中身。repositoryからのpathで引く。
+fn included_texts(sources: &[(String, String)]) -> Checked<Vec<(String, String)>> {
+    let mut texts: Vec<(String, String)> = Vec::new();
+    for (path, text) in sources {
+        for include in flaky_elements::included(text).required_because("the source parses")? {
+            let Some(written) = include.path else {
+                continue;
+            };
+            let target = resolve(path, &written);
+            if texts.iter().any(|(read, _)| *read == target) {
+                continue;
+            }
+            let bytes = std::fs::read(root().join(&target))
+                .required_because("the included file is readable")?;
+            texts.push((target, String::from_utf8_lossy(&bytes).into_owned()));
+        }
+    }
+    Ok(texts)
+}
+
+/// `from`のfileに書かれた相対pathを、repositoryからのpathへ直す。
+fn resolve(from: &str, written: &str) -> String {
+    let mut parts: Vec<&str> = from.split('/').collect();
+    parts.pop();
+    for part in written.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            _ => parts.push(part),
+        }
+    }
+    parts.join("/")
+}
+
 #[test]
 fn flaky_elements_stay_where_they_are_allowed() -> Checked {
     let sources: Vec<(String, String)> = sources_and_tests()?
         .into_iter()
         .filter(|(path, _)| !path.starts_with(FLAKY_ELEMENT_DEFINITION))
         .collect();
-    let violations = flaky_element_violations(&sources, &FLAKY_ELEMENT_PLACES, &OS_LAYER_WIRING)?;
+    let included = included_texts(&sources)?;
+    let violations =
+        flaky_element_violations(&sources, &included, &FLAKY_ELEMENT_PLACES, &OS_LAYER_WIRING)?;
     assert!(
         violations.is_empty(),
         "flaky elements are written only where FLAKY_ELEMENT_PLACES allows them:\n{}",
@@ -979,14 +1010,39 @@ fn flaky_elements_stay_where_they_are_allowed() -> Checked {
 ///
 /// OS層の実物を名指しすることも要素として数える。OS層の中と、`wiring`に挙げた本番の配線
 /// だけが名指ししてよい。
+///
+/// `include_str!`・`include_bytes!`が読み込むfileの中身は、`included`から引き、読み込んだ
+/// fileのその行の文字列literalとして数える。中身を読めなければ、要素が無いとはみなさない。
 fn flaky_element_violations(
     sources: &[(String, String)],
+    included: &[(String, String)],
     places: &[(&str, &[Element])],
     wiring: &[&str],
 ) -> Checked<Vec<String>> {
     let mut violations = Vec::new();
     for (path, text) in sources {
         let mut found = flaky_elements::elements(text).required_because("the source parses")?;
+        for include in flaky_elements::included(text).required_because("the source parses")? {
+            let Some(written) = include.path else {
+                violations.push(format!(
+                    "{path}: line {} includes a file not named by a literal, so it cannot be read",
+                    include.line
+                ));
+                continue;
+            };
+            let target = resolve(path, &written);
+            let Some((_, contents)) = included.iter().find(|(read, _)| *read == target) else {
+                violations.push(format!("{path}: includes {target}, which was not read"));
+                continue;
+            };
+            for (element, spelling) in flaky_elements::script_elements(contents) {
+                found.push(Found {
+                    element,
+                    line: include.line,
+                    spelling: format!("{target}: {spelling}"),
+                });
+            }
+        }
         let wires = found.iter().any(|item| item.element == Element::OsLayer);
         let listed = wiring.contains(&path.as_str());
         if listed && !wires {
@@ -1046,7 +1102,7 @@ fn a_flaky_element_outside_the_list_is_reported() -> Checked {
         "src/wait.rs".to_string(),
         "fn wait() { std::thread::sleep(D); }".to_string(),
     )];
-    let violations = flaky_element_violations(&sources, &[], &[])?;
+    let violations = flaky_element_violations(&sources, &[], &[], &[])?;
     assert_eq!(violations.len(), 1, "{violations:?}");
     assert!(violations[0].contains("RealTime is not allowed here"));
     Ok(())
@@ -1059,7 +1115,7 @@ fn a_listed_file_may_not_take_another_kind_of_element() -> Checked {
         "fn wait() { std::thread::sleep(D); std::thread::spawn(f); }".to_string(),
     )];
     let violations =
-        flaky_element_violations(&sources, &[("src/wait.rs", &[Element::RealTime])], &[])?;
+        flaky_element_violations(&sources, &[], &[("src/wait.rs", &[Element::RealTime])], &[])?;
     assert_eq!(violations.len(), 1, "{violations:?}");
     assert!(violations[0].contains("Thread is not allowed here"));
     Ok(())
@@ -1075,7 +1131,7 @@ fn only_the_listed_wiring_names_the_os_layer_outside_it() -> Checked {
         ("src/paths/lock/lock_test.rs".to_string(), uses.clone()),
         ("src/boundary/os/system_clock_test.rs".to_string(), uses),
     ];
-    let violations = flaky_element_violations(&sources, &[], &["src/paths/lock/acquire.rs"])?;
+    let violations = flaky_element_violations(&sources, &[], &[], &["src/paths/lock/acquire.rs"])?;
     assert_eq!(violations.len(), 2, "{violations:?}");
     assert!(violations[0].starts_with("src/paths/lock/decide.rs: OsLayer"));
     assert!(violations[1].starts_with("src/paths/lock/lock_test.rs: OsLayer"));
@@ -1085,7 +1141,7 @@ fn only_the_listed_wiring_names_the_os_layer_outside_it() -> Checked {
         "src/paths/lock/acquire.rs".to_string(),
         "fn f() {}".to_string(),
     )];
-    let violations = flaky_element_violations(&sources, &[], &["src/paths/lock/acquire.rs"])?;
+    let violations = flaky_element_violations(&sources, &[], &[], &["src/paths/lock/acquire.rs"])?;
     assert_eq!(violations.len(), 1, "{violations:?}");
     assert!(violations[0].contains("remove it from OS_LAYER_WIRING"));
     Ok(())
@@ -1096,12 +1152,57 @@ fn an_element_that_is_gone_must_leave_the_list() -> Checked {
     // 一覧は減る方向にしか動かない。消えた要素を残せば、次に足す要素がそこへ紛れる。
     let sources = [("src/wait.rs".to_string(), "fn wait() {}".to_string())];
     let violations =
-        flaky_element_violations(&sources, &[("src/wait.rs", &[Element::RealTime])], &[])?;
+        flaky_element_violations(&sources, &[], &[("src/wait.rs", &[Element::RealTime])], &[])?;
     assert_eq!(violations.len(), 1, "{violations:?}");
     assert!(violations[0].contains("RealTime is gone"));
 
-    let violations = flaky_element_violations(&[], &[("src/wait.rs", &[Element::RealTime])], &[])?;
+    let violations =
+        flaky_element_violations(&[], &[], &[("src/wait.rs", &[Element::RealTime])], &[])?;
     assert_eq!(violations.len(), 1, "{violations:?}");
     assert!(violations[0].contains("no such file"));
+    Ok(())
+}
+
+#[test]
+fn a_script_read_by_include_counts_where_it_is_included() -> Checked {
+    // 読み込んだ中身は、読み込んだfileの文字列literalと同じである。このfileも読まれるため、
+    // 要素の綴りを1つのliteralに収めない。
+    let script = [(
+        "src/support/place.sh".to_string(),
+        concat!("cat > f\nsleep", " 1\n").to_string(),
+    )];
+    let sources = [
+        (
+            "src/support/place.rs".to_string(),
+            "const S: &str = include_str!(\"place.sh\");".to_string(),
+        ),
+        (
+            "tests/place.rs".to_string(),
+            "const S: &str = include_str!(\"../src/support/place.sh\");".to_string(),
+        ),
+    ];
+    let violations = flaky_element_violations(
+        &sources,
+        &script,
+        &[("tests/place.rs", &[Element::RealTime])],
+        &[],
+    )?;
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert!(violations[0].starts_with("src/support/place.rs: RealTime is not allowed here"));
+    assert!(violations[0].contains("1: src/support/place.sh: sleep"));
+
+    // 中身を読めないfileを、要素が無いとはみなさない。
+    let sources = [(
+        "src/support/place.rs".to_string(),
+        concat!(
+            "const S: &str = include_str!(concat!(\"place\", \".sh\"));\n",
+            "const T: &str = include_str!(\"other.sh\");",
+        )
+        .to_string(),
+    )];
+    let violations = flaky_element_violations(&sources, &script, &[], &[])?;
+    assert_eq!(violations.len(), 2, "{violations:?}");
+    assert!(violations[0].contains("line 1 includes a file not named by a literal"));
+    assert!(violations[1].contains("includes src/support/other.sh, which was not read"));
     Ok(())
 }

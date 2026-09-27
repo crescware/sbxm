@@ -5,21 +5,24 @@
 //! どのexit codeで終わるかを固定する。
 //!
 //! hostは`bin`へ置く4つの代役である。答えは`SBXM_FAKE`の下のfileが持ち、testはそこへ
-//! 書いてhostの見せ方を決める。scriptは必ず終わり、待つ相手を作らない。実行のたびにHOME、
-//! 案件の親directory、hostの答えを作り直すため、testの順序にも並列実行にも依らない。
+//! 書いてhostの見せ方を決める。scriptは必ず終わる。端末を引き渡されたSSHの代役だけは、
+//! testが入力を閉じるまで待つが、testが先に終わっても入力は閉じるため、取り残されない。
+//! 実行のたびにHOME、案件の親directory、hostの答えを作り直すため、testの順序にも並列実行
+//! にも依らない。
 
 mod fake_tool;
 mod outcome;
 mod temp_home;
+mod wait_until;
 
 use fake_tool::install_fake_tool;
 use outcome::{Checked, Required, Unmet};
 use temp_home::{TempHome, temp_home};
+use wait_until::wait_until;
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
-use std::time::{Duration, Instant};
 
 /// 実hostのtoolの代わりに答えるscript。呼ばれた名前でどのtoolかを決める。
 ///
@@ -43,12 +46,14 @@ BARE_GIT_DIR="/home/agent/work/example-repo/.git"
 case "$program" in
 ssh)
 	# terminalを引き渡した先の終了status。通常の数値のほか、lifecycle test用に
-	# 自分自身のsignal終了と、親sbxmの終了まで待つ動作を受け付ける。
+	# 自分自身のsignal終了と、testが入力を閉じるまで待つ動作を受け付ける。
 	mode=$(cat "$fake/ssh-exit")
 	case "$mode" in
 	hold)
 		: >"$fake/ssh-started"
-		while [ ! -e "$fake/ssh-release" ]; do sleep 0.01; done
+		# 入力はsbxmから引き継いだ、testが書き込み端を持つpipeである。testが先に終わっても
+		# 書き込み端は閉じるため、ここで待ち続けることはない。
+		cat >/dev/null
 		: >"$fake/ssh-finished"
 		exit 0
 		;;
@@ -397,6 +402,9 @@ impl Host {
     }
 
     /// 終了をtest側で制御するため、sbxmを待たずに起動する。
+    ///
+    /// stdinはpipeとし、書き込み端をtestが持つ。sbxmが端末を引き渡した子は、このpipeを
+    /// 入力として受け継ぐ。
     fn spawn(&self, arguments: &[&str]) -> Checked<Child> {
         Command::new(env!("CARGO_BIN_EXE_sbxm"))
             .args(arguments)
@@ -409,7 +417,7 @@ impl Host {
             .env("SBXM_FAKE", &self.fake)
             .env("NO_COLOR", "1")
             .env_remove("TERM")
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -479,21 +487,6 @@ impl Host {
         )?;
         self.answer("worktrees", &format!("{WORKTREE}\n"))
     }
-}
-
-/// lifecycle testがchildの実行開始を待つ。
-fn wait_for_file(path: &Path) -> Checked<()> {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while !path.exists() {
-        if Instant::now() >= deadline {
-            return Err(Unmet::new(format!(
-                "{} was not created in time",
-                path.display()
-            )));
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    Ok(())
 }
 
 /// 表示されたSandbox名。
@@ -939,8 +932,24 @@ fn terminating_the_sbxm_process_releases_the_lease_without_deleting_the_file() -
     host.answer("ssh-exit", "hold")?;
 
     let mut child = host.spawn(&["--lang", "en", "open", PROJECT])?;
+    // fake SSHは、この書き込み端が閉じるまで終わらない。`wait`は子のstdinを閉じてから待つ
+    // ため、先に取り出して持っておく。
+    let release = child
+        .stdin
+        .take()
+        .required_because("sbxm reads its input from the test")?;
     let started = host.fake.join("ssh-started");
-    wait_for_file(&started)?;
+    wait_until("the fake SSH to start", || {
+        if started.exists() {
+            return Ok(Some(()));
+        }
+        match child.try_wait().required_because("sbxm can be checked")? {
+            None => Ok(None),
+            Some(status) => Err(Unmet::new(format!(
+                "sbxm ended before the fake SSH started: {status}"
+            ))),
+        }
+    })?;
     assert!(
         !host.exclusive_session_lease_available()?,
         "the running SSH child holds the session lease"
@@ -952,9 +961,13 @@ fn terminating_the_sbxm_process_releases_the_lease_without_deleting_the_file() -
         .required_because("the sbxm process is reaped")?;
     assert!(!status.success(), "the process was terminated by the test");
 
-    // sbxm processが消えたあと、孤立したfake SSHを終わらせる。lease file自体は触らない。
-    host.answer("ssh-release", "done")?;
-    wait_for_file(&host.fake.join("ssh-finished"))?;
+    // sbxm processが消えたあと、入力を閉じて孤立したfake SSHを終わらせる。lease file自体は
+    // 触らない。
+    drop(release);
+    let finished = host.fake.join("ssh-finished");
+    wait_until("the orphaned fake SSH to finish", || {
+        Ok(finished.exists().then_some(()))
+    })?;
     assert!(
         host.exclusive_session_lease_available()?,
         "the OS releases the session lease when sbxm exits"
