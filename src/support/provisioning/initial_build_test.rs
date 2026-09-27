@@ -1527,3 +1527,46 @@ fn a_token_github_refuses_stops_before_the_repository_is_fetched() -> Checked {
     assert!(!calls.iter().any(|call| call.contains("git init --bare")));
     Ok(())
 }
+
+#[test]
+fn a_snapshot_blob_that_already_holds_other_bytes_is_not_trusted() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = registered(&bench, &world)?;
+    // 宣言fileの中身と同じ名前のblobが、別の中身で既にある。
+    let blob = paths.snapshot_blob(&crate::hash::sha256_hex(b"declared = true\n"));
+    fs::create_dir_all(blob.parent().required()?).required()?;
+    set_mode(&paths.snapshot_dir(), 0o700)?;
+    set_mode(blob.parent().required()?, 0o700)?;
+    fs::write(&blob, b"other bytes\n").required()?;
+    set_mode(&blob, 0o600)?;
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("a blob whose bytes differ from its name is not used")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningSnapshotChanged));
+    assert!(!world.ran("docker build"));
+    Ok(())
+}
+
+#[test]
+fn a_dockerfile_removed_after_the_intent_is_saved_does_not_stop_the_resume() -> Checked {
+    // intentがある再開では、記録した世代が正本である。今のDockerfileを読めなくても続ける。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = interrupted_at(&bench, &world, "docker build")?;
+    fs::remove_file(paths.dockerfile()).required()?;
+
+    bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .required_because("the recorded generation is resumed")?;
+
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none()
+    );
+    Ok(())
+}
