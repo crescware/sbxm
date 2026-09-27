@@ -2030,3 +2030,69 @@ fn a_stopped_sandbox_whose_workspace_root_others_can_enter_is_not_started() -> C
     assert!(!host.ran("/bin/true"), "{:?}", host.calls());
     Ok(())
 }
+
+#[test]
+fn a_token_registration_removal_that_does_not_answer_keeps_the_project_managed() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let sandbox = project.sandbox.as_str().to_string();
+    let host = clean_host(&fixture, &project)?.answering(
+        "secret ls",
+        0,
+        &custom_secret_listing(&sandbox, "sbx-cs-example"),
+    );
+    expect_successful_removal(&host);
+    let mut prepared = planned(&fixture, &host, false).required()?;
+    let host = crate::testing::host::Unrunnable::timing_out(host, "secret rm");
+
+    let confirmation = confirm(&mut prepared, true, &mut ScriptedConfirm::typing(&sandbox))?
+        .required_because("the normal mode asks")?;
+    let clock = ScriptedClock::default();
+    let error = execute_confirmed(
+        &host,
+        &prepared,
+        confirmation,
+        poll(&clock),
+        &mut SilentProgress,
+    )
+    .refused_because("the removal of the registration does not answer")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_removal_followed_by_two_sandboxes_of_the_name_keeps_the_project_managed() -> Checked {
+    let (_fixture, project, _, outcome) = destroyed_seeing(false, |fixture, project| {
+        Ok(vec![
+            listed(fixture, project, "running")?,
+            listed(fixture, project, "running")?,
+            twice(fixture, project)?,
+        ])
+    })?;
+
+    let error = outcome.refused_because("the removal is not confirmed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_whose_workspace_became_a_symlink_is_not_started() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    *host.listing.borrow_mut() = vec![listed(&fixture, &project, "stopped")?];
+    let elsewhere = fixture.workspace_root.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).required()?;
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    std::fs::remove_dir_all(&workspace).required()?;
+    std::os::unix::fs::symlink(&elsewhere, &workspace).required()?;
+
+    let error = planned(&fixture, &host, false).refused_because("the workspace is a symlink")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    assert!(!host.ran("/bin/true"), "{:?}", host.calls());
+    Ok(())
+}

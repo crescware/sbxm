@@ -66,3 +66,21 @@ fn an_interrupted_probe_is_not_reported_as_an_unreachable_engine() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn an_engine_that_reports_no_version_is_not_taken_as_reachable() -> Checked {
+    let host = FakeHost::macos().responding("docker version --format {{.Server.Version}}", "\n");
+
+    let error = require_reachable(&host).refused_because("no server version was reported")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?;
+    assert!(
+        diagnostic.external.is_none(),
+        "nothing failed, so nothing is quoted"
+    );
+    Ok(())
+}
