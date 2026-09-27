@@ -48,7 +48,7 @@ pub struct World {
     pub calls: RefCell<Vec<crate::boundary::host::CommandSpec>>,
     /// 一致した起動の直前に、hostの外で誰かが書き換えたことを模したclosureを1回走らせる。
     #[allow(clippy::type_complexity)]
-    pub mutate_before: RefCell<Option<(String, Box<dyn Fn()>)>>,
+    pub mutate_before: RefCell<Option<(String, Box<dyn Fn(&World)>)>>,
 }
 
 impl World {
@@ -88,6 +88,14 @@ impl World {
     /// 1回だけ走らせる。TOCTOU再現のために、固定した入力を使うはずの工程が実際に
     /// live pathを読んでいないことを確かめる。
     pub fn mutate_before(&self, needle: &str, action: impl Fn() + 'static) {
+        self.change_before(needle, move |_| action());
+    }
+
+    /// 次に指定と一致する起動の直前に、この世界の応答を1回だけ変える。
+    ///
+    /// 同じ起動が工程の前半にも後半にも現れる場合に、前半を成功させたまま後半だけを
+    /// 失敗させるために使う。
+    pub fn change_before(&self, needle: &str, action: impl Fn(&World) + 'static) {
         *self.mutate_before.borrow_mut() = Some((needle.to_string(), Box::new(action)));
     }
 
@@ -232,8 +240,14 @@ impl crate::boundary::host::HostEnvironment for World {
             .borrow()
             .as_ref()
             .is_some_and(|(needle, _)| invocation.contains(needle.as_str()));
-        if matched && let Some((_, action)) = self.mutate_before.borrow_mut().take() {
-            action();
+        // closureがこの世界を変えられるよう、借用を解いてから走らせる。
+        let armed = if matched {
+            self.mutate_before.borrow_mut().take()
+        } else {
+            None
+        };
+        if let Some((_, action)) = armed {
+            action(self);
         }
 
         if let Some((needle, interrupt)) = self.interruption.borrow().as_ref()

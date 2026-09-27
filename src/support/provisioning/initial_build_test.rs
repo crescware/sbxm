@@ -931,3 +931,246 @@ fn a_workspace_that_had_to_be_created_again_is_told_rather_than_hidden() -> Chec
     );
     Ok(())
 }
+
+// --- intentを保存したあとの失敗 ---
+//
+// intentを保存したあとで止まった実行は、次に実行できる復旧command（`sbxm open`）を添える。
+// 保存する前に止まった実行は、何も記録しない。
+
+/// 登録した案件と、そのpath。
+fn registered(bench: &Bench, world: &World) -> Checked<(ProjectPaths, crate::project::ProjectId)> {
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    let project = bench.register(world, &request).required()?;
+    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
+    Ok((paths, project))
+}
+
+/// 最後の診断が、復旧commandとして`sbxm open`を添えているか。
+fn names_the_open_command(error: &crate::diagnostics::Error) -> bool {
+    error.diagnostics().last().is_some_and(|diagnostic| {
+        diagnostic.remediation.as_ref().is_some_and(|remediation| {
+            remediation
+                .commands
+                .iter()
+                .any(|command| command.as_str() == "sbxm open Example-Org/Example-Repo")
+        })
+    })
+}
+
+/// 構築の最後のworktree作成の直後から、完成の再観測が始まる。
+const LAST_BUILD_STEP: &str = "example-repo.tree-";
+
+fn set_mode(path: &std::path::Path, mode: u32) -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).required()
+}
+
+#[test]
+fn inputs_that_cannot_be_captured_stop_the_build_before_anything_is_recorded() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = registered(&bench, &world)?;
+    fs::remove_file(paths.dockerfile()).required()?;
+    fs::create_dir(paths.dockerfile()).required()?;
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("a Dockerfile that is a directory cannot be captured")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    assert!(
+        !names_the_open_command(&error),
+        "nothing was recorded to resume"
+    );
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none()
+    );
+    assert!(!world.ran("docker build"));
+    Ok(())
+}
+
+#[test]
+fn an_intent_that_cannot_be_saved_stops_the_build_before_the_image_is_built() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = registered(&bench, &world)?;
+    fs::create_dir_all(paths.cache_dir()).required()?;
+    set_mode(&paths.cache_dir(), 0o700)?;
+    set_mode(&paths.sbxm_dir(), 0o500)?;
+
+    let result = bench.ensure(&world, &project, &mut SilentProgress);
+    set_mode(&paths.sbxm_dir(), 0o700)?;
+
+    let error = result.refused_because("the metadata cannot be replaced")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_none()
+    );
+    assert!(!world.ran("docker build"));
+    Ok(())
+}
+
+#[test]
+fn a_symlinked_cache_stops_the_build_after_the_intent_with_the_open_command() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = registered(&bench, &world)?;
+    // 入力の写しを置き終えたあと、古いarchiveを片付ける前にcacheがsymlinkへ替わる。
+    let cache = paths.cache_dir();
+    let elsewhere = bench.workspace_root.path().join("elsewhere");
+    world.change_before("docker version", move |_| {
+        let _ = fs::create_dir_all(&elsewhere);
+        let _ = fs::remove_dir_all(&cache);
+        let _ = std::os::unix::fs::symlink(&elsewhere, &cache);
+    });
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("a symlinked cache is not swept")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    assert!(names_the_open_command(&error));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn an_interrupted_build_is_reported_as_it_was_interrupted() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    *world.interruption.borrow_mut() = Some(("docker build".to_string(), |_| {
+        crate::diagnostics::Error::Canceled
+    }));
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the build was interrupted")?;
+
+    assert!(
+        matches!(error, crate::diagnostics::Error::Canceled),
+        "{error:?}"
+    );
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_completion_that_cannot_be_observed_keeps_the_intent_and_names_the_open_command() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    world.change_before(LAST_BUILD_STEP, |world| world.timing_out("sbx ls"));
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the completion could not be observed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(names_the_open_command(&error));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_completion_whose_declared_file_differs_is_refused_with_the_open_command() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    // 置いたはずの宣言fileが、完成の再観測では別の中身に見える。
+    world.change_before(LAST_BUILD_STEP, |world| {
+        world.answering(
+            "sha256sum",
+            0,
+            "0000000000000000000000000000000000000000000000000000000000000000  -\n",
+        );
+    });
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("a completion that differs from what was placed is not recorded")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    assert!(names_the_open_command(&error));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_completion_missing_a_worktree_stays_pending() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    // 作ったはずのworktreeが、完成の再観測では見えない。
+    world.change_before(LAST_BUILD_STEP, |world| {
+        world.change_before("sha256sum", |world| {
+            world.failing("test -e /home/agent/work/example-repo/example-repo.tree");
+        });
+    });
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("an incomplete build is not recorded as complete")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::InitialProvisioningPending));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_completion_that_cannot_be_recorded_keeps_the_intent_for_the_next_open() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = registered(&bench, &world)?;
+    // 完成を確かめ終えたあと、intentを消す前にmetadataの置き場へ書けなくなる。
+    let sbxm = paths.sbxm_dir();
+    world.change_before("sha256sum", move |_| {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&sbxm, fs::Permissions::from_mode(0o500));
+    });
+
+    let result = bench.ensure(&world, &project, &mut SilentProgress);
+    set_mode(&paths.sbxm_dir(), 0o700)?;
+
+    let error = result.refused_because("the completion cannot be recorded")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(names_the_open_command(&error));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
