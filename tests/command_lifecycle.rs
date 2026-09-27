@@ -19,7 +19,9 @@ fn ctrl_c_does_not_reach_a_capture_descendant() -> Checked {
     install_fake_tool(
         &bin,
         "sw_vers",
-        "(sleep 1; printf alive > \"$SBXM_SURVIVOR\") &\n\
+        // 印は書き終えてから名前を付ける。redirectは中身より先に空のfileを作るため、
+        // 書いている途中の印を読むと、子孫が生きていても空に見える。
+        "(sleep 1; printf alive > \"$SBXM_SURVIVOR.part\"; mv \"$SBXM_SURVIVOR.part\" \"$SBXM_SURVIVOR\") &\n\
          kill -INT -\"$PPID\"\n\
          sleep 30\n",
     )?;
