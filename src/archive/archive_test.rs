@@ -479,3 +479,71 @@ fn an_index_that_cannot_be_used_is_refused() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_tag_that_is_not_text_is_refused_even_when_the_config_is_named() -> Checked {
+    let hex = &IMAGE_ID["sha256:".len()..];
+    let document = format!(r#"[{{"Config":"blobs/sha256/{hex}","RepoTags":[1]}}]"#);
+    let (_dir, path) = write_archive(&[(MANIFEST_ENTRY, document.as_bytes())])?;
+
+    let error = read_manifest(&path).refused_because("a tag is not text")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+    Ok(())
+}
+
+#[test]
+fn an_index_does_not_stand_in_for_an_unusable_manifest() -> Checked {
+    let index = index_json("sbxm-example-template:111111111111", INDEX_ID);
+    let (_dir, path) = write_archive(&[
+        ("index.json", index.as_bytes()),
+        (MANIFEST_ENTRY, br#"{"Config":"blobs/sha256/x"}"#),
+    ])?;
+
+    let error = read_image_ids(&path).refused_because("the manifest is not usable")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+    Ok(())
+}
+
+#[test]
+fn the_digests_of_a_missing_archive_are_not_read_as_none() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+
+    let error =
+        read_image_ids(&dir.path().join("absent.tar")).refused_because("there is no archive")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+    Ok(())
+}
+
+#[test]
+fn an_image_configuration_cut_short_is_refused() -> Checked {
+    let hex = &IMAGE_ID["sha256:".len()..];
+    let config = format!("blobs/sha256/{hex}");
+    let document = manifest("sbxm-example-template:111111111111", &config);
+    let mut bytes = tar(&[(MANIFEST_ENTRY, document.as_bytes())]);
+    // 終わりの印を外し、configのheaderだけを置く。宣言した長さの中身は続かない。
+    bytes.truncate(bytes.len() - 2 * BLOCK);
+    bytes.extend(header(config.as_bytes(), b"", b"00000001000"));
+    let (_dir, path) = write_bytes(&bytes)?;
+
+    let error = verify_holds_image(&path, "sbxm-example-template:111111111111", &labels())
+        .refused_because("the configuration cannot be read")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+    Ok(())
+}
+
+#[test]
+fn a_header_whose_name_or_size_is_not_text_stops_the_scan() -> Checked {
+    for block in [
+        header(b"manifest.json", &[0xff], b"00000000000"),
+        header(b"manifest.json", b"", &[0xff]),
+    ] {
+        let (_dir, path) = write_bytes(&block)?;
+        let error = read_entry(&path, MANIFEST_ENTRY).refused_because("the header is not text")?;
+        assert_eq!(error.first_id(), Some(ErrorId::ArchiveUnusable));
+    }
+    Ok(())
+}
