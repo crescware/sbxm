@@ -20,8 +20,10 @@ pub fn canonical_id_of_remote(url: &str) -> Option<String> {
             .or_else(|| url.strip_prefix("git://"))?;
         let (authority, path) = rest.split_once('/')?;
         // ssh://git@github.com:22/owner/repository.git
-        let host = authority.rsplit('@').next()?;
-        let host = host.split(':').next()?;
+        let host = authority
+            .rsplit_once('@')
+            .map_or(authority, |(_, host)| host);
+        let host = host.split_once(':').map_or(host, |(host, _)| host);
         require_github(host)?;
         path
     };
