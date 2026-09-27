@@ -114,7 +114,9 @@ private fieldへ触れる構築関数も本番fileへ置く理由にはならな
 あり、関数の本体は1つの呼び出し式に限られる。`?`のほかに分岐を置けないため、判断をOS層へ
 移して基準を逃れることはできない。この形は`tests/architecture.rs`の
 `the_os_layer_has_no_branches`が確かめる。OSについての仮定は、隣の`_test` fileが契約testと
-して実OSで確かめ、coverageの数字では求めない。
+して実OSで確かめ、coverageの数字では求めない。threadが1本のprocessでしか確かめられない仮定
+（`poll`がsignal handlerで切り上がること）は、harnessを使わない`tests/poll_eintr.rs`が
+確かめる。
 
 `tests/module_boundaries.rs`が次を確認する。
 

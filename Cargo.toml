@@ -50,6 +50,12 @@ fluent-syntax = "0.12.0"
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 syn = { version = "2.0.0", features = ["full", "visit"] }
 
+# `poll`がsignal handlerで切り上がることは、threadが1本のprocessでしか確かめられない。
+# libtestはtestをthreadで走らせるため、このtestだけはharnessを使わない。
+[[test]]
+name = "poll_eintr"
+harness = false
+
 [lints]
 workspace = true
 

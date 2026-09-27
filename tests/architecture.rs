@@ -877,10 +877,32 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 ///
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 21] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 26] = [
     // OS層。分岐を持たず、coverageの母集団から外す。
     ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
     ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
+    // OSについての仮定を実OSで確かめる契約test。
+    (
+        "src/boundary/os/system_pipe_test.rs",
+        &[Element::ChildProcess],
+    ),
+    (
+        "src/boundary/os/system_process_test.rs",
+        &[
+            Element::ChildProcess,
+            Element::Signal,
+            Element::WrittenExecutable,
+        ],
+    ),
+    (
+        "src/boundary/os/system_pty_test.rs",
+        &[Element::ChildProcess],
+    ),
+    ("src/boundary/os/system_signal_test.rs", &[Element::Signal]),
+    (
+        "tests/poll_eintr.rs",
+        &[Element::RealTime, Element::ChildProcess, Element::Signal],
+    ),
     // 外部processを動かす実行。判断とOSの呼び出しが同じ関数にある。
     ("src/boundary/host/poll_pipes.rs", &[Element::ChildProcess]),
     (
