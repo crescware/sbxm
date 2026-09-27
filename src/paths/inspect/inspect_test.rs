@@ -299,3 +299,25 @@ fn a_lock_file_another_account_owns_is_never_taken() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_file_another_account_owns_is_refused_before_its_permission_is_judged() -> Checked {
+    // testから別accountのfileは作れない。どのhostにも在り、rootが所有する`/etc/passwd`を開く。
+    let path = Path::new("/etc/passwd");
+    let file = File::open(path).required_because("a file every account can read")?;
+    if file.metadata().required()?.uid() == current_user() {
+        // rootとして走るとこのfileは自分のものになり、この状態を作れない。
+        return Ok(());
+    }
+
+    let error = require_private_file(
+        &file,
+        path,
+        crate::paths::PRIVATE_FILE_MODE,
+        PathScope::ConfigFile,
+    )
+    .refused_because("a file another account owns is never used")?;
+    // `/etc/passwd`はotherにも読める。所有者の判定がpermissionより先に立つ。
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigNotOwned));
+    Ok(())
+}

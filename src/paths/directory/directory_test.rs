@@ -432,3 +432,41 @@ fn require_private_directory_reports_a_directory_it_cannot_read() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
     Ok(())
 }
+
+#[test]
+fn a_private_directory_that_is_gone_before_its_mode_is_settled_is_reported() -> Checked {
+    // 作ったと答えたdirectoryを、modeを確定させる前に別のprocessが消した状況を作る。
+    let dir = temp_dir()?;
+    let target = dir.path().join("state");
+
+    let error = super::ensure_private_dir_with::ensure_private_dir_with(
+        &target,
+        PRIVATE_DIR_MODE,
+        PathScope::ConfigDir,
+        &|_, _| Ok(()),
+    )
+    .refused_because("a directory that is not there cannot be settled")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert_eq!(
+        cause_of(&error)?,
+        std::io::Error::from_raw_os_error(2).to_string(),
+        "the operating system said why"
+    );
+    assert!(!target.exists(), "nothing is created in its place");
+    Ok(())
+}
+
+#[test]
+fn require_private_directory_refuses_a_directory_another_account_owns() -> Checked {
+    // rootが所有する`/`を使う。testから別accountのdirectoryは作れない。
+    let root = std::path::Path::new("/");
+    if fs::symlink_metadata(root).required()?.uid() == current_user() {
+        // rootとして走ると`/`は自分のものになり、この状態を作れない。
+        return Ok(());
+    }
+    let error = require_private_directory(root, PRIVATE_DIR_MODE, PathScope::ConfigDir)
+        .refused_because("a directory another account owns is never used")?;
+    // `/`はgroupとotherにも開いている。所有者の判定がpermissionより先に立つ。
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigDirNotOwned));
+    Ok(())
+}
