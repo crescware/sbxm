@@ -2250,3 +2250,301 @@ fn a_local_project_is_told_to_save_rather_than_push() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_host_repository_that_cannot_be_listed_leaves_every_commit_unproven() -> Checked {
+    // hostのrepositoryがoriginの役を持つ。その一覧が読めなければ、どのcommitも残るとは
+    // 言えない。直す先はSandboxではなくhostである。
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!(
+            "for-each-ref --format=%(refname) %(objectname) refs/heads/ refs/tags/ refs/sbx/{}/",
+            project.sandbox
+        ),
+        128,
+        "",
+    );
+    as_local(&mut project)?;
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("an unreadable host repository is a collected blocker")?;
+
+    assert_eq!(
+        assessment.blockers(),
+        [Blocker::OriginUnobservable {
+            references: vec!["refs/heads/main".to_string()],
+            reason: UnobservableReason::HostRepositoryUnreadable,
+        }]
+    );
+    assert_eq!(
+        assessment.worktrees()[0].reachability.display(),
+        "unobservable(host-repository-unreadable)"
+    );
+    let error = gate::require_no_blockers(&assessment)
+        .refused_because("an unreadable host repository never permits the removal")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::OriginHostRepositoryUnreadable);
+    assert!(
+        diagnostic
+            .facts
+            .contains(&crate::design::Fact::references(&[
+                "refs/heads/main".to_string()
+            ])),
+        "{:?}",
+        diagnostic.facts
+    );
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .required_because("the refusal says what to do")?;
+    assert_eq!(
+        remediation
+            .commands
+            .iter()
+            .map(crate::design::text::CommandLine::as_str)
+            .collect::<Vec<_>>(),
+        ["sbxm status local/example-repo"]
+    );
+    Ok(())
+}
+
+#[test]
+fn an_unmerged_path_counts_as_a_tracked_change() -> Checked {
+    // 衝突を解いている途中のpathは、commitしていない変更である。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+        0,
+        "u UU N... 100644 100644 100644 100644 abc abc abc conflicted.txt\0",
+    );
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("assess collects the blocker")?;
+    assert_eq!(
+        assessment.blockers(),
+        [Blocker::TrackedChanges {
+            worktree: "example-repo.tree-0".to_string(),
+        }]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_long_record_that_cannot_be_read_is_shown_cut_short() -> Checked {
+    // 読めなかったrecordは、利用者が選べるfile名を含みうる。原因として示すのは先頭だけ
+    // とし、切ったことを末尾の`…`で示す。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+    let record = format!("x {}", "a".repeat(298));
+
+    let host = clean_host(&fixture, &project)?.answering(
+        &format!("exec {name} -- git -C {managed} status --porcelain=v2 -z --untracked-files=all"),
+        0,
+        &format!("{record}\0"),
+    );
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("an unknown status record is retained as an observation blocker")?;
+    let error = gate::require_no_blockers(&assessment)
+        .refused_because("an unknown status record is not evidence of a clean worktree")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::WorktreeStatusUnobservable);
+    let shown: String = record.chars().take(200).collect();
+    assert!(
+        diagnostic
+            .facts
+            .contains(&crate::design::Fact::cause(&format!("{shown}…"))),
+        "{:?}",
+        diagnostic.facts
+    );
+    Ok(())
+}
+
+#[test]
+fn refs_outside_the_local_namespace_are_neither_lost_nor_asked_about() -> Checked {
+    // remote-tracking refと観測用の一時refは、Sandboxの中で作った作業ではない。消えても
+    // 失うものは無く、originへ届くかを問う対象にもしない。
+    const ELSEWHERE: &str = "5555555555555555555555555555555555555555";
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = clean_host(&fixture, &project)?.answering(
+        &repository_command(
+            &project,
+            "for-each-ref --format=%(refname)%09%(objectname)%09%(upstream) refs/",
+        ),
+        0,
+        &format!(
+            "refs/remotes/origin/main\t{ELSEWHERE}\t\nrefs/sbxm/origin/heads/main\t{ELSEWHERE}\t\n"
+        ),
+    );
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("the listing was read")?;
+
+    assert!(
+        assessment.blockers().is_empty(),
+        "{:?}",
+        assessment.blockers()
+    );
+    assert_eq!(
+        assessment.confirmable_losses(),
+        [ConfirmableLoss::SandboxWritableLayer]
+    );
+    assert!(
+        !host.ran(&format!("--contains={ELSEWHERE}")),
+        "{:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_reflog_whose_live_commits_cannot_be_listed_counts_nothing() -> Checked {
+    // reflogにだけ残るcommitは、reflogの一覧から生きているcommitを除いて数える。後者を
+    // 読めなければ、reflogの全件を失うものとも0件とも言えない。
+    const REFLOGGED: &str = "6666666666666666666666666666666666666666";
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = clean_host(&fixture, &project)?
+        .answering(
+            &repository_command(&project, "rev-list --walk-reflogs --all"),
+            0,
+            &format!("{REFLOGGED}\n"),
+        )
+        .answering(&repository_command(&project, "rev-list --all"), 128, "");
+
+    let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+        .required_because("the failure is retained as an observation blocker")?;
+
+    assert!(
+        !assessment
+            .confirmable_losses()
+            .iter()
+            .any(|loss| matches!(loss, ConfirmableLoss::ReflogOnlyCommits { .. })),
+        "{:?}",
+        assessment.confirmable_losses()
+    );
+    let error = gate::require_no_blockers(&assessment)
+        .refused_because("an uncounted reflog never reaches the confirmation")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ReflogUnobservable));
+    Ok(())
+}
+
+#[test]
+fn a_check_that_went_unanswered_is_never_read_as_a_pass() -> Checked {
+    // 答えが返らなかった検査は、その検査の観測不能として残す。独立した後続の検査は続ける。
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+    let cases = [
+        (
+            format!("exec {name} -- test -e {managed}/.git/MERGE_HEAD"),
+            ErrorId::GitOperationUnobservable,
+            format!("exec {name} -- test -e {managed}/.git/rebase-apply"),
+        ),
+        (
+            repository_command(&project, "remote"),
+            ErrorId::RemoteConfigurationUnobservable,
+            repository_command(&project, "rev-list --all"),
+        ),
+    ];
+
+    for (step, expected, later) in cases {
+        let host =
+            crate::testing::host::Unrunnable::timing_out(clean_host(&fixture, &project)?, &step);
+        let assessment = assess(&host, &fixture, &project, DestructiveOperation::Destroy)
+            .required_because("an unanswered check is retained as an observation blocker")?;
+        let error = gate::require_no_blockers(&assessment)
+            .refused_because("a check that did not answer never means the worktree is safe")?;
+        assert_eq!(error.first_id(), Some(expected), "{step}");
+        assert_eq!(error.diagnostics().len(), 1, "{step}: {error:?}");
+        assert!(host.inner.ran(&later), "{step}: {:?}", host.inner.calls());
+    }
+    Ok(())
+}
+
+#[test]
+fn a_check_the_user_interrupted_is_never_read_as_a_pass() -> Checked {
+    // Ctrl-Cで中断した検査は、何も答えていない。原因として引き継ぐ事実を持たなくても、
+    // その検査の観測不能として残す。
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let name = project.sandbox.as_str().to_string();
+    let managed = format!("{}/example-repo.tree-0", layout.bare_root());
+
+    let interrupted = crate::testing::host::Unrunnable::canceled(
+        clean_host(&fixture, &project)?,
+        &format!("exec {name} -- git -C {managed} rev-parse --git-dir"),
+    );
+    let assessment = assess(
+        &interrupted,
+        &fixture,
+        &project,
+        DestructiveOperation::Destroy,
+    )
+    .required_because("the interruption is retained as an observation blocker")?;
+    let error = gate::require_no_blockers(&assessment)
+        .refused_because("an interrupted check never means no operation is in progress")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::GitOperationUnobservable);
+    assert_eq!(
+        diagnostic.facts,
+        [crate::design::Fact::worktree("example-repo.tree-0")]
+    );
+
+    // hostのrepositoryを読むcommandが中断すれば、originの観測そのものが成立していない。
+    let interrupted = crate::testing::host::Unrunnable::canceled(
+        clean_host(&fixture, &project)?,
+        "for-each-ref --format=%(refname) %(objectname) refs/heads/",
+    );
+    as_local(&mut project)?;
+    let assessment = assess(
+        &interrupted,
+        &fixture,
+        &project,
+        DestructiveOperation::Destroy,
+    )
+    .required_because("the interruption is retained as an observation blocker")?;
+    assert!(assessment.worktrees().is_empty(), "{assessment:?}");
+    let error = gate::require_no_blockers(&assessment)
+        .refused_because("an interrupted origin observation proves nothing")?;
+    let diagnostic = error
+        .diagnostics()
+        .first()
+        .required_because("one diagnostic")?;
+    assert_eq!(diagnostic.id, ErrorId::OriginObservationUnobservable);
+    let remediation = diagnostic
+        .remediation
+        .as_ref()
+        .required_because("the refusal says what to do")?;
+    assert_eq!(
+        remediation
+            .commands
+            .iter()
+            .map(crate::design::text::CommandLine::as_str)
+            .collect::<Vec<_>>(),
+        ["sbxm status local/example-repo"]
+    );
+    Ok(())
+}
