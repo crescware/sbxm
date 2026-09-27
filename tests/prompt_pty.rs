@@ -9,27 +9,29 @@
 //! 続きを訊いたか、何が保存されたか、取り消しが何も残さなかったか、を見る。
 //!
 //! testは止まらないことを優先する。打鍵はpromptを終わらせる分だけ必ず先に書き込み、
-//! 読み取りと終了待ちには上限を置く。上限に達した実行は子processを終わらせて失敗と
-//! する。Ctrl-Cは打鍵として送らない。端末crateはこれを自分自身へのSIGINTへ変えるため、
-//! 子processがsignalで終わり、exit codeもcoverageも残らない。
+//! 画面も終了も`wait_until`で待ち、上限を置く。上限に達した実行も途中で失敗した実行も、
+//! 子processを終わらせてから失敗とする。Ctrl-Cは打鍵として送らない。端末crateはこれを
+//! 自分自身へのSIGINTへ変えるため、子processがsignalで終わり、exit codeもcoverageも
+//! 残らない。
 
 mod fake_tool;
 mod outcome;
 mod temp_home;
+mod wait_until;
 
 use fake_tool::install_fake_tool;
 use outcome::{Checked, Required, Unmet};
 use temp_home::{TempHome, temp_home};
+use wait_until::wait_until;
 
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
-use std::time::{Duration, Instant};
 
-use rustix::fs::{Mode, OFlags};
+use rustix::fs::{Mode, OFlags, fcntl_getfl, fcntl_setfl};
+use rustix::io::{FdFlags, fcntl_setfd};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{OptionalActions, Winsize, tcgetattr, tcsetattr, tcsetwinsize};
 
@@ -41,9 +43,6 @@ const TAB: &str = "\t";
 const ENTER: &str = "\n";
 const SPACE: &str = " ";
 
-/// 1実行に許す時間。これを超えた実行は、待つ相手が来ないものとして終わらせる。
-const LIMIT: Duration = Duration::from_secs(60);
-
 /// 端末の大きさ。値を固定して、折り返しと一覧の高さを実行環境から切り離す。
 const ROWS: u16 = 40;
 const COLUMNS: u16 = 120;
@@ -52,11 +51,10 @@ const COLUMNS: u16 = 120;
 struct Session {
     /// 打鍵を書き込む側。
     keyboard: File,
-    /// 端末へ現れたbyteを運ぶ。子processが終わると切れる。
-    screen: Receiver<Vec<u8>>,
+    /// 端末へ現れたbyteを読む側。`keyboard`と同じ親側であり、待たずに読む。
+    screen: File,
     child: Child,
     seen: String,
-    limit: Instant,
 }
 
 /// 終わった実行。
@@ -82,16 +80,27 @@ impl Ended {
 
 impl Session {
     /// PTYを1つ開き、その端末側をsbxmの3 streamとして実行を始める。
+    ///
+    /// 両端をCLOEXECにする。testは並行に走り、別のtestの子processがこの端末側を受け継ぐと、
+    /// sbxmが終わってもその子processが終わるまで端末は閉じたことにならない。親側は
+    /// openptの引数では指定しない。`posix_openpt`はCLOEXECを受け取らず、rustixが引数として
+    /// 通すのはLinuxとFreeBSDとNetBSDだけである。開いてからfcntlで立てる。
     fn start(home: &Path, cwd: &Path, path: &Path, arguments: &[&str]) -> Checked<Session> {
         let controller = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)
             .required_because("a pseudo terminal is available")?;
+        fcntl_setfd(&controller, FdFlags::CLOEXEC)
+            .required_because("the controller is not inherited")?;
         grantpt(&controller).required_because("the terminal side is usable")?;
         unlockpt(&controller).required_because("the terminal side is unlocked")?;
         let name = ptsname(&controller, Vec::new()).required_because("the terminal has a name")?;
         // 制御端末として奪わない。testを動かしているprocessのsessionへ結び付けない。
         let terminal = File::from(
-            rustix::fs::open(&name, OFlags::RDWR | OFlags::NOCTTY, Mode::empty())
-                .required_because("the terminal side opens")?,
+            rustix::fs::open(
+                &name,
+                OFlags::RDWR | OFlags::NOCTTY | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .required_because("the terminal side opens")?,
         );
 
         // 端末側をrawにする。echoと行編集は端末の機能であり、promptが読む打鍵では
@@ -144,30 +153,22 @@ impl Session {
         // 端末側を親が持ち続けると、子が終わっても読み取りが終わらない。
         drop(terminal);
 
-        let mut reader = File::from(controller);
-        let keyboard = reader
+        // 読み取りは待たずに戻す。待つのは`wait_until`であり、読み取りそのものではない。
+        // 打鍵も同じ親側へ書くため待たずに書くが、1度に書くのはPTYの入力bufferより十分に
+        // 短い。
+        let screen = File::from(controller);
+        let flags = fcntl_getfl(&screen).required_because("the controller flags are readable")?;
+        fcntl_setfl(&screen, flags | OFlags::NONBLOCK)
+            .required_because("the controller does not block")?;
+        let keyboard = screen
             .try_clone()
             .required_because("the same terminal takes the keystrokes")?;
-        let (sender, screen) = channel();
-        std::thread::spawn(move || {
-            let mut chunk = [0u8; 4096];
-            loop {
-                // 子processが終わって端末側が閉じると、読み取りは失敗として終わる。
-                let Ok(size) = reader.read(&mut chunk) else {
-                    break;
-                };
-                if size == 0 || sender.send(chunk[..size].to_vec()).is_err() {
-                    break;
-                }
-            }
-        });
 
         Ok(Session {
             keyboard,
             screen,
             child,
             seen: String::new(),
-            limit: Instant::now() + LIMIT,
         })
     }
 
@@ -186,51 +187,92 @@ impl Session {
     /// 答えがpromptの表示に依る場合だけ使う。現れないまま子processが終われば、
     /// 待ち続けずに失敗として返す。
     fn wait_for(&mut self, shown: &str) -> Checked<()> {
-        while !visible(&self.seen).join("\n").contains(shown) {
-            let remaining = self.limit.saturating_duration_since(Instant::now());
-            match self.screen.recv_timeout(remaining) {
-                Ok(chunk) => self.seen.push_str(&String::from_utf8_lossy(&chunk)),
-                Err(RecvTimeoutError::Disconnected) => {
-                    return Err(Unmet::new(format!(
-                        "the run ended before {shown:?} appeared"
-                    )));
-                }
-                Err(RecvTimeoutError::Timeout) => {
-                    let _ = self.child.kill();
-                    let _ = self.child.wait();
-                    return Err(Unmet::new(format!("{shown:?} never appeared")));
-                }
+        let Session { screen, seen, .. } = self;
+        wait_until(&format!("{shown:?} to appear"), || {
+            if visible(seen).join("\n").contains(shown) {
+                return Ok(Some(()));
             }
-        }
-        Ok(())
+            match read_now(screen) {
+                Screen::Said(chunk) => {
+                    seen.push_str(&String::from_utf8_lossy(&chunk));
+                    Ok(None)
+                }
+                Screen::Quiet => Ok(None),
+                Screen::Gone => Err(Unmet::new(format!(
+                    "the run ended before {shown:?} appeared"
+                ))),
+            }
+        })
     }
 
     /// 実行が終わるまで読み、終了codeとともに返す。
+    ///
+    /// 端末が閉じるまで読み切ってから、終了を待つ。
     fn finish(mut self) -> Checked<Ended> {
-        loop {
-            let remaining = self.limit.saturating_duration_since(Instant::now());
-            match self.screen.recv_timeout(remaining) {
-                Ok(chunk) => self.seen.push_str(&String::from_utf8_lossy(&chunk)),
-                Err(RecvTimeoutError::Disconnected) => break,
-                Err(RecvTimeoutError::Timeout) => {
-                    let _ = self.child.kill();
-                    let _ = self.child.wait();
-                    return Err(Unmet::new(
-                        "the run did not end on the keystrokes it was given",
-                    ));
-                }
+        let Session {
+            screen,
+            seen,
+            child,
+            ..
+        } = &mut self;
+        wait_until("the terminal to close", || match read_now(screen) {
+            Screen::Said(chunk) => {
+                seen.push_str(&String::from_utf8_lossy(&chunk));
+                Ok(None)
             }
-        }
-        let status = self
-            .child
-            .wait()
-            .required_because("the process is reaped")?;
+            Screen::Quiet => Ok(None),
+            Screen::Gone => Ok(Some(())),
+        })?;
+        let status = wait_until("sbxm to end", || {
+            child.try_wait().required_because("the process is reaped")
+        })?;
         Ok(Ended {
-            lines: visible(&self.seen),
+            lines: visible(seen),
             code: status
                 .code()
                 .required_because("the process exits by itself")?,
         })
+    }
+}
+
+impl Drop for Session {
+    /// 途中で失敗した実行も、子processを残さない。
+    ///
+    /// 終わりを見届けた子へは何も送らない。刈り取った子への`kill`は、signalを送らずに戻る。
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// 端末に届いたbyteを、待たずに1度だけ読んだ結果。
+enum Screen {
+    /// 届いたbyte。
+    Said(Vec<u8>),
+    /// まだ何も届いていない。
+    Quiet,
+    /// 端末側がすべて閉じた。
+    Gone,
+}
+
+/// 端末に届いたbyteを、待たずに1度だけ読む。
+///
+/// 端末側がすべて閉じると、Linuxは残りを読ませたあとEIOで答える。`0`で答えるplatformも
+/// ありうるため、`0`も、待てば読めるのではない失敗も、閉じたこととして扱う。
+fn read_now(screen: &mut File) -> Screen {
+    let mut chunk = [0u8; 4096];
+    match screen.read(&mut chunk) {
+        Ok(0) => Screen::Gone,
+        Ok(size) => Screen::Said(chunk[..size].to_vec()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+            ) =>
+        {
+            Screen::Quiet
+        }
+        Err(_) => Screen::Gone,
     }
 }
 

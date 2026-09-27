@@ -3,9 +3,9 @@
 //! 上限は1つだけ置く。上限はhangを止めるためにあり、平常の実行が近づく値ではない。
 //! 速さは確かめない。状態がどれだけ早く整ったかは、testが述べる契約ではない。
 //!
-//! 3本のtest binary(`host`、`prompt_terminal`、`command_lifecycle`)がこれを取り込む。
-//! どれも別processの途中の状態を待つ。終わりまで待つだけの実行は`output()`で待ち、これを
-//! 使わない。
+//! 4本のtest binary(`host`、`prompt_pty`、`prompt_terminal`、`command_lifecycle`)がこれを
+//! 取り込む。どれも別processの途中の状態を待つ。終わりまで待つだけの実行は`output()`で待ち、
+//! これを使わない。
 
 use std::time::{Duration, Instant};
 

@@ -925,12 +925,7 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 21] = [
     ("tests/host.rs", &[Element::ChildProcess, Element::Signal]),
     (
         "tests/prompt_pty.rs",
-        &[
-            Element::RealTime,
-            Element::Thread,
-            Element::ChildProcess,
-            Element::Signal,
-        ],
+        &[Element::ChildProcess, Element::Signal],
     ),
     (
         "tests/prompt_terminal.rs",
