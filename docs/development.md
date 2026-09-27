@@ -172,7 +172,9 @@ testは、要素を含むかどうかと、何を確かめるかで3種類に分
 - 契約test。`src/boundary/os/`の`_test` fileに置き、OS層が頼るOSの振る舞いを実OSで確かめる。
   何を前提とするかをdoc commentに書く。
 - e2e test。`tests/`に置き、実processを動かして、終わる前の途中の状態を待つ。待つ相手は、
-  PTYに現れた文字、marker file、子processの終了である。
+  PTYに現れた文字、marker file、子processの終了である。sbxmがSandboxへ渡す手順を、選んだ段で
+  自分へsignalを送らせながらこのhostのshellで走らせる`tests/place_from_stdin.rs`もここに
+  置く。途中の状態は待たないが、signalを使う。
 
 要素を書いてよいのは、OS層と、契約testと、e2e testである。`FLAKY_ELEMENT_PLACES`にはほかに、
 判断とOSの呼び出しがまだ同じ関数にある`src/boundary/host`の本番codeと、要素をまだ含むunit

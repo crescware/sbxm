@@ -20,15 +20,7 @@
 ///   飛ばすか、`rm`そのものを終わらせるためである。EXIT trapが無視を置くより先にsignalが
 ///   届くと、signalのtrapが割り込み、その`exit`でEXIT trapの残りを飛ばす。signalのtrapも
 ///   自分で消してから終わる。
-pub(super) const PLACE_FROM_STDIN: &str = r#"set -eu
-staged=
-remove='trap "" HUP INT TERM; [ -z "$staged" ] || rm -f "$staged"'
-trap "$remove" EXIT
-trap "$remove; exit 143" HUP INT TERM
-umask 077
-staged=$(trap '' HUP INT TERM; mktemp)
-cat > "$staged"
-received=$(sha256sum "$staged")
-[ "${received%% *}" = "$3" ] || exit 65
-install -o agent -g agent -m 0600 "$staged" "$2"
-mv -f "$2" "$1""#;
+///
+/// 本文は`place_from_stdin.sh`が持つ。signalを受けたときの振る舞いを実shellで確かめる
+/// `tests/place_from_stdin.rs`も、同じfileを読む。
+pub(super) const PLACE_FROM_STDIN: &str = include_str!("place_from_stdin.sh");
