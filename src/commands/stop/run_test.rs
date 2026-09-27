@@ -406,12 +406,12 @@ struct ProbingLock {
     free: std::cell::Cell<Option<bool>>,
 }
 
-impl crate::boundary::host::HostEnvironment for ProbingLock {
-    fn command_exists(&self, program: &str) -> bool {
+impl crate::testing::host::AnsweredHost for ProbingLock {
+    fn has_command(&self, program: &str) -> bool {
         self.inner.command_exists(program)
     }
 
-    fn run(
+    fn answer(
         &self,
         spec: &crate::boundary::host::CommandSpec,
     ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {

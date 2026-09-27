@@ -240,26 +240,21 @@ fn timed_out(spec: &CommandSpec) -> Error {
     )
 }
 
-impl crate::boundary::host::HostEnvironment for World {
-    fn command_exists(&self, _program: &str) -> bool {
+impl crate::testing::host::AnsweredHost for World {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    /// 模したsessionは瞬時に終わる。実物が間隔ごとに呼ぶ途中の手続きを、sessionを
-    /// 記録したあとに1回だけ呼び、終わる前に走ったものとして扱う。
-    fn run_with_terminal_ticking(
+    /// 模したsessionは、途中の手続きがちょうど1回走る長さだけ続く。
+    fn session_length(
         &self,
-        command: &crate::boundary::host::TerminalCommand,
-        output: &mut dyn crate::design::ExternalOutput,
-        _every: std::time::Duration,
-        tick: &mut dyn FnMut(),
-    ) -> Result<CommandOutcome> {
-        let outcome = self.run_with_terminal(command, output)?;
-        tick();
-        Ok(outcome)
+        _command: &crate::boundary::host::TerminalCommand,
+        every: std::time::Duration,
+    ) -> std::time::Duration {
+        every + every / 2
     }
 
-    fn run(&self, spec: &crate::boundary::host::CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &crate::boundary::host::CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let invocation = format!("{} {}", spec.program, spec.args.join(" "));
 

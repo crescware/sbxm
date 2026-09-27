@@ -1,5 +1,6 @@
-use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandSpec, EnvPolicy, TimeoutClass};
 use crate::diagnostics::Result;
+use crate::testing::host::AnsweredHost;
 use std::time::Duration;
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -49,12 +50,12 @@ impl FakeSbx {
     }
 }
 
-impl HostEnvironment for FakeSbx {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeSbx {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let listing = spec.args.first().is_some_and(|arg| arg == "ls");
         let code = i32::from(listing && self.listing_fails);

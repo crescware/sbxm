@@ -2,8 +2,9 @@ use std::fs;
 
 use std::cell::RefCell;
 
-use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec};
 use crate::diagnostics::Result;
+use crate::testing::host::AnsweredHost;
 
 /// 4種の状態はどれも独立で、組み合わせて使うbuilderであるため束ねない。
 #[allow(clippy::struct_excessive_bools)]
@@ -69,12 +70,12 @@ impl FakeDocker {
     }
 }
 
-impl HostEnvironment for FakeDocker {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeDocker {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let sub = |index: usize, name: &str| spec.args.get(index).is_some_and(|arg| arg == name);
         let checking_version = sub(0, "version") && sub(1, "--format");

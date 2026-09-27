@@ -1,9 +1,7 @@
-use crate::boundary::host::{
-    CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment, OutputPolicy, TimeoutClass,
-};
+use crate::boundary::host::{CommandOutcome, CommandSpec, EnvPolicy, OutputPolicy, TimeoutClass};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::testing::global_status::FakeHost;
-use crate::testing::host::FakeSbx;
+use crate::testing::host::{AnsweredHost, FakeSbx};
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::require_signed_in;
@@ -45,12 +43,12 @@ fn an_incomplete_warmup_response_is_retried_before_selection() -> Checked {
     Ok(())
 }
 
-impl HostEnvironment for CanceledHost {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for CanceledHost {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, _spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, _spec: &CommandSpec) -> Result<CommandOutcome> {
         Err(Error::Canceled)
     }
 }

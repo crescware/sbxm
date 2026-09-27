@@ -9,11 +9,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::boundary::host::{Pipes, Processes, Pty, Signals};
+use crate::boundary::host::{CommandOutcome, Pipes, Processes, Pty, Signals};
 use crate::testing::scripted_clock::ScriptedClock;
 use crate::time::{Clock, Moment};
 
-use super::{End, Event, ScriptedController, ScriptedPipe, ScriptedWriter, Step};
+use super::{End, Event, ReadStep, ScriptedController, ScriptedPipe, ScriptedWriter, Step};
 
 /// `check_exit`に答える回数の上限。
 ///
@@ -131,6 +131,34 @@ impl ScriptedOs {
     pub fn controller(mut self, controller: ScriptedController) -> ScriptedOs {
         *self.controller.get_mut() = Some(controller);
         self
+    }
+
+    /// `HostEnvironment::run`の答えを再生する。子は`lasts`だけ動き、stdoutとstderrは答えの
+    /// byteを出して閉じる。
+    pub fn replaying(answer: &CommandOutcome, lasts: Duration) -> ScriptedOs {
+        let code = answer.status.code().unwrap_or(1);
+        ScriptedOs::default()
+            .stdout(ScriptedPipe::new([ReadStep::Owned(answer.stdout.clone())]))
+            .stderr(ScriptedPipe::new([ReadStep::Owned(answer.stderr.clone())]))
+            .exits_at(lasts, code)
+    }
+
+    /// PTYの親側は、答えが書かれるまで`prompt`を示し、書かれた後は答えのstdoutとstderrを
+    /// 示す。子はすぐ終わる。
+    pub fn replaying_on_a_pty(answer: &CommandOutcome, prompt: &str) -> ScriptedOs {
+        let code = answer.status.code().unwrap_or(1);
+        let mut after = Vec::new();
+        if !answer.stdout.is_empty() {
+            after.push(ReadStep::Owned(answer.stdout.clone()));
+        }
+        if !answer.stderr.is_empty() {
+            after.push(ReadStep::Owned(answer.stderr.clone()));
+        }
+        let controller = ScriptedController::new([ReadStep::Owned(prompt.as_bytes().to_vec())])
+            .after_answer(after);
+        ScriptedOs::default()
+            .controller(controller)
+            .exits([Ok(Some(exited(code)))])
     }
 
     fn record(&self, event: Event) {

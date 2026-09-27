@@ -1,7 +1,8 @@
-use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 use crate::support::protection::BARE_GIT_DIR_PROBE;
+use crate::testing::host::AnsweredHost;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -62,12 +63,12 @@ impl InnerCommandSandbox {
     }
 }
 
-impl HostEnvironment for InnerCommandSandbox {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for InnerCommandSandbox {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.args.clone());
         let inner = crate::testing::command::inner_args(spec);
         let key = inner.join(" ");

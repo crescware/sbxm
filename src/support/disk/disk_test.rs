@@ -1,7 +1,8 @@
 use crate::boundary::host::protocol::RootDiskUsage;
-use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment, TimeoutClass};
+use crate::boundary::host::{CommandOutcome, CommandSpec, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::support::inventory::ProjectState;
+use crate::testing::host::AnsweredHost;
 use crate::testing::host::FakeSbx;
 use crate::testing::sandbox::InnerCommandSandbox;
 use std::os::unix::process::ExitStatusExt;
@@ -81,12 +82,12 @@ fn only_raw_127_is_reported_as_command_missing() {
 
 struct SignaledSandbox;
 
-impl HostEnvironment for SignaledSandbox {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for SignaledSandbox {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         let mut outcome = crate::testing::command::outcome(spec, 0, "");
         outcome.status = std::process::ExitStatus::from_raw(9);
         Ok(outcome)

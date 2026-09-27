@@ -8,6 +8,7 @@ use crate::diagnostics::{Error, ErrorId, Result};
 use crate::testing::command::{
     End, Event, ReadStep, ScriptedOs, ScriptedPipe, ScriptedWriter, Step,
 };
+use crate::testing::host::AnsweredHost;
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::recorded_output::RecordedOutput;
 
@@ -657,12 +658,12 @@ fn a_sink_that_cannot_take_the_output_refuses_the_run() -> Checked {
 /// captureしたstdoutを決め打ちで返すhost。既定の`run_streaming`を確かめる。
 struct AnsweringHost(Vec<u8>);
 
-impl HostEnvironment for AnsweringHost {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for AnsweringHost {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         Ok(crate::testing::command::outcome(
             spec,
             0,

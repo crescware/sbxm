@@ -275,12 +275,12 @@ impl ScriptedGit {
     }
 }
 
-impl crate::boundary::host::HostEnvironment for ScriptedGit {
-    fn command_exists(&self, _program: &str) -> bool {
+impl crate::testing::host::AnsweredHost for ScriptedGit {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(
+    fn answer(
         &self,
         spec: &crate::boundary::host::CommandSpec,
     ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {

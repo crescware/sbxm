@@ -1,9 +1,10 @@
 use crate::boundary::host::protocol::SandboxState;
-use crate::boundary::host::{CommandOutcome, CommandSpec, EnvPolicy, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec, EnvPolicy};
 use crate::diagnostics::{ErrorId, Result};
 use crate::paths::{self, PRIVATE_DIR_MODE};
 use crate::project::SandboxName;
 use crate::support::template::LoadedTemplate;
+use crate::testing::host::AnsweredHost;
 use std::path::Path;
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -44,12 +45,12 @@ impl FakeSbx {
     }
 }
 
-impl HostEnvironment for FakeSbx {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeSbx {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let stdout = if spec.args.first().is_some_and(|arg| arg == "ls") {
             self.listings.borrow_mut().pop().unwrap_or_default()
@@ -66,12 +67,12 @@ struct FakeProbe {
     keys: (i32, &'static str),
 }
 
-impl HostEnvironment for FakeProbe {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeProbe {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         let (code, stdout) = if spec.args.iter().any(|arg| arg == "printenv") {
             self.socket
         } else {

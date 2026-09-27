@@ -1,7 +1,6 @@
-use std::io::Write;
-
 use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment, RealHost};
 use crate::diagnostics::Result;
+use crate::testing::host::AnsweredHost;
 
 /// `sbx exec <sandbox> -- <argv>`を、Sandboxへ送らずこのhostでそのまま走らせるhost。
 ///
@@ -53,21 +52,12 @@ fn local_path(arg: &str) -> Option<String> {
     (domain == "sbx").then(|| format!("/{path}"))
 }
 
-impl HostEnvironment for LocalSandbox {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for LocalSandbox {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         RealHost.run(&Self::unwrap(spec))
-    }
-
-    fn run_streaming(
-        &self,
-        spec: &CommandSpec,
-        sink: &mut dyn Write,
-        limit: u64,
-    ) -> Result<CommandOutcome> {
-        RealHost.run_streaming(&Self::unwrap(spec), sink, limit)
     }
 }

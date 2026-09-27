@@ -1,7 +1,8 @@
 use crate::testing::outcome::{Checked, Required};
 
-use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::{CommandOutcome, CommandSpec};
 use crate::diagnostics::Result;
+use crate::testing::host::AnsweredHost;
 use std::cell::RefCell;
 
 /// Sandbox一覧を返し、実行された指定を記録するhost。
@@ -91,12 +92,12 @@ impl FakeSbx {
     }
 }
 
-impl HostEnvironment for FakeSbx {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeSbx {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.specs.borrow_mut().push(spec.clone());
         let key = spec.args.join(" ");
         let (code, stdout) = if spec.args.first().is_some_and(|arg| arg == "ls") {

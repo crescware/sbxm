@@ -5,6 +5,7 @@ use crate::design::renderer::Renderer;
 use crate::diagnostics::{ErrorId, Result};
 use crate::i18n::{Catalog, Locale};
 use crate::project::{SandboxLayout, SandboxName};
+use crate::testing::host::AnsweredHost;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -2099,12 +2100,12 @@ struct HostGitMissing {
     inner: FakeSbx,
 }
 
-impl HostEnvironment for HostGitMissing {
-    fn command_exists(&self, program: &str) -> bool {
+impl AnsweredHost for HostGitMissing {
+    fn has_command(&self, program: &str) -> bool {
         program != "git"
     }
 
-    fn run(
+    fn answer(
         &self,
         spec: &crate::boundary::host::CommandSpec,
     ) -> Result<crate::boundary::host::CommandOutcome> {

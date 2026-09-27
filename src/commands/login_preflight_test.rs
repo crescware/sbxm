@@ -7,6 +7,7 @@ use crate::design::{PromptUi, RenderingPolicy, Ui};
 use crate::diagnostics::{ExitCode, Result};
 use crate::i18n::Locale;
 use crate::testing::global_status::FakeHost;
+use crate::testing::host::AnsweredHost;
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::{Fixture, project_id};
 use crate::testing::scripted_clock::ScriptedClock;
@@ -21,12 +22,12 @@ struct RecordingHost {
     calls: RefCell<Vec<String>>,
 }
 
-impl HostEnvironment for RecordingHost {
-    fn command_exists(&self, program: &str) -> bool {
+impl AnsweredHost for RecordingHost {
+    fn has_command(&self, program: &str) -> bool {
         self.host.command_exists(program)
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls
             .borrow_mut()
             .push(format!("{} {}", spec.program, spec.args.join(" ")));

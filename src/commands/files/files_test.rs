@@ -338,12 +338,12 @@ fn a_relative_source_or_an_unresolvable_home_is_never_guessed_at() -> Checked {
 /// どのcommandも起動できないhost。
 struct NothingStarts;
 
-impl crate::boundary::host::HostEnvironment for NothingStarts {
-    fn command_exists(&self, _program: &str) -> bool {
+impl crate::testing::host::AnsweredHost for NothingStarts {
+    fn has_command(&self, _program: &str) -> bool {
         false
     }
 
-    fn run(
+    fn answer(
         &self,
         _spec: &crate::boundary::host::CommandSpec,
     ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {

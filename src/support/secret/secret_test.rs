@@ -1,5 +1,6 @@
-use crate::boundary::host::{CommandSpec, HostEnvironment};
+use crate::boundary::host::CommandSpec;
 use crate::diagnostics::{ErrorId, Result};
+use crate::testing::host::AnsweredHost;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -51,12 +52,12 @@ impl FakeSbx {
     }
 }
 
-impl HostEnvironment for FakeSbx {
-    fn command_exists(&self, _program: &str) -> bool {
+impl AnsweredHost for FakeSbx {
+    fn has_command(&self, _program: &str) -> bool {
         true
     }
 
-    fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+    fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.args.clone());
         let joined = spec.args.join(" ");
         if let Some((_, code, stdout, stderr)) = self
