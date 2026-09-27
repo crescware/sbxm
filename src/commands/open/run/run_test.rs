@@ -14,7 +14,7 @@ use super::*;
 use crate::boundary::host::{OutputPolicy as CommandOutputPolicy, TimeoutClass};
 use crate::design::SilentProgress;
 use crate::metadata::{self, RebuildIntent};
-use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};
+use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
@@ -857,9 +857,10 @@ fn the_session_lease_is_released_before_a_connection_error_is_reported() -> Chec
 
     connect(&host, prepared, &mut RecordedOutput::new(), None)
         .refused_because("a failed SSH child is reported")?;
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     paths::acquire_exclusive_lock(
         &project.paths.session_lease_file(),
-        Duration::ZERO,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
@@ -879,9 +880,10 @@ fn the_project_lock_is_released_before_the_terminal_is_handed_over() -> Checked 
 
     prepare_for(&fixture, &host).required_because("prepare")?;
     // 接続中に、別terminalの`stop`がこの案件を待たされない。
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     paths::acquire_exclusive_lock(
         &project.paths.lock_file(),
-        Duration::ZERO,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
@@ -913,9 +915,10 @@ fn the_session_lease_stays_held_until_the_terminal_session_ends() -> Checked {
 
     // sessionが終わる（`Prepared`が破棄される）と、exclusive leaseを取得できる。
     drop(prepared);
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     paths::acquire_exclusive_lock(
         &project.paths.session_lease_file(),
-        Duration::ZERO,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )

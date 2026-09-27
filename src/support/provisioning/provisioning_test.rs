@@ -2,7 +2,7 @@ use super::*;
 
 use crate::design::SilentProgress;
 use crate::diagnostics::ErrorId;
-use crate::paths::{self, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
 use crate::support::select;
 use crate::testing::add_request::request;
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -148,9 +148,10 @@ fn construction_holds_exclusive_then_connection_holds_shared() -> Checked {
     .refused_because("an active connection blocks a new exclusive session lease")?;
 
     drop(prepared);
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     paths::acquire_exclusive_lock(
         &paths.session_lease_file(),
-        Duration::ZERO,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )

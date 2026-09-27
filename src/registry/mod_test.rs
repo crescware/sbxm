@@ -1,6 +1,6 @@
 use crate::config::ConfigLocation;
 use crate::diagnostics::{Error, ErrorId};
-use crate::paths::{PRIVATE_FILE_MODE, PathScope, acquire_exclusive_lock};
+use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, acquire_exclusive_lock};
 use std::path::Path;
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -436,9 +436,10 @@ fn the_registry_lock_is_held_for_as_long_as_the_guard_lives() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::LockTimeout));
 
     drop(held);
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     acquire_exclusive_lock(
         &path,
-        std::time::Duration::ZERO,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ConfigFile,
     )

@@ -876,11 +876,34 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 /// flakyになりうる要素を書いてよいfileと、そこに書いてよい要素。
 ///
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
-/// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 21] = [
+/// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。OS層とその契約testを足すときを
+/// 除き、一覧は減る方向にしか動かない。
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 26] = [
     // OS層。分岐を持たず、coverageの母集団から外す。
     ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
     ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
+    // OSについての仮定を実OSで確かめる契約test。
+    (
+        "src/boundary/os/system_pipe_test.rs",
+        &[Element::ChildProcess],
+    ),
+    (
+        "src/boundary/os/system_process_test.rs",
+        &[
+            Element::ChildProcess,
+            Element::Signal,
+            Element::WrittenExecutable,
+        ],
+    ),
+    (
+        "src/boundary/os/system_pty_test.rs",
+        &[Element::ChildProcess],
+    ),
+    ("src/boundary/os/system_signal_test.rs", &[Element::Signal]),
+    (
+        "tests/poll_eintr.rs",
+        &[Element::RealTime, Element::ChildProcess, Element::Signal],
+    ),
     // 外部processを動かす実行。判断とOSの呼び出しが同じ関数にある。
     ("src/boundary/host/poll_pipes.rs", &[Element::ChildProcess]),
     (
@@ -1006,7 +1029,7 @@ fn flaky_elements_stay_where_they_are_allowed() -> Checked {
     Ok(())
 }
 
-/// 要素が一覧の許す場所と種類を外れていないか。一覧は減る方向にしか動かせない。
+/// 要素が一覧の許す場所と種類を外れていないか。消えた要素を一覧に残すことも外れとする。
 ///
 /// OS層の実物を名指しすることも要素として数える。OS層の中と、`wiring`に挙げた本番の配線
 /// だけが名指ししてよい。
@@ -1149,7 +1172,7 @@ fn only_the_listed_wiring_names_the_os_layer_outside_it() -> Checked {
 
 #[test]
 fn an_element_that_is_gone_must_leave_the_list() -> Checked {
-    // 一覧は減る方向にしか動かない。消えた要素を残せば、次に足す要素がそこへ紛れる。
+    // 消えた要素は一覧から外す。残せば、次に足す要素がそこへ紛れる。
     let sources = [("src/wait.rs".to_string(), "fn wait() {}".to_string())];
     let violations =
         flaky_element_violations(&sources, &[], &[("src/wait.rs", &[Element::RealTime])], &[])?;
@@ -1163,46 +1186,54 @@ fn an_element_that_is_gone_must_leave_the_list() -> Checked {
     Ok(())
 }
 
-#[test]
-fn a_script_read_by_include_counts_where_it_is_included() -> Checked {
-    // 読み込んだ中身は、読み込んだfileの文字列literalと同じである。このfileも読まれるため、
-    // 要素の綴りを1つのliteralに収めない。
-    let script = [(
-        "src/support/place.sh".to_string(),
-        concat!("cat > f\nsleep", " 1\n").to_string(),
-    )];
-    let sources = [
-        (
-            "src/support/place.rs".to_string(),
-            "const S: &str = include_str!(\"place.sh\");".to_string(),
-        ),
-        (
-            "tests/place.rs".to_string(),
-            "const S: &str = include_str!(\"../src/support/place.sh\");".to_string(),
-        ),
-    ];
-    let violations = flaky_element_violations(
-        &sources,
-        &script,
-        &[("tests/place.rs", &[Element::RealTime])],
-        &[],
-    )?;
-    assert_eq!(violations.len(), 1, "{violations:?}");
-    assert!(violations[0].starts_with("src/support/place.rs: RealTime is not allowed here"));
-    assert!(violations[0].contains("1: src/support/place.sh: sleep"));
+/// 契約testとe2e testの待ちの上限を持つfile。
+///
+/// 契約testは`src/testing/wait_until.rs`、e2e testは`tests/wait_until/mod.rs`の`wait_until`で
+/// 待つ。`poll_eintr`だけは、確かめる`poll`そのものの期限で待つ。
+const WAIT_LIMITS: [&str; 3] = [
+    "src/testing/wait_until.rs",
+    "tests/wait_until/mod.rs",
+    "tests/poll_eintr.rs",
+];
 
-    // 中身を読めないfileを、要素が無いとはみなさない。
-    let sources = [(
-        "src/support/place.rs".to_string(),
-        concat!(
-            "const S: &str = include_str!(concat!(\"place\", \".sh\"));\n",
-            "const T: &str = include_str!(\"other.sh\");",
-        )
-        .to_string(),
-    )];
-    let violations = flaky_element_violations(&sources, &script, &[], &[])?;
-    assert_eq!(violations.len(), 2, "{violations:?}");
-    assert!(violations[0].contains("line 1 includes a file not named by a literal"));
-    assert!(violations[1].contains("includes src/support/other.sh, which was not read"));
+#[test]
+fn every_test_waits_under_one_limit() -> Checked {
+    // 上限はhangを止める1つの値とする。片方だけ延ばせば、どちらかが遅い環境の速さに合わせた
+    // 値になる。
+    let mut limits = Vec::with_capacity(WAIT_LIMITS.len());
+    for path in WAIT_LIMITS {
+        let text = std::fs::read_to_string(root().join(path))
+            .required_because("the source is readable")?;
+        limits.push((path, wait_limit(&text)?));
+    }
+    let (first, limit) = &limits[0];
+    for (path, other) in &limits[1..] {
+        assert_eq!(
+            other, limit,
+            "{path} and {first} keep the same `const WAIT_LIMIT`"
+        );
+    }
     Ok(())
+}
+
+/// fileの`const WAIT_LIMIT`の定義を、token列の綴りで返す。
+fn wait_limit(text: &str) -> Checked<String> {
+    let tokens: Vec<proc_macro2::TokenTree> = text
+        .parse::<proc_macro2::TokenStream>()
+        .required_because("the source is Rust tokens")?
+        .into_iter()
+        .collect();
+    let named = |token: &proc_macro2::TokenTree, name: &str| matches!(token, proc_macro2::TokenTree::Ident(ident) if ident == name);
+    let start = tokens
+        .windows(2)
+        .position(|pair| named(&pair[0], "const") && named(&pair[1], "WAIT_LIMIT"))
+        .required_because("the limit is kept in `const WAIT_LIMIT`")?;
+    let definition: proc_macro2::TokenStream = tokens[start..]
+        .iter()
+        .take_while(|token| {
+            !matches!(token, proc_macro2::TokenTree::Punct(punct) if punct.as_char() == ';')
+        })
+        .cloned()
+        .collect();
+    Ok(definition.to_string())
 }

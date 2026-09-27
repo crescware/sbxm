@@ -27,6 +27,7 @@ pub mod repository;
 pub mod sandbox;
 pub mod scripted_clock;
 pub mod value;
+pub mod wait_until;
 
 pub use install_fake_tool::install_fake_tool;
 pub use plain::plain;

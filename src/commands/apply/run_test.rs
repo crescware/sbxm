@@ -10,7 +10,7 @@ use super::{super::fake::*, *};
 use crate::design::SilentProgress;
 use crate::hash::sha256_hex;
 use crate::metadata::{InitialProvisioningIntent, RebuildIntent};
-use crate::paths::{PRIVATE_FILE_MODE, PathScope};
+use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::value::DIGEST;
 use std::os::unix::fs::PermissionsExt;
@@ -440,9 +440,10 @@ fn the_project_lock_is_held_while_the_files_are_replaced() -> Checked {
     );
 
     // lockはworkflow終了後に解放され、lock file自体は残る。
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     crate::paths::acquire_exclusive_lock(
         &paths.lock_file(),
-        std::time::Duration::ZERO,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )

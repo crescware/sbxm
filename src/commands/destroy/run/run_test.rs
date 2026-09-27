@@ -926,9 +926,10 @@ fn the_project_lock_is_held_across_the_confirmation() -> Checked {
 
     // lockはPreparedとともに解放される。
     drop(prepared);
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     paths::acquire_exclusive_lock(
         &lock_file,
-        waiting,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
@@ -960,9 +961,10 @@ fn the_session_lease_is_held_across_the_confirmation() -> Checked {
 
     // leaseはPreparedとともに解放される。
     drop(prepared);
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     paths::acquire_exclusive_lock(
         &lease_file,
-        waiting,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )

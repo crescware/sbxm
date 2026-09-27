@@ -145,9 +145,10 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
         host.calls()
     );
     // exclusive session leaseは、rebuildが終わったあとは保持されたままにならない。
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     paths::acquire_exclusive_lock(
         &project.paths.session_lease_file(),
-        std::time::Duration::ZERO,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
