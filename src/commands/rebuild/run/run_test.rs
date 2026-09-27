@@ -139,7 +139,7 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
     // exclusive session leaseは、rebuildが終わったあとは保持されたままにならない。
     paths::acquire_exclusive_lock(
         &project.paths.session_lease_file(),
-        LOCK_TIMEOUT,
+        std::time::Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )

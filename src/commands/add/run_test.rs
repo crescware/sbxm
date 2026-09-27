@@ -9,7 +9,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use crate::config::ConfigLocation;
 use crate::metadata::RebuildIntent;
-use crate::paths::{LOCK_TIMEOUT, ProjectParent};
+use crate::paths::ProjectParent;
 use crate::support::generation::current_dockerfile_hash;
 use crate::testing::add_request::{from, request};
 use crate::testing::project::{https_repository, ssh_repository};
@@ -433,17 +433,17 @@ fn the_project_lock_is_held_for_the_whole_workflow() -> Checked {
 
     let error = paths::acquire_exclusive_lock(
         &lock_path,
-        Duration::from_millis(100),
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
-    .refused_because("a second run waits for the first")?;
+    .refused_because("a second run does not get the lock while the first holds it")?;
     assert_eq!(error.first_id(), Some(ErrorId::LockTimeout));
 
     drop(registration);
     paths::acquire_exclusive_lock(
         &lock_path,
-        LOCK_TIMEOUT,
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )

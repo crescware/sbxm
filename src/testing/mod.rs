@@ -24,6 +24,7 @@ pub mod registry;
 pub mod render;
 pub mod repository;
 pub mod sandbox;
+pub mod scripted_clock;
 pub mod value;
 
 pub use plain::plain;

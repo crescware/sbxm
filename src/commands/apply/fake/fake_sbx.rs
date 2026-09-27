@@ -116,7 +116,7 @@ impl HostEnvironment for FakeSbx {
         {
             let taken = crate::paths::acquire_exclusive_lock(
                 path,
-                std::time::Duration::from_millis(50),
+                std::time::Duration::ZERO,
                 PRIVATE_FILE_MODE,
                 PathScope::ProjectPath,
             );

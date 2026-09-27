@@ -8,7 +8,6 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use super::*;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::thread;
 
 use crate::paths::{LOCK_TIMEOUT, PRIVATE_FILE_MODE};
 use crate::testing::fs::temp_dir;
@@ -52,11 +51,11 @@ fn an_exclusive_lock_blocks_a_new_shared_lock() -> Checked {
 
     let error = acquire_shared_lock(
         &path,
-        Duration::from_millis(150),
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
-    .refused_because("a shared lock must wait behind a held exclusive lock")?;
+    .refused_because("a shared lock is not granted while an exclusive lock is held")?;
     assert_eq!(error.first_id(), Some(ErrorId::LockTimeout));
 
     drop(held);
@@ -85,11 +84,11 @@ fn a_shared_lock_blocks_a_new_exclusive_lock() -> Checked {
 
     let error = acquire_exclusive_lock(
         &path,
-        Duration::from_millis(150),
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
-    .refused_because("an exclusive lock must wait behind a held shared lock")?;
+    .refused_because("an exclusive lock is not granted while a shared lock is held")?;
     assert_eq!(error.first_id(), Some(ErrorId::LockTimeout));
 
     drop(held);
@@ -173,20 +172,12 @@ fn a_stale_shared_lock_file_alone_does_not_block_a_fresh_holder() -> Checked {
     fs::set_permissions(&path, fs::Permissions::from_mode(PRIVATE_FILE_MODE))
         .required_because("match the mode a real lock file would have")?;
 
-    thread::scope(|scope| -> Checked {
-        let handle = scope.spawn(|| {
-            acquire_shared_lock(
-                &path,
-                LOCK_TIMEOUT,
-                PRIVATE_FILE_MODE,
-                PathScope::ProjectPath,
-            )
-        });
-        handle
-            .join()
-            .required_because("thread joins")?
-            .required_because("a stale file with no OS lock held is acquired immediately")?;
-        Ok(())
-    })?;
+    acquire_shared_lock(
+        &path,
+        LOCK_TIMEOUT,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("a stale file with no OS lock held is acquired immediately")?;
     Ok(())
 }

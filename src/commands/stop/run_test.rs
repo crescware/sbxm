@@ -339,7 +339,7 @@ impl crate::boundary::host::HostEnvironment for ProbingLock {
         {
             let taken = crate::paths::acquire_exclusive_lock(
                 &self.lock,
-                std::time::Duration::from_millis(10),
+                std::time::Duration::ZERO,
                 crate::paths::PRIVATE_FILE_MODE,
                 crate::paths::PathScope::ProjectPath,
             );

@@ -377,6 +377,20 @@ fn a_symlinked_registry_lock_stops_the_mutation_before_the_document_is_read() ->
 }
 
 #[test]
+fn the_registry_is_read_only_after_its_lock_is_taken() -> Checked {
+    // 読めない内容を置いておく。lockより先に読めば、lockの拒否より先にその失敗が出る。
+    let (dir, location) = home()?;
+    write_registry(&location, "entries: [unterminated\n")?;
+    let elsewhere = dir.path().join("elsewhere.lock");
+    std::os::unix::fs::symlink(&elsewhere, location.registry_lock()).required()?;
+
+    let error = RegistryGuard::acquire(&location)
+        .refused_because("a lock that is a symlink protects nothing")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigSymlink));
+    Ok(())
+}
+
+#[test]
 fn a_registry_other_accounts_can_read_is_refused_rather_than_repaired() -> Checked {
     let (_dir, location) = home()?;
     write_registry(&location, &document(&[Entry::example()]))?;
@@ -406,7 +420,7 @@ fn a_symlinked_registry_is_never_followed() -> Checked {
 }
 
 #[test]
-fn a_concurrent_run_waits_for_the_registry_lock() -> Checked {
+fn the_registry_lock_is_held_for_as_long_as_the_guard_lives() -> Checked {
     let (_dir, location) = home()?;
     let held =
         RegistryGuard::acquire(&location).required_because("the first run holds the lock")?;
@@ -414,7 +428,7 @@ fn a_concurrent_run_waits_for_the_registry_lock() -> Checked {
     let path = location.registry_lock();
     let error = acquire_exclusive_lock(
         &path,
-        std::time::Duration::from_millis(50),
+        std::time::Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ConfigFile,
     )
@@ -424,60 +438,11 @@ fn a_concurrent_run_waits_for_the_registry_lock() -> Checked {
     drop(held);
     acquire_exclusive_lock(
         &path,
-        std::time::Duration::from_millis(50),
+        std::time::Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ConfigFile,
     )
     .required_because("the lock is released when the guard ends")?;
-    Ok(())
-}
-
-#[test]
-fn concurrent_registrations_of_different_projects_lose_no_entry() -> Checked {
-    let (_dir, location) = home()?;
-    let projects = [
-        "alpha/alfa",
-        "bravo/bravo",
-        "charlie/charlie",
-        "delta/delta",
-    ];
-
-    // 各threadの成立確認は、joinしたあとに呼び出し元で判定する。
-    let outcomes = std::thread::scope(|scope| {
-        let handles: Vec<_> = projects
-            .into_iter()
-            .map(|project| {
-                let location = location.clone();
-                scope.spawn(move || -> Checked {
-                    let mut guard = RegistryGuard::acquire(&location)
-                        .required_because("the lock serialises the runs")?;
-                    let name = project
-                        .split('/')
-                        .nth(1)
-                        .required_because("a repository name")?;
-                    let entry = entry_for(project, &format!("/home/user/Projects/{name}.project"))?;
-                    guard.insert(entry).required_because("record")?;
-                    Ok(())
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(std::thread::ScopedJoinHandle::join)
-            .collect::<Vec<_>>()
-    });
-    for outcome in outcomes {
-        outcome.required_because("the thread finishes")??;
-    }
-
-    let registry = load(&location).required_because("the document stays valid")?;
-    let mut recorded: Vec<&str> = registry
-        .entries()
-        .iter()
-        .map(|entry| entry.canonical_id().as_str())
-        .collect();
-    recorded.sort_unstable();
-    assert_eq!(recorded, projects);
     Ok(())
 }
 

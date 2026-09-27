@@ -11,7 +11,8 @@
 //!
 //! llvm-covはfile単位でしか母集団を外せない。moduleだけでなくitemも同じ規約に従わせ、
 //! 母集団は両方向から固定する。数えるfileにtest支援codeが混じることも、除外を足して
-//! 本番codeを母集団から外すことも、どちらも落とす。
+//! 本番codeを母集団から外すことも、どちらも落とす。本番codeで外してよいのは、分岐を持てない
+//! OS層だけである。
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
@@ -283,7 +284,19 @@ const OUTSIDE_THE_COVERAGE_POPULATION: [(&str, &str); 4] = [
     ("_test", "[^/]*_test[^/]*\\.rs$"),
 ];
 
-/// coverageが数えないpathか。
+/// coverageが数えない、分岐を持たないOS層の置き場。
+///
+/// 本番codeだが、関数の本体は1つの呼び出し式に限られ、判断を置けない。その形は
+/// `tests/architecture.rs`の`the_os_layer_has_no_branches`が確かめる。左が本testの判定、右が
+/// coverage taskへ渡す正規表現の一部である。
+const THE_OS_LAYER: (&str, &str) = ("src/boundary/os/", "(^|/)src/boundary/os/");
+
+/// `THE_OS_LAYER`の置き場にあるか。
+fn in_the_os_layer(relative: &str) -> bool {
+    relative.starts_with(THE_OS_LAYER.0)
+}
+
+/// test支援codeを置くためにcoverageが数えないpathか。
 ///
 /// 上の表の左側を、正規表現と同じ順で綴る。
 fn outside_the_coverage_population(relative: &str) -> bool {
@@ -920,7 +933,8 @@ impl SharedDecision<'_> {
 ///
 /// 置き場所の規約はtest支援codeを母集団へ入れないためにある。同じ規約は、除外を足して
 /// 本番codeを母集団から外すことも禁じなければならない。片側だけを見ると、`fake/`を1つ
-/// 足すだけで、testの無い本番codeを数えられなくできる。
+/// 足すだけで、testの無い本番codeを数えられなくできる。本番codeで外してよいのはOS層だけで
+/// ある。
 ///
 /// crate rootから`mod`宣言を辿り、test buildでしか組み立たないfileを求めて、規約が外す
 /// fileと突き合わせる。module宣言はmodule levelにあるものだけを読む。
@@ -971,13 +985,20 @@ fn the_coverage_population_is_what_the_crate_builds_without_tests()
     paths.sort();
     for path in paths {
         let relative = relative_to(root, &path)?;
-        let counted = !outside_the_coverage_population(&relative);
+        // test支援codeの置き場は、OS層の中でも外でもtest buildだけのものに限る。OS層の例外は
+        // 本番codeを数えないことだけであり、置き場の規則は緩めない。
+        let test_place = outside_the_coverage_population(&relative);
         match population.get(&path) {
             None => violations.push(format!("{relative}: no module declaration reaches it")),
-            Some(true) if counted => {
+            Some(true) if !test_place && !in_the_os_layer(&relative) => {
                 violations.push(format!("{relative}: builds only for tests, but is counted"));
             }
-            Some(false) if !counted => {
+            Some(true) if !test_place => {
+                violations.push(format!(
+                    "{relative}: builds only for tests, but is not in a test place"
+                ));
+            }
+            Some(false) if test_place => {
                 violations.push(format!(
                     "{relative}: builds for production, but is left out"
                 ));
@@ -1055,7 +1076,7 @@ fn alternatives(pattern: &str) -> Vec<String> {
     parts
 }
 
-/// coverage taskが外すのは、規約が定めた4か所だけか。
+/// coverage taskが外すのは、規約が定めた4か所とOS層だけか。
 ///
 /// 足りないほうだけを見ると、除外を1つ足して本番codeを母集団から外せる。数も綴りも
 /// 一致することを求める。
@@ -1067,6 +1088,7 @@ fn the_coverage_task_leaves_out_the_same_places() -> Result<(), Box<dyn std::err
     declared.sort();
     let mut expected: Vec<String> = OUTSIDE_THE_COVERAGE_POPULATION
         .iter()
+        .chain(std::iter::once(&THE_OS_LAYER))
         .map(|(_, pattern)| (*pattern).to_string())
         .collect();
     expected.sort();

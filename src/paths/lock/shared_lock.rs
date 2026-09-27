@@ -1,5 +1,7 @@
 use std::fs::File;
 
+use crate::boundary::os::SystemFileLock;
+
 /// 保持している間だけ保護区間を共有占有するOS file lock。
 ///
 /// 複数の保持者が同時に取得できる。exclusive lockとは同じfileに対して排他する。
@@ -13,6 +15,6 @@ pub struct SharedLock {
 
 impl Drop for SharedLock {
     fn drop(&mut self) {
-        let _ = self.file.unlock();
+        let _ = SystemFileLock::unlock(&self.file);
     }
 }

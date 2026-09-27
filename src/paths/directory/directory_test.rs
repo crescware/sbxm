@@ -57,6 +57,63 @@ fn private_dir_is_created_with_the_requested_mode() -> Checked {
 }
 
 #[test]
+fn a_private_directory_gets_its_mode_when_it_is_created() -> Checked {
+    // 作ってから絞ると、そのあいだに別のprocessが広いmodeを観測する。modeはmkdirへ渡す。
+    let dir = temp_dir()?;
+    let target = dir.path().join("state");
+    let asked = std::cell::RefCell::new(Vec::new());
+
+    super::ensure_private_dir_with::ensure_private_dir_with(
+        &target,
+        PRIVATE_DIR_MODE,
+        PathScope::ConfigDir,
+        &|path, mode| {
+            asked.borrow_mut().push(mode);
+            fs::create_dir(path)
+        },
+    )
+    .required_because("create")?;
+
+    assert_eq!(*asked.borrow(), vec![PRIVATE_DIR_MODE]);
+    Ok(())
+}
+
+#[test]
+fn a_directory_is_never_wider_than_its_mode_when_it_appears() -> Checked {
+    // umaskはbitを落とすだけで足さない。作った直後から、求めたmodeより広くない。
+    let dir = temp_dir()?;
+    let target = dir.path().join("state");
+    super::create_private_directory::create_private_directory(&target, PRIVATE_DIR_MODE)
+        .required_because("create")?;
+    let mode = fs::metadata(&target).required()?.permissions().mode() & 0o777;
+    assert_eq!(mode & !PRIVATE_DIR_MODE, 0, "{mode:o}");
+    Ok(())
+}
+
+#[test]
+fn a_directory_another_run_created_first_is_accepted() -> Checked {
+    // 無いと見てから作るまでに、同じ利用者の別の実行が先に作ることがある。
+    let dir = temp_dir()?;
+    let target = dir.path().join("state");
+
+    super::ensure_private_dir_with::ensure_private_dir_with(
+        &target,
+        PRIVATE_DIR_MODE,
+        PathScope::ConfigDir,
+        &|path, mode| {
+            super::create_private_directory::create_private_directory(path, mode)?;
+            super::create_private_directory::create_private_directory(path, mode)
+        },
+    )
+    .required_because("a directory that is already there is used")?;
+    assert_eq!(
+        fs::metadata(&target).required()?.permissions().mode() & 0o777,
+        PRIVATE_DIR_MODE
+    );
+    Ok(())
+}
+
+#[test]
 fn private_dir_refuses_an_over_permissive_existing_directory() -> Checked {
     let dir = temp_dir()?;
     let target = dir.path().join("sbxm");
@@ -133,39 +190,6 @@ fn a_directory_is_never_created_through_a_symlink_or_over_another_file() -> Chec
     let error = ensure_directory(&file).refused_because("an existing file is refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
     assert_eq!(fs::read_to_string(&file).required()?, "x");
-    Ok(())
-}
-
-#[test]
-fn a_private_directory_is_never_observed_wider_than_it_was_asked_for() -> Checked {
-    // 作ってからpermissionを絞ると、そのあいだに別のprocessが広いmodeを観測する。
-    // mkdirの時点でmodeを決めることで、途中の状態を見せない。
-    let dir = temp_dir()?;
-    let target = dir.path().join("state");
-    let observed = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..8)
-            .map(|_| {
-                let target = target.clone();
-                scope.spawn(move || {
-                    ensure_private_dir(&target, PRIVATE_DIR_MODE, PathScope::ConfigDir)
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(std::thread::ScopedJoinHandle::join)
-            .collect::<Vec<_>>()
-    });
-
-    for outcome in observed {
-        outcome
-            .required_because("the thread finishes")?
-            .required_because("every run sees a directory it may use")?;
-    }
-    assert_eq!(
-        fs::metadata(&target).required()?.permissions().mode() & 0o777,
-        PRIVATE_DIR_MODE
-    );
     Ok(())
 }
 

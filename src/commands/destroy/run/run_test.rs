@@ -885,7 +885,7 @@ fn the_project_lock_is_held_across_the_confirmation() -> Checked {
     .lock_file();
 
     // 確認を待つあいだも、別の実行はこの案件へ入れない。
-    let waiting = std::time::Duration::from_millis(200);
+    let waiting = std::time::Duration::ZERO;
     paths::acquire_exclusive_lock(
         &lock_file,
         waiting,
@@ -917,7 +917,7 @@ fn the_session_lease_is_held_across_the_confirmation() -> Checked {
     .session_lease_file();
 
     // 確認を待つあいだも、通常rebuild/destroyのexclusive session leaseはここへ入れない。
-    let waiting = std::time::Duration::from_millis(200);
+    let waiting = std::time::Duration::ZERO;
     paths::acquire_exclusive_lock(
         &lease_file,
         waiting,

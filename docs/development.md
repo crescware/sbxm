@@ -110,14 +110,20 @@ private fieldへ触れる構築関数も本番fileへ置く理由にはならな
 ものへ届き、inherent implはcrateのどのmoduleにも書けるため、対象の隣の`_test` fileへ
 `impl`ごと置ける。
 
+本番codeで数えないのは、`src/boundary/os/`のOS層だけとする。OS層はOSの呼び出しそのもので
+あり、関数の本体は1つの呼び出し式に限られる。`?`のほかに分岐を置けないため、判断をOS層へ
+移して基準を逃れることはできない。この形は`tests/architecture.rs`の
+`the_os_layer_has_no_branches`が確かめる。OSについての仮定は、隣の`_test` fileが契約testと
+して実OSで確かめ、coverageの数字では求めない。
+
 `tests/module_boundaries.rs`が次を確認する。
 
 - 数えるfileに、test buildでしか組み立たないcodeが無いこと
 - `test`がitemとその内部のcodeの有無を1人で決めていること。`#[cfg(not(test))]`は数えられる
   のにtestが踏めず、`#[cfg(any(test, ...))]`は本番buildに存在するかどうかが決まらない
-- crate rootから辿って、test buildでしか組み立たないfileだけが外れていること。除外を
+- crate rootから辿って、test buildでしか組み立たないfileとOS層だけが外れていること。除外を
   足して本番codeを母集団から外すことも落ちる
-- `mise.toml`が渡す`--ignore-filename-regex`が、この4つだけを綴っていること
+- `mise.toml`が渡す`--ignore-filename-regex`が、この4つとOS層だけを綴っていること
 
 ## 同じtreeは同じ値を返す
 
@@ -138,6 +144,12 @@ coverageは繰り返し測っても同じ値になることを前提とする。
 
 検出はsourceを構文として読み、`use`が導入した名前を完全修飾pathへ戻してから判定する。何を
 検出し何を見ないかは`tests/flaky_elements/mod.rs`の冒頭に書く。
+
+要素は、判断のcodeが差し込みで受け取る。実物はOS層が持ち、testは台本どおりに答えるものを
+渡す。OS層の実物を名指ししてよいのは、OS層の中と、`OS_LAYER_WIRING`に挙げた本番の配線だけで
+ある。ほかの本番codeやtestが名指しすれば、実OSを動かす要素として数える。配線を通して実OSへ
+届くtestは名指ししないため数えられない。そうしたtestは、lockなら期限を0にして1度だけ試す
+ように、待たずに済む形で書く。
 
 ## flakyを疑ったとき
 
