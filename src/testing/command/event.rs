@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::End;
+use super::{End, Step};
 
 /// `ScriptedOs`へ判断のcodeが呼んだ基本操作。呼ばれた順に残る。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,4 +35,8 @@ pub enum Event {
     WatchingInterrupts,
     /// Ctrl-Cの見張りを外した。
     StoppedWatching,
+    /// PTYについての基本操作を呼んだ。
+    Pty(Step),
+    /// 端末側の設定をrawにした。
+    MadeRaw,
 }

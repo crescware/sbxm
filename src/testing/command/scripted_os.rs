@@ -3,17 +3,17 @@ use std::collections::VecDeque;
 use std::io;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::process::{Command, ExitStatus};
+use std::process::{Command, ExitStatus, Stdio};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::boundary::host::{Pipes, Processes, Signals};
+use crate::boundary::host::{Pipes, Processes, Pty, Signals};
 use crate::testing::scripted_clock::ScriptedClock;
 use crate::time::{Clock, Moment};
 
-use super::{End, Event, ScriptedPipe, ScriptedWriter, Step};
+use super::{End, Event, ScriptedController, ScriptedPipe, ScriptedWriter, Step};
 
 /// `check_exit`に答える回数の上限。
 ///
@@ -44,6 +44,8 @@ pub struct ScriptedOs {
     checks: Cell<usize>,
     polled: Cell<usize>,
     arrived: RefCell<Option<Arc<AtomicBool>>>,
+    controller: RefCell<Option<ScriptedController>>,
+    terminal_stdio_calls: Cell<u8>,
 }
 
 impl ScriptedOs {
@@ -122,6 +124,12 @@ impl ScriptedOs {
     /// 見張りを置いた時点で既に届いている。
     pub fn interrupting_at_poll(mut self, poll: usize) -> ScriptedOs {
         self.interrupt_at = Some(poll);
+        self
+    }
+
+    /// PTYの親側。既定は何も言わない。
+    pub fn controller(mut self, controller: ScriptedController) -> ScriptedOs {
+        *self.controller.get_mut() = Some(controller);
         self
     }
 
@@ -316,5 +324,90 @@ impl Signals for ScriptedOs {
     fn stop_watching(&self, (): ()) -> bool {
         self.record(Event::StoppedWatching);
         true
+    }
+}
+
+impl Pty for ScriptedOs {
+    type Controller = ScriptedController;
+    type Terminal = ();
+    type Name = ();
+    type Settings = bool;
+
+    fn open_controller(&self) -> io::Result<ScriptedController> {
+        self.attempt(Step::OpenController)?;
+        self.record(Event::Pty(Step::OpenController));
+        Ok(self.controller.borrow_mut().take().unwrap_or_default())
+    }
+
+    fn close_on_exec(&self, _controller: &ScriptedController) -> io::Result<()> {
+        self.attempt(Step::CloseOnExec)?;
+        self.record(Event::Pty(Step::CloseOnExec));
+        Ok(())
+    }
+
+    fn grant(&self, _controller: &ScriptedController) -> io::Result<()> {
+        self.attempt(Step::Grant)?;
+        self.record(Event::Pty(Step::Grant));
+        Ok(())
+    }
+
+    fn unlock_terminal(&self, _controller: &ScriptedController) -> io::Result<()> {
+        self.attempt(Step::UnlockTerminal)?;
+        self.record(Event::Pty(Step::UnlockTerminal));
+        Ok(())
+    }
+
+    fn terminal_name(&self, _controller: &ScriptedController) -> io::Result<()> {
+        self.attempt(Step::TerminalName)?;
+        self.record(Event::Pty(Step::TerminalName));
+        Ok(())
+    }
+
+    fn open_terminal(&self, (): &()) -> io::Result<()> {
+        self.attempt(Step::OpenTerminal)?;
+        self.record(Event::Pty(Step::OpenTerminal));
+        Ok(())
+    }
+
+    fn settings(&self, (): &()) -> io::Result<bool> {
+        self.attempt(Step::Settings)?;
+        self.record(Event::Pty(Step::Settings));
+        Ok(false)
+    }
+
+    fn make_raw(&self, settings: &mut bool) {
+        *settings = true;
+        self.record(Event::MadeRaw);
+    }
+
+    fn apply_settings(&self, (): &(), _settings: &bool) -> io::Result<()> {
+        self.attempt(Step::ApplySettings)?;
+        self.record(Event::Pty(Step::ApplySettings));
+        Ok(())
+    }
+
+    fn set_size(
+        &self,
+        _controller: &ScriptedController,
+        _rows: u16,
+        _columns: u16,
+    ) -> io::Result<()> {
+        self.attempt(Step::SetSize)?;
+        self.record(Event::Pty(Step::SetSize));
+        Ok(())
+    }
+
+    fn controller_nonblocking(&self, _controller: &ScriptedController) -> io::Result<()> {
+        self.attempt(Step::ControllerNonblocking)?;
+        self.record(Event::Pty(Step::ControllerNonblocking));
+        Ok(())
+    }
+
+    fn terminal_stdio(&self, (): &()) -> io::Result<Stdio> {
+        let call = self.terminal_stdio_calls.get() + 1;
+        self.terminal_stdio_calls.set(call);
+        self.attempt(Step::TerminalStdio(call))?;
+        self.record(Event::Pty(Step::TerminalStdio(call)));
+        Ok(Stdio::null())
     }
 }

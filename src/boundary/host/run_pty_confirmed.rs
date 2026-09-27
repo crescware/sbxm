@@ -1,26 +1,17 @@
-use std::fs::File;
 use std::io::{Read, Write};
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::time::{Duration, Instant};
+use std::process::{Command, ExitStatus};
 
-use rustix::fs::{Mode, OFlags, fcntl_getfl, fcntl_setfl};
-use rustix::io::{Errno, FdFlags, fcntl_setfd};
-use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
-use rustix::termios::{OptionalActions, Winsize, tcgetattr, tcsetattr, tcsetwinsize};
+use rustix::io::Errno;
 
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
-
-use crate::boundary::os::RealHost;
+use crate::time::Clock;
 
 use super::{
-    CommandOutcome, PtyConfirmedCommand, apply_env, spawn_failure, start_child, terminate_child,
-    unreadable,
+    CommandOutcome, Processes, Pty, PtyConfirmedCommand, WAIT_POLL_INTERVAL, apply_env,
+    spawn_failure, start_child, terminate_child, unreadable,
 };
-
-/// promptを読む間隔。
-const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// 端末の大きさ。値を固定し、折り返しを実行環境から切り離す。
 const ROWS: u16 = 24;
@@ -31,92 +22,83 @@ const COLUMNS: u16 = 120;
 /// 期待するpromptが現れる前に、timeout・読み取り不能・processの終了のいずれかに
 /// 達した場合は、答えを送らずに`ExternalCommandNotConfirmed`として終える。答えを
 /// 送った後は、`CommandOutcome`をそのまま返し、成否の判定は呼び出し側に委ねる。
-pub(crate) fn run_pty_confirmed(command: &PtyConfirmedCommand) -> Result<CommandOutcome> {
+pub(crate) fn run_pty_confirmed<O: Processes + Pty>(
+    os: &O,
+    clock: &dyn Clock,
+    command: &PtyConfirmedCommand,
+) -> Result<CommandOutcome> {
     let spec = command.as_capture_spec();
-    let (controller, terminal) = open_pty().map_err(|error| spawn_failure(&spec, &error))?;
+    let (mut controller, terminal) = open_pty(os).map_err(|error| spawn_failure(&spec, &error))?;
 
     let mut process = Command::new(&command.program);
     process.args(&command.args);
     apply_env(&mut process, command.env, None);
-    let stdin = terminal
-        .try_clone()
-        .map_err(|error| spawn_failure(&spec, &error))?;
-    let stdout = terminal
-        .try_clone()
-        .map_err(|error| spawn_failure(&spec, &error))?;
-    process.stdin(Stdio::from(stdin));
-    process.stdout(Stdio::from(stdout));
-    process.stderr(Stdio::from(terminal));
+    attach(os, &mut process, &terminal).map_err(|error| spawn_failure(&spec, &error))?;
 
-    let mut child = start_child(&RealHost, &mut process, &spec)?;
+    let mut child = start_child(os, &mut process, &spec)?;
 
-    match drive(&mut child, controller, command) {
+    // `process`と`terminal`は端末側を持ったまま、この関数の終わりまで残る。子が終わっても
+    // 端末側は閉じないため、読み切りはWouldBlockで終わる（契約test C15a）。
+    match drive(os, clock, &mut child, &mut controller, command) {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
-            terminate_child(&RealHost, &mut child);
+            // 報告より先に終わらせる。`drive`自身は子を終わらせない。
+            terminate_child(os, &mut child);
             Err(error)
         }
     }
 }
 
-/// PTYを1つ開き、端末側をraw modeにする。
-fn open_pty() -> std::io::Result<(File, File)> {
-    let controller = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)?;
-    fcntl_setfd(&controller, FdFlags::CLOEXEC)?;
-    grantpt(&controller)?;
-    unlockpt(&controller)?;
-    let name = ptsname(&controller, Vec::new())?;
+/// PTYを1つ開き、端末側をraw modeにする。順番は変えず、失敗はそこで諦める。
+fn open_pty<O: Pty>(os: &O) -> std::io::Result<(O::Controller, O::Terminal)> {
+    let controller = os.open_controller()?;
+    os.close_on_exec(&controller)?;
+    os.grant(&controller)?;
+    os.unlock_terminal(&controller)?;
+    let name = os.terminal_name(&controller)?;
     // 制御端末として奪わない。sbxm自身のsessionへ結び付けない。
-    let terminal = File::from(rustix::fs::open(
-        &name,
-        OFlags::RDWR | OFlags::NOCTTY | OFlags::CLOEXEC,
-        Mode::empty(),
-    )?);
-
+    let terminal = os.open_terminal(&name)?;
     // 端末側をrawにする。echoと行編集は端末の機能であり、答えを送る打鍵ではない。
-    let mut settings = tcgetattr(&terminal)?;
-    settings.make_raw();
-    tcsetattr(&terminal, OptionalActions::Now, &settings)?;
-    tcsetwinsize(
-        &controller,
-        Winsize {
-            ws_row: ROWS,
-            ws_col: COLUMNS,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        },
-    )?;
-
-    let controller = File::from(controller);
-    // 読み取りは待たずに戻す。待ち時間の上限はここのloopが決める。
-    let flags = fcntl_getfl(&controller)?;
-    fcntl_setfl(&controller, flags | OFlags::NONBLOCK)?;
+    let mut settings = os.settings(&terminal)?;
+    os.make_raw(&mut settings);
+    os.apply_settings(&terminal, &settings)?;
+    os.set_size(&controller, ROWS, COLUMNS)?;
+    // 読み取りは待たずに戻す。待ち時間の上限はdriveのloopが決める。
+    os.controller_nonblocking(&controller)?;
     Ok((controller, terminal))
 }
 
+/// 子の3本のstreamを、端末側の複製へ向ける。
+fn attach<O: Pty>(os: &O, process: &mut Command, terminal: &O::Terminal) -> std::io::Result<()> {
+    process.stdin(os.terminal_stdio(terminal)?);
+    process.stdout(os.terminal_stdio(terminal)?);
+    process.stderr(os.terminal_stdio(terminal)?);
+    Ok(())
+}
+
 /// promptを監視しながら子processの終わりまで読み、答えるべき瞬間にだけ書き込む。
-fn drive(
-    child: &mut Child,
-    mut controller: File,
+/// 失敗を返すとき、子を終わらせるのは呼び出し側である。
+fn drive<O: Processes + Pty>(
+    os: &O,
+    clock: &dyn Clock,
+    child: &mut O::Child,
+    controller: &mut O::Controller,
     command: &PtyConfirmedCommand,
 ) -> Result<CommandOutcome> {
-    let prompt_deadline = Instant::now() + command.prompt_timeout;
+    let prompt_deadline = clock.now().after(command.prompt_timeout);
     let overall_deadline = command
         .timeout
         .duration()
-        .map(|limit| Instant::now() + limit);
+        .map(|limit| clock.now().after(limit));
     let mut buffer: Vec<u8> = Vec::new();
     let mut answered = false;
     let mut chunk = [0u8; 4096];
 
     loop {
-        match controller.read(&mut chunk) {
-            Ok(0) => {}
-            Ok(size) => buffer.extend_from_slice(&chunk[..size]),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-            // 読めなくなった端末は、これ以上何も言わない相手として扱う。以後はprocessの
-            // 終了だけを待つ。
-            Err(_) => {}
+        // 読めた分だけ足す。0も、まだ何も無いことも、読めなくなった端末も、新しく言ったことは
+        // 無いとし、以後はprocessの終了を待つ。
+        if let Ok(size) = controller.read(&mut chunk) {
+            buffer.extend_from_slice(&chunk[..size]);
         }
 
         if !answered {
@@ -132,9 +114,7 @@ fn drive(
                     ));
                 }
                 answered = true;
-            } else if Instant::now() >= prompt_deadline {
-                let _ = child.kill();
-                let _ = child.wait();
+            } else if clock.now() >= prompt_deadline {
                 return Err(not_confirmed(
                     command,
                     "the expected prompt did not appear in time",
@@ -143,32 +123,30 @@ fn drive(
             }
         }
 
-        match child.try_wait() {
+        match os.check_exit(child) {
             Ok(Some(status)) => {
-                drain_after_exit(&mut controller, &mut buffer, command)?;
+                drain_after_exit(controller, &mut buffer, command)?;
                 return finish(command, status, buffer, answered);
             }
             Ok(None) => {}
             Err(error) => return Err(spawn_failure(&command.as_capture_spec(), &error)),
         }
 
-        if overall_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            let _ = child.kill();
-            let _ = child.wait();
+        if overall_deadline.is_some_and(|deadline| clock.now() >= deadline) {
             return Err(timed_out(command));
         }
 
-        std::thread::sleep(POLL_INTERVAL);
+        clock.sleep(WAIT_POLL_INTERVAL);
     }
 }
 
 /// processが終わった後、PTYに残った出力を読み切る。
 ///
-/// masterのnonblocking readは、slave側が閉じて他に読む物がなくなると、`WouldBlock`ではなく
-/// `EIO`を返す（pipeのように`0`にはならない）。これを読み切りの終わりとして扱い、それ以外の
-/// 読み取り失敗は、runtimeの原文を失いかけたこととして外へ返す。
-fn drain_after_exit(
-    controller: &mut File,
+/// 親が端末側を持つ間、残りを読み終えたmasterのnonblocking readは`WouldBlock`を返す。誰も
+/// 端末側を持たなければ、Linuxは`EIO`を、macOSは`0`を返す（契約test C15a/C15b）。どれも読み切りの
+/// 終わりとし、それ以外の読み取り失敗は、runtimeの原文を失いかけたこととして外へ返す。
+fn drain_after_exit<R: Read>(
+    controller: &mut R,
     buffer: &mut Vec<u8>,
     command: &PtyConfirmedCommand,
 ) -> Result<()> {
