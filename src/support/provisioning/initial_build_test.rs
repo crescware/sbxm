@@ -1776,3 +1776,13 @@ fn a_finished_project_whose_sandbox_is_gone_and_whose_generation_is_unknown_is_n
     );
     Ok(())
 }
+
+#[test]
+fn an_image_that_cannot_be_looked_up_after_the_build_stops_the_build() -> Checked {
+    let (world, error) = built_after(|world| {
+        world.change_before("docker build", |world| world.timing_out("docker image ls"));
+    })?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(!world.ran("docker image save"));
+    Ok(())
+}
