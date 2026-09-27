@@ -217,3 +217,27 @@ fn a_local_project_has_no_token_to_rotate() -> Checked {
     assert!(host.calls().is_empty(), "{:?}", host.calls());
     Ok(())
 }
+
+#[test]
+fn a_guide_is_not_written_from_a_registry_that_cannot_be_read() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new()?;
+    fixture.register("owner/repo")?;
+    std::fs::set_permissions(
+        fixture.location.registry_file(),
+        std::fs::Permissions::from_mode(0o666),
+    )
+    .required()?;
+
+    let error = super::run::run(
+        &explicit("owner/repo")?,
+        &fixture.location,
+        Locale::En,
+        &FakeSbx::listing(""),
+        &mut ScriptedPrompt::choosing(0),
+    )
+    .refused_because("the registry is not private")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigPermissionTooOpen));
+    Ok(())
+}

@@ -1837,3 +1837,262 @@ fn a_destroy_stops_at_any_step_that_does_not_answer() -> Checked {
     }
     Ok(())
 }
+
+/// tokenの登録を1件持つ案件を、`host`の答えで消す。
+fn destroyed_with_registration(
+    change: impl Fn(FakeSbx, &str) -> FakeSbx,
+) -> Checked<(
+    Fixture,
+    crate::testing::project::Registered,
+    Result<DestroyOutcome>,
+)> {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let sandbox = project.sandbox.as_str().to_string();
+    let host = change(clean_host(&fixture, &project)?, &sandbox);
+    expect_successful_removal(&host);
+    let mut prepared = planned(&fixture, &host, false).required()?;
+    let outcome = destroy(&host, &mut prepared);
+    Ok((fixture, project, outcome))
+}
+
+#[test]
+fn a_token_registration_that_cannot_be_removed_keeps_the_project_managed() -> Checked {
+    let (_fixture, project, outcome) = destroyed_with_registration(|host, sandbox| {
+        host.answering_in_turn(
+            "secret ls",
+            &[(0, &custom_secret_listing(sandbox, "sbx-cs-example"))],
+        )
+        .answering(
+            &format!("secret rm {sandbox} --placeholder sbx-cs-example --force"),
+            1,
+            "",
+        )
+    })?;
+
+    let error = outcome.refused_because("the registration stays")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn registrations_that_cannot_be_listed_after_the_removal_keep_the_project_managed() -> Checked {
+    let (_fixture, project, outcome) = destroyed_with_registration(|host, sandbox| {
+        host.answering_in_turn(
+            "secret ls",
+            &[
+                (0, &custom_secret_listing(sandbox, "sbx-cs-example")),
+                (1, ""),
+            ],
+        )
+    })?;
+
+    let error = outcome.refused_because("what is left is unknown")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+/// 案件を1件登録し、`listings`の一覧を呼ばれる順に返すhostで消す。
+fn destroyed_seeing(
+    force: bool,
+    listings: impl Fn(&Fixture, &Registered) -> Checked<Vec<String>>,
+) -> Checked<(Fixture, Registered, FakeSbx, Result<DestroyOutcome>)> {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let mut listed = listings(&fixture, &project)?;
+    listed.reverse();
+    *host.listing.borrow_mut() = listed;
+    let mut prepared = planned(&fixture, &host, force).required()?;
+    let outcome = destroy(&host, &mut prepared);
+    Ok((fixture, project, host, outcome))
+}
+
+fn twice(fixture: &Fixture, project: &Registered) -> Checked<String> {
+    let entry = fixture.entry(project, "running")?;
+    Ok(format!(r#"{{"sandboxes":[{entry},{entry}]}}"#))
+}
+
+#[test]
+fn force_without_a_sandbox_stops_when_the_absence_is_ambiguous() -> Checked {
+    let (_fixture, project, host, outcome) = destroyed_seeing(true, |fixture, project| {
+        Ok(vec![
+            r#"{"sandboxes":[]}"#.to_string(),
+            twice(fixture, project)?,
+        ])
+    })?;
+
+    let error = outcome.refused_because("two sandboxes share the name")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    assert!(!host.ran("rm "));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_confirmed_destroy_stops_when_the_sandbox_is_listed_twice() -> Checked {
+    let (_fixture, project, host, outcome) = destroyed_seeing(false, |fixture, project| {
+        Ok(vec![
+            listed(fixture, project, "running")?,
+            twice(fixture, project)?,
+        ])
+    })?;
+
+    let error = outcome.refused_because("two sandboxes share the name")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    assert!(!host.ran("rm "));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_removal_whose_result_cannot_be_listed_keeps_the_project_managed() -> Checked {
+    let (_fixture, project, _, outcome) = destroyed_seeing(false, |fixture, project| {
+        Ok(vec![
+            listed(fixture, project, "running")?,
+            listed(fixture, project, "running")?,
+            "not json".to_string(),
+        ])
+    })?;
+
+    let error = outcome.refused_because("the removal is not confirmed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_forced_removal_that_does_not_answer_keeps_the_project_managed() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let prepared = planned(&fixture, &host, true).required()?;
+    let host = crate::testing::host::Unrunnable::timing_out(host, "rm --force");
+    let clock = ScriptedClock::default();
+
+    let error = execute_bypassed(&host, &prepared, poll(&clock), &mut SilentProgress)
+        .refused_because("the removal does not answer")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+/// 止まっているSandboxを持つ案件を、起動したあとの一覧が`after_start`になるhostで計画する。
+fn planned_from_stopped(
+    arrange: impl Fn(&Fixture, &Registered) -> Checked<Vec<String>>,
+) -> Checked<(Fixture, FakeSbx, Result<Prepared>)> {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let mut listed = arrange(&fixture, &project)?;
+    listed.reverse();
+    *host.listing.borrow_mut() = listed;
+    let prepared = planned(&fixture, &host, false);
+    Ok((fixture, host, prepared))
+}
+
+#[test]
+fn a_started_sandbox_that_is_listed_twice_is_not_planned() -> Checked {
+    let (_fixture, _, prepared) = planned_from_stopped(|fixture, project| {
+        Ok(vec![
+            listed(fixture, project, "stopped")?,
+            twice(fixture, project)?,
+        ])
+    })?;
+
+    let error = prepared.refused_because("two sandboxes share the name")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_whose_workspace_root_others_can_enter_is_not_started() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    *host.listing.borrow_mut() = vec![listed(&fixture, &project, "stopped")?];
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    std::fs::create_dir_all(&workspace).required()?;
+    set_mode(&workspace, 0o700)?;
+    set_mode(&fixture.workspace_root, 0o755)?;
+
+    let error = planned(&fixture, &host, false).refused_because("the root is not private")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert!(!host.ran("/bin/true"), "{:?}", host.calls());
+    Ok(())
+}
+
+#[test]
+fn a_token_registration_removal_that_does_not_answer_keeps_the_project_managed() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let sandbox = project.sandbox.as_str().to_string();
+    let host = clean_host(&fixture, &project)?.answering(
+        "secret ls",
+        0,
+        &custom_secret_listing(&sandbox, "sbx-cs-example"),
+    );
+    expect_successful_removal(&host);
+    let mut prepared = planned(&fixture, &host, false).required()?;
+    let host = crate::testing::host::Unrunnable::timing_out(host, "secret rm");
+
+    let confirmation = confirm(&mut prepared, true, &mut ScriptedConfirm::typing(&sandbox))?
+        .required_because("the normal mode asks")?;
+    let clock = ScriptedClock::default();
+    let error = execute_confirmed(
+        &host,
+        &prepared,
+        confirmation,
+        poll(&clock),
+        &mut SilentProgress,
+    )
+    .refused_because("the removal of the registration does not answer")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_removal_followed_by_two_sandboxes_of_the_name_keeps_the_project_managed() -> Checked {
+    let (_fixture, project, _, outcome) = destroyed_seeing(false, |fixture, project| {
+        Ok(vec![
+            listed(fixture, project, "running")?,
+            listed(fixture, project, "running")?,
+            twice(fixture, project)?,
+        ])
+    })?;
+
+    let error = outcome.refused_because("the removal is not confirmed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_whose_workspace_became_a_symlink_is_not_started() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    *host.listing.borrow_mut() = vec![listed(&fixture, &project, "stopped")?];
+    let elsewhere = fixture.workspace_root.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).required()?;
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    std::fs::remove_dir_all(&workspace).required()?;
+    std::os::unix::fs::symlink(&elsewhere, &workspace).required()?;
+
+    let error = planned(&fixture, &host, false).refused_because("the workspace is a symlink")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    assert!(!host.ran("/bin/true"), "{:?}", host.calls());
+    Ok(())
+}

@@ -31,3 +31,7 @@ pub fn exec(context: &Context, ui: &mut Ui, host: &dyn HostEnvironment) -> ExitC
         Err(error) => report(ui, &error),
     }
 }
+
+#[cfg(test)]
+#[path = "exec_test.rs"]
+mod exec_test;

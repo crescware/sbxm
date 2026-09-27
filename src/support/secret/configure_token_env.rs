@@ -6,7 +6,7 @@ use crate::msg;
 use crate::support::Observed;
 use crate::support::sandbox;
 
-use super::{TOKEN_ENV_FILE, expected_token_env, is_sbxm_token_env, observe_token_env};
+use super::{TOKEN_ENV_FILE, is_sbxm_token_env, observe_token_env, token_env_lines};
 
 /// shellが一切解釈しない形で1行ずつ書き出す。値はargvで渡し、fileへは`printf`が
 /// そのまま入れる。
@@ -42,13 +42,7 @@ pub fn configure_token_env(
 }
 
 fn write(host: &dyn HostEnvironment, sandbox: &str, placeholder: &str) -> Result<()> {
-    let content = expected_token_env(placeholder);
-    let mut lines = content.lines();
-    let (Some(marker), Some(first), Some(second)) = (lines.next(), lines.next(), lines.next())
-    else {
-        // `expected_token_env`は常に3行を返す。
-        return Ok(());
-    };
+    let [marker, first, second] = token_env_lines(placeholder);
     sandbox::exec_as_root(
         host,
         sandbox,
@@ -57,9 +51,9 @@ fn write(host: &dyn HostEnvironment, sandbox: &str, placeholder: &str) -> Result
             "-c",
             WRITE,
             "sh",
-            marker,
-            first,
-            second,
+            &marker,
+            &first,
+            &second,
             TOKEN_ENV_FILE,
         ],
     )?

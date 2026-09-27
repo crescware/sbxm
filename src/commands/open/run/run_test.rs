@@ -925,3 +925,32 @@ fn the_session_lease_stays_held_until_the_terminal_session_ends() -> Checked {
     .required_because("the session lease releases once the session ends")?;
     Ok(())
 }
+
+#[test]
+fn an_ssh_that_cannot_be_started_is_reported_after_the_lease_is_released() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = crate::testing::host::Unrunnable::timing_out(
+        ready(FakeSbx::listing(&running), &project)?,
+        &format!("-t {}.sbx", project.sandbox),
+    );
+    let prepared = prepare_for(&fixture, &host.inner).required_because("prepare")?;
+
+    let error = connect(&host, prepared, &mut RecordedOutput::new(), None)
+        .refused_because("the SSH child never ran")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    // 待たずに1度だけ試す。leaseが解けていれば取れる。
+    paths::acquire_exclusive_lock(
+        &project.paths.session_lease_file(),
+        std::time::Duration::ZERO,
+        PRIVATE_FILE_MODE,
+        PathScope::ProjectPath,
+    )
+    .required_because("the session lease is released before the error report")?;
+    Ok(())
+}

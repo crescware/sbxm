@@ -2,6 +2,7 @@
 
 mod answered_host;
 mod assert_lifecycle;
+mod changing_before;
 mod custom_secret_listing;
 mod failing_at;
 mod fake_sbx;
@@ -13,6 +14,7 @@ mod unrunnable;
 
 pub use answered_host::AnsweredHost;
 pub use assert_lifecycle::assert_lifecycle;
+pub use changing_before::ChangingBefore;
 pub use custom_secret_listing::custom_secret_listing;
 pub use failing_at::FailingAt;
 pub use fake_sbx::FakeSbx;

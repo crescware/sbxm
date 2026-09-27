@@ -129,3 +129,43 @@ fn a_save_that_does_not_arrive_is_reported() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     Ok(())
 }
+
+#[test]
+fn a_save_is_not_chosen_from_a_registry_that_cannot_be_read() -> Checked {
+    let error = saved_after(|bench, _| {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            bench.location.registry_file(),
+            std::fs::Permissions::from_mode(0o666),
+        )
+        .required()
+    })?
+    .err()
+    .required_because("the registry is not private")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigPermissionTooOpen));
+    Ok(())
+}
+
+#[test]
+fn a_save_from_a_sandbox_listed_twice_is_refused() -> Checked {
+    let clock = ScriptedClock::default();
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench.build(&world, &request).required()?;
+    let row = world.sandboxes.borrow().first().cloned();
+    world.sandboxes.borrow_mut().extend(row);
+
+    let error = save_now(
+        &bench.location,
+        Some(&project_of(&request)?),
+        &mut ScriptedPrompt::choosing(0),
+        &world,
+        bench.workspace_root.path(),
+        &clock,
+    )
+    .err()
+    .required_because("two sandboxes share the name")?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    Ok(())
+}

@@ -215,3 +215,11 @@ fn a_sandbox_listing_that_cannot_be_read_states_which_reading_failed() -> Checke
     }
     Ok(())
 }
+
+#[test]
+fn sandboxes_that_are_not_a_list_are_not_read_as_none() -> Checked {
+    let error = parse_sandbox_list(r#"{"sandboxes":3}"#).refused_because("not a list")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    Ok(())
+}

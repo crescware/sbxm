@@ -404,3 +404,22 @@ fn the_pty_is_opened_in_the_documented_order() {
         "a PTY run does not move to its own process group"
     );
 }
+
+#[test]
+fn an_answered_exchange_whose_last_output_cannot_be_read_is_reported() -> Checked {
+    let prompt = "confirmation";
+    let controller = ScriptedController::new([ReadStep::Bytes(prompt.as_bytes())])
+        .after_answer([ReadStep::Failed]);
+    let os = ScriptedOs::default()
+        .controller(controller)
+        .exits([Ok(Some(exited(0)))]);
+
+    let error = run_pty_confirmed(&os, os.clock(), &command(prompt))
+        .refused_because("the output after the exit is not known")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ExternalCommandOutputUnreadable)
+    );
+    Ok(())
+}

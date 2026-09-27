@@ -224,3 +224,23 @@ fn a_missing_token_registration_is_reported_with_the_command_that_registers_it()
     );
     Ok(())
 }
+
+#[test]
+fn a_project_whose_metadata_cannot_be_read_is_not_diagnosed_from_a_guess() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    std::fs::write(project.paths.metadata_file(), b"not: [valid").required()?;
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+
+    let error = diagnose(
+        &fixture.location,
+        &fixture.config,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .refused_because("the metadata is broken")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidSyntax));
+    Ok(())
+}

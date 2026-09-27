@@ -14,6 +14,7 @@ use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::protection::{clean_host, commit_only_in_the_sandbox};
 use crate::testing::scripted_clock::ScriptedClock;
+use std::os::unix::fs::PermissionsExt;
 
 /// `exec`が書いたstdoutとstderr、そして終了statusを取り出す。
 ///
@@ -261,6 +262,56 @@ fn a_refusal_that_remains_after_saving_is_reported_without_asking_again() -> Che
         !ran.stdout.contains("Target generation"),
         "no plan is drawn while the refusal remains: {}",
         ran.stdout
+    );
+    Ok(())
+}
+
+#[test]
+fn a_confirmed_rebuild_recreates_the_sandbox_and_reports_what_it_applied() -> Checked {
+    let fixture = Fixture::new()?;
+    let mut project = fixture.register("example-org/example-repo")?;
+    let host = host_with_the_applied_generation(&fixture, &mut project)?;
+    let layout = crate::project::SandboxLayout::new(project.metadata.canonical_id());
+    let host = crate::commands::rebuild::fake::ready_to_switch(
+        host,
+        project.sandbox.as_str(),
+        &layout.bare_git_dir(),
+        &layout.worktree(0),
+    );
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    std::fs::create_dir_all(&workspace).required()?;
+    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
+    let created = format!(
+        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
+        project.sandbox,
+        workspace.display()
+    );
+    // 一覧は末尾から取り出される。消す前の保存、計画、実行の取り直しまでは稼働中の
+    // Sandboxを観測し、削除のあとは消えていて、作り直したあとは新しいSandboxを観測する。
+    *host.listing.borrow_mut() = vec![
+        created,
+        r#"{"sandboxes":[]}"#.to_string(),
+        r#"{"sandboxes":[]}"#.to_string(),
+        running(&fixture, &project)?,
+        running(&fixture, &project)?,
+        running(&fixture, &project)?,
+    ];
+
+    let ran = run(&fixture, &host, project.sandbox.as_str())?;
+
+    assert_eq!(ran.code, ExitCode::Success, "{}{}", ran.stdout, ran.stderr);
+    assert!(
+        host.ran(&format!("rm {}", project.sandbox)) && host.ran("create --name"),
+        "{:?}",
+        host.calls()
+    );
+    assert!(
+        metadata::load(&project.paths)
+            .required()?
+            .required_because("the project stays managed")?
+            .rebuild
+            .is_none(),
+        "the rebuild intent is cleared once the switch completes"
     );
     Ok(())
 }

@@ -1,4 +1,4 @@
-use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::{CommandOutcome, HostEnvironment};
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
@@ -7,12 +7,13 @@ use super::version_probe;
 
 /// Docker Engineへ疎通できることを確認する。
 pub fn require_reachable(host: &dyn HostEnvironment) -> Result<()> {
-    let outcome = match version_probe(host) {
+    // 非0で終わった場合も、起動できなかった場合と同じく元の失敗を事実として残す。
+    let outcome = match version_probe(host).and_then(CommandOutcome::require_success) {
         Ok(outcome) => outcome,
         Err(error @ Error::Canceled) => return Err(error),
         Err(error) => return Err(unreachable(Some(&error))),
     };
-    if outcome.success() && !outcome.stdout_text().trim().is_empty() {
+    if !outcome.stdout_text().trim().is_empty() {
         return Ok(());
     }
     Err(unreachable(None))

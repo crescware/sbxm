@@ -525,3 +525,115 @@ fn a_stop_does_not_report_success_past_a_step_that_did_not_answer() -> Checked {
     }
     Ok(())
 }
+
+/// 動いているSandboxを1つ持つ案件と、それを止めるhost。
+fn running_project() -> Checked<(Fixture, crate::testing::project::Registered, FakeSbx)> {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("alpha/alfa")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let after = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let host = FakeSbx::listings(&[&running, &running, &after]);
+    Ok((fixture, project, host))
+}
+
+fn stop_with(
+    fixture: &Fixture,
+    host: &dyn crate::boundary::host::HostEnvironment,
+) -> crate::diagnostics::Result<crate::commands::stop::StopReport> {
+    let clock = ScriptedClock::default();
+    run(
+        &fixture.location,
+        &[crate::project::ProjectId::parse("alpha/alfa")?],
+        host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+        poll(&clock),
+        &mut RecordedOutput::new(),
+    )
+}
+
+#[test]
+fn a_metadata_that_cannot_be_read_stops_before_any_lock_is_taken() -> Checked {
+    let (fixture, project, host) = running_project()?;
+    std::fs::write(project.paths.metadata_file(), b"not: [valid").required()?;
+
+    let error = stop_with(&fixture, &host).refused_because("the metadata is broken")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidSyntax));
+    assert!(!host.ran("stop "));
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_listed_twice_is_not_stopped() -> Checked {
+    let (fixture, project, _) = running_project()?;
+    let entry = fixture.entry(&project, "running")?;
+    let host = FakeSbx::listing(&format!(r#"{{"sandboxes":[{entry},{entry}]}}"#));
+
+    let error = stop_with(&fixture, &host).refused_because("two sandboxes share the name")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    assert!(!host.ran("stop "));
+    Ok(())
+}
+
+#[test]
+fn a_lock_that_cannot_be_trusted_stops_before_anything_is_stopped() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let (fixture, project, host) = running_project()?;
+    std::fs::write(project.paths.lock_file(), b"").required()?;
+    std::fs::set_permissions(
+        project.paths.lock_file(),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .required()?;
+
+    let error = stop_with(&fixture, &host).refused_because("an unsafe lock")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert!(!host.ran("stop "));
+    Ok(())
+}
+
+#[test]
+fn a_metadata_broken_while_the_locks_were_taken_stops_before_anything_is_stopped() -> Checked {
+    let (fixture, project, host) = running_project()?;
+    let metadata = project.paths.metadata_file();
+    // lockを取ったあとの一覧の直前に、metadataが読めなくなる。
+    let host = crate::testing::host::ChangingBefore::skipping(host, "ls --json", 1, move || {
+        let _ = std::fs::write(&metadata, b"not: [valid");
+    });
+
+    let error = stop_with(&fixture, &host).refused_because("the metadata is broken")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidSyntax));
+    assert!(!host.inner.ran("stop "));
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_listed_twice_after_the_locks_were_taken_is_not_stopped() -> Checked {
+    let (fixture, project, _) = running_project()?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let entry = fixture.entry(&project, "running")?;
+    let twice = format!(r#"{{"sandboxes":[{entry},{entry}]}}"#);
+    let host = FakeSbx::listings(&[&running, &twice]);
+
+    let error = stop_with(&fixture, &host).refused_because("two sandboxes share the name")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    assert!(!host.ran("stop "));
+    Ok(())
+}

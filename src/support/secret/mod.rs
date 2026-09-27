@@ -42,6 +42,7 @@ mod replace_github_command;
 mod require_github;
 mod require_github_accepts;
 mod token_env_file;
+mod token_env_lines;
 mod token_env_marker;
 
 pub use configure_git_credential::configure_git_credential;
@@ -70,6 +71,7 @@ pub use replace_github_command::replace_github_command;
 pub use require_github::require_github;
 pub use require_github_accepts::require_github_accepts;
 use token_env_file::TOKEN_ENV_FILE;
+use token_env_lines::token_env_lines;
 use token_env_marker::TOKEN_ENV_MARKER;
 
 #[cfg(test)]

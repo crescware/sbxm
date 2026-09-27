@@ -1045,3 +1045,25 @@ fn an_ssh_probe_that_exits_non_zero_is_unobservable_and_keeps_the_original_stder
     );
     Ok(())
 }
+
+#[test]
+fn a_platform_whose_architecture_cannot_be_read_is_not_guessed() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
+    // 版は読めるが、CPUの種類が読めない。
+    let host = FakeHost::new()
+        .with_commands(&["git", "ssh", "docker", "sbx", "sw_vers"])
+        .responding("sw_vers -productVersion", "15.1\n");
+    let status = diagnose(&location, &host);
+
+    assert_eq!(
+        status_of(&status, "status-item-platform")?,
+        StatusValue::Error
+    );
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::PlatformUnobservable)
+    );
+    Ok(())
+}
