@@ -1,8 +1,10 @@
 //! `status`の実行。
 
 use crate::boundary::host::HostEnvironment;
+use crate::config::GlobalConfig;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::{ExitCode, Result};
+use crate::i18n::Locale;
 use crate::msg;
 use crate::project::ProjectId;
 use crate::support::select;
@@ -21,43 +23,39 @@ pub fn exec(
 ) -> ExitCode {
     // 明示したglobal診断は、未loginでもほかの前提をすべて報告する。
     // 対話実行はglobalを含むscope選択そのものより前に確認する。
-    if !matches!(scope, Scope::Global) {
-        let locale = match context.tolerant_locale() {
-            Ok(locale) => locale,
-            Err(error) => return report(ui, &error),
-        };
-        ui.set_locale(locale);
-        if let Err(error) = crate::support::login::require_signed_in(host) {
-            return report(ui, &error);
-        }
+    if matches!(scope, Scope::Global) {
+        return global(context, ui, host);
+    }
+    let (config, locale) = match context.settings() {
+        Ok(pair) => pair,
+        Err(error) => return report(ui, &error),
+    };
+    ui.set_locale(locale);
+    if let Err(error) = crate::support::login::require_signed_in(host) {
+        return report(ui, &error);
     }
     match scope {
-        Scope::Global => global(context, ui, host),
-        Scope::Project(project) => project_scope(project, context, ui, host),
-        Scope::Prompt => prompt_scope(context, ui, host, prompt),
+        Scope::Project(project) => project_scope(project, &config, context, ui, host),
+        _ => prompt_scope(&config, locale, context, ui, host, prompt),
     }
 }
 
 fn prompt_scope(
+    config: &GlobalConfig,
+    locale: Locale,
     context: &Context,
     ui: &mut Ui,
     host: &dyn HostEnvironment,
     prompt: &mut PromptUi,
 ) -> ExitCode {
-    let locale = match context.tolerant_locale() {
-        Ok(locale) => locale,
-        Err(error) => return report(ui, &error),
-    };
-    ui.set_locale(locale);
     prompt.set_locale(locale);
     let scope = match select_scope(context.location, prompt) {
         Ok(scope) => scope,
         Err(error) => return report(ui, &error),
     };
     match scope {
-        Scope::Global => global(context, ui, host),
-        Scope::Project(project) => project_scope(&project, context, ui, host),
-        Scope::Prompt => unreachable!("select_scope never returns an unresolved prompt"),
+        Scope::Project(project) => project_scope(&project, config, context, ui, host),
+        _ => global(context, ui, host),
     }
 }
 
@@ -93,18 +91,14 @@ fn global(context: &Context, ui: &mut Ui, host: &dyn HostEnvironment) -> ExitCod
 
 fn project_scope(
     project: &ProjectId,
+    config: &GlobalConfig,
     context: &Context,
     ui: &mut Ui,
     host: &dyn HostEnvironment,
 ) -> ExitCode {
-    let (config, locale) = match context.settings() {
-        Ok(pair) => pair,
-        Err(error) => return report(ui, &error),
-    };
-    ui.set_locale(locale);
     match super::project::diagnose(
         context.location,
-        &config,
+        config,
         project,
         host,
         context.workspace_root,
