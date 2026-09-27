@@ -186,6 +186,11 @@ testが残る。
 実行は`output()`で、killした子の回収は`wait`で待ち、`wait_until`を使わない。途中で失敗した
 testも、終わらない子processを残さない。
 
+契約testが別のprocessやOSの状態が整うのを待つときは、`src/testing/wait_until.rs`の
+`wait_until`だけを使う。上限は60秒の1つだけであり、速さは確かめない。閉じたことが相手へ
+届くのも待つ。同じprocessの別のthreadがforkした子は、自分のexecまで開いたfileの複製を持つ
+ためである。
+
 ## flakyを疑ったとき
 
 1つのtestを単独で繰り返しても、時機の競合はほとんど再現しない。CIで出る競合は、同じprocessの

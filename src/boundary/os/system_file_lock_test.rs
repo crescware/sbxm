@@ -4,13 +4,17 @@
 //! 別に開いたfileどうしで排他する。外すか閉じれば解ける。pathではなく開いたfileに掛かるため、
 //! pathを別のfileへ置き換えれば、開き直したfileにはlockが無い。
 //!
-//! どれも1つのthreadで、待たずに試した結果だけを見る。
+//! どれも1つのthreadで、待たずに試した結果だけを見る。閉じたことで解けるのを見る仮定だけは、
+//! 解けるまで待つ。同じprocessの別のthreadのtestがforkした子は、自分のexecまで開いたfileを
+//! 共有し、そのlockも持つためである。
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::Path;
 
+use crate::boundary::os::SystemClock;
 use crate::testing::fs::temp_dir;
-use crate::testing::outcome::{Checked, Required};
+use crate::testing::outcome::{Checked, Required, Unmet};
+use crate::testing::wait_until::wait_until;
 
 use super::*;
 
@@ -65,8 +69,18 @@ fn closing_the_file_releases_its_lock() -> Checked {
     SystemFileLock::try_lock(&held).required_because("the first lock is free")?;
     drop(held);
 
-    SystemFileLock::try_lock(&open(&path)?).required_because("closing released the lock")?;
-    Ok(())
+    let reopened = open(&path)?;
+    wait_until(
+        &SystemClock,
+        "closing to release the lock",
+        || match SystemFileLock::try_lock(&reopened) {
+            Ok(()) => Ok(Some(())),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(TryLockError::Error(error)) => Err(Unmet::new(format!(
+                "the lock could not be tried: {error:?}"
+            ))),
+        },
+    )
 }
 
 #[test]
