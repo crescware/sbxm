@@ -13,6 +13,7 @@ use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::super::{Args, adopt, exec};
 use super::*;
@@ -45,6 +46,7 @@ fn run(
     can_prompt: bool,
     keys: ScriptedKeys,
 ) -> Checked<Ran> {
+    let clock = ScriptedClock::default();
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     let policy = RenderingPolicy::plain();
@@ -59,6 +61,7 @@ fn run(
         let context = Context {
             location: &bench.location,
             workspace_root: bench.workspace_root.path(),
+            clock: &clock,
             locale: Locale::En,
             can_prompt,
         };

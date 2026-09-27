@@ -9,6 +9,7 @@ use crate::i18n::Locale;
 use crate::testing::global_status::FakeHost;
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::{Fixture, project_id};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::{Command, Context, apply, destroy, guide, open, status};
 
@@ -105,6 +106,7 @@ fn execute(
 
 #[test]
 fn all_sandbox_commands_report_missing_login_before_any_prompt_or_mutation() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("owner/repo")?;
     let before = std::fs::read(project.paths.metadata_file()).required()?;
@@ -134,6 +136,7 @@ fn all_sandbox_commands_report_missing_login_before_any_prompt_or_mutation() -> 
                     let context = Context {
                         location: &fixture.location,
                         workspace_root: &fixture.workspace_root,
+                        clock: &clock,
                         locale,
                         can_prompt: !explicit,
                     };
@@ -168,6 +171,7 @@ fn all_sandbox_commands_report_missing_login_before_any_prompt_or_mutation() -> 
 
 #[test]
 fn authenticated_commands_reach_selection_and_can_be_canceled() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     fixture.register("owner/repo")?;
     // `sync`は`--local`の案件だけを並べる。選ぶ案件が無ければ、選ばせる前に断る。
@@ -199,6 +203,7 @@ fn authenticated_commands_reach_selection_and_can_be_canceled() -> Checked {
             let context = Context {
                 location: &fixture.location,
                 workspace_root: &fixture.workspace_root,
+                clock: &clock,
                 locale: Locale::En,
                 can_prompt: true,
             };

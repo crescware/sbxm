@@ -9,6 +9,7 @@ use crate::testing::host::FakeSbx;
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::Fixture;
 use crate::testing::prompt::ScriptedPrompt;
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::select_scope;
 
@@ -18,6 +19,7 @@ fn execute_prompt(
     keys: ScriptedKeys,
     screen: &RecordedScreen,
 ) -> ExitCode {
+    let clock = ScriptedClock::default();
     let policy = RenderingPolicy::plain();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -32,6 +34,7 @@ fn execute_prompt(
         let context = Context {
             location: &fixture.location,
             workspace_root: &fixture.workspace_root,
+            clock: &clock,
             locale: Locale::En,
             can_prompt: true,
         };
@@ -126,6 +129,7 @@ fn prompt_cancellation_returns_canceled() -> Checked {
 
 #[test]
 fn explicit_global_status_reports_login_alongside_other_host_checks() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let host = FakeHost::macos().failing(
         "sbx ls --json",
@@ -147,6 +151,7 @@ fn explicit_global_status_reports_login_alongside_other_host_checks() -> Checked
         let context = Context {
             location: &fixture.location,
             workspace_root: &fixture.workspace_root,
+            clock: &clock,
             locale: Locale::En,
             can_prompt: false,
         };

@@ -8,6 +8,7 @@ use crate::project::ProjectId;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -18,9 +19,11 @@ fn run_exec(
     world: &World,
     project: Option<&ProjectId>,
 ) -> Checked<(ExitCode, String, String)> {
+    let clock = ScriptedClock::default();
     let context = Context {
         location: &bench.location,
         workspace_root: bench.workspace_root.path(),
+        clock: &clock,
         locale: Locale::En,
         can_prompt: false,
     };

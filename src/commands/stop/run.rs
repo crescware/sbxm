@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Instant;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::ConfigLocation;
@@ -120,7 +119,7 @@ fn stop_one(
     host.run_with_terminal(&command, output)?
         .require_success()?;
 
-    let deadline = Instant::now() + poll.limit;
+    let deadline = poll.deadline();
     loop {
         let entries = daemon::list(host)?;
         let state = entries
@@ -131,16 +130,14 @@ fn stop_one(
             // 削除されている場合も、起動していないことは確認できている。
             None | Some(crate::boundary::host::protocol::SandboxState::Stopped) => return Ok(()),
             Some(crate::boundary::host::protocol::SandboxState::Running)
-                if Instant::now() >= deadline =>
+                if poll.expired(deadline) =>
             {
                 return Err(Error::new(
                     ErrorId::SandboxStillRunning,
                     msg!("error-sandbox-still-running", sandbox = sandbox),
                 ));
             }
-            Some(crate::boundary::host::protocol::SandboxState::Running) => {
-                std::thread::sleep(poll.interval);
-            }
+            Some(crate::boundary::host::protocol::SandboxState::Running) => poll.pause(),
         }
     }
 }

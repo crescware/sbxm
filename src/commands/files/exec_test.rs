@@ -11,6 +11,7 @@ use crate::i18n::Locale;
 use crate::testing::host::FakeSbx;
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::Fixture;
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::*;
 
@@ -30,6 +31,7 @@ fn run(
     keys: ScriptedKeys,
     host: &FakeSbx,
 ) -> Checked<Ran> {
+    let clock = ScriptedClock::default();
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     let screen = RecordedScreen::new();
@@ -45,6 +47,7 @@ fn run(
         let context = Context {
             location: &fixture.location,
             workspace_root: &fixture.workspace_root,
+            clock: &clock,
             locale: Locale::En,
             can_prompt,
         };

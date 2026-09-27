@@ -59,7 +59,7 @@ pub fn exec(
                 args.force,
                 host,
                 context.workspace_root,
-                inventory::Poll::default(),
+                inventory::Poll::standard(context.clock),
                 ui,
             )
         });
@@ -87,10 +87,15 @@ pub fn exec(
             host,
             &prepared,
             confirmation,
-            inventory::Poll::default(),
+            inventory::Poll::standard(context.clock),
             ui,
         ),
-        None => super::run::execute_bypassed(host, &prepared, inventory::Poll::default(), ui),
+        None => super::run::execute_bypassed(
+            host,
+            &prepared,
+            inventory::Poll::standard(context.clock),
+            ui,
+        ),
     };
     let mut outcome = match executed {
         Ok(outcome) => outcome,

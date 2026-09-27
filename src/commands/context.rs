@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::config::{self, ConfigLocation, GlobalConfig};
 use crate::diagnostics::Result;
 use crate::i18n::Locale;
+use crate::time::Clock;
 
 /// command固有でない実行の入力。
 pub struct Context<'a> {
@@ -12,6 +13,12 @@ pub struct Context<'a> {
     /// 実行環境を名指すため、`location`と同じく`main`が選んだものだけを使う。commandが
     /// 自分で正本の定数へ手を伸ばすと、その経路は実hostのpathでしか動かなくなる。
     pub workspace_root: &'a Path,
+    /// この実行が時間を読み、待つ時計。
+    ///
+    /// `location`と同じく`main`が選んだものだけを使う。commandが自分でOSの時計へ手を
+    /// 伸ばすと、その経路は実時間でしか動かず、testは実際に待つか、待たずに済む経路しか
+    /// 通れない。
+    pub clock: &'a dyn Clock,
     /// この実行で使う表示言語。
     pub locale: Locale,
     pub can_prompt: bool,

@@ -38,7 +38,7 @@ pub fn exec(
         host,
         prompt,
         context.workspace_root,
-        inventory::Poll::default(),
+        inventory::Poll::standard(context.clock),
         ui,
     ) {
         Ok(prepared) => prepared,

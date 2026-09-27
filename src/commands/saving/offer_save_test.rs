@@ -10,6 +10,7 @@ use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 
 /// `offer_save`が返した流れと、書いたstdoutとstderr。
 struct Offered {
@@ -58,6 +59,7 @@ fn offer(
     can_prompt: bool,
     prompt: &mut ScriptedPrompt,
 ) -> Checked<Offered> {
+    let clock = ScriptedClock::default();
     let policy = RenderingPolicy::plain();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -66,6 +68,7 @@ fn offer(
         let context = Context {
             location: &bench.location,
             workspace_root: bench.workspace_root.path(),
+            clock: &clock,
             locale: Locale::En,
             can_prompt,
         };

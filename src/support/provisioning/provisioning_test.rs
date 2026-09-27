@@ -9,6 +9,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::poll::poll;
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 use std::cell::RefCell;
 use std::fs;
 use std::rc::Rc;
@@ -94,6 +95,7 @@ fn construction_holds_exclusive_then_connection_holds_shared() -> Checked {
     // project lock → exclusive → sharedの順序は、`open`が準備mutationと接続を1回で
     // 済ませるようになったあとも変わらない。構築中は他のsession/lifecycle操作を
     // 入れず、接続中はexclusiveな操作（rebuild/destroyなど）だけを締め出す。
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     let add_request = request("Example-Org/Example-Repo", None, None)?;
@@ -124,7 +126,7 @@ fn construction_holds_exclusive_then_connection_holds_shared() -> Checked {
         &world,
         &mut ScriptedPrompt::choosing(0),
         bench.workspace_root.path(),
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("the first open builds and connects")?;

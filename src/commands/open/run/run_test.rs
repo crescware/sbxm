@@ -19,6 +19,7 @@ use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::prompt::ScriptedPrompt;
+use crate::testing::scripted_clock::ScriptedClock;
 use std::fmt::Write as _;
 use std::time::Duration;
 
@@ -173,6 +174,16 @@ fn prepare_for(fixture: &Fixture, host: &FakeSbx) -> Result<Prepared> {
 }
 
 fn prepare_for_index(fixture: &Fixture, host: &FakeSbx, index: Option<u32>) -> Result<Prepared> {
+    prepare_on(fixture, host, index, &ScriptedClock::default())
+}
+
+/// `prepare_for_index`を、起動を待つあいだを`clock`で数えて行う。
+fn prepare_on(
+    fixture: &Fixture,
+    host: &FakeSbx,
+    index: Option<u32>,
+    clock: &ScriptedClock,
+) -> Result<Prepared> {
     prepare(
         &fixture.location,
         &fixture.config,
@@ -181,7 +192,7 @@ fn prepare_for_index(fixture: &Fixture, host: &FakeSbx, index: Option<u32>) -> R
         host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(clock),
         &mut SilentProgress,
     )
 }
@@ -251,6 +262,7 @@ fn disk_usage_is_observed_exactly_once_after_the_sandbox_is_confirmed_running() 
 
 #[test]
 fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
     let running = format!(
@@ -278,6 +290,7 @@ fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
             let context = Context {
                 location: &fixture.location,
                 workspace_root: &fixture.workspace_root,
+                clock: &clock,
                 locale: Locale::En,
                 can_prompt: false,
             };
@@ -351,6 +364,7 @@ fn an_interactive_index_the_locked_metadata_no_longer_declares_falls_back_to_the
     // 場合に当たる。`apply`は減らさないが、destroyしてから少ない数で追加し直すことや、
     // metadataを手で書き換えることで起こり得る。決め打ちのpromptは範囲へ収めずに値を
     // 返すため、時機に依らずこの状況を作れる。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let running = format!(
@@ -367,7 +381,7 @@ fn an_interactive_index_the_locked_metadata_no_longer_declares_falls_back_to_the
         &host,
         &mut ScriptedPrompt::choosing_worktree(4),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("an index outside the locked metadata still opens the project")?;
@@ -386,6 +400,7 @@ fn an_interactive_index_the_locked_metadata_no_longer_declares_falls_back_to_the
 
 #[test]
 fn an_interactive_index_inside_the_metadata_is_opened_without_a_warning() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     project.metadata.provisioning.requested_worktrees = 5;
@@ -405,7 +420,7 @@ fn an_interactive_index_inside_the_metadata_is_opened_without_a_warning() -> Che
         &host,
         &mut ScriptedPrompt::choosing_worktree(2),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare the selected worktree")?;
@@ -440,6 +455,7 @@ fn an_unconfigured_worktree_index_falls_back_to_the_repository_root() -> Checked
 
 #[test]
 fn a_missing_worktree_is_reported_before_the_terminal_is_handed_over() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let running = format!(
@@ -462,6 +478,7 @@ fn a_missing_worktree_is_reported_before_the_terminal_is_handed_over() -> Checke
         let context = Context {
             location: &fixture.location,
             workspace_root: &fixture.workspace_root,
+            clock: &clock,
             locale: Locale::En,
             can_prompt: false,
         };
@@ -519,6 +536,7 @@ fn the_host_agent_has_to_be_out_of_reach_before_the_terminal_is_handed_over() ->
 
 #[test]
 fn a_stopped_project_is_started_without_a_terminal_and_waited_for() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let stopped = format!(
@@ -529,17 +547,24 @@ fn a_stopped_project_is_started_without_a_terminal_and_waited_for() -> Checked {
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
-    let host = ready(FakeSbx::listings(&[&stopped, &running]), &project)?;
+    // 起動の前に、状態とworkspaceの復元のために2回読む。起動した直後の一覧はまだstoppedを
+    // 示し、1度待ってから読み直すとrunningになる。
+    let host = ready(
+        FakeSbx::listings(&[&stopped, &stopped, &stopped, &running]),
+        &project,
+    )?;
 
-    prepare_for(&fixture, &host).required_because("prepare")?;
+    prepare_on(&fixture, &host, None, &clock).required_because("prepare")?;
 
     assert!(host.ran("/bin/true"), "{:?}", host.calls());
     assert_lifecycle(&host, "/bin/true")?;
+    assert_eq!(*clock.slept.borrow(), vec![Duration::from_secs(2)]);
     Ok(())
 }
 
 #[test]
 fn a_stopped_project_whose_workspace_is_gone_is_restored_and_started() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
     // runtimeのrecordは残っているが、mount元のdirectoryはhostから消えている。
@@ -567,6 +592,7 @@ fn a_stopped_project_whose_workspace_is_gone_is_restored_and_started() -> Checke
         let context = Context {
             location: &fixture.location,
             workspace_root: &fixture.workspace_root,
+            clock: &clock,
             locale: Locale::En,
             can_prompt: false,
         };
@@ -620,6 +646,7 @@ fn a_running_project_is_opened_even_though_its_workspace_is_not_observed() -> Ch
 
 #[test]
 fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
 
@@ -631,7 +658,7 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("a project that is not managed has nothing to open")?;
@@ -670,6 +697,7 @@ fn a_rebuild_in_progress_stops_the_connection() -> Checked {
 
 #[test]
 fn an_intent_recorded_after_the_selection_is_still_seen() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let running = format!(
@@ -694,7 +722,7 @@ fn an_intent_recorded_after_the_selection_is_still_seen() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("the intent on disk decides, not the copy from the selection")?;
@@ -704,6 +732,7 @@ fn an_intent_recorded_after_the_selection_is_still_seen() -> Checked {
 
 #[test]
 fn a_sandbox_that_never_reaches_running_is_reported_rather_than_assumed() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let stopped = format!(
@@ -712,9 +741,11 @@ fn a_sandbox_that_never_reaches_running_is_reported_rather_than_assumed() -> Che
     );
     let host = ready(FakeSbx::listing(&stopped), &project)?;
 
-    let error = prepare_for(&fixture, &host)
+    let error = prepare_on(&fixture, &host, None, &clock)
         .refused_because("a sandbox that stays stopped is not connected")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNotRunning));
+    // 60秒の期限まで、2秒おきに読み直してから諦める。
+    assert_eq!(*clock.slept.borrow(), vec![Duration::from_secs(2); 30]);
     let remediation = error.diagnostics()[0]
         .remediation
         .as_ref()

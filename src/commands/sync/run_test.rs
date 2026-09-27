@@ -7,6 +7,7 @@ use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::*;
 
@@ -215,6 +216,7 @@ fn syncing_from_the_entry_point_prints_what_changed() -> Checked {
     use crate::diagnostics::ExitCode;
     use crate::i18n::Locale;
 
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     bench.build(&world, &local_request()?).required()?;
@@ -232,6 +234,7 @@ fn syncing_from_the_entry_point_prints_what_changed() -> Checked {
         let context = Context {
             location: &bench.location,
             workspace_root: bench.workspace_root.path(),
+            clock: &clock,
             locale: Locale::En,
             can_prompt: false,
         };

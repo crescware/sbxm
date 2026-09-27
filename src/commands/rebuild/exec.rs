@@ -57,7 +57,7 @@ pub fn exec(
                 target,
                 host,
                 context.workspace_root,
-                inventory::Poll::default(),
+                inventory::Poll::standard(context.clock),
                 ui,
             )
         });
@@ -81,7 +81,7 @@ pub fn exec(
         confirmation,
         &config,
         context.workspace_root,
-        inventory::Poll::default(),
+        inventory::Poll::standard(context.clock),
         ui,
     ) {
         Ok(output) => print::report(ui, &output),

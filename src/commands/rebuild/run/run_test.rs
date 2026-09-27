@@ -23,6 +23,7 @@ use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::prompt::{ScriptedConfirm, ScriptedPrompt};
 use crate::testing::protection::clean_host;
+use crate::testing::scripted_clock::ScriptedClock;
 use crate::testing::value::IMAGE_ID;
 use std::os::unix::fs::PermissionsExt;
 
@@ -33,7 +34,14 @@ fn rebuild(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
 ) -> Result<RebuildOutput> {
-    let (prepared, snapshot) = prepare(target, host, workspace_root, poll(), &mut SilentProgress)?;
+    let clock = ScriptedClock::default();
+    let (prepared, snapshot) = prepare(
+        target,
+        host,
+        workspace_root,
+        poll(&clock),
+        &mut SilentProgress,
+    )?;
     let project = prepared.plan.project.clone();
     let confirmation = confirm(
         snapshot,
@@ -47,7 +55,7 @@ fn rebuild(
         confirmation,
         config,
         workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
 }
@@ -373,6 +381,7 @@ fn a_bare_repository_fetch_failure_carries_the_disk_state_at_that_moment() -> Ch
 
 #[test]
 fn an_open_session_stops_the_rebuild_before_anything_is_touched() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let session = paths::acquire_shared_lock(
@@ -392,7 +401,7 @@ fn an_open_session_stops_the_rebuild_before_anything_is_touched() -> Checked {
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("a normal rebuild must not run while a session is open")?;
@@ -409,6 +418,7 @@ fn an_open_session_stops_the_rebuild_before_anything_is_touched() -> Checked {
 
 #[test]
 fn a_project_whose_build_never_finished_is_sent_to_open_even_with_the_same_dockerfile() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     // `add`は登録時に適用済みhashを書く。Sandboxを作る前に中断した案件は、
@@ -430,7 +440,7 @@ fn a_project_whose_build_never_finished_is_sent_to_open_even_with_the_same_docke
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("there is no sandbox to report as unchanged")?;
@@ -452,6 +462,7 @@ fn a_project_whose_build_never_finished_is_sent_to_open_even_with_the_same_docke
 
 #[test]
 fn a_project_whose_first_build_was_interrupted_is_sent_to_open_for_resumption() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
@@ -475,7 +486,7 @@ fn a_project_whose_first_build_was_interrupted_is_sent_to_open_for_resumption() 
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("an interrupted first build is recovered explicitly")?;
@@ -513,6 +524,7 @@ fn an_interrupted_first_build_is_refused_even_when_the_sandbox_runs() -> Checked
     // `sbx create`のあとで中断した初回構築。Sandboxはあるが、案件はまだ完成して
     // いない。世代交代はintentを残したまま適用済み世代を進めるため、そのあと
     // metadataを読めなくする。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -532,7 +544,7 @@ fn an_interrupted_first_build_is_refused_even_when_the_sandbox_runs() -> Checked
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("an unfinished first build is recovered explicitly")?;
@@ -561,6 +573,7 @@ fn an_interrupted_first_build_is_refused_even_when_the_sandbox_runs() -> Checked
 fn an_interrupted_first_build_is_refused_without_starting_the_sandbox() -> Checked {
     // 停止中のSandboxの起動は、明示確認より前に行う唯一のhost状態の変更である。
     // 拒否がその手前で終わることを固定する。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let mut project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -581,7 +594,7 @@ fn an_interrupted_first_build_is_refused_without_starting_the_sandbox() -> Check
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("an unfinished first build is recovered explicitly")?;
@@ -597,6 +610,7 @@ fn an_interrupted_first_build_is_refused_without_starting_the_sandbox() -> Check
 
 #[test]
 fn a_project_that_is_not_managed_cannot_be_rebuilt() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
     let error = prepare(
@@ -607,7 +621,7 @@ fn a_project_that_is_not_managed_cannot_be_rebuilt() -> Checked {
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("there is nothing to rebuild")?;
@@ -619,6 +633,7 @@ fn a_project_that_is_not_managed_cannot_be_rebuilt() -> Checked {
 fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() -> Checked {
     // `rebuild`はこのSandboxをこれから作り直す。保存状態を読むためだけの起動を
     // 利用者へ求めない。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -647,7 +662,7 @@ fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() -> Checked
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     );
 
@@ -661,6 +676,7 @@ fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() -> Checked
 
 #[test]
 fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -678,7 +694,7 @@ fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() -> Check
         },
         &absent,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("a project without a sandbox has nothing to switch")?;
@@ -689,6 +705,7 @@ fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() -> Check
 
 #[test]
 fn unsaved_work_stops_the_rebuild_before_anything_is_built() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -710,7 +727,7 @@ fn unsaved_work_stops_the_rebuild_before_anything_is_built() -> Checked {
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("a dirty worktree is not recreated")?;
@@ -725,6 +742,7 @@ fn unsaved_work_stops_the_rebuild_before_anything_is_built() -> Checked {
 
 #[test]
 fn only_a_name_of_the_target_confirms_an_interactive_rebuild() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -738,7 +756,7 @@ fn only_a_name_of_the_target_confirms_an_interactive_rebuild() -> Checked {
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -763,7 +781,7 @@ fn only_a_name_of_the_target_confirms_an_interactive_rebuild() -> Checked {
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -781,6 +799,7 @@ fn only_a_name_of_the_target_confirms_an_interactive_rebuild() -> Checked {
 #[test]
 fn a_non_interactive_run_is_refused_rather_than_skipped() -> Checked {
     // rebuildに`--force`は無い。非対話環境は、確認できないことを理由に拒否する。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -794,7 +813,7 @@ fn a_non_interactive_run_is_refused_rather_than_skipped() -> Checked {
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -819,6 +838,7 @@ fn a_non_interactive_run_is_refused_rather_than_skipped() -> Checked {
 #[test]
 fn a_resume_with_an_intent_still_shows_the_plan_and_asks_again() -> Checked {
     // #82: 中断した再構築の続きであっても、削除計画と明示確認を毎回省略しない。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -840,7 +860,7 @@ fn a_resume_with_an_intent_still_shows_the_plan_and_asks_again() -> Checked {
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("a resume still builds a plan")?;
@@ -1472,6 +1492,7 @@ fn the_first_rebuild_of_a_generation_exports_its_archive_and_loads_the_template(
 
 #[test]
 fn an_engine_that_does_not_answer_stops_the_rebuild_before_anything_is_read() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -1487,7 +1508,7 @@ fn an_engine_that_does_not_answer_stops_the_rebuild_before_anything_is_read() ->
         },
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("without the engine there is nothing to rebuild")?;
@@ -1587,6 +1608,7 @@ fn local_host_to_rebuild(
 fn a_local_project_the_host_cannot_write_into_stops_before_the_old_sandbox_goes() -> Checked {
     // 作り直したSandboxのoriginは、hostのgitがsshで書き込む。書き込めないと分かるのが
     // 古いSandboxを消したあとでは遅い。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let mut project = fixture.register_local("/srv/code/example-repo/.git", "example-repo")?;
     std::fs::write(project.paths.dockerfile(), "unchanged\n").required()?;
@@ -1620,7 +1642,7 @@ fn a_local_project_the_host_cannot_write_into_stops_before_the_old_sandbox_goes(
             },
             &host,
             &fixture.workspace_root,
-            poll(),
+            poll(&clock),
             &mut SilentProgress,
         )
         .refused_because("the host cannot write into a new sandbox")?;

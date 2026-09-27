@@ -13,6 +13,7 @@ use crate::testing::image::template_listing;
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::protection::{clean_host, commit_only_in_the_sandbox};
+use crate::testing::scripted_clock::ScriptedClock;
 
 /// `exec`が書いたstdoutとstderr、そして終了statusを取り出す。
 ///
@@ -34,6 +35,7 @@ fn run_pressing(fixture: &Fixture, host: &dyn HostEnvironment, keys: &[Key]) -> 
 }
 
 fn run_with(fixture: &Fixture, host: &dyn HostEnvironment, keys: ScriptedKeys) -> Checked<Ran> {
+    let clock = ScriptedClock::default();
     let policy = RenderingPolicy::plain();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -48,6 +50,7 @@ fn run_with(fixture: &Fixture, host: &dyn HostEnvironment, keys: ScriptedKeys) -
         let context = Context {
             location: &fixture.location,
             workspace_root: &fixture.workspace_root,
+            clock: &clock,
             locale: Locale::En,
             can_prompt: true,
         };
