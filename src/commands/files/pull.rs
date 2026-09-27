@@ -47,6 +47,9 @@ pub fn pull(
     .lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
     inventory::require_running(host, &locked.metadata, workspace_root)?;
+    // 置き換えた内容を広げる先があるかどうかを、結果の案内に使う。受け取ったあとに失敗
+    // しうる工程を置かない。受け取ったものは、呼び出し側へ返してはじめて片付けられる。
+    let others = select::candidates(location)?.len().saturating_sub(1);
     let sandbox = locked.metadata.sandbox_name();
 
     let Some(copy) = files::receive_copy(
@@ -65,8 +68,6 @@ pub fn pull(
             ),
         )));
     };
-    // 置き換えた内容を広げる先があるかどうかを、結果の案内に使う。
-    let others = select::candidates(location)?.len().saturating_sub(1);
     Ok(Pulled {
         declaration,
         project: locked.metadata.display_id(),

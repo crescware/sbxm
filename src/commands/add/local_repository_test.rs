@@ -239,3 +239,217 @@ fn a_parent_outside_the_repository_is_not_inside_it() -> Checked {
     }
     Ok(())
 }
+
+// --- gitを台本で答えさせる経路 ---
+//
+// 実物のgitでは作れない答え、つまり起動の失敗と想定外の終了statusを、台本のhostで返す。
+
+/// 台本のgitが1つの問いへ返すもの。
+enum Answer {
+    Exits(i32, String),
+    Unrunnable,
+}
+
+/// `--git-common-dir`、`symbolic-ref`、`-C <parent>`の3つの問いへ台本で答えるhost。
+struct ScriptedGit {
+    common_dir: Answer,
+    branch: Answer,
+    enclosing: Answer,
+    calls: std::cell::RefCell<Vec<String>>,
+}
+
+impl ScriptedGit {
+    /// `git_dir`をそのままrepositoryとし、`main`の上にいて、親はその外にあると答える。
+    fn answering_for(git_dir: &Path) -> ScriptedGit {
+        ScriptedGit {
+            common_dir: Answer::Exits(0, format!("{}\n", git_dir.display())),
+            branch: Answer::Exits(0, "refs/heads/main\n".to_string()),
+            enclosing: Answer::Exits(128, String::new()),
+            calls: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    /// 答えた問いの名前。
+    fn asked(&self) -> Vec<String> {
+        self.calls.borrow().clone()
+    }
+}
+
+impl crate::boundary::host::HostEnvironment for ScriptedGit {
+    fn command_exists(&self, _program: &str) -> bool {
+        true
+    }
+
+    fn run(
+        &self,
+        spec: &crate::boundary::host::CommandSpec,
+    ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {
+        let (name, answer) = if spec.args.first().is_some_and(|arg| arg == "-C") {
+            ("enclosing", &self.enclosing)
+        } else if spec.args.iter().any(|arg| arg == "symbolic-ref") {
+            ("branch", &self.branch)
+        } else {
+            ("common-dir", &self.common_dir)
+        };
+        self.calls.borrow_mut().push(name.to_string());
+        match answer {
+            Answer::Exits(code, stdout) => {
+                Ok(crate::testing::command::outcome(spec, *code, stdout))
+            }
+            Answer::Unrunnable => Err(crate::diagnostics::Error::new(
+                ErrorId::ExternalCommandSpawnFailed,
+                crate::msg!("error-external-command-spawn-failed"),
+            )),
+        }
+    }
+}
+
+/// 1つの問いを起動できなくする手続き。
+type MakeUnrunnable = fn(&mut ScriptedGit);
+
+fn resolve_with(
+    host: &ScriptedGit,
+    parent: &Path,
+    path: &Path,
+) -> crate::diagnostics::Result<LocalRepository> {
+    let parent = ProjectParent::at(parent)?;
+    LocalRepository::resolve(host, &parent, path, None)
+}
+
+/// 観測した理由として示したmessage ID。
+fn reason_of(error: &crate::diagnostics::Error) -> Checked<&'static str> {
+    error
+        .diagnostics()
+        .first()
+        .required_because("the refusal carries a diagnostic")?
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            crate::design::Fact::Translated { value, .. } => Some(value.id),
+            _ => None,
+        })
+        .required_because("the refusal names what it observed")
+}
+
+/// UTF-8にならない名前のdirectoryを`parent`の下に作る。作れないfilesystemでは`None`。
+fn directory_not_named_in_utf8(parent: &Path, suffix: &str) -> Checked<Option<PathBuf>> {
+    use std::os::unix::ffi::OsStrExt;
+
+    // 有効なUTF-8にはならない、単独の続きbyte。
+    let mut name = vec![0x80, 0x81];
+    name.extend_from_slice(suffix.as_bytes());
+    let path = parent.join(std::ffi::OsStr::from_bytes(&name));
+    let created = std::fs::create_dir_all(&path);
+    if created
+        .as_ref()
+        .err()
+        .and_then(std::io::Error::raw_os_error)
+        == Some(rustix::io::Errno::ILSEQ.raw_os_error())
+    {
+        // macOSのAPFSは不正UTF-8のfile name自体を作成できない。
+        return Ok(None);
+    }
+    created.required()?;
+    Ok(Some(path))
+}
+
+#[test]
+fn a_git_directory_whose_real_path_is_not_utf8_is_refused_before_git_runs() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let Some(repository) = directory_not_named_in_utf8(dir.path(), "app")? else {
+        return Ok(());
+    };
+    let git_dir = repository.join(".git");
+    std::fs::create_dir_all(&git_dir).required()?;
+    let host = ScriptedGit::answering_for(&git_dir);
+
+    let error = resolve_with(&host, dir.path(), &git_dir)
+        .refused_because("a path that cannot be recorded or handed to git")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LocalRepositoryUnusable));
+    assert_eq!(reason_of(&error)?, "cause-path-not-utf8");
+    assert!(
+        host.asked().is_empty(),
+        "git never runs: {:?}",
+        host.asked()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_shared_repository_whose_real_path_is_not_utf8_is_refused() -> Checked {
+    // 渡したgit directoryはUTF-8でも、worktreeが共有するrepositoryの実体がそうでない。
+    let dir = tempfile::tempdir().required()?;
+    let Some(shared) = directory_not_named_in_utf8(dir.path(), "shared.git")? else {
+        return Ok(());
+    };
+    let link = dir.path().join("shared-link.git");
+    std::os::unix::fs::symlink(&shared, &link).required()?;
+    let git_dir = dir.path().join("worktree.git");
+    std::fs::create_dir_all(&git_dir).required()?;
+    let mut host = ScriptedGit::answering_for(&git_dir);
+    host.common_dir = Answer::Exits(0, format!("{}\n", link.display()));
+
+    let error = resolve_with(&host, dir.path(), &git_dir)
+        .refused_because("the repository to record cannot be written down")?;
+    assert_eq!(error.first_id(), Some(ErrorId::LocalRepositoryUnusable));
+    assert_eq!(reason_of(&error)?, "cause-path-not-utf8");
+    assert_eq!(
+        host.asked(),
+        ["common-dir"],
+        "nothing more is asked about a repository that cannot be recorded"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_git_that_cannot_be_started_stops_the_resolution_at_that_question() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let git_dir = dir.path().join("app").join(".git");
+    std::fs::create_dir_all(&git_dir).required()?;
+    let git_dir = std::fs::canonicalize(&git_dir).required()?;
+
+    // 問いは順に訊く。起動できなかった問いのあとは何も訊かない。
+    let questions: [(&str, MakeUnrunnable); 3] = [
+        ("common-dir", |host| host.common_dir = Answer::Unrunnable),
+        ("branch", |host| host.branch = Answer::Unrunnable),
+        ("enclosing", |host| host.enclosing = Answer::Unrunnable),
+    ];
+    for (index, (question, unrunnable)) in questions.iter().enumerate() {
+        let mut host = ScriptedGit::answering_for(&git_dir);
+        unrunnable(&mut host);
+
+        let error = resolve_with(&host, dir.path(), &git_dir)
+            .refused_because(&format!("{question} could not be asked"))?;
+        // gitを起動できなかったことは、git directoryでないこととして言い換えない。
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandSpawnFailed),
+            "{question}"
+        );
+        let asked: Vec<&str> = questions[..=index].iter().map(|(name, _)| *name).collect();
+        assert_eq!(host.asked(), asked, "{question}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_head_git_cannot_read_is_a_failure_rather_than_a_detached_head() -> Checked {
+    // 終了status 1だけがdetached HEADである。それ以外の失敗から起点を無いとは読まない。
+    let dir = tempfile::tempdir().required()?;
+    let git_dir = dir.path().join("app").join(".git");
+    std::fs::create_dir_all(&git_dir).required()?;
+    let git_dir = std::fs::canonicalize(&git_dir).required()?;
+    let mut host = ScriptedGit::answering_for(&git_dir);
+    host.branch = Answer::Exits(128, String::new());
+
+    let error = resolve_with(&host, dir.path(), &git_dir)
+        .refused_because("an unreadable HEAD has no known branch")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert_eq!(host.asked(), ["common-dir", "branch"]);
+
+    // 同じhostでも、1で答えればdetachedとして続ける。
+    host.branch = Answer::Exits(1, String::new());
+    let resolved = resolve_with(&host, dir.path(), &git_dir).required()?;
+    assert_eq!(resolved.branch, None);
+    Ok(())
+}

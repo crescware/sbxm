@@ -6,12 +6,16 @@ use crate::design::SilentProgress;
 use crate::paths::ProjectParent;
 use crate::testing::project::{https_repository, ssh_repository};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::os::unix::fs::PermissionsExt;
 
 /// gitの応答を差し替え、起動された内容を記録するhost。
 struct FakeGit {
     answers: HashMap<String, String>,
+    /// gitが128で終わる指定。
+    failures: HashSet<String>,
+    /// 起動できない指定。先頭の語で一致させる。
+    unrunnable: Option<String>,
     calls: RefCell<Vec<CommandSpec>>,
     clone_creates: Option<PathBuf>,
 }
@@ -20,6 +24,8 @@ impl FakeGit {
     fn new() -> FakeGit {
         FakeGit {
             answers: HashMap::new(),
+            failures: HashSet::new(),
+            unrunnable: None,
             calls: RefCell::new(Vec::new()),
             clone_creates: None,
         }
@@ -27,6 +33,18 @@ impl FakeGit {
 
     fn answering(mut self, args: &str, stdout: &str) -> FakeGit {
         self.answers.insert(args.to_string(), stdout.to_string());
+        self
+    }
+
+    /// gitが答えられずに終わる指定。
+    fn failing(mut self, args: &str) -> FakeGit {
+        self.failures.insert(args.to_string());
+        self
+    }
+
+    /// 起動できない指定。何も作らず、何も答えない。
+    fn unrunnable(mut self, args: &str) -> FakeGit {
+        self.unrunnable = Some(args.to_string());
         self
     }
 
@@ -53,6 +71,22 @@ impl HostEnvironment for FakeGit {
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let key = spec.args.join(" ");
+        if self
+            .unrunnable
+            .as_ref()
+            .is_some_and(|args| key.starts_with(args.as_str()))
+        {
+            return Err(Error::single(
+                Diagnostic::new(
+                    ErrorId::ExternalCommandSpawnFailed,
+                    msg!("error-external-command-spawn-failed"),
+                )
+                .fact(Fact::command(&spec.program)),
+            ));
+        }
+        if self.failures.contains(&key) {
+            return Ok(crate::testing::command::outcome(spec, 128, ""));
+        }
         if key.starts_with("clone")
             && let Some(path) = &self.clone_creates
         {
@@ -624,5 +658,159 @@ fn a_clone_path_that_cannot_be_observed_is_never_cloned_over() -> Checked {
         "a path sbxm could not observe is never cloned onto: {:?}",
         host.args_of_calls()
     );
+    Ok(())
+}
+
+/// 起動された指定のうち、先頭の2語。どの検査まで進んだかを見る。
+fn steps_of(host: &FakeGit) -> Vec<String> {
+    host.args_of_calls()
+        .iter()
+        .map(|args| args.iter().take(2).cloned().collect::<Vec<_>>().join(" "))
+        .collect()
+}
+
+#[test]
+fn a_fresh_clone_that_fails_the_checks_is_refused_and_left_where_it_was_made() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    let host = healthy(&paths.host_clone())
+        .answering("rev-parse --is-bare-repository", "true\n")
+        .cloning_into(&paths.host_clone());
+
+    let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
+        .refused_because("a fresh clone is held to the rules a reused one is")?;
+    assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
+    assert_eq!(reason_of(&error)?, "cause-bare-repository");
+    assert_eq!(
+        steps_of(&host),
+        ["clone --progress", "rev-parse --is-bare-repository"],
+        "the clone is checked right after it is made"
+    );
+    assert!(
+        paths.host_clone().join(".git").is_dir(),
+        "what the clone made is left for the user to look at"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_clone_git_cannot_be_started_for_makes_nothing_and_checks_nothing() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    let host = healthy(&paths.host_clone())
+        .cloning_into(&paths.host_clone())
+        .unrunnable("clone");
+
+    let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
+        .refused_because("a clone that never ran is not a clone")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    assert_eq!(steps_of(&host), ["clone --progress"]);
+    assert!(!paths.host_clone().exists());
+    Ok(())
+}
+
+#[test]
+fn a_clone_that_reports_success_but_left_nothing_is_refused_by_what_was_observed() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    // gitは成功と答えたが、そこには何も無い。
+    let host = healthy(&paths.host_clone());
+
+    let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
+        .refused_because("an absent working tree is not verified")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    assert_eq!(shown_path(&error)?, paths::display(&paths.host_clone()));
+    assert!(
+        error.diagnostics()[0].facts.iter().any(|fact| matches!(
+            fact,
+            Fact::OneLine { label, value }
+                if label.id == "diagnostic-cause-label" && value.as_str().contains("os error")
+        )),
+        "the operating system's own wording is carried through: {:?}",
+        error.diagnostics()[0].facts
+    );
+    assert_eq!(
+        steps_of(&host),
+        ["clone --progress"],
+        "nothing is asked of a clone that is not there"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_check_git_cannot_answer_stops_the_reuse_at_that_check() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
+
+    for check in [
+        "rev-parse --is-bare-repository",
+        "rev-parse --show-toplevel",
+        "config --get-all remote.origin.url",
+    ] {
+        let host = healthy(&paths.host_clone()).failing(check);
+        let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
+            .refused_because(&format!("{check} has no answer"))?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandFailed),
+            "{check}: the failure of git is reported rather than read as an answer"
+        );
+        assert_eq!(
+            host.args_of_calls().last().map(|args| args.join(" ")),
+            Some(check.to_string()),
+            "no check runs after the one that failed"
+        );
+        assert!(
+            paths.host_clone().join(".git").is_dir(),
+            "a clone that could not be checked is not removed"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_check_git_cannot_be_started_for_is_reported_as_it_happened() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone().join(".git")).required()?;
+    let host = healthy(&paths.host_clone()).unrunnable("rev-parse --is-bare-repository");
+
+    let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
+        .refused_because("a check that never ran proves nothing")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    assert_eq!(steps_of(&host), ["rev-parse --is-bare-repository"]);
+    Ok(())
+}
+
+#[test]
+fn a_git_file_that_is_not_text_names_the_git_path_it_could_not_read() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let (paths, repository) = project_paths(dir.path())?;
+    fs::create_dir_all(paths.host_clone()).required()?;
+    fs::write(paths.host_clone().join(".git"), [0xff, 0xfe, b'\n']).required()?;
+
+    let host = healthy(&paths.host_clone());
+    let error = HostClone::ensure(&host, &paths, &repository, &mut SilentProgress)
+        .refused_because("a worktree file that cannot be read names no git directory")?;
+    assert_eq!(error.first_id(), Some(ErrorId::HostCloneUnusable));
+    assert_eq!(
+        shown_path(&error)?,
+        paths::display(&paths.host_clone().join(".git"))
+    );
+    assert_eq!(
+        remediation_path(&error)?,
+        paths::display(&paths.host_clone())
+    );
+    assert!(
+        error.diagnostics()[0].facts.iter().any(|fact| matches!(
+            fact,
+            Fact::OneLine { label, value }
+                if label.id == "diagnostic-cause-label" && value.as_str().contains("UTF-8")
+        )),
+        "why it could not be read is carried through: {:?}",
+        error.diagnostics()[0].facts
+    );
+    assert!(host.args_of_calls().is_empty(), "git never runs");
     Ok(())
 }

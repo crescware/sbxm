@@ -430,3 +430,100 @@ fn a_value_that_cannot_be_a_git_identity_is_refused_rather_than_saved() -> Check
     }
     Ok(())
 }
+
+/// 名前までは打ち、emailの欄でやめるprompt。
+struct LeavingAtTheEmail {
+    asked: Vec<&'static str>,
+}
+
+impl crate::commands::add::IdentityPrompt for LeavingAtTheEmail {
+    fn git_user_name(&mut self, _candidate: &str) -> crate::diagnostics::Result<String> {
+        self.asked.push("prompt-git-user-name");
+        Ok("Typed User".to_string())
+    }
+
+    fn git_user_email(&mut self, _candidate: &str) -> crate::diagnostics::Result<String> {
+        self.asked.push("prompt-git-user-email");
+        Err(crate::diagnostics::Error::Canceled)
+    }
+}
+
+#[test]
+fn leaving_at_the_email_saves_not_even_the_name_already_typed() -> Checked {
+    let clock = ScriptedClock::default();
+    let (_dir, location) = home()?;
+    let context = context(&location, &clock, None, tty().can_prompt());
+    let mut prompt = LeavingAtTheEmail { asked: Vec::new() };
+
+    let error = choose_git_identity(
+        &context,
+        &config_holding(None),
+        &add_args(None)?,
+        &silent_host(),
+        &mut prompt,
+    )
+    .refused_because("a cancelled email field stops the run")?;
+
+    assert_eq!(error.exit_code(), crate::diagnostics::ExitCode::Canceled);
+    assert_eq!(
+        prompt.asked,
+        ["prompt-git-user-name", "prompt-git-user-email"],
+        "the email is asked after the name was entered"
+    );
+    assert!(!location.dir().exists(), "half an identity is never saved");
+    Ok(())
+}
+
+/// global state directoryの場所を塞ぐ通常file。設定を保存できない。
+fn blocking_the_state_directory(location: &ConfigLocation) -> Checked {
+    std::fs::write(location.dir(), b"not a directory\n").required()?;
+    Ok(())
+}
+
+#[test]
+fn a_language_that_cannot_be_saved_stops_the_run_after_it_was_chosen() -> Checked {
+    let clock = ScriptedClock::default();
+    let (_dir, location) = home()?;
+    blocking_the_state_directory(&location)?;
+    let context = context(&location, &clock, None, tty().can_prompt());
+    let mut prompt = ScriptedPrompt::choosing(0);
+
+    let error = choose_language(&context, &GlobalConfig::default(), Locale::En, &mut prompt)
+        .refused_because("the choice has nowhere to be saved")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    assert_eq!(prompt.headings.borrow().len(), 1, "the user was asked");
+    assert_eq!(
+        std::fs::read_to_string(location.dir()).required()?,
+        "not a directory\n",
+        "what stands in the way is left as it was"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_identity_that_cannot_be_saved_stops_the_run_after_it_was_entered() -> Checked {
+    let clock = ScriptedClock::default();
+    let (_dir, location) = home()?;
+    blocking_the_state_directory(&location)?;
+    let context = context(&location, &clock, None, tty().can_prompt());
+    let mut prompt = ScriptedIdentityPrompt::typing("Typed User", "typed@example.com");
+
+    let error = choose_git_identity(
+        &context,
+        &config_holding(None),
+        &add_args(None)?,
+        &silent_host(),
+        &mut prompt,
+    )
+    .refused_because("the identity has nowhere to be saved")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    assert!(prompt.asked_anything(), "the user was asked");
+    assert_eq!(
+        std::fs::read_to_string(location.dir()).required()?,
+        "not a directory\n",
+        "what stands in the way is left as it was"
+    );
+    Ok(())
+}

@@ -334,3 +334,55 @@ fn a_relative_source_or_an_unresolvable_home_is_never_guessed_at() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::FileDestinationRequired));
     Ok(())
 }
+
+/// どのcommandも起動できないhost。
+struct NothingStarts;
+
+impl crate::boundary::host::HostEnvironment for NothingStarts {
+    fn command_exists(&self, _program: &str) -> bool {
+        false
+    }
+
+    fn run(
+        &self,
+        _spec: &crate::boundary::host::CommandSpec,
+    ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {
+        Err(crate::diagnostics::Error::new(
+            ErrorId::ExternalCommandSpawnFailed,
+            crate::msg!("error-external-command-spawn-failed"),
+        ))
+    }
+}
+
+#[test]
+fn a_git_that_cannot_be_started_is_not_read_as_no_difference() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let before = dir.path().join("before.md");
+    let after = dir.path().join("after.md");
+    fs::write(&before, b"line\nold\n").required()?;
+    fs::write(&after, b"line\nnew\n").required()?;
+
+    let error = host_diff(&NothingStarts, &before, &after)
+        .refused_because("nothing compared the two files")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    Ok(())
+}
+
+#[test]
+fn a_declaration_that_cannot_be_saved_is_refused_and_leaves_the_way_blocked() -> Checked {
+    let (_home, location, file) = home_with(".claude/CLAUDE.md", b"# notes\n")?;
+    // global state directoryの場所を通常fileが塞いでいる。
+    fs::write(location.dir(), b"not a directory\n").required()?;
+
+    let error = add(&location, &GlobalConfig::default(), &file, None)
+        .refused_because("the declaration has nowhere to be saved")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnexpectedType));
+    assert_eq!(
+        fs::read_to_string(location.dir()).required()?,
+        "not a directory\n",
+        "what stands in the way is left as it was"
+    );
+    assert_eq!(fs::read(&file).required()?, b"# notes\n");
+    Ok(())
+}
