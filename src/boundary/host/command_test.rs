@@ -1,104 +1,43 @@
-use crate::diagnostics::{ErrorId, Result};
+use std::io::{self, ErrorKind};
+use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::process::ExitStatus;
+use std::time::Duration;
 
+use crate::diagnostics::{Error, ErrorId, Result};
+use crate::testing::command::{
+    End, Event, ReadStep, ScriptedOs, ScriptedPipe, ScriptedWriter, Step,
+};
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
 use std::fs;
-use std::os::unix::process::CommandExt;
 
-/// 実行内容を記録するscriptを置く。
-///
-/// scriptは`sh <path>`で起動し、書いたfileそのものをexecしない。書いた直後のfileをexecすると、
-/// 別threadのtestがforkした子が書き込み端を持ったままの間は`ETXTBSY`で起動できない。
-/// interpreterがfileを読むだけなら、この競合は起きない。
-fn fake_script(dir: &Path, name: &str, body: &str) -> Checked<String> {
-    let path = dir.join(name);
-    fs::write(&path, format!("{body}\n")).required_because("write the fake script")?;
-    Ok(path.to_str().required()?.to_string())
+/// probeとして走らせる、既定のcommand。
+fn spec() -> CommandSpec {
+    CommandSpec::probe("fake-tool", &[])
 }
 
-/// timeout classの既定値ではない待ち時間で実行する。
-///
-/// 最短のclassでも10秒あるため、deadlineに達する側の分岐はtestからしか踏めない。
-fn run_with_limit(spec: &CommandSpec, limit: Duration) -> Result<CommandOutcome> {
-    run_inner(spec, Some(limit))
+/// `code`で自ら終わった子の終了status。
+fn exited(code: i32) -> ExitStatus {
+    ExitStatus::from_raw(code << 8)
 }
 
-/// 背景processの起動を確認してからcaptureのdeadlineを始める。
-///
-/// 直接の子をspawnしてすぐに200msのtimeoutを始めると、負荷の高いmacOSではshellが
-/// 背景processを作る前に打ち切られることがある。このtestは子孫がpipeを握ったまま
-/// 直接の子だけが終わることを見たいので、起動完了を待ってからpumpを始める。
-fn run_capture_after_ready(
-    spec: &CommandSpec,
-    ready: &Path,
-    limit: Duration,
-    started: &mut Option<Instant>,
-) -> Result<()> {
-    let mut command = configure(spec);
-    command.process_group(0);
-    let signal = SignalGuard::new().map_err(|error| spawn_failure(spec, &error))?;
-    let mut child = spawn(&mut command, spec)?;
-
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !ready.exists() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    if !ready.exists() {
-        terminate_child(&mut child);
-        return Err(spawn_failure(
-            spec,
-            &std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "the capture descendant did not start",
-            ),
-        ));
-    }
-
-    *started = Some(Instant::now());
-    let mut output = Vec::new();
-    pump_until_exit(
-        &mut child,
-        spec,
-        Some(limit),
-        Some(&signal),
-        &mut |_, bytes| {
-            output.extend_from_slice(bytes);
-            Ok(())
-        },
-    )?;
-    Ok(())
+/// 別の場所で引き取られた子を尋ねたときの失敗。
+fn no_child() -> io::Error {
+    io::Error::from_raw_os_error(rustix::io::Errno::CHILD.raw_os_error())
 }
 
-/// 待つ相手だけを用意する。
-///
-/// `wait_with_limit`はpipeもprocess groupも前提にしないため、待機と打ち切りだけを
-/// 見るtestは、直接の子を1つ起動して渡す。
-fn sleeping_child(seconds: &str) -> Checked<std::process::Child> {
-    std::process::Command::new("sleep")
-        .arg(seconds)
-        .stdin(std::process::Stdio::null())
-        .spawn()
-        .required_because("a child to wait for")
-}
-
-/// 子processを`Child`の外で回収し、待てない状態を作る。
-///
-/// 他のlibraryやsignal handlerが先にwaitした場合と同じで、以後この子は待てない。
-fn reaped_outside_the_handle(child: &std::process::Child) -> Checked {
-    rustix::process::waitpid(
-        Some(rustix::process::Pid::from_child(child)),
-        rustix::process::WaitOptions::empty(),
-    )
-    .required_because("the child is collected outside the handle")?;
-    Ok(())
+/// 子を終わらせ、終了statusを引き取ったか。
+fn ended(events: &[Event]) -> bool {
+    events
+        .windows(2)
+        .any(|pair| pair == [Event::Ended, Event::WaitedExit])
 }
 
 /// 診断が持つ事実の項目名。
-fn labels(error: &crate::diagnostics::Error) -> Checked<Vec<String>> {
+fn labels(error: &Error) -> Checked<Vec<String>> {
     Ok(error
         .diagnostics()
         .first()
@@ -107,6 +46,15 @@ fn labels(error: &crate::diagnostics::Error) -> Checked<Vec<String>> {
         .iter()
         .map(|fact| fact.label().id.to_string())
         .collect())
+}
+
+/// `spec`を起動したという記録。
+fn started(spec: &CommandSpec) -> Event {
+    Event::Started {
+        program: spec.program.clone(),
+        args: spec.args.clone(),
+        directory: spec.working_dir.clone(),
+    }
 }
 
 #[test]
@@ -131,66 +79,35 @@ fn timeout_classes_match_the_documented_defaults() {
 }
 
 #[test]
-fn the_real_host_uses_the_pty_runner() -> Checked {
-    let error = RealHost
-        .run_pty_confirmed(&PtyConfirmedCommand::new(
-            "/does/not/exist/sbx",
-            &[],
-            "the sandbox",
-            "confirmation",
-        ))
-        .refused_because("the real host delegates PTY execution")?;
-
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
-    Ok(())
-}
-
-#[test]
 fn a_command_runs_in_the_working_directory_it_was_given() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let workspace = dir.path().join("workspace");
     fs::create_dir(&workspace).required()?;
-    let record = dir.path().join("record");
-    let fake = fake_script(
-        dir.path(),
-        "fake-tool",
-        &format!(r#"pwd > "{}""#, record.display()),
-    )?;
+    let os = ScriptedOs::default().exits([Ok(Some(exited(0)))]);
+    let spec = CommandSpec::capture("fake-tool", &[]).working_dir(&workspace);
 
-    let spec = CommandSpec::capture("sh", &[&fake]).working_dir(&workspace);
-    run(&spec).required_because("the fake tool runs")?;
+    run_inner(&os, os.clock(), &spec, None).required_because("the fake tool runs")?;
 
-    let observed = fs::read_to_string(&record).required()?;
-    assert_eq!(
-        std::fs::canonicalize(observed.trim()).required()?,
-        std::fs::canonicalize(&workspace).required()?
+    assert!(
+        os.events().contains(&started(&spec)),
+        "the working directory reaches the started command: {:?}",
+        os.events()
     );
     Ok(())
 }
 
 #[test]
 fn a_relayed_command_sends_both_streams_to_the_external_output_instead_of_a_buffer() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let record = dir.path().join("record");
-    let fake = fake_script(
-        dir.path(),
-        "fake-tool",
-        &format!(
-            r#"printf 'progress'; printf 'warning' >&2; printf 'ran' > "{}""#,
-            record.display()
-        ),
-    )?;
-
-    let command = TerminalCommand::relayed("sh", &[&fake]);
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::new([ReadStep::Bytes(b"progress")]))
+        .stderr(ScriptedPipe::new([ReadStep::Bytes(b"warning")]))
+        .exits([Ok(Some(exited(0)))]);
+    let command = TerminalCommand::relayed("fake-tool", &[]);
     let mut output = RecordedOutput::new();
-    let outcome =
-        run_with_terminal(&command, &mut output).required_because("the fake tool runs")?;
 
-    assert_eq!(
-        fs::read_to_string(&record).required()?,
-        "ran",
-        "the command still runs"
-    );
+    let outcome = run_terminal_inner(&os, os.clock(), &command, &mut output, None)
+        .required_because("the fake tool runs")?;
+
     let relayed = output.text();
     assert!(
         relayed.contains("progress") && relayed.contains("warning"),
@@ -209,17 +126,21 @@ fn a_relayed_command_sends_both_streams_to_the_external_output_instead_of_a_buff
         "relayed output belongs to the terminal, not to a buffer"
     );
     assert!(!outcome.stderr_lossy);
+    assert!(
+        !os.events().contains(&Event::OwnGroup),
+        "the relay stays in sbxm's own process group"
+    );
     Ok(())
 }
 
 #[test]
 fn a_relayed_command_that_says_nothing_does_not_announce_any_external_output() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let fake = fake_script(dir.path(), "fake-tool", "exit 0")?;
-
-    let command = TerminalCommand::relayed("sh", &[&fake]);
+    let os = ScriptedOs::default().exits([Ok(Some(exited(0)))]);
+    let command = TerminalCommand::relayed("fake-tool", &[]);
     let mut output = RecordedOutput::new();
-    run_with_terminal(&command, &mut output).required_because("the fake tool runs")?;
+
+    run_terminal_inner(&os, os.clock(), &command, &mut output, None)
+        .required_because("the fake tool runs")?;
 
     // 空のbyte列は届くことがある。境界を置くかどうかは描画側が中身で決める。
     assert!(output.relayed.is_empty(), "nothing was written");
@@ -228,22 +149,15 @@ fn a_relayed_command_that_says_nothing_does_not_announce_any_external_output() -
 
 #[test]
 fn an_interactive_command_is_handed_the_terminal_and_waited_for_without_a_limit() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let record = dir.path().join("record");
-    let fake = fake_script(
-        dir.path(),
-        "fake-tool",
-        &format!(r#"printf 'ran' > "{}""#, record.display()),
-    )?;
-
-    let command = TerminalCommand::handed_over("sh", &[&fake]);
+    let os = ScriptedOs::default();
+    let command = TerminalCommand::handed_over("fake-tool", &[]);
     // 終える時期を決めるのは利用者であり、sbxmは待ち切る。
     assert_eq!(command.spec().timeout.duration(), None);
     let mut output = RecordedOutput::new();
-    let outcome =
-        run_with_terminal(&command, &mut output).required_because("the fake tool runs")?;
 
-    assert_eq!(fs::read_to_string(&record).required()?, "ran");
+    let outcome = run_terminal_inner(&os, os.clock(), &command, &mut output, None)
+        .required_because("the fake tool runs")?;
+
     assert!(outcome.success());
     assert_eq!(
         (output.handed_over, output.finished),
@@ -254,6 +168,11 @@ fn an_interactive_command_is_handed_the_terminal_and_waited_for_without_a_limit(
         outcome.stdout.is_empty() && outcome.stderr.is_empty(),
         "the terminal was handed over, so there is nothing to capture"
     );
+    assert_eq!(
+        os.events(),
+        [started(command.spec()), Event::WaitedExit],
+        "without a limit or a tick, the wait never asks in between"
+    );
     Ok(())
 }
 
@@ -262,12 +181,14 @@ fn a_failure_keeps_the_invocation_that_produced_it() -> Checked {
     let dir = tempfile::tempdir().required()?;
     let workspace = dir.path().join("workspace");
     fs::create_dir(&workspace).required()?;
-    let fake = fake_script(dir.path(), "fake-tool", "exit 2")?;
+    let os = ScriptedOs::default().exits([Ok(Some(exited(2)))]);
+    let spec = CommandSpec::capture("fake-tool", &["clone", "--bare"]).working_dir(&workspace);
 
-    let spec = CommandSpec::capture("sh", &[&fake, "clone", "--bare"]).working_dir(&workspace);
-    let failure = run(&spec).required_because("runs")?.failure();
+    let failure = run_inner(&os, os.clock(), &spec, None)
+        .required_because("runs")?
+        .failure();
 
-    assert_eq!(failure.safe_args, vec![fake.as_str(), "clone", "--bare"]);
+    assert_eq!(failure.safe_args, vec!["clone", "--bare"]);
     assert_eq!(failure.working_dir.as_deref(), Some(workspace.as_path()));
     assert!(failure.exit_status.contains('2'));
     Ok(())
@@ -275,72 +196,25 @@ fn a_failure_keeps_the_invocation_that_produced_it() -> Checked {
 
 #[test]
 fn every_argument_reaches_the_program_in_order() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let record = dir.path().join("record");
-    let fake = fake_script(
-        dir.path(),
-        "fake-tool",
-        &format!(
-            r#"for a in "$@"; do echo "arg=$a"; done > "{}""#,
-            record.display()
-        ),
-    )?;
+    let os = ScriptedOs::default().exits([Ok(Some(exited(0)))]);
+    let spec = CommandSpec::probe("fake-tool", &["ls", "--json"]);
 
-    let spec = CommandSpec::probe("sh", &[&fake, "ls", "--json"]);
-    let outcome = run(&spec).required_because("the fake tool runs")?;
-    assert!(outcome.success());
+    run_inner(&os, os.clock(), &spec, None).required_because("the fake tool runs")?;
 
-    assert_eq!(
-        fs::read_to_string(&record).required()?,
-        "arg=ls\narg=--json\n"
-    );
+    assert!(os.events().contains(&started(&spec)), "{:?}", os.events());
     Ok(())
 }
 
 #[test]
 fn arguments_are_passed_without_a_shell() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let record = dir.path().join("record");
-    let fake = fake_script(
-        dir.path(),
-        "fake-tool",
-        &format!(r#"printf '%s' "$1" > "{}""#, record.display()),
-    )?;
-
     // shellを介さないため、metacharacterはそのまま1個のargumentとして届く。
     let dangerous = "; rm -rf / #$(whoami)";
-    let spec = CommandSpec::probe("sh", &[&fake, dangerous]);
-    run(&spec).required_because("the fake tool runs")?;
+    let os = ScriptedOs::default().exits([Ok(Some(exited(0)))]);
+    let spec = CommandSpec::probe("fake-tool", &[dangerous]);
 
-    assert_eq!(fs::read_to_string(&record).required()?, dangerous);
-    Ok(())
-}
+    run_inner(&os, os.clock(), &spec, None).required_because("the fake tool runs")?;
 
-#[test]
-fn security_sensitive_runs_drop_the_ssh_agent_socket() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let record = dir.path().join("record");
-    let fake = fake_script(
-        dir.path(),
-        "fake-sbx",
-        &format!(
-            r#"printf 'ssh=%s\n' "${{SSH_AUTH_SOCK-<unset>}}" > "{}""#,
-            record.display()
-        ),
-    )?;
-
-    // 親processのenvironmentは継承されるが、SSH_AUTH_SOCKだけは除外される。
-    let inherited = CommandSpec::probe("sh", &[&fake]);
-    run(&inherited).required_because("run with inherited environment")?;
-    let with_agent = fs::read_to_string(&record).required()?;
-
-    let stripped = CommandSpec::probe("sh", &[&fake]).env(EnvPolicy::InheritWithoutSshAgent);
-    run(&stripped).required_because("run without the agent socket")?;
-    let without_agent = fs::read_to_string(&record).required()?;
-
-    assert_eq!(without_agent, "ssh=<unset>\n");
-    // 親がSSH_AUTH_SOCKを持たない環境でも、除外側は常にunsetである。
-    assert!(with_agent.starts_with("ssh="));
+    assert!(os.events().contains(&started(&spec)), "{:?}", os.events());
     Ok(())
 }
 
@@ -387,14 +261,13 @@ fn git_in_a_host_repository_forgets_where_the_caller_pointed_git() {
 
 #[test]
 fn capture_keeps_both_streams_separately() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let fake = fake_script(
-        dir.path(),
-        "fake-tool",
-        "printf 'to stdout'; printf 'to stderr' >&2; exit 3",
-    )?;
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::new([ReadStep::Bytes(b"to stdout")]))
+        .stderr(ScriptedPipe::new([ReadStep::Bytes(b"to stderr")]))
+        .exits([Ok(Some(exited(3)))]);
 
-    let outcome = run(&CommandSpec::probe("sh", &[&fake])).required_because("runs")?;
+    let outcome = run_inner(&os, os.clock(), &spec(), None).required_because("runs")?;
+
     assert_eq!(outcome.stdout_text(), "to stdout");
     assert_eq!(outcome.failure().stderr_text(), "to stderr");
     assert!(!outcome.success());
@@ -404,10 +277,12 @@ fn capture_keeps_both_streams_separately() -> Checked {
 
 #[test]
 fn invalid_utf8_output_is_kept_as_bytes_and_reported_as_lossy() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let fake = fake_script(dir.path(), "fake-tool", r"printf '\377\376' >&2")?;
+    let os = ScriptedOs::default()
+        .stderr(ScriptedPipe::new([ReadStep::Bytes(b"\xff\xfe")]))
+        .exits([Ok(Some(exited(0)))]);
 
-    let outcome = run(&CommandSpec::probe("sh", &[&fake])).required_because("runs")?;
+    let outcome = run_inner(&os, os.clock(), &spec(), None).required_because("runs")?;
+
     assert_eq!(outcome.stderr, vec![0xff, 0xfe]);
     assert!(
         outcome.stderr_lossy,
@@ -418,83 +293,62 @@ fn invalid_utf8_output_is_kept_as_bytes_and_reported_as_lossy() -> Checked {
 
 #[test]
 fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let fake = fake_script(dir.path(), "fake-tool", "sleep 30")?;
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::held_open([]))
+        .stderr(ScriptedPipe::held_open([]));
 
-    let spec = CommandSpec::probe("sh", &[&fake]);
-    // probeの10秒を待たずに判定するため、直接短いdeadlineを使う。
-    let started = Instant::now();
-    let error = run_with_limit(&spec, Duration::from_millis(200))
+    let error = run_inner(&os, os.clock(), &spec(), Some(Duration::from_millis(200)))
         .refused_because("the command must be terminated")?;
+
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
-    assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "the child must be killed promptly"
+    assert_eq!(
+        os.events()
+            .iter()
+            .filter(|event| matches!(event, Event::Watched(_)))
+            .count(),
+        10,
+        "a 200ms limit is reached after 10 waits of 20ms each"
     );
+    assert!(ended(&os.events()), "{:?}", os.events());
     Ok(())
 }
 
 #[test]
 fn a_descendant_outliving_the_direct_child_cannot_hold_capture_open_after_timeout() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let ready = dir.path().join("ready");
-    let survivor = dir.path().join("survivor");
-    let fake = fake_script(
-        dir.path(),
-        "fake-tool",
-        &format!(
-            // 背景のprocessは直接の子が終わったあとにmarkerを残す。stdoutのpipeも握ったままに
-            // するため、readerがEOFを待つ実装へ戻るとこのtestもtimeoutする。
-            r#"(printf 'ready' > "{}"; sleep 1; printf 'alive' > "{}") &
-sleep 30"#,
-            ready.display(),
-            survivor.display()
-        ),
-    )?;
+    // 背景の子孫がpipeを握ったままでも、直接の子が終わればcaptureも終わる。EOFを待てば、
+    // このtestは終わらない。
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::held_open([]))
+        .stderr(ScriptedPipe::held_open([]))
+        .exits([Ok(None), Ok(Some(exited(0)))]);
 
-    let spec = CommandSpec::probe("sh", &[&fake]);
-    let mut started = None;
-    let error = run_capture_after_ready(&spec, &ready, Duration::from_millis(200), &mut started)
-        .refused_because("the command must be terminated")?;
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
-    assert!(
-        started
-            .required_because("capture must start after the descendant is ready")?
-            .elapsed()
-            < Duration::from_millis(1500),
-        "the reader must not wait for a descendant that outlives the direct child"
-    );
+    let outcome = run_inner(&os, os.clock(), &spec(), None)
+        .required_because("the direct child ends the capture")?;
 
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !survivor.exists() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert_eq!(
-        fs::read_to_string(&survivor)
-            .required_because("the descendant outlives its direct child")?,
-        "alive",
-        "timeout must not terminate the descendant"
-    );
+    assert!(outcome.success());
+    assert!(os.events().contains(&Event::Closed(End::Stdout)));
+    assert!(os.events().contains(&Event::Closed(End::Stderr)));
     Ok(())
 }
 
 #[test]
 fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> Checked {
     // 打ち切りが届くのは直接の子だけである。
-    let relayed = TerminalCommand::relayed("sleep", &["30"]);
+    let relayed = TerminalCommand::relayed("fake-tool", &["30"]);
     let spec = relayed.spec();
-    let mut child = sleeping_child("30")?;
-    let pid = rustix::process::Pid::from_child(&child);
+    let os = ScriptedOs::default();
 
-    let started = Instant::now();
-    let error = wait_with_limit(&mut child, spec, Some(Duration::from_millis(200)), None)
-        .refused_because("the limit must end the wait")?;
+    let error = wait_with_limit(
+        &os,
+        os.clock(),
+        &mut (),
+        spec,
+        Some(Duration::from_millis(200)),
+        None,
+    )
+    .refused_because("the limit must end the wait")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
-    assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "the wait must not outlive the limit it was given"
-    );
     let diagnostic = error
         .diagnostics()
         .first()
@@ -503,14 +357,12 @@ fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> 
         diagnostic
             .description
             .args
-            .contains(&("program", "sleep".to_string())),
+            .contains(&("program", "fake-tool".to_string())),
         "the report names the command that was cut off: {:?}",
         diagnostic.description
     );
-    // 報告より先に終わらせるため、返った時点でzombieも実行中のprocessも残らない。
-    assert_eq!(
-        rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG).err(),
-        Some(rustix::io::Errno::CHILD),
+    assert!(
+        ended(&os.events()),
         "the child must already be collected when the timeout is reported"
     );
     Ok(())
@@ -519,12 +371,11 @@ fn a_child_that_outlives_its_limit_is_ended_before_the_timeout_is_reported() -> 
 #[test]
 fn a_child_that_cannot_be_waited_for_is_ended_and_reported_with_what_the_os_said() -> Checked {
     // 対話commandに上限は無い。待てなくなったことだけが、待機を終える理由になる。
-    let handed_over = TerminalCommand::handed_over("sleep", &[]);
+    let handed_over = TerminalCommand::handed_over("fake-tool", &[]);
     let spec = handed_over.spec();
-    let mut child = sleeping_child("0")?;
-    reaped_outside_the_handle(&child)?;
+    let os = ScriptedOs::default().waits([Err(no_child())]);
 
-    let error = wait_with_limit(&mut child, spec, None, None)
+    let error = wait_with_limit(&os, os.clock(), &mut (), spec, None, None)
         .refused_because("a child that cannot be waited for must not be waited for forever")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
@@ -533,24 +384,30 @@ fn a_child_that_cannot_be_waited_for_is_ended_and_reported_with_what_the_os_said
         vec!["diagnostic-command-label", "diagnostic-cause-label"],
         "the invocation and the reason the OS gave are both kept"
     );
+    assert!(ended(&os.events()), "{:?}", os.events());
     Ok(())
 }
 
 #[test]
 fn a_limited_wait_reports_the_same_failure_when_the_child_can_no_longer_be_observed() -> Checked {
     // 期限付きの待機でも、待てなくなった相手は期限まで数え続けずに報告する。
-    let relayed = TerminalCommand::relayed("sleep", &[]);
+    let relayed = TerminalCommand::relayed("fake-tool", &[]);
     let spec = relayed.spec();
-    let mut child = sleeping_child("0")?;
-    reaped_outside_the_handle(&child)?;
+    let os = ScriptedOs::default().exits([Err(no_child())]);
 
-    let started = Instant::now();
-    let error = wait_with_limit(&mut child, spec, Some(Duration::from_secs(30)), None)
-        .refused_because("a child that cannot be waited for is not waited for")?;
+    let error = wait_with_limit(
+        &os,
+        os.clock(),
+        &mut (),
+        spec,
+        Some(Duration::from_secs(30)),
+        None,
+    )
+    .refused_because("a child that cannot be waited for is not waited for")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
     assert!(
-        started.elapsed() < Duration::from_secs(5),
+        os.clock().slept.borrow().is_empty(),
         "the failure must be reported without waiting for the limit"
     );
     Ok(())
@@ -558,8 +415,9 @@ fn a_limited_wait_reports_the_same_failure_when_the_child_can_no_longer_be_obser
 
 #[test]
 fn a_missing_program_is_distinguished_from_other_spawn_failures() -> Checked {
-    let spec = CommandSpec::probe("sbxm-no-such-program-exists", &[]);
-    let error = run(&spec).refused_because("missing programs fail")?;
+    let os = ScriptedOs::default().failing(Step::Start, io::Error::from(ErrorKind::NotFound));
+    let error =
+        run_inner(&os, os.clock(), &spec(), None).refused_because("missing programs fail")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
     Ok(())
 }
@@ -568,8 +426,10 @@ fn a_missing_program_is_distinguished_from_other_spawn_failures() -> Checked {
 fn a_missing_working_directory_is_not_mistaken_for_a_missing_program() -> Checked {
     // OSはどちらも`NotFound`で答える。無いのはprogramではなくdirectoryだと名指しする。
     let dir = tempfile::tempdir().required()?;
-    let spec = CommandSpec::probe("true", &[]).working_dir(&dir.path().join("gone"));
-    let error = run(&spec).refused_because("the directory is gone")?;
+    let os = ScriptedOs::default().failing(Step::Start, io::Error::from(ErrorKind::NotFound));
+    let spec = CommandSpec::probe("fake-tool", &[]).working_dir(&dir.path().join("gone"));
+
+    let error = run_inner(&os, os.clock(), &spec, None).refused_because("the directory is gone")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::ExternalCommandDirectoryMissing)
@@ -579,11 +439,12 @@ fn a_missing_working_directory_is_not_mistaken_for_a_missing_program() -> Checke
 
 #[test]
 fn a_spawn_failure_that_is_not_a_missing_program_keeps_what_was_observed() -> Checked {
-    let dir = tempfile::tempdir().required()?;
+    // 起動できない理由が「相手が居ない」でなければ、相手が居ないとは言わない。
+    let os =
+        ScriptedOs::default().failing(Step::Start, io::Error::from(ErrorKind::PermissionDenied));
 
-    // directoryは在るが起動できない。存在しないprogramとは別の失敗である。
-    let spec = CommandSpec::probe(dir.path().to_str().required()?, &[]);
-    let error = run(&spec).refused_because("a directory cannot be started")?;
+    let error = run_inner(&os, os.clock(), &spec(), None)
+        .refused_because("a directory cannot be started")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
     assert_eq!(
@@ -596,10 +457,11 @@ fn a_spawn_failure_that_is_not_a_missing_program_keeps_what_was_observed() -> Ch
 
 #[test]
 fn a_non_zero_status_maps_to_one_while_keeping_the_original_value() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let fake = fake_script(dir.path(), "fake-tool", "printf 'boom' >&2; exit 42")?;
+    let os = ScriptedOs::default()
+        .stderr(ScriptedPipe::new([ReadStep::Bytes(b"boom")]))
+        .exits([Ok(Some(exited(42)))]);
 
-    let outcome = run(&CommandSpec::probe("sh", &[&fake])).required_because("runs")?;
+    let outcome = run_inner(&os, os.clock(), &spec(), None).required_because("runs")?;
     let error = outcome
         .require_success()
         .refused_because("a non-zero status is a failure")?;
@@ -638,30 +500,66 @@ fn path_lookup_finds_an_executable_placed_at_the_front_of_path() -> Checked {
 
 #[test]
 fn input_reaches_the_child_and_ends_with_an_eof() -> Checked {
-    let spec = CommandSpec::capture("sh", &["-c", "cat"]).with_input(b"declared = true\n".to_vec());
-    let outcome = run(&spec).required()?;
-    assert!(outcome.status.success());
-    assert_eq!(outcome.stdout, b"declared = true\n");
+    let writer = ScriptedWriter::accepting_all();
+    let written = writer.written();
+    let os = ScriptedOs::default()
+        .stdin(writer)
+        .exits([Ok(Some(exited(0)))]);
+    let spec = spec().with_input(b"declared = true\n".to_vec());
+
+    let outcome = run_inner(&os, os.clock(), &spec, None).required()?;
+
+    assert!(outcome.success());
+    assert_eq!(written.borrow().as_slice(), b"declared = true\n");
+    assert!(os.events().contains(&Event::Closed(End::Stdin)));
     Ok(())
 }
 
 #[test]
 fn input_larger_than_a_pipe_is_written_while_the_output_is_read() -> Checked {
-    // 子は読んだ分だけ書き返す。書き込みと読み取りのどちらかが待つと、互いに止まる。
-    let input: Vec<u8> = (0..=u8::MAX).cycle().take(1024 * 1024).collect();
-    let spec = CommandSpec::capture("sh", &["-c", "cat"]).with_input(input.clone());
-    let outcome = run(&spec).required()?;
-    assert!(outcome.status.success());
-    assert_eq!(outcome.stdout.len(), input.len());
-    assert!(outcome.stdout == input, "the bytes arrive unchanged");
+    // 子は読んだ分だけ書き返す。台本は書けた量だけ進め、要らない容量の仮定は置かない。
+    const CHUNK: usize = 4096;
+    let input: Vec<u8> = (0..=u8::MAX).cycle().take(4 * CHUNK).collect();
+    let mut answers = Vec::new();
+    let mut stdout_steps = Vec::new();
+    for chunk in input.chunks(CHUNK) {
+        answers.push(Ok(CHUNK));
+        answers.push(Err(ErrorKind::WouldBlock.into()));
+        stdout_steps.push(ReadStep::Owned(chunk.to_vec()));
+    }
+    let writer = ScriptedWriter::answering(answers);
+    let written = writer.written();
+    let os = ScriptedOs::default()
+        .stdin(writer)
+        .stdout(ScriptedPipe::new(stdout_steps))
+        .exits([
+            Ok(None),
+            Ok(None),
+            Ok(None),
+            Ok(None),
+            Ok(None),
+            Ok(Some(exited(0))),
+        ]);
+    let spec = spec().with_input(input.clone());
+
+    let outcome = run_inner(&os, os.clock(), &spec, None).required()?;
+
+    assert!(outcome.success());
+    assert_eq!(outcome.stdout, input);
+    assert_eq!(written.borrow().as_slice(), input.as_slice());
     Ok(())
 }
 
 #[test]
 fn a_child_that_never_reads_its_input_still_ends_with_its_own_status() -> Checked {
-    let input = vec![0_u8; 1024 * 1024];
-    let spec = CommandSpec::capture("sh", &["-c", "exit 3"]).with_input(input);
-    let outcome = run(&spec).required()?;
+    let writer = ScriptedWriter::answering([Err(ErrorKind::BrokenPipe.into())]);
+    let os = ScriptedOs::default()
+        .stdin(writer)
+        .exits([Ok(Some(exited(3)))]);
+    let spec = spec().with_input(vec![0_u8; 1024 * 1024]);
+
+    let outcome = run_inner(&os, os.clock(), &spec, None).required()?;
+
     assert_eq!(outcome.status.code(), Some(3));
     Ok(())
 }
@@ -680,9 +578,14 @@ fn the_input_never_reaches_a_debug_representation() {
 
 #[test]
 fn a_streamed_run_hands_stdout_to_the_sink_and_keeps_stderr() -> Checked {
-    let spec = CommandSpec::capture("sh", &["-c", "printf received; printf noted >&2"]);
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::new([ReadStep::Bytes(b"received")]))
+        .stderr(ScriptedPipe::new([ReadStep::Bytes(b"noted")]))
+        .exits([Ok(Some(exited(0)))]);
     let mut sink = Vec::new();
-    let outcome = run_streaming(&spec, &mut sink, 1024).required()?;
+
+    let outcome = run_streaming(&os, os.clock(), &spec(), &mut sink, 1024).required()?;
+
     assert!(outcome.status.success());
     assert_eq!(sink, b"received");
     assert!(outcome.stdout.is_empty(), "stdout is not kept twice");
@@ -692,9 +595,14 @@ fn a_streamed_run_hands_stdout_to_the_sink_and_keeps_stderr() -> Checked {
 
 #[test]
 fn a_streamed_run_carries_more_than_a_pipe_holds() -> Checked {
-    let spec = CommandSpec::capture("head", &["-c", "2097152", "/dev/zero"]);
+    let steps = (0..64).map(|_| ReadStep::Owned(vec![b'x'; 32 * 1024]));
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::new(steps))
+        .exits([Ok(Some(exited(0)))]);
     let mut sink = Vec::new();
-    let outcome = run_streaming(&spec, &mut sink, 4 * 1024 * 1024).required()?;
+
+    let outcome = run_streaming(&os, os.clock(), &spec(), &mut sink, 4 * 1024 * 1024).required()?;
+
     assert!(outcome.status.success());
     assert_eq!(sink.len(), 2 * 1024 * 1024);
     Ok(())
@@ -703,16 +611,18 @@ fn a_streamed_run_carries_more_than_a_pipe_holds() -> Checked {
 #[test]
 fn output_beyond_the_limit_ends_the_child_and_is_refused() -> Checked {
     // 終わらない出力でも、上限を超えた時点で子を終わらせる。
-    let spec = CommandSpec::capture("yes", &[]);
+    let steps = (0..3).map(|_| ReadStep::Owned(vec![b'y'; 4096]));
+    let os = ScriptedOs::default().stdout(ScriptedPipe::held_open(steps));
     let mut sink = Vec::new();
-    let started = Instant::now();
-    let error = run_streaming(&spec, &mut sink, 4096).refused_because("the output never ends")?;
+
+    let error = run_streaming(&os, os.clock(), &spec(), &mut sink, 4096)
+        .refused_because("the output never ends")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::ExternalCommandOutputTooLarge)
     );
     assert!(sink.len() <= 4096, "nothing beyond the limit is kept");
-    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(ended(&os.events()), "{:?}", os.events());
     Ok(())
 }
 
@@ -731,8 +641,11 @@ impl std::io::Write for RefusingSink {
 
 #[test]
 fn a_sink_that_cannot_take_the_output_refuses_the_run() -> Checked {
-    let spec = CommandSpec::capture("sh", &["-c", "printf received"]);
-    let error = run_streaming(&spec, &mut RefusingSink, 1024)
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::new([ReadStep::Bytes(b"received")]))
+        .exits([Ok(Some(exited(0)))]);
+
+    let error = run_streaming(&os, os.clock(), &spec(), &mut RefusingSink, 1024)
         .refused_because("the output has nowhere to go")?;
     assert_eq!(
         error.first_id(),
@@ -817,9 +730,18 @@ impl std::io::Write for UnflushableSink {
 
 #[test]
 fn a_sink_that_cannot_finish_the_output_refuses_the_run() -> Checked {
-    let spec = CommandSpec::capture("sh", &["-c", "printf received"]);
-    let error = run_streaming(&spec, &mut UnflushableSink(Vec::new()), 1024)
-        .refused_because("the output was not finished")?;
+    let os = ScriptedOs::default()
+        .stdout(ScriptedPipe::new([ReadStep::Bytes(b"received")]))
+        .exits([Ok(Some(exited(0)))]);
+
+    let error = run_streaming(
+        &os,
+        os.clock(),
+        &spec(),
+        &mut UnflushableSink(Vec::new()),
+        1024,
+    )
+    .refused_because("the output was not finished")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::ExternalCommandOutputUnstored)
@@ -828,81 +750,118 @@ fn a_sink_that_cannot_finish_the_output_refuses_the_run() -> Checked {
 }
 
 #[test]
-fn the_real_host_streams_stdout_itself() -> Checked {
-    let spec = CommandSpec::capture("sh", &["-c", "printf received"]);
-    let mut sink = Vec::new();
-    RealHost.run_streaming(&spec, &mut sink, 1024).required()?;
-    assert_eq!(sink, b"received");
+fn a_handed_over_command_lets_the_caller_work_while_it_runs() -> Checked {
+    let os = ScriptedOs::default().exits_at(Duration::from_millis(300), 0);
+    let mut ticks = 0;
+    let mut tick = || ticks += 1;
+
+    let status = wait_with_limit(
+        &os,
+        os.clock(),
+        &mut (),
+        &spec(),
+        None,
+        Some((Duration::from_millis(50), &mut tick)),
+    )
+    .required_because("the command ends on its own")?;
+
+    assert!(status.success());
+    assert_eq!(ticks, 4, "ticks land at 60, 120, 180 and 240ms");
     Ok(())
 }
 
 #[test]
-fn a_handed_over_command_lets_the_caller_work_while_it_runs() -> Checked {
-    let command = TerminalCommand::handed_over("sh", &["-c", "sleep 0.3"]);
+fn a_tick_that_takes_time_counts_the_next_interval_from_after_it_returns() -> Checked {
+    // `tick`が時計を進めても、次の間隔はその後の時刻から数える。先の時刻から数えていれば、
+    // このtestは5回のtickを見る。
+    let os = ScriptedOs::default().exits_at(Duration::from_millis(300), 0);
     let mut ticks = 0;
+    let mut tick = || {
+        ticks += 1;
+        os.clock().advance(Duration::from_millis(30));
+    };
 
-    let outcome = RealHost
-        .run_with_terminal_ticking(
-            &command,
-            &mut RecordedOutput::new(),
-            Duration::from_millis(50),
-            &mut || ticks += 1,
-        )
-        .required()?;
+    wait_with_limit(
+        &os,
+        os.clock(),
+        &mut (),
+        &spec(),
+        None,
+        Some((Duration::from_millis(50), &mut tick)),
+    )
+    .required_because("the command ends on its own")?;
 
-    assert!(outcome.success());
-    assert!(
-        ticks >= 2,
-        "the caller worked while the command ran: {ticks}"
-    );
+    assert_eq!(ticks, 3);
     Ok(())
 }
 
 #[test]
 fn a_command_that_keeps_its_output_is_not_interrupted_to_tick() -> Checked {
-    let command = TerminalCommand::relayed("sh", &["-c", "sleep 0.1"]);
+    let os = ScriptedOs::default().exits([Ok(Some(exited(0)))]);
+    let command = TerminalCommand::relayed("fake-tool", &[]);
     let mut ticks = 0;
+    let mut tick = || ticks += 1;
+    let mut output = RecordedOutput::new();
 
-    let outcome = RealHost
-        .run_with_terminal_ticking(
-            &command,
-            &mut RecordedOutput::new(),
-            Duration::from_millis(10),
-            &mut || ticks += 1,
-        )
-        .required()?;
+    let outcome = run_terminal_inner(
+        &os,
+        os.clock(),
+        &command,
+        &mut output,
+        Some((Duration::from_millis(10), &mut tick)),
+    )
+    .required_because("the fake tool runs")?;
 
     assert!(outcome.success());
     assert_eq!(ticks, 0);
+    assert!(os.clock().slept.borrow().is_empty());
     Ok(())
 }
 
 #[test]
 fn only_the_first_part_of_a_flood_of_diagnostics_is_kept() -> Checked {
     // 流す実行が読む相手は信用しない。stderrは診断に使う分だけ溜め、残りは読んで捨てる。
-    let spec = CommandSpec::capture("sh", &["-c", "head -c 300000 /dev/zero >&2; printf done"]);
+    let steps = (0..30).map(|_| ReadStep::Owned(vec![0_u8; 10_000]));
+    let os = ScriptedOs::default()
+        .stderr(ScriptedPipe::new(steps))
+        .exits([Ok(Some(exited(0)))]);
     let mut sink = Vec::new();
-    let outcome = RealHost.run_streaming(&spec, &mut sink, 1024).required()?;
-    assert_eq!(sink, b"done");
+
+    let outcome = run_streaming(&os, os.clock(), &spec(), &mut sink, 1024).required()?;
+
     assert_eq!(outcome.stderr.len(), 64 * 1024);
     Ok(())
 }
 
 #[test]
 fn a_large_input_reaches_a_child_that_writes_nothing_without_waiting_on_polls() -> Checked {
-    // 子が出力を書かないあいだも、読んだ分だけすぐに書き足す。出力を待つ間隔ごとに
-    // 書き足していた頃は、8 MiBに0.7秒ほどかかった。今は数msで終わる。
-    let input = vec![b'x'; 8 * 1024 * 1024];
-    let spec = CommandSpec::capture("sh", &["-c", "cat > /dev/null"]).with_input(input);
-    let started = Instant::now();
+    // 書き残しがある間はstdinも見張り、書き終えたら外れる。
+    let writer = ScriptedWriter::answering([Ok(1), Err(ErrorKind::WouldBlock.into()), Ok(1)]);
+    let os = ScriptedOs::default()
+        .stdin(writer)
+        .stdout(ScriptedPipe::held_open([]))
+        .stderr(ScriptedPipe::held_open([]))
+        .exits([Ok(None), Ok(None), Ok(Some(exited(0)))]);
+    let spec = spec().with_input(b"ab".to_vec());
 
-    let outcome = RealHost.run(&spec).required()?;
+    run_inner(&os, os.clock(), &spec, None)
+        .required_because("a child that never reads still ends")?;
 
-    assert!(outcome.success());
-    assert!(
-        started.elapsed() < Duration::from_millis(300),
-        "{:?}",
-        started.elapsed()
+    let watched: Vec<Vec<End>> = os
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Watched(ends) => Some(ends),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        watched,
+        [
+            vec![End::Stdout, End::Stderr, End::Stdin],
+            vec![End::Stdout, End::Stderr],
+            vec![End::Stdout, End::Stderr],
+        ]
     );
     Ok(())
 }
@@ -910,22 +869,23 @@ fn a_large_input_reaches_a_child_that_writes_nothing_without_waiting_on_polls() 
 #[test]
 fn a_wait_that_ticks_still_ends_a_child_that_outlives_its_limit() -> Checked {
     // 待つあいだ手続きを呼ぶ経路でも、上限は守る。
-    let handed_over = TerminalCommand::handed_over("sleep", &["30"]);
+    let handed_over = TerminalCommand::handed_over("fake-tool", &["30"]);
     let spec = handed_over.spec();
-    let mut child = sleeping_child("30")?;
+    let os = ScriptedOs::default();
     let mut ticks = 0;
+    let mut tick = || ticks += 1;
 
-    let started = Instant::now();
     let error = wait_with_limit(
-        &mut child,
+        &os,
+        os.clock(),
+        &mut (),
         spec,
         Some(Duration::from_millis(200)),
-        Some((Duration::from_millis(20), &mut || ticks += 1)),
+        Some((Duration::from_millis(20), &mut tick)),
     )
     .refused_because("the limit must end the wait")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
-    assert!(started.elapsed() < Duration::from_secs(5));
-    assert!(ticks >= 1, "the caller worked while waiting: {ticks}");
+    assert_eq!(ticks, 9, "the caller worked while waiting");
     Ok(())
 }

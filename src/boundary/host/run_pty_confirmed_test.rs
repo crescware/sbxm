@@ -95,7 +95,7 @@ fn an_answer_write_failure_is_reported_as_not_confirmed() -> Checked {
     let mut child = sleeping_child()?;
     let error = drive(&mut child, controller, &short_prompt_command())
         .refused_because("a failed answer write is not confirmation")?;
-    terminate_child(&mut child);
+    terminate_child(&RealHost, &mut child);
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotConfirmed));
     Ok(())

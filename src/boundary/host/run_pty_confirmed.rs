@@ -12,8 +12,10 @@ use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
+use crate::boundary::os::RealHost;
+
 use super::{
-    CommandOutcome, PtyConfirmedCommand, apply_env, spawn, spawn_failure, terminate_child,
+    CommandOutcome, PtyConfirmedCommand, apply_env, spawn_failure, start_child, terminate_child,
     unreadable,
 };
 
@@ -29,7 +31,7 @@ const COLUMNS: u16 = 120;
 /// 期待するpromptが現れる前に、timeout・読み取り不能・processの終了のいずれかに
 /// 達した場合は、答えを送らずに`ExternalCommandNotConfirmed`として終える。答えを
 /// 送った後は、`CommandOutcome`をそのまま返し、成否の判定は呼び出し側に委ねる。
-pub(super) fn run_pty_confirmed(command: &PtyConfirmedCommand) -> Result<CommandOutcome> {
+pub(crate) fn run_pty_confirmed(command: &PtyConfirmedCommand) -> Result<CommandOutcome> {
     let spec = command.as_capture_spec();
     let (controller, terminal) = open_pty().map_err(|error| spawn_failure(&spec, &error))?;
 
@@ -46,12 +48,12 @@ pub(super) fn run_pty_confirmed(command: &PtyConfirmedCommand) -> Result<Command
     process.stdout(Stdio::from(stdout));
     process.stderr(Stdio::from(terminal));
 
-    let mut child = spawn(&mut process, &spec)?;
+    let mut child = start_child(&RealHost, &mut process, &spec)?;
 
     match drive(&mut child, controller, command) {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
-            terminate_child(&mut child);
+            terminate_child(&RealHost, &mut child);
             Err(error)
         }
     }

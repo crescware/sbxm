@@ -861,8 +861,10 @@ fn is_test_code(path: &str) -> bool {
 ///
 /// 判断のcodeは基本操作を差し込みで受け取り、実物を選ぶのはここに挙げた配線だけとする。
 /// 一覧に無い本番codeがOS層を名指しすれば、差し込まずに実OSを使う判断が紛れる。
-const OS_LAYER_WIRING: [&str; 6] = [
+const OS_LAYER_WIRING: [&str; 8] = [
     "src/app/execute.rs",
+    "src/boundary/host/mod.rs",
+    "src/boundary/host/run_pty_confirmed.rs",
     "src/paths/lock/acquire_exclusive_lock.rs",
     "src/paths/lock/acquire_shared_lock.rs",
     "src/paths/lock/exclusive_lock.rs",
@@ -878,10 +880,17 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。OS層とその契約testを足すときを
 /// 除き、一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 26] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 18] = [
     // OS層。分岐を持たず、coverageの母集団から外す。
     ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
     ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
+    // 子process・pipe・signalの基本操作。判断のcodeが差し込みで受け取る側。
+    (
+        "src/boundary/os/system_process.rs",
+        &[Element::ChildProcess, Element::Signal],
+    ),
+    ("src/boundary/os/system_pipe.rs", &[Element::ChildProcess]),
+    ("src/boundary/os/system_signal.rs", &[Element::Signal]),
     // OSについての仮定を実OSで確かめる契約test。
     (
         "src/boundary/os/system_pipe_test.rs",
@@ -904,38 +913,12 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 26] = [
         "tests/poll_eintr.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
-    // 外部processを動かす実行。判断とOSの呼び出しが同じ関数にある。
-    ("src/boundary/host/poll_pipes.rs", &[Element::ChildProcess]),
-    (
-        "src/boundary/host/pump_until_exit.rs",
-        &[Element::RealTime, Element::ChildProcess],
-    ),
-    ("src/boundary/host/run_inner.rs", &[Element::ChildProcess]),
+    // PTYの上での実行。判断とOSの呼び出しが同じ関数にある。PTYの移動はここより後のPRで行う。
     (
         "src/boundary/host/run_pty_confirmed.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
-    ("src/boundary/host/run_relay.rs", &[Element::ChildProcess]),
-    ("src/boundary/host/signal_guard.rs", &[Element::Signal]),
-    ("src/boundary/host/spawn.rs", &[Element::ChildProcess]),
-    (
-        "src/boundary/host/terminate_child.rs",
-        &[Element::ChildProcess, Element::Signal],
-    ),
-    ("src/boundary/host/unwaitable.rs", &[Element::ChildProcess]),
-    (
-        "src/boundary/host/wait_with_limit.rs",
-        &[Element::RealTime, Element::ChildProcess],
-    ),
     // test。
-    (
-        "src/boundary/host/command_test.rs",
-        &[Element::RealTime, Element::ChildProcess],
-    ),
-    (
-        "src/boundary/host/fake/pump_until_exit_test.rs",
-        &[Element::RealTime, Element::ChildProcess],
-    ),
     (
         "src/boundary/host/run_pty_confirmed_test.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],

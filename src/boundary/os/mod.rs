@@ -5,30 +5,24 @@
 //! ここはcoverageの母集団から外す。OSについての仮定は、隣の`_test` fileが契約testとして実OSで
 //! 確かめる。
 //!
-//! 子process、pipe、PTY、signalの基本操作は、まだ`boundary::host`の判断と同じ関数にある。
-//! ここへ移す前に、それらが頼る仮定を`system_{process,pipe,pty,signal}_test.rs`の契約testとして
-//! 置く。これらはstdとrustixを直接呼び、基本操作をここへ移せば、その基本操作を通して呼ぶ。
-//! `poll`がsignal handlerで切り上がることは、threadが1本のprocessでしか確かめられないため、
-//! harnessを使わない`tests/poll_eintr.rs`が確かめる。
+//! 子process、pipe、signalの基本操作は、`boundary::host`が持つtrait（`Processes`・`Pipes`・
+//! `Signals`）を`RealHost`が実装する形でここに置く。`RealHost`はそれらと`SystemClock`を
+//! `boundary::host`の判断へ渡す配線でもある。PTYの基本操作は、まだ`boundary::host`の判断と同じ
+//! 関数にある。ここへ移す前に、それが頼る仮定を`system_pty_test.rs`の契約testとして置き、
+//! stdとrustixを直接呼ぶ。`poll`がsignal handlerで切り上がることは、threadが1本のprocessでしか
+//! 確かめられないため、harnessを使わない`tests/poll_eintr.rs`が確かめる。
 
+mod real_host;
 mod system_clock;
 mod system_file_lock;
+mod system_pipe;
+mod system_process;
+mod system_signal;
 
+pub use real_host::RealHost;
 pub use system_clock::SystemClock;
 pub use system_file_lock::SystemFileLock;
 
 #[cfg(test)]
-#[path = "system_pipe_test.rs"]
-mod system_pipe_test;
-
-#[cfg(test)]
-#[path = "system_process_test.rs"]
-mod system_process_test;
-
-#[cfg(test)]
 #[path = "system_pty_test.rs"]
 mod system_pty_test;
-
-#[cfg(test)]
-#[path = "system_signal_test.rs"]
-mod system_signal_test;

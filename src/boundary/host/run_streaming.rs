@@ -1,11 +1,11 @@
 use std::io::Write;
-use std::os::unix::process::CommandExt;
 
 use crate::diagnostics::Result;
+use crate::time::Clock;
 
 use super::{
-    CommandOutcome, CommandSpec, MAX_KEPT_STDERR, SignalGuard, Stream, configure, outcome,
-    output_too_large, pump_until_exit, spawn, spawn_failure, unstored,
+    CommandOutcome, CommandSpec, MAX_KEPT_STDERR, Pipes, SignalGuard, Signals, Stream, configure,
+    outcome, output_too_large, pump_until_exit, spawn_failure, start_child, unstored,
 };
 
 /// 出力をcaptureして実行し、stdoutだけを届いた順に`sink`へ流す。
@@ -13,26 +13,30 @@ use super::{
 /// stdoutを溜めないため、大きな出力でもmemoryを使い切らない。`limit`byteを超えた時点で
 /// 子を終わらせ、それ以上は受け取らない。stderrは診断に使うため、上限までだけ溜める。
 /// `sink`へ書けなかった場合は、出力を読めなかったのではなく、hostで残せなかったと報告する。
-pub(super) fn run_streaming(
+pub(crate) fn run_streaming<O: Pipes + Signals>(
+    os: &O,
+    clock: &dyn Clock,
     spec: &CommandSpec,
     sink: &mut dyn Write,
     limit: u64,
 ) -> Result<CommandOutcome> {
     let mut command = configure(spec);
     // `run_inner`と同じく専用のprocess groupへ置き、端末からのCtrl-Cを子孫へ届けない。
-    command.process_group(0);
-    let signal = SignalGuard::new().map_err(|error| spawn_failure(spec, &error))?;
-    let mut child = spawn(&mut command, spec)?;
+    os.own_group(&mut command);
+    let signal = SignalGuard::new(os).map_err(|error| spawn_failure(spec, &error))?;
+    let mut child = start_child(os, &mut command, spec)?;
 
     let mut received: u64 = 0;
     let mut exceeded = false;
     let mut unstored_cause = None;
     let mut stderr = Vec::new();
     let status = pump_until_exit(
+        os,
+        clock,
         &mut child,
         spec,
         spec.timeout.duration(),
-        Some(&signal),
+        &|| signal.interrupted(),
         &mut |stream, bytes| match stream {
             Stream::Stdout => {
                 received = received.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));

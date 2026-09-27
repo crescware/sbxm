@@ -1,19 +1,23 @@
-use std::process::{Child, Command};
+use std::process::Command;
 
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
 
-use super::{CommandSpec, spawn_failure};
+use super::{CommandSpec, Processes, spawn_failure};
 
 /// 子processを起動する。相手が居ないことと、作業directoryが無いことは、起動の失敗と
 /// 別に述べる。
 ///
-/// 作業directoryが無いときも同じ`NotFound`が返る。そのときは相手が居ないとは言わず、
-/// 無いdirectoryを名指しする。
-pub(super) fn spawn(command: &mut Command, spec: &CommandSpec) -> Result<Child> {
-    command.spawn().map_err(|error| {
+/// 作業directoryが無いときも同じ`NotFound`が返る（契約test C8）。そのときは相手が居ないとは
+/// 言わず、無いdirectoryを名指しする。
+pub(super) fn start_child<O: Processes>(
+    os: &O,
+    command: &mut Command,
+    spec: &CommandSpec,
+) -> Result<O::Child> {
+    os.start(command).map_err(|error| {
         if let Some(directory) = spec
             .working_dir
             .as_ref()

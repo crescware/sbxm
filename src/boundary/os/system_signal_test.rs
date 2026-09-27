@@ -16,10 +16,13 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use signal_hook::consts::{SIGINT, SIGTERM};
+use signal_hook::consts::SIGTERM;
 
+use crate::boundary::host::Signals;
 use crate::testing::fs::temp_dir;
 use crate::testing::outcome::{Checked, Required};
+
+use super::RealHost;
 
 /// C19: Ctrl-Cの見張りは何度でも置け、置いた見張りはそれぞれ外せる。1度も送らない。
 ///
@@ -27,11 +30,11 @@ use crate::testing::outcome::{Checked, Required};
 /// の中で、置いて外すことを何度も繰り返す。
 #[test]
 fn an_interrupt_watch_can_be_placed_again_and_removed() -> Checked {
-    let first = signal_hook::flag::register(SIGINT, Arc::new(AtomicBool::new(false)))?;
-    let second = signal_hook::flag::register(SIGINT, Arc::new(AtomicBool::new(false)))?;
+    let first = RealHost.watch_interrupts(&Arc::new(AtomicBool::new(false)))?;
+    let second = RealHost.watch_interrupts(&Arc::new(AtomicBool::new(false)))?;
 
-    assert!(signal_hook::low_level::unregister(second));
-    assert!(signal_hook::low_level::unregister(first));
+    assert!(RealHost.stop_watching(second));
+    assert!(RealHost.stop_watching(first));
     Ok(())
 }
 
