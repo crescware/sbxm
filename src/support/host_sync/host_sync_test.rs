@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::diagnostics::ErrorId;
 
+use crate::testing::host::FailingAt;
 use crate::testing::install_fake_tool;
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::repository::git_in;
@@ -1367,4 +1368,102 @@ fn a_tag_deleted_on_the_host_comes_back_while_the_sandbox_still_has_it() -> Chec
     );
     assert_eq!(repos.host_ref("refs/tags/v1")?, tip);
     Ok(())
+}
+
+/// 起動ごとの失敗の作り方。
+#[derive(Clone, Copy)]
+enum Failures {
+    /// 時間切れだけを作る。終了statusが答えそのものである起動を含む工程に使う。
+    TimeoutsOnly,
+    /// 時間切れと、実行できて失敗した場合の両方を作る。
+    TimeoutsAndExits,
+}
+
+/// `run`の起動を1つずつ失敗させ、どの失敗も成功として扱わないことを確かめる。
+///
+/// `run`は失敗させないときに成功する工程を、毎回新しく組み立てて走らせる。
+fn no_failed_step_is_taken_as_done<T>(
+    failures: Failures,
+    run: impl Fn(&FailingAt<LocalSandbox>) -> Checked<crate::diagnostics::Result<T>>,
+) -> Checked {
+    let recorded = FailingAt::recording(LocalSandbox);
+    run(&recorded)?.required_because("every step succeeds")?;
+    for (at, step) in recorded.calls().iter().enumerate() {
+        let timing_out = FailingAt::timing_out(LocalSandbox, at);
+        assert!(
+            run(&timing_out)?.is_err(),
+            "a step that did not answer: {step}"
+        );
+        // 祖先かどうかは、終了statusで答えが返る。失敗ではない。
+        if matches!(failures, Failures::TimeoutsOnly) || step.contains("merge-base --is-ancestor") {
+            continue;
+        }
+        let exiting = FailingAt::exiting(LocalSandbox, at);
+        assert!(run(&exiting)?.is_err(), "a step that failed: {step}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_save_that_archives_rewritten_refs_is_not_done_past_a_failed_step() -> Checked {
+    no_failed_step_is_taken_as_done(Failures::TimeoutsAndExits, |host| {
+        let repositories = Repositories::new()?;
+        repositories.fetch("20260101T000000Z")?;
+        git_in(
+            &repositories.worktree,
+            &[
+                "commit",
+                "--quiet",
+                "--amend",
+                "--allow-empty",
+                "-m",
+                "rewritten",
+            ],
+        )?;
+        Ok(save_to_host(
+            host,
+            &sandbox_name()?,
+            &repositories.git_dir(),
+            &repositories.host,
+            saved_at(),
+        ))
+    })
+}
+
+#[test]
+fn a_restore_is_not_done_past_a_failed_step() -> Checked {
+    no_failed_step_is_taken_as_done(Failures::TimeoutsAndExits, |host| {
+        let rebuilt = Rebuilt::new()?;
+        rebuilt.save("main")?;
+        rebuilt.save("topic")?;
+        Ok(restore_saved_branches(
+            host,
+            &rebuilt.host,
+            NAMESPACE,
+            &rebuilt.sandbox.to_string_lossy(),
+        ))
+    })
+}
+
+#[test]
+fn a_reflection_is_not_done_past_a_step_that_did_not_answer() -> Checked {
+    // pushの終了statusは、拒まれたrefの報告を含む答えである。時間切れだけを作る。
+    no_failed_step_is_taken_as_done(Failures::TimeoutsOnly, |host| {
+        let reflecting = Reflecting::new()?;
+        reflecting.saved("heads/topic", &reflecting.third)?;
+        reflecting.set("refs/heads/side", &reflecting.first)?;
+        reflecting.saved("heads/side", &reflecting.third)?;
+        let forked = reflecting.aside(&reflecting.second, "forked")?;
+        reflecting.set("refs/heads/fork", &reflecting.third)?;
+        reflecting.saved("heads/fork", &forked)?;
+        Ok(reflect_saved(host, &reflecting.host, NAMESPACE))
+    })?;
+    no_failed_step_is_taken_as_done(Failures::TimeoutsOnly, |host| {
+        let reflecting = Reflecting::new()?;
+        reflecting.saved("heads/topic", &reflecting.third)?;
+        let hooks = reflecting.host.join(".git/hooks");
+        fs::create_dir_all(&hooks).required()?;
+        std::os::unix::fs::symlink(on_path("false")?, hooks.join("pre-receive")).required()?;
+        Ok(reflect_saved(host, &reflecting.host, NAMESPACE))
+    })
 }

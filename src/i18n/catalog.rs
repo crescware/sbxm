@@ -70,3 +70,7 @@ impl Catalog {
         Ok(formatted.into_owned())
     }
 }
+
+#[cfg(test)]
+#[path = "catalog_test.rs"]
+mod catalog_test;

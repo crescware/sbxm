@@ -1783,3 +1783,57 @@ fn an_unreadable_metadata_keeps_the_entry() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::MetadataInvalidSyntax));
     Ok(())
 }
+
+#[test]
+fn a_destroy_stops_at_any_step_that_does_not_answer() -> Checked {
+    let destroyed = |host: &dyn crate::boundary::host::HostEnvironment,
+                     fixture: &Fixture|
+     -> Result<DestroyOutcome> {
+        let clock = ScriptedClock::default();
+        let mut prepared = prepare(
+            Selection {
+                location: &fixture.location,
+                requested: Some(&crate::project::ProjectId::parse(
+                    "example-org/example-repo",
+                )?),
+                prompt: &mut ScriptedPrompt::choosing(0),
+            },
+            false,
+            host,
+            &fixture.workspace_root,
+            poll(&clock),
+            &mut SilentProgress,
+        )?;
+        let sandbox = prepared.plan.sandbox.clone();
+        match confirm(&mut prepared, true, &mut ScriptedConfirm::typing(&sandbox))? {
+            Some(confirmation) => execute_confirmed(
+                host,
+                &prepared,
+                confirmation,
+                poll(&clock),
+                &mut SilentProgress,
+            ),
+            None => execute_bypassed(host, &prepared, poll(&clock), &mut SilentProgress),
+        }
+    };
+    let arrange = || -> Checked<(Fixture, FakeSbx)> {
+        let fixture = Fixture::new()?;
+        let (_, host) = running_project(&fixture)?;
+        expect_successful_removal(&host);
+        Ok((fixture, host))
+    };
+    let (fixture, host) = arrange()?;
+    let recorded = crate::testing::host::FailingAt::recording(host);
+    destroyed(&recorded, &fixture).required_because("every step answers")?;
+    for (at, step) in recorded.calls().iter().enumerate() {
+        // hostに保存済みの先端は、保護を緩める側の事実である。読めなければ足さず、保護は
+        // 拒否する側へ倒れる。消えて困るものが無いこの案件では、読めなくても止まらない。
+        if step.contains("%(objectname) refs/sbx/") {
+            continue;
+        }
+        let (fixture, host) = arrange()?;
+        let failing = crate::testing::host::FailingAt::timing_out(host, at);
+        assert!(destroyed(&failing, &fixture).is_err(), "{step}");
+    }
+    Ok(())
+}

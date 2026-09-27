@@ -605,3 +605,73 @@ fn a_two_way_question_answers_which_of_the_two_was_chosen() -> Checked {
     );
     Ok(())
 }
+
+/// 他人にも書けるregistry。registryは読む前にpermissionを確かめる。
+fn exposed_registry() -> Checked<Fixture> {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    std::fs::set_permissions(
+        fixture.location.registry_file(),
+        std::fs::Permissions::from_mode(0o666),
+    )
+    .required()?;
+    Ok(fixture)
+}
+
+#[test]
+fn no_selection_is_made_from_an_unreadable_registry() -> Checked {
+    let fixture = exposed_registry()?;
+    let heading = msg!("select-open-heading");
+    let project = project_id("example-org/example-repo")?;
+    let mut prompt = ScriptedPrompt::choosing(0);
+
+    let failures = [
+        one(&fixture.location, None, &heading, &mut prompt).map(|_| ()),
+        many(&fixture.location, &[], &heading, &mut prompt).map(|_| ()),
+        one_local(&fixture.location, None, &heading, &mut prompt).map(|_| ()),
+        open(&fixture.location, &heading, &mut prompt).map(|_| ()),
+        find(&fixture.location, &project).map(|_| ()),
+    ];
+
+    for failure in failures {
+        let error = failure.refused_because("the registry is not private")?;
+        assert_eq!(error.first_id(), Some(ErrorId::ConfigPermissionTooOpen));
+    }
+    Ok(())
+}
+
+#[test]
+fn a_choice_past_the_listed_projects_selects_nothing() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+
+    let error = many(
+        &fixture.location,
+        &[],
+        &msg!("select-stop-heading"),
+        &mut ScriptedPrompt::choosing_many(&[0, 3]),
+    )
+    .refused_because("there is no fourth project")?;
+
+    assert!(error.first_id().is_some());
+    Ok(())
+}
+
+#[test]
+fn a_project_whose_root_was_replaced_is_not_reloaded() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let candidate = find(&fixture.location, &project_id("example-org/example-repo")?).required()?;
+    let elsewhere = fixture.workspace_root.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).required()?;
+    std::fs::rename(project.paths.root(), fixture.workspace_root.join("moved")).required()?;
+    std::os::unix::fs::symlink(&elsewhere, project.paths.root()).required()?;
+
+    let error = candidate
+        .reload()
+        .refused_because("the root is a symlink")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    Ok(())
+}

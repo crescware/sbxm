@@ -2131,3 +2131,38 @@ fn a_stopped_sandbox_that_never_runs_is_not_read_for_protection() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_rebuild_stops_at_any_step_that_does_not_answer() -> Checked {
+    let rebuilt =
+        |host: &dyn HostEnvironment, fixture: &Fixture| -> Checked<Result<RebuildOutput>> {
+            Ok(rebuild(
+                Target {
+                    location: &fixture.location,
+                    requested: Some(&project_id("example-org/example-repo")?),
+                    prompt: &mut ScriptedPrompt::choosing(0),
+                },
+                &fixture.config,
+                host,
+                &fixture.workspace_root,
+            ))
+        };
+    let (fixture, _, host) = switched_sandbox()?;
+    let recorded = crate::testing::host::FailingAt::recording(host);
+    rebuilt(&recorded, &fixture)?.required_because("every step answers")?;
+    for (at, step) in recorded.calls().iter().enumerate() {
+        // hostに保存済みの先端は、保護を緩める側の事実である。読めなければ足さず、保護は
+        // 拒否する側へ倒れる。消えて困るものが無いこの案件では、読めなくても止まらない。
+        if step.contains("%(objectname) refs/sbx/") {
+            continue;
+        }
+        // 空き容量は、失敗の診断に添える事実である。読めなくても元の失敗を隠さない。
+        if step.contains("df -Pk") {
+            continue;
+        }
+        let (fixture, _, host) = switched_sandbox()?;
+        let failing = crate::testing::host::FailingAt::timing_out(host, at);
+        assert!(rebuilt(&failing, &fixture)?.is_err(), "{step}");
+    }
+    Ok(())
+}

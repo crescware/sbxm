@@ -927,3 +927,79 @@ fn open_stops_when_the_worktrees_cannot_be_listed() -> Checked {
     );
     Ok(())
 }
+
+/// 登録済み案件を、任意のhostを通して`open`で開く。
+fn opened(
+    bench: &Bench,
+    host: &dyn crate::boundary::host::HostEnvironment,
+    project: &ProjectId,
+) -> Result<Prepared> {
+    let clock = ScriptedClock::default();
+    prepare(
+        &bench.location,
+        &bench.config,
+        Some(project),
+        None,
+        host,
+        &mut ScriptedPrompt::choosing(0),
+        bench.workspace_root.path(),
+        poll(&clock),
+        &mut SilentProgress,
+    )
+}
+
+/// `arrange`が整えた案件を開く起動を1つずつ時間切れにし、どれが答えなくても端末を
+/// 渡さないことを確かめる。
+fn no_unanswered_step_hands_over_the_terminal(
+    arrange: impl Fn(&Bench, &World) -> Checked<ProjectId>,
+) -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = arrange(&bench, &world)?;
+    let recorded = crate::testing::host::FailingAt::recording(world);
+    opened(&bench, &recorded, &project).required_because("every step answers")?;
+    for (at, step) in recorded.calls().iter().enumerate() {
+        // 空き容量は、読めなかった理由として接続の前に示す。接続そのものは止めない。
+        if step.contains("df -Pk") {
+            continue;
+        }
+        let bench = Bench::new()?;
+        let world = World::new();
+        let project = arrange(&bench, &world)?;
+        let failing = crate::testing::host::FailingAt::timing_out(world, at);
+        assert!(opened(&bench, &failing, &project).is_err(), "{step}");
+    }
+    Ok(())
+}
+
+#[test]
+fn opening_a_built_project_stops_at_any_step_that_does_not_answer() -> Checked {
+    no_unanswered_step_hands_over_the_terminal(|bench, world| Ok(built(bench, world, None)?.1))
+}
+
+#[test]
+fn restoring_a_missing_worktree_stops_at_any_step_that_does_not_answer() -> Checked {
+    no_unanswered_step_hands_over_the_terminal(|bench, world| {
+        Ok(missing_a_worktree(bench, world)?.1)
+    })
+}
+
+#[test]
+fn starting_a_stopped_project_stops_at_any_step_that_does_not_answer() -> Checked {
+    no_unanswered_step_hands_over_the_terminal(|bench, world| {
+        let (_, project) = built(bench, world, None)?;
+        world.stopped();
+        Ok(project)
+    })
+}
+
+#[test]
+fn resuming_an_interrupted_build_stops_at_any_step_that_does_not_answer() -> Checked {
+    no_unanswered_step_hands_over_the_terminal(|bench, world| {
+        let project = registered(bench, world, None)?;
+        world.failing("worktree add");
+        open(bench, world, &project, None).refused_because("the build is interrupted")?;
+        world.nothing_fails();
+        Ok(project)
+    })
+}

@@ -92,3 +92,18 @@ fn a_branch_name_becomes_the_remote_tracking_ref_of_origin() {
         "refs/remotes/origin/feature/login"
     );
 }
+
+#[test]
+fn a_remote_without_the_part_after_the_host_has_no_project() {
+    for url in [
+        "git@github.com",
+        "https://github.com",
+        "ssh://git@github.com:22",
+    ] {
+        assert_eq!(canonical_id_of_remote(url), None, "{url}");
+    }
+    assert_eq!(
+        canonical_id_of_remote("ssh://git@github.com:22/Example-Org/Example-Repo.git").as_deref(),
+        Some("example-org/example-repo")
+    );
+}

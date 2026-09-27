@@ -6,7 +6,7 @@ use crate::i18n::Locale;
 use crate::project::ProjectId;
 use crate::testing::global_status::FakeHost;
 use crate::testing::host::FakeSbx;
-use crate::testing::outcome::{Checked, Required};
+use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::project::Fixture;
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::scripted_clock::ScriptedClock;
@@ -165,5 +165,104 @@ fn explicit_global_status_reports_login_alongside_other_host_checks() -> Checked
     assert!(stderr.contains("sbx-login-missing"), "{stderr}");
     assert!(stderr.contains("sbx login"), "{stderr}");
     assert!(screen.drawn().is_empty());
+    Ok(())
+}
+
+/// 他人にも読めるconfig。configは読む前にpermissionを確かめる。
+fn exposed_config(fixture: &Fixture) -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let config = fixture.location.config_file();
+    std::fs::create_dir_all(fixture.location.dir()).required()?;
+    std::fs::set_permissions(
+        fixture.location.dir(),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .required()?;
+    std::fs::write(&config, b"language: en\n").required()?;
+    std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o644)).required()
+}
+
+#[test]
+fn a_prompt_over_an_unreadable_config_asks_nothing() -> Checked {
+    let fixture = Fixture::new()?;
+    exposed_config(&fixture)?;
+    let screen = RecordedScreen::new();
+
+    let code = execute_prompt(
+        &fixture,
+        &FakeHost::macos(),
+        ScriptedKeys::choosing(0),
+        &screen,
+    );
+
+    assert_eq!(code, ExitCode::Failure);
+    assert!(screen.drawn().is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_prompt_over_an_unreadable_registry_is_reported() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    let registry = fixture.location.registry_file();
+    std::fs::set_permissions(&registry, std::fs::Permissions::from_mode(0o644)).required()?;
+    let screen = RecordedScreen::new();
+
+    let code = execute_prompt(
+        &fixture,
+        &FakeHost::macos(),
+        ScriptedKeys::choosing(0),
+        &screen,
+    );
+
+    assert_eq!(code, ExitCode::Failure);
+    Ok(())
+}
+
+#[test]
+fn a_choice_past_the_listed_projects_is_not_resolved() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+
+    let error = select_scope(&fixture.location, &mut ScriptedPrompt::choosing(2))
+        .refused_because("there is no second project")?;
+
+    assert!(error.first_id().is_some());
+    Ok(())
+}
+
+#[test]
+fn a_project_status_over_an_unreadable_config_is_reported() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    exposed_config(&fixture)?;
+    let clock = ScriptedClock::default();
+    let policy = RenderingPolicy::plain();
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
+    let mut prompt = PromptUi::new(
+        Locale::En,
+        policy.stderr,
+        Box::new(ScriptedKeys::choosing(0)),
+        Box::new(RecordedScreen::new()),
+    );
+    let context = Context {
+        location: &fixture.location,
+        workspace_root: &fixture.workspace_root,
+        clock: &clock,
+        locale: Locale::En,
+        can_prompt: false,
+    };
+
+    let code = super::exec(
+        &Scope::Project(ProjectId::parse("example-org/example-repo")?),
+        &context,
+        &mut ui,
+        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
+        &mut prompt,
+    );
+
+    assert_eq!(code, ExitCode::Failure);
     Ok(())
 }

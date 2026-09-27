@@ -1126,3 +1126,37 @@ fn a_repair_whose_completion_lost_a_worktree_keeps_the_intent() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_repair_stops_at_any_step_that_does_not_answer() -> Checked {
+    let repaired = |host: &dyn HostEnvironment, bench: &Bench, project: &ProjectId| {
+        let plan = prepare(
+            &bench.location,
+            &bench.config,
+            Some(project),
+            host,
+            bench.workspace_root.path(),
+            &mut ScriptedPrompt::choosing(0),
+        )?;
+        execute(
+            host,
+            plan,
+            &bench.config,
+            bench.workspace_root.path(),
+            &mut SilentProgress,
+        )
+    };
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    let recorded = crate::testing::host::FailingAt::recording(world);
+    repaired(&recorded, &bench, &project).required_because("every step answers")?;
+    for (at, step) in recorded.calls().iter().enumerate() {
+        let bench = Bench::new()?;
+        let world = World::new();
+        let (_, project) = legacy_incomplete(&bench, &world)?;
+        let failing = crate::testing::host::FailingAt::timing_out(world, at);
+        assert!(repaired(&failing, &bench, &project).is_err(), "{step}");
+    }
+    Ok(())
+}

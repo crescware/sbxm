@@ -259,3 +259,35 @@ fn syncing_from_the_entry_point_prints_what_changed() -> Checked {
     assert!(text.contains("local/app"), "{text}");
     Ok(())
 }
+
+#[test]
+fn a_sync_stops_at_any_step_that_does_not_answer() -> Checked {
+    let synced = |host: &dyn crate::boundary::host::HostEnvironment, bench: &Bench| {
+        let clock = ScriptedClock::default();
+        run(
+            &bench.location,
+            Some(&local_project()?),
+            &mut ScriptedPrompt::choosing(0),
+            host,
+            bench.workspace_root.path(),
+            &clock,
+        )
+        .map_err(|error| crate::testing::outcome::Unmet::new(format!("{error:?}")))
+    };
+    let arrange = || -> Checked<(Bench, World)> {
+        let bench = Bench::new()?;
+        let world = World::new();
+        bench.build(&world, &local_request()?).required()?;
+        world.answering(PLACE_SAVE_REFS, 0, "ready\n");
+        Ok((bench, world))
+    };
+    let (bench, world) = arrange()?;
+    let recorded = crate::testing::host::FailingAt::recording(world);
+    synced(&recorded, &bench)?;
+    for (at, step) in recorded.calls().iter().enumerate() {
+        let (bench, world) = arrange()?;
+        let failing = crate::testing::host::FailingAt::timing_out(world, at);
+        assert!(synced(&failing, &bench).is_err(), "{step}");
+    }
+    Ok(())
+}

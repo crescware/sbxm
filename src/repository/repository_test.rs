@@ -431,3 +431,20 @@ fn a_stored_local_name_that_cannot_name_a_project_is_not_blamed_on_the_path() ->
     assert_eq!(placed.id, "cause-local-repository-path-unrecognized");
     Ok(())
 }
+
+#[test]
+fn a_clone_url_without_the_part_after_the_host_is_refused() {
+    for value in ["git@github.com", "https://github.com"] {
+        assert!(
+            RepositoryIdentity::parse_clone_url(value).is_err(),
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn a_path_that_leaves_no_name_has_no_clone_directory() {
+    for path in ["/", "/.git"] {
+        assert_eq!(clone_directory_name(path), None, "{path}");
+    }
+}
