@@ -501,3 +501,96 @@ fn a_resumable_replacement_refuses_a_target_that_is_not_there_or_is_a_link() -> 
     assert_eq!(fs::read_to_string(&real).required()?, "version: 1\n");
     Ok(())
 }
+
+/// 再開できる置き換えが`dir`に残した一時file。
+fn resumable_leftovers(dir: &Path) -> Checked<Vec<String>> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir).required_because("list the directory")? {
+        let name = entry
+            .required_because("read an entry")?
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
+        if name.starts_with(".project.yaml.") {
+            found.push(name);
+        }
+    }
+    Ok(found)
+}
+
+#[test]
+fn a_resumable_write_without_a_parent_directory_checks_and_writes_nothing() -> Checked {
+    // rootには一時fileを並べる親directoryが無い。precondition検査へ進む前に止まる。
+    let checked = std::cell::Cell::new(false);
+    let error = resumable_write_with_precondition(
+        Path::new("/"),
+        "version: 1\n",
+        PRIVATE_FILE_MODE,
+        |_: &Path| {
+            checked.set(true);
+            Ok(())
+        },
+    )
+    .refused_because("the root cannot be written as a file")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert_eq!(cause_of(&error)?, "missing parent");
+    assert!(
+        !checked.get(),
+        "nothing is checked for a write that cannot start"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resumable_replacement_leaves_a_target_that_became_a_different_file_alone() -> Checked {
+    let dir = temp_dir()?;
+    let target = dir.path().join("project.yaml");
+    atomic_create(&target, "first\n", PRIVATE_FILE_MODE).required_because("create")?;
+    let original = FileIdentity::of_path_without_following(&target).required()?;
+
+    // 検査のあと、書いている間に別のprocessがfileを作り直した状況を作る。
+    let replacement = dir.path().join("other.yaml");
+    atomic_create(&replacement, "second\n", PRIVATE_FILE_MODE).required_because("create")?;
+    fs::rename(&replacement, &target).required_because("swap the target")?;
+
+    let error = resumable_write_with_precondition(
+        &target,
+        "third\n",
+        PRIVATE_FILE_MODE,
+        |target: &Path| unchanged_identity(target, PRIVATE_FILE_MODE, original),
+    )
+    .refused_because("a target that changed identity is not overwritten")?;
+    assert_eq!(error.first_id(), Some(ErrorId::TargetChangedConcurrently));
+    assert_eq!(fs::read_to_string(&target).required()?, "second\n");
+    assert_eq!(
+        resumable_leftovers(dir.path())?,
+        Vec::<String>::new(),
+        "the temporary file of this run is cleaned up"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resumable_rename_the_operating_system_refuses_leaves_neither_side_changed() -> Checked {
+    let dir = temp_dir()?;
+    // 中身のあるdirectoryの上へはrenameできない。検査を通っても、置き換えは起きない。
+    let target = dir.path().join("occupied");
+    fs::create_dir(&target).required_because("create")?;
+    fs::write(target.join("kept"), b"x").required_because("write inside")?;
+
+    let error =
+        resumable_write_with_precondition(&target, "version: 1\n", PRIVATE_FILE_MODE, |_| Ok(()))
+            .refused_because("a target that cannot be replaced is refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        !cause_of(&error)?.is_empty(),
+        "the operating system said why"
+    );
+    assert_eq!(fs::read_to_string(target.join("kept")).required()?, "x");
+    assert_eq!(
+        resumable_leftovers(dir.path())?,
+        Vec::<String>::new(),
+        "the temporary file of this run is cleaned up"
+    );
+    Ok(())
+}
