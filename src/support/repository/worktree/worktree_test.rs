@@ -615,3 +615,120 @@ fn a_branch_left_in_the_sandbox_that_was_not_restored_does_not_move_the_start() 
     assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     Ok(())
 }
+
+#[test]
+fn a_question_that_went_unanswered_before_a_worktree_is_made_makes_none() -> Checked {
+    // 戻したbranchの先端、pathの有無、同じ名前のbranchの有無は、どれもworktreeの作り方を
+    // 決める。答えが返らなければ、推測した作り方でworktreeを作らない。
+    let git_dir = layout()?.bare_git_dir();
+    let path = layout()?.worktree(0);
+    let cases = [
+        (
+            CreationMode::Attached,
+            format!("git --git-dir {git_dir} rev-parse --verify refs/heads/develop^{{commit}}"),
+        ),
+        (CreationMode::Detached, format!("test -e {path}")),
+        (
+            CreationMode::Attached,
+            format!("git --git-dir {git_dir} show-ref --verify --quiet refs/heads/develop"),
+        ),
+    ];
+
+    for (mode, step) in cases {
+        let host = worktree_host(mode, 1)?.timing_out(&step);
+        let project = metadata(mode, Some("develop"), 1)?;
+
+        let error = ensure_worktrees(
+            &host,
+            "sbxm-example",
+            &layout()?,
+            &project,
+            "develop",
+            &["develop".to_string()],
+            &mut SilentProgress,
+        )
+        .refused_because("a question that went unanswered stops the run")?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ExternalCommandTimeout),
+            "{step}"
+        );
+        assert!(
+            !host.ran("worktree add"),
+            "{step}: nothing is made on a guess: {:?}",
+            host.calls()
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_worktree_whose_creation_went_unanswered_is_not_examined_as_made() -> Checked {
+    // `worktree add`の答えが返らなければ、worktreeができたかどうかを知らない。できたものと
+    // してHEADを読み、その結果で案件の成果物かを判定しない。
+    let git_dir = layout()?.bare_git_dir();
+    let path = layout()?.worktree(0);
+    let step =
+        format!("git --git-dir {git_dir} worktree add --detach {path} refs/remotes/origin/develop");
+    let host = worktree_host(CreationMode::Detached, 1)?.timing_out(&step);
+    let project = metadata(CreationMode::Detached, Some("develop"), 1)?;
+
+    let error = ensure_worktrees(
+        &host,
+        "sbxm-example",
+        &layout()?,
+        &project,
+        "develop",
+        &[],
+        &mut SilentProgress,
+    )
+    .refused_because("the creation went unanswered")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        !host.ran(&format!("git -C {path} rev-parse HEAD")),
+        "{:?}",
+        host.calls()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_worktree_that_cannot_be_looked_at_is_neither_made_nor_taken_over() -> Checked {
+    // pathの有無が分からなければ作らない。HEADを読めなければ、起点に立つとも立たないとも
+    // 言えず、modeの確認へ進まない。
+    let git_dir = layout()?.bare_git_dir();
+    let path = layout()?.worktree(0);
+
+    let unanswered =
+        worktree_host(CreationMode::Detached, 1)?.timing_out(&format!("test -e {path}"));
+    let error = provision_worktree(
+        &unanswered,
+        "sbxm-example",
+        &git_dir,
+        &path,
+        "develop",
+        CreationMode::Detached,
+        COMMIT,
+    )
+    .refused_because("whether the path is there went unanswered")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(!unanswered.ran("worktree add"), "{:?}", unanswered.calls());
+
+    let unreadable = worktree_host(CreationMode::Detached, 1)?
+        .holding(&[&path])
+        .failing(&format!("git -C {path} rev-parse HEAD"));
+    let error = provision_worktree(
+        &unreadable,
+        "sbxm-example",
+        &git_dir,
+        &path,
+        "develop",
+        CreationMode::Detached,
+        COMMIT,
+    )
+    .refused_because("the HEAD of the worktree could not be read")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(!unreadable.ran("symbolic-ref"), "{:?}", unreadable.calls());
+    Ok(())
+}

@@ -226,3 +226,34 @@ fn a_start_branch_that_has_no_remote_tracking_ref_stops_the_run() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::StartRefUnresolved));
     Ok(())
 }
+
+#[test]
+fn a_resolved_branch_that_cannot_be_recorded_is_not_used() -> Checked {
+    // 記録できなかった起点でworktreeを作ると、次の実行は別の起点を解決しうる。記録の
+    // 失敗で止まり、remote-tracking refの確認へ進まない。
+    let dir = tempfile::tempdir().required()?;
+    let paths = project_paths(dir.path())?;
+    let git_dir = layout()?.bare_git_dir();
+    let host = InnerCommandSandbox::new().answering(
+        &format!("git --git-dir {git_dir} ls-remote --symref origin HEAD"),
+        "ref: refs/heads/main\tHEAD\n",
+    );
+
+    // metadataを置き換える先が無い。
+    let mut project = metadata(CreationMode::Attached, None, 1)?;
+
+    let error = resolve_start_ref(&host, "sbxm-example", &layout()?, &paths, &mut project)
+        .refused_because("the resolved branch could not be recorded")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        !host.ran("show-ref"),
+        "an unrecorded branch is not looked up: {:?}",
+        host.calls()
+    );
+    assert_eq!(
+        metadata::load(&paths).required()?,
+        None,
+        "nothing is written in place of the metadata"
+    );
+    Ok(())
+}
