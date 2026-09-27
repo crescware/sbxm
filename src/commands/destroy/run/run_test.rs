@@ -1541,7 +1541,11 @@ fn a_local_project_is_removed_without_a_token_and_keeps_its_host_repository() ->
     Ok(())
 }
 
-fn planned(fixture: &Fixture, host: &FakeSbx, force: bool) -> Result<Prepared> {
+fn planned(
+    fixture: &Fixture,
+    host: &dyn crate::boundary::host::HostEnvironment,
+    force: bool,
+) -> Result<Prepared> {
     let clock = ScriptedClock::default();
     prepare(
         Selection {
@@ -2094,5 +2098,44 @@ fn a_stopped_sandbox_whose_workspace_became_a_symlink_is_not_started() -> Checke
 
     assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
     assert!(!host.ran("/bin/true"), "{:?}", host.calls());
+    Ok(())
+}
+
+#[test]
+fn an_untracked_record_without_a_path_is_not_read_as_clean() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let layout = SandboxLayout::new(project.metadata.canonical_id());
+    let host = host.answering(
+        &format!(
+            "exec {} -- git -C {} status --porcelain=v2 -z --untracked-files=all",
+            project.sandbox,
+            layout.worktree(0)
+        ),
+        0,
+        "? \0",
+    );
+
+    let error = planned(&fixture, &host, false).refused_because("the status is not usable")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::WorktreeStatusUnobservable));
+    Ok(())
+}
+
+#[test]
+fn an_inspection_interrupted_by_the_user_removes_nothing() -> Checked {
+    let fixture = Fixture::new()?;
+    let (_, host) = running_project(&fixture)?;
+    let host = crate::testing::host::Unrunnable::canceled(host, "worktree list");
+
+    let error = planned(&fixture, &host, false).refused_because("the inspection did not finish")?;
+
+    // 検査は観測の失敗をすべて拒否の理由へ収める。診断を持たない中断も、観測できなかった
+    // ものとして拒む。
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::WorktreeInventoryUnobservable)
+    );
+    assert!(!host.inner.ran("rm "));
     Ok(())
 }

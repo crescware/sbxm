@@ -755,3 +755,31 @@ fn a_pull_adopts_nothing_past_a_step_that_did_not_answer() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_receiving_directory_others_can_enter_is_not_used() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let (bench, world, project) = built()?;
+    world.edited_inside(IN_SANDBOX, b"edited inside\n");
+    let candidate = crate::support::select::find(&bench.location, &project).required()?;
+    let incoming = candidate.paths.incoming_dir();
+    fs::create_dir_all(&incoming).required()?;
+    fs::set_permissions(&incoming, fs::Permissions::from_mode(0o755)).required()?;
+
+    let ran = run(
+        &bench,
+        &world,
+        &pulling(&project),
+        true,
+        ScriptedKeys::confirming(),
+    )?;
+
+    assert_eq!(ran.code, ExitCode::Failure, "{}", ran.stdout);
+    assert!(
+        ran.stderr
+            .contains("error: project-file-permission-too-open"),
+        "{}",
+        ran.stderr
+    );
+    Ok(())
+}
