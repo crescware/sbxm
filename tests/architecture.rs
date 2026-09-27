@@ -917,10 +917,7 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 20] = [
         "src/boundary/host/run_pty_confirmed_test.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
-    (
-        "src/support/files/files_test.rs",
-        &[Element::RealTime, Element::ChildProcess, Element::Signal],
-    ),
+    ("src/support/files/files_test.rs", &[Element::Signal]),
     (
         "tests/command_lifecycle.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],
