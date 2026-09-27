@@ -1161,3 +1161,23 @@ fn a_repair_stops_at_any_step_that_does_not_answer() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn a_credential_helper_left_by_an_earlier_registration_is_shown_as_a_mismatch_in_the_plan()
+-> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    // 前の登録のplaceholderを指す、sbxmが置いた形のhelper。書き直せる食い違いである。
+    world.answering(
+        "--get credential.https://github.com.helper",
+        0,
+        "!f() { echo username=x; echo password=sbx-cs-earlier; }; f\n",
+    );
+
+    let plan = prepared(&bench, &world, &project).required_because("the plan is drawn")?;
+
+    let observed = format!("{:?}", plan.plan.observations);
+    assert!(observed.contains("\"mismatch\""), "{observed}");
+    Ok(())
+}
