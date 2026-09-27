@@ -1174,3 +1174,233 @@ fn a_completion_that_cannot_be_recorded_keeps_the_intent_for_the_next_open() -> 
     );
     Ok(())
 }
+
+// --- intentからの再開 ---
+//
+// 1回目の構築を途中で止めてintentを残し、次の実行が再開する途中で別の段を止める。
+
+/// 1回目の構築を`needle`の起動で失敗させ、intentを残す。
+fn interrupted_at(
+    bench: &Bench,
+    world: &World,
+    needle: &str,
+) -> Checked<(ProjectPaths, crate::project::ProjectId)> {
+    let (paths, project) = registered(bench, world)?;
+    world.failing(needle);
+    bench
+        .ensure(world, &project, &mut SilentProgress)
+        .refused_because("the first run stops midway")?;
+    world.nothing_fails();
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok((paths, project))
+}
+
+/// Sandboxの中を整える段。Sandboxはもう作ってある。
+const INTERIOR_STEP: &str = "git init --bare";
+
+#[test]
+fn a_finished_resume_that_cannot_be_recorded_keeps_the_intent() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = registered(&bench, &world)?;
+    // 1回目は完成まで進み、最後の記録だけに失敗する。
+    let sbxm = paths.sbxm_dir();
+    world.change_before("sha256sum", move |_| {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&sbxm, fs::Permissions::from_mode(0o500));
+    });
+    let first = bench.ensure(&world, &project, &mut SilentProgress);
+    assert!(first.is_err());
+    // 再開は完成を見て記録だけをやり直すが、まだ書けない。
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the completion still cannot be recorded");
+    set_mode(&paths.sbxm_dir(), 0o700)?;
+
+    assert_eq!(error?.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resume_whose_fixed_inputs_are_gone_stops_before_touching_the_sandbox() -> Checked {
+    // Sandboxを作ったあとは、写しが無ければ元のfileから取り直す。元のfileも変わって
+    // いれば、止めたときの入力はもう手に入らない。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
+    fs::remove_dir_all(paths.snapshot_dir()).required()?;
+    fs::write(
+        bench.home.path().join("declared.yaml"),
+        b"declared = false\n",
+    )
+    .required()?;
+    let mark = world.mark();
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the fixed inputs are gone")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::InitialProvisioningSnapshotChanged)
+    );
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains(INTERIOR_STEP))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resume_that_cannot_confirm_the_sandbox_stops_before_touching_it() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
+    // 再開の観測は一覧を読めるが、workspaceを戻す前の読み直しで期限を過ぎる。
+    world.change_before("sbx ls", |world| {
+        world.change_before("sbx ls", |world| world.timing_out("sbx ls"));
+    });
+    let mark = world.mark();
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the sandbox could not be confirmed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains(INTERIOR_STEP))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resume_whose_interior_fails_again_keeps_the_intent() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
+    world.failing(INTERIOR_STEP);
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the interior fails again")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resume_without_a_sandbox_checks_the_preconditions_first() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = interrupted_at(&bench, &world, "docker build")?;
+    world.failing("docker version");
+    let mark = world.mark();
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the engine does not answer")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DockerUnreachable));
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("docker build"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resumed_completion_that_cannot_be_observed_keeps_the_intent() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
+    world.change_before(LAST_BUILD_STEP, |world| world.timing_out("sbx ls"));
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the completion could not be observed")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resumed_completion_that_differs_is_refused() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
+    world.change_before(LAST_BUILD_STEP, |world| {
+        world.answering(
+            "sha256sum",
+            0,
+            "0000000000000000000000000000000000000000000000000000000000000000  -\n",
+        );
+    });
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("a completion that differs is not recorded")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resumed_completion_that_cannot_be_recorded_keeps_the_intent() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (paths, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
+    let sbxm = paths.sbxm_dir();
+    world.change_before("sha256sum", move |_| {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&sbxm, fs::Permissions::from_mode(0o500));
+    });
+
+    let result = bench.ensure(&world, &project, &mut SilentProgress);
+    set_mode(&paths.sbxm_dir(), 0o700)?;
+
+    let error = result.refused_because("the completion cannot be recorded")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        bench
+            .stored("Example-Org/Example-Repo")?
+            .initial_provisioning
+            .is_some()
+    );
+    Ok(())
+}
