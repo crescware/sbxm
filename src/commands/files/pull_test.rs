@@ -357,3 +357,48 @@ fn an_adopted_copy_can_be_spread_to_the_other_projects() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_registry_that_cannot_be_read_after_the_lock_receives_nothing() -> Checked {
+    // 受け取ったあとに止まれば、受け取ったものが隔離領域に残る。止まるなら受け取る前に止まる。
+    let (bench, world, project) = built()?;
+    world.edited_inside(IN_SANDBOX, b"edited inside\n");
+    let config = config::load(&bench.location).required()?.settings();
+    let incoming = crate::support::select::find(&bench.location, &project)
+        .required()?
+        .paths
+        .incoming_dir();
+    // 案件を選んでlockを取ったあと、Sandboxが動いているかを訊く間にregistryが壊れる。
+    let registry = bench.location.registry_file();
+    world.mutate_before("ls --json", move || {
+        let _ = fs::write(&registry, "version: [\n");
+    });
+    let mark = world.mark();
+
+    let error = pull(
+        &bench.location,
+        &config,
+        DESTINATION,
+        Some(&project),
+        &mut ScriptedPrompt::choosing(0),
+        &world,
+        bench.workspace_root.path(),
+    )
+    .err()
+    .required_because("the other projects cannot be counted")?;
+
+    assert!(
+        error.contains_id(ErrorId::RegistryInvalidSyntax),
+        "{error:?}"
+    );
+    assert!(
+        !world.since(mark).iter().any(|call| call.contains("cat --")),
+        "nothing is read out of the sandbox: {:?}",
+        world.since(mark)
+    );
+    assert!(
+        !incoming.exists() || fs::read_dir(&incoming).required()?.next().is_none(),
+        "nothing is left in the quarantine"
+    );
+    Ok(())
+}
