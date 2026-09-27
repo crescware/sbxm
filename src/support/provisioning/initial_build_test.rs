@@ -1579,3 +1579,91 @@ fn a_token_environment_that_cannot_be_written_stops_the_build_with_the_open_comm
     );
     Ok(())
 }
+
+/// 登録だけを済ませた案件の構築を、`arrange`で整えた世界で走らせる。
+fn built_after(arrange: impl Fn(&World)) -> Checked<(World, crate::diagnostics::Error)> {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    arrange(&world);
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the build stops")?;
+    Ok((world, error))
+}
+
+/// 構築のうち`n`回目（0から数える）のTemplateの一覧だけが答えない。
+///
+/// 1回目は構築前の観測、2回目は既存のTemplateの確認、3回目は読み込む直前、4回目は読み込んだ
+/// あとの確認である。
+fn template_listing_unanswered(world: &World, n: usize) {
+    // 差し込みは起動の直前に走る。そこで時間切れにすれば、その起動が答えない。
+    world.change_before("template ls", move |world| {
+        if n == 0 {
+            world.timing_out("template ls");
+        } else {
+            template_listing_unanswered(world, n - 1);
+        }
+    });
+}
+
+#[test]
+fn a_template_list_that_does_not_answer_before_the_load_stops_the_build() -> Checked {
+    let (world, error) = built_after(|world| template_listing_unanswered(world, 2))?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(!world.ran("template load"));
+    Ok(())
+}
+
+#[test]
+fn a_template_load_that_does_not_answer_stops_the_build() -> Checked {
+    let (_, error) = built_after(|world| world.timing_out("template load"))?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    Ok(())
+}
+
+#[test]
+fn a_template_list_that_does_not_answer_after_the_load_stops_the_build() -> Checked {
+    let (world, error) = built_after(|world| template_listing_unanswered(world, 3))?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(world.ran("template load"));
+    Ok(())
+}
+
+#[test]
+fn a_template_list_that_cannot_be_read_is_not_taken_as_empty() -> Checked {
+    let (world, error) = built_after(|world| world.answering("template ls", 0, "not json"))?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    assert!(!world.ran("template load"));
+    Ok(())
+}
+
+#[test]
+fn an_agent_check_that_answers_unexpectedly_is_not_read_as_safe() -> Checked {
+    let (_, error) = built_after(|world| world.answering("ssh-add -L", 5, ""))?;
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
+    Ok(())
+}
+
+#[test]
+fn a_local_project_whose_ssh_settings_do_not_answer_is_not_built() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = crate::commands::add::AddRequest {
+        repository: crate::repository::RepositoryIdentity::local("/home/user/code/app/.git", "app")
+            .required_because("a local repository")?,
+        worktrees: None,
+        detach: None,
+        start_branch: Some("main".to_string()),
+        parent_inside_repository: false,
+    };
+    world.timing_out("ssh -G");
+
+    let error = bench
+        .build(&world, &request)
+        .refused_because("the ssh settings are unknown")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    assert!(!world.ran("sbx create"));
+    Ok(())
+}
