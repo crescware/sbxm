@@ -828,7 +828,7 @@ fn the_session_lease_is_released_before_a_connection_error_is_reported() -> Chec
         .refused_because("a failed SSH child is reported")?;
     paths::acquire_exclusive_lock(
         &project.paths.session_lease_file(),
-        Duration::from_millis(50),
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
@@ -850,7 +850,7 @@ fn the_project_lock_is_released_before_the_terminal_is_handed_over() -> Checked 
     // 接続中に、別terminalの`stop`がこの案件を待たされない。
     paths::acquire_exclusive_lock(
         &project.paths.lock_file(),
-        Duration::from_millis(50),
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
@@ -874,7 +874,7 @@ fn the_session_lease_stays_held_until_the_terminal_session_ends() -> Checked {
     // 通常rebuild/destroyが取るexclusive leaseはここで拒否される。
     paths::acquire_exclusive_lock(
         &project.paths.session_lease_file(),
-        Duration::from_millis(50),
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
@@ -884,7 +884,7 @@ fn the_session_lease_stays_held_until_the_terminal_session_ends() -> Checked {
     drop(prepared);
     paths::acquire_exclusive_lock(
         &project.paths.session_lease_file(),
-        Duration::from_millis(50),
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )

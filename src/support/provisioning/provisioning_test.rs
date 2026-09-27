@@ -108,7 +108,7 @@ fn construction_holds_exclusive_then_connection_holds_shared() -> Checked {
     world.mutate_before("sbx create", move || {
         let refused = paths::acquire_shared_lock(
             &lease_file,
-            Duration::from_millis(50),
+            Duration::ZERO,
             PRIVATE_FILE_MODE,
             PathScope::ProjectPath,
         )
@@ -139,7 +139,7 @@ fn construction_holds_exclusive_then_connection_holds_shared() -> Checked {
     // 締め出す（sharedな他sessionとは共存できる、と混同しない）。
     paths::acquire_exclusive_lock(
         &paths.session_lease_file(),
-        Duration::from_millis(50),
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
@@ -148,7 +148,7 @@ fn construction_holds_exclusive_then_connection_holds_shared() -> Checked {
     drop(prepared);
     paths::acquire_exclusive_lock(
         &paths.session_lease_file(),
-        Duration::from_millis(50),
+        Duration::ZERO,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )

@@ -3,8 +3,10 @@
 //! symlinkと既存の非directoryは、内容を変更せず拒否する。permissionが過剰な既存
 //! directoryも修復しない。
 
+mod create_private_directory;
 mod ensure_directory;
 mod ensure_private_dir;
+mod ensure_private_dir_with;
 mod require_owned_directory;
 mod require_private_directory;
 
