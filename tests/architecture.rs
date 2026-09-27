@@ -8,6 +8,7 @@
 
 mod disable_directive;
 mod flaky_elements;
+mod os_layer;
 mod outcome;
 
 use disable_directive::DISABLE_NEXT_LINE;
@@ -824,6 +825,49 @@ fn no_resource_carries_an_emoji() -> Checked {
     Ok(())
 }
 
+/// OSの呼び出しそのものを置く層。分岐を持たず、coverageの母集団から外す。
+const OS_LAYER: &str = "src/boundary/os/";
+
+#[test]
+fn the_os_layer_has_no_branches() -> Checked {
+    let mut violations = Vec::new();
+    for (path, text) in sources()? {
+        if !path.starts_with(OS_LAYER) || is_test_code(&path) {
+            continue;
+        }
+        let entry = path.ends_with("/mod.rs");
+        for violation in os_layer::violations(&text, entry).required_because("the source parses")? {
+            violations.push(format!("{path}: {violation}"));
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "each function in {OS_LAYER} is one call, so that no decision escapes coverage:\n{}",
+        violations.join("\n")
+    );
+    Ok(())
+}
+
+/// testを置く場所か。`tests/module_boundaries.rs`がcoverageから外す4か所と同じ綴り。
+fn is_test_code(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    path.starts_with("tests/")
+        || path.starts_with("src/testing/")
+        || path.contains("/fake/")
+        || name.contains("_test")
+}
+
+/// OS層の実物を、判断のcodeへ渡してよい本番のfile。
+///
+/// 判断のcodeは基本操作を差し込みで受け取り、実物を選ぶのはここに挙げた配線だけとする。
+/// 一覧に無い本番codeがOS層を名指しすれば、差し込まずに実OSを使う判断が紛れる。
+const OS_LAYER_WIRING: [&str; 4] = [
+    "src/paths/lock/acquire_exclusive_lock.rs",
+    "src/paths/lock/acquire_shared_lock.rs",
+    "src/paths/lock/exclusive_lock.rs",
+    "src/paths/lock/shared_lock.rs",
+];
+
 /// flakyになりうる要素を検出する定義そのもの。検出する綴りを例として持つため読まない。
 const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 
@@ -831,7 +875,10 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 ///
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 35] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 32] = [
+    // OS層。分岐を持たず、coverageの母集団から外す。
+    ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
+    ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
     // 外部processを動かす実行。判断とOSの呼び出しが同じ関数にある。
     ("src/boundary/host/poll_pipes.rs", &[Element::ChildProcess]),
     (
@@ -857,15 +904,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 35] = [
     ),
     // 判断のcodeへ漏れているもの。
     ("src/commands/stop/run.rs", &[Element::RealTime]),
-    (
-        "src/paths/lock/acquire_exclusive_lock.rs",
-        &[Element::FileLock],
-    ),
-    ("src/paths/lock/acquire_lock.rs", &[Element::RealTime]),
-    (
-        "src/paths/lock/acquire_shared_lock.rs",
-        &[Element::FileLock],
-    ),
     (
         "src/support/daemon/list_with_timeout.rs",
         &[Element::RealTime],
@@ -900,11 +938,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 35] = [
         &[Element::RealTime],
     ),
     ("src/paths/directory/directory_test.rs", &[Element::Thread]),
-    (
-        "src/paths/lock/lock_test.rs",
-        &[Element::RealTime, Element::Thread],
-    ),
-    ("src/paths/lock/shared_lock_test.rs", &[Element::Thread]),
     ("src/registry/mod_test.rs", &[Element::Thread]),
     (
         "src/support/files/files_test.rs",
@@ -989,7 +1022,7 @@ fn flaky_elements_stay_where_they_are_allowed() -> Checked {
         .into_iter()
         .filter(|(path, _)| !path.starts_with(FLAKY_ELEMENT_DEFINITION))
         .collect();
-    let violations = flaky_element_violations(&sources, &FLAKY_ELEMENT_PLACES)?;
+    let violations = flaky_element_violations(&sources, &FLAKY_ELEMENT_PLACES, &OS_LAYER_WIRING)?;
     assert!(
         violations.is_empty(),
         "flaky elements are written only where FLAKY_ELEMENT_PLACES allows them:\n{}",
@@ -999,13 +1032,32 @@ fn flaky_elements_stay_where_they_are_allowed() -> Checked {
 }
 
 /// 要素が一覧の許す場所と種類を外れていないか。一覧は減る方向にしか動かせない。
+///
+/// OS層の実物を名指しすることも要素として数える。OS層の中と、`wiring`に挙げた本番の配線
+/// だけが名指ししてよい。
 fn flaky_element_violations(
     sources: &[(String, String)],
     places: &[(&str, &[Element])],
+    wiring: &[&str],
 ) -> Checked<Vec<String>> {
     let mut violations = Vec::new();
     for (path, text) in sources {
-        let found = flaky_elements::elements(text).required_because("the source parses")?;
+        let mut found = flaky_elements::elements(text).required_because("the source parses")?;
+        let wires = found.iter().any(|item| item.element == Element::OsLayer);
+        let listed = wiring.contains(&path.as_str());
+        if listed && !wires {
+            violations.push(format!(
+                "{path}: no longer names the OS layer; remove it from OS_LAYER_WIRING"
+            ));
+        }
+        if listed && is_test_code(path) {
+            violations.push(format!(
+                "{path}: a test is not wiring; remove it from OS_LAYER_WIRING"
+            ));
+        }
+        if (listed && !is_test_code(path)) || path.starts_with(OS_LAYER) {
+            found.retain(|item| item.element != Element::OsLayer);
+        }
         let allowed: &[Element] = places
             .iter()
             .find(|(place, _)| place == path)
@@ -1034,6 +1086,13 @@ fn flaky_element_violations(
             ));
         }
     }
+    for place in wiring {
+        if !sources.iter().any(|(path, _)| path == place) {
+            violations.push(format!(
+                "{place}: listed in OS_LAYER_WIRING, but there is no such file"
+            ));
+        }
+    }
     Ok(violations)
 }
 
@@ -1043,7 +1102,7 @@ fn a_flaky_element_outside_the_list_is_reported() -> Checked {
         "src/wait.rs".to_string(),
         "fn wait() { std::thread::sleep(D); }".to_string(),
     )];
-    let violations = flaky_element_violations(&sources, &[])?;
+    let violations = flaky_element_violations(&sources, &[], &[])?;
     assert_eq!(violations.len(), 1, "{violations:?}");
     assert!(violations[0].contains("RealTime is not allowed here"));
     Ok(())
@@ -1055,9 +1114,36 @@ fn a_listed_file_may_not_take_another_kind_of_element() -> Checked {
         "src/wait.rs".to_string(),
         "fn wait() { std::thread::sleep(D); std::thread::spawn(f); }".to_string(),
     )];
-    let violations = flaky_element_violations(&sources, &[("src/wait.rs", &[Element::RealTime])])?;
+    let violations =
+        flaky_element_violations(&sources, &[("src/wait.rs", &[Element::RealTime])], &[])?;
     assert_eq!(violations.len(), 1, "{violations:?}");
     assert!(violations[0].contains("Thread is not allowed here"));
+    Ok(())
+}
+
+#[test]
+fn only_the_listed_wiring_names_the_os_layer_outside_it() -> Checked {
+    // 配線は実物を選んで渡すだけである。ほかの本番codeやtestが名指しすれば実OSを動かす。
+    let uses = "use crate::boundary::os::SystemClock;\nfn f() { g(&SystemClock); }".to_string();
+    let sources = [
+        ("src/paths/lock/acquire.rs".to_string(), uses.clone()),
+        ("src/paths/lock/decide.rs".to_string(), uses.clone()),
+        ("src/paths/lock/lock_test.rs".to_string(), uses.clone()),
+        ("src/boundary/os/system_clock_test.rs".to_string(), uses),
+    ];
+    let violations = flaky_element_violations(&sources, &[], &["src/paths/lock/acquire.rs"])?;
+    assert_eq!(violations.len(), 2, "{violations:?}");
+    assert!(violations[0].starts_with("src/paths/lock/decide.rs: OsLayer"));
+    assert!(violations[1].starts_with("src/paths/lock/lock_test.rs: OsLayer"));
+
+    // 名指ししなくなった配線は一覧から外す。
+    let sources = [(
+        "src/paths/lock/acquire.rs".to_string(),
+        "fn f() {}".to_string(),
+    )];
+    let violations = flaky_element_violations(&sources, &[], &["src/paths/lock/acquire.rs"])?;
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert!(violations[0].contains("remove it from OS_LAYER_WIRING"));
     Ok(())
 }
 
@@ -1065,11 +1151,12 @@ fn a_listed_file_may_not_take_another_kind_of_element() -> Checked {
 fn an_element_that_is_gone_must_leave_the_list() -> Checked {
     // 一覧は減る方向にしか動かない。消えた要素を残せば、次に足す要素がそこへ紛れる。
     let sources = [("src/wait.rs".to_string(), "fn wait() {}".to_string())];
-    let violations = flaky_element_violations(&sources, &[("src/wait.rs", &[Element::RealTime])])?;
+    let violations =
+        flaky_element_violations(&sources, &[("src/wait.rs", &[Element::RealTime])], &[])?;
     assert_eq!(violations.len(), 1, "{violations:?}");
     assert!(violations[0].contains("RealTime is gone"));
 
-    let violations = flaky_element_violations(&[], &[("src/wait.rs", &[Element::RealTime])])?;
+    let violations = flaky_element_violations(&[], &[("src/wait.rs", &[Element::RealTime])], &[])?;
     assert_eq!(violations.len(), 1, "{violations:?}");
     assert!(violations[0].contains("no such file"));
     Ok(())

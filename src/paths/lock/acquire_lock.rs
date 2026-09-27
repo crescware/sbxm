@@ -1,7 +1,7 @@
 use std::fs::{File, OpenOptions, TryLockError};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -9,13 +9,15 @@ use crate::msg;
 
 use crate::paths::inspect::{FileIdentity, display, is_symlink, require_private_file};
 use crate::paths::scope::PathScope;
+use crate::time::Clock;
 
 const LOCK_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 /// OS file lockをtimeout付きで取得する。exclusive/sharedのどちらも同じ安全条件に従う。
 ///
-/// `try_lock`は`File::try_lock`または`File::try_lock_shared`を渡し、呼び出し側が
-/// 種別を選ぶ。
+/// `try_lock`は排他か共有のlockを1度だけ待たずに試す手続きで、呼び出し側が種別を選ぶ。
+/// 待つ時間は`clock`で測り、`clock`で待つ。どちらも実物はOS層にあり、testは台本どおりに
+/// 答えるものを渡す。
 ///
 /// lock取得後、開いたfileと現在のlock pathのidentityが一致することを確認し、
 /// 一致しない場合は削除済みの古いlock fileとみなして取り直す。
@@ -27,9 +29,10 @@ pub(super) fn acquire_lock(
     timeout: Duration,
     mode: u32,
     scope: PathScope,
-    try_lock: fn(&File) -> std::result::Result<(), TryLockError>,
+    try_lock: &dyn Fn(&File) -> std::result::Result<(), TryLockError>,
+    clock: &dyn Clock,
 ) -> Result<File> {
-    let deadline = Instant::now() + timeout;
+    let deadline = clock.now().after(timeout);
     loop {
         if is_symlink(path) {
             return Err(scope.symlink_error(path));
@@ -48,10 +51,10 @@ pub(super) fn acquire_lock(
             match try_lock(&file) {
                 Ok(()) => break true,
                 Err(TryLockError::WouldBlock) => {
-                    if Instant::now() >= deadline {
+                    if clock.now() >= deadline {
                         break false;
                     }
-                    std::thread::sleep(LOCK_POLL_INTERVAL);
+                    clock.sleep(LOCK_POLL_INTERVAL);
                 }
                 Err(TryLockError::Error(error)) => {
                     return Err(unavailable(path, &error.to_string()));
@@ -70,10 +73,10 @@ pub(super) fn acquire_lock(
                 return Ok(file);
             }
             // 待機中にlock fileが削除・再作成された。古いinodeのlockは保護にならない。
+            // 閉じれば古いfileのlockは解ける。
             _ => {
-                let _ = file.unlock();
                 drop(file);
-                if Instant::now() >= deadline {
+                if clock.now() >= deadline {
                     return Err(timed_out(path, timeout));
                 }
             }

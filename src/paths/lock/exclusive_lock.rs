@@ -1,5 +1,7 @@
 use std::fs::File;
 
+use crate::boundary::os::SystemFileLock;
+
 /// 保持している間だけ保護区間を占有するOS file lock。
 ///
 /// lock fileはworkflow終了後も削除しない。fileの存在自体は処理中を意味せず、
@@ -11,6 +13,6 @@ pub struct ExclusiveLock {
 
 impl Drop for ExclusiveLock {
     fn drop(&mut self) {
-        let _ = self.file.unlock();
+        let _ = SystemFileLock::unlock(&self.file);
     }
 }

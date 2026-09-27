@@ -6,4 +6,5 @@
 
 pub mod command_line;
 pub mod host;
+pub(crate) mod os;
 pub(crate) mod terminal;

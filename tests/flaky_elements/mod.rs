@@ -16,10 +16,14 @@
 //! 背景の`&`は並行して動く子process、`kill`はsignal、`#!`で始まる中身は書いた直後に実行する
 //! fileである。doc commentは読まない。
 //!
+//! OS層（`crate::boundary::os`）を名指しすることは`OsLayer`として数える。`crate`から始まる
+//! pathは、このためだけに読む。
+//!
 //! 検出しないものもある。環境変数の値、一時directoryの共有、fakeの中での順序は、fixtureが毎回
 //! 同じ値を与えることで守る。marker fileの出現を待つloopは、待つための実時間で検出する。
-//! `Mutex::lock`と綴りが同じ`File::lock`のmethod呼び出しは見ない。crateの中で要素を包んで
-//! 公開すると、数えられるのは包んだfileだけである。
+//! `Mutex::lock`と綴りが同じ`File::lock`のmethod呼び出しは見ない。OS層の外で要素を包んで
+//! 公開すると、数えられるのは包んだfileだけである。OS層を包んだ本番codeを通して実OSを
+//! 動かすtestも、名指ししない限り数えられない。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -41,8 +45,10 @@ pub enum Element {
     /// `#!`で始まる中身。書いた直後にexecすると、別threadがforkした子が書き込み端を持つ間は
     /// `ETXTBSY`で起動できない。
     WrittenExecutable,
-    /// `File::try_lock`などのfile lock。
+    /// `File::try_lock`・`unlock`などのfile lock。
     FileLock,
+    /// OS層（`crate::boundary::os`）の実物。OS層の外のtestが使えば、実OSを動かす。
+    OsLayer,
 }
 
 /// 見つかった要素1つ。
@@ -54,7 +60,7 @@ pub struct Found {
 }
 
 /// 完全修飾pathの先頭が一致すれば要素とみなすもの。上から順に照らし、最初の一致を採る。
-const PATHS: [(&[&str], Element); 26] = [
+const PATHS: [(&[&str], Element); 28] = [
     (&["std", "time", "Instant", "now"], Element::RealTime),
     (&["std", "time", "SystemTime", "now"], Element::RealTime),
     (&["std", "thread", "sleep"], Element::RealTime),
@@ -90,12 +96,14 @@ const PATHS: [(&[&str], Element); 26] = [
     (&["std", "fs", "File", "try_lock_shared"], Element::FileLock),
     (&["std", "fs", "File", "lock"], Element::FileLock),
     (&["std", "fs", "File", "lock_shared"], Element::FileLock),
+    (&["std", "fs", "File", "unlock"], Element::FileLock),
+    (&["crate", "boundary", "os"], Element::OsLayer),
 ];
 
 /// 名前だけで要素と分かるmethod。受け手の型は見ない。どれも受け手が何であれ要素である。
 ///
 /// `spawn`はclosureを受け取ればthread、そうでなければ子processである。
-const METHODS: [(&str, Element); 12] = [
+const METHODS: [(&str, Element); 13] = [
     ("elapsed", Element::RealTime),
     ("recv_timeout", Element::RealTime),
     ("spawn", Element::ChildProcess),
@@ -108,6 +116,7 @@ const METHODS: [(&str, Element); 12] = [
     ("try_lock", Element::FileLock),
     ("try_lock_shared", Element::FileLock),
     ("lock_shared", Element::FileLock),
+    ("unlock", Element::FileLock),
 ];
 
 /// `use`が導入した名前から完全修飾pathへの対応。
@@ -213,8 +222,9 @@ impl Imports {
     }
 }
 
-/// そのまま完全修飾pathとして読める先頭。
-const EXTERN_ROOTS: [&str; 5] = ["std", "core", "alloc", "rustix", "signal_hook"];
+/// そのまま完全修飾pathとして読める先頭。`crate`から始まるpathは、
+/// OS層の実物を見分けるために読む。
+const EXTERN_ROOTS: [&str; 6] = ["std", "core", "alloc", "rustix", "signal_hook", "crate"];
 
 impl<'ast> Visit<'ast> for Imports {
     fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
@@ -505,6 +515,16 @@ mod tests {
     }
 
     #[test]
+    fn the_os_layer_is_found_through_its_crate_path() -> Result<(), syn::Error> {
+        assert_eq!(
+            kinds_in("use crate::boundary::os::SystemClock;\nfn f() { SystemClock.now(); }")?,
+            [Element::OsLayer]
+        );
+        assert!(kinds_in("use crate::time::Clock;\nfn f(clock: &dyn Clock) {}")?.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn a_name_that_was_not_imported_is_not_an_element() -> Result<(), syn::Error> {
         // 同じ綴りでも、導入していなければ局所の名前である。
         assert!(kinds_in("fn f(thread: T, sleep: S) { sleep(thread); spawn(x); }")?.is_empty());
@@ -534,6 +554,10 @@ mod tests {
         assert_eq!(kinds_in("fn f() { s.elapsed(); }")?, [Element::RealTime]);
         assert_eq!(kinds_in("fn f() { c.kill(); }")?, [Element::Signal]);
         assert_eq!(kinds_in("fn f() { f.try_lock(); }")?, [Element::FileLock]);
+        assert_eq!(
+            kinds_in("use std::fs::File;\nfn f() { File::unlock(&f); }")?,
+            [Element::FileLock]
+        );
         // 呼び出しでなければfieldである。
         assert!(kinds_in("fn f() { c.kill; }")?.is_empty());
         Ok(())

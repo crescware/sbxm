@@ -25,6 +25,7 @@ mod repository;
 mod support;
 #[cfg(test)]
 mod testing;
+mod time;
 
 fn main() -> std::process::ExitCode {
     let argv: Vec<String> = std::env::args().collect();

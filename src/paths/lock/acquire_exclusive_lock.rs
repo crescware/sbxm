@@ -1,7 +1,7 @@
-use std::fs::File;
 use std::path::Path;
 use std::time::Duration;
 
+use crate::boundary::os::{SystemClock, SystemFileLock};
 use crate::diagnostics::Result;
 use crate::paths::scope::PathScope;
 
@@ -18,5 +18,13 @@ pub fn acquire_exclusive_lock(
     mode: u32,
     scope: PathScope,
 ) -> Result<ExclusiveLock> {
-    acquire_lock(path, timeout, mode, scope, File::try_lock).map(|file| ExclusiveLock { file })
+    acquire_lock(
+        path,
+        timeout,
+        mode,
+        scope,
+        &SystemFileLock::try_lock,
+        &SystemClock,
+    )
+    .map(|file| ExclusiveLock { file })
 }
