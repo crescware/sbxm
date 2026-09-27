@@ -6,6 +6,7 @@ use crate::paths;
 use std::fs;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
+use std::process::ExitStatus;
 
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -223,16 +224,20 @@ fn a_declared_file_is_sent_through_stdin_and_moved_into_place() -> Checked {
 }
 
 #[test]
-fn the_sandbox_side_steps_keep_the_file_private_and_replace_it_by_a_rename() {
+fn the_sandbox_side_steps_keep_the_file_private_and_replace_it_by_a_rename() -> Checked {
     // 受け取ったbyte列は、rootだけが読める推測できない名前の一時fileへ書く。
     assert!(PLACE_FROM_STDIN.contains("umask 077"));
-    assert!(PLACE_FROM_STDIN.contains("mktemp"));
+    let created = PLACE_FROM_STDIN.find("mktemp").required()?;
+    // 一時fileを作る前に、消す手順とsignalの受け方を置く。
+    assert!(PLACE_FROM_STDIN.find(" EXIT\n").required()? < created);
+    assert!(PLACE_FROM_STDIN.find(" HUP INT TERM\n").required()? < created);
     // 中身のdigestが一致した場合だけ、agentだけが読めるfileとして置く。
     assert!(PLACE_FROM_STDIN.contains("sha256sum"));
     assert!(PLACE_FROM_STDIN.contains("install -o agent -g agent -m 0600"));
     // 読み手へ半端な内容を見せない。
     assert!(PLACE_FROM_STDIN.ends_with(r#"mv -f "$2" "$1""#));
     assert!(PLACE_FROM_STDIN.contains(&format!("exit {TRANSFER_INCOMPLETE}")));
+    Ok(())
 }
 
 #[test]
@@ -946,11 +951,34 @@ fn every_file_that_cannot_be_placed_is_named_before_anything_is_placed() -> Chec
 /// `mktemp`はtemplateを渡されないと`TMPDIR`より利用者ごとの一時directoryを使うため、
 /// `TMPDIR`のtemplateを渡す関数に置き換える。関数は`PATH`の探索より先に呼ばれ、`command`は
 /// 関数を飛ばして本物を呼ぶ。実行可能fileを書かずに済む。
-const STAND_INS: &str = r#"install() {
+///
+/// 各段は、`SBXM_SIGNAL_AT`が自分の名前であれば、scriptを走らせているshell自身へSIGTERMを
+/// 送る。`<名前> group`であれば、shellのprocess group全体へ送り、そのとき動いている子にも
+/// 届ける。`$$`はsubshellの中でも元のshellを指す。signalが届く時点を、待ち時間ではなく段で
+/// 決める。多くの段は終えた直後に送る。`mktemp`は一時fileを作ってから名前を書くまでの間に
+/// 送り、`rm`は消す前に送る。送る前に`SBXM_SIGNALLED`へ`SBXM_SIGNAL_AT`を書き足し、選んだ段を
+/// scriptが通ったことを残す。
+const STAND_INS: &str = r#"signal() {
+  case ${SBXM_SIGNAL_AT:-} in
+  "$1") printf '%s\n' "$SBXM_SIGNAL_AT" >> "$SBXM_SIGNALLED"; kill -TERM $$ ;;
+  "$1 group") printf '%s\n' "$SBXM_SIGNAL_AT" >> "$SBXM_SIGNALLED"; kill -TERM -$$ ;;
+  esac
+}
+umask() { command umask "$@"; signal umask; }
+mktemp() {
+  made=$(command mktemp "$TMPDIR/tmp.XXXXXXXXXX")
+  signal mktemp
+  printf '%s\n' "$made"
+}
+cat() { command cat "$@"; signal cat; }
+sha256sum() { command sha256sum "$@"; signal sha256sum; }
+install() {
   while [ $# -gt 2 ]; do case "$1" in -o|-g|-m) shift 2 ;; *) break ;; esac; done
   cp "$1" "$2"
+  signal install
 }
-mktemp() { command mktemp "$TMPDIR/tmp.XXXXXXXXXX"; }
+mv() { command mv "$@"; signal mv; }
+rm() { signal rm; command rm "$@"; }
 "#;
 
 /// `PLACE_FROM_STDIN`をこのhostのshellで走らせる場所。
@@ -971,10 +999,18 @@ impl Placing {
         self.dir.path().join("settings.yaml")
     }
 
-    fn command(&self, digest: &str) -> std::process::Command {
+    /// `input`を受け取らせ、終わるまで待つ。`signal_at`の段でSIGTERMを受ける。空なら最後まで
+    /// 走らせる。
+    ///
+    /// stdinは書き終えたfileから読ませる。shellを新しいprocess groupの先頭に置き、groupへ
+    /// 送るsignalをtestへ届かせない。
+    fn run(&self, digest: &str, input: &[u8], signal_at: &str) -> Checked<ExitStatus> {
+        use std::os::unix::process::CommandExt;
+
+        let input_file = self.dir.path().join("input");
+        fs::write(&input_file, input).required()?;
         let destination = self.destination();
-        let mut command = std::process::Command::new("sh");
-        command
+        Ok(std::process::Command::new("sh")
             .arg("-c")
             .arg(format!("{STAND_INS}{PLACE_FROM_STDIN}"))
             .arg("sh")
@@ -982,8 +1018,13 @@ impl Placing {
             .arg(destination.with_extension("sbxm-new"))
             .arg(digest)
             .env("TMPDIR", self.dir.path().join("tmp"))
-            .stdin(std::process::Stdio::piped());
-        command
+            .env("SBXM_SIGNAL_AT", signal_at)
+            .env("SBXM_SIGNALLED", self.signalled_record())
+            .stdin(fs::File::open(&input_file).required()?)
+            .process_group(0)
+            .output()
+            .required()?
+            .status)
     }
 
     /// 一時fileの置き場に残ったもの。
@@ -993,21 +1034,14 @@ impl Placing {
             .count())
     }
 
-    /// 一時fileの置き場へ書かれたbyte数。
-    fn received(&self) -> Checked<u64> {
-        let mut received = 0;
-        for entry in fs::read_dir(self.dir.path().join("tmp")).required()? {
-            received += entry.required()?.metadata().required()?.len();
-        }
-        Ok(received)
+    /// 段がsignalを送る前に書き足す記録。一時fileの置き場の外に置く。
+    fn signalled_record(&self) -> PathBuf {
+        self.dir.path().join("signalled")
     }
 
-    fn run(&self, digest: &str, input: &[u8]) -> Checked<std::process::ExitStatus> {
-        use std::io::Write;
-
-        let mut child = self.command(digest).spawn().required()?;
-        child.stdin.take().required()?.write_all(input).required()?;
-        child.wait().required()
+    /// signalを送った段。どの段も送っていなければ記録が無く、読めない。
+    fn signalled(&self) -> std::io::Result<String> {
+        fs::read_to_string(self.signalled_record())
     }
 }
 
@@ -1016,7 +1050,7 @@ fn the_placement_script_places_only_bytes_that_arrived_whole() -> Checked {
     let placing = Placing::new()?;
     let body = b"declared = true\n";
 
-    let status = placing.run(&sha256_hex(body), body)?;
+    let status = placing.run(&sha256_hex(body), body, "")?;
     assert!(status.success(), "{status:?}");
     assert_eq!(fs::read(placing.destination()).required()?, body);
     assert_eq!(
@@ -1027,7 +1061,7 @@ fn the_placement_script_places_only_bytes_that_arrived_whole() -> Checked {
     assert!(!placing.destination().with_extension("sbxm-new").exists());
 
     // 欠けて届いた内容では、置いてあるfileを置き換えない。
-    let status = placing.run(&sha256_hex(body), b"declared")?;
+    let status = placing.run(&sha256_hex(body), b"declared", "")?;
     assert_eq!(status.code(), Some(TRANSFER_INCOMPLETE));
     assert_eq!(fs::read(placing.destination()).required()?, body);
     assert_eq!(placing.staged()?, 0);
@@ -1035,37 +1069,38 @@ fn the_placement_script_places_only_bytes_that_arrived_whole() -> Checked {
 }
 
 #[test]
-fn a_placement_stopped_by_a_signal_leaves_nothing_behind() -> Checked {
-    use std::io::Write;
-
-    // 受け取りの途中でsignalを受けても、秘密を含みうる一時fileを残さない。
-    let placing = Placing::new()?;
-    let mut child = placing.command(&sha256_hex(b"x")).spawn().required()?;
-    // 一時fileができただけでは、まだtrapを置いていないことがある。`cat`が1 byteを
-    // 書いたのを見てから止める。負荷のかかったmachineでも打ち切らないよう長く待つ。
-    child
-        .stdin
-        .as_mut()
-        .required()?
-        .write_all(b"x")
-        .required()?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    while placing.received()? == 0 && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(10));
+fn a_placement_stopped_by_a_signal_at_any_step_leaves_no_temporary_file() -> Checked {
+    // 受け取りのどの段で止められても、秘密を含みうる一時fileを残さない。止めたsignalは
+    // trapを通って`exit 143`で終わり、signalのまま終わったのではない。一時fileを消している
+    // 途中のsignalは受け流し、置き終えた結果を変えない。どの場合も、選んだ段が1度だけ
+    // signalを送ったことを記録で確かめる。`rm`の段は送らなくても同じ結果になるためである。
+    let body = b"declared = true\n";
+    for (step, code) in [
+        ("umask", 143),
+        ("mktemp", 143),
+        ("cat", 143),
+        ("sha256sum", 143),
+        ("install", 143),
+        ("mv", 143),
+        ("rm", 0),
+    ] {
+        for signal_at in [step.to_string(), format!("{step} group")] {
+            let placing = Placing::new()?;
+            let status = placing.run(&sha256_hex(body), body, &signal_at)?;
+            let signalled = placing
+                .signalled()
+                .required_because(&format!("{signal_at}: the step sent its signal"))?;
+            assert_eq!(signalled, format!("{signal_at}\n"), "{status:?}");
+            assert_eq!(placing.staged()?, 0, "{signal_at}: {status:?}");
+            assert_eq!(status.code(), Some(code), "{signal_at}: {status:?}");
+            // 置き換えるのはrenameだけである。
+            assert_eq!(
+                placing.destination().exists(),
+                matches!(step, "mv" | "rm"),
+                "{signal_at}"
+            );
+        }
     }
-    assert_eq!(
-        placing.received()?,
-        1,
-        "the script started receiving: {:?}",
-        child.try_wait()
-    );
-
-    let pid = rustix::process::Pid::from_child(&child);
-    rustix::process::kill_process(pid, rustix::process::Signal::TERM).required()?;
-    child.wait().required()?;
-
-    assert_eq!(placing.staged()?, 0);
-    assert!(!placing.destination().exists());
     Ok(())
 }
 
