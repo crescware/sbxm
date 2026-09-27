@@ -7,9 +7,11 @@
 //! 作成したSandboxの中から観測する（`sandbox::require_credentials_isolated`）。
 
 mod list;
+mod list_retrying;
 mod list_with_timeout;
 
 pub use list::list;
+use list_retrying::list_retrying;
 pub use list_with_timeout::list_with_timeout;
 
 #[cfg(test)]
