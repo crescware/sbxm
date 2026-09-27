@@ -2,7 +2,9 @@ use crate::commands::add::{BUNDLED_DOCKERFILE, register, was_already_registered}
 use crate::diagnostics::ErrorId;
 use crate::hash::sha256_hex;
 use crate::metadata::{self, CreationMode};
-use crate::paths::{self, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
+use crate::paths::{
+    self, LOCK_TIMEOUT, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PathScope, ProjectPaths,
+};
 use std::fs;
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -441,9 +443,10 @@ fn the_project_lock_is_held_for_the_whole_workflow() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::LockTimeout));
 
     drop(registration);
+    // 解けるまで待つ。別のthreadのtestがforkした子は、execまでlock fileの複製を持つ。
     paths::acquire_exclusive_lock(
         &lock_path,
-        Duration::ZERO,
+        LOCK_TIMEOUT,
         PRIVATE_FILE_MODE,
         PathScope::ProjectPath,
     )
