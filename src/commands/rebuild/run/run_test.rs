@@ -2202,3 +2202,61 @@ fn a_recreated_sandbox_that_points_elsewhere_is_not_accepted() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_rebuild_that_places_declared_files_stops_at_any_step_that_does_not_answer() -> Checked {
+    let arrange = || -> Checked<(Fixture, FakeSbx)> {
+        let (mut fixture, project, host) = switched_sandbox()?;
+        std::fs::write(
+            fixture.dir.path().join("declared.yaml"),
+            b"declared = true\n",
+        )
+        .required()?;
+        fixture.config.files = vec![declared_file(&fixture, "declared.yaml")?];
+        let name = project.sandbox.as_str();
+        let host = host
+            .answering(
+                &format!("exec {name} -- test -h /home/agent/.config"),
+                1,
+                "",
+            )
+            .answering(
+                &format!("exec {name} -- test -h /home/agent/.config/example.yaml"),
+                1,
+                "",
+            )
+            .answering(
+                &format!("exec {name} -- test -e /home/agent/.config/example.yaml"),
+                1,
+                "",
+            );
+        Ok((fixture, host))
+    };
+    let rebuilt =
+        |host: &dyn HostEnvironment, fixture: &Fixture| -> Checked<Result<RebuildOutput>> {
+            Ok(rebuild(
+                Target {
+                    location: &fixture.location,
+                    requested: Some(&project_id("example-org/example-repo")?),
+                    prompt: &mut ScriptedPrompt::choosing(0),
+                },
+                &fixture.config,
+                host,
+                &fixture.workspace_root,
+            ))
+        };
+    let (fixture, host) = arrange()?;
+    let recorded = crate::testing::host::FailingAt::recording(host);
+    rebuilt(&recorded, &fixture)?.required_because("every step answers")?;
+    for (at, step) in recorded.calls().iter().enumerate() {
+        // 空き容量は失敗の診断に添える事実であり、保存済みの先端は保護を緩める側の事実である。
+        // どちらも読めなくても、元の判断を変えない。
+        if step.contains("df -Pk") || step.contains("%(objectname) refs/sbx/") {
+            continue;
+        }
+        let (fixture, host) = arrange()?;
+        let failing = crate::testing::host::FailingAt::timing_out(host, at);
+        assert!(rebuilt(&failing, &fixture)?.is_err(), "{step}");
+    }
+    Ok(())
+}
