@@ -7,9 +7,11 @@
 //! commandを完全には区別できないため、曖昧な判定を足して誤検出を増やさない。
 
 mod disable_directive;
+mod flaky_elements;
 mod outcome;
 
 use disable_directive::DISABLE_NEXT_LINE;
+use flaky_elements::Element;
 use outcome::{Checked, Required};
 
 use std::path::{Path, PathBuf};
@@ -819,5 +821,258 @@ fn no_resource_carries_an_emoji() -> Checked {
         "a pictograph can be drawn in more than one color:\n{}",
         offenders.join("\n")
     );
+    Ok(())
+}
+
+/// flakyになりうる要素を検出する定義そのもの。検出する綴りを例として持つため読まない。
+const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
+
+/// flakyになりうる要素を書いてよいfileと、そこに書いてよい要素。
+///
+/// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
+/// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 37] = [
+    // 外部processを動かす実行。判断とOSの呼び出しが同じ関数にある。
+    ("src/boundary/host/poll_pipes.rs", &[Element::ChildProcess]),
+    (
+        "src/boundary/host/pump_until_exit.rs",
+        &[Element::RealTime, Element::ChildProcess],
+    ),
+    ("src/boundary/host/run_inner.rs", &[Element::ChildProcess]),
+    (
+        "src/boundary/host/run_pty_confirmed.rs",
+        &[Element::RealTime, Element::ChildProcess, Element::Signal],
+    ),
+    ("src/boundary/host/run_relay.rs", &[Element::ChildProcess]),
+    ("src/boundary/host/signal_guard.rs", &[Element::Signal]),
+    ("src/boundary/host/spawn.rs", &[Element::ChildProcess]),
+    (
+        "src/boundary/host/terminate_child.rs",
+        &[Element::ChildProcess, Element::Signal],
+    ),
+    ("src/boundary/host/unwaitable.rs", &[Element::ChildProcess]),
+    (
+        "src/boundary/host/wait_with_limit.rs",
+        &[Element::RealTime, Element::ChildProcess],
+    ),
+    // 判断のcodeへ漏れているもの。
+    ("src/commands/stop/run.rs", &[Element::RealTime]),
+    (
+        "src/paths/lock/acquire_exclusive_lock.rs",
+        &[Element::FileLock],
+    ),
+    ("src/paths/lock/acquire_lock.rs", &[Element::RealTime]),
+    (
+        "src/paths/lock/acquire_shared_lock.rs",
+        &[Element::FileLock],
+    ),
+    (
+        "src/support/daemon/list_with_timeout.rs",
+        &[Element::RealTime],
+    ),
+    (
+        "src/support/host_sync/save_to_host.rs",
+        &[Element::RealTime],
+    ),
+    (
+        "src/support/inventory/wait_until_absent.rs",
+        &[Element::RealTime],
+    ),
+    (
+        "src/support/inventory/wait_until_running.rs",
+        &[Element::RealTime],
+    ),
+    ("src/support/select/open.rs", &[Element::Thread]),
+    // test。
+    (
+        "src/boundary/host/command_test.rs",
+        &[Element::RealTime, Element::ChildProcess],
+    ),
+    (
+        "src/boundary/host/fake/pump_until_exit_test.rs",
+        &[Element::RealTime, Element::ChildProcess],
+    ),
+    (
+        "src/boundary/host/run_pty_confirmed_test.rs",
+        &[Element::RealTime, Element::ChildProcess, Element::Signal],
+    ),
+    (
+        "src/commands/saving/save_first_test.rs",
+        &[Element::RealTime],
+    ),
+    ("src/paths/directory/directory_test.rs", &[Element::Thread]),
+    (
+        "src/paths/lock/lock_test.rs",
+        &[Element::RealTime, Element::Thread],
+    ),
+    ("src/paths/lock/shared_lock_test.rs", &[Element::Thread]),
+    ("src/registry/mod_test.rs", &[Element::Thread]),
+    (
+        "src/support/files/files_test.rs",
+        &[
+            Element::RealTime,
+            Element::ChildProcess,
+            Element::Signal,
+            Element::WrittenExecutable,
+        ],
+    ),
+    (
+        "src/support/host_sync/host_sync_test.rs",
+        &[Element::WrittenExecutable],
+    ),
+    ("src/support/select/open_test.rs", &[Element::RealTime]),
+    (
+        "tests/authenticated_host/mod.rs",
+        &[Element::WrittenExecutable],
+    ),
+    ("tests/cli.rs", &[Element::WrittenExecutable]),
+    (
+        "tests/command_lifecycle.rs",
+        &[
+            Element::RealTime,
+            Element::ChildProcess,
+            Element::Signal,
+            Element::WrittenExecutable,
+        ],
+    ),
+    (
+        "tests/host.rs",
+        &[
+            Element::RealTime,
+            Element::ChildProcess,
+            Element::Signal,
+            Element::WrittenExecutable,
+        ],
+    ),
+    ("tests/lifecycle.rs", &[Element::WrittenExecutable]),
+    (
+        "tests/prompt_pty.rs",
+        &[
+            Element::RealTime,
+            Element::Thread,
+            Element::ChildProcess,
+            Element::Signal,
+            Element::WrittenExecutable,
+        ],
+    ),
+    (
+        "tests/prompt_terminal.rs",
+        &[
+            Element::RealTime,
+            Element::ChildProcess,
+            Element::Signal,
+            Element::WrittenExecutable,
+        ],
+    ),
+];
+
+/// `src`と`tests`のRust source。
+fn sources_and_tests() -> Checked<Vec<(String, String)>> {
+    let mut found = Vec::new();
+    collect(&root().join("src"), &mut found)?;
+    collect(&root().join("tests"), &mut found)?;
+    found.sort();
+    let mut sources = Vec::with_capacity(found.len());
+    for path in found {
+        let text = std::fs::read_to_string(&path).required_because("the source is readable")?;
+        let relative = path
+            .strip_prefix(root())
+            .required_because("inside the repository")?
+            .to_string_lossy()
+            .into_owned();
+        sources.push((relative, text));
+    }
+    Ok(sources)
+}
+
+#[test]
+fn flaky_elements_stay_where_they_are_allowed() -> Checked {
+    let sources: Vec<(String, String)> = sources_and_tests()?
+        .into_iter()
+        .filter(|(path, _)| !path.starts_with(FLAKY_ELEMENT_DEFINITION))
+        .collect();
+    let violations = flaky_element_violations(&sources, &FLAKY_ELEMENT_PLACES)?;
+    assert!(
+        violations.is_empty(),
+        "flaky elements are written only where FLAKY_ELEMENT_PLACES allows them:\n{}",
+        violations.join("\n")
+    );
+    Ok(())
+}
+
+/// 要素が一覧の許す場所と種類を外れていないか。一覧は減る方向にしか動かせない。
+fn flaky_element_violations(
+    sources: &[(String, String)],
+    places: &[(&str, &[Element])],
+) -> Checked<Vec<String>> {
+    let mut violations = Vec::new();
+    for (path, text) in sources {
+        let found = flaky_elements::elements(text).required_because("the source parses")?;
+        let allowed: &[Element] = places
+            .iter()
+            .find(|(place, _)| place == path)
+            .map_or(&[], |(_, elements)| elements);
+        for (element, at) in flaky_elements::by_element(&found) {
+            if !allowed.contains(&element) {
+                violations.push(format!(
+                    "{path}: {element:?} is not allowed here:\n    {}",
+                    at.join("\n    ")
+                ));
+            }
+        }
+        let present = flaky_elements::kinds(&found);
+        for element in allowed {
+            if !present.contains(element) {
+                violations.push(format!(
+                    "{path}: {element:?} is gone; remove it from FLAKY_ELEMENT_PLACES"
+                ));
+            }
+        }
+    }
+    for (place, _) in places {
+        if !sources.iter().any(|(path, _)| path == place) {
+            violations.push(format!(
+                "{place}: listed in FLAKY_ELEMENT_PLACES, but there is no such file"
+            ));
+        }
+    }
+    Ok(violations)
+}
+
+#[test]
+fn a_flaky_element_outside_the_list_is_reported() -> Checked {
+    let sources = [(
+        "src/wait.rs".to_string(),
+        "fn wait() { std::thread::sleep(D); }".to_string(),
+    )];
+    let violations = flaky_element_violations(&sources, &[])?;
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert!(violations[0].contains("RealTime is not allowed here"));
+    Ok(())
+}
+
+#[test]
+fn a_listed_file_may_not_take_another_kind_of_element() -> Checked {
+    let sources = [(
+        "src/wait.rs".to_string(),
+        "fn wait() { std::thread::sleep(D); std::thread::spawn(f); }".to_string(),
+    )];
+    let violations = flaky_element_violations(&sources, &[("src/wait.rs", &[Element::RealTime])])?;
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert!(violations[0].contains("Thread is not allowed here"));
+    Ok(())
+}
+
+#[test]
+fn an_element_that_is_gone_must_leave_the_list() -> Checked {
+    // 一覧は減る方向にしか動かない。消えた要素を残せば、次に足す要素がそこへ紛れる。
+    let sources = [("src/wait.rs".to_string(), "fn wait() {}".to_string())];
+    let violations = flaky_element_violations(&sources, &[("src/wait.rs", &[Element::RealTime])])?;
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert!(violations[0].contains("RealTime is gone"));
+
+    let violations = flaky_element_violations(&[], &[("src/wait.rs", &[Element::RealTime])])?;
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    assert!(violations[0].contains("no such file"));
     Ok(())
 }
