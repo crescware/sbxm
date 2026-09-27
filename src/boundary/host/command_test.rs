@@ -7,7 +7,6 @@ use crate::testing::recorded_output::RecordedOutput;
 
 use super::*;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 
 /// 実行内容を記録するscriptを置く。
@@ -618,11 +617,9 @@ fn a_non_zero_status_maps_to_one_while_keeping_the_original_value() -> Checked {
 #[test]
 fn path_lookup_finds_an_executable_placed_at_the_front_of_path() -> Checked {
     let dir = tempfile::tempdir().required()?;
-    // 探すだけで起動しないため、実行可能fileを書いてよい。
-    let path = dir.path().join("sbxm-fake-on-path");
-    fs::write(&path, "exit 0\n").required_because("write the fake executable")?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-        .required_because("make it executable")?;
+    // 実行可能fileは実行時に書かない。置いてある`/bin/sh`を別の名前で指す。
+    std::os::unix::fs::symlink("/bin/sh", dir.path().join("sbxm-fake-on-path"))
+        .required_because("link the fake executable")?;
 
     let original = std::env::var_os("PATH").unwrap_or_default();
     let mut entries = vec![dir.path().to_path_buf()];

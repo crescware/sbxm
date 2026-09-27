@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::diagnostics::ErrorId;
 
+use crate::testing::install_fake_tool;
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::repository::git_in;
 use crate::testing::sandbox::LocalSandbox;
@@ -654,19 +655,15 @@ struct Placing {
 
 impl Placing {
     fn new(case: &str) -> Checked<Placing> {
-        use std::os::unix::fs::PermissionsExt;
-
         let dir = tempfile::tempdir().required()?;
-        fs::create_dir(dir.path().join("bin")).required()?;
-        let git = dir.path().join("bin/git");
-        fs::write(
-            &git,
-            format!(
-                "#!/bin/sh\ncase \" $* \" in\n{case}\nesac\nPATH=${{PATH#*:}}\nexec git \"$@\"\n"
-            ),
-        )
-        .required()?;
-        fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).required()?;
+        let bin = dir.path().join("bin");
+        fs::create_dir(&bin).required()?;
+        // 先頭の`PATH`はこの`bin`なので、外して本物の`git`を呼ぶ。
+        install_fake_tool(
+            &bin,
+            "git",
+            &format!("case \" $* \" in\n{case}\nesac\nPATH=${{PATH#*:}}\nexec git \"$@\"\n"),
+        )?;
         Ok(Placing { dir })
     }
 
@@ -700,6 +697,9 @@ fn a_git_failure_while_gathering_refs_is_not_taken_as_nothing_to_save() -> Check
         assert!(!output.status.success(), "{case}: {output:?}");
         assert!(output.stdout.is_empty(), "{case}: {output:?}");
     }
+    // 枝に当たらない起動は本物の`git`へ渡る。上の失敗は、代役ではなく枝から来ている。
+    let output = Placing::new(r#"*" never "*) exit 1 ;;"#)?.output(&repositories)?;
+    assert_eq!(output.stdout, b"ready\n", "{output:?}");
     Ok(())
 }
 
@@ -1174,20 +1174,30 @@ fn the_checked_out_branch_follows_the_host_repository_settings() -> Checked {
     Ok(())
 }
 
+/// このtestを走らせている`PATH`で`program`が見つかる場所。
+///
+/// POSIXは`false`や`true`をexecできる道具として求めるが、置き場所は求めない。固定のpathを
+/// 指すと、置き場所の違うOSでは指した先が無い。
+fn on_path(program: &str) -> Checked<PathBuf> {
+    let path = std::env::var_os("PATH").required_because("PATH is set")?;
+    std::env::split_paths(&path)
+        .map(|directory| directory.join(program))
+        .find(|candidate| candidate.is_file())
+        .required_because("the program is on PATH")
+}
+
 #[test]
 fn the_host_repository_hooks_decide_as_for_any_push_but_pre_push_does_not_run() -> Checked {
     // 受け取る側のhookは、hostのrepositoryの規則である。送る側の`pre-push`は、別の
     // repositoryへ送る前の確認であり、自分自身への反映には関わらない。
-    use std::os::unix::fs::PermissionsExt;
-
     let host = Reflecting::new()?;
     host.saved("heads/topic", &host.third)?;
     let hooks = host.host.join(".git/hooks");
     fs::create_dir_all(&hooks).required()?;
+    // どちらのhookも、走れば拒む。実行可能fileを書かず、`PATH`にある`false`を指す。
+    let refuse = on_path("false")?;
     for hook in ["pre-push", "pre-receive"] {
-        let path = hooks.join(hook);
-        fs::write(&path, "#!/bin/sh\nexit 1\n").required()?;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).required()?;
+        std::os::unix::fs::symlink(&refuse, hooks.join(hook)).required()?;
     }
 
     let results = host.reflect()?;

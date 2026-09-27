@@ -940,38 +940,30 @@ fn every_file_that_cannot_be_placed_is_named_before_anything_is_placed() -> Chec
     Ok(())
 }
 
+/// `PLACE_FROM_STDIN`をこのhostのshellで走らせるための前置き。
+///
+/// ownerを変える`install`はrootでしか通らないため、写すだけの関数に置き換える。macOSの
+/// `mktemp`はtemplateを渡されないと`TMPDIR`より利用者ごとの一時directoryを使うため、
+/// `TMPDIR`のtemplateを渡す関数に置き換える。関数は`PATH`の探索より先に呼ばれ、`command`は
+/// 関数を飛ばして本物を呼ぶ。実行可能fileを書かずに済む。
+const STAND_INS: &str = r#"install() {
+  while [ $# -gt 2 ]; do case "$1" in -o|-g|-m) shift 2 ;; *) break ;; esac; done
+  cp "$1" "$2"
+}
+mktemp() { command mktemp "$TMPDIR/tmp.XXXXXXXXXX"; }
+"#;
+
 /// `PLACE_FROM_STDIN`をこのhostのshellで走らせる場所。
 ///
-/// ownerを変える`install`はrootでしか通らないため、写すだけの`install`を`PATH`の先頭へ
-/// 置く。一時fileは`TMPDIR`へ作らせ、残ったかどうかを確かめる。macOSの`mktemp`は
-/// templateを渡されないと`TMPDIR`より利用者ごとの一時directoryを使うため、`TMPDIR`の
-/// templateを渡す`mktemp`も`PATH`の先頭へ置く。
+/// 一時fileは`TMPDIR`へ作らせ、残ったかどうかを確かめる。
 struct Placing {
     dir: tempfile::TempDir,
 }
 
 impl Placing {
     fn new() -> Checked<Placing> {
-        use std::os::unix::fs::PermissionsExt;
-
         let dir = tempfile::tempdir().required()?;
-        fs::create_dir(dir.path().join("bin")).required()?;
         fs::create_dir(dir.path().join("tmp")).required()?;
-        for (name, script) in [
-            (
-                "install",
-                "#!/bin/sh\nwhile [ $# -gt 2 ]; do case \"$1\" in -o|-g|-m) shift 2 ;; *) break ;; esac; done\ncp \"$1\" \"$2\"\n",
-            ),
-            // 先頭の`PATH`はこの`bin`なので、外して本物の`mktemp`を呼ぶ。
-            (
-                "mktemp",
-                "#!/bin/sh\nPATH=${PATH#*:}\nexec mktemp \"$TMPDIR/tmp.XXXXXXXXXX\"\n",
-            ),
-        ] {
-            let path = dir.path().join("bin").join(name);
-            fs::write(&path, script).required()?;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).required()?;
-        }
         Ok(Placing { dir })
     }
 
@@ -983,18 +975,12 @@ impl Placing {
         let destination = self.destination();
         let mut command = std::process::Command::new("sh");
         command
-            .args(["-c", PLACE_FROM_STDIN, "sh"])
+            .arg("-c")
+            .arg(format!("{STAND_INS}{PLACE_FROM_STDIN}"))
+            .arg("sh")
             .arg(&destination)
             .arg(destination.with_extension("sbxm-new"))
             .arg(digest)
-            .env(
-                "PATH",
-                format!(
-                    "{}:{}",
-                    self.dir.path().join("bin").display(),
-                    std::env::var("PATH").unwrap_or_default()
-                ),
-            )
             .env("TMPDIR", self.dir.path().join("tmp"))
             .stdin(std::process::Stdio::piped());
         command

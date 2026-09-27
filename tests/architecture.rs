@@ -877,7 +877,7 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 ///
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 24] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 20] = [
     // OS層。分岐を持たず、coverageの母集団から外す。
     ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
     ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
@@ -919,41 +919,16 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 24] = [
     ),
     (
         "src/support/files/files_test.rs",
-        &[
-            Element::RealTime,
-            Element::ChildProcess,
-            Element::Signal,
-            Element::WrittenExecutable,
-        ],
+        &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
-    (
-        "src/support/host_sync/host_sync_test.rs",
-        &[Element::WrittenExecutable],
-    ),
-    (
-        "tests/authenticated_host/mod.rs",
-        &[Element::WrittenExecutable],
-    ),
-    ("tests/cli.rs", &[Element::WrittenExecutable]),
     (
         "tests/command_lifecycle.rs",
-        &[
-            Element::RealTime,
-            Element::ChildProcess,
-            Element::Signal,
-            Element::WrittenExecutable,
-        ],
+        &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
     (
         "tests/host.rs",
-        &[
-            Element::RealTime,
-            Element::ChildProcess,
-            Element::Signal,
-            Element::WrittenExecutable,
-        ],
+        &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
-    ("tests/lifecycle.rs", &[Element::WrittenExecutable]),
     (
         "tests/prompt_pty.rs",
         &[
@@ -961,17 +936,11 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 24] = [
             Element::Thread,
             Element::ChildProcess,
             Element::Signal,
-            Element::WrittenExecutable,
         ],
     ),
     (
         "tests/prompt_terminal.rs",
-        &[
-            Element::RealTime,
-            Element::ChildProcess,
-            Element::Signal,
-            Element::WrittenExecutable,
-        ],
+        &[Element::RealTime, Element::ChildProcess, Element::Signal],
     ),
 ];
 

@@ -13,15 +13,16 @@
 //! testは止まらないことを優先する。読み取りも終了待ちも上限を置き、上限に達した実行は
 //! 子processを終わらせて失敗とする。
 
+mod fake_tool;
 mod outcome;
 mod temp_home;
 
+use fake_tool::install_fake_tool;
 use outcome::{Checked, Required, Unmet};
 use temp_home::temp_home;
 
 use std::fs::File;
 use std::io::{Read, Write};
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -279,19 +280,15 @@ fn projects(home: &Path) -> Checked<PathBuf> {
 fn host_tools(home: &Path) -> Checked<PathBuf> {
     let bin = home.join("bin");
     std::fs::create_dir_all(&bin).required_because("the fake bin directory is created")?;
-    let path = bin.join("git");
-    std::fs::write(
-        &path,
-        "#!/bin/sh\n\
-         case \"$1 $2 $3 $4\" in\n\
+    install_fake_tool(
+        &bin,
+        "git",
+        "case \"$1 $2 $3 $4\" in\n\
          \"config --global --get-all user.name\") echo 'Example User'; exit 0;;\n\
          \"config --global --get-all user.email\") echo 'user@example.com'; exit 0;;\n\
          esac\n\
          exit 1\n",
-    )
-    .required_because("the fake tool is written")?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-        .required_because("the fake tool is executable")?;
+    )?;
     Ok(bin)
 }
 
