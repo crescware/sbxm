@@ -120,6 +120,20 @@ fn add_reports_a_repeat_run_without_pretending_something_changed() -> Checked {
 }
 
 #[test]
+fn add_shows_a_start_branch_decided_at_build_time_as_a_dash() -> Checked {
+    // GitHubのrepositoryの起点は、構築時にremote default branchから決まる。空欄にしない。
+    let mut output = add_output();
+    output.start_ref = None;
+    let drawn = plain(&super::add::print::document(&output), Locale::En)?;
+    let row = drawn
+        .lines()
+        .find(|line| line.contains("Start branch"))
+        .required_because("the start branch has a row")?;
+    assert_eq!(row.split_whitespace().last(), Some("-"), "{drawn}");
+    Ok(())
+}
+
+#[test]
 fn guide_places_the_credential_boundary_next_to_the_external_command() -> Checked {
     let document = super::guide::print::document(&super::guide::GuideOutput {
         project: "owner/repo".to_string(),

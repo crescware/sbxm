@@ -54,3 +54,23 @@ fn both_ends_of_the_allowed_range_are_inside_it() -> Checked {
     }
     Ok(())
 }
+
+#[test]
+fn the_branch_a_host_repository_is_on_is_checked_like_a_detach_branch() -> Checked {
+    // `--local`の起点は、hostのrepositoryが今いるbranchである。利用者が打った値ではなくても、
+    // 外部commandへ渡す前に同じ規則で確かめる。
+    let local = crate::repository::RepositoryIdentity::local("/home/user/code/app/.git", "app")
+        .required_because("a local repository")?;
+    let mut request = from(local, None, None);
+    request.start_branch = Some("-x".to_string());
+
+    let error = TargetConfiguration::from_request(&request)
+        .refused_because("a branch that reads as an option")?;
+    assert_eq!(error.first_id(), Some(ErrorId::InvalidBranchName));
+
+    request.start_branch = Some("main".to_string());
+    let target = TargetConfiguration::from_request(&request).required()?;
+    assert_eq!(target.mode, CreationMode::Attached);
+    assert_eq!(target.start_ref.as_deref(), Some("main"));
+    Ok(())
+}

@@ -945,3 +945,278 @@ fn a_detached_host_repository_is_not_recorded_but_a_registered_one_resumes() -> 
     );
     Ok(())
 }
+
+// --- 登録済みの案件directoryが崩れた状態からの再実行 ---
+//
+// 保存済みのrootを信用する前に観測し、崩れていれば直さずに止める。止まった実行は、観測した
+// ものを1つも作り直さず、書き換えず、消さない。
+
+/// directoryの下にあるものの種類、permission、中身。symlinkは追跡しない。
+fn snapshot(root: &Path) -> Checked<Vec<(std::path::PathBuf, String)>> {
+    let mut found = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let metadata = fs::symlink_metadata(&path).required()?;
+        let mode = metadata.permissions().mode() & 0o7777;
+        let described = if metadata.file_type().is_symlink() {
+            format!("symlink -> {}", fs::read_link(&path).required()?.display())
+        } else if metadata.is_dir() {
+            for entry in fs::read_dir(&path).required()? {
+                pending.push(entry.required()?.path());
+            }
+            format!("directory {mode:o}")
+        } else {
+            // 読めないfileは、読めないこと自体を記録する。
+            format!("file {mode:o} {:?}", fs::read(&path).ok())
+        };
+        found.push((path, described));
+    }
+    found.sort();
+    Ok(found)
+}
+
+/// 案件directoryを置く親の下に、登録済みの案件を1件作る。
+fn registered_under_projects(setup: &Setup) -> Checked<(std::path::PathBuf, ProjectPaths)> {
+    let projects = setup.dir.path().join("Projects");
+    fs::create_dir_all(&projects).required()?;
+    let registration = register(
+        &setup.location,
+        &ProjectParent::at(&projects).required()?,
+        &request("example-org/example-repo", None, None)?,
+        &identity(),
+    )?;
+    Ok((projects, registration.paths.clone()))
+}
+
+/// 登録済みの案件directoryを崩す手続き。案件directoryを置く親と、案件のpathを受け取る。
+type Breakage = fn(&Path, &ProjectPaths) -> Checked;
+
+fn chmod(path: &Path, mode: u32) -> Checked {
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).required()
+}
+
+#[test]
+fn a_broken_registered_project_is_neither_repaired_nor_adopted_by_a_re_run() -> Checked {
+    let cases: [(&str, ErrorId, Breakage); 10] = [
+        (
+            "the directory holding the root is now a file",
+            ErrorId::ProjectPathUnreadable,
+            |projects, _| {
+                fs::remove_dir_all(projects).required()?;
+                fs::write(projects, b"not a directory\n").required()
+            },
+        ),
+        (
+            "the root is a symlink to a directory elsewhere",
+            ErrorId::ProjectPathSymlink,
+            |projects, paths| {
+                let elsewhere = projects.join("elsewhere");
+                fs::rename(paths.root(), &elsewhere).required()?;
+                std::os::unix::fs::symlink(&elsewhere, paths.root()).required()
+            },
+        ),
+        (
+            "the directory holding the root is a symlink to nothing",
+            ErrorId::AtomicWriteFailed,
+            |projects, _| {
+                fs::remove_dir_all(projects).required()?;
+                let nowhere = projects.with_file_name("nowhere");
+                std::os::unix::fs::symlink(nowhere, projects).required()
+            },
+        ),
+        (
+            "the private directory is open to others",
+            ErrorId::ProjectFilePermissionTooOpen,
+            |_, paths| chmod(&paths.sbxm_dir(), 0o755),
+        ),
+        (
+            "the cache directory is open to others",
+            ErrorId::ProjectFilePermissionTooOpen,
+            |_, paths| chmod(&paths.cache_dir(), 0o755),
+        ),
+        (
+            "the lock file is open to others",
+            ErrorId::ProjectFilePermissionTooOpen,
+            |_, paths| chmod(&paths.lock_file(), 0o644),
+        ),
+        (
+            "the metadata is not YAML",
+            ErrorId::MetadataInvalidSyntax,
+            |_, paths| fs::write(paths.metadata_file(), b"repository: [\n").required(),
+        ),
+        (
+            "the Dockerfile is a directory",
+            ErrorId::ProjectPathUnexpectedType,
+            |_, paths| {
+                fs::remove_file(paths.dockerfile()).required()?;
+                fs::create_dir(paths.dockerfile()).required()
+            },
+        ),
+        (
+            "the Dockerfile is missing beside a leftover of an interrupted write",
+            ErrorId::TempFileLeftBehind,
+            |_, paths| {
+                fs::remove_file(paths.dockerfile()).required()?;
+                fs::write(paths.sbxm_dir().join(".Dockerfile.tmp"), b"interrupted\n").required()
+            },
+        ),
+        (
+            "the metadata is missing beside a leftover of an interrupted write",
+            ErrorId::TempFileLeftBehind,
+            |_, paths| {
+                fs::remove_file(paths.metadata_file()).required()?;
+                fs::write(paths.sbxm_dir().join(".project.yaml.tmp"), b"interrupted\n").required()
+            },
+        ),
+    ];
+    for (case, expected, breakage) in cases {
+        let setup = setup()?;
+        let (projects, paths) = registered_under_projects(&setup)?;
+        breakage(&projects, &paths)?;
+        let before = snapshot(setup.dir.path())?;
+        let registry = fs::read(setup.location.registry_file()).required()?;
+
+        let error = register(
+            &setup.location,
+            &setup.parent,
+            &request("example-org/example-repo", None, None)?,
+            &identity(),
+        )
+        .refused_because(case)?;
+
+        assert_eq!(error.first_id(), Some(expected), "{case}: {error:?}");
+        assert_eq!(snapshot(setup.dir.path())?, before, "{case}");
+        assert_eq!(
+            fs::read(setup.location.registry_file()).required()?,
+            registry,
+            "{case}: the registry is not rewritten"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_dockerfile_that_cannot_be_read_is_not_replaced_by_the_bundled_one() -> Checked {
+    if rustix::process::geteuid().is_root() {
+        // rootはread bitに関わらず読めるため、この状態を作れない。
+        return Ok(());
+    }
+    let setup = setup()?;
+    let (_, paths) = registered_under_projects(&setup)?;
+    fs::write(paths.dockerfile(), "FROM scratch\n").required()?;
+    chmod(&paths.dockerfile(), 0o000)?;
+    let stored = fs::read(paths.metadata_file()).required()?;
+
+    let outcome = register(
+        &setup.location,
+        &setup.parent,
+        &request("example-org/example-repo", None, None)?,
+        &identity(),
+    );
+    chmod(&paths.dockerfile(), PRIVATE_FILE_MODE)?;
+
+    let error = outcome.refused_because("the Dockerfile cannot be read")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathUnreadable));
+    assert_eq!(
+        fs::read_to_string(paths.dockerfile()).required()?,
+        "FROM scratch\n",
+        "the user's Dockerfile is kept"
+    );
+    assert_eq!(fs::read(paths.metadata_file()).required()?, stored);
+    Ok(())
+}
+
+#[test]
+fn a_detached_host_repository_does_not_resume_a_registration_that_recorded_no_start() -> Checked {
+    // 中断点: registry entryとproject rootはあり、metadataを書く前。起点がまだ記録されて
+    // いないため、hostのrepositoryが今detachedなら、続けても記録する起点が無い。
+    let setup = setup()?;
+    let local = crate::repository::RepositoryIdentity::local("/home/user/code/app/.git", "app")
+        .required_because("a local repository")?;
+    let mut on_branch = from(local.clone(), None, None);
+    on_branch.start_branch = Some("main".to_string());
+    let paths = register(&setup.location, &setup.parent, &on_branch, &identity())?
+        .paths
+        .clone();
+    fs::remove_file(paths.metadata_file()).required()?;
+
+    let error = register(
+        &setup.location,
+        &setup.parent,
+        &from(local, None, None),
+        &identity(),
+    )
+    .refused_because("there is no branch to start from")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::HostRepositoryDetached));
+    assert!(!paths.metadata_file().exists(), "no start is made up");
+    Ok(())
+}
+
+/// 登録済みの案件を崩す手続き。global state directoryも崩せる。
+type RunBreakage = fn(&ConfigLocation, &Path, &ProjectPaths) -> Checked;
+
+#[test]
+fn a_run_that_cannot_tell_or_record_the_registration_clones_nothing() -> Checked {
+    // 登録済みかを確かめられない実行も、登録を記録できない実行も、host cloneへ進まない。
+    let cases: [(&str, ErrorId, RunBreakage); 3] = [
+        (
+            "the registry is of an unknown version",
+            ErrorId::RegistryUnknownVersion,
+            |location, _, _| {
+                fs::write(location.registry_file(), "version: 2\nprojects: []\n").required()
+            },
+        ),
+        (
+            "the directory holding the root is now a file",
+            ErrorId::ProjectPathUnreadable,
+            |_, projects, _| {
+                fs::remove_dir_all(projects).required()?;
+                fs::write(projects, b"not a directory\n").required()
+            },
+        ),
+        (
+            "the metadata is not YAML",
+            ErrorId::MetadataInvalidSyntax,
+            |_, _, paths| fs::write(paths.metadata_file(), b"repository: [\n").required(),
+        ),
+    ];
+    for (case, expected, breakage) in cases {
+        let setup = setup()?;
+        let (projects, paths) = registered_under_projects(&setup)?;
+        breakage(&setup.location, &projects, &paths)?;
+        let before = snapshot(setup.dir.path())?;
+        let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+
+        let error = super::run(
+            &setup.location,
+            &setup.parent,
+            &request("example-org/example-repo", None, None)?,
+            &identity(),
+            &host,
+            &mut crate::design::SilentProgress,
+        )
+        .refused_because(case)?;
+
+        assert!(error.contains_id(expected), "{case}: {error:?}");
+        assert!(host.calls().is_empty(), "{case}: {:?}", host.calls());
+        assert_eq!(snapshot(setup.dir.path())?, before, "{case}");
+    }
+
+    // 登録済みでない案件の登録が、目標構成の検査で止まる。
+    let setup = setup()?;
+    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let error = super::run(
+        &setup.location,
+        &setup.parent,
+        &request("example-org/example-repo", Some(2), None)?,
+        &identity(),
+        &host,
+        &mut crate::design::SilentProgress,
+    )
+    .refused_because("more than one worktree needs a detached start")?;
+    assert_eq!(error.first_id(), Some(ErrorId::WorktreesRequireDetach));
+    assert!(host.calls().is_empty(), "{:?}", host.calls());
+    assert_eq!(fs::read_dir(setup.dir.path()).required()?.count(), 0);
+    Ok(())
+}
