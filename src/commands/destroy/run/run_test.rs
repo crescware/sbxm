@@ -1982,3 +1982,51 @@ fn a_forced_removal_that_does_not_answer_keeps_the_project_managed() -> Checked 
     assert!(project.paths.metadata_file().exists());
     Ok(())
 }
+
+/// 止まっているSandboxを持つ案件を、起動したあとの一覧が`after_start`になるhostで計画する。
+fn planned_from_stopped(
+    arrange: impl Fn(&Fixture, &Registered) -> Checked<Vec<String>>,
+) -> Checked<(Fixture, FakeSbx, Result<Prepared>)> {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    let mut listed = arrange(&fixture, &project)?;
+    listed.reverse();
+    *host.listing.borrow_mut() = listed;
+    let prepared = planned(&fixture, &host, false);
+    Ok((fixture, host, prepared))
+}
+
+#[test]
+fn a_started_sandbox_that_is_listed_twice_is_not_planned() -> Checked {
+    let (_fixture, _, prepared) = planned_from_stopped(|fixture, project| {
+        Ok(vec![
+            listed(fixture, project, "stopped")?,
+            twice(fixture, project)?,
+        ])
+    })?;
+
+    let error = prepared.refused_because("two sandboxes share the name")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
+    Ok(())
+}
+
+#[test]
+fn a_stopped_sandbox_whose_workspace_root_others_can_enter_is_not_started() -> Checked {
+    let fixture = Fixture::new()?;
+    let (project, host) = running_project(&fixture)?;
+    *host.listing.borrow_mut() = vec![listed(&fixture, &project, "stopped")?];
+    let workspace = fixture.workspace_root.join(project.sandbox.as_str());
+    std::fs::create_dir_all(&workspace).required()?;
+    set_mode(&workspace, 0o700)?;
+    set_mode(&fixture.workspace_root, 0o755)?;
+
+    let error = planned(&fixture, &host, false).refused_because("the root is not private")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert!(!host.ran("/bin/true"), "{:?}", host.calls());
+    Ok(())
+}

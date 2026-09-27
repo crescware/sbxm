@@ -304,3 +304,29 @@ fn a_lock_file_that_cannot_be_removed_is_a_warning_after_the_project_is_unmanage
     );
     Ok(())
 }
+
+#[test]
+fn a_forced_destroy_of_a_stopped_sandbox_shows_it_as_stopped() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    *host.listing.borrow_mut() = vec![r#"{"sandboxes":[]}"#.to_string(), stopped.clone(), stopped];
+
+    let ran = run_with(&fixture, &host, &[], true)?;
+
+    assert_eq!(ran.code, ExitCode::Success, "{}{}", ran.stdout, ran.stderr);
+    assert!(
+        ran.stdout.contains("Sandbox state  stopped"),
+        "{}",
+        ran.stdout
+    );
+    assert!(
+        !host.ran(&format!("exec {} -- /bin/true", project.sandbox)),
+        "force does not start it"
+    );
+    Ok(())
+}
