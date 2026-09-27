@@ -965,6 +965,23 @@ fn set_mode(path: &std::path::Path, mode: u32) -> Checked {
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).required()
 }
 
+/// 完成の観測が終わったあと、最後の記録の前にmetadataの置き場へ書けなくする。
+///
+/// 観測の中でもmetadataを書くことがある。観測の最後の起動は、宣言fileのdigestを読んだ
+/// あとの2回目の`git -C`である。
+fn seal_after_the_observation(world: &World, sbxm: std::path::PathBuf) {
+    world.change_before("sha256sum", move |world| {
+        let sbxm = sbxm.clone();
+        world.change_before("git -C", move |world| {
+            let sbxm = sbxm.clone();
+            world.change_before("git -C", move |_| {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&sbxm, fs::Permissions::from_mode(0o500));
+            });
+        });
+    });
+}
+
 #[test]
 fn inputs_that_cannot_be_captured_stop_the_build_before_anything_is_recorded() -> Checked {
     let bench = Bench::new()?;
@@ -997,8 +1014,10 @@ fn an_intent_that_cannot_be_saved_stops_the_build_before_the_image_is_built() ->
     let bench = Bench::new()?;
     let world = World::new();
     let (paths, project) = registered(&bench, &world)?;
-    fs::create_dir_all(paths.cache_dir()).required()?;
-    set_mode(&paths.cache_dir(), 0o700)?;
+    // 入力の写しは置けるが、intentを書くmetadataの置き場へは書けない。
+    fs::create_dir_all(paths.snapshot_dir().join("sha256")).required()?;
+    set_mode(&paths.snapshot_dir(), 0o700)?;
+    set_mode(&paths.snapshot_dir().join("sha256"), 0o700)?;
     set_mode(&paths.sbxm_dir(), 0o500)?;
 
     let result = bench.ensure(&world, &project, &mut SilentProgress);
@@ -1006,6 +1025,10 @@ fn an_intent_that_cannot_be_saved_stops_the_build_before_the_image_is_built() ->
 
     let error = result.refused_because("the metadata cannot be replaced")?;
     assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        !names_the_open_command(&error),
+        "nothing was recorded to resume"
+    );
     assert!(
         bench
             .stored("Example-Org/Example-Repo")?
@@ -1153,12 +1176,7 @@ fn a_completion_that_cannot_be_recorded_keeps_the_intent_for_the_next_open() -> 
     let bench = Bench::new()?;
     let world = World::new();
     let (paths, project) = registered(&bench, &world)?;
-    // 完成を確かめ終えたあと、intentを消す前にmetadataの置き場へ書けなくなる。
-    let sbxm = paths.sbxm_dir();
-    world.change_before("sha256sum", move |_| {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&sbxm, fs::Permissions::from_mode(0o500));
-    });
+    seal_after_the_observation(&world, paths.sbxm_dir());
 
     let result = bench.ensure(&world, &project, &mut SilentProgress);
     set_mode(&paths.sbxm_dir(), 0o700)?;
@@ -1208,21 +1226,16 @@ fn a_finished_resume_that_cannot_be_recorded_keeps_the_intent() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (paths, project) = registered(&bench, &world)?;
-    // 1回目は完成まで進み、最後の記録だけに失敗する。
-    let sbxm = paths.sbxm_dir();
-    world.change_before("sha256sum", move |_| {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&sbxm, fs::Permissions::from_mode(0o500));
-    });
+    // 1回目は完成まで進み、最後の記録だけに失敗する。置き場は書けないまま残す。
+    seal_after_the_observation(&world, paths.sbxm_dir());
     let first = bench.ensure(&world, &project, &mut SilentProgress);
-    assert!(first.is_err());
     // 再開は完成を見て記録だけをやり直すが、まだ書けない。
-    let error = bench
-        .ensure(&world, &project, &mut SilentProgress)
-        .refused_because("the completion still cannot be recorded");
+    let second = bench.ensure(&world, &project, &mut SilentProgress);
     set_mode(&paths.sbxm_dir(), 0o700)?;
 
-    assert_eq!(error?.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(first.is_err());
+    let error = second.refused_because("the completion still cannot be recorded")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
     assert!(
         bench
             .stored("Example-Org/Example-Repo")?
@@ -1385,11 +1398,7 @@ fn a_resumed_completion_that_cannot_be_recorded_keeps_the_intent() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (paths, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
-    let sbxm = paths.sbxm_dir();
-    world.change_before("sha256sum", move |_| {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&sbxm, fs::Permissions::from_mode(0o500));
-    });
+    seal_after_the_observation(&world, paths.sbxm_dir());
 
     let result = bench.ensure(&world, &project, &mut SilentProgress);
     set_mode(&paths.sbxm_dir(), 0o700)?;
