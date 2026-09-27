@@ -11,9 +11,12 @@ use crate::testing::host::{FakeSbx, assert_lifecycle};
 use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
+use crate::testing::scripted_clock::ScriptedClock;
+use std::time::Duration;
 
 #[test]
 fn only_the_running_targets_are_stopped() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
@@ -35,7 +38,7 @@ fn only_the_running_targets_are_stopped() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut RecordedOutput::new(),
     )
     .required_because("stop")?;
@@ -70,6 +73,7 @@ fn only_the_running_targets_are_stopped() -> Checked {
 
 #[test]
 fn a_project_without_a_sandbox_is_a_no_op_success() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     fixture.register("example-org/example-repo")?;
     let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
@@ -80,7 +84,7 @@ fn a_project_without_a_sandbox_is_a_no_op_success() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut RecordedOutput::new(),
     )
     .required_because("stop")?;
@@ -91,6 +95,7 @@ fn a_project_without_a_sandbox_is_a_no_op_success() -> Checked {
 
 #[test]
 fn a_rebuild_in_progress_stops_nothing_at_all() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
@@ -114,7 +119,7 @@ fn a_rebuild_in_progress_stops_nothing_at_all() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut RecordedOutput::new(),
     )
     .refused_because("one target that cannot be stopped stops the whole run")?;
@@ -125,6 +130,7 @@ fn a_rebuild_in_progress_stops_nothing_at_all() -> Checked {
 
 #[test]
 fn an_intent_recorded_after_the_first_check_is_still_seen() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("alpha/alfa")?;
     let listing = format!(
@@ -147,7 +153,7 @@ fn an_intent_recorded_after_the_first_check_is_still_seen() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut RecordedOutput::new(),
     )
     .refused_because("the metadata on disk decides after the lock is held")?;
@@ -158,6 +164,7 @@ fn an_intent_recorded_after_the_first_check_is_still_seen() -> Checked {
 
 #[test]
 fn a_failure_leaves_the_remaining_targets_running() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
@@ -174,7 +181,7 @@ fn a_failure_leaves_the_remaining_targets_running() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut RecordedOutput::new(),
     )
     .required_because("the report is produced even when a target fails")?;
@@ -191,6 +198,7 @@ fn a_failure_leaves_the_remaining_targets_running() -> Checked {
 
 #[test]
 fn a_sandbox_that_stays_running_is_reported_as_failed() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let running = format!(
@@ -205,7 +213,7 @@ fn a_sandbox_that_stays_running_is_reported_as_failed() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut RecordedOutput::new(),
     )
     .required_because("report")?;
@@ -216,11 +224,85 @@ fn a_sandbox_that_stays_running_is_reported_as_failed() -> Checked {
             .iter()
             .any(|diagnostic| diagnostic.id == ErrorId::SandboxStillRunning)
     );
+    // 60秒の期限まで、2秒おきに読み直す。止める前の2回に、待つあいだの31回が続く。
+    assert_eq!(*clock.slept.borrow(), vec![Duration::from_secs(2); 30]);
+    assert_eq!(listings(&host), 2 + 31);
     Ok(())
 }
 
 #[test]
+fn a_sandbox_gone_from_the_listing_after_the_stop_is_stopped() -> Checked {
+    let clock = ScriptedClock::default();
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = FakeSbx::listings(&[&running, &running, r#"{"sandboxes":[]}"#]);
+
+    let report = run(
+        &fixture.location,
+        &[project_id("example-org/example-repo")?],
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+        poll(&clock),
+        &mut RecordedOutput::new(),
+    )
+    .required_because("stop")?;
+
+    // 消えていても、起動していないことは確かめられている。
+    assert_eq!(report.outcomes[0].result, StopResult::Stopped);
+    assert!(report.failures.is_empty(), "{:?}", report.failures);
+    assert!(clock.slept.borrow().is_empty(), "{:?}", clock.slept);
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_still_running_right_after_the_stop_is_read_again_after_a_pause() -> Checked {
+    let clock = ScriptedClock::default();
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let stopped = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "stopped")?
+    );
+    let host = FakeSbx::listings(&[&running, &running, &running, &stopped]);
+
+    let report = run(
+        &fixture.location,
+        &[project_id("example-org/example-repo")?],
+        &host,
+        &mut ScriptedPrompt::choosing(0),
+        &fixture.workspace_root,
+        poll(&clock),
+        &mut RecordedOutput::new(),
+    )
+    .required_because("stop")?;
+
+    assert_eq!(report.outcomes[0].result, StopResult::Stopped);
+    assert!(report.failures.is_empty(), "{:?}", report.failures);
+    assert_eq!(*clock.slept.borrow(), vec![Duration::from_secs(2)]);
+    assert_eq!(listings(&host), 4);
+    Ok(())
+}
+
+/// `sbx ls`を読んだ回数。
+fn listings(host: &FakeSbx) -> usize {
+    host.calls()
+        .iter()
+        .filter(|call| call.join(" ") == "ls --json")
+        .count()
+}
+
+#[test]
 fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
@@ -242,7 +324,7 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing_many(&[0]),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut RecordedOutput::new(),
     )
     .required_because("stop")?;
@@ -253,6 +335,7 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
 
 #[test]
 fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let local = fixture.register_local("/srv/code/app/.git", "app")?;
     let github = fixture.register("zeta/zulu")?;
@@ -276,7 +359,7 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut output,
     )
     .required_because("stop")?;
@@ -352,6 +435,7 @@ impl crate::boundary::host::HostEnvironment for ProbingLock {
 #[test]
 fn saving_one_target_leaves_the_others_free_for_other_commands() -> Checked {
     // 保存は時間がかかる。そのあいだ、止める対象すべてのlockを持ち続けない。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let local = fixture.register_local("/srv/code/app/.git", "app")?;
     let github = fixture.register("zeta/zulu")?;
@@ -377,7 +461,7 @@ fn saving_one_target_leaves_the_others_free_for_other_commands() -> Checked {
         &host,
         &mut ScriptedPrompt::choosing(0),
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut RecordedOutput::new(),
     )
     .required_because("stop")?;

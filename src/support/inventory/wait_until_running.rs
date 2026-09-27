@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Instant;
 
 use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -19,14 +18,14 @@ pub fn wait_until_running(
     poll: Poll,
 ) -> Result<()> {
     let name = metadata.sandbox_name();
-    let deadline = Instant::now() + poll.limit;
+    let deadline = poll.deadline();
     loop {
         let entries = daemon::list(host)?;
         let observed = state_of(&entries, metadata, workspace_root)?;
         if observed == ProjectState::Running {
             return Ok(());
         }
-        if Instant::now() >= deadline {
+        if poll.expired(deadline) {
             return Err(Error::single(
                 Diagnostic::new(
                     ErrorId::SandboxNotRunning,
@@ -42,6 +41,6 @@ pub fn wait_until_running(
                 ),
             ));
         }
-        std::thread::sleep(poll.interval);
+        poll.pause();
     }
 }

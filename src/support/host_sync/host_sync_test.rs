@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::diagnostics::ErrorId;
 
@@ -11,6 +11,11 @@ use crate::testing::sandbox::LocalSandbox;
 use super::*;
 
 const NAMESPACE: &str = "sbxm-example-org-example-repo-99a40327a69b";
+
+/// 保存した時刻。退避の名前は`20260923T101501Z`になる。
+fn saved_at() -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(1_790_158_501)
+}
 
 /// Sandboxの中を模したbare repositoryと、hostのrepository。
 struct Repositories {
@@ -87,7 +92,13 @@ impl Repositories {
 
     /// `save_to_host`で保存する。
     fn save(&self) -> crate::diagnostics::Result<Option<Vec<RefChange>>> {
-        save_to_host(&LocalSandbox, &sandbox_name()?, &self.git_dir(), &self.host)
+        save_to_host(
+            &LocalSandbox,
+            &sandbox_name()?,
+            &self.git_dir(),
+            &self.host,
+            saved_at(),
+        )
     }
 
     fn host_ref(&self, reference: &str) -> Checked<String> {
@@ -271,6 +282,7 @@ fn a_repository_without_refs_has_nothing_to_save_and_keeps_what_was_saved() -> C
         &sandbox_name()?,
         &empty.to_string_lossy(),
         &repositories.host,
+        saved_at(),
     )
     .required()?;
 
@@ -283,6 +295,41 @@ fn a_repository_without_refs_has_nothing_to_save_and_keeps_what_was_saved() -> C
         )?
         .is_empty()
     );
+    Ok(())
+}
+
+#[test]
+fn a_save_archives_under_the_time_it_is_given() -> Checked {
+    // 退避の名前に刻むのは、呼び出し側が保存する時点に時計から読んだ時刻である。
+    let repositories = Repositories::new()?;
+    repositories.save().required()?;
+    let saved = repositories.host_ref(&reference("heads/main"))?;
+    git_in(
+        &repositories.worktree,
+        &[
+            "commit",
+            "--quiet",
+            "--amend",
+            "--allow-empty",
+            "-m",
+            "amended",
+        ],
+    )?;
+
+    let changes = repositories
+        .save()
+        .required()?
+        .required_because("the sandbox has refs to save")?;
+
+    let archived = reference("archive/20260923T101501Z/heads/main");
+    assert!(
+        changes.contains(&RefChange::Replaced {
+            reference: reference("heads/main"),
+            archived: archived.clone(),
+        }),
+        "{changes:?}"
+    );
+    assert_eq!(repositories.host_ref(&archived)?, saved);
     Ok(())
 }
 
@@ -910,6 +957,7 @@ fn a_local_project_saves_its_commits_on_its_own_before_the_sandbox_goes() -> Che
         &Relocated::onto(&metadata, Some(&repositories)),
         &paths,
         &metadata,
+        saved_at(),
         &mut crate::design::SilentProgress,
     );
 
@@ -939,6 +987,7 @@ fn a_save_that_fails_is_a_warning_with_the_command_to_retry() -> Checked {
         &Relocated::onto(&metadata, None),
         &paths,
         &metadata,
+        saved_at(),
         &mut crate::design::SilentProgress,
     );
 
@@ -963,6 +1012,7 @@ fn a_github_project_is_left_to_its_origin() -> Checked {
         &Relocated::onto(&metadata, None),
         &paths,
         &metadata,
+        saved_at(),
         &mut crate::design::SilentProgress,
     );
 

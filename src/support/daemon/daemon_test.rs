@@ -1,7 +1,9 @@
-use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment};
+use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
+use std::time::Duration;
 
 use crate::testing::outcome::{Checked, Refused, Required};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::*;
 use crate::boundary::host::CommandOutcome;
@@ -101,8 +103,10 @@ fn a_listing_cut_short_by_a_cold_daemon_is_retried_until_it_parses() -> Checked 
         "{",
         r#"{"sandboxes":[{"name":"sbxm-example","status":"running"}]}"#,
     ]);
+    let clock = ScriptedClock::default();
 
-    let entries = list(&host).required_because("the retry reads the second, complete listing")?;
+    let entries = list_retrying(&host, TimeoutClass::SandboxLifecycle, &clock)
+        .required_because("the retry reads the second, complete listing")?;
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].name, "sbxm-example");
     assert_eq!(
@@ -110,14 +114,17 @@ fn a_listing_cut_short_by_a_cold_daemon_is_retried_until_it_parses() -> Checked 
         2,
         "the command is run again after the unparseable listing"
     );
+    assert_eq!(*clock.slept.borrow(), vec![Duration::from_millis(200)]);
     Ok(())
 }
 
 #[test]
 fn a_listing_that_stays_unparseable_gives_up_after_a_bounded_number_of_retries() -> Checked {
     let host = FakeSbx::sequenced_listing(&["{"]);
+    let clock = ScriptedClock::default();
 
-    let error = list(&host).refused_because("retries do not run forever")?;
+    let error = list_retrying(&host, TimeoutClass::SandboxLifecycle, &clock)
+        .refused_because("retries do not run forever")?;
     assert_eq!(
         error.first_id(),
         Some(crate::diagnostics::ErrorId::ExternalOutputUnparseable)
@@ -126,6 +133,11 @@ fn a_listing_that_stays_unparseable_gives_up_after_a_bounded_number_of_retries()
         host.calls.borrow().len(),
         3,
         "the initial attempt plus every retry ran, then it stopped"
+    );
+    assert_eq!(
+        *clock.slept.borrow(),
+        vec![Duration::from_millis(200); 2],
+        "each retry waits for the daemon first"
     );
     Ok(())
 }

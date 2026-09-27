@@ -7,6 +7,7 @@ use crate::paths::LOCK_TIMEOUT;
 use crate::project::ProjectId;
 use crate::support::host_sync::AutoSaved;
 use crate::support::select;
+use crate::time::Clock;
 
 use super::save_selected;
 
@@ -19,10 +20,18 @@ pub fn save_first(
     project: &ProjectId,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    clock: &dyn Clock,
     progress: &mut dyn ProgressSink,
 ) -> AutoSaved {
     match select::find(location, project) {
-        Ok(candidate) => save_selected(candidate, host, workspace_root, LOCK_TIMEOUT, progress),
+        Ok(candidate) => save_selected(
+            candidate,
+            host,
+            workspace_root,
+            LOCK_TIMEOUT,
+            clock,
+            progress,
+        ),
         Err(_) => AutoSaved::Nothing,
     }
 }

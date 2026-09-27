@@ -2181,6 +2181,7 @@ fn a_commit_saved_to_the_host_is_found_there_and_a_later_one_is_not() -> Checked
         &name,
         &sandbox_repository.join(".git").to_string_lossy(),
         &host_repository,
+        std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_790_158_501),
     )
     .required()?;
     git_in(

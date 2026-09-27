@@ -9,6 +9,7 @@ use crate::testing::host::{FakeSbx, no_secrets};
 use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::protection::{clean_host, commit_only_in_the_sandbox};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::super::Args;
 
@@ -29,6 +30,7 @@ fn run_with(
     keys: &[Key],
     force: bool,
 ) -> Checked<Ran> {
+    let clock = ScriptedClock::default();
     let policy = RenderingPolicy::plain();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -43,6 +45,7 @@ fn run_with(
         let context = Context {
             location: &fixture.location,
             workspace_root: &fixture.workspace_root,
+            clock: &clock,
             locale: Locale::En,
             can_prompt: true,
         };

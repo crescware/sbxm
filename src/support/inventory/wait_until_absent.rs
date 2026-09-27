@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 use crate::project::SandboxName;
@@ -14,14 +12,14 @@ pub(super) fn wait_until_absent(
     name: &SandboxName,
     poll: Poll,
 ) -> Result<()> {
-    let deadline = Instant::now() + poll.limit;
+    let deadline = poll.deadline();
     loop {
         if single(&daemon::list(host)?, name.as_str())?.is_none() {
             return Ok(());
         }
-        if Instant::now() >= deadline {
+        if poll.expired(deadline) {
             return Err(still_present(name));
         }
-        std::thread::sleep(poll.interval);
+        poll.pause();
     }
 }

@@ -21,7 +21,7 @@ pub(super) struct Switch<'a> {
     pub(super) paths: &'a ProjectPaths,
     pub(super) project: &'a ProjectId,
     pub(super) workspace_root: &'a Path,
-    pub(super) poll: Poll,
+    pub(super) poll: Poll<'a>,
 }
 
 impl Switch<'_> {

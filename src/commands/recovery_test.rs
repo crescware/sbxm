@@ -15,6 +15,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::poll::poll;
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::open::run::Prepared;
 use super::present::ListState;
@@ -23,6 +24,7 @@ use super::status::project::ProjectStatus;
 const PROJECT: &str = "Example-Org/Example-Repo";
 
 fn open(bench: &Bench, world: &World, project: &ProjectId) -> Result<Prepared> {
+    let clock = ScriptedClock::default();
     super::open::run::prepare(
         &bench.location,
         &bench.config,
@@ -31,7 +33,7 @@ fn open(bench: &Bench, world: &World, project: &ProjectId) -> Result<Prepared> {
         world,
         &mut ScriptedPrompt::choosing(0),
         bench.workspace_root.path(),
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
 }

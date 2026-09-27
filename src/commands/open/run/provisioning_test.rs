@@ -16,6 +16,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::poll::poll;
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 
@@ -25,6 +26,7 @@ const PROJECT: &str = "Example-Org/Example-Repo";
 
 /// 登録済み案件を`open`で開く。
 fn open(bench: &Bench, world: &World, project: &ProjectId, index: Option<u32>) -> Result<Prepared> {
+    let clock = ScriptedClock::default();
     prepare(
         &bench.location,
         &bench.config,
@@ -33,7 +35,7 @@ fn open(bench: &Bench, world: &World, project: &ProjectId, index: Option<u32>) -
         world,
         &mut ScriptedPrompt::choosing(0),
         bench.workspace_root.path(),
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
 }
@@ -46,6 +48,7 @@ fn exec(
     stdout: &mut Vec<u8>,
     stderr: &mut Vec<u8>,
 ) -> ExitCode {
+    let clock = ScriptedClock::default();
     let policy = RenderingPolicy::plain();
     let mut ui = Ui::capture(Locale::En, policy, stdout, stderr);
     let mut prompt = PromptUi::new(
@@ -57,6 +60,7 @@ fn exec(
     let context = Context {
         location: &bench.location,
         workspace_root: bench.workspace_root.path(),
+        clock: &clock,
         locale: Locale::En,
         can_prompt: false,
     };

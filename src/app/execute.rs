@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::boundary::host::RealHost;
+use crate::boundary::os::SystemClock;
 use crate::boundary::terminal::{create_prompt_ui, create_ui};
 use crate::commands::{Command, Context};
 use crate::design::Document;
@@ -30,6 +31,7 @@ pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitC
     let context = Context {
         location: invocation.location(),
         workspace_root: Path::new(WORKSPACE_ROOT),
+        clock: &SystemClock,
         locale,
         can_prompt: invocation.can_prompt(),
     };

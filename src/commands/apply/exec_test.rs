@@ -9,6 +9,7 @@ use crate::i18n::Locale;
 use crate::metadata::RebuildIntent;
 
 use crate::testing::outcome::{Checked, Required};
+use crate::testing::scripted_clock::ScriptedClock;
 use crate::testing::value::DIGEST;
 
 use super::super::fake::*;
@@ -20,6 +21,7 @@ fn exec_all(
     workspace_root: &Path,
     host: &FakeSbx,
 ) -> Checked<(ExitCode, String, String)> {
+    let clock = ScriptedClock::default();
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     let policy = RenderingPolicy::plain();
@@ -34,6 +36,7 @@ fn exec_all(
         let context = Context {
             location,
             workspace_root,
+            clock: &clock,
             locale: Locale::En,
             can_prompt: false,
         };

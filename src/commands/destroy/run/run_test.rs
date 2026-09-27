@@ -21,6 +21,7 @@ use crate::testing::poll::poll;
 use crate::testing::project::{Fixture, Registered, project_id};
 use crate::testing::prompt::{ScriptedConfirm, ScriptedPrompt};
 use crate::testing::protection::clean_host;
+use crate::testing::scripted_clock::ScriptedClock;
 use crate::testing::value::COMMIT;
 use std::os::unix::fs::PermissionsExt;
 
@@ -56,18 +57,32 @@ fn expect_successful_removal(host: &FakeSbx) {
 
 /// `exec`を模した、確認込みの実行。通常modeは常に正しいSandbox名で確認する。
 fn destroy(host: &FakeSbx, prepared: &mut Prepared) -> Result<DestroyOutcome> {
+    destroy_on(host, prepared, &ScriptedClock::default())
+}
+
+/// `destroy`を、消えるまでの待ちを`clock`で数えて行う。
+fn destroy_on(
+    host: &FakeSbx,
+    prepared: &mut Prepared,
+    clock: &ScriptedClock,
+) -> Result<DestroyOutcome> {
     let sandbox = prepared.plan.sandbox.clone();
     let confirmation = confirm(prepared, true, &mut ScriptedConfirm::typing(&sandbox))?;
     match confirmation {
-        Some(confirmation) => {
-            execute_confirmed(host, prepared, confirmation, poll(), &mut SilentProgress)
-        }
-        None => execute_bypassed(host, prepared, poll(), &mut SilentProgress),
+        Some(confirmation) => execute_confirmed(
+            host,
+            prepared,
+            confirmation,
+            poll(clock),
+            &mut SilentProgress,
+        ),
+        None => execute_bypassed(host, prepared, poll(clock), &mut SilentProgress),
     }
 }
 
 #[test]
 fn a_clean_running_project_is_planned_then_removed() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
@@ -85,7 +100,7 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -134,6 +149,7 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
 
 #[test]
 fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
@@ -148,7 +164,7 @@ fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> 
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -178,6 +194,7 @@ fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> 
 fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -> Checked {
     // runtimeがactive sessionを理由に拒否した場合、exit statusが失われてはならず、
     // 一覧を再取得して不在を待つ工程（poll）へ進んではならない。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str()).answering(
@@ -195,7 +212,7 @@ fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -230,6 +247,7 @@ fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -
 fn a_stopped_project_is_started_so_the_plan_can_show_what_would_be_lost() -> Checked {
     // 停止を理由に拒否して`open`を求めると、これから消す案件のために、repositoryの取得と
     // worktreeの用意をやり直させることになる。destroyは観測に要る起動だけを自分で行う。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let name = project.sandbox.as_str();
@@ -256,7 +274,7 @@ fn a_stopped_project_is_started_so_the_plan_can_show_what_would_be_lost() -> Che
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("a stopped sandbox is started rather than handed back")?;
@@ -279,6 +297,7 @@ fn a_stopped_project_is_started_so_the_plan_can_show_what_would_be_lost() -> Che
 
 #[test]
 fn force_removes_a_stopped_project_without_starting_it() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let name = project.sandbox.as_str();
@@ -300,7 +319,7 @@ fn force_removes_a_stopped_project_without_starting_it() -> Checked {
         true,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("force skips the checks")?;
@@ -327,6 +346,7 @@ fn a_stopped_pending_project_is_started_and_planned_without_open() -> Checked {
     // 初回構築が途中で終わった案件こそ、消したい対象である。完成させてからでなければ
     // 消せない、という順序を求めない。共有repositoryを持たないSandboxは、この案件の
     // 作業を1つも持たないため、失うものは書き込み層だけである。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let mut pending = project.metadata.clone();
@@ -360,7 +380,7 @@ fn a_stopped_pending_project_is_started_and_planned_without_open() -> Checked {
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("an interrupted first build is removable as it is")?;
@@ -381,6 +401,7 @@ fn a_stopped_pending_project_is_started_and_planned_without_open() -> Checked {
 
 #[test]
 fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let layout = SandboxLayout::new(project.metadata.canonical_id());
@@ -401,7 +422,7 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() -> Checked {
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("work that only exists here is not deleted")?;
@@ -413,6 +434,7 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() -> Checked {
 
 #[test]
 fn an_open_session_stops_the_normal_destroy_before_anything_is_inspected() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = clean_host(&fixture, &project)?;
@@ -433,7 +455,7 @@ fn an_open_session_stops_the_normal_destroy_before_anything_is_inspected() -> Ch
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("a normal destroy must not run while a session is open")?;
@@ -452,6 +474,7 @@ fn an_open_session_stops_the_normal_destroy_before_anything_is_inspected() -> Ch
 
 #[test]
 fn force_bypasses_the_session_lease_even_while_a_session_is_open() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
@@ -475,7 +498,7 @@ fn force_bypasses_the_session_lease_even_while_a_session_is_open() -> Checked {
         true,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("--force bypasses the session lease just like the protection gate")?;
@@ -486,6 +509,7 @@ fn force_bypasses_the_session_lease_even_while_a_session_is_open() -> Checked {
 
 #[test]
 fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
 
@@ -498,7 +522,7 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .refused_because("a project that is not managed has nothing to destroy")?;
@@ -513,6 +537,7 @@ fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
 
 #[test]
 fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(
@@ -529,7 +554,7 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -545,6 +570,7 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
 fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
     // scopeはSandboxの有無と無関係に残る。登録を残したまま管理を解くと、次に同じ案件を
     // addして案内どおりにset-customを実行しても、同じenvの登録が既にあるとして拒否される。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let sandbox = project.sandbox.as_str();
@@ -566,7 +592,7 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -594,6 +620,7 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
 fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Checked {
     // commandの戻り値だけを不在の根拠にしない。残ったままなら、同じcommandでやり直せる
     // 状態を保ったまま停止する。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let sandbox = project.sandbox.as_str();
@@ -613,7 +640,7 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -640,6 +667,7 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
 #[test]
 fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() -> Checked {
     // global scopeのsecretはほかのSandboxも使う。1案件の後片付けで消す対象ではない。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = clean_host(&fixture, &project)?.answering(
@@ -658,7 +686,7 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() -> Che
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -700,6 +728,7 @@ fn the_re_registration_command_repeats_the_target_configuration() -> Checked {
 
 #[test]
 fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let elsewhere = fixture
@@ -722,7 +751,7 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> 
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -742,6 +771,7 @@ fn a_cache_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> 
 
 /// 削除して良い状態の案件を1件用意する。
 fn prepared_project(fixture: &Fixture, force: bool) -> Checked<(FakeSbx, Prepared)> {
+    let clock = ScriptedClock::default();
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(fixture, &project)?, project.sandbox.as_str());
     host.listing
@@ -756,7 +786,7 @@ fn prepared_project(fixture: &Fixture, force: bool) -> Checked<(FakeSbx, Prepare
         force,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -960,6 +990,7 @@ fn unseal(directory: &std::path::Path) -> Checked {
 
 #[test]
 fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
@@ -974,7 +1005,7 @@ fn a_cleanup_that_fails_before_the_commit_point_keeps_the_project_managed() -> C
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -1009,6 +1040,7 @@ fn reported_path(error: &Error) -> Option<String> {
 fn a_cache_that_cannot_be_removed_names_the_cache_and_keeps_the_project_managed() -> Checked {
     // 後片付けの失敗はcommit pointの手前で起こる。どのpathが残ったかを示さなければ、
     // 利用者はやり直す前に何を直せばよいか分からない。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::create_dir_all(project.paths.cache_dir()).required()?;
@@ -1024,7 +1056,7 @@ fn a_cache_that_cannot_be_removed_names_the_cache_and_keeps_the_project_managed(
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -1050,6 +1082,7 @@ fn a_cache_that_cannot_be_removed_names_the_cache_and_keeps_the_project_managed(
 fn a_metadata_file_that_is_a_symlink_is_not_followed_and_the_project_stays_managed() -> Checked {
     // 管理解除のcommit pointであっても、symlinkの先は消さない。link自体を消して
     // 管理を解いたことにもしない。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
@@ -1064,7 +1097,7 @@ fn a_metadata_file_that_is_a_symlink_is_not_followed_and_the_project_stays_manag
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -1094,6 +1127,7 @@ fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() 
     // 計画時に不在だったからといって、削除commandを省いた実行を成功にはできない。
     // confirmationは不在という観測へ結び付いており、remove直前の再評価でSandboxが
     // 現れていれば、fingerprintの不一致として拒否する。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let running = format!(
@@ -1115,7 +1149,7 @@ fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() 
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -1137,6 +1171,7 @@ fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() 
 
 #[test]
 fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
@@ -1151,7 +1186,7 @@ fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -1173,6 +1208,7 @@ fn a_lock_file_left_behind_is_a_warning_because_the_project_is_already_unmanaged
 
 #[test]
 fn a_sandbox_that_survives_its_removal_keeps_the_management_data() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     // 削除後の一覧にも対象が残り続ける。
@@ -1187,13 +1223,19 @@ fn a_sandbox_that_survives_its_removal_keeps_the_management_data() -> Checked {
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
 
-    let error = destroy(&host, &mut prepared).refused_because("the sandbox is still there")?;
+    let error =
+        destroy_on(&host, &mut prepared, &clock).refused_because("the sandbox is still there")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxStillPresent));
+    // 60秒の期限まで、2秒おきに読み直してから諦める。
+    assert_eq!(
+        *clock.slept.borrow(),
+        vec![std::time::Duration::from_secs(2); 30]
+    );
     assert!(
         !host.ran("secret rm"),
         "a sandbox that still exists keeps the token it was given"
@@ -1331,6 +1373,7 @@ fn a_root_whose_place_cannot_even_be_looked_at_keeps_the_entry() -> Checked {
 fn a_project_registered_again_during_the_removal_keeps_its_entry() -> Checked {
     // destroyはmetadataを消してproject lockを手放したあとでregistry lockを取る。その
     // 隙間に同じ案件のaddが登録をやり直していれば、entryは新しい登録意図を指している。
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
@@ -1344,7 +1387,7 @@ fn a_project_registered_again_during_the_removal_keeps_its_entry() -> Checked {
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;
@@ -1449,6 +1492,7 @@ fn an_entry_left_behind_by_a_crash_after_the_commit_point_is_tolerated() -> Chec
 
 #[test]
 fn a_local_project_is_removed_without_a_token_and_keeps_its_host_repository() -> Checked {
+    let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register_local("/srv/code/app/.git", "app")?;
     let scopes = format!("refs/heads/ refs/tags/ refs/sbx/{}/", project.sandbox);
@@ -1469,7 +1513,7 @@ fn a_local_project_is_removed_without_a_token_and_keeps_its_host_repository() ->
         false,
         &host,
         &fixture.workspace_root,
-        poll(),
+        poll(&clock),
         &mut SilentProgress,
     )
     .required_because("prepare")?;

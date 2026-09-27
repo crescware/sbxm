@@ -861,11 +861,13 @@ fn is_test_code(path: &str) -> bool {
 ///
 /// 判断のcodeは基本操作を差し込みで受け取り、実物を選ぶのはここに挙げた配線だけとする。
 /// 一覧に無い本番codeがOS層を名指しすれば、差し込まずに実OSを使う判断が紛れる。
-const OS_LAYER_WIRING: [&str; 4] = [
+const OS_LAYER_WIRING: [&str; 6] = [
+    "src/app/execute.rs",
     "src/paths/lock/acquire_exclusive_lock.rs",
     "src/paths/lock/acquire_shared_lock.rs",
     "src/paths/lock/exclusive_lock.rs",
     "src/paths/lock/shared_lock.rs",
+    "src/support/daemon/list_with_timeout.rs",
 ];
 
 /// flakyになりうる要素を検出する定義そのもの。検出する綴りを例として持つため読まない。
@@ -875,7 +877,7 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 ///
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 30] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 24] = [
     // OS層。分岐を持たず、coverageの母集団から外す。
     ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
     ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
@@ -902,24 +904,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 30] = [
         "src/boundary/host/wait_with_limit.rs",
         &[Element::RealTime, Element::ChildProcess],
     ),
-    // 判断のcodeへ漏れているもの。
-    ("src/commands/stop/run.rs", &[Element::RealTime]),
-    (
-        "src/support/daemon/list_with_timeout.rs",
-        &[Element::RealTime],
-    ),
-    (
-        "src/support/host_sync/save_to_host.rs",
-        &[Element::RealTime],
-    ),
-    (
-        "src/support/inventory/wait_until_absent.rs",
-        &[Element::RealTime],
-    ),
-    (
-        "src/support/inventory/wait_until_running.rs",
-        &[Element::RealTime],
-    ),
     // test。
     (
         "src/boundary/host/command_test.rs",
@@ -932,10 +916,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 30] = [
     (
         "src/boundary/host/run_pty_confirmed_test.rs",
         &[Element::RealTime, Element::ChildProcess, Element::Signal],
-    ),
-    (
-        "src/commands/saving/save_first_test.rs",
-        &[Element::RealTime],
     ),
     (
         "src/support/files/files_test.rs",

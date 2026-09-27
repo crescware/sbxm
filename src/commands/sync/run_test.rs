@@ -7,6 +7,7 @@ use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
+use crate::testing::scripted_clock::ScriptedClock;
 
 use super::*;
 
@@ -26,6 +27,7 @@ fn local_project() -> Checked<ProjectId> {
 }
 
 fn sync(bench: &Bench, world: &World) -> crate::diagnostics::Result<SyncOutput> {
+    let clock = ScriptedClock::default();
     let project = ProjectId::parse("local/app")?;
     run(
         &bench.location,
@@ -33,6 +35,7 @@ fn sync(bench: &Bench, world: &World) -> crate::diagnostics::Result<SyncOutput> 
         &mut ScriptedPrompt::choosing(0),
         world,
         bench.workspace_root.path(),
+        &clock,
     )
 }
 
@@ -100,6 +103,7 @@ fn a_sandbox_with_nothing_to_save_is_still_sent_the_host() -> Checked {
 
 #[test]
 fn a_github_project_is_not_synced() -> Checked {
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     let request = request("Example-Org/Example-Repo", None, None)?;
@@ -112,6 +116,7 @@ fn a_github_project_is_not_synced() -> Checked {
         &mut ScriptedPrompt::choosing(0),
         &world,
         bench.workspace_root.path(),
+        &clock,
     )
     .refused_because("its sandbox fetches from and pushes to GitHub itself")?;
 
@@ -123,6 +128,7 @@ fn a_github_project_is_not_synced() -> Checked {
 #[test]
 fn an_omitted_project_is_chosen_only_from_the_projects_added_with_local() -> Checked {
     // GitHubの案件しか無ければ、選ばせる前に断る。
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     bench
@@ -137,6 +143,7 @@ fn an_omitted_project_is_chosen_only_from_the_projects_added_with_local() -> Che
         &mut prompt,
         &world,
         bench.workspace_root.path(),
+        &clock,
     )
     .refused_because("there is no local project to sync")?;
 
@@ -153,6 +160,7 @@ fn an_omitted_project_is_chosen_only_from_the_projects_added_with_local() -> Che
         &mut prompt,
         &world,
         bench.workspace_root.path(),
+        &clock,
     )
     .required_because("the local project is synced")?;
 
@@ -215,6 +223,7 @@ fn syncing_from_the_entry_point_prints_what_changed() -> Checked {
     use crate::diagnostics::ExitCode;
     use crate::i18n::Locale;
 
+    let clock = ScriptedClock::default();
     let bench = Bench::new()?;
     let world = World::new();
     bench.build(&world, &local_request()?).required()?;
@@ -232,6 +241,7 @@ fn syncing_from_the_entry_point_prints_what_changed() -> Checked {
         let context = Context {
             location: &bench.location,
             workspace_root: bench.workspace_root.path(),
+            clock: &clock,
             locale: Locale::En,
             can_prompt: false,
         };
