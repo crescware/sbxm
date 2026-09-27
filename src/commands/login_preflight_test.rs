@@ -11,7 +11,10 @@ use crate::testing::outcome::{Checked, Required};
 use crate::testing::project::{Fixture, project_id};
 use crate::testing::scripted_clock::ScriptedClock;
 
-use super::{Command, Context, apply, destroy, guide, open, status};
+use super::{Command, Context, apply, destroy, files, guide, open, status};
+
+/// `files pull`が取り出す、宣言済みの配置先。
+const DECLARED: &str = ".claude/CLAUDE.md";
 
 struct RecordingHost {
     host: FakeHost,
@@ -73,6 +76,11 @@ fn commands(explicit: bool) -> Checked<Vec<Command>> {
             project: project.clone(),
             force: true,
         }),
+        // Sandboxから宣言fileを取り出す実行も、宣言を読む前に認証を確かめる。
+        Command::Files(files::Args::Pull {
+            destination: DECLARED.to_string(),
+            project: project.clone(),
+        }),
         Command::Ls,
         Command::Status(project.map_or(status::Scope::Prompt, status::Scope::Project)),
     ])
@@ -98,6 +106,7 @@ fn execute(
         }
         Command::Stop(projects) => super::stop::exec(projects, context, ui, host, prompt),
         Command::Destroy(args) => destroy::exec(args, context, ui, host, prompt),
+        Command::Files(args) => files::exec(args, context, ui, host, prompt),
         Command::Ls => super::ls::exec(context, ui, host),
         Command::Status(scope) => status::exec(scope, context, ui, host, prompt),
         _ => unreachable!("this test covers commands that require Docker authentication"),
@@ -176,6 +185,17 @@ fn authenticated_commands_reach_selection_and_can_be_canceled() -> Checked {
     fixture.register("owner/repo")?;
     // `sync`は`--local`の案件だけを並べる。選ぶ案件が無ければ、選ばせる前に断る。
     fixture.register_local("/srv/code/app/.git", "app")?;
+    // `files pull`は宣言したfileだけを取り出す。宣言が無ければ、選ばせる前に断る。
+    let source = fixture.dir.path().join(DECLARED);
+    std::fs::create_dir_all(source.parent().required()?).required()?;
+    std::fs::write(&source, b"# notes\n").required()?;
+    files::add(
+        &fixture.location,
+        &crate::config::GlobalConfig::default(),
+        &files::absolute_source(&source).required()?,
+        None,
+    )
+    .required_because("declare the file to pull")?;
     for command in commands(false)? {
         // 全案件が対象の実行には、選ぶ案件が無い。
         if matches!(

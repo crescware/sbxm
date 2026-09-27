@@ -334,3 +334,36 @@ fn a_relative_source_or_an_unresolvable_home_is_never_guessed_at() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::FileDestinationRequired));
     Ok(())
 }
+
+/// どのcommandも起動できないhost。
+struct NothingStarts;
+
+impl crate::boundary::host::HostEnvironment for NothingStarts {
+    fn command_exists(&self, _program: &str) -> bool {
+        false
+    }
+
+    fn run(
+        &self,
+        _spec: &crate::boundary::host::CommandSpec,
+    ) -> crate::diagnostics::Result<crate::boundary::host::CommandOutcome> {
+        Err(crate::diagnostics::Error::new(
+            ErrorId::ExternalCommandSpawnFailed,
+            crate::msg!("error-external-command-spawn-failed"),
+        ))
+    }
+}
+
+#[test]
+fn a_git_that_cannot_be_started_is_not_read_as_no_difference() -> Checked {
+    let dir = tempfile::tempdir().required()?;
+    let before = dir.path().join("before.md");
+    let after = dir.path().join("after.md");
+    fs::write(&before, b"line\nold\n").required()?;
+    fs::write(&after, b"line\nnew\n").required()?;
+
+    let error = host_diff(&NothingStarts, &before, &after)
+        .refused_because("nothing compared the two files")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandSpawnFailed));
+    Ok(())
+}

@@ -402,3 +402,319 @@ fn a_registry_that_cannot_be_read_after_the_lock_receives_nothing() -> Checked {
     );
     Ok(())
 }
+
+/// Sandboxを読む前に止める崩れ。止めた理由のerror IDと、崩した手続きを並べる。
+type Damage = fn(&Bench, &ProjectId) -> Checked<Args>;
+
+#[test]
+fn what_stops_the_pull_before_the_sandbox_is_read_leaves_everything_as_it_was() -> Checked {
+    let cases: [(&str, Damage); 4] = [
+        // hostの宣言fileが無い。比べる相手が無いまま取り出さない。
+        ("declared-file-unusable", |bench, project| {
+            fs::remove_file(bench.config.files[0].source.as_path()).required()?;
+            Ok(pulling(project))
+        }),
+        // 登録されていない案件。
+        ("project-not-managed", |_, _| {
+            Ok(Args::Pull {
+                destination: DESTINATION.to_string(),
+                project: Some(crate::testing::project::project_id("Other-Org/Other-Repo")?),
+            })
+        }),
+        // project lockのfileが本人以外にも開かれている。lockを取らずに読まない。
+        ("project-file-permission-too-open", |bench, project| {
+            let candidate = crate::support::select::find(&bench.location, project).required()?;
+            fs::set_permissions(
+                candidate.paths.lock_file(),
+                std::os::unix::fs::PermissionsExt::from_mode(0o644),
+            )
+            .required()?;
+            Ok(pulling(project))
+        }),
+        // 世代の切替中。取り出した内容を記録する先のbaselineが決まっていない。
+        ("rebuild-intent-pending", |bench, project| {
+            let candidate = crate::support::select::find(&bench.location, project).required()?;
+            let mut metadata = candidate.reload().required()?;
+            metadata.rebuild = Some(crate::metadata::RebuildIntent {
+                target_dockerfile_sha256: sha256_hex(b"target"),
+                previous_dockerfile_sha256: metadata.provisioning.dockerfile_sha256.clone(),
+            });
+            crate::metadata::update(&candidate.paths, &metadata).required()?;
+            Ok(pulling(project))
+        }),
+    ];
+    for (expected, damage) in cases {
+        let (bench, world, project) = built()?;
+        world.edited_inside(IN_SANDBOX, b"edited inside\n");
+        let args = damage(&bench, &project)?;
+        let stored = bench.stored("Example-Org/Example-Repo")?;
+        let mark = world.mark();
+
+        let ran = run(&bench, &world, &args, true, ScriptedKeys::choosing(1))?;
+
+        assert_eq!(ran.code, ExitCode::Failure, "{expected}");
+        assert!(ran.stderr.contains(expected), "{expected}: {}", ran.stderr);
+        assert!(
+            !world
+                .since(mark)
+                .iter()
+                .any(|call| call.contains("sbx exec")),
+            "{expected}: the sandbox is not read: {:?}",
+            world.since(mark)
+        );
+        assert!(incoming_is_empty(&bench, &project)?, "{expected}");
+        assert_eq!(
+            bench.stored("Example-Org/Example-Repo")?,
+            stored,
+            "{expected}: the baseline is kept"
+        );
+    }
+    Ok(())
+}
+
+/// 取り出しに失敗しても、hostの宣言fileも隔離領域も変えない。
+fn assert_nothing_adopted(bench: &Bench, project: &ProjectId, before: &[u8]) -> Checked {
+    assert_eq!(
+        fs::read(bench.config.files[0].source.as_path()).required()?,
+        before,
+        "the host file is kept"
+    );
+    assert!(
+        incoming_is_empty(bench, project)?,
+        "the received copy is not kept"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_copy_that_cannot_be_received_leaves_nothing_behind() -> Checked {
+    let (bench, world, project) = built()?;
+    world.edited_inside(IN_SANDBOX, b"edited inside\n");
+    world.failing(&format!("cat -- {IN_SANDBOX}"));
+    let before = fs::read(bench.config.files[0].source.as_path()).required()?;
+
+    let ran = run(
+        &bench,
+        &world,
+        &pulling(&project),
+        true,
+        ScriptedKeys::choosing(1),
+    )?;
+
+    assert_eq!(ran.code, ExitCode::Failure);
+    assert!(
+        ran.stderr.contains("external-command-failed"),
+        "{}",
+        ran.stderr
+    );
+    assert!(
+        ran.stdout.is_empty(),
+        "no differences are shown: {}",
+        ran.stdout
+    );
+    assert_nothing_adopted(&bench, &project, &before)
+}
+
+#[test]
+fn differences_the_host_git_cannot_show_are_not_taken_for_none() -> Checked {
+    // 差分を示せなければ、採用するかを訊かない。同じ内容だとも読まない。
+    let (bench, world, project) = built()?;
+    world.edited_inside(IN_SANDBOX, b"edited inside\n");
+    world.answering("diff --no-index", 128, "");
+    let before = fs::read(bench.config.files[0].source.as_path()).required()?;
+
+    let ran = run(
+        &bench,
+        &world,
+        &pulling(&project),
+        true,
+        ScriptedKeys::choosing(1),
+    )?;
+
+    assert_eq!(ran.code, ExitCode::Failure);
+    assert!(
+        ran.stderr.contains("external-command-failed"),
+        "{}",
+        ran.stderr
+    );
+    assert!(!ran.stdout.contains("already matches"), "{}", ran.stdout);
+    assert_nothing_adopted(&bench, &project, &before)
+}
+
+#[test]
+fn a_keyboard_lost_while_deciding_adopts_nothing() -> Checked {
+    // 答えを読めなかったことは、残すと選んだこととは違う。失敗として終える。
+    let (bench, world, project) = built()?;
+    world.edited_inside(IN_SANDBOX, b"edited inside\n");
+    let before = fs::read(bench.config.files[0].source.as_path()).required()?;
+
+    let ran = run(
+        &bench,
+        &world,
+        &pulling(&project),
+        true,
+        ScriptedKeys::failing(std::io::ErrorKind::BrokenPipe),
+    )?;
+
+    assert_eq!(ran.code, ExitCode::Failure);
+    assert!(ran.stderr.contains("prompt-unreadable"), "{}", ran.stderr);
+    assert!(ran.stdout.contains("+edited inside"), "{}", ran.stdout);
+    assert!(!ran.stdout.contains("Kept"), "{}", ran.stdout);
+    assert_nothing_adopted(&bench, &project, &before)
+}
+
+#[test]
+fn a_host_file_edited_while_the_differences_are_shown_is_not_replaced() -> Checked {
+    // 見せた差分は、書き換わる前のhostの宣言fileとのものである。採用を選んでも置き換えない。
+    let (bench, world, project) = built()?;
+    world.edited_inside(IN_SANDBOX, b"edited inside\n");
+    let source = bench.config.files[0].source.as_path().to_path_buf();
+    let edited = source.clone();
+    world.mutate_before("diff --no-index", move || {
+        let _ = fs::write(&edited, b"edited on the host meanwhile\n");
+    });
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+
+    let ran = run(
+        &bench,
+        &world,
+        &pulling(&project),
+        true,
+        ScriptedKeys::choosing(1),
+    )?;
+
+    assert_eq!(ran.code, ExitCode::Failure);
+    assert!(
+        ran.stderr.contains("declared-file-unusable"),
+        "{}",
+        ran.stderr
+    );
+    assert!(!ran.stdout.contains("Adopted"), "{}", ran.stdout);
+    assert_nothing_adopted(&bench, &project, b"edited on the host meanwhile\n")?;
+    assert_eq!(bench.stored("Example-Org/Example-Repo")?, stored);
+    Ok(())
+}
+
+/// 差分のある内容を取り出し、採用する前の状態にする。
+fn pulled_with_differences() -> Checked<(Bench, World, ProjectId, Pulled)> {
+    let (bench, world, project) = built()?;
+    world.edited_inside(IN_SANDBOX, b"edited inside\n");
+    let config = config::load(&bench.location).required()?.settings();
+    let pulled = pull(
+        &bench.location,
+        &config,
+        DESTINATION,
+        Some(&project),
+        &mut ScriptedPrompt::choosing(0),
+        &world,
+        bench.workspace_root.path(),
+    )
+    .required()?;
+    Ok((bench, world, project, pulled))
+}
+
+#[test]
+fn a_host_file_removed_after_the_pull_is_not_recreated_by_adopting() -> Checked {
+    let (bench, _world, _project, mut pulled) = pulled_with_differences()?;
+    let source = bench.config.files[0].source.as_path().to_path_buf();
+    fs::remove_file(&source).required()?;
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+
+    let error = adopt(&mut pulled).refused_because("there is no host file to replace")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileUnusable));
+    assert!(!source.exists(), "the host file is not recreated");
+    assert_eq!(bench.stored("Example-Org/Example-Repo")?, stored);
+    Ok(())
+}
+
+#[test]
+fn a_received_copy_that_is_gone_replaces_nothing() -> Checked {
+    let (bench, _world, _project, mut pulled) = pulled_with_differences()?;
+    let source = bench.config.files[0].source.as_path().to_path_buf();
+    let before = fs::read(&source).required()?;
+    fs::remove_file(&pulled.copy.path).required()?;
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+
+    let error = adopt(&mut pulled).refused_because("there is nothing to adopt")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert_eq!(fs::read(&source).required()?, before);
+    assert_eq!(bench.stored("Example-Org/Example-Repo")?, stored);
+    Ok(())
+}
+
+#[test]
+fn a_directory_that_cannot_hold_the_replacement_keeps_the_host_file() -> Checked {
+    if rustix::process::geteuid().is_root() {
+        // rootはwrite bitに関わらず書けるため、この状態を作れない。
+        return Ok(());
+    }
+    let (bench, _world, _project, mut pulled) = pulled_with_differences()?;
+    let source = bench.config.files[0].source.as_path().to_path_buf();
+    let directory = source.parent().required()?.to_path_buf();
+    let before = fs::read(&source).required()?;
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    let beside = names_in(&directory)?;
+
+    fs::set_permissions(
+        &directory,
+        std::os::unix::fs::PermissionsExt::from_mode(0o500),
+    )
+    .required()?;
+    let outcome = adopt(&mut pulled);
+    fs::set_permissions(
+        &directory,
+        std::os::unix::fs::PermissionsExt::from_mode(0o700),
+    )
+    .required()?;
+
+    let error = outcome.refused_because("the replacement cannot be written beside the file")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert_eq!(fs::read(&source).required()?, before);
+    assert_eq!(bench.stored("Example-Org/Example-Repo")?, stored);
+    assert_eq!(names_in(&directory)?, beside, "nothing is left beside it");
+    Ok(())
+}
+
+/// directoryに並ぶ名前。
+fn names_in(directory: &std::path::Path) -> Checked<Vec<std::ffi::OsString>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(directory).required()? {
+        names.push(entry.required()?.file_name());
+    }
+    names.sort();
+    Ok(names)
+}
+
+#[test]
+fn a_baseline_that_cannot_be_recorded_is_reported_after_the_host_file_was_replaced() -> Checked {
+    // 置き換えたあとで記録に失敗すれば、置き換えは戻さずに失敗として伝える。記録していない
+    // baselineは、次の`apply`が食い違いとして観測する。
+    let (bench, _world, project, mut pulled) = pulled_with_differences()?;
+    let source = bench.config.files[0].source.as_path().to_path_buf();
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    let metadata_file = crate::support::select::find(&bench.location, &project)
+        .required()?
+        .paths
+        .metadata_file();
+    fs::set_permissions(
+        &metadata_file,
+        std::os::unix::fs::PermissionsExt::from_mode(0o644),
+    )
+    .required()?;
+
+    let error = adopt(&mut pulled).refused_because("the metadata is not private")?;
+
+    assert_eq!(
+        error.first_id(),
+        Some(ErrorId::ProjectFilePermissionTooOpen)
+    );
+    assert_eq!(fs::read(&source).required()?, b"edited inside\n");
+    assert_eq!(
+        bench.stored("Example-Org/Example-Repo")?,
+        stored,
+        "the baseline is not recorded"
+    );
+    Ok(())
+}
