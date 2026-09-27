@@ -87,8 +87,8 @@ pub fn exec(
     // lockは待たない。待つあいだはSSHの終了に気付けず、lockを持つ別のcommandも、この
     // 保存を待つことになる。取れなければ次の機会に保存する。
     let saves_to_host = prepared.saves_to_host.clone();
-    let mut save = || {
-        if let Some(candidate) = &saves_to_host {
+    let mut save = saves_to_host.clone().map(|candidate| {
+        move || {
             let _ = saving::save_selected(
                 candidate.clone(),
                 host,
@@ -98,11 +98,10 @@ pub fn exec(
                 &mut SilentProgress,
             );
         }
-    };
-    let during: Option<&mut dyn FnMut()> = if saves_to_host.is_some() {
-        Some(&mut save)
-    } else {
-        None
+    });
+    let during: Option<&mut dyn FnMut()> = match save.as_mut() {
+        Some(save) => Some(save),
+        None => None,
     };
     let connected = super::run::connect(host, prepared, ui, during);
     // sessionを閉じたあとにも保存しておく。
