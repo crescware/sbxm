@@ -53,7 +53,7 @@ impl HostEnvironment for RealHost {
     }
 
     fn run_pty_confirmed(&self, command: &PtyConfirmedCommand) -> Result<CommandOutcome> {
-        run_pty_confirmed(command)
+        run_pty_confirmed(self, &SystemClock, command)
     }
 }
 

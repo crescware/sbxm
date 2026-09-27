@@ -9,8 +9,8 @@
 //! ままでも実行の外側へreaderが残らない。Capture commandは専用のprocess groupに置くが、
 //! timeoutまたはCtrl-Cで終わらせるのは直接の子だけである。
 //!
-//! 子process、pipe、signalへの基本操作は`Processes`・`Pipes`・`Signals`として、時計は
-//! `Clock`として差し込みで受け取り、ここは何をどの順で呼ぶかだけを決める。実物はOS層の
+//! 子process、pipe、PTY、signalへの基本操作は`Processes`・`Pipes`・`Pty`・`Signals`として、
+//! 時計は`Clock`として差し込みで受け取り、ここは何をどの順で呼ぶかだけを決める。実物はOS層の
 //! `RealHost`と`SystemClock`であり、testは台本どおりに答えるものを渡す。
 
 pub mod protocol;
@@ -36,6 +36,7 @@ mod output_too_large;
 mod pipes;
 mod poll_pipes;
 mod processes;
+mod pty;
 mod pty_confirmed_command;
 mod pump_until_exit;
 mod run_inner;
@@ -80,6 +81,7 @@ use output_too_large::output_too_large;
 pub(crate) use pipes::Pipes;
 use poll_pipes::poll_pipes;
 pub(crate) use processes::Processes;
+pub(crate) use pty::Pty;
 pub use pty_confirmed_command::PtyConfirmedCommand;
 use pump_until_exit::pump_until_exit;
 pub(crate) use run_inner::run_inner;

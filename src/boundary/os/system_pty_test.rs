@@ -1,22 +1,23 @@
 //! 契約test: PTYについての仮定。
 //!
 //! 確認promptへの応答は、PTYの親の側を待たずに読み、読めた値だけで次を決める。PTYは
-//! `run_pty_confirmed`の`open_pty`と同じ手順で開き、子の3本のstreamを端末側へ向ける。
-//! 親の側は`poll`で待たず、間を置いて読み直す。macOSの`poll`は端末のdeviceを扱わない。
+//! `RealHost`の`Pty`実装を通し、`run_pty_confirmed`の`open_pty`と同じ手順で開き、子の3本の
+//! streamを端末側へ向ける。親の側は`poll`で待たず、間を置いて読み直す。macOSの`poll`は
+//! 端末のdeviceを扱わない。
 
 use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
 
-use rustix::fs::{Mode, OFlags, fcntl_getfl, fcntl_setfl};
-use rustix::io::{Errno, FdFlags, fcntl_getfd, fcntl_setfd};
-use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
-use rustix::termios::{OptionalActions, Winsize, tcgetattr, tcgetwinsize, tcsetattr, tcsetwinsize};
+use rustix::io::{Errno, FdFlags, fcntl_getfd};
+use rustix::termios::tcgetwinsize;
 
+use crate::boundary::host::Pty;
+use crate::boundary::os::SystemClock;
 use crate::testing::outcome::{Checked, Refused, Required, Unmet};
 use crate::testing::wait_until::wait_until;
 
-use super::SystemClock;
+use super::RealHost;
 
 /// `run_pty_confirmed`が固定する端末の大きさ。
 const ROWS: u16 = 24;
@@ -24,36 +25,37 @@ const COLUMNS: u16 = 120;
 
 /// `run_pty_confirmed`の`open_pty`と同じ手順で開いたPTYの、親が読み書きする側と端末側。
 fn open_pty() -> Checked<(File, File)> {
-    let controller =
-        openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).required_because("open the controller")?;
-    fcntl_setfd(&controller, FdFlags::CLOEXEC).required_because("close it on exec")?;
-    grantpt(&controller).required_because("grant the terminal")?;
-    unlockpt(&controller).required_because("unlock the terminal")?;
-    let name = ptsname(&controller, Vec::new()).required_because("name the terminal")?;
-    let terminal = File::from(
-        rustix::fs::open(
-            &name,
-            OFlags::RDWR | OFlags::NOCTTY | OFlags::CLOEXEC,
-            Mode::empty(),
-        )
-        .required_because("open the terminal")?,
-    );
-    let mut settings = tcgetattr(&terminal).required_because("read the settings")?;
-    settings.make_raw();
-    tcsetattr(&terminal, OptionalActions::Now, &settings).required_because("make it raw")?;
-    tcsetwinsize(
-        &controller,
-        Winsize {
-            ws_row: ROWS,
-            ws_col: COLUMNS,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        },
-    )
-    .required_because("set the size")?;
-    let controller = File::from(controller);
-    let flags = fcntl_getfl(&controller).required_because("read the status flags")?;
-    fcntl_setfl(&controller, flags | OFlags::NONBLOCK).required_because("stop blocking")?;
+    let controller = RealHost
+        .open_controller()
+        .required_because("open the controller")?;
+    RealHost
+        .close_on_exec(&controller)
+        .required_because("close it on exec")?;
+    RealHost
+        .grant(&controller)
+        .required_because("grant the terminal")?;
+    RealHost
+        .unlock_terminal(&controller)
+        .required_because("unlock the terminal")?;
+    let name = RealHost
+        .terminal_name(&controller)
+        .required_because("name the terminal")?;
+    let terminal = RealHost
+        .open_terminal(&name)
+        .required_because("open the terminal")?;
+    let mut settings = RealHost
+        .settings(&terminal)
+        .required_because("read the settings")?;
+    RealHost.make_raw(&mut settings);
+    RealHost
+        .apply_settings(&terminal, &settings)
+        .required_because("make it raw")?;
+    RealHost
+        .set_size(&controller, ROWS, COLUMNS)
+        .required_because("set the size")?;
+    RealHost
+        .controller_nonblocking(&controller)
+        .required_because("stop blocking")?;
     Ok((controller, terminal))
 }
 
@@ -64,9 +66,9 @@ fn open_pty() -> Checked<(File, File)> {
 fn start_on(terminal: &File, script: &str) -> Checked<Child> {
     Ok(Command::new("sh")
         .args(["-c", script])
-        .stdin(Stdio::from(terminal.try_clone()?))
-        .stdout(Stdio::from(terminal.try_clone()?))
-        .stderr(Stdio::from(terminal.try_clone()?))
+        .stdin(RealHost.terminal_stdio(terminal)?)
+        .stdout(RealHost.terminal_stdio(terminal)?)
+        .stderr(RealHost.terminal_stdio(terminal)?)
         .spawn()?)
 }
 
