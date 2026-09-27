@@ -1553,3 +1553,29 @@ fn a_dockerfile_removed_after_the_intent_is_saved_does_not_stop_the_resume() -> 
     );
     Ok(())
 }
+
+#[test]
+fn a_token_environment_that_cannot_be_written_stops_the_build_with_the_open_command() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = registered(&bench, &world)?;
+    // tokenのplaceholderを渡す環境変数fileを、root権限で書く起動だけが失敗する。
+    world.failing(r#"> "$4" sh"#);
+
+    let error = bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .refused_because("the token environment is not written")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(names_the_open_command(&error));
+    let calls = world.invocations();
+    let failed = calls
+        .iter()
+        .find(|call| call.contains(r#"> "$4" sh"#))
+        .required_because("the write was attempted")?;
+    assert!(
+        failed.contains("--user root") && failed.contains("sbxm-github-token"),
+        "{failed}"
+    );
+    Ok(())
+}

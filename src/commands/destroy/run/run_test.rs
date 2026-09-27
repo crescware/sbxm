@@ -1837,3 +1837,61 @@ fn a_destroy_stops_at_any_step_that_does_not_answer() -> Checked {
     }
     Ok(())
 }
+
+/// tokenの登録を1件持つ案件を、`host`の答えで消す。
+fn destroyed_with_registration(
+    change: impl Fn(FakeSbx, &str) -> FakeSbx,
+) -> Checked<(
+    Fixture,
+    crate::testing::project::Registered,
+    Result<DestroyOutcome>,
+)> {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let sandbox = project.sandbox.as_str().to_string();
+    let host = change(clean_host(&fixture, &project)?, &sandbox);
+    expect_successful_removal(&host);
+    let mut prepared = planned(&fixture, &host, false).required()?;
+    let outcome = destroy(&host, &mut prepared);
+    Ok((fixture, project, outcome))
+}
+
+#[test]
+fn a_token_registration_that_cannot_be_removed_keeps_the_project_managed() -> Checked {
+    let (_fixture, project, outcome) = destroyed_with_registration(|host, sandbox| {
+        host.answering_in_turn(
+            "secret ls",
+            &[(0, &custom_secret_listing(sandbox, "sbx-cs-example"))],
+        )
+        .answering(
+            &format!("secret rm {sandbox} --placeholder sbx-cs-example --force"),
+            1,
+            "",
+        )
+    })?;
+
+    let error = outcome.refused_because("the registration stays")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn registrations_that_cannot_be_listed_after_the_removal_keep_the_project_managed() -> Checked {
+    let (_fixture, project, outcome) = destroyed_with_registration(|host, sandbox| {
+        host.answering_in_turn(
+            "secret ls",
+            &[
+                (0, &custom_secret_listing(sandbox, "sbx-cs-example")),
+                (1, ""),
+            ],
+        )
+    })?;
+
+    let error = outcome.refused_because("what is left is unknown")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
+    assert!(project.paths.metadata_file().exists());
+    Ok(())
+}
