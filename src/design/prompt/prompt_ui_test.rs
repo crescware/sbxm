@@ -357,3 +357,116 @@ fn the_language_the_prompt_asks_in_follows_the_one_that_was_settled_on() -> Chec
     );
     Ok(())
 }
+
+#[test]
+fn an_open_prompt_with_no_projects_is_unresolved_rather_than_an_empty_prompt() -> Checked {
+    let screen = RecordedScreen::new();
+    let error = prompt(ScriptedKeys::confirming(), &screen)
+        .select_open(&heading(), &[], &[])
+        .refused_because("there is no project to choose")?;
+
+    assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
+    assert_ne!(error.exit_code(), ExitCode::Canceled);
+    assert!(screen.drawn().is_empty(), "nothing is drawn");
+    Ok(())
+}
+
+#[test]
+fn an_open_prompt_that_cannot_be_drawn_or_read_stops_without_a_choice() -> Checked {
+    for (keys, screen, reason) in [
+        (
+            ScriptedKeys::confirming(),
+            RecordedScreen::failing(std::io::ErrorKind::BrokenPipe),
+            "a prompt that cannot be drawn cannot be answered",
+        ),
+        (
+            ScriptedKeys::failing(std::io::ErrorKind::BrokenPipe),
+            RecordedScreen::new(),
+            "a prompt that cannot be read cannot be answered",
+        ),
+    ] {
+        let error = prompt(keys, &screen)
+            .select_open(&heading(), &labels(), &[Some(2); 3])
+            .refused_because(reason)?;
+
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::PromptUnreadable),
+            "{reason}"
+        );
+        // 描いた一覧は下ろし、確定の一行も残さない。
+        assert!(screen.lines().is_empty(), "{reason}: {:?}", screen.lines());
+        assert!(
+            screen.cursor_is_visible(),
+            "{reason}: the cursor is handed back"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn an_input_stops_at_the_first_write_the_screen_refuses() -> Checked {
+    let heading = "Enter the name this project's commits are made under".to_string();
+    // (打鍵, 候補, 受け付ける操作の数, 書けなくなった操作)。
+    let cases: [(&[Key], &str, usize, &str); 5] = [
+        (&[Key::Enter], "", 0, "drawing the heading"),
+        (&[Key::Enter], "Host User", 1, "placing the candidate"),
+        (
+            &[Key::Char('a'), Key::Enter],
+            "",
+            1,
+            "echoing a typed character",
+        ),
+        (
+            &[Key::Char('a'), Key::Backspace, Key::Enter],
+            "",
+            2,
+            "rubbing out a character",
+        ),
+        (&[Key::Enter], "", 1, "ending the line"),
+    ];
+    for (keys, candidate, allowed, failed) in cases {
+        let screen = RecordedScreen::failing_after(allowed, std::io::ErrorKind::BrokenPipe);
+        let error = prompt(ScriptedKeys::pressing(keys), &screen)
+            .input(&msg!("prompt-git-user-name"), candidate)
+            .refused_because(&format!(
+                "a screen that fails while {failed} stops the input"
+            ))?;
+
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::PromptUnreadable),
+            "{failed}"
+        );
+        assert_ne!(error.exit_code(), ExitCode::Canceled, "{failed}");
+        // 書けなかった操作より後は、何も描いたものとして数えない。
+        let expected = if allowed == 0 {
+            Vec::new()
+        } else {
+            vec![heading.clone()]
+        };
+        assert_eq!(screen.drawn(), expected, "{failed}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_heading_that_cannot_be_formatted_names_the_failure_and_still_asks() -> Checked {
+    // 利用者向けの文字列を作れなくても、promptを止めず内部異常の文字列をそのまま見せる。
+    let screen = RecordedScreen::new();
+    let chosen = prompt(ScriptedKeys::confirming(), &screen)
+        .select_one(&msg!("no-such-prompt-heading"), &labels())
+        .required_because("the candidates can still be chosen")?;
+
+    assert_eq!(chosen, 0);
+    let heading = screen
+        .drawn()
+        .first()
+        .cloned()
+        .required_because("the heading line is drawn")?;
+    assert!(
+        heading.starts_with("message-format-failed: message-id=no-such-prompt-heading"),
+        "{heading}"
+    );
+    Ok(())
+}

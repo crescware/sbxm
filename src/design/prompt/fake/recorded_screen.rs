@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::design::width::display_width;
@@ -20,6 +20,8 @@ pub struct RecordedScreen {
     cursor: Rc<RefCell<bool>>,
     rows: Option<u16>,
     failure: Option<std::io::ErrorKind>,
+    /// `failure`があっても、なお成功させる残りの操作数。
+    allowed: Rc<Cell<usize>>,
 }
 
 impl RecordedScreen {
@@ -31,6 +33,7 @@ impl RecordedScreen {
             cursor: Rc::new(RefCell::new(true)),
             rows: None,
             failure: None,
+            allowed: Rc::new(Cell::new(0)),
         }
     }
 
@@ -44,8 +47,16 @@ impl RecordedScreen {
 
     /// 書けない画面。
     pub fn failing(kind: std::io::ErrorKind) -> RecordedScreen {
+        RecordedScreen::failing_after(0, kind)
+    }
+
+    /// 最初の`count`回の操作だけを受け付け、それ以降は書けない画面。
+    ///
+    /// 見出しは描けたのに入力の途中で書けなくなった、のように、途中の1手だけを失敗させる。
+    pub fn failing_after(count: usize, kind: std::io::ErrorKind) -> RecordedScreen {
         RecordedScreen {
             failure: Some(kind),
+            allowed: Rc::new(Cell::new(count)),
             ..RecordedScreen::new()
         }
     }
@@ -70,9 +81,15 @@ impl RecordedScreen {
     }
 
     fn writable(&self) -> std::io::Result<()> {
-        match self.failure {
-            Some(kind) => Err(std::io::Error::from(kind)),
-            None => Ok(()),
+        let Some(kind) = self.failure else {
+            return Ok(());
+        };
+        match self.allowed.get().checked_sub(1) {
+            Some(remaining) => {
+                self.allowed.set(remaining);
+                Ok(())
+            }
+            None => Err(std::io::Error::from(kind)),
         }
     }
 

@@ -373,3 +373,224 @@ fn a_target_that_is_still_the_file_that_was_checked_may_be_replaced() -> Checked
         .required_because("the file that was checked is the file that is there")?;
     Ok(())
 }
+
+#[test]
+fn a_parent_that_cannot_be_opened_does_not_undo_a_completed_write() -> Checked {
+    if rustix::process::geteuid().is_root() {
+        // rootはmodeに関わらずdirectoryを開けるため、この状態を作れない。
+        return Ok(());
+    }
+    // 書き込みと検索だけを許すdirectory。fileは作れて移せるが、directory自体は開けない。
+    // renameの永続化を諦めても、書き終えた内容は失われない。
+    let dir = temp_dir()?;
+    let parent = dir.path().join("write-only");
+    fs::create_dir(&parent).required_because("create the parent")?;
+    let created = parent.join("config.yaml");
+    let resumed = parent.join("project.yaml");
+    let built = parent.join("built.tar");
+    let published = parent.join("template.tar");
+    fs::write(&built, b"built").required_because("seed the built artifact")?;
+    atomic_create(&resumed, "version: 1\n", PRIVATE_FILE_MODE).required_because("seed")?;
+
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o300))
+        .required_because("keep the parent from being opened")?;
+    let outcomes = [
+        (
+            "create",
+            atomic_create(&created, "first\n", PRIVATE_FILE_MODE),
+        ),
+        (
+            "replace",
+            atomic_replace(&created, "second\n", PRIVATE_FILE_MODE),
+        ),
+        (
+            "resumable replace",
+            atomic_replace_resumable(&resumed, "version: 2\n", PRIVATE_FILE_MODE),
+        ),
+        (
+            "rename into place",
+            atomic_rename_into_place(&built, &published),
+        ),
+    ];
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
+        .required_because("reopen the parent directory")?;
+
+    for (operation, outcome) in outcomes {
+        outcome.required_because(&format!("the {operation} completes without the sync"))?;
+    }
+    assert_eq!(fs::read_to_string(&created).required()?, "second\n");
+    assert_eq!(fs::read_to_string(&resumed).required()?, "version: 2\n");
+    assert_eq!(fs::read(&published).required()?, b"built");
+    assert!(!built.exists(), "the artifact was moved, not copied");
+    Ok(())
+}
+
+#[test]
+fn a_target_that_names_no_file_in_a_directory_is_refused_before_anything_is_written() -> Checked {
+    // rootには一時fileを並べる親directoryが無い。
+    let error = atomic_create(Path::new("/"), "version: 1\n", PRIVATE_FILE_MODE)
+        .refused_because("the root cannot be written as a file")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert_eq!(reason_of(&error)?, "cause-no-parent-directory");
+    Ok(())
+}
+
+#[test]
+fn a_rename_the_operating_system_refuses_leaves_neither_side_changed() -> Checked {
+    let dir = temp_dir()?;
+    // 中身のあるdirectoryの上へはrenameできない。検査を通っても、置き換えは起きない。
+    let target = dir.path().join("occupied");
+    fs::create_dir(&target).required_because("create")?;
+    fs::write(target.join("kept"), b"x").required_because("write inside")?;
+
+    let error =
+        atomic_write_with_precondition(&target, "version: 1\n", PRIVATE_FILE_MODE, |_| Ok(()))
+            .refused_because("a target that cannot be replaced is refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        !cause_of(&error)?.is_empty(),
+        "the operating system said why"
+    );
+    assert_eq!(fs::read_to_string(target.join("kept")).required()?, "x");
+    assert!(
+        !dir.path().join(".occupied.tmp").exists(),
+        "the temporary file of this run is cleaned up"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_target_that_disappeared_before_the_rename_is_not_created_again() -> Checked {
+    let dir = temp_dir()?;
+    let target = dir.path().join("project.yaml");
+    atomic_create(&target, "first\n", PRIVATE_FILE_MODE).required_because("create")?;
+    let original = FileIdentity::of_path_without_following(&target).required()?;
+    // 書いている間に別のprocessが消した状況を作る。置き換える相手はもう居ない。
+    fs::remove_file(&target).required_because("remove the target")?;
+
+    let error =
+        atomic_write_with_precondition(&target, "second\n", PRIVATE_FILE_MODE, |target: &Path| {
+            unchanged_identity(target, PRIVATE_FILE_MODE, original)
+        })
+        .refused_because("a replacement never becomes a creation")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert_eq!(cause_of(&error)?, no_such_file());
+    assert!(!target.exists(), "the target is not recreated");
+    assert!(!dir.path().join(".project.yaml.tmp").exists());
+    Ok(())
+}
+
+#[test]
+fn a_resumable_replacement_refuses_a_target_that_is_not_there_or_is_a_link() -> Checked {
+    let dir = temp_dir()?;
+
+    let missing = dir.path().join("project.yaml");
+    let error = atomic_replace_resumable(&missing, "version: 1\n", PRIVATE_FILE_MODE)
+        .refused_because("a file that is not there cannot be replaced")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert_eq!(cause_of(&error)?, no_such_file());
+    assert!(!missing.exists(), "a refused replacement creates nothing");
+
+    let real = dir.path().join("real.yaml");
+    fs::write(&real, "version: 1\n").required()?;
+    let link = dir.path().join("link.yaml");
+    std::os::unix::fs::symlink(&real, &link).required()?;
+    let error = atomic_replace_resumable(&link, "replaced", PRIVATE_FILE_MODE)
+        .refused_because("symlinked targets are refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ProjectPathSymlink));
+    assert_eq!(fs::read_to_string(&real).required()?, "version: 1\n");
+    Ok(())
+}
+
+/// 再開できる置き換えが`dir`に残した一時file。
+fn resumable_leftovers(dir: &Path) -> Checked<Vec<String>> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir).required_because("list the directory")? {
+        let name = entry
+            .required_because("read an entry")?
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
+        if name.starts_with(".project.yaml.") {
+            found.push(name);
+        }
+    }
+    Ok(found)
+}
+
+#[test]
+fn a_resumable_write_without_a_parent_directory_checks_and_writes_nothing() -> Checked {
+    // rootには一時fileを並べる親directoryが無い。precondition検査へ進む前に止まる。
+    let checked = std::cell::Cell::new(false);
+    let error = resumable_write_with_precondition(
+        Path::new("/"),
+        "version: 1\n",
+        PRIVATE_FILE_MODE,
+        |_: &Path| {
+            checked.set(true);
+            Ok(())
+        },
+    )
+    .refused_because("the root cannot be written as a file")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert_eq!(cause_of(&error)?, "missing parent");
+    assert!(
+        !checked.get(),
+        "nothing is checked for a write that cannot start"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resumable_replacement_leaves_a_target_that_became_a_different_file_alone() -> Checked {
+    let dir = temp_dir()?;
+    let target = dir.path().join("project.yaml");
+    atomic_create(&target, "first\n", PRIVATE_FILE_MODE).required_because("create")?;
+    let original = FileIdentity::of_path_without_following(&target).required()?;
+
+    // 検査のあと、書いている間に別のprocessがfileを作り直した状況を作る。
+    let replacement = dir.path().join("other.yaml");
+    atomic_create(&replacement, "second\n", PRIVATE_FILE_MODE).required_because("create")?;
+    fs::rename(&replacement, &target).required_because("swap the target")?;
+
+    let error = resumable_write_with_precondition(
+        &target,
+        "third\n",
+        PRIVATE_FILE_MODE,
+        |target: &Path| unchanged_identity(target, PRIVATE_FILE_MODE, original),
+    )
+    .refused_because("a target that changed identity is not overwritten")?;
+    assert_eq!(error.first_id(), Some(ErrorId::TargetChangedConcurrently));
+    assert_eq!(fs::read_to_string(&target).required()?, "second\n");
+    assert_eq!(
+        resumable_leftovers(dir.path())?,
+        Vec::<String>::new(),
+        "the temporary file of this run is cleaned up"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resumable_rename_the_operating_system_refuses_leaves_neither_side_changed() -> Checked {
+    let dir = temp_dir()?;
+    // 中身のあるdirectoryの上へはrenameできない。検査を通っても、置き換えは起きない。
+    let target = dir.path().join("occupied");
+    fs::create_dir(&target).required_because("create")?;
+    fs::write(target.join("kept"), b"x").required_because("write inside")?;
+
+    let error =
+        resumable_write_with_precondition(&target, "version: 1\n", PRIVATE_FILE_MODE, |_| Ok(()))
+            .refused_because("a target that cannot be replaced is refused")?;
+    assert_eq!(error.first_id(), Some(ErrorId::AtomicWriteFailed));
+    assert!(
+        !cause_of(&error)?.is_empty(),
+        "the operating system said why"
+    );
+    assert_eq!(fs::read_to_string(target.join("kept")).required()?, "x");
+    assert_eq!(
+        resumable_leftovers(dir.path())?,
+        Vec::<String>::new(),
+        "the temporary file of this run is cleaned up"
+    );
+    Ok(())
+}

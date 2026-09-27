@@ -312,3 +312,73 @@ fn removing_from_a_configuration_that_does_not_load_is_refused_for_its_own_reaso
     assert_eq!(error.first_id(), Some(ErrorId::ConfigUnknownVersion));
     Ok(())
 }
+
+#[test]
+fn files_written_in_a_shape_sbxm_does_not_extend_are_left_alone() -> Checked {
+    // どれも有効なconfigだが、宣言を足す位置と字下げを原文から決められない。
+    let cases = [
+        // `files`全体が別のkeyのalias。
+        "version: 1\nshared: &shared []\nfiles: *shared\n",
+        // `files`を明示的なkeyとして書き、値の行が分かれている。
+        "version: 1\nshared: &shared []\n? files\n: *shared\n",
+        // 最後の宣言が別のkeyのalias。
+        "version: 1\nentry: &entry {source: /Users/example/.gitconfig, destination: .gitconfig}\nfiles:\n  - *entry\n",
+        // `-`だけの行のあとに宣言が続く。
+        "version: 1\nfiles:\n  -\n    source: /Users/example/.gitconfig\n    destination: .gitconfig\n",
+    ];
+    for text in cases {
+        let (_dir, location) = location()?;
+        write_config(&location, text)?;
+        let before = loaded(&location)?.files;
+
+        let error = save_file_declaration(&location, &claude()?)
+            .refused_because(&format!("sbxm does not guess how to extend {text:?}"))?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ConfigNotRewritable),
+            "{text:?}"
+        );
+        assert_eq!(written(&location)?, text, "{text:?} is untouched");
+        assert_eq!(loaded(&location)?.files, before, "{text:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_declaration_listed_through_an_alias_is_not_removed_in_place() -> Checked {
+    let (_dir, location) = location()?;
+    // `files`は別のkeyのaliasである。外せば、aliasの元のkeyも変わる。
+    let text = "version: 1\nshared: &shared\n  - source: /Users/example/.gitconfig\n    destination: .gitconfig\nfiles: *shared\n";
+    write_config(&location, text)?;
+
+    let error = remove_file_declaration(
+        &location,
+        &SandboxHomeRelativePath::new(".gitconfig").required()?,
+    )
+    .refused_because("a list that is written elsewhere is not edited here")?;
+    let diagnostic = error.diagnostics().first().required()?;
+    assert_eq!(diagnostic.id, ErrorId::ConfigNotRewritable);
+    assert_eq!(
+        diagnostic
+            .remediation
+            .as_ref()
+            .and_then(|remediation| remediation.explanation.first())
+            .map(|message| message.id),
+        Some("remediation-file-declaration-not-removable")
+    );
+    assert_eq!(written(&location)?, text);
+    Ok(())
+}
+
+#[test]
+fn an_entry_past_the_end_of_files_is_not_removed() {
+    // 外す位置は読み取った宣言の数から決まる。原文の`files`がそれより短ければ、何も外さない。
+    let text =
+        "version: 1\nfiles:\n  - source: /Users/example/.gitconfig\n    destination: .gitconfig\n";
+    assert_eq!(remove_file_entry(text, 1), None);
+    assert_eq!(
+        remove_file_entry(text, 0).as_deref(),
+        Some("version: 1\nfiles: []\n"),
+        "the one entry that is there can be removed"
+    );
+}

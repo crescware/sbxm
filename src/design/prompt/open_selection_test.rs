@@ -112,3 +112,17 @@ fn a_prompt_with_no_projects_does_not_move_or_confirm_a_project() {
         }
     );
 }
+
+#[test]
+fn keys_the_open_prompt_does_not_use_leave_both_values_alone() {
+    // Spaceで選ぶ候補は無い。受け付けない打鍵と同じく、案件もindexも動かさない。
+    let mut selection = OpenSelection::new(2, &[Some(3); 2]);
+    selection.apply(Action::Next);
+    selection.apply(Action::IncreaseIndex);
+
+    for action in [Action::Toggle, Action::Ignore] {
+        assert_eq!(selection.apply(action), Transition::Continue, "{action:?}");
+        assert_eq!(selection.current_project(), 1, "{action:?}");
+        assert_eq!(selection.current_index(), 1, "{action:?}");
+    }
+}

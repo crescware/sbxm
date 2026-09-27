@@ -958,3 +958,220 @@ fn an_identity_value_that_git_cannot_use_is_refused() -> Checked {
     }
     Ok(())
 }
+
+// --- 編集に共通する前提 ---
+
+/// `~/.sbxm/config.yaml`を書き換える操作。書いたconfigのpathを返す。
+type Edit<'a> = &'a dyn Fn(&ConfigLocation) -> crate::diagnostics::Result<PathBuf>;
+
+fn gitconfig_declared() -> Checked<FileDeclaration> {
+    Ok(FileDeclaration {
+        source: HostFileSource::new("/Users/example/.gitconfig").required()?,
+        destination: SandboxHomeRelativePath::new(".gitconfig").required()?,
+    })
+}
+
+fn claude_declared() -> Checked<FileDeclaration> {
+    Ok(FileDeclaration {
+        source: HostFileSource::new("/Users/example/.claude/CLAUDE.md").required()?,
+        destination: SandboxHomeRelativePath::new(".claude/CLAUDE.md").required()?,
+    })
+}
+
+/// `.gitconfig`を宣言済みの、有効なconfig。
+const DECLARING_GITCONFIG: &str =
+    "version: 1\nfiles:\n  - source: /Users/example/.gitconfig\n    destination: .gitconfig\n";
+
+#[test]
+fn no_setting_is_saved_into_a_configuration_directory_other_accounts_can_open() -> Checked {
+    // 保存はどれも`~/.sbxm`の検査から始まる。広すぎるmodeを直さず、何も書かずに止まる。
+    let declared = gitconfig_declared()?;
+    let saves: [(&str, Edit); 3] = [
+        ("language", &|location| save_language(location, Locale::Ja)),
+        ("identity", &|location| {
+            save_git_identity(location, &example_identity())
+        }),
+        ("declaration", &|location| {
+            save_file_declaration(location, &declared)
+        }),
+    ];
+    for (setting, save) in saves {
+        let (_dir, location) = location()?;
+        fs::create_dir(location.dir()).required_because("create config dir")?;
+        fs::set_permissions(location.dir(), fs::Permissions::from_mode(0o755))
+            .required_because("open the config dir to other accounts")?;
+
+        let error = save(&location).refused_because(&format!(
+            "the {setting} is not saved into a directory other accounts can open"
+        ))?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::ConfigDirPermissionTooOpen),
+            "{setting}"
+        );
+        assert!(
+            !location.config_file().exists(),
+            "{setting}: nothing is written"
+        );
+        let mode = fs::metadata(location.dir())
+            .required()?
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode, 0o755,
+            "{setting}: sbxm must not repair permissions on its own"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn no_edit_writes_through_a_symlinked_configuration() -> Checked {
+    // 言語の保存は`a_symlinked_configuration_is_refused`が確かめる。ほかの編集も、原文を
+    // 読む前の同じ検査で止まる。
+    let declared = claude_declared()?;
+    let destination = SandboxHomeRelativePath::new(".gitconfig").required()?;
+    let edits: [(&str, Edit); 3] = [
+        ("identity", &|location| {
+            save_git_identity(location, &example_identity())
+        }),
+        ("declaration", &|location| {
+            save_file_declaration(location, &declared)
+        }),
+        ("removal", &|location| {
+            remove_file_declaration(location, &destination).map(|(path, _)| path)
+        }),
+    ];
+    for (edit, run) in edits {
+        let (dir, location) = location()?;
+        fs::create_dir_all(location.dir()).required()?;
+        fs::set_permissions(location.dir(), fs::Permissions::from_mode(PRIVATE_DIR_MODE))
+            .required()?;
+        let real = dir.path().join("real-config.yaml");
+        fs::write(&real, DECLARING_GITCONFIG).required()?;
+        std::os::unix::fs::symlink(&real, location.config_file()).required()?;
+
+        let error = run(&location)
+            .refused_because(&format!("the {edit} is never written through a symlink"))?;
+        assert_eq!(error.first_id(), Some(ErrorId::ConfigSymlink), "{edit}");
+        assert_eq!(
+            fs::read_to_string(&real).required()?,
+            DECLARING_GITCONFIG,
+            "{edit}: the file behind the link is untouched"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_temporary_file_an_interrupted_save_left_behind_stops_the_next_edit() -> Checked {
+    // 前回の保存が中断して残した一時file。消さずに残し、利用者が中身を確かめてから消せる
+    // ようにする。
+    let declared = claude_declared()?;
+    let destination = SandboxHomeRelativePath::new(".gitconfig").required()?;
+    // (編集, 既存configの原文)。原文が無ければ、新しく作る経路を通る。
+    let edits: [(&str, Option<&str>, Edit); 4] = [
+        ("language", None, &|location| {
+            save_language(location, Locale::Ja)
+        }),
+        ("identity", Some(DECLARING_GITCONFIG), &|location| {
+            save_git_identity(location, &example_identity())
+        }),
+        ("declaration", Some(DECLARING_GITCONFIG), &|location| {
+            save_file_declaration(location, &declared)
+        }),
+        ("removal", Some(DECLARING_GITCONFIG), &|location| {
+            remove_file_declaration(location, &destination).map(|(path, _)| path)
+        }),
+    ];
+    for (edit, before, run) in edits {
+        let (_dir, location) = location()?;
+        if let Some(text) = before {
+            write_config(&location, text)?;
+        } else {
+            fs::create_dir(location.dir()).required()?;
+            fs::set_permissions(location.dir(), fs::Permissions::from_mode(PRIVATE_DIR_MODE))
+                .required()?;
+        }
+        let leftover = location.dir().join(".config.yaml.tmp");
+        fs::write(&leftover, "interrupted").required()?;
+
+        let error = run(&location)
+            .refused_because(&format!("the {edit} stops at the leftover temporary file"))?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::TempFileLeftBehind),
+            "{edit}"
+        );
+        assert_eq!(
+            fs::read_to_string(&leftover).required()?,
+            "interrupted",
+            "{edit}: the leftover is kept for inspection"
+        );
+        match before {
+            Some(text) => assert_eq!(
+                fs::read_to_string(location.config_file()).required()?,
+                text,
+                "{edit}: the configuration is untouched"
+            ),
+            None => assert!(
+                !location.config_file().exists(),
+                "{edit}: no configuration is created"
+            ),
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn the_configuration_is_never_written_through_a_symlink_that_took_its_place() -> Checked {
+    // 原文を読んだあと書くまでの間に、configのpathがsymlinkへ差し替えられた状況を作る。
+    let (dir, location) = location()?;
+    fs::create_dir_all(location.dir()).required()?;
+    fs::set_permissions(location.dir(), fs::Permissions::from_mode(PRIVATE_DIR_MODE)).required()?;
+    let real = dir.path().join("elsewhere.yaml");
+    fs::write(&real, "version: 1\n").required()?;
+    std::os::unix::fs::symlink(&real, location.config_file()).required()?;
+
+    let error = super::write_config(&location.config_file(), "version: 1\nlanguage: ja\n")
+        .refused_because("a symlink is never written through")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigSymlink));
+    assert_eq!(fs::read_to_string(&real).required()?, "version: 1\n");
+    assert!(
+        fs::symlink_metadata(location.config_file())
+            .required()?
+            .file_type()
+            .is_symlink(),
+        "sbxm must not remove what it refused to write"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_declared_file_that_is_not_a_mapping_is_counted_but_has_no_key_to_call_unknown() -> Checked {
+    // 宣言がmappingでなくても、警告を集める段では拒否しない。拒否は続く読み取りが行う。
+    let path = Path::new("/Users/example/.sbxm/config.yaml");
+    let text = "version: 1\nfiles:\n  - /Users/example/.gitconfig\n  - source: /a\n    destination: a\n    sync: both\n";
+    let document: yaml_serde::Value =
+        yaml_serde::from_str(text).required_because("a list of anything is valid YAML")?;
+
+    let warnings = unknown_key_warnings(&document, path);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(
+        warnings[0].description.id,
+        "warning-config-unknown-file-key"
+    );
+    // 利用者が数える順には、読み飛ばした宣言も入る。
+    let entry = warnings[0]
+        .description
+        .args
+        .iter()
+        .find_map(|(name, value)| (*name == "entry").then(|| value.clone()))
+        .required_because("the warning names the entry")?;
+    assert_eq!(entry, "2");
+
+    let error = parse(text, path).refused_because("a declaration must be a mapping")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ConfigInvalidSyntax));
+    Ok(())
+}
