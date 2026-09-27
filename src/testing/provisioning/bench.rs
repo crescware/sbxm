@@ -23,7 +23,7 @@ use crate::design::{ProgressSink, SilentProgress};
 pub struct Bench {
     pub parent: ProjectParent,
     pub _base: tempfile::TempDir,
-    pub _home: tempfile::TempDir,
+    pub home: tempfile::TempDir,
     pub workspace_root: tempfile::TempDir,
     pub location: ConfigLocation,
     pub config: GlobalConfig,
@@ -59,7 +59,7 @@ impl Bench {
             location: ConfigLocation::from_home(home.path().to_path_buf()),
             parent: ProjectParent::at(base.path()).required_because("valid parent directory")?,
             _base: base,
-            _home: home,
+            home,
             workspace_root,
             config,
         })

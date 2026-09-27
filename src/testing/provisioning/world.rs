@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::boundary::host::{CommandOutcome, TimeoutClass};
-use crate::diagnostics::Result;
+use crate::boundary::host::{CommandOutcome, CommandSpec, TimeoutClass};
+use crate::diagnostics::{Error, ErrorId, Result};
+use crate::msg;
 
 use crate::support::tools;
 
@@ -40,10 +41,14 @@ pub struct World {
     pub default_branch: String,
     /// 一致した起動を、実行せずにこのexit statusと標準出力で答える。副作用は起こさない。
     pub answer: RefCell<Option<(String, i32, String)>>,
+    /// 一致した起動を、exit statusを返さずにこの関数が作るerrorで終わらせる。副作用は
+    /// 起こさない。
+    #[allow(clippy::type_complexity)]
+    pub interruption: RefCell<Option<(String, fn(&CommandSpec) -> Error)>>,
     pub calls: RefCell<Vec<crate::boundary::host::CommandSpec>>,
     /// 一致した起動の直前に、hostの外で誰かが書き換えたことを模したclosureを1回走らせる。
     #[allow(clippy::type_complexity)]
-    pub mutate_before: RefCell<Option<(String, Box<dyn Fn()>)>>,
+    pub mutate_before: RefCell<Option<(String, Box<dyn Fn(&World)>)>>,
 }
 
 impl World {
@@ -73,6 +78,7 @@ impl World {
             ),
             default_branch: "main".to_string(),
             answer: RefCell::new(None),
+            interruption: RefCell::new(None),
             calls: RefCell::new(Vec::new()),
             mutate_before: RefCell::new(None),
         }
@@ -82,6 +88,14 @@ impl World {
     /// 1回だけ走らせる。TOCTOU再現のために、固定した入力を使うはずの工程が実際に
     /// live pathを読んでいないことを確かめる。
     pub fn mutate_before(&self, needle: &str, action: impl Fn() + 'static) {
+        self.change_before(needle, move |_| action());
+    }
+
+    /// 次に指定と一致する起動の直前に、この世界の応答を1回だけ変える。
+    ///
+    /// 同じ起動が工程の前半にも後半にも現れる場合に、前半を成功させたまま後半だけを
+    /// 失敗させるために使う。
+    pub fn change_before(&self, needle: &str, action: impl Fn(&World) + 'static) {
         *self.mutate_before.borrow_mut() = Some((needle.to_string(), Box::new(action)));
     }
 
@@ -132,8 +146,17 @@ impl World {
         *self.answer.borrow_mut() = Some((needle.to_string(), code, stdout.to_string()));
     }
 
+    /// 次の実行で、指定した起動を期限切れで終わらせる。
+    ///
+    /// 実物のhostは、期限を過ぎたcommandを終わらせてから`Err`で返す。exit statusを
+    /// 返した失敗とは違い、呼び出し側へは`Err`として届く。
+    pub fn timing_out(&self, needle: &str) {
+        *self.interruption.borrow_mut() = Some((needle.to_string(), timed_out));
+    }
+
     pub fn nothing_fails(&self) {
         *self.answer.borrow_mut() = None;
+        *self.interruption.borrow_mut() = None;
     }
 
     pub fn invocations(&self) -> Vec<String> {
@@ -177,6 +200,18 @@ impl World {
     }
 }
 
+/// 期限を過ぎた起動を、実物のhostと同じ診断で終わらせる。
+fn timed_out(spec: &CommandSpec) -> Error {
+    Error::new(
+        ErrorId::ExternalCommandTimeout,
+        msg!(
+            "error-external-command-timeout",
+            program = spec.program,
+            seconds = 10
+        ),
+    )
+}
+
 impl crate::boundary::host::HostEnvironment for World {
     fn command_exists(&self, _program: &str) -> bool {
         true
@@ -205,8 +240,20 @@ impl crate::boundary::host::HostEnvironment for World {
             .borrow()
             .as_ref()
             .is_some_and(|(needle, _)| invocation.contains(needle.as_str()));
-        if matched && let Some((_, action)) = self.mutate_before.borrow_mut().take() {
-            action();
+        // closureがこの世界を変えられるよう、借用を解いてから走らせる。
+        let armed = if matched {
+            self.mutate_before.borrow_mut().take()
+        } else {
+            None
+        };
+        if let Some((_, action)) = armed {
+            action(self);
+        }
+
+        if let Some((needle, interrupt)) = self.interruption.borrow().as_ref()
+            && invocation.contains(needle.as_str())
+        {
+            return Err(interrupt(spec));
         }
 
         if let Some((needle, code, stdout)) = self.answer.borrow().as_ref()
