@@ -4,8 +4,6 @@ use crate::support::disk::DiskObservation;
 use crate::support::provisioning::ProvisioningOutput;
 use crate::support::select::Candidate;
 
-use super::ClampedIndex;
-
 /// 接続先と、接続前に見せる情報。
 #[derive(Debug)]
 pub struct Prepared {
@@ -18,10 +16,9 @@ pub struct Prepared {
     pub ssh_host: String,
     /// SSH sessionを開始するSandbox内のdirectory。
     pub working_directory: String,
-    /// 指定されたindexが見つからず、repository rootへfallbackした場合のindex。
+    /// `--index`またはpromptで確定したindexが、lock後のmetadataが宣言するworktreeに無く、
+    /// repository rootへfallbackした場合のindex。
     pub missing_worktree_index: Option<u32>,
-    /// promptで確定したindexを、lock済みmetadataの範囲まで下げた場合のその内訳。
-    pub clamped_worktree_index: Option<ClampedIndex>,
     pub worktrees: Vec<String>,
     /// SSH接続前に観測した、root filesystemの使用量。
     pub disk: DiskObservation,

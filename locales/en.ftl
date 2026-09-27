@@ -49,7 +49,6 @@ cli-open-about = Open an SSH session to a project's sandbox, building it on the 
 cli-open-project-help = Registered owner/repository ID of the project to open
 cli-open-index-help = Start in the Nth managed worktree instead of the repository root (zero-based)
 warning-open-worktree-not-found = Managed worktree { $index } was not found; opening the repository root instead.
-warning-open-worktree-index-clamped = This project has no managed worktree { $requested }; opening managed worktree { $index } instead.
 
 select-guide-topic-heading = What do you need guidance for?
 select-guide-project-heading = Which project is this guidance for?
@@ -814,7 +813,7 @@ prompt-key-toggle = Toggle
 prompt-key-confirm = Confirm
 prompt-key-cancel = Cancel
 prompt-worktree-index = Worktree index: { $index } (0-{ $maximum })
-prompt-worktree-index-calculating = Worktree index: { $index } (calculating)
+prompt-worktree-index-unreadable = Worktree index: { $index } (metadata unreadable)
 destroy-recovery-heading = Recovery
 open-worktrees-heading = Managed worktrees in this sandbox
 status-no-worktrees = No managed worktree was observed.

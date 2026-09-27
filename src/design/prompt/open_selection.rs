@@ -2,28 +2,26 @@ use super::{Action, Transition};
 
 /// `open`で案件とmanaged worktree indexを同時に選ぶ状態。
 ///
-/// 上下キーは案件、左右キーはindexへ割り当てる。metadataはprompt表示を待たせないため、
-/// 案件ごとの最大値は計算結果が届くまで未確定である。未確定のあいだは呼び出し側が渡す
-/// 天井まで動かせるが、その値は案件の答えではないので最大値としては示さない。
-/// 結果が届いた時点で、現在のindexはその案件の最大値へ収める。
+/// 上下キーは案件、左右キーはindexへ割り当てる。案件ごとの最後のindexは組み立てる
+/// 時点で揃っている。metadataを読めなかった案件は`None`で、範囲を持たずindexは0から
+/// 動かない。案件を移ると、indexは移った先の範囲へ収める。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenSelection {
     project_count: usize,
     current_project: usize,
     current_index: u32,
-    /// metadataが未確定のあいだ動かせるindexの上限。
-    ceiling: u32,
     maximum_indexes: Vec<Option<u32>>,
 }
 
 impl OpenSelection {
-    pub fn new(project_count: usize, ceiling: u32) -> OpenSelection {
+    /// `maximum_indexes`が`project_count`に足りない案件は、metadataを読めなかった案件と
+    /// 同じく範囲を持たない。
+    pub fn new(project_count: usize, maximum_indexes: &[Option<u32>]) -> OpenSelection {
         OpenSelection {
             project_count,
             current_project: 0,
             current_index: 0,
-            ceiling,
-            maximum_indexes: vec![None; project_count],
+            maximum_indexes: maximum_indexes.to_vec(),
         }
     }
 
@@ -35,23 +33,12 @@ impl OpenSelection {
         self.current_index
     }
 
-    /// 現在の案件の最大index。計算がまだ届いていなければ`None`。
+    /// 現在の案件の最後のindex。metadataを読めなかった案件は`None`。
     pub fn maximum_index(&self) -> Option<u32> {
         self.maximum_indexes
             .get(self.current_project)
             .copied()
             .flatten()
-    }
-
-    /// metadataの計算結果で、指定案件の最大indexを確定する。
-    pub fn set_maximum(&mut self, project: usize, maximum: u32) {
-        let Some(maximum_index) = self.maximum_indexes.get_mut(project) else {
-            return;
-        };
-        *maximum_index = Some(maximum);
-        if self.current_project == project {
-            self.current_index = self.current_index.min(maximum);
-        }
     }
 
     /// 打鍵を案件またはindexの状態へ反映する。
@@ -82,9 +69,9 @@ impl OpenSelection {
         }
     }
 
-    /// いま動かせるindexの上限。案件の最大値が未確定のあいだは天井を使う。
+    /// いま動かせるindexの上限。範囲を持たない案件では0から動かさない。
     fn bound(&self) -> u32 {
-        self.maximum_index().unwrap_or(self.ceiling)
+        self.maximum_index().unwrap_or(0)
     }
 
     fn move_project(&mut self, offset: usize) {

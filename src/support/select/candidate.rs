@@ -9,7 +9,8 @@ use super::{Locked, incomplete_registration, inconsistent_registration};
 
 /// 選択された1案件。runtime状態は持たない。
 ///
-/// 表示に必要な情報はregistry entryだけで揃う。metadataはlockを取ってから読む。
+/// 表示に必要な情報はregistry entryで揃う。`open`のpromptが範囲を示すために読むmetadataは
+/// 表示だけに使い、判定はlockを取ってから読み直す。
 #[derive(Debug, Clone)]
 pub struct Candidate {
     pub paths: ProjectPaths,
@@ -22,9 +23,10 @@ impl Candidate {
         self.repository.display_id()
     }
 
-    /// lock取得後に読み直したmetadata。
+    /// registry entryが指すmetadataを読み直す。
     ///
-    /// 選択時に読んだmetadataは古くなり得るため、preconditionの判定にはこちらを使う。
+    /// lockを取らずに読んだmetadataは読んだ直後に古くなり得るため、表示や早い拒否にだけ使い、
+    /// preconditionの判定にはlockを取ってから読み直したものを使う。
     /// registry entryと一致しないmetadataは、どちらかを正しいものとして採用しない。
     pub fn reload(&self) -> Result<ProjectMetadata> {
         self.verify_root()?;

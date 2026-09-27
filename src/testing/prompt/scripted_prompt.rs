@@ -10,6 +10,8 @@ pub struct ScriptedPrompt {
     pub asked: std::cell::RefCell<Vec<Vec<String>>>,
     /// 訊かれた見出し。commandが何を訊いたかをtestが確かめる。
     pub headings: std::cell::RefCell<Vec<&'static str>>,
+    /// `select_open`へ渡された案件ごとの最後のindex。
+    pub maximums: std::cell::RefCell<Vec<Vec<Option<u32>>>>,
 }
 
 impl ScriptedPrompt {
@@ -21,6 +23,7 @@ impl ScriptedPrompt {
             canceled: false,
             asked: std::cell::RefCell::new(Vec::new()),
             headings: std::cell::RefCell::new(Vec::new()),
+            maximums: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -39,6 +42,7 @@ impl ScriptedPrompt {
             canceled: false,
             asked: std::cell::RefCell::new(Vec::new()),
             headings: std::cell::RefCell::new(Vec::new()),
+            maximums: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -50,6 +54,7 @@ impl ScriptedPrompt {
             canceled: true,
             asked: std::cell::RefCell::new(Vec::new()),
             headings: std::cell::RefCell::new(Vec::new()),
+            maximums: std::cell::RefCell::new(Vec::new()),
         }
     }
 }
@@ -75,16 +80,16 @@ impl ProjectPrompt for ScriptedPrompt {
         &mut self,
         heading: &Msg,
         candidates: &[String],
-        ceiling: u32,
-        maximums: &mut dyn FnMut(usize) -> Option<u32>,
+        maximums: &[Option<u32>],
     ) -> Result<(usize, u32)> {
-        // 決め打ちのpromptは描画しないため、案件ごとの計算結果は使わない。
-        let _ = maximums;
         self.record(heading, candidates);
+        self.maximums.borrow_mut().push(maximums.to_vec());
         if self.canceled {
             return Err(Error::Canceled);
         }
-        Ok((self.one, self.index.min(ceiling)))
+        // 決め打ちの値をそのまま返す。範囲へ収めるのは実端末のpromptであり、範囲外の値は
+        // lock後の読み直しが扱う経路をtestから踏むために使う。
+        Ok((self.one, self.index))
     }
 }
 

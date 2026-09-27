@@ -1,6 +1,6 @@
 use crate::boundary::host::protocol::RootDiskUsage;
 use crate::commands::{Context, open::Args};
-use crate::design::prompt::{Key, RecordedScreen, ScriptedKeys};
+use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::design::{PromptUi, RenderingPolicy, Ui};
 use crate::diagnostics::{ErrorId, ExitCode, Result};
 use crate::i18n::Locale;
@@ -13,7 +13,7 @@ use crate::testing::recorded_output::RecordedOutput;
 use super::*;
 use crate::boundary::host::{OutputPolicy as CommandOutputPolicy, TimeoutClass};
 use crate::design::SilentProgress;
-use crate::metadata::{self, MAX_WORKTREE_INDEX, RebuildIntent};
+use crate::metadata::{self, RebuildIntent};
 use crate::paths::{self, PRIVATE_FILE_MODE, PathScope};
 use crate::testing::host::{FakeSbx, assert_lifecycle, isolated_agent};
 use crate::testing::poll::poll;
@@ -323,98 +323,6 @@ fn a_sandbox_missing_df_is_reported_before_ssh_handover() -> Checked {
     Ok(())
 }
 
-/// Enterを返す直前に、案件のmetadataを書き換えるkey source。
-///
-/// promptは、案件のmetadataを裏のthreadで読みながら表示する。その読み込みがいつ届くかに
-/// 依らず、promptが受け付けた値とlock後のmetadataが食い違う状況を作る。
-struct RewritingOnEnter {
-    keys: ScriptedKeys,
-    rewrite: Option<Box<dyn FnOnce()>>,
-}
-
-impl crate::design::prompt::Keys for RewritingOnEnter {
-    fn read_key(&mut self) -> std::io::Result<Key> {
-        let key = crate::design::prompt::Keys::read_key(&mut self.keys)?;
-        if key == Key::Enter
-            && let Some(rewrite) = self.rewrite.take()
-        {
-            rewrite();
-        }
-        Ok(key)
-    }
-}
-
-#[test]
-fn an_index_beyond_the_project_is_reported_before_the_terminal_is_handed_over() -> Checked {
-    let fixture = Fixture::new()?;
-    let project = fixture.register("example-org/example-repo")?;
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
-    let host = ready(FakeSbx::listing(&running), &project)?;
-
-    // promptを開いた時点の案件は8本のworktreeを持つ。裏の読み込みが先に届いても、
-    // 5番目まで進める。確定した直後に1本へ戻し、lock後のmetadataで範囲へ収めさせる。
-    let original = project.metadata.clone();
-    let mut wider = original.clone();
-    wider.provisioning.mode = crate::metadata::CreationMode::Detached;
-    wider.provisioning.requested_worktrees = 8;
-    metadata::update(&project.paths, &wider).required()?;
-    let paths = project.paths.clone();
-    let rewrite: Box<dyn FnOnce()> = Box::new(move || {
-        assert!(metadata::update(&paths, &original).is_ok());
-    });
-
-    let mut keys = vec![Key::ArrowRight; 5];
-    keys.push(Key::Enter);
-    let keys = RewritingOnEnter {
-        keys: ScriptedKeys::pressing(&keys),
-        rewrite: Some(rewrite),
-    };
-
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = {
-        let policy = RenderingPolicy::plain();
-        let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
-        let mut prompt = PromptUi::new(
-            Locale::En,
-            policy.stderr,
-            Box::new(keys),
-            Box::new(RecordedScreen::new()),
-        );
-        let context = Context {
-            location: &fixture.location,
-            workspace_root: &fixture.workspace_root,
-            locale: Locale::En,
-            can_prompt: true,
-        };
-        crate::commands::open::exec(
-            &Args {
-                project: None,
-                index: None,
-            },
-            &context,
-            &mut ui,
-            &host,
-            &mut prompt,
-        )
-    };
-
-    assert_eq!(code, ExitCode::Success);
-    let stderr = String::from_utf8(stderr).required_because("open stderr is UTF-8")?;
-    assert!(
-        stderr.contains("has no managed worktree 5"),
-        "the clamp names what was asked for: {stderr:?}"
-    );
-    assert!(
-        stderr.contains("opening managed worktree 0"),
-        "the clamp names where the session starts: {stderr:?}"
-    );
-    Ok(())
-}
-
 #[test]
 fn a_selected_worktree_becomes_the_ssh_starting_directory() -> Checked {
     let fixture = Fixture::new()?;
@@ -437,18 +345,19 @@ fn a_selected_worktree_becomes_the_ssh_starting_directory() -> Checked {
 }
 
 #[test]
-fn an_interactive_index_is_bounded_by_the_selected_projects_worktrees() -> Checked {
+fn an_interactive_index_the_locked_metadata_no_longer_declares_falls_back_to_the_repository_root()
+-> Checked {
+    // promptが範囲を読んだあと、lockを取るまでに案件のmetadataが宣言するworktreeが減った
+    // 場合に当たる。`apply`は減らさないが、destroyしてから少ない数で追加し直すことや、
+    // metadataを手で書き換えることで起こり得る。決め打ちのpromptは範囲へ収めずに値を
+    // 返すため、時機に依らずこの状況を作れる。
     let fixture = Fixture::new()?;
-    let mut project = fixture.register("example-org/example-repo")?;
-    project.metadata.provisioning.requested_worktrees = 5;
-    metadata::update(&project.paths, &project.metadata)
-        .required_because("record five managed worktrees")?;
+    let project = fixture.register("example-org/example-repo")?;
     let running = format!(
         r#"{{"sandboxes":[{}]}}"#,
         fixture.entry(&project, "running")?
     );
     let host = ready(FakeSbx::listing(&running), &project)?;
-    let mut prompt = ScriptedPrompt::choosing_worktree(99);
 
     let prepared = prepare(
         &fixture.location,
@@ -456,26 +365,22 @@ fn an_interactive_index_is_bounded_by_the_selected_projects_worktrees() -> Check
         None,
         None,
         &host,
-        &mut prompt,
+        &mut ScriptedPrompt::choosing_worktree(4),
         &fixture.workspace_root,
         poll(),
         &mut SilentProgress,
     )
-    .required_because("prepare the selected worktree")?;
+    .required_because("an index outside the locked metadata still opens the project")?;
 
     assert_eq!(
-        prepared.working_directory, "/home/agent/work/example-repo/example-repo.tree-4",
-        "the optimistic index the prompt accepted is brought down to what the metadata declares"
+        prepared.working_directory, "/home/agent/work/example-repo",
+        "the session starts where `--index` would, not in a worktree guessed for the user"
     );
     assert_eq!(
-        prepared.clamped_worktree_index,
-        Some(ClampedIndex {
-            requested: MAX_WORKTREE_INDEX,
-            opened: 4,
-        }),
-        "the difference between the confirmed value and the connection is not swallowed"
+        prepared.missing_worktree_index,
+        Some(4),
+        "the confirmed value that was not found is reported before connecting"
     );
-    assert_eq!(prepared.missing_worktree_index, None);
     Ok(())
 }
 
@@ -510,8 +415,8 @@ fn an_interactive_index_inside_the_metadata_is_opened_without_a_warning() -> Che
         "/home/agent/work/example-repo/example-repo.tree-2"
     );
     assert_eq!(
-        prepared.clamped_worktree_index, None,
-        "a value the project can satisfy is not reported as an adjustment"
+        prepared.missing_worktree_index, None,
+        "a value the project can satisfy is not reported as missing"
     );
     Ok(())
 }
@@ -530,6 +435,60 @@ fn an_unconfigured_worktree_index_falls_back_to_the_repository_root() -> Checked
         .required_because("an unknown worktree falls back to the root")?;
     assert_eq!(prepared.working_directory, "/home/agent/work/example-repo");
     assert_eq!(prepared.missing_worktree_index, Some(1));
+    Ok(())
+}
+
+#[test]
+fn a_missing_worktree_is_reported_before_the_terminal_is_handed_over() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let running = format!(
+        r#"{{"sandboxes":[{}]}}"#,
+        fixture.entry(&project, "running")?
+    );
+    let host = ready(FakeSbx::listing(&running), &project)?;
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = {
+        let policy = RenderingPolicy::plain();
+        let mut ui = Ui::capture(Locale::En, policy, &mut stdout, &mut stderr);
+        let mut prompt = PromptUi::new(
+            Locale::En,
+            policy.stderr,
+            Box::new(ScriptedKeys::confirming()),
+            Box::new(RecordedScreen::new()),
+        );
+        let context = Context {
+            location: &fixture.location,
+            workspace_root: &fixture.workspace_root,
+            locale: Locale::En,
+            can_prompt: false,
+        };
+        crate::commands::open::exec(
+            &Args {
+                project: Some(project_id("example-org/example-repo")?),
+                index: Some(1),
+            },
+            &context,
+            &mut ui,
+            &host,
+            &mut prompt,
+        )
+    };
+
+    assert_eq!(code, ExitCode::Success);
+    let stderr = String::from_utf8(stderr).required_because("open stderr is UTF-8")?;
+    let warned = stderr
+        .find("Managed worktree 1 was not found; opening the repository root instead.")
+        .required_because("the missing worktree is named")?;
+    let connecting = stderr
+        .find("Connecting to")
+        .required_because("the connection is announced")?;
+    assert!(
+        warned < connecting,
+        "the difference is shown before the connection: {stderr:?}"
+    );
     Ok(())
 }
 

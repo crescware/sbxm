@@ -4,7 +4,7 @@ use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::{ConfigLocation, GlobalConfig};
 use crate::design::{Fact, Warning};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
-use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata, last_worktree_index};
+use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
 
@@ -13,7 +13,7 @@ use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{daemon, disk, docker, generation, provisioning, sandbox, worktree};
 
-use super::{ClampedIndex, Prepared};
+use super::Prepared;
 
 /// `SSHへ引き渡せる状態までSandboxを整える`。
 ///
@@ -41,18 +41,12 @@ pub fn prepare(
     poll: Poll,
     progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
-    let interactive_index = requested.is_none() && index.is_none();
-    // 認証はexecで確認済み。案件のmetadataはprompt表示前には待たないため、
-    // interactiveなindexは設定上限相当の楽観的な値まで受け付ける。promptの裏で計算が終われば
-    // 表示中の最大値へ反映し、最後はlock済みmetadataでclampする。clampした事実は
-    // `Prepared`へ載せ、接続前に見せる。
-    let (candidate, index) = if interactive_index {
-        let (candidate, index) = select::open(
-            location,
-            &msg!("select-open-heading"),
-            prompt,
-            MAX_WORKTREE_INDEX,
-        )?;
+    // 案件をpromptで選ぶときは、indexも同じ画面で選ぶ。promptが示す範囲はlockの前に
+    // 読んだものであり、確定からlockまでに変わり得る。範囲の外になった値は`--index`と
+    // 同じく、lock後のmetadataが宣言するworktreeに無ければrepository rootへ繋ぎ、
+    // 接続前に知らせる。
+    let (candidate, index) = if requested.is_none() && index.is_none() {
+        let (candidate, index) = select::open(location, &msg!("select-open-heading"), prompt)?;
         (candidate, Some(index))
     } else {
         (
@@ -61,11 +55,6 @@ pub fn prepare(
         )
     };
     let mut locked = candidate.lock()?;
-    let (index, clamped_worktree_index) = if interactive_index {
-        clamp_to_metadata(index, &locked.metadata)
-    } else {
-        (index, None)
-    };
 
     generation::require_no_rebuild(&locked.metadata)?;
     docker::require_reachable(host)?;
@@ -105,7 +94,6 @@ pub fn prepare(
         ssh_host: sandbox::ssh_host(name.as_str()),
         working_directory,
         missing_worktree_index,
-        clamped_worktree_index,
         worktrees,
         disk,
         provisioned,
@@ -221,29 +209,6 @@ fn restore_workspace(
             .fact(Fact::path(&crate::paths::display(&ready.workspace)))
             .explain(msg!("guidance-workspace-restored"))
     }))
-}
-
-/// promptの楽観的な上限で確定したindexを、lock済みmetadataの範囲へ収める。
-///
-/// 収めた場合は、その内訳も返す。呼び出し側は接続前にそれを見せる。
-fn clamp_to_metadata(
-    index: Option<u32>,
-    metadata: &ProjectMetadata,
-) -> (Option<u32>, Option<ClampedIndex>) {
-    let maximum = last_worktree_index(metadata.provisioning.requested_worktrees);
-    let Some(requested) = index else {
-        return (None, None);
-    };
-    if requested <= maximum {
-        return (Some(requested), None);
-    }
-    (
-        Some(maximum),
-        Some(ClampedIndex {
-            requested,
-            opened: maximum,
-        }),
-    )
 }
 
 /// indexなし、または見つからないindexはrepository rootへ接続する。

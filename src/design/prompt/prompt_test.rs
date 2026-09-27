@@ -344,7 +344,7 @@ fn the_confirmed_value_is_left_as_its_own_line() {
 #[test]
 fn the_open_frame_reserves_exactly_the_rows_the_viewport_subtracts() {
     let labels = labels();
-    let selection = OpenSelection::new(labels.len(), 4);
+    let selection = OpenSelection::new(labels.len(), &[Some(4); 3]);
     let drawn = painter(StreamPolicy::plain()).open_frame(
         &msg!("select-open-heading"),
         &labels,

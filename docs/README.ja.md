@@ -150,10 +150,10 @@ cloneし、managed worktreeを作成してからSSHで接続します。2回目�
 
 対話端末でproject IDを省略すると、1つのpromptで上下キーから案件、左右キーから
 0始まりのmanaged worktree indexを選び、Enter 1回で両方を確定します。認証を確認したら、
-projectのmetadataを待たずにpromptを開きます。結果が届くまでのindex行は`(計算中)`と述べるだけで、
-まだ分からない範囲を数として示しません。そのあいだもindexは動かせます。metadataは裏で計算し、
-選択中の案件の結果が届いたらその案件自身の範囲を表示して、indexをその中に収めます。
-確定時にもproject lockのmetadataで再確認し、下げた場合は接続前に警告します。
+各案件のmetadataを読んでからpromptを開きます。index行は選択中の案件自身の範囲を示します。
+metadataを読めない案件はindex行でそう述べ、indexは0から動かず、選ぶとその理由を報告します。
+確定した値はproject lockの下で再確認し、その案件がそのmanaged worktreeを宣言していなければ、
+`--index`と同じく警告してrepository rootを開きます。
 
 Sandbox内のworktreeは次の場所にあります。
 

@@ -2,7 +2,6 @@ use crate::design::policy::StreamPolicy;
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
 use crate::diagnostics::{ErrorId, ExitCode, Msg};
 use crate::i18n::{Catalog, Locale};
-use crate::metadata::MAX_WORKTREE_INDEX;
 use crate::msg;
 use crate::testing::outcome::{Checked, Refused, Required};
 
@@ -28,11 +27,6 @@ fn prompt(keys: ScriptedKeys, screen: &RecordedScreen) -> PromptUi {
     )
 }
 
-/// metadataの計算がまだ届いていない状態。楽観的な上限だけで描く。
-fn no_maximums() -> impl FnMut(usize) -> Option<u32> {
-    |_project| None
-}
-
 fn heading() -> Msg {
     msg!("select-open-heading")
 }
@@ -42,7 +36,7 @@ fn a_project_and_worktree_index_are_confirmed_from_one_prompt() -> Checked {
     let screen = RecordedScreen::new();
     let keys = [Key::ArrowDown, Key::ArrowRight, Key::ArrowRight, Key::Enter];
     let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_open(&heading(), &labels(), 4, &mut no_maximums())
+        .select_open(&heading(), &labels(), &[Some(4); 3])
         .required_because("the project and index are confirmed together")?;
 
     assert_eq!(chosen, (1, 2));
@@ -54,64 +48,65 @@ fn a_project_and_worktree_index_are_confirmed_from_one_prompt() -> Checked {
 }
 
 #[test]
-fn an_open_prompt_states_no_range_until_the_maximum_is_calculated() -> Checked {
-    let screen = RecordedScreen::new();
-    let keys = [Key::ArrowRight, Key::ArrowRight, Key::Enter];
-    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_open(
-            &heading(),
-            &labels(),
-            MAX_WORKTREE_INDEX,
-            &mut no_maximums(),
-        )
-        .required_because("the prompt is ready without metadata")?;
-
-    assert_eq!(chosen, (0, 2), "the index still moves while it is unknown");
-    assert!(
-        screen
-            .drawn()
-            .iter()
-            .any(|line| line.contains("Worktree index: 2 (calculating)")),
-        "the wait is named rather than filled in with the ceiling: {:?}",
-        screen.drawn()
-    );
-    assert!(
-        !screen
-            .drawn()
-            .iter()
-            .any(|line| line.contains(&format!("0-{MAX_WORKTREE_INDEX}"))),
-        "the ceiling is not this project's range and is never shown as one: {:?}",
-        screen.drawn()
-    );
-    Ok(())
-}
-
-#[test]
-fn a_calculated_maximum_reduces_the_bound_while_the_prompt_is_open() -> Checked {
+fn the_range_follows_the_project_under_the_cursor() -> Checked {
     let screen = RecordedScreen::new();
     let keys = [
         Key::ArrowRight,
         Key::ArrowRight,
         Key::ArrowRight,
+        Key::ArrowDown,
         Key::Enter,
     ];
-    let mut polls = 0;
-    let mut maximums = |_project| {
-        polls += 1;
-        (polls >= 2).then_some(1)
-    };
     let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
-        .select_open(&heading(), &labels(), MAX_WORKTREE_INDEX, &mut maximums)
-        .required_because("the calculated maximum is applied before confirmation")?;
+        .select_open(&heading(), &labels(), &[Some(3), Some(1), Some(0)])
+        .required_because("each project brings its own range")?;
 
-    assert_eq!(chosen, (0, 1));
+    assert_eq!(
+        chosen,
+        (1, 1),
+        "the index is held within the project it lands on"
+    );
+    let drawn = screen.drawn();
     assert!(
-        screen
-            .drawn()
+        drawn
+            .iter()
+            .any(|line| line.contains("Worktree index: 3 (0-3)")),
+        "the first project's range is shown from the start: {drawn:?}"
+    );
+    assert!(
+        drawn
             .iter()
             .any(|line| line.contains("Worktree index: 1 (0-1)")),
-        "the calculated maximum is rendered: {:?}",
-        screen.drawn()
+        "the range changes with the project: {drawn:?}"
+    );
+    assert!(
+        !drawn
+            .iter()
+            .any(|line| line.contains("(metadata unreadable)")),
+        "a project whose range was read is never said to be unreadable: {drawn:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_project_whose_metadata_could_not_be_read_names_that_instead_of_a_range() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [Key::ArrowRight, Key::Enter];
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_open(&heading(), &labels(), &[None, Some(2), Some(2)])
+        .required_because("an unreadable project can still be confirmed")?;
+
+    assert_eq!(chosen, (0, 0), "the index does not move without a range");
+    let drawn = screen.drawn();
+    assert!(
+        drawn
+            .iter()
+            .any(|line| line.contains("Worktree index: 0 (metadata unreadable)")),
+        "the reason is named rather than a range: {drawn:?}"
+    );
+    assert!(
+        !drawn.iter().any(|line| line.contains("(0-")),
+        "no range is made up for a project that was not read: {drawn:?}"
     );
     Ok(())
 }

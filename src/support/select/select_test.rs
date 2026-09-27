@@ -4,7 +4,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::diagnostics::ExitCode;
-use crate::metadata::{MAX_WORKTREE_INDEX, ProjectMetadata};
+use crate::metadata::{self, ProjectMetadata};
 use crate::msg;
 use crate::testing::project::{Fixture, project_id};
 use crate::testing::prompt::ScriptedPrompt;
@@ -79,20 +79,62 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
 }
 
 #[test]
-fn open_selects_a_project_and_index_without_reading_metadata() -> Checked {
+fn open_offers_each_projects_own_range_before_the_prompt_opens() -> Checked {
     let fixture = Fixture::new()?;
-    fixture.register("example-org/example-repo")?;
-    fixture.register("other/other-repo")?;
+    for (id, worktrees) in [("example-org/example-repo", 5), ("other/other-repo", 3)] {
+        let mut project = fixture.register(id)?;
+        project.metadata.provisioning.requested_worktrees = worktrees;
+        metadata::update(&project.paths, &project.metadata)
+            .required_because("record the worktree count")?;
+    }
 
-    let (chosen, index) = open(
-        &fixture.location,
-        &msg!("select-open-heading"),
-        &mut ScriptedPrompt::choosing_worktree(MAX_WORKTREE_INDEX),
-        MAX_WORKTREE_INDEX,
-    )
-    .required_because("the combined open prompt returns both values")?;
+    let mut prompt = ScriptedPrompt::choosing_worktree(2);
+    let (chosen, index) = open(&fixture.location, &msg!("select-open-heading"), &mut prompt)
+        .required_because("the combined open prompt returns both values")?;
+
+    assert_eq!(
+        prompt.maximums.borrow()[0],
+        vec![Some(4), Some(2)],
+        "every project's last index is known when the prompt opens, in the order it lists them"
+    );
     assert_eq!(chosen.display_id(), "example-org/example-repo");
-    assert_eq!(index, MAX_WORKTREE_INDEX);
+    assert_eq!(index, 2);
+    Ok(())
+}
+
+#[test]
+fn open_still_lists_a_project_whose_metadata_cannot_be_read() -> Checked {
+    let fixture = Fixture::new()?;
+    let broken = fixture.register("example-org/example-repo")?;
+    fixture.register("other/other-repo")?;
+    std::fs::write(broken.paths.metadata_file(), "version: 2\n")
+        .required_because("break the metadata of one project")?;
+
+    let mut prompt = ScriptedPrompt::choosing(0);
+    let (chosen, index) = open(&fixture.location, &msg!("select-open-heading"), &mut prompt)
+        .required_because("one broken project does not take the prompt away")?;
+
+    assert_eq!(
+        prompt.asked.borrow()[0],
+        vec![
+            "example-org/example-repo".to_string(),
+            "other/other-repo".to_string()
+        ],
+        "the broken project is still offered"
+    );
+    assert_eq!(
+        prompt.maximums.borrow()[0],
+        vec![None, Some(0)],
+        "a range that could not be read is not made up"
+    );
+    assert_eq!(
+        (chosen.display_id().as_str(), index),
+        ("example-org/example-repo", 0)
+    );
+    let error = chosen
+        .lock()
+        .refused_because("the reason is reported once the project is chosen")?;
+    assert_eq!(error.first_id(), Some(ErrorId::MetadataUnknownVersion));
     Ok(())
 }
 
@@ -105,7 +147,6 @@ fn open_rejects_an_index_that_is_not_in_the_candidate_list() -> Checked {
         &fixture.location,
         &msg!("select-open-heading"),
         &mut ScriptedPrompt::choosing(7),
-        MAX_WORKTREE_INDEX,
     )
     .refused_because("an invalid project selection is not opened")?;
     assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
@@ -116,13 +157,8 @@ fn open_rejects_an_index_that_is_not_in_the_candidate_list() -> Checked {
 fn open_has_no_prompt_when_no_projects_are_registered() -> Checked {
     let fixture = Fixture::new()?;
     let mut prompt = ScriptedPrompt::choosing(0);
-    let error = open(
-        &fixture.location,
-        &msg!("select-open-heading"),
-        &mut prompt,
-        MAX_WORKTREE_INDEX,
-    )
-    .refused_because("there is no project to open")?;
+    let error = open(&fixture.location, &msg!("select-open-heading"), &mut prompt)
+        .refused_because("there is no project to open")?;
     assert_eq!(error.first_id(), Some(ErrorId::NoManagedProjects));
     assert!(prompt.asked.borrow().is_empty());
     Ok(())

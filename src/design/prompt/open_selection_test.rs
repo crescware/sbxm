@@ -1,10 +1,8 @@
-use crate::metadata::MAX_WORKTREE_INDEX;
-
 use super::super::{Action, Key, OpenSelection, Transition, action_for};
 
 #[test]
 fn vertical_keys_move_projects_and_horizontal_keys_change_index() {
-    let mut selection = OpenSelection::new(3, 4);
+    let mut selection = OpenSelection::new(3, &[Some(4); 3]);
 
     assert_eq!(selection.apply(Action::Next), Transition::Continue);
     assert_eq!(selection.current_project(), 1);
@@ -19,7 +17,7 @@ fn vertical_keys_move_projects_and_horizontal_keys_change_index() {
 
 #[test]
 fn both_axes_are_clamped_or_wrapped_by_their_own_rules() {
-    let mut selection = OpenSelection::new(2, 1);
+    let mut selection = OpenSelection::new(2, &[Some(1); 2]);
 
     assert_eq!(selection.apply(Action::DecreaseIndex), Transition::Continue);
     assert_eq!(selection.current_index(), 0);
@@ -33,54 +31,61 @@ fn both_axes_are_clamped_or_wrapped_by_their_own_rules() {
 }
 
 #[test]
-fn a_calculated_maximum_clamps_the_current_index_without_affecting_other_projects() {
-    let mut selection = OpenSelection::new(2, MAX_WORKTREE_INDEX);
-    selection.apply(Action::IncreaseIndex);
-    selection.apply(Action::IncreaseIndex);
-    selection.set_maximum(0, 1);
-
-    assert_eq!(selection.current_index(), 1);
-    assert_eq!(selection.maximum_index(), Some(1));
+fn moving_to_a_project_with_fewer_worktrees_brings_the_index_within_it() {
+    let mut selection = OpenSelection::new(2, &[Some(3), Some(1)]);
+    for _ in 0..3 {
+        selection.apply(Action::IncreaseIndex);
+    }
+    assert_eq!(selection.current_index(), 3);
 
     selection.apply(Action::Next);
-    assert_eq!(selection.current_index(), 1);
     assert_eq!(
-        selection.maximum_index(),
-        None,
-        "the other project is still uncalculated; the ceiling is not its answer"
+        selection.current_index(),
+        1,
+        "the index is held within the project the cursor moved to"
     );
+    assert_eq!(selection.maximum_index(), Some(1));
+
+    selection.apply(Action::Previous);
+    assert_eq!(
+        selection.current_index(),
+        1,
+        "the index given up on the way is not restored"
+    );
+    assert_eq!(selection.maximum_index(), Some(3));
 }
 
 #[test]
-fn an_index_moves_up_to_the_ceiling_while_the_maximum_is_unknown() {
-    let mut selection = OpenSelection::new(1, 2);
+fn a_project_whose_metadata_could_not_be_read_keeps_its_index_at_zero() {
+    let mut selection = OpenSelection::new(1, &[None]);
+    selection.apply(Action::IncreaseIndex);
+    selection.apply(Action::IncreaseIndex);
+
+    assert_eq!(
+        selection.current_index(),
+        0,
+        "a range that was not read does not let the index move"
+    );
+    assert_eq!(selection.maximum_index(), None);
+}
+
+#[test]
+fn a_project_without_a_given_maximum_has_no_range() {
+    let mut selection = OpenSelection::new(2, &[Some(2)]);
+    selection.apply(Action::Next);
+    selection.apply(Action::IncreaseIndex);
 
     assert_eq!(
         selection.maximum_index(),
         None,
-        "a prompt that has not read metadata states no range"
+        "a missing entry is not read out of another project's slot"
     );
-    for _ in 0..5 {
-        selection.apply(Action::IncreaseIndex);
-    }
-    assert_eq!(
-        selection.current_index(),
-        2,
-        "the ceiling still bounds the value it does not describe"
-    );
-
-    selection.set_maximum(0, 0);
-    assert_eq!(
-        selection.current_index(),
-        0,
-        "the answer wins over the ceiling"
-    );
-    assert_eq!(selection.maximum_index(), Some(0));
+    assert_eq!(selection.current_index(), 0);
 }
 
 #[test]
 fn enter_confirms_both_current_values() {
-    let mut selection = OpenSelection::new(3, MAX_WORKTREE_INDEX);
+    let mut selection = OpenSelection::new(3, &[Some(4); 3]);
     selection.apply(action_for(Key::ArrowDown));
     selection.apply(action_for(Key::ArrowRight));
     selection.apply(action_for(Key::ArrowRight));
@@ -96,7 +101,7 @@ fn enter_confirms_both_current_values() {
 
 #[test]
 fn a_prompt_with_no_projects_does_not_move_or_confirm_a_project() {
-    let mut selection = OpenSelection::new(0, MAX_WORKTREE_INDEX);
+    let mut selection = OpenSelection::new(0, &[]);
     assert_eq!(selection.apply(Action::Next), Transition::Continue);
     assert_eq!(selection.current_project(), 0);
     assert_eq!(
