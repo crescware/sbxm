@@ -142,7 +142,8 @@ coverageは繰り返し測っても同じ値になることを前提とする。
 
 要素を書いてよいfileと種類は、`tests/architecture.rs`の`FLAKY_ELEMENT_PLACES`が持つ。一覧に
 無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。一覧のfileから
-要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
+要素が消えたら、一覧から外すまで落ちる。OS層とその契約testを足すときを除き、一覧は減る方向に
+しか動かない。
 
 検出はsourceを構文として読み、`use`が導入した名前を完全修飾pathへ戻してから判定する。何を
 検出し何を見ないかは`tests/flaky_elements/mod.rs`の冒頭に書く。
@@ -193,7 +194,10 @@ testも、終わらない子processを残さない。
 
 契約testが別のprocessやOSの状態が整うのを待つときは、`src/testing/wait_until.rs`の
 `wait_until`だけを使う。上限は60秒の1つだけであり、速さは確かめない。閉じたことが相手へ
-届くのも待つ。上に書いた複製は、pipeの端やPTYの端末側でも同じく残るためである。
+届くのも待つ。上に書いた複製は、pipeの端やPTYの端末側でも同じく残るためである。子を`wait`で
+引き取るのは、自分で終わる子と、SIGKILLで終わらせた子に限る。`tests/poll_eintr.rs`だけは、
+確かめる`poll`そのものの期限で待つ。その期限は`wait_until`の上限と同じ定義で持ち、
+`tests/architecture.rs`が一致を確かめる。
 
 ## flakyを疑ったとき
 

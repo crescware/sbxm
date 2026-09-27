@@ -10,14 +10,16 @@
 //! 使わず、threadが`main`の1本しかないprocessで確かめる。
 //!
 //! 見張りは`SignalGuard`と同じくSIGINTへ置く。このbinaryには、ほかに見張りを置くtestが無い。
-//! 待ちの期限は、`src/testing/wait_until.rs`の上限と同じ60秒とする。期限はhangを止めるために
-//! あり、速さは確かめない。
+//! 待ちは`wait_until`を通さず、確かめる`poll`そのものの期限で止める。期限は
+//! `src/testing/wait_until.rs`の上限と同じ定義で持ち、`tests/architecture.rs`が一致を確かめる。
+//! 期限はhangを止めるためにあり、速さは確かめない。
 
 mod outcome;
 
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use rustix::event::{PollFd, PollFlags, Timespec};
 use rustix::io::Errno;
@@ -26,12 +28,10 @@ use signal_hook::consts::SIGINT;
 use outcome::{Checked, Required, Unmet};
 
 /// 待ちの期限。
-const WAIT_LIMIT: Timespec = Timespec {
-    tv_sec: 60,
-    tv_nsec: 0,
-};
+const WAIT_LIMIT: Duration = Duration::from_secs(60);
 
 fn main() -> Checked {
+    let limit = Timespec::try_from(WAIT_LIMIT).required_because("the limit is a timespec")?;
     let arrived = Arc::new(AtomicBool::new(false));
     let registration = signal_hook::flag::register(SIGINT, Arc::clone(&arrived))
         .required_because("place the same watch as SignalGuard")?;
@@ -54,7 +54,7 @@ fn main() -> Checked {
         &idle,
         PollFlags::IN | PollFlags::HUP | PollFlags::ERR | PollFlags::NVAL,
     )];
-    let waited = rustix::event::poll(&mut watched, Some(&WAIT_LIMIT));
+    let waited = rustix::event::poll(&mut watched, Some(&limit));
 
     sender.kill().required_because("stop sending SIGINT")?;
     sender.wait().required_because("reap the sender")?;

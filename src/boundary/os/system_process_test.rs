@@ -3,9 +3,13 @@
 //! 外部commandの実行は、起動や待ちの失敗をOSが返す値で見分け、子を終わらせる手順と置く
 //! process groupをOSの約束に委ねる。ここで実OSに確かめる。scriptは`sh -c`で渡し、testが
 //! 書いたfileをexecしない。書き込み中のfileをexecできないことを確かめるC9だけが例外である。
+//!
+//! 子を`wait`で引き取るのは、自分で終わる子と、SIGKILLで終わらせた子だけとする。入力の
+//! 終わりで終わる子の終了も、pipeのEOFも、別のthreadのtestがforkした子が複製を閉じるまで
+//! 来ないため、それらを待たない。
 
 use std::fs::{File, Permissions};
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, BufRead, BufReader, ErrorKind, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::{Child, Command, Stdio};
@@ -192,7 +196,7 @@ fn a_child_in_its_own_group_takes_its_descendants_along() -> Checked {
         .stdin
         .take()
         .required_because("the input pipe was created")?;
-    let mut stdout = child
+    let stdout = child
         .stdout
         .take()
         .required_because("the output pipe was created")?;
@@ -200,8 +204,10 @@ fn a_child_in_its_own_group_takes_its_descendants_along() -> Checked {
     let status = child.wait()?;
     assert!(status.success(), "{status:?}");
 
+    // 子は終わっており、`echo`が書いた行はpipeにある。pipeのEOFは、子孫が出力の複製を
+    // 閉じるまで来ないため、1行だけ読む。
     let mut said = String::new();
-    stdout.read_to_string(&mut said)?;
+    BufReader::new(stdout).read_line(&mut said)?;
     let descendant = Pid::from_raw(
         said.trim()
             .parse()
@@ -223,18 +229,18 @@ fn a_child_in_its_own_group_takes_its_descendants_along() -> Checked {
 
 /// C13: process groupを選ばずに起動した子は、sbxmと同じgroupに残る。
 ///
-/// `run_terminal_inner`と`run_relay`は、端末へ出るcommandをこうして起動する。利用者の
-/// Ctrl-Cは、sbxmへ届くのと同じく子へも届く。
+/// `run_terminal_inner`は、端末へ出るcommandをこうして起動する。`run_relay`はこれに頼り、
+/// 割り込みを見張らない。利用者のCtrl-Cは、sbxmへ届くのと同じく子へも届く。
 #[test]
 fn a_child_started_without_its_own_group_stays_in_ours() -> Checked {
     let mut child = reading_child()?;
-    let holding = child
+    let _holding = child
         .stdin
         .take()
         .required_because("the input pipe was created")?;
 
     let group = getpgid(Some(Pid::from_child(&child))).required_because("the child is alive")?;
-    drop(holding);
+    child.kill()?;
     child.wait()?;
     assert_eq!(group, getpgid(None).required_because("our own group")?);
     Ok(())
