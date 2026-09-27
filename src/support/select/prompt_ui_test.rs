@@ -2,7 +2,6 @@ use crate::design::PromptUi;
 use crate::design::policy::StreamPolicy;
 use crate::design::prompt::{Key, RecordedScreen, ScriptedKeys};
 use crate::i18n::Locale;
-use crate::metadata::MAX_WORKTREE_INDEX;
 use crate::msg;
 
 use crate::testing::outcome::{Checked, Required};
@@ -45,7 +44,6 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
     .required_because("two projects are chosen")?;
     assert_eq!(chosen, vec![1, 2]);
 
-    let mut no_maximums = |_project| None;
     let chosen = ProjectPrompt::select_open(
         &mut prompt(ScriptedKeys::pressing(&[
             Key::ArrowDown,
@@ -54,13 +52,11 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
         ])),
         &msg!("select-open-heading"),
         &candidates(),
-        MAX_WORKTREE_INDEX,
-        &mut no_maximums,
+        &[Some(4); 3],
     )
     .required_because("a project and worktree index are chosen")?;
     assert_eq!(chosen, (1, 1));
 
-    let mut maximums = |_project| Some(1);
     let chosen = ProjectPrompt::select_open(
         &mut prompt(ScriptedKeys::pressing(&[
             Key::ArrowRight,
@@ -69,10 +65,9 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
         ])),
         &msg!("select-open-heading"),
         &candidates(),
-        MAX_WORKTREE_INDEX,
-        &mut maximums,
+        &[Some(1); 3],
     )
-    .required_because("a calculated maximum is passed into the prompt")?;
+    .required_because("the per-project maximum bounds the index")?;
     assert_eq!(chosen, (0, 1));
     Ok(())
 }

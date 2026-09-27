@@ -168,13 +168,13 @@ worktree, use its zero-based index, for example `sbxm open <project-id> -i 0`.
 When the project ID is omitted in an interactive terminal, sbxm shows one
 prompt. Use the up and down cursor keys to choose a project, the left and right
 cursor keys to adjust its zero-based managed worktree index, and press Enter
-once to confirm both. After authentication succeeds, the prompt opens without
-waiting for project metadata. Until that project's result arrives, the index line
-reads `(calculating)` rather than naming a range sbxm cannot yet know; the index
-still moves in the meantime. Metadata is calculated in the background, and when
-the result arrives the prompt shows that project's own range and holds the index
-within it. Confirmation rechecks the value under the project lock, and sbxm
-warns before connecting if the confirmed index had to be brought down.
+once to confirm both. After authentication succeeds, sbxm reads each project's
+metadata and then opens the prompt, so the index line shows the selected
+project's own range from the start. If a project's metadata cannot be read, its
+index line says so, the index stays at `0`, and choosing it reports why. The
+confirmed value is rechecked under the project lock; if the project no longer
+declares that managed worktree, sbxm warns and starts in the repository root, as
+it does for `--index`.
 
 Inside the sandbox, worktrees are located at:
 

@@ -119,8 +119,8 @@ impl Painter {
         let mut lines = vec![self.heading(heading), String::new()];
         lines.push(format!("  {}", self.muted(&self.open_keys())));
         lines.push(String::new());
-        // 案件の最大値が届くまでは範囲を述べない。天井は案件の答えではないため、
-        // 具体的な数として見せると一度嘘をついて訂正することになる。
+        // metadataを読めなかった案件は範囲を述べない。数を示すと、読めていない値を
+        // 読めたかのように見せることになる。
         let index = match selection.maximum_index() {
             Some(maximum) => msg!(
                 "prompt-worktree-index",
@@ -128,7 +128,7 @@ impl Painter {
                 maximum = maximum
             ),
             None => msg!(
-                "prompt-worktree-index-calculating",
+                "prompt-worktree-index-unreadable",
                 index = selection.current_index()
             ),
         };

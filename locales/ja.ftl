@@ -49,7 +49,6 @@ cli-open-about = 案件のSandboxへのSSH接続を開き、初回は構築し�
 cli-open-project-help = SSH接続する案件のowner/repository形式の登録ID
 cli-open-index-help = repository rootではなくN番目のmanaged worktreeを起点にします（0始まり）
 warning-open-worktree-not-found = managed worktree { $index } が見つからないため、repository rootを開きます。
-warning-open-worktree-index-clamped = この案件にmanaged worktree { $requested } は存在しないため、managed worktree { $index } を開きます。
 
 select-guide-topic-heading = 何について案内しますか？
 select-guide-project-heading = どの案件について案内しますか？
@@ -814,7 +813,7 @@ prompt-key-toggle = 選択
 prompt-key-confirm = 確定
 prompt-key-cancel = 取消
 prompt-worktree-index = worktree index: { $index } (0-{ $maximum })
-prompt-worktree-index-calculating = worktree index: { $index } (計算中)
+prompt-worktree-index-unreadable = worktree index: { $index } (metadataを読めません)
 destroy-recovery-heading = 復旧 (Recovery)
 open-worktrees-heading = このSandboxのmanaged worktree
 status-no-worktrees = managed worktreeは観測されませんでした。

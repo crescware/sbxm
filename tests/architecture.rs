@@ -831,7 +831,7 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 ///
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 37] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 35] = [
     // 外部processを動かす実行。判断とOSの呼び出しが同じ関数にある。
     ("src/boundary/host/poll_pipes.rs", &[Element::ChildProcess]),
     (
@@ -882,7 +882,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 37] = [
         "src/support/inventory/wait_until_running.rs",
         &[Element::RealTime],
     ),
-    ("src/support/select/open.rs", &[Element::Thread]),
     // test。
     (
         "src/boundary/host/command_test.rs",
@@ -920,7 +919,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 37] = [
         "src/support/host_sync/host_sync_test.rs",
         &[Element::WrittenExecutable],
     ),
-    ("src/support/select/open_test.rs", &[Element::RealTime]),
     (
         "tests/authenticated_host/mod.rs",
         &[Element::WrittenExecutable],
