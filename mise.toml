@@ -29,6 +29,10 @@ cargo llvm-cov \
 description = "辞書と実装の対応、辞書どうしの一致を確認する"
 run = "cargo test --test ftl"
 
+[tasks.test-min-git]
+description = "hostのgitに求める最小versionのgitで、testを実行する"
+run = 'bin="$(scripts/min-git/build.sh)" && export PATH="$bin:$PATH" && git --version && cargo test --workspace --all-features'
+
 [tasks.check-macos]
 description = "macOS向けにcompileできることを確認する"
 run = "cargo check --workspace --all-targets --all-features --target aarch64-apple-darwin"
@@ -38,5 +42,5 @@ description = "scripts/release/release.shのend-to-end testを実行する"
 run = "scripts/release/release_test.sh"
 
 [tasks.check]
-description = "整形・lint・辞書・macOS向けcompile・test・coverage・release scriptのtestをすべて確認する"
-run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && mise run i18n && mise run check-macos && mise run coverage && mise run release-test"
+description = "整形・lint・辞書・macOS向けcompile・test・coverage・最小versionのgitでのtest・release scriptのtestをすべて確認する"
+run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && mise run i18n && mise run check-macos && mise run coverage && mise run test-min-git && mise run release-test"

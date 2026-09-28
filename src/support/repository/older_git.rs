@@ -36,3 +36,7 @@ pub fn older_git(host: &dyn HostEnvironment, directory: &Path) -> Option<Error> 
         )
     })
 }
+
+#[cfg(test)]
+#[path = "older_git_test.rs"]
+mod older_git_test;
