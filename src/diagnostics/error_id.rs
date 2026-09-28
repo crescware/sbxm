@@ -230,6 +230,7 @@ error_ids! {
     PlatformUnsupported => "platform-unsupported",
     PlatformUnobservable => "platform-unobservable",
     HostCommandMissing => "host-command-missing",
+    HostGitTooOld => "host-git-too-old",
     DockerUnreachable => "docker-unreachable",
     NetworkPolicyMismatch => "network-policy-mismatch",
     NetworkPolicyUnobservable => "network-policy-unobservable",

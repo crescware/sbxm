@@ -26,7 +26,7 @@ into the sandbox.
 - macOS 14 or later on Apple silicon
 - Docker Desktop with a running Docker Engine
 - **[Docker Sandboxes CLI 0.42.1 or later](https://docs.docker.com/ai/sandboxes/get-started/)**
-- Git and SSH
+- Git 2.36 or later, and SSH
 - A GitHub personal access token for each repository you want to manage
 
 Run `sbxm status --global` to check these requirements and the Docker Sandboxes
