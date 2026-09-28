@@ -11,6 +11,7 @@ mod host_repository;
 #[cfg(test)]
 #[path = "mod_test.rs"]
 mod mod_test;
+mod older_git;
 mod push_refusal;
 mod push_to_sandbox;
 mod refresh_origin;
@@ -34,6 +35,7 @@ pub(crate) use fetch_refspec::FETCH_REFSPEC;
 pub use has_local_branches::has_local_branches;
 pub use host_git::host_git;
 pub use host_repository::host_repository;
+pub use older_git::older_git;
 pub use push_refusal::PushRefusal;
 pub use push_to_sandbox::push_to_sandbox;
 pub use refresh_origin::refresh_origin;
