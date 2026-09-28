@@ -67,7 +67,7 @@ fn the_sandbox_is_saved_and_reflected_before_the_host_is_sent_back() -> Checked 
         "fetch --no-tags --no-recurse-submodules --no-write-fetch-head --quiet ssh://{}.sbx",
         output.namespace
     ))?;
-    let reflected = position("push --porcelain --no-verify .")?;
+    let reflected = position("push --porcelain --no-verify --receive-pack=")?;
     let sent = position(".git +refs/heads/*:refs/remotes/origin/*")?;
     assert!(position(PLACE_SAVE_REFS)? < saved, "{calls:?}");
     assert!(saved < reflected && reflected < sent, "{calls:?}");
@@ -89,7 +89,7 @@ fn a_sandbox_with_nothing_to_save_is_still_sent_the_host() -> Checked {
     assert!(
         !calls
             .iter()
-            .any(|call| call.contains("push --porcelain --no-verify . ")),
+            .any(|call| call.contains("push --porcelain --no-verify --receive-pack=")),
         "{calls:?}"
     );
     assert!(

@@ -57,6 +57,8 @@ fn parse_record(record: &str) -> Result<Entry> {
         path: path.to_string(),
         bare: false,
         detached: false,
+        branch: None,
+        prunable: false,
     };
     let flags = parse_fields(fields, &mut entry)?;
     if !flags.saw_bare && !flags.saw_branch && !flags.saw_detached {
@@ -112,6 +114,7 @@ fn parse_fields<'a>(
                     ));
                 }
                 flags.saw_branch = true;
+                entry.branch = value.map(str::to_string);
             }
             "detached" => {
                 if flags.saw_detached || flags.saw_branch || value.is_some() {
@@ -138,6 +141,7 @@ fn parse_fields<'a>(
                 let seen = if key == "locked" {
                     &mut flags.saw_locked
                 } else {
+                    entry.prunable = true;
                     &mut flags.saw_prunable
                 };
                 if *seen {

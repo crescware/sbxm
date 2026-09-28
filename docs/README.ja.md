@@ -450,10 +450,13 @@ Sandboxの中からhostのrepositoryへ届く経路はありません。Sandbox�
 hostのrepositoryとSandboxは`sbxm sync local/<name>`で同期します。hostのrepositoryは、
 GitHubの案件でのGitHubの役を持ちます。Sandboxのbranchとtagは`git push`と同じ規則でhostへ、
 hostのbranchとtagは`git fetch --prune`と同じ規則でSandboxの`origin`へ届きます。早送りでない
-branch、hostでcheckoutしているbranch、別の先を指す同じ名前のtagのように、pushでGitが断るものは
-動かさず、そのcommitは`refs/sbx/<sandbox>/`に残ります。Sandboxのworktreeとbranchはそのまま
-です。GitHubへもう一度pushする前と同じく、Sandboxの中で`origin/<branch>`をmergeするか
-rebaseしてから、もう一度同期してください。
+branchや、別の先を指す同じ名前のtagのように、pushでGitが断るものは動かさず、そのcommitは
+`refs/sbx/<sandbox>/`に残ります。hostでcheckoutしているbranchは、そのworktreeで
+`git merge --ff-only`が通るなら、fileごと進めます。重なる未commitの変更があれば進めず、その
+fileを示します。Sandboxのworktreeとbranchはそのままです。hostのcommitが足りないSandboxの
+branchは、`sync`が名指しします。Sandboxの中で`origin/<branch>`へ取り込んでください。hostと
+分かれたbranchは、GitHubへもう一度pushする前と同じく、mergeかrebaseをしてから、もう一度同期
+してください。
 
 Sandboxの`origin`はSandboxと一緒に消える写しにすぎないため、rebuildとdestroyは、hostのrepositoryから
 辿れるcommitだけを失われないものとして数えます。hostのbranchやtag、または

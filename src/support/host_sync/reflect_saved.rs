@@ -4,14 +4,18 @@ use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::{Result, unparseable};
 use crate::support::repository::{host_git, refusal_reason};
 
-use super::{ReflectResult, Reflected, saved_namespace};
+use super::{ReflectResult, Reflected, move_checked_out, saved_namespace};
 
 /// Sandboxから保存したbranchとtagを、hostの`repository`のbranchとtagへ反映する。
 ///
 /// hostのrepositoryが自分自身へ、`refs/sbx/<sandbox>/heads/*`と`tags/*`をpushする。受け取る
-/// git（receive-pack）がrefごとに判断するため、早送りでない更新、checkout中のbranch、指す
-/// 先の違う同じ名前のtagは、gitとhostのrepositoryの設定に従って断られる。sbxmは規則を
-/// 持たない。消えたbranchやtagは運ばない。
+/// git（receive-pack）がrefごとに判断するため、早送りでない更新と、指す先の違う同じ名前の
+/// tagは、gitとhostのrepositoryの設定に従って断られる。消えたbranchやtagは運ばない。
+///
+/// hostでcheckoutしているbranchだけは、pushでは動かさず、そのworktreeで早送りする
+/// （`move_checked_out`）。pushに任せると、hostのrepositoryの`receive.denyCurrentBranch`
+/// しだいで、断られるか、未commitの変更が1つでもあると断られるか、作業treeを残して
+/// refだけが進む。そのためpushでは、設定によらずcheckout中のbranchを断らせる。
 ///
 /// 受け取る側のhookは、hostのrepositoryの規則として走らせる。送る側の`pre-push`は、別の
 /// repositoryへ送る前の確認であり、自分自身へ反映するときには走らせない。
@@ -28,10 +32,18 @@ pub fn reflect_saved(
     let pushed = host_git(
         host,
         repository,
-        &["push", "--porcelain", "--no-verify", ".", &heads, &tags],
+        &[
+            "push",
+            "--porcelain",
+            "--no-verify",
+            RECEIVE_PACK,
+            ".",
+            &heads,
+            &tags,
+        ],
         None,
-        // hostのrepositoryのreceive hookと、`updateInstead`での作業treeの更新が、この
-        // pushの中で走る。どちらも手元のfileの読み書きだけでは終わらない。
+        // hostのrepositoryのreceive hookが、このpushの中で走る。手元のfileの読み書きだけ
+        // では終わらない。
         TimeoutClass::RepositoryTransfer,
     )?;
     // 断ったrefがあれば1で終わる。それ以外の失敗は、refごとの答えを持たない。
@@ -78,7 +90,11 @@ pub fn reflect_saved(
     Ok(reflected)
 }
 
+/// 受け取る側のgit。`git -c`で渡した設定は、同じ機械の中のpushでも受け取る側へ届かない。
+const RECEIVE_PACK: &str = "--receive-pack=git -c receive.denyCurrentBranch=refuse receive-pack";
+
 /// 断られたrefの理由。早送りでないものは、Sandboxが遅れているだけかを見分ける。
+/// checkout中で断られたbranchは、そのworktreeで早送りする。
 fn rejection(
     host: &dyn HostEnvironment,
     repository: &Path,
@@ -92,7 +108,7 @@ fn rejection(
             ReflectResult::Behind
         }
         "non-fast-forward" => ReflectResult::Diverged,
-        "branch is currently checked out" => ReflectResult::CheckedOut,
+        "branch is currently checked out" => move_checked_out(host, repository, source, reference)?,
         "already exists" => ReflectResult::Exists,
         _ => ReflectResult::Refused {
             reason: reason.to_string(),

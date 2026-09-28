@@ -8,6 +8,10 @@ pub struct Entry {
     pub path: String,
     pub bare: bool,
     pub detached: bool,
+    /// checkoutしているbranchのref。`refs/heads/<branch>`の形。detachedとbareでは`None`。
+    pub branch: Option<String>,
+    /// worktreeのdirectoryが無いなど、gitが片付けてよいと見なしたもの。
+    pub prunable: bool,
 }
 
 impl Entry {

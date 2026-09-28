@@ -1139,40 +1139,245 @@ fn saved_branches_and_tags_reach_the_host_by_the_rules_of_a_git_push() -> Checke
     Ok(())
 }
 
+/// 反映するpush。hostのrepositoryの設定によらず、checkout中のbranchを断らせる。
+fn reflecting_push() -> String {
+    format!(
+        "push --porcelain --no-verify --receive-pack=git -c receive.denyCurrentBranch=refuse receive-pack . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
+    )
+}
+
+/// fileを持つhostのrepositoryと、Sandboxから`main`として保存したことにする、その先の
+/// commit。hostは`main`をcheckoutしている。
+///
+/// `base`は`a`と`b`を持つ。`ahead`は`base`の上で`a`を書き換え、`new`を足す。
+struct Working {
+    root: tempfile::TempDir,
+    host: PathBuf,
+    base: String,
+    ahead: String,
+}
+
+impl Working {
+    fn new() -> Checked<Working> {
+        let root = tempfile::tempdir().required()?;
+        // macOSの一時directoryはsymlinkを通る。gitが示すworktreeのpathと比べるため、
+        // 実際の場所を使う。
+        let host = fs::canonicalize(root.path()).required()?.join("host");
+        fs::create_dir(&host).required()?;
+        git_in(&host, &["init", "--quiet"])?;
+        fs::write(host.join("a"), "a\n").required()?;
+        fs::write(host.join("b"), "b\n").required()?;
+        git_in(&host, &["add", "a", "b"])?;
+        git_in(&host, &["commit", "--quiet", "-m", "base"])?;
+        let base = git_in(&host, &["rev-parse", "HEAD"])?;
+        fs::write(host.join("a"), "a from the sandbox\n").required()?;
+        fs::write(host.join("new"), "new\n").required()?;
+        git_in(&host, &["add", "a", "new"])?;
+        git_in(&host, &["commit", "--quiet", "-m", "ahead"])?;
+        let ahead = git_in(&host, &["rev-parse", "HEAD"])?;
+        git_in(&host, &["reset", "--quiet", "--hard", &base])?;
+        git_in(&host, &["update-ref", &reference("heads/main"), &ahead])?;
+        Ok(Working {
+            root,
+            host,
+            base,
+            ahead,
+        })
+    }
+
+    /// 登録したgit directoryから反映する。`sbxm add --local`が記録するのはこの場所である。
+    fn reflect(&self) -> Checked<Vec<Reflected>> {
+        reflect_saved(&LocalSandbox, &self.host.join(".git"), NAMESPACE).required()
+    }
+
+    fn main(&self) -> Checked<String> {
+        git_in(&self.host, &["rev-parse", "--verify", "refs/heads/main"])
+    }
+
+    /// hostのrepositoryに足すworktreeの場所。
+    fn linked(&self, name: &str) -> Checked<PathBuf> {
+        Ok(fs::canonicalize(self.root.path()).required()?.join(name))
+    }
+
+    /// `main`をcheckoutするworktreeを足す。
+    fn add_worktree(&self, name: &str, extra: &[&str]) -> Checked<PathBuf> {
+        let linked = self.linked(name)?;
+        let path = linked.to_string_lossy().into_owned();
+        let mut args = vec!["worktree", "add", "--quiet"];
+        args.extend_from_slice(extra);
+        args.extend_from_slice(&[&path, "main"]);
+        git_in(&self.host, &args)?;
+        Ok(linked)
+    }
+}
+
+fn read(worktree: &std::path::Path, file: &str) -> Checked<String> {
+    fs::read_to_string(worktree.join(file)).required()
+}
+
+/// `Working`をある状態にする手順。
+type Arrange<'a> = &'a dyn Fn(&Working) -> Checked;
+
 #[test]
-fn the_checked_out_branch_follows_the_host_repository_settings() -> Checked {
-    // 既定では、hostのgitはcheckoutしているbranchを動かさない。hostのrepositoryが
-    // `updateInstead`を選んでいれば、変更の無い作業treeごと進める。
-    let host = Reflecting::new()?;
-    let ahead = host.aside(&host.third, "ahead")?;
-    host.saved("heads/master", &ahead)?;
-    host.saved("heads/main", &ahead)?;
-    let current = git_in(&host.host, &["symbolic-ref", "--short", "HEAD"])?;
+fn the_checked_out_branch_moves_with_its_worktree_whatever_the_host_repository_settings() -> Checked
+{
+    // 利用者がそのworktreeで`git merge --ff-only`したときと同じく進める。重ならない変更は
+    // 残す。`receive.denyCurrentBranch`は見ない。`updateInstead`でも変更があれば止めず、
+    // `ignore`でも作業treeを残してrefだけを進めない。
+    for setting in [None, Some("refuse"), Some("updateInstead"), Some("ignore")] {
+        let host = Working::new()?;
+        if let Some(setting) = setting {
+            git_in(
+                &host.host,
+                &["config", "receive.denyCurrentBranch", setting],
+            )?;
+        }
+        fs::write(host.host.join("b"), "b changed on the host\n").required()?;
 
-    let results = host.reflect()?;
-    assert!(
-        results.contains(&reflected(
-            &format!("refs/heads/{current}"),
-            ReflectResult::CheckedOut
-        )),
-        "{results:?}"
+        assert_eq!(
+            host.reflect()?,
+            vec![reflected("refs/heads/main", ReflectResult::Updated)],
+            "{setting:?}"
+        );
+        assert_eq!(host.main()?, host.ahead, "{setting:?}");
+        assert_eq!(read(&host.host, "a")?, "a from the sandbox\n");
+        assert_eq!(read(&host.host, "b")?, "b changed on the host\n");
+        assert_eq!(
+            git_in(&host.host, &["status", "--porcelain"])?,
+            "M b",
+            "{setting:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn uncommitted_changes_the_sandbox_commits_overlap_keep_the_checked_out_branch_where_it_was()
+-> Checked {
+    // 早送りが書き換えるfileに、stageした変更と、足されるfileと同じ名前の未追跡のfileが
+    // ある。gitが断り、どれも残る。重ならない`b`の変更は、理由に挙げない。
+    let host = Working::new()?;
+    fs::write(host.host.join("a"), "a changed on the host\n").required()?;
+    git_in(&host.host, &["add", "a"])?;
+    fs::write(host.host.join("new"), "untracked on the host\n").required()?;
+    fs::write(host.host.join("b"), "b changed on the host\n").required()?;
+
+    assert_eq!(
+        host.reflect()?,
+        vec![reflected(
+            "refs/heads/main",
+            ReflectResult::LocalChanges {
+                worktree: host.host.clone(),
+                paths: vec!["a".to_string(), "new".to_string()],
+            }
+        )]
     );
-    assert_eq!(host.at("HEAD")?, host.third);
+    assert_eq!(host.main()?, host.base);
+    assert_eq!(read(&host.host, "a")?, "a changed on the host\n");
+    assert_eq!(read(&host.host, "new")?, "untracked on the host\n");
+    Ok(())
+}
 
+#[test]
+fn a_branch_checked_out_in_a_linked_worktree_moves_there() -> Checked {
+    let host = Working::new()?;
+    git_in(&host.host, &["switch", "--quiet", "--detach"])?;
+    let linked = host.add_worktree("linked", &[])?;
+
+    assert_eq!(
+        host.reflect()?,
+        vec![reflected("refs/heads/main", ReflectResult::Updated)]
+    );
+    assert_eq!(host.main()?, host.ahead);
+    assert_eq!(read(&linked, "a")?, "a from the sandbox\n");
+    // branchを指していないworktreeは動かさない。
+    assert_eq!(read(&host.host, "a")?, "a\n");
+    Ok(())
+}
+
+#[test]
+fn a_checked_out_branch_no_single_worktree_can_move_is_left_as_it_was() -> Checked {
+    // gitはどれも`main`をcheckout中として断る。rebaseの途中のworktreeはbranchを指さない。
+    // directoryの無いworktreeでは進められない。2つのworktreeが指せば、どちらで進めるかが
+    // 決まらない。
+    let rebasing = |host: &Working| -> Checked {
+        git_in(
+            &host.host,
+            &[
+                "-c",
+                "sequence.editor=printf 'break\\n' >",
+                "rebase",
+                "--quiet",
+                "--interactive",
+                "--root",
+            ],
+        )?;
+        Ok(())
+    };
+    let removed = |host: &Working| -> Checked {
+        git_in(&host.host, &["switch", "--quiet", "--detach"])?;
+        fs::remove_dir_all(host.add_worktree("removed", &[])?).required()?;
+        Ok(())
+    };
+    let locked_and_removed = |host: &Working| -> Checked {
+        git_in(&host.host, &["switch", "--quiet", "--detach"])?;
+        fs::remove_dir_all(host.add_worktree("locked", &["--lock"])?).required()?;
+        Ok(())
+    };
+    let twice = |host: &Working| -> Checked {
+        host.add_worktree("twice", &["--force"])?;
+        Ok(())
+    };
+    let cases: [(&str, Arrange); 4] = [
+        ("rebasing", &rebasing),
+        ("removed", &removed),
+        ("locked and removed", &locked_and_removed),
+        ("twice", &twice),
+    ];
+    for (name, arrange) in cases {
+        let host = Working::new()?;
+        arrange(&host)?;
+
+        assert_eq!(
+            host.reflect()?,
+            vec![reflected("refs/heads/main", ReflectResult::CheckedOut)],
+            "{name}"
+        );
+        assert_eq!(host.main()?, host.base, "{name}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_fast_forward_git_refuses_for_another_reason_is_refused_with_gits_answer() -> Checked {
+    // mergeの途中の作業treeでは、重なる変更が無くてもgitは断る。
+    let host = Working::new()?;
+    git_in(&host.host, &["switch", "--quiet", "--create", "side"])?;
+    fs::write(host.host.join("b"), "b on side\n").required()?;
+    git_in(&host.host, &["commit", "--quiet", "--all", "-m", "side"])?;
+    git_in(&host.host, &["switch", "--quiet", "main"])?;
     git_in(
         &host.host,
-        &["config", "receive.denyCurrentBranch", "updateInstead"],
+        &["merge", "--quiet", "--no-ff", "--no-commit", "side"],
     )?;
+
     let results = host.reflect()?;
-    assert!(
-        results.contains(&reflected(
-            &format!("refs/heads/{current}"),
-            ReflectResult::Updated
-        )),
-        "{results:?}"
-    );
-    assert_eq!(host.at("HEAD")?, ahead);
-    assert!(git_in(&host.host, &["status", "--porcelain"])?.is_empty());
+
+    let [
+        Reflected {
+            reference,
+            result: ReflectResult::Refused { reason },
+        },
+    ] = results.as_slice()
+    else {
+        return Err(crate::testing::outcome::Unmet::new(format!(
+            "one refused ref: {results:?}"
+        )));
+    };
+    assert_eq!(reference, "refs/heads/main");
+    // gitの答えは利用者のlocaleで書かれる。
+    assert!(!reason.is_empty(), "{results:?}");
+    assert_eq!(host.main()?, host.base);
     Ok(())
 }
 
@@ -1243,9 +1448,7 @@ fn a_push_git_could_not_run_is_an_error_rather_than_nothing_reflected() -> Check
 
 #[test]
 fn a_ref_line_git_did_not_write_is_not_read_as_a_result() -> Checked {
-    let push = format!(
-        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
-    );
+    let push = reflecting_push();
     for line in [
         "!\trefs/heads/main\t[rejected] (non-fast-forward)\n",
         "?\trefs/sbx/x/heads/main:refs/heads/main\t[odd]\n",
@@ -1273,9 +1476,7 @@ fn a_push_that_failed_without_refusing_any_ref_is_an_error_rather_than_nothing_r
 {
     // gitは断ったrefがあれば1で終わる。1で終わったのに断ったrefが1つも無ければ、refごとの
     // 答えではない。何も反映しなかった成功とは読まない。
-    let push = format!(
-        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
-    );
+    let push = reflecting_push();
     for output in [
         "",
         "To .\nDone\n",
@@ -1298,11 +1499,9 @@ fn a_push_that_failed_without_refusing_any_ref_is_an_error_rather_than_nothing_r
 
 #[test]
 fn reflecting_waits_for_the_host_repository_hooks_as_long_as_a_transfer() -> Checked {
-    // 反映のpushの中で、hostのrepositoryのreceive hookと、`updateInstead`での作業treeの
-    // 更新が走る。手元のfileの読み書きの時間では打ち切らない。
-    let push = format!(
-        "push --porcelain --no-verify . refs/sbx/{NAMESPACE}/heads/*:refs/heads/* refs/sbx/{NAMESPACE}/tags/*:refs/tags/*"
-    );
+    // 反映のpushの中で、hostのrepositoryのreceive hookが走る。手元のfileの読み書きの時間
+    // では打ち切らない。
+    let push = reflecting_push();
     let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
 
     reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE).required()?;
@@ -1466,6 +1665,16 @@ fn a_reflection_is_not_done_past_a_step_that_did_not_answer() -> Checked {
         fs::create_dir_all(&hooks).required()?;
         std::os::unix::fs::symlink(on_path("false")?, hooks.join("pre-receive")).required()?;
         Ok(reflect_saved(host, &reflecting.host, NAMESPACE))
+    })?;
+    // checkout中のbranchを、そのworktreeで進める。進められた場合と、重なる変更で断った場合。
+    no_failed_step_is_taken_as_done(Failures::TimeoutsOnly, |host| {
+        let working = Working::new()?;
+        Ok(reflect_saved(host, &working.host, NAMESPACE))
+    })?;
+    no_failed_step_is_taken_as_done(Failures::TimeoutsOnly, |host| {
+        let working = Working::new()?;
+        fs::write(working.host.join("a"), "a changed on the host\n").required()?;
+        Ok(reflect_saved(host, &working.host, NAMESPACE))
     })
 }
 

@@ -1,7 +1,8 @@
-//! `Sandbox内のGit` worktree一覧。
+//! Gitのworktree一覧。
 //!
 //! `git worktree list --porcelain -z`のNUL区切り出力だけを読み、表示textの検索や
-//! 行の見た目に依存しない。bare rootの外を指すpathは案件の成果物として扱わない。
+//! 行の見た目に依存しない。`list`はSandbox内の一覧を読み、bare rootの外を指すpathは
+//! 案件の成果物として扱わない。`parse_list`は、hostのrepositoryの一覧を読むのにも使う。
 
 mod entry;
 mod list;

@@ -74,12 +74,13 @@ fn both_directions_are_listed_under_their_own_headings() -> Checked {
         "refs/remotes/origin/main",
         "refs/remotes/origin/old",
         "removed",
-        "worktrees and branches in the sandbox were left as they were",
     ] {
         assert!(text.contains(expected), "{expected}: {text}");
     }
-    // gitが断ったrefが無ければ、残した場所は示さない。
+    // gitが断ったrefが無ければ、残した場所は示さない。hostとSandboxのbranchが揃えば、
+    // Sandboxの中でする取り込みも示さない。
     assert!(!text.contains("refs/sbx/"), "{text}");
+    assert!(!text.contains("origin/<branch>"), "{text}");
     Ok(())
 }
 
@@ -90,7 +91,14 @@ fn refs_git_left_as_they_were_point_at_where_their_commits_are_kept() -> Checked
             Some(vec![
                 reflected("refs/heads/back", ReflectResult::Behind),
                 reflected("refs/heads/fork", ReflectResult::Diverged),
-                reflected("refs/heads/main", ReflectResult::CheckedOut),
+                reflected("refs/heads/rebasing", ReflectResult::CheckedOut),
+                reflected(
+                    "refs/heads/main",
+                    ReflectResult::LocalChanges {
+                        worktree: PathBuf::from("/Users/example/code/app"),
+                        paths: vec!["src/lib.rs".to_string(), "README.md".to_string()],
+                    },
+                ),
                 reflected("refs/tags/v1", ReflectResult::Exists),
                 reflected(
                     "refs/heads/guarded",
@@ -107,10 +115,12 @@ fn refs_git_left_as_they_were_point_at_where_their_commits_are_kept() -> Checked
         "behind",
         "diverged",
         "checked-out",
+        "local-changes",
         "exists",
         "refused",
         "refs/sbx/sbxm-local-app-0123456789ab",
         "Git refused refs/heads/guarded: pre-receive hook declined",
+        "refs/heads/main is checked out in /Users/example/code/app, where uncommitted changes to src/lib.rs, README.md overlap",
     ] {
         assert!(text.contains(expected), "{expected}: {text}");
     }
@@ -118,16 +128,87 @@ fn refs_git_left_as_they_were_point_at_where_their_commits_are_kept() -> Checked
 }
 
 #[test]
-fn a_branch_that_is_only_behind_loses_nothing_and_is_not_said_to_be_kept() -> Checked {
-    let text = rendered(
+fn a_sync_git_left_any_ref_of_is_not_said_to_be_synced() -> Checked {
+    // 終了status 1と同じく、hostの側でもSandboxのoriginの側でも、断られたものがあれば
+    // 同期したとは言わない。遅れているだけのbranchは数えない。
+    let refused_on_the_host = output(
+        Some(vec![
+            reflected("refs/heads/topic", ReflectResult::Updated),
+            reflected("refs/heads/main", ReflectResult::CheckedOut),
+        ]),
+        Vec::new(),
+    );
+    let refused_in_the_sandbox = output(
+        Some(vec![reflected("refs/heads/topic", ReflectResult::Updated)]),
+        vec![SentChange::Refused {
+            reference: "refs/tags/v1".to_string(),
+            reason: "already exists".to_string(),
+        }],
+    );
+    for refused in [refused_on_the_host, refused_in_the_sandbox] {
+        let text = rendered(&refused, Locale::En)?;
+        assert!(
+            text.starts_with(
+                "! Warning: local/app is not fully in sync with /Users/example/code/app/.git"
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("Synced"), "{text}");
+    }
+    let behind = rendered(
         &output(
             Some(vec![reflected("refs/heads/back", ReflectResult::Behind)]),
             Vec::new(),
         ),
         Locale::En,
     )?;
+    assert!(behind.starts_with("\u{2713} Synced local/app"), "{behind}");
+    Ok(())
+}
+
+#[test]
+fn a_branch_that_is_only_behind_loses_nothing_and_is_named_to_be_taken_in() -> Checked {
+    let text = rendered(
+        &output(
+            Some(vec![
+                reflected("refs/heads/back", ReflectResult::Behind),
+                reflected("refs/heads/main", ReflectResult::Updated),
+                reflected("refs/heads/old", ReflectResult::Behind),
+            ]),
+            Vec::new(),
+        ),
+        Locale::En,
+    )?;
     assert!(text.contains("behind"), "{text}");
     assert!(!text.contains("refs/sbx/"), "{text}");
+    assert!(
+        text.contains("These sandbox branches lack commits the host has: back, old."),
+        "{text}"
+    );
+    // hostに届けるものが残るのは、分かれたbranchだけである。
+    assert!(!text.contains("sync again"), "{text}");
+    Ok(())
+}
+
+#[test]
+fn a_branch_that_diverged_is_named_to_be_merged_and_synced_again() -> Checked {
+    let text = rendered(
+        &output(
+            Some(vec![
+                reflected("refs/heads/back", ReflectResult::Behind),
+                reflected("refs/heads/fork", ReflectResult::Diverged),
+            ]),
+            Vec::new(),
+        ),
+        Locale::Ja,
+    )?;
+    for expected in [
+        "次のSandboxのbranchには、hostにあるcommitが足りません: back。",
+        "次のSandboxのbranchとhostは、それぞれ相手に無いcommitを持っています: fork。",
+        "もう一度同期してhostへ届けてください",
+    ] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
     Ok(())
 }
 
