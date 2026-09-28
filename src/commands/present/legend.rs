@@ -108,6 +108,7 @@ impl Legend {
             ReflectResult::Behind => "legend-reflect-behind",
             ReflectResult::Diverged => "legend-reflect-diverged",
             ReflectResult::CheckedOut => "legend-reflect-checked-out",
+            ReflectResult::LocalChanges { .. } => "legend-reflect-local-changes",
             ReflectResult::Exists => "legend-reflect-exists",
             ReflectResult::Refused { .. } => "legend-reflect-refused",
         };

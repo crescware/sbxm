@@ -12,6 +12,7 @@ pub fn reflect_result(result: &ReflectResult) -> Inline {
         ReflectResult::Behind => ("behind", VisualState::Neutral),
         ReflectResult::Diverged => ("diverged", VisualState::Attention),
         ReflectResult::CheckedOut => ("checked-out", VisualState::Attention),
+        ReflectResult::LocalChanges { .. } => ("local-changes", VisualState::Attention),
         ReflectResult::Exists => ("exists", VisualState::Attention),
         ReflectResult::Refused { .. } => ("refused", VisualState::Attention),
     };

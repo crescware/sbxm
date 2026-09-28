@@ -7,7 +7,7 @@ use crate::testing::sandbox::InnerCommandSandbox;
 
 #[test]
 fn the_porcelain_listing_is_read_field_by_field() -> Checked {
-    let output = "worktree /home/agent/work/repo\0bare\0\0worktree /home/agent/work/repo/repo.tree-0\0HEAD abc\0branch refs/heads/main\0\0worktree /home/agent/work/repo/repo.tree-1\0HEAD abc\0detached\0\0";
+    let output = "worktree /home/agent/work/repo\0bare\0\0worktree /home/agent/work/repo/repo.tree-0\0HEAD abc\0branch refs/heads/main\0\0worktree /home/agent/work/repo/repo.tree-1\0HEAD abc\0detached\0\0worktree /home/agent/work/repo/repo.tree-2\0HEAD abc\0branch refs/heads/topic\0prunable gitdir file points to non-existent location\0\0";
     let entries = parse_list(output).required_because("the listing parses")?;
     assert_eq!(
         entries,
@@ -16,16 +16,29 @@ fn the_porcelain_listing_is_read_field_by_field() -> Checked {
                 path: "/home/agent/work/repo".to_string(),
                 bare: true,
                 detached: false,
+                branch: None,
+                prunable: false,
             },
             Entry {
                 path: "/home/agent/work/repo/repo.tree-0".to_string(),
                 bare: false,
                 detached: false,
+                branch: Some("refs/heads/main".to_string()),
+                prunable: false,
             },
             Entry {
                 path: "/home/agent/work/repo/repo.tree-1".to_string(),
                 bare: false,
                 detached: true,
+                branch: None,
+                prunable: false,
+            },
+            Entry {
+                path: "/home/agent/work/repo/repo.tree-2".to_string(),
+                bare: false,
+                detached: false,
+                branch: Some("refs/heads/topic".to_string()),
+                prunable: true,
             },
         ]
     );
@@ -98,6 +111,8 @@ fn only_paths_under_the_bare_root_are_this_projects_worktrees() {
         path: format!("{root}/repo.tree-0"),
         bare: false,
         detached: false,
+        branch: None,
+        prunable: false,
     };
     assert_eq!(managed.relative_to(root).as_deref(), Some("repo.tree-0"));
 
@@ -105,6 +120,8 @@ fn only_paths_under_the_bare_root_are_this_projects_worktrees() {
         path: root.to_string(),
         bare: true,
         detached: false,
+        branch: None,
+        prunable: false,
     };
     assert_eq!(
         bare.relative_to(root),
@@ -117,6 +134,8 @@ fn only_paths_under_the_bare_root_are_this_projects_worktrees() {
         path: format!("{root}/../elsewhere"),
         bare: false,
         detached: false,
+        branch: None,
+        prunable: false,
     };
     assert_eq!(escaping.relative_to(root), None);
 
@@ -125,6 +144,8 @@ fn only_paths_under_the_bare_root_are_this_projects_worktrees() {
         path: format!("{root}-other/tree"),
         bare: false,
         detached: false,
+        branch: None,
+        prunable: false,
     };
     assert_eq!(sibling.relative_to(root), None);
 }
