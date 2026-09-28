@@ -30,6 +30,6 @@ Before proposing a change, run the complete verification task:
 mise run check
 ```
 
-The check task formats, lints, verifies the macOS target, runs tests, checks coverage, and tests the release script. See [docs/development.md](https://github.com/crescware/sbxm/blob/main/docs/development.md) for the project conventions.
+The check task formats, lints, verifies the macOS target, runs tests, checks coverage, runs the tests again on the oldest Git sbxm supports on the host (2.36.0, built from source into `target/min-git/`), and tests the release script. See [docs/development.md](https://github.com/crescware/sbxm/blob/main/docs/development.md) for the project conventions.
 
 The website has its own `website/mise.toml` for Node and pnpm. Run website commands from `website/` and keep the two toolchains separate.

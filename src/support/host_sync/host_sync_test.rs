@@ -44,6 +44,34 @@ impl Repositories {
         let sandbox = bare.join(".git");
         let worktree = bare.join("example-repo.tree-0");
         let git_dir = sandbox.to_string_lossy().into_owned();
+        // commitの無いrepositoryへ、branchを作りながらworktreeを足せるのはgit 2.42からで
+        // ある。hostのgitに求める2.36でも組めるよう、最初のcommitを先に置く。
+        let tree = git_in(
+            root.path(),
+            &[
+                "--git-dir",
+                &git_dir,
+                "hash-object",
+                "-w",
+                "-t",
+                "tree",
+                "/dev/null",
+            ],
+        )?;
+        let first = git_in(
+            root.path(),
+            &["--git-dir", &git_dir, "commit-tree", &tree, "-m", "first"],
+        )?;
+        git_in(
+            root.path(),
+            &[
+                "--git-dir",
+                &git_dir,
+                "update-ref",
+                "refs/heads/main",
+                &first,
+            ],
+        )?;
         git_in(
             root.path(),
             &[
@@ -52,14 +80,9 @@ impl Repositories {
                 "worktree",
                 "add",
                 "--quiet",
-                "-b",
-                "main",
                 &worktree.to_string_lossy(),
+                "main",
             ],
-        )?;
-        git_in(
-            &worktree,
-            &["commit", "--quiet", "--allow-empty", "-m", "first"],
         )?;
         Ok(Repositories {
             root,

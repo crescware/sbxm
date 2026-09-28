@@ -78,6 +78,13 @@ mise run check
 - clippyのwarningが0件である
 - testが全件成功する
 - coverageが最低基準を下回らない
+- hostのgitに求める最小version（Git 2.36.0）でも、testが全件成功する
+
+最小versionのgitは、`scripts/min-git/build.sh`がgitとzlibのsourceをGitHubから取り、
+Linuxではzigで、macOSではCommand Line Toolsのccでbuildして`target/min-git/`へ置く。
+gitは公式のbinaryを配らず、package managerが入れるのは新しい版だけのためである。
+versionとchecksumは固定し、2回目からはbuild済みのものを使う。`mise run test-min-git`は、
+そのgitを`PATH`の先頭に置いてtestを走らせる。buildには`curl`、`tar`、`make`を使う。
 
 整形だけを当てる場合は次を実行する。
 
