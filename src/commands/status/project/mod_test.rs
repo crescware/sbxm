@@ -6,7 +6,7 @@ use super::{fake::*, *};
 use crate::support::provisioning::NextAction;
 use crate::testing::add_request::{project_of, request};
 use crate::testing::host::FakeSbx;
-use crate::testing::project::{Fixture, project_id};
+use crate::testing::project::{Fixture, diagnose, project_id};
 use crate::testing::provisioning::{Bench, World};
 
 #[test]

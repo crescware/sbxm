@@ -39,7 +39,7 @@ fn open(bench: &Bench, world: &World, project: &ProjectId) -> Result<Prepared> {
 }
 
 fn diagnose(bench: &Bench, world: &World, project: &ProjectId) -> Checked<ProjectStatus> {
-    super::status::project::diagnose(
+    crate::testing::project::diagnose(
         &bench.location,
         &bench.config,
         project,

@@ -6,9 +6,10 @@ use crate::hash::sha256_hex;
 
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Required};
+use crate::testing::project::diagnose;
 use crate::testing::provisioning::{Bench, World};
 
-use super::super::{FileRow, FileState, ProjectStatus, diagnose};
+use super::super::{FileRow, FileState, ProjectStatus};
 
 const DESTINATION: &str = ".config/example/settings.yaml";
 const IN_SANDBOX: &str = "/home/agent/.config/example/settings.yaml";

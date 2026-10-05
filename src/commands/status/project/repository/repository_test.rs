@@ -10,9 +10,9 @@ use crate::testing::host::AnsweredHost;
 
 use crate::testing::outcome::{Checked, Required};
 
-use super::{super::diagnose, super::fake::*};
+use super::super::fake::*;
 use crate::testing::host::FakeSbx;
-use crate::testing::project::{Fixture, project_id};
+use crate::testing::project::{Fixture, diagnose, project_id};
 use crate::testing::value::COMMIT;
 
 #[test]
