@@ -6,9 +6,10 @@ use crate::hash::sha256_hex;
 
 use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Required};
+use crate::testing::project::diagnose;
 use crate::testing::provisioning::{Bench, World};
 
-use super::super::{FileRow, FileState, ProjectStatus, diagnose};
+use super::super::{FileRow, FileState, ProjectStatus};
 
 const DESTINATION: &str = ".config/example/settings.yaml";
 const IN_SANDBOX: &str = "/home/agent/.config/example/settings.yaml";
@@ -30,7 +31,6 @@ fn diagnosed(bench: &Bench, config: &GlobalConfig, world: &World) -> Checked<Pro
         &project_of(&request("Example-Org/Example-Repo", None, None)?)?,
         world,
         bench.workspace_root.path(),
-        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose the built project")
 }

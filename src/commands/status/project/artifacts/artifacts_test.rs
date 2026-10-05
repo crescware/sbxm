@@ -11,10 +11,10 @@ use crate::support::image::{self, LABEL_CANONICAL_ID, LABEL_DOCKERFILE_SHA256};
 
 use crate::testing::outcome::{Checked, Required};
 
+use super::super::fake::*;
 use super::check_directory;
-use super::{super::diagnose, super::fake::*};
 use crate::testing::host::FakeSbx;
-use crate::testing::project::{Fixture, project_id};
+use crate::testing::project::{Fixture, diagnose, project_id};
 use crate::testing::value::IMAGE_ID;
 
 #[test]
@@ -104,7 +104,6 @@ fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
-        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(value_of(&status, "status-item-image")?, Value::Missing);
@@ -130,7 +129,6 @@ fn an_engine_that_cannot_be_asked_does_not_make_an_image_absent() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
-        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(value_of(&status, "status-item-image")?, Value::NotObserved);
@@ -158,7 +156,6 @@ fn a_changed_dockerfile_is_reported_as_the_next_rebuild_rather_than_a_fault() ->
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
-        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(value_of(&status, "status-item-dockerfile")?, Value::Changed);
@@ -183,7 +180,6 @@ fn a_dockerfile_whose_digest_matches_the_recorded_generation_is_ready() -> Check
         &project_id("example-org/example-repo")?,
         &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
-        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(value_of(&status, "status-item-dockerfile")?, Value::Ready);
@@ -206,7 +202,6 @@ fn a_dockerfile_that_cannot_be_read_is_neither_absent_nor_a_new_generation() -> 
         &project_id("example-org/example-repo")?,
         &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
-        &mut crate::design::SilentProgress,
     );
     std::fs::set_permissions(&dockerfile, std::fs::Permissions::from_mode(0o600)).required()?;
     let status = status.required_because("diagnose")?;
@@ -253,7 +248,6 @@ fn a_dockerfile_that_is_a_symlink_is_refused_instead_of_followed() -> Checked {
         &project_id("example-org/example-repo")?,
         &FakeSbx::listing(r#"{"sandboxes":[]}"#),
         &fixture.workspace_root,
-        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(
@@ -298,7 +292,6 @@ fn an_image_that_declares_this_project_and_this_generation_is_ready() -> Checked
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
-        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(value_of(&status, "status-item-image")?, Value::Ready);
@@ -337,7 +330,6 @@ fn an_image_whose_labels_declare_something_else_is_unusable_rather_than_ready() 
             &project_id("example-org/example-repo")?,
             &host,
             &fixture.workspace_root,
-            &mut crate::design::SilentProgress,
         )
         .required_because("diagnose")?;
         assert_eq!(
