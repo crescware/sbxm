@@ -59,15 +59,20 @@ pub fn diagnose(
     // 4. image、Sandbox
     progress.step(msg!("progress-status-image"));
     check_image(host, &name, &metadata, &mut status);
-    progress.step(msg!("progress-status-sandbox"));
+    progress.step(msg!("progress-inspect-sandbox"));
     let state = check_sandbox(host, &metadata, workspace_root, &mut status);
 
     // 5-9. Sandbox内部の検査
-    if state == Some(ProjectState::Running) {
-        progress.step(msg!("progress-status-inside"));
-    }
     let host_repository = repository::host_repository(&paths, &metadata);
-    check_inside(host, &name, &metadata, &host_repository, state, &mut status);
+    check_inside(
+        host,
+        &name,
+        &metadata,
+        &host_repository,
+        state,
+        &mut status,
+        progress,
+    );
 
     // 10. 宣言file
     if !config.files.is_empty() {

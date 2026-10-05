@@ -54,5 +54,5 @@ pub(super) fn observe_protection(
         metadata,
         &host_repository,
     );
-    protection::gate::assess(host, &request)
+    protection::gate::assess(host, &request, progress)
 }

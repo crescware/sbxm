@@ -1,4 +1,5 @@
 use crate::boundary::host::HostEnvironment;
+use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 
 use super::super::{ProtectionSnapshot, Request, inspect};
@@ -15,6 +16,12 @@ use super::super::{ProtectionSnapshot, Request, inspect};
 // 既存の呼び出し側が共通のdiagnostic flowを使えるよう、Resultの境界は残す。観測失敗
 // 自体はAssessment内で表現する。
 #[allow(clippy::unnecessary_wraps)]
-pub fn assess(host: &dyn HostEnvironment, request: &Request<'_>) -> Result<ProtectionSnapshot> {
-    Ok(ProtectionSnapshot::new(inspect::inspect(host, request)))
+pub fn assess(
+    host: &dyn HostEnvironment,
+    request: &Request<'_>,
+    progress: &mut dyn ProgressSink,
+) -> Result<ProtectionSnapshot> {
+    Ok(ProtectionSnapshot::new(inspect::inspect(
+        host, request, progress,
+    )))
 }

@@ -242,6 +242,12 @@ When run in an interactive terminal, `repair`, `apply`, `rebuild`, `open`,
 `stop`, `destroy`, and `status` can prompt you to select a target if the
 project argument is omitted. For `status`, the first choice is `global`,
 followed by registered project IDs.
+Project diagnostics report each inspection phase on standard error before waiting.
+`status` and `destroy` use the same worktree progress, naming the worktree and its
+position in the list. `destroy` also reports the project lock, ignored files,
+unfinished Git operations, origin fetch, and the safety recheck after confirmation.
+`status` only reads stored origin refs and does not fetch or start stopped sandboxes.
+Reports and deletion plans remain on standard output after inspection.
 `guide` first prompts for a topic when it is omitted, then prompts for a project.
 If `credential-rotation` is given, it starts at the project prompt.
 In a non-interactive terminal, provide an explicit project argument for these

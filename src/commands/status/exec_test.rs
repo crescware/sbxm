@@ -180,6 +180,88 @@ fn project_progress_is_flushed_before_waiting_for_docker_in_both_languages() -> 
 }
 
 #[test]
+fn inside_progress_is_flushed_before_each_slow_read_without_fetching() -> Checked {
+    use std::io::BufWriter;
+
+    use crate::testing::command::ScriptedWriter;
+    use crate::testing::host::ChangingBefore;
+    use crate::testing::protection::clean_host;
+
+    for (needle, en, ja) in [
+        (
+            "worktree list --porcelain",
+            "Reading the worktree list",
+            "worktree一覧を読み取ります",
+        ),
+        (
+            "status --porcelain=v2 -z --untracked-files=all",
+            "changes and untracked files",
+            "変更と未追跡fileを確認します",
+        ),
+        (
+            "rev-parse HEAD",
+            "HEAD and upstream",
+            "HEADとupstreamを確認します",
+        ),
+        (
+            "config --get remote.origin.url",
+            "No fetch is performed.",
+            "fetchは行いません",
+        ),
+    ] {
+        for (locale, waiting) in [(Locale::En, en), (Locale::Ja, ja)] {
+            let fixture = Fixture::new()?;
+            let project = fixture.register("example-org/example-repo")?;
+            let clock = ScriptedClock::default();
+            let policy = RenderingPolicy::plain();
+            let stdout = ScriptedWriter::accepting_all();
+            let stderr = ScriptedWriter::accepting_all();
+            let written_stdout = stdout.written();
+            let written_stderr = stderr.written();
+            let visible_stderr = written_stderr.clone();
+            let host = ChangingBefore::new(clean_host(&fixture, &project)?, needle, move || {
+                let progress = String::from_utf8_lossy(&visible_stderr.borrow()).into_owned();
+                assert!(progress.contains(waiting), "{progress}");
+                if needle.starts_with("status ") || needle == "rev-parse HEAD" {
+                    assert!(progress.contains("worktree 1/1"), "{progress}");
+                    assert!(progress.contains("example-repo.tree-0"), "{progress}");
+                }
+                assert!(written_stdout.borrow().is_empty(), "the report comes later");
+            });
+            let mut ui = Ui::new(
+                locale,
+                policy,
+                BufWriter::new(stdout),
+                BufWriter::new(stderr),
+            );
+            let mut prompt = PromptUi::new(
+                locale,
+                policy.stderr,
+                Box::new(ScriptedKeys::choosing(1)),
+                Box::new(RecordedScreen::new()),
+            );
+            let context = Context {
+                location: &fixture.location,
+                workspace_root: &fixture.workspace_root,
+                clock: &clock,
+                locale,
+                can_prompt: true,
+            };
+
+            assert_ne!(
+                super::exec(&Scope::Prompt, &context, &mut ui, &host, &mut prompt),
+                ExitCode::Canceled
+            );
+            assert!(host.inner.ran(needle), "{needle}");
+            assert!(!host.inner.ran(" fetch "), "status must remain read-only");
+            let progress = String::from_utf8_lossy(&written_stderr.borrow()).into_owned();
+            assert!(!progress.contains('\u{1b}'), "{progress}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn prompt_cancellation_returns_canceled() -> Checked {
     let fixture = Fixture::new()?;
     let screen = RecordedScreen::new();

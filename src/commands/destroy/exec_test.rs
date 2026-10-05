@@ -63,6 +63,136 @@ fn run_with(
 }
 
 #[test]
+fn selected_project_progress_is_flushed_before_state_and_protection_checks() -> Checked {
+    for (needle, skip, en, ja) in [
+        (
+            "ls --json",
+            1,
+            "Waiting for Docker Sandboxes to respond.",
+            "Docker Sandboxesの応答を待っています",
+        ),
+        (
+            "worktree list --porcelain",
+            0,
+            "Reading the worktree list",
+            "worktree一覧を読み取ります",
+        ),
+        (
+            "status --porcelain=v2 -z --untracked-files=all",
+            0,
+            "changes and untracked files",
+            "変更と未追跡fileを確認します",
+        ),
+        (
+            "status --porcelain=v2 -z --ignored=traditional",
+            0,
+            "ignored files and directories",
+            "無視対象file・directoryを確認します",
+        ),
+        (
+            "rev-parse --git-dir",
+            0,
+            "unfinished Git operations",
+            "進行中のGit操作を確認します",
+        ),
+        (
+            "rev-parse HEAD",
+            0,
+            "HEAD and upstream",
+            "HEADとupstreamを確認します",
+        ),
+        (
+            "rev-list --walk-reflogs",
+            0,
+            "reflog-only commits",
+            "reflogだけに残るcommitを確認します",
+        ),
+        (
+            "fetch --prune",
+            0,
+            "Waiting for origin to respond.",
+            "originの応答を待っています",
+        ),
+    ] {
+        for (locale, waiting) in [(Locale::En, en), (Locale::Ja, ja)] {
+            assert_selected_progress(needle, skip, locale, waiting)?;
+        }
+    }
+    Ok(())
+}
+
+fn assert_selected_progress(
+    needle: &'static str,
+    skip: usize,
+    locale: Locale,
+    waiting: &'static str,
+) -> Checked {
+    use std::io::BufWriter;
+
+    use crate::testing::command::ScriptedWriter;
+    use crate::testing::host::ChangingBefore;
+
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let clock = ScriptedClock::default();
+    let policy = RenderingPolicy::plain();
+    let stdout = ScriptedWriter::accepting_all();
+    let stderr = ScriptedWriter::accepting_all();
+    let written_stdout = stdout.written();
+    let written_stderr = stderr.written();
+    let visible_stderr = written_stderr.clone();
+    let host = ChangingBefore::skipping(clean_host(&fixture, &project)?, needle, skip, move || {
+        let progress = String::from_utf8_lossy(&visible_stderr.borrow()).into_owned();
+        assert!(progress.contains(waiting), "{progress}");
+        assert!(
+            progress.contains("example-org/example-repo"),
+            "the lock wait names its project: {progress}"
+        );
+        if needle.starts_with("status ") || needle == "rev-parse HEAD" {
+            assert!(progress.contains("worktree 1/1"), "{progress}");
+            assert!(progress.contains("example-repo.tree-0"), "{progress}");
+        }
+        assert!(
+            written_stdout.borrow().is_empty(),
+            "the deletion plan comes later"
+        );
+    });
+    let mut ui = Ui::new(
+        locale,
+        policy,
+        BufWriter::new(stdout),
+        BufWriter::new(stderr),
+    );
+    let mut prompt = PromptUi::new(
+        locale,
+        policy.stderr,
+        Box::new(ScriptedKeys::pressing(&[Key::Enter, Key::Escape])),
+        Box::new(RecordedScreen::new()),
+    );
+    let context = Context {
+        location: &fixture.location,
+        workspace_root: &fixture.workspace_root,
+        clock: &clock,
+        locale,
+        can_prompt: true,
+    };
+    let args = Args {
+        project: None,
+        force: false,
+    };
+
+    assert_eq!(
+        super::exec(&args, &context, &mut ui, &host, &mut prompt),
+        ExitCode::Canceled
+    );
+    assert!(host.inner.ran(needle), "{needle}");
+    assert!(!host.inner.ran("rm "), "cancel must not remove anything");
+    let progress = String::from_utf8_lossy(&written_stderr.borrow()).into_owned();
+    assert!(!progress.contains('\u{1b}'), "{progress}");
+    Ok(())
+}
+
+#[test]
 fn a_commit_saved_to_the_host_on_request_lets_the_plan_be_drawn() -> Checked {
     // 保護の検査が止めたあと、hostへ保存する選択をすれば、同じ案件をもう一度準備して
     // 計画と確認へ進む。確認はcancelし、削除には進ませない。
@@ -153,6 +283,24 @@ fn a_confirmed_destroy_removes_the_sandbox_and_reports_the_project_as_unmanaged(
 
     assert_eq!(ran.code, ExitCode::Success, "{}{}", ran.stdout, ran.stderr);
     assert!(
+        ran.stderr
+            .contains("Rechecking the sandbox state and deletion safety after confirmation."),
+        "{}",
+        ran.stderr
+    );
+    assert_eq!(
+        ran.stderr.matches("changes and untracked files").count(),
+        2,
+        "{}",
+        ran.stderr
+    );
+    assert_eq!(
+        ran.stderr.matches("Waiting for origin to respond.").count(),
+        2,
+        "{}",
+        ran.stderr
+    );
+    assert!(
         host.ran(&format!("rm {}", project.sandbox)),
         "{:?}",
         host.calls()
@@ -181,6 +329,8 @@ fn a_forced_destroy_warns_and_removes_without_asking() -> Checked {
     let ran = run_with(&fixture, &host, &[], true)?;
 
     assert_eq!(ran.code, ExitCode::Success, "{}{}", ran.stdout, ran.stderr);
+    assert!(!ran.stderr.contains("Checking worktree"), "{}", ran.stderr);
+    assert!(!host.ran("fetch --prune"), "{:?}", host.calls());
     assert!(
         ran.stderr.contains("Force mode skips"),
         "the bypass is announced: {}",

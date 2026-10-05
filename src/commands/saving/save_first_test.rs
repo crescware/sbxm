@@ -165,6 +165,7 @@ fn a_save_that_must_not_wait_gives_up_at_once_on_a_held_lock() -> Checked {
     let candidate = crate::support::select::find(&bench.location, &local_project()?).required()?;
     let held = candidate.paths.acquire_lock().required()?;
     let mark = world.mark();
+    let mut progress = crate::testing::recorded_output::RecordedOutput::new();
 
     // 渡した期限0がlockの取得まで届くことは、待ちきれなかった旨の文面が挙げる秒数で見る。
     // 期限0なら待たずに1度だけ試すことは、lockの取得のtestが台本の時計で確かめる。
@@ -174,7 +175,7 @@ fn a_save_that_must_not_wait_gives_up_at_once_on_a_held_lock() -> Checked {
         bench.workspace_root.path(),
         std::time::Duration::ZERO,
         &clock,
-        &mut crate::design::SilentProgress,
+        &mut progress,
     );
 
     let AutoSaved::Failed(warning) = saved else {
@@ -196,6 +197,12 @@ fn a_save_that_must_not_wait_gives_up_at_once_on_a_held_lock() -> Checked {
         "{warning:?}"
     );
     assert!(!tried_to_save(&world, mark), "{:?}", world.since(mark));
+    assert_eq!(
+        progress.steps.len(),
+        1,
+        "the lock wait is announced even when it fails"
+    );
+    assert_eq!(progress.steps[0].id, "progress-project-lock");
     drop(held);
     Ok(())
 }
