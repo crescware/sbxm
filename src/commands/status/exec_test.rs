@@ -112,6 +112,74 @@ fn prompt_executes_the_selected_project_scope() -> Checked {
 }
 
 #[test]
+fn project_progress_is_flushed_before_waiting_for_docker_in_both_languages() -> Checked {
+    use std::io::BufWriter;
+
+    use crate::testing::command::ScriptedWriter;
+    use crate::testing::host::ChangingBefore;
+
+    for (locale, waiting) in [
+        (Locale::En, "Waiting for Docker to respond."),
+        (Locale::Ja, "Dockerの応答を待っています。"),
+    ] {
+        for scope in [
+            Scope::Prompt,
+            Scope::Project(ProjectId::parse("example-org/example-repo")?),
+        ] {
+            let fixture = Fixture::new()?;
+            fixture.register("example-org/example-repo")?;
+            let clock = ScriptedClock::default();
+            let policy = RenderingPolicy::plain();
+            let stdout = ScriptedWriter::accepting_all();
+            let stderr = ScriptedWriter::accepting_all();
+            let written_stdout = stdout.written();
+            let written_stderr = stderr.written();
+            let visible_stderr = written_stderr.clone();
+            let host = ChangingBefore::new(
+                FakeSbx::listing(r#"{"sandboxes":[]}"#),
+                "image ls --quiet",
+                move || {
+                    // BufWriterの中に残った表示では、待ち時間のfeedbackにならない。
+                    let progress = String::from_utf8_lossy(&visible_stderr.borrow()).into_owned();
+                    assert!(progress.contains("example-org/example-repo"), "{progress}");
+                    assert!(progress.contains(waiting), "{progress}");
+                    assert!(written_stdout.borrow().is_empty(), "the report comes later");
+                },
+            );
+            let screen = RecordedScreen::new();
+            let mut prompt = PromptUi::new(
+                locale,
+                policy.stderr,
+                Box::new(ScriptedKeys::choosing(1)),
+                Box::new(screen.clone()),
+            );
+            let context = Context {
+                location: &fixture.location,
+                workspace_root: &fixture.workspace_root,
+                clock: &clock,
+                locale,
+                can_prompt: matches!(scope, Scope::Prompt),
+            };
+            let mut ui = Ui::new(
+                locale,
+                policy,
+                BufWriter::new(stdout),
+                BufWriter::new(stderr),
+            );
+
+            let code = super::exec(&scope, &context, &mut ui, &host, &mut prompt);
+
+            assert_ne!(code, ExitCode::Canceled);
+            assert!(host.inner.ran("image ls --quiet"));
+            let progress = String::from_utf8_lossy(&written_stderr.borrow()).into_owned();
+            assert!(!progress.contains('\u{1b}'), "{progress}");
+            assert_eq!(screen.drawn().is_empty(), !context.can_prompt);
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn prompt_cancellation_returns_canceled() -> Checked {
     let fixture = Fixture::new()?;
     let screen = RecordedScreen::new();

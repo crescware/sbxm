@@ -45,6 +45,7 @@ fn diagnose(bench: &Bench, world: &World, project: &ProjectId) -> Checked<Projec
         project,
         world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     )
     .required_because("the project is diagnosed without changing it")
 }

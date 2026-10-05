@@ -102,6 +102,7 @@ fn project_scope(
         project,
         host,
         context.workspace_root,
+        ui,
     ) {
         Ok(status) => print::project(ui, &status),
         Err(error) => report(ui, &error),

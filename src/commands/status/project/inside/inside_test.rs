@@ -22,12 +22,14 @@ fn a_stopped_sandbox_is_not_started_to_look_inside_it() -> Checked {
         &project,
     );
 
+    let mut progress = crate::testing::recorded_output::RecordedOutput::new();
     let status = diagnose(
         &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut progress,
     )
     .required_because("diagnose")?;
 
@@ -44,6 +46,12 @@ fn a_stopped_sandbox_is_not_started_to_look_inside_it() -> Checked {
         !host.ran("exec"),
         "nothing runs inside a stopped sandbox: {:?}",
         host.calls()
+    );
+    assert!(
+        progress
+            .steps
+            .iter()
+            .all(|step| !matches!(step.id, "progress-status-inside" | "progress-status-disk"))
     );
     assert!(
         status.is_healthy(),
@@ -71,6 +79,7 @@ fn the_workspace_a_stopped_sandbox_declares_is_confirmed_on_the_host() -> Checke
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -99,6 +108,7 @@ fn a_workspace_that_is_gone_is_not_reported_as_ready() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -137,6 +147,7 @@ fn a_workspace_that_cannot_be_observed_is_not_read_as_present_or_absent() -> Che
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     );
 
     std::fs::set_permissions(
@@ -176,6 +187,7 @@ fn a_sandbox_state_that_cannot_be_read_is_not_reported_as_a_missing_sandbox() ->
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -224,6 +236,7 @@ fn colliding_sandbox_names_are_not_reported_as_a_mismatch() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -277,6 +290,7 @@ fn an_unrelated_project_does_not_decide_this_one() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(value_of(&status, "status-item-sandbox")?, Value::Stopped);
@@ -309,6 +323,7 @@ fn an_ssh_agent_inside_the_sandbox_is_a_security_failure() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -346,6 +361,7 @@ fn a_socket_variable_without_a_reachable_agent_is_not_exposed() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -385,6 +401,7 @@ fn an_agent_that_answers_without_keys_is_still_reachable() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(value_of(&status, "status-item-ssh-agent")?, Value::Exposed);
@@ -414,6 +431,7 @@ fn a_check_that_could_not_run_is_not_read_as_not_exposed() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(
@@ -446,6 +464,7 @@ fn a_token_that_was_never_registered_is_missing_rather_than_unusable() -> Checke
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(value_of(&status, "status-item-secret")?, Value::Missing);
@@ -466,6 +485,7 @@ fn a_token_that_was_never_registered_is_missing_rather_than_unusable() -> Checke
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(value_of(&status, "status-item-secret")?, Value::Missing);
@@ -500,6 +520,7 @@ fn a_sandbox_that_works_somewhere_else_is_not_taken_for_this_projects() -> Check
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -560,6 +581,7 @@ fn a_local_project_has_no_github_secret_to_look_for() -> Checked {
             &project_id("local/app")?,
             &host,
             &fixture.workspace_root,
+            &mut crate::design::SilentProgress,
         )
         .required_because("diagnose")?;
 

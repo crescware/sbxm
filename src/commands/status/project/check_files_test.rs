@@ -30,6 +30,7 @@ fn diagnosed(bench: &Bench, config: &GlobalConfig, world: &World) -> Checked<Pro
         &project_of(&request("Example-Org/Example-Repo", None, None)?)?,
         world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose the built project")
 }

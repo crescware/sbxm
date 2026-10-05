@@ -27,6 +27,7 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -89,6 +90,7 @@ fn status_keeps_clean_state_separate_from_an_unobservable_remote() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -136,6 +138,7 @@ fn an_unpublished_commit_is_shown_without_failing_status() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -176,6 +179,7 @@ fn one_shared_observation_failure_produces_one_diagnostic_not_one_per_worktree()
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -222,6 +226,7 @@ fn a_read_only_observation_that_could_not_launch_is_diagnosed_once_with_its_own_
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -265,6 +270,7 @@ fn a_head_read_that_answered_empty_is_not_read_as_a_commit() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -306,6 +312,7 @@ fn a_head_read_the_host_could_not_launch_is_diagnosed_as_the_hosts_failure() -> 
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -342,6 +349,7 @@ fn a_branch_read_that_answered_empty_is_not_read_as_a_commit() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -375,6 +383,7 @@ fn a_branch_read_the_host_could_not_launch_is_diagnosed_as_the_hosts_failure() -
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -408,6 +417,7 @@ fn an_upstream_read_that_answered_empty_is_not_read_as_configured() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -447,6 +457,7 @@ fn a_worktree_without_an_upstream_can_still_be_shown_as_reachable() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -485,6 +496,7 @@ fn an_upstream_read_that_answered_oddly_is_not_read_as_configured() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -526,6 +538,7 @@ fn an_upstream_read_the_host_could_not_launch_is_diagnosed_as_the_hosts_failure(
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -556,6 +569,7 @@ fn a_worktree_outside_the_shared_repository_is_not_counted_as_the_projects() -> 
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -600,6 +614,7 @@ fn a_declared_worktree_that_is_missing_is_reported_as_unusable() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -650,6 +665,7 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(
@@ -673,6 +689,7 @@ fn a_repository_check_that_could_not_run_is_not_read_as_missing() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
     assert_eq!(
@@ -698,6 +715,7 @@ fn a_repository_check_the_host_could_not_start_stays_the_hosts_own_failure() -> 
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -747,6 +765,7 @@ fn a_worktree_listing_that_failed_leaves_no_worktree_row_behind() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -798,6 +817,7 @@ fn a_worktree_whose_status_did_not_answer_is_not_reported_as_clean() -> Checked 
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -843,6 +863,7 @@ fn a_status_command_that_could_not_be_run_leaves_the_worktree_unobserved() -> Ch
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 

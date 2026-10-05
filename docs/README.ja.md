@@ -216,6 +216,10 @@ Sandboxが起動し、`open-blocked`は接続前の準備が残っています�
 対話端末で実行した場合、`repair`、`apply`、`rebuild`、`open`、`stop`、`destroy`、
 `status`はプロジェクト引数を省略すると対象を選択するpromptを表示できます。
 `status`では先頭に`global`を表示し、その後へ登録済みproject IDを並べます。
+案件の診断では、Docker・Docker Sandboxesの応答待ち、Sandbox内部の検査、
+宣言file・ディスクの確認、次の一手の判定など、主な工程の開始をstderrへ表示します。
+診断結果の表は、検査が終わったあとにstdoutへ表示します。停止中のSandboxは、
+内部やディスクを確認するために起動しません。
 `guide`はtopicを省略すると最初にtopicを問い、続いて案件を問います。
 `credential-rotation`を指定した場合は案件選択から始めます。非対話端末では、これらの
 commandにプロジェクト引数を明示してください。`guide`にはtopicの明示も必要で、

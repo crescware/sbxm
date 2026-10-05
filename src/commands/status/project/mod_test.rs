@@ -19,6 +19,7 @@ fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .refused_because("there is nothing to diagnose")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProjectNotManaged));
@@ -37,6 +38,7 @@ fn the_items_are_reported_in_the_documented_order() -> Checked {
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -75,6 +77,7 @@ fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() -> Ch
         &project_id("Example-Org/Example-Repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose")?;
 
@@ -112,6 +115,7 @@ fn an_unfinished_first_provisioning_is_named_with_the_command_that_recovers_it()
         &project_of(&request)?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose the interrupted project")?;
 
@@ -148,6 +152,7 @@ fn a_changed_dockerfile_on_a_finished_project_is_named_as_a_generation_change() 
         &project,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose the finished project")?;
 
@@ -173,6 +178,7 @@ fn a_stopped_project_is_not_given_a_command_that_cannot_be_proven() -> Checked {
         &project_of(&request)?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose the stopped project")?;
 
@@ -197,6 +203,7 @@ fn a_missing_token_registration_is_reported_with_the_command_that_registers_it()
         &project_of(&request)?,
         &world,
         bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
     )
     .required_because("diagnose the sandbox whose token is no longer registered")?;
 
@@ -238,6 +245,7 @@ fn a_project_whose_metadata_cannot_be_read_is_not_diagnosed_from_a_guess() -> Ch
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut crate::design::SilentProgress,
     )
     .refused_because("the metadata is broken")?;
 
