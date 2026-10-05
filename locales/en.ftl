@@ -782,6 +782,13 @@ progress-checking-repository = Checking the repository already inside the sandbo
 progress-fetching-repository = Fetching the repository inside the sandbox. For a large repository this can take several minutes.
 progress-sending-repository = Writing the host repository's branches and tags into the sandbox. For a large repository this can take several minutes.
 progress-creating-worktrees = Creating the managed worktrees. For a large repository this can take a few minutes.
+progress-status-project = Reading project metadata and host files for { $project }.
+progress-status-image = Checking the sandbox image. Waiting for Docker to respond.
+progress-status-sandbox = Checking the sandbox state. Waiting for Docker Sandboxes to respond.
+progress-status-inside = Checking credentials, the repository, and worktrees inside the sandbox. Many worktrees or files can make this take longer.
+progress-status-files = Checking declared files and their placement.
+progress-status-disk = Checking disk usage inside the sandbox.
+progress-status-next = Checking whether the sandbox needs setup or maintenance to determine the next step.
 
 cli-color-help = When to color the output ({ $supported })
 warning-label = Warning:

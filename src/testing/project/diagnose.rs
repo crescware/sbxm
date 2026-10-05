@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::boundary::host::HostEnvironment;
 use crate::commands::status::project::ProjectStatus;
 use crate::config::{ConfigLocation, GlobalConfig};
+use crate::design::SilentProgress;
 use crate::diagnostics::Result;
 use crate::project::ProjectId;
 
@@ -16,5 +17,12 @@ pub fn diagnose(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
 ) -> Result<ProjectStatus> {
-    crate::commands::status::project::diagnose(location, config, project, host, workspace_root)
+    crate::commands::status::project::diagnose(
+        location,
+        config,
+        project,
+        host,
+        workspace_root,
+        &mut SilentProgress,
+    )
 }

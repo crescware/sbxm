@@ -2,9 +2,12 @@ use std::path::Path;
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::{ConfigLocation, GlobalConfig};
+use crate::design::ProgressSink;
 use crate::diagnostics::Result;
+use crate::msg;
 use crate::project::ProjectId;
 
+use crate::support::inventory::ProjectState;
 use crate::support::provisioning::{self, NextAction};
 use crate::support::{disk, repository, select};
 
@@ -22,7 +25,12 @@ pub fn diagnose(
     project: &ProjectId,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<ProjectStatus> {
+    progress.step(msg!(
+        "progress-status-project",
+        project = project.to_string()
+    ));
     // 案件の場所はregistryだけが持つ。配置規則から再計算しない。
     let candidate = select::find(location, project)?;
     let paths = candidate.paths.clone();
@@ -49,22 +57,34 @@ pub fn diagnose(
     check_dockerfile(&paths, &metadata, &mut status);
 
     // 4. image、Sandbox
+    progress.step(msg!("progress-status-image"));
     check_image(host, &name, &metadata, &mut status);
+    progress.step(msg!("progress-status-sandbox"));
     let state = check_sandbox(host, &metadata, workspace_root, &mut status);
 
     // 5-9. Sandbox内部の検査
+    if state == Some(ProjectState::Running) {
+        progress.step(msg!("progress-status-inside"));
+    }
     let host_repository = repository::host_repository(&paths, &metadata);
     check_inside(host, &name, &metadata, &host_repository, state, &mut status);
 
     // 10. 宣言file
+    if !config.files.is_empty() {
+        progress.step(msg!("progress-status-files"));
+    }
     check_files(host, &name, &metadata, config, state, &mut status);
 
     // root filesystemの使用量。running中だけ観測のためにcommandを実行する。
+    if state == Some(ProjectState::Running) {
+        progress.step(msg!("progress-status-disk"));
+    }
     status.disk = disk::observe(host, name.as_str(), state, TimeoutClass::Probe);
 
     // 次の1手は、`repair`と同じ共有観測から同じ規則で決める。statusが別の判定規則を
     // 持つと、案内したcommandが実行時に「不要」と答え得る。観測そのものが成立しない
     // 場合は、実行できると証明できないcommandを出さない。
+    progress.step(msg!("progress-status-next"));
     status.next = provisioning::observe(host, &paths, config, &metadata, workspace_root)
         .ok()
         .and_then(|observation| NextAction::decide(&metadata, &observation));

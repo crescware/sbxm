@@ -22,12 +22,14 @@ fn a_stopped_sandbox_is_not_started_to_look_inside_it() -> Checked {
         &project,
     );
 
-    let status = diagnose(
+    let mut progress = crate::testing::recorded_output::RecordedOutput::new();
+    let status = crate::commands::status::project::diagnose(
         &fixture.location,
         &fixture.config,
         &project_id("example-org/example-repo")?,
         &host,
         &fixture.workspace_root,
+        &mut progress,
     )
     .required_because("diagnose")?;
 
@@ -44,6 +46,12 @@ fn a_stopped_sandbox_is_not_started_to_look_inside_it() -> Checked {
         !host.ran("exec"),
         "nothing runs inside a stopped sandbox: {:?}",
         host.calls()
+    );
+    assert!(
+        progress
+            .steps
+            .iter()
+            .all(|step| !matches!(step.id, "progress-status-inside" | "progress-status-disk"))
     );
     assert!(
         status.is_healthy(),

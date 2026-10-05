@@ -782,6 +782,13 @@ progress-checking-repository = Sandboxの中にある既存のrepositoryを検�
 progress-fetching-repository = Sandboxの中でrepositoryをfetchします。大きなrepositoryでは数分かかることがあります。
 progress-sending-repository = hostのrepositoryのbranchとtagをSandboxへ書き込みます。大きなrepositoryでは数分かかることがあります。
 progress-creating-worktrees = managed worktreeを作成します。大きなrepositoryでは数分かかることがあります。
+progress-status-project = { $project } の案件metadataとhost上のfileを読み取ります。
+progress-status-image = Sandbox imageを確認します。Dockerの応答を待っています。
+progress-status-sandbox = Sandboxの状態を確認します。Docker Sandboxesの応答を待っています。
+progress-status-inside = Sandbox内のcredential、repository、worktreeを確認します。worktreeやfileが多い場合は時間がかかることがあります。
+progress-status-files = 宣言fileとその配置状態を確認します。
+progress-status-disk = Sandbox内のディスク使用量を確認します。
+progress-status-next = 次の一手を判断するため、Sandboxの構築・保守が必要か確認します。
 
 cli-color-help = 出力へ色を付ける条件 ({ $supported })
 warning-label = 警告 (Warning):
