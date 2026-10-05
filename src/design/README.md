@@ -259,6 +259,12 @@ block間は空行一行、block内は詰める。rendererがblock境界を管理
 
 progressは処理開始前にstderrへ書き、直ちにflushする。
 
+検査の工程名はcommandごとに独自の粒度を作らず、共通の観測処理から`ProgressSink`へ
+通知する。認証・案件lock・Docker/Sandbox応答待ちも、検査に入る前の待機工程として
+示す。worktreeと宣言fileには対象名と現在件数/総件数を添える。再検査は省略せず、
+確認後・修復後などの区切りを示して同じ観測工程をもう一度表示する。外部commandを
+1つずつ列挙するverboseログや、検査工程ごとのsuccess行は追加しない。
+
 ### Summary
 
 成功結果を可能な限り一行で示す。

@@ -180,6 +180,75 @@ fn all_sandbox_commands_report_missing_login_before_any_prompt_or_mutation() -> 
 }
 
 #[test]
+fn all_sandbox_commands_flush_the_login_phase_before_waiting_in_both_languages() -> Checked {
+    use std::cell::Cell;
+    use std::io::BufWriter;
+    use std::rc::Rc;
+
+    use crate::testing::command::ScriptedWriter;
+    use crate::testing::host::ChangingBefore;
+
+    let clock = ScriptedClock::default();
+    let fixture = Fixture::new()?;
+    for (locale, expected) in [
+        (Locale::En, "Checking Docker Sandboxes sign-in."),
+        (Locale::Ja, "Docker Sandboxesへのloginを確認します。"),
+    ] {
+        for command in commands(false)? {
+            let stdout = ScriptedWriter::accepting_all();
+            let stderr = ScriptedWriter::accepting_all();
+            let visible_stdout = stdout.written();
+            let visible_stderr = stderr.written();
+            let observed = Rc::new(Cell::new(false));
+            let observed_by_host = observed.clone();
+            let host = ChangingBefore::new(
+                FakeHost::macos().failing(
+                    "sbx ls --json",
+                    "401 Unauthorized: user is not authenticated to Docker",
+                    1,
+                ),
+                "ls --json",
+                move || {
+                    let progress = String::from_utf8_lossy(&visible_stderr.borrow()).into_owned();
+                    assert!(progress.contains(expected), "{progress}");
+                    assert!(visible_stdout.borrow().is_empty(), "no result or plan yet");
+                    observed_by_host.set(true);
+                },
+            );
+            let policy = RenderingPolicy::plain();
+            let screen = RecordedScreen::new();
+            let mut ui = Ui::new(
+                locale,
+                policy,
+                BufWriter::new(stdout),
+                BufWriter::new(stderr),
+            );
+            let mut prompt = PromptUi::new(
+                locale,
+                policy.stderr,
+                Box::new(ScriptedKeys::canceling()),
+                Box::new(screen.clone()),
+            );
+            let context = Context {
+                location: &fixture.location,
+                workspace_root: &fixture.workspace_root,
+                clock: &clock,
+                locale,
+                can_prompt: true,
+            };
+            assert_eq!(
+                execute(&command, &context, &host, &mut ui, &mut prompt),
+                ExitCode::Failure,
+                "{command:?}"
+            );
+            assert!(observed.get(), "{command:?}: the preflight was not reached");
+            assert!(screen.drawn().is_empty(), "{command:?}: no prompt yet");
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn authenticated_commands_reach_selection_and_can_be_canceled() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;

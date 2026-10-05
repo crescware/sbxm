@@ -1,5 +1,6 @@
 use crate::boundary::host::HostEnvironment;
 use crate::boundary::host::protocol::{CliVersion, require_minimum_version};
+use crate::design::ProgressSink;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
@@ -16,6 +17,7 @@ pub fn check_docker_sandboxes(
     host: &dyn HostEnvironment,
     sbx_present: bool,
     status: &mut GlobalStatus,
+    progress: &mut dyn ProgressSink,
 ) {
     let dependent_items = [
         "status-item-network-policy",
@@ -39,6 +41,7 @@ pub fn check_docker_sandboxes(
         return;
     }
 
+    progress.step(msg!("progress-inspect-sbx-version"));
     let output = match read_stdout(host, "sbx", &["version"]) {
         Ok(output) => output,
         Err(error) => {
@@ -82,8 +85,11 @@ pub fn check_docker_sandboxes(
     }
 
     push(status, "status-item-docker-sandboxes", StatusValue::Ready);
+    progress.step(msg!("progress-inspect-network"));
     check_network_policy(host, status);
+    progress.step(msg!("progress-inspect-daemon"));
     check_daemon(host, status);
-    check_login(host, status);
+    check_login(host, status, progress);
+    progress.step(msg!("progress-inspect-remote-ssh"));
     check_remote_ssh(host, status);
 }

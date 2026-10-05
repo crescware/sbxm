@@ -216,13 +216,17 @@ Sandboxが起動し、`open-blocked`は接続前の準備が残っています�
 対話端末で実行した場合、`repair`、`apply`、`rebuild`、`open`、`stop`、`destroy`、
 `status`はプロジェクト引数を省略すると対象を選択するpromptを表示できます。
 `status`では先頭に`global`を表示し、その後へ登録済みproject IDを並べます。
-案件の診断では、Docker・Docker Sandboxesの応答待ち、credential・repositoryの検査、
-宣言file・ディスクの確認、次の一手の判定など、工程の開始をstderrへ表示します。
-`status`と`destroy`のworktree検査は同じ工程表示を使い、対象名と全体の何件目かを示します。
-`destroy`は案件lockの取得、無視対象file、進行中のGit操作、originのfetch、削除確認後の
-安全性の再検査も表示します。`status`は保存済みのorigin refだけを読み、fetchは行いません。
-診断結果や削除計画は、検査が終わったあとにstdoutへ表示します。停止中のSandboxは、
-`status`で内部やディスクを確認するために起動しません。
+検査の進捗は全commandで同じ方針に揃え、処理を待つ前に工程名をstderrへ表示して、
+直ちにflushします。認証、案件lock、Docker・Sandboxの応答待ちのほか、`status`、
+`open`、`repair`、`apply`（`--all`を含む）、`rebuild`のrepository・worktree・file検査が
+対象です。worktreeとfileは対象名と全体の何件目かも示します。`destroy`、`sync`、
+`stop`、`files pull`、`ls`、`guide`の検査や、`add --local`のhost repository確認にも
+同じ工程表示を使います。`status --global`はDocker、CLI version、network policy、
+daemon、認証、Remote SSHの確認を分けて表示します。
+削除保護では無視対象file、進行中のGit操作、originのfetch、確認後の安全性の再検査も
+表示します。読み取り専用の`status`は保存済みのorigin refだけを読み、fetchは行いません。
+停止中のSandboxも内部やディスクの確認のために起動しません。診断結果や削除計画は、
+検査が終わったあとにstdoutへ表示します。外部commandの逐次ログは出しません。
 `guide`はtopicを省略すると最初にtopicを問い、続いて案件を問います。
 `credential-rotation`を指定した場合は案件選択から始めます。非対話端末では、これらの
 commandにプロジェクト引数を明示してください。`guide`にはtopicの明示も必要で、

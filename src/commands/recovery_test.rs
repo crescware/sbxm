@@ -51,8 +51,13 @@ fn diagnose(bench: &Bench, world: &World, project: &ProjectId) -> Checked<Projec
 
 /// `ls`が同じ案件へ写した状態。
 fn listed(bench: &Bench, world: &World) -> Checked<ListState> {
-    let listing = super::ls::run::run(&bench.location, world, bench.workspace_root.path())
-        .required_because("the listing is produced")?;
+    let listing = super::ls::run::run(
+        &bench.location,
+        world,
+        bench.workspace_root.path(),
+        &mut crate::design::SilentProgress,
+    )
+    .required_because("the listing is produced")?;
     Ok(listing
         .projects
         .iter()

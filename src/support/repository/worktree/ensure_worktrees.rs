@@ -6,6 +6,7 @@ use crate::msg;
 use crate::project::SandboxLayout;
 
 use crate::support::sandbox;
+use crate::support::worktree::Inspection;
 
 use crate::design::ProgressSink;
 
@@ -33,6 +34,7 @@ pub fn ensure_worktrees(
 ) -> Result<Vec<String>> {
     let git_dir = layout.bare_git_dir();
     let reference = git::origin_ref(branch);
+    progress.step(msg!("progress-inspect-start-ref"));
     let origin_commit = sandbox::read(
         host,
         sandbox,
@@ -57,10 +59,15 @@ pub fn ensure_worktrees(
         origin_commit.clone()
     };
     progress.step(msg!("progress-creating-worktrees"));
-    for index in 0..project.provisioning.requested_worktrees {
+    let total = layout
+        .worktree_names(project.provisioning.requested_worktrees)
+        .len();
+    for (position, index) in (0..project.provisioning.requested_worktrees).enumerate() {
         let path = layout.worktree(index);
+        let mut inspection = Inspection::new(host, sandbox, &path, position + 1, total, progress);
+        inspection.preparing();
         if sandbox::path_exists(host, sandbox, &path)? {
-            adopt_worktree(host, sandbox, &git_dir, &path)?;
+            adopt_worktree(&mut inspection, &git_dir)?;
             continue;
         }
         let mode = mode_for(index, project.provisioning.mode);
@@ -72,7 +79,7 @@ pub fn ensure_worktrees(
             host,
             sandbox,
             &git_dir,
-            &path,
+            &mut inspection,
             branch,
             mode,
             expected_commit,

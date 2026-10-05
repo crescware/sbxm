@@ -1,4 +1,5 @@
 use crate::boundary::host::HostEnvironment;
+use crate::design::ProgressSink;
 use crate::diagnostics::ErrorId;
 
 use crate::support::{StatusValue, login};
@@ -9,8 +10,12 @@ use crate::commands::status::global::{GlobalStatus, push};
 ///
 /// loginを前提とするのはTemplateとSandboxを扱う工程であり、observeできない場合に
 /// login済みと推測しない。
-pub fn check_login(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
-    match login::require_signed_in(host) {
+pub fn check_login(
+    host: &dyn HostEnvironment,
+    status: &mut GlobalStatus,
+    progress: &mut dyn ProgressSink,
+) {
+    match login::require_signed_in(host, progress) {
         Ok(()) => push(status, "status-item-login", StatusValue::Ready),
         Err(error) => {
             let value = if error.contains_id(ErrorId::SbxLoginMissing) {

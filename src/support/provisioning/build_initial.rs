@@ -30,12 +30,15 @@ pub(crate) fn build_initial(
     // custom secretはSandboxの作成時に結び付く。あとから登録しても既存のSandboxには
     // 届かないため、作成より前に、そしてimageを組む前に確認する。Dockerの到達性も
     // ここで一度だけ確認し、以降の`provision`の中では再確認しない。
-    let preconditions = verify_external_preconditions(host, &locked.metadata)?;
+    let preconditions = verify_external_preconditions(host, &locked.metadata, progress)?;
 
     // Dockerfileと宣言fileを1回だけ読み、privateなsnapshotへ複製する。以降はこの
     // snapshotだけを使い、生きているhost pathを二度と読まない。`target`が`Some`の
     // 場合、旧世代のimage/templateを保持したまま完成させるため、現在のDockerfileは
     // このgenerationのsnapshotとして書かない。
+    if !config.files.is_empty() {
+        progress.step(msg!("progress-status-files"));
+    }
     let inputs = ProvisioningInputs::capture(&locked.paths, config, target)?;
 
     // metadataのintentとtarget generationを、最初のhost側mutationより先にatomicに保存する。
@@ -64,12 +67,14 @@ pub(crate) fn build_initial(
 
     // 成果物をread-onlyで再確認できてからintentをclearする。clearのatomic replaceに失敗
     // した場合も、disk上のintentは残るため、次回のopenへ安全に渡る。
+    progress.step(msg!("progress-inspect-result"));
     let completed = observe(
         host,
         &locked.paths,
         config,
         &locked.metadata,
         workspace_root,
+        progress,
     )
     .map_err(|error| with_open_command(error, &project))?;
     completed

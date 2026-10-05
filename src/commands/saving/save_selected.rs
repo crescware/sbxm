@@ -40,8 +40,7 @@ pub fn save_selected(
     if locked.metadata.rebuild.is_some() {
         return AutoSaved::Nothing;
     }
-    progress.step(msg!("progress-inspect-sandbox"));
-    if inventory::require_running(host, &locked.metadata, workspace_root).is_err() {
+    if inventory::require_running(host, &locked.metadata, workspace_root, progress).is_err() {
         return AutoSaved::Nothing;
     }
     host_sync::auto_save(

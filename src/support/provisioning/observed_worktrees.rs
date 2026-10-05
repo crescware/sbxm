@@ -1,11 +1,11 @@
 use crate::boundary::host::HostEnvironment;
-use crate::design::Fact;
+use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::SandboxLayout;
 
-use crate::support::{repository, sandbox};
+use crate::support::{repository, worktree};
 
 use super::WorktreeRow;
 
@@ -21,6 +21,7 @@ pub(crate) fn observed_worktrees(
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
     names: &[String],
+    progress: &mut dyn ProgressSink,
 ) -> Result<Vec<WorktreeRow>> {
     let provisioning = &metadata.provisioning;
     let git_dir = layout.bare_git_dir();
@@ -30,10 +31,12 @@ pub(crate) fn observed_worktrees(
         .map(crate::git::origin_ref)
         .unwrap_or_default();
     let mut rows = Vec::with_capacity(names.len());
-    for name in names {
+    for (index, name) in names.iter().enumerate() {
         let path = format!("{}/{name}", layout.bare_root());
-        repository::adopt_worktree(host, sandbox, &git_dir, &path)?;
-        let head = read_head(host, sandbox, &path)?;
+        let mut inspection =
+            worktree::Inspection::new(host, sandbox, &path, index + 1, names.len(), progress);
+        repository::adopt_worktree(&mut inspection, &git_dir)?;
+        let head = read_head(&mut inspection)?;
         rows.push(WorktreeRow {
             path: name.clone(),
             created_from: created_from.clone(),
@@ -45,12 +48,8 @@ pub(crate) fn observed_worktrees(
 }
 
 /// worktreeのHEADを読む。失敗、または空の応答は観測不能として拒否する。
-fn read_head(host: &dyn HostEnvironment, sandbox_name: &str, path: &str) -> Result<String> {
-    let outcome = sandbox::exec(
-        host,
-        sandbox_name,
-        &["git", "-C", path, "rev-parse", "HEAD"],
-    )?;
+fn read_head(inspection: &mut worktree::Inspection<'_>) -> Result<String> {
+    let outcome = inspection.head_outcome()?;
     let observed = outcome.stdout_text();
     let trimmed = observed.trim();
     if outcome.success() && !trimmed.is_empty() {
@@ -61,7 +60,7 @@ fn read_head(host: &dyn HostEnvironment, sandbox_name: &str, path: &str) -> Resu
             ErrorId::SandboxRepositoryUnusable,
             msg!("error-sandbox-repository-unusable"),
         )
-        .fact(Fact::path(path))
+        .fact(Fact::path(inspection.path()))
         .fact(Fact::reason(msg!("cause-head-unobservable"))),
     ))
 }

@@ -235,6 +235,7 @@ fn a_sandbox_whose_state_was_not_observed_is_not_looked_into() -> Checked {
         &bench.config,
         None,
         &mut status,
+        &mut crate::testing::recorded_output::RecordedOutput::new(),
     );
 
     assert_eq!(

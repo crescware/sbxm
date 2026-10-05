@@ -7,7 +7,7 @@ use crate::support::sandbox;
 
 /// 1つのworktreeの読み取りと、待ち時間の前に出す工程表示。
 ///
-/// statusと破壊操作で同じcommandを使う。clean/dirtyの表示、削除の拒否条件、
+/// status、構築・修復、破壊操作で同じcommandを使う。clean/dirtyの表示、削除の拒否条件、
 /// detached HEADの解釈などは呼び出し側が決め、ここでは観測結果だけを返す。
 pub struct Inspection<'a> {
     host: &'a dyn HostEnvironment,
@@ -48,9 +48,33 @@ impl<'a> Inspection<'a> {
     }
 
     pub fn head(&mut self) -> Result<String> {
-        self.step(msg!("progress-inspect-worktree-head"));
-        let outcome = self.exec(&["rev-parse", "HEAD"])?.require_success()?;
+        let outcome = self.head_outcome()?.require_success()?;
         Ok(outcome.stdout_text().trim().to_string())
+    }
+
+    pub fn head_outcome(&mut self) -> Result<CommandOutcome> {
+        self.step(msg!("progress-inspect-worktree-head"));
+        self.exec(&["rev-parse", "HEAD"])
+    }
+
+    pub fn path(&self) -> &str {
+        self.path
+    }
+
+    pub fn preparing(&mut self) {
+        self.step(msg!("progress-inspect-worktree-preparation"));
+    }
+
+    pub fn common_dir(&mut self) -> Result<String> {
+        self.step(msg!("progress-inspect-worktree-repository"));
+        let outcome = self
+            .exec(&["rev-parse", "--path-format=absolute", "--git-common-dir"])?
+            .require_success()?;
+        Ok(outcome.stdout_text().trim().to_string())
+    }
+
+    pub fn branch_reference(&self) -> Result<CommandOutcome> {
+        self.exec(&["symbolic-ref", "-q", "HEAD"])
     }
 
     pub fn branch(&self) -> Result<CommandOutcome> {

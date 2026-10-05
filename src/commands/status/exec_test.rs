@@ -180,6 +180,88 @@ fn project_progress_is_flushed_before_waiting_for_docker_in_both_languages() -> 
 }
 
 #[test]
+fn global_progress_is_flushed_before_each_external_check_in_both_languages() -> Checked {
+    use std::cell::Cell;
+    use std::io::BufWriter;
+    use std::rc::Rc;
+
+    use crate::testing::command::ScriptedWriter;
+    use crate::testing::host::ChangingBefore;
+
+    let fixture = Fixture::new()?;
+    let clock = ScriptedClock::default();
+    for (needle, skip, en, ja) in [
+        (
+            "version --format",
+            0,
+            "Checking Docker connectivity.",
+            "Dockerへの疎通を確認します。",
+        ),
+        ("version", 1, "CLI version", "CLIのversionを確認します。"),
+        (
+            "policy ls",
+            0,
+            "network policy",
+            "network policyを確認します。",
+        ),
+        (
+            "daemon status",
+            0,
+            "daemon state",
+            "daemonの状態を確認します。",
+        ),
+        ("ls --json", 0, "sign-in", "loginを確認します。"),
+        (
+            "-G",
+            0,
+            "Remote SSH configuration",
+            "Remote SSHの設定を確認します。",
+        ),
+    ] {
+        for (locale, expected) in [(Locale::En, en), (Locale::Ja, ja)] {
+            let stdout = ScriptedWriter::accepting_all();
+            let stderr = ScriptedWriter::accepting_all();
+            let visible_stdout = stdout.written();
+            let visible_stderr = stderr.written();
+            let observed = Rc::new(Cell::new(false));
+            let observed_by_host = observed.clone();
+            let host = ChangingBefore::skipping(FakeHost::macos(), needle, skip, move || {
+                let progress = String::from_utf8_lossy(&visible_stderr.borrow()).into_owned();
+                assert!(progress.contains(expected), "{needle}: {progress}");
+                assert!(visible_stdout.borrow().is_empty(), "the report comes later");
+                observed_by_host.set(true);
+            });
+            let policy = RenderingPolicy::plain();
+            let mut ui = Ui::new(
+                locale,
+                policy,
+                BufWriter::new(stdout),
+                BufWriter::new(stderr),
+            );
+            let mut prompt = PromptUi::new(
+                locale,
+                policy.stderr,
+                Box::new(ScriptedKeys::canceling()),
+                Box::new(RecordedScreen::new()),
+            );
+            let context = Context {
+                location: &fixture.location,
+                workspace_root: &fixture.workspace_root,
+                clock: &clock,
+                locale,
+                can_prompt: false,
+            };
+            assert_ne!(
+                super::exec(&Scope::Global, &context, &mut ui, &host, &mut prompt),
+                ExitCode::Canceled
+            );
+            assert!(observed.get(), "the check was not reached: {needle}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn inside_progress_is_flushed_before_each_slow_read_without_fetching() -> Checked {
     use std::io::BufWriter;
 

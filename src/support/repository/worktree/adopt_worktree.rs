@@ -1,8 +1,7 @@
-use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 use crate::msg;
 
-use crate::support::sandbox;
+use crate::support::worktree::Inspection;
 
 use crate::support::repository::unusable;
 
@@ -14,29 +13,13 @@ use crate::support::repository::unusable;
 /// HEADは動き、branchを切ればmodeも変わる。そこで起きたことを異常として扱うと、
 /// 作業した案件はworktreeを増やせなくなる。どちらもsbxmが作るときの事後条件であって、
 /// 既にあるものへの要件ではない。
-pub fn adopt_worktree(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
-    git_dir: &str,
-    path: &str,
-) -> Result<()> {
+pub fn adopt_worktree(inspection: &mut Inspection<'_>, git_dir: &str) -> Result<()> {
     // `--path-format=absolute`を付けないと、gitは条件によって相対pathを返す。bare git
     // dirとの一致を見る比較では、返る形が決まっていないと判定にならない。
-    let common = sandbox::read(
-        host,
-        sandbox,
-        &[
-            "git",
-            "-C",
-            path,
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-common-dir",
-        ],
-    )?;
+    let common = inspection.common_dir()?;
     if common != git_dir {
         return Err(unusable(
-            path,
+            inspection.path(),
             msg!(
                 "cause-worktree-belongs-elsewhere",
                 observed = common,

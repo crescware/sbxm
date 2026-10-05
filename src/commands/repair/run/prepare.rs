@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::{ConfigLocation, GlobalConfig};
-use crate::design::{Fact, Field, Inline};
+use crate::design::{Fact, Field, Inline, ProgressSink};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -23,10 +23,15 @@ pub fn prepare(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     prompt: &mut dyn ProjectPrompt,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
-    let locked =
-        crate::support::select::one(location, requested, &msg!("select-repair-heading"), prompt)?
-            .lock()?;
+    let candidate =
+        crate::support::select::one(location, requested, &msg!("select-repair-heading"), prompt)?;
+    progress.step(msg!(
+        "progress-project-lock",
+        project = candidate.display_id()
+    ));
+    let locked = candidate.lock()?;
     crate::support::generation::require_no_rebuild(&locked.metadata)?;
     let first = provisioning::observe(
         host,
@@ -34,6 +39,7 @@ pub fn prepare(
         config,
         &locked.metadata,
         workspace_root,
+        progress,
     )?;
     // 観測は最後まで並べたうえで、安全と確認できなかった事実があれば計画を作らない。
     first.require_safe()?;
@@ -71,19 +77,22 @@ pub fn prepare(
 
     // lease取得後にもう一度読む。別workflowが先に成果物を進めていた場合は、最初の
     // repair計画をそのまま適用しない。
+    progress.step(msg!("progress-inspect-recheck"));
     let second = provisioning::observe(
         host,
         &locked.paths,
         config,
         &locked.metadata,
         workspace_root,
+        progress,
     )?;
     second.require_safe()?;
     let second_target = target_generation(&second, &locked.metadata)?;
     if second.state != first.state || second_target != target {
         return Err(state_changed(&locked.metadata, first.state, second.state));
     }
-    let preconditions = provisioning::verify_external_preconditions(host, &locked.metadata)?;
+    let preconditions =
+        provisioning::verify_external_preconditions(host, &locked.metadata, progress)?;
     let plan = plan(
         &locked.metadata,
         &second,

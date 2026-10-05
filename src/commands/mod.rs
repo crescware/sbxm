@@ -13,6 +13,9 @@ mod context;
 pub mod destroy;
 pub mod files;
 pub mod guide;
+#[cfg(test)]
+#[path = "inspection_progress_test.rs"]
+mod inspection_progress_test;
 pub mod ls;
 pub mod open;
 mod present;

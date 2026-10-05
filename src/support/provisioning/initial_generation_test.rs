@@ -12,7 +12,8 @@ use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
 use std::fs;
 
-use crate::commands::repair::run::{execute as repair_execute, prepare as repair_prepare};
+use crate::commands::repair::run::execute as repair_execute;
+use crate::testing::repair::prepare as repair_prepare;
 
 /// 編集後のDockerfileの内容。世代が変わったことだけが要る。
 const EDITED_DOCKERFILE: &[u8] = b"FROM example:edited\n";

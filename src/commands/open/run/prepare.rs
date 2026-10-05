@@ -54,9 +54,14 @@ pub fn prepare(
             index,
         )
     };
+    progress.step(msg!(
+        "progress-project-lock",
+        project = candidate.display_id()
+    ));
     let mut locked = candidate.lock()?;
 
     generation::require_no_rebuild(&locked.metadata)?;
+    progress.step(msg!("progress-inspect-docker"));
     docker::require_reachable(host)?;
 
     let (provisioned, warnings) =
@@ -70,13 +75,15 @@ pub fn prepare(
     let layout = SandboxLayout::new(metadata.canonical_id());
 
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
+    progress.step(msg!("progress-inspect-credentials"));
     sandbox::require_credentials_isolated(host, name.as_str())?;
 
-    let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata)?;
+    let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata, progress)?;
     let (working_directory, missing_worktree_index) = working_directory(&layout, &worktrees, index);
 
     // ここまで来た時点でSandboxは必ずrunningである。この観測のために追加で
     // 起動しない。値または理由はSSHへterminalを渡す前に1回だけ示す。
+    progress.step(msg!("progress-status-disk"));
     let disk = disk::observe(
         host,
         name.as_str(),
@@ -110,6 +117,7 @@ fn prepare_runtime(
     poll: Poll,
     progress: &mut dyn ProgressSink,
 ) -> Result<(Option<provisioning::ProvisioningOutput>, Vec<Warning>)> {
+    progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;
     let mut warnings = Vec::new();
@@ -167,6 +175,7 @@ fn complete_missing_interior(
         config,
         &locked.metadata,
         workspace_root,
+        progress,
     )?;
     observation.require_safe()?;
     if observation.state != provisioning::ProvisioningState::Incomplete {
@@ -178,12 +187,14 @@ fn complete_missing_interior(
     let output = provisioning::provision_interior(locked, &inputs, host, progress, Vec::new())?;
     drop(exclusive);
 
+    progress.step(msg!("progress-inspect-result"));
     let completed = provisioning::observe(
         host,
         &locked.paths,
         config,
         &locked.metadata,
         workspace_root,
+        progress,
     )?;
     completed.require_safe()?;
     // workspaceが確認できないままだと、内部は補ったあとも観測不能のまま残る。それは
@@ -235,7 +246,9 @@ fn verify_worktrees(
     name: &str,
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Vec<String>> {
+    progress.step(msg!("progress-inspect-worktrees"));
     let bare_root = layout.bare_root();
     let listed: Vec<String> = worktree::list(host, name, layout)?
         .iter()

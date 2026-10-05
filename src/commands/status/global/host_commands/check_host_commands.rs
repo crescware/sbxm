@@ -1,5 +1,5 @@
 use crate::boundary::host::HostEnvironment;
-use crate::design::Fact;
+use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 
@@ -15,6 +15,7 @@ use super::REQUIRED_COMMANDS;
 pub fn check_host_commands(
     host: &dyn HostEnvironment,
     status: &mut GlobalStatus,
+    progress: &mut dyn ProgressSink,
 ) -> Vec<&'static str> {
     let mut present = Vec::new();
     for program in REQUIRED_COMMANDS {
@@ -55,6 +56,7 @@ pub fn check_host_commands(
         return present;
     }
 
+    progress.step(msg!("progress-inspect-docker"));
     match docker::read_server_version(host) {
         Ok(output) if !output.trim().is_empty() => {
             push(status, "status-item-docker", StatusValue::Ready);

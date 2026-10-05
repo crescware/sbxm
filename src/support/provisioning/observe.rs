@@ -3,8 +3,10 @@ use std::path::Path;
 use crate::boundary::host::HostEnvironment;
 use crate::boundary::host::protocol::{SandboxEntry, SandboxState};
 use crate::config::GlobalConfig;
+use crate::design::ProgressSink;
 use crate::diagnostics::{Error, Result};
 use crate::metadata::ProjectMetadata;
+use crate::msg;
 use crate::paths::ProjectPaths;
 use crate::project::{SandboxLayout, SandboxName};
 use crate::support::Observed;
@@ -32,7 +34,12 @@ pub(crate) fn observe(
     config: &GlobalConfig,
     metadata: &ProjectMetadata,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Observation> {
+    progress.step(msg!(
+        "progress-inspect-project",
+        project = metadata.display_id()
+    ));
     let stored_generation = metadata.provisioning.dockerfile_sha256.clone();
     let target_generation = metadata.initial_provisioning.as_ref().map_or_else(
         || stored_generation.clone(),
@@ -55,6 +62,7 @@ pub(crate) fn observe(
     );
     let mut blocking = Blocking::new();
 
+    progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     let entry = inventory::single(&entries, name.as_str())?;
     if let Some(entry) = entry {
@@ -83,6 +91,7 @@ pub(crate) fn observe(
                 &layout,
                 &mut observation,
                 &mut blocking,
+                progress,
             );
         } else {
             // 停止中のSandboxの中は、起動せずには読めない。読まなかったことを欠落と
@@ -101,7 +110,13 @@ pub(crate) fn observe(
     // 完成済みSandboxは、再利用判定にDocker daemonを要しない。Dockerfileが変わった
     // 場合も、既存の成果物をreadyとする事実は変わらず、世代の切替はrebuildの責務である。
     if !observation.is_complete() {
-        let stored = generation_artifacts(host, &name, metadata, &observation.stored_generation)?;
+        let stored = generation_artifacts(
+            host,
+            &name,
+            metadata,
+            &observation.stored_generation,
+            progress,
+        )?;
         observation.stored_image_present = stored.0;
         observation.stored_image_matches = stored.1;
         observation.stored_template_present = stored.2;
@@ -110,8 +125,13 @@ pub(crate) fn observe(
             observation.current_image_matches = stored.1;
             observation.current_template_present = stored.2;
         } else {
-            let current =
-                generation_artifacts(host, &name, metadata, &observation.current_generation)?;
+            let current = generation_artifacts(
+                host,
+                &name,
+                metadata,
+                &observation.current_generation,
+                progress,
+            )?;
             observation.current_image_present = current.0;
             observation.current_image_matches = current.1;
             observation.current_template_present = current.2;
@@ -144,15 +164,19 @@ fn generation_artifacts(
     name: &SandboxName,
     metadata: &ProjectMetadata,
     generation: &str,
+    progress: &mut dyn ProgressSink,
 ) -> Result<(bool, bool, bool)> {
     let image_name = image::image_name(name, generation);
+    progress.step(msg!("progress-status-image"));
     let Some(identity) = image::inspect(host, &image_name)? else {
+        progress.step(msg!("progress-inspect-templates"));
         return Ok((false, false, template::find(host, &image_name)?.is_some()));
     };
     let matches = image::labels_match(
         &identity,
         &image::expected_labels(metadata.canonical_id(), generation),
     );
+    progress.step(msg!("progress-inspect-templates"));
     Ok((true, matches, template::find(host, &image_name)?.is_some()))
 }
 
@@ -166,9 +190,11 @@ fn observe_sandbox(
     layout: &SandboxLayout,
     observation: &mut Observation,
     blocking: &mut Blocking,
+    progress: &mut dyn ProgressSink,
 ) {
     let sandbox = &entry.name;
 
+    progress.step(msg!("progress-inspect-credentials"));
     observation.credentials = match sandbox::require_credentials_isolated(host, sandbox) {
         Ok(()) => Observed::Matching,
         Err(error) => blocked(blocking, error),
@@ -185,7 +211,7 @@ fn observe_sandbox(
             observation.token_env = Observed::NotApplicable;
         }
     }
-    match declared_files(host, sandbox, metadata, config) {
+    match declared_files(host, sandbox, metadata, config, progress) {
         Ok(files) => {
             // Sandboxの中で書き換えられたfileも置かれてはいる。欠けているのは、まだ
             // 置かれていないfileだけである。
@@ -201,15 +227,25 @@ fn observe_sandbox(
         }
         Err(error) => observation.files_placed = blocked(blocking, error),
     }
+    progress.step(msg!("progress-inspect-identity"));
     observation.identity = match identity::observe(host, sandbox, &metadata.git_identity) {
         Ok(true) => Observed::Matching,
         Ok(false) => Observed::Missing,
         Err(error) => blocked(blocking, error),
     };
+    progress.step(msg!("progress-inspect-tools"));
     observation.tools = observe_tools(host, sandbox, blocking);
-    observation.repository = observe_repository(host, sandbox, origin, layout, blocking);
+    observation.repository = observe_repository(host, sandbox, origin, layout, blocking, progress);
     if observation.repository.is_matching() {
-        observe_worktrees(host, sandbox, layout, metadata, observation, blocking);
+        observe_worktrees(
+            host,
+            sandbox,
+            layout,
+            metadata,
+            observation,
+            blocking,
+            progress,
+        );
     }
 }
 
@@ -270,14 +306,17 @@ fn observe_repository(
     origin: &repository::SandboxOrigin,
     layout: &SandboxLayout,
     blocking: &mut Blocking,
+    progress: &mut dyn ProgressSink,
 ) -> Observed {
     let git_dir = layout.bare_git_dir();
     match sandbox::path_exists(host, sandbox, &git_dir) {
         Ok(false) => Observed::Missing,
-        Ok(true) => match repository::verify_bare_clone(host, sandbox, origin, &git_dir) {
-            Ok(()) => Observed::Matching,
-            Err(error) => blocked(blocking, error),
-        },
+        Ok(true) => {
+            match repository::verify_bare_clone(host, sandbox, origin, &git_dir, progress) {
+                Ok(()) => Observed::Matching,
+                Err(error) => blocked(blocking, error),
+            }
+        }
         Err(error) => blocked(blocking, error),
     }
 }
@@ -289,7 +328,9 @@ fn observe_worktrees(
     metadata: &ProjectMetadata,
     observation: &mut Observation,
     blocking: &mut Blocking,
+    progress: &mut dyn ProgressSink,
 ) {
+    progress.step(msg!("progress-inspect-worktrees"));
     // 1本でも欠けているからといって、そこで打ち切らない。打ち切ると存在するworktreeの
     // 一覧が空のままになり、`actions_for`が要求本数すべてを作成対象として表示する。
     let mut present = Vec::new();
@@ -307,7 +348,7 @@ fn observe_worktrees(
     // 起点branchが決まっていない案件は、worktreeが揃ったとは言えない。それでも、
     // 存在が確認できたものだけはこの下でHEADまで観測する。
     let start_ref_resolved = metadata.provisioning.start_ref.is_some();
-    match observed_worktrees(host, sandbox, layout, metadata, &present) {
+    match observed_worktrees(host, sandbox, layout, metadata, &present, progress) {
         Ok(worktrees) => {
             let requested = usize::try_from(metadata.provisioning.requested_worktrees);
             observation.worktrees_present = if all_present

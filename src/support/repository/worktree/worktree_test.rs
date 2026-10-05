@@ -733,3 +733,26 @@ fn a_worktree_that_cannot_be_looked_at_is_neither_made_nor_taken_over() -> Check
     assert!(!unreadable.ran("symbolic-ref"), "{:?}", unreadable.calls());
     Ok(())
 }
+
+fn provision_worktree(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    git_dir: &str,
+    path: &str,
+    branch: &str,
+    mode: CreationMode,
+    expected_commit: &str,
+) -> crate::diagnostics::Result<()> {
+    let mut progress = SilentProgress;
+    let mut inspection =
+        crate::support::worktree::Inspection::new(host, sandbox, path, 1, 1, &mut progress);
+    super::provision_worktree(
+        host,
+        sandbox,
+        git_dir,
+        &mut inspection,
+        branch,
+        mode,
+        expected_commit,
+    )
+}

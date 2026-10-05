@@ -28,7 +28,7 @@ pub fn diagnose(
     progress: &mut dyn ProgressSink,
 ) -> Result<ProjectStatus> {
     progress.step(msg!(
-        "progress-status-project",
+        "progress-inspect-project",
         project = project.to_string()
     ));
     // 案件の場所はregistryだけが持つ。配置規則から再計算しない。
@@ -78,7 +78,7 @@ pub fn diagnose(
     if !config.files.is_empty() {
         progress.step(msg!("progress-status-files"));
     }
-    check_files(host, &name, &metadata, config, state, &mut status);
+    check_files(host, &name, &metadata, config, state, &mut status, progress);
 
     // root filesystemの使用量。running中だけ観測のためにcommandを実行する。
     if state == Some(ProjectState::Running) {
@@ -90,7 +90,7 @@ pub fn diagnose(
     // 持つと、案内したcommandが実行時に「不要」と答え得る。観測そのものが成立しない
     // 場合は、実行できると証明できないcommandを出さない。
     progress.step(msg!("progress-status-next"));
-    status.next = provisioning::observe(host, &paths, config, &metadata, workspace_root)
+    status.next = provisioning::observe(host, &paths, config, &metadata, workspace_root, progress)
         .ok()
         .and_then(|observation| NextAction::decide(&metadata, &observation));
 

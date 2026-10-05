@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::{self, ConfigLocation, GlobalConfig, SandboxHomeRelativePath};
+use crate::design::ProgressSink;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
@@ -17,6 +18,7 @@ use super::{Pulled, invalid_destination};
 ///
 /// 動いているSandboxからだけ取り出し、停止中のSandboxを起動しない。取り出すだけで、host
 /// の宣言fileもbaselineも変えない。
+#[allow(clippy::too_many_arguments)]
 pub fn pull(
     location: &ConfigLocation,
     config: &GlobalConfig,
@@ -25,6 +27,7 @@ pub fn pull(
     prompt: &mut dyn ProjectPrompt,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Pulled> {
     let destination = SandboxHomeRelativePath::new(destination)
         .map_err(|reason| invalid_destination(destination, reason))?;
@@ -36,22 +39,38 @@ pub fn pull(
     else {
         return Err(config::file_not_declared(&destination));
     };
+    progress.step(msg!(
+        "progress-inspect-file",
+        path = format!("{:?}", declaration.destination.as_path()),
+        current = 1,
+        total = 1
+    ));
     let host_sha256 = files::read_source(declaration.source.as_path())?;
 
-    let locked = select::one(
+    let candidate = select::one(
         location,
         requested,
         &msg!("select-files-pull-heading"),
         prompt,
-    )?
-    .lock()?;
+    )?;
+    progress.step(msg!(
+        "progress-project-lock",
+        project = candidate.display_id()
+    ));
+    let locked = candidate.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
-    inventory::require_running(host, &locked.metadata, workspace_root)?;
+    inventory::require_running(host, &locked.metadata, workspace_root, progress)?;
     // 置き換えた内容を広げる先があるかどうかを、結果の案内に使う。受け取ったあとに失敗
     // しうる工程を置かない。受け取ったものは、呼び出し側へ返してはじめて片付けられる。
     let others = select::candidates(location)?.len().saturating_sub(1);
     let sandbox = locked.metadata.sandbox_name();
 
+    progress.step(msg!(
+        "progress-inspect-file",
+        path = format!("{:?}", declaration.destination.as_path()),
+        current = 1,
+        total = 1
+    ));
     let Some(copy) = files::receive_copy(
         host,
         sandbox.as_str(),

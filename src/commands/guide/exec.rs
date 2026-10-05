@@ -20,11 +20,11 @@ pub fn exec(
     prompt.set_locale(locale);
 
     // secret一覧を読むcommandであるため、topicや案件を選ばせる前に認証を確認する。
-    if let Err(error) = crate::support::login::require_signed_in(host) {
+    if let Err(error) = crate::support::login::require_signed_in(host, ui) {
         return report(ui, &error);
     }
 
-    match super::run::run(args, context.location, locale, host, prompt) {
+    match super::run::run(args, context.location, locale, host, prompt, ui) {
         Ok(output) => {
             ui.stdout(&print::document(&output));
             ExitCode::Success

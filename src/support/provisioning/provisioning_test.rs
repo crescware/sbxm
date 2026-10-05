@@ -187,3 +187,10 @@ fn a_host_repository_that_is_gone_or_empty_is_refused_before_anything_is_built()
     }
     Ok(())
 }
+
+fn verify_external_preconditions(
+    host: &dyn crate::boundary::host::HostEnvironment,
+    metadata: &crate::metadata::ProjectMetadata,
+) -> crate::diagnostics::Result<ExternalPreconditions> {
+    super::verify_external_preconditions(host, metadata, &mut SilentProgress)
+}

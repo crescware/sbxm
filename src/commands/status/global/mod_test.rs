@@ -1067,3 +1067,10 @@ fn a_platform_whose_architecture_cannot_be_read_is_not_guessed() -> Checked {
     );
     Ok(())
 }
+
+fn diagnose(
+    location: &crate::config::ConfigLocation,
+    host: &dyn crate::boundary::host::HostEnvironment,
+) -> GlobalStatus {
+    super::diagnose(location, host, &mut crate::design::SilentProgress)
+}

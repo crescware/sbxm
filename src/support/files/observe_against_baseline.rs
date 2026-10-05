@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::boundary::host::HostEnvironment;
+use crate::design::ProgressSink;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::InitialProvisioningFile;
 use crate::msg;
@@ -21,9 +22,16 @@ pub fn observe_against_baseline(
     sandbox: &str,
     baseline: &[InitialProvisioningFile],
     divergence: Divergence,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Vec<PlacedFile>> {
     let mut observed = Vec::with_capacity(baseline.len());
-    for entry in baseline {
+    for (index, entry) in baseline.iter().enumerate() {
+        progress.step(msg!(
+            "progress-inspect-file",
+            path = format!("{:?}", entry.destination),
+            current = index + 1,
+            total = baseline.len()
+        ));
         let destination = destination_path(&PathBuf::from(&entry.destination))?;
         let full = format!("{AGENT_HOME}/{destination}");
         require_no_symlink_in_sandbox(host, sandbox, &PathBuf::from(&entry.source), &destination)?;

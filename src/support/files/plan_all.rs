@@ -1,6 +1,8 @@
 use crate::boundary::host::HostEnvironment;
 use crate::config::FileDeclaration;
+use crate::design::ProgressSink;
 use crate::diagnostics::{Error, Result};
+use crate::msg;
 
 use super::{Conflict, PlannedFile, plan};
 
@@ -13,10 +15,17 @@ pub fn plan_all(
     sandbox: &str,
     declarations: &[FileDeclaration],
     conflict: Conflict,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Vec<PlannedFile>> {
     let mut planned = Vec::with_capacity(declarations.len());
     let mut refused = Vec::new();
-    for declaration in declarations {
+    for (index, declaration) in declarations.iter().enumerate() {
+        progress.step(msg!(
+            "progress-inspect-file",
+            path = format!("{:?}", declaration.destination.as_path()),
+            current = index + 1,
+            total = declarations.len()
+        ));
         match plan(host, sandbox, declaration, conflict)? {
             Ok(file) => planned.push(file),
             Err(diagnostic) => refused.push(diagnostic),

@@ -1,5 +1,6 @@
 use crate::boundary::host::HostEnvironment;
 use crate::config::FileDeclaration;
+use crate::design::ProgressSink;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
@@ -14,9 +15,16 @@ pub fn observe(
     host: &dyn HostEnvironment,
     sandbox: &str,
     declarations: &[FileDeclaration],
+    progress: &mut dyn ProgressSink,
 ) -> Result<Vec<PlacedFile>> {
     let mut observed = Vec::with_capacity(declarations.len());
-    for declaration in declarations {
+    for (index, declaration) in declarations.iter().enumerate() {
+        progress.step(msg!(
+            "progress-inspect-file",
+            path = format!("{:?}", declaration.destination.as_path()),
+            current = index + 1,
+            total = declarations.len()
+        ));
         let source = declaration.source.as_path();
         let digest = read_source(source)?;
         let destination = destination_path(declaration.destination.as_path())?;

@@ -23,7 +23,7 @@ pub fn exec(
     };
     ui.set_locale(locale);
     prompt.set_locale(locale);
-    if let Err(error) = crate::support::login::require_signed_in(host) {
+    if let Err(error) = crate::support::login::require_signed_in(host, ui) {
         return report(ui, &error);
     }
 
@@ -34,6 +34,7 @@ pub fn exec(
         host,
         context.workspace_root,
         prompt,
+        ui,
     ) {
         Ok(prepared) => prepared,
         Err(error) => return report(ui, &error),

@@ -670,7 +670,7 @@ fn a_template_reused_by_name_alone_is_refused_when_its_runtime_id_differs() -> C
 
     let mark = world.mark();
     let project = project_of(&request)?;
-    let prepared = crate::commands::repair::run::prepare(
+    let prepared = crate::testing::repair::prepare(
         &bench.location,
         &bench.config,
         Some(&project),
@@ -714,7 +714,7 @@ fn a_template_with_a_matching_runtime_id_is_reused() -> Checked {
 
     let project = project_of(&request)?;
     let mark = world.mark();
-    let prepared = crate::commands::repair::run::prepare(
+    let prepared = crate::testing::repair::prepare(
         &bench.location,
         &bench.config,
         Some(&project),
@@ -767,7 +767,7 @@ fn a_template_left_behind_by_a_dropped_sandbox_is_reused_to_rebuild_it() -> Chec
 
     let project = project_of(&request)?;
     let mark = world.mark();
-    let prepared = crate::commands::repair::run::prepare(
+    let prepared = crate::testing::repair::prepare(
         &bench.location,
         &bench.config,
         Some(&project),
@@ -881,7 +881,7 @@ fn a_workspace_that_had_to_be_created_again_is_told_rather_than_hidden() -> Chec
 
     let mark = world.mark();
     let project = project_of(&request)?;
-    let prepared = crate::commands::repair::run::prepare(
+    let prepared = crate::testing::repair::prepare(
         &bench.location,
         &bench.config,
         Some(&project),

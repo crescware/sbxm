@@ -1,6 +1,8 @@
 use crate::boundary::host::HostEnvironment;
 use crate::config::{GlobalConfig, SandboxHomeRelativePath};
+use crate::design::ProgressSink;
 use crate::metadata::ProjectMetadata;
+use crate::msg;
 use crate::paths;
 use crate::project::SandboxName;
 use crate::support::files;
@@ -19,9 +21,16 @@ pub fn check_files(
     config: &GlobalConfig,
     state: Option<ProjectState>,
     status: &mut ProjectStatus,
+    progress: &mut dyn ProgressSink,
 ) {
     let baseline = metadata.declared_files.as_deref().unwrap_or_default();
-    for declared in &config.files {
+    for (index, declared) in config.files.iter().enumerate() {
+        progress.step(msg!(
+            "progress-inspect-file",
+            path = format!("{:?}", declared.destination.as_path()),
+            current = index + 1,
+            total = config.files.len()
+        ));
         let recorded = baseline
             .iter()
             .find(|entry| {

@@ -15,10 +15,10 @@ pub fn exec(context: &Context, ui: &mut Ui, host: &dyn HostEnvironment) -> ExitC
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    if let Err(error) = crate::support::login::require_signed_in(host) {
+    if let Err(error) = crate::support::login::require_signed_in(host, ui) {
         return report(ui, &error);
     }
-    match super::run::run(context.location, host, context.workspace_root) {
+    match super::run::run(context.location, host, context.workspace_root, ui) {
         Ok(listing) => {
             ui.stdout(&print::document(&listing, locale));
             // 復旧に必要なentryをすべて見せたうえで、1件でも整っていなければ失敗とする。

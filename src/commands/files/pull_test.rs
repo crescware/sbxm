@@ -783,3 +783,24 @@ fn a_receiving_directory_others_can_enter_is_not_used() -> Checked {
     );
     Ok(())
 }
+
+fn pull(
+    location: &crate::config::ConfigLocation,
+    config: &crate::config::GlobalConfig,
+    destination: &str,
+    requested: Option<&crate::project::ProjectId>,
+    prompt: &mut dyn crate::support::select::ProjectPrompt,
+    host: &dyn crate::boundary::host::HostEnvironment,
+    workspace_root: &std::path::Path,
+) -> crate::diagnostics::Result<Pulled> {
+    super::pull(
+        location,
+        config,
+        destination,
+        requested,
+        prompt,
+        host,
+        workspace_root,
+        &mut crate::design::SilentProgress,
+    )
+}

@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::ConfigLocation;
+use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 
 use crate::support::inventory::{self};
@@ -13,8 +14,9 @@ pub fn run(
     location: &ConfigLocation,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Listing> {
-    let inventory = inventory::take(location, host, workspace_root)?;
+    let inventory = inventory::take(location, host, workspace_root, progress)?;
 
     Ok(Listing {
         settled: inventory.is_settled(),

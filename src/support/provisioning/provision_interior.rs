@@ -2,6 +2,7 @@ use crate::boundary::host::HostEnvironment;
 use crate::boundary::host::protocol::SandboxState;
 use crate::design::{ProgressSink, Warning};
 use crate::diagnostics::Result;
+use crate::msg;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
 use crate::support::select::Locked;
@@ -26,6 +27,7 @@ pub(crate) fn provision_interior(
     let project = ProjectId::parse(&locked.metadata.display_id())?;
     let layout = SandboxLayout::new(&canonical);
 
+    progress.step(msg!("progress-inspect-credentials"));
     sandbox::require_credentials_isolated(host, &ready_name)?;
     let origin = repository::SandboxOrigin::of(&locked.metadata)?;
     // credential helperへ書く直前に読む。事前条件の確認から時間が空くため、その間に
@@ -38,15 +40,21 @@ pub(crate) fn provision_interior(
 
     let decorate = |error| disk::attach_on_failure(host, &ready_name, SandboxState::Running, error);
 
+    if !inputs.file_declarations().is_empty() {
+        progress.step(msg!("progress-status-files"));
+    }
     inputs.verify_unchanged()?;
     let placed_files = files::place_all(
         host,
         &ready_name,
         &inputs.file_declarations(),
         files::Conflict::Refuse,
+        progress,
     )
     .map_err(decorate)?;
+    progress.step(msg!("progress-inspect-identity"));
     identity::ensure(host, &ready_name, &locked.metadata.git_identity).map_err(decorate)?;
+    progress.step(msg!("progress-inspect-tools"));
     tools::SandboxReady::announce(host, &ready_name).map_err(decorate)?;
     if let Some(registration) = &registration {
         secret::configure_git_credential(host, &ready_name, registration.placeholder())
@@ -54,6 +62,7 @@ pub(crate) fn provision_interior(
         secret::configure_token_env(host, &ready_name, registration.placeholder())
             .map_err(decorate)?;
         // 数分かかるfetchへ進む前に、実物と同じ経路で認証だけを確かめる。
+        progress.step(msg!("progress-inspect-credentials"));
         secret::require_github_accepts(host, &ready_name, &project, registration)?;
     }
 
@@ -74,6 +83,7 @@ pub(crate) fn provision_interior(
     } else {
         Vec::new()
     };
+    progress.step(msg!("progress-inspect-start-ref"));
     let branch = repository::resolve_start_ref(
         host,
         &ready_name,
@@ -99,6 +109,7 @@ pub(crate) fn provision_interior(
         &layout,
         &locked.metadata,
         &worktree_names,
+        progress,
     )?;
     Ok(ProvisioningOutput {
         project: locked.metadata.display_id(),

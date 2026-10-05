@@ -60,8 +60,7 @@ pub fn check_inside(
         check_secret(host, name, status);
     }
     let layout = SandboxLayout::new(metadata.canonical_id());
-    progress.step(msg!("progress-inspect-repository"));
-    check_bare_repository(host, name, &layout, status);
+    check_bare_repository(host, name, &layout, status, progress);
     check_worktrees(
         host,
         name,

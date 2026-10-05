@@ -1,6 +1,7 @@
 use crate::boundary::host::HostEnvironment;
 use crate::design::{PromptUi, Ui};
 use crate::diagnostics::ExitCode;
+use crate::msg;
 use crate::paths::ProjectParent;
 
 use crate::commands::add::AddRequest;
@@ -29,6 +30,9 @@ pub fn exec(
     };
     // 登録する対象は、clone URLと同じく何かを訊く前に確かめる。対象の誤りを、言語や
     // 名義を決めたあとで知らせない。
+    if matches!(args.target, super::AddTarget::Local { .. }) {
+        ui.progress(msg!("progress-inspect-host-repository"));
+    }
     let request = match AddRequest::resolve(args, &parent, host) {
         Ok(request) => request,
         Err(error) => return report(ui, &error),
@@ -43,6 +47,9 @@ pub fn exec(
     prompt.set_locale(locale);
 
     // 名義は、この実行が何かを作る前に決める。訊くなら選んだ言語で訊く。
+    if args.git_identity.is_none() && config.git_identity.is_none() && context.can_prompt {
+        ui.progress(msg!("progress-inspect-identity"));
+    }
     let git_identity = match choose_git_identity(context, &config, args, host, prompt) {
         Ok(chosen) => chosen,
         Err(error) => return report(ui, &error),
