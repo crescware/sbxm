@@ -6,9 +6,9 @@ use crate::diagnostics::ErrorId;
 
 use crate::testing::outcome::{Checked, Required};
 
-use super::{super::diagnose, super::fake::*};
+use super::super::fake::*;
 use crate::testing::host::{FakeSbx, no_secrets, registered_secret};
-use crate::testing::project::{Fixture, project_id};
+use crate::testing::project::{Fixture, diagnose, project_id};
 
 #[test]
 fn a_stopped_sandbox_is_not_started_to_look_inside_it() -> Checked {

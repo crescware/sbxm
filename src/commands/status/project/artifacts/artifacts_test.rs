@@ -11,10 +11,10 @@ use crate::support::image::{self, LABEL_CANONICAL_ID, LABEL_DOCKERFILE_SHA256};
 
 use crate::testing::outcome::{Checked, Required};
 
+use super::super::fake::*;
 use super::check_directory;
-use super::{super::diagnose, super::fake::*};
 use crate::testing::host::FakeSbx;
-use crate::testing::project::{Fixture, project_id};
+use crate::testing::project::{Fixture, diagnose, project_id};
 use crate::testing::value::IMAGE_ID;
 
 #[test]
