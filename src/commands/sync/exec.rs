@@ -23,7 +23,7 @@ pub fn exec(
     };
     ui.set_locale(locale);
     prompt.set_locale(locale);
-    if let Err(error) = crate::support::login::require_signed_in(host) {
+    if let Err(error) = crate::support::login::require_signed_in(host, ui) {
         return report(ui, &error);
     }
     match super::run(
@@ -33,6 +33,7 @@ pub fn exec(
         host,
         context.workspace_root,
         context.clock,
+        ui,
     ) {
         Ok(output) => print::report(ui, &output),
         Err(error) => report(ui, &error),

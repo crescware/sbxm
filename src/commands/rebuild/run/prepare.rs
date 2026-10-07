@@ -44,8 +44,12 @@ pub fn prepare(
         prompt,
     } = selection;
     // 対象が決まる前にhostの状態へ触れない。
-    let locked =
-        select::one(location, requested, &msg!("select-rebuild-heading"), prompt)?.lock()?;
+    let candidate = select::one(location, requested, &msg!("select-rebuild-heading"), prompt)?;
+    progress.step(msg!(
+        "progress-project-lock",
+        project = candidate.display_id()
+    ));
+    let locked = candidate.lock()?;
     // 中断した初回構築を暗黙に進めない。Sandboxの有無にも停止中かどうかにも依らず、
     // 対象が決まった直後に無条件で拒否する。中断したrebuildの再開はここを素通りする。
     // 2つのintentは同時にdiskへ乗れないため、`metadata.rebuild`があるならintentは無い。
@@ -57,16 +61,20 @@ pub fn prepare(
     // sessionのshared leaseだけである。
     let session_lease = locked.acquire_exclusive_session_lease()?;
 
+    progress.step(msg!("progress-inspect-docker"));
     docker::require_reachable(host)?;
 
     let name = SandboxName::derive(locked.metadata.canonical_id());
     // hostにあるrepositoryは、作り直したSandboxへhostのgitがsshで書き込む。古いSandboxを
     // 消してから、書き込めないと分かるのでは遅い。構築の前の確認と同じものを確かめる。
     if let Some(repository) = locked.metadata.repository.host_path() {
+        progress.step(msg!("progress-inspect-host-repository"));
         host_sync::require_something_to_send(host, repository)?;
+        progress.step(msg!("progress-inspect-remote-ssh"));
         sandbox::require_ssh(host, name.as_str())?;
     }
     let current = generation::current_dockerfile_hash(&locked.paths)?;
+    progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;
 

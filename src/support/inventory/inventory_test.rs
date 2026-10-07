@@ -315,3 +315,16 @@ fn a_workspace_that_another_account_could_write_to_is_not_trusted_for_a_start() 
     );
     Ok(())
 }
+
+fn take(
+    location: &crate::config::ConfigLocation,
+    host: &dyn crate::boundary::host::HostEnvironment,
+    workspace_root: &std::path::Path,
+) -> crate::diagnostics::Result<Snapshot> {
+    super::take(
+        location,
+        host,
+        workspace_root,
+        &mut crate::design::SilentProgress,
+    )
+}

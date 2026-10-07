@@ -247,7 +247,7 @@ fn a_host_repository_records_the_token_it_does_not_need_as_not_applicable() -> C
     let candidate = crate::support::select::find(&bench.location, &project).required()?;
     let metadata = candidate.reload().required()?;
 
-    let observation = super::observe(
+    let observation = crate::testing::provisioning::observe(
         &world,
         &candidate.paths,
         &bench.config,

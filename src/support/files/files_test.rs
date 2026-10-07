@@ -1061,3 +1061,61 @@ fn a_sandbox_copy_that_changes_while_it_is_read_is_refused() -> Checked {
     assert!(absent.is_none());
     Ok(())
 }
+
+fn observe(
+    host: &dyn crate::boundary::host::HostEnvironment,
+    sandbox: &str,
+    declarations: &[FileDeclaration],
+) -> Result<Vec<PlacedFile>> {
+    super::observe(
+        host,
+        sandbox,
+        declarations,
+        &mut crate::design::SilentProgress,
+    )
+}
+
+fn observe_against_baseline(
+    host: &dyn crate::boundary::host::HostEnvironment,
+    sandbox: &str,
+    baseline: &[crate::metadata::InitialProvisioningFile],
+    divergence: Divergence,
+) -> Result<Vec<PlacedFile>> {
+    super::observe_against_baseline(
+        host,
+        sandbox,
+        baseline,
+        divergence,
+        &mut crate::design::SilentProgress,
+    )
+}
+
+fn plan_all(
+    host: &dyn crate::boundary::host::HostEnvironment,
+    sandbox: &str,
+    declarations: &[FileDeclaration],
+    conflict: Conflict,
+) -> Result<Vec<PlannedFile>> {
+    super::plan_all(
+        host,
+        sandbox,
+        declarations,
+        conflict,
+        &mut crate::design::SilentProgress,
+    )
+}
+
+fn place_all(
+    host: &dyn crate::boundary::host::HostEnvironment,
+    sandbox: &str,
+    declarations: &[FileDeclaration],
+    conflict: Conflict,
+) -> Result<Vec<PlacedFile>> {
+    super::place_all(
+        host,
+        sandbox,
+        declarations,
+        conflict,
+        &mut crate::design::SilentProgress,
+    )
+}

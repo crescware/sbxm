@@ -23,6 +23,7 @@ pub mod provisioning;
 pub mod recorded_output;
 pub mod registry;
 pub mod render;
+pub mod repair;
 pub mod repository;
 pub mod sandbox;
 pub mod scripted_clock;

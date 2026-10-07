@@ -43,6 +43,7 @@ pub fn execute(
         progress,
     )?;
 
+    progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, &prepared.locked.metadata, workspace_root)?;
     let existed = state != inventory::ProjectState::NotCreated;

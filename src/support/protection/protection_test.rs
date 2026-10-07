@@ -31,7 +31,7 @@ fn snapshot(
         &project.metadata,
         std::path::Path::new("/work/example-repo"),
     );
-    gate::assess(host, &request)
+    gate::assess(host, &request, &mut crate::design::SilentProgress)
 }
 
 /// 観測結果だけを見るtestのための取り出し。

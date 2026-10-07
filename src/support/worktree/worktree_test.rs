@@ -6,6 +6,57 @@ use crate::testing::repository::layout;
 use crate::testing::sandbox::InnerCommandSandbox;
 
 #[test]
+fn inspection_progress_names_each_worktree_without_exposing_control_characters() -> Checked {
+    use crate::testing::host::FakeSbx;
+    use crate::testing::recorded_output::RecordedOutput;
+
+    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let mut progress = RecordedOutput::new();
+    let paths = ["/work/repo.tree-0", "/work/改行\nと\u{1b}[31m.tree-1"];
+    for (index, path) in paths.iter().enumerate() {
+        let mut inspection = Inspection::new(
+            &host,
+            "sandbox",
+            path,
+            index + 1,
+            paths.len(),
+            &mut progress,
+        );
+        inspection.changes()?;
+        inspection.head()?;
+    }
+    assert_eq!(progress.steps.len(), 4);
+    for (index, path) in paths.iter().enumerate() {
+        for (offset, id) in [
+            "progress-inspect-worktree-changes",
+            "progress-inspect-worktree-head",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let message = &progress.steps[index * 2 + offset];
+            assert_eq!(message.id, *id);
+            assert!(message.args.contains(&("current", (index + 1).to_string())));
+            assert!(message.args.contains(&("total", "2".to_string())));
+            assert!(message.args.contains(&("path", format!("{path:?}"))));
+            assert!(
+                message
+                    .args
+                    .iter()
+                    .all(|(_, value)| !value.contains(['\n', '\u{1b}']))
+            );
+        }
+        assert!(
+            host.calls()
+                .iter()
+                .any(|args| args.iter().any(|arg| arg == path)),
+            "the observed path is not escaped"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn the_porcelain_listing_is_read_field_by_field() -> Checked {
     let output = "worktree /home/agent/work/repo\0bare\0\0worktree /home/agent/work/repo/repo.tree-0\0HEAD abc\0branch refs/heads/main\0\0worktree /home/agent/work/repo/repo.tree-1\0HEAD abc\0detached\0\0worktree /home/agent/work/repo/repo.tree-2\0HEAD abc\0branch refs/heads/topic\0prunable gitdir file points to non-existent location\0\0";
     let entries = parse_list(output).required_because("the listing parses")?;

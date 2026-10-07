@@ -1,5 +1,6 @@
 use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
+use crate::msg;
 use crate::project::SandboxLayout;
 
 use crate::design::ProgressSink;
@@ -22,6 +23,7 @@ pub fn execute_confirmed(
     progress: &mut dyn ProgressSink,
 ) -> Result<DestroyOutcome> {
     let metadata = &prepared.locked.metadata;
+    progress.step(msg!("progress-destroy-recheck"));
     let present = inventory::single(&daemon::list(host)?, prepared.name.as_str())?.is_some();
     let current = if present {
         let layout = SandboxLayout::new(metadata.canonical_id());
@@ -34,7 +36,7 @@ pub fn execute_confirmed(
             metadata,
             &host_repository,
         );
-        protection::gate::assess(host, &request)?
+        protection::gate::assess(host, &request, progress)?
     } else {
         protection::gate::assess_absent(
             DestructiveOperation::Destroy,

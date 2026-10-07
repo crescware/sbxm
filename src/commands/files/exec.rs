@@ -40,7 +40,7 @@ pub fn exec(
             destination,
             project,
         } => {
-            if let Err(error) = crate::support::login::require_signed_in(host) {
+            if let Err(error) = crate::support::login::require_signed_in(host, ui) {
                 return report(ui, &error);
             }
             let mut pulled = match pull(
@@ -51,6 +51,7 @@ pub fn exec(
                 prompt,
                 host,
                 context.workspace_root,
+                ui,
             ) {
                 Ok(pulled) => pulled,
                 Err(error) => return report(ui, &error),

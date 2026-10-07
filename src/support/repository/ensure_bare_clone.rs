@@ -23,8 +23,7 @@ pub fn ensure_bare_clone(
     let git_dir = layout.bare_git_dir();
 
     if sandbox::path_exists(host, sandbox, &git_dir)? {
-        progress.step(msg!("progress-checking-repository"));
-        complete_empty_initialization(host, sandbox, origin, &git_dir)?;
+        complete_empty_initialization(host, sandbox, origin, &git_dir, progress)?;
     } else {
         progress.step(msg!("progress-preparing-repository"));
         sandbox::exec(host, sandbox, &["mkdir", "-p", &layout.bare_root()])?.require_success()?;
@@ -61,7 +60,7 @@ pub fn ensure_bare_clone(
         )?
         .require_success()?;
     }
-    verify_bare_clone(host, sandbox, origin, &git_dir)?;
+    verify_bare_clone(host, sandbox, origin, &git_dir, progress)?;
 
     // remote-tracking refを現在の状態にしてから、起点refを解決する。hostにあるrepositoryは、
     // Sandboxの中でfetchせず、hostのgitが書き込む。
@@ -80,19 +79,10 @@ fn complete_empty_initialization(
     sandbox_name: &str,
     origin: &SandboxOrigin,
     git_dir: &str,
+    progress: &mut dyn ProgressSink,
 ) -> Result<()> {
-    let bare = sandbox::read(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "--git-dir",
-            git_dir,
-            "rev-parse",
-            "--is-bare-repository",
-        ],
-    )?;
-    if bare != "true" {
+    let bare = super::inspect_bare(host, sandbox_name, git_dir, progress)?.require_success()?;
+    if bare.stdout_text().trim() != "true" {
         return Ok(());
     }
     let configured = sandbox::exec(

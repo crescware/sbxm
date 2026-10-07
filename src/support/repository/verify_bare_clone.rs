@@ -1,4 +1,5 @@
 use crate::boundary::host::HostEnvironment;
+use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 use crate::msg;
 
@@ -12,22 +13,14 @@ pub fn verify_bare_clone(
     sandbox: &str,
     origin: &SandboxOrigin,
     git_dir: &str,
+    progress: &mut dyn ProgressSink,
 ) -> Result<()> {
-    let bare = sandbox::read(
-        host,
-        sandbox,
-        &[
-            "git",
-            "--git-dir",
-            git_dir,
-            "rev-parse",
-            "--is-bare-repository",
-        ],
-    )?;
-    if bare != "true" {
+    let bare = super::inspect_bare(host, sandbox, git_dir, progress)?.require_success()?;
+    if bare.stdout_text().trim() != "true" {
         return Err(unusable(git_dir, msg!("cause-not-bare-repository")));
     }
 
+    progress.step(msg!("progress-inspect-repository-config"));
     let urls = sandbox::read(
         host,
         sandbox,
@@ -84,6 +77,7 @@ pub fn verify_bare_clone(
         ));
     }
 
+    progress.step(msg!("progress-inspect-repository-connectivity"));
     let outcome = sandbox::exec(
         host,
         sandbox,

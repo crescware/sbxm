@@ -30,7 +30,7 @@ pub fn exec(
     };
     ui.set_locale(locale);
     prompt.set_locale(locale);
-    if let Err(error) = crate::support::login::require_signed_in(host) {
+    if let Err(error) = crate::support::login::require_signed_in(host, ui) {
         return report(ui, &error);
     }
     // hostへ保存してから準備をやり直す場合に、対象を選び直させない。

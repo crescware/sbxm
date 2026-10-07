@@ -14,8 +14,9 @@ use std::path::PathBuf;
 
 use crate::project::{ProjectId, SandboxLayout};
 
-use super::{Prepared, RepairAction, execute, prepare};
+use super::{Prepared, RepairAction, execute};
 use crate::commands::repair::RepairOutput;
+use crate::testing::repair::prepare;
 
 struct StateChangingHost<'a> {
     world: &'a World,

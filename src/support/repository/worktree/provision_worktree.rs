@@ -4,6 +4,7 @@ use crate::metadata::CreationMode;
 use crate::msg;
 
 use crate::support::sandbox;
+use crate::support::worktree::Inspection;
 
 use crate::support::repository::unusable;
 
@@ -18,18 +19,18 @@ pub fn provision_worktree(
     host: &dyn HostEnvironment,
     sandbox: &str,
     git_dir: &str,
-    path: &str,
+    inspection: &mut Inspection<'_>,
     branch: &str,
     mode: CreationMode,
     expected_commit: &str,
 ) -> Result<()> {
-    if !sandbox::path_exists(host, sandbox, path)? {
-        create_worktree(host, sandbox, git_dir, path, branch, mode)?;
+    if !sandbox::path_exists(host, sandbox, inspection.path())? {
+        create_worktree(host, sandbox, git_dir, inspection.path(), branch, mode)?;
     }
-    let head = sandbox::read(host, sandbox, &["git", "-C", path, "rev-parse", "HEAD"])?;
+    let head = inspection.head()?;
     if head != expected_commit {
         return Err(unusable(
-            path,
+            inspection.path(),
             msg!(
                 "cause-head-differs",
                 observed = head,
@@ -37,5 +38,5 @@ pub fn provision_worktree(
             ),
         ));
     }
-    verify_mode(host, sandbox, path, branch, mode)
+    verify_mode(inspection, branch, mode)
 }

@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 
 use crate::boundary::host::{CommandOutcome, HostEnvironment};
-use crate::design::{Fact, Remediation};
+use crate::design::{Fact, ProgressSink, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Msg, Result};
 use crate::msg;
 use crate::paths;
@@ -71,7 +71,12 @@ struct StatusReport {
 /// をそのまま信じると、消えたupstreamが誤って拒否になり、古い写しが誤って許可になる。
 /// hostにあるrepositoryを登録した案件は、[`observe_host_origin`]がhostのrepositoryを
 /// 直接読む。
-pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment {
+pub fn inspect(
+    host: &dyn HostEnvironment,
+    request: &Request<'_>,
+    progress: &mut dyn ProgressSink,
+) -> Assessment {
+    progress.step(msg!("progress-inspect-repository"));
     let layout = request.layout;
     let sandbox_name = request.sandbox.as_str();
     let bare_root = layout.bare_root();
@@ -101,6 +106,7 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         return observation_failure(request, project, confirmable_losses, None);
     }
 
+    progress.step(msg!("progress-inspect-worktrees"));
     let entries = match worktree::list(host, sandbox_name, layout) {
         Ok(entries) => entries,
         Err(error) => {
@@ -119,9 +125,9 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         request,
         entries,
         &bare_root,
-        &project,
         &mut blockers,
         &mut confirmable_losses,
+        progress,
     );
 
     let repository = RepositoryScope {
@@ -132,6 +138,7 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
     // ローカル所有refの損失は、origin観測を待ってからでないと確定しない。remoteとreflogの
     // 損失は先に確定するが、削除計画にはref・remote・reflogの順で並べる。
     let mut repository_losses = Vec::new();
+    progress.step(msg!("progress-inspect-references"));
     let pending_refs = collect_repository_inventory(
         host,
         sandbox_name,
@@ -148,6 +155,10 @@ pub fn inspect(host: &dyn HostEnvironment, request: &Request<'_>) -> Assessment 
         .chain(pending_refs.iter().map(|pending| pending.candidate.clone()))
         .collect();
     let origin = OriginKind::of(request.metadata);
+    progress.step(match origin {
+        OriginKind::Remote => msg!("progress-inspect-origin-fetch"),
+        OriginKind::Host => msg!("progress-inspect-origin-local"),
+    });
     let observation = match observe_origin(host, request, origin, &candidates) {
         Ok(observation) => observation,
         Err(error) => {
@@ -216,10 +227,11 @@ fn examine_worktrees(
     request: &Request<'_>,
     entries: Vec<worktree::Entry>,
     bare_root: &str,
-    project: &str,
     blockers: &mut Vec<Blocker>,
     confirmable_losses: &mut Vec<ConfirmableLoss>,
+    progress: &mut dyn ProgressSink,
 ) -> Vec<PendingWorktree> {
+    let project = request.metadata.display_id();
     let sandbox_name = request.sandbox.as_str();
     let declared: BTreeSet<String> = request
         .layout
@@ -228,10 +240,8 @@ fn examine_worktrees(
         .collect();
 
     let mut pending_worktrees = Vec::new();
-    for entry in entries {
-        if entry.bare {
-            continue;
-        }
+    let total = entries.iter().filter(|entry| !entry.bare).count();
+    for (index, entry) in entries.into_iter().filter(|entry| !entry.bare).enumerate() {
         let Some(relative) = entry.relative_to(bare_root) else {
             // bare root外のworktreeは、案件の成果物として扱えない。relativeが無いため
             // 他の検査は行えないが、拒否そのものは他のblockerと同列に集める。
@@ -258,12 +268,12 @@ fn examine_worktrees(
             }
         }
 
+        let mut inspection =
+            worktree::Inspection::new(host, sandbox_name, &entry.path, index + 1, total, progress);
         let Some(pending) = examine(
-            host,
-            sandbox_name,
-            &entry,
+            &mut inspection,
             &relative,
-            project,
+            &project,
             managed,
             blockers,
             confirmable_losses,
@@ -510,33 +520,19 @@ fn collect_repository_inventory(
 }
 
 /// 1件のworktreeを検査し、既知のblocker・確認対象・観測不能を集めながら結果を組み立てる。
-#[allow(clippy::too_many_arguments)]
 fn examine(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
-    entry: &worktree::Entry,
+    inspection: &mut worktree::Inspection<'_>,
     relative: &str,
     project: &str,
     managed: bool,
     blockers: &mut Vec<Blocker>,
     confirmable_losses: &mut Vec<ConfirmableLoss>,
 ) -> Option<PendingWorktree> {
-    let path = entry.path.as_str();
+    check_tree_status(inspection, relative, project, blockers);
+    collect_ignored_paths(inspection, relative, project, blockers, confirmable_losses);
+    check_operation_in_progress(inspection, relative, project, blockers);
 
-    check_tree_status(host, sandbox_name, path, relative, project, blockers);
-    collect_ignored_paths(
-        host,
-        sandbox_name,
-        path,
-        relative,
-        project,
-        blockers,
-        confirmable_losses,
-    );
-    check_operation_in_progress(host, sandbox_name, path, relative, project, blockers);
-
-    let (head, mode, branch, primary) =
-        resolve_position(host, sandbox_name, path, relative, project, blockers)?;
+    let (head, mode, branch, primary) = resolve_position(inspection, relative, project, blockers)?;
 
     Some(PendingWorktree {
         relative: relative.to_string(),
@@ -557,18 +553,12 @@ fn examine(
 /// commitを特定できない、または観測不能な場合は`None`を返し、呼び出し側はこの
 /// worktreeのreportを欠測として扱う。
 fn resolve_position(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
-    path: &str,
+    inspection: &mut worktree::Inspection<'_>,
     relative: &str,
     project: &str,
     blockers: &mut Vec<Blocker>,
 ) -> Option<(String, Mode, Option<String>, CommitCandidate)> {
-    let head = match sandbox::read(
-        host,
-        sandbox_name,
-        &["git", "-C", path, "rev-parse", "HEAD"],
-    ) {
+    let head = match inspection.head() {
         Ok(head) => Some(head),
         Err(error) => {
             blockers.push(observation_blocker(&reclassify_local_refs(
@@ -579,19 +569,7 @@ fn resolve_position(
             None
         }
     };
-    let branch_outcome = match sandbox::exec(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "-C",
-            path,
-            "symbolic-ref",
-            "--quiet",
-            "--short",
-            "HEAD",
-        ],
-    ) {
+    let branch_outcome = match inspection.branch() {
         Ok(outcome) => Some(outcome),
         Err(error) => {
             blockers.push(observation_blocker(&reclassify_local_refs(
@@ -623,9 +601,7 @@ fn resolve_position(
     let head = head?;
     if attached {
         let branch = branch_outcome.stdout_text().trim().to_string();
-        let Observed::Yes(upstream) =
-            read_upstream(host, sandbox_name, path, relative, project, blockers)
-        else {
+        let Observed::Yes(upstream) = read_upstream(inspection, relative, project, blockers) else {
             return None;
         };
         let candidate =
@@ -640,26 +616,15 @@ fn resolve_position(
 
 /// 追跡対象の変更と未追跡pathを分けて集める。
 fn check_tree_status(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
-    path: &str,
+    inspection: &mut worktree::Inspection<'_>,
     relative: &str,
     project: &str,
     blockers: &mut Vec<Blocker>,
 ) {
-    let outcome = match run(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "-C",
-            path,
-            "status",
-            "--porcelain=v2",
-            "-z",
-            "--untracked-files=all",
-        ],
-    ) {
+    let outcome = match inspection
+        .changes()
+        .and_then(CommandOutcome::require_success)
+    {
         Ok(outcome) => outcome,
         Err(error) => {
             blockers.push(observation_blocker(&reclassify(
@@ -786,27 +751,16 @@ fn valid_status_record(rest: &str, fields: usize) -> bool {
 /// 単位に畳んだ一覧は、確認から削除までのあいだの無関係な書き込みでfingerprintを
 /// 変えない。
 fn collect_ignored_paths(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
-    path: &str,
+    inspection: &mut worktree::Inspection<'_>,
     relative: &str,
     project: &str,
     blockers: &mut Vec<Blocker>,
     confirmable_losses: &mut Vec<ConfirmableLoss>,
 ) {
-    let outcome = match run(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "-C",
-            path,
-            "status",
-            "--porcelain=v2",
-            "-z",
-            "--ignored=traditional",
-        ],
-    ) {
+    let outcome = match inspection
+        .ignored()
+        .and_then(CommandOutcome::require_success)
+    {
         Ok(outcome) => outcome,
         Err(error) => {
             blockers.push(observation_blocker(&ignored_paths_unobservable(
@@ -839,18 +793,12 @@ fn collect_ignored_paths(
 
 /// merge、rebase、cherry-pickのような操作が途中で止まっていないことを確かめる。
 fn check_operation_in_progress(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
-    path: &str,
+    inspection: &mut worktree::Inspection<'_>,
     relative: &str,
     project: &str,
     blockers: &mut Vec<Blocker>,
 ) {
-    let git_dir = match sandbox::read(
-        host,
-        sandbox_name,
-        &["git", "-C", path, "rev-parse", "--git-dir"],
-    ) {
+    let git_dir = match inspection.git_dir() {
         Ok(git_dir) => git_dir,
         Err(error) => {
             blockers.push(observation_blocker(&reclassify_git_operation(
@@ -861,8 +809,7 @@ fn check_operation_in_progress(
     };
 
     for marker in IN_PROGRESS_MARKERS {
-        let candidate = format!("{git_dir}/{marker}");
-        let probe = match sandbox::exec(host, sandbox_name, &["test", "-e", &candidate]) {
+        let probe = match inspection.operation_marker(&git_dir, marker) {
             Ok(probe) => probe,
             Err(error) => {
                 blockers.push(observation_blocker(&reclassify_git_operation(
@@ -903,25 +850,12 @@ fn check_operation_in_progress(
 /// upstreamが追いついているかどうかはここでは見ない。回収できるかどうかは、refresh後の
 /// originの観測だけを根拠に決める。
 fn read_upstream(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
-    path: &str,
+    inspection: &worktree::Inspection<'_>,
     relative: &str,
     project: &str,
     blockers: &mut Vec<Blocker>,
 ) -> Observed<Option<String>> {
-    let outcome = match sandbox::exec(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "-C",
-            path,
-            "rev-parse",
-            "--symbolic-full-name",
-            "@{upstream}",
-        ],
-    ) {
+    let outcome = match inspection.upstream() {
         Ok(outcome) => outcome,
         Err(error) => {
             blockers.push(observation_blocker(&reclassify_local_refs(

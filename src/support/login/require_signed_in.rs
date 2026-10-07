@@ -1,5 +1,5 @@
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
-use crate::design::Fact;
+use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::support::daemon;
@@ -8,7 +8,11 @@ use crate::support::daemon;
 ///
 /// `sbx login`にstatus subcommandはないため、`ls --json`を短いprobeとして使う。
 /// 一覧はここで使い回さず、案件のlock取得後に各workflowが現在の状態を取り直す。
-pub fn require_signed_in(host: &dyn HostEnvironment) -> Result<()> {
+pub fn require_signed_in(
+    host: &dyn HostEnvironment,
+    progress: &mut dyn ProgressSink,
+) -> Result<()> {
+    progress.step(msg!("progress-inspect-login"));
     daemon::list_with_timeout(host, TimeoutClass::Probe)
         .map(|_| ())
         .map_err(unobservable)

@@ -42,6 +42,9 @@ pub(crate) fn resume_initial(
         return Ok(super::ready_output(&locked.metadata, observation));
     }
     let needs_dockerfile = !observation.sandbox.is_matching() && !observation.stored_image_matches;
+    if !intent.files.is_empty() {
+        progress.step(msg!("progress-status-files"));
+    }
     let inputs = ProvisioningInputs::resume(&locked.paths, &intent, needs_dockerfile)?;
     let output = if observation.sandbox.is_matching() {
         let mut warnings = Vec::new();
@@ -56,7 +59,7 @@ pub(crate) fn resume_initial(
         }
         provision_interior(locked, &inputs, host, progress, warnings)?
     } else {
-        let preconditions = verify_external_preconditions(host, &locked.metadata)?;
+        let preconditions = verify_external_preconditions(host, &locked.metadata, progress)?;
         provision(
             locked,
             &inputs,
@@ -68,12 +71,14 @@ pub(crate) fn resume_initial(
         )?
     };
 
+    progress.step(msg!("progress-inspect-result"));
     let completed = observe(
         host,
         &locked.paths,
         config,
         &locked.metadata,
         workspace_root,
+        progress,
     )?;
     completed.require_safe()?;
     if !completed.is_complete() {

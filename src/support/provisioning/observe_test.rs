@@ -10,7 +10,8 @@ use crate::testing::add_request::{project_of, request};
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::provisioning::{Bench, World};
 
-use super::{Observation, ProvisioningState, observe};
+use super::{Observation, ProvisioningState};
+use crate::testing::provisioning::observe;
 
 /// 構築済み案件を、lockを取らずにもう一度観測する。
 fn observe_built(bench: &Bench, world: &World, project: &crate::project::ProjectId) -> Checked<()> {

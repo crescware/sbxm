@@ -34,6 +34,7 @@ pub fn run(
     let selected = select::many(location, requested, &msg!("select-stop-heading"), prompt)?;
 
     // 2-3. 1回の一覧取得で全stateを解決し、進められない状態が1件でもあれば止める。
+    output.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     let mut running = Vec::new();
     for candidate in &selected {
@@ -62,10 +63,15 @@ pub fn run(
     // 4. 複数lockはcanonical ID昇順に取得する。
     let mut locks: Vec<ExclusiveLock> = Vec::with_capacity(selected.len());
     for candidate in &selected {
+        output.step(msg!(
+            "progress-project-lock",
+            project = candidate.display_id()
+        ));
         locks.push(candidate.paths.acquire_lock()?);
     }
 
     // 5. lock取得後のmetadataとstateでpreconditionを判定し直す。
+    output.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     let mut targets: Vec<Target> = Vec::with_capacity(selected.len());
     for candidate in &selected {

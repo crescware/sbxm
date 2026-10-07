@@ -4,6 +4,7 @@ use crate::boundary::host::HostEnvironment;
 use crate::config::{ConfigLocation, GlobalConfig};
 use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::Result;
+use crate::msg;
 use crate::project::SandboxName;
 use crate::support::files::Placement;
 use crate::support::inventory::{self, ProjectState};
@@ -25,6 +26,7 @@ pub fn run_all(
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<AllReport> {
+    progress.step(msg!("progress-inspect-registry"));
     let candidates = select::candidates(location)?;
     if candidates.is_empty() {
         return Err(select::no_managed_projects());
@@ -64,11 +66,16 @@ fn apply_one(
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<ProjectResult> {
+    progress.step(msg!(
+        "progress-project-lock",
+        project = candidate.display_id()
+    ));
     let locked = candidate.lock()?;
     // Sandboxの状態より先に判定する。中断した初回構築は固定したsnapshotで再開するため、
     // Sandboxが無くても現在の宣言が置かれるとは言えない。
     generation::require_no_rebuild(&locked.metadata)?;
     provisioning::require_no_initial_intent(&locked.metadata)?;
+    progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     match inventory::state_of(&entries, &locked.metadata, workspace_root)? {
         ProjectState::NotCreated => return Ok(ProjectResult::NotCreated),

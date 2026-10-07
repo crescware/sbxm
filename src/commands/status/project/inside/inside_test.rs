@@ -47,12 +47,14 @@ fn a_stopped_sandbox_is_not_started_to_look_inside_it() -> Checked {
         "nothing runs inside a stopped sandbox: {:?}",
         host.calls()
     );
-    assert!(
-        progress
-            .steps
-            .iter()
-            .all(|step| !matches!(step.id, "progress-status-inside" | "progress-status-disk"))
-    );
+    assert!(progress.steps.iter().all(|step| !matches!(
+        step.id,
+        "progress-inspect-credentials"
+            | "progress-inspect-repository"
+            | "progress-inspect-worktrees"
+            | "progress-inspect-ssh-agent"
+            | "progress-status-disk"
+    )));
     assert!(
         status.is_healthy(),
         "not observing on purpose is not a failure"

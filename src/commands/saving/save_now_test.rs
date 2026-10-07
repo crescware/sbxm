@@ -169,3 +169,22 @@ fn a_save_from_a_sandbox_listed_twice_is_refused() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
     Ok(())
 }
+
+fn save_now(
+    location: &crate::config::ConfigLocation,
+    requested: Option<&crate::project::ProjectId>,
+    prompt: &mut dyn crate::support::select::ProjectPrompt,
+    host: &dyn crate::boundary::host::HostEnvironment,
+    workspace_root: &std::path::Path,
+    clock: &dyn crate::time::Clock,
+) -> crate::diagnostics::Result<SaveOutput> {
+    super::save_now(
+        location,
+        requested,
+        prompt,
+        host,
+        workspace_root,
+        clock,
+        &mut crate::design::SilentProgress,
+    )
+}

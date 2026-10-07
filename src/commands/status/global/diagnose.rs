@@ -1,5 +1,7 @@
 use crate::boundary::host::HostEnvironment;
 use crate::config::ConfigLocation;
+use crate::design::ProgressSink;
+use crate::msg;
 
 use crate::commands::status::global::host_commands::check_host_commands;
 use crate::commands::status::global::platform::check_platform;
@@ -11,7 +13,12 @@ use crate::commands::status::global::settings::{
 use super::GlobalStatus;
 
 /// hostとglobal環境を診断する。何も変更しない。
-pub fn diagnose(location: &ConfigLocation, host: &dyn HostEnvironment) -> GlobalStatus {
+pub fn diagnose(
+    location: &ConfigLocation,
+    host: &dyn HostEnvironment,
+    progress: &mut dyn ProgressSink,
+) -> GlobalStatus {
+    progress.step(msg!("progress-inspect-registry"));
     let mut status = GlobalStatus {
         rows: Vec::new(),
         diagnostics: Vec::new(),
@@ -24,16 +31,17 @@ pub fn diagnose(location: &ConfigLocation, host: &dyn HostEnvironment) -> Global
     check_registry(location, &mut status);
 
     // 2. platform
+    progress.step(msg!("progress-inspect-host"));
     check_platform(host, &mut status);
 
     // 3-4. hostが直接実行するcommandと、Docker Client/Server疎通
-    let present = check_host_commands(host, &mut status);
+    let present = check_host_commands(host, &mut status, progress);
 
     // 5. 新規登録の既定となるGit identity
     check_git_identity(config.as_ref(), &mut status);
 
     // 5-9. Docker Sandboxes CLIとそのserviceの状態
-    check_docker_sandboxes(host, present.contains(&"sbx"), &mut status);
+    check_docker_sandboxes(host, present.contains(&"sbx"), &mut status, progress);
 
     status
 }

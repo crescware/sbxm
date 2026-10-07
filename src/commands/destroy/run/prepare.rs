@@ -40,12 +40,17 @@ pub fn prepare(
         prompt,
     } = selection;
     // 対象が決まる前にhostの状態へ触れない。
-    let locked =
-        select::one(location, requested, &msg!("select-destroy-heading"), prompt)?.lock()?;
+    let candidate = select::one(location, requested, &msg!("select-destroy-heading"), prompt)?;
+    progress.step(msg!(
+        "progress-project-lock",
+        project = candidate.display_id()
+    ));
+    let locked = candidate.lock()?;
     let paths = locked.paths.clone();
 
     let metadata = &locked.metadata;
     let name = metadata.sandbox_name();
+    progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     let observed = inventory::state_of(&entries, metadata, workspace_root)?;
 
@@ -87,7 +92,7 @@ pub fn prepare(
                 metadata,
                 &host_repository,
             );
-            protection::gate::assess(host, &request)?
+            protection::gate::assess(host, &request, progress)?
         };
         // Blockerが1件でもあれば、削除計画を見せず明示確認も求めずにここで拒否する。
         protection::gate::require_no_blockers(snapshot.assessment())?;

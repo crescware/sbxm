@@ -350,3 +350,22 @@ fn origin_refs_the_sandbox_cannot_list_are_not_read_as_none() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     Ok(())
 }
+
+fn run(
+    location: &crate::config::ConfigLocation,
+    requested: Option<&crate::project::ProjectId>,
+    prompt: &mut dyn crate::support::select::ProjectPrompt,
+    host: &dyn crate::boundary::host::HostEnvironment,
+    workspace_root: &std::path::Path,
+    clock: &dyn crate::time::Clock,
+) -> crate::diagnostics::Result<SyncOutput> {
+    super::run(
+        location,
+        requested,
+        prompt,
+        host,
+        workspace_root,
+        clock,
+        &mut crate::design::SilentProgress,
+    )
+}

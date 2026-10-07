@@ -1,6 +1,6 @@
 use crate::boundary::host::HostEnvironment;
 use crate::config::GlobalConfig;
-use crate::design::Fact;
+use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -24,6 +24,7 @@ pub(crate) fn declared_files(
     sandbox: &str,
     metadata: &ProjectMetadata,
     config: &GlobalConfig,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Vec<PlacedFile>> {
     if let Some(intent) = &metadata.initial_provisioning {
         return files::observe_against_baseline(
@@ -31,6 +32,7 @@ pub(crate) fn declared_files(
             sandbox,
             &intent.files,
             files::Divergence::Conflict,
+            progress,
         );
     }
     if let Some(baseline) = &metadata.declared_files {
@@ -39,9 +41,10 @@ pub(crate) fn declared_files(
             sandbox,
             baseline,
             files::Divergence::Modified,
+            progress,
         );
     }
-    let observed = files::observe(host, sandbox, &config.files)?;
+    let observed = files::observe(host, sandbox, &config.files, progress)?;
     if observed
         .iter()
         .any(|file| file.placement != files::Placement::Unchanged)

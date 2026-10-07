@@ -42,7 +42,7 @@ impl HostClone {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 clone(host, &target, repository, progress)?;
                 // 作成直後も、再利用と同じ規則で成果物を検証する。
-                inspect(host, paths, repository, &target)?;
+                inspect(host, paths, repository, &target, progress)?;
                 Ok(HostClone {
                     path: target,
                     created: true,
@@ -50,7 +50,7 @@ impl HostClone {
             }
             Err(error) => Err(PathScope::ProjectPath.unreadable_error(&target, &error.to_string())),
             Ok(_) => {
-                inspect(host, paths, repository, &target)?;
+                inspect(host, paths, repository, &target, progress)?;
                 Ok(HostClone {
                     path: target,
                     created: false,
@@ -91,7 +91,9 @@ fn inspect(
     paths: &ProjectPaths,
     repository: &RepositoryIdentity,
     target: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<()> {
+    progress.step(msg!("progress-inspect-host-repository"));
     if paths::is_symlink(target) {
         return Err(PathScope::ProjectPath.symlink_error(target));
     }

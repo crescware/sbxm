@@ -4,8 +4,6 @@ use crate::testing::global_status::FakeHost;
 use crate::testing::host::{AnsweredHost, FakeSbx};
 use crate::testing::outcome::{Checked, Refused, Required};
 
-use super::require_signed_in;
-
 #[test]
 fn login_is_checked_with_a_captured_read_only_probe_without_the_ssh_agent() -> Checked {
     let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
@@ -58,4 +56,8 @@ fn canceling_a_login_probe_stays_canceled() -> Checked {
     let error = require_signed_in(&CanceledHost).refused_because("the user canceled")?;
     assert_eq!(error, Error::Canceled);
     Ok(())
+}
+
+fn require_signed_in(host: &dyn crate::boundary::host::HostEnvironment) -> Result<()> {
+    super::require_signed_in(host, &mut crate::design::SilentProgress)
 }

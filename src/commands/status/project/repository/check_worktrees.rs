@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
-use crate::design::{Fact, Remediation};
+use crate::design::{Fact, ProgressSink, Remediation};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -30,7 +30,9 @@ pub fn check_worktrees(
     metadata: &ProjectMetadata,
     host_repository: &Path,
     status: &mut ProjectStatus,
+    progress: &mut dyn ProgressSink,
 ) {
+    progress.step(msg!("progress-inspect-worktrees"));
     let entries = match worktree::list(host, name.as_str(), layout) {
         Ok(entries) => entries,
         Err(error) => {
@@ -44,7 +46,13 @@ pub fn check_worktrees(
 
     let project = status.project.clone();
     let (pending, value) =
-        collect_pending_worktrees(host, name, layout, metadata, entries, &project, status);
+        collect_pending_worktrees(host, name, layout, metadata, entries, status, progress);
+    if pending.iter().any(|worktree| worktree.candidate.is_some()) {
+        progress.step(match metadata.repository.provider() {
+            Provider::Github => msg!("progress-inspect-origin-read-only"),
+            Provider::Local => msg!("progress-inspect-origin-local"),
+        });
+    }
     let observation = observe_candidates(
         host,
         name,
@@ -72,22 +80,29 @@ fn collect_pending_worktrees(
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
     entries: Vec<worktree::Entry>,
-    project: &str,
     status: &mut ProjectStatus,
+    progress: &mut dyn ProgressSink,
 ) -> (Vec<PendingWorktree>, Value) {
+    let project = status.project.clone();
     let bare_root = layout.bare_root();
     let declared = layout.worktree_names(metadata.provisioning.requested_worktrees);
     let mut seen = Vec::new();
     let mut pending = Vec::new();
     let mut value = Value::Ready;
 
-    for entry in entries {
-        if entry.bare {
-            continue;
-        }
-        let Some(worktree) =
-            read_pending_worktree(host, name, &entry, &bare_root, &declared, project, status)
-        else {
+    let total = entries.iter().filter(|entry| !entry.bare).count();
+    for (index, entry) in entries.into_iter().filter(|entry| !entry.bare).enumerate() {
+        let mut inspection =
+            worktree::Inspection::new(host, name.as_str(), &entry.path, index + 1, total, progress);
+        let Some(worktree) = read_pending_worktree(
+            &mut inspection,
+            name,
+            &entry,
+            &bare_root,
+            &declared,
+            &project,
+            status,
+        ) else {
             value = Value::Mismatch;
             continue;
         };
@@ -104,7 +119,7 @@ fn collect_pending_worktrees(
 }
 
 fn read_pending_worktree(
-    host: &dyn HostEnvironment,
+    inspection: &mut worktree::Inspection<'_>,
     name: &SandboxName,
     entry: &worktree::Entry,
     bare_root: &str,
@@ -131,16 +146,8 @@ fn read_pending_worktree(
     } else {
         Value::Attached
     };
-    let state = worktree_state(host, name, &entry.path, status);
-    let candidate = read_candidate(
-        host,
-        name,
-        &entry.path,
-        &relative,
-        entry.detached,
-        project,
-        status,
-    );
+    let state = worktree_state(inspection, &entry.path, status);
+    let candidate = read_candidate(inspection, name, &relative, entry.detached, project, status);
     Some(PendingWorktree {
         path: relative,
         kind: if managed { "managed" } else { "unmanaged" },
@@ -288,19 +295,14 @@ fn classify_worktree(
 
 /// statusがRemoteを分類するために必要なcandidateを、worktreeの状態とは別に読む。
 fn read_candidate(
-    host: &dyn HostEnvironment,
+    inspection: &mut worktree::Inspection<'_>,
     name: &SandboxName,
-    path: &str,
     relative: &str,
     detached: bool,
     project: &str,
     status: &mut ProjectStatus,
 ) -> Option<CommitCandidate> {
-    let head = match sandbox::read(
-        host,
-        name.as_str(),
-        &["git", "-C", path, "rev-parse", "HEAD"],
-    ) {
+    let head = match inspection.head() {
         Ok(head) if !head.is_empty() => head,
         Ok(_) => {
             read_only_candidate_failure(name, relative, project, status);
@@ -318,19 +320,10 @@ fn read_candidate(
         return Some(CommitCandidate::new("HEAD".to_string(), head, None));
     }
 
-    let branch = match sandbox::read(
-        host,
-        name.as_str(),
-        &[
-            "git",
-            "-C",
-            path,
-            "symbolic-ref",
-            "--quiet",
-            "--short",
-            "HEAD",
-        ],
-    ) {
+    let branch = match inspection
+        .branch()
+        .and_then(|outcome| Ok(outcome.require_success()?.stdout_text().trim().to_string()))
+    {
         Ok(branch) if !branch.is_empty() => branch,
         Ok(_) => {
             read_only_candidate_failure(name, relative, project, status);
@@ -344,18 +337,7 @@ fn read_candidate(
         }
     };
 
-    let upstream = match sandbox::exec(
-        host,
-        name.as_str(),
-        &[
-            "git",
-            "-C",
-            path,
-            "rev-parse",
-            "--symbolic-full-name",
-            "@{upstream}",
-        ],
-    ) {
+    let upstream = match inspection.upstream() {
         Ok(outcome) => match sandbox::inner_exit_code(&outcome) {
             Some(0) => {
                 let upstream = outcome.stdout_text().trim().to_string();

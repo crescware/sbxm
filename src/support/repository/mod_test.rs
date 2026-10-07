@@ -668,8 +668,14 @@ fn a_sandbox_built_with_an_earlier_origin_is_pointed_at_a_rebuild() -> Checked {
         project: "local/app".to_string(),
     };
 
-    let error = verify_bare_clone(&host, "sbxm-example", &origin, &git_dir)
-        .refused_because("the origin is not the one the host writes")?;
+    let error = verify_bare_clone(
+        &host,
+        "sbxm-example",
+        &origin,
+        &git_dir,
+        &mut crate::testing::recorded_output::RecordedOutput::new(),
+    )
+    .refused_because("the origin is not the one the host writes")?;
 
     let diagnostic = error
         .diagnostics()

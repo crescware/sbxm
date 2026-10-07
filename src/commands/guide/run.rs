@@ -1,4 +1,5 @@
 use crate::config::ConfigLocation;
+use crate::design::ProgressSink;
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::i18n::Locale;
 use crate::msg;
@@ -14,13 +15,14 @@ pub fn run(
     locale: Locale,
     host: &dyn crate::boundary::host::HostEnvironment,
     prompt: &mut dyn select::ProjectPrompt,
+    progress: &mut dyn ProgressSink,
 ) -> Result<GuideOutput> {
     let topic = match args.topic {
         Some(topic) => topic,
         None => select_topic(locale, prompt)?,
     };
     match topic {
-        Topic::CredentialRotation => credential_rotation(args, location, host, prompt),
+        Topic::CredentialRotation => credential_rotation(args, location, host, prompt, progress),
     }
 }
 
@@ -45,6 +47,7 @@ fn credential_rotation(
     location: &ConfigLocation,
     host: &dyn crate::boundary::host::HostEnvironment,
     prompt: &mut dyn select::ProjectPrompt,
+    progress: &mut dyn ProgressSink,
 ) -> Result<GuideOutput> {
     let candidate = select::one(
         location,
@@ -60,6 +63,7 @@ fn credential_rotation(
         ));
     }
     let sandbox = SandboxName::derive(candidate.repository.canonical_id());
+    progress.step(msg!("progress-inspect-credentials"));
     let register_command = secret::replace_github_command(host, sandbox.as_str())?;
 
     Ok(GuideOutput {

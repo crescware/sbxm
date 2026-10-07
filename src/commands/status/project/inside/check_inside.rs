@@ -1,7 +1,9 @@
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
+use crate::design::ProgressSink;
 use crate::metadata::ProjectMetadata;
+use crate::msg;
 use crate::project::{SandboxLayout, SandboxName};
 
 use crate::support::inventory::ProjectState;
@@ -23,6 +25,7 @@ pub fn check_inside(
     host_repository: &Path,
     state: Option<ProjectState>,
     status: &mut ProjectStatus,
+    progress: &mut dyn ProgressSink,
 ) {
     let inner = [
         "status-item-secret",
@@ -53,10 +56,20 @@ pub fn check_inside(
     if without_token {
         status.push("status-item-secret", Value::NotApplicable);
     } else {
+        progress.step(msg!("progress-inspect-credentials"));
         check_secret(host, name, status);
     }
     let layout = SandboxLayout::new(metadata.canonical_id());
-    check_bare_repository(host, name, &layout, status);
-    check_worktrees(host, name, &layout, metadata, host_repository, status);
+    check_bare_repository(host, name, &layout, status, progress);
+    check_worktrees(
+        host,
+        name,
+        &layout,
+        metadata,
+        host_repository,
+        status,
+        progress,
+    );
+    progress.step(msg!("progress-inspect-ssh-agent"));
     check_ssh_agent(host, name, status);
 }

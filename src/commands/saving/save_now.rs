@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::ConfigLocation;
+use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
@@ -23,12 +24,22 @@ pub(super) fn save_now(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     clock: &dyn Clock,
+    progress: &mut dyn ProgressSink,
 ) -> Result<SaveOutput> {
-    let locked = select::one(location, requested, &msg!("select-save-heading"), prompt)?.lock()?;
+    let candidate = select::one(location, requested, &msg!("select-save-heading"), prompt)?;
+    progress.step(msg!(
+        "progress-project-lock",
+        project = candidate.display_id()
+    ));
+    let locked = candidate.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
-    inventory::require_running(host, &locked.metadata, workspace_root)?;
+    inventory::require_running(host, &locked.metadata, workspace_root, progress)?;
     let sandbox = locked.metadata.sandbox_name();
     let target = repository::host_repository(&locked.paths, &locked.metadata);
+    progress.step(msg!(
+        "progress-saving-to-host",
+        project = locked.metadata.display_id()
+    ));
     let changes = host_sync::save_to_host(
         host,
         &sandbox,

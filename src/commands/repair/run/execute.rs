@@ -34,12 +34,14 @@ pub fn execute(
         });
     }
 
+    progress.step(msg!("progress-inspect-recheck"));
     let latest = provisioning::observe(
         host,
         &prepared.paths,
         config,
         &prepared.locked.metadata,
         workspace_root,
+        progress,
     )?;
     latest.require_safe()?;
     let has_intent = prepared.locked.metadata.initial_provisioning.is_some();
@@ -70,6 +72,9 @@ pub fn execute(
 
     // intentが再現するべき入力を先にsnapshotへ固定し、そのsnapshotのdigestをintentと
     // 比較してから初めてmutationへ進む。検証後に生きている入力を読み直す隙を作らない。
+    if !config.files.is_empty() {
+        progress.step(msg!("progress-status-files"));
+    }
     let inputs = capture_repair_inputs(&prepared, config)?;
 
     prepared.locked.metadata.initial_provisioning = Some(provisioning::initial_intent(&inputs));
@@ -94,12 +99,14 @@ pub fn execute(
         warnings,
     )?;
 
+    progress.step(msg!("progress-inspect-result"));
     let completed = provisioning::observe(
         host,
         &prepared.paths,
         config,
         &prepared.locked.metadata,
         workspace_root,
+        progress,
     )?;
     completed.require_safe()?;
     if !completed.is_complete() {

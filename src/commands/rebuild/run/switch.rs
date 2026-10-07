@@ -4,6 +4,7 @@ use crate::boundary::host::HostEnvironment;
 use crate::config::GlobalConfig;
 use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
+use crate::msg;
 use crate::paths::ProjectPaths;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
@@ -50,6 +51,9 @@ impl Switch<'_> {
         } = *self;
         let layout = SandboxLayout::new(metadata.canonical_id());
         // 宣言fileは古いSandboxを消す前に読む。読めないfileがあれば、何も消さずに止まる。
+        if !config.files.is_empty() {
+            progress.step(msg!("progress-status-files"));
+        }
         let inputs = provisioning::ProvisioningInputs::capture_files(paths, config)?;
 
         if existed {
@@ -64,6 +68,7 @@ impl Switch<'_> {
         let origin = repository::SandboxOrigin::of(metadata)?;
         let registration = match origin {
             repository::SandboxOrigin::Github(_) => {
+                progress.step(msg!("progress-inspect-credentials"));
                 Some(secret::require_github(host, name.as_str())?)
             }
             repository::SandboxOrigin::Host { .. } => None,
@@ -75,21 +80,30 @@ impl Switch<'_> {
         // 追加のfactとして載せる。平常時はcommandを1つも増やさない。
         let decorate = |error| disk::attach_on_failure(host, &ready.name, ready.state, error);
 
+        progress.step(msg!("progress-inspect-identity"));
         identity::ensure(host, &ready.name, &metadata.git_identity).map_err(decorate)?;
+        progress.step(msg!("progress-inspect-tools"));
         tools::SandboxReady::announce(host, &ready.name).map_err(decorate)?;
         if let Some(registration) = &registration {
             secret::configure_git_credential(host, &ready.name, registration.placeholder())
                 .map_err(decorate)?;
             secret::configure_token_env(host, &ready.name, registration.placeholder())
                 .map_err(decorate)?;
+            progress.step(msg!("progress-inspect-credentials"));
             secret::require_github_accepts(host, &ready.name, project, registration)?;
         }
         let declarations: Vec<_> = inputs
             .iter()
             .map(|input| input.declaration.clone())
             .collect();
-        files::place_all(host, &ready.name, &declarations, Conflict::Overwrite)
-            .map_err(decorate)?;
+        files::place_all(
+            host,
+            &ready.name,
+            &declarations,
+            Conflict::Overwrite,
+            progress,
+        )
+        .map_err(decorate)?;
         // 作り直したSandboxへ置いた内容が、以後の`apply`が置き換えてよい基準になる。
         metadata.declared_files = Some(provisioning::recorded_files(&inputs));
         repository::ensure_bare_clone(host, &ready.name, &origin, &layout, progress)
@@ -99,6 +113,7 @@ impl Switch<'_> {
         let restored = origin
             .restore_saved_branches(host, ready.name.as_str(), &layout.bare_git_dir())
             .map_err(decorate)?;
+        progress.step(msg!("progress-inspect-start-ref"));
         let branch = repository::resolve_start_ref(host, &ready.name, &layout, paths, metadata)?;
         repository::ensure_worktrees(
             host,
@@ -110,6 +125,7 @@ impl Switch<'_> {
             progress,
         )
         .map_err(decorate)?;
+        progress.step(msg!("progress-inspect-credentials"));
         sandbox::require_credentials_isolated(host, &ready.name)?;
         Ok(restored)
     }

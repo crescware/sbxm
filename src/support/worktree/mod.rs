@@ -5,10 +5,12 @@
 //! 案件の成果物として扱わない。`parse_list`は、hostのrepositoryの一覧を読むのにも使う。
 
 mod entry;
+mod inspection;
 mod list;
 mod parse_list;
 
 pub use entry::Entry;
+pub use inspection::Inspection;
 pub use list::list;
 pub use parse_list::parse_list;
 

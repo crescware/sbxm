@@ -4,7 +4,9 @@ use std::path::Path;
 use crate::boundary::host::HostEnvironment;
 use crate::boundary::host::protocol::SandboxEntry;
 use crate::config::ConfigLocation;
+use crate::design::ProgressSink;
 use crate::diagnostics::Result;
+use crate::msg;
 use crate::paths::ProjectPaths;
 use crate::registry::{self};
 
@@ -25,14 +27,21 @@ pub fn take(
     location: &ConfigLocation,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Snapshot> {
+    progress.step(msg!("progress-inspect-registry"));
     let registry = registry::load(location)?;
+    progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     require_unique_names(&entries)?;
 
     let mut projects = Vec::with_capacity(registry.entries().len());
     let mut claimed: BTreeSet<String> = BTreeSet::new();
     for entry in registry.entries() {
+        progress.step(msg!(
+            "progress-inspect-project",
+            project = entry.repository().display_id()
+        ));
         let name = entry.sandbox_name();
         let paths = ProjectPaths::at(entry.project_root(), entry.canonical_id());
         let (observed, recovery_pending) = observe(&paths, entry, &entries, workspace_root)?;

@@ -22,7 +22,7 @@ fn explicit_topic_and_project_start_without_a_prompt() -> Checked {
     let host = FakeSbx::listing("").answering("secret ls", 0, &listing);
     let mut prompt = ScriptedPrompt::choosing(0);
 
-    let output = super::run::run(
+    let output = run_quiet(
         &explicit("owner/repo")?,
         &fixture.location,
         Locale::En,
@@ -55,7 +55,7 @@ fn omitted_values_prompt_for_the_topic_before_the_project() -> Checked {
     let host = FakeSbx::listing("").answering("secret ls", 0, &listing);
     let mut prompt = ScriptedPrompt::choosing(0);
 
-    super::run::run(
+    run_quiet(
         &Args {
             topic: None,
             project: None,
@@ -87,7 +87,7 @@ fn an_explicit_topic_prompts_only_for_the_project() -> Checked {
     let host = FakeSbx::listing("").answering("secret ls", 0, &listing);
     let mut prompt = ScriptedPrompt::choosing(0);
 
-    super::run::run(
+    run_quiet(
         &Args {
             topic: Some(Topic::CredentialRotation),
             project: None,
@@ -109,7 +109,7 @@ fn a_global_registration_is_replaced_in_its_existing_scope() -> Checked {
     let listing = custom_secret_listing("(global)", "sbx-cs-global");
     let host = FakeSbx::listing("").answering("secret ls", 0, &listing);
 
-    let output = super::run::run(
+    let output = run_quiet(
         &explicit("owner/repo")?,
         &fixture.location,
         Locale::En,
@@ -134,7 +134,7 @@ fn a_missing_registration_uses_the_existing_secret_diagnostic() -> Checked {
     fixture.register("owner/repo")?;
     let host = FakeSbx::listing("").answering("secret ls", 0, "No secrets found\n");
 
-    let error = super::run::run(
+    let error = run_quiet(
         &explicit("owner/repo")?,
         &fixture.location,
         Locale::En,
@@ -162,7 +162,7 @@ fn an_unresolved_topic_selection_stops_before_selecting_a_project() -> Checked {
     let host = FakeSbx::listing("");
     let mut prompt = ScriptedPrompt::choosing(Topic::ALL.len());
 
-    let error = super::run::run(
+    let error = run_quiet(
         &Args {
             topic: None,
             project: None,
@@ -183,7 +183,7 @@ fn an_unresolved_topic_selection_stops_before_selecting_a_project() -> Checked {
 fn canceling_the_topic_selection_cancels_the_guide() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("owner/repo")?;
-    let result = super::run::run(
+    let result = run_quiet(
         &Args {
             topic: None,
             project: None,
@@ -204,7 +204,7 @@ fn a_local_project_has_no_token_to_rotate() -> Checked {
     fixture.register_local("/srv/code/app/.git", "app")?;
     let host = FakeSbx::listing("");
 
-    let error = super::run::run(
+    let error = run_quiet(
         &explicit("local/app")?,
         &fixture.location,
         Locale::En,
@@ -229,7 +229,7 @@ fn a_guide_is_not_written_from_a_registry_that_cannot_be_read() -> Checked {
     )
     .required()?;
 
-    let error = super::run::run(
+    let error = run_quiet(
         &explicit("owner/repo")?,
         &fixture.location,
         Locale::En,
@@ -240,4 +240,21 @@ fn a_guide_is_not_written_from_a_registry_that_cannot_be_read() -> Checked {
 
     assert_eq!(error.first_id(), Some(ErrorId::ConfigPermissionTooOpen));
     Ok(())
+}
+
+fn run_quiet(
+    args: &Args,
+    location: &crate::config::ConfigLocation,
+    locale: Locale,
+    host: &dyn crate::boundary::host::HostEnvironment,
+    prompt: &mut dyn crate::support::select::ProjectPrompt,
+) -> crate::diagnostics::Result<crate::commands::guide::GuideOutput> {
+    super::run::run(
+        args,
+        location,
+        locale,
+        host,
+        prompt,
+        &mut crate::design::SilentProgress,
+    )
 }

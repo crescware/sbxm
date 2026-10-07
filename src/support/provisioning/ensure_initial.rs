@@ -27,6 +27,7 @@ pub(crate) fn ensure_initial(
         config,
         &locked.metadata,
         workspace_root,
+        progress,
     )?;
     match InitialRoute::decide(&locked.metadata, &observation)? {
         InitialRoute::AlreadyBuilt => Ok(ready_output(&locked.metadata, &observation)),

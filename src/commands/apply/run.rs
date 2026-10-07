@@ -27,7 +27,12 @@ pub fn run(
         prompt,
     } = target;
     // 対象が決まる前にhostの状態へ触れない。
-    let locked = select::one(location, requested, &msg!("select-apply-heading"), prompt)?.lock()?;
+    let candidate = select::one(location, requested, &msg!("select-apply-heading"), prompt)?;
+    progress.step(msg!(
+        "progress-project-lock",
+        project = candidate.display_id()
+    ));
+    let locked = candidate.lock()?;
     apply_locked(locked, config, scope, host, workspace_root, progress)
 }
 

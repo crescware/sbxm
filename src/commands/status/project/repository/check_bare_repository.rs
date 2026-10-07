@@ -1,5 +1,5 @@
 use crate::boundary::host::HostEnvironment;
-use crate::design::Fact;
+use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 use crate::project::{SandboxLayout, SandboxName};
@@ -13,19 +13,10 @@ pub fn check_bare_repository(
     name: &SandboxName,
     layout: &SandboxLayout,
     status: &mut ProjectStatus,
+    progress: &mut dyn ProgressSink,
 ) {
     let git_dir = layout.bare_git_dir();
-    let outcome = sandbox::exec(
-        host,
-        name.as_str(),
-        &[
-            "git",
-            "--git-dir",
-            &git_dir,
-            "rev-parse",
-            "--is-bare-repository",
-        ],
-    );
+    let outcome = crate::support::repository::inspect_bare(host, name.as_str(), &git_dir, progress);
     let value = match outcome {
         Ok(outcome) => match sandbox::inner_exit_code(&outcome) {
             Some(0) if outcome.stdout_text().trim() == "true" => Value::Ready,

@@ -242,6 +242,18 @@ When run in an interactive terminal, `repair`, `apply`, `rebuild`, `open`,
 `stop`, `destroy`, and `status` can prompt you to select a target if the
 project argument is omitted. For `status`, the first choice is `global`,
 followed by registered project IDs.
+Inspection progress follows the same policy across commands: the current phase is
+written to standard error and flushed before waiting. This includes authentication,
+project locks, Docker and sandbox responses, and the repository, worktree and file
+checks used by `status`, `open`, `repair`, `apply` (including `--all`), and `rebuild`.
+Worktree and file checks name the target and its position in the list. `destroy`,
+`sync`, `stop`, `files pull`, `ls`, and `guide` also report their inspection phases;
+`add --local` reports its host repository check. `status --global` separates Docker,
+CLI version, network policy, daemon, authentication, and Remote SSH checks.
+Safety checks still report ignored files, unfinished Git operations, origin fetch,
+and the recheck after confirmation. Read-only `status` checks only stored origin
+refs and does not fetch or start stopped sandboxes. Reports and deletion plans
+remain on standard output after inspection; progress is not a command trace.
 `guide` first prompts for a topic when it is omitted, then prompts for a project.
 If `credential-rotation` is given, it starts at the project prompt.
 In a non-interactive terminal, provide an explicit project argument for these

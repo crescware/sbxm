@@ -332,3 +332,16 @@ fn a_project_whose_first_provisioning_did_not_finish_is_shown_as_open_blocked() 
     );
     Ok(())
 }
+
+fn run(
+    location: &crate::config::ConfigLocation,
+    host: &dyn crate::boundary::host::HostEnvironment,
+    workspace_root: &std::path::Path,
+) -> crate::diagnostics::Result<Listing> {
+    super::run(
+        location,
+        host,
+        workspace_root,
+        &mut crate::design::SilentProgress,
+    )
+}

@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use crate::boundary::host::HostEnvironment;
 use crate::design::ProgressSink;
+use crate::msg;
 use crate::support::host_sync::{self, AutoSaved};
 use crate::support::inventory;
 use crate::support::select::Candidate;
@@ -30,14 +31,16 @@ pub fn save_selected(
         return AutoSaved::Nothing;
     }
     let display_id = candidate.display_id();
+    progress.step(msg!("progress-project-lock", project = display_id));
     let locked = match candidate.lock_within(wait) {
         Ok(locked) => locked,
         Err(error) => return AutoSaved::Failed(host_sync::save_failed(&display_id, &error)),
     };
     // 世代の切替の途中は保存しない。続きの`rebuild`へ任せる。
-    if locked.metadata.rebuild.is_some()
-        || inventory::require_running(host, &locked.metadata, workspace_root).is_err()
-    {
+    if locked.metadata.rebuild.is_some() {
+        return AutoSaved::Nothing;
+    }
+    if inventory::require_running(host, &locked.metadata, workspace_root, progress).is_err() {
         return AutoSaved::Nothing;
     }
     host_sync::auto_save(

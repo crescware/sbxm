@@ -31,7 +31,7 @@ pub fn exec(
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    if let Err(error) = crate::support::login::require_signed_in(host) {
+    if let Err(error) = crate::support::login::require_signed_in(host, ui) {
         return report(ui, &error);
     }
     match scope {
@@ -85,7 +85,7 @@ fn global(context: &Context, ui: &mut Ui, host: &dyn HostEnvironment) -> ExitCod
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    let status = super::global::diagnose(context.location, host);
+    let status = super::global::diagnose(context.location, host, ui);
     print::global(ui, &status)
 }
 

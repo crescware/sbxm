@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::config::ConfigLocation;
-use crate::design::Remediation;
+use crate::design::{ProgressSink, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout};
@@ -28,9 +28,14 @@ pub fn run(
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     clock: &dyn Clock,
+    progress: &mut dyn ProgressSink,
 ) -> Result<SyncOutput> {
-    let locked =
-        select::one_local(location, requested, &msg!("select-sync-heading"), prompt)?.lock()?;
+    let candidate = select::one_local(location, requested, &msg!("select-sync-heading"), prompt)?;
+    progress.step(msg!(
+        "progress-project-lock",
+        project = candidate.display_id()
+    ));
+    let locked = candidate.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
     let origin = SandboxOrigin::of(&locked.metadata)?;
     let SandboxOrigin::Host { repository, .. } = &origin else {
@@ -46,22 +51,30 @@ pub fn run(
             ),
         ));
     };
-    inventory::require_running(host, &locked.metadata, workspace_root)?;
+    inventory::require_running(host, &locked.metadata, workspace_root, progress)?;
     let sandbox = locked.metadata.sandbox_name();
     let git_dir = SandboxLayout::new(locked.metadata.canonical_id()).bare_git_dir();
     // 構築が終わっていないSandboxとは同期しない。originを送る先も、保存する元も、この
     // 案件のbare repositoryである。
-    repository::verify_bare_clone(host, sandbox.as_str(), &origin, &git_dir)?;
+    repository::verify_bare_clone(host, sandbox.as_str(), &origin, &git_dir, progress)?;
 
+    progress.step(msg!(
+        "progress-saving-to-host",
+        project = locked.metadata.display_id()
+    ));
     let saved = host_sync::save_to_host(host, &sandbox, &git_dir, repository, clock.wall())?;
     let reflected = match saved {
-        Some(_) => Some(host_sync::reflect_saved(
-            host,
-            repository,
-            sandbox.as_str(),
-        )?),
+        Some(_) => {
+            progress.step(msg!("progress-reflecting-saved"));
+            Some(host_sync::reflect_saved(
+                host,
+                repository,
+                sandbox.as_str(),
+            )?)
+        }
         None => None,
     };
+    progress.step(msg!("progress-sending-repository"));
     let sent = send_host_refs(host, &origin, sandbox.as_str(), &git_dir)?;
 
     Ok(SyncOutput {

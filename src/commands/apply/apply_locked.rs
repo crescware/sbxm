@@ -39,6 +39,7 @@ pub(super) fn apply_locked(
 
     let canonical = locked.metadata.canonical_id().clone();
     let name = SandboxName::derive(&canonical);
+    progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     let Some(entry) = inventory::single(&entries, name.as_str())? else {
         return Err(inventory::not_created(&locked.metadata, name.as_str()));
@@ -77,6 +78,7 @@ pub(super) fn apply_locked(
             host,
             &entry.name,
             &decorate,
+            progress,
         )?;
     }
 
@@ -87,6 +89,7 @@ pub(super) fn apply_locked(
         let origin = repository::SandboxOrigin::of(&locked.metadata)?;
         repository::ensure_bare_clone(host, &entry.name, &origin, &layout, progress)
             .map_err(decorate)?;
+        progress.step(msg!("progress-inspect-start-ref"));
         let branch = repository::resolve_start_ref(
             host,
             &entry.name,
@@ -128,7 +131,11 @@ fn apply_files(
     host: &dyn HostEnvironment,
     sandbox: &str,
     decorate: &dyn Fn(Error) -> Error,
+    progress: &mut dyn ProgressSink,
 ) -> Result<Vec<PlacedFile>> {
+    if !config.files.is_empty() {
+        progress.step(msg!("progress-status-files"));
+    }
     let inputs = provisioning::ProvisioningInputs::capture_files(&locked.paths, config)?;
     let declarations: Vec<_> = inputs
         .iter()
@@ -140,7 +147,8 @@ fn apply_files(
     } else {
         files::Conflict::Protect(&baseline)
     };
-    let planned = files::plan_all(host, sandbox, &declarations, conflict).map_err(decorate)?;
+    let planned =
+        files::plan_all(host, sandbox, &declarations, conflict, progress).map_err(decorate)?;
 
     let mut placed = Vec::with_capacity(planned.len());
     for (file, input) in planned.iter().zip(&inputs) {

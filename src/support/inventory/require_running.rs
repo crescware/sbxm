@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
-use crate::design::Remediation;
+use crate::design::{ProgressSink, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -18,8 +18,10 @@ pub fn require_running(
     host: &dyn HostEnvironment,
     metadata: &ProjectMetadata,
     workspace_root: &Path,
+    progress: &mut dyn ProgressSink,
 ) -> Result<()> {
     let sandbox = metadata.sandbox_name();
+    progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     match state_of(&entries, metadata, workspace_root)? {
         ProjectState::Running => Ok(()),
