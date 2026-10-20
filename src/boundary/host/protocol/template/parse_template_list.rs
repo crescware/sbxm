@@ -1,12 +1,12 @@
 use crate::diagnostics::{Result, unparseable};
 
-use crate::boundary::host::protocol::json::{string_field, wrapped_documents};
+use crate::boundary::host::protocol::json::string_field;
 
 use super::TemplateEntry;
 
-/// `sbx template ls`のstructured outputをparseする。
+/// `sbx template ls --json`のstructured outputをparseする。
 ///
-/// 一覧形式と、1行1件のJSON形式のどちらでも読む。名前を持たないentryがある出力は、
+/// sbx v0.48.0以降が返す配列だけを読む。名前を持たないentryがある出力は、
 /// 一覧として信用できないためparse不能として扱う。
 pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
     let documents = template_documents(output)?;
@@ -19,11 +19,9 @@ pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
 
         // runtimeのimage storeはrepositoryとtagで1件を示す。
         let repository = string_field(object, "repository")
-            .or_else(|| string_field(object, "Repository"))
             .filter(|value| !value.is_empty())
             .ok_or_else(|| unparseable("sbx template ls", "an entry has no repository"))?;
         let tag = string_field(object, "tag")
-            .or_else(|| string_field(object, "Tag"))
             .filter(|value| !value.is_empty())
             .ok_or_else(|| {
                 unparseable(
@@ -32,9 +30,7 @@ pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
                 )
             })?;
 
-        let id = string_field(object, "id")
-            .or_else(|| string_field(object, "Id"))
-            .filter(|value| !value.is_empty());
+        let id = string_field(object, "id").filter(|value| !value.is_empty());
 
         entries.push(TemplateEntry {
             names: reference_names(&repository, &tag),
@@ -46,9 +42,18 @@ pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
 
 /// `sbx template ls --json`が並べるimage。
 ///
-/// sbx v0.48.0はimageの配列を直接返す。
+/// sbx v0.48.0はimageの配列を直接返し、1件もなければ空の配列を返す。旧版の包みや
+/// 1行1件のJSON、空の出力は受け付けない。
 fn template_documents(output: &str) -> Result<Vec<serde_json::Value>> {
-    wrapped_documents("sbx template ls", "images", output)
+    let document: serde_json::Value = serde_json::from_str(output.trim())
+        .map_err(|error| unparseable("sbx template ls", &error.to_string()))?;
+    match document {
+        serde_json::Value::Array(items) => Ok(items),
+        _ => Err(unparseable(
+            "sbx template ls",
+            "the document is not an array",
+        )),
+    }
 }
 
 /// 同じimageを指す参照の書き方。
