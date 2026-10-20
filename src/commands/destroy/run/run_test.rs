@@ -148,7 +148,7 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
 }
 
 #[test]
-fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> Checked {
+fn the_removal_is_not_relayed_and_the_listing_is_read_by_sbxm() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
@@ -170,13 +170,13 @@ fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> 
     .required_because("prepare")?;
     destroy(&host, &mut prepared).required_because("destroy")?;
 
-    // sbxmは既に自前の確認を済ませている。sbx自身の確認prompt/答えを利用者へ
-    // 二重に見せない。
+    // sbxmは既に自前の確認を済ませている。daemonへの削除要求とその応答は、
+    // 利用者へ中継せずにsbxmが読む。
     let removal = host.spec("--request DELETE")?;
     assert_eq!(
         removal.output(),
         OutputPolicy::Capture,
-        "the runtime's own confirmation is answered internally, not shown to the user"
+        "the deletion request is read by sbxm, not relayed to the user"
     );
     assert_eq!(removal.env, EnvPolicy::InheritWithoutSshAgent);
     assert_eq!(removal.timeout, TimeoutClass::SandboxLifecycle);
@@ -323,8 +323,8 @@ fn force_removes_a_stopped_project_without_starting_it() -> Checked {
     );
 
     destroy(&host, &mut prepared).required_because("destroy")?;
-    // `--force`は、sbxm自身のデータ保護検査だけでなく、runtimeの確認prompt・
-    // active-session検査も省く。通常経路とは別の`remove_forced`を通る。
+    // `--force`は、sbxm自身のデータ保護検査だけでなく、runtimeのactive-session検査も
+    // 省く。通常経路とは別の`remove_forced`を通る。
     assert!(host.removed(project.sandbox.as_str()) && host.ran("force=true"));
     assert!(!project.paths.metadata_file().exists());
     Ok(())

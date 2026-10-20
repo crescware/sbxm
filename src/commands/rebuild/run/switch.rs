@@ -57,7 +57,8 @@ impl Switch<'_> {
         let inputs = provisioning::ProvisioningInputs::capture_files(paths, config)?;
 
         if existed {
-            // rebuildに`--force`は無く、常にsbx自身の確認とactive-session検査を経る。
+            // rebuildに`--force`は無く、常にforce=falseで削除を求め、runtime自身の
+            // active-session検査を経る。
             // 削除する対象は許可証が持つ。`name`は再作成の側だけが使う。
             inventory::remove_protected(host, permit, poll, progress)?;
         }
