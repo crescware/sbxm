@@ -22,7 +22,7 @@ pub use disk::{RootDiskUsage, parse_df};
 pub use image::{ImageIdentity, parse_image_inspect};
 pub use login::is_login_missing;
 pub use policy::{EXPECTED_NETWORK_POLICY, parse_network_policy};
-pub use sandbox::{SandboxEntry, SandboxState, parse_sandbox_list};
+pub use sandbox::{SandboxEntry, SandboxState, is_listing_cut_short, parse_sandbox_list};
 pub use secret::{CustomSecret, parse_custom_secrets};
 pub use template::{TemplateEntry, parse_template_list};
 pub use version::{CliVersion, require_minimum_version};

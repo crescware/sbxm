@@ -211,3 +211,20 @@ fn sandboxes_that_are_not_a_list_are_not_read_as_none() -> Checked {
     assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
     Ok(())
 }
+
+#[test]
+fn only_a_listing_that_ends_before_the_json_does_is_cut_short() {
+    for output in ["", "  \n", "[", r#"[{"name":"sbxm-a","#, "{"] {
+        assert!(is_listing_cut_short(output), "{output:?}");
+    }
+    for output in [
+        "[]",
+        "null",
+        r#"{"sandboxes":[]}"#,
+        r#"[{"name":"sbxm-a","status":"pausing"}]"#,
+        "not json",
+        "[] trailing",
+    ] {
+        assert!(!is_listing_cut_short(output), "{output:?}");
+    }
+}
