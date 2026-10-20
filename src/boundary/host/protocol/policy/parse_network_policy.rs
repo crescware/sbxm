@@ -2,7 +2,7 @@ use crate::diagnostics::{Result, unparseable};
 
 use super::EXPECTED_NETWORK_POLICY;
 
-/// v0.48.0の組み込みBalanced presetを構成するnetwork ruleのID。
+/// v0.48.0の組み込み`balanced` presetを構成するnetwork ruleのID。
 const BALANCED_RULES: [&str; 6] = [
     "default-ai-services",
     "default-package-managers",
@@ -13,6 +13,8 @@ const BALANCED_RULES: [&str; 6] = [
 ];
 
 /// 組み込みpresetのrule IDと出自を確認する。任意のallow/deny ruleからpresetを推測しない。
+///
+/// presetは`sbx policy init allow-all|balanced|deny-all`が受け付ける名前で返す。
 pub fn parse_network_policy(output: &str) -> Result<String> {
     let document: serde_json::Value = serde_json::from_str(output)
         .map_err(|error| unparseable("sbx policy ls", &error.to_string()))?;
@@ -66,7 +68,7 @@ pub fn parse_network_policy(output: &str) -> Result<String> {
         .iter()
         .any(|rule| rule.get("id").and_then(serde_json::Value::as_str) == Some("default-allow-all"))
     {
-        return Ok("Open".to_string());
+        return Ok("allow-all".to_string());
     }
     if network.len() == BALANCED_RULES.len()
         && BALANCED_RULES.iter().all(|id| {
@@ -98,7 +100,7 @@ pub fn parse_network_policy(output: &str) -> Result<String> {
                     .any(|rule| rule.get("id").and_then(serde_json::Value::as_str) == Some(*id))
             })
     {
-        return Ok("Locked Down".to_string());
+        return Ok("deny-all".to_string());
     }
     Err(unparseable(
         "sbx policy ls",

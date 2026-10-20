@@ -10,12 +10,12 @@ fn only_the_complete_active_builtin_balanced_preset_is_supported() -> Checked {
         EXPECTED_NETWORK_POLICY
     );
     assert_eq!(
-        parse_network_policy(&crate::testing::policy::open()).required()?,
-        "Open"
+        parse_network_policy(&crate::testing::policy::allow_all()).required()?,
+        "allow-all"
     );
     assert_eq!(
-        parse_network_policy(&crate::testing::policy::locked_down()).required()?,
-        "Locked Down"
+        parse_network_policy(&crate::testing::policy::deny_all()).required()?,
+        "deny-all"
     );
     Ok(())
 }

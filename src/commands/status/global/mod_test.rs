@@ -414,8 +414,8 @@ fn sandbox_state_is_reported_from_the_structured_output() -> Checked {
 fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() -> Checked {
     let (_dir, location) = location_with_config(None)?;
     for (output, observed) in [
-        (crate::testing::policy::open(), "Open"),
-        (crate::testing::policy::locked_down(), "Locked Down"),
+        (crate::testing::policy::allow_all(), "allow-all"),
+        (crate::testing::policy::deny_all(), "deny-all"),
     ] {
         let host = FakeHost::macos().responding("sbx policy ls --json", &output);
         let status = diagnose(&location, &host);
@@ -434,7 +434,7 @@ fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() -> Chec
             diagnostic
                 .description
                 .args
-                .contains(&("expected", "Balanced".to_string()))
+                .contains(&("expected", "balanced".to_string()))
         );
     }
     Ok(())
