@@ -1712,7 +1712,7 @@ fn an_unreadable_listing_after_the_confirmation_removes_nothing() -> Checked {
     let error = destroy(&host, &mut prepared).refused_because("an unreadable listing")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
-    assert!(!host.removed(project.sandbox.as_str()));
+    assert!(!host.removal_requested(project.sandbox.as_str()));
     Ok(())
 }
 
@@ -1729,7 +1729,7 @@ fn a_repository_that_cannot_be_observed_again_removes_nothing() -> Checked {
         error.first_id(),
         Some(ErrorId::WorktreeInventoryUnobservable)
     );
-    assert!(!host.removed(project.sandbox.as_str()));
+    assert!(!host.removal_requested(project.sandbox.as_str()));
     Ok(())
 }
 

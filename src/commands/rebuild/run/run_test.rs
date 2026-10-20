@@ -2142,7 +2142,7 @@ fn a_sandbox_stopped_after_the_plan_that_does_not_start_is_not_rebuilt() -> Chec
         rebuilt_with(&fixture, &host)?,
         Some(ErrorId::ExternalCommandFailed)
     );
-    assert!(!host.removed(project.sandbox.as_str()));
+    assert!(!host.removal_requested(project.sandbox.as_str()));
     Ok(())
 }
 
