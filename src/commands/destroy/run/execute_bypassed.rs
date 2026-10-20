@@ -22,7 +22,7 @@ pub fn execute_bypassed(
         // 削除commandを実行しない場合だけ、一覧で不在を1回確かめる。
         require_absent(host, &prepared.name)?;
     } else {
-        // データ保護検査と同じく、sbx自身の確認とactive-session検査も意図的に迂回する。
+        // データ保護検査と同じく、runtime自身のactive-session検査も意図的に迂回する。
         inventory::remove_forced(host, &prepared.name, poll, progress)?;
     }
     finish_removal(host, prepared)
