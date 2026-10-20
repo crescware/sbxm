@@ -677,7 +677,7 @@ fn the_rebuild_plan_shows_both_generations_and_what_the_rebuild_loses() -> Check
         confirmable_losses: every_confirmable_loss(),
     };
     let document = super::rebuild::print::plan_document(&plan);
-    assert_eq!(shape(&document), vec!["fields", "lines", "note"]);
+    assert_eq!(shape(&document), vec!["fields", "lines"]);
 
     let Some(Block::Section(section)) = document.blocks().first() else {
         return Err(Unmet::new("a section".to_string()));
@@ -715,7 +715,7 @@ fn a_plan_without_a_single_loss_shows_no_empty_section() {
         target_generation: "a".repeat(64),
         confirmable_losses: Vec::new(),
     });
-    assert_eq!(shape(&document), vec!["fields", "note"]);
+    assert_eq!(shape(&document), vec!["fields"]);
 }
 
 /// documentが持つ`index`番目のtable。

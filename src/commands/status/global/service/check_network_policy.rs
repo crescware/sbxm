@@ -1,5 +1,5 @@
 use crate::boundary::host::HostEnvironment;
-use crate::boundary::host::protocol::{NetworkPolicyState, parse_network_policy};
+use crate::boundary::host::protocol::{EXPECTED_NETWORK_POLICY, parse_network_policy};
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
@@ -9,21 +9,28 @@ use crate::support::StatusValue;
 use crate::commands::status::global::external::{describe, external_of, read_stdout};
 use crate::commands::status::global::{GlobalStatus, push};
 
-/// policy一覧とgovernanceの可用性を確認する。preset名は一覧から推測しない。
+/// 対応するnetwork policyであることを確認する。読めない状態を正常とはしない。
 pub fn check_network_policy(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
     match read_stdout(host, "sbx", &["policy", "ls", "--json"]) {
         Ok(output) => match parse_network_policy(&output) {
-            Ok(NetworkPolicyState::Available) => {
+            Ok(observed) if observed == EXPECTED_NETWORK_POLICY => {
                 push(status, "status-item-network-policy", StatusValue::Ready);
             }
-            Ok(NetworkPolicyState::Blocked) => {
+            Ok(observed) => {
                 push(status, "status-item-network-policy", StatusValue::Error);
                 status.diagnostics.push(
                     Diagnostic::new(
-                        ErrorId::NetworkPolicyBlocked,
-                        msg!("error-network-policy-blocked"),
+                        ErrorId::NetworkPolicyMismatch,
+                        msg!(
+                            "error-network-policy-mismatch",
+                            observed = observed,
+                            expected = EXPECTED_NETWORK_POLICY
+                        ),
                     )
-                    .remediation(msg!("remediation-network-policy")),
+                    .remediation(msg!(
+                        "remediation-network-policy",
+                        expected = EXPECTED_NETWORK_POLICY
+                    )),
                 );
             }
             Err(error) => {

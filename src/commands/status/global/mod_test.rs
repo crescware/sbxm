@@ -391,7 +391,7 @@ fn a_version_below_the_minimum_stops_the_dependent_checks() -> Checked {
 fn sandbox_state_is_reported_from_the_structured_output() -> Checked {
     let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos()
-        .responding("sbx policy ls --json", r#"{"rules":[]}"#)
+        .responding("sbx policy ls --json", &crate::testing::policy::balanced())
         .responding("sbx daemon status --json", r#"{"status":"running"}"#);
     let status = diagnose(&location, &host);
 
@@ -411,6 +411,36 @@ fn sandbox_state_is_reported_from_the_structured_output() -> Checked {
 }
 
 #[test]
+fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
+    for (output, observed) in [
+        (crate::testing::policy::open(), "Open"),
+        (crate::testing::policy::locked_down(), "Locked Down"),
+    ] {
+        let host = FakeHost::macos().responding("sbx policy ls --json", &output);
+        let status = diagnose(&location, &host);
+        assert_eq!(
+            status_of(&status, "status-item-network-policy")?,
+            StatusValue::Error
+        );
+        let diagnostic = diagnosed(&status, ErrorId::NetworkPolicyMismatch)?;
+        assert!(
+            diagnostic
+                .description
+                .args
+                .contains(&("observed", observed.to_string()))
+        );
+        assert!(
+            diagnostic
+                .description
+                .args
+                .contains(&("expected", "Balanced".to_string()))
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn blocked_or_unavailable_governance_is_reported() -> Checked {
     let (_dir, location) = location_with_config(None)?;
     for output in [
@@ -423,7 +453,7 @@ fn blocked_or_unavailable_governance_is_reported() -> Checked {
             status_of(&status, "status-item-network-policy")?,
             StatusValue::Error
         );
-        diagnosed(&status, ErrorId::NetworkPolicyBlocked)?;
+        diagnosed(&status, ErrorId::NetworkPolicyUnobservable)?;
     }
     Ok(())
 }
@@ -891,7 +921,7 @@ fn an_obsolete_policy_listing_is_unobservable() -> Checked {
         !status
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.id == ErrorId::NetworkPolicyBlocked),
+            .any(|diagnostic| diagnostic.id == ErrorId::NetworkPolicyMismatch),
         "{:?}",
         status.diagnostics
     );

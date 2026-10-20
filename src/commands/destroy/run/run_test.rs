@@ -128,7 +128,7 @@ fn a_clean_running_project_is_planned_then_removed() -> Checked {
 
     let outcome = destroy(&host, &mut prepared).required_because("destroy")?;
     assert!(outcome.warnings.is_empty());
-    assert!(host.ran(&format!("rm {}", project.sandbox)));
+    assert!(host.removed(project.sandbox.as_str()));
     assert!(
         !host.ran("--force"),
         "the normal path never forces the removal: {:?}",
@@ -172,7 +172,7 @@ fn the_removal_hides_sbxs_own_confirmation_and_the_listing_is_read_by_sbxm() -> 
 
     // sbxmは既に自前の確認を済ませている。sbx自身の確認prompt/答えを利用者へ
     // 二重に見せない。
-    let removal = host.spec(&format!("rm {}", project.sandbox))?;
+    let removal = host.spec("--request DELETE")?;
     assert_eq!(
         removal.output(),
         OutputPolicy::Capture,
@@ -198,7 +198,7 @@ fn a_runtime_refusal_of_the_removal_stops_before_the_listing_is_polled_again() -
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str()).answering(
-        &format!("rm {}", project.sandbox),
+        &crate::testing::host::removal_command(project.sandbox.as_str(), false),
         1,
         "sandbox is in use",
     );
@@ -282,7 +282,7 @@ fn a_stopped_project_is_started_so_the_plan_can_show_what_would_be_lost() -> Che
     assert_eq!(prepared.plan.worktrees.len(), 1);
 
     destroy(&host, &mut prepared).required_because("destroy")?;
-    assert!(host.ran(&format!("rm {name}")));
+    assert!(host.removed(name));
     assert!(!project.paths.metadata_file().exists());
     Ok(())
 }
@@ -325,7 +325,7 @@ fn force_removes_a_stopped_project_without_starting_it() -> Checked {
     destroy(&host, &mut prepared).required_because("destroy")?;
     // `--force`は、sbxm自身のデータ保護検査だけでなく、runtimeの確認prompt・
     // active-session検査も省く。通常経路とは別の`remove_forced`を通る。
-    assert!(host.ran(&format!("rm --force {}", project.sandbox)));
+    assert!(host.removed(project.sandbox.as_str()) && host.ran("force=true"));
     assert!(!project.paths.metadata_file().exists());
     Ok(())
 }
@@ -410,7 +410,7 @@ fn unsaved_work_stops_the_normal_mode_before_anything_is_deleted() -> Checked {
     )
     .refused_because("work that only exists here is not deleted")?;
     assert_eq!(error.first_id(), Some(ErrorId::WorktreeTrackedChanges));
-    assert!(!host.ran("rm "), "nothing is removed");
+    assert!(!host.removed_any(), "nothing is removed");
     assert!(project.paths.metadata_file().exists());
     Ok(())
 }
@@ -448,7 +448,7 @@ fn an_open_session_stops_the_normal_destroy_before_anything_is_inspected() -> Ch
         "the protection gate is never reached while a session is open: {:?}",
         host.calls()
     );
-    assert!(!host.ran("rm "), "nothing is removed");
+    assert!(!host.removed_any(), "nothing is removed");
     assert!(project.paths.metadata_file().exists());
 
     drop(session);
@@ -539,7 +539,7 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
     assert_eq!(prepared.plan.state, ProjectState::NotCreated);
 
     destroy(&host, &mut prepared).required_because("destroy")?;
-    assert!(!host.ran("rm "), "there is no sandbox to remove");
+    assert!(!host.removed_any(), "there is no sandbox to remove");
     assert!(!project.paths.metadata_file().exists());
     Ok(())
 }
@@ -587,9 +587,47 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
     );
     // 消し損ねたSandboxがplaceholderを持ったまま残る順序にしない。
     assert!(
-        position(&host, &format!("rm {sandbox}"))? < position(&host, "secret rm")?,
+        position(&host, "--request DELETE")? < position(&host, "secret rm")?,
         "the sandbox goes first, then the token it was given"
     );
+    assert!(!project.paths.metadata_file().exists());
+    Ok(())
+}
+
+#[test]
+fn destroy_keeps_other_secrets_in_the_same_scope() -> Checked {
+    let clock = ScriptedClock::default();
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let sandbox = project.sandbox.as_str();
+    let other = serde_json::json!({"scope":sandbox,"targets":["api.example.com"],"env":"OTHER_TOKEN","placeholder":"sbx-cs-other"});
+    let mut before: serde_json::Value =
+        serde_json::from_str(&custom_secret_listing(sandbox, "sbx-cs-github")).required()?;
+    before["custom_secrets"]
+        .as_array_mut()
+        .required()?
+        .push(other.clone());
+    let after = serde_json::json!({"custom_secrets":[other]}).to_string();
+    let host = clean_host(&fixture, &project)?
+        .answering_in_turn("secret ls --json", &[(0, &before.to_string()), (0, &after)]);
+    expect_successful_removal(&host);
+    let mut prepared = prepare(
+        Selection {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        false,
+        &host,
+        &fixture.workspace_root,
+        poll(&clock),
+        &mut SilentProgress,
+    )
+    .required()?;
+    destroy(&host, &mut prepared).required()?;
+    assert!(host.ran("delete_scoped_secrets=false"));
+    assert!(host.ran("--placeholder sbx-cs-github --force"));
+    assert!(!host.ran("--placeholder sbx-cs-other"));
     assert!(!project.paths.metadata_file().exists());
     Ok(())
 }
@@ -847,7 +885,7 @@ fn canceling_the_confirmation_changes_nothing_and_exits_130() -> Checked {
     let error =
         confirm(&mut prepared, true, &mut canceled).refused_because("Esc and Ctrl-C leave")?;
     assert_eq!(error.exit_code(), ExitCode::Canceled);
-    assert!(!host.ran("rm "), "nothing is removed");
+    assert!(!host.removed_any(), "nothing is removed");
     Ok(())
 }
 
@@ -1133,7 +1171,7 @@ fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() 
     let error = destroy(&host, &mut prepared).refused_because("the sandbox is listed after all")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProtectionStateChanged));
     assert!(
-        !host.ran("rm "),
+        !host.removed_any(),
         "the plan said there was nothing to remove: {:?}",
         host.calls()
     );
@@ -1508,8 +1546,15 @@ fn a_local_project_is_removed_without_a_token_and_keeps_its_host_repository() ->
     );
 
     destroy(&host, &mut prepared).required_because("destroy")?;
-    assert!(host.ran(&format!("rm {}", project.sandbox)));
-    assert!(!host.ran("secret"), "{:?}", host.calls());
+    assert!(host.removed(project.sandbox.as_str()));
+    assert!(
+        !host
+            .calls()
+            .iter()
+            .any(|args| args.first().is_some_and(|arg| arg == "secret")),
+        "{:?}",
+        host.calls()
+    );
     assert!(!project.paths.metadata_file().exists());
     Ok(())
 }
@@ -1667,7 +1712,7 @@ fn an_unreadable_listing_after_the_confirmation_removes_nothing() -> Checked {
     let error = destroy(&host, &mut prepared).refused_because("an unreadable listing")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
-    assert!(!host.ran(&format!("rm {}", project.sandbox)));
+    assert!(!host.removed(project.sandbox.as_str()));
     Ok(())
 }
 
@@ -1684,7 +1729,7 @@ fn a_repository_that_cannot_be_observed_again_removes_nothing() -> Checked {
         error.first_id(),
         Some(ErrorId::WorktreeInventoryUnobservable)
     );
-    assert!(!host.ran(&format!("rm {}", project.sandbox)));
+    assert!(!host.removed(project.sandbox.as_str()));
     Ok(())
 }
 
@@ -1899,7 +1944,7 @@ fn force_without_a_sandbox_stops_when_the_absence_is_ambiguous() -> Checked {
     let error = outcome.refused_because("two sandboxes share the name")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
-    assert!(!host.ran("rm "));
+    assert!(!host.removed_any());
     assert!(project.paths.metadata_file().exists());
     Ok(())
 }
@@ -1916,7 +1961,7 @@ fn a_confirmed_destroy_stops_when_the_sandbox_is_listed_twice() -> Checked {
     let error = outcome.refused_because("two sandboxes share the name")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::SandboxNameCollision));
-    assert!(!host.ran("rm "));
+    assert!(!host.removed_any());
     assert!(project.paths.metadata_file().exists());
     Ok(())
 }
@@ -1943,7 +1988,7 @@ fn a_forced_removal_that_does_not_answer_keeps_the_project_managed() -> Checked 
     let fixture = Fixture::new()?;
     let (project, host) = running_project(&fixture)?;
     let prepared = planned(&fixture, &host, true).required()?;
-    let host = crate::testing::host::Unrunnable::timing_out(host, "rm --force");
+    let host = crate::testing::host::Unrunnable::timing_out(host, "--request DELETE");
     let clock = ScriptedClock::default();
 
     let error = execute_bypassed(&host, &prepared, poll(&clock), &mut SilentProgress)
@@ -2103,6 +2148,6 @@ fn an_inspection_interrupted_by_the_user_removes_nothing() -> Checked {
         error.first_id(),
         Some(ErrorId::WorktreeInventoryUnobservable)
     );
-    assert!(!host.inner.ran("rm "));
+    assert!(!host.inner.removed_any());
     Ok(())
 }

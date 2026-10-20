@@ -5,9 +5,8 @@
 
 use std::time::Duration;
 
-use crate::boundary::host::{CommandSpec, HostEnvironment, PtyConfirmedCommand, TerminalCommand};
-use crate::diagnostics::ErrorId;
-use crate::testing::outcome::{Checked, Refused, Required};
+use crate::boundary::host::{CommandSpec, HostEnvironment, TerminalCommand};
+use crate::testing::outcome::{Checked, Required};
 use crate::testing::recorded_output::RecordedOutput;
 
 use super::RealHost;
@@ -60,20 +59,5 @@ fn the_real_host_hands_the_terminal_over_while_it_waits() -> Checked {
     assert!(outcome.success());
     assert_eq!((output.handed_over, output.finished), (1, 1));
     assert_eq!(ticks, 0);
-    Ok(())
-}
-
-#[test]
-fn the_real_host_uses_the_pty_runner() -> Checked {
-    let error = RealHost
-        .run_pty_confirmed(&PtyConfirmedCommand::new(
-            "/does/not/exist/sbx",
-            &[],
-            "the sandbox",
-            "confirmation",
-        ))
-        .refused_because("the real host delegates PTY execution")?;
-
-    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotFound));
     Ok(())
 }

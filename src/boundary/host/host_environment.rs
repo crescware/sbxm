@@ -4,7 +4,7 @@ use std::time::Duration;
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
-use super::{CommandOutcome, CommandSpec, PtyConfirmedCommand, TerminalCommand};
+use super::{CommandOutcome, CommandSpec, TerminalCommand};
 
 /// hostに対する外部commandの実行。testでは差し替える。
 ///
@@ -41,7 +41,4 @@ pub trait HostEnvironment {
         sink: &mut dyn Write,
         limit: u64,
     ) -> Result<CommandOutcome>;
-
-    /// 確認promptにだけ答える、PTYの上でのcommand実行。利用者へ何も中継しない。
-    fn run_pty_confirmed(&self, command: &PtyConfirmedCommand) -> Result<CommandOutcome>;
 }

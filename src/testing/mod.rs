@@ -15,6 +15,7 @@ mod install_fake_tool;
 pub mod metadata;
 pub mod outcome;
 mod plain;
+pub mod policy;
 pub mod poll;
 pub mod project;
 pub mod prompt;

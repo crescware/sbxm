@@ -32,6 +32,26 @@ program=${0##*/}
 printf '%s %s\n' "$program" "$*" >>"$fake/log"
 
 case "$program" in
+curl)
+    while [ $# -gt 0 ] && [ "$1" != --request ]; do shift; done
+    shift
+    method=$1
+    url=$2
+    name=${url##*/}
+    name=${name%%\?*}
+    case "$method" in
+    GET)
+        printf '{"name":"%s","id":"ec55cefe-9919-4c0e-952c-db88e5466db2"}\n' "$name"
+        exit 0;;
+    DELETE)
+        case "$url" in *'&delete_scoped_secrets=false') ;; *) exit 22;; esac
+        code=$(cat "$fake/rm-exit")
+        [ "$code" = 0 ] || exit "$code"
+        awk -F'\t' -v name="$name" '$1 != name' "$fake/sandboxes" >"$fake/sandboxes.next"
+        mv "$fake/sandboxes.next" "$fake/sandboxes"
+        exit 0;;
+    esac
+    exit 1;;
 ssh)
 	exit "$(cat "$fake/ssh-exit")"
 	;;
@@ -71,6 +91,9 @@ git)
 esac
 
 case "$1" in
+daemon)
+    printf '{"status":"running","socket":"/tmp/sbxm-test-sandboxd.sock"}\n'
+    exit 0;;
 ls)
 	printf '['
 	awk -F'\t' '{
@@ -171,7 +194,7 @@ impl Host {
         }
         write_config(home.path(), "version: 1\nlanguage: en\n")?;
 
-        for program in ["git", "sbx", "docker", "ssh"] {
+        for program in ["git", "sbx", "docker", "ssh", "curl"] {
             install_fake_tool(&bin, program, HOST_TOOL)?;
         }
         let host = Host {

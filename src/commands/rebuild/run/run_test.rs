@@ -133,7 +133,7 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
         host.calls()
     );
     assert!(
-        host.ran("rm ") && host.ran("create --name"),
+        host.removed_any() && host.ran("create --name"),
         "an unchanged Dockerfile still recreates the sandbox: {:?}",
         host.calls()
     );
@@ -321,7 +321,7 @@ fn a_declared_file_that_cannot_be_read_stops_the_rebuild_before_the_old_sandbox_
         !host
             .calls()
             .iter()
-            .any(|args| args.first().is_some_and(|arg| arg == "rm")),
+            .any(|args| crate::testing::host::is_sandbox_removal(args)),
         "the old sandbox is kept: {:?}",
         host.calls()
     );
@@ -744,7 +744,10 @@ fn only_a_name_of_the_target_confirms_an_interactive_rebuild() -> Checked {
         .refused_because("only a name of the target confirms a rebuild")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProtectionNotConfirmed));
     assert_eq!(wrong.asked(), 3);
-    assert!(!host.ran("rm "), "nothing is removed without confirmation");
+    assert!(
+        !host.removed_any(),
+        "nothing is removed without confirmation"
+    );
 
     // 画面に出ているsandbox名も、同じ対象を名指す答えとして受け取る。
     drop(prepared);
@@ -847,7 +850,7 @@ fn a_resume_with_an_intent_still_shows_the_plan_and_asks_again() -> Checked {
         .refused_because("a resume still asks again")?;
     assert_eq!(error.exit_code(), crate::diagnostics::ExitCode::Canceled);
     assert!(
-        !host.ran("build") && !host.ran("rm "),
+        !host.ran("build") && !host.removed_any(),
         "nothing is mutated before the confirmation: {:?}",
         host.calls()
     );
@@ -909,7 +912,7 @@ fn a_sandbox_that_disappears_while_the_new_generation_is_prepared_fails_closed()
     assert_eq!(error.first_id(), Some(ErrorId::ProtectionStateChanged));
 
     assert!(
-        !host.ran("rm ") && !host.ran("create --name"),
+        !host.removed_any() && !host.ran("create --name"),
         "nothing is removed or created once the state has changed: {:?}",
         host.calls()
     );
@@ -944,7 +947,7 @@ fn a_new_generation_that_cannot_be_produced_leaves_the_existing_sandbox_alone() 
     .refused_because("the new generation never became usable")?;
     assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
     assert!(
-        !host.ran("stop") && !host.ran("rm ") && !host.ran("create --name"),
+        !host.ran("stop") && !host.removed_any() && !host.ran("create --name"),
         "the sandbox that is still running is untouched: {:?}",
         host.calls()
     );
@@ -1291,7 +1294,7 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
         .required_because("the stopped sandbox is started before it is inspected")?;
     let removed = calls
         .iter()
-        .position(|args| args.first().is_some_and(|arg| arg == "rm"))
+        .position(|args| crate::testing::host::is_sandbox_removal(args))
         .required_because("the previous generation is removed")?;
     assert!(
         started < removed,
@@ -1327,7 +1330,7 @@ fn a_sandbox_that_cannot_be_started_is_not_rebuilt_over() -> Checked {
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     assert!(
-        !host.ran("build") && !host.ran("rm ") && !host.ran("worktree list"),
+        !host.ran("build") && !host.removed_any() && !host.ran("worktree list"),
         "nothing is inspected or built before the sandbox answers: {:?}",
         host.calls()
     );
@@ -1611,7 +1614,7 @@ fn a_local_project_the_host_cannot_write_into_stops_before_the_old_sandbox_goes(
             !host
                 .calls()
                 .iter()
-                .any(|args| args.first().is_some_and(|arg| arg == "rm")),
+                .any(|args| crate::testing::host::is_sandbox_removal(args)),
             "the old sandbox is kept: {:?}",
             host.calls()
         );
@@ -1685,7 +1688,15 @@ fn a_local_project_is_rebuilt_from_the_host_with_its_saved_branches_back() -> Ch
         "the worktree checks out the branch that came back: {:?}",
         host.calls()
     );
-    assert!(!host.ran("secret"), "{:?}", host.calls());
+    assert!(
+        !host
+            .calls()
+            .iter()
+            .any(|args| args.first().is_some_and(|arg| arg == "secret"))
+            && !host.ran("credential.helper"),
+        "local rebuild does not configure a GitHub token: {:?}",
+        host.calls()
+    );
     Ok(())
 }
 
@@ -1734,7 +1745,10 @@ fn listed_twice(fixture: &Fixture, project: &Registered) -> Checked<String> {
 #[test]
 fn a_sandbox_that_sbx_does_not_remove_is_not_recreated() -> Checked {
     assert_eq!(
-        rebuild_failing_at(|name| format!("rm {name}"), 1)?,
+        rebuild_failing_at(
+            |name| crate::testing::host::removal_command(name, false),
+            22
+        )?,
         Some(ErrorId::ExternalCommandFailed)
     );
     Ok(())
@@ -1975,7 +1989,7 @@ fn an_archive_that_the_engine_did_not_write_stops_the_rebuild() -> Checked {
         rebuilt_with(&fixture, &host)?,
         Some(ErrorId::ArchiveUnusable)
     );
-    assert!(!host.ran("rm "));
+    assert!(!host.removed_any());
     Ok(())
 }
 
@@ -2007,7 +2021,7 @@ fn a_rebuild_that_cannot_record_its_intent_removes_nothing() -> Checked {
     set_mode(&sbxm, 0o700)?;
 
     assert_eq!(id, Some(ErrorId::AtomicWriteFailed));
-    assert!(!host.ran("rm "));
+    assert!(!host.removed_any());
     Ok(())
 }
 
@@ -2128,7 +2142,7 @@ fn a_sandbox_stopped_after_the_plan_that_does_not_start_is_not_rebuilt() -> Chec
         rebuilt_with(&fixture, &host)?,
         Some(ErrorId::ExternalCommandFailed)
     );
-    assert!(!host.ran(&format!("rm {}", project.sandbox)));
+    assert!(!host.removed(project.sandbox.as_str()));
     Ok(())
 }
 
@@ -2207,22 +2221,9 @@ fn a_rebuild_that_places_declared_files_stops_at_any_step_that_does_not_answer()
 }
 
 #[test]
-fn a_v048_rebuild_can_resume_after_removed_scoped_secrets_are_registered_again() -> Checked {
+fn a_rebuild_keeps_scoped_secrets_and_completes_without_reregistration() -> Checked {
     let (fixture, project, host) = switched_sandbox()?;
-    // v0.48.0のrmはSandbox向けのsecretも削除する。空の一覧はrm後の観測である。
-    let host = host.answering("secret ls --json", 0, r#"{"custom_secrets":[]}"#);
-    assert_eq!(
-        rebuilt_with(&fixture, &host)?,
-        Some(ErrorId::GithubSecretMissing)
-    );
-    assert!(host.ran(&format!("rm {}", project.sandbox)));
-    assert!(!host.ran("create --name"));
-    let stored = metadata::load(&project.paths).required()?.required()?;
-    let intent = stored
-        .rebuild
-        .required_because("the generation remains fixed while credentials are restored")?;
-    let host = continuing(&fixture, &project, &intent.target_dockerfile_sha256)?;
-    let output = rebuild(
+    rebuild(
         Target {
             location: &fixture.location,
             requested: Some(&project_id("example-org/example-repo")?),
@@ -2232,8 +2233,12 @@ fn a_v048_rebuild_can_resume_after_removed_scoped_secrets_are_registered_again()
         &host,
         &fixture.workspace_root,
     )
-    .required_because("re-registering the token lets the same rebuild finish")?;
-    assert_eq!(output.applied, intent.target_dockerfile_sha256);
+    .required_because("the scoped registration survives the rebuild")?;
+    assert!(host.removed(project.sandbox.as_str()));
+    assert!(!host.ran(&format!("rm {}", project.sandbox)));
+    assert!(host.ran("delete_scoped_secrets=false"));
+    assert!(host.ran("create --name"));
+    assert!(!host.ran("secret rm") && !host.ran("secret set"));
     assert!(
         metadata::load(&project.paths)
             .required()?

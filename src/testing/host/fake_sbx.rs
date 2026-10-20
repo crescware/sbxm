@@ -79,6 +79,22 @@ impl FakeSbx {
             .any(|args| args.join(" ").contains(needle))
     }
 
+    pub fn removed_any(&self) -> bool {
+        self.calls()
+            .iter()
+            .any(|args| super::is_sandbox_removal(args))
+    }
+
+    pub fn removed(&self, name: &str) -> bool {
+        self.calls().iter().any(|args| {
+            super::is_sandbox_removal(args)
+                && (args.iter().any(|arg| arg == name)
+                    || args
+                        .iter()
+                        .any(|arg| arg.starts_with(&format!("http://localhost/sandbox/{name}?"))))
+        })
+    }
+
     /// 引数が一致した最後の1件の指定。envとoutput policyの検証に使う。
     pub fn spec(&self, needle: &str) -> Checked<CommandSpec> {
         Ok(self
@@ -117,6 +133,18 @@ impl AnsweredHost for FakeSbx {
         } else {
             match self.answers.get(&key) {
                 Some((code, stdout)) => (*code, stdout.clone()),
+                None if spec.args == ["daemon", "status", "--json"] => (
+                    0,
+                    r#"{"status":"running","socket":"/tmp/sbxm-test-sandboxd.sock"}"#.to_string(),
+                ),
+                None if spec.program == "curl" && spec.args.iter().any(|arg| arg == "GET") => {
+                    let name = spec
+                        .args
+                        .last()
+                        .and_then(|url| url.rsplit('/').next())
+                        .unwrap_or_default();
+                    (0, serde_json::json!({"name":name,"id":"ec55cefe-9919-4c0e-952c-db88e5466db2"}).to_string())
+                }
                 // 保存の前にworktreeのHEADを置く手順は、指定が無ければ保存するものが
                 // 無いと答える。実物は何も書かずに終わらないため、空の答えを返さない。
                 None if spec

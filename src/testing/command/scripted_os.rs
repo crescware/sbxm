@@ -3,17 +3,17 @@ use std::collections::VecDeque;
 use std::io;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Command, ExitStatus};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::boundary::host::{CommandOutcome, Pipes, Processes, Pty, Signals};
+use crate::boundary::host::{CommandOutcome, Pipes, Processes, Signals};
 use crate::testing::scripted_clock::ScriptedClock;
 use crate::time::{Clock, Moment};
 
-use super::{End, Event, ReadStep, ScriptedController, ScriptedPipe, ScriptedWriter, Step};
+use super::{End, Event, ReadStep, ScriptedPipe, ScriptedWriter, Step};
 
 /// `check_exit`に答える回数の上限。
 ///
@@ -44,8 +44,6 @@ pub struct ScriptedOs {
     checks: Cell<usize>,
     polled: Cell<usize>,
     arrived: RefCell<Option<Arc<AtomicBool>>>,
-    controller: RefCell<Option<ScriptedController>>,
-    terminal_stdio_calls: Cell<u8>,
 }
 
 impl ScriptedOs {
@@ -127,12 +125,6 @@ impl ScriptedOs {
         self
     }
 
-    /// PTYの親側。既定は何も言わない。
-    pub fn controller(mut self, controller: ScriptedController) -> ScriptedOs {
-        *self.controller.get_mut() = Some(controller);
-        self
-    }
-
     /// `HostEnvironment::run`の答えを再生する。子は`lasts`だけ動き、stdoutとstderrは答えの
     /// byteを出して閉じる。
     pub fn replaying(answer: &CommandOutcome, lasts: Duration) -> ScriptedOs {
@@ -141,24 +133,6 @@ impl ScriptedOs {
             .stdout(ScriptedPipe::new([ReadStep::Owned(answer.stdout.clone())]))
             .stderr(ScriptedPipe::new([ReadStep::Owned(answer.stderr.clone())]))
             .exits_at(lasts, code)
-    }
-
-    /// PTYの親側は、答えが書かれるまで`prompt`を示し、書かれた後は答えのstdoutとstderrを
-    /// 示す。子はすぐ終わる。
-    pub fn replaying_on_a_pty(answer: &CommandOutcome, prompt: &str) -> ScriptedOs {
-        let code = answer.status.code().unwrap_or(1);
-        let mut after = Vec::new();
-        if !answer.stdout.is_empty() {
-            after.push(ReadStep::Owned(answer.stdout.clone()));
-        }
-        if !answer.stderr.is_empty() {
-            after.push(ReadStep::Owned(answer.stderr.clone()));
-        }
-        let controller = ScriptedController::new([ReadStep::Owned(prompt.as_bytes().to_vec())])
-            .after_answer(after);
-        ScriptedOs::default()
-            .controller(controller)
-            .exits([Ok(Some(exited(code)))])
     }
 
     fn record(&self, event: Event) {
@@ -352,90 +326,5 @@ impl Signals for ScriptedOs {
     fn stop_watching(&self, (): ()) -> bool {
         self.record(Event::StoppedWatching);
         true
-    }
-}
-
-impl Pty for ScriptedOs {
-    type Controller = ScriptedController;
-    type Terminal = ();
-    type Name = ();
-    type Settings = bool;
-
-    fn open_controller(&self) -> io::Result<ScriptedController> {
-        self.attempt(Step::OpenController)?;
-        self.record(Event::Pty(Step::OpenController));
-        Ok(self.controller.borrow_mut().take().unwrap_or_default())
-    }
-
-    fn close_on_exec(&self, _controller: &ScriptedController) -> io::Result<()> {
-        self.attempt(Step::CloseOnExec)?;
-        self.record(Event::Pty(Step::CloseOnExec));
-        Ok(())
-    }
-
-    fn grant(&self, _controller: &ScriptedController) -> io::Result<()> {
-        self.attempt(Step::Grant)?;
-        self.record(Event::Pty(Step::Grant));
-        Ok(())
-    }
-
-    fn unlock_terminal(&self, _controller: &ScriptedController) -> io::Result<()> {
-        self.attempt(Step::UnlockTerminal)?;
-        self.record(Event::Pty(Step::UnlockTerminal));
-        Ok(())
-    }
-
-    fn terminal_name(&self, _controller: &ScriptedController) -> io::Result<()> {
-        self.attempt(Step::TerminalName)?;
-        self.record(Event::Pty(Step::TerminalName));
-        Ok(())
-    }
-
-    fn open_terminal(&self, (): &()) -> io::Result<()> {
-        self.attempt(Step::OpenTerminal)?;
-        self.record(Event::Pty(Step::OpenTerminal));
-        Ok(())
-    }
-
-    fn settings(&self, (): &()) -> io::Result<bool> {
-        self.attempt(Step::Settings)?;
-        self.record(Event::Pty(Step::Settings));
-        Ok(false)
-    }
-
-    fn make_raw(&self, settings: &mut bool) {
-        *settings = true;
-        self.record(Event::MadeRaw);
-    }
-
-    fn apply_settings(&self, (): &(), _settings: &bool) -> io::Result<()> {
-        self.attempt(Step::ApplySettings)?;
-        self.record(Event::Pty(Step::ApplySettings));
-        Ok(())
-    }
-
-    fn set_size(
-        &self,
-        _controller: &ScriptedController,
-        _rows: u16,
-        _columns: u16,
-    ) -> io::Result<()> {
-        self.attempt(Step::SetSize)?;
-        self.record(Event::Pty(Step::SetSize));
-        Ok(())
-    }
-
-    fn controller_nonblocking(&self, _controller: &ScriptedController) -> io::Result<()> {
-        self.attempt(Step::ControllerNonblocking)?;
-        self.record(Event::Pty(Step::ControllerNonblocking));
-        Ok(())
-    }
-
-    fn terminal_stdio(&self, (): &()) -> io::Result<Stdio> {
-        let call = self.terminal_stdio_calls.get() + 1;
-        self.terminal_stdio_calls.set(call);
-        self.attempt(Step::TerminalStdio(call))?;
-        self.record(Event::Pty(Step::TerminalStdio(call)));
-        Ok(Stdio::null())
     }
 }

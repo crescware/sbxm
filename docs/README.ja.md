@@ -498,12 +498,12 @@ dirty worktree、publishしていないcommit、repository単位のref、active 
 この起動はほかの準備を行わず、確認をcancelしてもSandboxは起動したまま残ります。対話端末では、
 続いて案件の登録ID（command lineへ渡す`<owner>/<repository>`）の入力を求め、一致しない場合は
 入力し直せます。Sandbox自体の削除では、Docker Sandboxes自身のruntimeが行うactive-session
-検査（sbxmが開始していないsession）も尊重します。この確認はsbxmが内部で答えるため、利用者に
-二重には尋ねません。通常のdestroyを非対話端末で実行した場合は、確認を省略せず拒否します。
+検査（sbxmが開始していないsession）も尊重します。Sandboxの削除要求ではscoped secretを保持し、
+その後で案件のGitHub用登録だけを削除します。通常のdestroyを非対話端末で実行した場合は、
+確認を省略せず拒否します。
 
-Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに登録した全てのsecret
-（`GH_TOKEN`のcustom secretを含む）は削除されます。登録が残ると、同じプロジェクトに対する
-次の`sbx secret set-custom`
+Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに登録した`GH_TOKEN`のcustom
+secretは削除されます。登録が残ると、同じプロジェクトに対する次の`sbx secret set-custom`
 が重複として失敗し、存在しないSandbox宛のtokenを預けたままになります。ホスト側のclone、
 プロジェクトのDockerfile、build済みimage、load済みtemplate、それ以外を対象に登録した
 secretは残るため、tokenを再登録すればあとからプロジェクトを再登録できます。

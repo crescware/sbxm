@@ -4,31 +4,56 @@ use super::*;
 use crate::diagnostics::ErrorId;
 
 #[test]
-fn v048_rules_are_observed_without_inventing_a_preset_name() -> Checked {
-    for output in [
-        r#"{"rules":[]}"#,
-        r#"{"rules":[{"id":"rule-1","policy_name":"default-deny-all","resource_type":"network","decision":"deny","resources":["*"],"editable":true}]}"#,
-        r#"{"rules":[],"organization":"example","governance_blocked":false,"organization_unavailable":false}"#,
-    ] {
-        assert_eq!(
-            parse_network_policy(output).required()?,
-            NetworkPolicyState::Available
-        );
-    }
+fn only_the_complete_active_builtin_balanced_preset_is_supported() -> Checked {
+    assert_eq!(
+        parse_network_policy(&crate::testing::policy::balanced()).required()?,
+        EXPECTED_NETWORK_POLICY
+    );
+    assert_eq!(
+        parse_network_policy(&crate::testing::policy::open()).required()?,
+        "Open"
+    );
+    assert_eq!(
+        parse_network_policy(&crate::testing::policy::locked_down()).required()?,
+        "Locked Down"
+    );
     Ok(())
 }
 
 #[test]
-fn blocked_governance_is_observed_separately_from_malformed_output() -> Checked {
+fn incomplete_or_unavailable_policy_is_never_ready() -> Checked {
+    for field in ["governance_blocked", "organization_unavailable"] {
+        let mut document: serde_json::Value =
+            serde_json::from_str(&crate::testing::policy::balanced()).required()?;
+        document[field] = serde_json::json!(true);
+        assert!(parse_network_policy(&document.to_string()).is_err());
+    }
     for output in [
-        r#"{"rules":[],"governance_blocked":true}"#,
-        r#"{"rules":[],"organization_unavailable":true}"#,
+        r#"{"rules":[]}"#,
+        r#"{"rules":[{"id":"default-deny-all","resource_type":"network","decision":"deny","resources":["*"]}]}"#,
     ] {
-        assert_eq!(
-            parse_network_policy(output).required()?,
-            NetworkPolicyState::Blocked
+        assert!(parse_network_policy(output).is_err());
+    }
+    for (key, value) in [
+        ("origin", serde_json::json!("org")),
+        ("status", serde_json::json!("inactive")),
+        ("sandbox_id", serde_json::json!("another")),
+        ("decision", serde_json::json!("deny")),
+        ("resources", serde_json::json!([])),
+        ("provenance", serde_json::json!({"created_via":"added"})),
+    ] {
+        let mut document: serde_json::Value =
+            serde_json::from_str(&crate::testing::policy::balanced()).required()?;
+        document["rules"][0][key] = value;
+        assert!(
+            parse_network_policy(&document.to_string()).is_err(),
+            "{key}"
         );
     }
+    let mut document: serde_json::Value =
+        serde_json::from_str(&crate::testing::policy::balanced()).required()?;
+    document["rules"].as_array_mut().required()?.pop();
+    assert!(parse_network_policy(&document.to_string()).is_err());
     Ok(())
 }
 

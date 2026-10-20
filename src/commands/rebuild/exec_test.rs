@@ -132,7 +132,7 @@ fn a_sandbox_that_disappeared_after_it_was_confirmed_is_reported_instead_of_rebu
         ran.stderr
     );
     assert!(
-        !host.ran("rm ") && !host.ran("create --name"),
+        !host.removed_any() && !host.ran("create --name"),
         "nothing is removed or created once the state has changed: {:?}",
         host.calls()
     );
@@ -151,7 +151,7 @@ fn a_name_that_does_not_match_the_sandbox_stops_before_anything_is_touched() -> 
 
     assert_eq!(ran.code, ExitCode::Failure, "{}{}", ran.stdout, ran.stderr);
     assert!(
-        !host.ran("rm ") && !host.ran("create --name"),
+        !host.removed_any() && !host.ran("create --name"),
         "a name that does not match touches nothing: {:?}",
         host.calls()
     );
@@ -181,7 +181,7 @@ fn a_project_that_is_not_managed_is_reported_before_the_plan_is_drawn() -> Check
     );
     // 案件が決まらない以上、Sandboxの中も覗かない。
     assert!(
-        !host.ran("rm ") && !host.ran("create --name") && !host.ran("exec "),
+        !host.removed_any() && !host.ran("create --name") && !host.ran("exec "),
         "{:?}",
         host.calls()
     );
@@ -219,7 +219,7 @@ fn a_commit_saved_to_the_host_on_request_lets_the_plan_be_drawn() -> Checked {
         ran.stdout
     );
     assert!(
-        !host.ran("rm ") && !host.ran("create --name"),
+        !host.removed_any() && !host.ran("create --name"),
         "{:?}",
         host.calls()
     );
@@ -298,7 +298,7 @@ fn a_confirmed_rebuild_recreates_the_sandbox_and_reports_what_it_applied() -> Ch
 
     assert_eq!(ran.code, ExitCode::Success, "{}{}", ran.stdout, ran.stderr);
     assert!(
-        host.ran(&format!("rm {}", project.sandbox)) && host.ran("create --name"),
+        host.removed(project.sandbox.as_str()) && host.ran("create --name"),
         "{:?}",
         host.calls()
     );

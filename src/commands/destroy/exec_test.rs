@@ -186,7 +186,7 @@ fn assert_selected_progress(
         ExitCode::Canceled
     );
     assert!(host.inner.ran(needle), "{needle}");
-    assert!(!host.inner.ran("rm "), "cancel must not remove anything");
+    assert!(!host.inner.removed_any(), "cancel must not remove anything");
     let progress = String::from_utf8_lossy(&written_stderr.borrow()).into_owned();
     assert!(!progress.contains('\u{1b}'), "{progress}");
     Ok(())
@@ -221,7 +221,7 @@ fn a_commit_saved_to_the_host_on_request_lets_the_plan_be_drawn() -> Checked {
         "the plan is drawn once the commits are saved: {}",
         ran.stdout
     );
-    assert!(!host.ran("rm "), "{:?}", host.calls());
+    assert!(!host.removed_any(), "{:?}", host.calls());
     Ok(())
 }
 
@@ -292,11 +292,7 @@ fn a_confirmed_destroy_removes_the_sandbox_and_reports_the_project_as_unmanaged(
         "{}",
         ran.stderr
     );
-    assert!(
-        host.ran(&format!("rm {}", project.sandbox)),
-        "{:?}",
-        host.calls()
-    );
+    assert!(host.removed(project.sandbox.as_str()), "{:?}", host.calls());
     assert!(
         ran.stdout.contains("is no longer managed"),
         "{}",
@@ -329,7 +325,7 @@ fn a_forced_destroy_warns_and_removes_without_asking() -> Checked {
         ran.stderr
     );
     assert!(
-        host.ran(&format!("rm --force {}", project.sandbox)),
+        host.removed(project.sandbox.as_str()) && host.ran("force=true"),
         "{:?}",
         host.calls()
     );
@@ -376,7 +372,7 @@ fn a_refusal_that_remains_after_saving_is_reported_without_asking_again() -> Che
         ran.stderr
     );
     assert!(!ran.stderr.contains("prompt-unreadable"), "{}", ran.stderr);
-    assert!(!host.ran("rm "), "{:?}", host.calls());
+    assert!(!host.removed_any(), "{:?}", host.calls());
     Ok(())
 }
 
@@ -422,7 +418,7 @@ fn a_lock_file_that_cannot_be_removed_is_a_warning_after_the_project_is_unmanage
             &project,
             no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str()),
         )?,
-        &format!("rm {}", project.sandbox),
+        &crate::testing::host::removal_command(project.sandbox.as_str(), false),
         move || {
             let _ = std::fs::remove_file(&lock);
             let _ = std::fs::create_dir_all(lock.join("occupied"));

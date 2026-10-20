@@ -553,14 +553,14 @@ and cancelling the confirmation leaves the sandbox running. In an interactive
 terminal, it then asks you to type the project ID, and asks again when what you
 typed names something else.
 Removing the sandbox itself also respects Docker Sandboxes' own runtime check
-for anything still attached to it (a session sbxm did not start) — sbxm answers
-that confirmation internally, so you are not asked twice. A normal destroy in a
-non-interactive terminal refuses rather than skipping that confirmation.
+for anything still attached to it (a session sbxm did not start). The deletion
+request preserves scoped secrets; sbxm then removes only the project's GitHub
+registration. A normal destroy in a non-interactive terminal refuses rather
+than skipping the confirmation.
 
-The sandbox, sbxm's project metadata, and all secrets scoped to that
-sandbox (including its `GH_TOKEN` custom secret) are deleted. A registration
-left behind would make the next `sbx secret set-custom` for the same project
-fail as a duplicate, and
+The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
+registered for that sandbox are deleted. A registration left behind would make
+the next `sbx secret set-custom` for the same project fail as a duplicate, and
 it would keep a token for a sandbox that no longer exists. The host clone,
 project Dockerfile, built images, loaded templates, and every secret registered
 for anything else are kept, so the project can be registered again later with a

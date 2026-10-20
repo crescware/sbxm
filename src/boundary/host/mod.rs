@@ -9,7 +9,7 @@
 //! ままでも実行の外側へreaderが残らない。Capture commandは専用のprocess groupに置くが、
 //! timeoutまたはCtrl-Cで終わらせるのは直接の子だけである。
 //!
-//! 子process、pipe、PTY、signalへの基本操作は`Processes`・`Pipes`・`Pty`・`Signals`として、
+//! 子process、pipe、signalへの基本操作は`Processes`・`Pipes`・`Signals`として、
 //! 時計は`Clock`として差し込みで受け取り、ここは何をどの順で呼ぶかだけを決める。実物はOS層の
 //! `RealHost`と`SystemClock`であり、testは台本どおりに答えるものを渡す。
 
@@ -20,7 +20,6 @@ mod command_input;
 mod command_outcome;
 mod command_spec;
 mod configure;
-mod counted_prompt;
 mod drain_pipe;
 mod env_policy;
 mod exists_in_path_value;
@@ -37,11 +36,9 @@ mod output_too_large;
 mod pipes;
 mod poll_pipes;
 mod processes;
-mod pty;
-mod pty_confirmed_command;
 mod pump_until_exit;
+mod remove_sandbox_preserving_secrets;
 mod run_inner;
-mod run_pty_confirmed;
 mod run_relay;
 mod run_streaming;
 mod run_terminal_inner;
@@ -82,11 +79,9 @@ use output_too_large::output_too_large;
 pub(crate) use pipes::Pipes;
 use poll_pipes::poll_pipes;
 pub(crate) use processes::Processes;
-pub(crate) use pty::Pty;
-pub use pty_confirmed_command::PtyConfirmedCommand;
 use pump_until_exit::pump_until_exit;
+pub(crate) use remove_sandbox_preserving_secrets::remove_sandbox_preserving_secrets;
 pub(crate) use run_inner::run_inner;
-pub(crate) use run_pty_confirmed::run_pty_confirmed;
 use run_relay::run_relay;
 pub(crate) use run_streaming::run_streaming;
 pub(crate) use run_terminal_inner::run_terminal_inner;
