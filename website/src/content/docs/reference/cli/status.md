@@ -10,8 +10,6 @@ sbxm status --global
 
 In an interactive terminal, omitting the project ID opens a selection prompt. The first choice is `global`, followed by registered project IDs. In a non-interactive terminal, specify exactly one scope. `--global` checks the supported macOS platform, required commands, Docker Engine, Docker Sandboxes login and network policy, daemon state, and Remote SSH setup. A project ID checks its registry entry, host artifacts, image, sandbox, secret, repository, and worktrees.
 
-With Docker Sandboxes 0.48.0 or later, the network policy check reads JSON rules and reports blocked or unavailable organization governance. It does not infer a preset name from the rule list.
-
 Status is read-only and is the first command to run when another lifecycle command refuses to continue.
 
 Project checks report each major stage to stderr before it starts: reading host files, waiting for Docker and Docker Sandboxes, inspecting the running sandbox, checking declared files and disk usage, and determining the next step. The status tables go to stdout after the checks finish. A stopped sandbox is not started to inspect its contents or disk usage.
