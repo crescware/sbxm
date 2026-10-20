@@ -61,7 +61,10 @@ pub(crate) fn remove_sandbox_preserving_secrets(
 }
 
 fn request(host: &dyn HostEnvironment, socket: &str, method: &str, url: &str) -> Result<String> {
-    // 対応hostのmacOSが供給するcurlを使う。HTTP接続先はdaemonが示したUnix socketのみ。
+    // curlはPATHから探す。対応するmacOS 14以降が備えるcurlで足りるが、PATHの先に別の
+    // curlがあればそれを使う。`--fail-with-body`はcurl 7.76.0以降を要する。`--disable`は
+    // 最初の引数でなければ効かない。設定fileとproxyを無効にし、HTTPの接続先はdaemonが
+    // 示したUnix socketだけにする。
     let spec = CommandSpec::capture(
         "curl",
         &[
