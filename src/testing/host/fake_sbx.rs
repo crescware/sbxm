@@ -85,13 +85,31 @@ impl FakeSbx {
             .any(|args| super::is_sandbox_removal(args))
     }
 
+    /// scoped secretを保持する削除要求で、このSandboxを消したか。
+    ///
+    /// `sbx rm`はscoped secretも消すため、1度でも呼べば消したことに数えない。
     pub fn removed(&self, name: &str) -> bool {
+        let target = format!("http://localhost/sandbox/{name}?");
+        let calls = self.calls();
+        !calls
+            .iter()
+            .any(|args| args.first().is_some_and(|arg| arg == "rm"))
+            && calls.iter().any(|args| {
+                args.iter().any(|arg| arg == "DELETE")
+                    && args.iter().any(|arg| {
+                        arg.starts_with(&target) && arg.ends_with("&delete_scoped_secrets=false")
+                    })
+            })
+    }
+
+    /// このSandboxを消す起動を、形を問わず1度でも求めたか。
+    pub fn removal_requested(&self, name: &str) -> bool {
+        let target = format!("http://localhost/sandbox/{name}?");
         self.calls().iter().any(|args| {
             super::is_sandbox_removal(args)
-                && (args.iter().any(|arg| arg == name)
-                    || args
-                        .iter()
-                        .any(|arg| arg.starts_with(&format!("http://localhost/sandbox/{name}?"))))
+                && args
+                    .iter()
+                    .any(|arg| arg == name || arg.starts_with(&target))
         })
     }
 
