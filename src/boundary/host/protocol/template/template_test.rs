@@ -50,7 +50,44 @@ fn the_template_listing_of_the_target_version_is_read_as_it_is() -> Checked {
     assert!(!entries[0].is_named("sbxm-example-org-example-repo-0123456789ab-template:other"));
 
     assert!(parse_template_list("[]").required()?.is_empty());
-    assert!(parse_template_list("").required()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_legacy_or_partial_listing_is_not_read_as_an_empty_array() -> Checked {
+    // v0.48.0は1件もなくても`[]`を返す。旧版の包み、`null`、空の出力、1行1件のJSONを
+    // 一覧として読むと、読めなかった一覧を「Templateがない」と取り違える。
+    for (output, cause) in [
+        ("", "EOF while parsing a value at line 1 column 0"),
+        ("null", "the document is not an array"),
+        (r#"{"images":[]}"#, "the document is not an array"),
+        (r#"{"images":null}"#, "the document is not an array"),
+        (
+            r#"{"repository":"docker.io/library/x","tag":"v1"}"#,
+            "the document is not an array",
+        ),
+        (
+            "{\"repository\":\"x\",\"tag\":\"v1\"}\n{\"repository\":\"y\",\"tag\":\"v1\"}\n",
+            "trailing characters at line 2 column 1",
+        ),
+    ] {
+        let error = parse_template_list(output).refused_because(output)?;
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+        assert_eq!(refusal_cause(&error)?, cause, "output {output}");
+    }
+    Ok(())
+}
+
+#[test]
+fn only_the_field_names_of_the_target_version_are_read() -> Checked {
+    // 大文字の項目名を返す実versionの根拠はない。別名から名前を拾わない。
+    let error = parse_template_list(r#"[{"Repository":"docker.io/library/x","Tag":"v1"}]"#)
+        .refused_because("capitalized fields are not an alias")?;
+    assert_eq!(refusal_cause(&error)?, "an entry has no repository");
+
+    let entries =
+        parse_template_list(r#"[{"Id":"a3d0f4449170","repository":"x","tag":"v1"}]"#).required()?;
+    assert_eq!(entries[0].id, None);
     Ok(())
 }
 
@@ -108,7 +145,7 @@ fn a_template_listing_that_cannot_be_read_states_which_reading_failed() -> Check
             r#"[{"repository":"docker.io/library/x"}]"#,
             "the entry for docker.io/library/x has no tag",
         ),
-        ("12", "the document is neither an array nor an object"),
+        ("12", "the document is not an array"),
     ] {
         let error = parse_template_list(output).refused_because("a listing that cannot be read")?;
         assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
