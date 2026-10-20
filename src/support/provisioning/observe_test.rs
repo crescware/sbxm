@@ -299,7 +299,7 @@ fn a_token_env_file_that_cannot_be_read_in_time_is_recorded_as_unsafe() -> Check
 fn a_secret_listing_that_fails_leaves_the_helper_and_token_unconfirmed() -> Checked {
     // 登録を読めなければ、helperとtoken fileが正しいplaceholderを持つかも判定できない。
     // 推測で一致とせず、どちらも足りないものとして扱う。
-    let observation = reobserved(|world| world.failing("secret ls"), |_| {})?
+    let observation = reobserved(|world| world.failing("secret ls --json"), |_| {})?
         .required_because("an unreadable registration does not end the observation")?;
 
     assert_eq!(observation.credential_helper, Observed::Missing);

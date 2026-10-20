@@ -25,7 +25,7 @@ into the sandbox.
 
 - macOS 14 or later on Apple silicon
 - Docker Desktop with a running Docker Engine
-- **[Docker Sandboxes CLI 0.42.1 or later](https://docs.docker.com/ai/sandboxes/get-started/)**
+- **[Docker Sandboxes CLI 0.48.0 or later](https://docs.docker.com/ai/sandboxes/get-started/)**
 - Git 2.36 or later, and SSH
 - A GitHub personal access token for each repository you want to manage
 
@@ -127,7 +127,7 @@ Create a personal access token that can read and write the repository:
 command with your token before building the sandbox. The command resembles:
 
 ```sh
-sbx secret set-custom <sandbox> \
+sbx secret set-custom --sandbox <sandbox> \
   --host github.com \
   --host '**.github.com' \
   --host '**.githubusercontent.com' \
@@ -553,9 +553,10 @@ and cancelling the confirmation leaves the sandbox running. In an interactive
 terminal, it then asks you to type the project ID, and asks again when what you
 typed names something else.
 Removing the sandbox itself also respects Docker Sandboxes' own runtime check
-for anything still attached to it (a session sbxm did not start) — sbxm answers
-that confirmation internally, so you are not asked twice. A normal destroy in a
-non-interactive terminal refuses rather than skipping that confirmation.
+for anything still attached to it (a session sbxm did not start). The deletion
+request preserves scoped secrets; sbxm then removes only the project's GitHub
+registration. A normal destroy in a non-interactive terminal refuses rather
+than skipping the confirmation.
 
 The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
 registered for that sandbox are deleted. A registration left behind would make

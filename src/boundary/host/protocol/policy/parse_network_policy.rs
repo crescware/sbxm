@@ -1,53 +1,107 @@
 use crate::diagnostics::{Result, unparseable};
 
-use crate::boundary::host::protocol::json::string_field;
+use super::EXPECTED_NETWORK_POLICY;
 
-/// `sbx policy ls`から現在のnetwork policyを取り出す。
+/// v0.48.0の組み込みBalanced presetを構成するnetwork ruleのID。
+const BALANCED_RULES: [&str; 6] = [
+    "default-ai-services",
+    "default-package-managers",
+    "default-code-and-containers",
+    "default-cloud-infrastructure",
+    "default-os-packages",
+    "default-cert-validation",
+];
+
+/// 組み込みpresetのrule IDと出自を確認する。任意のallow/deny ruleからpresetを推測しない。
 pub fn parse_network_policy(output: &str) -> Result<String> {
     let document: serde_json::Value = serde_json::from_str(output)
         .map_err(|error| unparseable("sbx policy ls", &error.to_string()))?;
-
-    let from_object = |object: &serde_json::Map<String, serde_json::Value>| -> Option<String> {
-        string_field(object, "policy")
-            .or_else(|| string_field(object, "current"))
-            .or_else(|| string_field(object, "name"))
-    };
-
-    match &document {
-        serde_json::Value::Object(object) => from_object(object)
-            .ok_or_else(|| unparseable("sbx policy ls", "no policy field is present")),
-        serde_json::Value::Array(items) => {
-            // 一覧形式では、有効と印の付いた1件だけを現在値とする。
-            let mut active: Vec<String> = Vec::new();
-            for item in items {
-                let Some(object) = item.as_object() else {
-                    return Err(unparseable("sbx policy ls", "an entry is not an object"));
-                };
-                let selected = object
-                    .get("active")
-                    .or_else(|| object.get("current"))
-                    .or_else(|| object.get("selected"))
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false);
-                if selected && let Some(name) = from_object(object) {
-                    active.push(name);
-                }
-            }
-            match active.len() {
-                1 => Ok(active.remove(0)),
-                0 => Err(unparseable(
-                    "sbx policy ls",
-                    "no entry is marked as the active policy",
-                )),
-                _ => Err(unparseable(
-                    "sbx policy ls",
-                    "more than one entry is marked as the active policy",
-                )),
-            }
-        }
-        _ => Err(unparseable(
-            "sbx policy ls",
-            "the document is neither an array nor an object",
-        )),
+    let rules = document
+        .get("rules")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| unparseable("sbx policy ls", "rules is not a list"))?;
+    if rules.iter().any(|rule| !rule.is_object()) {
+        return Err(unparseable("sbx policy ls", "a rule is not an object"));
     }
+    let flag = |key: &str| -> Result<bool> {
+        match document.get(key) {
+            None => Ok(false),
+            Some(serde_json::Value::Bool(value)) => Ok(*value),
+            Some(_) => Err(unparseable(
+                "sbx policy ls",
+                &format!("{key} is not a boolean"),
+            )),
+        }
+    };
+    let blocked = flag("governance_blocked")?;
+    let unavailable = flag("organization_unavailable")?;
+    if blocked || unavailable {
+        return Err(unparseable(
+            "sbx policy ls",
+            "governance is blocked or unavailable",
+        ));
+    }
+    let defaults: Vec<&serde_json::Value> = rules
+        .iter()
+        .filter(|rule| {
+            rule.get("origin").and_then(serde_json::Value::as_str) == Some("local")
+                && rule
+                    .pointer("/provenance/created_via")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("default")
+                && rule.get("sandbox_id").is_none()
+                && rule.get("status").and_then(serde_json::Value::as_str) == Some("active")
+        })
+        .collect();
+    let network: Vec<&serde_json::Value> = defaults
+        .iter()
+        .copied()
+        .filter(|rule| {
+            rule.get("resource_type")
+                .and_then(serde_json::Value::as_str)
+                == Some("network")
+        })
+        .collect();
+    if network
+        .iter()
+        .any(|rule| rule.get("id").and_then(serde_json::Value::as_str) == Some("default-allow-all"))
+    {
+        return Ok("Open".to_string());
+    }
+    if network.len() == BALANCED_RULES.len()
+        && BALANCED_RULES.iter().all(|id| {
+            network
+                .iter()
+                .filter(|rule| {
+                    rule.get("id").and_then(serde_json::Value::as_str) == Some(*id)
+                        && rule.get("decision").and_then(serde_json::Value::as_str) == Some("allow")
+                        && rule
+                            .get("resources")
+                            .and_then(serde_json::Value::as_array)
+                            .is_some_and(|values| {
+                                !values.is_empty()
+                                    && values.iter().all(serde_json::Value::is_string)
+                            })
+                })
+                .count()
+                == 1
+        })
+    {
+        return Ok(EXPECTED_NETWORK_POLICY.to_string());
+    }
+    if network.is_empty()
+        && ["default-fs-read-allow-all", "default-fs-write-allow-all"]
+            .iter()
+            .all(|id| {
+                defaults
+                    .iter()
+                    .any(|rule| rule.get("id").and_then(serde_json::Value::as_str) == Some(*id))
+            })
+    {
+        return Ok("Locked Down".to_string());
+    }
+    Err(unparseable(
+        "sbx policy ls",
+        "the active built-in network preset cannot be established",
+    ))
 }

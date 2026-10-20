@@ -112,25 +112,23 @@ esac
 
 case "$1" in
 ls)
-	printf '{"sandboxes":['
+	printf '['
 	awk -F'\t' '{
 		printf "%s{\"name\":\"%s\",\"status\":\"%s\",\"workspaces\":[\"%s\"]}", (NR > 1 ? "," : ""), $1, $2, $3
 	}' "$fake/sandboxes"
-	printf ']}'
+	printf ']'
 	exit 0
 	;;
 template)
 	# 対象generationのimageはbuildしていないので、Templateも1つも無い。
 	[ "$2" = ls ] || exit 1
-	printf '{"images":[]}'
+	printf '[]'
 	exit 0
 	;;
 secret)
 	# 実機と同じ形の一覧。1件のcustom secretが全hostを覆う。
 	[ "$2" = ls ] || exit 1
-	printf 'CUSTOM SECRETS\n'
-	printf 'SCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n'
-	printf '(global)   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-example   ghp_example\n'
+	printf '%s\n' '{"custom_secrets":[{"scope":"(global)","targets":["github.com","**.github.com","**.githubusercontent.com","ghcr.io"],"env":"GH_TOKEN","placeholder":"sbx-cs-example"}]}'
 	exit 0
 	;;
 exec) ;;

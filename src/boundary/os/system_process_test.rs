@@ -79,8 +79,7 @@ fn a_directory_given_as_the_program_fails_otherwise() -> Checked {
 
 /// C9: 書き込みのために開かれているfileは、Linuxではexecできず、`ETXTBSY`で拒まれる。
 ///
-/// testが書いたscriptを直接execせず`sh <path>`で起動する決まり（`run_pty_confirmed_test.rs`の
-/// `fake_script`）は、これによる。別のthreadのtestがforkした子は、自分のexecまで書き込み端の
+/// testが書いたscriptを直接execせず`sh <path>`で起動する決まりは、これによる。別のthreadのtestがforkした子は、自分のexecまで書き込み端の
 /// 複製を持つため、書き終えて閉じた直後のfileもその間はexecできない。macOSのkernelがこれを
 /// 拒むかはCIでしか確かめられないため、Linux以外では起動できた場合も受け入れる。拒まない
 /// OSでも、この決まりは害を持たない。

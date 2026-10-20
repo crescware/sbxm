@@ -2,8 +2,8 @@ use std::io::Write;
 use std::time::Duration;
 
 use crate::boundary::host::{
-    CommandOutcome, CommandSpec, HostEnvironment, PtyConfirmedCommand, TerminalCommand,
-    exists_on_path, run_inner, run_pty_confirmed, run_streaming, run_terminal_inner,
+    CommandOutcome, CommandSpec, HostEnvironment, TerminalCommand, exists_on_path, run_inner,
+    run_streaming, run_terminal_inner,
 };
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
@@ -50,10 +50,6 @@ impl HostEnvironment for RealHost {
         limit: u64,
     ) -> Result<CommandOutcome> {
         run_streaming(self, &SystemClock, spec, sink, limit)
-    }
-
-    fn run_pty_confirmed(&self, command: &PtyConfirmedCommand) -> Result<CommandOutcome> {
-        run_pty_confirmed(self, &SystemClock, command)
     }
 }
 

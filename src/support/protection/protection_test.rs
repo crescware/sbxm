@@ -1956,7 +1956,7 @@ fn a_workspace_directory_missing_on_the_host_is_never_treated_as_no_repository()
     // できないため、host側を見ずに`sbx exec`だけへ頼ると同じ結論に落ちてしまう。
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let assessment = assess(&host, &fixture, &project, DestructiveOperation::Rebuild)
         .required_because("the missing workspace is retained as an observation blocker")?;
@@ -1976,7 +1976,7 @@ fn a_workspace_directory_that_cannot_be_observed_is_never_treated_as_no_reposito
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     fixture.workspace_is_unobservable(&project)?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let assessment = assess(&host, &fixture, &project, DestructiveOperation::Rebuild)
         .required_because("the unobservable workspace is retained as an observation blocker")?;

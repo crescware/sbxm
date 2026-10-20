@@ -186,7 +186,7 @@ fn assert_selected_progress(
         ExitCode::Canceled
     );
     assert!(host.inner.ran(needle), "{needle}");
-    assert!(!host.inner.ran("rm "), "cancel must not remove anything");
+    assert!(!host.inner.removed_any(), "cancel must not remove anything");
     let progress = String::from_utf8_lossy(&written_stderr.borrow()).into_owned();
     assert!(!progress.contains('\u{1b}'), "{progress}");
     Ok(())
@@ -221,7 +221,7 @@ fn a_commit_saved_to_the_host_on_request_lets_the_plan_be_drawn() -> Checked {
         "the plan is drawn once the commits are saved: {}",
         ran.stdout
     );
-    assert!(!host.ran("rm "), "{:?}", host.calls());
+    assert!(!host.removed_any(), "{:?}", host.calls());
     Ok(())
 }
 
@@ -249,16 +249,8 @@ fn choosing_not_to_save_stops_before_the_plan() -> Checked {
 /// 削除が最後まで進む一覧。login確認、準備、削除直前の観測では対象があり、削除後には
 /// 消えている。
 fn removable(fixture: &Fixture, project: &Registered, host: FakeSbx) -> Checked<FakeSbx> {
-    let present = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(project, "running")?
-    );
-    *host.listing.borrow_mut() = vec![
-        r#"{"sandboxes":[]}"#.to_string(),
-        present.clone(),
-        present.clone(),
-        present,
-    ];
+    let present = format!("[{}]", fixture.entry(project, "running")?);
+    *host.listing.borrow_mut() = vec!["[]".to_string(), present.clone(), present.clone(), present];
     Ok(host)
 }
 
@@ -300,11 +292,7 @@ fn a_confirmed_destroy_removes_the_sandbox_and_reports_the_project_as_unmanaged(
         "{}",
         ran.stderr
     );
-    assert!(
-        host.ran(&format!("rm {}", project.sandbox)),
-        "{:?}",
-        host.calls()
-    );
+    assert!(host.removed(project.sandbox.as_str()), "{:?}", host.calls());
     assert!(
         ran.stdout.contains("is no longer managed"),
         "{}",
@@ -337,7 +325,7 @@ fn a_forced_destroy_warns_and_removes_without_asking() -> Checked {
         ran.stderr
     );
     assert!(
-        host.ran(&format!("rm --force {}", project.sandbox)),
+        host.removed(project.sandbox.as_str()) && host.ran("force=true"),
         "{:?}",
         host.calls()
     );
@@ -347,7 +335,7 @@ fn a_forced_destroy_warns_and_removes_without_asking() -> Checked {
 #[test]
 fn a_project_that_is_not_managed_is_reported_before_anything_is_inspected() -> Checked {
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let ran = run(&fixture, &host, &[])?;
 
@@ -384,7 +372,7 @@ fn a_refusal_that_remains_after_saving_is_reported_without_asking_again() -> Che
         ran.stderr
     );
     assert!(!ran.stderr.contains("prompt-unreadable"), "{}", ran.stderr);
-    assert!(!host.ran("rm "), "{:?}", host.calls());
+    assert!(!host.removed_any(), "{:?}", host.calls());
     Ok(())
 }
 
@@ -393,19 +381,13 @@ fn a_stopped_sandbox_started_for_the_plan_is_announced() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
     // 一覧は末尾から取り出される。消す前の保存と計画の準備がそれぞれ停止を観測し、
     // 起動して動いていることを確かめたあと、削除の直前にもう一度確かめ、消えたことを
     // 確かめる。
     *host.listing.borrow_mut() = vec![
-        r#"{"sandboxes":[]}"#.to_string(),
+        "[]".to_string(),
         running.clone(),
         running,
         stopped.clone(),
@@ -436,7 +418,7 @@ fn a_lock_file_that_cannot_be_removed_is_a_warning_after_the_project_is_unmanage
             &project,
             no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str()),
         )?,
-        &format!("rm {}", project.sandbox),
+        &crate::testing::host::removal_command(project.sandbox.as_str(), false),
         move || {
             let _ = std::fs::remove_file(&lock);
             let _ = std::fs::create_dir_all(lock.join("occupied"));
@@ -460,11 +442,8 @@ fn a_forced_destroy_of_a_stopped_sandbox_shows_it_as_stopped() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
-    *host.listing.borrow_mut() = vec![r#"{"sandboxes":[]}"#.to_string(), stopped.clone(), stopped];
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
+    *host.listing.borrow_mut() = vec!["[]".to_string(), stopped.clone(), stopped];
 
     let ran = run_with(&fixture, &host, &[], true)?;
 

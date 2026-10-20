@@ -53,7 +53,7 @@ sbxm add git@github.com:<owner>/<repository>.git \
 `sbxm add` prints a project-specific command like this:
 
 ```sh
-sbx secret set-custom <sandbox> \
+sbx secret set-custom --sandbox <sandbox> \
   --host github.com \
   --host '**.github.com' \
   --host '**.githubusercontent.com' \

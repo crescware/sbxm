@@ -3,6 +3,7 @@ use super::*;
 #[test]
 fn docker_authentication_failures_are_recognized() {
     for output in [
+        "error: not signed in to Docker\n  try: sbx login\n",
         "ERROR: list sandboxes: list local runtimes: list runtimes: request failed: 401 Unauthorized: user is not authenticated to Docker: secret not found\nno valid user session found, please sign in to Docker to proceed\n\nSign in with: sbx login\n",
         "You are not authenticated to Docker. Please sign in again.",
         "no valid user session found, please sign in to Docker to proceed",

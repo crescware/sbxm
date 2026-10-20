@@ -5,8 +5,8 @@
 //! ここはcoverageの母集団から外す。OSについての仮定は、隣の`_test` fileが契約testとして実OSで
 //! 確かめる。
 //!
-//! 子process、pipe、PTY、signalの基本操作は、`boundary::host`が持つtrait（`Processes`・
-//! `Pipes`・`Pty`・`Signals`）を`RealHost`が実装する形でここに置く。`RealHost`はそれらと
+//! 子process、pipe、signalの基本操作は、`boundary::host`が持つtrait（`Processes`・
+//! `Pipes`・`Signals`）を`RealHost`が実装する形でここに置く。`RealHost`はそれらと
 //! `SystemClock`を`boundary::host`の判断へ渡す配線でもある。`poll`がsignal handlerで
 //! 切り上がることは、threadが1本のprocessでしか確かめられないため、harnessを使わない
 //! `tests/poll_eintr.rs`が確かめる。
@@ -16,7 +16,6 @@ mod system_clock;
 mod system_file_lock;
 mod system_pipe;
 mod system_process;
-mod system_pty;
 mod system_signal;
 
 pub use real_host::RealHost;

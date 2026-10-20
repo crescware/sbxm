@@ -72,10 +72,7 @@ impl Read for ScriptedPipe {
             None if self.held_open => Err(io::ErrorKind::WouldBlock.into()),
             Some(ReadStep::WouldBlock) => Err(io::ErrorKind::WouldBlock.into()),
             Some(ReadStep::Failed) => Err(io::Error::other("the pipe could not be read")),
-            Some(ReadStep::Gone) => Err(io::Error::from_raw_os_error(
-                rustix::io::Errno::IO.raw_os_error(),
-            )),
-            Some(ReadStep::Eof) | None => Ok(0),
+            None => Ok(0),
         }
     }
 }

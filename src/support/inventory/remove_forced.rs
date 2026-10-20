@@ -1,4 +1,4 @@
-use crate::boundary::host::{HostEnvironment, TimeoutClass};
+use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 use crate::msg;
 use crate::project::SandboxName;
@@ -18,9 +18,6 @@ pub fn remove_forced(
     progress: &mut dyn ProgressSink,
 ) -> Result<()> {
     progress.step(msg!("progress-removing-sandbox"));
-    let args = ["rm", "--force", name.as_str()];
-    let command = sandbox::relayed(&args).timeout(TimeoutClass::SandboxLifecycle);
-    host.run_with_terminal(&command, progress)?
-        .require_success()?;
+    sandbox::remove_preserving_secrets(host, name, true)?;
     wait_until_absent(host, name, poll)
 }

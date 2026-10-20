@@ -41,9 +41,6 @@ const CONFIGURE: &str = "src/boundary/host/configure.rs";
 /// `sbx`の出力を端末へ出す起動を組み立ててよい唯一のfile。
 const SBX_RELAY: &str = "src/support/sandbox/relayed.rs";
 
-/// 確認promptにだけ答える`sbx`起動を組み立ててよい唯一のfile。
-const SBX_PTY_CONFIRM: &str = "src/support/sandbox/remove_confirmed.rs";
-
 /// Dockerのprocessを組み立ててよい唯一のmodule。
 const DOCKER_SUPPORT: &str = "src/support/docker/";
 
@@ -375,23 +372,22 @@ fn what_sbx_says_reaches_the_terminal_through_one_place() -> Checked {
 }
 
 #[test]
-fn sbx_is_run_with_a_confirmation_prompt_in_one_place_only() -> Checked {
-    // 期待するpromptと答えの組はここでしか決めない。呼び出し箇所が増えると、
-    // どのpromptに何を答えるかがcommandごとに分かれ、固定protocolでなくなる。
+fn sandbox_deletion_requests_are_built_in_one_boundary() -> Checked {
+    let boundary = "src/boundary/host/remove_sandbox_preserving_secrets.rs";
     let mut offenders = Vec::new();
     for (path, text) in sources()? {
-        if path == SBX_PTY_CONFIRM || path.ends_with("_test.rs") {
+        if path == boundary || path.ends_with("_test.rs") || path.starts_with("src/testing/") {
             continue;
         }
         for (index, line) in text.lines().enumerate() {
-            if line.contains("PtyConfirmedCommand::new(") {
+            if line.contains("\"DELETE\"") || line.contains("delete_scoped_secrets") {
                 offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
             }
         }
     }
     assert!(
         offenders.is_empty(),
-        "a PTY-confirmed sbx command is built only in {SBX_PTY_CONFIRM}:\n{}",
+        "Sandbox deletion must retain scoped secrets through {boundary}:\n{}",
         offenders.join("\n")
     );
     Ok(())
@@ -879,7 +875,7 @@ const FLAKY_ELEMENT_DEFINITION: &str = "tests/flaky_elements/";
 /// 一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。
 /// 一覧のfileから要素が消えたら、一覧から外すまで落ちる。OS層とその契約testを足すときを
 /// 除き、一覧は減る方向にしか動かない。
-const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 17] = [
+const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 15] = [
     // OS層。分岐を持たず、coverageの母集団から外す。
     ("src/boundary/os/system_clock.rs", &[Element::RealTime]),
     ("src/boundary/os/system_file_lock.rs", &[Element::FileLock]),
@@ -889,7 +885,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 17] = [
         &[Element::ChildProcess, Element::Signal],
     ),
     ("src/boundary/os/system_pipe.rs", &[Element::ChildProcess]),
-    ("src/boundary/os/system_pty.rs", &[Element::ChildProcess]),
     ("src/boundary/os/system_signal.rs", &[Element::Signal]),
     // OSについての仮定を実OSで確かめる契約test。
     (
@@ -903,10 +898,6 @@ const FLAKY_ELEMENT_PLACES: [(&str, &[Element]); 17] = [
             Element::Signal,
             Element::WrittenExecutable,
         ],
-    ),
-    (
-        "src/boundary/os/system_pty_test.rs",
-        &[Element::ChildProcess],
     ),
     ("src/boundary/os/system_signal_test.rs", &[Element::Signal]),
     (

@@ -75,7 +75,7 @@ impl AnsweredHost for FakeSbx {
 
 #[test]
 fn the_listing_is_read_without_the_host_ssh_agent() -> Checked {
-    let host = FakeSbx::listing(r#"{"sandboxes":[{"name":"sbxm-example","status":"running"}]}"#);
+    let host = FakeSbx::listing(r#"[{"name":"sbxm-example","status":"running"}]"#);
 
     let entries = list(&host).required_because("the listing parses")?;
     assert_eq!(entries.len(), 1);
@@ -100,10 +100,8 @@ fn a_listing_that_fails_is_not_read_as_an_empty_one() -> Checked {
 
 #[test]
 fn a_listing_cut_short_by_a_cold_daemon_is_retried_until_it_parses() -> Checked {
-    let host = FakeSbx::sequenced_listing(&[
-        "{",
-        r#"{"sandboxes":[{"name":"sbxm-example","status":"running"}]}"#,
-    ]);
+    let host =
+        FakeSbx::sequenced_listing(&["{", r#"[{"name":"sbxm-example","status":"running"}]"#]);
     let clock = ScriptedClock::default();
 
     let entries = list_retrying(&host, TimeoutClass::SandboxLifecycle, &clock)

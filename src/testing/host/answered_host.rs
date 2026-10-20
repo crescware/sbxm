@@ -2,8 +2,8 @@ use std::io::Write;
 use std::time::Duration;
 
 use crate::boundary::host::{
-    CommandOutcome, CommandSpec, HostEnvironment, PtyConfirmedCommand, TerminalCommand,
-    run_pty_confirmed, run_streaming, run_terminal_inner,
+    CommandOutcome, CommandSpec, HostEnvironment, TerminalCommand, run_streaming,
+    run_terminal_inner,
 };
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
@@ -11,8 +11,8 @@ use crate::testing::command::ScriptedOs;
 
 /// 実行全体への答えだけを持つtestのhost。fakeはこれを実装する。
 ///
-/// 端末を引き渡す実行、出力を流す実行、PTYの上の実行は、答えを`ScriptedOs`で1歩ずつの基本操作に
-/// 直し、実物と同じ判断のcodeへ渡す。tickの予定、出力の上限、promptの確認は、fakeでも実物と同じ
+/// 端末を引き渡す実行、出力を流す実行は、答えを`ScriptedOs`で1歩ずつの基本操作に
+/// 直し、実物と同じ判断のcodeへ渡す。tickの予定と出力の上限は、fakeでも実物と同じ
 /// codeが決める。
 pub trait AnsweredHost {
     fn has_command(&self, program: &str) -> bool;
@@ -70,11 +70,5 @@ impl<T: AnsweredHost> HostEnvironment for T {
         let answer = self.answer(spec)?;
         let os = ScriptedOs::replaying(&answer, Duration::ZERO);
         run_streaming(&os, os.clock(), spec, sink, limit)
-    }
-
-    fn run_pty_confirmed(&self, command: &PtyConfirmedCommand) -> Result<CommandOutcome> {
-        let answer = self.answer(&command.as_capture_spec())?;
-        let os = ScriptedOs::replaying_on_a_pty(&answer, command.expected_prompt());
-        run_pty_confirmed(&os, os.clock(), command)
     }
 }

@@ -102,7 +102,7 @@ fn prompt_executes_the_selected_project_scope() -> Checked {
 
     let code = execute_prompt(
         &fixture,
-        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
+        &FakeSbx::listing("[]"),
         ScriptedKeys::choosing(1),
         &screen,
     );
@@ -135,17 +135,13 @@ fn project_progress_is_flushed_before_waiting_for_docker_in_both_languages() -> 
             let written_stdout = stdout.written();
             let written_stderr = stderr.written();
             let visible_stderr = written_stderr.clone();
-            let host = ChangingBefore::new(
-                FakeSbx::listing(r#"{"sandboxes":[]}"#),
-                "image ls --quiet",
-                move || {
-                    // BufWriterの中に残った表示では、待ち時間のfeedbackにならない。
-                    let progress = String::from_utf8_lossy(&visible_stderr.borrow()).into_owned();
-                    assert!(progress.contains("example-org/example-repo"), "{progress}");
-                    assert!(progress.contains(waiting), "{progress}");
-                    assert!(written_stdout.borrow().is_empty(), "the report comes later");
-                },
-            );
+            let host = ChangingBefore::new(FakeSbx::listing("[]"), "image ls --quiet", move || {
+                // BufWriterの中に残った表示では、待ち時間のfeedbackにならない。
+                let progress = String::from_utf8_lossy(&visible_stderr.borrow()).into_owned();
+                assert!(progress.contains("example-org/example-repo"), "{progress}");
+                assert!(progress.contains(waiting), "{progress}");
+                assert!(written_stdout.borrow().is_empty(), "the report comes later");
+            });
             let screen = RecordedScreen::new();
             let mut prompt = PromptUi::new(
                 locale,
@@ -210,7 +206,7 @@ fn global_progress_is_flushed_before_each_external_check_in_both_languages() -> 
             "daemon state",
             "daemonの状態を確認します。",
         ),
-        ("ls --json", 0, "sign-in", "loginを確認します。"),
+        ("ls --json", 1, "sign-in", "loginを確認します。"),
         (
             "-G",
             0,
@@ -491,7 +487,7 @@ fn a_project_status_over_an_unreadable_config_is_reported() -> Checked {
         &Scope::Project(ProjectId::parse("example-org/example-repo")?),
         &context,
         &mut ui,
-        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
+        &FakeSbx::listing("[]"),
         &mut prompt,
     );
 

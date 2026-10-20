@@ -351,8 +351,8 @@ fn without_sandboxes(bin: &Path) -> Checked<()> {
         bin,
         "sbx",
         "case \"$1 $2\" in\n\
-         \"ls --json\") echo '{\"sandboxes\":[]}'; exit 0;;\n\
-         \"secret ls\") echo 'No secrets found'; exit 0;;\n\
+         \"ls --json\") echo '[]'; exit 0;;\n\
+         \"secret ls\") echo '{\"custom_secrets\":[]}'; exit 0;;\n\
          esac\n\
          exit 1\n",
     )
@@ -364,12 +364,9 @@ fn with_global_github_secret(bin: &Path) -> Checked<()> {
         bin,
         "sbx",
         "case \"$1 $2\" in\n\
-         \"ls --json\") echo '{\"sandboxes\":[]}'; exit 0;;\n\
+         \"ls --json\") echo '[]'; exit 0;;\n\
          \"secret ls\")\n\
-           printf '%s\\n' \\
-             'CUSTOM SECRETS' \\
-             'SCOPE   TARGETS   ENV   PLACEHOLDER   SECRET' \\
-             '(global)   github.com, **.github.com, **.githubusercontent.com, ghcr.io   GH_TOKEN   sbx-cs-example   ghp_example'\n\
+           echo '{\"custom_secrets\":[{\"scope\":\"(global)\",\"targets\":[\"github.com\",\"**.github.com\",\"**.githubusercontent.com\",\"ghcr.io\"],\"env\":\"GH_TOKEN\",\"placeholder\":\"sbx-cs-example\"}]}'\n\
            exit 0;;\n\
          esac\n\
          exit 1\n",

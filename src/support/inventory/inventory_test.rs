@@ -14,7 +14,7 @@ fn projects_and_sandboxes_are_paired_by_exact_name() -> Checked {
     let first = fixture.register("Example-Org/Example-Repo")?;
     let second = fixture.register("other/other-repo")?;
     let host = FakeSbx::listing(&format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&first, "running")?,
         fixture.entry(&second, "stopped")?
     ));
@@ -47,7 +47,7 @@ fn projects_and_sandboxes_are_paired_by_exact_name() -> Checked {
 fn a_project_without_a_sandbox_is_not_created_rather_than_missing() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("example-org/example-repo")?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let inventory =
         take(&fixture.location, &host, &fixture.workspace_root).required_because("inventory")?;
@@ -64,7 +64,7 @@ fn a_sandbox_that_belongs_to_no_project_is_listed_separately() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = FakeSbx::listing(&format!(
-        r#"{{"sandboxes":[{},{{"name":"sbxm-zeta","status":"running","workspaces":["/tmp/elsewhere"]}},{{"name":"sbxm-alpha","status":"stopped","workspaces":["/tmp/elsewhere"]}}]}}"#,
+        r#"[{},{{"name":"sbxm-zeta","status":"running","workspaces":["/tmp/elsewhere"]}},{{"name":"sbxm-alpha","status":"stopped","workspaces":["/tmp/elsewhere"]}}]"#,
         fixture.entry(&project, "running")?
     ));
 
@@ -88,7 +88,7 @@ fn an_inconsistent_pairing_is_refused_rather_than_reported_as_a_state() -> Check
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = FakeSbx::listing(&format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["/tmp/elsewhere"]}}]}}"#,
+        r#"[{{"name":"{}","status":"running","workspaces":["/tmp/elsewhere"]}}]"#,
         project.sandbox,
     ));
 
@@ -105,7 +105,7 @@ fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() -> Checked {
 
     // 同名のSandboxが2件ある一覧からは対応を決められない。
     let duplicated = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&project, "running")?,
         fixture.entry(&project, "stopped")?
     );
@@ -119,7 +119,7 @@ fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() -> Checked {
 
     // 未対応のraw stateも同じく一覧を成立させない。
     let unknown = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"pausing","workspaces":["/tmp/x"]}}]}}"#,
+        r#"[{{"name":"{}","status":"pausing","workspaces":["/tmp/x"]}}]"#,
         project.sandbox
     );
     let error = take(
@@ -142,7 +142,7 @@ fn a_listing_that_cannot_be_paired_stops_before_anything_is_shown() -> Checked {
 
     let inventory = take(
         &fixture.location,
-        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
+        &FakeSbx::listing("[]"),
         &fixture.workspace_root,
     )
     .required_because("a broken project does not take the listing down with it")?;
@@ -167,7 +167,7 @@ fn one_project_is_resolved_without_the_rest_of_the_listing_being_sound() -> Chec
     let project = fixture.register("example-org/example-repo")?;
     // 別のSandboxが2件同名でも、この案件の対応は名前の完全一致で決まる。
     let listing = format!(
-        r#"{{"sandboxes":[{},{{"name":"sbxm-other","status":"running"}},{{"name":"sbxm-other","status":"stopped"}}]}}"#,
+        r#"[{},{{"name":"sbxm-other","status":"running"}},{{"name":"sbxm-other","status":"stopped"}}]"#,
         fixture.entry(&project, "running")?
     );
     let entries = crate::boundary::host::protocol::parse_sandbox_list(&listing)
@@ -225,7 +225,7 @@ fn a_stopped_sandbox_whose_workspace_is_gone_is_not_asked_to_start() -> Checked 
     let project = fixture.register("example-org/example-repo")?;
     // runtimeのrecordは残っているが、mount元のdirectoryはhostから消えている。
     let host = FakeSbx::listing(&format!(
-        r#"{{"sandboxes":[{}]}}"#,
+        "[{}]",
         fixture.declared_entry(&project, "stopped")
     ));
 
@@ -260,10 +260,7 @@ fn a_stopped_sandbox_whose_workspace_is_gone_is_not_asked_to_start() -> Checked 
 fn a_workspace_that_is_present_lets_the_start_go_through() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let host = FakeSbx::listing(&format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    ));
+    let host = FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "stopped")?));
 
     start(
         &host,
@@ -285,10 +282,7 @@ fn a_workspace_that_is_present_lets_the_start_go_through() -> Checked {
 fn a_workspace_that_another_account_could_write_to_is_not_trusted_for_a_start() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let host = FakeSbx::listing(&format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    ));
+    let host = FakeSbx::listing(&format!("[{}]", fixture.entry(&project, "stopped")?));
 
     // 実在はするが、他accountも書き込めるpermissionのままになっている。cleanupの
     // あとで別accountが用意した可能性を、実在の確認だけでは除けない。

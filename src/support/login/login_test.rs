@@ -6,7 +6,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 #[test]
 fn login_is_checked_with_a_captured_read_only_probe_without_the_ssh_agent() -> Checked {
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
     require_signed_in(&host).required()?;
     let spec = host.spec("ls --json")?;
     assert_eq!(spec.program, "sbx");
@@ -29,7 +29,7 @@ struct CanceledHost;
 
 #[test]
 fn an_incomplete_warmup_response_is_retried_before_selection() -> Checked {
-    let host = FakeSbx::listings(&["{", r#"{"sandboxes":[]}"#]);
+    let host = FakeSbx::listings(&["{", "[]"]);
     require_signed_in(&host).required()?;
     assert_eq!(host.calls().len(), 2);
     assert!(

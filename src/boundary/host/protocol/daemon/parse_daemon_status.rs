@@ -2,26 +2,20 @@ use crate::diagnostics::{Result, unparseable};
 
 use super::DaemonState;
 
-/// `sbx daemon status`をparseする。
+/// `sbx daemon status --json`をparseする。socketやlogのpathは読まない。
 pub fn parse_daemon_status(output: &str) -> Result<DaemonState> {
-    // `sbx daemon status`はJSONを持たず、`<label>: <value>`の行を並べる。
-    // socketとlogのpathはhostのuser名を含むため読まない。
-    let state = output.lines().find_map(|line| {
-        line.split_once(':')
-            .filter(|(label, _)| label.trim().eq_ignore_ascii_case("status"))
-            .map(|(_, value)| value.trim().to_ascii_lowercase())
-    });
-
-    match state.as_deref() {
+    let document: serde_json::Value = serde_json::from_str(output)
+        .map_err(|error| unparseable("sbx daemon status", &error.to_string()))?;
+    match document.get("status").and_then(serde_json::Value::as_str) {
         Some("running") => Ok(DaemonState::Running),
-        Some("stopped" | "not running" | "not-running") => Ok(DaemonState::Stopped),
+        Some("stopped") => Ok(DaemonState::Stopped),
         Some(other) => Err(unparseable(
             "sbx daemon status",
             &format!("status {other} has no defined meaning in this build"),
         )),
         None => Err(unparseable(
             "sbx daemon status",
-            "no line states the daemon status",
+            "the document has no status",
         )),
     }
 }

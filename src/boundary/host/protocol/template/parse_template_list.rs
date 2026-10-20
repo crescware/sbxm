@@ -46,7 +46,7 @@ pub fn parse_template_list(output: &str) -> Result<Vec<TemplateEntry>> {
 
 /// `sbx template ls --json`が並べるimage。
 ///
-/// 対象versionは`{"images": [...]}`で包む。
+/// sbx v0.48.0はimageの配列を直接返す。
 fn template_documents(output: &str) -> Result<Vec<serde_json::Value>> {
     wrapped_documents("sbx template ls", "images", output)
 }

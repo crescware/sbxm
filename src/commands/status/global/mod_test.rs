@@ -3,7 +3,6 @@ use crate::support::StatusValue;
 use crate::testing::outcome::{Checked, Required};
 
 use super::*;
-use crate::boundary::host::protocol::EXPECTED_NETWORK_POLICY;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, ErrorId, Msg};
 use crate::i18n::Locale;
@@ -392,8 +391,8 @@ fn a_version_below_the_minimum_stops_the_dependent_checks() -> Checked {
 fn sandbox_state_is_reported_from_the_structured_output() -> Checked {
     let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos()
-        .responding("sbx policy ls", r#"[{"name":"Balanced","active":true}]"#)
-        .responding("sbx daemon status", "Status: running\n");
+        .responding("sbx policy ls --json", &crate::testing::policy::balanced())
+        .responding("sbx daemon status --json", r#"{"status":"running"}"#);
     let status = diagnose(&location, &host);
 
     assert_eq!(
@@ -414,45 +413,47 @@ fn sandbox_state_is_reported_from_the_structured_output() -> Checked {
 #[test]
 fn a_policy_that_is_not_the_expected_one_is_refused_even_when_stricter() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-
-    for observed in ["Isolated", "Open"] {
-        let host = FakeHost::macos()
-            .responding(
-                "sbx policy ls",
-                &format!(r#"[{{"name":"{observed}","active":true}}]"#),
-            )
-            .responding("sbx daemon status", "Status: running\n");
+    for (output, observed) in [
+        (crate::testing::policy::open(), "Open"),
+        (crate::testing::policy::locked_down(), "Locked Down"),
+    ] {
+        let host = FakeHost::macos().responding("sbx policy ls --json", &output);
         let status = diagnose(&location, &host);
-
         assert_eq!(
             status_of(&status, "status-item-network-policy")?,
-            StatusValue::Error,
-            "{observed} is not {EXPECTED_NETWORK_POLICY}"
+            StatusValue::Error
         );
-        let diagnostic = status
-            .diagnostics
-            .iter()
-            .find(|diagnostic| diagnostic.id == ErrorId::NetworkPolicyMismatch)
-            .required_because(&format!(
-                "{observed} must be diagnosed: {:?}",
-                status.diagnostics
-            ))?;
+        let diagnostic = diagnosed(&status, ErrorId::NetworkPolicyMismatch)?;
         assert!(
             diagnostic
                 .description
                 .args
-                .contains(&("observed", observed.to_string())),
-            "{:?}",
-            diagnostic.description.args
+                .contains(&("observed", observed.to_string()))
         );
         assert!(
             diagnostic
                 .description
                 .args
-                .contains(&("expected", EXPECTED_NETWORK_POLICY.to_string())),
-            "{:?}",
-            diagnostic.description.args
+                .contains(&("expected", "Balanced".to_string()))
         );
+    }
+    Ok(())
+}
+
+#[test]
+fn blocked_or_unavailable_governance_is_reported() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
+    for output in [
+        r#"{"rules":[],"governance_blocked":true}"#,
+        r#"{"rules":[],"organization_unavailable":true}"#,
+    ] {
+        let host = FakeHost::macos().responding("sbx policy ls --json", output);
+        let status = diagnose(&location, &host);
+        assert_eq!(
+            status_of(&status, "status-item-network-policy")?,
+            StatusValue::Error
+        );
+        diagnosed(&status, ErrorId::NetworkPolicyUnobservable)?;
     }
     Ok(())
 }
@@ -728,7 +729,7 @@ fn a_state_directory_that_cannot_be_written_is_an_error_that_names_the_path() ->
 #[test]
 fn a_signed_in_host_is_ready_and_says_nothing_further() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().responding("sbx ls --json", r#"{"sandboxes":[]}"#);
+    let host = FakeHost::macos().responding("sbx ls --json", "[]");
 
     let status = diagnose(&location, &host);
 
@@ -827,7 +828,7 @@ fn a_login_probe_that_times_out_is_unobservable_rather_than_signed_in() -> Check
 #[test]
 fn a_stopped_daemon_is_reported_as_stopped_rather_than_as_a_failure() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().responding("sbx daemon status", "Status: stopped\n");
+    let host = FakeHost::macos().responding("sbx daemon status --json", r#"{"status":"stopped"}"#);
 
     let status = diagnose(&location, &host);
 
@@ -849,7 +850,7 @@ fn a_stopped_daemon_is_reported_as_stopped_rather_than_as_a_failure() -> Checked
 #[test]
 fn a_daemon_state_with_no_defined_meaning_is_not_read_as_running() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().responding("sbx daemon status", "Status: degraded\n");
+    let host = FakeHost::macos().responding("sbx daemon status --json", r#"{"status":"degraded"}"#);
 
     let status = diagnose(&location, &host);
 
@@ -868,7 +869,11 @@ fn a_daemon_state_with_no_defined_meaning_is_not_read_as_running() -> Checked {
 #[test]
 fn a_daemon_probe_that_exits_non_zero_keeps_the_original_stderr() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().failing("sbx daemon status", "Cannot reach the daemon socket", 1);
+    let host = FakeHost::macos().failing(
+        "sbx daemon status --json",
+        "Cannot reach the daemon socket",
+        1,
+    );
 
     let status = diagnose(&location, &host);
 
@@ -891,11 +896,14 @@ fn a_daemon_probe_that_exits_non_zero_keeps_the_original_stderr() -> Checked {
 }
 
 #[test]
-fn a_policy_listing_that_marks_nothing_active_is_unobservable_rather_than_a_mismatch() -> Checked {
+fn an_obsolete_policy_listing_is_unobservable() -> Checked {
     let (_dir, location) = location_with_config(None)?;
     let host = FakeHost::macos()
-        .responding("sbx policy ls", r#"[{"name":"Balanced","active":false}]"#)
-        .responding("sbx daemon status", "Status: running\n");
+        .responding(
+            "sbx policy ls --json",
+            r#"[{"name":"Balanced","active":false}]"#,
+        )
+        .responding("sbx daemon status --json", r#"{"status":"running"}"#);
 
     let status = diagnose(&location, &host);
 
@@ -923,7 +931,7 @@ fn a_policy_listing_that_marks_nothing_active_is_unobservable_rather_than_a_mism
 #[test]
 fn a_policy_probe_that_exits_non_zero_keeps_the_original_stderr() -> Checked {
     let (_dir, location) = location_with_config(None)?;
-    let host = FakeHost::macos().failing("sbx policy ls", "Error: no such command", 127);
+    let host = FakeHost::macos().failing("sbx policy ls --json", "Error: no such command", 127);
 
     let status = diagnose(&location, &host);
 

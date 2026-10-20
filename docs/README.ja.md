@@ -14,7 +14,7 @@ English: [README.md](../README.md)
 
 - macOS 14以降を搭載したApple silicon Mac
 - Docker Engineが起動しているDocker Desktop
-- **[Docker Sandboxes CLI 0.42.1以降](https://docs.docker.com/ai/sandboxes/get-started/)**
+- **[Docker Sandboxes CLI 0.48.0以降](https://docs.docker.com/ai/sandboxes/get-started/)**
 - Git 2.36以降と、SSH
 - 管理対象のrepositoryごとに発行したGitHub personal access token
 
@@ -113,7 +113,7 @@ Sandboxを構築する前に、そのコマンドへtokenを渡して実行し�
 表示されるコマンドは次のような形です。
 
 ```sh
-sbx secret set-custom <sandbox> \
+sbx secret set-custom --sandbox <sandbox> \
   --host github.com \
   --host '**.github.com' \
   --host '**.githubusercontent.com' \
@@ -498,8 +498,9 @@ dirty worktree、publishしていないcommit、repository単位のref、active 
 この起動はほかの準備を行わず、確認をcancelしてもSandboxは起動したまま残ります。対話端末では、
 続いて案件の登録ID（command lineへ渡す`<owner>/<repository>`）の入力を求め、一致しない場合は
 入力し直せます。Sandbox自体の削除では、Docker Sandboxes自身のruntimeが行うactive-session
-検査（sbxmが開始していないsession）も尊重します。この確認はsbxmが内部で答えるため、利用者に
-二重には尋ねません。通常のdestroyを非対話端末で実行した場合は、確認を省略せず拒否します。
+検査（sbxmが開始していないsession）も尊重します。Sandboxの削除要求ではscoped secretを保持し、
+その後で案件のGitHub用登録だけを削除します。通常のdestroyを非対話端末で実行した場合は、
+確認を省略せず拒否します。
 
 Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに登録した`GH_TOKEN`のcustom
 secretは削除されます。登録が残ると、同じプロジェクトに対する次の`sbx secret set-custom`

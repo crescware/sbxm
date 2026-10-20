@@ -73,7 +73,7 @@ fn adding(fixture: &Fixture, relative: &str) -> Checked<Args> {
 }
 
 fn nothing_running() -> FakeSbx {
-    FakeSbx::listing(r#"{"sandboxes":[]}"#)
+    FakeSbx::listing("[]")
 }
 
 fn declared_count(fixture: &Fixture) -> Checked<usize> {

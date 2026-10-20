@@ -856,7 +856,7 @@ fn a_repository_on_the_host_is_registered_without_being_cloned() -> Checked {
             .required_because("a local repository")?;
     let mut request = from(repository, None, None);
     request.start_branch = Some("main".to_string());
-    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = crate::testing::host::FakeSbx::listing("[]");
 
     let output = super::run(
         &setup.location,
@@ -1186,7 +1186,7 @@ fn a_run_that_cannot_tell_or_record_the_registration_clones_nothing() -> Checked
         let (projects, paths) = registered_under_projects(&setup)?;
         breakage(&setup.location, &projects, &paths)?;
         let before = snapshot(setup.dir.path())?;
-        let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+        let host = crate::testing::host::FakeSbx::listing("[]");
 
         let error = super::run(
             &setup.location,
@@ -1205,7 +1205,7 @@ fn a_run_that_cannot_tell_or_record_the_registration_clones_nothing() -> Checked
 
     // 登録済みでない案件の登録が、目標構成の検査で止まる。
     let setup = setup()?;
-    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = crate::testing::host::FakeSbx::listing("[]");
     let error = super::run(
         &setup.location,
         &setup.parent,

@@ -29,13 +29,19 @@ fn versions_are_extracted_from_surrounding_text() {
         CliVersion::extract_from_output("Docker Sandboxes CLI v1.2.3 (build abc)"),
         CliVersion::parse("1.2.3")
     );
+    assert_eq!(
+        CliVersion::extract_from_output(
+            "sbx version v0.48.0 5caf923e0587d376848f6f388eca3e0f5ca00e2d\n"
+        ),
+        CliVersion::parse("0.48.0")
+    );
     assert_eq!(CliVersion::extract_from_output("no version here"), None);
     assert_eq!(CliVersion::extract_from_output(""), None);
 }
 
 #[test]
 fn versions_below_the_minimum_are_refused() -> Checked {
-    let error = require_minimum_version(CliVersion::parse("0.42.0").required()?)
+    let error = require_minimum_version(CliVersion::parse("0.47.99").required()?)
         .refused_because("an older version must be refused")?;
     assert_eq!(error.first_id(), Some(ErrorId::SbxVersionBelowMinimum));
     Ok(())
@@ -43,7 +49,7 @@ fn versions_below_the_minimum_are_refused() -> Checked {
 
 #[test]
 fn the_minimum_version_and_later_are_accepted() -> Checked {
-    for observed in ["0.42.1", "0.42.5", "0.43.0", "1.0.0"] {
+    for observed in ["0.48.0", "0.48.1", "0.49.0", "1.0.0"] {
         assert!(
             require_minimum_version(CliVersion::parse(observed).required()?).is_ok(),
             "{observed} must be accepted"

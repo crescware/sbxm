@@ -21,12 +21,12 @@ fn only_the_running_targets_are_stopped() -> Checked {
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
     let running = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&first, "running")?,
         fixture.entry(&second, "stopped")?
     );
     let after = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&first, "stopped")?,
         fixture.entry(&second, "stopped")?
     );
@@ -76,7 +76,7 @@ fn a_project_without_a_sandbox_is_a_no_op_success() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     fixture.register("example-org/example-repo")?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let report = run(
         &fixture.location,
@@ -107,7 +107,7 @@ fn a_rebuild_in_progress_stops_nothing_at_all() -> Checked {
     metadata::update(&second.paths, &metadata).required_because("record the intent")?;
 
     let listing = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&first, "running")?,
         fixture.entry(&second, "running")?
     );
@@ -133,10 +133,7 @@ fn an_intent_recorded_after_the_first_check_is_still_seen() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("alpha/alfa")?;
-    let listing = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let listing = format!("[{}]", fixture.entry(&project, "running")?);
     let host = FakeSbx::listing(&listing);
 
     // 選択と最初の検査のあとにrebuildが始まった状態を、lock取得後に読み直す。
@@ -169,7 +166,7 @@ fn a_failure_leaves_the_remaining_targets_running() -> Checked {
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
     let running = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&first, "running")?,
         fixture.entry(&second, "running")?
     );
@@ -201,10 +198,7 @@ fn a_sandbox_that_stays_running_is_reported_as_failed() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     let host = FakeSbx::listing(&running);
 
     let report = run(
@@ -235,11 +229,8 @@ fn a_sandbox_gone_from_the_listing_after_the_stop_is_stopped() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
-    let host = FakeSbx::listings(&[&running, &running, r#"{"sandboxes":[]}"#]);
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let host = FakeSbx::listings(&[&running, &running, "[]"]);
 
     let report = run(
         &fixture.location,
@@ -264,14 +255,8 @@ fn a_sandbox_still_running_right_after_the_stop_is_read_again_after_a_pause() ->
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
     let host = FakeSbx::listings(&[&running, &running, &running, &stopped]);
 
     let report = run(
@@ -307,12 +292,12 @@ fn an_omitted_target_is_chosen_from_the_managed_projects() -> Checked {
     let first = fixture.register("alpha/alfa")?;
     let second = fixture.register("zeta/zulu")?;
     let running = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&first, "running")?,
         fixture.entry(&second, "running")?
     );
     let after = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&first, "stopped")?,
         fixture.entry(&second, "running")?
     );
@@ -340,12 +325,12 @@ fn a_running_local_sandbox_is_asked_for_its_commits_before_it_stops() -> Checked
     let local = fixture.register_local("/srv/code/app/.git", "app")?;
     let github = fixture.register("zeta/zulu")?;
     let running = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&local, "running")?,
         fixture.entry(&github, "running")?
     );
     let after = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&local, "stopped")?,
         fixture.entry(&github, "stopped")?
     );
@@ -440,12 +425,12 @@ fn saving_one_target_leaves_the_others_free_for_other_commands() -> Checked {
     let local = fixture.register_local("/srv/code/app/.git", "app")?;
     let github = fixture.register("zeta/zulu")?;
     let running = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&local, "running")?,
         fixture.entry(&github, "running")?
     );
     let after = format!(
-        r#"{{"sandboxes":[{},{}]}}"#,
+        "[{},{}]",
         fixture.entry(&local, "stopped")?,
         fixture.entry(&github, "stopped")?
     );
@@ -475,14 +460,8 @@ fn a_stop_does_not_report_success_past_a_step_that_did_not_answer() -> Checked {
     let arrange = || -> Checked<(Fixture, FakeSbx)> {
         let fixture = Fixture::new()?;
         let project = fixture.register("alpha/alfa")?;
-        let running = format!(
-            r#"{{"sandboxes":[{}]}}"#,
-            fixture.entry(&project, "running")?
-        );
-        let after = format!(
-            r#"{{"sandboxes":[{}]}}"#,
-            fixture.entry(&project, "stopped")?
-        );
+        let running = format!("[{}]", fixture.entry(&project, "running")?);
+        let after = format!("[{}]", fixture.entry(&project, "stopped")?);
         Ok((fixture, FakeSbx::listings(&[&running, &running, &after])))
     };
     let stopped = |host: &dyn crate::boundary::host::HostEnvironment,
@@ -530,14 +509,8 @@ fn a_stop_does_not_report_success_past_a_step_that_did_not_answer() -> Checked {
 fn running_project() -> Checked<(Fixture, crate::testing::project::Registered, FakeSbx)> {
     let fixture = Fixture::new()?;
     let project = fixture.register("alpha/alfa")?;
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
-    let after = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let after = format!("[{}]", fixture.entry(&project, "stopped")?);
     let host = FakeSbx::listings(&[&running, &running, &after]);
     Ok((fixture, project, host))
 }
@@ -574,7 +547,7 @@ fn a_metadata_that_cannot_be_read_stops_before_any_lock_is_taken() -> Checked {
 fn a_sandbox_listed_twice_is_not_stopped() -> Checked {
     let (fixture, project, _) = running_project()?;
     let entry = fixture.entry(&project, "running")?;
-    let host = FakeSbx::listing(&format!(r#"{{"sandboxes":[{entry},{entry}]}}"#));
+    let host = FakeSbx::listing(&format!("[{entry},{entry}]"));
 
     let error = stop_with(&fixture, &host).refused_because("two sandboxes share the name")?;
 
@@ -623,12 +596,9 @@ fn a_metadata_broken_while_the_locks_were_taken_stops_before_anything_is_stopped
 #[test]
 fn a_sandbox_listed_twice_after_the_locks_were_taken_is_not_stopped() -> Checked {
     let (fixture, project, _) = running_project()?;
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     let entry = fixture.entry(&project, "running")?;
-    let twice = format!(r#"{{"sandboxes":[{entry},{entry}]}}"#);
+    let twice = format!("[{entry},{entry}]");
     let host = FakeSbx::listings(&[&running, &twice]);
 
     let error = stop_with(&fixture, &host).refused_because("two sandboxes share the name")?;

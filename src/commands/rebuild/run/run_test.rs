@@ -93,12 +93,9 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
     let name = project.sandbox.as_str();
     let host = ready_to_switch(host, name, &git_dir, &worktree);
 
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     let created = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
+        r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
         project.sandbox,
         workspace.display()
     );
@@ -106,8 +103,8 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
     // 確認までは稼働中のSandboxが対象と観測し、作成後は新しいSandboxを観測する。
     *host.listing.borrow_mut() = vec![
         created,
-        r#"{"sandboxes":[]}"#.to_string(),
-        r#"{"sandboxes":[]}"#.to_string(),
+        "[]".to_string(),
+        "[]".to_string(),
         running.clone(),
         running,
     ];
@@ -136,7 +133,7 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
         host.calls()
     );
     assert!(
-        host.ran("rm ") && host.ran("create --name"),
+        host.removed_any() && host.ran("create --name"),
         "an unchanged Dockerfile still recreates the sandbox: {:?}",
         host.calls()
     );
@@ -189,19 +186,16 @@ fn switched_sandbox() -> Checked<(Fixture, crate::testing::project::Registered, 
     let name = project.sandbox.as_str();
     let host = ready_to_switch(host, name, &git_dir, &worktree);
 
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     let created = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
+        r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
         project.sandbox,
         workspace.display()
     );
     *host.listing.borrow_mut() = vec![
         created,
-        r#"{"sandboxes":[]}"#.to_string(),
-        r#"{"sandboxes":[]}"#.to_string(),
+        "[]".to_string(),
+        "[]".to_string(),
         running.clone(),
         running,
     ];
@@ -327,7 +321,7 @@ fn a_declared_file_that_cannot_be_read_stops_the_rebuild_before_the_old_sandbox_
         !host
             .calls()
             .iter()
-            .any(|args| args.first().is_some_and(|arg| arg == "rm")),
+            .any(|args| crate::testing::host::is_sandbox_removal(args)),
         "the old sandbox is kept: {:?}",
         host.calls()
     );
@@ -394,7 +388,7 @@ fn an_open_session_stops_the_rebuild_before_anything_is_touched() -> Checked {
     )
     .required_because("simulate an active sbxm open session")?;
 
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
     let error = prepare(
         Target {
             location: &fixture.location,
@@ -429,11 +423,8 @@ fn a_project_whose_build_never_finished_is_sent_to_open_even_with_the_same_docke
     project.metadata.provisioning.dockerfile_sha256 = sha256_hex(b"unchanged\n");
     metadata::update(&project.paths, &project.metadata).required()?;
 
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
-        "version --format {{.Server.Version}}",
-        0,
-        "27.0.3\n",
-    );
+    let host =
+        FakeSbx::listing("[]").answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
     let error = prepare(
         Target {
             location: &fixture.location,
@@ -475,11 +466,8 @@ fn a_project_whose_first_build_was_interrupted_is_sent_to_open_for_resumption() 
     });
     metadata::update(&project.paths, &project.metadata).required()?;
 
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
-        "version --format {{.Server.Version}}",
-        0,
-        "27.0.3\n",
-    );
+    let host =
+        FakeSbx::listing("[]").answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
     let error = prepare(
         Target {
             location: &fixture.location,
@@ -532,10 +520,7 @@ fn an_interrupted_first_build_is_refused_even_when_the_sandbox_runs() -> Checked
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     interrupt_initial_build(&mut project)?;
 
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     let host =
         FakeSbx::listing(&running).answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
     let error = prepare(
@@ -582,10 +567,7 @@ fn an_interrupted_first_build_is_refused_without_starting_the_sandbox() -> Check
     interrupt_initial_build(&mut project)?;
     let name = project.sandbox.as_str().to_string();
 
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
     let host =
         FakeSbx::listing(&stopped).answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
     let error = prepare(
@@ -614,7 +596,7 @@ fn an_interrupted_first_build_is_refused_without_starting_the_sandbox() -> Check
 fn a_project_that_is_not_managed_cannot_be_rebuilt() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
     let error = prepare(
         Target {
             location: &fixture.location,
@@ -641,14 +623,8 @@ fn a_stopped_sandbox_is_started_rather_than_handed_back_to_the_user() -> Checked
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let name = project.sandbox.as_str();
 
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     let host = FakeSbx::listings(&[&stopped, &running]).answering(
         "version --format {{.Server.Version}}",
         0,
@@ -683,11 +659,8 @@ fn a_project_without_a_sandbox_is_refused_with_the_command_that_helps() -> Check
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
 
-    let absent = FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
-        "version --format {{.Server.Version}}",
-        0,
-        "27.0.3\n",
-    );
+    let absent =
+        FakeSbx::listing("[]").answering("version --format {{.Server.Version}}", 0, "27.0.3\n");
     let error = prepare(
         Target {
             location: &fixture.location,
@@ -771,7 +744,10 @@ fn only_a_name_of_the_target_confirms_an_interactive_rebuild() -> Checked {
         .refused_because("only a name of the target confirms a rebuild")?;
     assert_eq!(error.first_id(), Some(ErrorId::ProtectionNotConfirmed));
     assert_eq!(wrong.asked(), 3);
-    assert!(!host.ran("rm "), "nothing is removed without confirmation");
+    assert!(
+        !host.removed_any(),
+        "nothing is removed without confirmation"
+    );
 
     // 画面に出ているsandbox名も、同じ対象を名指す答えとして受け取る。
     drop(prepared);
@@ -874,7 +850,7 @@ fn a_resume_with_an_intent_still_shows_the_plan_and_asks_again() -> Checked {
         .refused_because("a resume still asks again")?;
     assert_eq!(error.exit_code(), crate::diagnostics::ExitCode::Canceled);
     assert!(
-        !host.ran("build") && !host.ran("rm "),
+        !host.ran("build") && !host.removed_any(),
         "nothing is mutated before the confirmation: {:?}",
         host.calls()
     );
@@ -917,13 +893,10 @@ fn a_sandbox_that_disappears_while_the_new_generation_is_prepared_fails_closed()
         )
         .answering("template ls --json", 0, &template_listing(&image)?);
 
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     // 一覧は末尾から取り出される。prepareの観測後、生成準備のあいだに対象Sandboxが
     // 手作業で消えている状況になる。
-    *host.listing.borrow_mut() = vec![r#"{"sandboxes":[]}"#.to_string(), running];
+    *host.listing.borrow_mut() = vec!["[]".to_string(), running];
 
     let error = rebuild(
         Target {
@@ -939,7 +912,7 @@ fn a_sandbox_that_disappears_while_the_new_generation_is_prepared_fails_closed()
     assert_eq!(error.first_id(), Some(ErrorId::ProtectionStateChanged));
 
     assert!(
-        !host.ran("rm ") && !host.ran("create --name"),
+        !host.removed_any() && !host.ran("create --name"),
         "nothing is removed or created once the state has changed: {:?}",
         host.calls()
     );
@@ -974,7 +947,7 @@ fn a_new_generation_that_cannot_be_produced_leaves_the_existing_sandbox_alone() 
     .refused_because("the new generation never became usable")?;
     assert_eq!(error.first_id(), Some(ErrorId::ImageUnusable));
     assert!(
-        !host.ran("stop") && !host.ran("rm ") && !host.ran("create --name"),
+        !host.ran("stop") && !host.removed_any() && !host.ran("create --name"),
         "the sandbox that is still running is untouched: {:?}",
         host.calls()
     );
@@ -1047,13 +1020,13 @@ fn continuing(fixture: &Fixture, project: &Registered, target: &str) -> Checked<
     std::fs::create_dir_all(&workspace).required()?;
     std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
     let created = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
+        r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
         project.sandbox,
         workspace.display()
     );
 
     // 一覧は、prepare、execute再評価、作成前の確認、作成後の確認の順に読まれる。
-    let empty = r#"{"sandboxes":[]}"#;
+    let empty = "[]";
     let host = FakeSbx::listings(&[empty, empty, empty, &created])
         .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         // 固定した世代のimageは既にbuild済みである。
@@ -1122,7 +1095,7 @@ fn an_interrupted_rebuild_continues_from_the_generation_it_fixed() -> Checked {
         host.calls()
     );
     assert!(
-        host.ran("secret ls") && host.ran("ssh-add -L"),
+        host.ran("secret ls --json") && host.ran("ssh-add -L"),
         "the recreated sandbox reaches GitHub and not the host agent: {:?}",
         host.calls()
     );
@@ -1267,16 +1240,10 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
     std::fs::create_dir_all(&workspace).required()?;
     std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
 
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     let created = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
+        r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
         project.sandbox,
         workspace.display()
     );
@@ -1300,8 +1267,8 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
     // 一覧は末尾から取り出される。停止中のprevious世代を起動し、検査してから消す。
     *host.listing.borrow_mut() = vec![
         created,
-        r#"{"sandboxes":[]}"#.to_string(),
-        r#"{"sandboxes":[]}"#.to_string(),
+        "[]".to_string(),
+        "[]".to_string(),
         running.clone(),
         running,
         stopped.clone(),
@@ -1327,7 +1294,7 @@ fn a_stopped_previous_generation_is_started_so_its_saved_state_can_be_read() -> 
         .required_because("the stopped sandbox is started before it is inspected")?;
     let removed = calls
         .iter()
-        .position(|args| args.first().is_some_and(|arg| arg == "rm"))
+        .position(|args| crate::testing::host::is_sandbox_removal(args))
         .required_because("the previous generation is removed")?;
     assert!(
         started < removed,
@@ -1344,10 +1311,7 @@ fn a_sandbox_that_cannot_be_started_is_not_rebuilt_over() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.dockerfile(), "FROM scratch\n").required()?;
     let name = project.sandbox.as_str();
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
     let host = FakeSbx::listing(&stopped)
         .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         .answering(&format!("exec {name} -- /bin/true"), 1, "");
@@ -1366,7 +1330,7 @@ fn a_sandbox_that_cannot_be_started_is_not_rebuilt_over() -> Checked {
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     assert!(
-        !host.ran("build") && !host.ran("rm ") && !host.ran("worktree list"),
+        !host.ran("build") && !host.removed_any() && !host.ran("worktree list"),
         "nothing is inspected or built before the sandbox answers: {:?}",
         host.calls()
     );
@@ -1442,11 +1406,7 @@ fn the_first_rebuild_of_a_generation_exports_its_archive_and_loads_the_template(
     let host = SavingSbx {
         inner: continuing(&fixture, &project, &target)?.answering_in_turn(
             "template ls --json",
-            &[
-                (0, r#"{"images":[]}"#),
-                (0, r#"{"images":[]}"#),
-                (0, &template_listing(&image)?),
-            ],
+            &[(0, "[]"), (0, "[]"), (0, &template_listing(&image)?)],
         ),
         image: image.clone(),
         labels: image::expected_labels(project.metadata.canonical_id(), &target),
@@ -1654,7 +1614,7 @@ fn a_local_project_the_host_cannot_write_into_stops_before_the_old_sandbox_goes(
             !host
                 .calls()
                 .iter()
-                .any(|args| args.first().is_some_and(|arg| arg == "rm")),
+                .any(|args| crate::testing::host::is_sandbox_removal(args)),
             "the old sandbox is kept: {:?}",
             host.calls()
         );
@@ -1684,18 +1644,15 @@ fn a_local_project_is_rebuilt_from_the_host_with_its_saved_branches_back() -> Ch
     let saved = format!("refs/sbx/{name}/heads/");
     let host = local_host_to_rebuild(&fixture, &project, &image, &target)?;
 
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     let created = format!(
-        r#"{{"sandboxes":[{{"name":"{name}","status":"running","workspaces":["{}"]}}]}}"#,
+        r#"[{{"name":"{name}","status":"running","workspaces":["{}"]}}]"#,
         workspace.display()
     );
     *host.listing.borrow_mut() = vec![
         created,
-        r#"{"sandboxes":[]}"#.to_string(),
-        r#"{"sandboxes":[]}"#.to_string(),
+        "[]".to_string(),
+        "[]".to_string(),
         running.clone(),
         running,
     ];
@@ -1731,7 +1688,15 @@ fn a_local_project_is_rebuilt_from_the_host_with_its_saved_branches_back() -> Ch
         "the worktree checks out the branch that came back: {:?}",
         host.calls()
     );
-    assert!(!host.ran("secret"), "{:?}", host.calls());
+    assert!(
+        !host
+            .calls()
+            .iter()
+            .any(|args| args.first().is_some_and(|arg| arg == "secret"))
+            && !host.ran("credential.helper"),
+        "local rebuild does not configure a GitHub token: {:?}",
+        host.calls()
+    );
     Ok(())
 }
 
@@ -1769,21 +1734,21 @@ fn rebuilt_with(fixture: &Fixture, host: &FakeSbx) -> Checked<Option<ErrorId>> {
 }
 
 fn running(fixture: &Fixture, project: &Registered) -> Checked<String> {
-    Ok(format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(project, "running")?
-    ))
+    Ok(format!("[{}]", fixture.entry(project, "running")?))
 }
 
 fn listed_twice(fixture: &Fixture, project: &Registered) -> Checked<String> {
     let entry = fixture.entry(project, "running")?;
-    Ok(format!(r#"{{"sandboxes":[{entry},{entry}]}}"#))
+    Ok(format!("[{entry},{entry}]"))
 }
 
 #[test]
 fn a_sandbox_that_sbx_does_not_remove_is_not_recreated() -> Checked {
     assert_eq!(
-        rebuild_failing_at(|name| format!("rm {name}"), 1)?,
+        rebuild_failing_at(
+            |name| crate::testing::host::removal_command(name, false),
+            22
+        )?,
         Some(ErrorId::ExternalCommandFailed)
     );
     Ok(())
@@ -1792,7 +1757,7 @@ fn a_sandbox_that_sbx_does_not_remove_is_not_recreated() -> Checked {
 #[test]
 fn an_unreadable_token_registration_stops_before_the_sandbox_is_created() -> Checked {
     assert_eq!(
-        rebuild_failing_at(|_| "secret ls".to_string(), 1)?,
+        rebuild_failing_at(|_| "secret ls --json".to_string(), 1)?,
         Some(ErrorId::ExternalCommandFailed)
     );
     Ok(())
@@ -2018,13 +1983,13 @@ fn a_template_list_that_cannot_be_read_stops_the_rebuild() -> Checked {
 #[test]
 fn an_archive_that_the_engine_did_not_write_stops_the_rebuild() -> Checked {
     let (fixture, _, host) = switched_sandbox()?;
-    let host = host.answering("template ls --json", 0, r#"{"images":[]}"#);
+    let host = host.answering("template ls --json", 0, "[]");
 
     assert_eq!(
         rebuilt_with(&fixture, &host)?,
         Some(ErrorId::ArchiveUnusable)
     );
-    assert!(!host.ran("rm "));
+    assert!(!host.removed_any());
     Ok(())
 }
 
@@ -2056,7 +2021,7 @@ fn a_rebuild_that_cannot_record_its_intent_removes_nothing() -> Checked {
     set_mode(&sbxm, 0o700)?;
 
     assert_eq!(id, Some(ErrorId::AtomicWriteFailed));
-    assert!(!host.ran("rm "));
+    assert!(!host.removed_any());
     Ok(())
 }
 
@@ -2123,10 +2088,7 @@ fn a_dockerfile_that_cannot_be_read_stops_the_rebuild() -> Checked {
 fn a_stopped_sandbox_that_never_runs_is_not_read_for_protection() -> Checked {
     assert_eq!(
         rebuild_listing(|fixture, project| {
-            Ok(vec![format!(
-                r#"{{"sandboxes":[{}]}}"#,
-                fixture.entry(project, "stopped")?
-            )])
+            Ok(vec![format!("[{}]", fixture.entry(project, "stopped")?)])
         })?,
         Some(ErrorId::SandboxNotRunning)
     );
@@ -2171,10 +2133,7 @@ fn a_rebuild_stops_at_any_step_that_does_not_answer() -> Checked {
 #[test]
 fn a_sandbox_stopped_after_the_plan_that_does_not_start_is_not_rebuilt() -> Checked {
     let (fixture, project, host) = switched_sandbox()?;
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
     // 計画では動いていたSandboxが、実行の取り直しでは止まっていて、起動もできない。
     *host.listing.borrow_mut() = vec![stopped, running(&fixture, &project)?];
     let host = host.answering(&format!("exec {} -- /bin/true", project.sandbox), 1, "");
@@ -2183,7 +2142,7 @@ fn a_sandbox_stopped_after_the_plan_that_does_not_start_is_not_rebuilt() -> Chec
         rebuilt_with(&fixture, &host)?,
         Some(ErrorId::ExternalCommandFailed)
     );
-    assert!(!host.ran(&format!("rm {}", project.sandbox)));
+    assert!(!host.removed(project.sandbox.as_str()));
     Ok(())
 }
 
@@ -2191,7 +2150,7 @@ fn a_sandbox_stopped_after_the_plan_that_does_not_start_is_not_rebuilt() -> Chec
 fn a_recreated_sandbox_that_points_elsewhere_is_not_accepted() -> Checked {
     let (fixture, project, host) = switched_sandbox()?;
     let elsewhere = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["/elsewhere"]}}]}}"#,
+        r#"[{{"name":"{}","status":"running","workspaces":["/elsewhere"]}}]"#,
         project.sandbox
     );
     host.listing.borrow_mut()[0] = elsewhere;
@@ -2258,5 +2217,34 @@ fn a_rebuild_that_places_declared_files_stops_at_any_step_that_does_not_answer()
         let failing = crate::testing::host::FailingAt::timing_out(host, at);
         assert!(rebuilt(&failing, &fixture)?.is_err(), "{step}");
     }
+    Ok(())
+}
+
+#[test]
+fn a_rebuild_keeps_scoped_secrets_and_completes_without_reregistration() -> Checked {
+    let (fixture, project, host) = switched_sandbox()?;
+    rebuild(
+        Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required_because("the scoped registration survives the rebuild")?;
+    assert!(host.removed(project.sandbox.as_str()));
+    assert!(!host.ran(&format!("rm {}", project.sandbox)));
+    assert!(host.ran("delete_scoped_secrets=false"));
+    assert!(host.ran("create --name"));
+    assert!(!host.ran("secret rm") && !host.ran("secret set"));
+    assert!(
+        metadata::load(&project.paths)
+            .required()?
+            .required()?
+            .rebuild
+            .is_none()
+    );
     Ok(())
 }

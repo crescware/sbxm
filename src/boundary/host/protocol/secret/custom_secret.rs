@@ -1,6 +1,6 @@
 /// `sbx secret ls`が示すcustom secretの登録。
 ///
-/// scope、対象host、環境変数名、placeholderを持つ。`SECRET`列は読まない。tokenの一部が
+/// scope、対象host、環境変数名、placeholderを持つ。`secret`fieldは読まない。tokenの一部が
 /// 現れるためである。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomSecret {
@@ -17,6 +17,6 @@ pub struct CustomSecret {
     ///
     /// tokenそのものではなく、tokenの居場所を指す公開の目印である。同じenvへ登録を
     /// やり直すとき、この値を`--placeholder`へ渡せばSandboxが持つ値と一致したまま
-    /// 更新できる。読むのはそのためだけであり、隣の`SECRET`列は読まない。
+    /// 更新できる。読むのはそのためだけであり、隣の`secret`fieldは読まない。
     pub placeholder: String,
 }

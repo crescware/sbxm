@@ -10,7 +10,7 @@ use crate::commands::status::global::external::{describe, external_of, read_stdo
 use crate::commands::status::global::{GlobalStatus, push};
 
 pub fn check_daemon(host: &dyn HostEnvironment, status: &mut GlobalStatus) {
-    match read_stdout(host, "sbx", &["daemon", "status"]) {
+    match read_stdout(host, "sbx", &["daemon", "status", "--json"]) {
         Ok(output) => match parse_daemon_status(&output) {
             Ok(state) => {
                 let value = match state {

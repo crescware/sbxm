@@ -70,7 +70,7 @@ fn image() -> BuiltImage {
 #[test]
 fn an_archive_is_loaded_and_the_result_is_verified() -> Checked {
     let image = image();
-    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)?]);
+    let host = FakeSbx::listing(&["[]", &template_listing(&image.name)?]);
     let archive = Path::new("/tmp/template-111111111111.tar");
 
     let template = ensure(&host, archive, &image, &mut SilentProgress).required_because("load")?;
@@ -93,7 +93,7 @@ fn an_archive_is_loaded_and_the_result_is_verified() -> Checked {
 #[test]
 fn every_sandbox_command_runs_without_the_ssh_agent() -> Checked {
     let image = image();
-    let host = FakeSbx::listing(&[r#"{"images":[]}"#, &template_listing(&image.name)?]);
+    let host = FakeSbx::listing(&["[]", &template_listing(&image.name)?]);
     ensure(
         &host,
         Path::new("/tmp/template.tar"),
@@ -156,7 +156,7 @@ fn the_registry_prefix_the_runtime_adds_still_names_the_same_template() -> Check
 #[test]
 fn a_load_that_leaves_no_template_behind_is_a_failure() -> Checked {
     let image = image();
-    let host = FakeSbx::listing(&[r#"{"images":[]}"#, r#"{"images":[]}"#]);
+    let host = FakeSbx::listing(&["[]", "[]"]);
 
     let error = ensure(
         &host,

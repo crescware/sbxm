@@ -139,7 +139,7 @@ fn guide_places_the_credential_boundary_next_to_the_external_command() -> Checke
         project: "owner/repo".to_string(),
         sandbox: "sbxm-owner-repo".to_string(),
         register_command:
-            "sbx secret set-custom sbxm-owner-repo --placeholder sbx-cs-example --value <token>"
+            "sbx secret set-custom --sandbox sbxm-owner-repo --placeholder sbx-cs-example --value <token>"
                 .to_string(),
     });
 
@@ -149,7 +149,9 @@ fn guide_places_the_credential_boundary_next_to_the_external_command() -> Checke
     );
     assert_eq!(
         commands(&document),
-        ["sbx secret set-custom sbxm-owner-repo --placeholder sbx-cs-example --value <token>"]
+        [
+            "sbx secret set-custom --sandbox sbxm-owner-repo --placeholder sbx-cs-example --value <token>"
+        ]
     );
 
     let drawn = plain(&document, Locale::En)?;

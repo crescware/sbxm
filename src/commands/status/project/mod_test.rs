@@ -12,7 +12,7 @@ use crate::testing::provisioning::{Bench, World};
 #[test]
 fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
     let error = diagnose(
         &fixture.location,
         &fixture.config,
@@ -29,7 +29,7 @@ fn a_project_that_is_not_managed_cannot_be_diagnosed() -> Checked {
 fn the_items_are_reported_in_the_documented_order() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let host = without_image(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project);
+    let host = without_image(FakeSbx::listing("[]"), &project);
 
     let status = diagnose(
         &fixture.location,
@@ -67,7 +67,7 @@ fn the_items_are_reported_in_the_documented_order() -> Checked {
 fn a_project_without_a_sandbox_reports_the_inner_items_as_not_applicable() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
-    let host = without_image(FakeSbx::listing(r#"{"sandboxes":[]}"#), &project);
+    let host = without_image(FakeSbx::listing("[]"), &project);
 
     let status = diagnose(
         &fixture.location,
@@ -230,7 +230,7 @@ fn a_project_whose_metadata_cannot_be_read_is_not_diagnosed_from_a_guess() -> Ch
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     std::fs::write(project.paths.metadata_file(), b"not: [valid").required()?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let error = diagnose(
         &fixture.location,
