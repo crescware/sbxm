@@ -256,6 +256,17 @@ fn a_global_registration_counts_for_this_sandbox() -> Checked {
 }
 
 #[test]
+fn a_scope_spelled_global_without_parentheses_is_another_sandbox() -> Checked {
+    // 一覧はglobalを`(global)`と書く。`global`という名前のSandboxへの登録を、
+    // ほかのSandboxにも届くものとして読まない。
+    let host = FakeSbx::listing(&scoped("global", "sbx-cs-other-sandbox"));
+    let error = require_github(&host, "sbxm-example")
+        .refused_because("a registration for the sandbox named global does not reach this one")?;
+    assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+    Ok(())
+}
+
+#[test]
 fn replacement_keeps_the_selected_registration_scope_and_placeholder() -> Checked {
     for (scope, expected_prefix) in [
         (

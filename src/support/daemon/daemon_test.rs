@@ -118,6 +118,29 @@ fn a_listing_cut_short_by_a_cold_daemon_is_retried_until_it_parses() -> Checked 
 }
 
 #[test]
+fn a_complete_listing_of_another_shape_is_reported_without_a_retry() -> Checked {
+    // JSONとして読み終えた形の違いは、daemonが暖まっても変わらない。振り直して待たない。
+    for output in [
+        r#"{"sandboxes":[]}"#,
+        "null",
+        r#"[{"name":"sbxm-example","status":"pausing"}]"#,
+    ] {
+        let host = FakeSbx::sequenced_listing(&[output, "[]"]);
+        let clock = ScriptedClock::default();
+
+        let error =
+            list_retrying(&host, TimeoutClass::SandboxLifecycle, &clock).refused_because(output)?;
+        assert_eq!(
+            error.first_id(),
+            Some(crate::diagnostics::ErrorId::ExternalOutputUnparseable)
+        );
+        assert_eq!(host.calls.borrow().len(), 1, "{output}");
+        assert!(clock.slept.borrow().is_empty(), "{output}");
+    }
+    Ok(())
+}
+
+#[test]
 fn a_listing_that_stays_unparseable_gives_up_after_a_bounded_number_of_retries() -> Checked {
     let host = FakeSbx::sequenced_listing(&["{"]);
     let clock = ScriptedClock::default();
