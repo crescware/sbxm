@@ -836,6 +836,9 @@ fn a_context_whose_entries_cannot_be_listed_is_refused() -> Checked {
 
     let outcome = empty_private_context(Ok(context));
     fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).required()?;
+    // 拒否したときの`TempDir`は読めないうちに破棄され、中を一覧できずに残る。読めるよう
+    // 戻したので、ここで消す。
+    fs::remove_dir(&path).required_because("the context left by the failed cleanup is removed")?;
 
     let error = outcome.refused_because("an unlistable context is not assumed to be empty")?;
     let diagnostic = error
