@@ -33,6 +33,9 @@ pub fn exec(
     if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
         return report(ui, &error);
     }
+    if let Err(error) = crate::support::git_cli::require_supported_version(host, ui) {
+        return report(ui, &error);
+    }
     // hostへ保存してから準備をやり直す場合に、対象を選び直させない。
     let chosen = match select::chosen(
         context.location,

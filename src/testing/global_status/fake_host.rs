@@ -53,6 +53,10 @@ impl FakeHost {
                 "sbx version",
                 &crate::testing::host::supported_sbx_version(),
             )
+            .responding(
+                "git --version",
+                &crate::testing::host::supported_git_version(),
+            )
             .responding("sbx ls --json", "[]")
             .responding("git config --global --get-all user.name", "Example User\n")
             .responding(

@@ -231,6 +231,7 @@ error_ids! {
     PlatformUnobservable => "platform-unobservable",
     HostCommandMissing => "host-command-missing",
     HostGitTooOld => "host-git-too-old",
+    HostGitVersionUnparseable => "host-git-version-unparseable",
     DockerUnreachable => "docker-unreachable",
     NetworkPolicyMismatch => "network-policy-mismatch",
     NetworkPolicyUnobservable => "network-policy-unobservable",

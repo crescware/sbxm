@@ -374,11 +374,13 @@ fn authenticated_commands_reach_selection_and_can_be_canceled() -> Checked {
             String::from_utf8_lossy(&stderr)
         );
         assert!(!screen.drawn().is_empty(), "{command:?}");
-        assert_eq!(
-            *host.calls.borrow(),
-            ["sbx version", "sbx ls --json"],
-            "{command:?}"
-        );
+        // hostのgitを使うcommandは、loginの後、選択の前にgitのversionも確かめる。
+        let expected: &[&str] = if matches!(command, Command::Ls | Command::Guide(_)) {
+            &["sbx version", "sbx ls --json"]
+        } else {
+            &["sbx version", "sbx ls --json", "git --version"]
+        };
+        assert_eq!(*host.calls.borrow(), expected, "{command:?}");
     }
     Ok(())
 }

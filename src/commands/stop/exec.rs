@@ -27,6 +27,9 @@ pub fn exec(
     if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
         return report(ui, &error);
     }
+    if let Err(error) = crate::support::git_cli::require_supported_version(host, ui) {
+        return report(ui, &error);
+    }
     match super::run::run(
         context.location,
         projects,

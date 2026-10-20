@@ -1379,46 +1379,17 @@ fn main_checked_out() -> String {
 }
 
 #[test]
-fn a_worktree_listing_an_older_git_cannot_give_is_explained_by_its_version() -> Checked {
-    // `-z`はgit 2.36からである。一覧を読めなかったときだけversionを読み、古ければ
-    // そのことを示す。古くないか、versionを読めなければ、一覧の失敗をそのまま示す。
-    for (version, expected) in [
-        (
-            "git version 2.32.1 (Apple Git-133)\n",
-            ErrorId::HostGitTooOld,
-        ),
-        ("git version 2.36.0\n", ErrorId::ExternalCommandFailed),
-        ("", ErrorId::ExternalCommandFailed),
-    ] {
-        let host = crate::testing::host::FakeSbx::listing("[]")
-            .answering(&reflecting_push(), 1, &main_checked_out())
-            .answering("worktree list --porcelain -z", 129, "")
-            .answering("--version", 0, version);
-
-        let error = reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE)
-            .refused_because("the worktrees cannot be listed")?;
-
-        assert_eq!(error.first_id(), Some(expected), "{version:?}");
-    }
-    Ok(())
-}
-
-#[test]
-fn the_git_version_is_not_read_when_the_worktrees_are_listed() -> Checked {
+fn a_worktree_listing_that_fails_is_reported_as_gits_failure() -> Checked {
+    // gitのversionは、hostのgitを使うcommandが最初に確かめている。一覧が読めない理由を
+    // ここでversionから推し量らない。
     let host = crate::testing::host::FakeSbx::listing("[]")
         .answering(&reflecting_push(), 1, &main_checked_out())
-        .answering(
-            "worktree list --porcelain -z",
-            0,
-            "worktree /work/app\0HEAD abc\0branch refs/heads/main\0\0",
-        );
+        .answering("worktree list --porcelain -z", 129, "");
 
-    let results = reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE).required()?;
+    let error = reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE)
+        .refused_because("the worktrees cannot be listed")?;
 
-    assert_eq!(
-        results,
-        vec![reflected("refs/heads/main", ReflectResult::Updated)]
-    );
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     assert!(!host.ran("--version"), "{:?}", host.calls());
     Ok(())
 }

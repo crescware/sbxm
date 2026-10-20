@@ -1358,15 +1358,17 @@ fn a_host_path_that_cannot_be_added_is_refused_before_anything_is_asked() -> Che
     write_config(home.path(), "en")?;
     let missing = home.path().join("no-such-repository");
 
-    let run = sbxm_in(
-        home.path(),
-        &base,
-        &[
+    // hostのgitのversionだけは確かめられるhostで走らせる。
+    let output = authenticated_host::command(home.path())?
+        .current_dir(&base)
+        .args([
             "add",
             "--local",
             missing.to_str().required_because("a UTF-8 path")?,
-        ],
-    )?;
+        ])
+        .output()
+        .required_because("sbxm runs")?;
+    let run = Run::from(&output)?;
 
     assert_eq!(run.code, 1, "{}", run.stderr);
     assert!(
