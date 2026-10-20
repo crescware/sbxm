@@ -1,7 +1,7 @@
 /// tokenの登録を解くcommand。
 ///
-/// custom secretはenvでもhostでもなくplaceholderで指す。`sbx secret ls`のcustom secretの
-/// 表にNAME列はなく、placeholderがこの登録を一意に示す唯一の公開値である。
+/// custom secretはenvでもhostでもなくplaceholderで指す。`sbx secret ls --json`から
+/// sbxmが読む値のうち、この登録を一意に示す公開値はplaceholderだけである。
 ///
 /// `--placeholder`は`sbx secret rm --help`のFlagsに現れないhidden flagであり、
 /// `同じhelpのexamplesとCLI` referenceが用法を示す。`--help`の一覧にないことを根拠に

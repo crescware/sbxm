@@ -123,7 +123,7 @@ impl Fixture {
     /// 案件に対応するSandboxの一覧行。hostのworkspace directoryは作らない。
     ///
     /// runtimeがrecordを持ちながら、mount元のdirectoryがhostから消えている状態を表す。
-    /// sbx v0.37.0が実際に返す形（`status`、`workspaces`は配列）に合わせる。呼び出し側は
+    /// sbx v0.48.0が返す形（`status`、`workspaces`は配列）に合わせる。呼び出し側は
     /// これを配列へ入れて`sbx ls --json`の応答とする。
     pub fn declared_entry(&self, project: &Registered, state: &str) -> String {
         format!(

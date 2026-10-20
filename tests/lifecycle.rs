@@ -44,6 +44,7 @@ curl)
         printf '{"name":"%s","id":"ec55cefe-9919-4c0e-952c-db88e5466db2"}\n' "$name"
         exit 0;;
     DELETE)
+        # 削除できたときだけ一覧から消える。消せなかった指定は非zeroで終わる。
         case "$url" in *'&delete_scoped_secrets=false') ;; *) exit 22;; esac
         code=$(cat "$fake/rm-exit")
         [ "$code" = 0 ] || exit "$code"
@@ -106,14 +107,6 @@ stop)
 	# 停止したSandboxは一覧から消えず、stateだけが変わる。
 	awk -F'\t' -v name="$2" 'BEGIN { OFS = "\t" } { if ($1 == name) $2 = "stopped"; print }' \
 		"$fake/sandboxes" >"$fake/sandboxes.next"
-	mv "$fake/sandboxes.next" "$fake/sandboxes"
-	exit 0
-	;;
-rm)
-	# 削除できたときだけ一覧から消える。消せなかった指定は非zeroで終わる。
-	code=$(cat "$fake/rm-exit")
-	[ "$code" = 0 ] || exit "$code"
-	awk -F'\t' -v name="$3" '$1 != name' "$fake/sandboxes" >"$fake/sandboxes.next"
 	mv "$fake/sandboxes.next" "$fake/sandboxes"
 	exit 0
 	;;
