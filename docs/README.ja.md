@@ -19,7 +19,8 @@ English: [README.md](../README.md)
 - 管理対象のrepositoryごとに発行したGitHub personal access token
 
 `sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を
-確認できます。
+確認できます。Docker Sandboxesを使うほかのcommandも、最初にCLIのversionを確認し、
+上記より古ければほかの処理を行わずに停止します。
 
 ## インストール
 

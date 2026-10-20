@@ -72,3 +72,21 @@ fn only_three_numeric_parts_make_a_cli_version() {
         })
     );
 }
+
+#[test]
+fn the_documented_minimum_is_the_one_this_build_requires() -> Checked {
+    // 最低versionはこのconstantだけで決める。上げたのに要件の文書を合わせ忘れると、
+    // 利用者は通らないversionを入れることになる。
+    let stated = format!("Docker Sandboxes CLI {MINIMUM_CLI_VERSION}");
+    for document in [
+        "README.md",
+        "docs/README.ja.md",
+        "website/src/content/docs/getting-started/requirements.md",
+        "website/src/content/docs/index.mdx",
+    ] {
+        let text = std::fs::read_to_string(format!("{}/{document}", env!("CARGO_MANIFEST_DIR")))
+            .required_because(document)?;
+        assert!(text.contains(&stated), "{document} must state {stated}");
+    }
+    Ok(())
+}

@@ -1,0 +1,15 @@
+use crate::boundary::host::HostEnvironment;
+use crate::design::ProgressSink;
+use crate::diagnostics::Result;
+use crate::support::login;
+
+use super::require_supported_version;
+
+/// Docker Sandboxesを使うcommandが、案件の選択や確認より先に通す確認。
+///
+/// CLIのversionを確かめてから、loginを確かめる。loginのprobeは`sbx ls --json`の出力を
+/// 読むため、古いCLIでは未loginではなく「出力を解釈できない」として止まってしまう。
+pub fn require_ready(host: &dyn HostEnvironment, progress: &mut dyn ProgressSink) -> Result<()> {
+    require_supported_version(host, progress)?;
+    login::require_signed_in(host, progress)
+}

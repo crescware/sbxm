@@ -12,10 +12,24 @@ use std::path::Path;
 
 use crate::outcome::{Checked, Required};
 
+/// `sbx version`への答え。sbxmが求める最低versionのCLIの出力であり、最低versionを
+/// 上げたらこのfileだけを合わせる。一致しなければsbxmのunit testが落ちる。
+const SBX_VERSION: &str = include_str!("../fixtures/sbx-version");
+
 /// `bin`へ、`program`として起動されると`script`を走らせる代役を置く。
 ///
 /// 同じ名前へもう一度置くと、symlinkはそのままに振る舞いだけを差し替える。
+///
+/// `sbx`の代役は、`script`が何を書いても`sbx version`へ`SBX_VERSION`を答える。sbxmは
+/// Docker Sandboxesを使うcommandの最初にCLIのversionを確かめるため、台本ごとには書かせない。
 pub fn install_fake_tool(bin: &Path, program: &str, script: &str) -> Checked {
+    let script = if program == "sbx" {
+        format!(
+            "if [ \"$*\" = version ]; then\n    printf '%s' '{SBX_VERSION}'\n    exit 0\nfi\n{script}"
+        )
+    } else {
+        script.to_string()
+    };
     std::fs::write(bin.join(format!("{program}.sh")), script)
         .required_because("the fake tool's script is written")?;
     let link = bin.join(program);

@@ -40,7 +40,7 @@ pub fn exec(
             destination,
             project,
         } => {
-            if let Err(error) = crate::support::login::require_signed_in(host, ui) {
+            if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
                 return report(ui, &error);
             }
             let mut pulled = match pull(

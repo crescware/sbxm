@@ -121,6 +121,8 @@ impl World {
     pub fn sbx(&self, spec: &CommandSpec) -> (i32, String) {
         let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
         match args.as_slice() {
+            // このbuildが求める最低versionのCLIである。
+            ["version"] => (0, crate::testing::host::supported_sbx_version()),
             ["ls", "--json"] => {
                 let rendered = self
                     .sandboxes

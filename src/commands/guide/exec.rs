@@ -20,7 +20,7 @@ pub fn exec(
     prompt.set_locale(locale);
 
     // secret一覧を読むcommandであるため、topicや案件を選ばせる前に認証を確認する。
-    if let Err(error) = crate::support::login::require_signed_in(host, ui) {
+    if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
         return report(ui, &error);
     }
 

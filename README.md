@@ -30,7 +30,9 @@ into the sandbox.
 - A GitHub personal access token for each repository you want to manage
 
 Run `sbxm status --global` to check these requirements and the Docker Sandboxes
-environment.
+environment. Every other command that uses Docker Sandboxes checks the CLI
+version first and stops before doing anything else when it is older than the
+version above.
 
 ## Installation
 

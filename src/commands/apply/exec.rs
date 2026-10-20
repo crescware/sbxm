@@ -22,7 +22,7 @@ pub fn exec(
     };
     ui.set_locale(locale);
     prompt.set_locale(locale);
-    if let Err(error) = crate::support::login::require_signed_in(host, ui) {
+    if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
         return report(ui, &error);
     }
     if args.all {

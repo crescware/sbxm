@@ -22,6 +22,7 @@ pub mod provisioning;
 pub mod repository;
 pub mod retrieve;
 pub mod sandbox;
+pub mod sbx_cli;
 pub mod secret;
 pub mod select;
 pub mod status;

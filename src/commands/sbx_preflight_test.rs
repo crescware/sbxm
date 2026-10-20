@@ -1,4 +1,4 @@
-//! 認証が必要な全commandが、案件選択や確認より先に未loginを報告する契約。
+//! Docker Sandboxesを使う全commandが、案件選択や確認より先に、古いCLIと未loginを報告する契約。
 use std::cell::RefCell;
 
 use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
@@ -115,6 +115,70 @@ fn execute(
 }
 
 #[test]
+fn all_sandbox_commands_report_an_older_cli_before_signing_in_or_prompting() -> Checked {
+    // 古いCLIはloginのprobeにも別の形で答える。versionを先に読まないと、利用者には
+    // 「出力を解釈できない」とだけ伝わる。
+    let clock = ScriptedClock::default();
+    let fixture = Fixture::new()?;
+    let project = fixture.register("owner/repo")?;
+    let before = std::fs::read(project.paths.metadata_file()).required()?;
+    let minimum = crate::boundary::host::protocol::MINIMUM_CLI_VERSION.to_string();
+    for locale in [Locale::En, Locale::Ja] {
+        for explicit in [false, true] {
+            for command in commands(explicit)? {
+                let host = RecordingHost {
+                    host: FakeHost::macos().responding(
+                        "sbx version",
+                        "sbx version: v0.47.0 0411f50ee4700fe7bd37e6e7e3aced563e850ca9\n",
+                    ),
+                    calls: RefCell::new(Vec::new()),
+                };
+                let screen = RecordedScreen::new();
+                let policy = RenderingPolicy::plain();
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                let code = {
+                    let mut ui = Ui::capture(locale, policy, &mut stdout, &mut stderr);
+                    let mut prompt = PromptUi::new(
+                        locale,
+                        policy.stderr,
+                        Box::new(ScriptedKeys::canceling()),
+                        Box::new(screen.clone()),
+                    );
+                    let context = Context {
+                        location: &fixture.location,
+                        workspace_root: &fixture.workspace_root,
+                        clock: &clock,
+                        locale,
+                        can_prompt: !explicit,
+                    };
+                    execute(&command, &context, &host, &mut ui, &mut prompt)
+                };
+                let stderr = String::from_utf8(stderr).required()?;
+                assert_eq!(code, ExitCode::Failure, "{command:?}: {stderr}");
+                assert!(
+                    stderr.contains("sbx-version-below-minimum"),
+                    "{command:?}: {stderr}"
+                );
+                assert!(stderr.contains("0.47.0"), "{command:?}: {stderr}");
+                assert!(stderr.contains(&minimum), "{command:?}: {stderr}");
+                assert!(stdout.is_empty(), "{command:?}: no result or plan");
+                assert!(
+                    screen.drawn().is_empty(),
+                    "{command:?}: no selection or confirmation"
+                );
+                assert_eq!(*host.calls.borrow(), ["sbx version"], "{command:?}");
+                assert_eq!(
+                    std::fs::read(project.paths.metadata_file()).required()?,
+                    before
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn all_sandbox_commands_report_missing_login_before_any_prompt_or_mutation() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
@@ -168,7 +232,11 @@ fn all_sandbox_commands_report_missing_login_before_any_prompt_or_mutation() -> 
                     screen.drawn().is_empty(),
                     "{command:?}: no selection or confirmation"
                 );
-                assert_eq!(*host.calls.borrow(), ["sbx ls --json"], "{command:?}");
+                assert_eq!(
+                    *host.calls.borrow(),
+                    ["sbx version", "sbx ls --json"],
+                    "{command:?}"
+                );
                 assert_eq!(
                     std::fs::read(project.paths.metadata_file()).required()?,
                     before
@@ -306,7 +374,11 @@ fn authenticated_commands_reach_selection_and_can_be_canceled() -> Checked {
             String::from_utf8_lossy(&stderr)
         );
         assert!(!screen.drawn().is_empty(), "{command:?}");
-        assert_eq!(*host.calls.borrow(), ["sbx ls --json"], "{command:?}");
+        assert_eq!(
+            *host.calls.borrow(),
+            ["sbx version", "sbx ls --json"],
+            "{command:?}"
+        );
     }
     Ok(())
 }
