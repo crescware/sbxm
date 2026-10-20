@@ -14,7 +14,7 @@ pub fn command(home: &Path) -> Checked<Command> {
         r#"read -r state < "$0.probe"
 if [ "$*" = "ls --json" ] && [ "$state" = ready ]; then
     printf 'used\n' > "$0.probe"
-    printf '{"sandboxes":[]}\n'
+    printf '[]\n'
     exit 0
 fi
 printf 'the sandbox runtime is unavailable\n' >&2

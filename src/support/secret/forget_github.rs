@@ -45,6 +45,7 @@ pub fn forget_github(host: &dyn HostEnvironment, sandbox: &str) -> Result<Vec<St
             &[
                 "secret",
                 "rm",
+                "--sandbox",
                 sandbox,
                 "--placeholder",
                 &custom.placeholder,

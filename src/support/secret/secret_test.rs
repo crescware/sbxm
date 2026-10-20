@@ -88,10 +88,8 @@ impl AnsweredHost for FakeSbx {
 /// 1件のcustom secretが全hostを覆う一覧。
 fn scoped(scope: &str, placeholder: &str) -> String {
     format!(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
-             {scope}   {}   GH_TOKEN   {placeholder}   ghp_example\n",
-        GITHUB_HOSTS.join(" ")
+        r#"{{"custom_secrets":[{{"scope":"{scope}","targets":["{}"],"env":"GH_TOKEN","placeholder":"{placeholder}"}}]}}"#,
+        GITHUB_HOSTS.join("\",\"")
     )
 }
 
@@ -101,7 +99,7 @@ fn registered() -> String {
 
 /// 1件も登録がないscopeの一覧。
 fn none() -> String {
-    "No secrets found for scope \"sbxm-example\".\n".to_string()
+    r#"{"custom_secrets":[]}"#.to_string()
 }
 
 fn project() -> Checked<ProjectId> {
@@ -119,7 +117,7 @@ fn a_registered_custom_secret_lets_the_build_continue_and_names_its_placeholder(
     let calls = host.calls.borrow();
     assert_eq!(
         calls[0],
-        vec!["secret".to_string(), "ls".to_string()],
+        vec!["secret".to_string(), "ls".to_string(), "--json".to_string()],
         "the check is read-only, never asks for the value, and never narrows the scope"
     );
     Ok(())
@@ -140,7 +138,7 @@ fn a_service_secret_is_not_accepted_in_place_of_a_custom_one() -> Checked {
     // service secretを受け付けると、classic tokenの利用者は登録できたのに認証が
     // 通らない状態に落ちる。custom secretはtokenの形を問わない。
     let host = FakeSbx::listing(
-        "SCOPE          TYPE      NAME     SECRET\nsbxm-example   service   github   (stored)\n",
+        r#"{"secrets":[{"scope":"sbxm-example","service":"github"}],"custom_secrets":[]}"#,
     );
     let error = require_github(&host, "sbxm-example")
         .refused_because("a service secret does not carry every token type")?;
@@ -212,9 +210,7 @@ fn covering_only_the_git_host_leaves_gh_unauthenticated_and_is_refused() -> Chec
     // gitはgithub.comへ、ghはapi.github.comへ話す。この登録ではgit push/fetchだけが
     // 通り、`gh`はplaceholderをそのまま送って401になる。実機で起きたのがこの状態。
     let host = FakeSbx::listing(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS      ENV        PLACEHOLDER      SECRET\n\
-             sbxm-example   github.com   GH_TOKEN   sbx-cs-example   ghp_example\n",
+        r#"{"custom_secrets":[{"scope":"sbxm-example","targets":["github.com" ],"env":"GH_TOKEN","placeholder":"sbx-cs-example"}]}"#,
     );
     let error = require_github(&host, "sbxm-example")
         .refused_because("the proxy substitutes only for the hosts it was told about")?;
@@ -264,7 +260,7 @@ fn replacement_keeps_the_selected_registration_scope_and_placeholder() -> Checke
     for (scope, expected_prefix) in [
         (
             "sbxm-example",
-            "sbx secret set-custom sbxm-example --host 'github.com'",
+            "sbx secret set-custom --sandbox sbxm-example --host 'github.com'",
         ),
         ("(global)", "sbx secret set-custom --host 'github.com'"),
     ] {
@@ -285,12 +281,9 @@ fn replacement_keeps_the_selected_registration_scope_and_placeholder() -> Checke
     }
 
     let host = FakeSbx::listing(&format!(
-        "CUSTOM SECRETS\n\
-         SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
-         sbxm-example   {}   GH_TOKEN   sbx-cs-one   ghp_one\n\
-         sbxm-example   {}   OTHER      sbx-cs-two   ghp_two\n",
-        GITHUB_HOSTS.join(" "),
-        GITHUB_HOSTS.join(" ")
+        r#"{{"custom_secrets":[{{"scope":"sbxm-example","targets":["{}"],"env":"GH_TOKEN","placeholder":"sbx-cs-one"}},{{"scope":"sbxm-example","targets":["{}"],"env":"OTHER","placeholder":"sbx-cs-two"}}]}}"#,
+        GITHUB_HOSTS.join("\",\""),
+        GITHUB_HOSTS.join("\",\"")
     ));
     let error = replace_github_command(&host, "sbxm-example")
         .refused_because("two registrations cannot be rotated as if they were one")?;
@@ -303,12 +296,9 @@ fn a_sandbox_scoped_registration_wins_over_a_global_one() -> Checked {
     // 両方ある場合、Sandboxへ結び付いた側が使われる。案件ごとのtokenを、ほかの案件と
     // 共有するglobalの登録で上書きしない。
     let host = FakeSbx::listing(&format!(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
-             (global)   {}   GH_TOKEN   sbx-cs-global   ghp_example\n\
-             sbxm-example   {}   GH_TOKEN   sbx-cs-scoped   ghp_example\n",
-        GITHUB_HOSTS.join(" "),
-        GITHUB_HOSTS.join(" ")
+        r#"{{"custom_secrets":[{{"scope":"(global)","targets":["{}"],"env":"GH_TOKEN","placeholder":"sbx-cs-global"}},{{"scope":"sbxm-example","targets":["{}"],"env":"GH_TOKEN","placeholder":"sbx-cs-scoped"}}]}}"#,
+        GITHUB_HOSTS.join("\",\""),
+        GITHUB_HOSTS.join("\",\"")
     ));
     let registration =
         require_github(&host, "sbxm-example").required_because("the scoped one is chosen")?;
@@ -321,12 +311,9 @@ fn a_sandbox_scoped_registration_wins_over_a_global_one() -> Checked {
 fn several_registrations_for_one_sandbox_are_refused_instead_of_picked_from() -> Checked {
     // どちらのplaceholderをgitへ持たせるかを選ぶと、食い違ったまま静かに失敗する。
     let host = FakeSbx::listing(&format!(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS   ENV        PLACEHOLDER      SECRET\n\
-             sbxm-example   {}   GH_TOKEN   sbx-cs-one   ghp_example\n\
-             sbxm-example   {}   OTHER      sbx-cs-two   ghp_example\n",
-        GITHUB_HOSTS.join(" "),
-        GITHUB_HOSTS.join(" ")
+        r#"{{"custom_secrets":[{{"scope":"sbxm-example","targets":["{}"],"env":"GH_TOKEN","placeholder":"sbx-cs-one"}},{{"scope":"sbxm-example","targets":["{}"],"env":"OTHER","placeholder":"sbx-cs-two"}}]}}"#,
+        GITHUB_HOSTS.join("\",\""),
+        GITHUB_HOSTS.join("\",\"")
     ));
     let error = require_github(&host, "sbxm-example")
         .refused_because("two placeholders cannot both be presented")?;
@@ -364,9 +351,7 @@ fn an_incomplete_secret_is_told_to_keep_the_placeholder_the_sandbox_already_hold
     // placeholderを指定しない登録は、同じenvが既にあると重複として拒否される。
     // 既存の値を引き継ぐ形で示さないと、案内どおりに実行しても必ず失敗する。
     let host = FakeSbx::listing(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS      ENV        PLACEHOLDER              SECRET\n\
-             sbxm-example   github.com   GH_TOKEN   sbx-cs-Y1k0SfTWbkN6HzCO  ghp_example\n",
+        r#"{"custom_secrets":[{"scope":"sbxm-example","targets":["github.com" ],"env":"GH_TOKEN","placeholder":"sbx-cs-Y1k0SfTWbkN6HzCO"}]}"#,
     );
     let error =
         require_github(&host, "sbxm-example").refused_because("the coverage is incomplete")?;
@@ -439,9 +424,7 @@ fn a_registration_of_another_scope_is_not_removed_with_this_sandbox() -> Checked
 fn a_secret_the_user_registered_for_something_else_is_left_alone() -> Checked {
     // 同じscopeへ別のsecretを登録していることがある。sbxmは自分が案内した登録だけを扱う。
     let host = FakeSbx::listing(
-        "CUSTOM SECRETS\n\
-             SCOPE          TARGETS            ENV                 PLACEHOLDER      SECRET\n\
-             sbxm-example   api.example.com    ANTHROPIC_API_KEY   sbx-cs-other     sk-example\n",
+        r#"{"custom_secrets":[{"scope":"sbxm-example","targets":["api.example.com" ],"env":"ANTHROPIC_API_KEY","placeholder":"sbx-cs-other"}]}"#,
     );
     let removed = forget_github(&host, "sbxm-example")
         .required_because("nothing sbxm registered is there")?;
@@ -654,7 +637,7 @@ fn a_credential_github_rejects_is_updated_with_its_existing_placeholder() -> Che
                 .map(crate::design::text::CommandLine::as_str)
                 .collect::<Vec<_>>(),
             [
-                "sbx secret set-custom sbxm-example --host 'github.com' --host '**.github.com' --host '**.githubusercontent.com' --host 'ghcr.io' --placeholder sbx-cs-rejected --env GH_TOKEN --value <token>"
+                "sbx secret set-custom --sandbox sbxm-example --host 'github.com' --host '**.github.com' --host '**.githubusercontent.com' --host 'ghcr.io' --placeholder sbx-cs-rejected --env GH_TOKEN --value <token>"
             ],
             "the update preserves the placeholder used by git and needs no deletion or rebuild"
         );

@@ -20,6 +20,7 @@ mod command_input;
 mod command_outcome;
 mod command_spec;
 mod configure;
+mod counted_prompt;
 mod drain_pipe;
 mod env_policy;
 mod exists_in_path_value;

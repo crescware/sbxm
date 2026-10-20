@@ -197,7 +197,7 @@ fn a_first_fetch_brings_branches_and_worktree_heads_under_the_sbxm_namespace() -
 #[test]
 fn the_host_reads_the_sandbox_over_the_ssh_that_open_uses() -> Checked {
     // hostから始まるsshだけで届く。promptで止まらず、agentもforwardingも渡さない。
-    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = crate::testing::host::FakeSbx::listing("[]");
     import_from_sandbox(
         &host,
         std::path::Path::new("/work/example-repo"),
@@ -730,7 +730,7 @@ fn a_git_failure_while_gathering_refs_is_not_taken_as_nothing_to_save() -> Check
 
 #[test]
 fn an_answer_that_is_neither_ready_nor_empty_is_not_taken_as_nothing_to_save() -> Checked {
-    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+    let host = crate::testing::host::FakeSbx::listing("[]").answering(
         &format!("exec {NAMESPACE} -- sh -c {PLACE_SAVE_REFS} sh /git"),
         0,
         "",
@@ -1390,7 +1390,7 @@ fn a_worktree_listing_an_older_git_cannot_give_is_explained_by_its_version() -> 
         ("git version 2.36.0\n", ErrorId::ExternalCommandFailed),
         ("", ErrorId::ExternalCommandFailed),
     ] {
-        let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#)
+        let host = crate::testing::host::FakeSbx::listing("[]")
             .answering(&reflecting_push(), 1, &main_checked_out())
             .answering("worktree list --porcelain -z", 129, "")
             .answering("--version", 0, version);
@@ -1405,7 +1405,7 @@ fn a_worktree_listing_an_older_git_cannot_give_is_explained_by_its_version() -> 
 
 #[test]
 fn the_git_version_is_not_read_when_the_worktrees_are_listed() -> Checked {
-    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#)
+    let host = crate::testing::host::FakeSbx::listing("[]")
         .answering(&reflecting_push(), 1, &main_checked_out())
         .answering(
             "worktree list --porcelain -z",
@@ -1528,7 +1528,7 @@ fn a_ref_line_git_did_not_write_is_not_read_as_a_result() -> Checked {
         "!\trefs/heads/main\t[rejected] (non-fast-forward)\n",
         "?\trefs/sbx/x/heads/main:refs/heads/main\t[odd]\n",
     ] {
-        let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+        let host = crate::testing::host::FakeSbx::listing("[]").answering(
             &push,
             1,
             &format!("To .\n{line}Done\n"),
@@ -1557,8 +1557,7 @@ fn a_push_that_failed_without_refusing_any_ref_is_an_error_rather_than_nothing_r
         "To .\nDone\n",
         "To .\n=\trefs/sbx/x/heads/main:refs/heads/main\t[up to date]\nDone\n",
     ] {
-        let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#)
-            .answering(&push, 1, output);
+        let host = crate::testing::host::FakeSbx::listing("[]").answering(&push, 1, output);
 
         let error = reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE)
             .refused_because("a failure without a refused ref is not a result")?;
@@ -1577,7 +1576,7 @@ fn reflecting_waits_for_the_host_repository_hooks_as_long_as_a_transfer() -> Che
     // 反映のpushの中で、hostのrepositoryのreceive hookが走る。手元のfileの読み書きの時間
     // では打ち切らない。
     let push = reflecting_push();
-    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = crate::testing::host::FakeSbx::listing("[]");
 
     reflect_saved(&host, std::path::Path::new("/work/app"), NAMESPACE).required()?;
 

@@ -12,7 +12,7 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
     let bare_git_dir = layout.bare_git_dir();
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
     Ok(answering_origin_observation(
-        FakeSbx::listing(&format!(r#"{{"sandboxes":[{}]}}"#, fixture.entry(project, "running")?))
+        FakeSbx::listing(&format!("[{}]", fixture.entry(project, "running")?))
         .answering("version --format {{.Server.Version}}", 0, "27.0.3\n")
         .answering(
             &format!("exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {bare_git_dir}"),

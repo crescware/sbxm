@@ -25,12 +25,15 @@ into the sandbox.
 
 - macOS 14 or later on Apple silicon
 - Docker Desktop with a running Docker Engine
-- **[Docker Sandboxes CLI 0.42.1 or later](https://docs.docker.com/ai/sandboxes/get-started/)**
+- **[Docker Sandboxes CLI 0.48.0 or later](https://docs.docker.com/ai/sandboxes/get-started/)**
 - Git 2.36 or later, and SSH
 - A GitHub personal access token for each repository you want to manage
 
 Run `sbxm status --global` to check these requirements and the Docker Sandboxes
-environment.
+environment. Docker Sandboxes versions before 0.48.0 are unsupported; this
+release uses the [0.48.0 CLI formats and scope flags](https://docs.docker.com/ai/sandboxes/release-notes/#0480).
+The network policy check reads the current rules and governance availability;
+it does not infer a preset name such as Balanced from those rules.
 
 ## Installation
 
@@ -127,7 +130,7 @@ Create a personal access token that can read and write the repository:
 command with your token before building the sandbox. The command resembles:
 
 ```sh
-sbx secret set-custom <sandbox> \
+sbx secret set-custom --sandbox <sandbox> \
   --host github.com \
   --host '**.github.com' \
   --host '**.githubusercontent.com' \
@@ -274,6 +277,12 @@ file to add tools or system dependencies, then apply it:
 ```sh
 sbxm rebuild <project-id>
 ```
+
+Docker Sandboxes also removes the old sandbox's scoped secrets. If rebuild
+reports a missing GitHub secret after removal, run the registration command
+it prints, then run `sbxm rebuild <project-id>` again. The saved rebuild intent
+keeps the target generation fixed until the rebuild finishes. Global secrets
+remain available.
 
 Rebuilding recreates the sandbox from the Dockerfile whether or not it
 changed. The old sandbox's writable layer is lost. To protect work, sbxm
@@ -557,9 +566,9 @@ for anything still attached to it (a session sbxm did not start) — sbxm answer
 that confirmation internally, so you are not asked twice. A normal destroy in a
 non-interactive terminal refuses rather than skipping that confirmation.
 
-The sandbox, sbxm's project metadata, and the `GH_TOKEN` custom secret
-registered for that sandbox are deleted. A registration left behind would make
-the next `sbx secret set-custom` for the same project fail as a duplicate, and
+The sandbox, sbxm's project metadata, and all secrets scoped to that sandbox
+(including its `GH_TOKEN` custom secret) are deleted. A registration left behind
+would make the next `sbx secret set-custom` for the same project fail as a duplicate, and
 it would keep a token for a sandbox that no longer exists. The host clone,
 project Dockerfile, built images, loaded templates, and every secret registered
 for anything else are kept, so the project can be registered again later with a

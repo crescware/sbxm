@@ -17,7 +17,7 @@ pub fn looking_inside(
     let managed = format!("{}/example-repo.tree-0", layout.bare_root());
     let scratch = format!("{}/agent-scratch", layout.bare_root());
     let host = FakeSbx::listing(&format!(
-        r#"{{"sandboxes":[{}]}}"#,
+        "[{}]",
         fixture.entry(project, "running")?
     ))
     .answering(

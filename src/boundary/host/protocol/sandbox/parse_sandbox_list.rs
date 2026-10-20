@@ -6,9 +6,7 @@ use super::{SandboxEntry, SandboxState};
 
 /// `sbx ls --json`のstructured outputをparseする。
 ///
-/// 受け付ける形はsbx v0.37.0（要件となる最小version）が実際に返すものだけに絞る。
-/// `name`/`status`/`workspaces`以外のfield名や、`{"sandboxes": [...]}`で包まない出力は、
-/// 対応する実version の根拠がないため受け付けない。
+/// sbx v0.48.0以降が返す配列を読む。未知のstateやworkspaceの形は推測しない。
 pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
     let documents = sandbox_documents(output)?;
 
@@ -47,28 +45,19 @@ pub fn parse_sandbox_list(output: &str) -> Result<Vec<SandboxEntry>> {
     Ok(entries)
 }
 
-/// `sbx ls --json`が並べるSandbox。
-///
-/// sbx v0.37.0は常に`{"sandboxes": [...]}`で包んで返す。包みのない配列や1行1件の
-/// JSONを返すversionは確認できていないため、そのような出力は`unparseable`とする。
+/// sbx v0.48.0はSandboxの配列を直接返す。
 fn sandbox_documents(output: &str) -> Result<Vec<serde_json::Value>> {
-    let trimmed = output.trim();
-    let document: serde_json::Value =
-        serde_json::from_str(trimmed).map_err(|error| unparseable("sbx ls", &error.to_string()))?;
-    let object = document
-        .as_object()
-        .ok_or_else(|| unparseable("sbx ls", "the document does not wrap sandboxes"))?;
-    match object.get("sandboxes") {
-        Some(serde_json::Value::Array(items)) => Ok(items.clone()),
-        Some(serde_json::Value::Null) => Ok(Vec::new()),
-        Some(_) => Err(unparseable("sbx ls", "sandboxes is not a list")),
-        None => Err(unparseable("sbx ls", "the document has no sandboxes field")),
+    let document: serde_json::Value = serde_json::from_str(output.trim())
+        .map_err(|error| unparseable("sbx ls", &error.to_string()))?;
+    match document {
+        serde_json::Value::Array(items) => Ok(items),
+        _ => Err(unparseable("sbx ls", "the document is not an array")),
     }
 }
 
 /// `Sandboxが使っているWorkspace`。
 ///
-/// sbx v0.37.0は`workspaces`を配列で示す。sbxmが作るSandboxは中立Workspaceを
+/// sbx v0.48.0は`workspaces`を配列で示す。sbxmが作るSandboxは中立Workspaceを
 /// 1つだけ持つため、2つ以上ある一覧からはこの案件の成果物と判定しない。
 fn workspace_of(object: &serde_json::Map<String, serde_json::Value>) -> Result<Option<String>> {
     match object.get("workspaces") {

@@ -6,6 +6,6 @@ pub fn template_listing_with_id(image: &str, id: &str) -> Checked<String> {
         .rsplit_once(':')
         .required_because("an image reference")?;
     Ok(format!(
-        r#"{{"images":[{{"id":"{id}","repository":"docker.io/library/{repository}","tag":"{tag}"}}]}}"#
+        r#"[{{"id":"{id}","repository":"docker.io/library/{repository}","tag":"{tag}"}}]"#
     ))
 }

@@ -9,7 +9,7 @@ use crate::diagnostics::Result;
 ///
 /// `--service`で絞ると出力へ値の一部が現れる。一覧のまま読む形で呼ぶ。
 pub(super) fn list_customs(host: &dyn HostEnvironment) -> Result<Vec<CustomSecret>> {
-    let spec = CommandSpec::capture("sbx", &["secret", "ls"])
+    let spec = CommandSpec::capture("sbx", &["secret", "ls", "--json"])
         .env(EnvPolicy::InheritWithoutSshAgent)
         .timeout(TimeoutClass::SandboxLifecycle);
     let outcome = host.run(&spec)?.require_success()?;

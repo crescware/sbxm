@@ -36,4 +36,5 @@ pub fn plan_document(plan: &RebuildPlan) -> Document {
                 .map(present::confirmable_loss)
                 .collect(),
         )
+        .note(msg!("rebuild-plan-scoped-secrets"))
 }

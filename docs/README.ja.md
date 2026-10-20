@@ -14,12 +14,14 @@ English: [README.md](../README.md)
 
 - macOS 14以降を搭載したApple silicon Mac
 - Docker Engineが起動しているDocker Desktop
-- **[Docker Sandboxes CLI 0.42.1以降](https://docs.docker.com/ai/sandboxes/get-started/)**
+- **[Docker Sandboxes CLI 0.48.0以降](https://docs.docker.com/ai/sandboxes/get-started/)**
 - Git 2.36以降と、SSH
 - 管理対象のrepositoryごとに発行したGitHub personal access token
 
 `sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を
-確認できます。
+確認できます。0.48.0未満はサポートしません。[0.48.0のCLI出力形式とscope指定](https://docs.docker.com/ai/sandboxes/release-notes/#0480)
+に対応しています。network policy検査は現在のruleとgovernanceの可用性を読み取り、
+ruleからBalancedなどのpreset名を推測しません。
 
 ## インストール
 
@@ -113,7 +115,7 @@ Sandboxを構築する前に、そのコマンドへtokenを渡して実行し�
 表示されるコマンドは次のような形です。
 
 ```sh
-sbx secret set-custom <sandbox> \
+sbx secret set-custom --sandbox <sandbox> \
   --host github.com \
   --host '**.github.com' \
   --host '**.githubusercontent.com' \
@@ -246,6 +248,11 @@ system dependencyを追加するにはこのファイルを編集し、変更を
 ```sh
 sbxm rebuild <project-id>
 ```
+
+Docker Sandboxesは古いSandbox向けのsecretも削除します。削除後にGitHub secretの不足を
+案内された場合は、表示されたcommandで再登録してから`sbxm rebuild <project-id>`を
+再実行してください。保存されたrebuild intentにより、完了まで同じ世代へ復旧します。
+global scopeのsecretは残ります。
 
 rebuildはDockerfileの変更有無にかかわらずSandboxを作り直し、元のSandboxの書き込み可能な
 層を失わせます。作業内容を保護するため、dirty file、publishしていないcommit、進行中のGit
@@ -501,8 +508,8 @@ dirty worktree、publishしていないcommit、repository単位のref、active 
 検査（sbxmが開始していないsession）も尊重します。この確認はsbxmが内部で答えるため、利用者に
 二重には尋ねません。通常のdestroyを非対話端末で実行した場合は、確認を省略せず拒否します。
 
-Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに登録した`GH_TOKEN`のcustom
-secretは削除されます。登録が残ると、同じプロジェクトに対する次の`sbx secret set-custom`
+Sandbox、sbxmのプロジェクトmetadata、そのSandbox向けに登録した全てのsecret
+（`GH_TOKEN`のcustom secretを含む）は削除されます。登録が残ると、同じプロジェクトに対する次の`sbx secret set-custom`
 が重複として失敗し、存在しないSandbox宛のtokenを預けたままになります。ホスト側のclone、
 プロジェクトのDockerfile、build済みimage、load済みtemplate、それ以外を対象に登録した
 secretは残るため、tokenを再登録すればあとからプロジェクトを再登録できます。

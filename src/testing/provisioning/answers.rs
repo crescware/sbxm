@@ -1,6 +1,5 @@
 //! host上のcommandが返す応答。
 
-use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
@@ -137,7 +136,7 @@ impl World {
                     })
                     .collect::<Vec<_>>()
                     .join(",");
-                (0, format!(r#"{{"sandboxes":[{rendered}]}}"#))
+                (0, format!("[{rendered}]"))
             }
             ["template", "ls", "--json"] => {
                 // runtimeのimage storeはrepositoryとtagで示し、prefixを補う。
@@ -153,7 +152,7 @@ impl World {
                         })
                         .collect::<Vec<_>>()
                         .join(",");
-                (0, format!(r#"{{"images":[{rendered}]}}"#))
+                (0, format!("[{rendered}]"))
             }
             ["template", "load", archive] => {
                 // containerd image storeを持つ実物のruntimeと同じく、登録するidは
@@ -184,21 +183,17 @@ impl World {
                 });
                 (0, String::new())
             }
-            ["secret", "ls"] => {
+            ["secret", "ls", "--json"] => {
                 let secrets = self.secrets.borrow();
-                if secrets.is_empty() {
-                    return (0, "No secrets found.\n".to_string());
-                }
-                // 1件のcustom secretが複数hostを覆う。TARGETS列は空白1つで並ぶ。
-                let mut table =
-                    String::from("CUSTOM SECRETS\nSCOPE   TARGETS   ENV   PLACEHOLDER   SECRET\n");
-                // Stringへの書き込みは失敗しない。
-                let _ = writeln!(
-                    table,
-                    "(global)   {}   GH_TOKEN   sbx-cs-example   ghp_example",
-                    secrets.join(" ")
-                );
-                (0, table)
+                let customs = if secrets.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![serde_json::json!({
+                        "scope":"(global)", "targets":*secrets,
+                        "env":"GH_TOKEN", "placeholder":"sbx-cs-example"
+                    })]
+                };
+                (0, serde_json::json!({"custom_secrets":customs}).to_string())
             }
             ["daemon", ..] => (0, String::new()),
             _ => match spec.input().map(<[u8]>::to_vec) {

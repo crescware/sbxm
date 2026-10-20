@@ -30,7 +30,7 @@ pub fn register_command(scope: &str, placeholder: Option<&str>) -> String {
     let scope = if is_global_scope(scope) {
         String::new()
     } else {
-        format!("{scope} ")
+        format!("--sandbox {scope} ")
     };
     format!("sbx secret set-custom {scope}{hosts}{keep} --env {GITHUB_TOKEN_ENV} --value <token>")
 }

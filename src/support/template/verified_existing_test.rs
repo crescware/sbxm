@@ -34,7 +34,7 @@ fn legacy_declared() -> Vec<String> {
 
 #[test]
 fn a_template_with_no_matching_name_is_not_reused() -> Checked {
-    let host = FakeSbx::listing("").answering("template ls --json", 0, r#"{"images":[]}"#);
+    let host = FakeSbx::listing("").answering("template ls --json", 0, "[]");
     let loaded = verified_existing(&host, &built_image(), &oci_declared())
         .required_because("an absent template is observed, not an error")?;
     assert!(loaded.is_none());
@@ -100,7 +100,7 @@ fn a_template_with_no_reported_id_is_refused_as_unobservable() -> Checked {
     let host = FakeSbx::listing("").answering(
         "template ls --json",
         0,
-        r#"{"images":[{"repository":"docker.io/library/sbxm-example-template","tag":"aaaaaaaaaaaa"}]}"#,
+        r#"[{"repository":"docker.io/library/sbxm-example-template","tag":"aaaaaaaaaaaa"}]"#,
     );
     let error = verified_existing(&host, &built_image(), &oci_declared())
         .refused_because("no id means the correspondence cannot be confirmed")?;

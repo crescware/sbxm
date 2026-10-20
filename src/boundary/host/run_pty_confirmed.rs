@@ -102,7 +102,12 @@ fn drive<O: Processes + Pty>(
         }
 
         if !answered {
-            if prompt_is_ready(&buffer, &command.expected_prompt) {
+            if prompt_is_ready(&buffer, &command.expected_prompt)
+                || command
+                    .counted_prompt
+                    .as_ref()
+                    .is_some_and(|prompt| prompt.matches(&buffer))
+            {
                 if let Err(error) = controller
                     .write_all(command.answer.as_bytes())
                     .and_then(|()| controller.flush())

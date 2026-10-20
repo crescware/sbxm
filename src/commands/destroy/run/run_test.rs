@@ -52,7 +52,7 @@ fn position(host: &FakeSbx, needle: &str) -> Checked<usize> {
 /// 存在すると観測し、削除後の一覧では消えている。
 fn expect_successful_removal(host: &FakeSbx) {
     let present = host.listing.borrow()[0].clone();
-    *host.listing.borrow_mut() = vec![r#"{"sandboxes":[]}"#.to_string(), present.clone(), present];
+    *host.listing.borrow_mut() = vec!["[]".to_string(), present.clone(), present];
 }
 
 /// `exec`を模した、確認込みの実行。通常modeは常に正しいSandbox名で確認する。
@@ -251,19 +251,11 @@ fn a_stopped_project_is_started_so_the_plan_can_show_what_would_be_lost() -> Che
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let name = project.sandbox.as_str();
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
     let host = no_secrets(clean_host(&fixture, &project)?, name);
     let running = host.listing.borrow()[0].clone();
     // 観測は停止から始まり、起動を待ち切った一覧はrunning、削除後の一覧では消えている。
-    *host.listing.borrow_mut() = vec![
-        r#"{"sandboxes":[]}"#.to_string(),
-        running.clone(),
-        running,
-        stopped,
-    ];
+    *host.listing.borrow_mut() = vec!["[]".to_string(), running.clone(), running, stopped];
 
     let mut prepared = prepare(
         Selection {
@@ -301,13 +293,10 @@ fn force_removes_a_stopped_project_without_starting_it() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let name = project.sandbox.as_str();
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
 
     let host = no_secrets(
-        FakeSbx::listings(&[&stopped, r#"{"sandboxes":[]}"#]),
+        FakeSbx::listings(&[&stopped, "[]"]),
         project.sandbox.as_str(),
     );
     let mut prepared = prepare(
@@ -357,14 +346,8 @@ fn a_stopped_pending_project_is_started_and_planned_without_open() -> Checked {
     metadata::update(&project.paths, &pending).required_because("store the interrupted intent")?;
     let name = project.sandbox.as_str();
     let bare_git_dir = SandboxLayout::new(project.metadata.canonical_id()).bare_git_dir();
-    let stopped = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "stopped")?
-    );
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.declared_entry(&project, "running")
-    );
+    let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
+    let running = format!("[{}]", fixture.declared_entry(&project, "running"));
     let host = FakeSbx::listings(&[&stopped, &running]).answering(
         &format!("exec {name} -- sh -c {BARE_GIT_DIR_PROBE} sh {bare_git_dir}"),
         1,
@@ -478,9 +461,7 @@ fn force_bypasses_the_session_lease_even_while_a_session_is_open() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
-    host.listing
-        .borrow_mut()
-        .insert(0, r#"{"sandboxes":[]}"#.to_string());
+    host.listing.borrow_mut().insert(0, "[]".to_string());
     let session = paths::acquire_shared_lock(
         &project.paths.session_lease_file(),
         LOCK_TIMEOUT,
@@ -511,7 +492,7 @@ fn force_bypasses_the_session_lease_even_while_a_session_is_open() -> Checked {
 fn an_unmanaged_project_is_refused_before_the_host_is_touched() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let error = prepare(
         Selection {
@@ -540,10 +521,7 @@ fn a_project_without_a_sandbox_only_loses_its_management_data() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let host = no_secrets(
-        FakeSbx::listing(r#"{"sandboxes":[]}"#),
-        project.sandbox.as_str(),
-    );
+    let host = no_secrets(FakeSbx::listing("[]"), project.sandbox.as_str());
 
     let mut prepared = prepare(
         Selection {
@@ -575,7 +553,7 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     let sandbox = project.sandbox.as_str();
     let host = clean_host(&fixture, &project)?.answering_in_turn(
-        "secret ls",
+        "secret ls --json",
         &[
             (0, &custom_secret_listing(sandbox, "sbx-cs-example")),
             (0, &no_custom_secrets(sandbox)),
@@ -602,7 +580,7 @@ fn the_token_registration_goes_away_with_the_sandbox() -> Checked {
     destroy(&host, &mut prepared).required_because("destroy")?;
     assert!(
         host.ran(&format!(
-            "secret rm {sandbox} --placeholder sbx-cs-example --force"
+            "secret rm --sandbox {sandbox} --placeholder sbx-cs-example --force"
         )),
         "the registration is named by its placeholder: {:?}",
         host.calls()
@@ -625,7 +603,7 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
     let project = fixture.register("example-org/example-repo")?;
     let sandbox = project.sandbox.as_str();
     let host = clean_host(&fixture, &project)?.answering(
-        "secret ls",
+        "secret ls --json",
         0,
         &custom_secret_listing(sandbox, "sbx-cs-example"),
     );
@@ -654,7 +632,7 @@ fn a_registration_that_survives_its_removal_keeps_the_project_managed() -> Check
         .required_because("the user is told how to remove it")?;
     assert!(
         remediation.commands.iter().any(|command| command.as_str()
-            == format!("sbx secret rm {sandbox} --placeholder sbx-cs-example --force")),
+            == format!("sbx secret rm --sandbox {sandbox} --placeholder sbx-cs-example --force")),
         "the command that removes it is its own line: {remediation:?}"
     );
     assert!(
@@ -671,7 +649,7 @@ fn a_registration_of_another_scope_is_left_to_the_sandboxes_that_use_it() -> Che
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = clean_host(&fixture, &project)?.answering(
-        "secret ls",
+        "secret ls --json",
         0,
         &custom_secret_listing("(global)", "sbx-cs-elsewhere"),
     );
@@ -774,9 +752,7 @@ fn prepared_project(fixture: &Fixture, force: bool) -> Checked<(FakeSbx, Prepare
     let clock = ScriptedClock::default();
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(clean_host(fixture, &project)?, project.sandbox.as_str());
-    host.listing
-        .borrow_mut()
-        .insert(0, r#"{"sandboxes":[]}"#.to_string());
+    host.listing.borrow_mut().insert(0, "[]".to_string());
     let prepared = prepare(
         Selection {
             location: &fixture.location,
@@ -1132,15 +1108,12 @@ fn a_sandbox_that_appears_after_the_plan_was_made_is_not_left_behind_silently() 
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
-    let running = format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(&project, "running")?
-    );
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
     let host = no_secrets(clean_host(&fixture, &project)?, project.sandbox.as_str());
     // 一覧は末尾から取り出される。prepareの観測では不在だが、remove直前の再評価では
     // 現れている状況を作る。それ以外の観測(worktree一覧やgit状態)は`clean_host`が
     // 既に揃えたものをそのまま使う。
-    *host.listing.borrow_mut() = vec![running, r#"{"sandboxes":[]}"#.to_string()];
+    *host.listing.borrow_mut() = vec![running, "[]".to_string()];
 
     let mut prepared = prepare(
         Selection {
@@ -1571,10 +1544,7 @@ fn running_project(fixture: &Fixture) -> Checked<(Registered, FakeSbx)> {
 }
 
 fn listed(fixture: &Fixture, project: &Registered, state: &str) -> Checked<String> {
-    Ok(format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(project, state)?
-    ))
+    Ok(format!("[{}]", fixture.entry(project, state)?))
 }
 
 fn set_mode(path: &std::path::Path, mode: u32) -> Checked {
@@ -1615,7 +1585,7 @@ fn a_sandbox_listed_twice_is_not_planned_for_removal() -> Checked {
     let fixture = Fixture::new()?;
     let (project, host) = running_project(&fixture)?;
     let entry = fixture.entry(&project, "running")?;
-    *host.listing.borrow_mut() = vec![format!(r#"{{"sandboxes":[{entry},{entry}]}}"#)];
+    *host.listing.borrow_mut() = vec![format!("[{entry},{entry}]")];
 
     let error = planned(&fixture, &host, false).refused_because("two sandboxes")?;
 
@@ -1723,7 +1693,7 @@ fn force_without_a_sandbox_stops_when_the_absence_cannot_be_read() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;
     let host = no_secrets(
-        FakeSbx::listings(&[r#"{"sandboxes":[]}"#, "not json"]),
+        FakeSbx::listings(&["[]", "not json"]),
         project.sandbox.as_str(),
     );
     let mut prepared = planned(&fixture, &host, true).required()?;
@@ -1741,7 +1711,7 @@ fn force_without_a_sandbox_stops_when_one_has_appeared() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     let appeared = listed(&fixture, &project, "running")?;
     let host = no_secrets(
-        FakeSbx::listings(&[r#"{"sandboxes":[]}"#, &appeared]),
+        FakeSbx::listings(&["[]", &appeared]),
         project.sandbox.as_str(),
     );
     let mut prepared = planned(&fixture, &host, true).required()?;
@@ -1864,11 +1834,11 @@ fn destroyed_with_registration(
 fn a_token_registration_that_cannot_be_removed_keeps_the_project_managed() -> Checked {
     let (_fixture, project, outcome) = destroyed_with_registration(|host, sandbox| {
         host.answering_in_turn(
-            "secret ls",
+            "secret ls --json",
             &[(0, &custom_secret_listing(sandbox, "sbx-cs-example"))],
         )
         .answering(
-            &format!("secret rm {sandbox} --placeholder sbx-cs-example --force"),
+            &format!("secret rm --sandbox {sandbox} --placeholder sbx-cs-example --force"),
             1,
             "",
         )
@@ -1885,7 +1855,7 @@ fn a_token_registration_that_cannot_be_removed_keeps_the_project_managed() -> Ch
 fn registrations_that_cannot_be_listed_after_the_removal_keep_the_project_managed() -> Checked {
     let (_fixture, project, outcome) = destroyed_with_registration(|host, sandbox| {
         host.answering_in_turn(
-            "secret ls",
+            "secret ls --json",
             &[
                 (0, &custom_secret_listing(sandbox, "sbx-cs-example")),
                 (1, ""),
@@ -1917,16 +1887,13 @@ fn destroyed_seeing(
 
 fn twice(fixture: &Fixture, project: &Registered) -> Checked<String> {
     let entry = fixture.entry(project, "running")?;
-    Ok(format!(r#"{{"sandboxes":[{entry},{entry}]}}"#))
+    Ok(format!("[{entry},{entry}]"))
 }
 
 #[test]
 fn force_without_a_sandbox_stops_when_the_absence_is_ambiguous() -> Checked {
     let (_fixture, project, host, outcome) = destroyed_seeing(true, |fixture, project| {
-        Ok(vec![
-            r#"{"sandboxes":[]}"#.to_string(),
-            twice(fixture, project)?,
-        ])
+        Ok(vec!["[]".to_string(), twice(fixture, project)?])
     })?;
 
     let error = outcome.refused_because("two sandboxes share the name")?;
@@ -2041,7 +2008,7 @@ fn a_token_registration_removal_that_does_not_answer_keeps_the_project_managed()
     let project = fixture.register("example-org/example-repo")?;
     let sandbox = project.sandbox.as_str().to_string();
     let host = clean_host(&fixture, &project)?.answering(
-        "secret ls",
+        "secret ls --json",
         0,
         &custom_secret_listing(&sandbox, "sbx-cs-example"),
     );

@@ -10,7 +10,7 @@ fn inspection_progress_names_each_worktree_without_exposing_control_characters()
     use crate::testing::host::FakeSbx;
     use crate::testing::recorded_output::RecordedOutput;
 
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
     let mut progress = RecordedOutput::new();
     let paths = ["/work/repo.tree-0", "/work/改行\nと\u{1b}[31m.tree-1"];
     for (index, path) in paths.iter().enumerate() {

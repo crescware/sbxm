@@ -97,10 +97,7 @@ fn host_with_the_applied_generation(
 
 /// `exec`が観測するworkspaceを申告する、稼働中のSandbox 1件の一覧。
 fn running(fixture: &Fixture, project: &Registered) -> Checked<String> {
-    Ok(format!(
-        r#"{{"sandboxes":[{}]}}"#,
-        fixture.entry(project, "running")?
-    ))
+    Ok(format!("[{}]", fixture.entry(project, "running")?))
 }
 
 #[test]
@@ -114,7 +111,7 @@ fn a_sandbox_that_disappeared_after_it_was_confirmed_is_reported_instead_of_rebu
     // 一覧は末尾から取り出される。計画と確認までは稼働中のSandboxを観測し、実行が
     // 状態を取り直す時点では消えている。
     *host.listing.borrow_mut() = vec![
-        r#"{"sandboxes":[]}"#.to_string(),
+        "[]".to_string(),
         running(&fixture, &project)?,
         running(&fixture, &project)?,
     ];
@@ -172,7 +169,7 @@ fn a_name_that_does_not_match_the_sandbox_stops_before_anything_is_touched() -> 
 fn a_project_that_is_not_managed_is_reported_before_the_plan_is_drawn() -> Checked {
     // 対象が決まらなければ計画も確認も無い。`exec`は最初の失敗をそのまま述べる。
     let fixture = Fixture::new()?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let ran = run(&fixture, &host, "")?;
 
@@ -282,7 +279,7 @@ fn a_confirmed_rebuild_recreates_the_sandbox_and_reports_what_it_applied() -> Ch
     std::fs::create_dir_all(&workspace).required()?;
     std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o700)).required()?;
     let created = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
+        r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
         project.sandbox,
         workspace.display()
     );
@@ -290,8 +287,8 @@ fn a_confirmed_rebuild_recreates_the_sandbox_and_reports_what_it_applied() -> Ch
     // Sandboxを観測し、削除のあとは消えていて、作り直したあとは新しいSandboxを観測する。
     *host.listing.borrow_mut() = vec![
         created,
-        r#"{"sandboxes":[]}"#.to_string(),
-        r#"{"sandboxes":[]}"#.to_string(),
+        "[]".to_string(),
+        "[]".to_string(),
         running(&fixture, &project)?,
         running(&fixture, &project)?,
         running(&fixture, &project)?,

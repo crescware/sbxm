@@ -25,9 +25,8 @@ fn refusal_cause(error: &crate::diagnostics::Error) -> Checked<String> {
 
 #[test]
 fn the_template_listing_of_the_target_version_is_read_as_it_is() -> Checked {
-    // 対象versionが実際に出力する形。`images`で包み、1件をrepositoryとtagで示す。
-    let observed = r#"{
-  "images": [
+    // 対象versionが実際に出力する形。配列で返し、1件をrepositoryとtagで示す。
+    let observed = r#"[
     {
       "id": "a3d0f4449170",
       "repository": "docker.io/library/sbxm-example-org-example-repo-0123456789ab-template",
@@ -36,8 +35,7 @@ fn the_template_listing_of_the_target_version_is_read_as_it_is() -> Checked {
       "created_at": "2026-07-27T03:12:26Z",
       "size": 841254707
     }
-  ]
-}"#;
+ ]"#;
 
     let entries = parse_template_list(observed).required_because("the real listing parses")?;
     assert_eq!(entries.len(), 1);
@@ -51,11 +49,7 @@ fn the_template_listing_of_the_target_version_is_read_as_it_is() -> Checked {
     ));
     assert!(!entries[0].is_named("sbxm-example-org-example-repo-0123456789ab-template:other"));
 
-    assert!(
-        parse_template_list(r#"{"images": []}"#)
-            .required()?
-            .is_empty()
-    );
+    assert!(parse_template_list("[]").required()?.is_empty());
     assert!(parse_template_list("").required()?.is_empty());
     Ok(())
 }
@@ -84,7 +78,7 @@ fn a_repository_keeps_only_the_names_that_actually_point_at_it() -> Checked {
             ],
         ),
     ] {
-        let output = format!(r#"{{"images":[{{"repository":"{repository}","tag":"v1"}}]}}"#);
+        let output = format!(r#"[{{"repository":"{repository}","tag":"v1"}}]"#);
         let entries = parse_template_list(&output).required_because(&output)?;
         assert_eq!(entries[0].names, names);
         // 剥がした表記の1つだけを持つ側から照合しても、同じentryへ届く。
@@ -99,19 +93,19 @@ fn a_template_listing_that_cannot_be_read_states_which_reading_failed() -> Check
     // 扱うと、在るTemplateをもう一度作る。何が読めなかったかを分けて示す。
     for (output, cause) in [
         (
-            r#"{"images":["sbxm-example-template:v1"]}"#,
+            r#"["sbxm-example-template:v1"]"#,
             "an entry is not an object",
         ),
         (
-            r#"{"images":[{"id":"a3d0f4449170","tag":"v1"}]}"#,
+            r#"[{"id":"a3d0f4449170","tag":"v1"}]"#,
             "an entry has no repository",
         ),
         (
-            r#"{"images":[{"repository":"","tag":"v1"}]}"#,
+            r#"[{"repository":"","tag":"v1"}]"#,
             "an entry has no repository",
         ),
         (
-            r#"{"images":[{"repository":"docker.io/library/x"}]}"#,
+            r#"[{"repository":"docker.io/library/x"}]"#,
             "the entry for docker.io/library/x has no tag",
         ),
         ("12", "the document is neither an array nor an object"),

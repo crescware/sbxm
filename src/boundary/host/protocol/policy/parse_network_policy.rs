@@ -1,53 +1,33 @@
 use crate::diagnostics::{Result, unparseable};
 
-use crate::boundary::host::protocol::json::string_field;
+use super::NetworkPolicyState;
 
-/// `sbx policy ls`から現在のnetwork policyを取り出す。
-pub fn parse_network_policy(output: &str) -> Result<String> {
+/// v0.48.0のpolicy一覧を読む。preset名はこの出力にはなく、推測しない。
+pub fn parse_network_policy(output: &str) -> Result<NetworkPolicyState> {
     let document: serde_json::Value = serde_json::from_str(output)
         .map_err(|error| unparseable("sbx policy ls", &error.to_string()))?;
-
-    let from_object = |object: &serde_json::Map<String, serde_json::Value>| -> Option<String> {
-        string_field(object, "policy")
-            .or_else(|| string_field(object, "current"))
-            .or_else(|| string_field(object, "name"))
-    };
-
-    match &document {
-        serde_json::Value::Object(object) => from_object(object)
-            .ok_or_else(|| unparseable("sbx policy ls", "no policy field is present")),
-        serde_json::Value::Array(items) => {
-            // 一覧形式では、有効と印の付いた1件だけを現在値とする。
-            let mut active: Vec<String> = Vec::new();
-            for item in items {
-                let Some(object) = item.as_object() else {
-                    return Err(unparseable("sbx policy ls", "an entry is not an object"));
-                };
-                let selected = object
-                    .get("active")
-                    .or_else(|| object.get("current"))
-                    .or_else(|| object.get("selected"))
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false);
-                if selected && let Some(name) = from_object(object) {
-                    active.push(name);
-                }
-            }
-            match active.len() {
-                1 => Ok(active.remove(0)),
-                0 => Err(unparseable(
-                    "sbx policy ls",
-                    "no entry is marked as the active policy",
-                )),
-                _ => Err(unparseable(
-                    "sbx policy ls",
-                    "more than one entry is marked as the active policy",
-                )),
-            }
-        }
-        _ => Err(unparseable(
-            "sbx policy ls",
-            "the document is neither an array nor an object",
-        )),
+    let rules = document
+        .get("rules")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| unparseable("sbx policy ls", "rules is not a list"))?;
+    if rules.iter().any(|rule| !rule.is_object()) {
+        return Err(unparseable("sbx policy ls", "a rule is not an object"));
     }
+    let flag = |key: &str| -> Result<bool> {
+        match document.get(key) {
+            None => Ok(false),
+            Some(serde_json::Value::Bool(value)) => Ok(*value),
+            Some(_) => Err(unparseable(
+                "sbx policy ls",
+                &format!("{key} is not a boolean"),
+            )),
+        }
+    };
+    let blocked = flag("governance_blocked")?;
+    let unavailable = flag("organization_unavailable")?;
+    Ok(if blocked || unavailable {
+        NetworkPolicyState::Blocked
+    } else {
+        NetworkPolicyState::Available
+    })
 }

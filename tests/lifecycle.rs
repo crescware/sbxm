@@ -72,11 +72,11 @@ esac
 
 case "$1" in
 ls)
-	printf '{"sandboxes":['
+	printf '['
 	awk -F'\t' '{
 		printf "%s{\"name\":\"%s\",\"status\":\"%s\",\"workspaces\":[\"%s\"]}", (NR > 1 ? "," : ""), $1, $2, $3
 	}' "$fake/sandboxes"
-	printf ']}'
+	printf ']'
 	exit 0
 	;;
 stop)
@@ -96,7 +96,7 @@ rm)
 	;;
 secret)
 	[ "$2" = ls ] || exit 1
-	printf 'No secrets found for scope "%s".\n' "$3"
+	printf '{"custom_secrets":[]}\n'
 	exit 0
 	;;
 exec) ;;

@@ -34,7 +34,7 @@ fn a_registry_that_cannot_be_read_is_reported_instead_of_an_empty_listing() -> C
             locale: Locale::En,
             can_prompt: false,
         };
-        super::exec(&context, &mut ui, &FakeSbx::listing(r#"{"sandboxes":[]}"#))
+        super::exec(&context, &mut ui, &FakeSbx::listing("[]"))
     };
 
     assert_eq!(code, ExitCode::Failure);

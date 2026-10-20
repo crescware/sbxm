@@ -40,7 +40,7 @@ fn the_long_steps_forward_their_progress_and_the_read_steps_are_captured() -> Ch
     for needle in [
         "sbx ls --json",
         "docker image inspect",
-        "sbx secret ls",
+        "sbx secret ls --json",
         "sbx template ls --json",
     ] {
         assert_eq!(

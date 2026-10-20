@@ -19,7 +19,7 @@ fn explicit_topic_and_project_start_without_a_prompt() -> Checked {
     let registered = fixture.register("owner/repo")?;
     let sandbox = registered.metadata.sandbox_name();
     let listing = custom_secret_listing(sandbox.as_str(), "sbx-cs-existing");
-    let host = FakeSbx::listing("").answering("secret ls", 0, &listing);
+    let host = FakeSbx::listing("").answering("secret ls --json", 0, &listing);
     let mut prompt = ScriptedPrompt::choosing(0);
 
     let output = run_quiet(
@@ -52,7 +52,7 @@ fn omitted_values_prompt_for_the_topic_before_the_project() -> Checked {
     let registered = fixture.register("owner/repo")?;
     let sandbox = registered.metadata.sandbox_name();
     let listing = custom_secret_listing(sandbox.as_str(), "sbx-cs-existing");
-    let host = FakeSbx::listing("").answering("secret ls", 0, &listing);
+    let host = FakeSbx::listing("").answering("secret ls --json", 0, &listing);
     let mut prompt = ScriptedPrompt::choosing(0);
 
     run_quiet(
@@ -84,7 +84,7 @@ fn an_explicit_topic_prompts_only_for_the_project() -> Checked {
     let registered = fixture.register("owner/repo")?;
     let sandbox = registered.metadata.sandbox_name();
     let listing = custom_secret_listing(sandbox.as_str(), "sbx-cs-existing");
-    let host = FakeSbx::listing("").answering("secret ls", 0, &listing);
+    let host = FakeSbx::listing("").answering("secret ls --json", 0, &listing);
     let mut prompt = ScriptedPrompt::choosing(0);
 
     run_quiet(
@@ -107,7 +107,7 @@ fn a_global_registration_is_replaced_in_its_existing_scope() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("owner/repo")?;
     let listing = custom_secret_listing("(global)", "sbx-cs-global");
-    let host = FakeSbx::listing("").answering("secret ls", 0, &listing);
+    let host = FakeSbx::listing("").answering("secret ls --json", 0, &listing);
 
     let output = run_quiet(
         &explicit("owner/repo")?,
@@ -132,7 +132,7 @@ fn a_global_registration_is_replaced_in_its_existing_scope() -> Checked {
 fn a_missing_registration_uses_the_existing_secret_diagnostic() -> Checked {
     let fixture = Fixture::new()?;
     fixture.register("owner/repo")?;
-    let host = FakeSbx::listing("").answering("secret ls", 0, "No secrets found\n");
+    let host = FakeSbx::listing("").answering("secret ls --json", 0, r#"{"custom_secrets":[]}"#);
 
     let error = run_quiet(
         &explicit("owner/repo")?,

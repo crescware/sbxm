@@ -232,7 +232,7 @@ error_ids! {
     HostCommandMissing => "host-command-missing",
     HostGitTooOld => "host-git-too-old",
     DockerUnreachable => "docker-unreachable",
-    NetworkPolicyMismatch => "network-policy-mismatch",
+    NetworkPolicyBlocked => "network-policy-blocked",
     NetworkPolicyUnobservable => "network-policy-unobservable",
     DaemonUnobservable => "daemon-unobservable",
 

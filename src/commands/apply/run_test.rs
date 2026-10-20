@@ -67,7 +67,7 @@ fn duplicate_sandbox_names_are_refused_before_apply_changes_either_one() -> Chec
     write_metadata(&location, &parent, None)?;
     let name = SandboxName::derive(&canonical()?);
     let listing = format!(
-        r#"{{"sandboxes":[{{"name":"{name}","status":"running"}},{{"name":"{name}","status":"running"}}]}}"#
+        r#"[{{"name":"{name}","status":"running"}},{{"name":"{name}","status":"running"}}]"#
     );
     let host = FakeSbx::listing(&listing);
 
@@ -454,7 +454,7 @@ fn the_project_lock_is_held_while_the_files_are_replaced() -> Checked {
 #[test]
 fn a_project_that_is_not_managed_gets_no_lock_file() -> Checked {
     let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     run(
         Target {
@@ -573,7 +573,7 @@ fn a_stopped_sandbox_is_not_started_and_the_user_is_sent_to_open() -> Checked {
 #[test]
 fn a_project_that_is_not_managed_or_not_built_is_refused() -> Checked {
     let (_home, location, parent, config, workspace_root) = setup(Vec::new())?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
     let error = run(
         Target {
             location: &location,
@@ -723,7 +723,7 @@ fn a_sandbox_that_belongs_to_another_project_is_refused() -> Checked {
     write_metadata(&location, &parent, None)?;
     let name = SandboxName::derive(&canonical()?);
     let host = FakeSbx::listing(&format!(
-        r#"{{"sandboxes":[{{"name":"{name}","status":"running","workspaces":["/tmp/elsewhere"]}}]}}"#
+        r#"[{{"name":"{name}","status":"running","workspaces":["/tmp/elsewhere"]}}]"#
     ));
 
     let error = run(

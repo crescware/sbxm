@@ -423,3 +423,56 @@ fn an_answered_exchange_whose_last_output_cannot_be_read_is_reported() -> Checke
     );
     Ok(())
 }
+
+/// v0.48.0のsbxが同じSandboxのsecret件数を添える確認。
+fn counted_removal() -> PtyConfirmedCommand {
+    command("Remove sandbox 'sbxm-example'? This cannot be undone. (y/N)").counted_prompt(
+        "Remove sandbox 'sbxm-example', including ",
+        "associated scoped secret? This cannot be undone. (y/N)",
+        "associated scoped secrets? This cannot be undone. (y/N)",
+    )
+}
+
+#[test]
+fn v048_removal_prompts_with_and_without_scoped_secrets_are_answered_once() -> Checked {
+    for prompt in [
+        "Remove sandbox 'sbxm-example'? This cannot be undone. (y/N) ",
+        "Remove sandbox 'sbxm-example', including 1 associated scoped secret? This cannot be undone. (y/N) ",
+        "Remove sandbox 'sbxm-example', including 12 associated scoped secrets? This cannot be undone. (y/N)",
+    ] {
+        let controller = ScriptedController::new([ReadStep::Bytes(prompt.as_bytes())]);
+        let written = controller.written();
+        let os = ScriptedOs::default()
+            .controller(controller)
+            .exits([Ok(Some(exited(0)))]);
+        run_pty_confirmed(&os, os.clock(), &counted_removal()).required()?;
+        assert_eq!(written.borrow().as_slice(), b"y\n");
+    }
+    Ok(())
+}
+
+#[test]
+fn counted_removal_prompts_for_other_targets_or_with_extra_content_are_never_answered() -> Checked {
+    for prompt in [
+        "Remove sandbox 'other', including 1 associated scoped secret? This cannot be undone. (y/N)",
+        "Remove sandbox 'sbxm-example', including 0 associated scoped secrets? This cannot be undone. (y/N)",
+        "Remove sandbox 'sbxm-example', including 01 associated scoped secret? This cannot be undone. (y/N)",
+        "Remove sandbox 'sbxm-example', including +1 associated scoped secret? This cannot be undone. (y/N)",
+        "Remove sandbox 'sbxm-example', including 1 associated scoped secrets? This cannot be undone. (y/N)",
+        "Remove sandbox 'sbxm-example', including 2 associated scoped secret? This cannot be undone. (y/N)",
+        "Remove sandbox 'sbxm-example', including many associated scoped secrets? This cannot be undone. (y/N)",
+        "Remove sandbox 'sbxm-example', including 9999999999999999999999999 associated scoped secrets? This cannot be undone. (y/N)",
+        "Remove sandbox 'sbxm-example', including 1",
+        "Remove sandbox 'sbxm-example', including 1 associated scoped secret? This cannot be undone. (y/N)  ",
+        "Remove sandbox 'sbxm-example', including 1 associated scoped secret? This cannot be undone. (y/N)\n",
+        "Remove sandbox 'sbxm-example', including 1 associated scoped secret? This cannot be undone. (y/N) then reset everything?",
+    ] {
+        let controller = ScriptedController::new([ReadStep::Bytes(prompt.as_bytes())]);
+        let written = controller.written();
+        let os = ScriptedOs::default().controller(controller);
+        let error = run_pty_confirmed(&os, os.clock(), &counted_removal()).refused()?;
+        assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandNotConfirmed));
+        assert!(written.borrow().is_empty(), "{prompt}");
+    }
+    Ok(())
+}

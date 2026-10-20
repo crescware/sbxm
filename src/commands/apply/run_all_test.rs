@@ -23,7 +23,7 @@ fn listing_of(workspace_root: &Path, rows: &[(&str, &str)]) -> Checked<String> {
             workspace_root.join(&name).display()
         ));
     }
-    Ok(format!(r#"{{"sandboxes":[{}]}}"#, rendered.join(",")))
+    Ok(format!("[{}]", rendered.join(",")))
 }
 
 fn results(report: &AllReport) -> Vec<(&str, ProjectResult)> {
@@ -180,7 +180,7 @@ fn a_project_that_cannot_be_applied_does_not_stop_the_others() -> Checked {
 #[test]
 fn nothing_registered_is_refused_rather_than_reported_as_done() -> Checked {
     let (_home, location, _parent, config, workspace_root) = setup(Vec::new())?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let error = run_all(
         &location,
@@ -319,7 +319,7 @@ fn an_unreadable_registry_stops_the_whole_run() -> Checked {
         &location,
         &config,
         false,
-        &FakeSbx::listing(r#"{"sandboxes":[]}"#),
+        &FakeSbx::listing("[]"),
         &workspace_root,
         &mut SilentProgress,
     )

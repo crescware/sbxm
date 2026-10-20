@@ -846,7 +846,7 @@ fn a_successful_prepare_checks_secret_and_docker_reachability_exactly_once() -> 
     assert_eq!(
         since
             .iter()
-            .filter(|call| call.contains("secret ls"))
+            .filter(|call| call.contains("secret ls --json"))
             .count(),
         3,
         "the github secret is read as a precondition, before it is written, and when the result is verified: {since:?}"
@@ -1442,7 +1442,9 @@ fn a_token_that_cannot_be_listed_inside_stops_before_the_credential_is_written()
     let world = World::new();
     let (_, project) = registered(&bench, &world)?;
     // 作る前の確認は一覧を読めるが、中を整える段の読み直しで失敗する。
-    world.change_before(INTERIOR_FIRST_STEP, |world| world.failing("sbx secret ls"));
+    world.change_before(INTERIOR_FIRST_STEP, |world| {
+        world.failing("sbx secret ls --json");
+    });
 
     let (error, calls) = stopped_build(&bench, &world, &project)?;
 

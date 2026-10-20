@@ -103,7 +103,7 @@ fn a_project_that_could_not_be_applied_fails_the_run() -> Checked {
 #[test]
 fn nothing_registered_is_reported_as_an_error() -> Checked {
     let (_home, location, _parent, _config, workspace_root) = setup(Vec::new())?;
-    let host = FakeSbx::listing(r#"{"sandboxes":[]}"#);
+    let host = FakeSbx::listing("[]");
 
     let (code, _stdout, stderr) = exec_all(&location, &workspace_root, &host)?;
 

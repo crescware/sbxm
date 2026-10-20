@@ -139,7 +139,7 @@ fn guide_places_the_credential_boundary_next_to_the_external_command() -> Checke
         project: "owner/repo".to_string(),
         sandbox: "sbxm-owner-repo".to_string(),
         register_command:
-            "sbx secret set-custom sbxm-owner-repo --placeholder sbx-cs-example --value <token>"
+            "sbx secret set-custom --sandbox sbxm-owner-repo --placeholder sbx-cs-example --value <token>"
                 .to_string(),
     });
 
@@ -149,7 +149,9 @@ fn guide_places_the_credential_boundary_next_to_the_external_command() -> Checke
     );
     assert_eq!(
         commands(&document),
-        ["sbx secret set-custom sbxm-owner-repo --placeholder sbx-cs-example --value <token>"]
+        [
+            "sbx secret set-custom --sandbox sbxm-owner-repo --placeholder sbx-cs-example --value <token>"
+        ]
     );
 
     let drawn = plain(&document, Locale::En)?;
@@ -675,7 +677,7 @@ fn the_rebuild_plan_shows_both_generations_and_what_the_rebuild_loses() -> Check
         confirmable_losses: every_confirmable_loss(),
     };
     let document = super::rebuild::print::plan_document(&plan);
-    assert_eq!(shape(&document), vec!["fields", "lines"]);
+    assert_eq!(shape(&document), vec!["fields", "lines", "note"]);
 
     let Some(Block::Section(section)) = document.blocks().first() else {
         return Err(Unmet::new("a section".to_string()));
@@ -713,7 +715,7 @@ fn a_plan_without_a_single_loss_shows_no_empty_section() {
         target_generation: "a".repeat(64),
         confirmable_losses: Vec::new(),
     });
-    assert_eq!(shape(&document), vec!["fields"]);
+    assert_eq!(shape(&document), vec!["fields", "note"]);
 }
 
 /// documentが持つ`index`番目のtable。

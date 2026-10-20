@@ -7,12 +7,12 @@
 /// `同じhelpのexamplesとCLI` referenceが用法を示す。`--help`の一覧にないことを根拠に
 /// 別の指定へ書き換えない。
 ///
-/// scopeはSandbox名をpositionalで渡して確定させる。`-g`もSandbox名も渡さない実行は
+/// scopeは`--sandbox`で渡して確定させる。scopeを渡さない実行は
 /// scopeの選択を対話で訊く。sbxmはstdinを閉じて外部commandを実行するため、
 /// 対話へ入った時点で答える手段がない。
 ///
 /// `--force`は`sbx`の確認promptを省く。消してよいかはsbxmが先に判定しており、
 /// `destroy`は自前の確認も済ませている。
 pub fn forget_command(sandbox: &str, placeholder: &str) -> String {
-    format!("sbx secret rm {sandbox} --placeholder {placeholder} --force")
+    format!("sbx secret rm --sandbox {sandbox} --placeholder {placeholder} --force")
 }

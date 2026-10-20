@@ -201,7 +201,7 @@ fn template() -> LoadedTemplate {
 
 fn listing(workspace: &Path, state: &str) -> Checked<String> {
     Ok(format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"{state}","workspaces":["{}"]}}]}}"#,
+        r#"[{{"name":"{}","status":"{state}","workspaces":["{}"]}}]"#,
         sandbox()?,
         workspace.display()
     ))
@@ -211,7 +211,7 @@ fn listing(workspace: &Path, state: &str) -> Checked<String> {
 fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() -> Checked {
     let root = workspace_root()?;
     let workspace = workspace_path(root.path(), &sandbox()?);
-    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#, &listing(&workspace, "running")?]);
+    let host = FakeSbx::listing(&["[]", &listing(&workspace, "running")?]);
 
     let ready = ensure(
         &host,
@@ -257,7 +257,7 @@ fn a_missing_sandbox_is_created_from_the_template_in_a_neutral_workspace() -> Ch
 fn a_sandbox_absent_right_after_creation_is_reported_rather_than_guessed_at() -> Checked {
     let root = workspace_root()?;
     // `create`が成功を返した直後の一覧に、作ったはずのSandboxが出てこない状態を模す。
-    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#, r#"{"sandboxes":[]}"#]);
+    let host = FakeSbx::listing(&["[]", "[]"]);
 
     let error = ensure(
         &host,
@@ -278,7 +278,7 @@ fn a_workspace_root_that_cannot_be_created_stops_before_asking_the_host_anything
     // 新規rootを作る権利そのものを奪う。
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o500)).required()?;
 
-    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#]);
+    let host = FakeSbx::listing(&["[]"]);
     let error = ensure(
         &host,
         &sandbox()?,
@@ -435,10 +435,7 @@ fn a_sandbox_with_another_workspace_stops_the_run() -> Checked {
 fn a_runtime_that_hides_the_workspace_is_not_guessed_at() -> Checked {
     let root = workspace_root()?;
     // workspaceが分からない一覧からは、この案件のSandboxだと言えない。
-    let listing = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running"}}]}}"#,
-        sandbox()?
-    );
+    let listing = format!(r#"[{{"name":"{}","status":"running"}}]"#, sandbox()?);
     let host = FakeSbx::listing(&[&listing]);
     let error = ensure(
         &host,
@@ -457,7 +454,7 @@ fn the_listing_of_the_target_version_identifies_the_sandbox() -> Checked {
     let root = workspace_root()?;
     // 対象versionの一覧はTemplateを持たない。名前とworkspaceの実pathで対応を判定する。
     let listing = format!(
-        r#"{{"sandboxes":[{{"name":"{}","status":"running","workspaces":["{}"]}}]}}"#,
+        r#"[{{"name":"{}","status":"running","workspaces":["{}"]}}]"#,
         sandbox()?,
         workspace_path(root.path(), &sandbox()?).display()
     );
@@ -490,7 +487,7 @@ fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() -> Chec
     fs::create_dir_all(&real).required()?;
     std::os::unix::fs::symlink(&real, workspace_path(root.path(), &sandbox()?)).required()?;
 
-    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#]);
+    let host = FakeSbx::listing(&["[]"]);
     let error = ensure(
         &host,
         &sandbox()?,
@@ -508,7 +505,7 @@ fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() -> Chec
 fn restoring_a_workspace_for_a_sandbox_that_does_not_exist_is_refused() -> Checked {
     // `restore_workspace`は`ensure`と違い、対応するrecordが無い場合に新規作成しない。
     let root = workspace_root()?;
-    let host = FakeSbx::listing(&[r#"{"sandboxes":[]}"#]);
+    let host = FakeSbx::listing(&["[]"]);
 
     let error = restore_workspace(&host, &sandbox()?, root.path())
         .refused_because("there is nothing to restore without a matching sandbox")?;
@@ -534,7 +531,7 @@ fn restoring_an_existing_sandboxs_workspace_reports_whether_it_was_recreated() -
 fn a_path_check_that_could_not_run_is_not_read_as_absence() -> Checked {
     // `sbx exec`が内側のcommandを起動できなかったことを示す終了statusは、`test -e`が
     // 「不在」を示す`1`と重ならない。答えでない値を、不在として読まない。
-    let host = crate::testing::host::FakeSbx::listing(r#"{"sandboxes":[]}"#).answering(
+    let host = crate::testing::host::FakeSbx::listing("[]").answering(
         "exec sandbox -- test -e /work/repo.git",
         126,
         "",
