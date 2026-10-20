@@ -390,6 +390,7 @@ error-docker-unreachable = Docker daemonが応答しません
 error-network-policy-mismatch = network policyは { $observed } ですが、このbuildが検証済みなのは { $expected } だけです。
 error-network-policy-unobservable = network policyを読み取れません
 error-daemon-unobservable = Docker Sandboxes daemonの状態を読み取れません
+error-daemon-not-running = Docker Sandboxes daemonが起動していません
 error-sbx-login-missing = このhostはDocker Sandboxesへloginしていません。
 error-sbx-login-unobservable = このhostがDocker Sandboxesへloginしているかを読み取れません
 error-remote-ssh-unconfigured = sshに { $host } 向けのproxy設定がないため、SandboxへSSHで接続できません。
@@ -487,7 +488,8 @@ remediation-start-docker = Docker Desktopを起動し、engineがrunningにな�
 remediation-network-policy = 続行する前にDocker Sandboxesのnetwork policyを { $expected } に設定してください。
 remediation-wait-for-lock = ほかのsbxmの実行が終わるのを待ってから、もう一度実行してください。
 remediation-open-session-active = 接続中のremote sessionが終わるのを待ってから、もう一度実行してください。lease fileを手動で削除してもsessionは終わりません。
-remediation-external-command-not-confirmed = 下に示したcommandの出力を確認し、対象へほかに何も接続していないことを確かめてから、もう一度実行してください。
+remediation-external-command-not-confirmed = sbxmの作業中にSandboxが置き換わったか、削除された可能性があります。今あるSandboxを確認してから、同じcommandをもう一度実行してください。
+remediation-daemon-not-running = Docker Sandboxes daemonを起動してから、同じcommandをもう一度実行してください。
 security-config-permission-description = { $path } のmodeは { $observed } で、所有者以外にも権限があります。この機械上のほかのaccountが読み書きできる設定fileをsbxmは使用しません。
 security-config-permission-remediation = { $path } の所有者が自分であることを確認し、modeを { $expected } に制限してほかのaccountからの権限を外してください。
 

@@ -235,6 +235,7 @@ error_ids! {
     NetworkPolicyMismatch => "network-policy-mismatch",
     NetworkPolicyUnobservable => "network-policy-unobservable",
     DaemonUnobservable => "daemon-unobservable",
+    DaemonNotRunning => "daemon-not-running",
 
     // --- 対話 ---
     PromptUnreadable => "prompt-unreadable",

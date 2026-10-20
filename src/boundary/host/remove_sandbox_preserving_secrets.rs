@@ -19,9 +19,13 @@ pub(crate) fn remove_sandbox_preserving_secrets(
         .timeout(TimeoutClass::Probe);
     let output = host.run(&spec)?.require_success()?.stdout_text();
     if parse_daemon_status(&output)? != DaemonState::Running {
-        return Err(unparseable(
-            "sbx daemon status",
-            "the daemon is not running",
+        // 停止は読み取れた状態であり、出力の解釈の失敗ではない。sbxmはdaemonを起動しない。
+        return Err(Error::single(
+            Diagnostic::new(ErrorId::DaemonNotRunning, msg!("error-daemon-not-running"))
+                .remediation(
+                    crate::design::Remediation::text(msg!("remediation-daemon-not-running"))
+                        .try_run("sbx daemon start"),
+                ),
         ));
     }
     let document: serde_json::Value = serde_json::from_str(&output)
