@@ -390,6 +390,7 @@ error-docker-unreachable = The Docker daemon did not answer
 error-network-policy-mismatch = The network policy is the { $observed } preset, but this build is validated only for the { $expected } preset.
 error-network-policy-unobservable = The network policy could not be read
 error-daemon-unobservable = The Docker Sandboxes daemon state could not be read
+error-daemon-not-running = The Docker Sandboxes daemon is not running
 error-sbx-login-missing = This host is not signed in to Docker Sandboxes.
 error-sbx-login-unobservable = Whether this host is signed in to Docker Sandboxes could not be read
 error-remote-ssh-unconfigured = ssh has no proxy configuration for { $host }, so sbxm cannot reach a sandbox over SSH.
@@ -487,7 +488,8 @@ remediation-start-docker = Start Docker Desktop and wait until the engine report
 remediation-network-policy = Set the Docker Sandboxes network policy to the built-in { $expected } preset before continuing.
 remediation-wait-for-lock = Wait for the other sbxm run to finish, then run the command again.
 remediation-open-session-active = Wait for the remote session to end, then run the command again. Deleting the lease file by hand does not end the session.
-remediation-external-command-not-confirmed = Look at what the command printed below, make sure nothing else is currently attached to the target, and run the command again.
+remediation-external-command-not-confirmed = The sandbox may have been replaced or removed while sbxm was working on it. Check the sandboxes that exist now, then run the same command again.
+remediation-daemon-not-running = Start the Docker Sandboxes daemon, then run the same command again.
 security-config-permission-description = { $path } has mode { $observed }, which grants access beyond the owner. sbxm refuses to use a configuration that other accounts on this machine can read or change.
 security-config-permission-remediation = Confirm that you own { $path }, then take the access away from every other account by restricting its mode to { $expected }.
 

@@ -44,7 +44,6 @@ fn deletion_keeps_secrets_pins_the_runtime_and_preserves_the_force_choice() -> C
 fn an_unobservable_daemon_or_socket_stops_before_any_api_request() -> Checked {
     for output in [
         "not json",
-        r#"{"status":"stopped","socket":"/tmp/socket"}"#,
         r#"{"status":"running"}"#,
         r#"{"status":"running","socket":"relative"}"#,
         r#"{"status":"running","socket":"/tmp/\u0000socket"}"#,
@@ -58,6 +57,45 @@ fn an_unobservable_daemon_or_socket_stops_before_any_api_request() -> Checked {
         );
         assert_eq!(host.calls().len(), 1);
     }
+    Ok(())
+}
+
+#[test]
+fn a_stopped_daemon_is_reported_as_not_running_before_any_api_request() -> Checked {
+    // 停止は読み取れた状態である。出力を解釈できなかったこととは分けて示す。
+    let host = FakeSbx::listing("[]").answering(
+        "daemon status --json",
+        0,
+        r#"{"status":"stopped","socket":"/tmp/socket"}"#,
+    );
+    let error = remove_sandbox_preserving_secrets(&host, NAME, false).refused()?;
+    assert_eq!(error.first_id(), Some(ErrorId::DaemonNotRunning));
+    let diagnostic = error.diagnostics().first().required()?;
+    assert_eq!(diagnostic.description.id, "error-daemon-not-running");
+    let remediation = diagnostic.remediation.as_ref().required()?;
+    assert_eq!(
+        remediation.explanation[0].id,
+        "remediation-daemon-not-running"
+    );
+    assert_eq!(remediation.commands[0].as_str(), "sbx daemon start");
+    assert_eq!(host.calls().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_sandbox_that_cannot_be_pinned_points_at_the_sandboxes_that_exist_now() -> Checked {
+    // 名前やruntime IDを確かめられないのは、作業中に置き換わったか消えた場合である。
+    // 下に何も示さないため、出力を見るよう求める案内は使わない。
+    let host = FakeSbx::listing("[]").answering(INSPECT, 0, r#"{"name":"other","id":"a1"}"#);
+    let error = remove_sandbox_preserving_secrets(&host, NAME, false).refused()?;
+    let diagnostic = error.diagnostics().first().required()?;
+    assert_eq!(diagnostic.id, ErrorId::ExternalCommandNotConfirmed);
+    assert!(diagnostic.external.is_none());
+    let remediation = diagnostic.remediation.as_ref().required()?;
+    assert_eq!(
+        remediation.explanation[0].id,
+        "remediation-external-command-not-confirmed"
+    );
     Ok(())
 }
 
