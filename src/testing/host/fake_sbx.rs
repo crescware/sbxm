@@ -153,6 +153,8 @@ impl AnsweredHost for FakeSbx {
                 Some((code, stdout)) => (*code, stdout.clone()),
                 // 指定が無ければ、Templateは1つも無い。v0.48.0は0件でも空の配列を返す。
                 None if spec.args == ["template", "ls", "--json"] => (0, "[]".to_string()),
+                // 指定が無ければ、このbuildが求める最低versionのCLIである。
+                None if spec.args == ["version"] => (0, super::supported_sbx_version()),
                 None if spec.args == ["daemon", "status", "--json"] => (
                     0,
                     r#"{"status":"running","socket":"/tmp/sbxm-test-sandboxd.sock"}"#.to_string(),

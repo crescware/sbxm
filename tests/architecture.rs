@@ -394,6 +394,39 @@ fn sandbox_deletion_requests_are_built_in_one_boundary() -> Checked {
 }
 
 #[test]
+fn sandbox_commands_check_the_cli_version_before_signing_in() -> Checked {
+    // loginのprobeだけを呼ぶcommandは、CLIのversionを確かめないまま`sbx ls`を読み、古い
+    // CLIでは原因を示さずに止まる。commandは`sbx_cli::require_ready`を通す。全前提を
+    // 報告する`status --global`だけは、versionを報告の項目として先に読んでから呼ぶ。
+    let allowed = [
+        "src/support/login/mod.rs",
+        "src/support/login/require_signed_in.rs",
+        "src/support/sbx_cli/require_ready.rs",
+        "src/commands/status/global/service/check_login.rs",
+    ];
+    let mut offenders = Vec::new();
+    for (path, text) in sources()? {
+        if allowed.contains(&path.as_str())
+            || path.ends_with("_test.rs")
+            || path.starts_with("src/testing/")
+        {
+            continue;
+        }
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("require_signed_in") {
+                offenders.push(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "sandbox commands check the CLI version through sbx_cli::require_ready:\n{}",
+        offenders.join("\n")
+    );
+    Ok(())
+}
+
+#[test]
 fn docker_commands_are_constructed_in_one_module() -> Checked {
     // CommandSpecのconstructorは任意のprogram名を受け取るため、Rustのmodule privacy
     // だけではdockerの境界を強制できない。実行を表す明確なconstructor呼び出しをここで

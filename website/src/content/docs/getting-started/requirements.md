@@ -13,6 +13,8 @@ sbxm currently supports **macOS 14 or later on Apple silicon**.
 - Git 2.36 or later, and SSH
 - A GitHub personal access token with read and write access to each repository you manage
 
+Every command that uses Docker Sandboxes checks the CLI version first and stops before doing anything else when it is older than the version above.
+
 Run the following command after installation to check the host and Docker Sandboxes environment:
 
 ```sh

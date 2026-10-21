@@ -42,5 +42,5 @@ pub use report::report;
 mod command_line_test;
 
 #[cfg(test)]
-#[path = "login_preflight_test.rs"]
-mod login_preflight_test;
+#[path = "sbx_preflight_test.rs"]
+mod sbx_preflight_test;

@@ -483,6 +483,7 @@ remediation-file-destination-required = Name where the file goes inside the sand
 remediation-config-not-rewritable = Add `{ $declaration }` to { $path } yourself, then run the command again. sbxm does not rewrite a configuration unless it can confirm that the rest stays as written.
 remediation-fix-config = Edit { $path } and run the command again.
 remediation-install-command = Install { $program } and make sure it is on PATH.
+remediation-sbx-update = Update the Docker Sandboxes CLI to { $minimum } or later, then run the command again.
 remediation-host-git-too-old = Update the Git that git on PATH runs, then run the command again.
 remediation-start-docker = Start Docker Desktop and wait until the engine reports it is running.
 remediation-network-policy = Set the Docker Sandboxes network policy to the built-in { $expected } preset before continuing.

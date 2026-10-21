@@ -12,6 +12,7 @@ mod no_custom_secrets;
 mod no_secrets;
 mod registered_secret;
 mod removal_command;
+mod supported_sbx_version;
 mod unrunnable;
 
 pub use answered_host::AnsweredHost;
@@ -26,4 +27,5 @@ pub use no_custom_secrets::no_custom_secrets;
 pub use no_secrets::no_secrets;
 pub use registered_secret::registered_secret;
 pub use removal_command::removal_command;
+pub use supported_sbx_version::supported_sbx_version;
 pub use unrunnable::Unrunnable;

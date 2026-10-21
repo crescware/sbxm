@@ -627,7 +627,7 @@ fn a_missing_configuration_is_the_defaults_rather_than_a_reason_to_stop() -> Che
     let run = sbxm(home.path(), &["ls"])?;
     assert_eq!(run.code, 1);
     assert!(
-        run.stderr.contains("external-command-not-found"),
+        run.stderr.contains("host-command-missing"),
         "{}",
         run.stderr
     );
@@ -741,7 +741,7 @@ fn ls_needs_the_sandbox_runtime_before_it_can_answer() -> Checked {
     assert_eq!(run.code, 1, "{}", run.stdout);
     assert!(run.stdout.is_empty(), "no partial listing: {}", run.stdout);
     assert!(
-        run.stderr.contains("external-command-not-found"),
+        run.stderr.contains("host-command-missing"),
         "{}",
         run.stderr
     );
@@ -926,7 +926,7 @@ fn a_registered_project_still_needs_the_sandbox_runtime() -> Checked {
             run.stderr
         );
         assert!(
-            run.stderr.contains("external-command-not-found"),
+            run.stderr.contains("host-command-missing"),
             "{command}: {}",
             run.stderr
         );

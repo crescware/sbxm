@@ -49,7 +49,10 @@ impl FakeHost {
             .responding("sw_vers -productVersion", "14.5\n")
             .responding("uname -m", "arm64\n")
             .responding("docker version --format {{.Server.Version}}", "27.0.3\n")
-            .responding("sbx version", "sbx version 0.48.0\n")
+            .responding(
+                "sbx version",
+                &crate::testing::host::supported_sbx_version(),
+            )
             .responding("sbx ls --json", "[]")
             .responding("git config --global --get-all user.name", "Example User\n")
             .responding(

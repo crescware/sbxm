@@ -15,7 +15,7 @@ pub fn exec(context: &Context, ui: &mut Ui, host: &dyn HostEnvironment) -> ExitC
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    if let Err(error) = crate::support::login::require_signed_in(host, ui) {
+    if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
         return report(ui, &error);
     }
     match super::run::run(context.location, host, context.workspace_root, ui) {

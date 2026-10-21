@@ -124,11 +124,17 @@ impl AnsweredHost for FakeSbx {
             *self.lock_was_free.borrow_mut() = Some(taken.is_ok());
         }
         let outcome = self.inner.run(spec)?;
-        // Sandbox一覧だけはこちらが答える。残りはinner commandへの応答に任せる。
+        // Sandbox一覧とCLIのversionだけはこちらが答える。残りはinner commandへの応答に
+        // 任せる。
         match spec.args.first() {
             Some(arg) if arg == "ls" => {
                 Ok(crate::testing::command::outcome(spec, 0, &self.listing))
             }
+            Some(arg) if arg == "version" => Ok(crate::testing::command::outcome(
+                spec,
+                0,
+                &crate::testing::host::supported_sbx_version(),
+            )),
             _ => Ok(outcome),
         }
     }
