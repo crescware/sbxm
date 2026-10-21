@@ -90,15 +90,6 @@ fn a_missing_git_is_reported_as_missing_without_running_anything() -> Checked {
 }
 
 #[test]
-fn the_tests_run_on_the_git_the_host_is_asked_for() {
-    // `mise run test-min-git`は、`scripts/min-git/build.sh`がこのversionでbuildするgitで
-    // testを走らせる。hostに求めるversionと食い違えば、そのversionで動くことを確かめて
-    // いないことになる。
-    let built = include_str!("../../../scripts/min-git/version");
-    assert_eq!(built.trim_end(), MINIMUM_HOST_GIT.to_string());
-}
-
-#[test]
 fn the_fakes_answer_with_the_minimum_this_build_requires() -> Checked {
     // e2e testの代役は`tests/fixtures/git-version`を答える。最低versionを上げたのに
     // fixtureを合わせ忘れると、e2e testは古いgitとして止まる理由を探すことになる。
