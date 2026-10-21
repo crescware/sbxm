@@ -13,6 +13,8 @@ impl World {
     pub fn host_git(spec: &CommandSpec) -> (i32, String) {
         let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
         match args.as_slice() {
+            // このbuildが求める最低versionのgitである。
+            ["--version"] => (0, crate::testing::host::supported_git_version()),
             ["clone", "--progress", _, target] => {
                 // cloneが成功したときだけ、working treeができる。作れなければcloneの失敗である。
                 if fs::create_dir_all(Path::new(target).join(".git")).is_err() {

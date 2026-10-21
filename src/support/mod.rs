@@ -11,6 +11,7 @@ pub mod disk;
 pub mod docker;
 pub mod files;
 pub mod generation;
+pub mod git_cli;
 pub mod host_sync;
 pub mod identity;
 pub mod image;

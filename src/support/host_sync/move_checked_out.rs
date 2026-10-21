@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::{ErrorId, Result};
-use crate::support::repository::{host_git, older_git};
+use crate::support::repository::host_git;
 use crate::support::worktree;
 
 use super::ReflectResult;
@@ -81,11 +81,8 @@ fn checked_out_in(
         None,
         TimeoutClass::LocalFilesystem,
     )?;
-    // `-z`はgit 2.36からである。失敗したときだけ、古いgitのためかを確かめる。
-    let listed = match listed.require_success() {
-        Ok(listed) => listed,
-        Err(error) => return Err(older_git(host, repository).unwrap_or(error)),
-    };
+    // `-z`はgit 2.36からである。hostのgitを使うcommandは、最初にversionを確かめている。
+    let listed = listed.require_success()?;
     let mut found = worktree::parse_list(&listed.stdout_text())?
         .into_iter()
         .filter(|entry| !entry.prunable && entry.branch.as_deref() == Some(reference));

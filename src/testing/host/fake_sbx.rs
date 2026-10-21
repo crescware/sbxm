@@ -155,6 +155,10 @@ impl AnsweredHost for FakeSbx {
                 None if spec.args == ["template", "ls", "--json"] => (0, "[]".to_string()),
                 // 指定が無ければ、このbuildが求める最低versionのCLIである。
                 None if spec.args == ["version"] => (0, super::supported_sbx_version()),
+                // 指定が無ければ、hostのgitもこのbuildが求める最低versionである。
+                None if spec.program == "git" && spec.args == ["--version"] => {
+                    (0, super::supported_git_version())
+                }
                 None if spec.args == ["daemon", "status", "--json"] => (
                     0,
                     r#"{"status":"running","socket":"/tmp/sbxm-test-sandboxd.sock"}"#.to_string(),

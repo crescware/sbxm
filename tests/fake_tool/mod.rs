@@ -16,19 +16,22 @@ use crate::outcome::{Checked, Required};
 /// 上げたらこのfileだけを合わせる。一致しなければsbxmのunit testが落ちる。
 const SBX_VERSION: &str = include_str!("../fixtures/sbx-version");
 
+/// `git --version`への答え。sbxmが求める最低versionのgitの出力であり、最低versionを
+/// 上げたらこのfileだけを合わせる。一致しなければsbxmのunit testが落ちる。
+const GIT_VERSION: &str = include_str!("../fixtures/git-version");
+
 /// `bin`へ、`program`として起動されると`script`を走らせる代役を置く。
 ///
 /// 同じ名前へもう一度置くと、symlinkはそのままに振る舞いだけを差し替える。
 ///
-/// `sbx`の代役は、`script`が何を書いても`sbx version`へ`SBX_VERSION`を答える。sbxmは
-/// Docker Sandboxesを使うcommandの最初にCLIのversionを確かめるため、台本ごとには書かせない。
+/// `sbx`と`git`の代役は、`script`が何を書いても`sbx version`と`git --version`へ
+/// `SBX_VERSION`と`GIT_VERSION`を答える。sbxmはそれぞれを使うcommandの最初にversionを
+/// 確かめるため、台本ごとには書かせない。
 pub fn install_fake_tool(bin: &Path, program: &str, script: &str) -> Checked {
-    let script = if program == "sbx" {
-        format!(
-            "if [ \"$*\" = version ]; then\n    printf '%s' '{SBX_VERSION}'\n    exit 0\nfi\n{script}"
-        )
-    } else {
-        script.to_string()
+    let script = match program {
+        "sbx" => version_answer("version", SBX_VERSION, script),
+        "git" => version_answer("--version", GIT_VERSION, script),
+        _ => script.to_string(),
     };
     std::fs::write(bin.join(format!("{program}.sh")), script)
         .required_because("the fake tool's script is written")?;
@@ -39,4 +42,9 @@ pub fn install_fake_tool(bin: &Path, program: &str, script: &str) -> Checked {
             .required_because("the fake tool is linked under its name")?;
     }
     Ok(())
+}
+
+/// 引数が`asked`だけの起動へ`answer`を返し、それ以外は`script`へ渡す台本。
+fn version_answer(asked: &str, answer: &str, script: &str) -> String {
+    format!("if [ \"$*\" = {asked} ]; then\n    printf '%s' '{answer}'\n    exit 0\nfi\n{script}")
 }

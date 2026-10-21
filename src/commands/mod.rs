@@ -12,6 +12,9 @@ mod command_line_values;
 mod context;
 pub mod destroy;
 pub mod files;
+#[cfg(test)]
+#[path = "git_preflight_test.rs"]
+mod git_preflight_test;
 pub mod guide;
 #[cfg(test)]
 #[path = "inspection_progress_test.rs"]

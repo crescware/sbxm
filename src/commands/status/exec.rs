@@ -34,6 +34,9 @@ pub fn exec(
     if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
         return report(ui, &error);
     }
+    if let Err(error) = crate::support::git_cli::require_supported_version(host, ui) {
+        return report(ui, &error);
+    }
     match scope {
         Scope::Project(project) => project_scope(project, &config, context, ui, host),
         _ => prompt_scope(&config, locale, context, ui, host, prompt),

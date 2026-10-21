@@ -22,6 +22,9 @@ pub fn exec(
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
+    if let Err(error) = crate::support::git_cli::require_supported_version(host, ui) {
+        return report(ui, &error);
+    }
 
     // cwdはsbxmが選ぶ場所ではない。project rootを足す親directoryとして受け取る。
     let parent = match ProjectParent::current() {

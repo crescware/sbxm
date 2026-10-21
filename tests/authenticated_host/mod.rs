@@ -23,6 +23,12 @@ exit 1
     )?;
     std::fs::write(bin.join("sbx.probe"), b"ready\n")
         .required_because("the first probe succeeds")?;
+    // hostのgitはversionだけを答える。ほかの起動へ届くtestは、このhostでは書かない。
+    install_fake_tool(
+        &bin,
+        "git",
+        "printf 'git is not available to this test\\n' >&2\nexit 1\n",
+    )?;
     let mut command = Command::new(env!("CARGO_BIN_EXE_sbxm"));
     command
         .current_dir(home)
