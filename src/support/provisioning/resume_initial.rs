@@ -75,7 +75,6 @@ pub(crate) fn resume_initial(
     let completed = observe(
         host,
         &locked.paths,
-        config,
         &locked.metadata,
         workspace_root,
         progress,

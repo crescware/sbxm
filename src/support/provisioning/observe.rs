@@ -2,7 +2,6 @@ use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
 use crate::boundary::host::protocol::{SandboxEntry, SandboxState};
-use crate::config::GlobalConfig;
 use crate::design::ProgressSink;
 use crate::diagnostics::{Error, Result};
 use crate::metadata::ProjectMetadata;
@@ -31,7 +30,6 @@ type Blocking = Vec<Error>;
 pub(crate) fn observe(
     host: &dyn HostEnvironment,
     paths: &ProjectPaths,
-    config: &GlobalConfig,
     metadata: &ProjectMetadata,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
@@ -85,7 +83,6 @@ pub(crate) fn observe(
             observe_sandbox(
                 host,
                 entry,
-                config,
                 metadata,
                 &origin,
                 &layout,
@@ -184,7 +181,6 @@ fn generation_artifacts(
 fn observe_sandbox(
     host: &dyn HostEnvironment,
     entry: &SandboxEntry,
-    config: &GlobalConfig,
     metadata: &ProjectMetadata,
     origin: &repository::SandboxOrigin,
     layout: &SandboxLayout,
@@ -211,7 +207,7 @@ fn observe_sandbox(
             observation.token_env = Observed::NotApplicable;
         }
     }
-    match declared_files(host, sandbox, metadata, config, progress) {
+    match declared_files(host, sandbox, metadata, progress) {
         Ok(files) => {
             // Sandboxの中で書き換えられたfileも置かれてはいる。欠けているのは、まだ
             // 置かれていないfileだけである。

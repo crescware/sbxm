@@ -1,9 +1,7 @@
 use crate::boundary::host::HostEnvironment;
-use crate::config::GlobalConfig;
-use crate::design::{Fact, ProgressSink};
-use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
+use crate::design::ProgressSink;
+use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
-use crate::msg;
 use crate::support::files::{self, PlacedFile};
 
 /// 宣言fileの現在状態を、復旧すべきbaselineと照らして観測する。
@@ -16,14 +14,12 @@ use crate::support::files::{self, PlacedFile};
 /// られたものとして報告する。利用者が編集した設定fileは壊れた成果物ではない。intentの
 /// snapshotはこれから置く内容であり、異なるfileはどこから来たか分からないため拒否する。
 ///
-/// baselineが無い案件（この機能より前に完成した案件）は、現在の宣言と実際に一致する
-/// 場合だけ健全とみなす。一致しない場合、それが本当に壊れているのか、後から宣言が
-/// 増えただけなのかをこの観測だけでは一意に決められないため拒否する。
+/// intentもbaselineも無い案件には、sbxmが置いたと記録した宣言fileが無い。空のbaseline
+/// として扱い、何も観測しない。
 pub(crate) fn declared_files(
     host: &dyn HostEnvironment,
     sandbox: &str,
     metadata: &ProjectMetadata,
-    config: &GlobalConfig,
     progress: &mut dyn ProgressSink,
 ) -> Result<Vec<PlacedFile>> {
     if let Some(intent) = &metadata.initial_provisioning {
@@ -35,37 +31,11 @@ pub(crate) fn declared_files(
             progress,
         );
     }
-    if let Some(baseline) = &metadata.declared_files {
-        return files::observe_against_baseline(
-            host,
-            sandbox,
-            baseline,
-            files::Divergence::Modified,
-            progress,
-        );
-    }
-    let observed = files::observe(host, sandbox, &config.files, progress)?;
-    if observed
-        .iter()
-        .any(|file| file.placement != files::Placement::Unchanged)
-    {
-        return Err(baseline_ambiguous(metadata));
-    }
-    Ok(observed)
-}
-
-fn baseline_ambiguous(metadata: &ProjectMetadata) -> Error {
-    Error::single(
-        Diagnostic::new(
-            ErrorId::InitialProvisioningBaselineAmbiguous,
-            msg!(
-                "error-initial-provisioning-baseline-ambiguous",
-                project = metadata.display_id()
-            ),
-        )
-        .fact(Fact::reason(msg!(
-            "cause-initial-provisioning-baseline-ambiguous"
-        )))
-        .remediation(msg!("remediation-initial-provisioning-baseline-ambiguous")),
+    files::observe_against_baseline(
+        host,
+        sandbox,
+        metadata.declared_files.as_deref().unwrap_or_default(),
+        files::Divergence::Modified,
+        progress,
     )
 }

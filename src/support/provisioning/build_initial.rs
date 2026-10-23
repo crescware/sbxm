@@ -71,7 +71,6 @@ pub(crate) fn build_initial(
     let completed = observe(
         host,
         &locked.paths,
-        config,
         &locked.metadata,
         workspace_root,
         progress,

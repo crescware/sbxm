@@ -250,7 +250,6 @@ fn a_host_repository_records_the_token_it_does_not_need_as_not_applicable() -> C
     let observation = crate::testing::provisioning::observe(
         &world,
         &candidate.paths,
-        &bench.config,
         &metadata,
         bench.workspace_root.path(),
     )

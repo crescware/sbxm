@@ -42,7 +42,6 @@ fn a_dockerfile_edited_after_the_image_exists_finishes_on_the_generation_it_star
     let mark = world.mark();
     let prepared = repair_prepare(
         &bench.location,
-        &bench.config,
         Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),

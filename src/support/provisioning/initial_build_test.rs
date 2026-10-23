@@ -1,4 +1,3 @@
-use crate::metadata::{self};
 use crate::paths::ProjectPaths;
 
 use crate::testing::outcome::{Checked, Refused, Required};
@@ -413,80 +412,6 @@ fn a_declaration_added_after_completion_is_not_placed_by_a_later_prepare() -> Ch
 }
 
 #[test]
-fn a_legacy_project_without_a_recorded_baseline_is_ambiguous_when_a_declaration_is_missing()
--> Checked {
-    // baselineを記録する前に完成した案件（この機能より前のversionが作った案件）で、
-    // 宣言fileがsandboxに無い場合、それが構築の途中で欠けたのか、完成後に追加された
-    // 宣言なのかをこの観測だけでは一意に決められない。intentを作って推測で復旧する
-    // のではなく、拒否する。
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-    bench
-        .build(&world, &request)
-        .required_because("the project completes")?;
-
-    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    let mut stored = bench.stored("Example-Org/Example-Repo")?;
-    stored.declared_files = None;
-    metadata::update(&paths, &stored).required_because("simulate a pre-existing installation")?;
-
-    let extra_home = tempfile::tempdir().required_because("temporary home for the extra file")?;
-    let mut config = bench.config.clone();
-    let extra_source = extra_home.path().join("extra.yaml");
-    fs::write(&extra_source, b"extra = true\n").required_because("write the new file")?;
-    config.files.push(crate::config::FileDeclaration {
-        source: crate::config::HostFileSource::new(&crate::paths::display(&extra_source))
-            .required_because("valid source")?,
-        destination: crate::config::SandboxHomeRelativePath::new(".config/example/extra.yaml")
-            .required_because("valid destination")?,
-    });
-
-    let error = bench
-        .ensure_with(&world, &project_of(&request)?, &config, &mut SilentProgress)
-        .refused_because(
-            "a legacy project cannot tell broken from newly-declared without a baseline",
-        )?;
-    assert_eq!(
-        error.first_id(),
-        Some(ErrorId::InitialProvisioningBaselineAmbiguous)
-    );
-    assert!(
-        bench
-            .stored("Example-Org/Example-Repo")?
-            .initial_provisioning
-            .is_none(),
-        "no intent is guessed into existence for an ambiguous legacy project"
-    );
-    Ok(())
-}
-
-#[test]
-fn a_legacy_project_without_a_recorded_baseline_stays_ready_when_nothing_changed() -> Checked {
-    // baselineが無くても、現在の宣言がsandboxの中身とそのまま一致するなら健全とみなす。
-    // この機能の追加が、既存installationの正常な案件を壊さないことを確かめる。
-    let bench = Bench::new()?;
-    let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-    bench
-        .build(&world, &request)
-        .required_because("the project completes")?;
-
-    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    let mut stored = bench.stored("Example-Org/Example-Repo")?;
-    stored.declared_files = None;
-    metadata::update(&paths, &stored).required_because("simulate a pre-existing installation")?;
-
-    let output = bench
-        .ensure(&world, &project_of(&request)?, &mut SilentProgress)
-        .required_because(
-            "an unchanged legacy project remains ready without a recorded baseline",
-        )?;
-    assert!(output.already_built);
-    Ok(())
-}
-
-#[test]
 fn a_credential_helper_no_longer_matching_the_registration_is_not_treated_as_ready() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
@@ -672,7 +597,6 @@ fn a_template_reused_by_name_alone_is_refused_when_its_runtime_id_differs() -> C
     let project = project_of(&request)?;
     let prepared = crate::testing::repair::prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -716,7 +640,6 @@ fn a_template_with_a_matching_runtime_id_is_reused() -> Checked {
     let mark = world.mark();
     let prepared = crate::testing::repair::prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -769,7 +692,6 @@ fn a_template_left_behind_by_a_dropped_sandbox_is_reused_to_rebuild_it() -> Chec
     let mark = world.mark();
     let prepared = crate::testing::repair::prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -883,7 +805,6 @@ fn a_workspace_that_had_to_be_created_again_is_told_rather_than_hidden() -> Chec
     let project = project_of(&request)?;
     let prepared = crate::testing::repair::prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),

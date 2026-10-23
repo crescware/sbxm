@@ -269,8 +269,8 @@ fn parse_initial_provisioning(
     }))
 }
 
-/// 初回構築が完成した時点のbaselineを読む。この記録が無い案件は、この機能より前に
-/// 完成した案件として扱う。
+/// 初回構築が完成した時点のbaselineを読む。この記録が無い案件は、まだ構築を完成させて
+/// いない。
 fn parse_declared_files(
     raw: Option<Vec<RawInitialProvisioningFile>>,
     path: &Path,

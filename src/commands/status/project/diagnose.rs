@@ -90,7 +90,7 @@ pub fn diagnose(
     // 持つと、案内したcommandが実行時に「不要」と答え得る。観測そのものが成立しない
     // 場合は、実行できると証明できないcommandを出さない。
     progress.step(msg!("progress-status-next"));
-    status.next = provisioning::observe(host, &paths, config, &metadata, workspace_root, progress)
+    status.next = provisioning::observe(host, &paths, &metadata, workspace_root, progress)
         .ok()
         .and_then(|observation| NextAction::decide(&metadata, &observation));
 
