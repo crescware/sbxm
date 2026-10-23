@@ -21,6 +21,9 @@ pub mod guide;
 mod inspection_progress_test;
 pub mod ls;
 pub mod open;
+#[cfg(test)]
+#[path = "open_requirements_test.rs"]
+mod open_requirements_test;
 mod present;
 #[cfg(test)]
 #[path = "print_test.rs"]
