@@ -120,3 +120,65 @@ fn a_recorded_refusal_stops_a_mutation_before_it_starts() -> Checked {
     assert!(error.contains_id(ErrorId::SandboxWorkspaceNotEmpty));
     Ok(())
 }
+
+/// 観測の1項目を欠けさせる手順と、その名前。
+type Gap = (&'static str, fn(&mut Observation));
+
+/// GitHub tokenの登録が無く、それを使う2つも読まずに欠けとした案件。ほかは揃っている。
+fn without_the_github_token() -> Observation {
+    let mut observation = complete();
+    observation.secret = Observed::Missing;
+    observation.credential_helper = Observed::Missing;
+    observation.token_env = Observed::Missing;
+    observation
+}
+
+#[test]
+fn a_project_missing_only_the_github_token_lacks_only_the_token() {
+    let observation = without_the_github_token();
+    assert!(observation.lacks_only_the_github_token());
+    // 分類は変えない。欠けは欠けとして残り、statusが登録を案内する。
+    assert_eq!(observation.classify(false), ProvisioningState::Incomplete);
+}
+
+#[test]
+fn another_gap_beside_the_missing_token_is_more_than_the_token() {
+    let gaps: [Gap; 9] = [
+        ("sandbox", |o| o.sandbox = Observed::Missing),
+        ("workspace", |o| o.workspace = Observed::Missing),
+        ("declared file", |o| o.files_placed = Observed::Missing),
+        ("identity", |o| o.identity = Observed::Missing),
+        ("tools", |o| o.tools = Observed::Missing),
+        ("SSH agent", |o| o.credentials = Observed::Missing),
+        ("repository", |o| o.repository = Observed::Missing),
+        ("worktree", |o| o.worktrees_present = Observed::Missing),
+        // 読めなかったものは、揃っているとは言えない。
+        ("unread worktree", |o| o.worktrees_present = not_observed()),
+    ];
+    for (gap, open) in gaps {
+        let mut observation = without_the_github_token();
+        open(&mut observation);
+        assert!(
+            !observation.lacks_only_the_github_token(),
+            "a missing {gap} is more than the token"
+        );
+    }
+}
+
+#[test]
+fn a_registered_token_whose_settings_are_missing_is_not_a_missing_token() {
+    // 登録はあり、Sandboxへ持たせる設定だけが無い。`open`が補える欠けである。
+    let mut observation = complete();
+    observation.credential_helper = Observed::Missing;
+    observation.token_env = Observed::Missing;
+    assert!(!observation.lacks_only_the_github_token());
+}
+
+#[test]
+fn a_project_that_uses_no_token_never_lacks_it() {
+    let mut observation = complete();
+    observation.secret = Observed::NotApplicable;
+    observation.credential_helper = Observed::NotApplicable;
+    observation.token_env = Observed::NotApplicable;
+    assert!(!observation.lacks_only_the_github_token());
+}

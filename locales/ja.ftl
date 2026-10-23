@@ -49,6 +49,7 @@ cli-open-about = 案件のSandboxへのSSH接続を開き、初回は構築し�
 cli-open-project-help = SSH接続する案件のowner/repository形式の登録ID
 cli-open-index-help = repository rootではなくN番目のmanaged worktreeを起点にします（0始まり）
 warning-open-worktree-not-found = managed worktree { $index } が見つからないため、repository rootを開きます。
+warning-open-github-token-missing = GitHub tokenを登録するまで、{ $sandbox } の中でのfetchとpushは認証で失敗します。接続はこのまま続けます。
 
 select-guide-topic-heading = 何について案内しますか？
 select-guide-project-heading = どの案件について案内しますか？

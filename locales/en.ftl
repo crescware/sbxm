@@ -49,6 +49,7 @@ cli-open-about = Open an SSH session to a project's sandbox, building it on the 
 cli-open-project-help = Registered owner/repository ID of the project to open
 cli-open-index-help = Start in the Nth managed worktree instead of the repository root (zero-based)
 warning-open-worktree-not-found = Managed worktree { $index } was not found; opening the repository root instead.
+warning-open-github-token-missing = Fetch and push inside { $sandbox } will fail to authenticate with GitHub until its token is registered. The connection continues.
 
 select-guide-topic-heading = What do you need guidance for?
 select-guide-project-heading = Which project is this guidance for?

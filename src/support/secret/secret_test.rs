@@ -916,3 +916,33 @@ fn a_partial_token_env_read_never_reaches_the_diagnosis() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn a_lookup_tells_no_registration_from_several() -> Checked {
+    // 1件も無ければ、登録すれば埋まる。複数あれば、どれを使うかを利用者が決める。
+    let one = lookup_github(
+        &FakeSbx::listing(&scoped("sbxm-example", "sbx-cs-one")),
+        "sbxm-example",
+    )
+    .required_because("the listing is read")?;
+    assert!(matches!(one, GithubLookup::Registered(_)), "{one:?}");
+
+    let unregistered = lookup_github(&FakeSbx::listing(&none()), "sbxm-example")
+        .required_because("the listing is read")?;
+    assert!(
+        matches!(unregistered, GithubLookup::Unregistered(_)),
+        "{unregistered:?}"
+    );
+
+    let several = lookup_github(
+        &FakeSbx::listing(&format!(
+            r#"{{"custom_secrets":[{{"scope":"sbxm-example","targets":["{}"],"env":"GH_TOKEN","placeholder":"sbx-cs-one"}},{{"scope":"sbxm-example","targets":["{}"],"env":"OTHER","placeholder":"sbx-cs-two"}}]}}"#,
+            GITHUB_HOSTS.join("\",\""),
+            GITHUB_HOSTS.join("\",\"")
+        )),
+        "sbxm-example",
+    )
+    .required_because("the listing is read")?;
+    assert!(matches!(several, GithubLookup::Ambiguous(_)), "{several:?}");
+    Ok(())
+}

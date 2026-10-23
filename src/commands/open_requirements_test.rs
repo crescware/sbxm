@@ -7,12 +7,17 @@
 //!    次の`open`が続きを済ませて接続する。
 //! 2. `status`が`open`を案内した欠けは、`open`の1回の実行で直る。
 //! 3. Sandboxの中で利用者が変えた設定を、`open`は戻さず、それを理由に止まらない。
+//! 4. 初回構築を終えた案件で、GitHub tokenの登録が1件も無く、それ以外の準備が揃って
+//!    いるなら、`open`は接続の前に、fetchとpushが認証で失敗することと登録するcommandを
+//!    示して接続する。`status`はこの状態へ`open`を案内しない。
 
 use crate::boundary::host::HostEnvironment;
 use crate::design::SilentProgress;
+use crate::diagnostics::ErrorId;
 use crate::diagnostics::{Error, Result};
 use crate::project::{ProjectId, SandboxLayout};
 use crate::support::provisioning::NextAction;
+use crate::support::secret::{GITHUB_HOSTS, register_command};
 
 use crate::testing::add_request::request;
 use crate::testing::host::FailingAt;
@@ -264,5 +269,150 @@ fn settings_changed_inside_the_sandbox_neither_stop_open_nor_are_reset() -> Chec
             "the changed {setting} is not reported as something to fix"
         );
     }
+    Ok(())
+}
+
+/// `open`が接続の前に示す、tokenの登録が無いことの警告。
+const TOKEN_WARNING: &str = "warning-open-github-token-missing";
+
+/// 登録を解いた状態。Sandboxは残っているが、提示するtokenが無い。
+fn unregister(world: &World) {
+    world.secrets.borrow_mut().clear();
+}
+
+/// 登録し直した状態。
+fn register(world: &World) {
+    for host in GITHUB_HOSTS {
+        world.secrets.borrow_mut().push((*host).to_string());
+    }
+}
+
+/// この案件のtokenを登録するcommand。
+fn registration(bench: &Bench) -> Checked<String> {
+    Ok(register_command(
+        bench.stored(PROJECT)?.sandbox_name().as_str(),
+        None,
+    ))
+}
+
+#[test]
+fn a_missing_token_registration_alone_does_not_stop_open() -> Checked {
+    // 要件4。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = built(&bench, &world)?;
+    unregister(&world);
+    let settings = world.settings.borrow().clone();
+
+    assert_eq!(
+        diagnose(&bench, &world, &project)?.next,
+        None,
+        "open cannot register the token, so status does not send this state to open"
+    );
+
+    let mark = world.mark();
+    let prepared = open(&bench, &world, &project)
+        .required_because("a missing registration alone does not stop open")?;
+
+    let warning = prepared
+        .warnings
+        .iter()
+        .find(|warning| warning.description.id == TOKEN_WARNING)
+        .required_because("the missing registration is shown before connecting")?;
+    assert_eq!(
+        warning
+            .commands
+            .iter()
+            .map(crate::design::text::CommandLine::as_str)
+            .collect::<Vec<_>>(),
+        vec![registration(&bench)?],
+        "the warning names the command that registers the token"
+    );
+    // 補えるものは無い。補う工程へ進まず、Sandboxの中の設定も書き換えない。
+    assert!(prepared.provisioned.is_none());
+    assert_eq!(*world.settings.borrow(), settings);
+    assert!(
+        !world
+            .since(mark)
+            .iter()
+            .any(|call| call.contains("ls-remote")),
+        "{:?}",
+        world.since(mark)
+    );
+
+    // 登録し直せば、次の`open`は警告せずに接続し、何も残らない。
+    register(&world);
+    let prepared = open(&bench, &world, &project)
+        .required_because("the registered token is presented again")?;
+    assert!(
+        !prepared
+            .warnings
+            .iter()
+            .any(|warning| warning.description.id == TOKEN_WARNING)
+    );
+    assert_eq!(diagnose(&bench, &world, &project)?.next, None);
+    Ok(())
+}
+
+#[test]
+fn a_missing_token_registration_with_a_missing_worktree_still_stops_open() -> Checked {
+    // 要件4が扱わない場合。登録が無いうえに、`open`が補うmanaged worktreeも欠けている。
+    // worktreeを作り直す工程は、起点のbranchのfetchにtokenを要ることがある。登録が
+    // 無いことを理由に止まり、登録するcommandを示す。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = built(&bench, &world)?;
+    let layout = SandboxLayout::new(bench.stored(PROJECT)?.canonical_id());
+    let worktree = layout.worktree(0);
+    world.present.borrow_mut().remove(&worktree);
+    world.worktrees.borrow_mut().remove(&worktree);
+    unregister(&world);
+
+    assert_eq!(diagnose(&bench, &world, &project)?.next, None);
+    let error = open(&bench, &world, &project)
+        .err()
+        .required_because("the worktree cannot be recreated without the token")?;
+    assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+    assert!(
+        suggested_commands(&error).contains(&registration(&bench)?),
+        "{:?}",
+        suggested_commands(&error)
+    );
+
+    register(&world);
+    open(&bench, &world, &project).required_because("the registration lets open finish")?;
+    assert_eq!(diagnose(&bench, &world, &project)?.next, None);
+    Ok(())
+}
+
+#[test]
+fn several_token_registrations_still_stop_open() -> Checked {
+    // 要件4が扱わない場合。登録が複数あり、どれを使うか決まらない。登録すれば埋まる
+    // 欠けではなく、どれを残すかを利用者が決める必要がある。今までどおり止まり、その
+    // 理由と、余分な登録を消すcommandを示す。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = built(&bench, &world)?;
+    let hosts = GITHUB_HOSTS.join("\",\"");
+    world.answering(
+        "secret ls --json",
+        0,
+        &format!(
+            r#"{{"custom_secrets":[{{"scope":"(global)","targets":["{hosts}"],"env":"GH_TOKEN","placeholder":"sbx-cs-example"}},{{"scope":"(global)","targets":["{hosts}"],"env":"GH_TOKEN","placeholder":"sbx-cs-other"}}]}}"#
+        ),
+    );
+
+    assert_eq!(diagnose(&bench, &world, &project)?.next, None);
+    let error = open(&bench, &world, &project)
+        .err()
+        .required_because("which registration to present cannot be decided")?;
+    assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+    assert!(
+        suggested_commands(&error)
+            .iter()
+            .any(|command| command.starts_with("sbx secret rm")),
+        "{:?}",
+        suggested_commands(&error)
+    );
     Ok(())
 }

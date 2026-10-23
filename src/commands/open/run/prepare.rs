@@ -175,7 +175,14 @@ fn prepare_runtime(
     // 不足工程をこのopenで補う。`status`はこの状態にも`sbxm open`を案内するため、
     // ここで直せない欠落を残さない。
     let (provisioned, inside) = if provisioned.is_none() {
-        complete_missing_interior(locked, host, &entries, workspace_root, progress)?
+        complete_missing_interior(
+            locked,
+            host,
+            &entries,
+            workspace_root,
+            &mut warnings,
+            progress,
+        )?
     } else {
         (provisioned, None)
     };
@@ -204,11 +211,24 @@ fn start(
 ///
 /// 補ったかどうかと一緒に、Sandboxの中をまとめて読んだ最後の結果を返す。接続直前の
 /// 確認はその結果で行い、同じことをもう一度読まない。
+///
+/// 欠けているのが、GitHub tokenの登録だけなら、補わずに接続へ進む。登録が1件も無い
+/// 場合に限る。登録が複数あって1件に決まらない場合は、どれを使うかを利用者が決める
+/// 必要があり、今までどおり補う工程でその理由を示して止まる。登録はsbxmがtokenの
+/// 値を扱わないために残した利用者の手順であり、`open`が代わりに済ませられない。tokenは
+/// Sandboxの中でfetchやpushをするときに要り、SSHでつなぐには要らない。fetchとpushが
+/// 認証で失敗することと、登録するcommandを、`warnings`へ足して接続の前に示す。
+///
+/// 登録が無いうえに、このopenが補う準備（宣言file、Git identity、ghのgit protocol、
+/// bare repository、managed worktree）のどれかも欠けていれば、今までどおり補う工程へ
+/// 進み、その最初で登録が無いことを理由に止まる。managed worktreeを作り直すには起点の
+/// branchのfetchが要ることがあり、そのfetchにはtokenが要る。
 fn complete_missing_interior(
     locked: &mut crate::support::select::Locked,
     host: &dyn HostEnvironment,
     entries: &[SandboxEntry],
     workspace_root: &Path,
+    warnings: &mut Vec<Warning>,
     progress: &mut dyn ProgressSink,
 ) -> Result<(
     Option<provisioning::ProvisioningOutput>,
@@ -224,6 +244,15 @@ fn complete_missing_interior(
     )?;
     observation.require_safe()?;
     if observation.state != provisioning::ProvisioningState::Incomplete {
+        return Ok((None, observation.inside().cloned()));
+    }
+    if observation.lacks_only_the_github_token()
+        && let Some(unregistered) = observation.unregistered_secret()
+    {
+        warnings.push(github_token_warning(
+            locked.metadata.sandbox_name().as_str(),
+            unregistered,
+        ));
         return Ok((None, observation.inside().cloned()));
     }
     let exclusive = locked.acquire_exclusive_session_lease()?;
@@ -253,6 +282,29 @@ fn complete_missing_interior(
         ));
     }
     Ok((Some(output), completed.inside().cloned()))
+}
+
+/// GitHub tokenの登録が無いまま接続することを、接続の前に示す警告。
+///
+/// どのhostを覆う登録が無いかと、登録するcommandは、登録を確かめた診断がそのまま
+/// 持つ。ここでは、接続を続けることと、それで何が起きるかを足す。
+fn github_token_warning(sandbox: &str, unregistered: &Error) -> Warning {
+    let mut warning = Warning::text(msg!("warning-open-github-token-missing", sandbox = sandbox));
+    for diagnostic in unregistered.diagnostics() {
+        warning = warning.fact(Fact::reason(diagnostic.description.clone()));
+        for fact in &diagnostic.facts {
+            warning = warning.fact(fact.clone());
+        }
+        if let Some(remediation) = &diagnostic.remediation {
+            for explanation in &remediation.explanation {
+                warning = warning.explain(explanation.clone());
+            }
+            for command in &remediation.commands {
+                warning = warning.run(command.clone());
+            }
+        }
+    }
+    warning
 }
 
 /// 観測がSandboxの中を読まなかった経路で、接続直前に読むcommand。

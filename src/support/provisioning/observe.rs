@@ -318,8 +318,8 @@ fn observe_github_credential(
 ) {
     // 登録が読めなければ、helperが正しい値を持つかどうかも判定できない。推測せず、
     // どちらも足りないものとして扱う。
-    match secret::require_github(host, sandbox) {
-        Ok(registration) => {
+    match secret::lookup_github(host, sandbox) {
+        Ok(secret::GithubLookup::Registered(registration)) => {
             observation.secret = Observed::Matching;
             observation.credential_helper =
                 match secret::observe_git_credential(inside, registration.placeholder()) {
@@ -332,7 +332,18 @@ fn observe_github_credential(
                     Err(error) => blocked(blocking, error),
                 };
         }
-        Err(error) if error.contains_id(crate::diagnostics::ErrorId::GithubSecretMissing) => {
+        // 登録が1件も無い。危ない事実ではなく、利用者が登録すれば埋まる欠けである。
+        // 登録するcommandを示す診断は、観測と一緒に持ち帰る。
+        Ok(secret::GithubLookup::Unregistered(error)) => {
+            observation.secret = Observed::Missing;
+            observation.credential_helper = Observed::Missing;
+            observation.token_env = Observed::Missing;
+            observation.record_unregistered_secret(error);
+        }
+        // 登録が複数あり、どれを使うか決まらない。欠けとして記録するのは今までどおり
+        // だが、登録すれば埋まる欠けではないため、診断は持ち帰らない。`open`は補う工程で
+        // この理由を示して止まる。
+        Ok(secret::GithubLookup::Ambiguous(_)) => {
             observation.secret = Observed::Missing;
             observation.credential_helper = Observed::Missing;
             observation.token_env = Observed::Missing;
