@@ -332,10 +332,13 @@ fn observe_github_credential(
                     Err(error) => blocked(blocking, error),
                 };
         }
+        // 登録が無い、または1件に決まらない。危ない事実ではなく、利用者が登録すれば
+        // 埋まる欠けである。示すべき診断は、観測と一緒に持ち帰る。
         Err(error) if error.contains_id(crate::diagnostics::ErrorId::GithubSecretMissing) => {
             observation.secret = Observed::Missing;
             observation.credential_helper = Observed::Missing;
             observation.token_env = Observed::Missing;
+            observation.record_missing_secret(error);
         }
         Err(error) => {
             observation.secret = blocked(blocking, error);

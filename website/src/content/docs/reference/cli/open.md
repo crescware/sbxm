@@ -19,4 +19,6 @@ Starting a stopped sandbox requires the [neutral workspace directory](../../file
 
 The Docker Sandboxes Remote SSH integration must be configured on the host.
 
+For a GitHub project whose sandbox is already built, a missing GitHub token registration does not stop `open` when nothing else is missing. The token is needed to fetch and push inside the sandbox, not to connect. Before connecting, `open` warns that fetch and push will fail to authenticate until the token is registered, and shows the `sbx secret set-custom` command that registers it. The next `open` after registering hands the token's placeholder to Git inside the sandbox. When other preparation is missing as well, `open` stops and asks for the registration first, because that preparation can need a fetch.
+
 For a project added with `--local`, the sandbox's commits are saved into the host repository every 10 minutes while the session is connected and again after it closes; see [Develop without GitHub](../../../guides/local-repository/#automatic-save).

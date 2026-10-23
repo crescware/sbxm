@@ -31,9 +31,10 @@ impl NextAction {
         if observation.require_safe().is_err() {
             return None;
         }
-        // custom secretがSandboxへ適用されていない場合、repairはplaceholder検査で必ず
-        // 拒否される。実際の復旧手段はsecret診断が示すSandbox削除であり、ここから
-        // 成功しないrepairを重ねて案内しない。
+        // GitHub tokenの登録が無い欠けは、sbxmが代わりに埋められない。`open`は、欠けが
+        // 登録だけなら警告して接続し、ほかにも欠けがあれば登録が無いことを理由に止まる。
+        // どちらも`open`の1回では解消しないため、ここから案内しない。登録するcommandは
+        // secretの診断が示す。
         if observation.sandbox.is_matching() && observation.secret.is_missing() {
             return None;
         }

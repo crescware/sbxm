@@ -1042,3 +1042,33 @@ fn resuming_an_interrupted_build_stops_at_any_step_that_does_not_answer() -> Che
         Ok(project)
     })
 }
+
+#[test]
+fn a_missing_token_registration_is_shown_before_the_terminal_is_handed_over() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = built(&bench, &world, None)?;
+    world.secrets.borrow_mut().clear();
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = exec(&bench, &world, project, &mut stdout, &mut stderr);
+    let stderr = String::from_utf8(stderr).required_because("open stderr is UTF-8")?;
+
+    assert_eq!(code, ExitCode::Success, "{stderr}");
+    let warned = stderr
+        .find("will fail to authenticate")
+        .required_because("fetch and push are said to fail")?;
+    let registration = stderr
+        .find("sbx secret set-custom")
+        .required_because("the registration command is shown")?;
+    let connecting = stderr
+        .find("Connecting to")
+        .required_because("open goes on to connect")?;
+    assert!(
+        warned < registration && registration < connecting,
+        "{stderr}"
+    );
+    assert!(world.ran("ssh -t"), "{:?}", world.invocations());
+    Ok(())
+}

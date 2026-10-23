@@ -41,6 +41,11 @@ pub struct Observation {
     blocking: Vec<Error>,
     /// Sandboxの中をまとめて読んだ結果。中を読まなかった観測では`None`である。
     inside: Option<Recorded>,
+    /// GitHub tokenの登録が無い、または1件に決まらないことを示した診断。
+    ///
+    /// 登録はsbxmが代わりに済ませられない利用者の手順であり、拒否理由ではなく欠けとして
+    /// 記録する。`open`は、欠けがこれだけなら、この診断を警告として示して接続する。
+    missing_secret: Option<Error>,
 }
 
 impl Observation {
@@ -77,6 +82,7 @@ impl Observation {
             worktrees: Vec::new(),
             blocking: Vec::new(),
             inside: None,
+            missing_secret: None,
         }
     }
 
@@ -88,6 +94,40 @@ impl Observation {
     /// Sandboxの中をまとめて読んだ結果。`open`は接続直前の確認にこれを使う。
     pub(crate) fn inside(&self) -> Option<&Recorded> {
         self.inside.as_ref()
+    }
+
+    /// GitHub tokenの登録が無いと分かったときの診断を、観測と一緒に持つ。
+    pub(crate) fn record_missing_secret(&mut self, error: Error) {
+        self.missing_secret = Some(error);
+    }
+
+    /// GitHub tokenの登録が無い、または1件に決まらないことを示した診断。登録を確かめて
+    /// 見つからなかった場合だけ`Some`である。
+    pub(crate) fn missing_secret(&self) -> Option<&Error> {
+        self.missing_secret.as_ref()
+    }
+
+    /// 欠けているのが、GitHub tokenの登録と、それに依存する2つだけである。
+    ///
+    /// 依存する2つは、tokenのplaceholderを持たせるcredential helperとtoken環境変数file
+    /// である。登録が無ければ、観測はこの2つを読まずに欠けとして記録する。ほかの成果物は
+    /// どれも揃っている、または要らない。
+    ///
+    /// tokenはSandboxの中でfetchやpushをするときに要り、SSHでつなぐには要らない。
+    pub(crate) fn lacks_only_the_github_token(&self) -> bool {
+        self.secret.is_missing()
+            && [
+                &self.sandbox,
+                &self.workspace,
+                &self.files_placed,
+                &self.identity,
+                &self.tools,
+                &self.credentials,
+                &self.repository,
+                &self.worktrees_present,
+            ]
+            .into_iter()
+            .all(Observed::is_satisfied)
     }
 
     /// 観測の間に集めた「安全と確認できなかった事実」を記録する。
