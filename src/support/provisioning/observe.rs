@@ -315,7 +315,18 @@ fn observe_repository(
         Ok(true) => {
             match repository::verify_bare_clone(host, sandbox, origin, &git_dir, progress) {
                 Ok(()) => Observed::Matching,
-                Err(error) => blocked(blocking, error),
+                // 初期化の途中で止まったrepositoryは、壊れたのではなく、まだ出来ていない。
+                // 続きは`ensure_bare_clone`が同じ規則で補う。中断の跡と確かめられなければ、
+                // 元の拒否理由を残す。
+                Err(error) => match repository::observe_initialization(
+                    host, sandbox, origin, &git_dir, progress,
+                ) {
+                    Ok(
+                        repository::Initialization::OriginMissing
+                        | repository::Initialization::FetchRefspecMissing,
+                    ) => Observed::Missing,
+                    Ok(repository::Initialization::Settled) | Err(_) => blocked(blocking, error),
+                },
             }
         }
         Err(error) => blocked(blocking, error),
