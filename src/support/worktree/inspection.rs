@@ -1,17 +1,19 @@
-use crate::boundary::host::{CommandOutcome, HostEnvironment};
+use crate::boundary::host::CommandOutcome;
 use crate::design::ProgressSink;
 use crate::diagnostics::{Msg, Result};
 use crate::msg;
 
-use crate::support::sandbox;
+use crate::support::sandbox::Inside;
 
 /// 1つのworktreeの読み取りと、待ち時間の前に出す工程表示。
 ///
 /// status、構築・修復、破壊操作で同じcommandを使う。clean/dirtyの表示、削除の拒否条件、
 /// detached HEADの解釈などは呼び出し側が決め、ここでは観測結果だけを返す。
+///
+/// `open`の観測が読む`common_dir`と`head_outcome`のcommandは、`inspection_commands`が
+/// 同じ形で並べる。
 pub struct Inspection<'a> {
-    host: &'a dyn HostEnvironment,
-    sandbox: &'a str,
+    inside: &'a dyn Inside,
     path: &'a str,
     current: usize,
     total: usize,
@@ -20,16 +22,14 @@ pub struct Inspection<'a> {
 
 impl<'a> Inspection<'a> {
     pub fn new(
-        host: &'a dyn HostEnvironment,
-        sandbox: &'a str,
+        inside: &'a dyn Inside,
         path: &'a str,
         current: usize,
         total: usize,
         progress: &'a mut dyn ProgressSink,
     ) -> Self {
         Self {
-            host,
-            sandbox,
+            inside,
             path,
             current,
             total,
@@ -93,7 +93,7 @@ impl<'a> Inspection<'a> {
 
     pub fn operation_marker(&self, git_dir: &str, marker: &str) -> Result<CommandOutcome> {
         let path = format!("{git_dir}/{marker}");
-        sandbox::exec(self.host, self.sandbox, &["test", "-e", &path])
+        self.inside.exec(&["test", "-e", &path])
     }
 
     fn step(&mut self, message: Msg) {
@@ -109,6 +109,6 @@ impl<'a> Inspection<'a> {
     fn exec(&self, args: &[&str]) -> Result<CommandOutcome> {
         let mut command = vec!["git", "-C", self.path];
         command.extend_from_slice(args);
-        sandbox::exec(self.host, self.sandbox, &command)
+        self.inside.exec(&command)
     }
 }

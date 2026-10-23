@@ -265,29 +265,83 @@ fn a_git_identity_changed_inside_the_sandbox_is_kept_as_the_users_choice() -> Ch
 }
 
 #[test]
-fn a_credential_helper_that_cannot_be_read_in_time_is_recorded_as_unsafe() -> Checked {
-    let observation = reobserved(|world| world.timing_out("--get credential."), |_| {})?
-        .required_because("an unanswered probe does not end the observation")?;
+fn an_inside_check_that_does_not_answer_in_time_leaves_every_inside_item_unconfirmed() -> Checked {
+    // Sandboxの中は1回の起動でまとめて読む。その起動が答えなければ、どの項目も読めて
+    // いない。1つの項目の欠落として記録せず、全項目を同じ理由で未確認として残す。
+    for needle in [
+        "--get credential.",
+        "exec cat",
+        "example-repo.tree-0 rev-parse HEAD",
+    ] {
+        let observation = reobserved(|world| world.timing_out(needle), |_| {})?
+            .required_because("an unanswered check does not end the observation")?;
 
-    assert_eq!(observation.secret, Observed::Matching);
-    blocked_by(
-        &observation,
-        &observation.credential_helper,
-        ErrorId::ExternalCommandTimeout,
-    )
+        for observed in [
+            &observation.credentials,
+            &observation.secret,
+            &observation.credential_helper,
+            &observation.token_env,
+            &observation.files_placed,
+            &observation.identity,
+            &observation.tools,
+            &observation.repository,
+            &observation.worktrees_present,
+        ] {
+            blocked_by(&observation, observed, ErrorId::ExternalCommandTimeout)?;
+        }
+        assert_eq!(observation.sandbox, Observed::Matching, "{observation:?}");
+        assert!(observation.inside().is_none(), "{observation:?}");
+    }
+    Ok(())
 }
 
 #[test]
-fn a_token_env_file_that_cannot_be_read_in_time_is_recorded_as_unsafe() -> Checked {
-    let observation = reobserved(|world| world.timing_out("exec cat"), |_| {})?
-        .required_because("an unanswered probe does not end the observation")?;
+fn an_inside_check_whose_output_cannot_be_read_leaves_every_inside_item_unconfirmed() -> Checked {
+    let observation = reobserved(
+        |world| world.answering("# sbxm inside check", 0, "not what the check writes\n"),
+        |_| {},
+    )?
+    .required_because("an unreadable check does not end the observation")?;
 
-    assert_eq!(observation.credential_helper, Observed::Matching);
-    blocked_by(
-        &observation,
-        &observation.token_env,
-        ErrorId::ExternalCommandTimeout,
-    )
+    for observed in [&observation.credentials, &observation.worktrees_present] {
+        blocked_by(&observation, observed, ErrorId::ExternalOutputUnparseable)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn an_inside_check_that_could_not_run_leaves_every_inside_item_unconfirmed() -> Checked {
+    let observation = reobserved(
+        |world| world.answering("# sbxm inside check", 126, ""),
+        |_| {},
+    )?
+    .required_because("a check that did not run does not end the observation")?;
+
+    for observed in [&observation.credentials, &observation.worktrees_present] {
+        blocked_by(&observation, observed, ErrorId::SandboxCheckUnobservable)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn a_credential_helper_whose_read_fails_is_recorded_as_unsafe_on_its_own() -> Checked {
+    // 1つのcommandが実行できて失敗したことは、そのcommandの項目だけに残る。
+    let observation = reobserved(
+        |world| world.failing_with("--get credential.", "garbled\n"),
+        |_| {},
+    )?
+    .required_because("a failed read does not end the observation")?;
+
+    assert_eq!(observation.secret, Observed::Matching);
+    assert_eq!(observation.token_env, Observed::Matching);
+    assert_eq!(
+        observation.credential_helper,
+        Observed::Unobservable {
+            evidence: "garbled".to_string()
+        },
+        "{observation:?}"
+    );
+    Ok(())
 }
 
 #[test]
@@ -401,21 +455,6 @@ fn a_worktree_whose_presence_cannot_be_told_ends_only_the_worktree_scan() -> Che
         &observation,
         &observation.worktrees_present,
         ErrorId::SandboxCheckUnobservable,
-    )
-}
-
-#[test]
-fn a_worktree_head_that_cannot_be_read_in_time_is_recorded_as_unsafe() -> Checked {
-    let observation = reobserved(
-        |world| world.timing_out("example-repo.tree-0 rev-parse HEAD"),
-        |_| {},
-    )?
-    .required_because("an unanswered probe does not end the observation")?;
-
-    blocked_by(
-        &observation,
-        &observation.worktrees_present,
-        ErrorId::ExternalCommandTimeout,
     )
 }
 

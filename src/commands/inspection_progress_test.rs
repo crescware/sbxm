@@ -24,7 +24,18 @@ enum Entry {
 }
 
 #[test]
-fn open_repair_and_apply_flush_the_same_inspection_phases_before_waiting() -> Checked {
+fn open_repair_and_apply_flush_an_inspection_phase_before_waiting() -> Checked {
+    // openとrepairは、Sandboxの中を1回の起動でまとめて読む。待つのはその起動の前であり、
+    // そこで出す工程表示は1つである。
+    for entry in [Entry::Open, Entry::Repair] {
+        for (locale, expected) in [
+            (Locale::En, "Checking inside the sandbox"),
+            (Locale::Ja, "Sandboxの中をまとめて確認します"),
+        ] {
+            check_entry(entry, "sbxm inside check", expected, locale)?;
+        }
+    }
+    // applyは工程ごとに起動し、それぞれの前にその工程を示す。
     for (needle, en, ja) in [
         (
             "--is-bare-repository",
@@ -47,13 +58,11 @@ fn open_repair_and_apply_flush_the_same_inspection_phases_before_waiting() -> Ch
             "HEADとupstreamを確認します",
         ),
     ] {
-        for entry in [Entry::Open, Entry::Repair, Entry::Apply] {
-            for (locale, expected) in [(Locale::En, en), (Locale::Ja, ja)] {
-                check_entry(entry, needle, expected, locale)?;
-            }
+        for (locale, expected) in [(Locale::En, en), (Locale::Ja, ja)] {
+            check_entry(Entry::Apply, needle, expected, locale)?;
         }
     }
-    for entry in [Entry::Open, Entry::Repair, Entry::Apply, Entry::ApplyAll] {
+    for entry in [Entry::Apply, Entry::ApplyAll] {
         for (locale, expected) in [(Locale::En, "Checking file 1/1"), (Locale::Ja, "file 1/1")] {
             check_entry(entry, "sha256sum", expected, locale)?;
         }

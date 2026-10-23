@@ -5,7 +5,10 @@
 
 use std::fmt::Write as _;
 
+use crate::boundary::host::{CommandOutcome, CommandSpec};
+use crate::diagnostics::Result;
 use crate::support::tools;
+use crate::testing::inside::frame_inside_check;
 use crate::testing::value::COMMIT;
 
 use super::World;
@@ -29,15 +32,46 @@ impl World {
         };
         let inner = &args[position + 1..];
         let sandbox = args[position - 1];
+        self.start(sandbox);
+        self.inner(inner, sandbox)
+    }
 
-        // 実物と同じく、中で何かを動かせばSandboxは起動する。read-onlyのつもりの
-        // 検査でも状態が変わることを、fakeでも同じ性質として持つ。
+    /// まとめた確認を、中のcommandごとに1件ずつ答えて、実物と同じ形に並べる。
+    ///
+    /// commandごとに台本（直前の書き換え、答えない起動、差し替えた答え）を照らす。
+    /// 1つのcommandが答えなければ、まとめた確認そのものが答えない。
+    pub fn answer_inside_check(
+        &self,
+        spec: &CommandSpec,
+        sandbox: &str,
+        commands: &[Vec<String>],
+    ) -> Result<CommandOutcome> {
+        self.start(sandbox);
+        let mut answers = Vec::with_capacity(commands.len());
+        for command in commands {
+            let borrowed: Vec<&str> = command.iter().map(String::as_str).collect();
+            let invocation = format!("sbx exec {sandbox} -- {}", command.join(" "));
+            let answer = match self.scripted("sbx", &invocation)? {
+                Some(answer) => answer,
+                None => self.inner(&borrowed, sandbox),
+            };
+            answers.push(answer);
+        }
+        Ok(Self::outcome(spec, 0, &frame_inside_check(&answers)))
+    }
+
+    /// 実物と同じく、中で何かを動かせばSandboxは起動する。read-onlyのつもりの
+    /// 検査でも状態が変わることを、fakeでも同じ性質として持つ。
+    fn start(&self, sandbox: &str) {
         for row in self.sandboxes.borrow_mut().iter_mut() {
             if row.name == sandbox {
                 row.running = true;
             }
         }
+    }
 
+    /// Sandboxの中で走らせた1つのcommandへの答え。
+    fn inner(&self, inner: &[&str], sandbox: &str) -> (i32, String) {
         self.probe(inner, sandbox)
             .or_else(|| self.filesystem(inner))
             .or_else(|| self.settings_of(inner))

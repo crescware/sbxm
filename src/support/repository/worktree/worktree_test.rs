@@ -744,8 +744,9 @@ fn provision_worktree(
     expected_commit: &str,
 ) -> crate::diagnostics::Result<()> {
     let mut progress = SilentProgress;
+    let inside = crate::support::sandbox::Live::new(host, sandbox);
     let mut inspection =
-        crate::support::worktree::Inspection::new(host, sandbox, path, 1, 1, &mut progress);
+        crate::support::worktree::Inspection::new(&inside, path, 1, 1, &mut progress);
     super::provision_worktree(
         host,
         sandbox,

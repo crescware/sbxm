@@ -598,12 +598,19 @@ fn open_does_not_connect_under_a_session_lease_it_cannot_trust() -> Checked {
         refused(&bench, &world, &project)?,
         Some(ErrorId::ProjectFilePermissionTooOpen)
     );
-    assert!(
-        !world
+    // worktreeの一覧は観測がまとめて読む。信用できないleaseの下では、その観測の結果を
+    // 接続直前の確認に使うところまで進まず、Sandboxの中をもう一度読むこともない。
+    assert_eq!(
+        world
             .since(mark)
             .iter()
-            .any(|call| call.contains("worktree list"))
+            .filter(|call| call.contains("worktree list"))
+            .count(),
+        1,
+        "{:?}",
+        world.since(mark)
     );
+    assert!(!world.since(mark).iter().any(|call| call.contains("df -Pk")));
     Ok(())
 }
 
@@ -888,15 +895,14 @@ fn a_worktree_lost_again_after_the_restoration_stops_open() -> Checked {
 }
 
 #[test]
-fn a_host_agent_that_appears_after_the_observation_stops_the_handover() -> Checked {
+fn a_host_agent_that_appears_after_the_restoration_stops_the_handover() -> Checked {
+    // 補った後の確認が、SSHへ渡す前の最後の確認である。補う前の観測ではagentは届かず、
+    // 補った後の確認で届くようになっていれば、そこで止まる。
     let bench = Bench::new()?;
     let world = World::new();
-    let (_, project) = built(&bench, &world, None)?;
-    // 1回目は観測の中、2回目が接続の直前の確認である。
-    world.change_before("printenv SSH_AUTH_SOCK", |world| {
-        world.change_before("printenv SSH_AUTH_SOCK", |world| {
-            world.answering("ssh-add -L", 0, HOST_KEY);
-        });
+    let (_, project) = missing_a_worktree(&bench, &world)?;
+    world.change_before("worktree add", |world| {
+        world.answering("ssh-add -L", 0, HOST_KEY);
     });
 
     let mark = world.mark();
@@ -905,14 +911,47 @@ fn a_host_agent_that_appears_after_the_observation_stops_the_handover() -> Check
         refused(&bench, &world, &project)?,
         Some(ErrorId::SshAgentExposed)
     );
-    assert!(
-        !world
+    // 補う前に1回、補った後に1回、Sandboxの中をまとめて読む。接続直前にもう一度は読まない。
+    assert_eq!(
+        world
             .since(mark)
             .iter()
-            .any(|call| call.contains("worktree list"))
+            .filter(|call| call.contains(INSIDE_CHECK_MARK))
+            .count(),
+        2,
+        "{:?}",
+        world.since(mark)
     );
+    assert!(!world.since(mark).iter().any(|call| call.contains("df -Pk")));
     Ok(())
 }
+
+#[test]
+fn the_observation_that_found_nothing_missing_is_the_last_check_before_the_handover() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = built(&bench, &world, None)?;
+
+    let mark = world.mark();
+    open(&bench, &world, &project, None).required_because("a built project opens")?;
+
+    // 何も補わなかったので、Sandboxの中をまとめて読むのは観測の1回だけである。SSH agentの
+    // 隔離もworktreeの一覧も、その1回の中で読み、接続直前に1件ずつ読み直さない。空き容量
+    // だけは、その後に1回読む。
+    let inside: Vec<String> = world
+        .since(mark)
+        .into_iter()
+        .filter(|call| call.starts_with("sbx exec"))
+        .collect();
+    assert_eq!(inside.len(), 2, "{inside:?}");
+    assert!(inside[0].contains(INSIDE_CHECK_MARK), "{inside:?}");
+    assert!(inside[0].contains("ssh-add -L") && inside[0].contains("worktree list"));
+    assert!(inside[1].ends_with("df -Pk /"), "{inside:?}");
+    Ok(())
+}
+
+/// まとめた確認の起動を見分ける目印。手順の1行目である。
+const INSIDE_CHECK_MARK: &str = "# sbxm inside check";
 
 #[test]
 fn open_stops_when_the_worktrees_cannot_be_listed() -> Checked {

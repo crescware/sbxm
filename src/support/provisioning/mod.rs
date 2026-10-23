@@ -10,6 +10,7 @@ mod ensure_initial;
 mod external_preconditions;
 mod initial_intent;
 mod initial_route;
+mod inside_plan;
 mod next_action;
 mod observation;
 mod observe;

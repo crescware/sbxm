@@ -1,20 +1,17 @@
-use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 
-use crate::support::sandbox;
+use crate::support::sandbox::Inside;
 
-use super::GITHUB_HOST;
+use super::git_protocol_command;
 
 /// `gh`の`GitHub` `protocol`設定が設定済みかを、変更せずに観測する。
 ///
 /// HTTPS以外の値も、設定済みとして答える。Sandboxの中で利用者が選んだ値であり、
 /// 欠けているものではない。
-pub fn observe_git_protocol(host: &dyn HostEnvironment, sandbox: &str) -> Result<bool> {
-    let outcome = sandbox::exec(
-        host,
-        sandbox,
-        &["gh", "config", "get", "git_protocol", "--host", GITHUB_HOST],
-    )?;
+pub fn observe_git_protocol(inside: &dyn Inside) -> Result<bool> {
+    let command = git_protocol_command();
+    let borrowed: Vec<&str> = command.iter().map(String::as_str).collect();
+    let outcome = inside.exec(&borrowed)?;
     if !outcome.success() {
         return Ok(false);
     }

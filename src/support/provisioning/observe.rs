@@ -9,12 +9,14 @@ use crate::msg;
 use crate::paths::ProjectPaths;
 use crate::project::{SandboxLayout, SandboxName};
 use crate::support::Observed;
+use crate::support::sandbox::{Inside, Recorded};
 
 use crate::support::{
     generation, identity, image, inventory, repository, sandbox, secret, template, tools,
 };
 
 use super::declared_files::declared_files;
+use super::inside_plan::inside_plan;
 use super::observed_worktrees::observed_worktrees;
 use super::{Observation, ProvisioningState};
 
@@ -31,6 +33,10 @@ type Blocking = Vec<Error>;
 /// Sandboxの一覧は、呼び出し元がproject lockの後に読んだ`entries`を使い、ここでは
 /// 読み直さない。同じlockの下でSandboxのrecordを変えるのは呼び出し元の作成と起動
 /// だけなので、その後に呼ぶ呼び出し元だけが読み直してから渡す。
+///
+/// Sandboxの中は、`inside_plan`が並べたcommandを1回の`sbx exec`でまとめて読み
+/// （`sandbox::read_inside`）、項目ごとの判定はその結果から行う。hostで動く
+/// `sbx secret ls`と、imageやTemplateの確認は、今までどおり別に起動する。
 pub(crate) fn observe(
     host: &dyn HostEnvironment,
     entries: &[SandboxEntry],
@@ -159,6 +165,23 @@ fn mark_inside_unobservable(observation: &mut Observation, state: SandboxState) 
     observation.worktrees_present = unobservable;
 }
 
+/// Sandboxの中をまとめて読む確認そのものが答えなかった。
+///
+/// どの項目も読めていないため、全項目を同じ理由で、安全と確認できなかった事実として
+/// 残す。理由そのものは1件だけ記録する。
+fn mark_inside_blocked(observation: &mut Observation, blocking: &mut Blocking, error: Error) {
+    let unsafe_to_assume = blocked(blocking, error);
+    observation.files_placed = unsafe_to_assume.clone();
+    observation.identity = unsafe_to_assume.clone();
+    observation.tools = unsafe_to_assume.clone();
+    observation.credentials = unsafe_to_assume.clone();
+    observation.secret = unsafe_to_assume.clone();
+    observation.credential_helper = unsafe_to_assume.clone();
+    observation.token_env = unsafe_to_assume.clone();
+    observation.repository = unsafe_to_assume.clone();
+    observation.worktrees_present = unsafe_to_assume;
+}
+
 fn generation_artifacts(
     host: &dyn HostEnvironment,
     name: &SandboxName,
@@ -180,6 +203,12 @@ fn generation_artifacts(
     Ok((true, matches, template::find(host, &image_name)?.is_some()))
 }
 
+/// Sandboxの中を、1回の`sbx exec`でまとめて読んでから、項目ごとに判定する。
+///
+/// 読むcommandは`inside_plan`が並べ、判定は項目ごとの観測が1件ずつ起動していたときと
+/// 同じ規則で行う。まとめた確認そのものが答えなかった（時間切れ、起動できない、出力を
+/// 読めない）場合は、どの項目も読めていない。1つの項目の欠落として記録せず、中の全項目を
+/// 安全と確認できなかった事実として同じ理由で残す。
 #[allow(clippy::too_many_arguments)]
 fn observe_sandbox(
     host: &dyn HostEnvironment,
@@ -193,14 +222,50 @@ fn observe_sandbox(
 ) {
     let sandbox = &entry.name;
 
+    progress.step(msg!("progress-inspect-inside"));
+    let plan = inside_plan(metadata, origin, layout);
+    let inside = match sandbox::read_inside(host, sandbox, &plan) {
+        Ok(inside) => inside,
+        Err(error) => {
+            mark_inside_blocked(observation, blocking, error);
+            return;
+        }
+    };
+    observe_inside(
+        host,
+        sandbox,
+        &inside,
+        metadata,
+        origin,
+        layout,
+        observation,
+        blocking,
+        progress,
+    );
+    observation.carry_inside(inside);
+}
+
+/// まとめて読んだ結果から、Sandboxの中の各項目を判定する。
+#[allow(clippy::too_many_arguments)]
+fn observe_inside(
+    host: &dyn HostEnvironment,
+    sandbox: &str,
+    inside: &Recorded,
+    metadata: &ProjectMetadata,
+    origin: &repository::SandboxOrigin,
+    layout: &SandboxLayout,
+    observation: &mut Observation,
+    blocking: &mut Blocking,
+    progress: &mut dyn ProgressSink,
+) {
     progress.step(msg!("progress-inspect-credentials"));
-    observation.credentials = match sandbox::require_credentials_isolated(host, sandbox) {
+    observation.credentials = match sandbox::require_credentials_isolated(inside, sandbox) {
         Ok(()) => Observed::Matching,
         Err(error) => blocked(blocking, error),
     };
     match origin {
         repository::SandboxOrigin::Github(_) => {
-            observe_github_credential(host, sandbox, observation, blocking);
+            observe_github_credential(host, sandbox, inside, observation, blocking);
         }
         // hostから送るrepositoryには、登録するtokenも、それを使うhelperも無い。
         // 在るものとして記録せず、要らないものとして記録する。
@@ -210,7 +275,7 @@ fn observe_sandbox(
             observation.token_env = Observed::NotApplicable;
         }
     }
-    match declared_files(host, sandbox, metadata, progress) {
+    match declared_files(inside, metadata, progress) {
         Ok(files) => {
             // Sandboxの中で書き換えられたfileも置かれてはいる。欠けているのは、まだ
             // 置かれていないfileだけである。
@@ -228,31 +293,26 @@ fn observe_sandbox(
     }
     progress.step(msg!("progress-inspect-identity"));
     // 記録と違う値も、Sandboxの中で利用者が選んだ値として揃っているとみなす。
-    observation.identity = match identity::observe(host, sandbox) {
+    observation.identity = match identity::observe(inside) {
         Ok(true) => Observed::Matching,
         Ok(false) => Observed::Missing,
         Err(error) => blocked(blocking, error),
     };
     progress.step(msg!("progress-inspect-tools"));
-    observation.tools = observe_tools(host, sandbox, blocking);
-    observation.repository = observe_repository(host, sandbox, origin, layout, blocking, progress);
+    observation.tools = observe_tools(inside, blocking);
+    observation.repository = observe_repository(inside, origin, layout, blocking, progress);
     if observation.repository.is_matching() {
-        observe_worktrees(
-            host,
-            sandbox,
-            layout,
-            metadata,
-            observation,
-            blocking,
-            progress,
-        );
+        observe_worktrees(inside, layout, metadata, observation, blocking, progress);
     }
 }
 
 /// GitHub tokenの登録と、それを使うcredential helperとtoken環境変数file。
+///
+/// 登録はhostで動く`sbx secret ls`が答え、まとめた確認には含めない。
 fn observe_github_credential(
     host: &dyn HostEnvironment,
     sandbox: &str,
+    inside: &dyn Inside,
     observation: &mut Observation,
     blocking: &mut Blocking,
 ) {
@@ -262,12 +322,12 @@ fn observe_github_credential(
         Ok(registration) => {
             observation.secret = Observed::Matching;
             observation.credential_helper =
-                match secret::observe_git_credential(host, sandbox, registration.placeholder()) {
+                match secret::observe_git_credential(inside, registration.placeholder()) {
                     Ok(observed) => observed,
                     Err(error) => blocked(blocking, error),
                 };
             observation.token_env =
-                match secret::observe_token_env(host, sandbox, registration.placeholder()) {
+                match secret::observe_token_env(inside, registration.placeholder()) {
                     Ok(observed) => observed,
                     Err(error) => blocked(blocking, error),
                 };
@@ -285,47 +345,50 @@ fn observe_github_credential(
     }
 }
 
-fn observe_tools(host: &dyn HostEnvironment, sandbox: &str, blocking: &mut Blocking) -> Observed {
-    let installed = match tools::Installed::observe(host, sandbox) {
+fn observe_tools(inside: &dyn Inside, blocking: &mut Blocking) -> Observed {
+    let installed = match tools::Installed::observe(inside) {
         Ok(installed) => installed,
         Err(error) => return blocked(blocking, error),
     };
     if !installed.has(&tools::Gh) {
         return Observed::Matching;
     }
-    match identity::observe_git_protocol(host, sandbox) {
+    match identity::observe_git_protocol(inside) {
         Ok(true) => Observed::Matching,
         Ok(false) => Observed::Missing,
         Err(error) => blocked(blocking, error),
     }
 }
 
+/// bare repositoryの設定だけを確かめ、objectの接続性は見ない。接続性はrepositoryを
+/// 作るときと`sync`が確かめる。毎回の接続のたびに全objectを辿らない。
 fn observe_repository(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
+    inside: &dyn Inside,
     origin: &repository::SandboxOrigin,
     layout: &SandboxLayout,
     blocking: &mut Blocking,
     progress: &mut dyn ProgressSink,
 ) -> Observed {
     let git_dir = layout.bare_git_dir();
-    match sandbox::path_exists(host, sandbox, &git_dir) {
+    match sandbox::path_exists(inside, &git_dir) {
         Ok(false) => Observed::Missing,
         Ok(true) => {
-            match repository::verify_bare_clone(host, sandbox, origin, &git_dir, progress) {
+            match repository::verify_bare_config(inside, origin, &git_dir, progress) {
                 Ok(()) => Observed::Matching,
                 // 初期化の途中で止まったrepositoryは、壊れたのではなく、まだ出来ていない。
                 // 続きは`ensure_bare_clone`が同じ規則で補う。中断の跡と確かめられなければ、
                 // 元の拒否理由を残す。
-                Err(error) => match repository::observe_initialization(
-                    host, sandbox, origin, &git_dir, progress,
-                ) {
-                    Ok(
-                        repository::Initialization::OriginMissing
-                        | repository::Initialization::FetchRefspecMissing,
-                    ) => Observed::Missing,
-                    Ok(repository::Initialization::Settled) | Err(_) => blocked(blocking, error),
-                },
+                Err(error) => {
+                    match repository::observe_initialization(inside, origin, &git_dir, progress) {
+                        Ok(
+                            repository::Initialization::OriginMissing
+                            | repository::Initialization::FetchRefspecMissing,
+                        ) => Observed::Missing,
+                        Ok(repository::Initialization::Settled) | Err(_) => {
+                            blocked(blocking, error)
+                        }
+                    }
+                }
             }
         }
         Err(error) => blocked(blocking, error),
@@ -333,8 +396,7 @@ fn observe_repository(
 }
 
 fn observe_worktrees(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
+    inside: &dyn Inside,
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
     observation: &mut Observation,
@@ -347,7 +409,7 @@ fn observe_worktrees(
     let mut present = Vec::new();
     let mut all_present = true;
     for name in layout.worktree_names(metadata.provisioning.requested_worktrees) {
-        match sandbox::path_exists(host, sandbox, &format!("{}/{name}", layout.bare_root())) {
+        match sandbox::path_exists(inside, &format!("{}/{name}", layout.bare_root())) {
             Ok(true) => present.push(name),
             Ok(false) => all_present = false,
             Err(error) => {
@@ -359,7 +421,7 @@ fn observe_worktrees(
     // 起点branchが決まっていない案件は、worktreeが揃ったとは言えない。それでも、
     // 存在が確認できたものだけはこの下でHEADまで観測する。
     let start_ref_resolved = metadata.provisioning.start_ref.is_some();
-    match observed_worktrees(host, sandbox, layout, metadata, &present, progress) {
+    match observed_worktrees(inside, layout, metadata, &present, progress) {
         Ok(worktrees) => {
             let requested = usize::try_from(metadata.provisioning.requested_worktrees);
             observation.worktrees_present = if all_present

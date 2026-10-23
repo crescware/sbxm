@@ -19,6 +19,7 @@
 mod configure_git_credential;
 mod configure_token_env;
 mod covers_github_hosts;
+mod credential_commands;
 mod credential_key;
 mod expected_credential_helper;
 mod expected_token_env;
@@ -44,10 +45,12 @@ mod require_github_accepts;
 mod token_env_file;
 mod token_env_lines;
 mod token_env_marker;
+mod token_env_read;
 
 pub use configure_git_credential::configure_git_credential;
 pub use configure_token_env::configure_token_env;
 use covers_github_hosts::covers_github_hosts;
+pub use credential_commands::credential_commands;
 use credential_key::credential_key;
 use expected_credential_helper::expected_credential_helper;
 use expected_token_env::expected_token_env;
@@ -73,6 +76,7 @@ pub use require_github_accepts::require_github_accepts;
 use token_env_file::TOKEN_ENV_FILE;
 use token_env_lines::token_env_lines;
 use token_env_marker::TOKEN_ENV_MARKER;
+use token_env_read::TOKEN_ENV_READ;
 
 #[cfg(test)]
 #[path = "secret_test.rs"]

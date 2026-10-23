@@ -1,20 +1,21 @@
-use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 
-use crate::support::sandbox;
+use crate::support::sandbox::Inside;
 
 /// `Sandbox内のGit` identityが設定済みかを、変更せずに観測する。
 ///
 /// 記録と違う値も、設定済みとして答える。Sandboxの中で利用者が選んだ値であり、
 /// 欠けているものではない。
-pub fn observe(host: &dyn HostEnvironment, sandbox: &str) -> Result<bool> {
-    let name = observe_setting(host, sandbox, "user.name")?;
-    let email = observe_setting(host, sandbox, "user.email")?;
+///
+/// 読むcommandは`observe_commands`と同じである。
+pub fn observe(inside: &dyn Inside) -> Result<bool> {
+    let name = observe_setting(inside, "user.name")?;
+    let email = observe_setting(inside, "user.email")?;
     Ok(name && email)
 }
 
-fn observe_setting(host: &dyn HostEnvironment, sandbox: &str, key: &str) -> Result<bool> {
-    let outcome = sandbox::exec(host, sandbox, &["git", "config", "--global", "--get", key])?;
+fn observe_setting(inside: &dyn Inside, key: &str) -> Result<bool> {
+    let outcome = inside.exec(&["git", "config", "--global", "--get", key])?;
     if !outcome.success() {
         return Ok(false);
     }

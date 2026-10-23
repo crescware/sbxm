@@ -9,6 +9,7 @@ use crate::hash::sha256_file_hex;
 use crate::msg;
 use crate::paths;
 use crate::support::retrieve;
+use crate::support::sandbox::Live;
 
 use super::{
     AGENT_HOME, MAX_SOURCE_BYTES, ReceivedCopy, destination_path, digest_in_sandbox,
@@ -29,8 +30,9 @@ pub fn receive_copy(
     let source = declaration.source.as_path();
     let destination = destination_path(declaration.destination.as_path())?;
     let full = format!("{AGENT_HOME}/{destination}");
-    require_no_symlink_in_sandbox(host, sandbox, source, &destination)?;
-    let Some(observed) = digest_in_sandbox(host, sandbox, &full)? else {
+    let inside = Live::new(host, sandbox);
+    require_no_symlink_in_sandbox(&inside, source, &destination)?;
+    let Some(observed) = digest_in_sandbox(&inside, &full)? else {
         return Ok(None);
     };
 

@@ -6,6 +6,7 @@ use crate::design::Remediation;
 use crate::diagnostics::{Diagnostic, ErrorId, Result};
 use crate::msg;
 use crate::paths;
+use crate::support::sandbox::Live;
 
 use super::{
     AGENT_HOME, Conflict, Placement, PlannedFile, destination_path, digest_in_sandbox, read_source,
@@ -27,8 +28,9 @@ pub(super) fn plan(
     let digest = read_source(source)?;
     let destination = destination_path(declaration.destination.as_path())?;
     let full = format!("{AGENT_HOME}/{destination}");
+    let inside = Live::new(host, sandbox);
     // 宣言されたpath自体が`agent` home配下でも、Sandbox内のsymlinkが外を指し得る。
-    require_no_symlink_in_sandbox(host, sandbox, source, &destination)?;
+    require_no_symlink_in_sandbox(&inside, source, &destination)?;
 
     let planned = |placement| {
         Ok(Ok(PlannedFile {
@@ -38,7 +40,7 @@ pub(super) fn plan(
             placement,
         }))
     };
-    let Some(observed) = digest_in_sandbox(host, sandbox, &full)? else {
+    let Some(observed) = digest_in_sandbox(&inside, &full)? else {
         return planned(Placement::Placed);
     };
     if observed == digest {

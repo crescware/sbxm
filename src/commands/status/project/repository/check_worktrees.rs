@@ -10,7 +10,7 @@ use crate::project::{SandboxLayout, SandboxName};
 use crate::repository::Provider;
 
 use crate::support::protection::{self, CommitCandidate, Reachability, UnobservableReason};
-use crate::support::sandbox;
+use crate::support::sandbox::{self, Live};
 use crate::support::worktree;
 
 use crate::commands::status::project::{ProjectStatus, Value, WorktreeRow};
@@ -33,7 +33,7 @@ pub fn check_worktrees(
     progress: &mut dyn ProgressSink,
 ) {
     progress.step(msg!("progress-inspect-worktrees"));
-    let entries = match worktree::list(host, name.as_str(), layout) {
+    let entries = match worktree::list(&Live::new(host, name.as_str()), layout) {
         Ok(entries) => entries,
         Err(error) => {
             status
@@ -91,9 +91,10 @@ fn collect_pending_worktrees(
     let mut value = Value::Ready;
 
     let total = entries.iter().filter(|entry| !entry.bare).count();
+    let inside = Live::new(host, name.as_str());
     for (index, entry) in entries.into_iter().filter(|entry| !entry.bare).enumerate() {
         let mut inspection =
-            worktree::Inspection::new(host, name.as_str(), &entry.path, index + 1, total, progress);
+            worktree::Inspection::new(&inside, &entry.path, index + 1, total, progress);
         let Some(worktree) = read_pending_worktree(
             &mut inspection,
             name,

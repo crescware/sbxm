@@ -1,33 +1,17 @@
-use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 use crate::project::SandboxLayout;
 
-use crate::support::sandbox;
+use crate::support::sandbox::Inside;
 
-use super::{Entry, parse_list};
+use super::{Entry, list_command, parse_list};
 
 /// Sandbox内のworktree一覧を読む。
 ///
 /// 一覧を読めない場合は、worktreeが無いことと区別して外部commandの失敗とする。
-pub fn list(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
-    layout: &SandboxLayout,
-) -> Result<Vec<Entry>> {
-    let git_dir = layout.bare_git_dir();
-    let outcome = sandbox::exec(
-        host,
-        sandbox,
-        &[
-            "git",
-            "--git-dir",
-            &git_dir,
-            "worktree",
-            "list",
-            "--porcelain",
-            "-z",
-        ],
-    )?;
+pub fn list(inside: &dyn Inside, layout: &SandboxLayout) -> Result<Vec<Entry>> {
+    let command = list_command(layout);
+    let borrowed: Vec<&str> = command.iter().map(String::as_str).collect();
+    let outcome = inside.exec(&borrowed)?;
     let outcome = outcome.require_success()?;
     parse_list(&outcome.stdout_text())
 }

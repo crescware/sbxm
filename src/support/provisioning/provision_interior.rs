@@ -5,6 +5,7 @@ use crate::diagnostics::Result;
 use crate::msg;
 use crate::project::{ProjectId, SandboxLayout, SandboxName};
 
+use crate::support::sandbox::Live;
 use crate::support::select::Locked;
 use crate::support::{disk, files, identity, repository, sandbox, secret, tools};
 
@@ -28,7 +29,7 @@ pub(crate) fn provision_interior(
     let layout = SandboxLayout::new(&canonical);
 
     progress.step(msg!("progress-inspect-credentials"));
-    sandbox::require_credentials_isolated(host, &ready_name)?;
+    sandbox::require_credentials_isolated(&Live::new(host, &ready_name), &ready_name)?;
     let origin = repository::SandboxOrigin::of(&locked.metadata)?;
     // credential helperへ書く直前に読む。事前条件の確認から時間が空くため、その間に
     // tokenを登録し直していれば、新しいplaceholderをそのまま持たせる。hostにある
@@ -104,8 +105,7 @@ pub(crate) fn provision_interior(
 
     let worktree_names = layout.worktree_names(locked.metadata.provisioning.requested_worktrees);
     let worktrees = observed_worktrees(
-        host,
-        &ready_name,
+        &Live::new(host, &ready_name),
         &layout,
         &locked.metadata,
         &worktree_names,

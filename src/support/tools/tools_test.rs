@@ -7,6 +7,7 @@ use crate::testing::outcome::{Checked, Required};
 
 use super::*;
 use crate::boundary::host::{CommandOutcome, CommandSpec};
+use crate::support::sandbox::Live;
 use std::cell::RefCell;
 
 /// probeへ決め打ちで答え、それ以外の起動を成功として扱うhost。
@@ -71,8 +72,8 @@ fn the_probe_asks_for_every_tool_the_listing_holds() {
 #[test]
 fn one_run_answers_for_every_tool() -> Checked {
     let host = FakeSbx::naming(&["gh", "mise", "claude", "codex"]);
-    let installed =
-        Installed::observe(&host, "sbxm-example").required_because("count the tools")?;
+    let installed = Installed::observe(&Live::new(&host, "sbxm-example"))
+        .required_because("count the tools")?;
     for tool in ALL {
         assert!(installed.has(tool), "{} was named", tool.name());
     }
@@ -87,8 +88,11 @@ fn one_run_answers_for_every_tool() -> Checked {
 
 #[test]
 fn a_tool_that_was_not_named_is_absent() -> Checked {
-    let installed = Installed::observe(&FakeSbx::naming(&["gh", "codex"]), "sbxm-example")
-        .required_because("count")?;
+    let installed = Installed::observe(&Live::new(
+        &FakeSbx::naming(&["gh", "codex"]),
+        "sbxm-example",
+    ))
+    .required_because("count")?;
     assert!(installed.has(&Gh));
     assert!(installed.has(&Codex));
     assert!(!installed.has(&Mise));
@@ -98,8 +102,11 @@ fn a_tool_that_was_not_named_is_absent() -> Checked {
 
 #[test]
 fn a_name_the_listing_does_not_hold_is_ignored() -> Checked {
-    let installed = Installed::observe(&FakeSbx::naming(&["gh", "brew"]), "sbxm-example")
-        .required_because("count")?;
+    let installed = Installed::observe(&Live::new(
+        &FakeSbx::naming(&["gh", "brew"]),
+        "sbxm-example",
+    ))
+    .required_because("count")?;
     assert!(installed.has(&Gh));
     assert_eq!(installed.0.len(), 1, "{installed:?}");
     Ok(())
@@ -107,8 +114,8 @@ fn a_name_the_listing_does_not_hold_is_ignored() -> Checked {
 
 #[test]
 fn a_sandbox_that_names_nothing_carries_nothing() -> Checked {
-    let installed =
-        Installed::observe(&FakeSbx::naming(&[]), "sbxm-example").required_because("count")?;
+    let installed = Installed::observe(&Live::new(&FakeSbx::naming(&[]), "sbxm-example"))
+        .required_because("count")?;
     assert_eq!(installed, Installed::default());
     Ok(())
 }

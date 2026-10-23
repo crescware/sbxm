@@ -32,6 +32,20 @@ fn a_sandbox_without_gh_is_never_asked_to_configure_it() -> Checked {
     bench
         .build(&world, &request("Example-Org/Example-Repo", None, None)?)
         .required_because("build")?;
-    assert!(!world.ran("git_protocol"), "{:?}", world.invocations());
+    // 観測はまとめた確認の中で`gh`の設定も読むが、無い`gh`の答えは使わない。設定を
+    // 書くことも、1件の起動として読みに行くこともない。
+    assert!(
+        !world.ran("config set git_protocol"),
+        "{:?}",
+        world.invocations()
+    );
+    assert!(
+        !world
+            .invocations()
+            .iter()
+            .any(|call| call.ends_with("gh config get git_protocol --host github.com")),
+        "{:?}",
+        world.invocations()
+    );
     Ok(())
 }

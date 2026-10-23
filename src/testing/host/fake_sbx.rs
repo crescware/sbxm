@@ -3,6 +3,7 @@ use crate::testing::outcome::{Checked, Required};
 use crate::boundary::host::{CommandOutcome, CommandSpec};
 use crate::diagnostics::Result;
 use crate::testing::host::AnsweredHost;
+use crate::testing::inside::{frame_inside_check, split_inside_check};
 use std::cell::RefCell;
 
 /// Sandbox一覧を返し、実行された指定を記録するhost。
@@ -10,6 +11,9 @@ use std::cell::RefCell;
 /// 応答のkeyは引数全体(`exec <name> -- printenv SSH_AUTH_SOCK`のような文字列)である。
 /// `--`より後ろのinner commandだけで答えるfakeは
 /// `crate::testing::sandbox::InnerCommandSandbox`。
+///
+/// まとめた確認（Sandboxの中のcommandを1回の`sbx exec`で走らせる手順）には、中の
+/// commandごとに`exec <name> -- <command>`の応答を引き、実物と同じ形に並べて答える。
 pub struct FakeSbx {
     pub listing: RefCell<Vec<String>>,
     pub answers: std::collections::HashMap<String, (i32, String)>,
@@ -113,6 +117,18 @@ impl FakeSbx {
         })
     }
 
+    /// 1つの指定への応答。順に返す応答があればそれを先に使う。
+    fn lookup(&self, key: &str) -> Option<(i32, String)> {
+        if let Some(queued) = self.sequences.borrow_mut().get_mut(key) {
+            return Some(if queued.len() > 1 {
+                queued.pop().unwrap_or_default()
+            } else {
+                queued.last().cloned().unwrap_or_default()
+            });
+        }
+        self.answers.get(key).cloned()
+    }
+
     /// 引数が一致した最後の1件の指定。envとoutput policyの検証に使う。
     pub fn spec(&self, needle: &str) -> Checked<CommandSpec> {
         Ok(self
@@ -133,6 +149,23 @@ impl AnsweredHost for FakeSbx {
 
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.specs.borrow_mut().push(spec.clone());
+        if spec.program == "sbx"
+            && let Some((sandbox, commands)) = split_inside_check(&spec.args)
+        {
+            // 指定の無いcommandは、1件ずつ起動されたときと同じく、成功して何も出さない。
+            let answers: Vec<(i32, String)> = commands
+                .iter()
+                .map(|command| {
+                    self.lookup(&format!("exec {sandbox} -- {}", command.join(" ")))
+                        .unwrap_or((0, String::new()))
+                })
+                .collect();
+            return Ok(crate::testing::command::outcome(
+                spec,
+                0,
+                &frame_inside_check(&answers),
+            ));
+        }
         let key = spec.args.join(" ");
         let (code, stdout) = if spec.args.first().is_some_and(|arg| arg == "ls") {
             let mut listings = self.listing.borrow_mut();
@@ -142,12 +175,8 @@ impl AnsweredHost for FakeSbx {
                 listings.last().cloned().unwrap_or_default()
             };
             (0, output)
-        } else if let Some(queued) = self.sequences.borrow_mut().get_mut(&key) {
-            if queued.len() > 1 {
-                queued.pop().unwrap_or_default()
-            } else {
-                queued.last().cloned().unwrap_or_default()
-            }
+        } else if let Some(answer) = self.lookup(&key) {
+            answer
         } else {
             match self.answers.get(&key) {
                 Some((code, stdout)) => (*code, stdout.clone()),

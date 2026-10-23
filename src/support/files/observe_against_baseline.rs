@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use crate::boundary::host::HostEnvironment;
 use crate::design::ProgressSink;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::InitialProvisioningFile;
 use crate::msg;
+use crate::support::sandbox::Inside;
 
 use super::{
     AGENT_HOME, Divergence, PlacedFile, Placement, destination_path, digest_in_sandbox,
@@ -17,9 +17,10 @@ use super::{
 /// configではない。baselineは`source`・`destination`・digestだけを保存済みの記録
 /// として持つため、この照合はhost上のsource pathへ一切触れない。sandboxが別内容を
 /// 持っている場合の読み方は`divergence`が決める。どちらの場合も上書きはしない。
+///
+/// 読むcommandは`baseline_commands`と同じである。
 pub fn observe_against_baseline(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
+    inside: &dyn Inside,
     baseline: &[InitialProvisioningFile],
     divergence: Divergence,
     progress: &mut dyn ProgressSink,
@@ -34,8 +35,8 @@ pub fn observe_against_baseline(
         ));
         let destination = destination_path(&PathBuf::from(&entry.destination))?;
         let full = format!("{AGENT_HOME}/{destination}");
-        require_no_symlink_in_sandbox(host, sandbox, &PathBuf::from(&entry.source), &destination)?;
-        let placement = match digest_in_sandbox(host, sandbox, &full)? {
+        require_no_symlink_in_sandbox(inside, &PathBuf::from(&entry.source), &destination)?;
+        let placement = match digest_in_sandbox(inside, &full)? {
             None => Placement::Placed,
             Some(digest) if digest == entry.sha256 => Placement::Unchanged,
             Some(_) if divergence == Divergence::Modified => Placement::Modified,

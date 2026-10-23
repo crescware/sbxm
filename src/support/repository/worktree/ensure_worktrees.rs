@@ -5,7 +5,7 @@ use crate::metadata::{CreationMode, ProjectMetadata};
 use crate::msg;
 use crate::project::SandboxLayout;
 
-use crate::support::sandbox;
+use crate::support::sandbox::{self, Live};
 use crate::support::worktree::Inspection;
 
 use crate::design::ProgressSink;
@@ -62,11 +62,12 @@ pub fn ensure_worktrees(
     let total = layout
         .worktree_names(project.provisioning.requested_worktrees)
         .len();
+    let inside = Live::new(host, sandbox);
     for (position, index) in (0..project.provisioning.requested_worktrees).enumerate() {
         let path = layout.worktree(index);
-        let mut inspection = Inspection::new(host, sandbox, &path, position + 1, total, progress);
+        let mut inspection = Inspection::new(&inside, &path, position + 1, total, progress);
         inspection.preparing();
-        if sandbox::path_exists(host, sandbox, &path)? {
+        if sandbox::path_exists(&inside, &path)? {
             adopt_worktree(&mut inspection, &git_dir)?;
             continue;
         }
