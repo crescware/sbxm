@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
-use crate::config::{ConfigLocation, GlobalConfig};
+use crate::config::ConfigLocation;
 use crate::design::{Fact, Field, Inline, ProgressSink};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
@@ -18,7 +18,6 @@ use super::{Prepared, RepairPlan};
 /// 対象を決め、repair前の観測と変更範囲を固定する。
 pub fn prepare(
     location: &ConfigLocation,
-    config: &GlobalConfig,
     requested: Option<&ProjectId>,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
@@ -36,7 +35,6 @@ pub fn prepare(
     let first = provisioning::observe(
         host,
         &locked.paths,
-        config,
         &locked.metadata,
         workspace_root,
         progress,
@@ -81,7 +79,6 @@ pub fn prepare(
     let second = provisioning::observe(
         host,
         &locked.paths,
-        config,
         &locked.metadata,
         workspace_root,
         progress,

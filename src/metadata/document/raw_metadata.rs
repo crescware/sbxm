@@ -15,7 +15,7 @@ pub struct RawMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub initial_provisioning: Option<RawInitialProvisioning>,
     /// 初回構築が完成した時点で配置済みだった宣言fileのbaseline。intentが消えた後も残す。
-    /// この記録より前の案件では現れない。
+    /// 構築を完成させるまでは現れない。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub declared_files: Option<Vec<RawInitialProvisioningFile>>,
     /// Sandboxの切替中だけ現れる。切替中でなければkeyごと書かない。

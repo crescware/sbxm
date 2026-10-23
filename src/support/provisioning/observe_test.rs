@@ -20,7 +20,6 @@ fn observe_built(bench: &Bench, world: &World, project: &crate::project::Project
     let observation = observe(
         world,
         &candidate.paths,
-        &bench.config,
         &metadata,
         bench.workspace_root.path(),
     )
@@ -60,7 +59,6 @@ fn a_stopped_sandbox_is_observed_as_unobservable_rather_than_incomplete() -> Che
     let observation = observe(
         &world,
         &candidate.paths,
-        &bench.config,
         &metadata,
         bench.workspace_root.path(),
     )
@@ -113,7 +111,6 @@ fn only_the_missing_worktree_among_several_ends_the_matching_state() -> Checked 
     let observation = observe(
         &world,
         &candidate.paths,
-        &bench.config,
         &metadata,
         bench.workspace_root.path(),
     )
@@ -150,7 +147,6 @@ fn an_unsafe_artifact_is_recorded_without_ending_the_observation() -> Checked {
     let observation = observe(
         &world,
         &candidate.paths,
-        &bench.config,
         &metadata,
         bench.workspace_root.path(),
     )
@@ -191,7 +187,6 @@ fn a_declared_file_edited_inside_the_sandbox_is_modified_rather_than_unsafe() ->
     let observation = observe(
         &world,
         &candidate.paths,
-        &bench.config,
         &metadata,
         bench.workspace_root.path(),
     )
@@ -231,7 +226,6 @@ fn reobserved(
     Ok(observe(
         &world,
         &candidate.paths,
-        &bench.config,
         &metadata,
         bench.workspace_root.path(),
     ))
@@ -441,9 +435,9 @@ fn a_worktree_that_belongs_to_another_repository_is_recorded_as_unsafe() -> Chec
 }
 
 #[test]
-fn a_legacy_project_whose_declared_file_differs_inside_is_recorded_as_a_conflict() -> Checked {
-    // baselineが無い案件では、中身の違うfileが利用者の編集なのか、壊れた成果物なのかを
-    // 決められない。baselineがある案件と違い、書き換えられたfileとして受け入れない。
+fn a_project_without_a_recorded_baseline_observes_no_declared_file() -> Checked {
+    // intentもbaselineも無い案件には、sbxmが置いたと記録した宣言fileが無い。現在の
+    // global configの宣言をSandboxの中と照らさず、中身が違っても何も報告しない。
     let observation = reobserved(
         |world| {
             world.digests.borrow_mut().insert(
@@ -453,14 +447,19 @@ fn a_legacy_project_whose_declared_file_differs_inside_is_recorded_as_a_conflict
         },
         |metadata| metadata.declared_files = None,
     )?
-    .required_because("a conflicting file does not end the observation")?;
+    .required_because("a project without a baseline is observed")?;
 
     assert!(observation.files.is_empty(), "{observation:?}");
-    blocked_by(
-        &observation,
-        &observation.files_placed,
-        ErrorId::DeclaredFileConflict,
-    )
+    assert_eq!(
+        observation.files_placed,
+        Observed::Matching,
+        "{observation:?}"
+    );
+    observation
+        .require_safe()
+        .required_because("no declared file is left unconfirmed")?;
+    assert_eq!(observation.state, ProvisioningState::Ready);
+    Ok(())
 }
 
 #[test]
@@ -507,7 +506,6 @@ fn observe_registered(bench: &Bench, world: &World) -> Checked<Result<Observatio
     Ok(observe(
         world,
         &candidate.paths,
-        &bench.config,
         &metadata,
         bench.workspace_root.path(),
     ))
@@ -551,7 +549,6 @@ fn an_edited_dockerfile_whose_image_cannot_be_looked_up_ends_the_observation() -
     let error = observe(
         &world,
         &candidate.paths,
-        &bench.config,
         &metadata,
         bench.workspace_root.path(),
     )

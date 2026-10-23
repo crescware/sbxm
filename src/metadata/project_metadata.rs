@@ -20,7 +20,7 @@ pub struct ProjectMetadata {
     /// 初回構築が完成した時点で配置済みだった宣言fileのbaseline。
     ///
     /// `repair`はこのbaselineだけを復旧対象にし、現在のglobal configとの差分は`apply`の
-    /// 責務とする。この記録が無い案件は、この機能より前に完成した案件である。
+    /// 責務とする。この記録が無い案件は、まだ構築を完成させていない。
     pub declared_files: Option<Vec<InitialProvisioningFile>>,
     pub rebuild: Option<RebuildIntent>,
 }

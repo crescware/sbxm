@@ -151,7 +151,7 @@ fn prepare_runtime(
     // 不足工程をこのopenで補う。`status`はこの状態にも`sbxm open`を案内するため、
     // ここで直せない欠落を残さない。
     let provisioned = if provisioned.is_none() {
-        complete_missing_interior(locked, config, host, workspace_root, progress)?
+        complete_missing_interior(locked, host, workspace_root, progress)?
     } else {
         provisioned
     };
@@ -164,7 +164,6 @@ fn prepare_runtime(
 /// `InitialRoute::decide`が`Build`へ送り、ここへは来ない。
 fn complete_missing_interior(
     locked: &mut crate::support::select::Locked,
-    config: &GlobalConfig,
     host: &dyn HostEnvironment,
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
@@ -172,7 +171,6 @@ fn complete_missing_interior(
     let observation = provisioning::observe(
         host,
         &locked.paths,
-        config,
         &locked.metadata,
         workspace_root,
         progress,
@@ -191,7 +189,6 @@ fn complete_missing_interior(
     let completed = provisioning::observe(
         host,
         &locked.paths,
-        config,
         &locked.metadata,
         workspace_root,
         progress,

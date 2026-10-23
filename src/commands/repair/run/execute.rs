@@ -38,7 +38,6 @@ pub fn execute(
     let latest = provisioning::observe(
         host,
         &prepared.paths,
-        config,
         &prepared.locked.metadata,
         workspace_root,
         progress,
@@ -103,7 +102,6 @@ pub fn execute(
     let completed = provisioning::observe(
         host,
         &prepared.paths,
-        config,
         &prepared.locked.metadata,
         workspace_root,
         progress,

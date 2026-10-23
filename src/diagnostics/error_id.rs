@@ -105,7 +105,6 @@ error_ids! {
     InitialProvisioningGenerationMissing => "initial-provisioning-generation-missing",
     InitialProvisioningStateChanged => "initial-provisioning-state-changed",
     InitialProvisioningSnapshotChanged => "initial-provisioning-snapshot-changed",
-    InitialProvisioningBaselineAmbiguous => "initial-provisioning-baseline-ambiguous",
     InitialProvisioningUnobservable => "initial-provisioning-unobservable",
 
     // --- Host clone ---

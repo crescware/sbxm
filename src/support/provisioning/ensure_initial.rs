@@ -24,7 +24,6 @@ pub(crate) fn ensure_initial(
     let observation = observe(
         host,
         &locked.paths,
-        config,
         &locked.metadata,
         workspace_root,
         progress,

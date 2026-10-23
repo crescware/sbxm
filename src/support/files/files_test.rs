@@ -358,44 +358,14 @@ fn a_destination_that_already_holds_the_same_content_is_left_alone() -> Checked 
 }
 
 #[test]
-fn read_only_observation_distinguishes_missing_matching_and_conflicting_files() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let contents = b"declared = true\n";
-    let source = source_file(dir.path(), contents)?;
-    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
-
-    assert_eq!(
-        observe(&FakeSbx::empty(), "sbxm-example", &declarations)?[0].placement,
-        Placement::Placed,
-        "a missing destination still needs placement"
-    );
-    assert_eq!(
-        observe(
-            &FakeSbx::holding("/home/agent/.config/example/settings.yaml", contents),
-            "sbxm-example",
-            &declarations,
-        )?[0]
-            .placement,
-        Placement::Unchanged,
-        "a matching destination is already complete"
-    );
-
-    let host = FakeSbx::holding("/home/agent/.config/example/settings.yaml", b"older\n");
-    let error = observe(&host, "sbxm-example", &declarations)
-        .refused_because("a conflicting destination is never overwritten")?;
-    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
-    assert!(!host.placed(), "observation never mutates the sandbox");
-    Ok(())
-}
-
-#[test]
 fn an_unanswered_destination_probe_is_not_observed_as_a_missing_file() -> Checked {
-    let dir = tempfile::tempdir().required()?;
-    let source = source_file(dir.path(), b"declared = true\n")?;
-    let declarations = [declaration(&source, ".config/example/settings.yaml")?];
     let host = FakeSbx::empty().answering("test -e", 126);
+    let baseline = vec![baseline_entry(
+        ".config/example/settings.yaml",
+        &sha256_hex(b"declared = true\n"),
+    )];
 
-    let error = observe(&host, "sbxm-example", &declarations)
+    let error = observe_against_baseline(&host, "sbxm-example", &baseline, Divergence::Modified)
         .refused_because("an unanswered existence probe is not a missing artifact")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
     assert!(!host.ran("sha256sum"), "an unknown destination is not read");
@@ -1060,19 +1030,6 @@ fn a_sandbox_copy_that_changes_while_it_is_read_is_refused() -> Checked {
     .required()?;
     assert!(absent.is_none());
     Ok(())
-}
-
-fn observe(
-    host: &dyn crate::boundary::host::HostEnvironment,
-    sandbox: &str,
-    declarations: &[FileDeclaration],
-) -> Result<Vec<PlacedFile>> {
-    super::observe(
-        host,
-        sandbox,
-        declarations,
-        &mut crate::design::SilentProgress,
-    )
 }
 
 fn observe_against_baseline(

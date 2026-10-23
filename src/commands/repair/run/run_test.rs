@@ -77,7 +77,6 @@ fn repair_remains_a_compatible_entry_for_an_interrupted_open() -> Checked {
 
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -118,7 +117,6 @@ fn repair_uses_the_recorded_snapshot_after_global_input_changes() -> Checked {
 
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
@@ -166,7 +164,6 @@ fn an_active_session_blocks_repair_without_evicting_it() -> Checked {
     let mark = world.mark();
     let error = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -211,7 +208,6 @@ fn repair_rechecks_state_after_taking_the_exclusive_lease() -> Checked {
     };
     let error = prepare(
         &bench.location,
-        &bench.config,
         Some(&project_of(&request)?),
         &host,
         bench.workspace_root.path(),
@@ -242,7 +238,6 @@ fn an_interrupted_build_is_still_repairable_after_its_sandbox_stopped() -> Check
     let project = project_of(&request)?;
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -294,7 +289,6 @@ fn a_stopped_project_is_refused_rather_than_repaired_from_unread_facts() -> Chec
     let mark = world.mark();
     let error = prepare(
         &bench.location,
-        &bench.config,
         Some(&project_of(&request)?),
         &world,
         bench.workspace_root.path(),
@@ -334,7 +328,6 @@ fn repair_is_read_only_for_fresh_and_ready_projects() -> Checked {
 
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -358,7 +351,6 @@ fn repair_is_read_only_for_fresh_and_ready_projects() -> Checked {
 
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -400,7 +392,6 @@ fn a_legacy_incomplete_project_records_intent_before_repairing() -> Checked {
     let project = project_of(&request)?;
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -450,7 +441,6 @@ fn repair_stops_when_a_legacy_plan_is_no_longer_true() -> Checked {
     let project = project_of(&request)?;
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -517,7 +507,6 @@ fn repair_clears_an_intent_after_read_only_completion_verification() -> Checked 
     let project = project_of(&request)?;
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -577,7 +566,6 @@ fn repair_does_not_clear_an_intent_it_cannot_verify_as_complete() -> Checked {
     let project = project_of(&request)?;
     prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -617,7 +605,6 @@ fn repair_asks_for_another_repair_when_completion_cannot_be_reverified_after_pro
     let project = project_of(&request)?;
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -670,7 +657,6 @@ fn an_interrupted_local_project_is_repaired_without_a_token() -> Checked {
     let project = crate::project::ProjectId::parse("local/app").required()?;
     let prepared = prepare(
         &bench.location,
-        &bench.config,
         Some(&project),
         &world,
         bench.workspace_root.path(),
@@ -726,7 +712,6 @@ const LAST_OBSERVATION_STEP: &str = "sbx template ls";
 fn prepared(bench: &Bench, world: &World, project: &ProjectId) -> Result<Prepared> {
     prepare(
         &bench.location,
-        &bench.config,
         Some(project),
         world,
         bench.workspace_root.path(),
@@ -775,15 +760,12 @@ fn a_repair_whose_last_observation_is_unsafe_changes_nothing() -> Checked {
     let world = World::new();
     let (_, project) = legacy_incomplete(&bench, &world)?;
     let plan = prepared(&bench, &world, &project).required()?;
-    world.answering(
-        "sha256sum",
-        0,
-        "0000000000000000000000000000000000000000000000000000000000000000  -\n",
-    );
+    world.answering("rev-parse --is-bare-repository", 0, "false\n");
 
-    let error = executed(&bench, &world, plan).refused_because("a declared file changed")?;
+    let error =
+        executed(&bench, &world, plan).refused_because("the repository is no longer bare")?;
 
-    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     assert!(
         bench
             .stored("Example-Org/Example-Repo")?
@@ -1007,17 +989,13 @@ fn repair_plans_nothing_when_the_second_observation_is_unsafe() -> Checked {
     let (_, project) = legacy_incomplete(&bench, &world)?;
     world.change_before("sbx ls", |world| {
         world.change_before("sbx ls", |world| {
-            world.answering(
-                "sha256sum",
-                0,
-                "0000000000000000000000000000000000000000000000000000000000000000  -\n",
-            );
+            world.answering("rev-parse --is-bare-repository", 0, "false\n");
         });
     });
 
     let error = prepared(&bench, &world, &project).refused_because("an unsafe observation")?;
 
-    assert_eq!(error.first_id(), Some(ErrorId::DeclaredFileConflict));
+    assert_eq!(error.first_id(), Some(ErrorId::SandboxRepositoryUnusable));
     Ok(())
 }
 
@@ -1134,7 +1112,6 @@ fn a_repair_stops_at_any_step_that_does_not_answer() -> Checked {
     let repaired = |host: &dyn HostEnvironment, bench: &Bench, project: &ProjectId| {
         let plan = prepare(
             &bench.location,
-            &bench.config,
             Some(project),
             host,
             bench.workspace_root.path(),

@@ -32,7 +32,6 @@ pub fn exec(
 
     let prepared = match super::run::prepare(
         context.location,
-        &config,
         project,
         host,
         context.workspace_root,
