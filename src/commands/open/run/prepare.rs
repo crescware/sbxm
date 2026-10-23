@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::boundary::host::protocol::SandboxEntry;
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::config::{ConfigLocation, GlobalConfig};
 use crate::design::{Fact, Warning};
@@ -117,8 +118,11 @@ fn prepare_runtime(
     poll: Poll,
     progress: &mut dyn ProgressSink,
 ) -> Result<(Option<provisioning::ProvisioningOutput>, Vec<Warning>)> {
+    // project lockの後に読んだ一覧を、この関数のあいだ使い回す。同じlockの下で
+    // Sandboxのrecordを変えるのは自分の起動と作成だけなので、起動した直後に`start`が
+    // 返す一覧へ差し替えるほかは、読み直さない。
     progress.step(msg!("progress-inspect-sandbox"));
-    let entries = daemon::list(host)?;
+    let mut entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;
     let mut warnings = Vec::new();
     if state == ProjectState::Stopped
@@ -133,29 +137,45 @@ fn prepare_runtime(
         // ままexclusiveを解放してsharedへ移るため、lifecycle操作が間へ入らない。
         let exclusive = locked.acquire_exclusive_session_lease()?;
         if state == ProjectState::Stopped {
-            inventory::start(host, &locked.metadata, workspace_root, progress)?;
-            inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
+            entries = start(host, &locked.metadata, workspace_root, poll, progress)?;
         }
-        let output = provisioning::ensure_initial(locked, config, host, workspace_root, progress)?;
+        // 完成の観測でSandboxの中を読めたこと、つまりrunningであることを確かめてから
+        // 返る。ここで改めてrunningを待たない。
+        let output =
+            provisioning::ensure_initial(locked, config, host, &entries, workspace_root, progress)?;
         drop(exclusive);
         Some(output)
     } else {
         if state == ProjectState::Stopped {
-            inventory::start(host, &locked.metadata, workspace_root, progress)?;
+            entries = start(host, &locked.metadata, workspace_root, poll, progress)?;
         }
         None
     };
-    inventory::wait_until_running(host, &locked.metadata, workspace_root, poll)?;
 
     // intentは無いがSandboxは在る案件で、成果物の一部が欠けている場合だけ、観測できた
     // 不足工程をこのopenで補う。`status`はこの状態にも`sbxm open`を案内するため、
     // ここで直せない欠落を残さない。
     let provisioned = if provisioned.is_none() {
-        complete_missing_interior(locked, host, workspace_root, progress)?
+        complete_missing_interior(locked, host, &entries, workspace_root, progress)?
     } else {
         provisioned
     };
     Ok((provisioned, warnings))
+}
+
+/// 停止中のSandboxを起動し、runningと読めた一覧を返す。
+///
+/// 起動の前に読んだ一覧は、起動の後にはもう正しくない。runningを待つ読み直しが
+/// その一覧を兼ねるため、呼び出し元は別に読み直さない。
+fn start(
+    host: &dyn HostEnvironment,
+    metadata: &ProjectMetadata,
+    workspace_root: &Path,
+    poll: Poll,
+    progress: &mut dyn ProgressSink,
+) -> Result<Vec<SandboxEntry>> {
+    inventory::start(host, metadata, workspace_root, progress)?;
+    inventory::wait_until_running(host, metadata, workspace_root, poll)
 }
 
 /// intentが無い案件のIncompleteを、記録済みbaselineから観測できた不足工程だけ補う。
@@ -165,11 +185,13 @@ fn prepare_runtime(
 fn complete_missing_interior(
     locked: &mut crate::support::select::Locked,
     host: &dyn HostEnvironment,
+    entries: &[SandboxEntry],
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<Option<provisioning::ProvisioningOutput>> {
     let observation = provisioning::observe(
         host,
+        entries,
         &locked.paths,
         &locked.metadata,
         workspace_root,
@@ -185,9 +207,11 @@ fn complete_missing_interior(
     let output = provisioning::provision_interior(locked, &inputs, host, progress, Vec::new())?;
     drop(exclusive);
 
+    // 補ったのはSandboxの中だけで、recordは変えていない。一覧は同じものを使う。
     progress.step(msg!("progress-inspect-result"));
     let completed = provisioning::observe(
         host,
+        entries,
         &locked.paths,
         &locked.metadata,
         workspace_root,

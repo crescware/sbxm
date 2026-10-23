@@ -1,14 +1,16 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::{SandboxEntry, SandboxState};
 use crate::config::GlobalConfig;
 use crate::design::{Fact, ProgressSink, Warning};
 use crate::diagnostics::Result;
 use crate::metadata;
 use crate::msg;
 use crate::paths;
-use crate::support::sandbox;
 use crate::support::select::Locked;
+use crate::support::{daemon, sandbox};
 
 use super::{
     Observation, ProvisioningInputs, ProvisioningOutput, build_initial, initial_intent, observe,
@@ -16,10 +18,13 @@ use super::{
 };
 
 /// 初回構築の中断記録を、観測済みの成果物を保持したまま完成させる。
+///
+/// `entries`は、`observation`を作ったときのSandboxの一覧である。
 pub(crate) fn resume_initial(
     locked: &mut Locked,
     config: &GlobalConfig,
     host: &dyn HostEnvironment,
+    entries: &[SandboxEntry],
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
     observation: &Observation,
@@ -72,8 +77,20 @@ pub(crate) fn resume_initial(
     };
 
     progress.step(msg!("progress-inspect-result"));
+    // runningのSandboxの中だけを補った場合、recordは変わっていないため、受け取った
+    // 一覧をそのまま使う。`provision`はSandboxを作成し得る。止まっていたSandboxは、
+    // 中を進める`sbx exec`が起動する。どちらも、受け取った一覧はもう正しくない。
+    let entries = if observation.sandbox.is_matching()
+        && observation.sandbox_state == Some(SandboxState::Running)
+    {
+        Cow::Borrowed(entries)
+    } else {
+        progress.step(msg!("progress-inspect-sandbox"));
+        Cow::Owned(daemon::list(host)?)
+    };
     let completed = observe(
         host,
+        &entries,
         &locked.paths,
         &locked.metadata,
         workspace_root,

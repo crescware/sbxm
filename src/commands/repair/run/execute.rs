@@ -6,6 +6,7 @@ use crate::design::{Fact, ProgressSink, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata;
 use crate::msg;
+use crate::support::daemon;
 use crate::support::provisioning::{self, ProvisioningInputs, ProvisioningState};
 
 use crate::commands::repair::RepairOutput;
@@ -34,9 +35,12 @@ pub fn execute(
         });
     }
 
+    // 表示から実行までproject lockを保持しており、Sandboxのrecordは変わっていない。
+    // 一覧は`prepare`が読んだものを使う。
     progress.step(msg!("progress-inspect-recheck"));
     let latest = provisioning::observe(
         host,
+        &prepared.entries,
         &prepared.paths,
         &prepared.locked.metadata,
         workspace_root,
@@ -98,9 +102,13 @@ pub fn execute(
         warnings,
     )?;
 
+    // `provision`はSandboxを作成し得るため、一覧はここで読み直す。
     progress.step(msg!("progress-inspect-result"));
+    progress.step(msg!("progress-inspect-sandbox"));
+    let entries = daemon::list(host)?;
     let completed = provisioning::observe(
         host,
+        &entries,
         &prepared.paths,
         &prepared.locked.metadata,
         workspace_root,
@@ -133,8 +141,14 @@ fn resume_intent(
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<RepairOutput> {
-    let output =
-        provisioning::ensure_initial(&mut prepared.locked, config, host, workspace_root, progress)?;
+    let output = provisioning::ensure_initial(
+        &mut prepared.locked,
+        config,
+        host,
+        &prepared.entries,
+        workspace_root,
+        progress,
+    )?;
     Ok(RepairOutput {
         project: output.project,
         sandbox: output.sandbox,

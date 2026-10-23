@@ -6,8 +6,8 @@ use crate::design::ProgressSink;
 use crate::diagnostics::{Error, Result};
 use crate::metadata;
 use crate::msg;
-use crate::support::image;
 use crate::support::select::Locked;
+use crate::support::{daemon, image};
 
 use super::{
     ProvisioningInputs, ProvisioningOutput, ProvisioningState, initial_intent, observe, provision,
@@ -66,10 +66,14 @@ pub(crate) fn build_initial(
     .map_err(|error| with_open_command(error, &project))?;
 
     // 成果物をread-onlyで再確認できてからintentをclearする。clearのatomic replaceに失敗
-    // した場合も、disk上のintentは残るため、次回のopenへ安全に渡る。
+    // した場合も、disk上のintentは残るため、次回のopenへ安全に渡る。`provision`は
+    // Sandboxを作成し得るため、一覧はここで読み直す。
     progress.step(msg!("progress-inspect-result"));
+    progress.step(msg!("progress-inspect-sandbox"));
+    let entries = daemon::list(host).map_err(|error| with_open_command(error, &project))?;
     let completed = observe(
         host,
+        &entries,
         &locked.paths,
         &locked.metadata,
         workspace_root,

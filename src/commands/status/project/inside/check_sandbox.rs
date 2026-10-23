@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::SandboxEntry;
 use crate::diagnostics::ErrorId;
 use crate::metadata::ProjectMetadata;
 
@@ -19,14 +20,18 @@ use crate::commands::status::project::{ProjectStatus, Value};
 /// あり、その出所は`sbx ls`である。`status-item-workspace`はそのrecordがmount元と
 /// して宣言する中立workspace directoryが、host上に在るかである。recordが在ることは
 /// directoryが在ることを含まないため、後者はhostを実測して決める。
+///
+/// 読めた一覧は、同じstatusの中の観測へ渡すために、状態とは別に返す。一覧そのものを
+/// 読めなかった場合は`None`、読めたがこの案件の状態を決められなかった場合は一覧と
+/// `None`を返す。
 pub fn check_sandbox(
     host: &dyn HostEnvironment,
     metadata: &ProjectMetadata,
     workspace_root: &Path,
     status: &mut ProjectStatus,
-) -> Option<ProjectState> {
-    let observed = match daemon::list(host) {
-        Ok(entries) => inventory::state_of(&entries, metadata, workspace_root),
+) -> Option<(Vec<SandboxEntry>, Option<ProjectState>)> {
+    let entries = match daemon::list(host) {
+        Ok(entries) => entries,
         Err(error) => {
             // 一覧そのものを読めないのはglobal環境の問題である。
             status.push("status-item-sandbox", Value::NotObserved);
@@ -36,7 +41,7 @@ pub fn check_sandbox(
         }
     };
 
-    match observed {
+    let state = match inventory::state_of(&entries, metadata, workspace_root) {
         Ok(state) => {
             let sandbox = match state {
                 ProjectState::Running => Value::Running,
@@ -67,7 +72,8 @@ pub fn check_sandbox(
                 .extend(error.diagnostics().iter().cloned());
             None
         }
-    }
+    };
+    Some((entries, state))
 }
 
 /// 中立workspace directoryが、host上に在るかを実測する。

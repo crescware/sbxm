@@ -14,7 +14,7 @@ use crate::paths::{self, PRIVATE_DIR_MODE, ProjectParent, ProjectPaths};
 use crate::project::ProjectId;
 
 use crate::support::provisioning::{ProvisioningOutput, ensure_initial};
-use crate::support::select;
+use crate::support::{daemon, select};
 
 use super::World;
 use crate::design::{ProgressSink, SilentProgress};
@@ -100,10 +100,12 @@ impl Bench {
         progress: &mut dyn ProgressSink,
     ) -> Result<ProvisioningOutput> {
         let mut locked = select::find(&self.location, project)?.lock()?;
+        let entries = daemon::list(world)?;
         ensure_initial(
             &mut locked,
             config,
             world,
+            &entries,
             self.workspace_root.path(),
             progress,
         )

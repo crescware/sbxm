@@ -11,7 +11,7 @@ use crate::project::{SandboxLayout, SandboxName};
 use crate::support::Observed;
 
 use crate::support::{
-    daemon, generation, identity, image, inventory, repository, sandbox, secret, template, tools,
+    generation, identity, image, inventory, repository, sandbox, secret, template, tools,
 };
 
 use super::declared_files::declared_files;
@@ -27,8 +27,13 @@ type Blocking = Vec<Error>;
 /// `Observation`へ記録して最後まで観測を並べ、変更を伴う呼び出し側が
 /// `Observation::require_safe`で拒否する。`Err`はhost自体へ問い合わせられなかった
 /// 場合だけとする。
+///
+/// Sandboxの一覧は、呼び出し元がproject lockの後に読んだ`entries`を使い、ここでは
+/// 読み直さない。同じlockの下でSandboxのrecordを変えるのは呼び出し元の作成と起動
+/// だけなので、その後に呼ぶ呼び出し元だけが読み直してから渡す。
 pub(crate) fn observe(
     host: &dyn HostEnvironment,
+    entries: &[SandboxEntry],
     paths: &ProjectPaths,
     metadata: &ProjectMetadata,
     workspace_root: &Path,
@@ -60,9 +65,7 @@ pub(crate) fn observe(
     );
     let mut blocking = Blocking::new();
 
-    progress.step(msg!("progress-inspect-sandbox"));
-    let entries = daemon::list(host)?;
-    let entry = inventory::single(&entries, name.as_str())?;
+    let entry = inventory::single(entries, name.as_str())?;
     if let Some(entry) = entry {
         observation.sandbox_state = Some(entry.state);
         observation.sandbox = match sandbox::verify_identity(entry, &name, workspace_root) {

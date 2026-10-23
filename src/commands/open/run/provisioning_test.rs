@@ -777,12 +777,9 @@ fn a_missing_worktree_is_not_restored_from_an_unfinished_observation() -> Checke
     let bench = Bench::new()?;
     let world = World::new();
     let (_, project) = missing_a_worktree(&bench, &world)?;
-    // 1回目は一覧、2回目は起動の確認、3回目が欠落の観測である。
-    world.change_before("sbx ls", |world| {
-        world.change_before("sbx ls", |world| {
-            world.change_before("sbx ls", |world| world.timing_out("sbx ls"));
-        });
-    });
+    // 欠落の観測は、一覧を読み直さずSandboxの中を読むところから始まる。その最初の
+    // 起動で期限を過ぎる。
+    world.timing_out("printenv SSH_AUTH_SOCK");
     let mark = world.mark();
 
     assert_eq!(
@@ -838,8 +835,10 @@ fn a_restored_worktree_whose_completion_cannot_be_observed_stops_open() -> Check
     let bench = Bench::new()?;
     let world = World::new();
     let (_, project) = missing_a_worktree(&bench, &world)?;
+    // 補った後の観測は、一覧を読み直さずSandboxの中を読むところから始まる。その最初の
+    // 起動で期限を過ぎる。
     world.change_before("worktree add", |world| {
-        world.change_before("sbx ls", |world| world.timing_out("sbx ls"));
+        world.timing_out("printenv SSH_AUTH_SOCK");
     });
 
     assert_eq!(
@@ -871,9 +870,11 @@ fn a_worktree_lost_again_after_the_restoration_stops_open() -> Checked {
     let world = World::new();
     let (_, project) = missing_a_worktree(&bench, &world)?;
     let missing = SandboxLayout::new(bench.stored(PROJECT)?.canonical_id()).worktree(1);
+    // 補った後の観測は、一覧を読み直さずSandboxの中を読むところから始まる。その直前に
+    // worktreeが再び消える。
     world.change_before("worktree add", move |world| {
         let missing = missing.clone();
-        world.change_before("sbx ls", move |world| {
+        world.change_before("printenv SSH_AUTH_SOCK", move |world| {
             world.present.borrow_mut().remove(&missing);
             world.worktrees.borrow_mut().remove(&missing);
         });

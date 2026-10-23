@@ -181,6 +181,35 @@ fn a_stopped_project_is_not_given_a_command_that_cannot_be_proven() -> Checked {
 }
 
 #[test]
+fn the_next_action_is_decided_from_the_listing_the_status_already_read() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let request = request("Example-Org/Example-Repo", None, None)?;
+    bench
+        .build(&world, &request)
+        .required_because("the first build completes")?;
+    let mark = world.mark();
+
+    diagnose(
+        &bench.location,
+        &bench.config,
+        &project_of(&request)?,
+        &world,
+        bench.workspace_root.path(),
+    )
+    .required_because("diagnose the built project")?;
+
+    // Sandboxの状態と次の一手は、同じ1回の一覧から決める。
+    let listings = world
+        .since(mark)
+        .iter()
+        .filter(|call| *call == "sbx ls --json")
+        .count();
+    assert_eq!(listings, 1, "{:?}", world.since(mark));
+    Ok(())
+}
+
+#[test]
 fn a_missing_token_registration_is_reported_with_the_command_that_registers_it() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();

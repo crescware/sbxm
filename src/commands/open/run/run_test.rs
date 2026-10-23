@@ -236,6 +236,26 @@ fn a_running_project_is_opened_without_touching_the_daemon() -> Checked {
 }
 
 #[test]
+fn a_running_project_reads_the_sandbox_listing_once_after_the_lock() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("Example-Org/Example-Repo")?;
+    let running = format!("[{}]", fixture.entry(&project, "running")?);
+    let host = ready(FakeSbx::listing(&running), &project)?;
+
+    prepare_for(&fixture, &host).required_because("prepare")?;
+
+    // project lockの後に1回読んだ一覧を、runningの確認にも完全観測にも使う。同じlockの
+    // 下でSandboxのrecordを変えるのは自分の起動だけであり、ここでは起動していない。
+    let listings = host
+        .calls()
+        .iter()
+        .filter(|call| call.join(" ") == "ls --json")
+        .count();
+    assert_eq!(listings, 1, "{:?}", host.calls());
+    Ok(())
+}
+
+#[test]
 fn disk_usage_is_observed_exactly_once_after_the_sandbox_is_confirmed_running() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
