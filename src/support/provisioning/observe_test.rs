@@ -255,18 +255,19 @@ fn blocked_by(observation: &Observation, observed: &Observed, id: ErrorId) -> Ch
 }
 
 #[test]
-fn a_git_identity_that_answers_someone_else_is_recorded_as_unsafe() -> Checked {
+fn a_git_identity_changed_inside_the_sandbox_is_kept_as_the_users_choice() -> Checked {
     let observation = reobserved(
         |world| world.answering("--get user.name", 0, "Someone Else\n"),
         |_| {},
     )?
-    .required_because("a foreign identity does not end the observation")?;
+    .required_because("a changed identity does not end the observation")?;
 
-    blocked_by(
-        &observation,
-        &observation.identity,
-        ErrorId::SandboxIdentityMismatch,
-    )
+    assert_eq!(observation.identity, Observed::Matching, "{observation:?}");
+    observation
+        .require_safe()
+        .required_because("a value chosen inside the sandbox does not stop a change")?;
+    assert_eq!(observation.state, ProvisioningState::Ready);
+    Ok(())
 }
 
 #[test]
@@ -337,18 +338,19 @@ fn a_gh_protocol_that_is_not_set_is_missing_rather_than_unsafe() -> Checked {
 }
 
 #[test]
-fn a_gh_protocol_set_to_something_else_is_recorded_as_unsafe() -> Checked {
+fn a_gh_protocol_changed_inside_the_sandbox_is_kept_as_the_users_choice() -> Checked {
     let observation = reobserved(
         |world| world.answering("config get git_protocol", 0, "ssh\n"),
         |_| {},
     )?
-    .required_because("a foreign protocol does not end the observation")?;
+    .required_because("a changed protocol does not end the observation")?;
 
-    blocked_by(
-        &observation,
-        &observation.tools,
-        ErrorId::SandboxIdentityMismatch,
-    )
+    assert_eq!(observation.tools, Observed::Matching, "{observation:?}");
+    observation
+        .require_safe()
+        .required_because("a value chosen inside the sandbox does not stop a change")?;
+    assert_eq!(observation.state, ProvisioningState::Ready);
+    Ok(())
 }
 
 #[test]

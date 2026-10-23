@@ -116,11 +116,18 @@ fn the_protocol_is_written_only_when_it_is_not_already_https() -> Checked {
 }
 
 #[test]
-fn a_protocol_that_was_changed_by_hand_stops_the_run() -> Checked {
+fn a_protocol_that_was_changed_by_hand_is_kept() -> Checked {
+    // Sandboxの中で利用者が選んだ値である。戻さず、止めもしない。
     let host = FakeSbx::holding(&[("git_protocol", "ssh")]);
-    let error = ensure_git_protocol(&host, "sbxm-example")
-        .refused_because("a different value is refused")?;
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
+    ensure_git_protocol(&host, "sbxm-example").required_because("a chosen value is kept")?;
+    assert!(
+        !host
+            .calls()
+            .iter()
+            .any(|args| args.contains(&"set".to_string())),
+        "{:?}",
+        host.calls()
+    );
     Ok(())
 }
 
@@ -177,29 +184,27 @@ fn values_that_already_match_are_left_as_they_are() -> Checked {
 
 #[test]
 fn read_only_identity_observation_reports_missing_empty_matching_and_other_values() -> Checked {
-    let expected = identity();
     assert!(observe(
         &FakeSbx::holding(&[
             ("user.name", "Example User"),
             ("user.email", "user@example.com"),
         ]),
         "sbxm-example",
-        &expected,
     )?);
-    assert!(!observe(&FakeSbx::holding(&[]), "sbxm-example", &expected)?);
+    assert!(!observe(&FakeSbx::holding(&[]), "sbxm-example")?);
     assert!(!observe(
         &FakeSbx::holding(&[("user.name", ""), ("user.email", "user@example.com")]),
         "sbxm-example",
-        &expected,
     )?);
 
-    let error = observe(
-        &FakeSbx::holding(&[("user.name", "Another User")]),
+    // 記録と違う値も、Sandboxの中で利用者が選んだ値として設定済みと答える。
+    assert!(observe(
+        &FakeSbx::holding(&[
+            ("user.name", "Another User"),
+            ("user.email", "another@example.com"),
+        ]),
         "sbxm-example",
-        &expected,
-    )
-    .refused_because("a different identity is not silently accepted")?;
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
+    )?);
     Ok(())
 }
 
@@ -218,43 +223,33 @@ fn read_only_git_protocol_observation_reports_missing_empty_matching_and_other_v
         "sbxm-example",
     )?);
 
-    let error = observe_git_protocol(
+    // HTTPS以外の値も、Sandboxの中で利用者が選んだ値として設定済みと答える。
+    assert!(observe_git_protocol(
         &FakeSbx::holding(&[("git_protocol", "ssh")]),
         "sbxm-example",
-    )
-    .refused_because("a different protocol is not silently accepted")?;
-    assert_eq!(error.first_id(), Some(ErrorId::SandboxIdentityMismatch));
+    )?);
     Ok(())
 }
 
 #[test]
-fn a_sandbox_configured_for_someone_else_is_not_overwritten() -> Checked {
-    for settings in [
-        vec![("user.name", "Another User")],
-        vec![
-            ("user.name", "Example User"),
-            ("user.email", "another@example.com"),
-        ],
-    ] {
-        let host = FakeSbx::holding(&settings);
-        let error = ensure(&host, "sbxm-example", &identity())
-            .refused_because("a different value belongs to someone else")?;
-        assert_eq!(
-            error.first_id(),
-            Some(ErrorId::SandboxIdentityMismatch),
-            "{settings:?} produced the wrong error"
-        );
-        assert!(
-            !host
-                .calls()
-                .iter()
-                .any(|args| args.contains(&"Example User".to_string())
-                    && args.contains(&"--global".to_string())
-                    && !args.contains(&"--get".to_string())),
-            "nothing is written while a value disagrees: {:?}",
-            host.calls()
-        );
-    }
+fn a_value_already_set_in_the_sandbox_is_kept() -> Checked {
+    // Sandboxの中で利用者が選んだ値である。記録と違っても、戻さず、止めもしない。
+    let host = FakeSbx::holding(&[
+        ("user.name", "Another User"),
+        ("user.email", "another@example.com"),
+    ]);
+    ensure(&host, "sbxm-example", &identity()).required_because("chosen values are kept")?;
+    assert!(
+        !host.wrote("Example User") && !host.wrote("user@example.com"),
+        "nothing is written over a value that is already set: {:?}",
+        host.calls()
+    );
+
+    // 書くのは未設定のkeyだけである。
+    let host = FakeSbx::holding(&[("user.name", "Another User")]);
+    ensure(&host, "sbxm-example", &identity()).required_because("the unset key is written")?;
+    assert!(!host.wrote("Example User"), "{:?}", host.calls());
+    assert!(host.wrote("user@example.com"), "{:?}", host.calls());
     Ok(())
 }
 

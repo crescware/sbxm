@@ -8,10 +8,12 @@ mod fetch_refspec;
 mod has_local_branches;
 mod host_git;
 mod host_repository;
+mod initialization;
 mod inspect_bare;
 #[cfg(test)]
 #[path = "mod_test.rs"]
 mod mod_test;
+mod observe_initialization;
 mod push_refusal;
 mod push_to_sandbox;
 mod refresh_origin;
@@ -35,7 +37,9 @@ pub(crate) use fetch_refspec::FETCH_REFSPEC;
 pub use has_local_branches::has_local_branches;
 pub use host_git::host_git;
 pub use host_repository::host_repository;
+pub use initialization::Initialization;
 pub use inspect_bare::inspect_bare;
+pub use observe_initialization::observe_initialization;
 pub use push_refusal::PushRefusal;
 pub use push_to_sandbox::push_to_sandbox;
 pub use refresh_origin::refresh_origin;
