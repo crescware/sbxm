@@ -60,7 +60,8 @@ pub fn diagnose(
     progress.step(msg!("progress-status-image"));
     check_image(host, &name, &metadata, &mut status);
     progress.step(msg!("progress-inspect-sandbox"));
-    let state = check_sandbox(host, &metadata, workspace_root, &mut status);
+    let listed = check_sandbox(host, &metadata, workspace_root, &mut status);
+    let state = listed.as_ref().and_then(|(_, state)| *state);
 
     // 5-9. Sandbox内部の検査
     let host_repository = repository::host_repository(&paths, &metadata);
@@ -88,10 +89,13 @@ pub fn diagnose(
 
     // 次の1手は、`repair`と同じ共有観測から同じ規則で決める。statusが別の判定規則を
     // 持つと、案内したcommandが実行時に「不要」と答え得る。観測そのものが成立しない
-    // 場合は、実行できると証明できないcommandを出さない。
+    // 場合は、実行できると証明できないcommandを出さない。Sandboxの一覧は
+    // `check_sandbox`が読んだものを使い、読み直さない。
     progress.step(msg!("progress-status-next"));
-    status.next = provisioning::observe(host, &paths, &metadata, workspace_root, progress)
-        .ok()
+    status.next = listed
+        .and_then(|(entries, _)| {
+            provisioning::observe(host, &entries, &paths, &metadata, workspace_root, progress).ok()
+        })
         .and_then(|observation| NextAction::decide(&metadata, &observation));
 
     Ok(status)

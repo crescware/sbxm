@@ -8,6 +8,7 @@ use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::{ProjectId, SandboxName};
 use crate::support::Observed;
+use crate::support::daemon;
 use crate::support::files::Placement;
 use crate::support::provisioning::{self, Observation, ProvisioningState};
 use crate::support::select::ProjectPrompt;
@@ -32,8 +33,11 @@ pub fn prepare(
     ));
     let locked = candidate.lock()?;
     crate::support::generation::require_no_rebuild(&locked.metadata)?;
+    progress.step(msg!("progress-inspect-sandbox"));
+    let entries = daemon::list(host)?;
     let first = provisioning::observe(
         host,
+        &entries,
         &locked.paths,
         &locked.metadata,
         workspace_root,
@@ -61,6 +65,7 @@ pub fn prepare(
         return Ok(Prepared {
             paths: locked.paths.clone(),
             locked,
+            entries,
             observation: first,
             target: plan.target_generation.clone(),
             preconditions: None,
@@ -74,10 +79,12 @@ pub fn prepare(
     let session_lease = locked.acquire_exclusive_session_lease()?;
 
     // lease取得後にもう一度読む。別workflowが先に成果物を進めていた場合は、最初の
-    // repair計画をそのまま適用しない。
+    // repair計画をそのまま適用しない。Sandboxの一覧は読み直さない。同じproject lockの
+    // 下でrecordを変えるのは自分の作成と起動だけであり、ここではどちらもしていない。
     progress.step(msg!("progress-inspect-recheck"));
     let second = provisioning::observe(
         host,
+        &entries,
         &locked.paths,
         &locked.metadata,
         workspace_root,
@@ -99,6 +106,7 @@ pub fn prepare(
     Ok(Prepared {
         paths: locked.paths.clone(),
         locked,
+        entries,
         observation: second,
         target,
         preconditions: Some(preconditions),

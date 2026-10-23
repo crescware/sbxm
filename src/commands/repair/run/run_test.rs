@@ -1,50 +1,19 @@
-use crate::boundary::host::{CommandOutcome, CommandSpec, HostEnvironment};
+use crate::boundary::host::HostEnvironment;
 use crate::design::SilentProgress;
 use crate::diagnostics::{ErrorId, Result};
 use crate::metadata;
 use crate::paths::{self, LOCK_TIMEOUT, PRIVATE_FILE_MODE, PathScope, ProjectPaths};
 use crate::testing::add_request::{project_of, request};
-use crate::testing::host::AnsweredHost;
 use crate::testing::outcome::{Checked, Refused, Required};
 use crate::testing::prompt::ScriptedPrompt;
 use crate::testing::provisioning::{Bench, World};
-use std::cell::Cell;
 use std::fs;
-use std::path::PathBuf;
 
 use crate::project::{ProjectId, SandboxLayout};
 
 use super::{Prepared, RepairAction, execute};
 use crate::commands::repair::RepairOutput;
 use crate::testing::repair::prepare;
-
-struct StateChangingHost<'a> {
-    world: &'a World,
-    workspace: PathBuf,
-    sandbox_listings: Cell<usize>,
-}
-
-impl AnsweredHost for StateChangingHost<'_> {
-    fn has_command(&self, program: &str) -> bool {
-        self.world.command_exists(program)
-    }
-
-    fn answer(&self, spec: &CommandSpec) -> crate::diagnostics::Result<CommandOutcome> {
-        if spec.program == "sbx" && spec.args.as_slice() == ["ls", "--json"] {
-            let listing = self.sandbox_listings.get();
-            self.sandbox_listings.set(listing + 1);
-            if listing == 1 {
-                self.world.images.borrow_mut().clear();
-                self.world.templates.borrow_mut().clear();
-                self.world.sandboxes.borrow_mut().clear();
-                if self.workspace.is_dir() {
-                    assert!(fs::remove_dir_all(&self.workspace).is_ok());
-                }
-            }
-        }
-        self.world.run(spec)
-    }
-}
 
 #[test]
 fn repair_remains_a_compatible_entry_for_an_interrupted_open() -> Checked {
@@ -188,32 +157,30 @@ fn an_active_session_blocks_repair_without_evicting_it() -> Checked {
 fn repair_rechecks_state_after_taking_the_exclusive_lease() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
-    let request = request("Example-Org/Example-Repo", None, None)?;
-    world.failing("worktree add");
-    bench
-        .build(&world, &request)
-        .refused_because("the old run stopped after reusable artifacts were made")?;
-    world.nothing_fails();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    // lease取得後の再確認は、Sandboxの一覧を読み直さず、Sandboxの中を読むところから
+    // 始まる。その直前に、別のworkflowが欠けていたworktreeを作り終えている。
+    let stored = bench.stored("Example-Org/Example-Repo")?;
+    let layout = SandboxLayout::new(stored.canonical_id());
+    let created: Vec<String> = (0..stored.provisioning.requested_worktrees)
+        .map(|index| layout.worktree(index))
+        .collect();
+    world.change_before("printenv SSH_AUTH_SOCK", move |world| {
+        let created = created.clone();
+        world.change_before("printenv SSH_AUTH_SOCK", move |world| {
+            for path in &created {
+                world.present.borrow_mut().insert(path.clone());
+                world
+                    .worktrees
+                    .borrow_mut()
+                    .insert(path.clone(), Some(world.default_branch.clone()));
+            }
+        });
+    });
 
-    let paths = ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
-    let mut stored = bench.stored("Example-Org/Example-Repo")?;
-    stored.initial_provisioning = None;
-    metadata::update(&paths, &stored).required_because("make the record legacy")?;
+    let error =
+        prepared(&bench, &world, &project).refused_because("repair does not apply a stale plan")?;
 
-    let sandbox = stored.sandbox_name().to_string();
-    let host = StateChangingHost {
-        world: &world,
-        workspace: bench.workspace_root.path().join(&sandbox),
-        sandbox_listings: Cell::new(0),
-    };
-    let error = prepare(
-        &bench.location,
-        Some(&project_of(&request)?),
-        &host,
-        bench.workspace_root.path(),
-        &mut ScriptedPrompt::choosing(0),
-    )
-    .refused_because("repair does not apply a stale plan")?;
     assert_eq!(
         error.first_id(),
         Some(ErrorId::InitialProvisioningStateChanged)
@@ -740,7 +707,9 @@ fn a_repair_whose_last_observation_cannot_finish_changes_nothing() -> Checked {
     let world = World::new();
     let (_, project) = legacy_incomplete(&bench, &world)?;
     let plan = prepared(&bench, &world, &project).required()?;
-    world.timing_out("sbx ls");
+    // 実行前の再確認は、一覧を読み直さずSandboxの中を読むところから始まる。その最初の
+    // 起動で期限を過ぎる。
+    world.timing_out("printenv SSH_AUTH_SOCK");
 
     let error = executed(&bench, &world, plan).refused_because("an unfinished observation")?;
 
@@ -955,6 +924,27 @@ fn repair_leaves_a_pending_rebuild_to_rebuild() -> Checked {
 }
 
 #[test]
+fn repair_reads_the_sandbox_listing_once_while_planning() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = legacy_incomplete(&bench, &world)?;
+    let mark = world.mark();
+
+    let plan = prepared(&bench, &world, &project).required()?;
+
+    // 計画の観測と、lease取得後の再確認は、project lockの後に読んだ同じ1回の一覧から
+    // 行う。lockを保持しているあいだ、作成も起動もしなければ一覧は変わらない。
+    assert_eq!(plan.plan.state.as_str(), "incomplete");
+    let listings = world
+        .since(mark)
+        .iter()
+        .filter(|call| *call == "sbx ls --json")
+        .count();
+    assert_eq!(listings, 1, "{:?}", world.since(mark));
+    Ok(())
+}
+
+#[test]
 fn repair_plans_nothing_from_an_unfinished_first_observation() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
@@ -972,8 +962,12 @@ fn repair_plans_nothing_from_an_unfinished_second_observation() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (_, project) = legacy_incomplete(&bench, &world)?;
-    world.change_before("sbx ls", |world| {
-        world.change_before("sbx ls", |world| world.timing_out("sbx ls"));
+    // 2回目の観測は、一覧を読み直さずSandboxの中を読むところから始まる。その最初の
+    // 起動で期限を過ぎる。
+    world.change_before("printenv SSH_AUTH_SOCK", |world| {
+        world.change_before("printenv SSH_AUTH_SOCK", |world| {
+            world.timing_out("printenv SSH_AUTH_SOCK");
+        });
     });
 
     let error = prepared(&bench, &world, &project).refused_because("an unfinished observation")?;
@@ -987,8 +981,8 @@ fn repair_plans_nothing_when_the_second_observation_is_unsafe() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (_, project) = legacy_incomplete(&bench, &world)?;
-    world.change_before("sbx ls", |world| {
-        world.change_before("sbx ls", |world| {
+    world.change_before("printenv SSH_AUTH_SOCK", |world| {
+        world.change_before("printenv SSH_AUTH_SOCK", |world| {
             world.answering("rev-parse --is-bare-repository", 0, "false\n");
         });
     });
@@ -1035,8 +1029,10 @@ fn repair_plans_nothing_when_the_generation_is_lost_under_the_lease() -> Checked
     let world = World::new();
     let (paths, project) = legacy_incomplete(&bench, &world)?;
     fs::write(paths.dockerfile(), b"FROM example:edited\n").required()?;
-    world.change_before("sbx ls", |world| {
-        world.change_before("sbx ls", |world| world.images.borrow_mut().clear());
+    world.change_before("printenv SSH_AUTH_SOCK", |world| {
+        world.change_before("printenv SSH_AUTH_SOCK", |world| {
+            world.images.borrow_mut().clear();
+        });
     });
 
     let error = prepared(&bench, &world, &project).refused_because("no generation to select")?;

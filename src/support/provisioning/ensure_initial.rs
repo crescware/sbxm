@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::SandboxEntry;
 use crate::config::GlobalConfig;
 use crate::design::ProgressSink;
 use crate::diagnostics::Result;
@@ -14,15 +15,21 @@ use super::{
 ///
 /// `prepare`も`open`もここを通り、同じ観測から同じ規則で道を決める。既に目標構成が
 /// 揃っている案件を作り直さず、中断した初回構築は固定済み入力から再開する。
+///
+/// `entries`は、呼び出し元がproject lockの後に読んだSandboxの一覧である。どの道を
+/// 通っても、完成の観測でSandboxの中を読めたこと、つまりrunningであることを確かめて
+/// から返る。
 pub(crate) fn ensure_initial(
     locked: &mut Locked,
     config: &GlobalConfig,
     host: &dyn HostEnvironment,
+    entries: &[SandboxEntry],
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<ProvisioningOutput> {
     let observation = observe(
         host,
+        entries,
         &locked.paths,
         &locked.metadata,
         workspace_root,
@@ -38,8 +45,14 @@ pub(crate) fn ensure_initial(
             progress,
             target.as_deref(),
         ),
-        InitialRoute::Resume => {
-            resume_initial(locked, config, host, workspace_root, progress, &observation)
-        }
+        InitialRoute::Resume => resume_initial(
+            locked,
+            config,
+            host,
+            entries,
+            workspace_root,
+            progress,
+            &observation,
+        ),
     }
 }

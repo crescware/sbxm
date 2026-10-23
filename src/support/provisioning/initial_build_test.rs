@@ -1251,7 +1251,9 @@ fn a_resumed_completion_that_cannot_be_observed_keeps_the_intent() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (_, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
-    world.after_the_build(|world| world.timing_out("sbx ls"));
+    // 中だけを補った再開は、Sandboxの一覧を読み直さない。完成の観測はSandboxの中を
+    // 読むところから始まり、その最初の起動で期限を過ぎる。
+    world.after_the_build(|world| world.timing_out("printenv SSH_AUTH_SOCK"));
 
     let error = bench
         .ensure(&world, &project, &mut SilentProgress)
@@ -1629,10 +1631,12 @@ fn ensured_through(
     project: &crate::project::ProjectId,
 ) -> crate::diagnostics::Result<crate::support::provisioning::ProvisioningOutput> {
     let mut locked = crate::support::select::find(&bench.location, project)?.lock()?;
+    let entries = crate::support::daemon::list(host)?;
     crate::support::provisioning::ensure_initial(
         &mut locked,
         &bench.config,
         host,
+        &entries,
         bench.workspace_root.path(),
         &mut SilentProgress,
     )
