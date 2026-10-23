@@ -216,7 +216,11 @@ fn start(
 /// 値を扱わないために残した利用者の手順であり、`open`が代わりに済ませられない。tokenは
 /// Sandboxの中でfetchやpushをするときに要り、SSHでつなぐには要らない。fetchとpushが
 /// 認証で失敗することと、登録するcommandを、`warnings`へ足して接続の前に示す。
-/// ほかにも欠けがあれば、今までどおり補う工程へ進み、そこで登録が無いことを理由に止まる。
+///
+/// 登録が無いうえに、このopenが補う準備（宣言file、Git identity、ghのgit protocol、
+/// bare repository、managed worktree）のどれかも欠けていれば、今までどおり補う工程へ
+/// 進み、その最初で登録が無いことを理由に止まる。managed worktreeを作り直すには起点の
+/// branchのfetchが要ることがあり、そのfetchにはtokenが要る。
 fn complete_missing_interior(
     locked: &mut crate::support::select::Locked,
     host: &dyn HostEnvironment,

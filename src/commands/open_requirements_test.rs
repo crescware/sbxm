@@ -355,8 +355,9 @@ fn a_missing_token_registration_alone_does_not_stop_open() -> Checked {
 }
 
 #[test]
-fn a_missing_token_registration_beside_another_gap_still_stops_open() -> Checked {
-    // 要件4が扱わない場合。ほかの欠けを補う工程は、fetchにtokenを要ることがある。登録が
+fn a_missing_token_registration_with_a_missing_worktree_still_stops_open() -> Checked {
+    // 要件4が扱わない場合。登録が無いうえに、`open`が補うmanaged worktreeも欠けている。
+    // worktreeを作り直す工程は、起点のbranchのfetchにtokenを要ることがある。登録が
     // 無いことを理由に止まり、登録するcommandを示す。
     let bench = Bench::new()?;
     let world = World::new();
@@ -370,7 +371,7 @@ fn a_missing_token_registration_beside_another_gap_still_stops_open() -> Checked
     assert_eq!(diagnose(&bench, &world, &project)?.next, None);
     let error = open(&bench, &world, &project)
         .err()
-        .required_because("the other gap cannot be closed without the token")?;
+        .required_because("the worktree cannot be recreated without the token")?;
     assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
     assert!(
         suggested_commands(&error).contains(&registration(&bench)?),

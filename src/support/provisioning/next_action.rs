@@ -32,9 +32,10 @@ impl NextAction {
             return None;
         }
         // GitHub tokenの登録が無い欠けは、sbxmが代わりに埋められない。`open`は、欠けが
-        // 登録だけなら警告して接続し、ほかにも欠けがあれば登録が無いことを理由に止まる。
-        // どちらも`open`の1回では解消しないため、ここから案内しない。登録するcommandは
-        // secretの診断が示す。
+        // 登録だけなら警告して接続する。登録が無いうえに、`open`が補う準備（宣言file、
+        // managed worktreeなど）も欠けていれば、登録が無いことを理由に止まる。どちらも
+        // `open`の1回では解消しないため、ここから案内しない。登録するcommandはsecretの
+        // 診断が示す。
         if observation.sandbox.is_matching() && observation.secret.is_missing() {
             return None;
         }
