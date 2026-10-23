@@ -130,7 +130,6 @@ error_ids! {
     SandboxRepositoryUnwritable => "sandbox-repository-unwritable",
     HostRepositoryEmpty => "host-repository-empty",
     SyncRequiresLocal => "sync-requires-local",
-    SandboxIdentityMismatch => "sandbox-identity-mismatch",
     GithubSecretMissing => "github-secret-missing",
     GithubCredentialRejected => "github-credential-rejected",
     SandboxTokenEnvUnusable => "sandbox-token-env-unusable",

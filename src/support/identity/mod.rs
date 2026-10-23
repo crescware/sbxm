@@ -6,10 +6,10 @@
 //! hostの`git config --global`はこの選択の候補にしかならない。読めなくても案件を
 //! 止めない。値を決めるのはhostではなく利用者である。
 //!
-//! Sandbox内の既存の設定値が同じならそのままにし、異なる場合は別の利用者のSandboxで
-//! ある可能性があるため自動で上書きしない。
+//! Sandbox内に既に値があれば、記録と違っても利用者が選んだ値として残し、上書きも
+//! 拒否もしない。書くのは未設定の場合だけである。
 //!
-//! `gh`のprotocol設定もここに置く。値の性質が同じで、一致しない値の扱いを同じ形で
+//! `gh`のprotocol設定もここに置く。値の性質が同じで、既にある値の扱いを同じ形で
 //! 決めるためである。呼ぶかどうかは`tools`が`gh`の有無で決める。
 
 mod candidate_from_host;
@@ -17,7 +17,6 @@ mod ensure;
 mod ensure_git_protocol;
 mod git_protocol;
 mod github_host;
-mod mismatch;
 mod observe;
 mod observe_git_protocol;
 
@@ -26,7 +25,6 @@ pub use ensure::ensure;
 pub(super) use ensure_git_protocol::ensure_git_protocol;
 use git_protocol::GIT_PROTOCOL;
 use github_host::GITHUB_HOST;
-use mismatch::mismatch;
 pub use observe::observe;
 pub use observe_git_protocol::observe_git_protocol;
 

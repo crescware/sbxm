@@ -228,7 +228,8 @@ fn observe_sandbox(
         Err(error) => observation.files_placed = blocked(blocking, error),
     }
     progress.step(msg!("progress-inspect-identity"));
-    observation.identity = match identity::observe(host, sandbox, &metadata.git_identity) {
+    // 記録と違う値も、Sandboxの中で利用者が選んだ値として揃っているとみなす。
+    observation.identity = match identity::observe(host, sandbox) {
         Ok(true) => Observed::Matching,
         Ok(false) => Observed::Missing,
         Err(error) => blocked(blocking, error),

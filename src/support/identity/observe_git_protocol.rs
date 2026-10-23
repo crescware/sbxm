@@ -3,9 +3,12 @@ use crate::diagnostics::Result;
 
 use crate::support::sandbox;
 
-use super::{GIT_PROTOCOL, GITHUB_HOST, mismatch};
+use super::GITHUB_HOST;
 
-/// `gh`の`GitHub` `protocol`設定がHTTPSかを変更せずに観測する。
+/// `gh`の`GitHub` `protocol`設定が設定済みかを、変更せずに観測する。
+///
+/// HTTPS以外の値も、設定済みとして答える。Sandboxの中で利用者が選んだ値であり、
+/// 欠けているものではない。
 pub fn observe_git_protocol(host: &dyn HostEnvironment, sandbox: &str) -> Result<bool> {
     let outcome = sandbox::exec(
         host,
@@ -15,17 +18,5 @@ pub fn observe_git_protocol(host: &dyn HostEnvironment, sandbox: &str) -> Result
     if !outcome.success() {
         return Ok(false);
     }
-    let observed = outcome.stdout_text().trim().to_string();
-    if observed == GIT_PROTOCOL {
-        return Ok(true);
-    }
-    if observed.is_empty() {
-        return Ok(false);
-    }
-    Err(mismatch(
-        sandbox,
-        "gh git_protocol",
-        &observed,
-        GIT_PROTOCOL,
-    ))
+    Ok(!outcome.stdout_text().trim().is_empty())
 }

@@ -3,35 +3,23 @@ use crate::diagnostics::Result;
 
 use crate::support::sandbox;
 
-use super::{GIT_PROTOCOL, GITHUB_HOST, mismatch};
+use super::{GIT_PROTOCOL, GITHUB_HOST};
 
-/// Sandbox内の`gh``が使うprotocolがHTTPSであることを確かめる`。
+/// Sandbox内の`gh`が使うprotocolが未設定なら、HTTPSにする。
 ///
 /// sbxmはこの値を読まない。remote URLは自分でHTTPSとして書く。`gh`自身の既定も
 /// `https`であり、設定fileを持たないSandboxでは一致を観測して終わる。書き込みへ
 /// 進むのは`gh`が答えなかった場合だけである。
 ///
-/// 実際に効くのは、中で`ssh`へ変えられていた場合である。SandboxにSSH鍵は無いため、
-/// その`gh``はGitHubへ到達できない`。
+/// 既に値があれば、HTTPSでなくても利用者が選んだ値として残し、上書きも拒否もしない。
 pub fn ensure_git_protocol(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
     let outcome = sandbox::exec(
         host,
         sandbox,
         &["gh", "config", "get", "git_protocol", "--host", GITHUB_HOST],
     )?;
-    if outcome.success() {
-        let observed = outcome.stdout_text().trim().to_string();
-        if observed == GIT_PROTOCOL {
-            return Ok(());
-        }
-        if !observed.is_empty() {
-            return Err(mismatch(
-                sandbox,
-                "gh git_protocol",
-                &observed,
-                GIT_PROTOCOL,
-            ));
-        }
+    if outcome.success() && !outcome.stdout_text().trim().is_empty() {
+        return Ok(());
     }
 
     sandbox::exec(
