@@ -212,7 +212,9 @@ fn start(
 /// 補ったかどうかと一緒に、Sandboxの中をまとめて読んだ最後の結果を返す。接続直前の
 /// 確認はその結果で行い、同じことをもう一度読まない。
 ///
-/// 欠けているのが、GitHub tokenの登録だけなら、補わずに接続へ進む。登録はsbxmがtokenの
+/// 欠けているのが、GitHub tokenの登録だけなら、補わずに接続へ進む。登録が1件も無い
+/// 場合に限る。登録が複数あって1件に決まらない場合は、どれを使うかを利用者が決める
+/// 必要があり、今までどおり補う工程でその理由を示して止まる。登録はsbxmがtokenの
 /// 値を扱わないために残した利用者の手順であり、`open`が代わりに済ませられない。tokenは
 /// Sandboxの中でfetchやpushをするときに要り、SSHでつなぐには要らない。fetchとpushが
 /// 認証で失敗することと、登録するcommandを、`warnings`へ足して接続の前に示す。
@@ -245,11 +247,11 @@ fn complete_missing_interior(
         return Ok((None, observation.inside().cloned()));
     }
     if observation.lacks_only_the_github_token()
-        && let Some(missing) = observation.missing_secret()
+        && let Some(unregistered) = observation.unregistered_secret()
     {
         warnings.push(github_token_warning(
             locked.metadata.sandbox_name().as_str(),
-            missing,
+            unregistered,
         ));
         return Ok((None, observation.inside().cloned()));
     }
@@ -284,11 +286,11 @@ fn complete_missing_interior(
 
 /// GitHub tokenの登録が無いまま接続することを、接続の前に示す警告。
 ///
-/// 登録が無い理由（1件も無い、1件に決まらない）と、その解消方法は、登録を確かめた
-/// 診断がそのまま持つ。ここでは、接続を続けることと、それで何が起きるかを足す。
-fn github_token_warning(sandbox: &str, missing: &Error) -> Warning {
+/// どのhostを覆う登録が無いかと、登録するcommandは、登録を確かめた診断がそのまま
+/// 持つ。ここでは、接続を続けることと、それで何が起きるかを足す。
+fn github_token_warning(sandbox: &str, unregistered: &Error) -> Warning {
     let mut warning = Warning::text(msg!("warning-open-github-token-missing", sandbox = sandbox));
-    for diagnostic in missing.diagnostics() {
+    for diagnostic in unregistered.diagnostics() {
         warning = warning.fact(Fact::reason(diagnostic.description.clone()));
         for fact in &diagnostic.facts {
             warning = warning.fact(fact.clone());

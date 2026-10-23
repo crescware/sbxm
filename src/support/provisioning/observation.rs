@@ -41,11 +41,12 @@ pub struct Observation {
     blocking: Vec<Error>,
     /// Sandboxの中をまとめて読んだ結果。中を読まなかった観測では`None`である。
     inside: Option<Recorded>,
-    /// GitHub tokenの登録が無い、または1件に決まらないことを示した診断。
+    /// GitHub tokenの登録が1件も無いことを示した診断。
     ///
     /// 登録はsbxmが代わりに済ませられない利用者の手順であり、拒否理由ではなく欠けとして
     /// 記録する。`open`は、欠けがこれだけなら、この診断を警告として示して接続する。
-    missing_secret: Option<Error>,
+    /// 登録が複数あって1件に決まらない場合は持たない。
+    unregistered_secret: Option<Error>,
 }
 
 impl Observation {
@@ -82,7 +83,7 @@ impl Observation {
             worktrees: Vec::new(),
             blocking: Vec::new(),
             inside: None,
-            missing_secret: None,
+            unregistered_secret: None,
         }
     }
 
@@ -96,15 +97,15 @@ impl Observation {
         self.inside.as_ref()
     }
 
-    /// GitHub tokenの登録が無いと分かったときの診断を、観測と一緒に持つ。
-    pub(crate) fn record_missing_secret(&mut self, error: Error) {
-        self.missing_secret = Some(error);
+    /// GitHub tokenの登録が1件も無いと分かったときの診断を、観測と一緒に持つ。
+    pub(crate) fn record_unregistered_secret(&mut self, error: Error) {
+        self.unregistered_secret = Some(error);
     }
 
-    /// GitHub tokenの登録が無い、または1件に決まらないことを示した診断。登録を確かめて
-    /// 見つからなかった場合だけ`Some`である。
-    pub(crate) fn missing_secret(&self) -> Option<&Error> {
-        self.missing_secret.as_ref()
+    /// GitHub tokenの登録が1件も無いことを示した診断。登録を確かめて1件も無かった
+    /// 場合だけ`Some`である。
+    pub(crate) fn unregistered_secret(&self) -> Option<&Error> {
+        self.unregistered_secret.as_ref()
     }
 
     /// 欠けているのが、GitHub tokenの登録と、それに依存する2つだけである。

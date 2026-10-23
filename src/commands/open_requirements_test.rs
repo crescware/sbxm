@@ -7,9 +7,9 @@
 //!    次の`open`が続きを済ませて接続する。
 //! 2. `status`が`open`を案内した欠けは、`open`の1回の実行で直る。
 //! 3. Sandboxの中で利用者が変えた設定を、`open`は戻さず、それを理由に止まらない。
-//! 4. 初回構築を終えた案件で、欠けているのがGitHub tokenの登録だけなら、`open`は
-//!    接続の前に、fetchとpushが認証で失敗することと登録するcommandを示して接続する。
-//!    `status`はこの状態へ`open`を案内しない。
+//! 4. 初回構築を終えた案件で、GitHub tokenの登録が1件も無く、それ以外の準備が揃って
+//!    いるなら、`open`は接続の前に、fetchとpushが認証で失敗することと登録するcommandを
+//!    示して接続する。`status`はこの状態へ`open`を案内しない。
 
 use crate::boundary::host::HostEnvironment;
 use crate::design::SilentProgress;
@@ -382,5 +382,37 @@ fn a_missing_token_registration_with_a_missing_worktree_still_stops_open() -> Ch
     register(&world);
     open(&bench, &world, &project).required_because("the registration lets open finish")?;
     assert_eq!(diagnose(&bench, &world, &project)?.next, None);
+    Ok(())
+}
+
+#[test]
+fn several_token_registrations_still_stop_open() -> Checked {
+    // 要件4が扱わない場合。登録が複数あり、どれを使うか決まらない。登録すれば埋まる
+    // 欠けではなく、どれを残すかを利用者が決める必要がある。今までどおり止まり、その
+    // 理由と、余分な登録を消すcommandを示す。
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = built(&bench, &world)?;
+    let hosts = GITHUB_HOSTS.join("\",\"");
+    world.answering(
+        "secret ls --json",
+        0,
+        &format!(
+            r#"{{"custom_secrets":[{{"scope":"(global)","targets":["{hosts}"],"env":"GH_TOKEN","placeholder":"sbx-cs-example"}},{{"scope":"(global)","targets":["{hosts}"],"env":"GH_TOKEN","placeholder":"sbx-cs-other"}}]}}"#
+        ),
+    );
+
+    assert_eq!(diagnose(&bench, &world, &project)?.next, None);
+    let error = open(&bench, &world, &project)
+        .err()
+        .required_because("which registration to present cannot be decided")?;
+    assert_eq!(error.first_id(), Some(ErrorId::GithubSecretMissing));
+    assert!(
+        suggested_commands(&error)
+            .iter()
+            .any(|command| command.starts_with("sbx secret rm")),
+        "{:?}",
+        suggested_commands(&error)
+    );
     Ok(())
 }
