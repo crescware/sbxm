@@ -28,6 +28,11 @@ use super::Prepared;
 /// 8. hostのSSH `Agentが届かないことをSandboxの中から確認する`
 /// 9. managed worktreeをmetadataとGitから検証する
 ///
+/// 8と9は、6の観測がSandboxの中をまとめて読んだ結果で行う。6が何も補わなければその
+/// 観測の結果を、補えば補った後の観測の結果を使う。どちらの場合も、その観測がSSHへ
+/// 渡す前の最後の確認である。6がSandboxの中を読まなかった経路（初回構築、中を読めない
+/// まま接続へ進む場合）では、ここで同じ確認を1回読む。
+///
 /// lockはこの関数のあいだだけ保持する。準備mutationはexclusive session lease、接続は
 /// shared session leaseで守り、project lockを保持したまま両者を引き継ぐ。
 #[allow(clippy::too_many_arguments)]
@@ -65,7 +70,7 @@ pub fn prepare(
     progress.step(msg!("progress-inspect-docker"));
     docker::require_reachable(host)?;
 
-    let (provisioned, warnings) =
+    let (provisioned, warnings, inside) =
         prepare_runtime(&mut locked, config, host, workspace_root, poll, progress)?;
 
     // 準備と起動が完了した状態をSSH sessionとして保護する。
@@ -75,11 +80,18 @@ pub fn prepare(
     let name = metadata.sandbox_name();
     let layout = SandboxLayout::new(metadata.canonical_id());
 
+    let inside = if let Some(inside) = inside {
+        inside
+    } else {
+        progress.step(msg!("progress-inspect-inside"));
+        sandbox::read_inside(host, name.as_str(), &handover_plan(&layout))?
+    };
+
     // 接続する前に、hostのSSH Agentが届かないことを中から確かめる。
     progress.step(msg!("progress-inspect-credentials"));
-    sandbox::require_credentials_isolated(host, name.as_str())?;
+    sandbox::require_credentials_isolated(&inside, name.as_str())?;
 
-    let worktrees = verify_worktrees(host, name.as_str(), &layout, metadata, progress)?;
+    let worktrees = verify_worktrees(&inside, &layout, metadata, progress)?;
     let (working_directory, missing_worktree_index) = working_directory(&layout, &worktrees, index);
 
     // ここまで来た時点でSandboxは必ずrunningである。この観測のために追加で
@@ -110,6 +122,13 @@ pub fn prepare(
     })
 }
 
+/// 準備の結果と、復元の警告と、Sandboxの中をまとめて読んだ最後の結果。
+type Runtime = (
+    Option<provisioning::ProvisioningOutput>,
+    Vec<Warning>,
+    Option<sandbox::Recorded>,
+);
+
 fn prepare_runtime(
     locked: &mut crate::support::select::Locked,
     config: &GlobalConfig,
@@ -117,7 +136,7 @@ fn prepare_runtime(
     workspace_root: &Path,
     poll: Poll,
     progress: &mut dyn ProgressSink,
-) -> Result<(Option<provisioning::ProvisioningOutput>, Vec<Warning>)> {
+) -> Result<Runtime> {
     // project lockの後に読んだ一覧を、この関数のあいだ使い回す。同じlockの下で
     // Sandboxのrecordを変えるのは自分の起動と作成だけなので、起動した直後に`start`が
     // 返す一覧へ差し替えるほかは、読み直さない。
@@ -155,12 +174,12 @@ fn prepare_runtime(
     // intentは無いがSandboxは在る案件で、成果物の一部が欠けている場合だけ、観測できた
     // 不足工程をこのopenで補う。`status`はこの状態にも`sbxm open`を案内するため、
     // ここで直せない欠落を残さない。
-    let provisioned = if provisioned.is_none() {
+    let (provisioned, inside) = if provisioned.is_none() {
         complete_missing_interior(locked, host, &entries, workspace_root, progress)?
     } else {
-        provisioned
+        (provisioned, None)
     };
-    Ok((provisioned, warnings))
+    Ok((provisioned, warnings, inside))
 }
 
 /// 停止中のSandboxを起動し、runningと読めた一覧を返す。
@@ -182,13 +201,19 @@ fn start(
 ///
 /// image/archive/Template/Sandbox作成には触れない。それらが欠けている場合は
 /// `InitialRoute::decide`が`Build`へ送り、ここへは来ない。
+///
+/// 補ったかどうかと一緒に、Sandboxの中をまとめて読んだ最後の結果を返す。接続直前の
+/// 確認はその結果で行い、同じことをもう一度読まない。
 fn complete_missing_interior(
     locked: &mut crate::support::select::Locked,
     host: &dyn HostEnvironment,
     entries: &[SandboxEntry],
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
-) -> Result<Option<provisioning::ProvisioningOutput>> {
+) -> Result<(
+    Option<provisioning::ProvisioningOutput>,
+    Option<sandbox::Recorded>,
+)> {
     let observation = provisioning::observe(
         host,
         entries,
@@ -199,7 +224,7 @@ fn complete_missing_interior(
     )?;
     observation.require_safe()?;
     if observation.state != provisioning::ProvisioningState::Incomplete {
-        return Ok(None);
+        return Ok((None, observation.inside().cloned()));
     }
     let exclusive = locked.acquire_exclusive_session_lease()?;
     let files = locked.metadata.declared_files.clone().unwrap_or_default();
@@ -227,7 +252,17 @@ fn complete_missing_interior(
             provisioning::ProvisioningState::Incomplete,
         ));
     }
-    Ok(Some(output))
+    Ok((Some(output), completed.inside().cloned()))
+}
+
+/// 観測がSandboxの中を読まなかった経路で、接続直前に読むcommand。
+///
+/// SSH Agentの隔離と、worktreeの一覧である。観測が読む一覧（`inside_plan`）の一部と
+/// 同じcommandであり、読み方も同じである。
+fn handover_plan(layout: &SandboxLayout) -> Vec<Vec<String>> {
+    let mut commands = sandbox::ssh_agent_commands();
+    commands.push(worktree::list_command(layout));
+    commands
 }
 
 fn restore_workspace(
@@ -263,15 +298,14 @@ fn working_directory(
 
 /// metadataが宣言するmanaged worktreeが、Sandbox内のGitに揃っていることを確認する。
 fn verify_worktrees(
-    host: &dyn HostEnvironment,
-    name: &str,
+    inside: &dyn sandbox::Inside,
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
     progress: &mut dyn ProgressSink,
 ) -> Result<Vec<String>> {
     progress.step(msg!("progress-inspect-worktrees"));
     let bare_root = layout.bare_root();
-    let listed: Vec<String> = worktree::list(host, name, layout)?
+    let listed: Vec<String> = worktree::list(inside, layout)?
         .iter()
         .filter_map(|entry| entry.relative_to(&bare_root))
         .collect();

@@ -6,12 +6,16 @@
 
 mod entry;
 mod inspection;
+mod inspection_commands;
 mod list;
+mod list_command;
 mod parse_list;
 
 pub use entry::Entry;
 pub use inspection::Inspection;
+pub use inspection_commands::inspection_commands;
 pub use list::list;
+pub use list_command::list_command;
 pub use parse_list::parse_list;
 
 #[cfg(test)]

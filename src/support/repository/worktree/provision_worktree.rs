@@ -3,7 +3,7 @@ use crate::diagnostics::Result;
 use crate::metadata::CreationMode;
 use crate::msg;
 
-use crate::support::sandbox;
+use crate::support::sandbox::{self, Live};
 use crate::support::worktree::Inspection;
 
 use crate::support::repository::unusable;
@@ -24,7 +24,7 @@ pub fn provision_worktree(
     mode: CreationMode,
     expected_commit: &str,
 ) -> Result<()> {
-    if !sandbox::path_exists(host, sandbox, inspection.path())? {
+    if !sandbox::path_exists(&Live::new(host, sandbox), inspection.path())? {
         create_worktree(host, sandbox, git_dir, inspection.path(), branch, mode)?;
     }
     let head = inspection.head()?;

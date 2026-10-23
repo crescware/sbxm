@@ -1,12 +1,11 @@
 use std::path::Path;
 
-use crate::boundary::host::HostEnvironment;
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::paths;
 
-use crate::support::sandbox;
+use crate::support::sandbox::{self, Inside};
 
 use super::AGENT_HOME;
 
@@ -14,9 +13,10 @@ use super::AGENT_HOME;
 ///
 /// 配置はroot権限で行うため、途中のcomponentがsymlinkであれば、read、chown、
 /// 置き換えのいずれもhomeの外へ及ぶ。homeに近い側から1階層ずつ確認する。
+///
+/// 読むcommandは`baseline_commands`が同じ順で並べる。
 pub(super) fn require_no_symlink_in_sandbox(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
+    inside: &dyn Inside,
     source: &Path,
     destination: &str,
 ) -> Result<()> {
@@ -24,7 +24,7 @@ pub(super) fn require_no_symlink_in_sandbox(
     for part in destination.split('/') {
         current.push('/');
         current.push_str(part);
-        let outcome = sandbox::exec(host, sandbox, &["test", "-h", &current])?;
+        let outcome = inside.exec(&["test", "-h", &current])?;
         match sandbox::inner_exit_code(&outcome) {
             Some(0) => {
                 return Err(Error::single(

@@ -107,7 +107,7 @@ pub fn inspect(
     }
 
     progress.step(msg!("progress-inspect-worktrees"));
-    let entries = match worktree::list(host, sandbox_name, layout) {
+    let entries = match worktree::list(&sandbox::Live::new(host, sandbox_name), layout) {
         Ok(entries) => entries,
         Err(error) => {
             let blocker = worktree_inventory_unobservable(request, sandbox_name, &error);
@@ -268,8 +268,9 @@ fn examine_worktrees(
             }
         }
 
+        let inside = sandbox::Live::new(host, sandbox_name);
         let mut inspection =
-            worktree::Inspection::new(host, sandbox_name, &entry.path, index + 1, total, progress);
+            worktree::Inspection::new(&inside, &entry.path, index + 1, total, progress);
         let Some(pending) = examine(
             &mut inspection,
             &relative,

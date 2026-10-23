@@ -13,6 +13,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 use super::*;
 use crate::boundary::host::{CommandOutcome, CommandSpec};
 use crate::config::{HostFileSource, SandboxHomeRelativePath};
+use crate::support::sandbox::Live;
 use crate::support::sandbox::TRANSFER_INCOMPLETE;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -548,7 +549,7 @@ fn an_answer_from_sha256sum_without_a_digest_is_refused_rather_than_read_as_one(
         upper.as_str(),
     ] {
         let host = FakeSbx::reporting(destination, reported);
-        let error = digest_in_sandbox(&host, "sbxm-example", destination)
+        let error = digest_in_sandbox(&Live::new(&host, "sbxm-example"), destination)
             .refused_because("an answer that carries no digest is not a digest")?;
         assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
 
@@ -578,7 +579,7 @@ fn a_destination_that_is_not_in_the_sandbox_has_no_digest_rather_than_an_error()
 
     let host = FakeSbx::holding(destination, contents);
     assert_eq!(
-        digest_in_sandbox(&host, "sbxm-example", destination)
+        digest_in_sandbox(&Live::new(&host, "sbxm-example"), destination)
             .required_because("the digest of a file that is there")?,
         Some(sha256_hex(contents))
     );
@@ -586,7 +587,7 @@ fn a_destination_that_is_not_in_the_sandbox_has_no_digest_rather_than_an_error()
     // 無いfileは「無い」と答える。読めないことと無いことを同じ答えにしない。
     let host = FakeSbx::empty();
     assert_eq!(
-        digest_in_sandbox(&host, "sbxm-example", destination)
+        digest_in_sandbox(&Live::new(&host, "sbxm-example"), destination)
             .required_because("a destination that is not there")?,
         None
     );
@@ -1039,8 +1040,7 @@ fn observe_against_baseline(
     divergence: Divergence,
 ) -> Result<Vec<PlacedFile>> {
     super::observe_against_baseline(
-        host,
-        sandbox,
+        &Live::new(host, sandbox),
         baseline,
         divergence,
         &mut crate::design::SilentProgress,
@@ -1075,4 +1075,27 @@ fn place_all(
         conflict,
         &mut crate::design::SilentProgress,
     )
+}
+
+#[test]
+fn the_baseline_commands_check_every_level_below_the_home_before_reading_a_file() {
+    let baseline = vec![
+        baseline_entry(".config/example/settings.yaml", "0".repeat(64).as_str()),
+        // 相対pathとして読めない行き先は、観測が拒否する。ここでは何も並べない。
+        baseline_entry("/etc/passwd", "0".repeat(64).as_str()),
+    ];
+    let commands: Vec<String> = baseline_commands(&baseline)
+        .iter()
+        .map(|command| command.join(" "))
+        .collect();
+    assert_eq!(
+        commands,
+        [
+            "test -h /home/agent/.config",
+            "test -h /home/agent/.config/example",
+            "test -h /home/agent/.config/example/settings.yaml",
+            "test -e /home/agent/.config/example/settings.yaml",
+            "sha256sum /home/agent/.config/example/settings.yaml",
+        ]
+    );
 }

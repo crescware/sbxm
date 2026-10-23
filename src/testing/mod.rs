@@ -11,6 +11,7 @@ pub mod fs;
 pub mod global_status;
 pub mod host;
 pub mod image;
+pub mod inside;
 mod install_fake_tool;
 pub mod metadata;
 pub mod outcome;

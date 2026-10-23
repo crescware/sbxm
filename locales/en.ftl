@@ -783,6 +783,7 @@ progress-creating-worktrees = Creating the managed worktrees. For a large reposi
 progress-inspect-project = Reading project metadata and host files for { $project }.
 progress-status-image = Checking the sandbox image. Waiting for Docker to respond.
 progress-inspect-sandbox = Checking the sandbox state. Waiting for Docker Sandboxes to respond.
+progress-inspect-inside = Checking inside the sandbox: SSH agent isolation, credentials, Git identity, tools, declared files, the repository, and the worktrees.
 progress-project-lock = Acquiring the project lock for { $project }. Waiting for any other operation to finish.
 progress-inspect-credentials = Checking sandbox credentials.
 progress-inspect-repository = Checking the repository inside the sandbox.

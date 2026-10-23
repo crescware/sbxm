@@ -1,8 +1,7 @@
-use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 
 use crate::support::Observed;
-use crate::support::sandbox;
+use crate::support::sandbox::Inside;
 
 use super::{credential_key, expected_credential_helper};
 
@@ -15,16 +14,10 @@ use super::{credential_key, expected_credential_helper};
 /// `placeholder`は現在登録されている値である。sbxmが書いた形でも、別のplaceholderを
 /// 指していれば一致とはしない。書き換えてよいかどうかは[`super::configure_git_credential`]
 /// が`evidence`から判定する。
-pub(crate) fn observe_git_credential(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
-    placeholder: &str,
-) -> Result<Observed> {
-    let outcome = sandbox::exec(
-        host,
-        sandbox,
-        &["git", "config", "--global", "--get", &credential_key()],
-    )?;
+///
+/// 読むcommandは`credential_commands`の1つ目と同じである。
+pub(crate) fn observe_git_credential(inside: &dyn Inside, placeholder: &str) -> Result<Observed> {
+    let outcome = inside.exec(&["git", "config", "--global", "--get", &credential_key()])?;
     let observed = outcome.stdout_text();
     let trimmed = observed.trim();
 

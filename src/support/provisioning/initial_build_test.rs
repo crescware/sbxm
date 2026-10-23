@@ -1301,7 +1301,10 @@ fn a_resumed_completion_that_cannot_be_recorded_keeps_the_intent() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (paths, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
-    world.seal_before_the_final_record(paths.sbxm_dir());
+    // 再開は、まず中を観測してから続きを進め、完成の観測のあとに記録する。封じるのは、
+    // 続きの最後の段のあと、完成の観測が終わった時点である。
+    let sbxm = paths.sbxm_dir();
+    world.after_the_build(move |world| world.seal_before_the_final_record(sbxm.clone()));
 
     let result = bench.ensure(&world, &project, &mut SilentProgress);
     set_mode(&paths.sbxm_dir(), 0o700)?;

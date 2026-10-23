@@ -1,8 +1,8 @@
-use crate::boundary::host::HostEnvironment;
 use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
 use crate::support::files::{self, PlacedFile};
+use crate::support::sandbox::Inside;
 
 /// 宣言fileの現在状態を、復旧すべきbaselineと照らして観測する。
 ///
@@ -17,23 +17,20 @@ use crate::support::files::{self, PlacedFile};
 /// intentもbaselineも無い案件には、sbxmが置いたと記録した宣言fileが無い。空のbaseline
 /// として扱い、何も観測しない。
 pub(crate) fn declared_files(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
+    inside: &dyn Inside,
     metadata: &ProjectMetadata,
     progress: &mut dyn ProgressSink,
 ) -> Result<Vec<PlacedFile>> {
     if let Some(intent) = &metadata.initial_provisioning {
         return files::observe_against_baseline(
-            host,
-            sandbox,
+            inside,
             &intent.files,
             files::Divergence::Conflict,
             progress,
         );
     }
     files::observe_against_baseline(
-        host,
-        sandbox,
+        inside,
         metadata.declared_files.as_deref().unwrap_or_default(),
         files::Divergence::Modified,
         progress,

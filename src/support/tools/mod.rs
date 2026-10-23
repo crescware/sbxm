@@ -16,6 +16,7 @@ mod gh;
 mod installed;
 mod mise;
 mod probe;
+mod probe_command;
 mod sandbox_ready;
 mod tool;
 
@@ -26,6 +27,7 @@ pub use gh::Gh;
 pub use installed::Installed;
 pub use mise::Mise;
 pub use probe::probe;
+pub use probe_command::probe_command;
 pub use sandbox_ready::SandboxReady;
 pub use tool::Tool;
 

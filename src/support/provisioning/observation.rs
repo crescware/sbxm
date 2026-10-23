@@ -2,6 +2,7 @@ use crate::boundary::host::protocol::SandboxState;
 use crate::diagnostics::{Error, Result};
 use crate::support::Observed;
 use crate::support::files::PlacedFile;
+use crate::support::sandbox::Recorded;
 
 use super::{ProvisioningState, WorktreeRow};
 
@@ -38,6 +39,8 @@ pub struct Observation {
     pub worktrees_present: Observed,
     pub worktrees: Vec<WorktreeRow>,
     blocking: Vec<Error>,
+    /// Sandboxの中をまとめて読んだ結果。中を読まなかった観測では`None`である。
+    inside: Option<Recorded>,
 }
 
 impl Observation {
@@ -73,7 +76,18 @@ impl Observation {
             worktrees_present: Observed::Missing,
             worktrees: Vec::new(),
             blocking: Vec::new(),
+            inside: None,
         }
+    }
+
+    /// Sandboxの中をまとめて読んだ結果を、観測と一緒に持つ。
+    pub(crate) fn carry_inside(&mut self, inside: Recorded) {
+        self.inside = Some(inside);
+    }
+
+    /// Sandboxの中をまとめて読んだ結果。`open`は接続直前の確認にこれを使う。
+    pub(crate) fn inside(&self) -> Option<&Recorded> {
+        self.inside.as_ref()
     }
 
     /// 観測の間に集めた「安全と確認できなかった事実」を記録する。

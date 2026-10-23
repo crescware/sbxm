@@ -11,6 +11,8 @@ use crate::testing::sandbox::InnerCommandSandbox;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use crate::support::sandbox::Live;
+
 struct FakeSbx {
     /// Sandbox内で既に設定されている値。
     settings: HashMap<String, String>,
@@ -184,50 +186,53 @@ fn values_that_already_match_are_left_as_they_are() -> Checked {
 
 #[test]
 fn read_only_identity_observation_reports_missing_empty_matching_and_other_values() -> Checked {
-    assert!(observe(
+    assert!(observe(&Live::new(
         &FakeSbx::holding(&[
             ("user.name", "Example User"),
             ("user.email", "user@example.com"),
         ]),
         "sbxm-example",
-    )?);
-    assert!(!observe(&FakeSbx::holding(&[]), "sbxm-example")?);
-    assert!(!observe(
+    ))?);
+    assert!(!observe(&Live::new(
+        &FakeSbx::holding(&[]),
+        "sbxm-example"
+    ))?);
+    assert!(!observe(&Live::new(
         &FakeSbx::holding(&[("user.name", ""), ("user.email", "user@example.com")]),
         "sbxm-example",
-    )?);
+    ))?);
 
     // 記録と違う値も、Sandboxの中で利用者が選んだ値として設定済みと答える。
-    assert!(observe(
+    assert!(observe(&Live::new(
         &FakeSbx::holding(&[
             ("user.name", "Another User"),
             ("user.email", "another@example.com"),
         ]),
         "sbxm-example",
-    )?);
+    ))?);
     Ok(())
 }
 
 #[test]
 fn read_only_git_protocol_observation_reports_missing_empty_matching_and_other_values() -> Checked {
-    assert!(observe_git_protocol(
+    assert!(observe_git_protocol(&Live::new(
         &FakeSbx::holding(&[("git_protocol", "https")]),
         "sbxm-example",
-    )?);
-    assert!(!observe_git_protocol(
+    ))?);
+    assert!(!observe_git_protocol(&Live::new(
         &FakeSbx::holding(&[]),
         "sbxm-example",
-    )?);
-    assert!(!observe_git_protocol(
+    ))?);
+    assert!(!observe_git_protocol(&Live::new(
         &FakeSbx::holding(&[("git_protocol", "")]),
         "sbxm-example",
-    )?);
+    ))?);
 
     // HTTPS以外の値も、Sandboxの中で利用者が選んだ値として設定済みと答える。
-    assert!(observe_git_protocol(
+    assert!(observe_git_protocol(&Live::new(
         &FakeSbx::holding(&[("git_protocol", "ssh")]),
         "sbxm-example",
-    )?);
+    ))?);
     Ok(())
 }
 

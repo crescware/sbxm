@@ -127,7 +127,7 @@ impl Switch<'_> {
         )
         .map_err(decorate)?;
         progress.step(msg!("progress-inspect-credentials"));
-        sandbox::require_credentials_isolated(host, &ready.name)?;
+        sandbox::require_credentials_isolated(&sandbox::Live::new(host, &ready.name), &ready.name)?;
         Ok(restored)
     }
 }

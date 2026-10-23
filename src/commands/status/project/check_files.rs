@@ -7,6 +7,7 @@ use crate::paths;
 use crate::project::SandboxName;
 use crate::support::files;
 use crate::support::inventory::ProjectState;
+use crate::support::sandbox::Live;
 
 use super::{FileRow, FileState, ProjectStatus};
 
@@ -62,8 +63,7 @@ pub fn check_files(
             Some(ProjectState::Stopped) => FileState::NotObservedStopped,
             None => FileState::NotObserved,
             Some(ProjectState::Running) => match files::sandbox_digest(
-                host,
-                name.as_str(),
+                &Live::new(host, name.as_str()),
                 declared.source.as_path(),
                 declared.destination.as_path(),
             ) {

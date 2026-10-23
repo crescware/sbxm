@@ -2,6 +2,7 @@ use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
 use crate::diagnostics::ErrorId;
+use crate::support::sandbox::Live;
 use crate::testing::repository::layout;
 use crate::testing::sandbox::InnerCommandSandbox;
 
@@ -11,17 +12,11 @@ fn inspection_progress_names_each_worktree_without_exposing_control_characters()
     use crate::testing::recorded_output::RecordedOutput;
 
     let host = FakeSbx::listing("[]");
+    let inside = Live::new(&host, "sandbox");
     let mut progress = RecordedOutput::new();
     let paths = ["/work/repo.tree-0", "/work/改行\nと\u{1b}[31m.tree-1"];
     for (index, path) in paths.iter().enumerate() {
-        let mut inspection = Inspection::new(
-            &host,
-            "sandbox",
-            path,
-            index + 1,
-            paths.len(),
-            &mut progress,
-        );
+        let mut inspection = Inspection::new(&inside, path, index + 1, paths.len(), &mut progress);
         inspection.changes()?;
         inspection.head()?;
     }
@@ -149,7 +144,7 @@ fn a_listing_the_host_could_not_run_is_not_read_as_no_worktrees() -> Checked {
         "git --git-dir {git_dir} worktree list --porcelain -z"
     ));
 
-    let error = list(&host, "sbxm-example", &layout()?)
+    let error = list(&Live::new(&host, "sbxm-example"), &layout()?)
         .refused_because("a listing that did not run is not an empty listing")?;
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     Ok(())

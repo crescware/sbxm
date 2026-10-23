@@ -4,6 +4,7 @@
 //! 相対pathへ置く。file内容はstdout、stderr、log、metadataへ出さない。
 
 mod agent_home;
+mod baseline_commands;
 mod conflict;
 mod copy_into_sandbox;
 mod copy_steps;
@@ -27,6 +28,7 @@ mod require_no_symlink_in_sandbox;
 mod sandbox_digest;
 
 use agent_home::AGENT_HOME;
+pub use baseline_commands::baseline_commands;
 pub use conflict::Conflict;
 use copy_into_sandbox::copy_into_sandbox;
 use copy_steps::copy_steps;

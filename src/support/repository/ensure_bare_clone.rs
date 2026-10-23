@@ -4,7 +4,7 @@ use crate::msg;
 use crate::project::SandboxLayout;
 
 use crate::design::ProgressSink;
-use crate::support::sandbox;
+use crate::support::sandbox::{self, Live};
 
 use super::{
     FETCH_REFSPEC, Initialization, SandboxOrigin, observe_initialization, settle_refusals,
@@ -25,7 +25,7 @@ pub fn ensure_bare_clone(
 ) -> Result<()> {
     let git_dir = layout.bare_git_dir();
 
-    if sandbox::path_exists(host, sandbox, &git_dir)? {
+    if sandbox::path_exists(&Live::new(host, sandbox), &git_dir)? {
         complete_initialization(host, sandbox, origin, &git_dir, progress)?;
     } else {
         progress.step(msg!("progress-preparing-repository"));
@@ -58,7 +58,7 @@ fn complete_initialization(
     git_dir: &str,
     progress: &mut dyn ProgressSink,
 ) -> Result<()> {
-    match observe_initialization(host, sandbox, origin, git_dir, progress)? {
+    match observe_initialization(&Live::new(host, sandbox), origin, git_dir, progress)? {
         Initialization::Settled => Ok(()),
         Initialization::OriginMissing => {
             add_origin(host, sandbox, origin, git_dir)?;

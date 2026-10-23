@@ -10,6 +10,7 @@ mod host_git;
 mod host_repository;
 mod initialization;
 mod inspect_bare;
+mod inspection_commands;
 #[cfg(test)]
 #[path = "mod_test.rs"]
 mod mod_test;
@@ -30,6 +31,7 @@ mod tag_following;
 mod unusable;
 mod unusable_host_origin;
 mod verify_bare_clone;
+mod verify_bare_config;
 mod worktree;
 
 pub use ensure_bare_clone::ensure_bare_clone;
@@ -39,6 +41,7 @@ pub use host_git::host_git;
 pub use host_repository::host_repository;
 pub use initialization::Initialization;
 pub use inspect_bare::inspect_bare;
+pub use inspection_commands::inspection_commands;
 pub use observe_initialization::observe_initialization;
 pub use push_refusal::PushRefusal;
 pub use push_to_sandbox::push_to_sandbox;
@@ -56,4 +59,5 @@ pub use tag_following::TagFollowing;
 use unusable::unusable;
 use unusable_host_origin::unusable_host_origin;
 pub use verify_bare_clone::verify_bare_clone;
+pub use verify_bare_config::verify_bare_config;
 pub use worktree::{adopt_worktree, ensure_worktrees};

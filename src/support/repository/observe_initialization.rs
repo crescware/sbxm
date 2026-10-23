@@ -1,8 +1,7 @@
-use crate::boundary::host::HostEnvironment;
 use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 
-use crate::support::sandbox;
+use crate::support::sandbox::Inside;
 
 use super::{Initialization, SandboxOrigin};
 
@@ -11,51 +10,42 @@ use super::{Initialization, SandboxOrigin};
 /// 内容があるrepository、別のrepositoryを指すorigin、複数のoriginは、中断の跡と
 /// みなさない。続きを補う`ensure_bare_clone`と、欠けを判定する観測は、この同じ規則を
 /// 使う。片方だけが中断の跡と認めると、観測が拒否したまま補う工程へ届かない。
+///
+/// 読むcommandは`inspection_commands`に含まれる。
 pub fn observe_initialization(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
+    inside: &dyn Inside,
     origin: &SandboxOrigin,
     git_dir: &str,
     progress: &mut dyn ProgressSink,
 ) -> Result<Initialization> {
-    let bare = super::inspect_bare(host, sandbox_name, git_dir, progress)?.require_success()?;
+    let bare = super::inspect_bare(inside, git_dir, progress)?.require_success()?;
     if bare.stdout_text().trim() != "true" {
         return Ok(Initialization::Settled);
     }
-    let configured = sandbox::exec(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "--git-dir",
-            git_dir,
-            "config",
-            "--get-all",
-            "remote.origin.url",
-        ],
-    )?;
+    let configured = inside.exec(&[
+        "git",
+        "--git-dir",
+        git_dir,
+        "config",
+        "--get-all",
+        "remote.origin.url",
+    ])?;
     let origin_urls = configured.stdout_text();
     if !origin_urls.trim().is_empty() {
-        return fetch_refspec_missing(host, sandbox_name, origin, git_dir, &origin_urls);
+        return fetch_refspec_missing(inside, origin, git_dir, &origin_urls);
     }
-    let refs = sandbox::exec(
-        host,
-        sandbox_name,
-        &[
+    let refs = inside
+        .exec(&[
             "git",
             "--git-dir",
             git_dir,
             "for-each-ref",
             "--format=%(refname)",
-        ],
-    )?
-    .require_success()?;
-    let objects = sandbox::exec(
-        host,
-        sandbox_name,
-        &["git", "--git-dir", git_dir, "count-objects", "-v"],
-    )?
-    .require_success()?;
+        ])?
+        .require_success()?;
+    let objects = inside
+        .exec(&["git", "--git-dir", git_dir, "count-objects", "-v"])?
+        .require_success()?;
     let empty_objects = objects.stdout_text().lines().any(|line| line == "count: 0")
         && objects
             .stdout_text()
@@ -73,8 +63,7 @@ pub fn observe_initialization(
 /// 想定する。originが対象repositoryと一致し、fetch refspecが未設定の場合だけ
 /// 中断の跡とし、別repositoryのoriginや複数originは中断の跡とみなさない。
 fn fetch_refspec_missing(
-    host: &dyn HostEnvironment,
-    sandbox_name: &str,
+    inside: &dyn Inside,
     origin: &SandboxOrigin,
     git_dir: &str,
     origin_urls: &str,
@@ -89,18 +78,14 @@ fn fetch_refspec_missing(
     if origin.verify(url).is_err() {
         return Ok(Initialization::Settled);
     }
-    let fetch = sandbox::exec(
-        host,
-        sandbox_name,
-        &[
-            "git",
-            "--git-dir",
-            git_dir,
-            "config",
-            "--get-all",
-            "remote.origin.fetch",
-        ],
-    )?;
+    let fetch = inside.exec(&[
+        "git",
+        "--git-dir",
+        git_dir,
+        "config",
+        "--get-all",
+        "remote.origin.fetch",
+    ])?;
     if !fetch.stdout_text().trim().is_empty() {
         return Ok(Initialization::Settled);
     }

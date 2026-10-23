@@ -4,6 +4,7 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
 use crate::support::Observed;
+use crate::support::sandbox::Live;
 
 use super::{credential_key, expected_credential_helper, is_sbxm_helper, observe_git_credential};
 
@@ -21,7 +22,7 @@ pub fn configure_git_credential(
     sandbox: &str,
     placeholder: &str,
 ) -> Result<()> {
-    match observe_git_credential(host, sandbox, placeholder)? {
+    match observe_git_credential(&Live::new(host, sandbox), placeholder)? {
         Observed::Matching | Observed::NotApplicable => Ok(()),
         Observed::Missing => write(host, sandbox, placeholder),
         Observed::Mismatch { evidence } if is_sbxm_helper(&evidence) => {

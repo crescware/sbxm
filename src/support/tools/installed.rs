@@ -1,11 +1,10 @@
 use std::collections::BTreeSet;
 
-use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 
-use crate::support::sandbox;
+use crate::support::sandbox::Inside;
 
-use super::{ALL, Tool, probe};
+use super::{ALL, Tool, probe_command};
 
 /// Sandboxが持っているtool。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -13,8 +12,10 @@ pub struct Installed(pub(crate) BTreeSet<&'static str>);
 
 impl Installed {
     /// Sandboxが持っているtoolを、1回の起動で数える。
-    pub fn observe(host: &dyn HostEnvironment, sandbox: &str) -> Result<Installed> {
-        let outcome = sandbox::exec(host, sandbox, &["sh", "-c", &probe()])?.require_success()?;
+    pub fn observe(inside: &dyn Inside) -> Result<Installed> {
+        let command = probe_command();
+        let borrowed: Vec<&str> = command.iter().map(String::as_str).collect();
+        let outcome = inside.exec(&borrowed)?.require_success()?;
         let answer = outcome.stdout_text();
         let named: Vec<&str> = answer.lines().map(str::trim).collect();
         Ok(Installed(

@@ -6,6 +6,7 @@ use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 
 use crate::support::tools;
+use crate::testing::inside::split_inside_check;
 
 use super::SandboxRow;
 
@@ -49,6 +50,9 @@ pub struct World {
     /// 一致した起動の直前に、hostの外で誰かが書き換えたことを模したclosureを1回走らせる。
     #[allow(clippy::type_complexity)]
     pub mutate_before: RefCell<Option<(String, Box<dyn Fn(&World)>)>>,
+    /// 一致した起動が答えた直後に、この世界を1回だけ変えるclosure。
+    #[allow(clippy::type_complexity)]
+    pub mutate_after: RefCell<Option<(String, Box<dyn Fn(&World)>)>>,
 }
 
 impl World {
@@ -81,6 +85,7 @@ impl World {
             interruption: RefCell::new(None),
             calls: RefCell::new(Vec::new()),
             mutate_before: RefCell::new(None),
+            mutate_after: RefCell::new(None),
         }
     }
 
@@ -98,17 +103,12 @@ impl World {
         self.change_before("worktree add", action);
     }
 
-    /// 観測の最後の起動の直前に、この世界を1回だけ変える。
+    /// 観測がSandboxの中を読み終えた直後に、この世界を1回だけ変える。
     ///
-    /// 観測の中でもmetadataを書くことがある。観測の最後の起動は、宣言fileのdigestを
-    /// 読んだあとの2回目の`git -C`であり、そのあとhostの起動を挟まずに記録へ進む。
-    pub fn at_the_end_of_the_observation(&self, action: impl Fn(&World) + Clone + 'static) {
-        self.change_before("sha256sum", move |world| {
-            let action = action.clone();
-            world.change_before("git -C", move |world| {
-                world.change_before("git -C", action.clone());
-            });
-        });
+    /// 観測はSandboxの中を1回の起動でまとめて読む。その起動が答えたあと、hostの起動を
+    /// 挟まずに記録へ進む。
+    pub fn at_the_end_of_the_observation(&self, action: impl Fn(&World) + 'static) {
+        self.change_after(INSIDE_CHECK_MARK, action);
     }
 
     /// 観測が終わったあと、次の記録の前に`directory`へ書けなくする。
@@ -122,9 +122,14 @@ impl World {
     /// 次に指定と一致する起動の直前に、この世界の応答を1回だけ変える。
     ///
     /// 同じ起動が工程の前半にも後半にも現れる場合に、前半を成功させたまま後半だけを
-    /// 失敗させるために使う。
+    /// 失敗させるために使う。まとめた確認の中のcommandにも、1件ずつ照らす。
     pub fn change_before(&self, needle: &str, action: impl Fn(&World) + 'static) {
         *self.mutate_before.borrow_mut() = Some((needle.to_string(), Box::new(action)));
+    }
+
+    /// 次に指定と一致する起動が答えた直後に、この世界を1回だけ変える。
+    pub fn change_after(&self, needle: &str, action: impl Fn(&World) + 'static) {
+        *self.mutate_after.borrow_mut() = Some((needle.to_string(), Box::new(action)));
     }
 
     /// `利用者がDockerfileから外したtoolを持たないSandbox`。
@@ -187,6 +192,58 @@ impl World {
         *self.interruption.borrow_mut() = None;
     }
 
+    /// `invocation`に台本があれば、それを演じる。
+    ///
+    /// 直前の書き換えを走らせ、答えを返さない起動なら`Err`、差し替えた答えがあれば
+    /// それを返す。台本が無ければ`None`であり、呼び出し側が世界の状態から答える。
+    pub fn scripted(&self, program: &str, invocation: &str) -> Result<Option<(i32, String)>> {
+        let matched = self
+            .mutate_before
+            .borrow()
+            .as_ref()
+            .is_some_and(|(needle, _)| invocation.contains(needle.as_str()));
+        // closureがこの世界を変えられるよう、借用を解いてから走らせる。
+        let armed = if matched {
+            self.mutate_before.borrow_mut().take()
+        } else {
+            None
+        };
+        if let Some((_, action)) = armed {
+            action(self);
+        }
+
+        if let Some((needle, interrupt)) = self.interruption.borrow().as_ref()
+            && invocation.contains(needle.as_str())
+        {
+            return Err(interrupt(&CommandSpec::capture(program, &[])));
+        }
+
+        if let Some((needle, code, stdout)) = self.answer.borrow().as_ref()
+            && invocation.contains(needle.as_str())
+        {
+            // 答えを差し替えた工程は実行せず、その工程の副作用も残さない。
+            return Ok(Some((*code, stdout.clone())));
+        }
+        Ok(None)
+    }
+
+    /// `invocation`が答えた直後の書き換えがあれば、走らせる。
+    fn settle(&self, invocation: &str) {
+        let matched = self
+            .mutate_after
+            .borrow()
+            .as_ref()
+            .is_some_and(|(needle, _)| invocation.contains(needle.as_str()));
+        let armed = if matched {
+            self.mutate_after.borrow_mut().take()
+        } else {
+            None
+        };
+        if let Some((_, action)) = armed {
+            action(self);
+        }
+    }
+
     pub fn invocations(&self) -> Vec<String> {
         self.calls
             .borrow()
@@ -228,6 +285,9 @@ impl World {
     }
 }
 
+/// まとめた確認の起動を見分ける目印。手順の1行目である。
+const INSIDE_CHECK_MARK: &str = "# sbxm inside check";
+
 /// 期限を過ぎた起動を、実物のhostと同じ診断で終わらせる。
 fn timed_out(spec: &CommandSpec) -> Error {
     Error::new(
@@ -258,32 +318,21 @@ impl crate::testing::host::AnsweredHost for World {
         self.calls.borrow_mut().push(spec.clone());
         let invocation = format!("{} {}", spec.program, spec.args.join(" "));
 
-        let matched = self
-            .mutate_before
-            .borrow()
-            .as_ref()
-            .is_some_and(|(needle, _)| invocation.contains(needle.as_str()));
-        // closureがこの世界を変えられるよう、借用を解いてから走らせる。
-        let armed = if matched {
-            self.mutate_before.borrow_mut().take()
-        } else {
-            None
-        };
-        if let Some((_, action)) = armed {
-            action(self);
+        // まとめた確認は、中のcommandごとに台本を照らす。全体の起動に照らすのは、手順
+        // そのものを名指しした台本だけである。
+        if spec.program == "sbx"
+            && let Some((sandbox, commands)) = split_inside_check(&spec.args)
+        {
+            if let Some((code, stdout)) = self.scripted(&spec.program, INSIDE_CHECK_MARK)? {
+                return Ok(Self::outcome(spec, code, &stdout));
+            }
+            let outcome = self.answer_inside_check(spec, &sandbox, &commands)?;
+            self.settle(&invocation);
+            return Ok(outcome);
         }
 
-        if let Some((needle, interrupt)) = self.interruption.borrow().as_ref()
-            && invocation.contains(needle.as_str())
-        {
-            return Err(interrupt(spec));
-        }
-
-        if let Some((needle, code, stdout)) = self.answer.borrow().as_ref()
-            && invocation.contains(needle.as_str())
-        {
-            // 答えを差し替えた工程は実行せず、その工程の副作用も残さない。
-            return Ok(Self::outcome(spec, *code, stdout));
+        if let Some((code, stdout)) = self.scripted(&spec.program, &invocation)? {
+            return Ok(Self::outcome(spec, code, &stdout));
         }
 
         let (code, stdout) = match spec.program.as_str() {
@@ -296,6 +345,7 @@ impl crate::testing::host::AnsweredHost for World {
             }
             _ => (0, String::new()),
         };
+        self.settle(&invocation);
         Ok(Self::outcome(spec, code, &stdout))
     }
 }

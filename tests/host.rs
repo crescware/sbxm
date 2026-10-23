@@ -135,8 +135,9 @@ exec) ;;
 *) exit 1 ;;
 esac
 
-# `sbx exec <name> -- <argv>`のargvを実行する。
-while [ $# -gt 0 ] && [ "$1" != -- ]; do shift; done
+# `sbx exec <name> -- <argv>`のargvを実行する。`--`の直前がSandboxの名前である。
+name=
+while [ $# -gt 0 ] && [ "$1" != -- ]; do name=$1; shift; done
 shift
 
 case "$1" in
@@ -159,8 +160,30 @@ cat)
 	exit 0
 	;;
 sh)
-	# installed toolの一覧、GitHubの認証確認、token環境変数fileの書き込み。
+	# まとめた確認、installed toolの一覧、GitHubの認証確認、token環境変数fileの書き込み。
 	case "$3" in
+	'# sbxm inside check'*)
+		# Sandboxの中のcommandを1回でまとめて読む手順。中のcommandごとに自分を呼び直し、
+		# 実物のshellが並べるのと同じ形で結果を並べる。commandは空の引数で区切られている。
+		shift 4
+		dir=$(mktemp -d)
+		i=0
+		while [ $# -gt 0 ]; do
+			n=0
+			for a in "$@"; do [ -n "$a" ] || break; n=$((n + 1)); done
+			cmd=
+			j=1
+			while [ $j -le $n ]; do cmd="$cmd \"\$$j\""; j=$((j + 1)); done
+			eval "\"\$0\" exec \"\$name\" -- $cmd" </dev/null >"$dir/out" 2>"$dir/err"
+			status=$?
+			printf '%s %s %s %s\n' "$i" "$status" "$(($(wc -c <"$dir/out")))" "$(($(wc -c <"$dir/err")))"
+			cat "$dir/out" "$dir/err"
+			shift $((n + 1))
+			i=$((i + 1))
+		done
+		rm -rf "$dir"
+		exit 0
+		;;
 	*"exec cat --"*)
 		# token環境変数fileのprobeは、不在だけを専用statusで答える。
 		[ -e "$fake/token-env" ] || exit 44

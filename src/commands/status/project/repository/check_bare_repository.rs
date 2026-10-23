@@ -4,7 +4,7 @@ use crate::diagnostics::{Diagnostic, ErrorId};
 use crate::msg;
 use crate::project::{SandboxLayout, SandboxName};
 
-use crate::support::sandbox;
+use crate::support::sandbox::{self, Live};
 
 use crate::commands::status::project::{ProjectStatus, Value};
 
@@ -16,7 +16,11 @@ pub fn check_bare_repository(
     progress: &mut dyn ProgressSink,
 ) {
     let git_dir = layout.bare_git_dir();
-    let outcome = crate::support::repository::inspect_bare(host, name.as_str(), &git_dir, progress);
+    let outcome = crate::support::repository::inspect_bare(
+        &Live::new(host, name.as_str()),
+        &git_dir,
+        progress,
+    );
     let value = match outcome {
         Ok(outcome) => match sandbox::inner_exit_code(&outcome) {
             Some(0) if outcome.stdout_text().trim() == "true" => Value::Ready,

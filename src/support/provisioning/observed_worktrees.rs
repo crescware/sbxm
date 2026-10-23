@@ -1,10 +1,10 @@
-use crate::boundary::host::HostEnvironment;
 use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::metadata::ProjectMetadata;
 use crate::msg;
 use crate::project::SandboxLayout;
 
+use crate::support::sandbox::Inside;
 use crate::support::{repository, worktree};
 
 use super::WorktreeRow;
@@ -16,8 +16,7 @@ use super::WorktreeRow;
 /// 作業で変わり得るため一致条件にしないが、HEADを読めなかった場合は`None`へ丸めず
 /// 拒否する。観測できなかった状態を、観測できた状態と同じ形で返さないためである。
 pub(crate) fn observed_worktrees(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
+    inside: &dyn Inside,
     layout: &SandboxLayout,
     metadata: &ProjectMetadata,
     names: &[String],
@@ -34,7 +33,7 @@ pub(crate) fn observed_worktrees(
     for (index, name) in names.iter().enumerate() {
         let path = format!("{}/{name}", layout.bare_root());
         let mut inspection =
-            worktree::Inspection::new(host, sandbox, &path, index + 1, names.len(), progress);
+            worktree::Inspection::new(inside, &path, index + 1, names.len(), progress);
         repository::adopt_worktree(&mut inspection, &git_dir)?;
         let head = read_head(&mut inspection)?;
         rows.push(WorktreeRow {

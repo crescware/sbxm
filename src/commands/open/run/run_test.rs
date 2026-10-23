@@ -102,14 +102,6 @@ fn interior_ready(host: FakeSbx, project: &Registered, layout: &SandboxLayout) -
             ),
             0,
             &format!("{}\n", crate::support::repository::FETCH_REFSPEC),
-        )
-        .answering(
-            &format!(
-                "exec {} -- git --git-dir {git_dir} fsck --connectivity-only",
-                project.sandbox
-            ),
-            0,
-            "",
         );
     let identity = crate::testing::metadata::git_identity();
     let mut host = host

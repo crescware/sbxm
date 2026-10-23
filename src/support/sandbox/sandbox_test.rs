@@ -90,11 +90,12 @@ fn a_sandbox_that_cannot_reach_the_host_agent_passes_the_isolation_check() -> Ch
         keys: (SSH_ADD_NO_AGENT, ""),
     };
     assert!(
-        ssh_agent_is_exposed(&host, "sandbox")
+        ssh_agent_is_exposed(&Live::new(&host, "sandbox"))
             .required_because("the check answered")?
             .is_empty()
     );
-    require_credentials_isolated(&host, "sandbox").required_because("nothing is exposed")?;
+    require_credentials_isolated(&Live::new(&host, "sandbox"), "sandbox")
+        .required_because("nothing is exposed")?;
     Ok(())
 }
 
@@ -111,7 +112,7 @@ fn a_reachable_agent_counts_as_exposed_with_or_without_the_variable() -> Checked
     };
 
     for host in [with_socket, without_socket] {
-        let error = require_credentials_isolated(&host, "sandbox")
+        let error = require_credentials_isolated(&Live::new(&host, "sandbox"), "sandbox")
             .refused_because("the host agent is reachable from inside")?;
         assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
     }
@@ -127,11 +128,11 @@ fn a_socket_variable_that_no_agent_serves_is_not_exposure() -> Checked {
         keys: (SSH_ADD_NO_AGENT, ""),
     };
     assert!(
-        ssh_agent_is_exposed(&host, "sandbox")
+        ssh_agent_is_exposed(&Live::new(&host, "sandbox"))
             .required_because("the check answered")?
             .is_empty()
     );
-    require_credentials_isolated(&host, "sandbox")
+    require_credentials_isolated(&Live::new(&host, "sandbox"), "sandbox")
         .required_because("a dangling socket path is not a reachable agent")?;
     Ok(())
 }
@@ -147,12 +148,13 @@ fn the_key_material_an_agent_lists_never_reaches_a_diagnostic() -> Checked {
     };
 
     assert_eq!(
-        ssh_agent_is_exposed(&host, "sandbox").required_because("the check answered")?,
+        ssh_agent_is_exposed(&Live::new(&host, "sandbox"))
+            .required_because("the check answered")?,
         ["ssh-add reached an agent"],
         "what is observed is that an agent answered, not what it holds"
     );
 
-    let error = require_credentials_isolated(&host, "sandbox")
+    let error = require_credentials_isolated(&Live::new(&host, "sandbox"), "sandbox")
         .refused_because("an agent that lists keys is reachable from inside")?;
     assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
 
@@ -170,7 +172,7 @@ fn a_probe_that_could_not_run_is_not_read_as_isolation() -> Checked {
         socket: (126, ""),
         keys: (SSH_ADD_NO_AGENT, ""),
     };
-    let error = require_credentials_isolated(&host, "sandbox")
+    let error = require_credentials_isolated(&Live::new(&host, "sandbox"), "sandbox")
         .refused_because("a check that did not answer never means isolated")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
     Ok(())
@@ -537,7 +539,7 @@ fn a_path_check_that_could_not_run_is_not_read_as_absence() -> Checked {
         "",
     );
 
-    let error = path_exists(&host, "sandbox", "/work/repo.git")
+    let error = path_exists(&Live::new(&host, "sandbox"), "/work/repo.git")
         .refused_because("a check that did not run never means the path is absent")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxCheckUnobservable));
     Ok(())
@@ -583,4 +585,42 @@ fn text_from_the_sandbox_keeps_its_lines_but_shows_other_control_characters() {
         "remote: \\u{1b}[31mred\\u{1b}[0m\\r\nnext\tline\\u{7}"
     );
     assert_eq!(super::neutralized("plain テキスト"), "plain テキスト");
+}
+
+#[test]
+fn a_recorded_answer_has_the_shape_of_the_exec_it_stands_in_for() -> Checked {
+    use crate::boundary::host::protocol::InsideRecord;
+
+    let commands = vec![vec!["printenv".to_string(), "SSH_AUTH_SOCK".to_string()]];
+    let records = vec![InsideRecord {
+        status: 1,
+        stdout: b"/tmp/agent.sock\n".to_vec(),
+        stderr: b"\xff".to_vec(),
+    }];
+    let recorded = Recorded::new("sandbox", &commands, records);
+
+    let outcome = recorded
+        .exec(&["printenv", "SSH_AUTH_SOCK"])
+        .required_because("the check ran this command")?;
+    // 診断に現れる起動の形は、1件ずつ起動したときと同じである。
+    assert_eq!(outcome.program, "sbx");
+    assert_eq!(
+        outcome.args,
+        ["exec", "sandbox", "--", "printenv", "SSH_AUTH_SOCK"]
+    );
+    assert_eq!(outcome.status.code(), Some(1));
+    assert_eq!(outcome.stdout, b"/tmp/agent.sock\n");
+    assert_eq!(outcome.stderr, b"\xff");
+    assert!(outcome.stderr_lossy);
+    Ok(())
+}
+
+#[test]
+fn a_command_the_check_did_not_run_is_not_answered() -> Checked {
+    let recorded = Recorded::new("sandbox", &[], Vec::new());
+    let error = recorded
+        .exec(&["ssh-add", "-L"])
+        .refused_because("nothing was recorded for this command")?;
+    assert_eq!(error.first_id(), Some(ErrorId::ExternalOutputUnparseable));
+    Ok(())
 }

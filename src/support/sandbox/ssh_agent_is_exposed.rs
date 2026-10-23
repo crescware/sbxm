@@ -1,7 +1,6 @@
-use crate::boundary::host::HostEnvironment;
 use crate::diagnostics::Result;
 
-use super::{SSH_ADD_NO_AGENT, exec, inner_exit_code, unobservable};
+use super::{Inside, SSH_ADD_NO_AGENT, inner_exit_code, unobservable};
 
 /// hostのSSH `AgentへSandboxの中から到達できるか`。
 ///
@@ -13,11 +12,10 @@ use super::{SSH_ADD_NO_AGENT, exec, inner_exit_code, unobservable};
 ///
 /// 露出していないことは、検査commandが答えた場合にだけ言える。検査が成立しなかった
 /// 場合を「露出していない」へ丸めず、判定できないerrorとして返す。
-pub fn ssh_agent_is_exposed(
-    host: &dyn HostEnvironment,
-    sandbox: &str,
-) -> Result<Vec<&'static str>> {
-    let socket = exec(host, sandbox, &["printenv", "SSH_AUTH_SOCK"])?;
+///
+/// 読むcommandは`ssh_agent_commands`と同じである。
+pub fn ssh_agent_is_exposed(inside: &dyn Inside) -> Result<Vec<&'static str>> {
+    let socket = inside.exec(&["printenv", "SSH_AUTH_SOCK"])?;
     let socket_is_set = match inner_exit_code(&socket) {
         Some(0) if !socket.stdout_text().trim().is_empty() => true,
         // `printenv`は未設定のとき`1`で終わる。
@@ -25,7 +23,7 @@ pub fn ssh_agent_is_exposed(
         _ => return Err(unobservable(&socket, "SSH_AUTH_SOCK")),
     };
 
-    let keys = exec(host, sandbox, &["ssh-add", "-L"])?;
+    let keys = inside.exec(&["ssh-add", "-L"])?;
     match inner_exit_code(&keys) {
         // 鍵の有無にかかわらず、agentへ接続できた時点で露出している。
         Some(0 | 1) => {}

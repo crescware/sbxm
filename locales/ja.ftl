@@ -783,6 +783,7 @@ progress-creating-worktrees = managed worktreeを作成します。大きなrepo
 progress-inspect-project = { $project } の案件metadataとhost上のfileを読み取ります。
 progress-status-image = Sandbox imageを確認します。Dockerの応答を待っています。
 progress-inspect-sandbox = Sandboxの状態を確認します。Docker Sandboxesの応答を待っています。
+progress-inspect-inside = Sandboxの中をまとめて確認します。SSH agentの隔離、credential、Gitの名義、tool、宣言file、repository、worktreeです。
 progress-project-lock = { $project } の案件lockを取得します。他の操作があれば完了を待っています。
 progress-inspect-credentials = Sandboxのcredentialを確認します。
 progress-inspect-repository = Sandbox内のrepositoryを確認します。
