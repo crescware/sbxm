@@ -165,7 +165,9 @@ sh)
 	'# sbxm inside check'*)
 		# Sandboxの中のcommandを1回でまとめて読む手順。中のcommandごとに自分を呼び直し、
 		# 実物のshellが並べるのと同じ形で結果を並べる。commandは空の引数で区切られている。
+		# 所要時間は計らず、計らなかった印を並べる。
 		shift 4
+		[ "$1" != -t ] || shift
 		dir=$(mktemp -d)
 		i=0
 		while [ $# -gt 0 ]; do
@@ -176,7 +178,7 @@ sh)
 			while [ $j -le $n ]; do cmd="$cmd \"\$$j\""; j=$((j + 1)); done
 			eval "\"\$0\" exec \"\$name\" -- $cmd" </dev/null >"$dir/out" 2>"$dir/err"
 			status=$?
-			printf '%s %s %s %s\n' "$i" "$status" "$(($(wc -c <"$dir/out")))" "$(($(wc -c <"$dir/err")))"
+			printf '%s %s %s %s -\n' "$i" "$status" "$(($(wc -c <"$dir/out")))" "$(($(wc -c <"$dir/err")))"
 			cat "$dir/out" "$dir/err"
 			shift $((n + 1))
 			i=$((i + 1))

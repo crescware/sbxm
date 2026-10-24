@@ -15,6 +15,7 @@ impl<'a> Ui<'a> {
             stdout: Renderer::new(stdout, policy.stdout),
             stderr: Renderer::new(stderr, policy.stderr),
             external: false,
+            trace: None,
         }
     }
 }

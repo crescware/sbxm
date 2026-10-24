@@ -581,3 +581,24 @@ sbxmは結果を標準出力へ、進捗、prompt、警告、errorを標準エ�
 
 明示した `--color` は、どの環境変数よりも優先されます。色を消しても情報は失われません。
 marker、label、空行だけで同じ意味を読み取れます。
+
+### 時間がどこへ消えたかを追う
+
+`--verbose` を付けると、標準エラー出力にtraceが並びます。外部commandを起動したときと
+終わったときに1行ずつ、工程は次の工程が始まったときに1行、実行の終わりに合計を1行、
+いずれもdimで出します。所要時間は行の右端に右詰で、msに小数3桁の固定形式で置くため、
+`sort` や `grep` がそのまま効きます。
+
+```text
+→ Checking the sandbox state. Waiting for Docker Sandboxes to respond.
+run    sbx ls --json
+done   sbx ls --json: exit status: 0, stdout 1284B, stderr 0B                       567.492ms
+step   progress-inspect-sandbox                                                     571.230ms
+total  3 external commands 2290.552ms, sbxm 113.561ms                              2404.113ms
+```
+
+`open`・`status`・`repair` がSandboxの中で1回の `sbx exec` にまとめて走らせる確認は、
+項目ごとに時間を計り、`inside` の行として並べます。traceはcommand lineを出しますが、
+sbxmが標準入力へ渡した内容と、commandが出力した内容は出さず、byte数だけを示します。
+標準出力は結果だけのままなので、リダイレクトした結果は変わりません。合計は、外部command
+の中にいた時間と、sbxm自身が使った時間に分かれます。

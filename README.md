@@ -647,3 +647,26 @@ values, so they follow the contrast you already chose.
 An explicit `--color` wins over every environment variable. Removing color
 never removes information: markers, labels and blank lines carry the same
 meaning on their own.
+
+### Trace where the time goes
+
+`--verbose` adds a trace to standard error: one dim line when sbxm starts an
+external command and one when it ends, one line for each step once the next
+step begins, and a total when the run ends. Every elapsed time sits
+right-aligned at the end of its line, in milliseconds with three decimals, so
+`sort` and `grep` keep working on the output.
+
+```text
+→ Checking the sandbox state. Waiting for Docker Sandboxes to respond.
+run    sbx ls --json
+done   sbx ls --json: exit status: 0, stdout 1284B, stderr 0B                       567.492ms
+step   progress-inspect-sandbox                                                     571.230ms
+total  3 external commands 2290.552ms, sbxm 113.561ms                              2404.113ms
+```
+
+The checks that `open`, `status` and `repair` run inside the sandbox as one
+`sbx exec` are timed one by one and listed as `inside` lines. The trace shows
+command lines but never what sbxm sent on standard input or what a command
+printed; those appear only as byte counts. Standard output stays the result
+alone, so a redirected result is unaffected. The total splits the wall time
+into the time spent inside external commands and the time sbxm itself used.

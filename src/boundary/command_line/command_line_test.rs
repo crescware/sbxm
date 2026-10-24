@@ -52,3 +52,11 @@ fn options_after_double_dash_are_not_peeked() {
     assert_eq!(command_line.locale_override(), None);
     assert_eq!(command_line.color_setting(), ColorSetting::Default);
 }
+
+#[test]
+fn verbose_is_off_unless_the_flag_is_given_before_the_separator() {
+    assert!(!CommandLine::new(argv(&["ls"])).verbose());
+    assert!(!CommandLine::new(argv(&["ls", "--", "--verbose"])).verbose());
+    assert!(CommandLine::new(argv(&["--verbose", "ls"])).verbose());
+    assert!(CommandLine::new(argv(&["status", "--global", "--verbose"])).verbose());
+}

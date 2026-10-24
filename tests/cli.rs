@@ -216,6 +216,72 @@ fn every_shipped_resource_is_an_accepted_language() -> Checked {
     Ok(())
 }
 
+/// `--verbose`は、外部commandと工程の所要時間をstderrへ並べる。
+///
+/// 認証probeだけに答えるhostでは、`sbx version`と最初の`sbx ls --json`が答え、状態を
+/// 読む2回目の`sbx ls --json`が失敗する。どちらの起動もtraceに現れ、合計で閉じる。
+#[test]
+fn verbose_traces_each_external_command_and_the_total_on_stderr() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm_after_login(home.path(), &["--verbose", "ls"])?;
+
+    let lines: Vec<&str> = run.stderr.lines().collect();
+    assert!(lines.contains(&"run    sbx version"), "{}", run.stderr);
+    let done = lines
+        .iter()
+        .find(|line| line.starts_with("done   sbx version: exit status: 0, stdout "))
+        .required_because("the version probe is traced when it ends")?;
+    // stderrが端末でないので、所要時間は100桁目で揃う。
+    assert_eq!(done.len(), 100, "{done:?}");
+    assert!(done.ends_with("ms"), "{done:?}");
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("step   progress-inspect-sbx-version ")),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("total  ") && line.ends_with("ms")),
+        "{}",
+        run.stderr
+    );
+    // 失敗の診断は、traceの有無で変わらない。
+    assert!(run.stderr.contains("error:"), "{}", run.stderr);
+    Ok(())
+}
+
+#[test]
+fn without_verbose_nothing_is_traced() -> Checked {
+    let home = temp_home()?;
+    let run = sbxm_after_login(home.path(), &["ls"])?;
+
+    assert!(!run.stderr.contains("run    sbx"), "{}", run.stderr);
+    assert!(!run.stderr.contains("total  "), "{}", run.stderr);
+    Ok(())
+}
+
+#[test]
+fn verbose_adds_nothing_to_help() -> Checked {
+    let home = temp_home()?;
+    for arguments in [
+        &["--verbose", "--help"][..],
+        &["ls", "--verbose", "--help"][..],
+    ] {
+        let run = sbxm(home.path(), arguments)?;
+        assert_eq!(run.code, 0, "{arguments:?}: {}", run.stderr);
+        assert!(run.stderr.is_empty(), "{arguments:?}: {}", run.stderr);
+        assert!(
+            run.stdout.contains("--verbose"),
+            "{arguments:?}: {}",
+            run.stdout
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn help_is_written_to_stdout_and_never_mixed_with_diagnostics() -> Checked {
     let home = temp_home()?;

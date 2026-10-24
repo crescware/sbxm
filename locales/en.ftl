@@ -826,7 +826,17 @@ progress-inspect-recheck = Rechecking the current state before continuing.
 progress-inspect-result = Verifying the results of the completed changes.
 progress-reflecting-saved = Reflecting saved branches and tags into the host repository.
 
+trace-run = { $argv }
+trace-done = { $argv }: { $status }, stdout { $stdout }B, stderr { $stderr }B
+trace-done-terminal = { $argv }: { $status }
+trace-failed = { $argv }: { $error }
+trace-inside = { $index } { $argv }: { $status }
+trace-step = { $id }
+trace-total = { $count } external commands { $external }, sbxm { $own }
+trace-total-one = 1 external command { $external }, sbxm { $own }
+
 cli-color-help = When to color the output ({ $supported })
+cli-verbose-help = Trace every external command and step with its elapsed time on stderr
 warning-label = Warning:
 note-label = Note:
 remediation-heading = Try:

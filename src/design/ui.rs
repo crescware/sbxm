@@ -1,9 +1,14 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::diagnostics::{Error, Msg};
 use crate::i18n::{Catalog, Locale};
 
 use crate::design::renderer::Renderer;
 
-use super::{Document, ExternalOutput, GuidanceItem, ProgressSink, RenderingPolicy, Warning};
+use super::{
+    Document, ExternalOutput, GuidanceItem, ProgressSink, RenderingPolicy, Trace, Warning,
+};
 
 /// 1実行ぶんの利用者interface。
 ///
@@ -15,6 +20,8 @@ pub struct Ui<'a> {
     stderr: Renderer<'a>,
     /// 外部toolの出力が続いている最中か。
     external: bool,
+    /// `--verbose`の実行が工程の所要時間を並べる先。hostのdecoratorと共有する。
+    trace: Option<Rc<RefCell<Trace<'a>>>>,
 }
 
 impl<'a> Ui<'a> {
@@ -30,7 +37,13 @@ impl<'a> Ui<'a> {
             stdout: Renderer::new(stdout, policy.stdout),
             stderr: Renderer::new(stderr, policy.stderr),
             external: false,
+            trace: None,
         }
+    }
+
+    /// 工程の始まりを`trace`へも知らせるようにする。
+    pub fn attach_trace(&mut self, trace: Rc<RefCell<Trace<'a>>>) {
+        self.trace = Some(trace);
     }
 }
 
@@ -71,6 +84,10 @@ impl Ui<'_> {
     /// 外部toolが何も出さない工程では、待ち時間が「止まっているのか動いているのか
     /// 分からない時間」になる。工程を始める前に1行だけ知らせる。
     pub fn progress(&mut self, message: Msg) {
+        // 直前の工程の所要時間は、次の工程行より前に並ぶ。
+        if let Some(trace) = &self.trace {
+            trace.borrow_mut().step(message.id);
+        }
         self.stderr(&Document::new().progress(message));
     }
 

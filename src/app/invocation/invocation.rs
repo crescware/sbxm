@@ -61,6 +61,11 @@ impl Invocation {
     pub(crate) fn can_prompt(&self) -> bool {
         self.prompt.can_prompt()
     }
+
+    /// `--verbose`が指定されたか。
+    pub(crate) fn verbose(&self) -> bool {
+        self.command_line.verbose()
+    }
 }
 
 #[cfg(test)]

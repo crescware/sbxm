@@ -52,9 +52,55 @@ fn each_command_is_framed_with_its_status_stdout_and_stderr_as_written() -> Chec
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(
         output.stdout,
-        b"0 0 6 0\nhello\n1 2 3 10\nabcnot found\n2 0 4 0\na\0b\0"
+        b"0 0 6 0 -\nhello\n1 2 3 10 -\nabcnot found\n2 0 4 0 -\na\0b\0"
     );
     assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    Ok(())
+}
+
+/// このhostの`date`がnano秒を出せるか。GNU coreutilsは出せ、BSDの`date`は`%N`をそのまま
+/// 書く。手順はどちらでも止まらず、出せないときは計らなかったものとして並べる。
+fn date_has_nanoseconds() -> Checked<bool> {
+    let output = Command::new("date")
+        .arg("+%N")
+        .output()
+        .required_because("date runs")?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    Ok(!text.trim().is_empty() && text.trim().bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+#[test]
+fn a_timed_check_records_how_long_each_command_took() -> Checked {
+    let output = run(&["-t", "true", "", "printf", "x", ""])?;
+    assert_eq!(output.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    let mut lines = text.lines();
+    let first = lines.next().required_because("the first header")?;
+    let second = lines.next().required_because("the second header")?;
+    let fields: Vec<&str> = first.split(' ').collect();
+    assert_eq!(&fields[..4], ["0", "0", "0", "0"], "{text:?}");
+    if date_has_nanoseconds()? {
+        // 所要時間はnano秒の整数である。短いcommandでも、0以上の数として並ぶ。
+        fields[4]
+            .parse::<u64>()
+            .required_because("elapsed is a number of nanoseconds")?;
+        assert!(second.starts_with("1 0 1 0 "), "{text:?}");
+        second["1 0 1 0 ".len()..]
+            .parse::<u64>()
+            .required_because("the second elapsed is a number too")?;
+    } else {
+        assert_eq!(fields[4], "-", "{text:?}");
+        assert_eq!(second, "1 0 1 0 -", "{text:?}");
+    }
+    assert!(text.ends_with('x'), "{text:?}");
+    Ok(())
+}
+
+#[test]
+fn the_timing_option_alone_is_an_empty_check() -> Checked {
+    let output = run(&["-t"])?;
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty());
     Ok(())
 }
 
@@ -64,7 +110,7 @@ fn a_command_that_cannot_be_found_is_recorded_rather_than_ending_the_check() -> 
     assert_eq!(output.status.code(), Some(0));
     let text = String::from_utf8_lossy(&output.stdout);
     assert!(text.starts_with("0 127 0 "), "{text:?}");
-    assert!(text.ends_with("1 0 6 0\nafter\n"), "{text:?}");
+    assert!(text.ends_with("1 0 6 0 -\nafter\n"), "{text:?}");
     Ok(())
 }
 
@@ -72,7 +118,7 @@ fn a_command_that_cannot_be_found_is_recorded_rather_than_ending_the_check() -> 
 fn arguments_a_command_is_quoted_from_are_passed_as_one_word_each() -> Checked {
     // 空白や引用符を含む引数も、1語のまま届く。
     let output = run(&["printf", "%s|", "two words", "it's", "", ""])?;
-    assert_eq!(output.stdout, b"0 0 15 0\ntwo words|it's|");
+    assert_eq!(output.stdout, b"0 0 15 0 -\ntwo words|it's|");
     Ok(())
 }
 
@@ -102,7 +148,7 @@ fn the_commands_do_not_read_the_stdin_the_check_was_given() -> Checked {
     std::fs::write(&path, b"never read\n").required_because("stdin is prepared")?;
     let stdin = std::fs::File::open(&path).required_because("stdin opens")?;
     let output = run_with(&["cat", ""], |command| command.stdin(Stdio::from(stdin)))?;
-    assert_eq!(output.stdout, b"0 0 0 0\n");
+    assert_eq!(output.stdout, b"0 0 0 0 -\n");
     Ok(())
 }
 
@@ -112,7 +158,7 @@ fn the_temporary_directory_is_removed_when_the_check_ends() -> Checked {
     let output = run_with(&["printf", "x", ""], |command| {
         command.env("TMPDIR", temp.path())
     })?;
-    assert_eq!(output.stdout, b"0 0 1 0\nx");
+    assert_eq!(output.stdout, b"0 0 1 0 -\nx");
     let left: Vec<_> = std::fs::read_dir(temp.path())
         .required_because("TMPDIR is readable")?
         .collect();

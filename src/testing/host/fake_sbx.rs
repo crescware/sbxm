@@ -150,7 +150,7 @@ impl AnsweredHost for FakeSbx {
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.specs.borrow_mut().push(spec.clone());
         if spec.program == "sbx"
-            && let Some((sandbox, commands)) = split_inside_check(&spec.args)
+            && let Some((sandbox, _timed, commands)) = split_inside_check(&spec.args)
         {
             // 指定の無いcommandは、1件ずつ起動されたときと同じく、成功して何も出さない。
             let answers: Vec<(i32, String)> = commands

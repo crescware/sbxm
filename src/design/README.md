@@ -52,6 +52,7 @@ command固有のprinterは、表示する情報と順序だけを宣言する。
 - error
 - remediation
 - 外部commandの失敗情報
+- trace（`--verbose`のときだけ）
 
 色や見栄えを理由にstreamを変更しない。stdoutとstderrの責務はCLIのcontractであり、redirect、pipe、scriptからの利用を支える。
 
@@ -262,8 +263,48 @@ progressは処理開始前にstderrへ書き、直ちにflushする。
 検査の工程名はcommandごとに独自の粒度を作らず、共通の観測処理から`ProgressSink`へ
 通知する。認証・案件lock・Docker/Sandbox応答待ちも、検査に入る前の待機工程として
 示す。worktreeと宣言fileには対象名と現在件数/総件数を添える。再検査は省略せず、
-確認後・修復後などの区切りを示して同じ観測工程をもう一度表示する。外部commandを
-1つずつ列挙するverboseログや、検査工程ごとのsuccess行は追加しない。
+確認後・修復後などの区切りを示して同じ観測工程をもう一度表示する。検査工程ごとの
+success行は追加しない。外部commandを1つずつ列挙する行は、`--verbose`のtraceにだけ置く。
+
+### Trace
+
+`--verbose`のときだけ、工程と外部commandの所要時間をstderrへ並べる。既定の実行は1行も
+増やさない。読み手はsbxmを速くしようとしている人であり、どの外部commandに、どの工程に、
+時間が消えているかを知りたい。
+
+```text
+→ Checking the sandbox state. Waiting for Docker Sandboxes to respond.
+run    sbx ls --json
+done   sbx ls --json: exit status: 0, stdout 1284B, stderr 0B                       567.492ms
+run    sbx exec org-repo -- sh -c <inside_check.sh> sh -t (28 commands)
+done   sbx exec org-repo -- sh -c <inside_check.sh> sh -t (28 commands): exit status: 0, stdout 3120B, stderr 0B 1243.914ms
+inside 0 printenv SSH_AUTH_SOCK: exit status: 1                                       3.102ms
+inside 1 ssh-add -L: exit status: 2                                                   4.871ms
+step   progress-inspect-sandbox                                                    1815.460ms
+total  4 external commands 2290.552ms, sbxm 113.561ms                              2404.113ms
+```
+
+- 1 eventを1行で、progressと同じく連続する行の間に空行を置かない
+- 行全体をdim（`Muted`）で描く。行全体を着色しない規則の唯一の例外であり、補助情報を
+  本文より一段引いて見せるためにだけ使う。ほかのblockへ広げない
+- 左端はevent名で、`run`、`done`、`failed`、`inside`、`step`、`total`の6つ。状態値と同じく
+  翻訳せず、最も長い`inside`の幅に揃える
+- 所要時間は行の右端へ右詰で置く。括弧も接頭も付けない。単位はmsに小数3桁で固定し、
+  秒へ切り替えない。sortとgrepができる形を保つ
+- 右端の幅はstderrの端末幅から取る。端末でなければ100桁。本文が入らなければ空白1つで
+  続け、argvは切らない
+- 工程は`step`として、次の工程が始まったとき、または実行の終わりに、工程のmessage IDで
+  示す。progress行そのものは変えない
+- 外部commandはargvを出す。stdinへ渡したbyte列と、captureした出力の中身は出さず、
+  byte数だけを示す。`sh -c`へ渡した手順の本文は`<inside_check.sh>`と件数に置き換える
+- Sandboxの中でまとめて走らせた確認は、手順に所要時間を計らせ、commandごとに`inside`で
+  示す。計らせるのは`--verbose`の実行だけである
+- `total`は壁時計の総時間を右端に、外部commandの回数と合計時間、残り（sbxm自身の時間）
+  を本文に持つ。1行も並べなかった実行には出さない
+
+traceは`Trace`が直接書き、`Renderer`のblock間隔の勘定に入らない。`Ui`は工程の始まりを、
+hostのdecorator（`Traced`）は外部commandの始まりと終わりを、同じ1つの`Trace`へ知らせる。
+組み立てるのはcomposition root（`execute`）だけであり、commandはtraceの有無を知らない。
 
 ### Summary
 
@@ -597,6 +638,9 @@ sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれ
 
 promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`とは別に組み立てて渡す。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
 
+`Trace`は`--verbose`の所要時間を書く。`Ui`と同じく`design`が持ち、`Painter`で`Muted`を
+載せる。commandは`ProgressSink`へ工程を知らせるだけで、`Trace`を受け取らない。
+
 `PromptUi`は打鍵の供給元と描画先を`Keys`と`Screen`として受け取る。実端末の操作を担うのは、その2つを満たす`RealTerminal` adapterである。`PromptUi::terminal`はcomposition rootから使う組み立てhelperとして`Term`を2つのadapterへ渡し、選択と入力の進み方はfakeで確かめられる。実体を選ぶのは組み立てる側であり、commandは受け取った`PromptUi`を使う。
 
 ## 新しい出力を追加する手順
@@ -635,6 +679,7 @@ promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写し
 - commandごとにprompt themeを作る
 - prompt libraryの既定themeとcustom themeを混在させる
 - global mutable UI stateを作る
+- `--verbose`なしでtraceの行を出す、またはtraceをstdoutへ出す
 - snapshotだけで規約を守る
 - legacy rendererとdesign systemを恒久的に併存させる
 
@@ -714,6 +759,16 @@ promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写し
 - Esc/Ctrl-Cによるcancel
 - viewportと狭いterminal
 
+### trace
+
+- 所要時間が行の右端で揃い、幅の無いstreamでは100桁目で揃う
+- 本文が幅を超えた行は空白1つで時間を続け、argvを切らない
+- 幅はbyteではなく表示幅で数える
+- 工程は次の工程の始まり、または実行の終わりで所要時間を得る
+- 合計は外部commandの回数と合計時間、sbxm自身の時間に分かれ、1行も無い実行には出ない
+- 色を出すstreamでは行全体がdimになる
+- 既定の実行ではtraceの行が1行も出ない
+
 ### architecture
 
 - 利用者向けの`print!`、`println!`、`eprintln!`が`design`外にない
@@ -751,6 +806,7 @@ promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写し
 - warningとdiagnosticは構造化される
 - remediationの説明とcommandは分離される
 - progressは注入可能なsinkを通る
+- `--verbose`のtraceは`Trace`だけが書き、既定の実行には現れない
 - promptは共通themeまたは共通state machineを使う
 - helpとparser errorも同じpolicyに従う
 - legacyな`Reporter`、display helper、global progress stateは残らない
