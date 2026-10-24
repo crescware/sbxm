@@ -248,6 +248,30 @@ fn a_running_project_reads_the_sandbox_listing_once_after_the_lock() -> Checked 
 }
 
 #[test]
+fn a_stopped_project_reads_the_sandbox_listing_once_before_and_once_after_starting() -> Checked {
+    let clock = ScriptedClock::default();
+    let fixture = Fixture::new()?;
+    let project = fixture.register("Example-Org/Example-Repo")?;
+    // mount元のdirectoryが消えており、起動の前にworkspaceを戻す。
+    let stopped = format!("[{}]", fixture.declared_entry(&project, "stopped"));
+    let running = format!("[{}]", fixture.declared_entry(&project, "running"));
+    let host = ready(FakeSbx::listings(&[&stopped, &running]), &project)?;
+
+    prepare_on(&fixture, &host, None, &clock).required_because("prepare")?;
+
+    // project lockの後に読んだ一覧を、workspaceの復元にも使う。読み直すのは、自分が
+    // Sandboxを起動してrunningを待つときだけである。
+    let calls = host.calls();
+    let listings = calls
+        .iter()
+        .filter(|call| call.join(" ") == "ls --json")
+        .count();
+    assert_eq!(listings, 2, "{calls:?}");
+    assert!(host.ran("/bin/true"), "{calls:?}");
+    Ok(())
+}
+
+#[test]
 fn disk_usage_is_observed_exactly_once_after_the_sandbox_is_confirmed_running() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("Example-Org/Example-Repo")?;
@@ -526,12 +550,9 @@ fn a_stopped_project_is_started_without_a_terminal_and_waited_for() -> Checked {
     let project = fixture.register("example-org/example-repo")?;
     let stopped = format!("[{}]", fixture.entry(&project, "stopped")?);
     let running = format!("[{}]", fixture.entry(&project, "running")?);
-    // 起動の前に、状態とworkspaceの復元のために2回読む。起動した直後の一覧はまだstoppedを
-    // 示し、1度待ってから読み直すとrunningになる。
-    let host = ready(
-        FakeSbx::listings(&[&stopped, &stopped, &stopped, &running]),
-        &project,
-    )?;
+    // 起動の前に、状態を1回読む。workspaceの復元は同じ一覧を使う。起動した直後の一覧は
+    // まだstoppedを示し、1度待ってから読み直すとrunningになる。
+    let host = ready(FakeSbx::listings(&[&stopped, &stopped, &running]), &project)?;
 
     prepare_on(&fixture, &host, None, &clock).required_because("prepare")?;
 
@@ -549,6 +570,8 @@ fn a_stopped_project_whose_workspace_is_gone_is_restored_and_started() -> Checke
     // runtimeのrecordは残っているが、mount元のdirectoryはhostから消えている。
     let stopped = format!("[{}]", fixture.declared_entry(&project, "stopped"));
     let running = format!("[{}]", fixture.declared_entry(&project, "running"));
+    // 案件選択前のlogin確認と、lockの後の状態の読み取りがstoppedを示す。workspaceの
+    // 復元は後者の一覧を使い、起動の後に読み直すとrunningになる。
     let host = ready(FakeSbx::listings(&[&stopped, &stopped, &running]), &project)?;
 
     let mut stdout = Vec::new();

@@ -1183,10 +1183,9 @@ fn a_resume_that_cannot_confirm_the_sandbox_stops_before_touching_it() -> Checke
     let bench = Bench::new()?;
     let world = World::new();
     let (_, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
-    // 再開の観測は一覧を読めるが、workspaceを戻す前の読み直しで期限を過ぎる。
-    world.change_before("sbx ls", |world| {
-        world.change_before("sbx ls", |world| world.timing_out("sbx ls"));
-    });
+    // 再開はSandboxを、観測に使った一覧と、観測がSandboxの中を読んだ結果で確かめる。
+    // workspaceを戻す前に一覧を読み直さない。中を読む最初の起動で期限を過ぎる。
+    world.timing_out(INTERIOR_FIRST_STEP);
     let mark = world.mark();
 
     let error = bench
@@ -1200,6 +1199,29 @@ fn a_resume_that_cannot_confirm_the_sandbox_stops_before_touching_it() -> Checke
             .iter()
             .any(|call| call.contains(INTERIOR_STEP))
     );
+    Ok(())
+}
+
+#[test]
+fn a_resume_restores_the_workspace_from_the_listing_it_observed() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let (_, project) = interrupted_at(&bench, &world, INTERIOR_STEP)?;
+    let mark = world.mark();
+
+    bench
+        .ensure(&world, &project, &mut SilentProgress)
+        .required_because("the interrupted build is resumed")?;
+
+    // 一覧は、再開の観測のために呼び出し側が読んだ1回だけである。workspaceを戻すときも、
+    // 中だけを補ったあとの完成の観測も、その一覧を使う。
+    let calls = world.since(mark);
+    let listings = calls
+        .iter()
+        .filter(|call| call.starts_with("sbx ls"))
+        .count();
+    assert_eq!(listings, 1, "{calls:?}");
+    assert!(calls.iter().any(|call| call.contains(INTERIOR_STEP)));
     Ok(())
 }
 

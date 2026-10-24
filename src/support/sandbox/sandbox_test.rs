@@ -1,4 +1,4 @@
-use crate::boundary::host::protocol::SandboxState;
+use crate::boundary::host::protocol::{SandboxState, parse_sandbox_list};
 use crate::boundary::host::{CommandOutcome, CommandSpec, EnvPolicy};
 use crate::diagnostics::{ErrorId, Result};
 use crate::paths::{self, PRIVATE_DIR_MODE};
@@ -507,9 +507,8 @@ fn a_workspace_that_is_a_symlink_is_refused_before_anything_is_created() -> Chec
 fn restoring_a_workspace_for_a_sandbox_that_does_not_exist_is_refused() -> Checked {
     // `restore_workspace`は`ensure`と違い、対応するrecordが無い場合に新規作成しない。
     let root = workspace_root()?;
-    let host = FakeSbx::listing(&["[]"]);
 
-    let error = restore_workspace(&host, &sandbox()?, root.path())
+    let error = restore_workspace(&[], &sandbox()?, root.path())
         .refused_because("there is nothing to restore without a matching sandbox")?;
     assert_eq!(error.first_id(), Some(ErrorId::SandboxUnusable));
     Ok(())
@@ -519,9 +518,11 @@ fn restoring_a_workspace_for_a_sandbox_that_does_not_exist_is_refused() -> Check
 fn restoring_an_existing_sandboxs_workspace_reports_whether_it_was_recreated() -> Checked {
     let root = workspace_root()?;
     let workspace = workspace_path(root.path(), &sandbox()?);
-    let host = FakeSbx::listing(&[&listing(&workspace, "running")?]);
+    let entries = parse_sandbox_list(&listing(&workspace, "running")?)
+        .required_because("the listing parses")?;
 
-    let ready = restore_workspace(&host, &sandbox()?, root.path())
+    // 受け取った一覧から探すため、hostへは何も問い合わせない。引数にhostを取らない。
+    let ready = restore_workspace(&entries, &sandbox()?, root.path())
         .required_because("an existing sandbox is restored")?;
     assert!(!ready.created);
     assert!(ready.workspace_restored, "the mount point was gone");
