@@ -145,7 +145,7 @@ fn prepare_runtime(
     let state = inventory::state_of(&entries, &locked.metadata, workspace_root)?;
     let mut warnings = Vec::new();
     if state == ProjectState::Stopped
-        && let Some(warning) = restore_workspace(host, &locked.metadata, workspace_root)?
+        && let Some(warning) = restore_workspace(&entries, &locked.metadata, workspace_root)?
     {
         warnings.push(warning);
     }
@@ -318,11 +318,11 @@ fn handover_plan(layout: &SandboxLayout) -> Vec<Vec<String>> {
 }
 
 fn restore_workspace(
-    host: &dyn HostEnvironment,
+    entries: &[SandboxEntry],
     metadata: &ProjectMetadata,
     workspace_root: &Path,
 ) -> Result<Option<Warning>> {
-    let ready = sandbox::restore_workspace(host, &metadata.sandbox_name(), workspace_root)?;
+    let ready = sandbox::restore_workspace(entries, &metadata.sandbox_name(), workspace_root)?;
     Ok(ready.workspace_restored.then(|| {
         Warning::text(msg!("warning-workspace-restored", sandbox = ready.name))
             .fact(Fact::path(&crate::paths::display(&ready.workspace)))

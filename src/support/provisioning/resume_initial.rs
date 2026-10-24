@@ -53,8 +53,9 @@ pub(crate) fn resume_initial(
     let inputs = ProvisioningInputs::resume(&locked.paths, &intent, needs_dockerfile)?;
     let output = if observation.sandbox.is_matching() {
         let mut warnings = Vec::new();
+        // 観測に使った一覧から探す。観測からここまでに、Sandboxのrecordを変えるものは無い。
         let ready =
-            sandbox::restore_workspace(host, &locked.metadata.sandbox_name(), workspace_root)?;
+            sandbox::restore_workspace(entries, &locked.metadata.sandbox_name(), workspace_root)?;
         if ready.workspace_restored {
             warnings.push(
                 Warning::text(msg!("warning-workspace-restored", sandbox = ready.name))
