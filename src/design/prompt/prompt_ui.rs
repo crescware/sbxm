@@ -1,7 +1,11 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::diagnostics::{Error, ErrorId, Msg, Result};
 use crate::i18n::{Catalog, Locale};
 use crate::msg;
 
+use crate::design::Trace;
 use crate::design::policy::StreamPolicy;
 use crate::design::width::display_width;
 
@@ -20,6 +24,8 @@ pub struct PromptUi {
     painter: Painter,
     keys: Box<dyn Keys>,
     screen: Box<dyn Screen>,
+    /// `--verbose`の実行が、答えを待った時間を並べる先。`Ui`と共有する。
+    trace: Option<Rc<RefCell<Trace>>>,
 }
 
 impl PromptUi {
@@ -37,7 +43,34 @@ impl PromptUi {
             },
             keys,
             screen,
+            trace: None,
         }
+    }
+
+    /// 答えを待った時間を`trace`へも知らせるようにする。
+    pub fn attach_trace(&mut self, trace: Rc<RefCell<Trace>>) {
+        self.trace = Some(trace);
+    }
+
+    /// `ask`が利用者の答えを待つあいだを、traceへ知らせる。
+    ///
+    /// 待っている時間はsbxmの処理ではない。工程や外部commandに混ぜず、利用者が
+    /// 持っていた時間として数えさせる。答えが取り消しや失敗でも、待った時間は同じ。
+    /// 候補が無く訊かずに終わる場合は、待っていないため何も知らせない。
+    fn waiting<T>(
+        &mut self,
+        heading: &Msg,
+        ask: impl FnOnce(&mut PromptUi) -> Result<T>,
+    ) -> Result<T> {
+        let started = self
+            .trace
+            .as_ref()
+            .map(|trace| trace.borrow_mut().prompt_started());
+        let answer = ask(self);
+        if let (Some(trace), Some(started)) = (&self.trace, started) {
+            trace.borrow_mut().prompt_answered(heading.id, started);
+        }
+        answer
     }
 
     /// 表示言語を差し替える。
@@ -72,6 +105,15 @@ impl PromptUi {
         if labels.is_empty() {
             return Err(unresolved(0, 0));
         }
+        self.waiting(heading, |prompt| prompt.ask_open(heading, labels, maximums))
+    }
+
+    fn ask_open(
+        &mut self,
+        heading: &Msg,
+        labels: &[String],
+        maximums: &[Option<u32>],
+    ) -> Result<(usize, u32)> {
         let mut selection = OpenSelection::new(labels.len(), maximums);
 
         let _ = self.screen.hide_cursor();
@@ -118,6 +160,10 @@ impl PromptUi {
         if labels.is_empty() {
             return Err(unresolved(0, 0));
         }
+        self.waiting(heading, |prompt| prompt.ask(heading, labels, multi))
+    }
+
+    fn ask(&mut self, heading: &Msg, labels: &[String], multi: bool) -> Result<Vec<usize>> {
         let mut selection = Selection::new(labels.len(), multi, true);
 
         let _ = self.screen.hide_cursor();
@@ -170,6 +216,10 @@ impl PromptUi {
     }
 
     fn read_line(&mut self, heading: &Msg, initial: &str) -> Result<String> {
+        self.waiting(heading, |prompt| prompt.ask_line(heading, initial))
+    }
+
+    fn ask_line(&mut self, heading: &Msg, initial: &str) -> Result<String> {
         let heading = self.painter.heading(heading);
         self.screen
             .write_line(&heading)

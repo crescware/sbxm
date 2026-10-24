@@ -226,10 +226,10 @@ fn verbose_traces_each_external_command_and_the_total_on_stderr() -> Checked {
     let run = sbxm_after_login(home.path(), &["--verbose", "ls"])?;
 
     let lines: Vec<&str> = run.stderr.lines().collect();
-    assert!(lines.contains(&"run    sbx version"), "{}", run.stderr);
+    assert!(lines.contains(&"run     sbx version"), "{}", run.stderr);
     let done = lines
         .iter()
-        .find(|line| line.starts_with("done   sbx version: exit status: 0, stdout "))
+        .find(|line| line.starts_with("done    sbx version: exit status: 0, stdout "))
         .required_because("the version probe is traced when it ends")?;
     // stderrが端末でないので、所要時間は100桁目で揃う。
     assert_eq!(done.len(), 100, "{done:?}");
@@ -237,14 +237,14 @@ fn verbose_traces_each_external_command_and_the_total_on_stderr() -> Checked {
     assert!(
         lines
             .iter()
-            .any(|line| line.starts_with("step   progress-inspect-sbx-version ")),
+            .any(|line| line.starts_with("step    progress-inspect-sbx-version ")),
         "{}",
         run.stderr
     );
     assert!(
         lines
             .iter()
-            .any(|line| line.starts_with("total  ") && line.ends_with("ms")),
+            .any(|line| line.starts_with("total   ") && line.ends_with("ms")),
         "{}",
         run.stderr
     );
@@ -258,8 +258,8 @@ fn without_verbose_nothing_is_traced() -> Checked {
     let home = temp_home()?;
     let run = sbxm_after_login(home.path(), &["ls"])?;
 
-    assert!(!run.stderr.contains("run    sbx"), "{}", run.stderr);
-    assert!(!run.stderr.contains("total  "), "{}", run.stderr);
+    assert!(!run.stderr.contains("run     sbx"), "{}", run.stderr);
+    assert!(!run.stderr.contains("total   "), "{}", run.stderr);
     Ok(())
 }
 

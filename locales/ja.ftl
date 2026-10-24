@@ -832,8 +832,9 @@ trace-done-terminal = { $argv }: { $status }
 trace-failed = { $argv }: { $error }
 trace-inside = { $index } { $argv }: { $status }
 trace-step = { $id }
-trace-total = 外部command { $count }回 { $external }、sbxm { $own }
-trace-total-one = 外部command 1回 { $external }、sbxm { $own }
+trace-prompt = { $id }
+trace-total = 外部command { $count }回 { $external }、対話 { $interactive }、sbxm { $own }
+trace-total-one = 外部command 1回 { $external }、対話 { $interactive }、sbxm { $own }
 
 cli-color-help = 出力へ色を付ける条件 ({ $supported })
 cli-verbose-help = 外部commandと工程の所要時間をstderrへ出す

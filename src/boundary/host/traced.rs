@@ -12,7 +12,7 @@ use crate::time::Moment;
 use super::protocol::{
     INSIDE_CHECK, inside_check_arguments, parse_inside_check, split_inside_check,
 };
-use super::{CommandOutcome, CommandSpec, HostEnvironment, TerminalCommand};
+use super::{CommandOutcome, CommandSpec, HostEnvironment, OutputPolicy, TerminalCommand};
 
 /// 外部commandの起動と所要時間を`Trace`へ並べながら、実行そのものは`inner`へ渡すhost。
 ///
@@ -23,17 +23,40 @@ use super::{CommandOutcome, CommandSpec, HostEnvironment, TerminalCommand};
 /// Sandboxの中でまとめて走らせる確認は、手順に`-t`を渡してcommandごとの所要時間を
 /// 計らせ、並んだ結果を`inside`の行として出す。計らせるのは所要時間を読む実行だけで
 /// あり、読まない実行に、時刻を読む起動の代償を払わせない。
+///
+/// 端末そのものを渡す起動（SSH）は外部commandとして数えない。sessionの時間は利用者が
+/// 持っていた時間である。渡す前に`Trace`がそこまでの合計を並べ、渡しているあいだは
+/// 何も書かない。
 pub struct Traced<'a> {
     inner: &'a dyn HostEnvironment,
-    trace: Rc<RefCell<Trace<'a>>>,
+    trace: Rc<RefCell<Trace>>,
 }
 
 /// 手順の本文の代わりに出す印。本文を出すと、1行が手順そのものの長さになる。
 const SCRIPT_PLACEHOLDER: &str = "<inside_check.sh>";
 
 impl<'a> Traced<'a> {
-    pub fn new(inner: &'a dyn HostEnvironment, trace: Rc<RefCell<Trace<'a>>>) -> Traced<'a> {
+    pub fn new(inner: &'a dyn HostEnvironment, trace: Rc<RefCell<Trace>>) -> Traced<'a> {
         Traced { inner, trace }
+    }
+
+    /// 端末を`command`へ渡す`run`を、sessionとして並べる。
+    fn session(
+        &self,
+        command: &TerminalCommand,
+        run: impl FnOnce(&dyn HostEnvironment) -> Result<CommandOutcome>,
+    ) -> Result<CommandOutcome> {
+        let label = describe(command.spec());
+        let started = self.trace.borrow_mut().hand_over(&label);
+        let result = run(self.inner);
+        let status = match &result {
+            Ok(outcome) => outcome.status.to_string(),
+            Err(error) => first_id(error),
+        };
+        self.trace
+            .borrow_mut()
+            .session_ended(&label, started, &status);
+        result
     }
 
     fn begin(&self, spec: &CommandSpec) -> (String, Moment) {
@@ -114,6 +137,9 @@ impl HostEnvironment for Traced<'_> {
         command: &TerminalCommand,
         output: &mut dyn ExternalOutput,
     ) -> Result<CommandOutcome> {
+        if hands_over(command) {
+            return self.session(command, |inner| inner.run_with_terminal(command, output));
+        }
         let (label, started) = self.begin(command.spec());
         let result = self.inner.run_with_terminal(command, output);
         self.end_on_terminal(&label, started, &result);
@@ -127,6 +153,11 @@ impl HostEnvironment for Traced<'_> {
         every: Duration,
         tick: &mut dyn FnMut(),
     ) -> Result<CommandOutcome> {
+        if hands_over(command) {
+            return self.session(command, |inner| {
+                inner.run_with_terminal_ticking(command, output, every, tick)
+            });
+        }
         let (label, started) = self.begin(command.spec());
         let result = self
             .inner
@@ -168,6 +199,11 @@ impl Write for Counting<'_> {
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
     }
+}
+
+/// 端末そのものを渡す起動か。
+fn hands_over(command: &TerminalCommand) -> bool {
+    command.spec().output() == OutputPolicy::HandOver
 }
 
 /// `spec`がまとめた確認なら、所要時間を計るかと、並べたcommand。

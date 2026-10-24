@@ -29,6 +29,7 @@ pub mod repair;
 pub mod repository;
 pub mod sandbox;
 pub mod scripted_clock;
+pub mod shared_buffer;
 pub mod value;
 pub mod wait_until;
 

@@ -1,9 +1,17 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
+
+use crate::design::Trace;
 use crate::design::policy::StreamPolicy;
-use crate::design::prompt::{RecordedScreen, ScriptedKeys};
+use crate::design::prompt::{Keys, RecordedScreen, ScriptedKeys};
 use crate::diagnostics::{ErrorId, ExitCode, Msg};
 use crate::i18n::{Catalog, Locale};
 use crate::msg;
 use crate::testing::outcome::{Checked, Refused, Required};
+use crate::testing::scripted_clock::ScriptedClock;
+use crate::testing::shared_buffer::SharedBuffer;
+use crate::time::Clock;
 
 use super::{Key, PromptUi};
 
@@ -468,5 +476,125 @@ fn a_heading_that_cannot_be_formatted_names_the_failure_and_still_asks() -> Chec
         heading.starts_with("message-format-failed: message-id=no-such-prompt-heading"),
         "{heading}"
     );
+    Ok(())
+}
+
+/// 打鍵1つごとに時計を`takes`だけ進める供給元。利用者が考えて押すまでの時間を表す。
+struct SlowKeys {
+    keys: ScriptedKeys,
+    clock: Rc<ScriptedClock>,
+    takes: Duration,
+}
+
+impl Keys for SlowKeys {
+    fn read_key(&mut self) -> std::io::Result<Key> {
+        self.clock.advance(self.takes);
+        self.keys.read_key()
+    }
+}
+
+/// 打鍵ごとに`takes`かかるpromptを`trace`へつなぎ、`ask`を走らせてtraceの行を返す。
+fn traced_prompt<T>(
+    keys: ScriptedKeys,
+    takes: Duration,
+    ask: impl FnOnce(&mut PromptUi) -> T,
+) -> (T, Vec<String>) {
+    let clock = Rc::new(ScriptedClock::default());
+    let buffer = SharedBuffer::new();
+    let reader: Rc<dyn Clock> = Rc::<ScriptedClock>::clone(&clock);
+    let trace = Rc::new(RefCell::new(Trace::new(
+        Locale::En,
+        StreamPolicy::plain(),
+        buffer.clone(),
+        reader,
+    )));
+    let screen = RecordedScreen::new();
+    let mut prompt = PromptUi::new(
+        Locale::En,
+        StreamPolicy::plain(),
+        Box::new(SlowKeys {
+            keys,
+            clock: Rc::clone(&clock),
+            takes,
+        }),
+        Box::new(screen),
+    );
+    prompt.attach_trace(Rc::clone(&trace));
+    let answer = ask(&mut prompt);
+    trace.borrow_mut().finish();
+    (answer, buffer.lines())
+}
+
+#[test]
+fn the_time_spent_waiting_for_an_answer_is_traced_under_the_prompt_heading() -> Checked {
+    let keys = [Key::ArrowDown, Key::Enter];
+    let (chosen, lines) = traced_prompt(
+        ScriptedKeys::pressing(&keys),
+        Duration::from_millis(1_500),
+        |prompt| prompt.select_open(&heading(), &labels(), &[Some(1); 3]),
+    );
+    assert_eq!(chosen.required_because("an answer")?, (1, 0));
+
+    assert!(
+        lines[0].starts_with("prompt  select-open-heading "),
+        "{lines:?}"
+    );
+    assert!(lines[0].ends_with(" 3000.000ms"), "{lines:?}");
+    assert!(
+        lines[1].starts_with("total   0 external commands 0.000ms, interactive 3000.000ms, "),
+        "{lines:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn every_kind_of_prompt_reports_its_wait() {
+    let one_second = Duration::from_secs(1);
+    let (_, one) = traced_prompt(ScriptedKeys::confirming(), one_second, |prompt| {
+        prompt.select_one(&heading(), &labels())
+    });
+    let (_, many) = traced_prompt(ScriptedKeys::checking(&[0]), one_second, |prompt| {
+        prompt.select_many(&heading(), &labels())
+    });
+    let (_, typed) = traced_prompt(ScriptedKeys::typing("ab"), one_second, |prompt| {
+        prompt.exact(&msg!("select-guide-topic-heading"))
+    });
+
+    assert!(one[0].ends_with(" 1000.000ms"), "{one:?}");
+    assert!(
+        many[0].starts_with("prompt  select-open-heading "),
+        "{many:?}"
+    );
+    assert!(!many[0].ends_with(" 0.000ms"), "{many:?}");
+    assert!(
+        typed[0].starts_with("prompt  select-guide-topic-heading "),
+        "{typed:?}"
+    );
+    assert!(typed[0].ends_with(" 3000.000ms"), "{typed:?}");
+}
+
+#[test]
+fn a_cancelled_prompt_still_reports_how_long_it_waited() -> Checked {
+    let (answer, lines) = traced_prompt(
+        ScriptedKeys::pressing(&[Key::Escape]),
+        Duration::from_millis(400),
+        |prompt| prompt.input(&heading(), "owner/alpha"),
+    );
+    answer.refused_because("Escape cancels the input")?;
+
+    assert!(lines[0].ends_with(" 400.000ms"), "{lines:?}");
+    Ok(())
+}
+
+#[test]
+fn a_prompt_with_no_candidates_waits_for_nothing_and_is_not_traced() -> Checked {
+    let (answer, lines) = traced_prompt(
+        ScriptedKeys::pressing(&[]),
+        Duration::from_secs(1),
+        |prompt| prompt.select_one(&heading(), &[]),
+    );
+    answer.refused_because("there is nothing to choose")?;
+
+    assert!(lines.is_empty(), "{lines:?}");
     Ok(())
 }

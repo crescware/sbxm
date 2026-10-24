@@ -17,8 +17,9 @@ use super::invocation::Invocation;
 /// この1回の起動が持つ材料はここで尽きる。`Invocation`は値で受け取り、実行の間だけ
 /// 保持する。helpとversionもほかのcommandと同じ1つのmatchで受け、提示先だけが違う。
 ///
-/// `--verbose`では、工程と外部commandの所要時間を並べる`Trace`を1つ作り、`Ui`と
-/// hostの両方へ持たせる。hostは`RealHost`を包むdecoratorになり、実行の判断は変わらない。
+/// `--verbose`では、工程と外部commandの所要時間を並べる`Trace`を1つ作り、`Ui`、
+/// `PromptUi`、hostへ持たせる。hostは`RealHost`を包むdecoratorになり、実行の判断は
+/// 変わらない。
 #[allow(clippy::needless_pass_by_value)]
 pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitCode {
     let locale = invocation.locale();
@@ -28,7 +29,7 @@ pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitC
         Rc::new(RefCell::new(create_trace(
             locale,
             policy.stderr,
-            &SystemClock,
+            Rc::new(SystemClock),
         )))
     });
     if let Some(trace) = &trace {
@@ -59,6 +60,9 @@ pub(super) fn execute(invocation: Invocation, command: Result<Command>) -> ExitC
         None => real,
     };
     let mut prompt = create_prompt_ui(locale, policy.stderr);
+    if let Some(trace) = &trace {
+        prompt.attach_trace(Rc::clone(trace));
+    }
 
     let code = match command {
         Command::Help(text) | Command::Version(text) => {

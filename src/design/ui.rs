@@ -21,7 +21,7 @@ pub struct Ui<'a> {
     /// 外部toolの出力が続いている最中か。
     external: bool,
     /// `--verbose`の実行が工程の所要時間を並べる先。hostのdecoratorと共有する。
-    trace: Option<Rc<RefCell<Trace<'a>>>>,
+    trace: Option<Rc<RefCell<Trace>>>,
 }
 
 impl<'a> Ui<'a> {
@@ -42,7 +42,7 @@ impl<'a> Ui<'a> {
     }
 
     /// 工程の始まりを`trace`へも知らせるようにする。
-    pub fn attach_trace(&mut self, trace: Rc<RefCell<Trace<'a>>>) {
+    pub fn attach_trace(&mut self, trace: Rc<RefCell<Trace>>) {
         self.trace = Some(trace);
     }
 }

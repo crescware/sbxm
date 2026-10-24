@@ -272,23 +272,34 @@ success行は追加しない。外部commandを1つずつ列挙する行は、`-
 増やさない。読み手はsbxmを速くしようとしている人であり、どの外部commandに、どの工程に、
 時間が消えているかを知りたい。
 
+そのため実行の時間を3つに分けて数える。外部commandの中にいた時間、対話（利用者が持って
+いた時間）、残りのsbxm自身の時間である。対話は、promptが答えを待った時間と、端末を渡した
+sessionである。対話を工程や外部commandへ混ぜると、速くできない時間が、速くすべき時間に
+見える。
+
 ```text
+prompt  select-open-heading                                                               7183.402ms
 → Checking the sandbox state. Waiting for Docker Sandboxes to respond.
-run    sbx ls --json
-done   sbx ls --json: exit status: 0, stdout 1284B, stderr 0B                       567.492ms
-run    sbx exec org-repo -- sh -c <inside_check.sh> sh -t (28 commands)
-done   sbx exec org-repo -- sh -c <inside_check.sh> sh -t (28 commands): exit status: 0, stdout 3120B, stderr 0B 1243.914ms
-inside 0 printenv SSH_AUTH_SOCK: exit status: 1                                       3.102ms
-inside 1 ssh-add -L: exit status: 2                                                   4.871ms
-step   progress-inspect-sandbox                                                    1815.460ms
-total  4 external commands 2290.552ms, sbxm 113.561ms                              2404.113ms
+run     sbx ls --json
+done    sbx ls --json: exit status: 0, stdout 1284B, stderr 0B                             567.492ms
+run     sbx exec org-repo -- sh -c <inside_check.sh> sh -t (28 commands)
+done    sbx exec org-repo -- sh -c <inside_check.sh> sh -t (28 commands): exit status: 0, stdout 3120B, stderr 0B 1243.914ms
+inside  0 printenv SSH_AUTH_SOCK: exit status: 1                                             3.102ms
+inside  1 ssh-add -L: exit status: 2                                                         4.871ms
+step    progress-inspect-sandbox                                                          1815.460ms
+total   4 external commands 2290.552ms, interactive 7183.402ms, sbxm 113.561ms            9587.515ms
+run     ssh -t org-repo.sbx 'cd '\''/home/agent/work/repo'\'' && exec "${SHELL:-/bin/sh}" -l'
+
+agent@org-repo:repo$ exit
+session ssh -t org-repo.sbx 'cd '\''/home/agent/work/repo'\'' && exec "${SHELL:-/bin/sh}" -l': exit status: 0 150524.548ms
+total   4 external commands 2290.552ms, interactive 157707.950ms, sbxm 113.902ms        160112.404ms
 ```
 
 - 1 eventを1行で、progressと同じく連続する行の間に空行を置かない
 - 行全体をdim（`Muted`）で描く。行全体を着色しない規則の唯一の例外であり、補助情報を
   本文より一段引いて見せるためにだけ使う。ほかのblockへ広げない
-- 左端はevent名で、`run`、`done`、`failed`、`inside`、`step`、`total`の6つ。状態値と同じく
-  翻訳せず、最も長い`inside`の幅に揃える
+- 左端はevent名で、`run`、`done`、`failed`、`inside`、`step`、`prompt`、`session`、`total`
+  の8つ。状態値と同じく翻訳せず、最も長い`session`の幅に揃える
 - 所要時間は行の右端へ右詰で置く。括弧も接頭も付けない。単位はmsに小数3桁で固定し、
   秒へ切り替えない。sortとgrepができる形を保つ
 - 右端の幅はstderrの端末幅から取る。端末でなければ100桁。本文が入らなければ空白1つで
@@ -299,11 +310,18 @@ total  4 external commands 2290.552ms, sbxm 113.561ms                           
   byte数だけを示す。`sh -c`へ渡した手順の本文は`<inside_check.sh>`と件数に置き換える
 - Sandboxの中でまとめて走らせた確認は、手順に所要時間を計らせ、commandごとに`inside`で
   示す。計らせるのは`--verbose`の実行だけである
-- `total`は壁時計の総時間を右端に、外部commandの回数と合計時間、残り（sbxm自身の時間）
-  を本文に持つ。1行も並べなかった実行には出さない
+- promptは`prompt`として、答えを得たときに見出しのmessage IDと待った時間を示す。進行中の
+  工程は閉じず、待った分だけ止めたことにする。答えたあとの処理はその工程に残る。取り消し
+  でも待った時間は数え、候補が無く訊かなかったpromptは示さない
+- 端末そのものを渡す起動（SSH）は外部commandに数えない。渡す前に進行中の工程を閉じ、
+  そこまでの`total`を並べてから`run`を示す。sessionのあいだは、裏で走る処理があっても
+  1行も書かず、何も数えない。端末が戻ったら`session`として示す
+- `total`は壁時計の総時間を右端に、外部commandの回数と合計時間、対話の時間、残り（sbxm
+  自身の時間）を本文に持つ。1行も並べなかった実行には出さない
 
 traceは`Trace`が直接書き、`Renderer`のblock間隔の勘定に入らない。`Ui`は工程の始まりを、
-hostのdecorator（`Traced`）は外部commandの始まりと終わりを、同じ1つの`Trace`へ知らせる。
+`PromptUi`は答えを待つ始まりと終わりを、hostのdecorator（`Traced`）は外部commandと
+sessionの始まりと終わりを、同じ1つの`Trace`へ知らせる。
 組み立てるのはcomposition root（`execute`）だけであり、commandはtraceの有無を知らない。
 
 ### Summary
@@ -639,7 +657,8 @@ sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれ
 promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`とは別に組み立てて渡す。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
 
 `Trace`は`--verbose`の所要時間を書く。`Ui`と同じく`design`が持ち、`Painter`で`Muted`を
-載せる。commandは`ProgressSink`へ工程を知らせるだけで、`Trace`を受け取らない。
+載せる。`Ui`と`PromptUi`は同じ`Trace`を共有して持つ。commandは`ProgressSink`へ工程を
+知らせるだけで、`Trace`を受け取らない。
 
 `PromptUi`は打鍵の供給元と描画先を`Keys`と`Screen`として受け取る。実端末の操作を担うのは、その2つを満たす`RealTerminal` adapterである。`PromptUi::terminal`はcomposition rootから使う組み立てhelperとして`Term`を2つのadapterへ渡し、選択と入力の進み方はfakeで確かめられる。実体を選ぶのは組み立てる側であり、commandは受け取った`PromptUi`を使う。
 
@@ -764,8 +783,11 @@ promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写し
 - 所要時間が行の右端で揃い、幅の無いstreamでは100桁目で揃う
 - 本文が幅を超えた行は空白1つで時間を続け、argvを切らない
 - 幅はbyteではなく表示幅で数える
-- 工程は次の工程の始まり、または実行の終わりで所要時間を得る
-- 合計は外部commandの回数と合計時間、sbxm自身の時間に分かれ、1行も無い実行には出ない
+- 工程は次の工程の始まり、端末を渡す時点、または実行の終わりで所要時間を得る
+- promptが答えを待った時間は`prompt`の行に出て、工程から外れ、取り消しでも数える
+- 端末を渡す前にそこまでの合計が出て、sessionのあいだは1行も書かない
+- 合計は外部commandの回数と合計時間、対話の時間、sbxm自身の時間に分かれ、1行も無い実行には
+  出ない
 - 色を出すstreamでは行全体がdimになる
 - 既定の実行ではtraceの行が1行も出ない
 

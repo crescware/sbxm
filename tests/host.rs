@@ -829,6 +829,64 @@ fn open_names_the_sandbox_and_its_worktrees_before_it_hands_over_the_terminal() 
     Ok(())
 }
 
+/// traceの合計行が数えた外部commandの回数。
+fn counted_commands(total: &str) -> Checked<usize> {
+    total
+        .split_whitespace()
+        .nth(1)
+        .and_then(|count| count.parse().ok())
+        .required_because("the total names how many external commands ran")
+}
+
+/// `--verbose`の`open`は、端末を渡す前にそこまでの合計を並べる。sessionは外部commandに
+/// 数えず、それを含む工程も作らない。
+#[test]
+fn verbose_open_shows_the_total_before_the_session_and_counts_the_session_apart() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+
+    let run = host.run(&["--lang", "en", "--verbose", "open", PROJECT])?;
+
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    let lines: Vec<&str> = run.stderr.lines().collect();
+    let handed = lines
+        .iter()
+        .position(|line| line.starts_with("run     ssh -t "))
+        .required_because("the handed over session is traced")?;
+    let before = lines[handed - 1];
+    assert!(before.starts_with("total   "), "{}", run.stderr);
+    // 渡した端末とのあいだには、sbxmがいつも置く境界の空行だけが入る。
+    assert_eq!(lines[handed + 1], "", "{}", run.stderr);
+    assert!(
+        lines[handed + 2].starts_with("session ssh -t "),
+        "{}",
+        run.stderr
+    );
+    let last = lines
+        .last()
+        .copied()
+        .required_because("the trace ends with the whole total")?;
+    assert!(last.starts_with("total   "), "{}", run.stderr);
+
+    // 合計が数えた回数は、`done`と`failed`の行の数であり、sessionを含まない。
+    let ended = |range: &[&str]| {
+        range
+            .iter()
+            .filter(|line| line.starts_with("done    ") || line.starts_with("failed  "))
+            .count()
+    };
+    assert_eq!(
+        counted_commands(before)?,
+        ended(&lines[..handed]),
+        "{}",
+        run.stderr
+    );
+    assert_eq!(counted_commands(last)?, ended(&lines), "{}", run.stderr);
+    Ok(())
+}
+
 #[test]
 fn a_successful_ssh_session_releases_the_lease_when_the_command_exits() -> Checked {
     let host = Host::new()?;
