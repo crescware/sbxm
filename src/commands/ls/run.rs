@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::boundary::host::HostEnvironment;
+use crate::boundary::host::protocol::SandboxEntry;
 use crate::config::ConfigLocation;
 use crate::design::ProgressSink;
 use crate::diagnostics::Result;
@@ -9,14 +9,14 @@ use crate::support::inventory::{self};
 
 use super::{ListState, Listing, ProjectRow, UnmanagedRow};
 
-/// 管理案件と管理外Sandboxを一覧する。
+/// 管理案件と管理外Sandboxを、`entries`から一覧する。
 pub fn run(
     location: &ConfigLocation,
-    host: &dyn HostEnvironment,
+    entries: &[SandboxEntry],
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<Listing> {
-    let inventory = inventory::take(location, host, workspace_root, progress)?;
+    let inventory = inventory::take(location, entries, workspace_root, progress)?;
 
     Ok(Listing {
         settled: inventory.is_settled(),
