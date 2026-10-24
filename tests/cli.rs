@@ -218,8 +218,8 @@ fn every_shipped_resource_is_an_accepted_language() -> Checked {
 
 /// `--verbose`は、外部commandと工程の所要時間をstderrへ並べる。
 ///
-/// 認証probeだけに答えるhostでは、`sbx version`と最初の`sbx ls --json`が答え、状態を
-/// 読む2回目の`sbx ls --json`が失敗する。どちらの起動もtraceに現れ、合計で閉じる。
+/// loginのprobeに答えるhostで`ls`を走らせる。`sbx version`とprobeの`sbx ls --json`が
+/// traceに現れ、合計で閉じる。`ls`はprobeで読んだ一覧から組み立て、読み直さない。
 #[test]
 fn verbose_traces_each_external_command_and_the_total_on_stderr() -> Checked {
     let home = temp_home()?;
@@ -248,8 +248,12 @@ fn verbose_traces_each_external_command_and_the_total_on_stderr() -> Checked {
         "{}",
         run.stderr
     );
-    // 失敗の診断は、traceの有無で変わらない。
-    assert!(run.stderr.contains("error:"), "{}", run.stderr);
+    let listings = lines
+        .iter()
+        .filter(|line| **line == "run     sbx ls --json")
+        .count();
+    assert_eq!(listings, 1, "{}", run.stderr);
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
     Ok(())
 }
 

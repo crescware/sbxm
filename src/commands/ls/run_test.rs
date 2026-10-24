@@ -338,9 +338,11 @@ fn run(
     host: &dyn crate::boundary::host::HostEnvironment,
     workspace_root: &std::path::Path,
 ) -> crate::diagnostics::Result<Listing> {
+    // 本番の呼び出し元と同じく、一覧を読んでから渡す。
+    let entries = crate::support::daemon::list(host)?;
     super::run(
         location,
-        host,
+        &entries,
         workspace_root,
         &mut crate::design::SilentProgress,
     )

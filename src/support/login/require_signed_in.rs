@@ -1,3 +1,4 @@
+use crate::boundary::host::protocol::SandboxEntry;
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::design::{Fact, ProgressSink};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
@@ -7,15 +8,15 @@ use crate::support::daemon;
 /// 認証を必要とするread-only commandで、案件選択前にloginを確認する。
 ///
 /// `sbx login`にstatus subcommandはないため、`ls --json`を短いprobeとして使う。
-/// 一覧はここで使い回さず、案件のlock取得後に各workflowが現在の状態を取り直す。
+/// probeで読んだ一覧を返す。案件のlockを取るworkflowは、これを使わずにlock取得後に
+/// 現在の状態を取り直す。lockもpromptも挟まずに一覧を読むworkflow（`ls`）は、同じ
+/// 一覧を読み直さずにこれを使う。
 pub fn require_signed_in(
     host: &dyn HostEnvironment,
     progress: &mut dyn ProgressSink,
-) -> Result<()> {
+) -> Result<Vec<SandboxEntry>> {
     progress.step(msg!("progress-inspect-login"));
-    daemon::list_with_timeout(host, TimeoutClass::Probe)
-        .map(|_| ())
-        .map_err(unobservable)
+    daemon::list_with_timeout(host, TimeoutClass::Probe).map_err(unobservable)
 }
 
 fn unobservable(error: Error) -> Error {
