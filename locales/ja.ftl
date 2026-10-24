@@ -826,7 +826,18 @@ progress-inspect-recheck = 続行する前に現在の状態を再検査しま�
 progress-inspect-result = 完了した変更の結果を検証します。
 progress-reflecting-saved = 保存したbranchとtagをhostのrepositoryへ反映します。
 
+trace-run = { $argv }
+trace-done = { $argv }: { $status }、stdout { $stdout }B、stderr { $stderr }B
+trace-done-terminal = { $argv }: { $status }
+trace-failed = { $argv }: { $error }
+trace-inside = { $index } { $argv }: { $status }
+trace-step = { $id }
+trace-prompt = { $id }
+trace-total = 外部command { $count }回 { $external }、対話 { $interactive }、sbxm { $own }
+trace-total-one = 外部command 1回 { $external }、対話 { $interactive }、sbxm { $own }
+
 cli-color-help = 出力へ色を付ける条件 ({ $supported })
+cli-verbose-help = 外部commandと工程の所要時間をstderrへ出す
 warning-label = 警告 (Warning):
 note-label = 注記 (Note):
 remediation-heading = 対処 (Try):

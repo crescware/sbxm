@@ -596,6 +596,7 @@ fn a_recorded_answer_has_the_shape_of_the_exec_it_stands_in_for() -> Checked {
         status: 1,
         stdout: b"/tmp/agent.sock\n".to_vec(),
         stderr: b"\xff".to_vec(),
+        elapsed: None,
     }];
     let recorded = Recorded::new("sandbox", &commands, records);
 

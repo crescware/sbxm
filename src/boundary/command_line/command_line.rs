@@ -6,6 +6,7 @@ use crate::i18n::Locale;
 use super::invalid_lang_error;
 use super::locale_override::LocaleOverride;
 use super::peek::peek;
+use super::peek_flag::peek_flag;
 use super::preparse_option::PreparseOption;
 
 /// 1回のCLI呼び出しに渡されたcommand line。
@@ -13,6 +14,8 @@ pub(crate) struct CommandLine {
     argv: Vec<String>,
     locale_override: LocaleOverride,
     color_setting: ColorSetting,
+    /// 外部commandと工程の所要時間をstderrへ出すか。
+    verbose: bool,
 }
 
 impl CommandLine {
@@ -28,11 +31,13 @@ impl CommandLine {
             .and_then(ColorMode::parse_exact)
             .map(ColorSetting::Explicit)
             .unwrap_or_default();
+        let verbose = peek_flag(&argv, PreparseOption::Verbose);
 
         Self {
             argv,
             locale_override,
             color_setting,
+            verbose,
         }
     }
 
@@ -58,6 +63,11 @@ impl CommandLine {
         self.color_setting
     }
 
+    /// `--verbose`が指定されたか。
+    pub(crate) fn verbose(&self) -> bool {
+        self.verbose
+    }
+
     pub(crate) fn invalid_locale_error(value: &str) -> crate::diagnostics::Error {
         invalid_lang_error::invalid_lang_error(value)
     }
@@ -70,6 +80,10 @@ mod command_line_test;
 #[cfg(test)]
 #[path = "peek_test.rs"]
 mod peek_test;
+
+#[cfg(test)]
+#[path = "peek_flag_test.rs"]
+mod peek_flag_test;
 
 #[cfg(test)]
 #[path = "invalid_lang_error_test.rs"]

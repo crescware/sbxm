@@ -22,6 +22,7 @@ pub(crate) fn build_parser(catalog: &Catalog, syntaxes: &[CommandSyntax]) -> Res
         .arg_required_else_help(false)
         .arg(lang_arg(&builder)?)
         .arg(color_arg(&builder)?)
+        .arg(verbose_arg(&builder)?)
         .arg(help_flag(&templates))
         .arg(
             Arg::new("version")
@@ -94,6 +95,16 @@ fn lang_arg(builder: &Builder) -> Result<Arg> {
             "cli-lang-help",
             supported = Locale::value_list()
         ))?))
+}
+
+fn verbose_arg(builder: &Builder) -> Result<Arg> {
+    let option_name = PreparseOption::Verbose.option_name();
+    Ok(Arg::new(option_name)
+        .long(option_name)
+        .global(true)
+        .action(ArgAction::SetTrue)
+        .display_order(902)
+        .help(builder.text("cli-verbose-help")?))
 }
 
 fn color_arg(builder: &Builder) -> Result<Arg> {

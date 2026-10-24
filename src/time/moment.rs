@@ -17,4 +17,16 @@ impl Moment {
     pub fn after(self, span: Duration) -> Moment {
         Moment(self.0.saturating_add(span))
     }
+
+    /// `earlier`からこの読みまでの経過。`earlier`が後なら0とする。
+    ///
+    /// 同じ時計の2つの読みの差だけを取る。別の時計の読みを渡しても型では防げないため、
+    /// 呼び出し側が同じ時計から読むことを守る。
+    pub fn since(self, earlier: Moment) -> Duration {
+        self.0.saturating_sub(earlier.0)
+    }
 }
+
+#[cfg(test)]
+#[path = "moment_test.rs"]
+mod moment_test;

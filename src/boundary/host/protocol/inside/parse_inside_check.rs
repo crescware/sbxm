@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::diagnostics::{Result, unparseable};
 
 use super::InsideRecord;
@@ -23,11 +25,11 @@ pub fn parse_inside_check(output: &[u8], expected: usize) -> Result<Vec<InsideRe
         let header = String::from_utf8_lossy(&rest[..end]).into_owned();
         rest = &rest[end + 1..];
         let fields: Vec<&str> = header.split(' ').collect();
-        let [number, status, stdout_len, stderr_len] = fields.as_slice() else {
+        let [number, status, stdout_len, stderr_len, elapsed] = fields.as_slice() else {
             return Err(unparseable(
                 PROGRAM,
                 &format!(
-                    "record {index}: expected 4 header fields, found {}: {header}",
+                    "record {index}: expected 5 header fields, found {}: {header}",
                     fields.len()
                 ),
             ));
@@ -48,12 +50,14 @@ pub fn parse_inside_check(output: &[u8], expected: usize) -> Result<Vec<InsideRe
                     &format!("record {index}: {status} is not an exit status"),
                 )
             })?;
+        let elapsed = parse_elapsed(elapsed, index)?;
         let stdout = take(&mut rest, stdout_len, index, "stdout")?;
         let stderr = take(&mut rest, stderr_len, index, "stderr")?;
         records.push(InsideRecord {
             status,
             stdout,
             stderr,
+            elapsed,
         });
     }
     if !rest.is_empty() {
@@ -63,6 +67,22 @@ pub fn parse_inside_check(output: &[u8], expected: usize) -> Result<Vec<InsideRe
         ));
     }
     Ok(records)
+}
+
+/// 見出しの所要時間。`-`は計らなかったことを示し、それ以外はnano秒の整数である。
+fn parse_elapsed(field: &str, index: usize) -> Result<Option<Duration>> {
+    if field == "-" {
+        return Ok(None);
+    }
+    field
+        .parse::<u64>()
+        .map(|nanos| Some(Duration::from_nanos(nanos)))
+        .map_err(|_| {
+            unparseable(
+                PROGRAM,
+                &format!("record {index}: {field} is not an elapsed time in nanoseconds"),
+            )
+        })
 }
 
 /// 見出しが告げた長さのbyte列を切り出す。

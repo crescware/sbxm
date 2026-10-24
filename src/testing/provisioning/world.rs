@@ -321,7 +321,7 @@ impl crate::testing::host::AnsweredHost for World {
         // まとめた確認は、中のcommandごとに台本を照らす。全体の起動に照らすのは、手順
         // そのものを名指しした台本だけである。
         if spec.program == "sbx"
-            && let Some((sandbox, commands)) = split_inside_check(&spec.args)
+            && let Some((sandbox, _timed, commands)) = split_inside_check(&spec.args)
         {
             if let Some((code, stdout)) = self.scripted(&spec.program, INSIDE_CHECK_MARK)? {
                 return Ok(Self::outcome(spec, code, &stdout));

@@ -45,7 +45,7 @@ impl Painter {
         paint(text, spec)
     }
 
-    fn role(&self, text: &str, role: Role) -> String {
+    pub(super) fn role(&self, text: &str, role: Role) -> String {
         self.paint(text, style::role_style(role))
     }
 
