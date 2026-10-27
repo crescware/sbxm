@@ -17,7 +17,8 @@ pub fn read_inside(
     sandbox: &str,
     commands: &[Vec<String>],
 ) -> Result<Recorded> {
-    let args = inside_check_arguments(commands);
+    // 所要時間は`--verbose`のhostが、この起動を見分けて計らせる。
+    let args = inside_check_arguments(commands, false);
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     let outcome = exec(host, sandbox, &borrowed)?;
     if !outcome.success() {

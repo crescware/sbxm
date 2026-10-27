@@ -17,6 +17,7 @@ mod locale_override;
 mod parsed_command;
 mod parsed_command_line;
 mod peek;
+mod peek_flag;
 mod preparse_option;
 
 pub use argument_action::ArgumentAction;

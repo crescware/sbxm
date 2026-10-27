@@ -165,7 +165,9 @@ sh)
 	'# sbxm inside check'*)
 		# Sandboxの中のcommandを1回でまとめて読む手順。中のcommandごとに自分を呼び直し、
 		# 実物のshellが並べるのと同じ形で結果を並べる。commandは空の引数で区切られている。
+		# 所要時間は計らず、計らなかった印を並べる。
 		shift 4
+		[ "$1" != -t ] || shift
 		dir=$(mktemp -d)
 		i=0
 		while [ $# -gt 0 ]; do
@@ -176,7 +178,7 @@ sh)
 			while [ $j -le $n ]; do cmd="$cmd \"\$$j\""; j=$((j + 1)); done
 			eval "\"\$0\" exec \"\$name\" -- $cmd" </dev/null >"$dir/out" 2>"$dir/err"
 			status=$?
-			printf '%s %s %s %s\n' "$i" "$status" "$(($(wc -c <"$dir/out")))" "$(($(wc -c <"$dir/err")))"
+			printf '%s %s %s %s -\n' "$i" "$status" "$(($(wc -c <"$dir/out")))" "$(($(wc -c <"$dir/err")))"
 			cat "$dir/out" "$dir/err"
 			shift $((n + 1))
 			i=$((i + 1))
@@ -824,6 +826,64 @@ fn open_names_the_sandbox_and_its_worktrees_before_it_hands_over_the_terminal() 
         )),
         "{asked}"
     );
+    Ok(())
+}
+
+/// traceの合計行が数えた外部commandの回数。
+fn counted_commands(total: &str) -> Checked<usize> {
+    total
+        .split_whitespace()
+        .nth(1)
+        .and_then(|count| count.parse().ok())
+        .required_because("the total names how many external commands ran")
+}
+
+/// `--verbose`の`open`は、端末を渡す前にそこまでの合計を並べる。sessionは外部commandに
+/// 数えず、それを含む工程も作らない。
+#[test]
+fn verbose_open_shows_the_total_before_the_session_and_counts_the_session_apart() -> Checked {
+    let host = Host::new()?;
+    let sandbox = host.registered()?;
+    host.sandbox_is_running(&sandbox)?;
+    host.worktree_is_present()?;
+
+    let run = host.run(&["--lang", "en", "--verbose", "open", PROJECT])?;
+
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    let lines: Vec<&str> = run.stderr.lines().collect();
+    let handed = lines
+        .iter()
+        .position(|line| line.starts_with("run     ssh -t "))
+        .required_because("the handed over session is traced")?;
+    let before = lines[handed - 1];
+    assert!(before.starts_with("total   "), "{}", run.stderr);
+    // 渡した端末とのあいだには、sbxmがいつも置く境界の空行だけが入る。
+    assert_eq!(lines[handed + 1], "", "{}", run.stderr);
+    assert!(
+        lines[handed + 2].starts_with("session ssh -t "),
+        "{}",
+        run.stderr
+    );
+    let last = lines
+        .last()
+        .copied()
+        .required_because("the trace ends with the whole total")?;
+    assert!(last.starts_with("total   "), "{}", run.stderr);
+
+    // 合計が数えた回数は、`done`と`failed`の行の数であり、sessionを含まない。
+    let ended = |range: &[&str]| {
+        range
+            .iter()
+            .filter(|line| line.starts_with("done    ") || line.starts_with("failed  "))
+            .count()
+    };
+    assert_eq!(
+        counted_commands(before)?,
+        ended(&lines[..handed]),
+        "{}",
+        run.stderr
+    );
+    assert_eq!(counted_commands(last)?, ended(&lines), "{}", run.stderr);
     Ok(())
 }
 

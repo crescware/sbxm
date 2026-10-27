@@ -581,3 +581,29 @@ sbxmは結果を標準出力へ、進捗、prompt、警告、errorを標準エ�
 
 明示した `--color` は、どの環境変数よりも優先されます。色を消しても情報は失われません。
 marker、label、空行だけで同じ意味を読み取れます。
+
+### 時間がどこへ消えたかを追う
+
+`--verbose` を付けると、標準エラー出力にtraceが並びます。外部commandを起動したときと
+終わったときに1行ずつ、工程は次の工程が始まったときに1行、実行の終わりに合計を1行、
+いずれもdimで出します。所要時間は行の右端に右詰で、msに小数3桁の固定形式で置くため、
+`sort` や `grep` がそのまま効きます。promptを出した場合は、答えを待った時間を
+`prompt` の行として並べます。
+
+```text
+→ Checking the sandbox state. Waiting for Docker Sandboxes to respond.
+run     sbx ls --json
+done    sbx ls --json: exit status: 0, stdout 1284B, stderr 0B                             567.492ms
+step    progress-inspect-sandbox                                                           571.230ms
+total   3 external commands 2290.552ms, interactive 7183.402ms, sbxm 113.561ms            9587.515ms
+```
+
+`open`・`status`・`repair` がSandboxの中で1回の `sbx exec` にまとめて走らせる確認は、
+項目ごとに時間を計り、`inside` の行として並べます。traceはcommand lineを出しますが、
+sbxmが標準入力へ渡した内容と、commandが出力した内容は出さず、byte数だけを示します。
+標準出力は結果だけのままなので、リダイレクトした結果は変わりません。合計は、外部command
+の中にいた時間、対話（利用者が持っていた時間）、sbxm自身が使った時間の3つに分かれます。
+対話は、promptが答えを待った時間と、`open` が端末を渡したSSHのsessionです。工程にも
+外部commandにも入りません。`open` は端末を渡す前に、そこまでの合計を出します。接続まで
+にかかった時間を、sessionを開いたまま読めます。sessionが終わると `session` の行と、
+実行全体の合計が続きます。

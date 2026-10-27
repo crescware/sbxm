@@ -3,6 +3,7 @@
 pub(crate) enum PreparseOption {
     Color,
     Lang,
+    Verbose,
 }
 
 impl PreparseOption {
@@ -10,6 +11,7 @@ impl PreparseOption {
         match self {
             Self::Color => "color",
             Self::Lang => "lang",
+            Self::Verbose => "verbose",
         }
     }
 }

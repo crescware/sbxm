@@ -21,9 +21,8 @@ mod version;
 pub use daemon::{DaemonState, parse_daemon_status};
 pub use disk::{RootDiskUsage, parse_df};
 pub use image::{ImageIdentity, parse_image_inspect};
-#[cfg(test)]
 pub(crate) use inside::INSIDE_CHECK;
-pub use inside::{InsideRecord, inside_check_arguments, parse_inside_check};
+pub use inside::{InsideRecord, inside_check_arguments, parse_inside_check, split_inside_check};
 pub use login::is_login_missing;
 pub use policy::{EXPECTED_NETWORK_POLICY, parse_network_policy};
 pub use sandbox::{SandboxEntry, SandboxState, is_listing_cut_short, parse_sandbox_list};

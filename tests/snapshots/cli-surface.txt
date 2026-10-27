@@ -1,6 +1,7 @@
 sbxm
   id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
   id=color --color value=auto|always|never args=1 global action=Set order=901
+  id=verbose --verbose args=0 global action=SetTrue order=902
   id=help --help -h args=0 action=Help order=1000
   id=version --version -V args=0 action=Version order=1001
   add
@@ -14,6 +15,7 @@ sbxm
     id=git-user-email --git-user-email value=EMAIL args=1 action=Set order=6
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   apply
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=1 action=Set order=999
@@ -23,6 +25,7 @@ sbxm
     id=worktrees --worktrees -t value=N args=1 action=Set order=4
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   files
     id=help --help -h args=0 action=Help order=1000
     id=action positional value=add|ls|rm|pull args=1 action=Set order=999
@@ -31,51 +34,61 @@ sbxm
     id=dest --dest value=destination args=1 action=Set order=1
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   sync
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=1 action=Set order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   guide
     id=help --help -h args=0 action=Help order=1000
     id=topic positional value=topic args=1 action=Set order=999
     id=project positional value=project-id args=1 action=Set order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   repair
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=1 action=Set order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   rebuild
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=1 action=Set order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   open
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=1 action=Set order=999
     id=index --index -i value=N args=1 action=Set order=1
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   stop
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=0.. action=Append order=999
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   ls
     id=help --help -h args=0 action=Help order=1000
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   status
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=1 action=Set order=999
     id=global --global -g args=0 action=SetTrue order=1
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
   destroy
     id=help --help -h args=0 action=Help order=1000
     id=project positional value=project-id args=1 action=Set order=999
     id=force --force -f args=0 action=SetTrue order=1
     id=lang --lang value=<derived from the locale definitions> args=1 global action=Set order=900
     id=color --color value=auto|always|never args=1 global action=Set order=901
+    id=verbose --verbose args=0 global action=SetTrue order=902
