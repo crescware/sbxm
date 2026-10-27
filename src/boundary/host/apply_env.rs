@@ -28,12 +28,31 @@ const REPOSITORY_LOCATION: [&str; 16] = [
 /// 環境変数は`core.sshCommand`より先に効くため、残すと利用者のsshがそのまま使われる。
 const SSH_SELECTION: [&str; 3] = ["GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"];
 
+/// `sbx`へ付ける変数。利用状況の送信とfeature flagの取得を止める。
+///
+/// sign-inした状態の`sbx`は、起動のたびにこの2つでそれぞれ約0.45秒待つ。daemonが一覧を
+/// 返すのは数msであり、sbxmが`sbx`を呼ぶ時間のほとんどがこの待ちになる。どちらも
+/// sbxmが起動した`sbx`のprocessにだけ付き、`sbx`の設定には何も書かない。
+const SBX_QUIETING: [(&str, &str); 2] = [
+    ("SBX_NO_TELEMETRY", "1"),
+    ("DOCKER_SANDBOXES_DISABLE_UNLEASH", "1"),
+];
+
 /// `policy`に従って、子processへ渡すenvironmentを変える。
 ///
 /// defaultで現在processのenvironmentを継承する。`env_clear`は呼ばない。取り除くのは
 /// `policy`が名指しする変数だけであり、`DOCKER_SANDBOXES_ROOT_SIZE`のような他の変数は
-/// そのまま子processへ渡る。
-pub(super) fn apply_env(command: &mut Command, policy: EnvPolicy, working_dir: Option<&Path>) {
+/// そのまま子processへ渡る。`program`が`sbx`なら、`policy`によらず[`SBX_QUIETING`]を
+/// 付ける。
+pub(super) fn apply_env(
+    command: &mut Command,
+    program: &str,
+    policy: EnvPolicy,
+    working_dir: Option<&Path>,
+) {
+    if program == "sbx" {
+        command.envs(SBX_QUIETING);
+    }
     match policy {
         EnvPolicy::Inherit => {}
         EnvPolicy::InheritWithoutSshAgent => {

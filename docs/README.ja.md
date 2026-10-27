@@ -537,6 +537,18 @@ repositoryは追加したときの場所に残ります。
 プロジェクトの場所を知っているのはregistryだけであるため、プロジェクトのディレクトリを
 移動すると、sbxmは新しい場所を推測せず`ls`で`missing`として表示します。
 
+## sbxmがsbxを起動するとき
+
+sbxmは、`sbx`をいつも`SBX_NO_TELEMETRY=1`と`DOCKER_SANDBOXES_DISABLE_UNLEASH=1`を
+付けて起動します。付けないと、sign-inした`sbx`は起動のたびに、利用状況の送信に約0.45秒、
+feature flagの取得にも同じくらいかけます。daemonが一覧を返すのは数msです。2つを付けると、
+`sbx ls`1回が約0.9秒から約0.05秒になります。
+
+この2つの変数は、sbxmが起動した`sbx`のprocessにだけ届きます。sbxmはDocker Sandboxesの
+設定に何も書かないため、利用者が自分で実行する`sbx`の動きは変わりません。ただし、sbxmが
+起動した`sbx`がDocker Sandboxesのdaemonを起動した場合は、daemonが再起動するまで、この
+変数を持ち続けることがあります。
+
 ## コマンド一覧
 
 | コマンド | 用途 |

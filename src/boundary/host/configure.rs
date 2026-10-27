@@ -6,7 +6,12 @@ use super::{CommandSpec, OutputPolicy, apply_env};
 pub(super) fn configure(spec: &CommandSpec) -> Command {
     let mut command = Command::new(&spec.program);
     command.args(&spec.args);
-    apply_env(&mut command, spec.env, spec.working_dir.as_deref());
+    apply_env(
+        &mut command,
+        &spec.program,
+        spec.env,
+        spec.working_dir.as_deref(),
+    );
     if let Some(directory) = &spec.working_dir {
         command.current_dir(directory);
     }

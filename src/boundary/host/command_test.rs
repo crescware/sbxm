@@ -231,6 +231,62 @@ fn security_sensitive_runs_touch_no_environment_variable_other_than_the_ssh_agen
     assert_eq!(envs, [(std::ffi::OsStr::new("SSH_AUTH_SOCK"), None)]);
 }
 
+/// `spec`の子processへ明示的に渡す変数を、名前の順に並べる。
+fn explicit_envs(spec: &CommandSpec) -> Vec<(String, Option<String>)> {
+    let command = configure(spec);
+    let mut envs: Vec<(String, Option<String>)> = command
+        .get_envs()
+        .map(|(name, value)| {
+            (
+                name.to_string_lossy().into_owned(),
+                value.map(|value| value.to_string_lossy().into_owned()),
+            )
+        })
+        .collect();
+    envs.sort();
+    envs
+}
+
+fn set(name: &str) -> (String, Option<String>) {
+    (name.to_string(), Some("1".to_string()))
+}
+
+#[test]
+fn sbx_runs_without_sending_usage_or_fetching_feature_flags() {
+    // sign-inした`sbx`は、この2つでそれぞれ約0.45秒待つ。止めても一覧は数msで返る。
+    let spec = CommandSpec::probe("sbx", &["ls", "--json"]).env(EnvPolicy::InheritWithoutSshAgent);
+
+    assert_eq!(
+        explicit_envs(&spec),
+        [
+            set("DOCKER_SANDBOXES_DISABLE_UNLEASH"),
+            set("SBX_NO_TELEMETRY"),
+            ("SSH_AUTH_SOCK".to_string(), None),
+        ]
+    );
+}
+
+#[test]
+fn sbx_is_quieted_whatever_environment_policy_it_was_given() {
+    // `status`は`sbx`をpolicyを指定せずに起動する。そこでも同じ2つを付ける。
+    let spec = CommandSpec::probe("sbx", &["version"]);
+
+    assert_eq!(
+        explicit_envs(&spec),
+        [
+            set("DOCKER_SANDBOXES_DISABLE_UNLEASH"),
+            set("SBX_NO_TELEMETRY")
+        ]
+    );
+}
+
+#[test]
+fn programs_other_than_sbx_are_not_given_the_sbx_variables() {
+    let spec = CommandSpec::probe("git", &["--version"]).env(EnvPolicy::InheritWithoutSshAgent);
+
+    assert_eq!(explicit_envs(&spec), [("SSH_AUTH_SOCK".to_string(), None)]);
+}
+
 #[test]
 fn git_in_a_host_repository_forgets_where_the_caller_pointed_git() {
     // gitのhookやaliasから起動されると、`GIT_DIR`などが利用者のrepositoryと別の場所を
