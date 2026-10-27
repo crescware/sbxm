@@ -34,6 +34,11 @@ export PATH
 fake=$SBXM_FAKE
 program=${0##*/}
 printf '%s %s\n' "$program" "$*" >>"$fake/log"
+# sbxmが`sbx`へ付ける変数。起動ごとに、受け取った値を並べる。
+if [ "$program" = sbx ]; then
+	printf 'SBX_NO_TELEMETRY=%s DOCKER_SANDBOXES_DISABLE_UNLEASH=%s\n' \
+		"${SBX_NO_TELEMETRY-}" "${DOCKER_SANDBOXES_DISABLE_UNLEASH-}" >>"$fake/sbx-env"
+fi
 
 # Sandboxの中のGitが答えるcommit。
 COMMIT=1111111111111111111111111111111111111111
@@ -685,6 +690,26 @@ fn ls_exits_with_zero_when_every_registered_project_is_settled() -> Checked {
         unmanaged.contains("/tmp/docker-sandboxes/sbxm-elsewhere"),
         "{unmanaged}"
     );
+    Ok(())
+}
+
+#[test]
+fn every_sbx_that_sbxm_starts_skips_usage_reports_and_feature_flags() -> Checked {
+    let host = Host::new()?;
+    host.registered()?;
+
+    let run = host.run(&["--lang", "en", "ls"])?;
+
+    assert_eq!(run.code, 0, "{}{}", run.stdout, run.stderr);
+    let seen = std::fs::read_to_string(host.fake.join("sbx-env"))
+        .required_because("sbx recorded the environment it was given")?;
+    assert!(!seen.is_empty(), "{}", host.invocations()?);
+    for line in seen.lines() {
+        assert_eq!(
+            line, "SBX_NO_TELEMETRY=1 DOCKER_SANDBOXES_DISABLE_UNLEASH=1",
+            "{seen}"
+        );
+    }
     Ok(())
 }
 

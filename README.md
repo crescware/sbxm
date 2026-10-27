@@ -600,6 +600,21 @@ identity, or declared files, `config.yaml`. The registry is the only thing that 
 a project is, so moving a project directory makes `ls` report it as `missing`
 rather than sbxm guessing at the new location.
 
+## How sbxm runs sbx
+
+sbxm starts every `sbx` with `SBX_NO_TELEMETRY=1` and
+`DOCKER_SANDBOXES_DISABLE_UNLEASH=1`. Without them, a signed-in `sbx` spends
+about 0.45 seconds on sending usage data and about as long on fetching feature
+flags each time it starts, while the daemon answers a listing within a few
+milliseconds. With both set, one `sbx ls` takes about 0.05 seconds instead of
+0.9.
+
+The two variables reach only the `sbx` processes that sbxm starts. sbxm writes
+nothing to the settings of Docker Sandboxes, so an `sbx` you run yourself
+behaves as before. If one of the `sbx` processes that sbxm starts is the one
+that starts the Docker Sandboxes daemon, the daemon may keep the variables
+until it restarts.
+
 ## Command overview
 
 | Command | Purpose |
