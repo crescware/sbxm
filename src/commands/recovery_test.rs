@@ -51,9 +51,11 @@ fn diagnose(bench: &Bench, world: &World, project: &ProjectId) -> Checked<Projec
 
 /// `ls`が同じ案件へ写した状態。
 fn listed(bench: &Bench, world: &World) -> Checked<ListState> {
+    // `ls`と同じく、loginを確かめたときに読んだ一覧から組み立てる。
+    let entries = crate::support::daemon::list(world).required_because("the listing is read")?;
     let listing = super::ls::run::run(
         &bench.location,
-        world,
+        &entries,
         bench.workspace_root.path(),
         &mut crate::design::SilentProgress,
     )

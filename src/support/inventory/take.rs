@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::boundary::host::HostEnvironment;
 use crate::boundary::host::protocol::SandboxEntry;
 use crate::config::ConfigLocation;
 use crate::design::ProgressSink;
@@ -10,14 +9,13 @@ use crate::msg;
 use crate::paths::ProjectPaths;
 use crate::registry::{self};
 
-use crate::support::daemon;
-
 use super::{
     ManagedProject, Observed, ProjectState, Snapshot, duplicated, observe, observe_workspace,
 };
 
-/// 現在のinventoryを1回の一覧取得から組み立てる。
+/// 現在のinventoryを、1回読んだSandboxの一覧`entries`から組み立てる。
 ///
+/// 一覧はここで読まない。呼び出し側は、loginを確かめたときに読んだ一覧を渡す。
 /// registryが読めない、Sandbox名が重複、対応が矛盾する場合は、部分的に正しそうな
 /// 結果を返さずerrorとする。個々の案件の観測結果は、entryを黙って落とさずそのまま返す。
 ///
@@ -25,15 +23,13 @@ use super::{
 /// 観測できない案件があってもerrorにしない。1案件の破損で一覧全体を失わせない。
 pub fn take(
     location: &ConfigLocation,
-    host: &dyn HostEnvironment,
+    entries: &[SandboxEntry],
     workspace_root: &Path,
     progress: &mut dyn ProgressSink,
 ) -> Result<Snapshot> {
     progress.step(msg!("progress-inspect-registry"));
     let registry = registry::load(location)?;
-    progress.step(msg!("progress-inspect-sandbox"));
-    let entries = daemon::list(host)?;
-    require_unique_names(&entries)?;
+    require_unique_names(entries)?;
 
     let mut projects = Vec::with_capacity(registry.entries().len());
     let mut claimed: BTreeSet<String> = BTreeSet::new();
@@ -44,7 +40,7 @@ pub fn take(
         ));
         let name = entry.sandbox_name();
         let paths = ProjectPaths::at(entry.project_root(), entry.canonical_id());
-        let (observed, recovery_pending) = observe(&paths, entry, &entries, workspace_root)?;
+        let (observed, recovery_pending) = observe(&paths, entry, entries, workspace_root)?;
         if matches!(
             observed,
             Observed::Registered(ProjectState::Running | ProjectState::Stopped)
@@ -62,8 +58,9 @@ pub fn take(
     }
 
     let mut unmanaged: Vec<SandboxEntry> = entries
-        .into_iter()
+        .iter()
         .filter(|entry| !claimed.contains(&entry.name))
+        .cloned()
         .collect();
     unmanaged.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
 

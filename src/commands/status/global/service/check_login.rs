@@ -16,7 +16,7 @@ pub fn check_login(
     progress: &mut dyn ProgressSink,
 ) {
     match login::require_signed_in(host, progress) {
-        Ok(()) => push(status, "status-item-login", StatusValue::Ready),
+        Ok(_) => push(status, "status-item-login", StatusValue::Ready),
         Err(error) => {
             let value = if error.contains_id(ErrorId::SbxLoginMissing) {
                 StatusValue::Missing

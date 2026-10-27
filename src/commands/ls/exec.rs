@@ -15,10 +15,12 @@ pub fn exec(context: &Context, ui: &mut Ui, host: &dyn HostEnvironment) -> ExitC
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
-        return report(ui, &error);
-    }
-    match super::run::run(context.location, host, context.workspace_root, ui) {
+    // loginを確かめた一覧から組み立てる。lockもpromptも挟まないため、読み直さない。
+    let entries = match crate::support::sbx_cli::require_ready(host, ui) {
+        Ok(entries) => entries,
+        Err(error) => return report(ui, &error),
+    };
+    match super::run::run(context.location, &entries, context.workspace_root, ui) {
         Ok(listing) => {
             ui.stdout(&print::document(&listing, locale));
             // 復旧に必要なentryをすべて見せたうえで、1件でも整っていなければ失敗とする。

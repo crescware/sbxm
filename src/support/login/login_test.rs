@@ -58,6 +58,8 @@ fn canceling_a_login_probe_stays_canceled() -> Checked {
     Ok(())
 }
 
-fn require_signed_in(host: &dyn crate::boundary::host::HostEnvironment) -> Result<()> {
+fn require_signed_in(
+    host: &dyn crate::boundary::host::HostEnvironment,
+) -> Result<Vec<crate::boundary::host::protocol::SandboxEntry>> {
     super::require_signed_in(host, &mut crate::design::SilentProgress)
 }
