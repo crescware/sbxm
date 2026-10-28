@@ -66,10 +66,11 @@ mise run check
 
 - `cargo fmt --all -- --check`が差分を報告しない
 - clippyのwarningが0件である
+- Markdownの改行が段落の終わりにだけある。表示幅に合わせた折り返しは表示側が行うものであり、文の途中では英語も日本語も改行しない
 - testが全件成功する
 - coverageが最低基準を下回らない
 
-整形だけを当てる場合は次を実行する。
+整形だけを当てる場合は次を実行する。Rust sourceの整形に加えて、Markdownの段落の途中にある改行も前の行へ結合する。
 
 ```sh
 mise run fmt
