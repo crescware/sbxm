@@ -268,14 +268,13 @@ success行は追加しない。外部commandを1つずつ列挙する行は、`-
 
 ### Trace
 
-`--verbose`のときだけ、工程と外部commandの所要時間をstderrへ並べる。既定の実行は1行も
-増やさない。読み手はsbxmを速くしようとしている人であり、どの外部commandに、どの工程に、
-時間が消えているかを知りたい。
+`--verbose`のときだけ、sbxmが何をどの順でしたかをstderrへ並べる。既定の実行は1行も
+増やさない。目的は処理の追跡である。外部commandの起動と終わり、工程の区切り、promptの
+答え、端末の引き渡しを、起きた順に1行ずつ残す。
 
-そのため実行の時間を3つに分けて数える。外部commandの中にいた時間、対話（利用者が持って
-いた時間）、残りのsbxm自身の時間である。対話は、promptが答えを待った時間と、端末を渡した
-sessionである。対話を工程や外部commandへ混ぜると、速くできない時間が、速くすべき時間に
-見える。
+各行に所要時間を添えるため、同じtraceが時間の調査にも使える。合計行では実行の時間を
+3つに分けて数える。外部commandの中にいた時間、対話（利用者が持っていた時間）、残りの
+sbxm自身の時間である。対話は、promptが答えを待った時間と、端末を渡したsessionである。
 
 ```text
 prompt  select-open-heading                                                               7183.402ms
@@ -656,7 +655,7 @@ sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれ
 
 promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`とは別に組み立てて渡す。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
 
-`Trace`は`--verbose`の所要時間を書く。`Ui`と同じく`design`が持ち、`Painter`で`Muted`を
+`Trace`は`--verbose`の行を書く。`Ui`と同じく`design`が持ち、`Painter`で`Muted`を
 載せる。`Ui`と`PromptUi`は同じ`Trace`を共有して持つ。commandは`ProgressSink`へ工程を
 知らせるだけで、`Trace`を受け取らない。
 

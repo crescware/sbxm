@@ -837,7 +837,7 @@ trace-total = 外部command { $count }回 { $external }、対話 { $interactive 
 trace-total-one = 外部command 1回 { $external }、対話 { $interactive }、sbxm { $own }
 
 cli-color-help = 出力へ色を付ける条件 ({ $supported })
-cli-verbose-help = 外部commandと工程の所要時間をstderrへ出す
+cli-verbose-help = 外部commandと工程の経過を、所要時間を添えてstderrへ出す
 warning-label = 警告 (Warning):
 note-label = 注記 (Note):
 remediation-heading = 対処 (Try):

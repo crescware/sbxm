@@ -17,7 +17,7 @@ use super::invocation::Invocation;
 /// この1回の起動が持つ材料はここで尽きる。`Invocation`は値で受け取り、実行の間だけ
 /// 保持する。helpとversionもほかのcommandと同じ1つのmatchで受け、提示先だけが違う。
 ///
-/// `--verbose`では、工程と外部commandの所要時間を並べる`Trace`を1つ作り、`Ui`、
+/// `--verbose`では、工程と外部commandの経過を並べる`Trace`を1つ作り、`Ui`、
 /// `PromptUi`、hostへ持たせる。hostは`RealHost`を包むdecoratorになり、実行の判断は
 /// 変わらない。
 #[allow(clippy::needless_pass_by_value)]
