@@ -835,6 +835,9 @@ trace-step = { $id }
 trace-prompt = { $id }
 trace-total = { $count } external commands { $external }, interactive { $interactive }, sbxm { $own }
 trace-total-one = 1 external command { $external }, interactive { $interactive }, sbxm { $own }
+trace-host-tool-skipped = { $program } { $observed }: the version check was skipped because the recorded executable { $path } is unchanged
+trace-host-tool-checked = { $program }: the version was checked because the record could not be used ({ $reason })
+trace-host-tool-unsaved = { $program }: the version check passed but was not recorded ({ $reason })
 
 cli-color-help = When to color the output ({ $supported })
 cli-verbose-help = Trace every external command and step with its elapsed time on stderr

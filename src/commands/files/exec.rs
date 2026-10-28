@@ -40,10 +40,12 @@ pub fn exec(
             destination,
             project,
         } => {
-            if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
+            if let Err(error) = crate::support::sbx_cli::require_ready(context.location, host, ui) {
                 return report(ui, &error);
             }
-            if let Err(error) = crate::support::git_cli::require_supported_version(host, ui) {
+            if let Err(error) =
+                crate::support::git_cli::require_supported_version(context.location, host, ui)
+            {
                 return report(ui, &error);
             }
             let mut pulled = match pull(

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::boundary::host::{CommandOutcome, CommandSpec};
+use crate::boundary::host::{CommandOutcome, CommandSpec, Executable};
 use crate::diagnostics::{Error, ErrorId, Result};
 use crate::msg;
 use crate::testing::host::AnsweredHost;
@@ -8,6 +8,8 @@ use crate::testing::host::AnsweredHost;
 pub struct FakeHost {
     present: Vec<String>,
     responses: HashMap<String, std::result::Result<(String, String, i32), ErrorId>>,
+    /// PATH上の実行ファイルの観測。指定の無いprogramは観測できない。
+    executables: HashMap<String, Executable>,
 }
 
 impl FakeHost {
@@ -15,7 +17,14 @@ impl FakeHost {
         FakeHost {
             present: Vec::new(),
             responses: HashMap::new(),
+            executables: HashMap::new(),
         }
+    }
+
+    /// `program`のPATH上の実行ファイルを、この観測で答える。
+    pub fn with_executable(mut self, program: &str, executable: Executable) -> FakeHost {
+        self.executables.insert(program.to_string(), executable);
+        self
     }
 
     pub fn with_commands(mut self, programs: &[&str]) -> FakeHost {
@@ -69,6 +78,10 @@ impl FakeHost {
 impl AnsweredHost for FakeHost {
     fn has_command(&self, program: &str) -> bool {
         self.present.iter().any(|value| value == program)
+    }
+
+    fn executable(&self, program: &str) -> Option<Executable> {
+        self.executables.get(program).cloned()
     }
 
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {

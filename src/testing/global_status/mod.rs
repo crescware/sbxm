@@ -5,11 +5,13 @@
 mod fake_host;
 mod items;
 mod location_with_config;
+mod location_with_state_dir;
 mod status_of;
 mod valid_config;
 
 pub use fake_host::FakeHost;
 pub use items::items;
 pub use location_with_config::location_with_config;
+pub use location_with_state_dir::location_with_state_dir;
 pub use status_of::status_of;
 pub use valid_config::valid_config;

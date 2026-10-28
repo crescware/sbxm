@@ -40,3 +40,12 @@ fn an_unknown_home_directory_is_refused_rather_than_guessed() -> Checked {
     assert_eq!(reason, "cause-home-directory-unknown");
     Ok(())
 }
+
+#[test]
+fn the_host_tools_record_lives_beside_the_config() {
+    let location = ConfigLocation::from_home(PathBuf::from("/Users/example"));
+    assert_eq!(
+        location.host_tools_file(),
+        PathBuf::from("/Users/example/.sbxm/host-tools.yaml")
+    );
+}

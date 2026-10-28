@@ -11,6 +11,8 @@ pub struct RecordedOutput {
     pub steps: Vec<Msg>,
     /// 示した注意。
     pub warnings: Vec<Warning>,
+    /// `--verbose`だけが読む注記。
+    pub traces: Vec<Msg>,
 }
 
 impl RecordedOutput {
@@ -30,6 +32,10 @@ impl ProgressSink for RecordedOutput {
 
     fn warn(&mut self, warning: Warning) {
         self.warnings.push(warning);
+    }
+
+    fn trace(&mut self, message: Msg) {
+        self.traces.push(message);
     }
 }
 

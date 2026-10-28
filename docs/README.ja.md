@@ -21,7 +21,9 @@ English: [README.md](../README.md)
 `sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を
 確認できます。Docker Sandboxesを使うほかのcommandも、最初にCLIのversionを確認し、
 上記より古ければほかの処理を行わずに停止します。hostのGitを使うcommandも、同じように
-Gitのversionを確認します。
+Gitのversionを確認します。一度確認が通った実行ファイルは`~/.sbxm/host-tools.yaml`に
+記録し、その実行ファイルが変わらない限り確認を省略します。実行ファイルが変われば
+確認し直します。
 
 ## インストール
 
@@ -534,6 +536,8 @@ repositoryは追加したときの場所に残ります。
 
 `~/.sbxm`には、登録済みプロジェクトとその場所の索引である`registry.yaml`を置きます。
 表示言語か名義を選ぶか、配置するファイルを宣言した時点で`config.yaml`も作られます。
+Docker Sandboxes CLIとGitのversion確認が通った実行ファイルは`host-tools.yaml`に記録し、
+変わらない限り確認を省略します。
 プロジェクトの場所を知っているのはregistryだけであるため、プロジェクトのディレクトリを
 移動すると、sbxmは新しい場所を推測せず`ls`で`missing`として表示します。
 

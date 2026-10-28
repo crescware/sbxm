@@ -31,10 +31,12 @@ pub fn exec(
         Err(error) => return report(ui, &error),
     };
     ui.set_locale(locale);
-    if let Err(error) = crate::support::sbx_cli::require_ready(host, ui) {
+    if let Err(error) = crate::support::sbx_cli::require_ready(context.location, host, ui) {
         return report(ui, &error);
     }
-    if let Err(error) = crate::support::git_cli::require_supported_version(host, ui) {
+    if let Err(error) =
+        crate::support::git_cli::require_supported_version(context.location, host, ui)
+    {
         return report(ui, &error);
     }
     match scope {

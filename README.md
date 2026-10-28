@@ -33,7 +33,9 @@ Run `sbxm status --global` to check these requirements and the Docker Sandboxes
 environment. Every other command that uses Docker Sandboxes checks the CLI
 version first and stops before doing anything else when it is older than the
 version above. Every command that uses Git on the host checks the Git version
-the same way.
+the same way. Once a check has passed, sbxm records that executable in
+`~/.sbxm/host-tools.yaml` and skips the check while the executable stays
+unchanged. A changed executable is checked again.
 
 ## Installation
 
@@ -596,7 +598,9 @@ repository stays where it was added.
 
 Under `~/.sbxm`, sbxm keeps `registry.yaml` — the index of registered projects
 and where each one lives — and, once you have chosen a display language or an
-identity, or declared files, `config.yaml`. The registry is the only thing that knows where
+identity, or declared files, `config.yaml`. Once a Docker Sandboxes CLI or Git version
+check has passed, `host-tools.yaml` records that executable so the check can be skipped
+until it changes. The registry is the only thing that knows where
 a project is, so moving a project directory makes `ls` report it as `missing`
 rather than sbxm guessing at the new location.
 

@@ -835,6 +835,9 @@ trace-step = { $id }
 trace-prompt = { $id }
 trace-total = 外部command { $count }回 { $external }、対話 { $interactive }、sbxm { $own }
 trace-total-one = 外部command 1回 { $external }、対話 { $interactive }、sbxm { $own }
+trace-host-tool-skipped = { $program } { $observed }: 記録した実行ファイル { $path } が変わっていないため、versionの確認を省略しました
+trace-host-tool-checked = { $program }: 記録を使えないため、versionを確認しました ({ $reason })
+trace-host-tool-unsaved = { $program }: versionの確認は通りましたが、記録できませんでした ({ $reason })
 
 cli-color-help = 出力へ色を付ける条件 ({ $supported })
 cli-verbose-help = 外部commandと工程の所要時間をstderrへ出す

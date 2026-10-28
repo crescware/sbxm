@@ -4,7 +4,7 @@ use std::time::Duration;
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
 
-use super::{CommandOutcome, CommandSpec, TerminalCommand};
+use super::{CommandOutcome, CommandSpec, Executable, TerminalCommand};
 
 /// hostに対する外部commandの実行。testでは差し替える。
 ///
@@ -13,6 +13,12 @@ use super::{CommandOutcome, CommandSpec, TerminalCommand};
 /// 基本操作を差し込む。
 pub trait HostEnvironment {
     fn command_exists(&self, program: &str) -> bool;
+
+    /// PATH上で`program`として起動されるfileの実体を、実行せずに観測する。
+    ///
+    /// 見つからない、または観測できない場合は`None`。`command_exists`が真でも、観測の
+    /// あいだに差し替えられれば`None`になりうる。
+    fn inspect_executable(&self, program: &str) -> Option<Executable>;
 
     /// 出力をcaptureして実行する。
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome>;

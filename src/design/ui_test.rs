@@ -19,3 +19,29 @@ impl<'a> Ui<'a> {
         }
     }
 }
+
+#[test]
+fn a_trace_note_reaches_the_attached_trace_and_never_the_progress() {
+    use crate::design::policy::StreamPolicy;
+    use crate::testing::scripted_clock::ScriptedClock;
+    use crate::testing::shared_buffer::SharedBuffer;
+    use crate::time::Clock;
+
+    let stderr = SharedBuffer::new();
+    let policy = RenderingPolicy {
+        stdout: StreamPolicy::plain(),
+        stderr: StreamPolicy::plain(),
+    };
+    let mut ui = Ui::capture(Locale::En, policy, SharedBuffer::new(), stderr.clone());
+    // traceを付けていない実行では、注記はどこにも出ない。
+    ui.trace(crate::msg!("trace-step", id = "unattached"));
+    assert_eq!(stderr.text(), "");
+
+    let buffer = SharedBuffer::new();
+    let clock: Rc<dyn Clock> = Rc::new(ScriptedClock::default());
+    let trace = Trace::new(Locale::En, StreamPolicy::plain(), buffer.clone(), clock);
+    ui.attach_trace(Rc::new(RefCell::new(trace)));
+    ui.trace(crate::msg!("trace-step", id = "noted"));
+    assert_eq!(buffer.lines(), ["note    noted"]);
+    assert_eq!(stderr.text(), "", "a note is not a progress line");
+}

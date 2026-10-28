@@ -16,7 +16,7 @@ pub fn exec(context: &Context, ui: &mut Ui, host: &dyn HostEnvironment) -> ExitC
     };
     ui.set_locale(locale);
     // loginを確かめた一覧から組み立てる。lockもpromptも挟まないため、読み直さない。
-    let entries = match crate::support::sbx_cli::require_ready(host, ui) {
+    let entries = match crate::support::sbx_cli::require_ready(context.location, host, ui) {
         Ok(entries) => entries,
         Err(error) => return report(ui, &error),
     };

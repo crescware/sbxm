@@ -164,6 +164,15 @@ impl Trace {
         self.line("inside", &body, elapsed);
     }
 
+    /// 時間を持たない注記。省略した工程や、結果に影響しなかった失敗を残す。
+    pub fn note(&mut self, message: &Msg) {
+        if self.handed_over {
+            return;
+        }
+        let body = self.format(message);
+        self.line("note", &body, None);
+    }
+
     /// promptが利用者の答えを待ち始めた。返した読みを`prompt_answered`へ渡す。
     pub fn prompt_started(&mut self) -> Moment {
         self.clock.now()
