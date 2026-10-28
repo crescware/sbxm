@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # Claude CodeのPreToolUse hook。Bash toolが`git commit`か`git merge`を実行する前に
-# `cargo fmt --check`を、それが通ったら`cargo clippy --all-targets -- -D warnings`を実行する。
-# どちらかが失敗したらexit 2でtool呼び出しを拒否し、失敗の出力をClaudeへ返す。
-# 両方通ったときはexit 0で、判断を通常の権限確認へ委ねる。
+# `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、
+# `node scripts/check_md_line_breaks.mts`を順に実行する。
+# どれかが失敗したらexit 2でtool呼び出しを拒否し、失敗の出力をClaudeへ返す。
+# すべて通ったときはexit 0で、判断を通常の権限確認へ委ねる。
 #
 # 拒否しそこねるより余分に検査するほうを選ぶ。commandを読み切れないときは、
 # `git`と`commit`/`merge`の語が並ぶだけで対象にする。
@@ -15,9 +16,11 @@ import subprocess
 import sys
 import time
 
+# どれもrepositoryのrootで実行する。Markdownの検査はrootからの相対pathでscriptを指す。
 CHECKS = (
     ["cargo", "fmt", "--check"],
     ["cargo", "clippy", "--all-targets", "--", "-D", "warnings"],
+    ["node", "scripts/check_md_line_breaks.mts"],
 )
 # Claude Codeは時間切れのhookを打ち切り、tool呼び出しを通してしまう。settings.jsonで
 # 与えた900秒より手前で検査を打ち切り、拒否として扱う。
@@ -62,11 +65,29 @@ def main():
 
     deadline = time.monotonic() + DEADLINE_SECONDS
     for work_dir in work_dirs:
+        root = repository_root(work_dir)
         for check in CHECKS:
-            failure = run_check(check, work_dir, deadline)
+            failure = run_check(check, root, deadline)
             if failure:
                 return deny(failure)
     return 0
+
+
+def repository_root(directory):
+    """directoryを含むworktreeのrootを返す。gitが答えなければdirectoryをそのまま使う。"""
+    try:
+        result = subprocess.run(
+            ["git", "-C", directory, "rev-parse", "--show-toplevel"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return directory
+    root = result.stdout.strip()
+    return root if result.returncode == 0 and root else directory
 
 
 def find_work_dirs(command, cwd):
@@ -197,7 +218,8 @@ def run_check(check, work_dir, deadline):
 def deny(reason):
     print(
         f"{reason}\n"
-        "`cargo fmt --check`と`cargo clippy --all-targets -- -D warnings`が両方通るまで、"
+        "`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、"
+        "`node scripts/check_md_line_breaks.mts`がすべて通るまで、"
         "`git commit`/`git merge`は実行できません。",
         file=sys.stderr,
     )

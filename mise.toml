@@ -6,10 +6,17 @@
 rust = { version = "1.89.0", targets = "aarch64-apple-darwin", profile = "default" }
 zig = "0.16.0"
 "github:taiki-e/cargo-llvm-cov" = "0.8.7"
+# repositoryのscriptは`.mts`で書き、nodeがbuildなしで実行する。websiteのtoolchainとは別に、
+# rootのtaskとClaude Codeのhookがここのnodeを使う。
+node = "24"
 
 [tasks.fmt]
-description = "sourceを整形する"
-run = "cargo fmt --all"
+description = "sourceを整形し、Markdownの段落の途中にある改行を結合する"
+run = "cargo fmt --all && node scripts/check_md_line_breaks.mts --fix"
+
+[tasks.markdown]
+description = "Markdownの段落が途中で改行されていないことを確認する"
+run = "node scripts/check_md_line_breaks.mts"
 
 [tasks.coverage]
 description = "testを実行してcoverageの最低基準を確認する"
@@ -38,5 +45,5 @@ description = "scripts/release/release.shのend-to-end testを実行する"
 run = "scripts/release/release_test.sh"
 
 [tasks.check]
-description = "整形・lint・辞書・macOS向けcompile・test・coverage・release scriptのtestをすべて確認する"
-run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && mise run i18n && mise run check-macos && mise run coverage && mise run release-test"
+description = "整形・lint・Markdownの改行・辞書・macOS向けcompile・test・coverage・release scriptのtestをすべて確認する"
+run = "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && mise run markdown && mise run i18n && mise run check-macos && mise run coverage && mise run release-test"
