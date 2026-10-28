@@ -7,3 +7,7 @@ linker = ".cargo/zig-cc"
 
 [target.x86_64-unknown-linux-gnu]
 linker = ".cargo/zig-cc"
+
+# repositoryの開発用taskは`xtask` crateが持つ。`cargo xtask <task>`で呼ぶ。
+[alias]
+xtask = "run --quiet --package xtask --"
