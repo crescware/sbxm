@@ -18,6 +18,8 @@ impl ProgressSink for RecordingProgress {
     fn warn(&mut self, warning: Warning) {
         self.warnings.push(warning);
     }
+
+    fn trace(&mut self, _message: Msg) {}
 }
 
 impl ExternalOutput for RecordingProgress {

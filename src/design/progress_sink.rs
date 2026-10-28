@@ -17,4 +17,10 @@ pub trait ProgressSink: ExternalOutput {
     ///
     /// `Error::Canceled`のように最終結果へ事実を残せない経路が使う。
     fn warn(&mut self, warning: Warning);
+
+    /// `--verbose`の実行だけが読む注記を1行で残す。進捗には出さない。
+    ///
+    /// 省略した工程や、結果に影響しなかった失敗のように、利用者へ知らせるほどではないが
+    /// 調べるときには要る事実が使う。
+    fn trace(&mut self, message: Msg);
 }

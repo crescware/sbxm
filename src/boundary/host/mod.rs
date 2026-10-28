@@ -22,13 +22,18 @@ mod command_spec;
 mod configure;
 mod drain_pipe;
 mod env_policy;
-mod exists_in_path_value;
+mod executable;
+mod executable_identity;
 mod exists_on_path;
 mod hiding_lines;
 mod host_environment;
 mod input_bytes;
 mod input_feed;
+mod inspect_executable_at;
+mod inspect_executable_on_path;
 mod is_executable;
+mod locate_in_path_value;
+mod locate_on_path;
 mod max_kept_stderr;
 mod outcome;
 mod output_policy;
@@ -66,13 +71,18 @@ pub use command_spec::CommandSpec;
 use configure::configure;
 use drain_pipe::drain_pipe;
 pub use env_policy::EnvPolicy;
-use exists_in_path_value::exists_in_path_value;
+pub use executable::Executable;
+pub use executable_identity::ExecutableIdentity;
 pub use exists_on_path::exists_on_path;
 use hiding_lines::HidingLines;
 pub use host_environment::HostEnvironment;
 use input_bytes::InputBytes;
 use input_feed::InputFeed;
+use inspect_executable_at::inspect_executable_at;
+pub use inspect_executable_on_path::inspect_executable_on_path;
 use is_executable::is_executable;
+use locate_in_path_value::locate_in_path_value;
+use locate_on_path::locate_on_path;
 use max_kept_stderr::MAX_KEPT_STDERR;
 use outcome::outcome;
 pub use output_policy::OutputPolicy;
@@ -109,3 +119,7 @@ mod command_test;
 #[cfg(test)]
 #[path = "command_outcome_test.rs"]
 mod command_outcome_test;
+
+#[cfg(test)]
+#[path = "inspect_executable_test.rs"]
+mod inspect_executable_test;

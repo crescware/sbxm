@@ -35,7 +35,8 @@ A project added with `--local` has no `<repository>/` clone inside the project d
 ```text
 ~/.sbxm/
 ├── registry.yaml       # registered project IDs and locations
-└── config.yaml         # identity, language, and declared files when configured
+├── config.yaml         # identity, language, and declared files when configured
+└── host-tools.yaml     # CLI and Git executables whose version check has passed
 ```
 
 The registry is the only place that knows where a project lives. Moving the project directory makes `sbxm ls` report `missing`; it does not adopt a matching directory by name.

@@ -13,6 +13,7 @@ pub mod files;
 pub mod generation;
 pub mod git_cli;
 pub mod host_sync;
+pub mod host_tools;
 pub mod identity;
 pub mod image;
 pub mod inventory;

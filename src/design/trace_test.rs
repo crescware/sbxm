@@ -452,3 +452,20 @@ fn the_total_in_japanese_names_the_interactive_time() {
         "{lines:?}"
     );
 }
+
+#[test]
+fn a_note_has_no_time_and_is_held_back_while_the_terminal_is_handed_over() {
+    let clock = clock();
+    let lines = lines(Locale::En, policy(Some(72)), &clock, |trace| {
+        trace.note(&msg!("trace-step", id = "skipped"));
+        let started = trace.hand_over("ssh sandbox");
+        trace.note(&msg!("trace-step", id = "hidden"));
+        trace.session_ended("ssh sandbox", started, "exit status: 0");
+    });
+
+    assert_eq!(lines[0], "note    skipped");
+    assert!(
+        lines.iter().all(|line| !line.contains("hidden")),
+        "nothing is written while the terminal belongs to the session: {lines:?}"
+    );
+}

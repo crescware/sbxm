@@ -116,6 +116,12 @@ impl ProgressSink for Ui<'_> {
     fn warn(&mut self, warning: Warning) {
         self.warning(&warning);
     }
+
+    fn trace(&mut self, message: Msg) {
+        if let Some(trace) = &self.trace {
+            trace.borrow_mut().note(&message);
+        }
+    }
 }
 
 impl ExternalOutput for Ui<'_> {

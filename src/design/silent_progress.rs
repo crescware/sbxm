@@ -14,6 +14,10 @@ impl ProgressSink for SilentProgress {
     fn warn(&mut self, warning: Warning) {
         let _ = warning;
     }
+
+    fn trace(&mut self, message: Msg) {
+        let _ = message;
+    }
 }
 
 impl ExternalOutput for SilentProgress {

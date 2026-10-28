@@ -2,7 +2,7 @@ use std::io::Write;
 use std::time::Duration;
 
 use crate::boundary::host::{
-    CommandOutcome, CommandSpec, HostEnvironment, TerminalCommand, run_streaming,
+    CommandOutcome, CommandSpec, Executable, HostEnvironment, TerminalCommand, run_streaming,
     run_terminal_inner,
 };
 use crate::design::ExternalOutput;
@@ -20,6 +20,12 @@ pub trait AnsweredHost {
     /// 1回の実行への答え。
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome>;
 
+    /// PATH上の実行ファイルの観測。既定は観測できないとし、version確認の記録は使われも
+    /// 書かれもしない。
+    fn executable(&self, _program: &str) -> Option<Executable> {
+        None
+    }
+
     /// 端末を引き渡したsessionが終わるまでに経つ時間。既定は0で、途中の手続きは呼ばれない。
     fn session_length(&self, _command: &TerminalCommand, _every: Duration) -> Duration {
         Duration::ZERO
@@ -29,6 +35,10 @@ pub trait AnsweredHost {
 impl<T: AnsweredHost> HostEnvironment for T {
     fn command_exists(&self, program: &str) -> bool {
         self.has_command(program)
+    }
+
+    fn inspect_executable(&self, program: &str) -> Option<Executable> {
+        self.executable(program)
     }
 
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {

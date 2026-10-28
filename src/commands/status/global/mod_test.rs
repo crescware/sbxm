@@ -1082,3 +1082,50 @@ fn diagnose(
 ) -> GlobalStatus {
     super::diagnose(location, host, &mut crate::design::SilentProgress)
 }
+
+#[test]
+fn a_recorded_cli_is_not_probed_again_and_still_reports_ready() -> Checked {
+    use crate::testing::global_status::location_with_state_dir;
+    use crate::testing::host::reusable_executable;
+    use crate::testing::recorded_output::RecordedOutput;
+
+    let (_dir, location) = location_with_state_dir()?;
+    let host = FakeHost::macos().with_executable("sbx", reusable_executable("sbx"));
+    let mut progress = RecordedOutput::new();
+    let status = super::diagnose(&location, &host, &mut progress);
+    assert_eq!(
+        status_of(&status, "status-item-docker-sandboxes")?,
+        StatusValue::Ready
+    );
+    assert!(
+        progress
+            .steps
+            .iter()
+            .any(|step| step.id == "progress-inspect-sbx-version")
+    );
+    assert!(location.host_tools_file().is_file());
+
+    // 記録があれば`sbx version`を読まない。読めば失敗する応答にしても、Readyのまま。
+    let host = FakeHost::macos()
+        .with_executable("sbx", reusable_executable("sbx"))
+        .failing("sbx version", "boom", 1);
+    let mut progress = RecordedOutput::new();
+    let status = super::diagnose(&location, &host, &mut progress);
+    assert_eq!(
+        status_of(&status, "status-item-docker-sandboxes")?,
+        StatusValue::Ready
+    );
+    assert!(
+        !progress
+            .steps
+            .iter()
+            .any(|step| step.id == "progress-inspect-sbx-version")
+    );
+    assert!(
+        progress
+            .traces
+            .iter()
+            .any(|trace| trace.id == "trace-host-tool-skipped")
+    );
+    Ok(())
+}

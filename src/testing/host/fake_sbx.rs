@@ -1,6 +1,6 @@
 use crate::testing::outcome::{Checked, Required};
 
-use crate::boundary::host::{CommandOutcome, CommandSpec};
+use crate::boundary::host::{CommandOutcome, CommandSpec, Executable};
 use crate::diagnostics::Result;
 use crate::testing::host::AnsweredHost;
 use crate::testing::inside::{frame_inside_check, split_inside_check};
@@ -20,6 +20,8 @@ pub struct FakeSbx {
     /// 同じ指定へ順に返す応答。末尾から取り出す。
     pub sequences: RefCell<std::collections::HashMap<String, Vec<(i32, String)>>>,
     pub specs: RefCell<Vec<CommandSpec>>,
+    /// PATH上の実行ファイルの観測。指定の無いprogramは観測できない。
+    pub executables: std::collections::HashMap<String, Executable>,
 }
 
 impl FakeSbx {
@@ -29,6 +31,7 @@ impl FakeSbx {
             answers: std::collections::HashMap::new(),
             sequences: RefCell::new(std::collections::HashMap::new()),
             specs: RefCell::new(Vec::new()),
+            executables: std::collections::HashMap::new(),
         }
     }
 
@@ -45,12 +48,19 @@ impl FakeSbx {
             answers: std::collections::HashMap::new(),
             sequences: RefCell::new(std::collections::HashMap::new()),
             specs: RefCell::new(Vec::new()),
+            executables: std::collections::HashMap::new(),
         }
     }
 
     pub fn answering(mut self, command: &str, code: i32, stdout: &str) -> FakeSbx {
         self.answers
             .insert(command.to_string(), (code, stdout.to_string()));
+        self
+    }
+
+    /// `program`のPATH上の実行ファイルを、この観測で答える。
+    pub fn with_executable(mut self, program: &str, executable: Executable) -> FakeSbx {
+        self.executables.insert(program.to_string(), executable);
         self
     }
 
@@ -145,6 +155,10 @@ impl FakeSbx {
 impl AnsweredHost for FakeSbx {
     fn has_command(&self, _program: &str) -> bool {
         true
+    }
+
+    fn executable(&self, program: &str) -> Option<Executable> {
+        self.executables.get(program).cloned()
     }
 
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {

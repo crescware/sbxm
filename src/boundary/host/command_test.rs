@@ -547,10 +547,10 @@ fn path_lookup_finds_an_executable_placed_at_the_front_of_path() -> Checked {
 
     // processのPATHは書き換えず、探索の対象となる値だけを渡す。
     assert!(
-        exists_in_path_value("sbxm-fake-on-path", &joined),
+        locate_in_path_value("sbxm-fake-on-path", &joined).is_some(),
         "an executable at the front of PATH must be found"
     );
-    assert!(!exists_in_path_value("sbxm-fake-on-path", &original));
+    assert!(locate_in_path_value("sbxm-fake-on-path", &original).is_none());
     assert!(!exists_on_path("sbxm-fake-on-path"));
     Ok(())
 }

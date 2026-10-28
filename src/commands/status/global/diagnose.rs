@@ -41,7 +41,13 @@ pub fn diagnose(
     check_git_identity(config.as_ref(), &mut status);
 
     // 5-9. Docker Sandboxes CLIとそのserviceの状態
-    check_docker_sandboxes(host, present.contains(&"sbx"), &mut status, progress);
+    check_docker_sandboxes(
+        location,
+        host,
+        present.contains(&"sbx"),
+        &mut status,
+        progress,
+    );
 
     status
 }

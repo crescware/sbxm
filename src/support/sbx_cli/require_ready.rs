@@ -1,5 +1,6 @@
 use crate::boundary::host::HostEnvironment;
 use crate::boundary::host::protocol::SandboxEntry;
+use crate::config::ConfigLocation;
 use crate::design::ProgressSink;
 use crate::diagnostics::Result;
 use crate::support::login;
@@ -14,9 +15,10 @@ use super::require_supported_version;
 /// loginのprobeで読んだSandboxの一覧を返す。使ってよい場面は`login::require_signed_in`
 /// が決める。
 pub fn require_ready(
+    location: &ConfigLocation,
     host: &dyn HostEnvironment,
     progress: &mut dyn ProgressSink,
 ) -> Result<Vec<SandboxEntry>> {
-    require_supported_version(host, progress)?;
+    require_supported_version(location, host, progress)?;
     login::require_signed_in(host, progress)
 }

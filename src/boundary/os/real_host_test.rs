@@ -61,3 +61,17 @@ fn the_real_host_hands_the_terminal_over_while_it_waits() -> Checked {
     assert_eq!(ticks, 0);
     Ok(())
 }
+
+#[test]
+fn the_real_host_observes_an_executable_on_path() -> Checked {
+    let executable = RealHost
+        .inspect_executable("sh")
+        .required_because("sh is on PATH")?;
+    assert!(executable.identity.path.is_absolute());
+    assert!(
+        RealHost
+            .inspect_executable("sbxm-no-such-program")
+            .is_none()
+    );
+    Ok(())
+}

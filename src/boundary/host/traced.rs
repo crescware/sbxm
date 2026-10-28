@@ -12,7 +12,9 @@ use crate::time::Moment;
 use super::protocol::{
     INSIDE_CHECK, inside_check_arguments, parse_inside_check, split_inside_check,
 };
-use super::{CommandOutcome, CommandSpec, HostEnvironment, OutputPolicy, TerminalCommand};
+use super::{
+    CommandOutcome, CommandSpec, Executable, HostEnvironment, OutputPolicy, TerminalCommand,
+};
 
 /// 外部commandの起動と所要時間を`Trace`へ並べながら、実行そのものは`inner`へ渡すhost。
 ///
@@ -114,6 +116,11 @@ impl<'a> Traced<'a> {
 impl HostEnvironment for Traced<'_> {
     fn command_exists(&self, program: &str) -> bool {
         self.inner.command_exists(program)
+    }
+
+    /// 観測は外部commandを起動しないため、traceには並べない。
+    fn inspect_executable(&self, program: &str) -> Option<Executable> {
+        self.inner.inspect_executable(program)
     }
 
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {

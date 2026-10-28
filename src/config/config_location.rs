@@ -58,6 +58,13 @@ impl ConfigLocation {
     pub fn registry_lock(&self) -> PathBuf {
         self.dir().join("registry.lock")
     }
+
+    /// `~/.sbxm/host-tools.yaml`
+    ///
+    /// hostの道具のversion確認が通った実行ファイルの記録。
+    pub fn host_tools_file(&self) -> PathBuf {
+        self.dir().join("host-tools.yaml")
+    }
 }
 
 #[cfg(test)]

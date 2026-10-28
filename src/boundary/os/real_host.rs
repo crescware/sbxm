@@ -2,8 +2,8 @@ use std::io::Write;
 use std::time::Duration;
 
 use crate::boundary::host::{
-    CommandOutcome, CommandSpec, HostEnvironment, TerminalCommand, exists_on_path, run_inner,
-    run_streaming, run_terminal_inner,
+    CommandOutcome, CommandSpec, Executable, HostEnvironment, TerminalCommand, exists_on_path,
+    inspect_executable_on_path, run_inner, run_streaming, run_terminal_inner,
 };
 use crate::design::ExternalOutput;
 use crate::diagnostics::Result;
@@ -19,6 +19,10 @@ pub struct RealHost;
 impl HostEnvironment for RealHost {
     fn command_exists(&self, program: &str) -> bool {
         exists_on_path(program)
+    }
+
+    fn inspect_executable(&self, program: &str) -> Option<Executable> {
+        inspect_executable_on_path(program)
     }
 
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
