@@ -216,7 +216,7 @@ fn every_shipped_resource_is_an_accepted_language() -> Checked {
     Ok(())
 }
 
-/// `--verbose`は、外部commandと工程の経過を、所要時間を添えてstderrへ並べる。
+/// `--verbose`は、外部commandと工程の所要時間をstderrへ並べる。
 ///
 /// loginのprobeに答えるhostで`ls`を走らせる。`sbx version`とprobeの`sbx ls --json`が
 /// traceに現れ、合計で閉じる。`ls`はprobeで読んだ一覧から組み立て、読み直さない。

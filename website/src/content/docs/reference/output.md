@@ -20,7 +20,7 @@ An explicit `--color` wins over environment variables. Disabling color does not 
 
 ## Verbose trace
 
-`--verbose` adds a trace to standard error that follows what sbxm did, in order: one dim line when sbxm starts an external command and one when it ends, one line for each step once the next step begins, and a total when the run ends. Every elapsed time is right-aligned at the end of its line, in milliseconds with three decimals, so `sort` and `grep` keep working and the same trace also shows where the time went. A prompt adds a `prompt` line with how long it waited for your answer.
+`--verbose` adds a trace to standard error: one dim line when sbxm starts an external command and one when it ends, one line for each step once the next step begins, and a total when the run ends. Every elapsed time is right-aligned at the end of its line, in milliseconds with three decimals, so `sort` and `grep` keep working. A prompt adds a `prompt` line with how long it waited for your answer.
 
 ```text
 → Checking the sandbox state. Waiting for Docker Sandboxes to respond.

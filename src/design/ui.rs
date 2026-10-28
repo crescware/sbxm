@@ -20,7 +20,7 @@ pub struct Ui<'a> {
     stderr: Renderer<'a>,
     /// 外部toolの出力が続いている最中か。
     external: bool,
-    /// `--verbose`の実行が工程の区切りを並べる先。hostのdecoratorと共有する。
+    /// `--verbose`の実行が工程の所要時間を並べる先。hostのdecoratorと共有する。
     trace: Option<Rc<RefCell<Trace>>>,
 }
 

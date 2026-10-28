@@ -655,7 +655,7 @@ sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれ
 
 promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`とは別に組み立てて渡す。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
 
-`Trace`は`--verbose`の行を書く。`Ui`と同じく`design`が持ち、`Painter`で`Muted`を
+`Trace`は`--verbose`の所要時間を書く。`Ui`と同じく`design`が持ち、`Painter`で`Muted`を
 載せる。`Ui`と`PromptUi`は同じ`Trace`を共有して持つ。commandは`ProgressSink`へ工程を
 知らせるだけで、`Trace`を受け取らない。
 
