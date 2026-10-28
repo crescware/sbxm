@@ -2,12 +2,9 @@
 
 ## 文書の位置づけ
 
-この文書は、repository rootの`website/`にAstro Starlightで構築するsbxm公式サイトの
-プロダクト要件を定める。初回公開は英語だけとするが、英語ページのURLや配置を変えずに
-日本語を追加できることを初回実装の必須要件とする。
+この文書は、repository rootの`website/`にAstro Starlightで構築するsbxm公式サイトのプロダクト要件を定める。初回公開は英語だけとするが、英語ページのURLや配置を変えずに日本語を追加できることを初回実装の必須要件とする。
 
-サイト本体の実装、package導入、deployment設定はこの計画の承認後に行う。この計画では
-`website/`を作らない。
+サイト本体の実装、package導入、deployment設定はこの計画の承認後に行う。この計画では`website/`を作らない。
 
 ## 決定事項
 
@@ -19,8 +16,7 @@
 - 英語はURL prefixを持たないroot localeとする
 - 将来の日本語は同じslugを使って`/ja/`以下に追加する
 - 静的HTMLとしてbuildし、利用者のbrowserからserver-side APIを必要としない
-- documentation navigationのprimary groupは`Get started`、`Guides`、`Reference`、
-  `Troubleshooting`とする
+- documentation navigationのprimary groupは`Get started`、`Guides`、`Reference`、`Troubleshooting`とする
 - GitHub repositoryへのlinkと各documentの`Edit page` linkを提供する
 - site内検索はStarlight標準のPagefindを使う
 - analytics、cookie banner、外部font、広告、利用者追跡は初回scopeに含めない
@@ -75,8 +71,7 @@ homepageではこの説明を中心に、次の3点を一目で伝える。
 - 主要pageがmobile幅、keyboard操作、light/dark themeで利用できる
 - production build、内部link検査、contentとCLI surfaceの整合検査がCIで成功する
 
-page view、conversionなどの数値KPIはtrackingを導入しない初回には設定しない。利用状況を測る
-必要が生じた場合は、privacy要件と収集目的を別計画で決める。
+page view、conversionなどの数値KPIはtrackingを導入しない初回には設定しない。利用状況を測る必要が生じた場合は、privacy要件と収集目的を別計画で決める。
 
 ## 初回公開scope
 
@@ -112,8 +107,7 @@ page view、conversionなどの数値KPIはtrackingを導入しない初回に�
 - analytics、support chat、feedback widget
 - READMEやRust sourceから全文documentを自動生成する仕組み
 
-scope外の項目に備えて過剰なcomponentやdata layerを先に作らない。ただし日本語追加に必要な
-locale、route、content対応規約だけは初回から組み込む。
+scope外の項目に備えて過剰なcomponentやdata layerを先に作らない。ただし日本語追加に必要なlocale、route、content対応規約だけは初回から組み込む。
 
 ## 機能要件
 
@@ -164,8 +158,7 @@ website contentを作成・reviewするときは次の順でrepositoryの事実�
 8. cross-cutting policy: `docs/design-principles.md`
 9. contributor workflow: `docs/development.md`と`scripts/release/README.md`
 
-READMEとsourceが食い違う場合はwebsiteへ都合のよい方を写さない。behaviorをtest/sourceで確認し、
-不一致を同じ変更で修正するか、公開を止めて判断を求める。
+READMEとsourceが食い違う場合はwebsiteへ都合のよい方を写さない。behaviorをtest/sourceで確認し、不一致を同じ変更で修正するか、公開を止めて判断を求める。
 
 ### 公開後のownership
 
@@ -189,8 +182,7 @@ READMEの短縮はwebsite実装とは別のreview可能な変更として扱う�
 
 ## 国際化要件
 
-初回が英語だけでも、monolingual default構成にはしない。Starlightのroot localeを明示して
-`root: { label: 'English', lang: 'en' }`として設計する。
+初回が英語だけでも、monolingual default構成にはしない。Starlightのroot localeを明示して`root: { label: 'English', lang: 'en' }`として設計する。
 
 - English contentは`website/src/content/docs/`直下に置く
 - English routeは`/getting-started/`のようにlocale prefixを付けない
@@ -204,8 +196,7 @@ READMEの短縮はwebsite実装とは別のreview可能な変更として扱う�
 - date、punctuation、line wrappingをEnglishの長さだけに合わせない
 - imageへ説明文を焼き込まない。必要なlabelはHTML textとして描画する
 
-Starlightはroot localeをprefixなしで配信し、別localeをprefix付きで追加できる。また対応pageを
-同じfilenameで管理するとfallbackを提供できる。初回構成はこの公式mechanismに沿う。
+Starlightはroot localeをprefixなしで配信し、別localeをprefix付きで追加できる。また対応pageを同じfilenameで管理するとfallbackを提供できる。初回構成はこの公式mechanismに沿う。
 
 ## Security・privacy要件
 
@@ -255,13 +246,9 @@ Lighthouse scoreは回帰検知の補助であり、個別のaccessibility検査
 
 ## 未決定事項
 
-deployment追加前にownerが決める必要があるのはproduction originだけとする。custom domainが
-決まっていなければ`https://crescware.github.io/sbxm/`を使う。contentとlocal buildはこの決定を
-待たずに進める。
+deployment追加前にownerが決める必要があるのはproduction originだけとする。custom domainが決まっていなければ`https://crescware.github.io/sbxm/`を使う。contentとlocal buildはこの決定を待たずに進める。
 
-初回のvisual identityは`sbxm`のtext wordmarkとsimpleなlocal faviconで成立させる。専用logoは
-必要になった時点で別に設計し、初回実装のblockerにしない。未決定のcustom domainを推測した
-DNS設定は作らない。
+初回のvisual identityは`sbxm`のtext wordmarkとsimpleなlocal faviconで成立させる。専用logoは必要になった時点で別に設計し、初回実装のblockerにしない。未決定のcustom domainを推測したDNS設定は作らない。
 
 ## 完了条件
 

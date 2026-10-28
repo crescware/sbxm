@@ -1,11 +1,8 @@
 # 表示文字列のresource
 
-利用者向け文字列はすべてこのdirectoryのFTL resourceが持つ。実装側に利用者向けの
-literalを置かない。
+利用者向け文字列はすべてこのdirectoryのFTL resourceが持つ。実装側に利用者向けのliteralを置かない。
 
-規約はこのfileが1箇所で持ち、FTL resourceは内容だけを持つ。resourceへコメントと
-見出しを書かない。規約をresourceへ書くと、言語の数だけ同じ規約を維持することになる。
-例外は、検査を次の1行だけ無効にする宣言だけである。
+規約はこのfileが1箇所で持ち、FTL resourceは内容だけを持つ。resourceへコメントと見出しを書かない。規約をresourceへ書くと、言語の数だけ同じ規約を維持することになる。例外は、検査を次の1行だけ無効にする宣言だけである。
 
 ## このdirectoryの構成
 
@@ -16,16 +13,14 @@ locales/
 └── ja.ftl
 ```
 
-file名は`<tag>.ftl`とする。`<tag>`は`--lang`とconfigの`language`が受け付ける値であり、
-`src/i18n.rs`の`DEFINITIONS`が持つtagと一致させる。
+file名は`<tag>.ftl`とする。`<tag>`は`--lang`とconfigの`language`が受け付ける値であり、`src/i18n.rs`の`DEFINITIONS`が持つtagと一致させる。
 
 ## 言語を増やす手順
 
 1. `locales/<tag>.ftl`を追加し、正本localeと同じID集合を同じplaceholderで訳す
 2. `src/i18n.rs`の`Locale`へvariantを、`DEFINITIONS`へ行を足す
 
-これ以外のfileは編集しない。実装、test、ほかのlocale resourceは、この2箇所からの
-導出だけを見る。
+これ以外のfileは編集しない。実装、test、ほかのlocale resourceは、この2箇所からの導出だけを見る。
 
 ## 正本locale
 
@@ -41,20 +36,17 @@ file名は`<tag>.ftl`とする。`<tag>`は`--lang`とconfigの`language`が受�
 
 ### 全localeが同じID集合を同じplaceholderで持つ
 
-正本localeが定義するIDを過不足なく定義し、各messageが参照するplaceholder集合も
-一致させる。`tests/ftl.rs`が検証する。
+正本localeが定義するIDを過不足なく定義し、各messageが参照するplaceholder集合も一致させる。`tests/ftl.rs`が検証する。
 
 ### message IDはkebab-case
 
 ### 翻訳しないもの
 
-enum（状態値）、path、command名、option名、exit status、外部commandのstdoutと
-stderr。これらは正本localeの語のまま出力するため、resourceへliteralとして現れない。
+enum（状態値）、path、command名、option名、exit status、外部commandのstdoutとstderr。これらは正本localeの語のまま出力するため、resourceへliteralとして現れない。
 
 ### `locale-name`
 
-その言語の名称を「自称表記 / 正本localeの語」で書く。読めない書記系が選択肢に並んでも
-識別できるようにする。両者が一致する場合は自称表記だけでよい。
+その言語の名称を「自称表記 / 正本localeの語」で書く。読めない書記系が選択肢に並んでも識別できるようにする。両者が一致する場合は自称表記だけでよい。
 
 ```text
 日本語 / Japanese
@@ -65,8 +57,7 @@ English
 
 ### 正本locale以外の診断label
 
-「訳語 (正本localeの語)」の形式とする。利用者が正本localeの用語で検索できるように
-するため、括弧内は訳さない。
+「訳語 (正本localeの語)」の形式とする。利用者が正本localeの用語で検索できるようにするため、括弧内は訳さない。
 
 ```text
 設定 (Config)
@@ -75,22 +66,17 @@ English
 
 ### 状態値の凡例
 
-状態値を翻訳しないため、正本locale以外は`legend-*`で各値の説明を持つ。凡例は値を
-繰り返すのではなく、値の意味を書く。
+状態値を翻訳しないため、正本locale以外は`legend-*`で各値の説明を持つ。凡例は値を繰り返すのではなく、値の意味を書く。
 
 ```text
 legend-ready = 期待した状態で利用できる
 ```
 
-正本localeの`legend-*`は出力されない。値そのものが正本localeの語であるため、
-`Reporter::render_legend`が正本localeでは凡例を出さない。ID集合を一致させるために
-定義だけは置く。
+正本localeの`legend-*`は出力されない。値そのものが正本localeの語であるため、`Reporter::render_legend`が正本localeでは凡例を出さない。ID集合を一致させるために定義だけは置く。
 
 ### 検査を次の1行だけ無効にする宣言
 
-`tests/architecture.rs`の検査のうち、文字列検索では誤りと区別できない検査は、
-resourceの次の1行だけ無効にできる。たとえば、commandの実行を求める文を見つける
-検査は、commandの名前を挙げて説明するだけの文も見つける。
+`tests/architecture.rs`の検査のうち、文字列検索では誤りと区別できない検査は、resourceの次の1行だけ無効にできる。たとえば、commandの実行を求める文を見つける検査は、commandの名前を挙げて説明するだけの文も見つける。
 
 無効にする行の直前に、次の形の行を置く。
 
@@ -102,11 +88,9 @@ resourceの次の1行だけ無効にできる。たとえば、commandの実行�
 - `--`のあとに、その行が検査の意図に反しない理由を書く
 - 宣言が効くのは次の1行だけである。localeごとに、無効にする行それぞれの直前へ書く
 
-理由の無い宣言、無効にできない検査を名指しする宣言、次の行で何も無効にしていない
-宣言は、testが落とす。
+理由の無い宣言、無効にできない検査を名指しする宣言、次の行で何も無効にしていない宣言は、testが落とす。
 
-宣言は規約ではなく、その行の内容についての注記である。行ごとに理由が異なるため、
-resourceの中に置く。
+宣言は規約ではなく、その行の内容についての注記である。行ごとに理由が異なるため、resourceの中に置く。
 
 ## message IDのグループと並び順
 

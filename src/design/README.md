@@ -2,8 +2,7 @@
 
 ## この文書の役割
 
-このdirectoryは、`sbxm`の利用者向けinterfaceを構成するデザインシステムを持つ。
-この文書はCLI出力の恒久的な設計規約であり、新しい出力、prompt、diagnosticを追加するときの正本である。
+このdirectoryは、`sbxm`の利用者向けinterfaceを構成するデザインシステムを持つ。この文書はCLI出力の恒久的な設計規約であり、新しい出力、prompt、diagnosticを追加するときの正本である。
 
 実装はこの文書をmodule documentationとして取り込む。
 
@@ -107,8 +106,7 @@ color modeは`Auto`、`Always`、`Never`の三値とする。
 3. `TERM=dumb`なら`Never`
 4. `対象stream`が`TTY`なら`Always`
 
-`NO_COLOR`は値を問わず、空文字でもopt-outとして扱う。`TERM=dumb`はcolorとは独立して
-markerの文字集合をASCIIへ切り替える。明示的な`Always`でも、文字集合のfallbackは維持する。
+`NO_COLOR`は値を問わず、空文字でもopt-outとして扱う。`TERM=dumb`はcolorとは独立してmarkerの文字集合をASCIIへ切り替える。明示的な`Always`でも、文字集合のfallbackは維持する。
 
 CIかどうかを独自に推測しない。TTY、標準的な環境変数、明示optionに従う。
 
@@ -260,21 +258,13 @@ block間は空行一行、block内は詰める。rendererがblock境界を管理
 
 progressは処理開始前にstderrへ書き、直ちにflushする。
 
-検査の工程名はcommandごとに独自の粒度を作らず、共通の観測処理から`ProgressSink`へ
-通知する。認証・案件lock・Docker/Sandbox応答待ちも、検査に入る前の待機工程として
-示す。worktreeと宣言fileには対象名と現在件数/総件数を添える。再検査は省略せず、
-確認後・修復後などの区切りを示して同じ観測工程をもう一度表示する。検査工程ごとの
-success行は追加しない。外部commandを1つずつ列挙する行は、`--verbose`のtraceにだけ置く。
+検査の工程名はcommandごとに独自の粒度を作らず、共通の観測処理から`ProgressSink`へ通知する。認証・案件lock・Docker/Sandbox応答待ちも、検査に入る前の待機工程として示す。worktreeと宣言fileには対象名と現在件数/総件数を添える。再検査は省略せず、確認後・修復後などの区切りを示して同じ観測工程をもう一度表示する。検査工程ごとのsuccess行は追加しない。外部commandを1つずつ列挙する行は、`--verbose`のtraceにだけ置く。
 
 ### Trace
 
-`--verbose`のときだけ、sbxmが何をどの順でしたかをstderrへ並べる。既定の実行は1行も
-増やさない。目的は処理の追跡である。外部commandの起動と終わり、工程の区切り、promptの
-答え、端末の引き渡しを、起きた順に1行ずつ残す。
+`--verbose`のときだけ、sbxmが何をどの順でしたかをstderrへ並べる。既定の実行は1行も増やさない。目的は処理の追跡である。外部commandの起動と終わり、工程の区切り、promptの答え、端末の引き渡しを、起きた順に1行ずつ残す。
 
-各行に所要時間を添えるため、同じtraceが時間の調査にも使える。合計行では実行の時間を
-3つに分けて数える。外部commandの中にいた時間、対話（利用者が持っていた時間）、残りの
-sbxm自身の時間である。対話は、promptが答えを待った時間と、端末を渡したsessionである。
+各行に所要時間を添えるため、同じtraceが時間の調査にも使える。合計行では実行の時間を3つに分けて数える。外部commandの中にいた時間、対話（利用者が持っていた時間）、残りのsbxm自身の時間である。対話は、promptが答えを待った時間と、端末を渡したsessionである。
 
 ```text
 prompt  select-open-heading                                                               7183.402ms
@@ -295,33 +285,18 @@ total   4 external commands 2290.552ms, interactive 157707.950ms, sbxm 113.902ms
 ```
 
 - 1 eventを1行で、progressと同じく連続する行の間に空行を置かない
-- 行全体をdim（`Muted`）で描く。行全体を着色しない規則の唯一の例外であり、補助情報を
-  本文より一段引いて見せるためにだけ使う。ほかのblockへ広げない
-- 左端はevent名で、`run`、`done`、`failed`、`inside`、`step`、`prompt`、`session`、`total`
-  の8つ。状態値と同じく翻訳せず、最も長い`session`の幅に揃える
-- 所要時間は行の右端へ右詰で置く。括弧も接頭も付けない。単位はmsに小数3桁で固定し、
-  秒へ切り替えない。sortとgrepができる形を保つ
-- 右端の幅はstderrの端末幅から取る。端末でなければ100桁。本文が入らなければ空白1つで
-  続け、argvは切らない
-- 工程は`step`として、次の工程が始まったとき、または実行の終わりに、工程のmessage IDで
-  示す。progress行そのものは変えない
-- 外部commandはargvを出す。stdinへ渡したbyte列と、captureした出力の中身は出さず、
-  byte数だけを示す。`sh -c`へ渡した手順の本文は`<inside_check.sh>`と件数に置き換える
-- Sandboxの中でまとめて走らせた確認は、手順に所要時間を計らせ、commandごとに`inside`で
-  示す。計らせるのは`--verbose`の実行だけである
-- promptは`prompt`として、答えを得たときに見出しのmessage IDと待った時間を示す。進行中の
-  工程は閉じず、待った分だけ止めたことにする。答えたあとの処理はその工程に残る。取り消し
-  でも待った時間は数え、候補が無く訊かなかったpromptは示さない
-- 端末そのものを渡す起動（SSH）は外部commandに数えない。渡す前に進行中の工程を閉じ、
-  そこまでの`total`を並べてから`run`を示す。sessionのあいだは、裏で走る処理があっても
-  1行も書かず、何も数えない。端末が戻ったら`session`として示す
-- `total`は壁時計の総時間を右端に、外部commandの回数と合計時間、対話の時間、残り（sbxm
-  自身の時間）を本文に持つ。1行も並べなかった実行には出さない
+- 行全体をdim（`Muted`）で描く。行全体を着色しない規則の唯一の例外であり、補助情報を本文より一段引いて見せるためにだけ使う。ほかのblockへ広げない
+- 左端はevent名で、`run`、`done`、`failed`、`inside`、`step`、`prompt`、`session`、`total`の8つ。状態値と同じく翻訳せず、最も長い`session`の幅に揃える
+- 所要時間は行の右端へ右詰で置く。括弧も接頭も付けない。単位はmsに小数3桁で固定し、秒へ切り替えない。sortとgrepができる形を保つ
+- 右端の幅はstderrの端末幅から取る。端末でなければ100桁。本文が入らなければ空白1つで続け、argvは切らない
+- 工程は`step`として、次の工程が始まったとき、または実行の終わりに、工程のmessage IDで示す。progress行そのものは変えない
+- 外部commandはargvを出す。stdinへ渡したbyte列と、captureした出力の中身は出さず、byte数だけを示す。`sh -c`へ渡した手順の本文は`<inside_check.sh>`と件数に置き換える
+- Sandboxの中でまとめて走らせた確認は、手順に所要時間を計らせ、commandごとに`inside`で示す。計らせるのは`--verbose`の実行だけである
+- promptは`prompt`として、答えを得たときに見出しのmessage IDと待った時間を示す。進行中の工程は閉じず、待った分だけ止めたことにする。答えたあとの処理はその工程に残る。取り消しでも待った時間は数え、候補が無く訊かなかったpromptは示さない
+- 端末そのものを渡す起動（SSH）は外部commandに数えない。渡す前に進行中の工程を閉じ、そこまでの`total`を並べてから`run`を示す。sessionのあいだは、裏で走る処理があっても1行も書かず、何も数えない。端末が戻ったら`session`として示す
+- `total`は壁時計の総時間を右端に、外部commandの回数と合計時間、対話の時間、残り（sbxm自身の時間）を本文に持つ。1行も並べなかった実行には出さない
 
-traceは`Trace`が直接書き、`Renderer`のblock間隔の勘定に入らない。`Ui`は工程の始まりを、
-`PromptUi`は答えを待つ始まりと終わりを、hostのdecorator（`Traced`）は外部commandと
-sessionの始まりと終わりを、同じ1つの`Trace`へ知らせる。
-組み立てるのはcomposition root（`execute`）だけであり、commandはtraceの有無を知らない。
+traceは`Trace`が直接書き、`Renderer`のblock間隔の勘定に入らない。`Ui`は工程の始まりを、`PromptUi`は答えを待つ始まりと終わりを、hostのdecorator（`Traced`）は外部commandとsessionの始まりと終わりを、同じ1つの`Trace`へ知らせる。組み立てるのはcomposition root（`execute`）だけであり、commandはtraceの有無を知らない。
 
 ### Summary
 
@@ -655,9 +630,7 @@ sectionの中身は`Fields`、`Table`、`Lines`、`Legend`、`Empty`のいずれ
 
 promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写しを持ち、`Ui`とは別に組み立てて渡す。同じworkflowが進捗の報告とpromptの両方を必要としても借用が衝突しないようにするためである。
 
-`Trace`は`--verbose`の所要時間を書く。`Ui`と同じく`design`が持ち、`Painter`で`Muted`を
-載せる。`Ui`と`PromptUi`は同じ`Trace`を共有して持つ。commandは`ProgressSink`へ工程を
-知らせるだけで、`Trace`を受け取らない。
+`Trace`は`--verbose`の所要時間を書く。`Ui`と同じく`design`が持ち、`Painter`で`Muted`を載せる。`Ui`と`PromptUi`は同じ`Trace`を共有して持つ。commandは`ProgressSink`へ工程を知らせるだけで、`Trace`を受け取らない。
 
 `PromptUi`は打鍵の供給元と描画先を`Keys`と`Screen`として受け取る。実端末の操作を担うのは、その2つを満たす`RealTerminal` adapterである。`PromptUi::terminal`はcomposition rootから使う組み立てhelperとして`Term`を2つのadapterへ渡し、選択と入力の進み方はfakeで確かめられる。実体を選ぶのは組み立てる側であり、commandは受け取った`PromptUi`を使う。
 
@@ -785,8 +758,7 @@ promptは`PromptUi`だけが描く。`PromptUi`はlocaleと描画条件の写し
 - 工程は次の工程の始まり、端末を渡す時点、または実行の終わりで所要時間を得る
 - promptが答えを待った時間は`prompt`の行に出て、工程から外れ、取り消しでも数える
 - 端末を渡す前にそこまでの合計が出て、sessionのあいだは1行も書かない
-- 合計は外部commandの回数と合計時間、対話の時間、sbxm自身の時間に分かれ、1行も無い実行には
-  出ない
+- 合計は外部commandの回数と合計時間、対話の時間、sbxm自身の時間に分かれ、1行も無い実行には出ない
 - 色を出すstreamでは行全体がdimになる
 - 既定の実行ではtraceの行が1行も出ない
 
