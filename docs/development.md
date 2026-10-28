@@ -2,8 +2,7 @@
 
 この文書は、sbxmをsourceからbuildして検証するまでの手順を定める。
 
-sbxmの開発は、何も入っていないsandboxから始まることを常態とする。そのためhost側に何かが
-既に入っていることを前提にせず、cloneした状態から必要なものをすべて導入できるようにする。
+sbxmの開発は、何も入っていないsandboxから始まることを常態とする。そのためhost側に何かが既に入っていることを前提にせず、cloneした状態から必要なものをすべて導入できるようにする。
 
 ## 前提
 
@@ -30,18 +29,13 @@ mise install
 
 ## zigをlinkerに使う理由
 
-Linux向けの`rustc`はlinkerを同梱せず、リンク工程を外部の`cc`へ渡す。glibc向けのリンクには
-起動用objectとlibcの開発用fileも要る。どちらも通常はOSのC toolchainが提供する。
+Linux向けの`rustc`はlinkerを同梱せず、リンク工程を外部の`cc`へ渡す。glibc向けのリンクには起動用objectとlibcの開発用fileも要る。どちらも通常はOSのC toolchainが提供する。
 
 C toolchainが無いsandboxでは、この不足によりbuildがリンク工程で失敗する。
 
-zigはclangに加えてglibc向けの起動用objectとheaderを同梱するため、この不足を単体で満たす。
-`.cargo/config.toml`は、Linuxの2つのtargetに対して`.cargo/zig-cc`をlinkerとして指定する。
-`.cargo/zig-cc`は`zig cc`を呼ぶだけのwrapperであり、cargoがlinkerに単一の実行fileしか
-渡せないために置く。
+zigはclangに加えてglibc向けの起動用objectとheaderを同梱するため、この不足を単体で満たす。`.cargo/config.toml`は、Linuxの2つのtargetに対して`.cargo/zig-cc`をlinkerとして指定する。`.cargo/zig-cc`は`zig cc`を呼ぶだけのwrapperであり、cargoがlinkerに単一の実行fileしか渡せないために置く。
 
-macOSはこの指定の対象にしない。zigでmacOS向けにリンクするにはmacOS SDKを別途要するため、
-既存のC toolchainをそのまま使う。
+macOSはこの指定の対象にしない。zigでmacOS向けにリンクするにはmacOS SDKを別途要するため、既存のC toolchainをそのまま使う。
 
 ## buildとローカル実行
 
@@ -52,16 +46,13 @@ cargo build --release
 ./target/release/sbxm --help
 ```
 
-sourceから直接実行する場合は`cargo run --`の後ろにsbxmの引数を渡す。
-hostの要件とDocker Sandboxes環境を変更せずに診断するには、次を実行する。
+sourceから直接実行する場合は`cargo run --`の後ろにsbxmの引数を渡す。hostの要件とDocker Sandboxes環境を変更せずに診断するには、次を実行する。
 
 ```sh
 cargo run -- status --global
 ```
 
-`status --global`、`open`、`repair`などの実環境を使う操作は、READMEに記載したmacOS 14以降、
-Docker Desktop、Docker Sandboxes CLIが揃ったhostで実行する。Linuxではcompileとtestを実行できるが、
-Sandboxへの接続はできない。
+`status --global`、`open`、`repair`などの実環境を使う操作は、READMEに記載したmacOS 14以降、Docker Desktop、Docker Sandboxes CLIが揃ったhostで実行する。Linuxではcompileとtestを実行できるが、Sandboxへの接続はできない。
 
 ## 検証
 
@@ -71,8 +62,7 @@ Sandboxへの接続はできない。
 mise run check
 ```
 
-このtaskは整形・lint・test・coverageを順に確認し、1つでも満たさなければそこで止まる。満たす
-べき状態は次のとおり。
+このtaskは整形・lint・test・coverageを順に確認し、1つでも満たさなければそこで止まる。満たすべき状態は次のとおり。
 
 - `cargo fmt --all -- --check`が差分を報告しない
 - clippyのwarningが0件である
@@ -85,15 +75,11 @@ mise run check
 mise run fmt
 ```
 
-CLIの公開契約を変えた場合は`tests/snapshots/cli-surface.txt`が差分として現れる。意図した
-変更であることを確認したうえで、`SBXM_UPDATE_SNAPSHOTS=1`で記録を更新し、その差分をreviewに
-含める。
+CLIの公開契約を変えた場合は`tests/snapshots/cli-surface.txt`が差分として現れる。意図した変更であることを確認したうえで、`SBXM_UPDATE_SNAPSHOTS=1`で記録を更新し、その差分をreviewに含める。
 
 ## coverageの母集団
 
-coverageが数えるのは本番codeだけとする。testとtest支援codeは経路を踏ませるために書いたもの
-であり、必ず高いcoverageを示す。本番codeと同じ母集団へ入れると、本番codeの不足を相殺して
-最低基準を通してしまう。
+coverageが数えるのは本番codeだけとする。testとtest支援codeは経路を踏ませるために書いたものであり、必ず高いcoverageを示す。本番codeと同じ母集団へ入れると、本番codeの不足を相殺して最低基準を通してしまう。
 
 数えないのは次の4か所とする。
 
@@ -102,135 +88,74 @@ coverageが数えるのは本番codeだけとする。testとtest支援codeは�
 - `fake/` — 1つのmoduleの中だけで使うtest支援code
 - file名に`_test`を含むcode — unit test
 
-test buildでしか組み立たないcodeは、この4か所のいずれかへ置く。moduleだけでなくitemと
-その内部のstatementやexpressionも同じ規約に従う。llvm-covはfile単位でしか母集団を外せない
-ため、`Ui::capture`のようなtest専用の構築関数を本番fileへ書くと、それだけで母集団へ入る。
+test buildでしか組み立たないcodeは、この4か所のいずれかへ置く。moduleだけでなくitemとその内部のstatementやexpressionも同じ規約に従う。llvm-covはfile単位でしか母集団を外せないため、`Ui::capture`のようなtest専用の構築関数を本番fileへ書くと、それだけで母集団へ入る。
 
-private fieldへ触れる構築関数も本番fileへ置く理由にはならない。子moduleは親が宣言した
-ものへ届き、inherent implはcrateのどのmoduleにも書けるため、対象の隣の`_test` fileへ
-`impl`ごと置ける。
+private fieldへ触れる構築関数も本番fileへ置く理由にはならない。子moduleは親が宣言したものへ届き、inherent implはcrateのどのmoduleにも書けるため、対象の隣の`_test` fileへ`impl`ごと置ける。
 
-本番codeで数えないのは、`src/boundary/os/`のOS層だけとする。OS層はOSの呼び出しそのもので
-あり、関数の本体は1つの呼び出し式に限られる。`?`のほかに分岐を置けないため、判断をOS層へ
-移して基準を逃れることはできない。この形は`tests/architecture.rs`の
-`the_os_layer_has_no_branches`が確かめる。OSについての仮定は、隣の`_test` fileが契約testと
-して実OSで確かめ、coverageの数字では求めない。threadが1本のprocessでしか確かめられない仮定
-（`poll`がsignal handlerで切り上がること）は、harnessを使わない`tests/poll_eintr.rs`が
-確かめる。
+本番codeで数えないのは、`src/boundary/os/`のOS層だけとする。OS層はOSの呼び出しそのものであり、関数の本体は1つの呼び出し式に限られる。`?`のほかに分岐を置けないため、判断をOS層へ移して基準を逃れることはできない。この形は`tests/architecture.rs`の`the_os_layer_has_no_branches`が確かめる。OSについての仮定は、隣の`_test` fileが契約testとして実OSで確かめ、coverageの数字では求めない。threadが1本のprocessでしか確かめられない仮定（`poll`がsignal handlerで切り上がること）は、harnessを使わない`tests/poll_eintr.rs`が確かめる。
 
 `tests/module_boundaries.rs`が次を確認する。
 
 - 数えるfileに、test buildでしか組み立たないcodeが無いこと
-- `test`がitemとその内部のcodeの有無を1人で決めていること。`#[cfg(not(test))]`は数えられる
-  のにtestが踏めず、`#[cfg(any(test, ...))]`は本番buildに存在するかどうかが決まらない
-- crate rootから辿って、test buildでしか組み立たないfileとOS層だけが外れていること。除外を
-  足して本番codeを母集団から外すことも落ちる
+- `test`がitemとその内部のcodeの有無を1人で決めていること。`#[cfg(not(test))]`は数えられるのにtestが踏めず、`#[cfg(any(test, ...))]`は本番buildに存在するかどうかが決まらない
+- crate rootから辿って、test buildでしか組み立たないfileとOS層だけが外れていること。除外を足して本番codeを母集団から外すことも落ちる
 - `mise.toml`が渡す`--ignore-filename-regex`が、この4つとOS層だけを綴っていること
 
 ## 同じtreeは同じ値を返す
 
-coverageは繰り返し測っても同じ値になることを前提とする。同じtreeで未到達行が動く場合、揺れて
-いるのは測定ではなく実装である。testが偶然しか踏まない経路は、踏んだ回だけ到達済みになる。
+coverageは繰り返し測っても同じ値になることを前提とする。同じtreeで未到達行が動く場合、揺れているのは測定ではなく実装である。testが偶然しか踏まない経路は、踏んだ回だけ到達済みになる。
 
 基準を動かす前に、まず値を安定させる。踏ませたい経路は、競合ではなくtestから踏ませる。
 
 ## flakyになりうる要素
 
-実行のたびに順序や時機が変わりうるものを、flakyになりうる要素と呼ぶ。実時間、threadの順序、
-並行して動く子process、signal、書いた直後の実行可能file、file lockの取り合いである。完了まで
-同期的に待つだけの外部command実行（`output()`）は、順序の競合がないため数えない。
+実行のたびに順序や時機が変わりうるものを、flakyになりうる要素と呼ぶ。実時間、threadの順序、並行して動く子process、signal、書いた直後の実行可能file、file lockの取り合いである。完了まで同期的に待つだけの外部command実行（`output()`）は、順序の競合がないため数えない。
 
-要素を書いてよいfileと種類は、`tests/architecture.rs`の`FLAKY_ELEMENT_PLACES`が持つ。一覧に
-無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。一覧のfileから
-要素が消えたら、一覧から外すまで落ちる。OS層とその契約testを足すときを除き、一覧は減る方向に
-しか動かない。
+要素を書いてよいfileと種類は、`tests/architecture.rs`の`FLAKY_ELEMENT_PLACES`が持つ。一覧に無いfileに要素が現れても、一覧のfileに許した種類以外の要素が現れても落ちる。一覧のfileから要素が消えたら、一覧から外すまで落ちる。OS層とその契約testを足すときを除き、一覧は減る方向にしか動かない。
 
-検出はsourceを構文として読み、`use`が導入した名前を完全修飾pathへ戻してから判定する。何を
-検出し何を見ないかは`tests/flaky_elements/mod.rs`の冒頭に書く。
+検出はsourceを構文として読み、`use`が導入した名前を完全修飾pathへ戻してから判定する。何を検出し何を見ないかは`tests/flaky_elements/mod.rs`の冒頭に書く。
 
-要素は、判断のcodeが差し込みで受け取る。実物はOS層が持ち、testは台本どおりに答えるものを
-渡す。OS層の実物を名指ししてよいのは、OS層の中と、`OS_LAYER_WIRING`に挙げた本番の配線だけで
-ある。ほかの本番codeやtestが名指しすれば、実OSを動かす要素として数える。配線を通して実OSへ
-届くtestは名指ししないため数えられない。そうしたtestは、結果が時機で変わらない形で書く。
-lockが取られていることは、期限を0にして1度だけ試す。閉じたlockが解けたことは、
-`LOCK_TIMEOUT`を渡し、解けるまで待つ。同じprocessの別のthreadのtestがforkした子は、自分の
-execまで開いたfileの複製を持ち、そのあいだlockは解けないためである。複製はlockを長く残す
-だけであり、取られていることを見る試しの結果は変えない。
+要素は、判断のcodeが差し込みで受け取る。実物はOS層が持ち、testは台本どおりに答えるものを渡す。OS層の実物を名指ししてよいのは、OS層の中と、`OS_LAYER_WIRING`に挙げた本番の配線だけである。ほかの本番codeやtestが名指しすれば、実OSを動かす要素として数える。配線を通して実OSへ届くtestは名指ししないため数えられない。そうしたtestは、結果が時機で変わらない形で書く。lockが取られていることは、期限を0にして1度だけ試す。閉じたlockが解けたことは、`LOCK_TIMEOUT`を渡し、解けるまで待つ。同じprocessの別のthreadのtestがforkした子は、自分のexecまで開いたfileの複製を持ち、そのあいだlockは解けないためである。複製はlockを長く残すだけであり、取られていることを見る試しの結果は変えない。
 
-一覧の読み直しは、待たずに済む形を持たない。一覧を読む経路は時計を受け取らず、
-`list_with_timeout`がOSの時計を束ねる。読めない一覧を返すtestは、読み直しのたびに決まった
-長さの実時間を待つ。待つ回数にも上限があり、結果は待ちに依らないため、これを受け入れる。
-読み直しの判断そのものは、`list_retrying`のtestが台本の時計で確かめる。
+一覧の読み直しは、待たずに済む形を持たない。一覧を読む経路は時計を受け取らず、`list_with_timeout`がOSの時計を束ねる。読めない一覧を返すtestは、読み直しのたびに決まった長さの実時間を待つ。待つ回数にも上限があり、結果は待ちに依らないため、これを受け入れる。読み直しの判断そのものは、`list_retrying`のtestが台本の時計で確かめる。
 
-testは実行可能fileを実行時に書かない。書いた直後のfileは、別threadのtestがforkした子が
-書き込み端を持つ間、`ETXTBSY`でexecできない。`PATH`から起動させるhost toolの代役は、
-`install_fake_tool`（`tests/fake_tool/mod.rs`、`src/testing/install_fake_tool.rs`）で置く。
-道具の名前で`tests/fixtures/fake_tool.sh`へのsymlinkを置き、振る舞いは実行bitを持たない
-`<名前>.sh`へ書く。testが自分で走らせるscriptは`sh <path>`で起動する。
+testは実行可能fileを実行時に書かない。書いた直後のfileは、別threadのtestがforkした子が書き込み端を持つ間、`ETXTBSY`でexecできない。`PATH`から起動させるhost toolの代役は、`install_fake_tool`（`tests/fake_tool/mod.rs`、`src/testing/install_fake_tool.rs`）で置く。道具の名前で`tests/fixtures/fake_tool.sh`へのsymlinkを置き、振る舞いは実行bitを持たない`<名前>.sh`へ書く。testが自分で走らせるscriptは`sh <path>`で起動する。
 
 ## testの種類
 
 testは、要素を含むかどうかと、何を確かめるかで3種類に分ける。
 
-- 決定的なtest。要素を含まない。file名に`_test`を含むunit test、`fake/`、`src/testing/`と、
-  `tests/`のうち要素を含まないもの（sbxmを`output()`で終わりまで待つだけの`tests/cli.rs`
-  など）である。判断は、台本どおりに答える基本操作を渡して確かめる。
-- 契約test。`src/boundary/os/`の`_test` fileに置き、OS層が頼るOSの振る舞いを実OSで確かめる。
-  何を前提とするかをdoc commentに書く。
-- e2e test。`tests/`に置き、実processを動かして、終わる前の途中の状態を待つ。待つ相手は、
-  PTYに現れた文字、marker file、子processの終了である。sbxmがSandboxへ渡す手順を、選んだ段で
-  自分へsignalを送らせながらこのhostのshellで走らせる`tests/place_from_stdin.rs`もここに
-  置く。途中の状態は待たないが、signalを使う。
+- 決定的なtest。要素を含まない。file名に`_test`を含むunit test、`fake/`、`src/testing/`と、`tests/`のうち要素を含まないもの（sbxmを`output()`で終わりまで待つだけの`tests/cli.rs`など）である。判断は、台本どおりに答える基本操作を渡して確かめる。
+- 契約test。`src/boundary/os/`の`_test` fileに置き、OS層が頼るOSの振る舞いを実OSで確かめる。何を前提とするかをdoc commentに書く。
+- e2e test。`tests/`に置き、実processを動かして、終わる前の途中の状態を待つ。待つ相手は、PTYに現れた文字、marker file、子processの終了である。sbxmがSandboxへ渡す手順を、選んだ段で自分へsignalを送らせながらこのhostのshellで走らせる`tests/place_from_stdin.rs`もここに置く。途中の状態は待たないが、signalを使う。
 
-要素を書いてよいのは、OS層と、契約testと、e2e testである。`FLAKY_ELEMENT_PLACES`にはほかに、
-判断とOSの呼び出しがまだ同じ関数にある`src/boundary/host`の本番codeと、要素をまだ含むunit
-testが残る。
+要素を書いてよいのは、OS層と、契約testと、e2e testである。`FLAKY_ELEMENT_PLACES`にはほかに、判断とOSの呼び出しがまだ同じ関数にある`src/boundary/host`の本番codeと、要素をまだ含むunit testが残る。
 
-契約testもe2e testも速さを確かめない。e2e testが途中の状態を待つのは`tests/wait_until/mod.rs`の
-`wait_until`だけであり、上限は60秒の1つだけとする。上限はhangを止めるためにあり、平常の実行が
-近づく値ではない。待つ相手が来ないと分かれば、上限を待たずに失敗する。終わりまで待つだけの
-実行は`output()`で、killした子の回収は`wait`で待ち、`wait_until`を使わない。途中で失敗した
-testも、終わらない子processを残さない。
+契約testもe2e testも速さを確かめない。e2e testが途中の状態を待つのは`tests/wait_until/mod.rs`の`wait_until`だけであり、上限は60秒の1つだけとする。上限はhangを止めるためにあり、平常の実行が近づく値ではない。待つ相手が来ないと分かれば、上限を待たずに失敗する。終わりまで待つだけの実行は`output()`で、killした子の回収は`wait`で待ち、`wait_until`を使わない。途中で失敗したtestも、終わらない子processを残さない。
 
-契約testが別のprocessやOSの状態が整うのを待つときは、`src/testing/wait_until.rs`の
-`wait_until`だけを使う。上限は60秒の1つだけであり、速さは確かめない。閉じたことが相手へ
-届くのも待つ。上に書いた複製は、pipeの端やPTYの端末側でも同じく残るためである。子を`wait`で
-引き取るのは、自分で終わる子と、SIGKILLで終わらせた子に限る。`tests/poll_eintr.rs`だけは、
-確かめる`poll`そのものの期限で待つ。その期限は`wait_until`の上限と同じ定義で持ち、
-`tests/architecture.rs`が一致を確かめる。
+契約testが別のprocessやOSの状態が整うのを待つときは、`src/testing/wait_until.rs`の`wait_until`だけを使う。上限は60秒の1つだけであり、速さは確かめない。閉じたことが相手へ届くのも待つ。上に書いた複製は、pipeの端やPTYの端末側でも同じく残るためである。子を`wait`で引き取るのは、自分で終わる子と、SIGKILLで終わらせた子に限る。`tests/poll_eintr.rs`だけは、確かめる`poll`そのものの期限で待つ。その期限は`wait_until`の上限と同じ定義で持ち、`tests/architecture.rs`が一致を確かめる。
 
 ## flakyを疑ったとき
 
-1つのtestを単独で繰り返しても、時機の競合はほとんど再現しない。CIで出る競合は、同じprocessの
-中で千件を超えるtestがforkとexecをしながら走り、少ないCPUを取り合う条件で出る。
+1つのtestを単独で繰り返しても、時機の競合はほとんど再現しない。CIで出る競合は、同じprocessの中で千件を超えるtestがforkとexecをしながら走り、少ないCPUを取り合う条件で出る。
 
-疑わしいときは、unit testのbinary全体を2 coreに固定し、16 threadで数回走らせる。Linuxでは
-次のとおりである。
+疑わしいときは、unit testのbinary全体を2 coreに固定し、16 threadで数回走らせる。Linuxでは次のとおりである。
 
 ```sh
 cargo test --bin sbxm --no-run
 taskset -c 0,1 target/debug/deps/sbxm-<hash> --test-threads=16
 ```
 
-1行目が`Executable unittests src/main.rs (...)`として示すpathを、2行目へ渡す。修正前のtree
-（164c708）では、この条件でCIと同じ2件が落ちる。`tests/`の統合testは1 fileが1本のbinaryに
-なり、targetの名前は`.rs`を除いたfile名である。`tests/host.rs`なら、
-`cargo test --test host --no-run`が`Executable tests/host.rs (...)`として示すpathを、同じように
-渡す。
+1行目が`Executable unittests src/main.rs (...)`として示すpathを、2行目へ渡す。修正前のtree（164c708）では、この条件でCIと同じ2件が落ちる。`tests/`の統合testは1 fileが1本のbinaryになり、targetの名前は`.rs`を除いたfile名である。`tests/host.rs`なら、`cargo test --test host --no-run`が`Executable tests/host.rs (...)`として示すpathを、同じように渡す。
 
-これは診断の道具であり、CIでもreleaseでも回さない。何回通っても、flakyでないことの根拠には
-ならない。flakyでないことは反復ではなく、flakyになりうる要素を含まない構造で言う。
+これは診断の道具であり、CIでもreleaseでも回さない。何回通っても、flakyでないことの根拠にはならない。flakyでないことは反復ではなく、flakyになりうる要素を含まない構造で言う。
 
 ## 最低基準
 
 基準は`mise.toml`の`coverage` taskが1箇所で持つ。下回るとその時点で止まる。
 
-現在の実測値はこの文書へ書かない。coverageは変更のたびに動くため、書けばその行は次の変更で
-古くなる。値が要るときは`mise run coverage`が出す表を読む。
+現在の実測値はこの文書へ書かない。coverageは変更のたびに動くため、書けばその行は次の変更で古くなる。値が要るときは`mise run coverage`が出す表を読む。
 
-基準の行97%・関数97%・region 95%と、file単位の行90%は、今ある未到達分を当面は落とさずに置く
-ための下限であり、testを書かなくてよい範囲を示すものではない。本番codeを足すときは、その経路を
-踏むtestを同じ変更で足す。
+基準の行97%・関数97%・region 95%と、file単位の行90%は、今ある未到達分を当面は落とさずに置くための下限であり、testを書かなくてよい範囲を示すものではない。本番codeを足すときは、その経路を踏むtestを同じ変更で足す。
 
-割合を下限にする限り、新しく足した未到達codeは、同じ変更で足した到達済みcodeが押し上げた分に
-隠れる。母集団からtest支援codeを外しても、この相殺そのものは消えていない。
+割合を下限にする限り、新しく足した未到達codeは、同じ変更で足した到達済みcodeが押し上げた分に隠れる。母集団からtest支援codeを外しても、この相殺そのものは消えていない。

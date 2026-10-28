@@ -17,5 +17,4 @@ The absence of a workspace directory is a state rather than an error, so it neit
 
 For an unmanaged sandbox, `STATE` and `WORKSPACE` show what the runtime reported, unmapped: sbxm declares nothing about a sandbox it does not manage.
 
-See [Status values](../../status-values/) for the detailed observation values reported by
-`status`.
+See [Status values](../../status-values/) for the detailed observation values reported by `status`.
