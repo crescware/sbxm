@@ -8,4 +8,4 @@ Markdownの改行は段落の終わりにだけ置く。表示幅に合わせた
 
 ## script
 
-scriptは`.mts`だけで書き、`node`がbuildなしでそのまま実行する。shell script、Python、`.js`、`.mjs`、`.ts`など、`.mts`以外は使わない。
+repositoryに残す開発用のscriptは、Rustで`xtask` crateのtaskとして書き、`cargo xtask <task>`で呼ぶ。本番のcodeと同じlint、test、coverageの規律に従う。shell script、Python、TypeScriptなど、ほかの言語でscriptを新しく足さない。sbxmがSandboxやhostへ送って`sh`で実行するscriptは製品の一部であり、この規約の対象ではない。

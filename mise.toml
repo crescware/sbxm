@@ -6,17 +6,14 @@
 rust = { version = "1.89.0", targets = "aarch64-apple-darwin", profile = "default" }
 zig = "0.16.0"
 "github:taiki-e/cargo-llvm-cov" = "0.8.7"
-# repositoryのscriptは`.mts`で書き、nodeがbuildなしで実行する。websiteのtoolchainとは別に、
-# rootのtaskとClaude Codeのhookがここのnodeを使う。
-node = "24"
 
 [tasks.fmt]
 description = "sourceを整形し、Markdownの段落の途中にある改行を結合する"
-run = "cargo fmt --all && node scripts/check_md_line_breaks.mts --fix"
+run = "cargo fmt --all && cargo xtask markdown --fix"
 
 [tasks.markdown]
 description = "Markdownの段落が途中で改行されていないことを確認する"
-run = "node scripts/check_md_line_breaks.mts"
+run = "cargo xtask markdown"
 
 [tasks.coverage]
 description = "testを実行してcoverageの最低基準を確認する"

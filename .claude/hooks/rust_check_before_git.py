@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Claude CodeのPreToolUse hook。Bash toolが`git commit`か`git merge`を実行する前に
 # `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、
-# `node scripts/check_md_line_breaks.mts`を順に実行する。
+# `cargo xtask markdown`を順に実行する。
 # どれかが失敗したらexit 2でtool呼び出しを拒否し、失敗の出力をClaudeへ返す。
 # すべて通ったときはexit 0で、判断を通常の権限確認へ委ねる。
 #
@@ -16,11 +16,12 @@ import subprocess
 import sys
 import time
 
-# どれもrepositoryのrootで実行する。Markdownの検査はrootからの相対pathでscriptを指す。
+# どれもrepositoryのrootで実行する。`cargo xtask`は`.cargo/config.toml`のaliasで、Markdownの
+# 検査はrepositoryの`.md`をrootからの相対pathで挙げる。
 CHECKS = (
     ["cargo", "fmt", "--check"],
     ["cargo", "clippy", "--all-targets", "--", "-D", "warnings"],
-    ["node", "scripts/check_md_line_breaks.mts"],
+    ["cargo", "xtask", "markdown"],
 )
 # Claude Codeは時間切れのhookを打ち切り、tool呼び出しを通してしまう。settings.jsonで
 # 与えた900秒より手前で検査を打ち切り、拒否として扱う。
@@ -219,7 +220,7 @@ def deny(reason):
     print(
         f"{reason}\n"
         "`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、"
-        "`node scripts/check_md_line_breaks.mts`がすべて通るまで、"
+        "`cargo xtask markdown`がすべて通るまで、"
         "`git commit`/`git merge`は実行できません。",
         file=sys.stderr,
     )
