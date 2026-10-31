@@ -5,17 +5,9 @@ description: Understand common sbxm refusals and the safe next observation.
 
 ### Dirty or unpublished work
 
-Commit and push what you want to keep, remove what you do not, and run status
-again. Rebuild and destroy refuse to guess whether uncommitted or unreachable
-work is disposable. A clean worktree does not cover repository-level local
-branches, tags, notes, stash entries, extra remotes, or reflog-only commits;
-save or resolve those Layer A blockers independently.
+Commit and push what you want to keep, remove what you do not, and run status again. Rebuild and destroy refuse to guess whether uncommitted or unreachable work is disposable. A clean worktree does not cover repository-level local branches, tags, notes, stash entries, extra remotes, or reflog-only commits; save or resolve those Layer A blockers independently.
 
-For a project added with `--local`, pushing inside the sandbox does not help:
-nothing in the sandbox can reach the host repository.
-Sync them into the host repository with
-[`sbxm sync`](../../reference/cli/sync/) instead. An interactive rebuild or
-destroy also offers to save them and continue.
+For a project added with `--local`, pushing inside the sandbox does not help: nothing in the sandbox can reach the host repository. Sync them into the host repository with [`sbxm sync`](../../reference/cli/sync/) instead. An interactive rebuild or destroy also offers to save them and continue.
 
 ### Active session
 

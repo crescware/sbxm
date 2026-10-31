@@ -643,6 +643,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "xtask"
+version = "0.0.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "yaml-edit"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

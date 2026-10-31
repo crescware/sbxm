@@ -2,12 +2,9 @@
 
 ## 位置づけ
 
-この文書は、`website/`のホームページと利用者向けドキュメントが完成した後に、別の保守ブランチで
-検討するタスクだけをまとめる。deploy workflowは`.github/workflows/deploy-website.yml`に実装済みで
-あり、専用の検証script、追加のCI検査、外部link監視はこの文書の保守ブランチで扱う。
+この文書は、`website/`のホームページと利用者向けドキュメントが完成した後に、別の保守ブランチで検討するタスクだけをまとめる。deploy workflowは`.github/workflows/deploy-website.yml`に実装済みであり、専用の検証script、追加のCI検査、外部link監視はこの文書の保守ブランチで扱う。
 
-サイト本体の構成、英語content、Tailwind、Astro build、将来の日本語localeは
-[`website-technical-plan.md`](./website-technical-plan.md)で扱う。
+サイト本体の構成、英語content、Tailwind、Astro build、将来の日本語localeは[`website-technical-plan.md`](./website-technical-plan.md)で扱う。
 
 ## 保守ブランチの原則
 
@@ -22,9 +19,7 @@
 
 ### 1. CLI order and reference drift（必須）
 
-`sbxm --help` の `Commands:` blockを正本として、websiteのCLI referenceを照合する`.mts` taskを必ず
-実装する。Rust側では [`src/commands/specs.rs`](../src/commands/specs.rs) のvector順がhelpの表示順を
-決めているため、sourceと生成されたhelpの不一致も同じ保守taskで報告する。
+`sbxm --help` の `Commands:` blockを正本として、websiteのCLI referenceを照合する`.mts` taskを必ず実装する。Rust側では [`src/commands/specs.rs`](../src/commands/specs.rs) のvector順がhelpの表示順を決めているため、sourceと生成されたhelpの不一致も同じ保守taskで報告する。
 
 このtaskは次のすべてを確認し、不一致時は非zeroで終了してmergeを止める。
 
@@ -35,14 +30,11 @@
 - synopsisのrequired/optional引数、short option、value nameが一致する
 - websiteだけに存在する未知のcommand/optionがない
 
-失敗時はCLI側の順番、sidebar側の順番、最初の差分を表示する。commandの説明、example、安全上の
-注意は自動生成せず、人がreviewする。CLI追加・削除・並び替え、reference追加、sidebar変更を含む
-pull requestでは、このtaskを必須jobとして実行する。
+失敗時はCLI側の順番、sidebar側の順番、最初の差分を表示する。commandの説明、example、安全上の注意は自動生成せず、人がreviewする。CLI追加・削除・並び替え、reference追加、sidebar変更を含むpull requestでは、このtaskを必須jobとして実行する。
 
 ### 2. Source value drift
 
-requirements pageに表示する最低要件、Docker Sandboxes CLI minimum、worktree range、install commandを
-production sourceの限定された定数と照合する。Rust sourceを脆い正規表現で全面parseしない。
+requirements pageに表示する最低要件、Docker Sandboxes CLI minimum、worktree range、install commandをproduction sourceの限定された定数と照合する。Rust sourceを脆い正規表現で全面parseしない。
 
 ### 3. Build route and metadata review
 
@@ -75,8 +67,7 @@ deploy workflowとは独立した追加検査を、ownerが保守ブランチの
 3. `mise exec -- pnpm build`を実行する
 4. 必要なlink、accessibility、secret検査を独立jobとして追加する
 
-Rustの`mise run check`とは独立したjob名にする。Pages deployのpermissionは
-`.github/workflows/deploy-website.yml`だけに持たせる。
+Rustの`mise run check`とは独立したjob名にする。Pages deployのpermissionは`.github/workflows/deploy-website.yml`だけに持たせる。
 
 ## 着手条件
 

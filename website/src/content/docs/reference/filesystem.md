@@ -62,11 +62,8 @@ A running sandbox can lose the same directory the same way, without being stoppe
 When a sandbox is full, use this order:
 
 1. Delete unnecessary files inside the sandbox; the space returns immediately.
-2. Understand what a rebuild discards. If recreating the writable layer is
-   necessary, use the normal protected `sbxm rebuild` flow and review its plan.
-3. Save or resolve every Layer A blocker before retrying, including unpublished
-   commits, dirty or untracked work, in-progress Git operations, active
-   sessions, and repository-level refs.
+2. Understand what a rebuild discards. If recreating the writable layer is necessary, use the normal protected `sbxm rebuild` flow and review its plan.
+3. Save or resolve every Layer A blocker before retrying, including unpublished commits, dirty or untracked work, in-progress Git operations, active sessions, and repository-level refs.
 
 ## Sandbox worktrees
 

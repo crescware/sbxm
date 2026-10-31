@@ -2,27 +2,17 @@
 
 ## 目的
 
-[Issue #55](https://github.com/crescware/sbxm/issues/55)に従い、
-`scripts/release/release.sh`がGitHub Releaseを作成した後、同じRelease assetのURLと
-SHA-256を使って`crescware/homebrew-tap`の`Formula/sbxm.rb`を更新し、review用のPRを
-作るところまで自動化する。
+[Issue #55](https://github.com/crescware/sbxm/issues/55)に従い、`scripts/release/release.sh`がGitHub Releaseを作成した後、同じRelease assetのURLとSHA-256を使って`crescware/homebrew-tap`の`Formula/sbxm.rb`を更新し、review用のPRを作るところまで自動化する。
 
-通常のリリースで人が行う作業は、sbxm側のversion変更をmainへ入れること、
-`release.sh`を実行すること、sbxm側のversion変更PRと生成されたtap PRをmergeすることに
-限る。tapの`main`へ直接commitまたはpushする機能は作らない。
+通常のリリースで人が行う作業は、sbxm側のversion変更をmainへ入れること、`release.sh`を実行すること、sbxm側のversion変更PRと生成されたtap PRをmergeすることに限る。tapの`main`へ直接commitまたはpushする機能は作らない。
 
 ## 現状
 
-- `release.sh`はarchiveを作り、`record_provenance`内でSHA-256を計算し、tagのpush後に
-  `gh release create`を実行する。
-- `--dry-run`はtag、push、Release作成を省略する一方、archiveとrelease notesは`dist/`へ
-  作り、予定していたpublish commandを表示する。
-- `crescware/homebrew-tap`の`Formula/sbxm.rb`には、インデント2文字の`url`行と`sha256`行が
-  それぞれ1行だけある。`v0.0.1`ではこの2行を人が更新した。
-- tap repositoryには現在CI workflowがない。release script自身が、commit前に変更範囲と値を
-  検証する必要がある。
-- shell script用の永続的なtest harnessはない。release script追加時の検証は、fake commandと
-  scratch Git repositoryを使ったend-to-end testとして手動実行された。
+- `release.sh`はarchiveを作り、`record_provenance`内でSHA-256を計算し、tagのpush後に`gh release create`を実行する。
+- `--dry-run`はtag、push、Release作成を省略する一方、archiveとrelease notesは`dist/`へ作り、予定していたpublish commandを表示する。
+- `crescware/homebrew-tap`の`Formula/sbxm.rb`には、インデント2文字の`url`行と`sha256`行がそれぞれ1行だけある。`v0.0.1`ではこの2行を人が更新した。
+- tap repositoryには現在CI workflowがない。release script自身が、commit前に変更範囲と値を検証する必要がある。
+- shell script用の永続的なtest harnessはない。release script追加時の検証は、fake commandとscratch Git repositoryを使ったend-to-end testとして手動実行された。
 
 ## Scope
 
@@ -59,8 +49,7 @@ remoteへ影響する境界は次の順に固定する。
 9. formulaだけをcommitし、そのbranchだけをpushする
 10. `gh pr create`で`main`向けPRを作り、PR URLを表示する
 
-`create_github_release`または6のasset検証が失敗した場合、7以降を呼ばない。tapのcache、local
-branch、remote branch、PRのいずれも作らない。
+`create_github_release`または6のasset検証が失敗した場合、7以降を呼ばない。tapのcache、local branch、remote branch、PRのいずれも作らない。
 
 ## Release metadataの正本
 
@@ -72,32 +61,24 @@ branch、remote branch、PRのいずれも作らない。
 - formula側がrelease notesをparseしたり、同じarchiveを再度hashしたりしない
 - asset名は既存の`ARCHIVE_NAME`を使い、文字列を別の場所へ複製しない
 
-Release作成後は、同名assetがちょうど1件あり、`state`が`uploaded`、GitHubが返す
-`digest`が`sha256:<archive_sha256>`であることを確認する。formulaの`url`には、そのassetの
-`url`をそのまま使う。これにより、組み立てたURLの推測ではなく、今作ったReleaseが実際に公開した
-assetをformulaが参照する。
+Release作成後は、同名assetがちょうど1件あり、`state`が`uploaded`、GitHubが返す`digest`が`sha256:<archive_sha256>`であることを確認する。formulaの`url`には、そのassetの`url`をそのまま使う。これにより、組み立てたURLの推測ではなく、今作ったReleaseが実際に公開したassetをformulaが参照する。
 
-dry runではReleaseが存在しないため、現在のsource repository名、tag、`ARCHIVE_NAME`から予定URLを
-組み立て、local archiveのSHA-256と一緒にreportする。
+dry runではReleaseが存在しないため、現在のsource repository名、tag、`ARCHIVE_NAME`から予定URLを組み立て、local archiveのSHA-256と一緒にreportする。
 
 ## 公式repositoryとforkの境界
 
-tapの自動更新対象は`crescware/homebrew-tap`に固定する。既存READMEが説明しているforkでの
-Release作成を壊さず、かつforkのasset URLを公式tapへ誤って入れないため、現在のsource
-repositoryを`gh repo view --json nameWithOwner`で明示的に取得する。
+tapの自動更新対象は`crescware/homebrew-tap`に固定する。既存READMEが説明しているforkでのRelease作成を壊さず、かつforkのasset URLを公式tapへ誤って入れないため、現在のsource repositoryを`gh repo view --json nameWithOwner`で明示的に取得する。
 
 - `crescware/sbxm`での実行だけがtap更新を有効にする
 - forkでの実行は従来どおりfork側のReleaseまで行い、tap更新をskipしたことを明示する
 - dry runも同じ判定とし、公式repositoryでだけtap PRの予定を表示する
 - repositoryのownerやtap名をremote URLの文字列から推測しない
 
-この分岐と、公式tapへpushできるGitHub権限が追加で必要になることを
-`scripts/release/README.md`へ記載する。
+この分岐と、公式tapへpushできるGitHub権限が追加で必要になることを`scripts/release/README.md`へ記載する。
 
 ## Tap checkoutの管理
 
-cloneの再利用を成立させるため、毎回消える`WORK_DIR`や`dist/`には置かない。macOS向けの
-script専用cacheとして、次のdirectoryを使う。
+cloneの再利用を成立させるため、毎回消える`WORK_DIR`や`dist/`には置かない。macOS向けのscript専用cacheとして、次のdirectoryを使う。
 
 ```text
 ${XDG_CACHE_HOME:-$HOME/Library/Caches}/sbxm/release/homebrew-tap
@@ -105,18 +86,13 @@ ${XDG_CACHE_HOME:-$HOME/Library/Caches}/sbxm/release/homebrew-tap
 
 このdirectoryはtap開発者の通常のcheckoutとは別物とし、release scriptだけが使う。
 
-- directoryが無ければ、Release成功後に親directoryを作り、
-  `gh repo clone crescware/homebrew-tap <tap-dir>`でcloneする
-- directoryがあれば、Git working treeであること、repository rootがそのdirectory自身であること、
-  `origin`が`crescware/homebrew-tap`であること、working treeとindexがcleanであることを確認する
+- directoryが無ければ、Release成功後に親directoryを作り、`gh repo clone crescware/homebrew-tap <tap-dir>`でcloneする
+- directoryがあれば、Git working treeであること、repository rootがそのdirectory自身であること、`origin`が`crescware/homebrew-tap`であること、working treeとindexがcleanであることを確認する
 - 確認後にだけ`git fetch --prune origin main`を行う
-- pathが別用途で存在する、originを同定できない、dirtyである、fetchできない場合は、削除、reset、
-  stashをせずに停止する
+- pathが別用途で存在する、originを同定できない、dirtyである、fetchできない場合は、削除、reset、stashをせずに停止する
 - branchのbaseはlocal `main`ではなく、取得した`origin/main`のcommitへ固定する
 
-scriptはcache内の既存変更をownership不明の状態で上書きしない。正常終了後もcloneは残し、次回は
-fetch経路を使う。branch名はtagごとに一意なので、過去のcleanなlocal branchが残っていても新しい
-releaseのbaseには使わない。
+scriptはcache内の既存変更をownership不明の状態で上書きしない。正常終了後もcloneは残し、次回はfetch経路を使う。branch名はtagごとに一意なので、過去のcleanなlocal branchが残っていても新しいreleaseのbaseには使わない。
 
 ## Branchと衝突の扱い
 
@@ -126,12 +102,9 @@ branch名はIssueの指定どおり、tagを含めて次の形にする。
 chore/bump-sbxm-to-v0.0.2
 ```
 
-branchを作る前にlocal refと`origin`の同名refを別々に確認する。既に存在する場合は、どちらかを
-正しいものと推測して再利用せず、commit SHAとcache pathを表示して停止する。branchの削除や
-force pushは行わない。
+branchを作る前にlocal refと`origin`の同名refを別々に確認する。既に存在する場合は、どちらかを正しいものと推測して再利用せず、commit SHAとcache pathを表示して停止する。branchの削除やforce pushは行わない。
 
-新規branchは`origin/main`から作る。pushは`HEAD:refs/heads/<branch>`という明示的なrefspecを使い、
-`main`をpush対象に含めない。
+新規branchは`origin/main`から作る。pushは`HEAD:refs/heads/<branch>`という明示的なrefspecを使い、`main`をpush対象に含めない。
 
 ## Formulaの置換と検証
 
@@ -142,9 +115,7 @@ force pushは行わない。
 - `url`がsbxmのGitHub Release assetを指し、asset basenameが`ARCHIVE_NAME`と一致する
 - checkoutはformula以外も含めてcleanである
 
-元fileを直接in-place編集せず、`WORK_DIR`へcandidateを作る。`awk`などmacOS標準のtoolだけで、
-一致した2行を期待する完全な行へ置き換え、その他の行はそのまま出力する。candidateに対して次を
-すべて確認してからformulaへ反映する。
+元fileを直接in-place編集せず、`WORK_DIR`へcandidateを作る。`awk`などmacOS標準のtoolだけで、一致した2行を期待する完全な行へ置き換え、その他の行はそのまま出力する。candidateに対して次をすべて確認してからformulaへ反映する。
 
 1. 新しい`url`行と`sha256`行がそれぞれちょうど1行ある
 2. parseした値がRelease asset URLと`archive_sha256`へ完全一致する
@@ -153,8 +124,7 @@ force pushは行わない。
 5. diffが2行削除・2行追加だけで、`git diff --check`が成功する
 6. staged diffにも同じ条件が成立し、unstagedの変更が残っていない
 
-1つでも満たさなければcommitもpushもしない。`brew`を新しい実行時依存にせず、変更範囲の狭さと
-GitHub上のasset metadataとの一致をscript自身で保証する。
+1つでも満たさなければcommitもpushもしない。`brew`を新しい実行時依存にせず、変更範囲の狭さとGitHub上のasset metadataとの一致をscript自身で保証する。
 
 ## Commit、push、PR
 
@@ -165,15 +135,11 @@ commitとPRのmetadataはtagから決定的に作る。
 - head: `chore/bump-sbxm-to-v0.0.2`
 - PR body: source Releaseへのlink、asset URL、SHA-256、自動生成であること
 
-`gh pr create`には`--repo crescware/homebrew-tap`、`--base main`、`--head <branch>`、`--title`、
-`--body-file`をすべて渡し、promptやcurrent directoryから値を補完させない。body fileは
-`WORK_DIR`へ作る。成功時は返されたPR URLを最後のrelease summaryへ含める。
+`gh pr create`には`--repo crescware/homebrew-tap`、`--base main`、`--head <branch>`、`--title`、`--body-file`をすべて渡し、promptやcurrent directoryから値を補完させない。body fileは`WORK_DIR`へ作る。成功時は返されたPR URLを最後のrelease summaryへ含める。
 
 ## Dry run
 
-既存のdry runと同じく、archiveとrelease notesは`dist/`へ生成して検査できる状態を保つ。一方、
-tapについてはread/writeを分けず、clone、cache作成、fetch、branch作成、formula編集、commit、push、
-PR作成を一切実行しない。
+既存のdry runと同じく、archiveとrelease notesは`dist/`へ生成して検査できる状態を保つ。一方、tapについてはread/writeを分けず、clone、cache作成、fetch、branch作成、formula編集、commit、push、PR作成を一切実行しない。
 
 `report_dry_run`へ次を追加する。
 
@@ -185,13 +151,11 @@ PR作成を一切実行しない。
 - pushするrefspec
 - 実行予定の非対話な`gh pr create` command
 
-現在のRelease作成予定と同じreport内で、tap処理がRelease成功後にだけ行われることが読める順に
-表示する。dry run前後でtap cacheとtap remote refsが変わらないことをtestする。
+現在のRelease作成予定と同じreport内で、tap処理がRelease成功後にだけ行われることが読める順に表示する。dry run前後でtap cacheとtap remote refsが変わらないことをtestする。
 
 ## 失敗時に残す状態と回復案内
 
-tap処理はRelease公開後にしか始められないため、失敗しても作成済みReleaseやtagを自動で戻さない。
-外部状態を推測してrollbackすると、公開済みassetを参照し始めた利用者と競合するためである。
+tap処理はRelease公開後にしか始められないため、失敗しても作成済みReleaseやtagを自動で戻さない。外部状態を推測してrollbackすると、公開済みassetを参照し始めた利用者と競合するためである。
 
 | 失敗箇所 | 残る状態 | reportする内容 |
 | --- | --- | --- |
@@ -202,9 +166,7 @@ tap処理はRelease公開後にしか始められないため、失敗しても�
 | tap push | Releaseとtag、local commitが残る。tap remote branchは通常不変 | branch名と再push command |
 | PR作成 | Release、tag、tap remote branchが残る | 完全な`gh pr create`再実行command |
 
-同じtagでrelease script全体を再実行すると、既存Releaseの検査で拒否される。tap段階の例外的な
-失敗は、reportしたcacheとcommandから続ける方針とし、このIssueではReleaseをskipしてtapだけを
-再開する新しいCLI optionは追加しない。
+同じtagでrelease script全体を再実行すると、既存Releaseの検査で拒否される。tap段階の例外的な失敗は、reportしたcacheとcommandから続ける方針とし、このIssueではReleaseをskipしてtapだけを再開する新しいCLI optionは追加しない。
 
 ## 変更するfile
 
@@ -213,8 +175,7 @@ tap処理はRelease公開後にしか始められないため、失敗しても�
 - repository、tap、cache、formulaに関する定数と状態を追加する
 - checksum計算を`record_provenance`から分離し、同じ値を後続処理へ渡す
 - Release assetのURL・digest検証を追加する
-- tap checkout、branch衝突検査、formula candidate生成・検証、commit/push、PR作成を責務ごとの
-  小さなfunctionへ分ける
+- tap checkout、branch衝突検査、formula candidate生成・検証、commit/push、PR作成を責務ごとの小さなfunctionへ分ける
 - `publish`はRelease成功後にだけtap workflowを呼ぶ
 - `report_dry_run`と成功・失敗reportを拡張する
 - macOS同梱のBash 3.2と標準toolで動く範囲を維持する
@@ -235,8 +196,7 @@ tap処理はRelease公開後にしか始められないため、失敗しても�
 ### `mise.toml`
 
 - `release-test` taskを追加し、`mise run check`へ含める
-- test中のrelease scriptが呼ぶ`mise run check`はfake `mise`で記録・成功させ、task自身への再帰を
-  起こさない
+- test中のrelease scriptが呼ぶ`mise run check`はfake `mise`で記録・成功させ、task自身への再帰を起こさない
 
 ## 実装phase
 
@@ -247,8 +207,7 @@ tap処理はRelease公開後にしか始められないため、失敗しても�
 3. source repositoryの同定、公式tapを更新する条件、dry-run用asset URL生成を追加する
 4. Release作成後のasset URL・digest照合を追加する
 
-このphaseではtap repositoryへ書き込まない。既存Release生成のoutputと失敗時のtag挙動を回帰testで
-固定する。
+このphaseではtap repositoryへ書き込まない。既存Release生成のoutputと失敗時のtag挙動を回帰testで固定する。
 
 ### Phase 2: Tapを安全にcheckoutする
 
@@ -325,8 +284,7 @@ tap処理はRelease公開後にしか始められないため、失敗しても�
 - `release.sh --dry-run ... v0.0.2`がtapを変更せず、予定するformulaの2値とPR操作を表示する
 - 本番実行ではRelease成功後にだけtapを更新する
 - 生成されたtap PRのdiffが`Formula/sbxm.rb`の`url`と`sha256`の2行だけである
-- formulaのURLが作成済みRelease assetを指し、SHA-256がlocal archiveおよびGitHub asset digestと
-  一致する
+- formulaのURLが作成済みRelease assetを指し、SHA-256がlocal archiveおよびGitHub asset digestと一致する
 - tapの`main`はPR mergeまで変わらない
 - 通常系でSHA-256の転記とtap repositoryの手操作が不要になる
 - 異常系で、Releaseとtapのどこまでが作成されたか、および次に実行できるcommandが判別できる

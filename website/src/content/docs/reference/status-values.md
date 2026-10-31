@@ -3,10 +3,7 @@ title: Status values
 description: Understand the state values reported by sbxm status and sbxm ls.
 ---
 
-`sbxm status` uses stable, untranslated values so they can be recognized across locales.
-The values below describe an observation result and the action it suggests. `sbxm ls`
-uses a smaller user-facing project-state vocabulary; its `open-blocked` state points to
-the detailed observations in `sbxm status <project-id>`.
+`sbxm status` uses stable, untranslated values so they can be recognized across locales. The values below describe an observation result and the action it suggests. `sbxm ls` uses a smaller user-facing project-state vocabulary; its `open-blocked` state points to the detailed observations in `sbxm status <project-id>`.
 
 | Value | Meaning | What to do |
 | --- | --- | --- |
@@ -16,14 +13,11 @@ the detailed observations in `sbxm status <project-id>`.
 | `not-observed` | sbxm could not observe the state, so it cannot say whether the item is present or matches. | Read the diagnostic below the table and fix the environment that prevented observation. |
 | `not-applicable` | There is nothing to look into yet, so the item has no state to report. | Nothing. The item becomes meaningful once the artifact it describes exists. |
 
-`not-observed` is different from `missing`: absence is an observation, while
-`not-observed` means that the check itself could not produce an answer.
+`not-observed` is different from `missing`: absence is an observation, while `not-observed` means that the check itself could not produce an answer.
 
 ## Declared files
 
-The `DECLARED FILES` section of a project's status compares every current
-declaration with what sbxm placed at that destination last, once on the host and
-once in the sandbox.
+The `DECLARED FILES` section of a project's status compares every current declaration with what sbxm placed at that destination last, once on the host and once in the sandbox.
 
 | Value | Column | Meaning | What to do |
 | --- | --- | --- | --- |
@@ -41,8 +35,7 @@ A stopped sandbox is reported as `not-observed-stopped` and is not started to be
 
 ## The next command
 
-`sbxm status <project-id>` ends with at most one command, chosen from the same observation
-that `sbxm repair` uses, so the two never disagree.
+`sbxm status <project-id>` ends with at most one command, chosen from the same observation that `sbxm repair` uses, so the two never disagree.
 
 | What was observed | Next command |
 | --- | --- |
