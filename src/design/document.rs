@@ -5,7 +5,9 @@ use crate::design::table::Table;
 use crate::design::Cell;
 use crate::design::text::CommandLine;
 
-use super::{Block, Fact, Field, Guidance, GuidanceItem, LegendEntry, Section, SectionBody};
+use super::{
+    Block, CapacityMeter, Fact, Field, Guidance, GuidanceItem, LegendEntry, Section, SectionBody,
+};
 
 /// 1回の出力。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -48,6 +50,11 @@ impl Document {
             return self;
         }
         self.section(heading, SectionBody::Fields(fields))
+    }
+
+    /// 残量の数値と、同じ方向に減るゲージ。
+    pub fn capacity(self, heading: Msg, meter: CapacityMeter) -> Document {
+        self.section(Some(heading), SectionBody::Capacity(Box::new(meter)))
     }
 
     /// 列をそろえた一覧。行がなければsectionごと省く。

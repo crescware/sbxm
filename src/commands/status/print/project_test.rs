@@ -157,7 +157,11 @@ fn every_remote_state_is_printed_separately_from_worktree_state() -> Checked {
 fn the_disk_section_always_appears_observed_or_not() -> Checked {
     let observed = print(&healthy())?;
     assert!(observed.stdout.contains("DISK"), "{:?}", observed.stdout);
-    assert!(observed.stdout.contains("75"), "{:?}", observed.stdout);
+    assert!(
+        observed.stdout.contains("25% remaining"),
+        "{:?}",
+        observed.stdout
+    );
 
     for (disk, reason) in [
         (DiskObservation::NotObservedStopped, "did not start it"),

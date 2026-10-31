@@ -2,6 +2,7 @@
 
 mod blank;
 mod block;
+mod capacity_meter;
 mod cell;
 pub mod diagnostic;
 pub mod document;
@@ -35,6 +36,7 @@ mod width;
 
 use blank::blank;
 pub use block::Block;
+pub use capacity_meter::CapacityMeter;
 pub use cell::Cell;
 pub use diagnostic::{Remediation, Warning};
 pub use document::Document;

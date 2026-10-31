@@ -204,7 +204,18 @@ DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
 
 ### Sandboxのディスクを何が埋めるかを理解する
 
-`sbxm status <project-id>`は、Sandboxの現在の空き容量・実効天井・使用率を示すDISK sectionを表示します。この数値が何を反映しているかを理解するための事実です。
+`sbxm status <project-id>`と`sbxm open <project-id>`は、Sandboxの空き容量、残りの割合、空きが減るほど短くなるゲージを表示します。全体容量は使用済みと空き容量の合計で、予約領域を含みません。
+
+```text
+ディスク  /
+空き容量  4.7 GiB（残り25%）
+          [█████░░░░░░░░░░░░░░░]  残り少なめ
+全体容量  18.5 GiB
+```
+
+残量の割合は小数点以下を切り捨てます。容量と残量%は常に併記し、容量が1 GiB未満なら整数のMiB、1 GiB以上なら小数1桁のGiBで表示します。0より大きく1 MiB未満なら`<1 MiB`と表示し、KiBは使いません。ゲージと残量%は26%以上が緑、11〜25%が黄色の「残り少なめ」、10%以下が赤色の「残りわずか」です。空き100 MiB未満は割合より優先して赤色の「空きなし」とします。色なしでも状態ラベルを残し、ASCII端末ではゲージに`#`と`-`を使います。失敗時の診断にも同じ表示を使います。
+
+この容量が何を反映しているかを理解するための事実です。
 
 - `/home`、`/tmp`を含むSandbox内のすべては、1枚のroot filesystemを共有します。上の`DOCKER_SANDBOXES_ROOT_SIZE`でsizeを決めるのと同じfilesystemであり、build成果物や一時fileのための別volumeはありません。
 - `/tmp`はSandboxを停止して再度開いて（`sbxm open`）も消えません。中でperiodicな掃除を行うinit systemが無いため、置いたfileはSandbox自体を破棄または作り直すまで残り続けます。

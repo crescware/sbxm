@@ -1,15 +1,15 @@
 use crate::boundary::host::protocol::SandboxState;
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
-use crate::design::{Fact, Inline};
+use crate::design::Fact;
 use crate::diagnostics::Error;
 use crate::msg;
 
 use crate::support::inventory::ProjectState;
 
-use super::{DiskObservation, format_gib, format_percent, observe};
+use super::{DiskObservation, disk_meter, observe};
 
 /// sbxm自身がSandbox内を変更する工程が失敗したときだけ、失敗直後のSandbox内root
-/// filesystemの使用量を`Mount`・`Free`・`Usable`・`Capacity`の`Fact`として追加する。
+/// filesystemの残量を、通常表示と同じ語彙・ゲージの`Fact`として追加する。
 ///
 /// 元のErrorId、原因、external stderr、remediationはどれも変えない。観測そのものが
 /// 失敗した場合や`Observed`にならなかった場合は、何も足さず元のerrorをそのまま返す。
@@ -50,29 +50,19 @@ pub fn attach_on_failure(
     else {
         return error;
     };
+    let Some(meter) = disk_meter(&usage) else {
+        return error;
+    };
 
     Error::Diagnostics(
         diagnostics
             .iter()
             .cloned()
             .map(|diagnostic| {
-                diagnostic
-                    .fact(Fact::new(
-                        msg!("diagnostic-disk-mount-label"),
-                        Inline::path("/"),
-                    ))
-                    .fact(Fact::new(
-                        msg!("diagnostic-disk-free-label"),
-                        Inline::text(format_gib(usage.free_kib)),
-                    ))
-                    .fact(Fact::new(
-                        msg!("diagnostic-disk-usable-label"),
-                        Inline::text(format_gib(usage.usable_kib)),
-                    ))
-                    .fact(Fact::new(
-                        msg!("diagnostic-disk-capacity-label"),
-                        Inline::text(format_percent(usage.capacity_percent)),
-                    ))
+                diagnostic.fact(Fact::Capacity {
+                    label: msg!("diagnostic-disk-label"),
+                    meter: Box::new(meter.clone()),
+                })
             })
             .collect(),
     )

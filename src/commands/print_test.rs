@@ -30,6 +30,7 @@ fn shape(document: &Document) -> Vec<&'static str> {
             Block::Progress(_) => "progress",
             Block::Summary(_) => "summary",
             Block::Section(section) => match section.body {
+                SectionBody::Capacity(_) => "capacity",
                 SectionBody::Fields(_) => "fields",
                 SectionBody::Table(_) => "table",
                 SectionBody::Lines(_) => "lines",

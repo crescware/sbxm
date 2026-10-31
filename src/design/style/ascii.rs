@@ -10,4 +10,6 @@ pub(super) const ASCII: GlyphSet = GlyphSet {
     arrow_down: "v",
     arrow_left: "<",
     arrow_right: ">",
+    meter_filled: "#",
+    meter_empty: "-",
 };

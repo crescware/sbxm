@@ -16,6 +16,8 @@ pub struct GlyphSet {
     /// index promptの操作説明が指す左右キー。key名は翻訳しない。
     pub arrow_left: &'static str,
     pub arrow_right: &'static str,
+    pub meter_filled: &'static str,
+    pub meter_empty: &'static str,
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use crate::diagnostics::Msg;
 
-use crate::design::text::Inline;
+use crate::design::{CapacityMeter, text::Inline};
 
 /// `reference`で作った事実の項目名。
 const REFERENCE_LABEL: &str = "diagnostic-reference-label";
@@ -16,6 +16,11 @@ const REFERENCE_LABEL: &str = "diagnostic-reference-label";
 /// 失われるため、この分岐はrendererではなく構築時に決める。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Fact {
+    /// 診断に添える容量の観測。通常のsectionと同じゲージを使う。
+    Capacity {
+        label: Msg,
+        meter: Box<CapacityMeter>,
+    },
     /// 1行に収まる事実。項目名と同じ行に値を置く。
     OneLine { label: Msg, value: Inline },
     /// 複数行にわたる事実。項目名の次の行から字下げして並べる。
@@ -209,7 +214,8 @@ impl Fact {
         match self {
             Fact::OneLine { label, .. }
             | Fact::ManyLines { label, .. }
-            | Fact::Translated { label, .. } => label,
+            | Fact::Translated { label, .. }
+            | Fact::Capacity { label, .. } => label,
         }
     }
 }

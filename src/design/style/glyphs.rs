@@ -12,6 +12,8 @@ const UNICODE: GlyphSet = GlyphSet {
     arrow_down: "\u{2193}",
     arrow_left: "\u{2190}",
     arrow_right: "\u{2192}",
+    meter_filled: "\u{2588}",
+    meter_empty: "\u{2591}",
 };
 
 /// 文字集合に対応するglyph。どちらでも意味は変わらない。

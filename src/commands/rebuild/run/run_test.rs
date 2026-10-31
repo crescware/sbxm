@@ -362,7 +362,10 @@ fn a_bare_repository_fetch_failure_carries_the_disk_state_at_that_moment() -> Ch
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandFailed));
     let facts = &error.diagnostics()[0].facts;
-    assert_eq!(facts.len(), 4, "{facts:?}");
+    assert!(
+        matches!(facts.as_slice(), [crate::design::Fact::Capacity { .. }]),
+        "{facts:?}"
+    );
     let since = &host.calls()[mark..];
     assert_eq!(
         since
