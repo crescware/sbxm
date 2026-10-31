@@ -8,7 +8,9 @@ use crate::design::style::{self, GlyphSet, Role, StyleSpec, VisualState};
 use crate::design::table::Table;
 use crate::design::text::{CommandLine, Inline};
 use crate::design::width::{display_width, padding};
-use crate::design::{Block, Fact, Field, GuidanceItem, LegendEntry, Section, SectionBody};
+use crate::design::{
+    Block, CapacityMeter, Fact, Field, GuidanceItem, LegendEntry, Section, SectionBody,
+};
 
 use super::{Trailing, blank, line, paint, row};
 
@@ -151,12 +153,20 @@ impl Painter {
     fn section(&self, catalog: &Catalog, section: &Section, out: &mut Vec<u8>) {
         // headingと内容のあいだに空行を置かない。離すとheadingが何を指すか弱まる。
         if let Some(heading) = &section.heading {
+            let target = match &section.body {
+                SectionBody::Capacity(meter) => format!("  {}", self.inline(&meter.target)),
+                _ => String::new(),
+            };
             line(
                 out,
-                &self.role(&Self::format(catalog, heading), Role::Heading),
+                &format!(
+                    "{}{target}",
+                    self.role(&Self::format(catalog, heading), Role::Heading)
+                ),
             );
         }
         match &section.body {
+            SectionBody::Capacity(meter) => self.capacity(catalog, meter, "", out),
             SectionBody::Fields(fields) => self.fields(catalog, fields, out),
             SectionBody::Table(table) => self.table(catalog, table, out),
             SectionBody::Lines(lines) => {
@@ -170,6 +180,58 @@ impl Painter {
                 line(out, &format!("{INDENT}{}", Self::format(catalog, message)));
             }
         }
+    }
+
+    /// 容量の数値と残量の割合を同じ行に置き、ゲージを値の左端へ揃える。
+    fn capacity(&self, catalog: &Catalog, meter: &CapacityMeter, indent: &str, out: &mut Vec<u8>) {
+        let available = Self::format(catalog, &meter.available.label);
+        let total = Self::format(catalog, &meter.total.label);
+        let width = column_width([available.as_str(), total.as_str()].into_iter());
+        let remaining = self.state(&Self::format(catalog, &meter.remaining), meter.state);
+        line(
+            out,
+            &format!(
+                "{indent}{}{}{}{remaining}",
+                self.role(&available, Role::Muted),
+                padding(&available, width),
+                self.inline(&meter.available.value),
+            ),
+        );
+        let status = meter.status.as_ref().map_or_else(String::new, |message| {
+            format!(
+                "  {}",
+                self.state(&Self::format(catalog, message), meter.state)
+            )
+        });
+        line(
+            out,
+            &format!(
+                "{indent}{}{}{status}",
+                " ".repeat(width),
+                self.capacity_gauge(meter),
+            ),
+        );
+        line(
+            out,
+            &format!(
+                "{indent}{}{}{}",
+                self.role(&total, Role::Muted),
+                padding(&total, width),
+                self.inline(&meter.total.value),
+            ),
+        );
+    }
+
+    /// 20目盛りの概略表示。正確な残量は併記した数値で示す。
+    fn capacity_gauge(&self, meter: &CapacityMeter) -> String {
+        const CELLS: usize = 20;
+        let filled = (usize::from(meter.percent.min(100)) * CELLS + 50) / 100;
+        let glyphs = self.glyphs();
+        format!(
+            "[{}{}]",
+            self.state(&glyphs.meter_filled.repeat(filled), meter.state),
+            self.role(&glyphs.meter_empty.repeat(CELLS - filled), Role::Muted),
+        )
     }
 
     fn fields(&self, catalog: &Catalog, fields: &[Field], out: &mut Vec<u8>) {
@@ -318,6 +380,13 @@ impl Painter {
     fn fact(&self, catalog: &Catalog, fact: &Fact, out: &mut Vec<u8>) {
         let label = self.role(&Self::format(catalog, fact.label()), Role::Muted);
         match fact {
+            Fact::Capacity { meter, .. } => {
+                line(
+                    out,
+                    &format!("{INDENT}{label} {}", self.inline(&meter.target)),
+                );
+                self.capacity(catalog, meter, EXTERNAL_INDENT, out);
+            }
             Fact::OneLine { value, .. } => {
                 if value.as_str().is_empty() {
                     // 値がないときに項目名の後ろへ空白を残さない。

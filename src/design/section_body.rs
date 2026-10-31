@@ -4,11 +4,13 @@ use crate::design::table::Table;
 
 use crate::design::Cell;
 
-use super::{Field, LegendEntry};
+use super::{CapacityMeter, Field, LegendEntry};
 
 /// sectionが並べるもの。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SectionBody {
+    /// 空き容量と全体容量、残量のゲージ。
+    Capacity(Box<CapacityMeter>),
     /// 項目名と値の一覧。
     Fields(Vec<Field>),
     /// 列をそろえた一覧。

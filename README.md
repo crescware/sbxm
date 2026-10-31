@@ -329,9 +329,27 @@ command.
 
 ### Understand what fills the sandbox's disk
 
-`sbxm status <project-id>` shows a DISK section with the sandbox's current
-free space, usable ceiling, and capacity. A few facts explain what that number
-reflects:
+`sbxm status <project-id>` and `sbxm open <project-id>` show the sandbox's
+available space, percentage remaining, and a gauge that shrinks as space runs
+out. `Total` is used space plus available space, excluding reserved blocks.
+
+```text
+DISK  /
+Available  4.7 GiB (25% remaining)
+           [█████░░░░░░░░░░░░░░░]  Low space
+Total      18.5 GiB
+```
+
+The remaining percentage is rounded down. Capacity and percentage always appear
+together: capacities below 1 GiB use whole MiB, and capacities of 1 GiB or more
+use GiB with one decimal place. Below 1 MiB, a nonzero capacity reads `<1 MiB`.
+The gauge and remaining percentage are green above 25%, yellow at 11–25%
+(`Low space`), and red at 10% or less (`Very low space`). Available space below
+100 MiB takes priority and reads `No space available` in red, regardless of the
+percentage. Labels remain visible without color, and ASCII terminals use
+`#` and `-` for the gauge. Failure diagnostics use the same display.
+
+A few facts explain what this capacity reflects:
 
 - `/home`, `/tmp`, and everything else inside the sandbox share one root
   filesystem — the same one sized by `DOCKER_SANDBOXES_ROOT_SIZE` above. There

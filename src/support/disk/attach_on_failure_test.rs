@@ -1,10 +1,10 @@
 use crate::boundary::host::TimeoutClass;
 use crate::boundary::host::protocol::SandboxState;
-use crate::design::{Fact, Inline};
+use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, ExternalFailure};
 use crate::msg;
 use crate::testing::host::FakeSbx;
-use crate::testing::outcome::Checked;
+use crate::testing::outcome::{Checked, Required};
 use crate::testing::sandbox::InnerCommandSandbox;
 
 use super::*;
@@ -40,7 +40,7 @@ fn sample_error() -> Error {
 }
 
 #[test]
-fn an_observed_disk_usage_is_added_as_a_fact_without_changing_anything_else() {
+fn an_observed_disk_usage_is_added_as_a_fact_without_changing_anything_else() -> Checked {
     let host = InnerCommandSandbox::new().answering("df -Pk /", REALISTIC_DF);
     let original = sample_error();
 
@@ -52,19 +52,38 @@ fn an_observed_disk_usage_is_added_as_a_fact_without_changing_anything_else() {
     assert_eq!(after.external, before.external);
     assert_eq!(after.remediation, before.remediation);
     assert_eq!(before.facts.len(), 0);
+    assert_eq!(after.facts.len(), 1);
+    let meter = after
+        .facts
+        .iter()
+        .find_map(|fact| match fact {
+            Fact::Capacity { label, meter } => {
+                assert_eq!(label.id, "diagnostic-disk-label");
+                Some(meter)
+            }
+            _ => None,
+        })
+        .required_because("a capacity fact is attached")?;
+    assert_eq!(meter.available.value.as_str(), "4.7 GiB");
+    assert_eq!(meter.total.value.as_str(), "18.5 GiB");
+    assert_eq!(meter.percent, 25);
     assert_eq!(
-        after.facts,
-        vec![
-            Fact::new(msg!("diagnostic-disk-mount-label"), Inline::path("/")),
-            Fact::new(msg!("diagnostic-disk-free-label"), Inline::text("4.7 GiB")),
-            Fact::new(
-                msg!("diagnostic-disk-usable-label"),
-                Inline::text("18.5 GiB")
-            ),
-            Fact::new(msg!("diagnostic-disk-capacity-label"), Inline::text("75%")),
-        ],
-        "{:?}",
-        after.facts
+        meter.status.as_ref().map(|status| status.id),
+        Some("status-disk-low")
+    );
+    Ok(())
+}
+
+#[test]
+fn an_observation_with_no_total_does_not_claim_that_the_disk_is_full() {
+    let host = InnerCommandSandbox::new().answering(
+        "df -Pk /",
+        "Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 0 0 0 0% /\n",
+    );
+    let original = sample_error();
+    assert_eq!(
+        attach_on_failure(&host, NAME, SandboxState::Running, original.clone()),
+        original
     );
 }
 
