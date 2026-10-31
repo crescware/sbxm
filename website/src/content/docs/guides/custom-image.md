@@ -11,9 +11,7 @@ description: Edit a project Dockerfile and safely apply the new sandbox image.
 sbxm rebuild <project-id>
 ```
 
-Rebuild applies the Dockerfile by recreating the sandbox, whether or not the
-file changed. The old writable layer is lost. It also rebuilds the repository
-setup and managed worktrees.
+Rebuild applies the Dockerfile by recreating the sandbox, whether or not the file changed. The old writable layer is lost. It also rebuilds the repository setup and managed worktrees.
 
 ## Before rebuilding
 
@@ -22,19 +20,11 @@ The normal rebuild protects work by checking for:
 - dirty files
 - unpublished commits
 - an in-progress Git operation
-- repository-level refs such as local branches, tags, notes, stash entries,
-  extra remotes, and reflog-only commits
+- repository-level refs such as local branches, tags, notes, stash entries, extra remotes, and reflog-only commits
 - unmanaged worktrees
 - a Dockerfile or artifact that belongs to another project
 
-Commit and push what you want to keep, remove what you do not need, and
-inspect unmanaged worktrees yourself. Commits on branches, tags, or worktree
-`HEAD`s that you do not want to push yet can be saved into the host repository
-instead: when they are the only thing stopping the rebuild, an interactive
-rebuild offers to save them and continue. Stash
-and notes commits are not saved this way. A clean worktree does not prove that the
-repository has no Layer A blocker. sbxm does not delete unrelated work to make
-a rebuild fit.
+Commit and push what you want to keep, remove what you do not need, and inspect unmanaged worktrees yourself. Commits on branches, tags, or worktree `HEAD`s that you do not want to push yet can be saved into the host repository instead: when they are the only thing stopping the rebuild, an interactive rebuild offers to save them and continue. Stash and notes commits are not saved this way. A clean worktree does not prove that the repository has no Layer A blocker. sbxm does not delete unrelated work to make a rebuild fit.
 
 ## Add worktrees without rebuilding
 

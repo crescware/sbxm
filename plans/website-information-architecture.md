@@ -2,8 +2,7 @@
 
 ## 目的
 
-この文書は、`website-requirements.md`を満たすpage構成、navigation、content責務、将来の
-English/Japanese対応関係を定める。初回に公開するpageはすべてEnglishで書く。
+この文書は、`website-requirements.md`を満たすpage構成、navigation、content責務、将来のEnglish/Japanese対応関係を定める。初回に公開するpageはすべてEnglishで書く。
 
 ## 利用者導線
 
@@ -98,8 +97,7 @@ Project
   Development
 ```
 
-sidebar順はlearning pathとCLI lifecycleを表すため明示設定する。directory名のalphabetical orderへ
-任せない。
+sidebar順はlearning pathとCLI lifecycleを表すため明示設定する。directory名のalphabetical orderへ任せない。
 
 ## Route一覧
 
@@ -128,9 +126,7 @@ sidebar順はlearning pathとCLI lifecycleを表すため明示設定する。di
 | `/guides/configuration-files/` | Place configuration files | `config.yaml` schema、destination、`apply --files`、secret warning |
 | `/guides/teardown/` | Tear down safely | normal destroy、削除対象、残存物、再登録、`--force` |
 
-GitHub credential登録はquickstartの独立sectionとする。tokenの扱いを見落とさせないため、単なる
-referenceへ隔離しない。必要なら将来`/guides/github-credentials/`へ分割するが、初回はpage数を
-増やさずend-to-end flowを優先する。
+GitHub credential登録はquickstartの独立sectionとする。tokenの扱いを見落とさせないため、単なるreferenceへ隔離しない。必要なら将来`/guides/github-credentials/`へ分割するが、初回はpage数を増やさずend-to-end flowを優先する。
 
 ### Reference
 
@@ -162,8 +158,7 @@ referenceへ隔離しない。必要なら将来`/guides/github-credentials/`へ
 7. examples
 8. related commands
 
-「実装が持つ全error IDの辞書」は初回scopeにしない。利用者が行動を変えられる主要条件をguideと
-command pageへ載せる。
+「実装が持つ全error IDの辞書」は初回scopeにしない。利用者が行動を変えられる主要条件をguideとcommand pageへ載せる。
 
 ### Troubleshooting
 
@@ -174,8 +169,7 @@ command pageへ載せる。
 | `/troubleshooting/project/` | Diagnose a project | registry、artifacts、sandbox、repository、worktree、secret checks |
 | `/troubleshooting/safety-refusals/` | Resolve safety refusals | dirty、unpushed、unmanaged worktree、active session、collision |
 
-troubleshootingはerror textを大量に複製しない。「観測するcommand」「原因のcategory」「利用者が
-安全に確認する順序」「関連reference」へ絞る。error wordingそのものはCLIを正本とする。
+troubleshootingはerror textを大量に複製しない。「観測するcommand」「原因のcategory」「利用者が安全に確認する順序」「関連reference」へ絞る。error wordingそのものはCLIを正本とする。
 
 ### Project
 
@@ -184,14 +178,11 @@ troubleshootingはerror textを大量に複製しない。「観測するcommand
 | `/project/design-principles/` | Design principles | ambiguity、安全側へのrefusal、ownershipを推測しない方針 |
 | `/project/development/` | Development | mise、toolchain、`mise run check`、test/coverageへの入口 |
 
-release operator向け手順は初回siteへ全文掲載しない。GitHub Releasesとrepository内の
-`scripts/release/README.md`へlinkする。
+release operator向け手順は初回siteへ全文掲載しない。GitHub Releasesとrepository内の`scripts/release/README.md`へlinkする。
 
 ## Homepage構成
 
-Starlightの`splash` templateとheroを土台にする。hero後のfeature sectionは小さなAstro/MDX
-componentへ分け、Tailwind utilityで組み立てる。Starlightのnavigationやdocument layout全体を
-置き換えるcustom landing pageにはしない。
+Starlightの`splash` templateとheroを土台にする。hero後のfeature sectionは小さなAstro/MDX componentへ分け、Tailwind utilityで組み立てる。Starlightのnavigationやdocument layout全体を置き換えるcustom landing pageにはしない。
 
 ### Hero
 
@@ -202,8 +193,7 @@ componentへ分け、Tailwind utilityで組み立てる。Starlightのnavigation
 - secondary CTA: `View on GitHub`
 - installation snippet: `brew install crescware/tap/sbxm`
 
-headlineは「securityを完全に保証する」「どのrepositoryでも動く」など、実装を超えたclaimを
-含めない。
+headlineは「securityを完全に保証する」「どのrepositoryでも動く」など、実装を超えたclaimを含めない。
 
 ### Hero後のsection
 
@@ -240,9 +230,7 @@ quickstartはREADMEの順序を維持する。
 7. `sbxm open <project-id>`（初回はここでbuild/provisionまで行う）
 8. sandbox内worktree pathを確認する
 
-quickstart中のcredential sectionは、fine-grained tokenの`Contents: read and write`と
-`Metadata: read`、classic tokenの`repo` scopeを明記する。exampleの`<token>`は実値でないと
-明示し、documentやshell historyへtokenを貼ることを促す補助scriptは作らない。
+quickstart中のcredential sectionは、fine-grained tokenの`Contents: read and write`と`Metadata: read`、classic tokenの`repo` scopeを明記する。exampleの`<token>`は実値でないと明示し、documentやshell historyへtokenを貼ることを促す補助scriptは作らない。
 
 ## Cross-link規約
 
@@ -300,8 +288,7 @@ website/src/content/docs/ja/reference/cli/destroy.md
 
 ### New user
 
-homepageから2 interaction以内にrequirementsへ到達し、対応hostであるか判断できる。そこから
-next navigationだけでinstallとquickstartを完走できる。
+homepageから2 interaction以内にrequirementsへ到達し、対応hostであるか判断できる。そこからnext navigationだけでinstallとquickstartを完走できる。
 
 ### Existing user
 
@@ -309,10 +296,8 @@ header searchへ`rebuild`と入力し、command referenceとcustom image guide�
 
 ### Safety check
 
-`destroy` pageでnormalと`--force`の違い、削除されるもの、残るもの、再登録時の注意を一画面の
-heading構造から見つけられる。
+`destroy` pageでnormalと`--force`の違い、削除されるもの、残るもの、再登録時の注意を一画面のheading構造から見つけられる。
 
 ### Future Japanese user
 
-`/ja/getting-started/quickstart/`からlanguage selectorで同じEnglish pageへ移動でき、その
-English URLが`/getting-started/quickstart/`のまま保たれる。
+`/ja/getting-started/quickstart/`からlanguage selectorで同じEnglish pageへ移動でき、そのEnglish URLが`/getting-started/quickstart/`のまま保たれる。

@@ -2,9 +2,7 @@
 
 ## 目的
 
-この文書は、`website-requirements.md`と`website-information-architecture.md`をAstro Starlightで
-実現するためのrepository構成、build、deployment、段階的な実装順を定める。これは実装
-指示書であり、website本体とrepository rootのdeployment workflowの責務を分けて定める。
+この文書は、`website-requirements.md`と`website-information-architecture.md`をAstro Starlightで実現するためのrepository構成、build、deployment、段階的な実装順を定める。これは実装指示書であり、website本体とrepository rootのdeployment workflowの責務を分けて定める。
 
 ## Architecture
 
@@ -61,11 +59,9 @@ website/
         └── global.css
 ```
 
-`src/content/docs/ja/`は日本語を公開するときに追加する。空directoryやplaceholder translationを
-初回buildへ入れない。
+`src/content/docs/ja/`は日本語を公開するときに追加する。空directoryやplaceholder translationを初回buildへ入れない。
 
-Astro/Starlight標準の構成が上記と変わった場合、初回実装時のcurrent official templateを優先し、
-この文書の役割境界を保った最小差分にする。
+Astro/Starlight標準の構成が上記と変わった場合、初回実装時のcurrent official templateを優先し、この文書の役割境界を保った最小差分にする。
 
 ## Dependency方針
 
@@ -90,8 +86,7 @@ Astro/Starlight標準の構成が上記と変わった場合、初回実装時�
 - Starlight community plugin
 - icon package。Starlight built-in iconまたはlocal SVGを使う
 
-versionは初回実装時のcurrent stableで相互互換な組を選び、pnpm lockfileへ固定する。major
-updateはsite content変更と分けてreviewする。
+versionは初回実装時のcurrent stableで相互互換な組を選び、pnpm lockfileへ固定する。major updateはsite content変更と分けてreviewする。
 
 ## Starlight configuration contract
 
@@ -121,8 +116,7 @@ locales: {
 }
 ```
 
-`defaultLocale`はroot localeがdefaultになるStarlight contractに従い、省略するか`root`を明示する。
-初回実装時の型とofficial exampleに合わせる。
+`defaultLocale`はroot localeがdefaultになるStarlight contractに従い、省略するか`root`を明示する。初回実装時の型とofficial exampleに合わせる。
 
 日本語追加時だけ次を加える。
 
@@ -133,8 +127,7 @@ ja: {
 }
 ```
 
-この構成によりEnglishはrootのまま、Japaneseは`/ja/`になる。Starlightは同じrelative filenameを
-locale間の対応として扱い、未翻訳contentのfallbackを提供する。
+この構成によりEnglishはrootのまま、Japaneseは`/ja/`になる。Starlightは同じrelative filenameをlocale間の対応として扱い、未翻訳contentのfallbackを提供する。
 
 ### Sidebar
 
@@ -146,10 +139,7 @@ locale間の対応として扱い、未翻訳contentのfallbackを提供する�
 
 ## Styling方針
 
-Tailwind CSS v4を採用し、Starlight公式の`@astrojs/starlight-tailwind` compatibility layerを使う。
-新規projectはcurrent official `starlight/tailwind` templateを起点にする。独自landing section、card、
-diagram、small UI componentはTailwind utilityで実装し、通常のMarkdown proseはStarlightの
-document styleに任せる。
+Tailwind CSS v4を採用し、Starlight公式の`@astrojs/starlight-tailwind` compatibility layerを使う。新規projectはcurrent official `starlight/tailwind` templateを起点にする。独自landing section、card、diagram、small UI componentはTailwind utilityで実装し、通常のMarkdown proseはStarlightのdocument styleに任せる。
 
 `src/styles/global.css`は公式のcascade layer順を保つ。
 
@@ -177,9 +167,7 @@ document styleに任せる。
 - screenshotを主要説明に使わない。CLI outputはtext/codeとして選択可能にする
 - logo未決定時はtext wordmarkとlocal SVG faviconで成立させる
 
-Tailwindはauthoring toolでありruntime dependencyではない。utilityを使うためにReactなどのUI
-frameworkやclient hydrationを追加しない。追加のUI technologyは必要な機能が具体化した時点で
-個別に判断し、初回scaffoldへ先回りして含めない。
+Tailwindはauthoring toolでありruntime dependencyではない。utilityを使うためにReactなどのUI frameworkやclient hydrationを追加しない。追加のUI technologyは必要な機能が具体化した時点で個別に判断し、初回scaffoldへ先回りして含めない。
 
 ## Content implementation
 
@@ -193,8 +181,7 @@ frameworkやclient hydrationを追加しない。追加のUI technologyは必要
 
 ### Reuseとduplication
 
-利用者が読むworkflowをbuild時にrepository rootのREADMEからincludeしない。includeは編集contextを
-分断し、translation対応とlink解決を複雑にするためである。website contentはsite上の文脈で書く。
+利用者が読むworkflowをbuild時にrepository rootのREADMEからincludeしない。includeは編集contextを分断し、translation対応とlink解決を複雑にするためである。website contentはsite上の文脈で書く。
 
 次の短い事実は、contentを編集する際にsourceと照合して一貫した表記にする。
 
@@ -208,8 +195,7 @@ frameworkやclient hydrationを追加しない。追加のUI technologyは必要
 
 ## Local command contract
 
-ホームページを開発・公開するための最小限のpackage scriptだけを提供する。実際のpackage managerを
-prefixに付けても意味は同じにする。
+ホームページを開発・公開するための最小限のpackage scriptだけを提供する。実際のpackage managerをprefixに付けても意味は同じにする。
 
 | Script | 役割 |
 | --- | --- |
@@ -217,22 +203,17 @@ prefixに付けても意味は同じにする。
 | `build` | production static buildとPagefind index生成 |
 | `preview` | production artifactのlocal preview |
 
-`website/README.md`にはfresh cloneからinstall、dev、build、previewまでを記載する。rootの
-`docs/development.md`へNode toolchainを混ぜ込む変更はwebsite実装と別にreviewできるようにする。
+`website/README.md`にはfresh cloneからinstall、dev、build、previewまでを記載する。rootの`docs/development.md`へNode toolchainを混ぜ込む変更はwebsite実装と別にreviewできるようにする。
 
 ## Deployment計画
 
 ### Default proposal
 
-hostingが未指定のため、GitHub Pagesをdefault proposalとする。Astro公式はstatic siteをGitHub
-ActionsでGitHub Pagesへdeployするworkflowを案内している。repository project pageなら初期URLは
-`https://crescware.github.io/sbxm/`となり、後からcustom domainを設定できる。
+hostingが未指定のため、GitHub Pagesをdefault proposalとする。Astro公式はstatic siteをGitHub ActionsでGitHub Pagesへdeployするworkflowを案内している。repository project pageなら初期URLは`https://crescware.github.io/sbxm/`となり、後からcustom domainを設定できる。
 
 ### Workflow boundary
 
-GitHub Pages workflowはGitHubの仕様上repository rootの`.github/workflows/`に置く。
-website本体は`website/`に閉じ、deploy workflowはその外側でartifactを受け取る。現在の実装では
-`.github/workflows/deploy-website.yml`がこの役割を担う。
+GitHub Pages workflowはGitHubの仕様上repository rootの`.github/workflows/`に置く。website本体は`website/`に閉じ、deploy workflowはその外側でartifactを受け取る。現在の実装では`.github/workflows/deploy-website.yml`がこの役割を担う。
 
 workflow要件は次のとおり。
 
@@ -255,8 +236,7 @@ workflow要件は次のとおり。
 
 ### Last updated
 
-Starlightの`lastUpdated`はGit historyを使い、shallow cloneでは不正確になり得る。workflowは必要な
-historyを取得するか、表示を無効にする。誤った日付を表示するより、検証できるまで無効にする。
+Starlightの`lastUpdated`はGit historyを使い、shallow cloneでは不正確になり得る。workflowは必要なhistoryを取得するか、表示を無効にする。誤った日付を表示するより、検証できるまで無効にする。
 
 ## SEO・social assets
 
