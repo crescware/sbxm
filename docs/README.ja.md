@@ -350,6 +350,18 @@ sbxm destroy --force <project-id>
 
 Sandbox内に残すべきものがないと別途確認できた場合に限って、`--force`を使用してください。
 
+## SSH接続に失敗したとき
+
+`open`は端末をSSHへ渡す前に、hostのSSH設定とDocker SandboxesのSSH実効設定を確認し、起動済みの対象Sandboxへ新しい接続で実際に届くかを検査します。local案件では、新しいSandboxへの最初のrepository転送前にもSSHを検査します。`sbx exec`やrepositoryの内部検査が成功しても、SSH endpointが利用できるとは限りません。
+
+対話端末では、必要な修復commandを1つずつ表示し、承認を得てから実行します。client設定が不足していれば`sbx setup ssh`を提案します。管理者側の設定でSSHが許可され、endpointが無効なら`sbx settings set feature.ssh true`を提案します。その変更にdaemonの再起動が必要な場合は、他のSandboxへの接続も中断され得ることを示し、別の承認を得て`sbx daemon restart`を実行します。拒否やcancelではopenを停止し、それ以前に承認した変更は保持します。修復後は状態を再観測し、再起動後は案件の準備とSSH疎通を確認し直します。修復しても同じ障害が残る場合、同じ操作を繰り返しません。
+
+管理者の制約、環境変数によるoverride、設定を読めない状態は、迂回せず理由を表示します。SSHの修復で管理者側の実験機能の許可設定を変更することはありません。非対話端末では原因と復旧commandを表示し、SSH設定は変更しません。host keyの検証失敗など別のSSH障害では、元のエラーを保持して表示し、原因を推測した修復は提案しません。
+
+`status --global`はSSH client設定とSSH endpointの設定を分けて表示します。endpointの設定は実疎通の結果ではありません。その設定を読むためだけに、停止中または状態不明のdaemonを起動しません。起動した対象Sandboxへの疎通は`open`が検査します。
+
+接続前の検査で失敗した場合、対話sessionもhostへの自動保存も開始しません。local案件の未同期commitはSandboxにだけ残っている可能性があるため、エラーに同じ対象への`open`の再試行と、SSH復旧後の`sbxm sync <project-id>`を示します。Sandboxとcommitはそのまま保持してください。対話SSHのcommandを既に起動した場合は、非zero終了だけでは作業が無かったと判断できないため、最後の保存を試みます。SSHの失敗を先に表示し、保存にも失敗した場合は二次的な失敗として示します。接続の修復のためにSandboxを削除したり作り直したりする必要はありません。
+
 ## sbxmが置くもの
 
 プロジェクトは、登録したディレクトリの中で完結します。
@@ -366,9 +378,11 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 
 ## sbxmがsbxを起動するとき
 
-sbxmは、`sbx`をいつも`SBX_NO_TELEMETRY=1`と`DOCKER_SANDBOXES_DISABLE_UNLEASH=1`を付けて起動します。付けないと、sign-inした`sbx`は起動のたびに、利用状況の送信に約0.45秒、feature flagの取得にも同じくらいかけます。daemonが一覧を返すのは数msです。2つを付けると、`sbx ls`1回が約0.9秒から約0.05秒になります。
+sbxmは、通常の操作では`sbx`に`SBX_NO_TELEMETRY=1`と`DOCKER_SANDBOXES_DISABLE_UNLEASH=1`を付けて起動します。付けないと、sign-inした`sbx`は起動のたびに、利用状況の送信に約0.45秒、feature flagの取得にも同じくらいかけます。daemonが一覧を返すのは数msです。2つを付けると、`sbx ls`1回が約0.9秒から約0.05秒になります。
 
-この2つの変数は、sbxmが起動した`sbx`のprocessにだけ届きます。sbxmはDocker Sandboxesの設定に何も書かないため、利用者が自分で実行する`sbx`の動きは変わりません。ただし、sbxmが起動した`sbx`がDocker Sandboxesのdaemonを起動した場合は、daemonが再起動するまで、この変数を持ち続けることがあります。
+この2つの変数は、sbxmが起動した`sbx`のprocessにだけ届きます。environmentへの追加でDocker Sandboxesの設定を書き換えることはありません。ただし、sbxmが起動した`sbx`がDocker Sandboxesのdaemonを起動した場合は、daemonが再起動するまで、この変数を持ち続けることがあります。
+
+SSH設定の観測と承認されたSSH修復は例外です。利用状況の送信は止めますが、SSH endpointの観測や再起動によってfeatureの既定値が変わらないよう、feature flagについては呼び出し元のenvironmentをそのまま使います。
 
 ## コマンド一覧
 

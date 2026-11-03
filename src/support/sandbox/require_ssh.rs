@@ -1,9 +1,9 @@
 use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
-use crate::design::Fact;
+use crate::design::{Fact, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 
-use super::{proxy_command_configured, ssh_host};
+use super::{proxy_command_configured, require_ssh_feature, ssh_host};
 
 /// `sandbox`へsshでつながる設定があることを、接続せずに確かめる。
 ///
@@ -28,13 +28,15 @@ pub fn require_ssh(host: &dyn HostEnvironment, sandbox: &str) -> Result<()> {
         ));
     }
     if proxy_command_configured(&outcome.stdout_text()) {
-        return Ok(());
+        return require_ssh_feature(host);
     }
     Err(Error::single(
         Diagnostic::new(
             ErrorId::RemoteSshUnconfigured,
             msg!("error-remote-ssh-unconfigured", host = destination),
         )
-        .remediation(msg!("remediation-remote-ssh-unconfigured")),
+        .remediation(
+            Remediation::text(msg!("remediation-remote-ssh-unconfigured")).try_run("sbx setup ssh"),
+        ),
     ))
 }

@@ -31,6 +31,10 @@ pub(crate) fn provision_interior(
     progress.step(msg!("progress-inspect-credentials"));
     sandbox::require_credentials_isolated(&Live::new(host, &ready_name), &ready_name)?;
     let origin = repository::SandboxOrigin::of(&locked.metadata)?;
+    if matches!(origin, repository::SandboxOrigin::Host { .. }) {
+        progress.step(msg!("progress-inspect-ssh-connection"));
+        sandbox::probe_ssh(host, &ready_name)?;
+    }
     // credential helperへ書く直前に読む。事前条件の確認から時間が空くため、その間に
     // tokenを登録し直していれば、新しいplaceholderをそのまま持たせる。hostにある
     // repositoryはhostから送るため、tokenを使わない。

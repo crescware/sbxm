@@ -12,7 +12,7 @@ use crate::commands::status::global::external::{describe, external_of, read_stdo
 use crate::commands::status::global::service::{check_daemon, check_login, check_network_policy};
 use crate::commands::status::global::{GlobalStatus, push};
 
-use super::check_remote_ssh;
+use super::{check_remote_ssh, check_ssh_endpoint};
 
 /// Docker Sandboxes CLIのversion、network policy、daemonの状態。
 pub fn check_docker_sandboxes(
@@ -27,6 +27,7 @@ pub fn check_docker_sandboxes(
         "status-item-daemon",
         "status-item-login",
         "status-item-remote-ssh",
+        "status-item-ssh-endpoint",
     ];
 
     if !sbx_present {
@@ -56,9 +57,14 @@ pub fn check_docker_sandboxes(
     check_network_policy(host, status);
     progress.step(msg!("progress-inspect-daemon"));
     check_daemon(host, status);
+    let daemon = status
+        .rows
+        .last()
+        .map_or(StatusValue::Error, |row| row.status);
     check_login(host, status, progress);
     progress.step(msg!("progress-inspect-remote-ssh"));
     check_remote_ssh(host, status);
+    check_ssh_endpoint(host, daemon, status);
 }
 
 /// CLIが、このbuildの求める最低version以上か。
