@@ -316,6 +316,8 @@ The host repository fetches the sandbox's branches, tags, and each worktree's `H
 
 A commit saved this way outlives the sandbox, so rebuild and destroy count it as kept, the same as a commit reachable from the origin. A stash or notes commit missing from the origin is not saved this way, so it still has to be pushed or dropped.
 
+If repository initialization stops because the sandbox runs out of space, free space and rerun `sbxm open` or `sbxm repair`. sbxm resumes an empty repository directory or one carrying its initialization marker without deleting existing files. An unrecognized nonempty directory is left untouched.
+
 ## Develop without GitHub
 
 A repository that already lives on this host can be a project too. sbxm does not clone it: the repository itself acts as the origin, and the sandbox is a disposable place to work in. Pass its Git directory, not its working tree.

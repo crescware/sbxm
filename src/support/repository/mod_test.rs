@@ -905,7 +905,11 @@ fn preparing_the_repository_stops_at_the_step_that_failed_and_fetches_nothing() 
                 "{found:?} {fault:?} {step}"
             );
             let calls = host.calls();
-            let last = calls.last().required_because("the failed step was run")?;
+            let last = calls
+                .iter()
+                .rev()
+                .find(|args| !args.iter().any(|arg| arg.contains("entries=$(ls -A")))
+                .required_because("the failed step was run")?;
             assert!(
                 last.join(" ").ends_with(&step),
                 "{found:?} {fault:?} {step}: nothing runs after the step that failed: {calls:?}"
@@ -1117,5 +1121,76 @@ fn a_push_answer_that_cannot_be_read_ref_by_ref_is_not_success() -> Checked {
         assert_eq!(error.first_id(), Some(id), "{answer:?}");
         assert!(!host.ran(&steps.tags()), "{answer:?}: {:?}", host.calls());
     }
+    Ok(())
+}
+
+#[test]
+fn unfinished_git_init_is_resumed_without_removing_existing_objects() -> Checked {
+    use crate::support::sandbox::{Inside, Live};
+    use crate::testing::sandbox::LocalSandbox;
+    let directory = tempfile::tempdir().required()?;
+    let git_dir = directory.path().join("repo.git");
+    std::fs::create_dir_all(git_dir.join("sbxm-initializing")).required()?;
+    let text = git_dir.to_str().required()?;
+    let inside = Live::new(&LocalSandbox, "sandbox");
+    assert_eq!(
+        observe_initialization(
+            &inside,
+            &SandboxOrigin::Github(project()?),
+            text,
+            &mut SilentProgress
+        )
+        .required()?,
+        Initialization::Uninitialized
+    );
+    let code = inside.exec(&["git", "init", "--bare", text]).required()?;
+    assert!(code.success());
+    // markerは残してもvalidなGit repositoryを再初期化するとは判定しない。
+    assert_eq!(
+        observe_initialization(
+            &inside,
+            &SandboxOrigin::Github(project()?),
+            text,
+            &mut SilentProgress
+        )
+        .required()?,
+        Initialization::OriginMissing
+    );
+    let object = git_dir.join("objects/keep");
+    std::fs::write(&object, b"keep me").required()?;
+    assert_eq!(std::fs::read(&object).required()?, b"keep me");
+    Ok(())
+}
+
+#[test]
+fn only_an_empty_directory_or_an_initialization_marker_allows_resuming_failed_init() -> Checked {
+    use crate::support::sandbox::{Inside, Live};
+    use crate::testing::sandbox::LocalSandbox;
+    let directory = tempfile::tempdir().required()?;
+    let path = directory.path().join("repo.git");
+    std::fs::create_dir(&path).required()?;
+    let origin = SandboxOrigin::Github(project()?);
+    let inside = Live::new(&LocalSandbox, "sandbox");
+    let text = path.to_str().required()?;
+    assert_eq!(
+        observe_initialization(&inside, &origin, text, &mut SilentProgress).required()?,
+        Initialization::Uninitialized
+    );
+    std::fs::write(path.join("user-file"), b"unknown data").required()?;
+    observe_initialization(&inside, &origin, text, &mut SilentProgress)
+        .refused_because("unowned data is not an unfinished initialization")?;
+    let link = directory.path().join("linked");
+    std::os::unix::fs::symlink(&path, &link).required()?;
+    let command = super::unfinished_init_command(link.to_str().required()?);
+    assert!(
+        !inside
+            .exec(&command.iter().map(String::as_str).collect::<Vec<_>>())
+            .required()?
+            .success()
+    );
+    assert_eq!(
+        std::fs::read(path.join("user-file")).required()?,
+        b"unknown data"
+    );
     Ok(())
 }
