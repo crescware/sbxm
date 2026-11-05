@@ -884,3 +884,5 @@ status-disk-not-observed-not-created = The project is registered, but its sandbo
 status-disk-not-observed-mismatch = Whether the sandbox is running could not be determined, so disk usage was not checked.
 status-disk-command-missing = `df` is not available inside the sandbox, so disk usage could not be checked.
 status-disk-parse-failed = The disk usage report from inside the sandbox could not be read.
+
+session-backup-current = Host commit backup checked at { $checked } (UTC). Uncommitted and untracked files remain only in the sandbox.

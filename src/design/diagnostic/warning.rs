@@ -14,6 +14,8 @@ pub struct Warning {
     pub facts: Vec<Fact>,
     pub guidance: Vec<Msg>,
     pub commands: Vec<CommandLine>,
+    /// 原因の診断。外部commandのstderrも失わずに表示する。
+    pub diagnostics: Vec<crate::diagnostics::Diagnostic>,
 }
 
 impl Warning {
@@ -24,6 +26,7 @@ impl Warning {
             facts: Vec::new(),
             guidance: Vec::new(),
             commands: Vec::new(),
+            diagnostics: Vec::new(),
         }
     }
 

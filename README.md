@@ -418,3 +418,5 @@ Color is decided per stream. When only standard output is piped, the result is p
 An explicit `--color` wins over every environment variable. Removing color never removes information: markers, labels and blank lines carry the same meaning on their own.
 
 `--verbose` adds a trace for debugging to standard error. Standard output stays the result alone.
+
+`open` checks the host commit backup before handing over SSH and again when the session ends. It prints the check time and preserves the command, exit status, and stderr if saving fails. The latest periodic failure is reported after SSH returns; the terminal remains with SSH during the session. If the final save fails, `open` exits with status 1 even when SSH succeeded. Uncommitted and untracked files are outside this commit backup.

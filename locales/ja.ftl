@@ -884,3 +884,5 @@ status-disk-not-observed-not-created = この案件は登録されています�
 status-disk-not-observed-mismatch = Sandboxが起動しているかを判定できなかったため、ディスク使用量を確認しませんでした。
 status-disk-command-missing = Sandbox内に`df`が無いため、ディスク使用量を確認できませんでした。
 status-disk-parse-failed = Sandbox内から返ったディスク使用量の報告を読み取れませんでした。
+
+session-backup-current = { $checked }（UTC）時点でhostへのcommit保存を確認しました。未commit・未追跡fileはSandboxにだけ残ります。

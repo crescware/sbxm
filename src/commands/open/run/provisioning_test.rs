@@ -43,7 +43,7 @@ fn open(bench: &Bench, world: &World, project: &ProjectId, index: Option<u32>) -
 /// `open`を入口から実行し、terminalへ出るはずのものを受け取る。
 fn exec(
     bench: &Bench,
-    world: &World,
+    world: &dyn crate::boundary::host::HostEnvironment,
     project: ProjectId,
     stdout: &mut Vec<u8>,
     stderr: &mut Vec<u8>,
@@ -1070,5 +1070,96 @@ fn a_missing_token_registration_is_shown_before_the_terminal_is_handed_over() ->
         "{stderr}"
     );
     assert!(world.ran("ssh -t"), "{:?}", world.invocations());
+    Ok(())
+}
+
+struct FailedSessionSave<'a> {
+    world: &'a World,
+    fail_at: usize,
+    count: std::cell::Cell<usize>,
+}
+
+impl crate::testing::host::AnsweredHost for FailedSessionSave<'_> {
+    fn has_command(&self, _: &str) -> bool {
+        true
+    }
+    fn session_length(
+        &self,
+        _: &crate::boundary::host::TerminalCommand,
+        _: std::time::Duration,
+    ) -> std::time::Duration {
+        std::time::Duration::from_secs(601)
+    }
+    fn answer(
+        &self,
+        spec: &crate::boundary::host::CommandSpec,
+    ) -> Result<crate::boundary::host::CommandOutcome> {
+        if spec
+            .args
+            .iter()
+            .any(|arg| arg == crate::support::host_sync::PLACE_SAVE_REFS)
+        {
+            self.count.set(self.count.get() + 1);
+            if self.count.get() == self.fail_at {
+                return Ok(crate::testing::command::outcome_with_stderr(
+                    spec,
+                    1,
+                    "",
+                    "No space left on device",
+                ));
+            }
+        }
+        crate::testing::host::AnsweredHost::answer(self.world, spec)
+    }
+}
+
+#[test]
+fn failed_periodic_saves_are_kept_and_a_failed_final_save_changes_the_exit_status() -> Checked {
+    for fail_at in [1, 2, 3] {
+        let bench = Bench::new()?;
+        let world = World::new();
+        let request = crate::commands::add::AddRequest {
+            repository: crate::repository::RepositoryIdentity::local(
+                "/home/user/code/app/.git",
+                "app",
+            )
+            .required()?,
+            worktrees: None,
+            detach: None,
+            start_branch: Some("main".into()),
+            parent_inside_repository: false,
+        };
+        bench.build(&world, &request).required()?;
+        let host = FailedSessionSave {
+            world: &world,
+            fail_at,
+            count: std::cell::Cell::new(0),
+        };
+        let mut stdout = vec![];
+        let mut stderr = vec![];
+        let code = exec(
+            &bench,
+            &host,
+            ProjectId::parse("local/app").required()?,
+            &mut stdout,
+            &mut stderr,
+        );
+        assert_eq!(host.count.get(), 3);
+        assert_eq!(
+            code,
+            if fail_at == 3 {
+                ExitCode::Failure
+            } else {
+                ExitCode::Success
+            }
+        );
+        let text = String::from_utf8(stderr).required()?;
+        assert!(
+            text.contains("No space left on device"),
+            "{fail_at}: {text}"
+        );
+        assert!(text.contains("exit status: 1"), "{text}");
+        assert!(text.contains("only in the sandbox"), "{text}");
+    }
     Ok(())
 }

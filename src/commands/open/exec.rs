@@ -1,15 +1,12 @@
 //! `open`の実行と出力。
 
-use std::time::Duration;
-
 use crate::boundary::host::HostEnvironment;
-use crate::design::{Document, Inline, PromptUi, SilentProgress, Ui, Warning};
+use crate::design::{Document, Inline, PromptUi, Ui, Warning};
 use crate::diagnostics::ExitCode;
 use crate::msg;
-use crate::paths::LOCK_TIMEOUT;
 use crate::support::inventory;
 
-use crate::commands::{present, saving};
+use crate::commands::present;
 
 use super::super::{Context, report};
 use super::Args;
@@ -87,42 +84,5 @@ pub fn exec(
         );
     ui.stderr(&present::disk_section(connecting, &prepared.disk));
 
-    // hostにあるrepositoryの案件は、sessionのあいだも保存しておく。端末はSSHが持つため、
-    // 進捗も結果も示さない。保存できなかったことは、sessionを閉じたあとの保存が伝える。
-    // lockは待たない。待つあいだはSSHの終了に気付けず、lockを持つ別のcommandも、この
-    // 保存を待つことになる。取れなければ次の機会に保存する。
-    let saves_to_host = prepared.saves_to_host.clone();
-    let mut save = saves_to_host.clone().map(|candidate| {
-        move || {
-            let _ = saving::save_selected(
-                candidate.clone(),
-                host,
-                context.workspace_root,
-                Duration::ZERO,
-                context.clock,
-                &mut SilentProgress,
-            );
-        }
-    });
-    let during: Option<&mut dyn FnMut()> = match save.as_mut() {
-        Some(save) => Some(save),
-        None => None,
-    };
-    let connected = super::run::connect(host, prepared, ui, during);
-    // sessionを閉じたあとにも保存しておく。
-    if let Some(candidate) = saves_to_host {
-        let saved = saving::save_selected(
-            candidate,
-            host,
-            context.workspace_root,
-            LOCK_TIMEOUT,
-            context.clock,
-            ui,
-        );
-        saving::auto_saved(ui, &saved);
-    }
-    match connected {
-        Ok(()) => ExitCode::Success,
-        Err(error) => report(ui, &error),
-    }
+    super::session::session(context, ui, host, prepared)
 }
