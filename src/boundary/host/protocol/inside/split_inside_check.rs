@@ -13,6 +13,10 @@ pub fn split_inside_check(args: &[String]) -> Option<(String, bool, Vec<Vec<Stri
     if script_shell != "sh" || option != "-c" || script != INSIDE_CHECK || inner_shell != "sh" {
         return None;
     }
+    let rest = match rest {
+        [first, rest @ ..] if first == "-m" => rest,
+        rest => rest,
+    };
     let (timed, rest) = match rest {
         [first, rest @ ..] if first == "-t" => (true, rest),
         rest => (false, rest),

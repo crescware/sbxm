@@ -6,12 +6,14 @@
 mod inside_check;
 mod inside_check_arguments;
 mod inside_record;
+mod inside_text_check_arguments;
 mod parse_inside_check;
 mod split_inside_check;
 
 pub use inside_check::INSIDE_CHECK;
 pub use inside_check_arguments::inside_check_arguments;
 pub use inside_record::InsideRecord;
+pub use inside_text_check_arguments::inside_text_check_arguments;
 pub use parse_inside_check::parse_inside_check;
 pub use split_inside_check::split_inside_check;
 

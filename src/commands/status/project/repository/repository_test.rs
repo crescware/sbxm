@@ -98,7 +98,16 @@ fn a_full_filesystem_fails_status_even_when_every_repository_check_passes() -> C
     assert_eq!(
         host.calls()
             .iter()
-            .filter(|args| args.ends_with(&["df".into(), "-Pk".into(), "/".into()]))
+            .filter_map(|args| crate::testing::inside::split_inside_check(args))
+            .flat_map(|(_, _, commands)| commands)
+            .filter(|args| args == &["df", "-Pk", "/"])
+            .count(),
+        1
+    );
+    assert_eq!(
+        host.calls()
+            .iter()
+            .filter(|args| args.iter().any(|arg| arg == "-m"))
             .count(),
         1
     );
