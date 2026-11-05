@@ -212,6 +212,8 @@ Check the host has headroom for the size you request before running either comma
 
 `sbxm status <project-id>` and `sbxm open <project-id>` show the sandbox's available space, percentage remaining, and a gauge that shrinks as space runs out. `Total` is used space plus available space, excluding reserved blocks.
 
+If the additional setup and maintenance check fails, `status` keeps the results it could read, marks that check as `not-observed`, and prints the failure reason, including the exit status and stderr when available. It exits with status `1` and does not suggest a maintenance command based on an incomplete check. This includes a full disk preventing the internal check from creating temporary files.
+
 ```text
 DISK  /
 Available  4.7 GiB (25% remaining)
