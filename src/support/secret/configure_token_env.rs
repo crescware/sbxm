@@ -8,9 +8,9 @@ use crate::support::sandbox;
 
 use super::{TOKEN_ENV_FILE, is_sbxm_token_env, observe_token_env, token_env_lines};
 
-/// shellが一切解釈しない形で1行ずつ書き出す。値はargvで渡し、fileへは`printf`が
-/// そのまま入れる。
-const WRITE: &str = r#"printf '%s\n' "$1" "$2" "$3" > "$4""#;
+/// 同じdirectoryに完成した内容を同期してから置き換える。値はargvで渡し、shellに
+/// 解釈させない。容量不足でも、renameまでは既存の設定を保つ。
+const WRITE: &str = include_str!("write_token_env.sh");
 
 /// Sandboxの中で`gh`が使う環境変数を、登録済みのplaceholderにする。
 ///
@@ -74,3 +74,7 @@ fn unusable(sandbox: &str, reason: Msg) -> Error {
         .fact(Fact::reason(reason)),
     )
 }
+
+#[cfg(test)]
+#[path = "configure_token_env_test.rs"]
+mod configure_token_env_test;
