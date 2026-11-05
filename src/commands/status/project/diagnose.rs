@@ -96,7 +96,7 @@ pub fn diagnose(
         &paths,
         &host_repository,
         &mut status,
-    );
+    )?;
 
     // 次の1手は、`repair`と同じ共有観測から同じ規則で決める。statusが別の判定規則を
     // 持つと、案内したcommandが実行時に「不要」と答え得る。観測そのものが成立しない

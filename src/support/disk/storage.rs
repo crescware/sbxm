@@ -1,10 +1,12 @@
 use std::path::Path;
 
-use crate::boundary::host::protocol::{RootDiskUsage, parse_df_single};
+use crate::boundary::host::protocol::{
+    RootDiskUsage, inside_text_check_arguments, parse_df_single, parse_inside_check,
+};
 use crate::boundary::host::{CommandOutcome, HostEnvironment, TimeoutClass};
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result, unparseable};
-use crate::support::sandbox;
+use crate::support::sandbox::{self, Inside};
 use crate::{msg, paths};
 
 /// 書き込み先ごとの空きblockとinode。試し書きは行わない。
@@ -61,31 +63,64 @@ impl Storage {
     pub fn sandbox(
         host: &dyn HostEnvironment,
         sandbox: &str,
-        label: &'static str,
-        path: &str,
-    ) -> Self {
-        let mut storage = Self::empty(label, path.into());
-        let blocks =
-            sandbox::exec_with_timeout(host, sandbox, &["df", "-Pk", path], TimeoutClass::Probe)
-                .and_then(CommandOutcome::require_success)
-                .and_then(|outcome| parse_df_single(&outcome.stdout_text()));
-        storage.usage = storage.record(blocks);
-        storage.available_kib = storage.usage.map(|usage| usage.free_kib);
-        let inodes =
-            sandbox::exec_with_timeout(host, sandbox, &["df", "-Pi", path], TimeoutClass::Probe)
-                .and_then(CommandOutcome::require_success)
-                .and_then(|outcome| inode_count(&outcome.stdout_text()));
-        storage.available_inodes = storage.record(inodes);
-        storage.check_exhausted();
-        storage
+        paths: &[(&'static str, &str)],
+    ) -> Result<Vec<Self>> {
+        let commands: Vec<Vec<String>> = paths
+            .iter()
+            .flat_map(|(_, path)| {
+                ["-Pk", "-Pi"]
+                    .map(|flag| ["df", flag, path].into_iter().map(str::to_string).collect())
+            })
+            .collect();
+        let args = inside_text_check_arguments(&commands);
+        let borrowed: Vec<_> = args.iter().map(String::as_str).collect();
+        let observed = sandbox::exec_with_timeout(host, sandbox, &borrowed, TimeoutClass::Probe)
+            .and_then(CommandOutcome::require_success)
+            .and_then(|outcome| parse_inside_check(&outcome.stdout, commands.len()));
+        let records = match observed {
+            Ok(records) => sandbox::Recorded::new(sandbox, &commands, records),
+            Err(Error::Canceled) => return Err(Error::Canceled),
+            Err(error) => {
+                return Ok(paths
+                    .iter()
+                    .map(|(label, path)| {
+                        let mut storage = Self::empty(label, (*path).into());
+                        storage.diagnostics.extend_from_slice(error.diagnostics());
+                        storage
+                    })
+                    .collect());
+            }
+        };
+        paths
+            .iter()
+            .map(|(label, path)| Self::from_inside(&records, label, path))
+            .collect()
     }
 
-    fn record<T>(&mut self, result: Result<T>) -> Option<T> {
+    fn from_inside(inside: &dyn Inside, label: &'static str, path: &str) -> Result<Self> {
+        let mut storage = Self::empty(label, path.into());
+        let blocks = inside
+            .exec(&["df", "-Pk", path])
+            .and_then(CommandOutcome::require_success)
+            .and_then(|outcome| parse_df_single(&outcome.stdout_text()));
+        storage.usage = storage.record(blocks)?;
+        storage.available_kib = storage.usage.map(|usage| usage.free_kib);
+        let inodes = inside
+            .exec(&["df", "-Pi", path])
+            .and_then(CommandOutcome::require_success)
+            .and_then(|outcome| inode_count(&outcome.stdout_text()));
+        storage.available_inodes = storage.record(inodes)?;
+        storage.check_exhausted();
+        Ok(storage)
+    }
+
+    fn record<T>(&mut self, result: Result<T>) -> Result<Option<T>> {
         match result {
-            Ok(value) => Some(value),
+            Ok(value) => Ok(Some(value)),
+            Err(Error::Canceled) => Err(Error::Canceled),
             Err(error) => {
                 self.diagnostics.extend_from_slice(error.diagnostics());
-                None
+                Ok(None)
             }
         }
     }

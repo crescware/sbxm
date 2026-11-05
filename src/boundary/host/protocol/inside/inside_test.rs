@@ -119,6 +119,48 @@ fn a_timed_check_asks_the_procedure_before_the_first_command() {
 }
 
 #[test]
+fn a_memory_check_round_trips_its_commands() {
+    let mut args = vec!["exec".to_string(), "sandbox".to_string(), "--".to_string()];
+    args.extend(inside_text_check_arguments(&two_commands()));
+    assert_eq!(args[7], "-m");
+    assert_eq!(
+        split_inside_check(&args),
+        Some(("sandbox".to_string(), false, two_commands()))
+    );
+}
+
+#[test]
+fn text_checks_use_no_temporary_files_and_keep_utf8_newlines_and_failure_output() -> Checked {
+    let commands = vec![
+        vec![
+            "printf".into(),
+            "%s\\n".into(),
+            "日本語\n$(not-a-command)".into(),
+        ],
+        vec![
+            "sh".into(),
+            "-c".into(),
+            "printf 'failure\\n' >&2; exit 7".into(),
+        ],
+    ];
+    let args = inside_text_check_arguments(&commands);
+    let script = format!("mktemp() {{ exit 99; }}\n{INSIDE_CHECK}");
+    let output = std::process::Command::new("sh")
+        .args(["-c", &script, "sh"])
+        .args(&args[4..])
+        .output()
+        .required()?;
+    assert!(output.status.success(), "{output:?}");
+    let records = parse_inside_check(&output.stdout, 2).required()?;
+    assert_eq!(records[0].stdout, "日本語\n$(not-a-command)\n".as_bytes());
+    assert!(records[0].stderr.is_empty());
+    assert_eq!(records[1].status, 7);
+    assert_eq!(records[1].stderr, b"failure\n");
+    assert!(records[1].stdout.is_empty());
+    Ok(())
+}
+
+#[test]
 fn the_exec_arguments_are_read_back_into_the_commands_they_carry() {
     for timed in [false, true] {
         let mut args = vec!["exec".to_string(), "org-repo".to_string(), "--".to_string()];
