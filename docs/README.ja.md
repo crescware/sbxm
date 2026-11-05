@@ -310,6 +310,8 @@ originに無いbranch、tag、worktreeの`HEAD`のcommitだけを理由にrebuil
 
 こうして保存したcommitはSandboxを消しても残るため、rebuildとdestroyはoriginから辿れるcommitと同じく、失われないものとして数えます。originに無いstashやnotesのcommitはこの方法では保存されず、pushするか捨てる必要があります。
 
+`status` はhostのmetadata・image archive・commit保存先、Sandboxのroot・Docker dataについて、空きblockとinodeを別々に表示します。どちらかがゼロなら他の検査が正常でも失敗となり、取得失敗では元のcommandの診断を保持します。試し書きや停止中Sandboxの起動は行いません。Docker VMのbacking storageとuser・project quotaはこの観測では取得できず、filesystemによってはinode数も取得できません。空き容量の正の値は予約でも書き込み成功の保証でもありません。
+
 ## GitHubを使わずに開発する
 
 このhostにすでにあるrepositoryも、プロジェクトにできます。sbxmはcloneしません。そのrepository自身がoriginの役を持ち、Sandboxは作業のための使い捨ての場所になります。working treeではなく、repositoryのgit directoryを渡します。

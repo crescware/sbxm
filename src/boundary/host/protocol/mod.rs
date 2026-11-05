@@ -19,7 +19,7 @@ mod template;
 mod version;
 
 pub use daemon::{DaemonState, parse_daemon_status};
-pub use disk::{RootDiskUsage, parse_df};
+pub use disk::{RootDiskUsage, parse_df, parse_df_single};
 pub use image::{ImageIdentity, parse_image_inspect};
 pub(crate) use inside::INSIDE_CHECK;
 pub use inside::{InsideRecord, inside_check_arguments, parse_inside_check, split_inside_check};

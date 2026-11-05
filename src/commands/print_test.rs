@@ -409,6 +409,7 @@ fn project_status(
         worktrees,
         files: Vec::new(),
         disk: crate::support::disk::DiskObservation::NotObservedMismatch,
+        storage: Vec::new(),
         next: None,
         diagnostics: vec![Diagnostic::new(
             ErrorId::GlobalScopeUnobservable,

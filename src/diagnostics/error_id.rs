@@ -200,6 +200,8 @@ error_ids! {
 
     // --- 永続化 ---
     AtomicWriteFailed => "atomic-write-failed",
+    StorageExhausted => "storage-exhausted",
+    StorageUnobservable => "storage-unobservable",
     TempFileLeftBehind => "temp-file-left-behind",
     CleanupFailed => "cleanup-failed",
     TargetAppearedConcurrently => "target-appeared-concurrently",

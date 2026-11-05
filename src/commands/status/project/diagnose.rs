@@ -43,6 +43,7 @@ pub fn diagnose(
         worktrees: Vec::new(),
         files: Vec::new(),
         disk: disk::DiskObservation::NotObservedMismatch,
+        storage: Vec::new(),
         diagnostics: Vec::new(),
         next: None,
     };
@@ -85,7 +86,17 @@ pub fn diagnose(
     if state == Some(ProjectState::Running) {
         progress.step(msg!("progress-status-disk"));
     }
-    status.disk = disk::observe(host, name.as_str(), state, TimeoutClass::Probe);
+    if state != Some(ProjectState::Running) {
+        status.disk = disk::observe(host, name.as_str(), state, TimeoutClass::Probe);
+    }
+    super::check_storage::check_storage(
+        host,
+        name.as_str(),
+        state,
+        &paths,
+        &host_repository,
+        &mut status,
+    );
 
     // 次の1手は、`repair`と同じ共有観測から同じ規則で決める。statusが別の判定規則を
     // 持つと、案内したcommandが実行時に「不要」と答え得る。観測そのものが成立しない
@@ -97,6 +108,13 @@ pub fn diagnose(
             provisioning::observe(host, &entries, &paths, &metadata, workspace_root, progress).ok()
         })
         .and_then(|observation| NextAction::decide(&metadata, &observation));
+    if status
+        .storage
+        .iter()
+        .any(|storage| storage.require_available().is_err())
+    {
+        status.next = None;
+    }
 
     Ok(status)
 }

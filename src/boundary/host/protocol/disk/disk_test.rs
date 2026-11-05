@@ -1,6 +1,18 @@
 use crate::testing::outcome::{Checked, Refused, Required};
 
 use super::*;
+
+#[test]
+fn a_requested_path_can_be_on_a_mount_other_than_root() -> crate::testing::outcome::Checked {
+    use crate::testing::outcome::{Refused, Required};
+    let usage = parse_df_single("Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/vdb 100 80 20 80% /var/lib/docker\n").required()?;
+    assert_eq!(usage.free_kib, 20);
+    for bad in ["", "header\none\ntwo", "header\none"] {
+        parse_df_single(bad)
+            .refused_because("a successful probe needs one valid filesystem row")?;
+    }
+    Ok(())
+}
 use crate::diagnostics::ErrorId;
 
 #[test]

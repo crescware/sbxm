@@ -165,6 +165,8 @@ impl World {
                 "Filesystem     1024-blocks      Used Available Capacity Mounted on\noverlay          20466256  14502976   4898320       75% /\n"
                     .to_string(),
             )),
+            ["df", "-Pk", "/var/lib/docker"] => Some((0, "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/vdb 10000 100 9900 1% /var/lib/docker\n".into())),
+            ["df", "-Pi", path] => Some((0, format!("Filesystem Inodes IUsed IFree IUse% Mounted on\noverlay 10000 100 9900 1% {path}\n"))),
             ["test", flag, path] => {
                 // 模したSandboxにsymlinkは存在しない。
                 let known = *flag != "-h" && self.present.borrow().contains(*path);
