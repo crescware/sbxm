@@ -310,6 +310,8 @@ originに無いbranch、tag、worktreeの`HEAD`のcommitだけを理由にrebuil
 
 こうして保存したcommitはSandboxを消しても残るため、rebuildとdestroyはoriginから辿れるcommitと同じく、失われないものとして数えます。originに無いstashやnotesのcommitはこの方法では保存されず、pushするか捨てる必要があります。
 
+保存元Sandboxには一時refやfileを作らず、detached worktreeのcommitも読み取りだけでhostへ救出します。host側に空きがあれば、保存元の容量ゼロだけを理由に保存が妨げられません。
+
 ## GitHubを使わずに開発する
 
 このhostにすでにあるrepositoryも、プロジェクトにできます。sbxmはcloneしません。そのrepository自身がoriginの役を持ち、Sandboxは作業のための使い捨ての場所になります。working treeではなく、repositoryのgit directoryを渡します。

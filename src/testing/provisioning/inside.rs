@@ -351,7 +351,7 @@ impl World {
                         None => "detached".to_string(),
                     };
                     // Stringへの書き込みは失敗しない。
-                    let _ = write!(listed, "worktree {path}\0{state}\0\0");
+                    let _ = write!(listed, "worktree {path}\0HEAD {COMMIT}\0{state}\0\0");
                 }
                 Some((0, listed))
             }

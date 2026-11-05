@@ -64,7 +64,7 @@ fn the_sandbox_is_saved_and_reflected_before_the_host_is_sent_back() -> Checked 
             .required_because(&format!("no command matched {needle}: {calls:?}"))
     };
     let saved = position(&format!(
-        "fetch --no-tags --no-recurse-submodules --no-write-fetch-head --quiet ssh://{}.sbx",
+        "--no-tags --no-recurse-submodules --no-write-fetch-head --quiet ssh://{}.sbx",
         output.namespace
     ))?;
     let reflected = position("push --porcelain --no-verify --receive-pack=")?;

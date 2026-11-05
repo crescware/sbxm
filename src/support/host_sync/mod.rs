@@ -8,8 +8,6 @@
 mod auto_save;
 mod auto_saved;
 mod carries;
-mod clear_save_refs;
-mod finish_save;
 mod import_from_sandbox;
 mod move_checked_out;
 mod place_save_refs;
@@ -28,12 +26,11 @@ mod saved_refs;
 mod saved_tip;
 mod saved_tips;
 mod stamp;
+mod worktree_refspecs;
 
 pub use auto_save::auto_save;
 pub use auto_saved::AutoSaved;
 pub use carries::carries;
-use clear_save_refs::CLEAR_SAVE_REFS;
-use finish_save::finish_save;
 pub use import_from_sandbox::import_from_sandbox;
 use move_checked_out::move_checked_out;
 pub(crate) use place_save_refs::PLACE_SAVE_REFS;
