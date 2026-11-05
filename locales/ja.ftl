@@ -899,3 +899,9 @@ storage-sandbox-root = Sandbox root
 storage-sandbox-docker = Sandbox Docker data
 storage-unobserved = 未観測
 storage-observation-limits = 試し書きをせずに観測しています。Docker VMのbacking storageとuser・project quotaはこの観測では取得できず、filesystemによってはinode数も取得できません。停止中のSandboxは起動しません。
+
+error-rebuild-capacity-insufficient = 再構築の余力が不足しています: 最低 { $required } KiB・{ $inodes } file entryが必要ですが、観測値は { $available } KiB・{ $free_inodes } entryです
+remediation-rebuild-capacity-insufficient = 旧Sandboxは削除していません。空きを確保するか新しいSandboxのfilesystem sizeを増やしてrebuildを再実行してください。見積もりにはrepository転送の一時領域・checkout・余裕分を含めます。remoteの増大、filter、quota、同時書き込みで不足する可能性は残ります。
+progress-rebuild-capacity-probe = 旧Sandboxを保持し、一時Sandboxで再構築の容量を確認しています。
+error-rebuild-capacity-unconfirmed = 再構築の容量を確認できませんでした
+remediation-capacity-probe-left = 容量確認用の一時Sandboxが残っている可能性があります。旧案件のSandboxは削除していません。表示した一時Sandboxを確認してから、下のcommandで削除してください。

@@ -108,6 +108,7 @@ pub fn prepare(
 
     Ok((
         Prepared {
+            had_sandbox: state != ProjectState::NotCreated,
             plan,
             name,
             target,

@@ -25,7 +25,7 @@ pub fn clean_host(fixture: &Fixture, project: &Registered) -> Checked<FakeSbx> {
             ),
             0,
             &format!(
-                "worktree {}\0bare\0\0worktree {managed}\0branch refs/heads/main\0\0",
+                "worktree {}\0bare\0\0worktree {managed}\0HEAD {COMMIT}\0branch refs/heads/main\0\0",
                 layout.bare_root()
             ),
         )

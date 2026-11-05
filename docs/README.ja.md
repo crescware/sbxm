@@ -312,6 +312,8 @@ originに無いbranch、tag、worktreeの`HEAD`のcommitだけを理由にrebuil
 
 `status` はhostのmetadata・image archive・commit保存先、Sandboxのroot・Docker dataについて、空きblockとinodeを別々に表示します。どちらかがゼロなら他の検査が正常でも失敗となり、取得失敗では元のcommandの診断を保持します。試し書きや停止中Sandboxの起動は行いません。Docker VMのbacking storageとuser・project quotaはこの観測では取得できず、filesystemによってはinode数も取得できません。空き容量の正の値は予約でも書き込み成功の保証でもありません。
 
+`rebuild` は旧Sandboxを削除する前にhostの空き容量を調べ、新しいTemplateから一時Sandboxを作って空きblockとinodeを測ります。見積もりは旧bare repositoryの使用量の2倍を転送用領域とし、観測した最大checkoutの容量×要求worktree数、宣言file、128 MiBの余裕分を加えます。旧rootの容量ゼロだけでは拒否しません。旧Sandboxと並行して一時VMを1台動かす余力が必要です。一時VMを削除してから最後の保護検査を行い、確認や後片付けが失敗した場合は旧Sandboxを削除しません。後片付けに失敗した場合は一時VM名と保持したmount directoryを診断に示します。processの強制終了で `sbxm-capacity-check-...` というSandboxが残った場合は `status --global` で確認し、手動で削除できます。容量を予約する処理ではなく、remoteの増大、checkout filter、quota、同時書き込みまで保証するものではありません。切り替え後の失敗では再実行のためのrebuild intentを保持します。
+
 ## GitHubを使わずに開発する
 
 このhostにすでにあるrepositoryも、プロジェクトにできます。sbxmはcloneしません。そのrepository自身がoriginの役を持ち、Sandboxは作業のための使い捨ての場所になります。working treeではなく、repositoryのgit directoryを渡します。

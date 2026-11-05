@@ -202,6 +202,8 @@ error_ids! {
     AtomicWriteFailed => "atomic-write-failed",
     StorageExhausted => "storage-exhausted",
     StorageUnobservable => "storage-unobservable",
+    RebuildCapacityUnconfirmed => "rebuild-capacity-unconfirmed",
+    RebuildCapacityInsufficient => "rebuild-capacity-insufficient",
     TempFileLeftBehind => "temp-file-left-behind",
     CleanupFailed => "cleanup-failed",
     TargetAppearedConcurrently => "target-appeared-concurrently",

@@ -899,3 +899,9 @@ storage-sandbox-root = Sandbox root
 storage-sandbox-docker = Sandbox Docker data
 storage-unobserved = not-observed
 storage-observation-limits = Capacities are read without test writes. Docker VM backing storage and per-user or project quotas are not exposed by these probes; inode counts may be unavailable on some filesystems. A stopped sandbox is not started.
+
+error-rebuild-capacity-insufficient = Insufficient rebuild capacity: need at least { $required } KiB and { $inodes } file entries; observed { $available } KiB and { $free_inodes } entries
+remediation-rebuild-capacity-insufficient = The old sandbox has not been removed. Free space or increase the new sandbox filesystem size, then rerun rebuild. The estimate includes repository transfer scratch space, checkouts, and a safety margin; remote growth, filters, quotas, and concurrent writers can still exceed it.
+progress-rebuild-capacity-probe = Checking rebuild capacity in a temporary sandbox while preserving the old sandbox.
+error-rebuild-capacity-unconfirmed = Rebuild capacity could not be confirmed
+remediation-capacity-probe-left = A temporary capacity-check sandbox may remain. The old project sandbox has not been removed. Check the named temporary sandbox, then remove it with the command below.
