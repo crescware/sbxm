@@ -62,3 +62,42 @@ fn a_failed_init_keeps_a_marker_and_the_next_attempt_completes_without_deleting_
     );
     Ok(())
 }
+
+#[test]
+fn initialization_resumes_when_git_recognizes_the_directory_before_core_bare_was_saved() -> Checked
+{
+    for config in [
+        None,
+        Some("[core]\nrepositoryformatversion = 0\nfilemode = true\n"),
+    ] {
+        let directory = tempfile::tempdir().required()?;
+        let target = directory.path().join("repo.git");
+        let git_dir = target.to_str().required()?;
+        initialize(&LocalSandbox, "sandbox", git_dir).required()?;
+        match config {
+            Some(text) => fs::write(target.join("config"), text).required()?,
+            None => fs::remove_file(target.join("config")).required()?,
+        }
+        fs::write(target.join("preserved"), b"keep me").required()?;
+        let inside = Live::new(&LocalSandbox, "sandbox");
+        let bare = super::super::inspect_bare(&inside, git_dir, &mut SilentProgress).required()?;
+        assert!(bare.success());
+        assert_eq!(bare.stdout_text().trim(), "false");
+        let origin =
+            SandboxOrigin::Github(crate::project::ProjectId::parse("owner/repo").required()?);
+        assert!(
+            complete_initialization(
+                &LocalSandbox,
+                "sandbox",
+                &origin,
+                git_dir,
+                &mut SilentProgress
+            )
+            .required()?
+        );
+        super::super::verify_bare_config(&inside, &origin, git_dir, &mut SilentProgress)
+            .required()?;
+        assert_eq!(fs::read(target.join("preserved")).required()?, b"keep me");
+    }
+    Ok(())
+}

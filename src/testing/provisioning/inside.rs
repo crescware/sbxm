@@ -247,6 +247,10 @@ impl World {
                 self.present.borrow_mut().insert((*path).to_string());
                 Some(ok())
             }
+            ["sh", "-c", script, "sh", path] if script.contains("rmdir --") => {
+                self.present.borrow_mut().remove(*path);
+                Some(ok())
+            }
             ["git", "init", "--bare", git_dir] => {
                 self.present.borrow_mut().insert((*git_dir).to_string());
                 *self.bare_git_dir.borrow_mut() = Some((*git_dir).to_string());
