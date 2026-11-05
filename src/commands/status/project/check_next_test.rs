@@ -133,9 +133,9 @@ impl AnsweredHost for FullDiskHost {
         if crate::boundary::host::protocol::split_inside_check(&spec.args).is_some() {
             return Ok(outcome_with_stderr(
                 spec,
-                70,
+                125,
                 "",
-                "mktemp: failed to create directory: No space left on device\n",
+                "sandbox exec: cannot create process: No space left on device\n",
             ));
         }
         self.0.answer(spec)
@@ -186,7 +186,7 @@ fn a_full_disk_inside_check_failure_reaches_the_final_output_in_both_languages()
         for expected in [
             "sandbox-check-unobservable",
             "sbx exec",
-            "70",
+            "125",
             "No space left on device",
         ] {
             assert!(text.contains(expected), "{expected}: {text}");
