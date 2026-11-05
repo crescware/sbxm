@@ -97,6 +97,13 @@ pub fn diagnose(
             provisioning::observe(host, &entries, &paths, &metadata, workspace_root, progress).ok()
         })
         .and_then(|observation| NextAction::decide(&metadata, &observation));
+    if let Err(error) = crate::support::files::PendingUpdate::require_clean(&paths) {
+        status.push("status-item-file-update", Value::NotObserved);
+        status
+            .diagnostics
+            .extend(error.diagnostics().iter().cloned());
+        status.next = None;
+    }
 
     Ok(status)
 }

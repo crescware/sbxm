@@ -288,6 +288,8 @@ sbxmはSandbox側のファイルを案件の`.sbxm/incoming`へ取り出し、�
 
 登録済みのすべての案件へまとめて配置する場合は、次を実行します。
 
+file更新は、配置前に予定するdigestを `.sbxm/file-update.yaml` に記録します。配置後、baseline保存までに容量が不足した場合はhostの空きを確保し、同じ `apply --files` または `files pull` を再実行します。実体と記録を照合して管理情報を回復します。照合できない変更は保持し、`status` に未完了として表示します。記録の削除や `--force` による回避はしないでください。
+
 ```sh
 sbxm apply --files --all
 ```

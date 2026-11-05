@@ -884,3 +884,11 @@ status-disk-not-observed-not-created = この案件は登録されています�
 status-disk-not-observed-mismatch = Sandboxが起動しているかを判定できなかったため、ディスク使用量を確認しませんでした。
 status-disk-command-missing = Sandbox内に`df`が無いため、ディスク使用量を確認できませんでした。
 status-disk-parse-failed = Sandbox内から返ったディスク使用量の報告を読み取れませんでした。
+
+error-file-update-pending = 宣言fileの更新記録が完了していません。
+cause-file-update-record-invalid = 更新中の記録を正しく読み取れません
+cause-file-update-record-changed = 読み取り中に更新記録が変わりました
+cause-file-update-record-pending = 前の更新を先に照合する必要があります
+cause-file-update-target-changed = 更新前と更新予定のどちらとも内容が一致しないため、fileは上書きしていません
+remediation-file-update-pending = hostの空き容量を確保し、同じfile更新commandを再実行してください。更新を照合できるまで記録を保持し、強制上書きで飛ばさないでください。
+status-item-file-update = 宣言fileの更新記録

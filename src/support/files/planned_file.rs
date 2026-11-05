@@ -18,9 +18,21 @@ pub struct PlannedFile {
     pub(super) destination: String,
     /// `Placed`ならcopyし、`Unchanged`なら何もしない。
     pub(super) placement: Placement,
+    pub(super) previous_sha256: Option<String>,
 }
 
 impl PlannedFile {
+    pub fn changes_destination(&self) -> bool {
+        self.placement == Placement::Placed
+    }
+    /// 配置前に、照合済みの旧digestと配置する内容のintentを保存する。
+    pub fn begin_update(
+        &self,
+        paths: &crate::paths::ProjectPaths,
+        file: &crate::metadata::InitialProvisioningFile,
+    ) -> Result<()> {
+        super::PendingUpdate::begin(paths, file, self.previous_sha256.clone(), false)
+    }
     /// 決めた扱いを実行する。
     pub fn carry_out(&self, host: &dyn HostEnvironment, sandbox: &str) -> Result<PlacedFile> {
         if self.placement == Placement::Placed {

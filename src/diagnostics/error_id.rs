@@ -243,6 +243,8 @@ error_ids! {
     // 訊く手段も、保存済みの既定も、宣言も無い。
     GitIdentityUndecidable => "git-identity-undecidable",
 
+    FileUpdatePending => "file-update-pending",
+
     // --- 内部 ---
     MessageFormatFailed => "message-format-failed",
     DocumentRenderFailed => "document-render-failed",
