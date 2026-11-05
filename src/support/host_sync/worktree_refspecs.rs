@@ -39,17 +39,11 @@ fn refspecs(output: &str, incoming: &str) -> Result<Vec<String>> {
     let entries = worktree::parse_list(output)?;
     let mut names = BTreeSet::new();
     let mut result = Vec::new();
-    for (index, (entry, record)) in entries.iter().zip(output.split("\0\0")).enumerate() {
+    for (index, entry) in entries.iter().enumerate() {
         if entry.bare {
             continue;
         }
-        let oid = record
-            .split('\0')
-            .find_map(|field| field.strip_prefix("HEAD "))
-            .ok_or_else(|| unparseable("git worktree list", "missing worktree HEAD"))?;
-        if ![40, 64].contains(&oid.len()) || !oid.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(unparseable("git worktree list", "invalid worktree HEAD"));
-        }
+        let oid = entry.head_oid()?;
         let basename = entry.path.rsplit('/').next().unwrap_or_default();
         let safe = !basename.is_empty()
             && !basename.starts_with('.')

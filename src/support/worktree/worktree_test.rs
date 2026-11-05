@@ -62,6 +62,7 @@ fn the_porcelain_listing_is_read_field_by_field() -> Checked {
                 path: "/home/agent/work/repo".to_string(),
                 bare: true,
                 detached: false,
+                head: None,
                 branch: None,
                 prunable: false,
             },
@@ -69,6 +70,7 @@ fn the_porcelain_listing_is_read_field_by_field() -> Checked {
                 path: "/home/agent/work/repo/repo.tree-0".to_string(),
                 bare: false,
                 detached: false,
+                head: Some("abc".to_string()),
                 branch: Some("refs/heads/main".to_string()),
                 prunable: false,
             },
@@ -76,6 +78,7 @@ fn the_porcelain_listing_is_read_field_by_field() -> Checked {
                 path: "/home/agent/work/repo/repo.tree-1".to_string(),
                 bare: false,
                 detached: true,
+                head: Some("abc".to_string()),
                 branch: None,
                 prunable: false,
             },
@@ -83,6 +86,7 @@ fn the_porcelain_listing_is_read_field_by_field() -> Checked {
                 path: "/home/agent/work/repo/repo.tree-2".to_string(),
                 bare: false,
                 detached: false,
+                head: Some("abc".to_string()),
                 branch: Some("refs/heads/topic".to_string()),
                 prunable: true,
             },
@@ -157,6 +161,7 @@ fn only_paths_under_the_bare_root_are_this_projects_worktrees() {
         path: format!("{root}/repo.tree-0"),
         bare: false,
         detached: false,
+        head: None,
         branch: None,
         prunable: false,
     };
@@ -166,6 +171,7 @@ fn only_paths_under_the_bare_root_are_this_projects_worktrees() {
         path: root.to_string(),
         bare: true,
         detached: false,
+        head: None,
         branch: None,
         prunable: false,
     };
@@ -180,6 +186,7 @@ fn only_paths_under_the_bare_root_are_this_projects_worktrees() {
         path: format!("{root}/../elsewhere"),
         bare: false,
         detached: false,
+        head: None,
         branch: None,
         prunable: false,
     };
@@ -190,6 +197,7 @@ fn only_paths_under_the_bare_root_are_this_projects_worktrees() {
         path: format!("{root}-other/tree"),
         bare: false,
         detached: false,
+        head: None,
         branch: None,
         prunable: false,
     };
@@ -202,4 +210,26 @@ fn an_empty_record_between_records_is_rejected() {
         parse_list("worktree /home/agent/work/repo\0bare\0\0\0\0").is_err(),
         "a record with no field is not a worktree"
     );
+}
+
+#[test]
+fn a_worktree_head_is_retained_and_validated_once_for_all_consumers() -> Checked {
+    for oid in ["a".repeat(40), "B".repeat(64)] {
+        let text = format!("worktree /tree\0HEAD {oid}\0detached\0\0");
+        let entries = parse_list(&text).required()?;
+        assert_eq!(entries[0].head.as_deref(), Some(oid.as_str()));
+        assert_eq!(entries[0].head_oid().required()?, oid);
+    }
+    for head in ["", "bad", "gggggggggggggggggggggggggggggggggggggggg"] {
+        let field = if head.is_empty() {
+            String::new()
+        } else {
+            format!("HEAD {head}\0")
+        };
+        let entries = parse_list(&format!("worktree /tree\0{field}detached\0\0")).required()?;
+        entries[0].head_oid().refused_because(
+            "a missing or malformed HEAD must not disappear from a save or estimate",
+        )?;
+    }
+    Ok(())
 }
