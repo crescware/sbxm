@@ -19,6 +19,7 @@ pub struct SshHost {
     pub stubborn: Cell<bool>,
     pub refuse: RefCell<Option<&'static str>>,
     pub timeout: RefCell<Option<&'static str>>,
+    pub canceled: RefCell<Option<&'static str>>,
     pub probe_stderr: RefCell<Option<&'static str>>,
     pub session_fails: Cell<bool>,
     pub save_fails: Cell<bool>,
@@ -39,6 +40,7 @@ impl SshHost {
             stubborn: Cell::new(false),
             refuse: RefCell::new(None),
             timeout: RefCell::new(None),
+            canceled: RefCell::new(None),
             probe_stderr: RefCell::new(None),
             session_fails: Cell::new(false),
             save_fails: Cell::new(false),
@@ -74,6 +76,13 @@ impl AnsweredHost for SshHost {
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.calls.borrow_mut().push(spec.clone());
         let key = format!("{} {}", spec.program, spec.args.join(" "));
+        if self
+            .canceled
+            .borrow()
+            .is_some_and(|needle| key.contains(needle))
+        {
+            return Err(Error::Canceled);
+        }
         if self
             .timeout
             .borrow()

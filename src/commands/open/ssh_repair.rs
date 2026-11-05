@@ -50,15 +50,15 @@ impl SshRepair {
     }
 
     /// client設定の不足を先に観測した場合も、管理者側のgateを越えて修復しない。
-    pub fn verify_policy(self, host: &dyn HostEnvironment) -> Result<()> {
-        match sandbox::require_ssh_feature(host) {
-            Err(error)
-                if self != Self::Restart && error.contains_id(ErrorId::RemoteSshDisabled) =>
-            {
-                Ok(())
-            }
-            other => other,
+    pub fn verify_policy(
+        self,
+        host: &dyn HostEnvironment,
+    ) -> Result<crate::boundary::host::protocol::SshFeature> {
+        let feature = sandbox::inspect_ssh_feature(host)?;
+        if self == Self::Restart {
+            sandbox::require_ssh_feature_enabled(&feature)?;
         }
+        Ok(feature)
     }
 
     /// project lockとsession leaseを手放したあと、承認された操作だけを実行する。
@@ -69,11 +69,11 @@ impl SshRepair {
         target: &str,
         restart_required: bool,
     ) -> Result<bool> {
-        self.verify_policy(host)?;
+        let feature = self.verify_policy(host)?;
         // 承認を待つあいだに設定やendpointが直っていれば、変更せず再準備する。
         let checked = match self {
-            Self::Setup => sandbox::require_ssh(host, target),
-            Self::Enable => sandbox::require_ssh_feature(host),
+            Self::Setup => sandbox::require_ssh_client(host, target),
+            Self::Enable => sandbox::require_ssh_feature_enabled(&feature),
             // 明示的な再起動要求は、設定の保存値だけでは解消したと証明できない。
             Self::Restart if restart_required => Err(Self::restart_required()),
             Self::Restart => sandbox::probe_ssh(host, target),
@@ -83,7 +83,7 @@ impl SshRepair {
             Err(error) if Self::for_error(&error) == Some(self) => {}
             Err(error) => return Err(error),
         }
-        let requires_restart = self == Self::Enable && sandbox::ssh_feature(host)?.requires_restart;
+        let requires_restart = self == Self::Enable && feature.requires_restart;
         let spec = CommandSpec::capture("sbx", self.args())
             .env(EnvPolicy::SbxSsh)
             .timeout(TimeoutClass::SandboxLifecycle);

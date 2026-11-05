@@ -155,6 +155,54 @@ fn healthy_ssh_is_probed_without_changing_any_settings() -> Checked {
 }
 
 #[test]
+fn canceling_either_ssh_setting_query_stops_without_offering_or_executing_a_repair() -> Checked {
+    let (bench, host, project) = built(false)?;
+    for setting in [
+        "settings get feature.ssh",
+        "settings get platform.allowExperimentalFeatures",
+    ] {
+        host.canceled.replace(Some(setting));
+        let mut prompt = Answers::new(&[1]);
+        let error = prepare(&bench, &host, &args(project.clone()), true, &mut prompt)
+            .0
+            .refused_because("the setting query was canceled")?;
+        assert_eq!(error, Error::Canceled);
+        assert_eq!(error.exit_code(), ExitCode::Canceled);
+        assert!(host.mutations().is_empty());
+        assert!(prompt.selection.headings.borrow().is_empty());
+    }
+    Ok(())
+}
+
+#[test]
+fn enabling_ssh_uses_one_post_approval_observation_for_policy_and_restart() -> Checked {
+    let host = SshHost::new();
+    host.enabled.set(false);
+    assert!(
+        SshRepair::Enable
+            .execute(&host, &ScriptedClock::default(), "sandbox", false)
+            .required()?
+    );
+    let calls = host.invocations();
+    let before: Vec<_> = calls
+        .iter()
+        .take_while(|call| call.as_str() != "sbx settings set feature.ssh true")
+        .collect();
+    for setting in ["feature.ssh", "platform.allowExperimentalFeatures"] {
+        let command = format!("sbx settings get {setting} --json");
+        assert_eq!(
+            before
+                .iter()
+                .filter(|call| call.as_str() == command)
+                .count(),
+            1,
+            "{before:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn each_required_repair_is_approved_and_the_project_and_index_are_retained() -> Checked {
     let (bench, host, _) = built(true)?;
     host.configured.set(false);
