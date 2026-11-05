@@ -798,7 +798,7 @@ fn a_login_probe_that_exits_non_zero_is_unobservable_and_keeps_the_original_stde
 
     assert_eq!(status_of(&status, "status-item-login")?, StatusValue::Error);
     let diagnostic = diagnosed(&status, ErrorId::SbxLoginUnobservable)?;
-    assert_eq!(cause(diagnostic)?, ErrorId::ExternalCommandFailed.as_str());
+    assert_eq!(reason(diagnostic)?.id, "error-external-command-failed");
     let external = diagnostic
         .external
         .as_ref()
@@ -821,7 +821,7 @@ fn a_login_probe_that_times_out_is_unobservable_rather_than_signed_in() -> Check
     assert_eq!(status_of(&status, "status-item-login")?, StatusValue::Error);
     let diagnostic = diagnosed(&status, ErrorId::SbxLoginUnobservable)?;
     // 答えが返らなかったことも、答えとして記録する。
-    assert_eq!(cause(diagnostic)?, ErrorId::ExternalCommandTimeout.as_str());
+    assert_eq!(reason(diagnostic)?.id, "error-external-command-timeout");
     Ok(())
 }
 

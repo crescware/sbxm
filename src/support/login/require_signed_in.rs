@@ -1,6 +1,6 @@
 use crate::boundary::host::protocol::SandboxEntry;
 use crate::boundary::host::{HostEnvironment, TimeoutClass};
-use crate::design::{Fact, ProgressSink};
+use crate::design::{Fact, ProgressSink, Remediation};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::support::daemon;
@@ -30,10 +30,25 @@ fn unobservable(error: Error) -> Error {
         ErrorId::SbxLoginUnobservable,
         msg!("error-sbx-login-unobservable"),
     );
+    diagnostic.facts = error
+        .diagnostics()
+        .first()
+        .map_or_else(Vec::new, |source| source.facts.clone());
     if let Some(source) = error.diagnostics().first() {
-        diagnostic = diagnostic.fact(Fact::cause(source.id.as_str()));
+        diagnostic
+            .facts
+            .insert(0, Fact::reason(source.description.clone()));
         if let Some(external) = &source.external {
             diagnostic = diagnostic.external(external.clone());
+        }
+        if matches!(
+            source.id,
+            ErrorId::ExternalCommandFailed | ErrorId::ExternalCommandTimeout
+        ) {
+            diagnostic = diagnostic.remediation(
+                Remediation::text(msg!("remediation-sbx-login-unobservable"))
+                    .try_run("sbx diagnose"),
+            );
         }
     }
     Error::single(diagnostic)

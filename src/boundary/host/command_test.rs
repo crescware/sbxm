@@ -191,7 +191,12 @@ fn a_failure_keeps_the_invocation_that_produced_it() -> Checked {
 
     assert_eq!(failure.safe_args, vec!["clone", "--bare"]);
     assert_eq!(failure.working_dir.as_deref(), Some(workspace.as_path()));
-    assert!(failure.exit_status.contains('2'));
+    assert!(
+        failure
+            .exit_status
+            .as_deref()
+            .is_some_and(|status| status.contains('2'))
+    );
     Ok(())
 }
 
@@ -371,6 +376,28 @@ fn a_command_that_exceeds_its_timeout_is_terminated() -> Checked {
 }
 
 #[test]
+fn a_timeout_keeps_the_full_invocation_directory_and_received_stderr() -> Checked {
+    let directory = tempfile::tempdir().required()?;
+    for stderr in [b"daemon is starting\n".as_slice(), b"invalid: \xff\n"] {
+        let os = ScriptedOs::default()
+            .stdout(ScriptedPipe::held_open([]))
+            .stderr(ScriptedPipe::held_open([ReadStep::Owned(stderr.to_vec())]));
+        let spec = CommandSpec::probe("sbx", &["ls", "--json"]).working_dir(directory.path());
+        let error = run_inner(&os, os.clock(), &spec, Some(Duration::from_secs(10)))
+            .refused_because("the daemon did not finish its response")?;
+        let external = error.diagnostics()[0].external.as_ref().required()?;
+        assert_eq!(external.program, "sbx");
+        assert_eq!(external.safe_args, ["ls", "--json"]);
+        assert_eq!(external.working_dir.as_deref(), Some(directory.path()));
+        assert_eq!(external.exit_status, None);
+        assert_eq!(external.stderr, stderr);
+        assert_eq!(external.stderr_lossy, std::str::from_utf8(stderr).is_err());
+        assert!(ended(&os.events()));
+    }
+    Ok(())
+}
+
+#[test]
 fn a_descendant_outliving_the_direct_child_cannot_hold_capture_open_after_timeout() -> Checked {
     // 背景の子孫がpipeを握ったままでも、直接の子が終わればcaptureも終わる。EOFを待てば、
     // このtestは終わらない。
@@ -528,7 +555,12 @@ fn a_non_zero_status_maps_to_one_while_keeping_the_original_value() -> Checked {
         .external
         .as_ref()
         .required_because("the original values are kept in the diagnostic")?;
-    assert!(external.exit_status.contains("42"));
+    assert!(
+        external
+            .exit_status
+            .as_deref()
+            .is_some_and(|status| status.contains("42"))
+    );
     assert_eq!(external.stderr_text(), "boom");
     Ok(())
 }
@@ -1000,13 +1032,18 @@ fn a_stream_whose_program_is_missing_is_reported_as_missing() -> Checked {
 fn a_stream_that_outlives_its_limit_is_ended_and_reported() -> Checked {
     let os = ScriptedOs::default()
         .stdout(ScriptedPipe::held_open([]))
-        .stderr(ScriptedPipe::held_open([]));
+        .stderr(ScriptedPipe::held_open([ReadStep::Bytes(
+            b"still waiting\n",
+        )]));
     let spec = spec().timeout(TimeoutClass::Probe);
 
     let error = run_streaming(&os, os.clock(), &spec, &mut Vec::new(), 1024)
         .refused_because("the limit ends the stream")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
+    let external = error.diagnostics()[0].external.as_ref().required()?;
+    assert_eq!(external.stderr, b"still waiting\n");
+    assert_eq!(external.exit_status, None);
     assert!(ended(&os.events()), "{:?}", os.events());
     Ok(())
 }

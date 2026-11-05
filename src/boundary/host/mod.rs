@@ -54,6 +54,7 @@ mod start_child;
 mod stream;
 mod terminal_command;
 mod terminate_child;
+mod timed_out;
 mod timeout_class;
 mod traced;
 mod unreadable;
@@ -62,6 +63,7 @@ mod unwaitable;
 mod unwritable;
 mod wait_poll_interval;
 mod wait_with_limit;
+mod with_captured_stderr;
 
 pub use crate::boundary::os::RealHost;
 use apply_env::apply_env;
@@ -103,6 +105,7 @@ use start_child::start_child;
 use stream::Stream;
 pub use terminal_command::TerminalCommand;
 use terminate_child::terminate_child;
+use timed_out::timed_out;
 pub use timeout_class::TimeoutClass;
 pub use traced::Traced;
 use unreadable::unreadable;
@@ -111,6 +114,7 @@ use unwaitable::unwaitable;
 use unwritable::unwritable;
 use wait_poll_interval::WAIT_POLL_INTERVAL;
 use wait_with_limit::wait_with_limit;
+use with_captured_stderr::with_captured_stderr;
 
 #[cfg(test)]
 #[path = "command_test.rs"]

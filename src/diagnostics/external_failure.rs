@@ -8,8 +8,8 @@ pub struct ExternalFailure {
     pub safe_args: Vec<String>,
     /// 実行時の作業directory。指定していない場合は`None`。
     pub working_dir: Option<std::path::PathBuf>,
-    /// 外部commandのexit statusを原値のまま示す文字列。
-    pub exit_status: String,
+    /// 外部commandのexit statusを原値のまま示す文字列。時間切れでは観測できない。
+    pub exit_status: Option<String>,
     pub stderr: Vec<u8>,
     /// stderrをUTF-8として解釈する際にlossy変換が発生したか。
     pub stderr_lossy: bool,

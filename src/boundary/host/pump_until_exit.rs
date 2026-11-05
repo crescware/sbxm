@@ -2,13 +2,12 @@ use std::io::Read;
 use std::process::ExitStatus;
 use std::time::Duration;
 
-use crate::diagnostics::{Error, ErrorId, Result};
-use crate::msg;
+use crate::diagnostics::{Error, Result};
 use crate::time::Clock;
 
 use super::{
     CommandSpec, InputFeed, Pipes, Processes, Stream, drain_pipe, poll_pipes, spawn_failure,
-    terminate_child, unreadable, unwritable,
+    terminate_child, timed_out, unreadable, unwritable,
 };
 
 /// 直接の子が終わるまで2本のstreamを読み続け、届いたbyteを渡す。
@@ -161,14 +160,7 @@ fn pump<O: Pipes>(
             && clock.now() >= deadline
         {
             terminate_child(os, child);
-            return Err(Error::new(
-                ErrorId::ExternalCommandTimeout,
-                msg!(
-                    "error-external-command-timeout",
-                    program = spec.program,
-                    seconds = limit.as_secs()
-                ),
-            ));
+            return Err(timed_out(spec, limit));
         }
     }
 }
