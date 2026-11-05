@@ -318,7 +318,8 @@ fn write_blob(paths: &ProjectPaths, digest: &str, contents: &[u8]) -> Result<()>
     paths::ensure_private_dir(&directory, PRIVATE_DIR_MODE, PathScope::ProjectPath)?;
     let target = paths.snapshot_blob(digest);
     if target.exists() {
-        return verify_snapshot(&target, digest);
+        verify_snapshot(&target, digest)?;
+        return paths::sync_parent_directory(&target);
     }
     let write = || -> std::io::Result<()> {
         let mut temporary = tempfile::Builder::new()
@@ -339,12 +340,10 @@ fn write_blob(paths: &ProjectPaths, digest: &str, contents: &[u8]) -> Result<()>
             }
             Err(error) => return Err(error.error),
         }
-        if let Ok(parent) = File::open(&directory) {
-            let _ = parent.sync_all();
-        }
         Ok(())
     };
-    write().map_err(|error| paths::atomic_write_failed(&target, &error.to_string()))
+    write().map_err(|error| paths::atomic_write_failed(&target, &error.to_string()))?;
+    paths::sync_parent_directory(&target)
 }
 
 fn invalid_recorded(reason: crate::diagnostics::Msg) -> Error {

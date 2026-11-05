@@ -884,3 +884,6 @@ status-disk-not-observed-not-created = The project is registered, but its sandbo
 status-disk-not-observed-mismatch = Whether the sandbox is running could not be determined, so disk usage was not checked.
 status-disk-command-missing = `df` is not available inside the sandbox, so disk usage could not be checked.
 status-disk-parse-failed = The disk usage report from inside the sandbox could not be read.
+
+error-atomic-write-durability-unconfirmed = The file was placed, but its directory update could not be synchronized to storage
+remediation-atomic-write-durability-unconfirmed = The new file remains in place. Check available space and storage errors, then rerun the operation; persistence after a crash has not been confirmed.
