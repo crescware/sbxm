@@ -21,6 +21,13 @@ pub fn exec(
     host: &dyn HostEnvironment,
     prompt: &mut PromptUi,
 ) -> ExitCode {
+    let location = context.location.without_tool_recording();
+    let context = &Context {
+        location: &location,
+        ..*context
+    };
+    let read_only = crate::boundary::host::ReadOnly(host);
+    let host: &dyn HostEnvironment = &read_only;
     // 明示したglobal診断は、未loginでもほかの前提をすべて報告する。
     // 対話実行はglobalを含むscope選択そのものより前に確認する。
     if matches!(scope, Scope::Global) {

@@ -14,7 +14,7 @@ English: [README.md](../README.md)
 - Git 2.36以降と、SSH
 - 管理対象のrepositoryごとに発行したGitHub personal access token
 
-`sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を確認できます。Docker Sandboxesを使うほかのcommandも、最初にCLIのversionを確認し、上記より古ければほかの処理を行わずに停止します。hostのGitを使うcommandも、同じようにGitのversionを確認します。一度確認が通った実行ファイルは`~/.sbxm/host-tools.yaml`に記録し、その実行ファイルが変わらない限り確認を省略します。実行ファイルが変われば確認し直します。
+`sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を確認できます。Docker Sandboxesを使うほかのcommandも、最初にCLIのversionを確認し、上記より古ければほかの処理を行わずに停止します。hostのGitを使うcommandも、同じようにGitのversionを確認します。一度確認が通った実行ファイルは`~/.sbxm/host-tools.yaml`に記録し、その実行ファイルが変わらない限り確認を省略します。実行ファイルが変われば確認し直します。`status`は既存の記録を再利用しますが、新規作成も更新も行いません。
 
 ## インストール
 
@@ -165,6 +165,8 @@ credential交換guideは、現在の登録から公開情報であるscopeとpla
 対話端末で実行した場合、`repair`、`apply`、`rebuild`、`open`、`stop`、`destroy`、`status`はプロジェクト引数を省略すると対象を選択するpromptを表示できます。`status`では先頭に`global`を表示し、その後へ登録済みproject IDを並べます。検査の進捗は全commandで同じ方針に揃え、処理を待つ前に工程名をstderrへ表示して、直ちにflushします。認証、案件lock、Docker・Sandboxの応答待ちのほか、`status`、`open`、`repair`、`apply`（`--all`を含む）、`rebuild`のrepository・worktree・file検査が対象です。worktreeとfileは対象名と全体の何件目かも示します。`destroy`、`sync`、`stop`、`files pull`、`ls`、`guide`の検査や、`add --local`のhost repository確認にも同じ工程表示を使います。`status --global`はDocker、CLI version、network policy、daemon、認証、Remote SSHの確認を分けて表示します。削除保護では無視対象file、進行中のGit操作、originのfetch、確認後の安全性の再検査も表示します。読み取り専用の`status`は保存済みのorigin refだけを読み、fetchは行いません。停止中のSandboxも内部やディスクの確認のために起動しません。診断結果や削除計画は、検査が終わったあとにstdoutへ表示します。外部commandの逐次ログは出しません。`guide`はtopicを省略すると最初にtopicを問い、続いて案件を問います。`credential-rotation`を指定した場合は案件選択から始めます。非対話端末では、これらのcommandにプロジェクト引数を明示してください。`guide`にはtopicの明示も必要で、`status`だけはproject IDまたは`--global`をscopeとして指定できます。
 
 ただし`rebuild`と`destroy`は、引数を明示しても非対話端末では実行できません。どちらも削除計画を表示し、対象Sandbox名の完全一致入力を得た場合にだけ進むためです。`destroy`には確認を省略する`--force`がありますが、`rebuild`にはありません。
+
+`status`は保存済みのorigin tipとworktreeのcommitの有無をGitのbatchで一括確認し、同じobject IDの検査を共有します。Gitの任意のindex更新を抑え、Gitが対応していれば不足objectの遅延fetchも抑えます。host toolのversion確認cacheも更新しません。内部の構築検査ではcommand出力を保持する一時file、global診断ではdirectoryの書き込み可否probeを引き続き使うため、空き容量が無ければこれらの検査は失敗し得ます。
 
 ## プロジェクトをカスタマイズする
 
@@ -362,7 +364,7 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 
 `--local`で追加したプロジェクトは、このディレクトリの中にホスト側のcloneを持ちません。repositoryは追加したときの場所に残ります。
 
-`~/.sbxm`には、登録済みプロジェクトとその場所の索引である`registry.yaml`を置きます。表示言語か名義を選ぶか、配置するファイルを宣言した時点で`config.yaml`も作られます。Docker Sandboxes CLIとGitのversion確認が通った実行ファイルは`host-tools.yaml`に記録し、変わらない限り確認を省略します。プロジェクトの場所を知っているのはregistryだけであるため、プロジェクトのディレクトリを移動すると、sbxmは新しい場所を推測せず`ls`で`missing`として表示します。
+`~/.sbxm`には、登録済みプロジェクトとその場所の索引である`registry.yaml`を置きます。表示言語か名義を選ぶか、配置するファイルを宣言した時点で`config.yaml`も作られます。Docker Sandboxes CLIとGitのversion確認が通った実行ファイルは`host-tools.yaml`に記録し、変わらない限り確認を省略します。`status`ではこの記録を読むだけにします。プロジェクトの場所を知っているのはregistryだけであるため、プロジェクトのディレクトリを移動すると、sbxmは新しい場所を推測せず`ls`で`missing`として表示します。
 
 ## sbxmがsbxを起動するとき
 

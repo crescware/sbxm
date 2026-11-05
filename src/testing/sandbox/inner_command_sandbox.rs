@@ -84,6 +84,12 @@ impl AnsweredHost for InnerCommandSandbox {
             ));
         }
 
+        if let Some(result) =
+            crate::testing::command::object_batch(spec, |query| self.answer(query))?
+        {
+            return Ok(result);
+        }
+
         let (code, stdout) = if inner.first().is_some_and(|arg| *arg == "test") {
             let target = inner.last().copied().unwrap_or_default();
             // 模したSandboxにsymlinkは存在しない。在るpathはどれも実体である。

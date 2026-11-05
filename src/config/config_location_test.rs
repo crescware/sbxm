@@ -5,7 +5,10 @@ use super::*;
 impl ConfigLocation {
     /// 指定したhome directoryから組み立てる。
     pub fn from_home(home: PathBuf) -> ConfigLocation {
-        ConfigLocation { home }
+        ConfigLocation {
+            home,
+            record_host_tools: true,
+        }
     }
 }
 
