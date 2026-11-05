@@ -96,7 +96,7 @@ pub(crate) use run_inner::run_inner;
 use run_relay::run_relay;
 pub(crate) use run_streaming::run_streaming;
 pub(crate) use run_terminal_inner::run_terminal_inner;
-use signal_guard::SignalGuard;
+pub(crate) use signal_guard::SignalGuard;
 pub(crate) use signals::Signals;
 use spawn_failure::spawn_failure;
 use start_child::start_child;

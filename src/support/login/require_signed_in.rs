@@ -16,7 +16,7 @@ pub fn require_signed_in(
     progress: &mut dyn ProgressSink,
 ) -> Result<Vec<SandboxEntry>> {
     progress.step(msg!("progress-inspect-login"));
-    daemon::list_with_timeout(host, TimeoutClass::Probe).map_err(unobservable)
+    daemon::list_with_timeout(host, TimeoutClass::Probe, progress).map_err(unobservable)
 }
 
 fn unobservable(error: Error) -> Error {
@@ -30,6 +30,10 @@ fn unobservable(error: Error) -> Error {
         ErrorId::SbxLoginUnobservable,
         msg!("error-sbx-login-unobservable"),
     );
+    diagnostic.facts = error
+        .diagnostics()
+        .first()
+        .map_or_else(Vec::new, |source| source.facts.clone());
     if let Some(source) = error.diagnostics().first() {
         diagnostic = diagnostic.fact(Fact::cause(source.id.as_str()));
         if let Some(external) = &source.external {

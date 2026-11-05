@@ -1129,3 +1129,20 @@ fn a_recorded_cli_is_not_probed_again_and_still_reports_ready() -> Checked {
     );
     Ok(())
 }
+
+#[test]
+fn an_exhausted_login_probe_retains_the_attempt_count_in_its_final_diagnostic() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
+    let host = FakeHost::macos().timing_out("sbx ls --json");
+    let status = diagnose(&location, &host);
+    let diagnostic = diagnosed(&status, ErrorId::SbxLoginUnobservable)?;
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(fact,
+            crate::design::Fact::Translated { value, .. }
+            if value.id == "sbx-probe-attempts"
+                && value.args.contains(&("attempts", "3".into()))
+        )),
+        "the final sign-in diagnostic retains the total attempt count"
+    );
+    Ok(())
+}

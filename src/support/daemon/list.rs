@@ -4,5 +4,9 @@ use crate::diagnostics::Result;
 
 /// 現在のSandbox一覧。
 pub fn list(host: &dyn HostEnvironment) -> Result<Vec<SandboxEntry>> {
-    super::list_with_timeout(host, TimeoutClass::SandboxLifecycle)
+    super::list_with_timeout(
+        host,
+        TimeoutClass::SandboxLifecycle,
+        &mut crate::design::SilentProgress,
+    )
 }
