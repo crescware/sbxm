@@ -231,6 +231,8 @@ A few facts explain what this capacity reflects:
 
 When disk recovery is needed, use this order:
 
+If the sandbox cannot allocate temporary space for the combined internal check, sbxm runs the same read-only checks individually through host-side pipes. A full disk therefore does not by itself block the checks needed to connect for cleanup; failed safety checks still stop the connection.
+
 1. Delete unnecessary files inside the sandbox; the space returns immediately.
 2. Inspect what a rebuild would discard. If recreating the writable layer is necessary, run the normal protected `rebuild` flow and review its plan.
 3. Resolve every Layer A blocker shown by the protection checks — including unpublished commits, dirty or untracked work, Git operations, active sessions, and repository-level refs — before retrying.

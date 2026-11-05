@@ -225,6 +225,8 @@ DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
 
 diskの復旧が必要なときは、次の順序で進めてください。
 
+まとめた内部検査の一時領域をSandbox内に確保できない場合は、同じ読み取り検査をhost側のpipeで個別に実行します。容量ゼロだけを理由に清掃のための接続まで妨げず、安全確認自体が失敗した場合は接続を止めます。
+
 1. Sandbox内の不要なfileを削除する。空き容量はその場で戻ります。
 2. rebuildで何を破棄するかを確認する。書き込み可能な層の作り直しが必要なら、通常の保護付き`rebuild`を実行し、表示されたplanを確認する。
 3. 保護検査が示すLayer Aのblockerをすべて保存または解決してから再実行する。publishしていないcommit、dirtyまたは未追跡の作業、進行中のGit操作、active session、repository単位のrefも含まれます。
