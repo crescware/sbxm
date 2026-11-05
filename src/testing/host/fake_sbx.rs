@@ -237,6 +237,17 @@ impl AnsweredHost for FakeSbx {
                     (0, "proxycommand sbx ssh-proxy %h\n".to_string())
                 }
                 None if spec.args.iter().any(|arg| arg == "du") => (0, "1024 repository\n".into()),
+                None if spec.args.iter().any(|arg| arg.ends_with("^{tree}")) => {
+                    let count = spec
+                        .args
+                        .iter()
+                        .filter(|arg| arg.ends_with("^{tree}"))
+                        .count();
+                    (
+                        0,
+                        format!("{}\n", crate::testing::value::COMMIT).repeat(count),
+                    )
+                }
                 None => (0, String::new()),
             }
         };

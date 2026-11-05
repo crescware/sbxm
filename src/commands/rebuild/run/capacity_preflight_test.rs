@@ -13,6 +13,8 @@ enum Fault {
     Create,
     PartialCreate,
     Foreign,
+    TinyFiles(String),
+    Canceled,
 }
 struct FailingProbe {
     inner: FakeSbx,
@@ -38,12 +40,34 @@ impl AnsweredHost for FailingProbe {
                 "Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 100 100 0 100% /\n",
             ));
         }
-        if temporary && spec.args.iter().any(|arg| arg == "df") && matches!(self.fault, Fault::Full)
+        if !temporary
+            && let Fault::TinyFiles(tree) = &self.fault
+            && spec.args.iter().any(|arg| arg == "ls-tree")
         {
+            return Ok(crate::testing::command::outcome(spec, 0, tree));
+        }
+        if temporary
+            && spec.args.iter().any(|arg| arg == "-Pi")
+            && matches!(self.fault, Fault::Canceled)
+        {
+            return Err(Error::Canceled);
+        }
+        if temporary
+            && spec.args.iter().any(|arg| arg == "df")
+            && matches!(self.fault, Fault::Full | Fault::TinyFiles(_))
+            && let Some((_, _, commands)) = crate::testing::inside::split_inside_check(&spec.args)
+        {
+            let answers: Vec<_> = commands.iter().map(|command| {
+                let path = command.last().map_or("/", String::as_str);
+                let inode = command.iter().any(|arg| arg == "-Pi");
+                let free = if matches!(self.fault, Fault::Full) { 0 } else if inode { 1_000_000 } else { 256 * 1024 };
+                let columns = if inode { "Inodes IUsed IFree IUse%" } else { "1024-blocks Used Available Capacity" };
+                (0, format!("Filesystem {columns} Mounted on\noverlay 2000000 100000 {free} 90% {path}\n"))
+            }).collect();
             return Ok(crate::testing::command::outcome(
                 spec,
                 0,
-                "Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 100 100 0 100% /\n",
+                &crate::testing::inside::frame_inside_check(&answers),
             ));
         }
         if temporary
@@ -104,6 +128,7 @@ fn failed_target_capacity_creation_or_cleanup_preserves_the_old_sandbox() -> Che
         Fault::PartialCreate,
         Fault::Foreign,
         Fault::Changed,
+        Fault::TinyFiles(crate::testing::repository::small_file_tree(100_000)?),
     ] {
         let (fixture, project, inner) = switched_sandbox()?;
         let host = FailingProbe { inner, fault };
@@ -126,6 +151,7 @@ fn failed_target_capacity_creation_or_cleanup_preserves_the_old_sandbox() -> Che
                     ErrorId::StorageExhausted
                         | ErrorId::RebuildCapacityUnconfirmed
                         | ErrorId::ExternalCommandFailed
+                        | ErrorId::RebuildCapacityInsufficient
                 ))
         );
         assert!(
@@ -136,6 +162,43 @@ fn failed_target_capacity_creation_or_cleanup_preserves_the_old_sandbox() -> Che
                 .is_none()
         );
     }
+    Ok(())
+}
+
+#[test]
+fn canceling_the_capacity_probe_cleans_up_and_never_removes_the_old_sandbox() -> Checked {
+    let (fixture, project, inner) = switched_sandbox()?;
+    let host = FailingProbe {
+        inner,
+        fault: Fault::Canceled,
+    };
+    let error = rebuild(
+        crate::commands::rebuild::Target {
+            location: &fixture.location,
+            requested: Some(&project_id("example-org/example-repo")?),
+            prompt: &mut ScriptedPrompt::choosing(0),
+        },
+        &fixture.config,
+        &host,
+        &fixture.workspace_root,
+    )
+    .refused_because("the capacity observation was interrupted")?;
+    assert_eq!(error, Error::Canceled);
+    assert!(!host.inner.removal_requested(project.sandbox.as_str()));
+    let calls = host.inner.calls();
+    assert!(
+        calls
+            .iter()
+            .any(|args| args.iter().any(|arg| arg == "DELETE")
+                && args.iter().any(|arg| arg.contains("sbxm-capacity-check-")))
+    );
+    assert!(
+        crate::metadata::load(&project.paths)
+            .required()?
+            .required()?
+            .rebuild
+            .is_none()
+    );
     Ok(())
 }
 

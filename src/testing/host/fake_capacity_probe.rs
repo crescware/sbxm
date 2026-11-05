@@ -51,6 +51,25 @@ impl FakeCapacityProbe {
             );
             return Some(crate::testing::command::outcome(spec, 0, &output));
         }
+        if let ["exec", sandbox, "--", "stat", "-f", "-c", "%S", "/"] = args.as_slice()
+            && *sandbox == name
+        {
+            return Some(crate::testing::command::outcome(spec, 0, "4096\n"));
+        }
+        if let Some((sandbox, _, commands)) = crate::testing::inside::split_inside_check(&spec.args)
+            && sandbox == *name
+        {
+            let answers: Vec<_> = commands.iter().map(|command| {
+                let path = command.last().map_or("/", String::as_str);
+                let counters = if command.iter().any(|arg| arg == "-Pi") { "Inodes IUsed IFree IUse%" } else { "1024-blocks Used Available Capacity" };
+                (0, format!("Filesystem {counters} Mounted on\noverlay 20000000 100000 19900000 1% {path}\n"))
+            }).collect();
+            return Some(crate::testing::command::outcome(
+                spec,
+                0,
+                &crate::testing::inside::frame_inside_check(&answers),
+            ));
+        }
         None
     }
 }
