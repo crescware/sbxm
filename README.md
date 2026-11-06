@@ -26,6 +26,8 @@ The sandbox receives the Git identity and configuration files you choose, but no
 
 Run `sbxm status --global` to check these requirements and the Docker Sandboxes environment. Every other command that uses Docker Sandboxes checks the CLI version first and stops before doing anything else when it is older than the version above. Every command that uses Git on the host checks the Git version the same way. Once a check has passed, sbxm records that executable in `~/.sbxm/host-tools.yaml` and skips the check while the executable stays unchanged. A changed executable is checked again.
 
+Before project selection, the Docker Sandboxes sign-in check allows 10 seconds per attempt and makes at most three attempts when the Docker login service is temporarily unavailable, the command times out, or the listing JSON is incomplete. Retries wait one second, then two seconds, and show their reason and attempt number. These failures share the same three-attempt limit; three timeouts take about 33 seconds including the waits. An explicit sign-in requirement and other failures stop immediately. Ctrl-C also cancels the retry wait.
+
 ## Installation
 
 ```sh

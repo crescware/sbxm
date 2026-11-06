@@ -16,7 +16,7 @@ pub fn require_signed_in(
     progress: &mut dyn ProgressSink,
 ) -> Result<Vec<SandboxEntry>> {
     progress.step(msg!("progress-inspect-login"));
-    daemon::list_with_timeout(host, TimeoutClass::Probe).map_err(unobservable)
+    daemon::list_with_timeout(host, TimeoutClass::Probe, progress).map_err(unobservable)
 }
 
 fn unobservable(error: Error) -> Error {
