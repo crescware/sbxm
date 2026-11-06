@@ -318,6 +318,8 @@ originに無いbranch、tag、worktreeの`HEAD`のcommitだけを理由にrebuil
 
 こうして保存したcommitはSandboxを消しても残るため、rebuildとdestroyはoriginから辿れるcommitと同じく、失われないものとして数えます。originに無いstashやnotesのcommitはこの方法では保存されず、pushするか捨てる必要があります。
 
+保存元Sandboxには一時refやfileを作らず、detached worktreeのcommitも読み取りだけでhostへ救出します。host側に空きがあれば、保存元の容量ゼロだけを理由に保存が妨げられません。
+
 repositoryの初期化が容量不足で中断した場合は、空きを確保して `sbxm open` または `sbxm repair` を再実行します。空のrepository directory、またはsbxmの初期化中の印があるdirectoryを、既存fileを削除せずに再開します。由来を確認できない空でないdirectoryには手を加えません。
 
 ## GitHubを使わずに開発する

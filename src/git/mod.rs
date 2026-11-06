@@ -6,6 +6,7 @@
 mod canonical_id_of_remote;
 mod github_host;
 mod https_remote_url;
+mod is_object_id;
 mod origin_ref;
 mod require_github;
 mod validate_branch_name;
@@ -13,6 +14,7 @@ mod validate_branch_name;
 pub use canonical_id_of_remote::canonical_id_of_remote;
 use github_host::GITHUB_HOST;
 pub use https_remote_url::https_remote_url;
+pub use is_object_id::is_object_id;
 pub use origin_ref::origin_ref;
 use require_github::require_github;
 pub use validate_branch_name::validate_branch_name;

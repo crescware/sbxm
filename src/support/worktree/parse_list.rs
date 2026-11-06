@@ -57,6 +57,7 @@ fn parse_record(record: &str) -> Result<Entry> {
         path: path.to_string(),
         bare: false,
         detached: false,
+        head: None,
         branch: None,
         prunable: false,
     };
@@ -105,6 +106,7 @@ fn parse_fields<'a>(
                     ));
                 }
                 flags.saw_head = true;
+                entry.head = value.map(str::to_string);
             }
             "branch" => {
                 if flags.saw_branch || flags.saw_detached || !valid_single_value(value) {

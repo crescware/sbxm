@@ -54,16 +54,20 @@ fn import_through(
     let destination = saved_namespace(sandbox);
     let remote = sandbox_remote(sandbox, git_dir);
     let ssh = sandbox_ssh_config();
-    let refspecs: Vec<String> = REF_KINDS
+    let mut refspecs: Vec<String> = REF_KINDS
         .iter()
         .map(|(source, kind)| format!("+{source}*:{incoming}{kind}*"))
         .collect();
+    refspecs.extend(super::worktree_refspecs::worktree_refspecs(
+        host, sandbox, git_dir, incoming,
+    )?);
     let mut args = vec![
         "-c",
         ssh.as_str(),
         "-c",
         "transfer.fsckObjects=true",
         "fetch",
+        "--upload-pack=env GIT_OPTIONAL_LOCKS=0 GIT_NO_LAZY_FETCH=1 git -c uploadpack.allowAnySHA1InWant=true upload-pack",
         "--no-tags",
         "--no-recurse-submodules",
         "--no-write-fetch-head",

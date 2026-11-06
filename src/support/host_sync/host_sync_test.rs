@@ -111,8 +111,6 @@ impl Repositories {
             .required_because("the worktree heads are placed")?;
         assert!(placed, "the sandbox has refs to save");
         let imported = import_from_sandbox(&LocalSandbox, &self.host, NAMESPACE, &git_dir, stamp);
-        finish_save(&LocalSandbox, NAMESPACE, &git_dir)
-            .required_because("the worktree heads are cleared")?;
         imported.required_because("the sandbox refs are imported")
     }
 
@@ -144,6 +142,52 @@ fn sandbox_name() -> crate::diagnostics::Result<crate::project::SandboxName> {
     );
     assert_eq!(name.as_str(), NAMESPACE);
     Ok(name)
+}
+
+#[test]
+fn a_detached_commit_can_be_rescued_from_a_read_only_source_repository() -> Checked {
+    use std::os::unix::fs::PermissionsExt;
+    let repositories = Repositories::new()?;
+    git_in(&repositories.worktree, &["checkout", "--quiet", "--detach"])?;
+    let tip = repositories.commit("detached work on a full source")?;
+    let mut original = Vec::new();
+    let mut pending = vec![repositories.sandbox.clone()];
+    while let Some(path) = pending.pop() {
+        let metadata = fs::symlink_metadata(&path).required()?;
+        if metadata.is_dir() {
+            for entry in fs::read_dir(&path).required()? {
+                pending.push(entry.required()?.path());
+            }
+        }
+        let contents = if metadata.is_file() {
+            Some(fs::read(&path).required()?)
+        } else {
+            None
+        };
+        original.push((path.clone(), metadata.permissions(), contents));
+        fs::set_permissions(
+            &path,
+            fs::Permissions::from_mode(if metadata.is_dir() { 0o555 } else { 0o444 }),
+        )
+        .required()?;
+    }
+    let saved = repositories.save();
+    // testが失敗してもfixtureを片付けられるよう、先にdirectoryのpermissionを戻す。
+    for (path, permission, _) in &original {
+        fs::set_permissions(path, permission.clone()).required()?;
+    }
+    saved.required()?.required()?;
+    assert_eq!(
+        repositories.host_ref(&reference("worktrees/example-repo.tree-0"))?,
+        tip
+    );
+    assert!(repositories.save_refs()?.is_empty());
+    for (path, _, contents) in original {
+        if let Some(contents) = contents {
+            assert_eq!(fs::read(path).required()?, contents);
+        }
+    }
+    Ok(())
 }
 
 fn reference(kind_and_name: &str) -> String {
@@ -197,7 +241,10 @@ fn a_first_fetch_brings_branches_and_worktree_heads_under_the_sbxm_namespace() -
 #[test]
 fn the_host_reads_the_sandbox_over_the_ssh_that_open_uses() -> Checked {
     // hostから始まるsshだけで届く。promptで止まらず、agentもforwardingも渡さない。
-    let host = crate::testing::host::FakeSbx::listing("[]");
+    let host = crate::testing::host::FakeSbx::listing("[]").answering(
+        &format!("exec {NAMESPACE} -- git --git-dir /home/agent/work/example-repo/.git worktree list --porcelain -z"),
+        0, "worktree /home/agent/work/example-repo/.git\0bare\0\0",
+    );
     import_from_sandbox(
         &host,
         std::path::Path::new("/work/example-repo"),
@@ -666,7 +713,10 @@ fn temporary_refs_left_by_an_interrupted_save_are_not_saved() -> Checked {
             .host_ref(&reference("worktrees/example-repo.tree-0"))
             .is_ok()
     );
-    assert!(repositories.save_refs()?.is_empty());
+    assert!(
+        !repositories.save_refs()?.is_empty(),
+        "stale source refs are left untouched"
+    );
     Ok(())
 }
 
