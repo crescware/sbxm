@@ -163,6 +163,21 @@ impl AnsweredHost for FakeSbx {
 
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.specs.borrow_mut().push(spec.clone());
+        if spec
+            .args
+            .last()
+            .is_some_and(|arg| arg == "--batch-check=%(objectname)")
+        {
+            if let Some((code, output)) = self.lookup(&spec.args.join(" ")) {
+                return Ok(crate::testing::command::outcome(spec, code, &output));
+            }
+            if let Some(result) = crate::testing::command::object_batch(spec, |query| {
+                let (code, stdout) = self.lookup(&query.args.join(" ")).unwrap_or_default();
+                Ok(crate::testing::command::outcome(query, code, &stdout))
+            })? {
+                return Ok(result);
+            }
+        }
         if spec.program == "sbx"
             && let Some((sandbox, _timed, commands)) = split_inside_check(&spec.args)
         {
