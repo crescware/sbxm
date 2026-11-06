@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use crate::boundary::host::HostEnvironment;
-use crate::config::GlobalConfig;
 use crate::diagnostics::Result;
 use crate::metadata::ProjectMetadata;
 use crate::msg;
@@ -18,7 +17,6 @@ use crate::support::{disk, identity, provisioning, repository, sandbox, secret, 
 ///
 /// 工程ごとに変わるのはSandbox名、metadata、新Templateだけである。
 pub(super) struct Switch<'a> {
-    pub(super) config: &'a GlobalConfig,
     pub(super) paths: &'a ProjectPaths,
     pub(super) project: &'a ProjectId,
     pub(super) workspace_root: &'a Path,
@@ -40,28 +38,16 @@ impl Switch<'_> {
         template: &template::LoadedTemplate,
         existed: bool,
         permit: ProtectionPermit,
+        inputs: &[provisioning::SnapshotFile],
         progress: &mut dyn ProgressSink,
     ) -> Result<Vec<String>> {
         let Switch {
-            config,
             paths,
             project,
             workspace_root,
             poll,
         } = *self;
         let layout = SandboxLayout::new(metadata.canonical_id());
-        // 宣言fileは古いSandboxを消す前に読む。読めないfileがあれば、何も消さずに止まる。
-        if !config.files.is_empty() {
-            progress.step(msg!("progress-status-files"));
-        }
-        let inputs = provisioning::ProvisioningInputs::capture_files(paths, config)?;
-
-        if existed {
-            // rebuildに`--force`は無く、常にforce=falseで削除を求め、runtime自身の
-            // active-session検査を経る。
-            // 削除する対象は許可証が持つ。`name`は再作成の側だけが使う。
-            inventory::remove_protected(host, permit, poll, progress)?;
-        }
 
         // 再作成したSandboxは、`prepare`と同じ条件でGitHubへ届く必要がある。tokenの
         // ないままimageを組み直してSandboxを作らないよう、作り直す前に確認する。
@@ -74,6 +60,10 @@ impl Switch<'_> {
             }
             repository::SandboxOrigin::Host { .. } => None,
         };
+
+        if existed {
+            inventory::remove_protected(host, permit, poll, progress)?;
+        }
 
         let ready = sandbox::ensure(host, name, template, workspace_root, progress)?;
 
@@ -106,7 +96,7 @@ impl Switch<'_> {
         )
         .map_err(decorate)?;
         // 作り直したSandboxへ置いた内容が、以後の`apply`が置き換えてよい基準になる。
-        metadata.declared_files = Some(provisioning::recorded_files(&inputs));
+        metadata.declared_files = Some(provisioning::recorded_files(inputs));
         repository::ensure_bare_clone(host, &ready.name, &origin, &layout, progress)
             .map_err(decorate)?;
         // hostにあるrepositoryは、hostへ保存したbranchをworktreeより先に戻す。起点branchも

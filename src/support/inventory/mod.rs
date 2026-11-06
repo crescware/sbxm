@@ -43,7 +43,7 @@ pub use start::start;
 pub use state_of::state_of;
 pub use still_present::still_present;
 pub use take::take;
-use wait_until_absent::wait_until_absent;
+pub(crate) use wait_until_absent::wait_until_absent;
 pub use wait_until_running::wait_until_running;
 pub use workspace_state::WorkspaceState;
 

@@ -43,6 +43,17 @@ pub fn execute(
         progress,
     )?;
 
+    let inputs = super::preflight::preflight(
+        host,
+        &prepared,
+        &built.template,
+        config,
+        workspace_root,
+        prepared.had_sandbox,
+        poll,
+        progress,
+    )?;
+
     progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;
     let state = inventory::state_of(&entries, &prepared.locked.metadata, workspace_root)?;
@@ -91,7 +102,6 @@ pub fn execute(
 
     let project = ProjectId::parse(&prepared.locked.metadata.display_id())?;
     let switch = Switch {
-        config,
         paths: &prepared.locked.paths,
         project: &project,
         workspace_root,
@@ -104,6 +114,7 @@ pub fn execute(
         &built.template,
         existed,
         permit,
+        &inputs,
         progress,
     )?;
 

@@ -9,6 +9,7 @@ use super::RebuildPlan;
 /// lockを保持したまま確認と生成を挟むための状態。
 #[derive(Debug)]
 pub struct Prepared {
+    pub(super) had_sandbox: bool,
     pub plan: RebuildPlan,
     pub(super) name: SandboxName,
     /// 適用先のDockerfile hash。`RebuildIntent`から読んだ場合は再計算しない。

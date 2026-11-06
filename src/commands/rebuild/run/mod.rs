@@ -1,9 +1,13 @@
+mod capacity_probe;
+mod check_capacity;
 mod confirm;
 mod execute;
 mod observe_protection;
+mod preflight;
 mod prepare;
 mod prepared;
 mod rebuild_plan;
+mod space_required;
 mod start_to_read_saved_state;
 mod switch;
 

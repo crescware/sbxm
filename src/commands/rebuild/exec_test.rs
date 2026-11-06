@@ -132,7 +132,7 @@ fn a_sandbox_that_disappeared_after_it_was_confirmed_is_reported_instead_of_rebu
         ran.stderr
     );
     assert!(
-        !host.removed_any() && !host.ran("create --name"),
+        !host.removed_any() && !host.ran(&format!("create --name {}", project.sandbox)),
         "nothing is removed or created once the state has changed: {:?}",
         host.calls()
     );

@@ -138,8 +138,12 @@ fn a_dockerfile_that_did_not_change_still_recreates_the_sandbox() -> Checked {
         host.calls()
     );
     assert!(
-        !host.ran("df -Pk"),
-        "a successful rebuild never checks disk usage: {:?}",
+        !host
+            .calls()
+            .iter()
+            .any(|call| call.contains(&"df".to_string())
+                && call.contains(&project.sandbox.as_str().to_string())),
+        "a successful rebuild only checks the temporary sandbox disk: {:?}",
         host.calls()
     );
     // exclusive session leaseは、rebuildが終わったあとは保持されたままにならない。
@@ -370,7 +374,7 @@ fn a_bare_repository_fetch_failure_carries_the_disk_state_at_that_moment() -> Ch
     assert_eq!(
         since
             .iter()
-            .filter(|call| call.contains(&"df".to_string()))
+            .filter(|call| call.contains(&"df".to_string()) && call.contains(&name.to_string()))
             .count(),
         1,
         "exactly one disk check per failure: {since:?}"
@@ -915,7 +919,7 @@ fn a_sandbox_that_disappears_while_the_new_generation_is_prepared_fails_closed()
     assert_eq!(error.first_id(), Some(ErrorId::ProtectionStateChanged));
 
     assert!(
-        !host.removed_any() && !host.ran("create --name"),
+        !host.removed_any() && !host.ran(&format!("create --name {}", project.sandbox)),
         "nothing is removed or created once the state has changed: {:?}",
         host.calls()
     );
@@ -2251,3 +2255,6 @@ fn a_rebuild_keeps_scoped_secrets_and_completes_without_reregistration() -> Chec
     );
     Ok(())
 }
+
+#[path = "capacity_preflight_test.rs"]
+mod capacity_preflight_test;

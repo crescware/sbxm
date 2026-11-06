@@ -15,6 +15,7 @@ use std::cell::RefCell;
 /// まとめた確認（Sandboxの中のcommandを1回の`sbx exec`で走らせる手順）には、中の
 /// commandごとに`exec <name> -- <command>`の応答を引き、実物と同じ形に並べて答える。
 pub struct FakeSbx {
+    probes: RefCell<super::fake_capacity_probe::FakeCapacityProbe>,
     pub listing: RefCell<Vec<String>>,
     pub answers: std::collections::HashMap<String, (i32, String)>,
     /// 同じ指定へ順に返す応答。末尾から取り出す。
@@ -27,6 +28,7 @@ pub struct FakeSbx {
 impl FakeSbx {
     pub fn listing(output: &str) -> FakeSbx {
         FakeSbx {
+            probes: RefCell::default(),
             listing: RefCell::new(vec![output.to_string()]),
             answers: std::collections::HashMap::new(),
             sequences: RefCell::new(std::collections::HashMap::new()),
@@ -38,6 +40,7 @@ impl FakeSbx {
     /// 呼び出しごとに異なる一覧を返す。最後の1件は繰り返し使う。
     pub fn listings(outputs: &[&str]) -> FakeSbx {
         FakeSbx {
+            probes: RefCell::default(),
             listing: RefCell::new(
                 outputs
                     .iter()
@@ -94,9 +97,10 @@ impl FakeSbx {
     }
 
     pub fn removed_any(&self) -> bool {
-        self.calls()
-            .iter()
-            .any(|args| super::is_sandbox_removal(args))
+        self.calls().iter().any(|args| {
+            super::is_sandbox_removal(args)
+                && !args.iter().any(|arg| arg.contains("sbxm-capacity-check-"))
+        })
     }
 
     /// scoped secretを保持する削除要求で、このSandboxを消したか。
@@ -150,6 +154,24 @@ impl FakeSbx {
             .required_because(&format!("no command matched {needle}"))?
             .clone())
     }
+
+    /// objectの一括検査を、個別検査に指定した答えから組み立てる。
+    fn answer_objects(&self, spec: &CommandSpec) -> Result<Option<CommandOutcome>> {
+        if spec
+            .args
+            .last()
+            .is_none_or(|arg| arg != "--batch-check=%(objectname)")
+        {
+            return Ok(None);
+        }
+        if let Some((code, output)) = self.lookup(&spec.args.join(" ")) {
+            return Ok(Some(crate::testing::command::outcome(spec, code, &output)));
+        }
+        crate::testing::command::object_batch(spec, |query| {
+            let (code, stdout) = self.lookup(&query.args.join(" ")).unwrap_or_default();
+            Ok(crate::testing::command::outcome(query, code, &stdout))
+        })
+    }
 }
 
 impl AnsweredHost for FakeSbx {
@@ -163,20 +185,11 @@ impl AnsweredHost for FakeSbx {
 
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.specs.borrow_mut().push(spec.clone());
-        if spec
-            .args
-            .last()
-            .is_some_and(|arg| arg == "--batch-check=%(objectname)")
-        {
-            if let Some((code, output)) = self.lookup(&spec.args.join(" ")) {
-                return Ok(crate::testing::command::outcome(spec, code, &output));
-            }
-            if let Some(result) = crate::testing::command::object_batch(spec, |query| {
-                let (code, stdout) = self.lookup(&query.args.join(" ")).unwrap_or_default();
-                Ok(crate::testing::command::outcome(query, code, &stdout))
-            })? {
-                return Ok(result);
-            }
+        if let Some(result) = self.answer_objects(spec)? {
+            return Ok(result);
+        }
+        if let Some(outcome) = self.probes.borrow_mut().answer(spec) {
+            return Ok(outcome);
         }
         if spec.program == "sbx"
             && let Some((sandbox, _timed, commands)) = split_inside_check(&spec.args)
@@ -250,6 +263,18 @@ impl AnsweredHost for FakeSbx {
                     && spec.args.first().is_some_and(|arg| arg == "-G") =>
                 {
                     (0, "proxycommand sbx ssh-proxy %h\n".to_string())
+                }
+                None if spec.args.iter().any(|arg| arg == "du") => (0, "1024 repository\n".into()),
+                None if spec.args.iter().any(|arg| arg.ends_with("^{tree}")) => {
+                    let count = spec
+                        .args
+                        .iter()
+                        .filter(|arg| arg.ends_with("^{tree}"))
+                        .count();
+                    (
+                        0,
+                        format!("{}\n", crate::testing::value::COMMIT).repeat(count),
+                    )
                 }
                 None => (0, String::new()),
             }

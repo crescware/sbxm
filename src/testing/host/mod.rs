@@ -5,6 +5,7 @@ mod assert_lifecycle;
 mod changing_before;
 mod custom_secret_listing;
 mod failing_at;
+mod fake_capacity_probe;
 mod fake_sbx;
 mod is_sandbox_removal;
 mod isolated_agent;

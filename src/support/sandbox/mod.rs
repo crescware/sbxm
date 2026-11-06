@@ -57,7 +57,7 @@ mod workspace_exists;
 mod workspace_path;
 mod workspace_root;
 
-use agent_kit::AGENT_KIT;
+pub(crate) use agent_kit::AGENT_KIT;
 pub use ensure::ensure;
 pub use exec::exec;
 use exec_arguments::exec_arguments;

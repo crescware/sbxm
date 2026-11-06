@@ -7,7 +7,7 @@ use crate::support::daemon;
 use super::{Poll, single, still_present};
 
 /// commandの戻り値だけを不在の根拠にしない。一覧から消えるまで待つ。
-pub(super) fn wait_until_absent(
+pub(crate) fn wait_until_absent(
     host: &dyn HostEnvironment,
     name: &SandboxName,
     poll: Poll,
