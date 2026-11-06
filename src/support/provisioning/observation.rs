@@ -136,6 +136,11 @@ impl Observation {
         self.blocking = errors;
     }
 
+    /// 読み取り専用の診断も、追加検査で確認できなかった理由を全件表示する。
+    pub(crate) fn blocking_errors(&self) -> &[Error] {
+        &self.blocking
+    }
+
     /// 変更を始める前に、安全と確認できなかった事実があれば拒否する。
     ///
     /// 観測そのものは最後まで進めるため、mutationを持つcommandはこれを必ず通る。

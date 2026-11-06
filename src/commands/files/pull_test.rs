@@ -720,7 +720,7 @@ fn a_baseline_that_cannot_be_recorded_is_reported_after_the_host_file_was_replac
 }
 
 #[test]
-fn a_pull_adopts_nothing_past_a_step_that_did_not_answer() -> Checked {
+fn a_pull_retries_its_preflight_and_adopts_nothing_after_other_unanswered_steps() -> Checked {
     let arrange = || -> Checked<(Bench, World, ProjectId)> {
         let (bench, world, project) = built()?;
         world.edited_inside(IN_SANDBOX, b"edited inside\n");
@@ -736,7 +736,9 @@ fn a_pull_adopts_nothing_past_a_step_that_did_not_answer() -> Checked {
         ScriptedKeys::confirming(),
     )?;
     assert_eq!(ran.code, ExitCode::Success, "{}", ran.stderr);
-    for (at, step) in recorded.calls().iter().enumerate() {
+    let steps = recorded.calls();
+    let preflight = steps.iter().position(|step| step == "sbx ls --json");
+    for (at, step) in steps.iter().enumerate() {
         let (bench, world, project) = arrange()?;
         let source = bench.config.files[0].source.as_path().to_path_buf();
         let before = fs::read(&source).required()?;
@@ -750,7 +752,12 @@ fn a_pull_adopts_nothing_past_a_step_that_did_not_answer() -> Checked {
             ScriptedKeys::confirming(),
         )?;
 
-        assert_eq!(ran.code, ExitCode::Failure, "{step}: {}", ran.stdout);
+        if Some(at) == preflight {
+            assert_eq!(ran.code, ExitCode::Success, "{step}: {}", ran.stderr);
+            assert!(ran.stderr.contains("attempt 2 of 3"), "{}", ran.stderr);
+        } else {
+            assert_eq!(ran.code, ExitCode::Failure, "{step}: {}", ran.stdout);
+        }
         assert_eq!(fs::read(&source).required()?, before, "{step}");
     }
     Ok(())

@@ -12,7 +12,7 @@ use crate::time::Clock;
 /// 選んだ案件がhostにあるrepositoryの案件で、Sandboxが動いていれば、commitをhostへ
 /// 保存する。
 ///
-/// Sandboxが動いていなければ何もしない。続く操作が自分の規則で報告する。lockを`wait`
+/// Sandboxが動いていない場合も、保存を確認できなかった理由をwarningで残す。lockを`wait`
 /// のうちに取れなければ、保存できなかったことをwarningにする。続く操作が同じ理由で
 /// 断るとは限らず、黙れば保存したと受け取られる。保存はその案件のproject lockだけを
 /// 持って行い、終われば手放す。
@@ -40,8 +40,9 @@ pub fn save_selected(
     if locked.metadata.rebuild.is_some() {
         return AutoSaved::Nothing;
     }
-    if inventory::require_running(host, &locked.metadata, workspace_root, progress).is_err() {
-        return AutoSaved::Nothing;
+    if let Err(error) = inventory::require_running(host, &locked.metadata, workspace_root, progress)
+    {
+        return AutoSaved::Failed(host_sync::save_failed(&display_id, &error));
     }
     host_sync::auto_save(
         host,

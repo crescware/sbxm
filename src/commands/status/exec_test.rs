@@ -356,6 +356,22 @@ fn prompt_cancellation_returns_canceled() -> Checked {
 }
 
 #[test]
+fn status_checks_versions_without_writing_tool_records_and_marks_commands_read_only() -> Checked {
+    let fixture = Fixture::new()?;
+    fixture.register("example-org/example-repo")?;
+    let host = FakeSbx::listing("[]")
+        .with_executable("sbx", crate::testing::host::reusable_executable("sbx"))
+        .with_executable("git", crate::testing::host::reusable_executable("git"));
+    let screen = RecordedScreen::new();
+    execute_prompt(&fixture, &host, ScriptedKeys::choosing(0), &screen);
+    assert!(!fixture.location.host_tools_file().exists());
+    assert!(host.specs.borrow().iter().all(|spec| spec.read_only));
+    assert!(host.calls().iter().any(|args| args == &["version"]));
+    assert!(host.calls().iter().any(|args| args == &["--version"]));
+    Ok(())
+}
+
+#[test]
 fn explicit_global_status_reports_login_alongside_other_host_checks() -> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;

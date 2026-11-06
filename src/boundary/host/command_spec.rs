@@ -14,6 +14,8 @@ pub struct CommandSpec {
     pub args: Vec<String>,
     pub env: EnvPolicy,
     pub timeout: TimeoutClass,
+    /// 読み取り検査が暗黙に行うGitのindex更新と不足objectの取得を抑える。
+    pub(crate) read_only: bool,
     pub(super) output: OutputPolicy,
     /// 作業directory。指定しない場合は現在processのcurrent directoryを継承する。
     pub working_dir: Option<PathBuf>,
@@ -34,6 +36,7 @@ impl CommandSpec {
             args: args.iter().map(|arg| (*arg).to_string()).collect(),
             env: EnvPolicy::Inherit,
             timeout: TimeoutClass::Probe,
+            read_only: false,
             output: OutputPolicy::Capture,
             working_dir: None,
             input: CommandInput::Empty,
@@ -52,6 +55,11 @@ impl CommandSpec {
 
     pub fn timeout(mut self, class: TimeoutClass) -> CommandSpec {
         self.timeout = class;
+        self
+    }
+
+    pub(crate) fn read_only(mut self) -> CommandSpec {
+        self.read_only = true;
         self
     }
 

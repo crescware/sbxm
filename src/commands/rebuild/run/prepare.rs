@@ -50,6 +50,7 @@ pub fn prepare(
         project = candidate.display_id()
     ));
     let locked = candidate.lock()?;
+    crate::support::files::PendingUpdate::require_clean(&locked.paths)?;
     // 中断した初回構築を暗黙に進めない。Sandboxの有無にも停止中かどうかにも依らず、
     // 対象が決まった直後に無条件で拒否する。中断したrebuildの再開はここを素通りする。
     // 2つのintentは同時にdiskへ乗れないため、`metadata.rebuild`があるならintentは無い。

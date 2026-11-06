@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -44,10 +44,7 @@ pub(super) fn resumable_write_with_precondition(
     if let Err(error) = temporary.persist(target) {
         return Err(atomic_write_failed(target, &error.error.to_string()));
     }
-    if let Ok(directory) = File::open(parent) {
-        let _ = directory.sync_all();
-    }
-    Ok(())
+    crate::paths::sync_parent_directory(target)
 }
 
 fn write_result<T>(target: &Path, result: std::io::Result<T>) -> Result<T> {

@@ -34,3 +34,5 @@ pub use reusable_executable::reusable_executable;
 pub use supported_git_version::supported_git_version;
 pub use supported_sbx_version::supported_sbx_version;
 pub use unrunnable::Unrunnable;
+mod ssh_feature_enabled;
+pub use ssh_feature_enabled::SSH_FEATURE_ENABLED;

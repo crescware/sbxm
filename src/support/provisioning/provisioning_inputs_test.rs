@@ -543,9 +543,8 @@ fn a_blob_name_taken_by_a_dangling_symlink_is_refused_rather_than_followed() -> 
 }
 
 #[test]
-fn a_blob_directory_that_cannot_be_listed_still_receives_the_snapshot() -> Checked {
-    // blobを置いたあとのdirectoryのsyncは、できれば行う後始末である。書き込めるが
-    // 開けないdirectoryでも、snapshot自体は置ける。
+fn a_blob_directory_that_cannot_be_synced_reports_uncertain_durability_and_keeps_the_blob()
+-> Checked {
     let dir = tempfile::tempdir().required()?;
     let paths = project_paths(dir.path())?;
     let dockerfile = b"FROM example\n";
@@ -559,10 +558,15 @@ fn a_blob_directory_that_cannot_be_listed_still_receives_the_snapshot() -> Check
     )
     .required_because("restore permissions so the temp directory can be cleaned up")?;
 
-    let inputs = result.required_because("the blob is written without syncing its directory")?;
-    inputs
-        .verify_unchanged()
-        .required_because("the written blob verifies")?;
+    if rustix::process::geteuid().is_root() {
+        result.required_because("root can still open the directory")?;
+    } else {
+        let error = result.refused_because("directory sync is required")?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::AtomicWriteDurabilityUnconfirmed)
+        );
+    }
     assert_eq!(
         fs::read(paths.snapshot_blob(&sha256_hex(dockerfile))).required()?,
         dockerfile

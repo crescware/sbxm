@@ -9,11 +9,16 @@
 mod list;
 mod list_retrying;
 mod list_with_timeout;
+mod retry_reason;
 
 pub use list::list;
 use list_retrying::list_retrying;
 pub use list_with_timeout::list_with_timeout;
+use retry_reason::RetryReason;
 
 #[cfg(test)]
 #[path = "daemon_test.rs"]
 mod daemon_test;
+
+#[cfg(test)]
+mod probe_test;

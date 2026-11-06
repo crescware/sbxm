@@ -8,7 +8,7 @@ use crate::msg;
 use crate::project::ProjectId;
 
 use crate::support::inventory::ProjectState;
-use crate::support::provisioning::{self, NextAction};
+use crate::support::provisioning;
 use crate::support::{disk, repository, select};
 
 use crate::commands::status::project::artifacts::{check_directory, check_dockerfile, check_image};
@@ -103,11 +103,27 @@ pub fn diagnose(
     // 場合は、実行できると証明できないcommandを出さない。Sandboxの一覧は
     // `check_sandbox`が読んだものを使い、読み直さない。
     progress.step(msg!("progress-status-next"));
-    status.next = listed
-        .and_then(|(entries, _)| {
-            provisioning::observe(host, &entries, &paths, &metadata, workspace_root, progress).ok()
-        })
-        .and_then(|observation| NextAction::decide(&metadata, &observation));
+    // Dockerfileを読めないことは上の項目で既に示した。追加観測の入力が無い状態で
+    // 同じ欠落を別のfile errorへ変換しない。
+    let dockerfile_readable = status.items.iter().any(|item| {
+        item.item == "status-item-dockerfile" && matches!(item.value, Value::Ready | Value::Changed)
+    });
+    if let Some((entries, _)) = listed
+        && dockerfile_readable
+    {
+        super::check_next::check_next(
+            &metadata,
+            provisioning::observe(host, &entries, &paths, &metadata, workspace_root, progress),
+            &mut status,
+        )?;
+    }
+    if let Err(error) = crate::support::files::PendingUpdate::require_clean(&paths) {
+        status.push("status-item-file-update", Value::NotObserved);
+        status
+            .diagnostics
+            .extend(error.diagnostics().iter().cloned());
+        status.next = None;
+    }
     if status
         .storage
         .iter()

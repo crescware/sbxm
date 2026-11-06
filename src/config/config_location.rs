@@ -10,6 +10,7 @@ use crate::msg;
 #[derive(Debug, Clone)]
 pub struct ConfigLocation {
     home: PathBuf,
+    record_host_tools: bool,
 }
 
 impl ConfigLocation {
@@ -31,12 +32,27 @@ impl ConfigLocation {
                     .fact(Fact::reason(msg!("cause-home-directory-unknown"))),
             )
         })?;
-        Ok(ConfigLocation { home })
+        Ok(ConfigLocation {
+            home,
+            record_host_tools: true,
+        })
     }
 
     /// home directory。宣言fileの配置先を、sourceのhomeからの相対pathで決めるために使う。
     pub fn home(&self) -> &Path {
         &self.home
+    }
+
+    /// 観測のためだけにはhost toolのversion記録を書き換えない。
+    pub(crate) fn without_tool_recording(&self) -> ConfigLocation {
+        ConfigLocation {
+            home: self.home.clone(),
+            record_host_tools: false,
+        }
+    }
+
+    pub(crate) fn records_host_tools(&self) -> bool {
+        self.record_host_tools
     }
 
     /// `~/.sbxm`

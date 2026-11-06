@@ -38,6 +38,7 @@ impl LocalSandbox {
             return spec.clone();
         };
         let mut local = CommandSpec::capture(program, args).timeout(spec.timeout);
+        local.read_only = spec.read_only;
         if let Some(input) = spec.input() {
             local = local.with_input(input.to_vec());
         }

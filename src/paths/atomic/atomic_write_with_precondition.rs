@@ -1,4 +1,4 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
@@ -66,13 +66,7 @@ pub(super) fn atomic_write_with_precondition(
             .map_err(|error| write_failed(error.to_string()))?;
         precondition(target)?;
         fs::rename(&temp, target).map_err(|error| write_failed(error.to_string()))?;
-        if let Some(parent) = target.parent()
-            && let Ok(directory) = File::open(parent)
-        {
-            // rename自体を永続化する。失敗しても書き込み内容は失われないため、致命的には扱わない。
-            let _ = directory.sync_all();
-        }
-        Ok(())
+        crate::paths::sync_parent_directory(target)
     })();
 
     if result.is_err() {

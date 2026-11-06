@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -33,6 +33,7 @@ pub fn receive(
         .require_success()?;
     keep(temporary, &target)
         .map_err(|error| paths::atomic_write_failed(&target, &error.to_string()))?;
+    paths::sync_parent_directory(&target)?;
     Ok(target)
 }
 
@@ -53,10 +54,5 @@ fn keep(temporary: NamedTempFile, target: &Path) -> std::io::Result<()> {
     temporary
         .persist_noclobber(target)
         .map_err(|error| error.error)?;
-    if let Some(parent) = target.parent()
-        && let Ok(directory) = File::open(parent)
-    {
-        let _ = directory.sync_all();
-    }
     Ok(())
 }
