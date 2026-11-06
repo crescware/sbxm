@@ -103,6 +103,17 @@ impl AnsweredHost for InnerCommandSandbox {
                 i32::from(!self.present.borrow().iter().any(|known| known == target)),
                 "probed".to_string(),
             )
+        } else if key.contains("entries=$(ls -A") {
+            let target = inner.last().copied().unwrap_or_default();
+            (
+                i32::from(
+                    !self
+                        .present
+                        .borrow()
+                        .contains(&format!("{target}/sbxm-initializing")),
+                ),
+                String::new(),
+            )
         } else if key.contains("worktree add") {
             // 作成に成功したworktreeは、以後存在するものとして扱う。
             let path = inner

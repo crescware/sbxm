@@ -15,6 +15,7 @@ pub fn inspection_commands(git_dir: &str) -> Vec<Vec<String>> {
         "-e".to_string(),
         git_dir.to_string(),
     ]];
+    commands.push(super::unfinished_init_command(git_dir));
     for args in git {
         let mut command = vec![
             "git".to_string(),

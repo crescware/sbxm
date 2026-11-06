@@ -392,7 +392,8 @@ fn observe_repository(
                 Err(error) => {
                     match repository::observe_initialization(inside, origin, &git_dir, progress) {
                         Ok(
-                            repository::Initialization::OriginMissing
+                            repository::Initialization::Uninitialized
+                            | repository::Initialization::OriginMissing
                             | repository::Initialization::FetchRefspecMissing,
                         ) => Observed::Missing,
                         Ok(repository::Initialization::Settled) | Err(_) => {
