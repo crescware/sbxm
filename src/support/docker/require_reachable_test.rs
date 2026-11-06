@@ -50,7 +50,7 @@ fn an_engine_that_answers_with_a_failure_keeps_what_it_said() -> Checked {
         .as_ref()
         .required_because("what docker said is kept")?;
     assert_eq!(external.stderr, b"Cannot connect to the Docker daemon");
-    assert_eq!(external.exit_status, "exit status: 1");
+    assert_eq!(external.exit_status.as_deref(), Some("exit status: 1"));
     Ok(())
 }
 

@@ -61,7 +61,7 @@ fn external_failure_keeps_raw_stderr() {
         program: "sbx".into(),
         safe_args: vec!["ls".into()],
         working_dir: None,
-        exit_status: "exit status: 2".into(),
+        exit_status: Some("exit status: 2".into()),
         stderr: b"boom\n".to_vec(),
         stderr_lossy: false,
     };
