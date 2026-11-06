@@ -461,7 +461,7 @@ fn a_failed_handover_after_a_successful_build_does_not_return_to_pending() -> Ch
 }
 
 #[test]
-fn a_local_project_is_saved_during_and_after_the_session() -> Checked {
+fn a_local_project_is_saved_before_during_and_after_the_session() -> Checked {
     // 実物と同じ待ちの判断が、間隔ごとに保存を走らせる。端末へ何も書かずに保存を試みる。
     let bench = Bench::new()?;
     let world = World::new();
@@ -495,8 +495,16 @@ fn a_local_project_is_saved_during_and_after_the_session() -> Checked {
     let calls = world.since(mark);
     let session = calls
         .iter()
-        .position(|call| call.starts_with("ssh "))
+        .position(|call| call.starts_with("ssh -t "))
         .required_because("the session starts")?;
+    assert_eq!(
+        calls[..session]
+            .iter()
+            .filter(|call| call.contains(crate::support::host_sync::PLACE_SAVE_REFS))
+            .count(),
+        1,
+        "one backup before handing over the terminal"
+    );
     let saves = calls
         .iter()
         .skip(session)
