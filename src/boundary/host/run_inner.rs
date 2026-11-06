@@ -6,7 +6,7 @@ use crate::time::Clock;
 
 use super::{
     CommandOutcome, CommandSpec, Pipes, SignalGuard, Signals, Stream, configure, outcome,
-    pump_until_exit, spawn_failure, start_child,
+    pump_until_exit, spawn_failure, start_child, with_captured_stderr,
 };
 
 /// 出力をcaptureして実行する。
@@ -59,6 +59,10 @@ fn capture<O: Pipes + Signals>(
             }
             Ok(())
         },
-    )?;
+    );
+    let status = match status {
+        Ok(status) => status,
+        Err(error) => return Err(with_captured_stderr(error, stderr)),
+    };
     Ok((status, stdout, stderr))
 }

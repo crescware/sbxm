@@ -9,6 +9,7 @@ use crate::msg;
 pub fn save_failed(project: &str, error: &Error) -> Warning {
     let mut warning = Warning::text(msg!("auto-save-failed", project = project));
     for diagnostic in error.diagnostics() {
+        warning.diagnostics.push(diagnostic.clone());
         warning = warning
             .fact(Fact::cause(diagnostic.id.as_str()))
             .explain(diagnostic.description.clone());

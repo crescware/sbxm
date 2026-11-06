@@ -14,7 +14,7 @@ use crate::support::inventory::{self, Poll, ProjectState};
 use crate::support::select::{self, ProjectPrompt};
 use crate::support::{daemon, disk, docker, generation, provisioning, sandbox, worktree};
 
-use super::Prepared;
+use super::{OpenSelection, Prepared};
 
 /// `SSHへ引き渡せる状態までSandboxを整える`。
 ///
@@ -47,28 +47,21 @@ pub fn prepare(
     poll: Poll,
     progress: &mut dyn ProgressSink,
 ) -> Result<Prepared> {
-    // 案件をpromptで選ぶときは、indexも同じ画面で選ぶ。promptが示す範囲はlockの前に
-    // 読んだものであり、確定からlockまでに変わり得る。範囲の外になった値は`--index`と
-    // 同じく、lock後のmetadataが宣言するworktreeに無ければrepository rootへ繋ぎ、
-    // 接続前に知らせる。
-    let (candidate, index) = if requested.is_none() && index.is_none() {
-        let (candidate, index) = select::open(location, &msg!("select-open-heading"), prompt)?;
-        (candidate, Some(index))
-    } else {
-        (
-            select::one(location, requested, &msg!("select-open-heading"), prompt)?,
-            index,
-        )
-    };
+    let OpenSelection { candidate, index } =
+        OpenSelection::resolve(location, requested, index, prompt)?;
     progress.step(msg!(
         "progress-project-lock",
         project = candidate.display_id()
     ));
     let mut locked = candidate.lock()?;
+    crate::support::files::PendingUpdate::require_clean(&locked.paths)?;
 
     generation::require_no_rebuild(&locked.metadata)?;
     progress.step(msg!("progress-inspect-docker"));
     docker::require_reachable(host)?;
+
+    progress.step(msg!("progress-inspect-remote-ssh"));
+    sandbox::require_ssh(host, locked.metadata.sandbox_name().as_str())?;
 
     let (provisioned, warnings, inside) =
         prepare_runtime(&mut locked, config, host, workspace_root, poll, progress)?;
@@ -92,6 +85,8 @@ pub fn prepare(
     sandbox::require_credentials_isolated(&inside, name.as_str())?;
 
     let worktrees = verify_worktrees(&inside, &layout, metadata, progress)?;
+    progress.step(msg!("progress-inspect-ssh-connection"));
+    sandbox::probe_ssh(host, name.as_str())?;
     let (working_directory, missing_worktree_index) = working_directory(&layout, &worktrees, index);
 
     // ここまで来た時点でSandboxは必ずrunningである。この観測のために追加で

@@ -159,6 +159,13 @@ error_ids! {
     SbxLoginUnobservable => "sbx-login-unobservable",
     RemoteSshUnconfigured => "remote-ssh-unconfigured",
     RemoteSshUnobservable => "remote-ssh-unobservable",
+    RemoteSshDisabled => "remote-ssh-disabled",
+    RemoteSshUnavailable => "remote-ssh-unavailable",
+    RemoteSshConnectionFailed => "remote-ssh-connection-failed",
+    RemoteSshSettingUnobservable => "remote-ssh-setting-unobservable",
+    RemoteSshRestricted => "remote-ssh-restricted",
+    RemoteSshRepairFailed => "remote-ssh-repair-failed",
+    RemoteSshRestartRequired => "remote-ssh-restart-required",
 
     // --- 破壊前保護ゲート ---
     WorktreeTrackedChanges => "worktree-tracked-changes",
@@ -200,6 +207,7 @@ error_ids! {
 
     // --- 永続化 ---
     AtomicWriteFailed => "atomic-write-failed",
+    AtomicWriteDurabilityUnconfirmed => "atomic-write-durability-unconfirmed",
     TempFileLeftBehind => "temp-file-left-behind",
     CleanupFailed => "cleanup-failed",
     TargetAppearedConcurrently => "target-appeared-concurrently",
@@ -242,6 +250,8 @@ error_ids! {
     GitIdentityIncomplete => "git-identity-incomplete",
     // 訊く手段も、保存済みの既定も、宣言も無い。
     GitIdentityUndecidable => "git-identity-undecidable",
+
+    FileUpdatePending => "file-update-pending",
 
     // --- 内部 ---
     MessageFormatFailed => "message-format-failed",

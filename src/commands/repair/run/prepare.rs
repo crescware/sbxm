@@ -32,6 +32,7 @@ pub fn prepare(
         project = candidate.display_id()
     ));
     let locked = candidate.lock()?;
+    crate::support::files::PendingUpdate::require_clean(&locked.paths)?;
     crate::support::generation::require_no_rebuild(&locked.metadata)?;
     progress.step(msg!("progress-inspect-sandbox"));
     let entries = daemon::list(host)?;

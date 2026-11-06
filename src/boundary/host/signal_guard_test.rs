@@ -48,3 +48,30 @@ fn an_interrupt_that_already_arrived_is_seen_at_once() -> Checked {
     assert!(guard.interrupted());
     Ok(())
 }
+
+#[test]
+fn a_retry_sequence_is_watched_until_it_returns_and_watch_failures_are_reported() -> Checked {
+    let spec = super::super::CommandSpec::probe("sbx", &["ls", "--json"]);
+    for arrived in [false, true] {
+        let os = if arrived {
+            ScriptedOs::default().interrupting_at_poll(0)
+        } else {
+            ScriptedOs::default()
+        };
+        let observed =
+            SignalGuard::watching(&os, &spec, |interrupted| Ok(interrupted())).required()?;
+        assert_eq!(observed, arrived);
+        assert_eq!(
+            os.events(),
+            [Event::WatchingInterrupts, Event::StoppedWatching]
+        );
+    }
+    let os = ScriptedOs::default().failing(Step::WatchInterrupts, io::Error::other("cannot watch"));
+    let error =
+        SignalGuard::watching(&os, &spec, |_| Ok(())).refused_because("watching is required")?;
+    assert_eq!(
+        error.first_id(),
+        Some(crate::diagnostics::ErrorId::ExternalCommandSpawnFailed)
+    );
+    Ok(())
+}

@@ -57,9 +57,11 @@ pub fn pull(
         "progress-project-lock",
         project = candidate.display_id()
     ));
-    let locked = candidate.lock()?;
+    let mut locked = candidate.lock()?;
     generation::require_no_rebuild(&locked.metadata)?;
     inventory::require_running(host, &locked.metadata, workspace_root, progress)?;
+    let sandbox = locked.metadata.sandbox_name();
+    files::PendingUpdate::recover(host, sandbox.as_str(), &locked.paths, &mut locked.metadata)?;
     // 置き換えた内容を広げる先があるかどうかを、結果の案内に使う。受け取ったあとに失敗
     // しうる工程を置かない。受け取ったものは、呼び出し側へ返してはじめて片付けられる。
     let others = select::candidates(location)?.len().saturating_sub(1);
