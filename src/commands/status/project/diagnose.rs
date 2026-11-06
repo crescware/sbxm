@@ -106,6 +106,13 @@ pub fn diagnose(
             &mut status,
         )?;
     }
+    if let Err(error) = crate::support::files::PendingUpdate::require_clean(&paths) {
+        status.push("status-item-file-update", Value::NotObserved);
+        status
+            .diagnostics
+            .extend(error.diagnostics().iter().cloned());
+        status.next = None;
+    }
 
     Ok(status)
 }

@@ -300,6 +300,8 @@ sbxm files pull .claude/CLAUDE.md <project-id>
 
 sbxm copies the sandbox file into the project's `.sbxm/incoming` area, shows how it differs from the host file, and asks whether to adopt it. Nothing is merged automatically, and a non-interactive run only shows the differences. Control characters from the sandbox are shown as `\u{...}` instead of reaching your terminal.
 
+File updates first record their intended digest in `.sbxm/file-update.yaml`. If space runs out after placement but before the baseline is saved, free host space and rerun the same `apply --files` or `files pull` command. sbxm reconciles the actual file with this record before proceeding. It retains an unrecognized change for review and reports pending updates in `status`; do not remove the record or use `--force` to bypass recovery.
+
 To place the declarations in every registered project at once:
 
 ```sh

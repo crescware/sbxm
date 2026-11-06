@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::design::Fact;
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
-use crate::metadata::{self, InitialProvisioningFile};
+use crate::metadata::InitialProvisioningFile;
 use crate::msg;
 use crate::paths;
 use crate::support::files;
@@ -28,29 +28,21 @@ pub fn adopt(pulled: &mut Pulled) -> Result<PathBuf> {
             .fact(Fact::reason(msg!("cause-host-file-changed-while-deciding"))),
         ));
     }
-    replace(&source, &pulled.copy.path)
-        .map_err(|error| paths::atomic_write_failed(&source, &error.to_string()))?;
-    paths::sync_parent_directory(&source)?;
-
     let recorded = InitialProvisioningFile {
         source: paths::display(&source),
         destination: paths::display(pulled.declaration.destination.as_path()),
         sha256: pulled.copy.sha256.clone(),
     };
-    let mut baseline = pulled
-        .locked
-        .metadata
-        .declared_files
-        .clone()
-        .unwrap_or_default();
-    baseline.retain(|entry| {
-        crate::config::SandboxHomeRelativePath::new(&entry.destination).map_or(true, |placed| {
-            !placed.names_same_place(&pulled.declaration.destination)
-        })
-    });
-    baseline.push(recorded);
-    pulled.locked.metadata.declared_files = Some(baseline);
-    metadata::update(&pulled.locked.paths, &pulled.locked.metadata)?;
+    files::PendingUpdate::begin(
+        &pulled.locked.paths,
+        &recorded,
+        Some(pulled.host_sha256.clone()),
+        true,
+    )?;
+    replace(&source, &pulled.copy.path)
+        .map_err(|error| paths::atomic_write_failed(&source, &error.to_string()))?;
+    paths::sync_parent_directory(&source)?;
+    files::PendingUpdate::recover_host(&pulled.locked.paths, &mut pulled.locked.metadata)?;
     Ok(source)
 }
 

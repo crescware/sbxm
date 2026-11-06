@@ -54,6 +54,7 @@ pub fn prepare(
         project = candidate.display_id()
     ));
     let mut locked = candidate.lock()?;
+    crate::support::files::PendingUpdate::require_clean(&locked.paths)?;
 
     generation::require_no_rebuild(&locked.metadata)?;
     progress.step(msg!("progress-inspect-docker"));

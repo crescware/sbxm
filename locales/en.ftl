@@ -892,6 +892,13 @@ status-disk-not-observed-mismatch = Whether the sandbox is running could not be 
 status-disk-command-missing = `df` is not available inside the sandbox, so disk usage could not be checked.
 status-disk-parse-failed = The disk usage report from inside the sandbox could not be read.
 
+error-file-update-pending = A declared-file update has not been fully recorded.
+cause-file-update-record-invalid = the pending update record is invalid
+cause-file-update-record-changed = the pending update record changed while it was being read
+cause-file-update-record-pending = an earlier update must be reconciled first
+cause-file-update-target-changed = the target matches neither the previous nor the intended content; no file was overwritten
+remediation-file-update-pending = Free space on the host, then rerun the same file update command. Keep the pending record until the update can be verified; do not skip it by forcing an overwrite.
+status-item-file-update = Declared-file update record
 error-atomic-write-durability-unconfirmed = The file was placed, but its directory update could not be synchronized to storage
 remediation-atomic-write-durability-unconfirmed = The new file remains in place. Check available space and storage errors, then rerun the operation; persistence after a crash has not been confirmed.
 session-backup-current = Host commit backup checked at { $checked } (UTC). Uncommitted and untracked files remain only in the sandbox.
