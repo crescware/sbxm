@@ -78,7 +78,7 @@ fn saved_after(
         crate::paths::ProjectPaths::derive(&bench.parent, request.repository.canonical_id());
     change(&bench, &paths)?;
     world.answering(crate::support::host_sync::PLACE_SAVE_REFS, 0, "ready\n");
-    world.timing_out("fetch --no-tags");
+    world.timing_out("--no-tags --no-recurse-submodules");
     Ok(save_now(
         &bench.location,
         Some(&project_of(&request)?),

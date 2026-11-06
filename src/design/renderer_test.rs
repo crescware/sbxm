@@ -398,7 +398,7 @@ fn failed(stderr: &[u8], args: &[&str]) -> Diagnostic {
         program: "docker".to_string(),
         safe_args: args.iter().map(|arg| (*arg).to_string()).collect(),
         working_dir: None,
-        exit_status: "1".to_string(),
+        exit_status: Some("1".to_string()),
         stderr: stderr.to_vec(),
         stderr_lossy: false,
     })

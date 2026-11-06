@@ -236,6 +236,23 @@ impl World {
     /// bare repositoryそのものを触る起動。
     fn repository_of(&self, inner: &[&str]) -> Option<(i32, String)> {
         match inner {
+            ["sh", "-c", script, "sh", git_dir] if script.contains("entries=$(ls -A") => Some((
+                i32::from(
+                    !self
+                        .present
+                        .borrow()
+                        .contains(&format!("{git_dir}/sbxm-initializing")),
+                ),
+                String::new(),
+            )),
+            ["mkdir", "-p", "--", path] if path.ends_with("/sbxm-initializing") => {
+                self.present.borrow_mut().insert((*path).to_string());
+                Some(ok())
+            }
+            ["sh", "-c", script, "sh", path] if script.contains("rmdir --") => {
+                self.present.borrow_mut().remove(*path);
+                Some(ok())
+            }
             ["git", "init", "--bare", git_dir] => {
                 self.present.borrow_mut().insert((*git_dir).to_string());
                 *self.bare_git_dir.borrow_mut() = Some((*git_dir).to_string());
@@ -353,7 +370,7 @@ impl World {
                         None => "detached".to_string(),
                     };
                     // Stringへの書き込みは失敗しない。
-                    let _ = write!(listed, "worktree {path}\0{state}\0\0");
+                    let _ = write!(listed, "worktree {path}\0HEAD {COMMIT}\0{state}\0\0");
                 }
                 Some((0, listed))
             }

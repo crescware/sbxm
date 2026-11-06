@@ -163,6 +163,21 @@ impl AnsweredHost for FakeSbx {
 
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.specs.borrow_mut().push(spec.clone());
+        if spec
+            .args
+            .last()
+            .is_some_and(|arg| arg == "--batch-check=%(objectname)")
+        {
+            if let Some((code, output)) = self.lookup(&spec.args.join(" ")) {
+                return Ok(crate::testing::command::outcome(spec, code, &output));
+            }
+            if let Some(result) = crate::testing::command::object_batch(spec, |query| {
+                let (code, stdout) = self.lookup(&query.args.join(" ")).unwrap_or_default();
+                Ok(crate::testing::command::outcome(query, code, &stdout))
+            })? {
+                return Ok(result);
+            }
+        }
         if spec.program == "sbx"
             && let Some((sandbox, _timed, commands)) = split_inside_check(&spec.args)
         {
@@ -194,6 +209,13 @@ impl AnsweredHost for FakeSbx {
         } else {
             match self.answers.get(&key) {
                 Some((code, stdout)) => (*code, stdout.clone()),
+                None if spec.program == "sbx"
+                    && spec.args == ["settings", "get", "feature.ssh", "--json"] =>
+                {
+                    (0, super::SSH_FEATURE_ENABLED.to_string())
+                }
+                None if spec.program == "sbx" && spec.args == ["settings", "get", "platform.allowExperimentalFeatures", "--json"] =>
+                    (0, r#"{"key":"platform.allowExperimentalFeatures","value":true,"source":"default"}"#.to_string()),
                 // 指定が無ければ、Templateは1つも無い。v0.48.0は0件でも空の配列を返す。
                 None if spec.args == ["template", "ls", "--json"] => (0, "[]".to_string()),
                 // 指定が無ければ、このbuildが求める最低versionのCLIである。

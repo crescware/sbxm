@@ -4,7 +4,7 @@ use crate::support::sandbox;
 
 use super::PLACE_SAVE_REFS;
 
-/// 保存の前に、Sandboxの`git_dir`へworktreeの`HEAD`を一時refとして置く。
+/// 保存の前に、Sandboxの`git_dir`に保存対象があるかを、書き込みを伴わず確認する。
 ///
 /// 保存するrefがあるかを答える。何も書かない答えも、`ready`でも`empty`でもない答えも、
 /// 保存するものが無いとは読まない。
@@ -21,7 +21,7 @@ pub(super) fn prepare_save(
         "empty" => Ok(false),
         _ => Err(unparseable(
             "sbx exec",
-            "placing the worktree heads answered neither ready nor empty",
+            "reading the save candidates answered neither ready nor empty",
         )),
     }
 }

@@ -5,7 +5,7 @@ use crate::boundary::host::{HostEnvironment, TimeoutClass};
 use crate::diagnostics::Result;
 use crate::support::repository::host_git;
 
-use super::{REF_KINDS, saved_namespace};
+use super::saved_namespace;
 
 /// hostの`repository`が`sandbox`のために保存している、種類ごとのref。
 ///
@@ -19,7 +19,7 @@ pub(super) fn saved_refs(
 ) -> Result<BTreeMap<String, String>> {
     let namespace = saved_namespace(sandbox);
     let mut saved = BTreeMap::new();
-    for (_, kind) in REF_KINDS {
+    for kind in ["heads/", "tags/", "worktrees/"] {
         let prefix = format!("{namespace}{kind}");
         let listed = host_git(
             host,

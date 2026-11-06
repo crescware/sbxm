@@ -24,7 +24,9 @@ The sandbox receives the Git identity and configuration files you choose, but no
 - Git 2.36 or later, and SSH
 - A GitHub personal access token for each repository you want to manage
 
-Run `sbxm status --global` to check these requirements and the Docker Sandboxes environment. Every other command that uses Docker Sandboxes checks the CLI version first and stops before doing anything else when it is older than the version above. Every command that uses Git on the host checks the Git version the same way. Once a check has passed, sbxm records that executable in `~/.sbxm/host-tools.yaml` and skips the check while the executable stays unchanged. A changed executable is checked again.
+Run `sbxm status --global` to check these requirements and the Docker Sandboxes environment. Every other command that uses Docker Sandboxes checks the CLI version first and stops before doing anything else when it is older than the version above. Every command that uses Git on the host checks the Git version the same way. Once a check has passed, sbxm records that executable in `~/.sbxm/host-tools.yaml` and skips the check while the executable stays unchanged. A changed executable is checked again. `status` reuses existing records but does not create or update them.
+
+Before project selection, the Docker Sandboxes sign-in check allows 10 seconds per attempt and makes at most three attempts when the Docker login service is temporarily unavailable, the command times out, or the listing JSON is incomplete. Retries wait one second, then two seconds, and show their reason and attempt number. These failures share the same three-attempt limit; three timeouts take about 33 seconds including the waits. An explicit sign-in requirement and other failures stop immediately. Ctrl-C also cancels the retry wait.
 
 ## Installation
 
@@ -174,6 +176,8 @@ The `STATE` column answers whether `sbxm open` can connect immediately: `stopped
 
 When run in an interactive terminal, `repair`, `apply`, `rebuild`, `open`, `stop`, `destroy`, and `status` can prompt you to select a target if the project argument is omitted. For `status`, the first choice is `global`, followed by registered project IDs. Inspection progress follows the same policy across commands: the current phase is written to standard error and flushed before waiting. This includes authentication, project locks, Docker and sandbox responses, and the repository, worktree and file checks used by `status`, `open`, `repair`, `apply` (including `--all`), and `rebuild`. Worktree and file checks name the target and its position in the list. `destroy`, `sync`, `stop`, `files pull`, `ls`, and `guide` also report their inspection phases; `add --local` reports its host repository check. `status --global` separates Docker, CLI version, network policy, daemon, authentication, and Remote SSH checks. Safety checks still report ignored files, unfinished Git operations, origin fetch, and the recheck after confirmation. Read-only `status` checks only stored origin refs and does not fetch or start stopped sandboxes. Reports and deletion plans remain on standard output after inspection; progress is not a command trace. `guide` first prompts for a topic when it is omitted, then prompts for a project. If `credential-rotation` is given, it starts at the project prompt. In a non-interactive terminal, provide an explicit project argument for these commands; `guide` also requires an explicit topic, and `status` accepts either a project ID or `--global`. Normal `rebuild` and `destroy` still refuse in a non-interactive terminal because their protected flows require an interactive confirmation typed by hand. `destroy --force` is the only non-interactive bypass for destroy; it skips those checks and does not make the discarded data recoverable.
 
+`status` checks the existence of stored origin tips and worktree commits in one Git batch, sharing checks for identical object IDs. It suppresses optional Git index refreshes and, where supported by Git, lazy object fetches, and does not update the host tool version cache. The internal setup check still uses temporary files to capture command output, and global status still probes directory writability; these necessary checks can fail when no space is available.
+
 ## Customize a project
 
 ### Edit the sandbox image
@@ -211,6 +215,8 @@ Check the host has headroom for the size you request before running either comma
 ### Understand what fills the sandbox's disk
 
 `sbxm status <project-id>` and `sbxm open <project-id>` show the sandbox's available space, percentage remaining, and a gauge that shrinks as space runs out. `Total` is used space plus available space, excluding reserved blocks.
+
+If the additional setup and maintenance check fails, `status` keeps the results it could read, marks that check as `not-observed`, and prints the failure reason, including the exit status and stderr when available. It exits with status `1` and does not suggest a maintenance command based on an incomplete check. This includes a full disk preventing the internal check from creating temporary files.
 
 ```text
 DISK  /
@@ -292,6 +298,8 @@ sbxm files pull .claude/CLAUDE.md <project-id>
 
 sbxm copies the sandbox file into the project's `.sbxm/incoming` area, shows how it differs from the host file, and asks whether to adopt it. Nothing is merged automatically, and a non-interactive run only shows the differences. Control characters from the sandbox are shown as `\u{...}` instead of reaching your terminal.
 
+File updates first record their intended digest in `.sbxm/file-update.yaml`. If space runs out after placement but before the baseline is saved, free host space and rerun the same `apply --files` or `files pull` command. sbxm reconciles the actual file with this record before proceeding. It retains an unrecognized change for review and reports pending updates in `status`; do not remove the record or use `--force` to bypass recovery.
+
 To place the declarations in every registered project at once:
 
 ```sh
@@ -312,11 +320,13 @@ sbxm apply <project-id> --files --worktrees 4
 
 When commits on branches, tags, or worktree `HEAD`s that the origin does not have are the only reason a rebuild or destroy is refused, an interactive terminal offers to save them into the host repository and continue. Choosing to stop changes nothing.
 
-The host repository fetches the sandbox's branches, tags, and each worktree's `HEAD` over the same SSH connection that `sbxm open` uses, with object checks turned on, into `refs/sbx/<sandbox>/` only. Only the objects the host does not have yet are carried. Your host branches and tags are never touched. When a sandbox branch was rewritten or deleted, its previous tip is kept under `refs/sbx/<sandbox>/archive/<time>/` and is never removed automatically, so every commit that was ever saved stays reachable. The sandbox must be running; a stopped sandbox is not started.
+The host repository fetches the sandbox's branches, tags, and each worktree's `HEAD` over the same SSH connection that `sbxm open` uses, with object checks turned on, into `refs/sbx/<sandbox>/` only. Only the objects the host does not have yet are carried. Your host branches and tags are never touched. When a sandbox branch was rewritten or deleted, its previous tip is kept under `refs/sbx/<sandbox>/archive/<time>/` and is never removed automatically, so every commit that was ever saved stays reachable. The sandbox must be running; a stopped sandbox is not started. The source sandbox is read without creating temporary refs or files, including for detached worktree commits, so a full source filesystem does not prevent rescue when the host has space.
 
 A commit saved this way outlives the sandbox, so rebuild and destroy count it as kept, the same as a commit reachable from the origin. A stash or notes commit missing from the origin is not saved this way, so it still has to be pushed or dropped.
 
 `status` also reports available blocks and inodes separately for host metadata, image archives, commit backups, sandbox root, and sandbox Docker data. Zero blocks or inodes is a failure even when other checks pass; probe errors retain their original command diagnostics. These checks do not write test files or start stopped sandboxes. Docker VM backing storage and user/project quotas are not exposed by these probes, and some filesystems do not provide inode counts. Positive space is an observation, not a reservation or a guarantee of successful writes.
+
+If repository initialization stops because the sandbox runs out of space, free space and rerun `sbxm open` or `sbxm repair`. sbxm resumes an empty repository directory or one carrying its initialization marker without deleting existing files. An unrecognized nonempty directory is left untouched.
 
 ## Develop without GitHub
 
@@ -358,6 +368,18 @@ sbxm destroy --force <project-id>
 
 Use `--force` only when you have independently confirmed that nothing inside the sandbox needs to be preserved.
 
+## Troubleshooting SSH access
+
+Before handing the terminal to SSH, `open` checks the host SSH configuration and effective Docker Sandboxes SSH settings, then tests a fresh connection to the running target sandbox. Local projects also test SSH before the first repository transfer into a new sandbox. A working `sbx exec` or repository inspection does not prove that the SSH endpoint is available.
+
+In an interactive terminal, `open` shows each required repair command and asks before executing it. Missing client configuration can be repaired with `sbx setup ssh`. When administrator settings permit SSH, a disabled endpoint can be enabled with `sbx settings set feature.ssh true`. If that setting requires a daemon restart, `open` asks separately before running `sbx daemon restart`, which may interrupt other sandbox connections. Declining or canceling stops the open operation; earlier approved changes remain. Every repair is followed by new observations, and a restart is followed by fresh project preparation and an SSH connection check. A repair that does not fix the observed state is not repeated indefinitely.
+
+Administrator constraints, environment variable overrides, and unreadable settings are reported rather than bypassed. The administrator's experimental-features gate is never changed by SSH repair. Without an interactive terminal, `open` reports the cause and recovery commands and makes no SSH configuration changes. If the cause is another SSH error, such as host key verification, its original error is retained and no speculative repair is offered.
+
+`status --global` reports SSH client configuration and the SSH endpoint setting separately. The endpoint setting is not a live connection test. A stopped or unobservable daemon is not started just to read that setting; checking a particular running sandbox's connection is `open`'s responsibility.
+
+If preflight fails, no interactive session or automatic host save is started. For a local project, unsynchronized commits may still exist only inside the sandbox; the error shows how to retry `open` and then `sbxm sync <project-id>` after SSH is restored. Leave the sandbox and its commits in place. If the interactive SSH command has already run, `open` still attempts its final save because a nonzero SSH exit cannot prove that no work occurred. An SSH command failure is reported before a failed save, which is labeled as a secondary failure. Removing or rebuilding the sandbox is not a connection repair.
+
 ## Where sbxm keeps things
 
 A project lives entirely in the directory you registered it from:
@@ -370,13 +392,15 @@ A project lives entirely in the directory you registered it from:
 
 A project added with `--local` has no host clone inside that directory. Its repository stays where it was added.
 
-Under `~/.sbxm`, sbxm keeps `registry.yaml` — the index of registered projects and where each one lives — and, once you have chosen a display language or an identity, or declared files, `config.yaml`. Once a Docker Sandboxes CLI or Git version check has passed, `host-tools.yaml` records that executable so the check can be skipped until it changes. The registry is the only thing that knows where a project is, so moving a project directory makes `ls` report it as `missing` rather than sbxm guessing at the new location.
+Under `~/.sbxm`, sbxm keeps `registry.yaml` — the index of registered projects and where each one lives — and, once you have chosen a display language or an identity, or declared files, `config.yaml`. Once a Docker Sandboxes CLI or Git version check has passed, `host-tools.yaml` records that executable so the check can be skipped until it changes. `status` only reads this record. The registry is the only thing that knows where a project is, so moving a project directory makes `ls` report it as `missing` rather than sbxm guessing at the new location.
 
 ## How sbxm runs sbx
 
-sbxm starts every `sbx` with `SBX_NO_TELEMETRY=1` and `DOCKER_SANDBOXES_DISABLE_UNLEASH=1`. Without them, a signed-in `sbx` spends about 0.45 seconds on sending usage data and about as long on fetching feature flags each time it starts, while the daemon answers a listing within a few milliseconds. With both set, one `sbx ls` takes about 0.05 seconds instead of 0.9.
+For ordinary operations, sbxm starts `sbx` with `SBX_NO_TELEMETRY=1` and `DOCKER_SANDBOXES_DISABLE_UNLEASH=1`. Without them, a signed-in `sbx` spends about 0.45 seconds on sending usage data and about as long on fetching feature flags each time it starts, while the daemon answers a listing within a few milliseconds. With both set, one `sbx ls` takes about 0.05 seconds instead of 0.9.
 
-The two variables reach only the `sbx` processes that sbxm starts. sbxm writes nothing to the settings of Docker Sandboxes, so an `sbx` you run yourself behaves as before. If one of the `sbx` processes that sbxm starts is the one that starts the Docker Sandboxes daemon, the daemon may keep the variables until it restarts.
+These environment overrides reach only the `sbx` processes that sbxm starts and do not write Docker Sandboxes settings. If one of the `sbx` processes that sbxm starts is the one that starts the Docker Sandboxes daemon, the daemon may keep the variables until it restarts.
+
+SSH setting observations and approved SSH repairs are an exception: they still disable usage reports, but preserve the caller's feature-flag behavior so that observing or restarting the SSH endpoint does not change its defaults.
 
 ## Command overview
 
@@ -420,3 +444,5 @@ Color is decided per stream. When only standard output is piped, the result is p
 An explicit `--color` wins over every environment variable. Removing color never removes information: markers, labels and blank lines carry the same meaning on their own.
 
 `--verbose` adds a trace for debugging to standard error. Standard output stays the result alone.
+
+`open` checks the host commit backup before handing over SSH and again when the session ends. It prints the check time and preserves the command, exit status, and stderr if saving fails. The latest periodic failure is reported after SSH returns; the terminal remains with SSH during the session. If the final save fails, `open` exits with status 1 even when SSH succeeded. Uncommitted and untracked files are outside this commit backup.

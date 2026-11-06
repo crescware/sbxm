@@ -121,7 +121,7 @@ fn a_stopped_local_sandbox_is_not_started_to_save_from() -> Checked {
         &mut crate::design::SilentProgress,
     );
 
-    assert!(matches!(saved, AutoSaved::Nothing), "{saved:?}");
+    assert!(matches!(saved, AutoSaved::Failed(_)), "{saved:?}");
     assert!(!tried_to_save(&world, mark), "{:?}", world.since(mark));
     Ok(())
 }

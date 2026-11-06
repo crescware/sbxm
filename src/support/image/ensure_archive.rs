@@ -4,7 +4,7 @@ use crate::archive;
 
 use crate::boundary::host::HostEnvironment;
 use crate::design::Fact;
-use crate::design::ProgressSink;
+use crate::design::{ProgressSink, Warning};
 use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::hash::short_hex;
 use crate::msg;
@@ -49,15 +49,69 @@ pub fn ensure_archive(
         })?;
     }
 
-    progress.step(msg!("progress-saving-archive"));
-    docker::save(host, &image.name, &temporary, progress)?;
-
-    archive::verify_holds_image(&temporary, &image.name, &image.labels)
-        .map_err(|error| docker::diagnose_failure(host, error))?;
-    // 既存Templateとの照合に使うdigestは、保存した直後にここで読む。後の実行で
-    // 初めて読むと、同じarchiveが初回は通り2回目から拒まれる非対称が生じる。
-    let image_ids = archive::read_image_ids(&temporary)
-        .map_err(|error| docker::diagnose_failure(host, error))?;
-    paths::atomic_rename_into_place(&temporary, &target)?;
-    TransientArchive::new(target, image_ids)
+    let result = (|| {
+        progress.step(msg!("progress-saving-archive"));
+        docker::save(host, &image.name, &temporary, progress)?;
+        archive::verify_holds_image(&temporary, &image.name, &image.labels)
+            .map_err(|error| docker::diagnose_failure(host, error))?;
+        let image_ids = archive::read_image_ids(&temporary)
+            .map_err(|error| docker::diagnose_failure(host, error))?;
+        paths::atomic_rename_into_place(&temporary, &target)?;
+        TransientArchive::new(target, image_ids)
+    })();
+    match result {
+        Ok(archive) => Ok(archive),
+        Err(error) => {
+            // producerが非ゼロで終わった場合も、大きな書きかけを次回まで残さない。
+            // 開始前に既存の一時archiveを除去済みであり、この実行が作ったpathだけを扱う。
+            let cleanup = remove_partial(&temporary);
+            Err(with_cleanup(error, &temporary, cleanup, progress))
+        }
+    }
 }
+
+fn remove_partial(path: &std::path::Path) -> std::io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() => fs::remove_file(path),
+        Ok(_) => Err(std::io::Error::other(
+            "the partial archive is no longer a regular file",
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn with_cleanup(
+    error: Error,
+    path: &std::path::Path,
+    cleanup: std::io::Result<()>,
+    progress: &mut dyn ProgressSink,
+) -> Error {
+    let Err(cause) = cleanup else {
+        return error;
+    };
+    match error {
+        Error::Canceled => {
+            progress.warn(
+                Warning::text(msg!("warning-archive-cleanup-failed"))
+                    .fact(Fact::path(&paths::display(path)))
+                    .fact(Fact::cause(&cause.to_string())),
+            );
+            Error::Canceled
+        }
+        Error::Diagnostics(diagnostics) => Error::Diagnostics(
+            diagnostics
+                .into_iter()
+                .map(|diagnostic| {
+                    diagnostic
+                        .fact(Fact::path(&paths::display(path)))
+                        .fact(Fact::cause(&cause.to_string()))
+                })
+                .collect(),
+        ),
+    }
+}
+
+#[cfg(test)]
+#[path = "ensure_archive_test.rs"]
+mod ensure_archive_test;

@@ -51,6 +51,11 @@ impl TerminalCommand {
         self
     }
 
+    pub(crate) fn read_only(mut self) -> TerminalCommand {
+        self.spec = self.spec.read_only();
+        self
+    }
+
     /// この語を含む行は見せない。
     ///
     /// 外部toolの案内がsbxm自身の案内と食い違うときに使う。

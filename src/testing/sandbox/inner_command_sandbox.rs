@@ -19,6 +19,7 @@ pub struct InnerCommandSandbox {
     answers: HashMap<String, (i32, String)>,
     /// 応答そのものが返らないinner command。
     timeouts: HashSet<String>,
+    placed: RefCell<HashMap<String, String>>,
     calls: RefCell<Vec<Vec<String>>>,
 }
 
@@ -84,7 +85,30 @@ impl AnsweredHost for InnerCommandSandbox {
             ));
         }
 
-        let (code, stdout) = if inner.first().is_some_and(|arg| *arg == "test") {
+        if let Some(result) =
+            crate::testing::command::object_batch(spec, |query| self.answer(query))?
+        {
+            return Ok(result);
+        }
+
+        // 宣言fileの転送を受けた後は、配置した内容を観測できる。
+        if inner.len() >= 3 && spec.input().is_some() && !self.answers.contains_key(&key) {
+            let tail = &inner[inner.len() - 3..];
+            if tail[1] == format!("{}.sbxm-new", tail[0]) {
+                self.placed
+                    .borrow_mut()
+                    .insert(tail[0].into(), tail[2].into());
+                self.present.borrow_mut().push(tail[0].into());
+            }
+        }
+        let (code, stdout) = if inner.first() == Some(&"sha256sum")
+            && let Some(digest) = self
+                .placed
+                .borrow()
+                .get(inner.get(1).copied().unwrap_or_default())
+        {
+            (0, digest.clone())
+        } else if inner.first().is_some_and(|arg| *arg == "test") {
             let target = inner.last().copied().unwrap_or_default();
             // 模したSandboxにsymlinkは存在しない。在るpathはどれも実体である。
             let symlink = inner.get(1).is_some_and(|flag| *flag == "-h");
@@ -96,6 +120,17 @@ impl AnsweredHost for InnerCommandSandbox {
             (
                 i32::from(!self.present.borrow().iter().any(|known| known == target)),
                 "probed".to_string(),
+            )
+        } else if key.contains("entries=$(ls -A") {
+            let target = inner.last().copied().unwrap_or_default();
+            (
+                i32::from(
+                    !self
+                        .present
+                        .borrow()
+                        .contains(&format!("{target}/sbxm-initializing")),
+                ),
+                String::new(),
             )
         } else if key.contains("worktree add") {
             // 作成に成功したworktreeは、以後存在するものとして扱う。

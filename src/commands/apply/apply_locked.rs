@@ -1,4 +1,4 @@
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use crate::boundary::host::HostEnvironment;
 use crate::boundary::host::protocol::SandboxState;
@@ -68,6 +68,7 @@ pub(super) fn apply_locked(
     // 追加のfactとして載せる。平常時はcommandを1つも増やさない。ここまでの検査で
     // `entry.state`は`Running`と確認済みである。
     let decorate = |error| disk::attach_on_failure(host, &entry.name, entry.state, error);
+    files::PendingUpdate::recover(host, &entry.name, &locked.paths, &mut locked.metadata)?;
 
     let mut files = Vec::new();
     if scope.files {
@@ -141,7 +142,7 @@ fn apply_files(
         .iter()
         .map(|input| input.declaration.clone())
         .collect();
-    let mut baseline = locked.metadata.declared_files.clone().unwrap_or_default();
+    let baseline = locked.metadata.declared_files.clone().unwrap_or_default();
     let conflict = if force {
         files::Conflict::Overwrite
     } else {
@@ -152,16 +153,39 @@ fn apply_files(
 
     let mut placed = Vec::with_capacity(planned.len());
     for (file, input) in planned.iter().zip(&inputs) {
-        let mut result = file.carry_out(host, sandbox).map_err(decorate)?;
+        let recorded = provisioning::recorded_file(input);
+        let journal = file.changes_destination()
+            || !locked
+                .metadata
+                .declared_files
+                .as_ref()
+                .is_some_and(|files| files.contains(&recorded));
+        if journal {
+            file.begin_update(&locked.paths, &recorded)?;
+        }
+        let carried = file.carry_out(host, sandbox).map_err(decorate);
+        if let Err(mut error) = carried {
+            // 配置自体の失敗で旧内容が保たれていれば、intentだけを片付ける。
+            // 中断は追加commandを出さず、次回の照合へ渡す。
+            if error != Error::Canceled
+                && let Err(recovery) = files::PendingUpdate::recover(
+                    host,
+                    sandbox,
+                    &locked.paths,
+                    &mut locked.metadata,
+                )
+                && let Error::Diagnostics(diagnostics) = &mut error
+            {
+                diagnostics.extend_from_slice(recovery.diagnostics());
+            }
+            return Err(error);
+        }
+        let mut result = carried?;
         // 置いたのはsnapshotだが、利用者に示すのは宣言したfileである。
         result.source = PathBuf::from(&input.original_source);
         placed.push(result);
-        let recorded = provisioning::recorded_file(input);
-        if !baseline.contains(&recorded) {
-            baseline.retain(|entry| !same_destination(&entry.destination, &recorded.destination));
-            baseline.push(recorded);
-            locked.metadata.declared_files = Some(baseline.clone());
-            metadata::update(&locked.paths, &locked.metadata)?;
+        if journal {
+            files::PendingUpdate::recover(host, sandbox, &locked.paths, &mut locked.metadata)?;
         }
     }
 
@@ -172,18 +196,6 @@ fn apply_files(
         metadata::update(&locked.paths, &locked.metadata)?;
     }
     Ok(placed)
-}
-
-/// 2つの記録が同じdestinationを指すか。`./`の有無のような綴りの違いは同じとみなす。
-fn same_destination(left: &str, right: &str) -> bool {
-    let parts = |value: &str| -> Vec<std::ffi::OsString> {
-        Path::new(value)
-            .components()
-            .filter(|component| *component != Component::CurDir)
-            .map(|component| component.as_os_str().to_os_string())
-            .collect()
-    };
-    parts(left) == parts(right)
 }
 
 /// 目標worktree数を引き上げる。

@@ -32,24 +32,25 @@ pub(super) fn plan(
     // 宣言されたpath自体が`agent` home配下でも、Sandbox内のsymlinkが外を指し得る。
     require_no_symlink_in_sandbox(&inside, source, &destination)?;
 
-    let planned = |placement| {
+    let planned = |placement, previous: Option<&str>| {
         Ok(Ok(PlannedFile {
             source: source.to_path_buf(),
             digest: digest.clone(),
             destination: destination.clone(),
             placement,
+            previous_sha256: previous.map(str::to_string),
         }))
     };
     let Some(observed) = digest_in_sandbox(&inside, &full)? else {
-        return planned(Placement::Placed);
+        return planned(Placement::Placed, None);
     };
     if observed == digest {
-        return planned(Placement::Unchanged);
+        return planned(Placement::Unchanged, Some(&observed));
     }
     // `apply`はsnapshotから置くため、sourceはsbxmのprivateなcopyを指す。拒否の説明は
     // 利用者が失いうるSandbox側のfileだけで述べる。
     match conflict {
-        Conflict::Overwrite => planned(Placement::Placed),
+        Conflict::Overwrite => planned(Placement::Placed, Some(&observed)),
         Conflict::Refuse => Ok(Err(Diagnostic::new(
             ErrorId::DeclaredFileConflict,
             msg!(
@@ -61,7 +62,7 @@ pub(super) fn plan(
         .remediation(msg!("remediation-declared-file-conflict")))),
         Conflict::Protect(baseline) => match last_placed(baseline, &destination) {
             // sbxmが最後に置いた内容のままであり、置き換えても失われるものは無い。
-            Some(placed) if placed == observed => planned(Placement::Placed),
+            Some(placed) if placed == observed => planned(Placement::Placed, Some(&observed)),
             Some(_) => Ok(Err(Diagnostic::new(
                 ErrorId::DeclaredFileModified,
                 msg!("error-declared-file-modified", destination = full),

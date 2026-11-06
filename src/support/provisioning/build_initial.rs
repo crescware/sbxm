@@ -39,6 +39,10 @@ pub(crate) fn build_initial(
     if !config.files.is_empty() {
         progress.step(msg!("progress-status-files"));
     }
+    // 前回の大きな残骸を、snapshotやintentの書き込みが空き容量を必要とする前に解放する。
+    let project = locked.metadata.display_id();
+    let warnings = image::cleanup_stale_archives(&locked.paths)
+        .map_err(|error| with_open_command(error, &project))?;
     let inputs = ProvisioningInputs::capture(&locked.paths, config, target)?;
 
     // metadataのintentとtarget generationを、最初のhost側mutationより先にatomicに保存する。
@@ -49,10 +53,6 @@ pub(crate) fn build_initial(
         .dockerfile_sha256
         .clone_from(&inputs.dockerfile_sha256);
     metadata::update(&locked.paths, &locked.metadata)?;
-
-    let project = locked.metadata.display_id();
-    let warnings = image::cleanup_stale_archives(&locked.paths)
-        .map_err(|error| with_open_command(error, &project))?;
 
     let output = provision(
         locked,

@@ -50,6 +50,10 @@ BARE_GIT_DIR="/home/agent/work/example-repo/.git"
 
 case "$program" in
 ssh)
+    case "$1" in
+    -G) printf 'proxycommand sbx ssh proxy %%n\n'; exit 0 ;;
+    -n) exit 0 ;;
+    esac
 	# terminalを引き渡した先の終了status。通常の数値のほか、lifecycle test用に
 	# 自分自身のsignal終了と、testが入力を閉じるまで待つ動作を受け付ける。
 	mode=$(cat "$fake/ssh-exit")
@@ -116,6 +120,15 @@ git)
 esac
 
 case "$1" in
+settings)
+    if [ "$*" = "settings get platform.allowExperimentalFeatures --json" ]; then
+        printf '%s\n' '{"key":"platform.allowExperimentalFeatures","value":true,"source":"default"}'
+        exit 0
+    fi
+    [ "$*" = "settings get feature.ssh --json" ] || exit 1
+    printf '%s\n' '{"key":"feature.ssh","value":{"enabled":true},"source":"default","type":"json","requires_restart":true}'
+    exit 0
+    ;;
 ls)
 	printf '['
 	awk -F'\t' '{
@@ -202,7 +215,7 @@ sh)
 		# GitHubはcredentialを受け付ける。
 		exit 0
 		;;
-	"printf "*)
+	"printf "*|'# sbxm token environment write'*)
 		printf '%s\n' "$5" "$6" "$7" >"$fake/token-env"
 		exit 0
 		;;
@@ -695,7 +708,7 @@ fn ls_exits_with_zero_when_every_registered_project_is_settled() -> Checked {
 }
 
 #[test]
-fn every_sbx_that_sbxm_starts_skips_usage_reports_and_feature_flags() -> Checked {
+fn ordinary_sbx_runs_skip_usage_reports_and_feature_flags() -> Checked {
     let host = Host::new()?;
     host.registered()?;
 

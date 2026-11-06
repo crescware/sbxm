@@ -5,6 +5,7 @@
 
 mod artifacts;
 mod check_files;
+mod check_next;
 mod check_storage;
 mod diagnose;
 #[cfg(test)]

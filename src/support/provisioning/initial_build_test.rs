@@ -941,11 +941,11 @@ fn an_intent_that_cannot_be_saved_stops_the_build_before_the_image_is_built() ->
 }
 
 #[test]
-fn a_symlinked_cache_stops_the_build_after_the_intent_with_the_open_command() -> Checked {
+fn a_symlinked_cache_stops_the_build_before_recording_an_intent() -> Checked {
     let bench = Bench::new()?;
     let world = World::new();
     let (paths, project) = registered(&bench, &world)?;
-    // 入力の写しを置き終えたあと、古いarchiveを片付ける前にcacheがsymlinkへ替わる。
+    // 空きを作るためのcleanupはsnapshotとintentの保存より先に行う。
     let cache = paths.cache_dir();
     let elsewhere = bench.workspace_root.path().join("elsewhere");
     world.change_before("docker version", move |_| {
@@ -964,7 +964,7 @@ fn a_symlinked_cache_stops_the_build_after_the_intent_with_the_open_command() ->
         bench
             .stored("Example-Org/Example-Repo")?
             .initial_provisioning
-            .is_some()
+            .is_none()
     );
     Ok(())
 }
@@ -1510,7 +1510,7 @@ fn a_token_environment_that_cannot_be_written_stops_the_build_with_the_open_comm
     let world = World::new();
     let (_, project) = registered(&bench, &world)?;
     // tokenのplaceholderを渡す環境変数fileを、root権限で書く起動だけが失敗する。
-    world.failing(r#"> "$4" sh"#);
+    world.failing("# sbxm token environment write");
 
     let error = bench
         .ensure(&world, &project, &mut SilentProgress)
@@ -1521,7 +1521,7 @@ fn a_token_environment_that_cannot_be_written_stops_the_build_with_the_open_comm
     let calls = world.invocations();
     let failed = calls
         .iter()
-        .find(|call| call.contains(r#"> "$4" sh"#))
+        .find(|call| call.contains("# sbxm token environment write"))
         .required_because("the write was attempted")?;
     assert!(
         failed.contains("--user root") && failed.contains("sbxm-github-token"),
