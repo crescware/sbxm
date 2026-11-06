@@ -157,10 +157,10 @@ impl FakeSbx {
 
     /// objectの一括検査を、個別検査に指定した答えから組み立てる。
     fn answer_objects(&self, spec: &CommandSpec) -> Result<Option<CommandOutcome>> {
-        if !spec
+        if spec
             .args
             .last()
-            .is_some_and(|arg| arg == "--batch-check=%(objectname)")
+            .is_none_or(|arg| arg != "--batch-check=%(objectname)")
         {
             return Ok(None);
         }
