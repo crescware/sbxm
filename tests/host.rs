@@ -214,7 +214,7 @@ sh)
 		# GitHubはcredentialを受け付ける。
 		exit 0
 		;;
-	"printf "*)
+	"printf "*|'# sbxm token environment write'*)
 		printf '%s\n' "$5" "$6" "$7" >"$fake/token-env"
 		exit 0
 		;;
