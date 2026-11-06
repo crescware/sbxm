@@ -6,6 +6,7 @@ use crate::time::Clock;
 use super::{
     CommandOutcome, CommandSpec, MAX_KEPT_STDERR, Pipes, SignalGuard, Signals, Stream, configure,
     outcome, output_too_large, pump_until_exit, spawn_failure, start_child, unstored,
+    with_captured_stderr,
 };
 
 /// 出力をcaptureして実行し、stdoutだけを届いた順に`sink`へ流す。
@@ -61,7 +62,7 @@ pub(crate) fn run_streaming<O: Pipes + Signals>(
         (Ok(status), _) => status,
         (Err(_), _) if exceeded => return Err(output_too_large(spec, limit)),
         (Err(_), Some(cause)) => return Err(unstored(spec, &cause)),
-        (Err(error), None) => return Err(error),
+        (Err(error), None) => return Err(with_captured_stderr(error, stderr)),
     };
     if let Err(error) = sink.flush() {
         return Err(unstored(spec, &error.to_string()));

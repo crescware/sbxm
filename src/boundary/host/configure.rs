@@ -5,7 +5,21 @@ use super::{CommandSpec, OutputPolicy, apply_env};
 /// program、argument、environment、作業directory、streamの向き先を決める。
 pub(super) fn configure(spec: &CommandSpec) -> Command {
     let mut command = Command::new(&spec.program);
-    command.args(&spec.args);
+    if spec.read_only
+        && spec.program == "sbx"
+        && spec.args.first().is_some_and(|arg| arg == "exec")
+        && let Some(separator) = spec.args.iter().position(|arg| arg == "--")
+    {
+        command.args(&spec.args[..=separator]);
+        command.args(["env", "GIT_OPTIONAL_LOCKS=0", "GIT_NO_LAZY_FETCH=1"]);
+        command.args(&spec.args[separator + 1..]);
+    } else {
+        command.args(&spec.args);
+    }
+    if spec.read_only && spec.program == "git" {
+        command.env("GIT_OPTIONAL_LOCKS", "0");
+        command.env("GIT_NO_LAZY_FETCH", "1");
+    }
     apply_env(
         &mut command,
         &spec.program,

@@ -35,6 +35,9 @@ fn save(
     executable: Option<&Executable>,
     observed: CliVersion,
 ) -> Result<(), Unsaved> {
+    if !location.records_host_tools() {
+        return Err(Unsaved::ReadOnly);
+    }
     let executable = executable.ok_or(Unsaved::ExecutableUnobserved)?;
     reusable(program, executable).map_err(Unsaved::NotReusable)?;
     // `~/.sbxm`は案件の登録や設定の保存が作る。記録のためだけには作らない。

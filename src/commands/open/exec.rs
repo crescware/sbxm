@@ -4,7 +4,6 @@ use crate::boundary::host::HostEnvironment;
 use crate::design::{Document, Inline, PromptUi, Ui, Warning};
 use crate::diagnostics::ExitCode;
 use crate::msg;
-use crate::support::inventory;
 
 use crate::commands::present;
 
@@ -32,17 +31,7 @@ pub fn exec(
     {
         return report(ui, &error);
     }
-    let prepared = match super::run::prepare(
-        context.location,
-        &config,
-        args.project.as_ref(),
-        args.index,
-        host,
-        prompt,
-        context.workspace_root,
-        inventory::Poll::standard(context.clock),
-        ui,
-    ) {
+    let prepared = match super::prepare_connection(args, context, &config, host, prompt, ui) {
         Ok(prepared) => prepared,
         Err(error) => return report(ui, &error),
     };

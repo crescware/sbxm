@@ -104,8 +104,14 @@ fn a_listing_cut_short_by_a_cold_daemon_is_retried_until_it_parses() -> Checked 
         FakeSbx::sequenced_listing(&["{", r#"[{"name":"sbxm-example","status":"running"}]"#]);
     let clock = ScriptedClock::default();
 
-    let entries = list_retrying(&host, TimeoutClass::SandboxLifecycle, &clock)
-        .required_because("the retry reads the second, complete listing")?;
+    let entries = list_retrying(
+        &host,
+        TimeoutClass::SandboxLifecycle,
+        &clock,
+        &mut crate::design::SilentProgress,
+        &|| false,
+    )
+    .required_because("the retry reads the second, complete listing")?;
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].name, "sbxm-example");
     assert_eq!(
@@ -128,8 +134,14 @@ fn a_complete_listing_of_another_shape_is_reported_without_a_retry() -> Checked 
         let host = FakeSbx::sequenced_listing(&[output, "[]"]);
         let clock = ScriptedClock::default();
 
-        let error =
-            list_retrying(&host, TimeoutClass::SandboxLifecycle, &clock).refused_because(output)?;
+        let error = list_retrying(
+            &host,
+            TimeoutClass::SandboxLifecycle,
+            &clock,
+            &mut crate::design::SilentProgress,
+            &|| false,
+        )
+        .refused_because(output)?;
         assert_eq!(
             error.first_id(),
             Some(crate::diagnostics::ErrorId::ExternalOutputUnparseable)
@@ -145,8 +157,14 @@ fn a_listing_that_stays_unparseable_gives_up_after_a_bounded_number_of_retries()
     let host = FakeSbx::sequenced_listing(&["{"]);
     let clock = ScriptedClock::default();
 
-    let error = list_retrying(&host, TimeoutClass::SandboxLifecycle, &clock)
-        .refused_because("retries do not run forever")?;
+    let error = list_retrying(
+        &host,
+        TimeoutClass::SandboxLifecycle,
+        &clock,
+        &mut crate::design::SilentProgress,
+        &|| false,
+    )
+    .refused_because("retries do not run forever")?;
     assert_eq!(
         error.first_id(),
         Some(crate::diagnostics::ErrorId::ExternalOutputUnparseable)

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::boundary::host::HostEnvironment;
-use crate::commands::{Context, report, saving};
+use crate::commands::{Context, saving};
 use crate::design::{Document, SilentProgress, Ui};
 use crate::diagnostics::ExitCode;
 use crate::msg;
@@ -61,6 +61,9 @@ pub(super) fn session(
         None => None,
     };
     let connected = super::run::connect(host, prepared, ui, during);
+    if let Err(error) = &connected {
+        ui.error(error);
+    }
     if let Some(warning) = pending_warning.into_inner() {
         ui.warning(&warning);
     }
@@ -75,7 +78,16 @@ pub(super) fn session(
             context.clock,
             ui,
         );
-        saving::auto_saved(ui, &saved);
+        if connected.is_err()
+            && let crate::support::host_sync::AutoSaved::Failed(warning) = &saved
+        {
+            let mut secondary = warning.clone();
+            secondary.description = msg!("warning-open-ssh-save-secondary");
+            secondary.guidance.push(warning.description.clone());
+            ui.warning(&secondary);
+        } else {
+            saving::auto_saved(ui, &saved);
+        }
         unsaved = matches!(saved, crate::support::host_sync::AutoSaved::Failed(_));
         if !unsaved {
             ui.stderr(&Document::new().note(msg!(
@@ -87,6 +99,6 @@ pub(super) fn session(
     match connected {
         Ok(()) if unsaved => ExitCode::Failure,
         Ok(()) => ExitCode::Success,
-        Err(error) => report(ui, &error),
+        Err(error) => error.exit_code(),
     }
 }

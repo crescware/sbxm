@@ -84,6 +84,12 @@ impl AnsweredHost for InnerCommandSandbox {
             ));
         }
 
+        if let Some(result) =
+            crate::testing::command::object_batch(spec, |query| self.answer(query))?
+        {
+            return Ok(result);
+        }
+
         let (code, stdout) = if inner.first().is_some_and(|arg| *arg == "test") {
             let target = inner.last().copied().unwrap_or_default();
             // 模したSandboxにsymlinkは存在しない。在るpathはどれも実体である。
@@ -96,6 +102,17 @@ impl AnsweredHost for InnerCommandSandbox {
             (
                 i32::from(!self.present.borrow().iter().any(|known| known == target)),
                 "probed".to_string(),
+            )
+        } else if key.contains("entries=$(ls -A") {
+            let target = inner.last().copied().unwrap_or_default();
+            (
+                i32::from(
+                    !self
+                        .present
+                        .borrow()
+                        .contains(&format!("{target}/sbxm-initializing")),
+                ),
+                String::new(),
             )
         } else if key.contains("worktree add") {
             // 作成に成功したworktreeは、以後存在するものとして扱う。

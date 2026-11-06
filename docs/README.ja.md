@@ -14,7 +14,7 @@ English: [README.md](../README.md)
 - Git 2.36以降と、SSH
 - 管理対象のrepositoryごとに発行したGitHub personal access token
 
-`sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を確認できます。Docker Sandboxesを使うほかのcommandも、最初にCLIのversionを確認し、上記より古ければほかの処理を行わずに停止します。hostのGitを使うcommandも、同じようにGitのversionを確認します。一度確認が通った実行ファイルは`~/.sbxm/host-tools.yaml`に記録し、その実行ファイルが変わらない限り確認を省略します。実行ファイルが変われば確認し直します。
+`sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を確認できます。Docker Sandboxesを使うほかのcommandも、最初にCLIのversionを確認し、上記より古ければほかの処理を行わずに停止します。hostのGitを使うcommandも、同じようにGitのversionを確認します。一度確認が通った実行ファイルは`~/.sbxm/host-tools.yaml`に記録し、その実行ファイルが変わらない限り確認を省略します。実行ファイルが変われば確認し直します。`status`は既存の記録を再利用しますが、新規作成も更新も行いません。
 
 ## インストール
 
@@ -166,6 +166,8 @@ credential交換guideは、現在の登録から公開情報であるscopeとpla
 
 ただし`rebuild`と`destroy`は、引数を明示しても非対話端末では実行できません。どちらも削除計画を表示し、対象Sandbox名の完全一致入力を得た場合にだけ進むためです。`destroy`には確認を省略する`--force`がありますが、`rebuild`にはありません。
 
+`status`は保存済みのorigin tipとworktreeのcommitの有無をGitのbatchで一括確認し、同じobject IDの検査を共有します。Gitの任意のindex更新を抑え、Gitが対応していれば不足objectの遅延fetchも抑えます。host toolのversion確認cacheも更新しません。内部の構築検査ではcommand出力を保持する一時file、global診断ではdirectoryの書き込み可否probeを引き続き使うため、空き容量が無ければこれらの検査は失敗し得ます。
+
 ## プロジェクトをカスタマイズする
 
 ### Sandbox imageを編集する
@@ -205,6 +207,8 @@ DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
 ### Sandboxのディスクを何が埋めるかを理解する
 
 `sbxm status <project-id>`と`sbxm open <project-id>`は、Sandboxの空き容量、残りの割合、空きが減るほど短くなるゲージを表示します。全体容量は使用済みと空き容量の合計で、予約領域を含みません。
+
+構築・保守の追加検査が失敗した場合、`status`は読み取れた結果を残し、その検査を`not-observed`と表示します。終了statusやstderrを取得できた場合は、それらを含む失敗理由も示します。終了statusは`1`になり、不完全な検査に基づく保守commandは案内しません。空き容量が無く、内部検査の一時fileを作れない場合も対象です。
 
 ```text
 ディスク  /
@@ -310,6 +314,8 @@ originに無いbranch、tag、worktreeの`HEAD`のcommitだけを理由にrebuil
 
 こうして保存したcommitはSandboxを消しても残るため、rebuildとdestroyはoriginから辿れるcommitと同じく、失われないものとして数えます。originに無いstashやnotesのcommitはこの方法では保存されず、pushするか捨てる必要があります。
 
+repositoryの初期化が容量不足で中断した場合は、空きを確保して `sbxm open` または `sbxm repair` を再実行します。空のrepository directory、またはsbxmの初期化中の印があるdirectoryを、既存fileを削除せずに再開します。由来を確認できない空でないdirectoryには手を加えません。
+
 ## GitHubを使わずに開発する
 
 このhostにすでにあるrepositoryも、プロジェクトにできます。sbxmはcloneしません。そのrepository自身がoriginの役を持ち、Sandboxは作業のための使い捨ての場所になります。working treeではなく、repositoryのgit directoryを渡します。
@@ -350,6 +356,18 @@ sbxm destroy --force <project-id>
 
 Sandbox内に残すべきものがないと別途確認できた場合に限って、`--force`を使用してください。
 
+## SSH接続に失敗したとき
+
+`open`は端末をSSHへ渡す前に、hostのSSH設定とDocker SandboxesのSSH実効設定を確認し、起動済みの対象Sandboxへ新しい接続で実際に届くかを検査します。local案件では、新しいSandboxへの最初のrepository転送前にもSSHを検査します。`sbx exec`やrepositoryの内部検査が成功しても、SSH endpointが利用できるとは限りません。
+
+対話端末では、必要な修復commandを1つずつ表示し、承認を得てから実行します。client設定が不足していれば`sbx setup ssh`を提案します。管理者側の設定でSSHが許可され、endpointが無効なら`sbx settings set feature.ssh true`を提案します。その変更にdaemonの再起動が必要な場合は、他のSandboxへの接続も中断され得ることを示し、別の承認を得て`sbx daemon restart`を実行します。拒否やcancelではopenを停止し、それ以前に承認した変更は保持します。修復後は状態を再観測し、再起動後は案件の準備とSSH疎通を確認し直します。修復しても同じ障害が残る場合、同じ操作を繰り返しません。
+
+管理者の制約、環境変数によるoverride、設定を読めない状態は、迂回せず理由を表示します。SSHの修復で管理者側の実験機能の許可設定を変更することはありません。非対話端末では原因と復旧commandを表示し、SSH設定は変更しません。host keyの検証失敗など別のSSH障害では、元のエラーを保持して表示し、原因を推測した修復は提案しません。
+
+`status --global`はSSH client設定とSSH endpointの設定を分けて表示します。endpointの設定は実疎通の結果ではありません。その設定を読むためだけに、停止中または状態不明のdaemonを起動しません。起動した対象Sandboxへの疎通は`open`が検査します。
+
+接続前の検査で失敗した場合、対話sessionもhostへの自動保存も開始しません。local案件の未同期commitはSandboxにだけ残っている可能性があるため、エラーに同じ対象への`open`の再試行と、SSH復旧後の`sbxm sync <project-id>`を示します。Sandboxとcommitはそのまま保持してください。対話SSHのcommandを既に起動した場合は、非zero終了だけでは作業が無かったと判断できないため、最後の保存を試みます。SSHの失敗を先に表示し、保存にも失敗した場合は二次的な失敗として示します。接続の修復のためにSandboxを削除したり作り直したりする必要はありません。
+
 ## sbxmが置くもの
 
 プロジェクトは、登録したディレクトリの中で完結します。
@@ -362,13 +380,15 @@ Sandbox内に残すべきものがないと別途確認できた場合に限っ�
 
 `--local`で追加したプロジェクトは、このディレクトリの中にホスト側のcloneを持ちません。repositoryは追加したときの場所に残ります。
 
-`~/.sbxm`には、登録済みプロジェクトとその場所の索引である`registry.yaml`を置きます。表示言語か名義を選ぶか、配置するファイルを宣言した時点で`config.yaml`も作られます。Docker Sandboxes CLIとGitのversion確認が通った実行ファイルは`host-tools.yaml`に記録し、変わらない限り確認を省略します。プロジェクトの場所を知っているのはregistryだけであるため、プロジェクトのディレクトリを移動すると、sbxmは新しい場所を推測せず`ls`で`missing`として表示します。
+`~/.sbxm`には、登録済みプロジェクトとその場所の索引である`registry.yaml`を置きます。表示言語か名義を選ぶか、配置するファイルを宣言した時点で`config.yaml`も作られます。Docker Sandboxes CLIとGitのversion確認が通った実行ファイルは`host-tools.yaml`に記録し、変わらない限り確認を省略します。`status`ではこの記録を読むだけにします。プロジェクトの場所を知っているのはregistryだけであるため、プロジェクトのディレクトリを移動すると、sbxmは新しい場所を推測せず`ls`で`missing`として表示します。
 
 ## sbxmがsbxを起動するとき
 
-sbxmは、`sbx`をいつも`SBX_NO_TELEMETRY=1`と`DOCKER_SANDBOXES_DISABLE_UNLEASH=1`を付けて起動します。付けないと、sign-inした`sbx`は起動のたびに、利用状況の送信に約0.45秒、feature flagの取得にも同じくらいかけます。daemonが一覧を返すのは数msです。2つを付けると、`sbx ls`1回が約0.9秒から約0.05秒になります。
+sbxmは、通常の操作では`sbx`に`SBX_NO_TELEMETRY=1`と`DOCKER_SANDBOXES_DISABLE_UNLEASH=1`を付けて起動します。付けないと、sign-inした`sbx`は起動のたびに、利用状況の送信に約0.45秒、feature flagの取得にも同じくらいかけます。daemonが一覧を返すのは数msです。2つを付けると、`sbx ls`1回が約0.9秒から約0.05秒になります。
 
-この2つの変数は、sbxmが起動した`sbx`のprocessにだけ届きます。sbxmはDocker Sandboxesの設定に何も書かないため、利用者が自分で実行する`sbx`の動きは変わりません。ただし、sbxmが起動した`sbx`がDocker Sandboxesのdaemonを起動した場合は、daemonが再起動するまで、この変数を持ち続けることがあります。
+この2つの変数は、sbxmが起動した`sbx`のprocessにだけ届きます。environmentへの追加でDocker Sandboxesの設定を書き換えることはありません。ただし、sbxmが起動した`sbx`がDocker Sandboxesのdaemonを起動した場合は、daemonが再起動するまで、この変数を持ち続けることがあります。
+
+SSH設定の観測と承認されたSSH修復は例外です。利用状況の送信は止めますが、SSH endpointの観測や再起動によってfeatureの既定値が変わらないよう、feature flagについては呼び出し元のenvironmentをそのまま使います。
 
 ## コマンド一覧
 

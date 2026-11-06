@@ -33,6 +33,7 @@ fn every_row_is_shown_in_the_documented_order_even_when_checks_fail() -> Checked
             "status-item-daemon",
             "status-item-login",
             "status-item-remote-ssh",
+            "status-item-ssh-endpoint",
         ]
     );
     Ok(())
@@ -798,7 +799,7 @@ fn a_login_probe_that_exits_non_zero_is_unobservable_and_keeps_the_original_stde
 
     assert_eq!(status_of(&status, "status-item-login")?, StatusValue::Error);
     let diagnostic = diagnosed(&status, ErrorId::SbxLoginUnobservable)?;
-    assert_eq!(cause(diagnostic)?, ErrorId::ExternalCommandFailed.as_str());
+    assert_eq!(reason(diagnostic)?.id, "error-external-command-failed");
     let external = diagnostic
         .external
         .as_ref()
@@ -821,7 +822,7 @@ fn a_login_probe_that_times_out_is_unobservable_rather_than_signed_in() -> Check
     assert_eq!(status_of(&status, "status-item-login")?, StatusValue::Error);
     let diagnostic = diagnosed(&status, ErrorId::SbxLoginUnobservable)?;
     // 答えが返らなかったことも、答えとして記録する。
-    assert_eq!(cause(diagnostic)?, ErrorId::ExternalCommandTimeout.as_str());
+    assert_eq!(reason(diagnostic)?.id, "error-external-command-timeout");
     Ok(())
 }
 
@@ -1126,6 +1127,23 @@ fn a_recorded_cli_is_not_probed_again_and_still_reports_ready() -> Checked {
             .traces
             .iter()
             .any(|trace| trace.id == "trace-host-tool-skipped")
+    );
+    Ok(())
+}
+
+#[test]
+fn an_exhausted_login_probe_retains_the_attempt_count_in_its_final_diagnostic() -> Checked {
+    let (_dir, location) = location_with_config(None)?;
+    let host = FakeHost::macos().timing_out("sbx ls --json");
+    let status = diagnose(&location, &host);
+    let diagnostic = diagnosed(&status, ErrorId::SbxLoginUnobservable)?;
+    assert!(
+        diagnostic.facts.iter().any(|fact| matches!(fact,
+            crate::design::Fact::Translated { value, .. }
+            if value.id == "sbx-probe-attempts"
+                && value.args.contains(&("attempts", "3".into()))
+        )),
+        "the final sign-in diagnostic retains the total attempt count"
     );
     Ok(())
 }
