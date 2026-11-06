@@ -33,6 +33,7 @@ fn every_row_is_shown_in_the_documented_order_even_when_checks_fail() -> Checked
             "status-item-daemon",
             "status-item-login",
             "status-item-remote-ssh",
+            "status-item-ssh-endpoint",
         ]
     );
     Ok(())

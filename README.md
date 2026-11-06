@@ -356,6 +356,18 @@ sbxm destroy --force <project-id>
 
 Use `--force` only when you have independently confirmed that nothing inside the sandbox needs to be preserved.
 
+## Troubleshooting SSH access
+
+Before handing the terminal to SSH, `open` checks the host SSH configuration and effective Docker Sandboxes SSH settings, then tests a fresh connection to the running target sandbox. Local projects also test SSH before the first repository transfer into a new sandbox. A working `sbx exec` or repository inspection does not prove that the SSH endpoint is available.
+
+In an interactive terminal, `open` shows each required repair command and asks before executing it. Missing client configuration can be repaired with `sbx setup ssh`. When administrator settings permit SSH, a disabled endpoint can be enabled with `sbx settings set feature.ssh true`. If that setting requires a daemon restart, `open` asks separately before running `sbx daemon restart`, which may interrupt other sandbox connections. Declining or canceling stops the open operation; earlier approved changes remain. Every repair is followed by new observations, and a restart is followed by fresh project preparation and an SSH connection check. A repair that does not fix the observed state is not repeated indefinitely.
+
+Administrator constraints, environment variable overrides, and unreadable settings are reported rather than bypassed. The administrator's experimental-features gate is never changed by SSH repair. Without an interactive terminal, `open` reports the cause and recovery commands and makes no SSH configuration changes. If the cause is another SSH error, such as host key verification, its original error is retained and no speculative repair is offered.
+
+`status --global` reports SSH client configuration and the SSH endpoint setting separately. The endpoint setting is not a live connection test. A stopped or unobservable daemon is not started just to read that setting; checking a particular running sandbox's connection is `open`'s responsibility.
+
+If preflight fails, no interactive session or automatic host save is started. For a local project, unsynchronized commits may still exist only inside the sandbox; the error shows how to retry `open` and then `sbxm sync <project-id>` after SSH is restored. Leave the sandbox and its commits in place. If the interactive SSH command has already run, `open` still attempts its final save because a nonzero SSH exit cannot prove that no work occurred. An SSH command failure is reported before a failed save, which is labeled as a secondary failure. Removing or rebuilding the sandbox is not a connection repair.
+
 ## Where sbxm keeps things
 
 A project lives entirely in the directory you registered it from:
@@ -372,9 +384,11 @@ Under `~/.sbxm`, sbxm keeps `registry.yaml` — the index of registered projects
 
 ## How sbxm runs sbx
 
-sbxm starts every `sbx` with `SBX_NO_TELEMETRY=1` and `DOCKER_SANDBOXES_DISABLE_UNLEASH=1`. Without them, a signed-in `sbx` spends about 0.45 seconds on sending usage data and about as long on fetching feature flags each time it starts, while the daemon answers a listing within a few milliseconds. With both set, one `sbx ls` takes about 0.05 seconds instead of 0.9.
+For ordinary operations, sbxm starts `sbx` with `SBX_NO_TELEMETRY=1` and `DOCKER_SANDBOXES_DISABLE_UNLEASH=1`. Without them, a signed-in `sbx` spends about 0.45 seconds on sending usage data and about as long on fetching feature flags each time it starts, while the daemon answers a listing within a few milliseconds. With both set, one `sbx ls` takes about 0.05 seconds instead of 0.9.
 
-The two variables reach only the `sbx` processes that sbxm starts. sbxm writes nothing to the settings of Docker Sandboxes, so an `sbx` you run yourself behaves as before. If one of the `sbx` processes that sbxm starts is the one that starts the Docker Sandboxes daemon, the daemon may keep the variables until it restarts.
+These environment overrides reach only the `sbx` processes that sbxm starts and do not write Docker Sandboxes settings. If one of the `sbx` processes that sbxm starts is the one that starts the Docker Sandboxes daemon, the daemon may keep the variables until it restarts.
+
+SSH setting observations and approved SSH repairs are an exception: they still disable usage reports, but preserve the caller's feature-flag behavior so that observing or restarting the SSH endpoint does not change its defaults.
 
 ## Command overview
 

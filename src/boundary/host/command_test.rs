@@ -267,7 +267,7 @@ fn sbx_runs_without_sending_usage_or_fetching_feature_flags() {
 }
 
 #[test]
-fn sbx_is_quieted_whatever_environment_policy_it_was_given() {
+fn ordinary_sbx_runs_are_quieted_even_without_an_explicit_environment_policy() {
     // `status`は`sbx`をpolicyを指定せずに起動する。そこでも同じ2つを付ける。
     let spec = CommandSpec::probe("sbx", &["version"]);
 
@@ -1056,4 +1056,14 @@ fn a_relayed_command_that_outlives_its_limit_is_ended_and_reported() -> Checked 
     assert_eq!(error.first_id(), Some(ErrorId::ExternalCommandTimeout));
     assert!(ended(&os.events()), "{:?}", os.events());
     Ok(())
+}
+
+#[test]
+fn ssh_settings_keep_the_callers_feature_flag_environment_instead_of_disabling_it() {
+    let spec = CommandSpec::probe("sbx", &["settings", "get", "feature.ssh", "--json"])
+        .env(EnvPolicy::SbxSsh);
+    assert_eq!(
+        explicit_envs(&spec),
+        [set("SBX_NO_TELEMETRY"), ("SSH_AUTH_SOCK".to_string(), None)]
+    );
 }
