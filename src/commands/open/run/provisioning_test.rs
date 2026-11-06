@@ -24,6 +24,80 @@ use super::{Prepared, prepare};
 
 const PROJECT: &str = "Example-Org/Example-Repo";
 
+struct NoTemporarySpace<'a>(&'a World);
+
+impl crate::testing::host::AnsweredHost for NoTemporarySpace<'_> {
+    fn has_command(&self, _: &str) -> bool {
+        true
+    }
+    fn answer(
+        &self,
+        spec: &crate::boundary::host::CommandSpec,
+    ) -> Result<crate::boundary::host::CommandOutcome> {
+        if crate::boundary::host::protocol::split_inside_check(&spec.args).is_some() {
+            return Ok(crate::testing::command::outcome_with_stderr(
+                spec,
+                70,
+                "",
+                "mktemp: No space left on device",
+            ));
+        }
+        if spec
+            .args
+            .ends_with(&["df".into(), "-Pk".into(), "/".into()])
+        {
+            return Ok(crate::testing::command::outcome(
+                spec,
+                0,
+                "Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 1024 1024 0 100% /\n",
+            ));
+        }
+        let mut original = spec.clone();
+        if let Some(at) = original
+            .args
+            .iter()
+            .position(|arg| arg == "GIT_OPTIONAL_LOCKS=0")
+        {
+            original.args.drain(at - 1..at + 2);
+        }
+        self.0.answer(&original)
+    }
+}
+
+#[test]
+fn a_ready_sandbox_with_no_scratch_space_can_still_reach_the_ssh_handover() -> Checked {
+    let bench = Bench::new()?;
+    let world = World::new();
+    let project = registered(&bench, &world, None)?;
+    drop(open(&bench, &world, &project, None).required()?);
+    let before = world.calls.borrow().len();
+    let clock = ScriptedClock::default();
+    let prepared = prepare(
+        &bench.location,
+        &bench.config,
+        Some(&project),
+        None,
+        &NoTemporarySpace(&world),
+        &mut ScriptedPrompt::choosing(0),
+        bench.workspace_root.path(),
+        poll(&clock),
+        &mut SilentProgress,
+    )
+    .required()?;
+    assert!(prepared.provisioned.is_none());
+    assert!(
+        matches!(prepared.disk, crate::support::disk::DiskObservation::Observed(usage) if usage.free_kib == 0)
+    );
+    assert!(!world.calls.borrow()[before..].iter().any(|spec| {
+        let args = spec.args.join(" ");
+        args.contains("worktree add")
+            || args.contains(" init ")
+            || args.contains(" fetch ")
+            || args.contains("install ")
+    }));
+    Ok(())
+}
+
 /// 登録済み案件を`open`で開く。
 fn open(bench: &Bench, world: &World, project: &ProjectId, index: Option<u32>) -> Result<Prepared> {
     let clock = ScriptedClock::default();
