@@ -725,6 +725,7 @@ status-disk-low = 残り少なめ
 status-disk-very-low = 残りわずか
 status-disk-no-space = 空きなし
 status-item-metadata = metadata (Metadata)
+status-item-maintenance-check = 構築・保守の追加検査
 status-item-project-root = 案件root (Project root)
 status-item-host-clone = host clone (Host clone)
 status-item-host-repository = hostのrepository (Host repository)

@@ -725,6 +725,7 @@ status-disk-low = Low space
 status-disk-very-low = Very low space
 status-disk-no-space = No space available
 status-item-metadata = Metadata
+status-item-maintenance-check = Setup and maintenance check
 status-item-project-root = Project root
 status-item-host-clone = Host clone
 status-item-host-repository = Host repository

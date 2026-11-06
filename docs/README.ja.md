@@ -208,6 +208,8 @@ DOCKER_SANDBOXES_ROOT_SIZE=40g sbxm rebuild <project-id>
 
 `sbxm status <project-id>`と`sbxm open <project-id>`は、Sandboxの空き容量、残りの割合、空きが減るほど短くなるゲージを表示します。全体容量は使用済みと空き容量の合計で、予約領域を含みません。
 
+構築・保守の追加検査が失敗した場合、`status`は読み取れた結果を残し、その検査を`not-observed`と表示します。終了statusやstderrを取得できた場合は、それらを含む失敗理由も示します。終了statusは`1`になり、不完全な検査に基づく保守commandは案内しません。空き容量が無く、内部検査の一時fileを作れない場合も対象です。
+
 ```text
 ディスク  /
 空き容量  4.7 GiB（残り25%）
