@@ -154,6 +154,24 @@ impl FakeSbx {
             .required_because(&format!("no command matched {needle}"))?
             .clone())
     }
+
+    /// objectの一括検査を、個別検査に指定した答えから組み立てる。
+    fn answer_objects(&self, spec: &CommandSpec) -> Result<Option<CommandOutcome>> {
+        if !spec
+            .args
+            .last()
+            .is_some_and(|arg| arg == "--batch-check=%(objectname)")
+        {
+            return Ok(None);
+        }
+        if let Some((code, output)) = self.lookup(&spec.args.join(" ")) {
+            return Ok(Some(crate::testing::command::outcome(spec, code, &output)));
+        }
+        crate::testing::command::object_batch(spec, |query| {
+            let (code, stdout) = self.lookup(&query.args.join(" ")).unwrap_or_default();
+            Ok(crate::testing::command::outcome(query, code, &stdout))
+        })
+    }
 }
 
 impl AnsweredHost for FakeSbx {
@@ -167,20 +185,8 @@ impl AnsweredHost for FakeSbx {
 
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
         self.specs.borrow_mut().push(spec.clone());
-        if spec
-            .args
-            .last()
-            .is_some_and(|arg| arg == "--batch-check=%(objectname)")
-        {
-            if let Some((code, output)) = self.lookup(&spec.args.join(" ")) {
-                return Ok(crate::testing::command::outcome(spec, code, &output));
-            }
-            if let Some(result) = crate::testing::command::object_batch(spec, |query| {
-                let (code, stdout) = self.lookup(&query.args.join(" ")).unwrap_or_default();
-                Ok(crate::testing::command::outcome(query, code, &stdout))
-            })? {
-                return Ok(result);
-            }
+        if let Some(result) = self.answer_objects(spec)? {
+            return Ok(result);
         }
         if let Some(outcome) = self.probes.borrow_mut().answer(spec) {
             return Ok(outcome);
