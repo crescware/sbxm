@@ -20,6 +20,7 @@ fn status() -> ProjectStatus {
         items: Vec::new(),
         worktrees: Vec::new(),
         files: Vec::new(),
+        storage: Vec::new(),
         disk: DiskObservation::Observed(RootDiskUsage {
             free_kib: 0,
             usable_kib: 1024,
@@ -119,18 +120,9 @@ impl AnsweredHost for FullDiskHost {
     }
 
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
-        if spec
-            .args
-            .ends_with(&["df".into(), "-Pk".into(), "/".into()])
+        if crate::boundary::host::protocol::split_inside_check(&spec.args).is_some()
+            && !spec.args.iter().any(|arg| arg == "-m")
         {
-            return Ok(outcome_with_stderr(
-                spec,
-                0,
-                "Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 1024 1024 0 100% /\n",
-                "",
-            ));
-        }
-        if crate::boundary::host::protocol::split_inside_check(&spec.args).is_some() {
             return Ok(outcome_with_stderr(
                 spec,
                 125,
@@ -151,7 +143,11 @@ fn a_full_disk_inside_check_failure_reaches_the_final_output_in_both_languages()
         &fixture,
         &project,
         &three_entries(&project),
-    )?);
+    )?.answering(
+        &format!("exec {} -- df -Pk /", project.sandbox),
+        0,
+        "Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 1024 1024 0 100% /\n",
+    ));
     let status = diagnose(
         &fixture.location,
         &fixture.config,
