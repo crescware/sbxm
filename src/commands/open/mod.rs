@@ -6,6 +6,7 @@ mod connection_error;
 mod exec;
 mod prepare_connection;
 pub mod run;
+mod session;
 mod ssh_repair;
 
 pub use args::Args;

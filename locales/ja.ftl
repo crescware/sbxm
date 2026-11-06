@@ -892,6 +892,7 @@ status-disk-not-observed-mismatch = Sandboxが起動しているかを判定で�
 status-disk-command-missing = Sandbox内に`df`が無いため、ディスク使用量を確認できませんでした。
 status-disk-parse-failed = Sandbox内から返ったディスク使用量の報告を読み取れませんでした。
 
+session-backup-current = { $checked }（UTC）時点でhostへのcommit保存を確認しました。未commit・未追跡fileはSandboxにだけ残ります。
 error-remote-ssh-disabled = Docker SandboxesのSSH endpointが無効です。
 error-remote-ssh-unavailable = Docker SandboxesのSSH endpointを利用できません。repositoryの異常を示すものではありません。
 error-remote-ssh-connection-failed = SandboxへのSSH接続に失敗しました。

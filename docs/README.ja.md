@@ -434,3 +434,5 @@ sbxmは結果を標準出力へ、進捗、prompt、警告、errorを標準エ�
 明示した `--color` は、どの環境変数よりも優先されます。色を消しても情報は失われません。marker、label、空行だけで同じ意味を読み取れます。
 
 `--verbose` を付けると、debug用のtraceが標準エラー出力に並びます。標準出力は結果だけのままです。
+
+`open`はSSHへ引き渡す前とsession終了後にhostへのcommit保存を確認し、確認時刻を示します。失敗時はcommand・終了status・stderrを保持します。session中はterminalをSSHが使うため、直近の定期保存の失敗をSSH終了後に表示します。最後の保存が失敗した場合、SSHが成功していても`open`の終了statusは1です。未commit・未追跡fileはこのcommit保存の対象外です。
