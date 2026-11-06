@@ -18,7 +18,17 @@ pub fn observe_initialization(
     git_dir: &str,
     progress: &mut dyn ProgressSink,
 ) -> Result<Initialization> {
-    let bare = super::inspect_bare(inside, git_dir, progress)?.require_success()?;
+    let bare = super::inspect_bare(inside, git_dir, progress)?;
+    // HEAD・objects・refsだけでGitとして認識できても、core.bareの保存より前に
+    // 初期化が止まっていれば、rev-parseは成功してfalseを返す。
+    if !bare.success() || bare.stdout_text().trim() != "true" {
+        let command = super::unfinished_init_command(git_dir);
+        let args: Vec<&str> = command.iter().map(String::as_str).collect();
+        if inside.exec(&args)?.success() {
+            return Ok(Initialization::Uninitialized);
+        }
+    }
+    let bare = bare.require_success()?;
     if bare.stdout_text().trim() != "true" {
         return Ok(Initialization::Settled);
     }

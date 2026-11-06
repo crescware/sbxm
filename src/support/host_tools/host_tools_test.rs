@@ -24,6 +24,36 @@ fn write_private(path: &Path, text: &str) -> Checked {
     Ok(())
 }
 
+#[test]
+fn status_can_reuse_tool_records_without_creating_or_replacing_them() -> Checked {
+    let (_directory, location) = location_with_state_dir()?;
+    let executable = reusable_executable("sbx");
+    let observed = version("0.51.0")?;
+    let readonly = location.without_tool_recording();
+    let mut progress = RecordedOutput::new();
+    record(&readonly, "sbx", Some(&executable), observed, &mut progress);
+    assert!(!location.host_tools_file().exists());
+    assert_eq!(last_trace(&progress)?.1, "read-only");
+    record(&location, "sbx", Some(&executable), observed, &mut progress);
+    let before = std::fs::read(location.host_tools_file()).required()?;
+    assert_eq!(
+        recorded_version(&readonly, "sbx", Some(&executable), observed, &mut progress),
+        Some(observed)
+    );
+    record(
+        &readonly,
+        "sbx",
+        Some(&executable),
+        version("0.52.0")?,
+        &mut progress,
+    );
+    assert_eq!(
+        std::fs::read(location.host_tools_file()).required()?,
+        before
+    );
+    Ok(())
+}
+
 fn records_of(pairs: &[(&str, &Executable, &str)]) -> Checked<BTreeMap<String, RecordedTool>> {
     let mut records = BTreeMap::new();
     for (program, executable, observed) in pairs {

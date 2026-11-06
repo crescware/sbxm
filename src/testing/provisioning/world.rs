@@ -335,6 +335,12 @@ impl crate::testing::host::AnsweredHost for World {
             return Ok(Self::outcome(spec, code, &stdout));
         }
 
+        if let Some(result) =
+            crate::testing::command::object_batch(spec, |query| self.answer(query))?
+        {
+            return Ok(result);
+        }
+
         let (code, stdout) = match spec.program.as_str() {
             "git" => Self::host_git(spec),
             "docker" => self.docker(spec),

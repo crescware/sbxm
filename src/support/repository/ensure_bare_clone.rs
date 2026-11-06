@@ -25,17 +25,32 @@ pub fn ensure_bare_clone(
 ) -> Result<()> {
     let git_dir = layout.bare_git_dir();
 
-    if sandbox::path_exists(&Live::new(host, sandbox), &git_dir)? {
-        complete_initialization(host, sandbox, origin, &git_dir, progress)?;
+    let initialized = if sandbox::path_exists(&Live::new(host, sandbox), &git_dir)? {
+        complete_initialization(host, sandbox, origin, &git_dir, progress)?
     } else {
         progress.step(msg!("progress-preparing-repository"));
         sandbox::exec(host, sandbox, &["mkdir", "-p", &layout.bare_root()])?.require_success()?;
         // `git clone --bare`はremoteのbranchを`refs/heads/*`へ複製する。そのbranchは
         // worktreeを作るときに同じ名前で作ろうとするものと衝突する。bare repositoryは
         // remote-tracking refだけを持つ入れ物として始める。
-        sandbox::exec(host, sandbox, &["git", "init", "--bare", &git_dir])?.require_success()?;
+        initialize(host, sandbox, &git_dir)?;
         add_origin(host, sandbox, origin, &git_dir)?;
         set_fetch_refspec(host, sandbox, &git_dir)?;
+        true
+    };
+    if initialized {
+        sandbox::exec(
+            host,
+            sandbox,
+            &[
+                "sh",
+                "-c",
+                r#"if [ -d "$1" ] && [ ! -L "$1" ]; then rmdir -- "$1"; fi"#,
+                "sh",
+                &format!("{git_dir}/sbxm-initializing"),
+            ],
+        )?
+        .require_success()?;
     }
     verify_bare_clone(host, sandbox, origin, &git_dir, progress)?;
 
@@ -57,15 +72,35 @@ fn complete_initialization(
     origin: &SandboxOrigin,
     git_dir: &str,
     progress: &mut dyn ProgressSink,
-) -> Result<()> {
+) -> Result<bool> {
     match observe_initialization(&Live::new(host, sandbox), origin, git_dir, progress)? {
-        Initialization::Settled => Ok(()),
+        Initialization::Uninitialized => {
+            initialize(host, sandbox, git_dir)?;
+            add_origin(host, sandbox, origin, git_dir)?;
+            set_fetch_refspec(host, sandbox, git_dir).map(|()| true)
+        }
+        Initialization::Settled => Ok(false),
         Initialization::OriginMissing => {
             add_origin(host, sandbox, origin, git_dir)?;
-            set_fetch_refspec(host, sandbox, git_dir)
+            set_fetch_refspec(host, sandbox, git_dir).map(|()| true)
         }
-        Initialization::FetchRefspecMissing => set_fetch_refspec(host, sandbox, git_dir),
+        Initialization::FetchRefspecMissing => {
+            set_fetch_refspec(host, sandbox, git_dir).map(|()| true)
+        }
     }
+}
+
+fn initialize(host: &dyn HostEnvironment, sandbox: &str, git_dir: &str) -> Result<()> {
+    // markerを先に置く。初期化途中の容量不足でも、次回は同じdirectoryを再開できる。
+    // Gitのreinitは既存のrefやobjectを消さない。
+    sandbox::exec(
+        host,
+        sandbox,
+        &["mkdir", "-p", "--", &format!("{git_dir}/sbxm-initializing")],
+    )?
+    .require_success()?;
+    sandbox::exec(host, sandbox, &["git", "init", "--bare", git_dir])?.require_success()?;
+    Ok(())
 }
 
 fn add_origin(
@@ -100,3 +135,7 @@ fn set_fetch_refspec(host: &dyn HostEnvironment, sandbox: &str, git_dir: &str) -
     .require_success()?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "ensure_bare_clone_test.rs"]
+mod ensure_bare_clone_test;

@@ -125,6 +125,19 @@ impl World {
         match args.as_slice() {
             // このbuildが求める最低versionのCLIである。
             ["version"] => (0, crate::testing::host::supported_sbx_version()),
+            ["settings", "get", "feature.ssh", "--json"] => {
+                (0, crate::testing::host::SSH_FEATURE_ENABLED.to_string())
+            }
+            [
+                "settings",
+                "get",
+                "platform.allowExperimentalFeatures",
+                "--json",
+            ] => (
+                0,
+                r#"{"key":"platform.allowExperimentalFeatures","value":true,"source":"default"}"#
+                    .to_string(),
+            ),
             ["ls", "--json"] => {
                 let rendered = self
                     .sandboxes

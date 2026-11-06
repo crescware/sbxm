@@ -42,8 +42,8 @@ const SBX_QUIETING: [(&str, &str); 2] = [
 ///
 /// defaultで現在processのenvironmentを継承する。`env_clear`は呼ばない。取り除くのは
 /// `policy`が名指しする変数だけであり、`DOCKER_SANDBOXES_ROOT_SIZE`のような他の変数は
-/// そのまま子processへ渡る。`program`が`sbx`なら、`policy`によらず[`SBX_QUIETING`]を
-/// 付ける。
+/// そのまま子processへ渡る。通常の`sbx`には[`SBX_QUIETING`]を付け、SSH設定の観測と
+/// 修復では、観測するfeatureの既定値を変えないよう利用状況の送信だけを止める。
 pub(super) fn apply_env(
     command: &mut Command,
     program: &str,
@@ -51,11 +51,15 @@ pub(super) fn apply_env(
     working_dir: Option<&Path>,
 ) {
     if program == "sbx" {
-        command.envs(SBX_QUIETING);
+        if policy == EnvPolicy::SbxSsh {
+            command.env("SBX_NO_TELEMETRY", "1");
+        } else {
+            command.envs(SBX_QUIETING);
+        }
     }
     match policy {
         EnvPolicy::Inherit => {}
-        EnvPolicy::InheritWithoutSshAgent => {
+        EnvPolicy::InheritWithoutSshAgent | EnvPolicy::SbxSsh => {
             command.env_remove("SSH_AUTH_SOCK");
         }
         EnvPolicy::HostRepository => {

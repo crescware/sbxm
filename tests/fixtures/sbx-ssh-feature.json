@@ -1,0 +1,18 @@
+{
+  "default": {
+    "enabled": false,
+    "variant": "",
+    "variantPayload": ""
+  },
+  "description": "Enables the native SSH server in sandboxd. Experimental — gated by platform.allowExperimentalFeatures.",
+  "feature_flag": true,
+  "key": "feature.ssh",
+  "requires_restart": true,
+  "source": "default",
+  "type": "json",
+  "value": {
+    "enabled": false,
+    "variant": "",
+    "variantPayload": ""
+  }
+}

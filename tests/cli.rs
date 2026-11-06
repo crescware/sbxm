@@ -1241,6 +1241,7 @@ fn global_status_prints_only_the_global_section_and_the_published_columns() -> C
             "Daemon",
             "Docker Sandboxes login",
             "Remote SSH",
+            "SSH endpoint setting (connection not tested)",
         ]
     );
     assert!(!run.stdout.contains("PROJECT"), "{}", run.stdout);
@@ -1255,7 +1256,7 @@ fn global_status_reports_every_problem_and_exits_with_one() -> Checked {
 
     assert_eq!(run.code, 1, "an incomplete host is not healthy");
     // 取得できた行は後続検査が失敗しても省略しない。
-    assert_eq!(run.stdout.lines().count(), 15);
+    assert_eq!(run.stdout.lines().count(), 16);
     for id in ["external-command-not-found", "host-command-missing"] {
         assert!(
             run.stderr.contains(id),

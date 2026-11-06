@@ -67,6 +67,14 @@ impl FakeHost {
                 &crate::testing::host::supported_git_version(),
             )
             .responding("sbx ls --json", "[]")
+            .responding(
+                "sbx settings get platform.allowExperimentalFeatures --json",
+                r#"{"key":"platform.allowExperimentalFeatures","value":true,"source":"default"}"#,
+            )
+            .responding(
+                "sbx settings get feature.ssh --json",
+                crate::testing::host::SSH_FEATURE_ENABLED,
+            )
             .responding("git config --global --get-all user.name", "Example User\n")
             .responding(
                 "git config --global --get-all user.email",
