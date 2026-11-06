@@ -326,6 +326,8 @@ The host repository fetches the sandbox's branches, tags, and each worktree's `H
 
 A commit saved this way outlives the sandbox, so rebuild and destroy count it as kept, the same as a commit reachable from the origin. A stash or notes commit missing from the origin is not saved this way, so it still has to be pushed or dropped.
 
+`status` also reports available blocks and inodes separately for host metadata, image archives, commit backups, sandbox root, and sandbox Docker data. Zero blocks or inodes is a failure even when other checks pass; probe errors retain their original command diagnostics. These checks do not write test files or start stopped sandboxes. Docker VM backing storage and user/project quotas are not exposed by these probes, and some filesystems do not provide inode counts. Positive space is an observation, not a reservation or a guarantee of successful writes.
+
 If repository initialization stops because the sandbox runs out of space, free space and rerun `sbxm open` or `sbxm repair`. sbxm resumes an empty repository directory or one carrying its initialization marker without deleting existing files. An unrecognized nonempty directory is left untouched.
 
 ## Develop without GitHub

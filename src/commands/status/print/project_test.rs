@@ -61,6 +61,7 @@ fn healthy() -> ProjectStatus {
             },
         }],
         files: Vec::new(),
+        storage: Vec::new(),
         disk: DiskObservation::Observed(RootDiskUsage {
             free_kib: 4_898_320,
             usable_kib: 19_401_296,

@@ -223,6 +223,7 @@ fn a_sandbox_whose_state_was_not_observed_is_not_looked_into() -> Checked {
         worktrees: Vec::new(),
         files: Vec::new(),
         disk: crate::support::disk::DiskObservation::NotObservedMismatch,
+        storage: Vec::new(),
         diagnostics: Vec::new(),
         next: None,
     };

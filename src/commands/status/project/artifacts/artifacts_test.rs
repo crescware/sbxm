@@ -356,6 +356,7 @@ fn bare_status() -> ProjectStatus {
         worktrees: Vec::new(),
         files: Vec::new(),
         disk: crate::support::disk::DiskObservation::NotObservedMismatch,
+        storage: Vec::new(),
         diagnostics: Vec::new(),
         next: None,
     }

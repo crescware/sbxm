@@ -318,6 +318,8 @@ originに無いbranch、tag、worktreeの`HEAD`のcommitだけを理由にrebuil
 
 こうして保存したcommitはSandboxを消しても残るため、rebuildとdestroyはoriginから辿れるcommitと同じく、失われないものとして数えます。originに無いstashやnotesのcommitはこの方法では保存されず、pushするか捨てる必要があります。
 
+`status` はhostのmetadata・image archive・commit保存先、Sandboxのroot・Docker dataについて、空きblockとinodeを別々に表示します。どちらかがゼロなら他の検査が正常でも失敗となり、取得失敗では元のcommandの診断を保持します。試し書きや停止中Sandboxの起動は行いません。Docker VMのbacking storageとuser・project quotaはこの観測では取得できず、filesystemによってはinode数も取得できません。空き容量の正の値は予約でも書き込み成功の保証でもありません。
+
 保存元Sandboxには一時refやfileを作らず、detached worktreeのcommitも読み取りだけでhostへ救出します。host側に空きがあれば、保存元の容量ゼロだけを理由に保存が妨げられません。
 
 repositoryの初期化が容量不足で中断した場合は、空きを確保して `sbxm open` または `sbxm repair` を再実行します。空のrepository directory、またはsbxmの初期化中の印があるdirectoryを、既存fileを削除せずに再開します。由来を確認できない空でないdirectoryには手を加えません。

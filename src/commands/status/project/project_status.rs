@@ -18,6 +18,7 @@ pub struct ProjectStatus {
     /// root filesystemの使用量。`items`とは別に持ち、payloadを持てない`Value`には
     /// 押し込まない。
     pub disk: DiskObservation,
+    pub storage: Vec<crate::support::disk::Storage>,
     pub diagnostics: Vec<Diagnostic>,
     /// 観測から導いた、今すぐ実行できる1手。相反するcommandを並べないため、多くとも
     /// 1件しか持たない。

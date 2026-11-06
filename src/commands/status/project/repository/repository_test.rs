@@ -71,6 +71,50 @@ fn a_running_sandbox_is_looked_into_and_its_worktrees_classified() -> Checked {
 }
 
 #[test]
+fn a_full_filesystem_fails_status_even_when_every_repository_check_passes() -> Checked {
+    let fixture = Fixture::new()?;
+    let project = fixture.register("example-org/example-repo")?;
+    let host = looking_inside(&fixture, &project, &three_entries(&project))?.answering(
+        &format!("exec {} -- df -Pk /", project.sandbox),
+        0,
+        "Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 100 100 0 100% /\n",
+    );
+    let status = diagnose(
+        &fixture.location,
+        &fixture.config,
+        &project_id("example-org/example-repo")?,
+        &host,
+        &fixture.workspace_root,
+    )
+    .required()?;
+    assert!(!status.is_healthy());
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id == ErrorId::StorageExhausted)
+    );
+    assert!(status.next.is_none());
+    assert_eq!(
+        host.calls()
+            .iter()
+            .filter_map(|args| crate::testing::inside::split_inside_check(args))
+            .flat_map(|(_, _, commands)| commands)
+            .filter(|args| args == &["df", "-Pk", "/"])
+            .count(),
+        1
+    );
+    assert_eq!(
+        host.calls()
+            .iter()
+            .filter(|args| args.iter().any(|arg| arg == "-m"))
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
 fn status_keeps_clean_state_separate_from_an_unobservable_remote() -> Checked {
     let fixture = Fixture::new()?;
     let project = fixture.register("example-org/example-repo")?;

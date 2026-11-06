@@ -1,4 +1,4 @@
-use crate::design::{Document, Field, GuidanceItem, Inline, Table};
+use crate::design::{Cell, Document, Field, GuidanceItem, Inline, Table};
 use crate::i18n::Locale;
 use crate::msg;
 
@@ -51,8 +51,37 @@ pub fn project_document(status: &ProjectStatus, locale: Locale) -> Document {
     };
     let document = declared_files(document, status, &mut legend);
     let document = present::disk_section(document, &status.disk);
+    let document = storage_section(document, status);
     let document = document.legend(Legend::heading(), legend.entries());
     next_step(document, status)
+}
+
+fn storage_section(document: Document, status: &ProjectStatus) -> Document {
+    if status.storage.is_empty() {
+        return document;
+    }
+    let mut table = Table::new(vec![
+        msg!("column-storage-area"),
+        msg!("column-path"),
+        msg!("column-available-storage"),
+        msg!("column-available-inodes"),
+    ]);
+    for storage in &status.storage {
+        let unknown = || Cell::label(msg!("storage-unobserved"));
+        table.push(vec![
+            Cell::label(msg!(storage.label)),
+            Inline::path(storage.path.clone()).into(),
+            storage.available_kib.map_or_else(unknown, |kib| {
+                Inline::text(crate::support::disk::format_capacity(kib)).into()
+            }),
+            storage
+                .available_inodes
+                .map_or_else(unknown, |inodes| Inline::text(inodes.to_string()).into()),
+        ]);
+    }
+    document
+        .table(Some(msg!("status-storage-section")), table)
+        .note(msg!("storage-observation-limits"))
 }
 
 /// 宣言fileごとの、hostとSandboxの状態。宣言が無ければsectionごと省く。

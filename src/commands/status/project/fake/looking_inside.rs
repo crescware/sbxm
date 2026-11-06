@@ -94,6 +94,13 @@ pub fn looking_inside(
         0,
         "refs/remotes/origin/main\n",
     );
+    let mut host = host;
+    for path in ["/", "/var/lib/docker"] {
+        host = host.answering(&format!("exec {name} -- df -Pk {path}"), 0,
+            &format!("Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 10000 100 9900 1% {path}\n"))
+            .answering(&format!("exec {name} -- df -Pi {path}"), 0,
+            &format!("Filesystem Inodes IUsed IFree IUse% Mounted on\noverlay 10000 100 9900 1% {path}\n"));
+    }
     Ok(isolated_agent(
         registered_secret(host, project.sandbox.as_str()),
         project.sandbox.as_str(),

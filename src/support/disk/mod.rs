@@ -5,12 +5,14 @@ mod disk_meter;
 mod disk_observation;
 mod format_capacity;
 mod observe;
+mod storage;
 
 pub use attach_on_failure::attach_on_failure;
 pub use disk_meter::disk_meter;
 pub use disk_observation::DiskObservation;
 pub use format_capacity::format_capacity;
 pub use observe::observe;
+pub use storage::Storage;
 
 #[cfg(test)]
 #[path = "disk_test.rs"]
