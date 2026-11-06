@@ -54,6 +54,10 @@ curl)
     esac
     exit 1;;
 ssh)
+    case "$1" in
+    -G) printf 'proxycommand sbx ssh proxy %%n\n'; exit 0 ;;
+    -n) exit 0 ;;
+    esac
 	exit "$(cat "$fake/ssh-exit")"
 	;;
 docker)

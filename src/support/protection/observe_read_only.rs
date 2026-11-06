@@ -57,21 +57,20 @@ fn observe_origin(
         Err(reason) => return Ok(unobservable(reason)),
     };
 
-    // for-each-ref can list a remote-tracking ref whose object is no longer present in the
-    // local object database. Without this check, a failed ancestry query could be mistaken for
-    // a known-unreachable commit.
-    for tip in tips.values() {
-        if !object_present(host, &scope, tip)? {
-            return Ok(unobservable(UnobservableReason::ReadOnlyDataInsufficient));
-        }
+    let unique_commits: BTreeSet<&str> = candidates.iter().map(CommitCandidate::commit).collect();
+    // refとcandidateで同じobjectを何度も調べない。全objectをstdinで一度に渡し、
+    // Sandboxへの往復とGitの起動を、ref数によらず1回にする。
+    let objects: BTreeSet<&str> = tips
+        .values()
+        .map(String::as_str)
+        .chain(unique_commits.iter().copied())
+        .collect();
+    if !objects_present(host, &scope, &objects)? {
+        return Ok(unobservable(UnobservableReason::ReadOnlyDataInsufficient));
     }
 
     let mut reachable_from: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let unique_commits: BTreeSet<&str> = candidates.iter().map(CommitCandidate::commit).collect();
     for commit in unique_commits {
-        if !object_present(host, &scope, commit)? {
-            return Ok(unobservable(UnobservableReason::ReadOnlyDataInsufficient));
-        }
         match reaching_origin_refs(host, &scope, commit)? {
             Ok(origins) => {
                 reachable_from.insert(commit.to_string(), origins);
@@ -188,22 +187,63 @@ fn reaching_origin_refs(
     Ok(Ok(origins))
 }
 
-fn object_present(
+fn objects_present(
     host: &dyn HostEnvironment,
     scope: &ObservationScope<'_>,
-    object: &str,
+    objects: &BTreeSet<&str>,
 ) -> Result<bool> {
-    let outcome = sandbox::exec(
+    // object ID以外をbatchの入力行として解釈させない。
+    if objects.iter().any(|object| {
+        !matches!(object.len(), 40 | 64) || !object.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }) {
+        return Err(crate::diagnostics::unparseable(
+            "git cat-file --batch-check",
+            "expected full hexadecimal object IDs",
+        ));
+    }
+    let mut input = Vec::new();
+    for object in objects {
+        input.extend_from_slice(object.as_bytes());
+        input.push(b'\n');
+    }
+    let outcome = sandbox::exec_with_input(
         host,
         scope.sandbox,
-        &["git", "--git-dir", &scope.git_dir, "cat-file", "-e", object],
+        &[
+            "git",
+            "--git-dir",
+            &scope.git_dir,
+            "cat-file",
+            "--batch-check=%(objectname)",
+        ],
+        input,
     )
     .map_err(|error| reclassify(&error, scope))?;
-    match sandbox::inner_exit_code(&outcome) {
-        Some(0) => Ok(true),
-        Some(1) => Ok(false),
-        _ => Err(unobservable_command(&outcome, scope)),
+    if sandbox::inner_exit_code(&outcome) != Some(0) {
+        return Err(unobservable_command(&outcome, scope));
     }
+    let output = outcome.stdout_text();
+    let mut lines = output.lines();
+    let mut present = true;
+    for object in objects {
+        match lines.next() {
+            Some(line) if line == *object => {}
+            Some(line) if line.strip_suffix(" missing") == Some(*object) => present = false,
+            _ => {
+                return Err(crate::diagnostics::unparseable(
+                    "git cat-file --batch-check",
+                    "missing, reordered, or invalid object response",
+                ));
+            }
+        }
+    }
+    if lines.next().is_some() {
+        return Err(crate::diagnostics::unparseable(
+            "git cat-file --batch-check",
+            "unexpected extra object response",
+        ));
+    }
+    Ok(present)
 }
 
 fn reclassify(error: &Error, scope: &ObservationScope<'_>) -> Error {
@@ -230,3 +270,7 @@ fn observation_unobservable() -> Diagnostic {
         msg!("error-origin-observation-unobservable"),
     )
 }
+
+#[cfg(test)]
+#[path = "observe_read_only_test.rs"]
+mod observe_read_only_test;

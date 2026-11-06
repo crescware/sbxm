@@ -3,6 +3,7 @@
 mod end;
 mod event;
 mod inner_args;
+mod object_batch;
 mod outcome;
 mod outcome_with_stderr;
 mod read_step;
@@ -14,6 +15,7 @@ mod step;
 pub use end::End;
 pub use event::Event;
 pub use inner_args::inner_args;
+pub use object_batch::object_batch;
 pub use outcome::outcome;
 pub use outcome_with_stderr::outcome_with_stderr;
 pub use read_step::ReadStep;

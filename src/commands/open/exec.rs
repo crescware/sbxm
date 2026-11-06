@@ -7,7 +7,6 @@ use crate::design::{Document, Inline, PromptUi, SilentProgress, Ui, Warning};
 use crate::diagnostics::ExitCode;
 use crate::msg;
 use crate::paths::LOCK_TIMEOUT;
-use crate::support::inventory;
 
 use crate::commands::{present, saving};
 
@@ -35,17 +34,7 @@ pub fn exec(
     {
         return report(ui, &error);
     }
-    let prepared = match super::run::prepare(
-        context.location,
-        &config,
-        args.project.as_ref(),
-        args.index,
-        host,
-        prompt,
-        context.workspace_root,
-        inventory::Poll::standard(context.clock),
-        ui,
-    ) {
+    let prepared = match super::prepare_connection(args, context, &config, host, prompt, ui) {
         Ok(prepared) => prepared,
         Err(error) => return report(ui, &error),
     };
@@ -109,6 +98,11 @@ pub fn exec(
         None => None,
     };
     let connected = super::run::connect(host, prepared, ui, during);
+    // SSH起動後の非zeroだけでは、接続前の失敗とsession中の切断を区別できない。
+    // 保存する機会は維持し、接続の失敗を先に示してから、保存の結果を補足する。
+    if let Err(error) = &connected {
+        ui.error(error);
+    }
     // sessionを閉じたあとにも保存しておく。
     if let Some(candidate) = saves_to_host {
         let saved = saving::save_selected(
@@ -119,10 +113,19 @@ pub fn exec(
             context.clock,
             ui,
         );
-        saving::auto_saved(ui, &saved);
+        if connected.is_err()
+            && let crate::support::host_sync::AutoSaved::Failed(warning) = &saved
+        {
+            let mut secondary = warning.clone();
+            secondary.description = msg!("warning-open-ssh-save-secondary");
+            secondary.guidance.push(warning.description.clone());
+            ui.warning(&secondary);
+        } else {
+            saving::auto_saved(ui, &saved);
+        }
     }
     match connected {
         Ok(()) => ExitCode::Success,
-        Err(error) => report(ui, &error),
+        Err(error) => error.exit_code(),
     }
 }

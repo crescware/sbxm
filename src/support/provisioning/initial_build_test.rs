@@ -1510,7 +1510,7 @@ fn a_token_environment_that_cannot_be_written_stops_the_build_with_the_open_comm
     let world = World::new();
     let (_, project) = registered(&bench, &world)?;
     // tokenのplaceholderを渡す環境変数fileを、root権限で書く起動だけが失敗する。
-    world.failing(r#"> "$4" sh"#);
+    world.failing("# sbxm token environment write");
 
     let error = bench
         .ensure(&world, &project, &mut SilentProgress)
@@ -1521,7 +1521,7 @@ fn a_token_environment_that_cannot_be_written_stops_the_build_with_the_open_comm
     let calls = world.invocations();
     let failed = calls
         .iter()
-        .find(|call| call.contains(r#"> "$4" sh"#))
+        .find(|call| call.contains("# sbxm token environment write"))
         .required_because("the write was attempted")?;
     assert!(
         failed.contains("--user root") && failed.contains("sbxm-github-token"),

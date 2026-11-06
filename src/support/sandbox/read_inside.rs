@@ -20,13 +20,22 @@ pub fn read_inside(
     // 所要時間は`--verbose`のhostが、この起動を見分けて計らせる。
     let args = inside_check_arguments(commands, false);
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    let outcome = exec(host, sandbox, &borrowed)?;
+    let mut outcome = exec(host, sandbox, &borrowed)?;
     // 70は手順がcommandを1つも実行する前に、一時directoryを作れなかったことを示す。
     // 満杯のSandboxにも接続・診断できるよう、同じ検査をhostのpipeとmemoryで読む。
     if outcome.status.code() == Some(70) {
         return without_temporary_files(host, sandbox, commands);
     }
     if !outcome.success() {
+        // 手順の全文と全commandを診断へ展開せず、失敗した入口とstderrを示す。
+        if let Some(script) = outcome
+            .args
+            .iter()
+            .position(|arg| arg == crate::boundary::host::protocol::INSIDE_CHECK)
+        {
+            outcome.args.truncate(script + 1);
+            outcome.args[script] = "<inside_check.sh>".to_string();
+        }
         return Err(unobservable(&outcome, SUBJECT));
     }
     let records = parse_inside_check(&outcome.stdout, commands.len())?;

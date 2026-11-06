@@ -34,7 +34,7 @@ impl CommandOutcome {
             program: self.program.clone(),
             safe_args: self.args.clone(),
             working_dir: self.working_dir.clone(),
-            exit_status: self.status.to_string(),
+            exit_status: Some(self.status.to_string()),
             stderr: self.stderr.clone(),
             stderr_lossy: self.stderr_lossy,
         }
