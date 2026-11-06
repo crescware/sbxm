@@ -207,6 +207,7 @@ error_ids! {
 
     // --- 永続化 ---
     AtomicWriteFailed => "atomic-write-failed",
+    AtomicWriteDurabilityUnconfirmed => "atomic-write-durability-unconfirmed",
     TempFileLeftBehind => "temp-file-left-behind",
     CleanupFailed => "cleanup-failed",
     TargetAppearedConcurrently => "target-appeared-concurrently",

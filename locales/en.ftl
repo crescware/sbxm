@@ -892,6 +892,8 @@ status-disk-not-observed-mismatch = Whether the sandbox is running could not be 
 status-disk-command-missing = `df` is not available inside the sandbox, so disk usage could not be checked.
 status-disk-parse-failed = The disk usage report from inside the sandbox could not be read.
 
+error-atomic-write-durability-unconfirmed = The file was placed, but its directory update could not be synchronized to storage
+remediation-atomic-write-durability-unconfirmed = The new file remains in place. Check available space and storage errors, then rerun the operation; persistence after a crash has not been confirmed.
 session-backup-current = Host commit backup checked at { $checked } (UTC). Uncommitted and untracked files remain only in the sandbox.
 error-remote-ssh-disabled = The Docker Sandboxes SSH endpoint is disabled.
 error-remote-ssh-unavailable = The Docker Sandboxes SSH endpoint is unavailable; this does not establish a repository failure.

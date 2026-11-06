@@ -30,6 +30,7 @@ pub fn adopt(pulled: &mut Pulled) -> Result<PathBuf> {
     }
     replace(&source, &pulled.copy.path)
         .map_err(|error| paths::atomic_write_failed(&source, &error.to_string()))?;
+    paths::sync_parent_directory(&source)?;
 
     let recorded = InitialProvisioningFile {
         source: paths::display(&source),

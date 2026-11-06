@@ -25,7 +25,7 @@ pub fn atomic_rename_into_place(temp: &Path, target: &Path) -> Result<()> {
         return Err(unexpected_type(temp, "regular file", &metadata));
     }
 
-    fs::rename(temp, target).map_err(|error| {
+    let failed = |error: std::io::Error| {
         Error::single(
             Diagnostic::new(
                 ErrorId::AtomicWriteFailed,
@@ -34,11 +34,10 @@ pub fn atomic_rename_into_place(temp: &Path, target: &Path) -> Result<()> {
             .fact(Fact::path(&display(target)))
             .fact(Fact::cause(&error.to_string())),
         )
-    })?;
-    if let Some(parent) = target.parent()
-        && let Ok(directory) = File::open(parent)
-    {
-        let _ = directory.sync_all();
-    }
-    Ok(())
+    };
+    File::open(temp)
+        .and_then(|file| file.sync_all())
+        .map_err(failed)?;
+    fs::rename(temp, target).map_err(failed)?;
+    crate::paths::sync_parent_directory(target)
 }

@@ -892,6 +892,8 @@ status-disk-not-observed-mismatch = Sandboxが起動しているかを判定で�
 status-disk-command-missing = Sandbox内に`df`が無いため、ディスク使用量を確認できませんでした。
 status-disk-parse-failed = Sandbox内から返ったディスク使用量の報告を読み取れませんでした。
 
+error-atomic-write-durability-unconfirmed = fileは配置されましたが、directoryの更新をstorageに同期できませんでした
+remediation-atomic-write-durability-unconfirmed = 新しいfileは配置済みです。空き容量とstorageのerrorを確認して再実行してください。crash後も保持されるかは確認できていません。
 session-backup-current = { $checked }（UTC）時点でhostへのcommit保存を確認しました。未commit・未追跡fileはSandboxにだけ残ります。
 error-remote-ssh-disabled = Docker SandboxesのSSH endpointが無効です。
 error-remote-ssh-unavailable = Docker SandboxesのSSH endpointを利用できません。repositoryの異常を示すものではありません。

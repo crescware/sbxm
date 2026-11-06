@@ -381,7 +381,7 @@ fn a_parent_that_cannot_be_opened_does_not_undo_a_completed_write() -> Checked {
         return Ok(());
     }
     // 書き込みと検索だけを許すdirectory。fileは作れて移せるが、directory自体は開けない。
-    // renameの永続化を諦めても、書き終えた内容は失われない。
+    // renameの永続化に失敗したことを知らせ、書き終えた内容は保持する。
     let dir = temp_dir()?;
     let parent = dir.path().join("write-only");
     fs::create_dir(&parent).required_because("create the parent")?;
@@ -416,7 +416,12 @@ fn a_parent_that_cannot_be_opened_does_not_undo_a_completed_write() -> Checked {
         .required_because("reopen the parent directory")?;
 
     for (operation, outcome) in outcomes {
-        outcome.required_because(&format!("the {operation} completes without the sync"))?;
+        let error =
+            outcome.refused_because(&format!("the {operation} could not sync the parent"))?;
+        assert_eq!(
+            error.first_id(),
+            Some(ErrorId::AtomicWriteDurabilityUnconfirmed)
+        );
     }
     assert_eq!(fs::read_to_string(&created).required()?, "second\n");
     assert_eq!(fs::read_to_string(&resumed).required()?, "version: 2\n");
