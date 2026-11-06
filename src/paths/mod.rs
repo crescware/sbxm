@@ -12,6 +12,7 @@ mod private_dir_mode;
 mod private_file_mode;
 mod project;
 mod scope;
+mod sync_parent_directory;
 
 pub(crate) use atomic::atomic_write_failed;
 pub use atomic::{
@@ -30,3 +31,4 @@ pub use private_dir_mode::PRIVATE_DIR_MODE;
 pub use private_file_mode::PRIVATE_FILE_MODE;
 pub use project::{ProjectParent, ProjectPaths};
 pub use scope::PathScope;
+pub use sync_parent_directory::sync_parent_directory;

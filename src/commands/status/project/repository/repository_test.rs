@@ -766,7 +766,10 @@ fn a_worktree_listing_that_failed_leaves_no_worktree_row_behind() -> Checked {
         .as_ref()
         .required_because("the original exit status is preserved")?;
     assert!(
-        external.exit_status.contains("128"),
+        external
+            .exit_status
+            .as_deref()
+            .is_some_and(|status| status.contains("128")),
         "{:?}",
         external.exit_status
     );

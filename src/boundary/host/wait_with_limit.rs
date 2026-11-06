@@ -1,11 +1,10 @@
 use std::process::ExitStatus;
 use std::time::Duration;
 
-use crate::diagnostics::{ErrorId, Result, fail};
-use crate::msg;
+use crate::diagnostics::Result;
 use crate::time::Clock;
 
-use super::{CommandSpec, Processes, WAIT_POLL_INTERVAL, terminate_child, unwaitable};
+use super::{CommandSpec, Processes, WAIT_POLL_INTERVAL, terminate_child, timed_out, unwaitable};
 
 /// 子の終了を待つ。`limit`を過ぎたら子を終わらせて報告する。
 ///
@@ -37,14 +36,7 @@ pub(super) fn wait_with_limit<O: Processes>(
                 {
                     // 期限を過ぎたcommandは、報告より先に終わらせる。
                     terminate_child(os, child);
-                    return fail(
-                        ErrorId::ExternalCommandTimeout,
-                        msg!(
-                            "error-external-command-timeout",
-                            program = spec.program,
-                            seconds = limit.as_secs()
-                        ),
-                    );
+                    return Err(timed_out(spec, limit));
                 }
                 if let Some((at, every, action)) = ticking.as_mut()
                     && clock.now() >= *at

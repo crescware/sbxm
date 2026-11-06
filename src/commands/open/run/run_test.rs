@@ -536,7 +536,10 @@ fn the_host_agent_has_to_be_out_of_reach_before_the_terminal_is_handed_over() ->
     let error = prepare_for(&fixture, &host).refused_because("an exposed agent stops the run")?;
     assert_eq!(error.first_id(), Some(ErrorId::SshAgentExposed));
     assert!(
-        !host.ran(".sbx"),
+        !host
+            .calls()
+            .iter()
+            .any(|args| args.first().is_some_and(|arg| arg == "-t")),
         "the terminal is not handed over: {:?}",
         host.calls()
     );

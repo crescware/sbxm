@@ -3,6 +3,7 @@ use super::NotReusable;
 /// 確認が通ったのに記録しなかった理由。`--verbose`のtraceに残す。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Unsaved {
+    ReadOnly,
     /// 実行ファイルの識別情報を観測できなかった。
     ExecutableUnobserved,
     NotReusable(NotReusable),
@@ -18,6 +19,7 @@ impl Unsaved {
     /// 翻訳しない安定した表記。
     pub(super) fn as_str(self) -> &'static str {
         match self {
+            Unsaved::ReadOnly => "read-only",
             Unsaved::ExecutableUnobserved => "executable-unobserved",
             Unsaved::NotReusable(reason) => reason.as_str(),
             Unsaved::StateDirectoryMissing => "state-directory-missing",

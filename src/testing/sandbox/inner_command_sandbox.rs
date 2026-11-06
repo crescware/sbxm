@@ -85,6 +85,12 @@ impl AnsweredHost for InnerCommandSandbox {
             ));
         }
 
+        if let Some(result) =
+            crate::testing::command::object_batch(spec, |query| self.answer(query))?
+        {
+            return Ok(result);
+        }
+
         // 宣言fileの転送を受けた後は、配置した内容を観測できる。
         if inner.len() >= 3 && spec.input().is_some() && !self.answers.contains_key(&key) {
             let tail = &inner[inner.len() - 3..];
@@ -114,6 +120,17 @@ impl AnsweredHost for InnerCommandSandbox {
             (
                 i32::from(!self.present.borrow().iter().any(|known| known == target)),
                 "probed".to_string(),
+            )
+        } else if key.contains("entries=$(ls -A") {
+            let target = inner.last().copied().unwrap_or_default();
+            (
+                i32::from(
+                    !self
+                        .present
+                        .borrow()
+                        .contains(&format!("{target}/sbxm-initializing")),
+                ),
+                String::new(),
             )
         } else if key.contains("worktree add") {
             // 作成に成功したworktreeは、以後存在するものとして扱う。

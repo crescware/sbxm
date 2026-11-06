@@ -31,7 +31,7 @@ fn sample_error() -> Error {
                 "cp".to_string(),
             ],
             working_dir: None,
-            exit_status: "exit status: 28".to_string(),
+            exit_status: Some("exit status: 28".to_string()),
             stderr: b"No space left on device".to_vec(),
             stderr_lossy: false,
         })

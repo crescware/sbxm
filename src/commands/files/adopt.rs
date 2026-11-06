@@ -41,6 +41,7 @@ pub fn adopt(pulled: &mut Pulled) -> Result<PathBuf> {
     )?;
     replace(&source, &pulled.copy.path)
         .map_err(|error| paths::atomic_write_failed(&source, &error.to_string()))?;
+    paths::sync_parent_directory(&source)?;
     files::PendingUpdate::recover_host(&pulled.locked.paths, &mut pulled.locked.metadata)?;
     Ok(source)
 }
