@@ -79,7 +79,11 @@ fn select_scope(
     let mut labels = Vec::with_capacity(candidates.len() + 1);
     labels.push("global".to_owned());
     labels.extend(candidates.iter().map(select::Candidate::display_id));
-    let index = prompt.select_one(&msg!("select-status-heading"), &labels)?;
+    let index = prompt.select_one(
+        &msg!("select-status-heading"),
+        &labels,
+        crate::design::Filter::Typed,
+    )?;
     match index {
         0 => Ok(Scope::Global),
         project_index => {

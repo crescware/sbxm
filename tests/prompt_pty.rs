@@ -382,21 +382,34 @@ fn home_with_project() -> Checked<(TempHome, PathBuf, PathBuf)> {
     let base = projects(home.path())?;
     let bin = host_tools(home.path())?;
     write_config(home.path(), "en")?;
+    register(&home, &base, &bin, "git@github.com:owner/repo.git")?;
+    Ok((home, base, bin))
+}
+
+/// 案件を2件登録したHOMEを作る。絞り込みが一方だけを残すことを確かめるために使う。
+fn home_with_two_projects() -> Checked<(TempHome, PathBuf, PathBuf)> {
+    let (home, base, bin) = home_with_project()?;
+    register(&home, &base, &bin, "git@github.com:other/tools.git")?;
+    Ok((home, base, bin))
+}
+
+/// 1案件を登録する。cloneで止まるが、登録そのものは終わっている。
+fn register(home: &TempHome, base: &Path, bin: &Path, url: &str) -> Checked {
     let status = Command::new(env!("CARGO_BIN_EXE_sbxm"))
         .args([
             "add",
-            "git@github.com:owner/repo.git",
+            url,
             "--git-user-name",
             "Example User",
             "--git-user-email",
             "user@example.com",
         ])
-        .current_dir(&base)
+        .current_dir(base)
         .env("HOME", home.path())
         .env("LC_ALL", "C")
         .env_remove("LC_MESSAGES")
         .env_remove("LANG")
-        .env("PATH", &bin)
+        .env("PATH", bin)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -407,7 +420,7 @@ fn home_with_project() -> Checked<(TempHome, PathBuf, PathBuf)> {
         Some(1),
         "the fixture registers the project and stops at the clone"
     );
-    Ok((home, base, bin))
+    Ok(())
 }
 
 #[test]
@@ -725,6 +738,43 @@ fn the_project_id_typed_at_the_prompt_is_what_destroys_the_project() -> Checked 
     assert!(
         !registry.contains("owner/repo"),
         "the entry is gone: {registry}"
+    );
+    Ok(())
+}
+
+#[test]
+fn typing_narrows_the_open_prompt_and_only_a_matching_project_can_be_confirmed() -> Checked {
+    let (home, base, bin) = home_with_two_projects()?;
+    without_sandboxes(&bin)?;
+
+    let mut session = Session::start(home.path(), &base, &bin, &["open"])?;
+    session.wait_for("Which project do you want to open?")?;
+    // 何にも一致しない文字のあいだは、Enterを押しても確定しない。
+    session.press("zzz")?;
+    session.press(ENTER)?;
+    session.wait_for("Nothing matches zzz")?;
+    // 消してから、2件のうち一方にだけ含まれる文字を打つ。残った案件がEnterで確定する。
+    session.press(&BACKSPACE.repeat(3))?;
+    session.press("tool")?;
+    session.wait_for("Filter: tool  1/2")?;
+    session.press(ENTER)?;
+    let ended = session.finish()?;
+    let text = ended.text();
+
+    assert_eq!(
+        ended.lines_ending_with("Selected other/tools, worktree index 0"),
+        1,
+        "{text}"
+    );
+    assert_eq!(
+        ended.lines_ending_with("Selected owner/repo, worktree index 0"),
+        0,
+        "the hidden project is not what Enter confirmed: {text}"
+    );
+    // 接続はこのhostにDockerが無いため進まない。promptが答えられたことだけを確かめる。
+    assert_ne!(
+        ended.code, 130,
+        "the prompt was answered, not cancelled: {text}"
     );
     Ok(())
 }

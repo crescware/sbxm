@@ -29,7 +29,11 @@ pub fn run(
 fn select_topic(locale: Locale, prompt: &mut dyn select::ProjectPrompt) -> Result<Topic> {
     let topics = Topic::ALL;
     let labels = topics.map(|topic| topic.label(locale));
-    let index = prompt.select_one(&msg!("select-guide-topic-heading"), &labels)?;
+    let index = prompt.select_one(
+        &msg!("select-guide-topic-heading"),
+        &labels,
+        crate::design::Filter::None,
+    )?;
     topics.get(index).copied().ok_or_else(|| {
         Error::new(
             ErrorId::SelectionUnresolved,

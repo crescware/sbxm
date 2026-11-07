@@ -4,7 +4,7 @@ use super::open_viewport;
 fn the_open_list_gives_back_one_row_less_than_the_plain_list() {
     assert_eq!(
         open_viewport(Some(40)),
-        Some(33),
+        Some(32),
         "the worktree index line takes a row that the plain prompt does not have"
     );
 }

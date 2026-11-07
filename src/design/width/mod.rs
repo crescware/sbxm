@@ -6,11 +6,13 @@
 mod display_width;
 mod is_wide;
 mod padding;
+mod shorten;
 mod truncate;
 
 pub(super) use display_width::display_width;
 use is_wide::is_wide;
 pub(super) use padding::padding;
+pub(super) use shorten::shorten;
 pub(super) use truncate::truncate;
 
 #[cfg(test)]

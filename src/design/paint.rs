@@ -19,6 +19,9 @@ fn console_style(spec: StyleSpec) -> console::Style {
     if spec.dim {
         style = style.dim();
     }
+    if spec.underline {
+        style = style.underlined();
+    }
     if let Some(foreground) = spec.foreground {
         style = style.fg(match foreground {
             Color::Red => console::Color::Red,

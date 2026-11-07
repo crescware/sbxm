@@ -13,7 +13,7 @@ use crate::testing::scripted_clock::ScriptedClock;
 use crate::testing::shared_buffer::SharedBuffer;
 use crate::time::Clock;
 
-use super::{Key, PromptUi};
+use super::{Filter, Key, PromptUi};
 
 fn labels() -> Vec<String> {
     ["owner/alpha", "owner/bravo", "owner/charlie"]
@@ -123,7 +123,7 @@ fn a_project_whose_metadata_could_not_be_read_names_that_instead_of_a_range() ->
 fn only_the_confirmed_value_is_left_where_the_list_was() -> Checked {
     let screen = RecordedScreen::new();
     let chosen = prompt(ScriptedKeys::choosing(1), &screen)
-        .select_one(&heading(), &labels())
+        .select_one(&heading(), &labels(), Filter::None)
         .required_because("the second candidate is confirmed")?;
 
     assert_eq!(chosen, 1);
@@ -140,7 +140,7 @@ fn only_the_confirmed_value_is_left_where_the_list_was() -> Checked {
 fn every_checked_row_is_confirmed_together() -> Checked {
     let screen = RecordedScreen::new();
     let chosen = prompt(ScriptedKeys::checking(&[0, 2]), &screen)
-        .select_many(&heading(), &labels())
+        .select_many(&heading(), &labels(), Filter::None)
         .required_because("two candidates are confirmed")?;
 
     assert_eq!(chosen, vec![0, 2]);
@@ -156,7 +156,7 @@ fn every_checked_row_is_confirmed_together() -> Checked {
 fn a_cancelled_selection_leaves_nothing_behind() -> Checked {
     let screen = RecordedScreen::new();
     let error = prompt(ScriptedKeys::canceling(), &screen)
-        .select_one(&heading(), &labels())
+        .select_one(&heading(), &labels(), Filter::None)
         .refused_because("Esc changes nothing")?;
 
     assert_eq!(error.exit_code(), ExitCode::Canceled);
@@ -169,7 +169,7 @@ fn a_cancelled_selection_leaves_nothing_behind() -> Checked {
 fn an_empty_candidate_list_is_unresolved_rather_than_an_empty_prompt() -> Checked {
     let screen = RecordedScreen::new();
     let error = prompt(ScriptedKeys::confirming(), &screen)
-        .select_one(&heading(), &[])
+        .select_one(&heading(), &[], Filter::None)
         .refused_because("there is nothing to choose")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::SelectionUnresolved));
@@ -191,7 +191,7 @@ fn an_empty_candidate_list_is_unresolved_rather_than_an_empty_prompt() -> Checke
 fn a_screen_whose_height_is_unknown_shows_every_candidate() -> Checked {
     let screen = RecordedScreen::new();
     prompt(ScriptedKeys::confirming(), &screen)
-        .select_one(&heading(), &many_labels(10))
+        .select_one(&heading(), &many_labels(10), Filter::None)
         .required_because("the first candidate is confirmed")?;
 
     assert_eq!(candidates_drawn(&screen), 10);
@@ -203,7 +203,7 @@ fn a_short_screen_shows_a_window_of_the_candidates() -> Checked {
     // heading、操作説明、空行、結果の一行ぶんを残した4行だけが一覧に使える。
     let screen = RecordedScreen::with_rows(10);
     prompt(ScriptedKeys::confirming(), &screen)
-        .select_one(&heading(), &many_labels(10))
+        .select_one(&heading(), &many_labels(10), Filter::None)
         .required_because("the first candidate is confirmed")?;
 
     assert_eq!(candidates_drawn(&screen), 4);
@@ -223,7 +223,7 @@ fn candidates_drawn(screen: &RecordedScreen) -> usize {
 fn a_screen_that_cannot_be_written_stops_the_prompt() -> Checked {
     let screen = RecordedScreen::failing(std::io::ErrorKind::BrokenPipe);
     let error = prompt(ScriptedKeys::confirming(), &screen)
-        .select_one(&heading(), &labels())
+        .select_one(&heading(), &labels(), Filter::None)
         .refused_because("a prompt that cannot be drawn cannot be answered")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::PromptUnreadable));
@@ -237,7 +237,7 @@ fn keys_that_cannot_be_read_stop_the_prompt() -> Checked {
         ScriptedKeys::failing(std::io::ErrorKind::BrokenPipe),
         &screen,
     )
-    .select_one(&heading(), &labels())
+    .select_one(&heading(), &labels(), Filter::None)
     .refused_because("a prompt that cannot be read cannot be answered")?;
 
     assert_eq!(error.first_id(), Some(ErrorId::PromptUnreadable));
@@ -463,7 +463,7 @@ fn a_heading_that_cannot_be_formatted_names_the_failure_and_still_asks() -> Chec
     // 利用者向けの文字列を作れなくても、promptを止めず内部異常の文字列をそのまま見せる。
     let screen = RecordedScreen::new();
     let chosen = prompt(ScriptedKeys::confirming(), &screen)
-        .select_one(&msg!("no-such-prompt-heading"), &labels())
+        .select_one(&msg!("no-such-prompt-heading"), &labels(), Filter::None)
         .required_because("the candidates can still be chosen")?;
 
     assert_eq!(chosen, 0);
@@ -551,10 +551,10 @@ fn the_time_spent_waiting_for_an_answer_is_traced_under_the_prompt_heading() -> 
 fn every_kind_of_prompt_reports_its_wait() {
     let one_second = Duration::from_secs(1);
     let (_, one) = traced_prompt(ScriptedKeys::confirming(), one_second, |prompt| {
-        prompt.select_one(&heading(), &labels())
+        prompt.select_one(&heading(), &labels(), Filter::None)
     });
     let (_, many) = traced_prompt(ScriptedKeys::checking(&[0]), one_second, |prompt| {
-        prompt.select_many(&heading(), &labels())
+        prompt.select_many(&heading(), &labels(), Filter::None)
     });
     let (_, typed) = traced_prompt(ScriptedKeys::typing("ab"), one_second, |prompt| {
         prompt.exact(&msg!("select-guide-topic-heading"))
@@ -591,10 +591,88 @@ fn a_prompt_with_no_candidates_waits_for_nothing_and_is_not_traced() -> Checked 
     let (answer, lines) = traced_prompt(
         ScriptedKeys::pressing(&[]),
         Duration::from_secs(1),
-        |prompt| prompt.select_one(&heading(), &[]),
+        |prompt| prompt.select_one(&heading(), &[], Filter::None),
     );
     answer.refused_because("there is nothing to choose")?;
 
     assert!(lines.is_empty(), "{lines:?}");
+    Ok(())
+}
+
+#[test]
+fn typing_part_of_a_name_and_pressing_enter_confirms_the_matching_candidate() -> Checked {
+    let screen = RecordedScreen::new();
+    let chosen = prompt(ScriptedKeys::typing("brav"), &screen)
+        .select_one(&heading(), &labels(), Filter::Typed)
+        .required_because("the only candidate left is confirmed")?;
+
+    assert_eq!(chosen, 1, "the answer is the candidate index, not the row");
+    assert_eq!(
+        screen.lines(),
+        vec!["\u{2713} Selected owner/bravo".to_string()],
+        "the filter line is taken down with the list"
+    );
+    let drawn = screen.drawn();
+    assert!(
+        drawn.iter().any(|line| line == "  Filter: brav  1/3"),
+        "what was typed and how many are left are shown: {drawn:?}"
+    );
+    assert!(
+        drawn
+            .iter()
+            .any(|line| line == "  Filter: type to narrow the list"),
+        "an empty filter says what typing does: {drawn:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_open_prompt_narrows_the_projects_by_typing() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [Key::Char('c'), Key::Char('h'), Key::ArrowRight, Key::Enter];
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_open(&heading(), &labels(), &[Some(4); 3])
+        .required_because("the project left by the filter is confirmed with its index")?;
+
+    assert_eq!(chosen, (2, 1));
+    assert_eq!(
+        screen.lines(),
+        vec!["\u{2713} Selected owner/charlie, worktree index 1".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_prompt_without_a_filter_leaves_typed_letters_out_of_the_answer() -> Checked {
+    let screen = RecordedScreen::new();
+    let keys = [Key::Char('b'), Key::Backspace, Key::Enter];
+    let chosen = prompt(ScriptedKeys::pressing(&keys), &screen)
+        .select_one(&heading(), &labels(), Filter::None)
+        .required_because("the first candidate is confirmed")?;
+
+    assert_eq!(
+        chosen, 0,
+        "typing moves nothing when the list cannot be narrowed"
+    );
+    let drawn = screen.drawn();
+    assert!(
+        !drawn.iter().any(|line| line.contains("Filter")),
+        "no filter line and no key for it: {drawn:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_short_screen_leaves_a_row_for_the_filter_line() -> Checked {
+    let screen = RecordedScreen::with_rows(10);
+    prompt(ScriptedKeys::confirming(), &screen)
+        .select_one(&heading(), &many_labels(10), Filter::Typed)
+        .required_because("the first candidate is confirmed")?;
+
+    assert_eq!(
+        candidates_drawn(&screen),
+        3,
+        "the filter line takes one of the rows the plain list had"
+    );
     Ok(())
 }

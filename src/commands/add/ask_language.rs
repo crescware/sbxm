@@ -12,7 +12,11 @@ pub fn ask_language(prompt: &mut dyn ProjectPrompt, guessed: Locale) -> Result<L
     choices.extend(Locale::ALL.into_iter().filter(|locale| *locale != guessed));
 
     let items: Vec<String> = choices.iter().map(|locale| locale_name(*locale)).collect();
-    let index = prompt.select_one(&msg!("prompt-language-heading"), &items)?;
+    let index = prompt.select_one(
+        &msg!("prompt-language-heading"),
+        &items,
+        crate::design::Filter::None,
+    )?;
     // 候補に対応しない選択はcancelではない。promptの契約違反として区別して報告する。
     choices.get(index).copied().ok_or_else(|| {
         Error::new(

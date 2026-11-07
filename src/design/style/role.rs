@@ -26,4 +26,8 @@ pub enum Role {
     PromptCurrent,
     /// promptで選択済みであることを示すcheckbox。
     PromptChecked,
+    /// promptで、絞り込み文字列に一致したlabelの部分。
+    PromptMatch,
+    /// promptのkeyboard focusがある行の中の、絞り込み文字列に一致した部分。
+    PromptCurrentMatch,
 }

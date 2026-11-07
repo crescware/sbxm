@@ -1,12 +1,14 @@
+use std::ops::Range;
+
 use crate::diagnostics::Msg;
 use crate::i18n::Catalog;
 use crate::msg;
 
 use crate::design::policy::StreamPolicy;
 use crate::design::style::{self, GlyphSet, Role};
-use crate::design::width::{display_width, truncate};
+use crate::design::width::{display_width, shorten, truncate};
 
-use super::{OpenSelection, Selection, window};
+use super::{Filter, Narrowing, OpenSelection, Selection, window};
 
 /// promptの1画面を組み立てる。
 pub(super) struct Painter {
@@ -67,7 +69,7 @@ impl Painter {
     }
 
     /// 使えるkeyと動作を必ず対で示す。key名は翻訳せず、動作だけを訳す。
-    pub(crate) fn keys(&self, multi: bool) -> String {
+    pub(crate) fn keys(&self, multi: bool, filter: Filter) -> String {
         let glyphs = self.glyphs();
         let mut pairs = vec![format!(
             "{}/{} {}",
@@ -78,9 +80,17 @@ impl Painter {
         if multi {
             pairs.push(format!("Space {}", self.text("prompt-key-toggle")));
         }
+        if filter == Filter::Typed {
+            pairs.push(self.filter_key());
+        }
         pairs.push(format!("Enter {}", self.text("prompt-key-confirm")));
         pairs.push(format!("Esc {}", self.text("prompt-key-cancel")));
         pairs.join("   ")
+    }
+
+    /// 文字キーは1つの名前を持たないため、打つことそのものをkey名の位置に置く。
+    fn filter_key(&self) -> String {
+        format!("Type {}", self.text("prompt-key-filter"))
     }
 
     /// `open`の案件とworktree index promptで使えるkeyと動作を対で示す。
@@ -99,15 +109,56 @@ impl Painter {
                 glyphs.arrow_right,
                 self.text("prompt-key-adjust-index")
             ),
+            self.filter_key(),
             format!("Enter {}", self.text("prompt-key-confirm")),
             format!("Esc {}", self.text("prompt-key-cancel")),
         ]
         .join("   ")
     }
 
+    /// 絞り込みの一行。打った文字と、見えている候補の数を示す。
+    ///
+    /// 何も打っていなければ、打てば狭まることをmutedで示す。打った文字は利用者の値であり、
+    /// 既定色で出す。
+    fn filter_line(&self, narrowing: &Narrowing) -> String {
+        let label = self.text("prompt-filter-label");
+        if !narrowing.has_query() {
+            return format!(
+                "  {} {}",
+                self.muted(&label),
+                self.muted(&self.text("prompt-filter-hint"))
+            );
+        }
+        let count = self.format(&msg!(
+            "prompt-filter-count",
+            shown = narrowing.matches().len(),
+            total = narrowing.total()
+        ));
+        // 幅を超える場合も数は残し、打った文字の末尾だけを省く。
+        let query = match self.policy.width {
+            Some(width) => {
+                let fixed = 2 + display_width(&label) + 1 + 2 + display_width(&count);
+                truncate(narrowing.query(), width.saturating_sub(fixed).max(4))
+            }
+            None => narrowing.query().to_string(),
+        };
+        format!("  {} {query}  {}", self.muted(&label), self.muted(&count))
+    }
+
+    /// 一致する候補が無いまま確定しようとしたことを、一覧の直上へ出す。
+    fn no_match_warning(&self, narrowing: &Narrowing) -> String {
+        let glyphs = self.glyphs();
+        format!(
+            "{} {} {}",
+            self.paint(glyphs.warning, Role::WarningMarker),
+            self.paint(&self.text("warning-label"), Role::WarningMarker),
+            self.format(&msg!("prompt-filter-no-match", query = narrowing.query()))
+        )
+    }
+
     /// `open`の案件とworktree indexを同時に選ぶ1画面を組み立てる。
     ///
-    /// 候補以外の行数は[`OPEN_FRAME_FIXED_ROWS`]と一致させる。
+    /// 候補以外の行数は[`super::OPEN_FRAME_FIXED_ROWS`]と一致させる。
     pub(crate) fn open_frame(
         &self,
         heading: &Msg,
@@ -116,9 +167,11 @@ impl Painter {
         viewport: Option<usize>,
     ) -> Vec<String> {
         let current_label = format!("({})", self.text("prompt-current"));
+        let narrowing = selection.narrowing();
         let mut lines = vec![self.heading(heading), String::new()];
         lines.push(format!("  {}", self.muted(&self.open_keys())));
         lines.push(String::new());
+        lines.push(self.filter_line(narrowing));
         // metadataを読めなかった案件は範囲を述べない。数を示すと、読めていない値を
         // 読めたかのように見せることになる。
         let index = match selection.maximum_index() {
@@ -133,14 +186,24 @@ impl Painter {
             ),
         };
         lines.push(format!("  {}", self.format(&index)));
+        if selection.warns_about_no_match() {
+            lines.push(self.no_match_warning(narrowing));
+        }
         lines.push(String::new());
 
-        for index in window(labels.len(), selection.current_project(), viewport) {
+        let visible = selection.visible();
+        let position = visible
+            .iter()
+            .position(|index| *index == selection.current_project())
+            .unwrap_or(0);
+        for slot in window(visible.len(), position, viewport) {
+            let index = visible[slot];
             lines.push(self.candidate(
                 &labels[index],
                 index == selection.current_project(),
                 None,
                 &current_label,
+                narrowing.match_range(index),
             ));
         }
         lines
@@ -154,21 +217,30 @@ impl Painter {
         viewport: Option<usize>,
     ) -> Vec<String> {
         let glyphs = self.glyphs();
+        let narrowing = selection.narrowing();
         let mut lines = vec![self.heading(heading), String::new()];
 
         lines.push(format!(
             "  {}",
-            self.muted(&self.keys(selection.is_multi()))
+            self.muted(&self.keys(selection.is_multi(), narrowing.filter()))
         ));
+        if narrowing.is_typed() {
+            lines.push(self.filter_line(narrowing));
+        }
         if selection.is_multi() {
-            // zeroも省かない。画面外の候補を選んでいることを常に見せる。
-            lines.push(format!(
-                "  {}",
-                self.muted(&self.format(&msg!(
-                    "prompt-selected-count",
-                    count = selection.selected_count()
-                )))
-            ));
+            // zeroも省かない。画面外の候補を選んでいることを常に見せる。絞り込みで隠れた
+            // 選択も、隠れたまま確定することが分かるように数える。
+            let hidden = selection.hidden_checked_count();
+            let count = if hidden > 0 {
+                msg!(
+                    "prompt-selected-count-hidden",
+                    count = selection.selected_count(),
+                    hidden = hidden
+                )
+            } else {
+                msg!("prompt-selected-count", count = selection.selected_count())
+            };
+            lines.push(format!("  {}", self.muted(&self.format(&count))));
         }
         if selection.warns_about_empty() {
             lines.push(format!(
@@ -178,15 +250,25 @@ impl Painter {
                 self.text("prompt-select-at-least-one")
             ));
         }
+        if selection.warns_about_no_match() {
+            lines.push(self.no_match_warning(narrowing));
+        }
         lines.push(String::new());
 
         let current_label = format!("({})", self.text("prompt-current"));
-        for index in window(labels.len(), selection.current(), viewport) {
+        let visible = selection.visible();
+        let position = visible
+            .iter()
+            .position(|index| *index == selection.current())
+            .unwrap_or(0);
+        for slot in window(visible.len(), position, viewport) {
+            let index = visible[slot];
             lines.push(self.candidate(
                 &labels[index],
                 index == selection.current(),
                 selection.is_multi().then(|| selection.is_checked(index)),
                 &current_label,
+                narrowing.match_range(index),
             ));
         }
         lines
@@ -198,6 +280,7 @@ impl Painter {
         current: bool,
         checked: Option<bool>,
         current_label: &str,
+        matched: Option<Range<usize>>,
     ) -> String {
         // `›`はfocusだけ、`[x]`は選択済みだけを表す。両方の状態を同時に見せる。
         let marker = if current {
@@ -225,15 +308,34 @@ impl Painter {
             } else {
                 0
             };
-        let label = match self.policy.width {
-            Some(width) => truncate(label, width.saturating_sub(fixed).max(4)),
-            None => label.to_string(),
+        let (kept, ellipsis) = match self.policy.width {
+            Some(width) => shorten(label, width.saturating_sub(fixed).max(4)),
+            None => (label, ""),
         };
-        let label = if current {
-            self.paint(&label, Role::PromptCurrent)
-        } else {
-            label
+        // 一致した範囲は、見えている部分だけを強調する。省略記号は一致ではない。
+        let matched = matched
+            .map(|range| range.start.min(kept.len())..range.end.min(kept.len()))
+            .filter(|range| range.start < range.end);
+        let label = match matched {
+            Some(range) => format!(
+                "{}{}{}",
+                self.label(&kept[..range.start], current, false),
+                self.label(&kept[range.clone()], current, true),
+                self.label(&kept[range.end..], current, false)
+            ),
+            None => self.label(kept, current, false),
         };
-        format!("{marker} {checkbox}{label}{suffix}")
+        let ellipsis = self.label(ellipsis, current, false);
+        format!("{marker} {checkbox}{label}{ellipsis}{suffix}")
+    }
+
+    /// labelの一部。現在位置の行は全体を前へ出し、絞り込みに一致した部分へunderlineを重ねる。
+    fn label(&self, text: &str, current: bool, matched: bool) -> String {
+        match (current, matched) {
+            (true, true) => self.paint(text, Role::PromptCurrentMatch),
+            (true, false) => self.paint(text, Role::PromptCurrent),
+            (false, true) => self.paint(text, Role::PromptMatch),
+            (false, false) => text.to_string(),
+        }
     }
 }

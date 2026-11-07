@@ -18,6 +18,13 @@ pub fn role_style(role: Role) -> StyleSpec {
         Role::ErrorMarker => StyleSpec::bold_color(Color::Red),
         // 入力する一行とfocusのある行は、どちらも「いま手を動かす対象」である。
         Role::Command | Role::PromptCurrent => StyleSpec::bold_color(Color::Cyan),
+        // 絞り込みに一致した部分は一時的な照合対象であり、underlineだけで示す。色を足すと
+        // 意味色が増える。focusのある行では、行の装飾の上へ重ねる。
+        Role::PromptMatch => StyleSpec::underlined(),
+        Role::PromptCurrentMatch => StyleSpec {
+            underline: true,
+            ..StyleSpec::bold_color(Color::Cyan)
+        },
         Role::Muted => StyleSpec {
             dim: true,
             ..StyleSpec::plain()

@@ -1,4 +1,5 @@
 use crate::config::ConfigLocation;
+use crate::design::Filter;
 use crate::diagnostics::{Msg, Result};
 use crate::project::ProjectId;
 
@@ -38,7 +39,7 @@ pub fn many(
     if candidates.is_empty() {
         return Err(no_managed_projects());
     }
-    let indexes = prompt.select_many(heading, &labels(&candidates))?;
+    let indexes = prompt.select_many(heading, &labels(&candidates), Filter::Typed)?;
     // 未選択の確定は受け付けない。操作せず終える場合はEscまたはCtrl-Cを使う。
     if indexes.is_empty() {
         return Err(unresolved(0, candidates.len()));

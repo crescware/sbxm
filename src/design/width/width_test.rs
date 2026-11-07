@@ -103,3 +103,27 @@ fn truncation_counts_full_width_characters_as_two_columns() {
 fn a_width_too_small_for_the_ellipsis_still_stays_inside_it() {
     assert_eq!(display_width(&truncate("owner/repository", 2)), 2);
 }
+
+#[test]
+fn shortening_keeps_a_prefix_of_the_original_and_names_what_was_cut() {
+    assert_eq!(
+        super::shorten("owner/repository", 16),
+        ("owner/repository", "")
+    );
+    assert_eq!(super::shorten("owner/repository", 10), ("owner/r", "..."));
+    assert_eq!(
+        super::shorten("owner/repository", 2),
+        ("ow", ""),
+        "a width too small for the ellipsis only cuts"
+    );
+    assert_eq!(
+        super::shorten("案件名", 5),
+        ("案", "..."),
+        "a wide character that does not fit is not split"
+    );
+    assert_eq!(
+        super::shorten("案件名", 3),
+        ("案", ""),
+        "a cut without an ellipsis also stays on character boundaries"
+    );
+}

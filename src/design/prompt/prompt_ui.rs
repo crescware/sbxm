@@ -10,8 +10,8 @@ use crate::design::policy::StreamPolicy;
 use crate::design::width::display_width;
 
 use super::{
-    Key, Keys, OpenSelection, Painter, Screen, Selection, Transition, action_for, open_viewport,
-    unreadable, viewport,
+    Filter, Key, Keys, OpenSelection, Painter, Screen, Selection, Transition, action_for,
+    open_viewport, unreadable, viewport,
 };
 
 /// 対話の入口。
@@ -84,15 +84,22 @@ impl PromptUi {
     }
 
     /// 候補から1件を選ぶ。
-    pub fn select_one(&mut self, heading: &Msg, labels: &[String]) -> Result<usize> {
-        let selected = self.select(heading, labels, false)?;
+    ///
+    /// `filter`が`Typed`なら、文字を打って候補を絞り込める。
+    pub fn select_one(
+        &mut self,
+        heading: &Msg,
+        labels: &[String],
+        filter: Filter,
+    ) -> Result<usize> {
+        let selected = self.select(heading, labels, false, filter)?;
         selected
             .first()
             .copied()
             .ok_or_else(|| unresolved(0, labels.len()))
     }
 
-    /// `open`の案件とworktree indexを上下・左右キーで同時に選ぶ。
+    /// `open`の案件とworktree indexを上下・左右キーで同時に選ぶ。案件は文字で絞り込める。
     ///
     /// `maximums`は案件ごとの最後のindex。promptを開く前に揃っており、描画のあいだに
     /// 変わらない。`None`の案件は範囲を数として見せず、indexを0から動かさない。
@@ -114,7 +121,7 @@ impl PromptUi {
         labels: &[String],
         maximums: &[Option<u32>],
     ) -> Result<(usize, u32)> {
-        let mut selection = OpenSelection::new(labels.len(), maximums);
+        let mut selection = OpenSelection::new(labels, maximums);
 
         let _ = self.screen.hide_cursor();
         let mut drawn = 0usize;
@@ -152,26 +159,49 @@ impl PromptUi {
     }
 
     /// 候補から1件以上を選ぶ。未選択の確定は受け付けない。
-    pub fn select_many(&mut self, heading: &Msg, labels: &[String]) -> Result<Vec<usize>> {
-        self.select(heading, labels, true)
+    ///
+    /// `filter`が`Typed`なら、文字を打って候補を絞り込める。選択済みは絞り込みで隠れても
+    /// 残り、Enterで一緒に確定する。
+    pub fn select_many(
+        &mut self,
+        heading: &Msg,
+        labels: &[String],
+        filter: Filter,
+    ) -> Result<Vec<usize>> {
+        self.select(heading, labels, true, filter)
     }
 
-    fn select(&mut self, heading: &Msg, labels: &[String], multi: bool) -> Result<Vec<usize>> {
+    fn select(
+        &mut self,
+        heading: &Msg,
+        labels: &[String],
+        multi: bool,
+        filter: Filter,
+    ) -> Result<Vec<usize>> {
         if labels.is_empty() {
             return Err(unresolved(0, 0));
         }
-        self.waiting(heading, |prompt| prompt.ask(heading, labels, multi))
+        self.waiting(heading, |prompt| prompt.ask(heading, labels, multi, filter))
     }
 
-    fn ask(&mut self, heading: &Msg, labels: &[String], multi: bool) -> Result<Vec<usize>> {
-        let mut selection = Selection::new(labels.len(), multi, true);
+    fn ask(
+        &mut self,
+        heading: &Msg,
+        labels: &[String],
+        multi: bool,
+        filter: Filter,
+    ) -> Result<Vec<usize>> {
+        let mut selection = Selection::new(labels, multi, true, filter);
 
         let _ = self.screen.hide_cursor();
         let mut drawn = 0usize;
         let outcome = loop {
-            let frame =
-                self.painter
-                    .frame(heading, labels, &selection, viewport(self.screen.rows()));
+            let frame = self.painter.frame(
+                heading,
+                labels,
+                &selection,
+                viewport(self.screen.rows(), filter),
+            );
             if let Err(error) = redraw(self.screen.as_mut(), drawn, &frame) {
                 break Err(unreadable(&error));
             }
