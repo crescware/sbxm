@@ -278,6 +278,37 @@ assert_status() {
   assert_eq "$expected" "$RUN_STATUS" "$label (exit status)"
 }
 
+# release.shが全体とsectionごとの経過時間を表示したことを確かめる。値は実行環境で変わる
+# ため、行の形だけを見る。
+assert_elapsed_time_reported() {
+  local label="$1"
+  shift
+  assert_contains "$RUN_STDERR" "elapsed time:" "${label}: elapsed time summary is shown"
+  local section
+  for section in "$@"; do
+    assert_contains "$RUN_STDERR" "==> finished ${section} in " \
+      "${label}: section '${section}' reports its elapsed time when it finishes"
+    grep -Eq "^  ${section} +[0-9]+ ms$" <<<"$RUN_STDERR" \
+      || { printf 'assertion failed: %s: no elapsed time line for section %s\n  actual:\n%s\n' "$label" "$section" "$RUN_STDERR" >&2; exit 1; }
+  done
+  grep -Eq '^  total +[0-9]+ ms$' <<<"$RUN_STDERR" \
+    || { printf 'assertion failed: %s: no total elapsed time line\n  actual:\n%s\n' "$label" "$RUN_STDERR" >&2; exit 1; }
+}
+
+assert_elapsed_time_section_absent() {
+  local label="$1" section="$2"
+  if grep -Eq "^  ${section} +[0-9]+ ms" <<<"$RUN_STDERR"; then
+    printf 'assertion failed: %s: unexpected elapsed time line for section %s\n  actual:\n%s\n' "$label" "$section" "$RUN_STDERR" >&2
+    exit 1
+  fi
+}
+
+assert_elapsed_time_section_incomplete() {
+  local label="$1" section="$2"
+  grep -Eq "^  ${section} +[0-9]+ ms \(incomplete\)$" <<<"$RUN_STDERR" \
+    || { printf 'assertion failed: %s: section %s is not reported as incomplete\n  actual:\n%s\n' "$label" "$section" "$RUN_STDERR" >&2; exit 1; }
+}
+
 # ---------------------------------------------------------------------------
 # scratch environment
 # ---------------------------------------------------------------------------
@@ -503,6 +534,11 @@ test_fresh_clone_creates_pr() {
   local mise_calls
   mise_calls="$(grep -c '^mise run check' "$FAKE_CALL_LOG" || true)"
   assert_eq "1" "$mise_calls" "fresh clone: mise run check called exactly once"
+
+  # 全sectionと全体の経過時間が表示される。
+  assert_elapsed_time_reported "fresh clone" \
+    "preflight checks" "mise run check" "cargo build" "sign and verify binary" \
+    "package and provenance" "tag and release" "tap PR"
 }
 
 test_existing_cache_fetches_and_uses_updated_main() {
@@ -587,6 +623,12 @@ test_dry_run_official_repo_reports_plan_without_touching_tap() {
   local archive_sha256
   archive_sha256="$(awk '{print $1}' "${SCRATCH}/source/dist/release-notes.md" | grep -E '^[0-9a-f]{64}$')"
   assert_contains "$RUN_STDERR" "$archive_sha256" "dry run: report shows the real archive sha256"
+
+  # dry runはpublishとtap更新を行わないため、その2つのsectionは経過時間にも現れない。
+  assert_elapsed_time_reported "dry run" \
+    "preflight checks" "mise run check" "cargo build" "sign and verify binary" "package and provenance"
+  assert_elapsed_time_section_absent "dry run" "tag and release"
+  assert_elapsed_time_section_absent "dry run" "tap PR"
 }
 
 test_dry_run_fork_skips_tap_with_reason() {
@@ -622,6 +664,11 @@ test_release_create_failure_skips_tap_entirely() {
   assert_not_contains "$log" "--json assets" "release create failure: asset verification never runs"
   assert_not_contains "$log" "gh repo clone" "release create failure: tap is never cloned"
   assert_not_contains "$log" "gh pr create" "release create failure: no PR is created"
+
+  # 途中で落ちても経過時間は表示され、進行中だったsectionはincompleteと示される。
+  assert_elapsed_time_reported "release create failure" \
+    "preflight checks" "mise run check" "cargo build" "sign and verify binary" "package and provenance"
+  assert_elapsed_time_section_incomplete "release create failure" "tag and release"
 
   # tagはpush済みのまま残る (release.shの既存挙動)。
   git -C "$SOURCE_ORIGIN_DIR" rev-parse -q --verify "refs/tags/${TAG}" >/dev/null \
