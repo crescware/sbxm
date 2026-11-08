@@ -103,37 +103,32 @@ fail() {
 # 常に表示する。sectionの区切りはmain、publish、publish_tap_prに置き、README.mdの
 # 「実行順」の工程に対応させる。各sectionが終わるたびにその経過時間を1行出し、終了時に
 # EXIT trapから全sectionと全体をまとめて表示する。途中で落ちたときも、そこまでの値を出す。
+NOW_MS=""
 SCRIPT_START_MS=""
 SECTION_NAME=""
 SECTION_START_MS=""
-# "name<TAB>ms\n"の並び。bash 3.2では連想配列が使えないため、文字列で持つ。
+# "name<TAB>ms\n"の並び。
 SECTION_TIMES=""
 
-# ms単位の現在時刻。bash 5のEPOCHREALTIMEがあればそれを読む。macOSの/bin/bashは3.2で
-# これを持たないため、perlのTime::HiResで補う。どちらも無ければdateの秒を1000倍する。
-now_ms() {
-  local t sec frac
-  if [ -n "${EPOCHREALTIME:-}" ]; then
-    # 小数点はlocaleによって','になる。
-    t="${EPOCHREALTIME/,/.}"
-    sec="${t%.*}"
-    frac="${t#*.}000"
-    printf '%s%s\n' "$sec" "${frac:0:3}"
-  elif command -v perl >/dev/null 2>&1; then
-    perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000'
-  else
-    printf '%s000\n' "$(date +%s)"
-  fi
+# 現在時刻をms単位でNOW_MSへ入れる。EPOCHREALTIMEはmicro秒までの値を持つ。外部commandを
+# 呼ばず、subshellも作らない。
+read_now_ms() {
+  # 小数点はlocaleによって','になる。
+  local t="${EPOCHREALTIME/,/.}"
+  NOW_MS="${t%.*}${t#*.}"
+  NOW_MS="${NOW_MS%???}"
 }
 
 begin_section() {
   SECTION_NAME="$1"
-  SECTION_START_MS="$(now_ms)"
+  read_now_ms
+  SECTION_START_MS="$NOW_MS"
 }
 
 end_section() {
   local elapsed
-  elapsed=$(( $(now_ms) - SECTION_START_MS ))
+  read_now_ms
+  elapsed=$(( NOW_MS - SECTION_START_MS ))
   SECTION_TIMES="${SECTION_TIMES}${SECTION_NAME}"$'\t'"${elapsed}"$'\n'
   log "finished ${SECTION_NAME} in ${elapsed} ms"
   SECTION_NAME=""
@@ -143,8 +138,8 @@ end_section() {
 # EXIT trapから呼ぶ。stdoutは`$(...)`の戻り値に使うため、logと同じくstderrへ書く。
 report_elapsed_time() {
   [ -n "$SCRIPT_START_MS" ] || return 0
-  local now name ms
-  now="$(now_ms)"
+  local name ms
+  read_now_ms
   {
     printf '\nelapsed time:\n'
     while IFS=$'\t' read -r name ms; do
@@ -152,9 +147,9 @@ report_elapsed_time() {
       printf '  %-24s %9s ms\n' "$name" "$ms"
     done <<<"$SECTION_TIMES"
     if [ -n "$SECTION_NAME" ]; then
-      printf '  %-24s %9s ms (incomplete)\n' "$SECTION_NAME" "$(( now - SECTION_START_MS ))"
+      printf '  %-24s %9s ms (incomplete)\n' "$SECTION_NAME" "$(( NOW_MS - SECTION_START_MS ))"
     fi
-    printf '  %-24s %9s ms\n' "total" "$(( now - SCRIPT_START_MS ))"
+    printf '  %-24s %9s ms\n' "total" "$(( NOW_MS - SCRIPT_START_MS ))"
   } >&2
 }
 
@@ -1057,7 +1052,8 @@ report_dry_run() {
 }
 
 main() {
-  SCRIPT_START_MS="$(now_ms)"
+  read_now_ms
+  SCRIPT_START_MS="$NOW_MS"
 
   # optionはtagの前後どちらでも受ける。`release.sh v0.0.1 --dry-run`と書いた人が
   # 本番のリリースを作ってしまう余地を残さない。

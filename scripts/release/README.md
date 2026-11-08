@@ -133,7 +133,7 @@ elapsed time:
   total                       286420 ms
 ```
 
-時刻はbash 5の`EPOCHREALTIME`から読む。macOSの`/bin/bash`は3.2でこれを持たないため、`perl`の`Time::HiRes`で補う。どちらも無ければ`date`の秒を1000倍するので、その環境では下3桁が000になる。
+時刻はbashの`EPOCHREALTIME`から読む。外部commandは呼ばず、subshellも作らないので、計測が実行時間を増やすことはない。
 
 ## 失敗したときに何が残るか
 
