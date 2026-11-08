@@ -115,6 +115,26 @@ branch名は`chore/bump-sbxm-to-<tag>`とする (例: `chore/bump-sbxm-to-v0.0.2
 
 commitのmessageとPRのtitleは`Bump sbxm to <version>` (例: `Bump sbxm to 0.0.2`)とする。pushは`HEAD:refs/heads/<branch>`という明示的なrefspecを使い、`main`をpush対象に含めない。`gh pr create`には`--repo crescware/homebrew-tap`、`--base main`、`--head <branch>`、`--title`、`--body-file`をすべて渡し、current directoryやpromptから値を補完させない。PR本文にはsource Releaseへのlink、asset URL、SHA-256、自動生成であることを書く。
 
+## 実行時間の表示
+
+全体とsectionごとの経過時間をms単位で常に表示する。切り替えるoptionは置かない。sectionは[実行順](#実行順)の工程をまとめた7つで、`preflight checks` (検査)、`mise run check`、`cargo build` (build)、`sign and verify binary` (署名・検証)、`package and provenance` (package・記録)、`tag and release` (publish)、`tap PR` (tap更新) とする。dry runはpublishとtap更新を行わないため、その2つは現れない。tap更新をskipする実行では`tap PR`が現れない。
+
+各sectionが終わるたびに、`==> finished mise run check in 183456 ms`のように1行出す。終了時には、成功・失敗のどちらでも、全sectionと全体をまとめて表示する。途中で落ちたときは、進行中だったsectionにそこまでの経過時間を`(incomplete)`を添えて出す。
+
+```
+elapsed time:
+  preflight checks              1234 ms
+  mise run check              183456 ms
+  cargo build                  91234 ms
+  sign and verify binary         456 ms
+  package and provenance         789 ms
+  tag and release               3456 ms
+  tap PR                        5678 ms
+  total                       286420 ms
+```
+
+時刻はbash 5の`EPOCHREALTIME`から読む。macOSの`/bin/bash`は3.2でこれを持たないため、`perl`の`Time::HiRes`で補う。どちらも無ければ`date`の秒を1000倍するので、その環境では下3桁が000になる。
+
 ## 失敗したときに何が残るか
 
 | 落ちた工程 | 残るもの |

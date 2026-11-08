@@ -99,6 +99,65 @@ fail() {
   exit 1
 }
 
+# 実行時間の計測。全体とsectionごとの経過時間をms単位で表示する。optionでは切り替えず、
+# 常に表示する。sectionの区切りはmain、publish、publish_tap_prに置き、README.mdの
+# 「実行順」の工程に対応させる。各sectionが終わるたびにその経過時間を1行出し、終了時に
+# EXIT trapから全sectionと全体をまとめて表示する。途中で落ちたときも、そこまでの値を出す。
+SCRIPT_START_MS=""
+SECTION_NAME=""
+SECTION_START_MS=""
+# "name<TAB>ms\n"の並び。bash 3.2では連想配列が使えないため、文字列で持つ。
+SECTION_TIMES=""
+
+# ms単位の現在時刻。bash 5のEPOCHREALTIMEがあればそれを読む。macOSの/bin/bashは3.2で
+# これを持たないため、perlのTime::HiResで補う。どちらも無ければdateの秒を1000倍する。
+now_ms() {
+  local t sec frac
+  if [ -n "${EPOCHREALTIME:-}" ]; then
+    # 小数点はlocaleによって','になる。
+    t="${EPOCHREALTIME/,/.}"
+    sec="${t%.*}"
+    frac="${t#*.}000"
+    printf '%s%s\n' "$sec" "${frac:0:3}"
+  elif command -v perl >/dev/null 2>&1; then
+    perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000'
+  else
+    printf '%s000\n' "$(date +%s)"
+  fi
+}
+
+begin_section() {
+  SECTION_NAME="$1"
+  SECTION_START_MS="$(now_ms)"
+}
+
+end_section() {
+  local elapsed
+  elapsed=$(( $(now_ms) - SECTION_START_MS ))
+  SECTION_TIMES="${SECTION_TIMES}${SECTION_NAME}"$'\t'"${elapsed}"$'\n'
+  log "finished ${SECTION_NAME} in ${elapsed} ms"
+  SECTION_NAME=""
+  SECTION_START_MS=""
+}
+
+# EXIT trapから呼ぶ。stdoutは`$(...)`の戻り値に使うため、logと同じくstderrへ書く。
+report_elapsed_time() {
+  [ -n "$SCRIPT_START_MS" ] || return 0
+  local now name ms
+  now="$(now_ms)"
+  {
+    printf '\nelapsed time:\n'
+    while IFS=$'\t' read -r name ms; do
+      [ -n "$name" ] || continue
+      printf '  %-24s %9s ms\n' "$name" "$ms"
+    done <<<"$SECTION_TIMES"
+    if [ -n "$SECTION_NAME" ]; then
+      printf '  %-24s %9s ms (incomplete)\n' "$SECTION_NAME" "$(( now - SECTION_START_MS ))"
+    fi
+    printf '  %-24s %9s ms\n' "total" "$(( now - SCRIPT_START_MS ))"
+  } >&2
+}
+
 usage() {
   {
     printf 'usage: %s [--dry-run] (--prerelease | --stable) <tag>\n' "$(basename "$0")"
@@ -871,6 +930,8 @@ publish_tap_pr() {
     return 0
   fi
 
+  begin_section "tap PR"
+
   verify_release_asset "$tag" "$ARCHIVE_NAME" "$archive_sha256"
 
   resolve_tap_branch_name "$tag"
@@ -888,6 +949,8 @@ publish_tap_pr() {
   source_release_url="https://github.com/${SOURCE_REPO}/releases/tag/${tag}"
   body_file="$(write_tap_pr_body "$tag" "$source_release_url" "$RELEASE_ASSET_URL" "$archive_sha256")"
   create_tap_pr "$body_file"
+
+  end_section
 }
 
 publish() {
@@ -912,9 +975,11 @@ publish() {
     return 0
   fi
 
+  begin_section "tag and release"
   create_tag "$tag"
   push_tag "$tag"
   create_github_release "$tag" "$archive" "$notes_file"
+  end_section
 
   publish_tap_pr "$tag" "$version" "$archive_sha256"
 }
@@ -992,6 +1057,8 @@ report_dry_run() {
 }
 
 main() {
+  SCRIPT_START_MS="$(now_ms)"
+
   # optionはtagの前後どちらでも受ける。`release.sh v0.0.1 --dry-run`と書いた人が
   # 本番のリリースを作ってしまう余地を残さない。
   # bash 3.2ではset -uのもとで空arrayを展開できないため、arrayを使わず数える。
@@ -1044,9 +1111,11 @@ main() {
   cd "$(git rev-parse --show-toplevel)"
 
   WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sbxm-release.XXXXXX")"
-  trap 'rm -rf "$WORK_DIR"' EXIT
+  trap 'rm -rf "$WORK_DIR"; report_elapsed_time' EXIT
 
   [ "$DRY_RUN" -eq 1 ] && log "dry run: nothing will be tagged, pushed, or published"
+
+  begin_section "preflight checks"
 
   # 検査より前に消す。どこで落ちても、dist/には今回の実行が作ったものしか無い状態に
   # する。途中で落ちた実行の後に前回の生成物が残っていると、それを今回のものと読む。
@@ -1064,19 +1133,27 @@ main() {
   check_no_build_affecting_env_vars
   check_host_is_arm64
   check_rustc_host_is_apple_silicon
+  end_section
 
   # 安いものを先に落としてから、時間のかかる検査へ入る。
+  begin_section "mise run check"
   run_repository_checks
+  end_section
 
+  begin_section "cargo build"
   build_release_binary
+  end_section
 
   local bin_path="target/release/${BIN_NAME}"
+  begin_section "sign and verify binary"
   sign_binary "$bin_path"
   verify_signature "$bin_path"
   verify_adhoc_signature "$bin_path"
   verify_binary_arch "$bin_path"
   verify_binary_version "$bin_path" "$version"
+  end_section
 
+  begin_section "package and provenance"
   local archive_path
   archive_path="$(package_archive "$bin_path")"
   verify_archive_contents "$archive_path"
@@ -1086,6 +1163,7 @@ main() {
 
   local notes_file
   notes_file="$(record_provenance "$archive_path" "$archive_sha256")"
+  end_section
 
   publish "$tag" "$version" "$archive_path" "$archive_sha256" "$notes_file"
 
