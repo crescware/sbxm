@@ -421,6 +421,8 @@ run_release() {
   RUN_STATUS=0
   (
     cd "$SOURCE_DIR"
+    # release.shはこのtestを動かしているbashで実行する。env -iで作るPATHにはHomebrewの
+    # bashが入らないため、shebangの/usr/bin/env bashに任せると/bin/bashが選ばれる。
     env -i \
       PATH="${FAKE_BIN_DIR}:/usr/bin:/bin:/usr/local/bin" \
       HOME="$SCRATCH_HOME" \
@@ -443,7 +445,7 @@ run_release() {
       FAKE_TAP_FETCH_FAIL="${FAKE_TAP_FETCH_FAIL:-0}" \
       FAKE_TAP_COMMIT_FAIL="${FAKE_TAP_COMMIT_FAIL:-0}" \
       FAKE_TAP_PUSH_FAIL="${FAKE_TAP_PUSH_FAIL:-0}" \
-      "$RELEASE_SCRIPT" "$@" \
+      "$BASH" "$RELEASE_SCRIPT" "$@" \
       >"${SCRATCH}/stdout.log" 2>"${SCRATCH}/stderr.log"
   ) || RUN_STATUS=$?
   RUN_STDERR="$(cat "${SCRATCH}/stderr.log")"
