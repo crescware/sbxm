@@ -1,3 +1,4 @@
+use crate::design::Filter;
 use crate::diagnostics::{Msg, Result};
 use crate::i18n::{Catalog, Locale};
 
@@ -18,7 +19,7 @@ pub fn chooses_first(
         Ok(text) => text,
         Err(failure) => failure.to_string(),
     });
-    match prompt.select_one(heading, &choices)? {
+    match prompt.select_one(heading, &choices, Filter::None)? {
         0 => Ok(true),
         1 => Ok(false),
         index => Err(unresolved(index, choices.len())),

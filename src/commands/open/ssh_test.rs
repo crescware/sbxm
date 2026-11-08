@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::commands::{Context, add::AddRequest};
 use crate::design::prompt::{RecordedScreen, ScriptedKeys};
-use crate::design::{PromptUi, RenderingPolicy, Ui};
+use crate::design::{Filter, PromptUi, RenderingPolicy, Ui};
 use crate::diagnostics::{Error, ErrorId, ExitCode, Msg, Result};
 use crate::i18n::Locale;
 use crate::paths::{PRIVATE_FILE_MODE, PathScope};
@@ -94,7 +94,12 @@ impl Answers<'_> {
 }
 
 impl ProjectPrompt for Answers<'_> {
-    fn select_one(&mut self, heading: &Msg, candidates: &[String]) -> Result<usize> {
+    fn select_one(
+        &mut self,
+        heading: &Msg,
+        candidates: &[String],
+        filter: Filter,
+    ) -> Result<usize> {
         if self.fail {
             return Err(Error::new(
                 ErrorId::SelectionUnresolved,
@@ -105,14 +110,19 @@ impl ProjectPrompt for Answers<'_> {
                 ),
             ));
         }
-        self.selection.select_one(heading, candidates)?;
+        self.selection.select_one(heading, candidates, filter)?;
         if let Some(before) = &mut self.before {
             before();
         }
         Ok(self.choices.pop_front().unwrap_or(0))
     }
-    fn select_many(&mut self, heading: &Msg, candidates: &[String]) -> Result<Vec<usize>> {
-        self.selection.select_many(heading, candidates)
+    fn select_many(
+        &mut self,
+        heading: &Msg,
+        candidates: &[String],
+        filter: Filter,
+    ) -> Result<Vec<usize>> {
+        self.selection.select_many(heading, candidates, filter)
     }
     fn select_open(
         &mut self,

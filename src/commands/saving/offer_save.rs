@@ -75,7 +75,11 @@ fn ask_to_save(prompt: &mut dyn ProjectPrompt, locale: Locale) -> Result<bool> {
         label("prompt-save-to-host-save"),
         label("prompt-save-to-host-stop"),
     ];
-    let index = prompt.select_one(&msg!("prompt-save-to-host-heading"), &choices)?;
+    let index = prompt.select_one(
+        &msg!("prompt-save-to-host-heading"),
+        &choices,
+        crate::design::Filter::None,
+    )?;
     match index {
         0 => Ok(true),
         1 => Ok(false),

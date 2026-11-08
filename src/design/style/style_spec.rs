@@ -9,6 +9,8 @@ pub struct StyleSpec {
     pub bold: bool,
     /// 補助情報であることを示す減光。
     pub dim: bool,
+    /// 一時的な照合対象であることを示す下線。慣例的な強調には使わない。
+    pub underline: bool,
     pub foreground: Option<Color>,
 }
 
@@ -26,6 +28,13 @@ impl StyleSpec {
     pub(crate) fn bold() -> StyleSpec {
         StyleSpec {
             bold: true,
+            ..StyleSpec::plain()
+        }
+    }
+
+    pub(crate) fn underlined() -> StyleSpec {
+        StyleSpec {
+            underline: true,
             ..StyleSpec::plain()
         }
     }

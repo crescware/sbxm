@@ -114,7 +114,7 @@ sbxm open <project-id>
 
 接続時の起点は`/home/agent/work/<repository>`です。managed worktreeを起点にする場合は0始まりのindexを指定します。たとえば`sbxm open <project-id> -i 0`です。
 
-対話端末でproject IDを省略すると、1つのpromptで上下キーから案件、左右キーから0始まりのmanaged worktree indexを選び、Enter 1回で両方を確定します。認証を確認したら、各案件のmetadataを読んでからpromptを開きます。index行は選択中の案件自身の範囲を示します。metadataを読めない案件はindex行でそう述べ、indexは0から動かず、選ぶとその理由を報告します。確定した値はproject lockの下で再確認し、その案件がそのmanaged worktreeを宣言していなければ、`--index`と同じく警告してrepository rootを開きます。
+対話端末でproject IDを省略すると、1つのpromptで上下キーから案件、左右キーから0始まりのmanaged worktree indexを選び、Enter 1回で両方を確定します。文字を打つと、その文字を含むproject IDだけに一覧が絞られます。大文字小文字は区別せず、一致した部分に下線を引き、Backspaceで末尾の1文字を消し、一致する案件が無いあいだはEnterを受け付けません。上下キーは一致した案件の中だけを移動します。認証を確認したら、各案件のmetadataを読んでからpromptを開きます。index行は選択中の案件自身の範囲を示します。metadataを読めない案件はindex行でそう述べ、indexは0から動かず、選ぶとその理由を報告します。確定した値はproject lockの下で再確認し、その案件がそのmanaged worktreeを宣言していなければ、`--index`と同じく警告してrepository rootを開きます。
 
 Sandbox内のworktreeは次の場所にあります。
 
@@ -162,7 +162,7 @@ credential交換guideは、現在の登録から公開情報であるscopeとpla
 
 `STATE`は`sbxm open`がすぐ接続できるかを示します。`stopped`は開くとSandboxが起動し、`open-blocked`は接続前の準備が残っています。初回構築が始まったまま完了していない案件もここに含まれます。理由は`sbxm status <project-id>`で確認でき、次に実行するcommandを1つだけ示します。中断・欠落した接続準備は`sbxm open`、世代交代は`sbxm rebuild`です。
 
-対話端末で実行した場合、`repair`、`apply`、`rebuild`、`open`、`stop`、`destroy`、`status`はプロジェクト引数を省略すると対象を選択するpromptを表示できます。`status`では先頭に`global`を表示し、その後へ登録済みproject IDを並べます。検査の進捗は全commandで同じ方針に揃え、処理を待つ前に工程名をstderrへ表示して、直ちにflushします。認証、案件lock、Docker・Sandboxの応答待ちのほか、`status`、`open`、`repair`、`apply`（`--all`を含む）、`rebuild`のrepository・worktree・file検査が対象です。worktreeとfileは対象名と全体の何件目かも示します。`destroy`、`sync`、`stop`、`files pull`、`ls`、`guide`の検査や、`add --local`のhost repository確認にも同じ工程表示を使います。`status --global`はDocker、CLI version、network policy、daemon、認証、Remote SSHの確認を分けて表示します。削除保護では無視対象file、進行中のGit操作、originのfetch、確認後の安全性の再検査も表示します。読み取り専用の`status`は保存済みのorigin refだけを読み、fetchは行いません。停止中のSandboxも内部やディスクの確認のために起動しません。診断結果や削除計画は、検査が終わったあとにstdoutへ表示します。外部commandの逐次ログは出しません。`guide`はtopicを省略すると最初にtopicを問い、続いて案件を問います。`credential-rotation`を指定した場合は案件選択から始めます。非対話端末では、これらのcommandにプロジェクト引数を明示してください。`guide`にはtopicの明示も必要で、`status`だけはproject IDまたは`--global`をscopeとして指定できます。
+対話端末で実行した場合、`repair`、`apply`、`rebuild`、`open`、`stop`、`destroy`、`status`はプロジェクト引数を省略すると対象を選択するpromptを表示できます。案件の一覧では文字を打つと、その文字を含むIDだけに候補が絞られ、絞る前に選んだ案件は選んだままです。`status`では先頭に`global`を表示し、その後へ登録済みproject IDを並べます。検査の進捗は全commandで同じ方針に揃え、処理を待つ前に工程名をstderrへ表示して、直ちにflushします。認証、案件lock、Docker・Sandboxの応答待ちのほか、`status`、`open`、`repair`、`apply`（`--all`を含む）、`rebuild`のrepository・worktree・file検査が対象です。worktreeとfileは対象名と全体の何件目かも示します。`destroy`、`sync`、`stop`、`files pull`、`ls`、`guide`の検査や、`add --local`のhost repository確認にも同じ工程表示を使います。`status --global`はDocker、CLI version、network policy、daemon、認証、Remote SSHの確認を分けて表示します。削除保護では無視対象file、進行中のGit操作、originのfetch、確認後の安全性の再検査も表示します。読み取り専用の`status`は保存済みのorigin refだけを読み、fetchは行いません。停止中のSandboxも内部やディスクの確認のために起動しません。診断結果や削除計画は、検査が終わったあとにstdoutへ表示します。外部commandの逐次ログは出しません。`guide`はtopicを省略すると最初にtopicを問い、続いて案件を問います。`credential-rotation`を指定した場合は案件選択から始めます。非対話端末では、これらのcommandにプロジェクト引数を明示してください。`guide`にはtopicの明示も必要で、`status`だけはproject IDまたは`--global`をscopeとして指定できます。
 
 ただし`rebuild`と`destroy`は、引数を明示しても非対話端末では実行できません。どちらも削除計画を表示し、対象Sandbox名の完全一致入力を得た場合にだけ進むためです。`destroy`には確認を省略する`--force`がありますが、`rebuild`にはありません。
 

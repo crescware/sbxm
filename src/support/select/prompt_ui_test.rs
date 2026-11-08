@@ -1,6 +1,6 @@
-use crate::design::PromptUi;
 use crate::design::policy::StreamPolicy;
 use crate::design::prompt::{Key, RecordedScreen, ScriptedKeys};
+use crate::design::{Filter, PromptUi};
 use crate::i18n::Locale;
 use crate::msg;
 
@@ -32,6 +32,7 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
         &mut prompt(ScriptedKeys::choosing(2)),
         &msg!("select-open-heading"),
         &candidates(),
+        Filter::Typed,
     )
     .required_because("a project is chosen")?;
     assert_eq!(chosen, 2);
@@ -40,6 +41,7 @@ fn the_combined_open_selection_reaches_the_command_as_both_stopped_on_values() -
         &mut prompt(ScriptedKeys::checking(&[1, 2])),
         &msg!("select-stop-heading"),
         &candidates(),
+        Filter::Typed,
     )
     .required_because("two projects are chosen")?;
     assert_eq!(chosen, vec![1, 2]);

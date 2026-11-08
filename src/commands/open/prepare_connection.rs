@@ -67,7 +67,11 @@ pub(super) fn prepare_connection(
             label("prompt-ssh-repair-stop"),
             label("prompt-ssh-repair-run"),
         ];
-        let answer = prompt.select_one(&msg!("prompt-ssh-repair-heading"), &choices);
+        let answer = prompt.select_one(
+            &msg!("prompt-ssh-repair-heading"),
+            &choices,
+            crate::design::Filter::None,
+        );
         ui.note_prompt_output();
         match answer {
             Err(Error::Canceled) | Ok(0) => return Err(connection_error(error, &selection)),

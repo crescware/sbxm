@@ -28,11 +28,25 @@ fn frame(selection: &Selection, policy: StreamPolicy) -> Vec<String> {
 }
 
 fn single() -> Selection {
-    Selection::new(3, false, true)
+    Selection::new(&labels(), false, true, Filter::None)
 }
 
 fn multi() -> Selection {
-    Selection::new(3, true, true)
+    Selection::new(&labels(), true, true, Filter::None)
+}
+
+/// 文字で絞り込める選択。
+fn typed(multi: bool) -> Selection {
+    Selection::new(&labels(), multi, true, Filter::Typed)
+}
+
+fn type_text(selection: &mut Selection, text: &str) {
+    for character in text.chars() {
+        assert_eq!(
+            selection.apply(Action::Type(character)),
+            Transition::Continue
+        );
+    }
 }
 
 #[test]
@@ -165,7 +179,14 @@ fn escape_and_ctrl_c_change_nothing() {
 fn keys_that_have_no_meaning_leave_the_state_alone() {
     let mut selection = multi();
     let before = selection.clone();
-    for key in [Key::Tab, Key::ArrowLeft, Key::Char('x'), Key::Unknown] {
+    // 絞り込めない一覧では、文字とBackspaceも意味を持たない。
+    for key in [
+        Key::Tab,
+        Key::ArrowLeft,
+        Key::Char('x'),
+        Key::Backspace,
+        Key::Unknown,
+    ] {
         assert_eq!(selection.apply(action_for(key)), Transition::Continue);
     }
     assert_eq!(selection, before);
@@ -189,7 +210,7 @@ fn every_state_stays_readable_without_color() {
 fn an_empty_selection_has_nowhere_to_move_and_confirms_nothing() {
     // `PromptUi`は候補ゼロで開かない。`Selection`は端末を持たない状態機械として単体で
     // 成立するため、候補ゼロもこの型自身が受け止める。
-    let mut selection = Selection::new(0, true, true);
+    let mut selection = Selection::new(&[], true, true, Filter::None);
     assert_eq!(selection.apply(Action::Next), Transition::Continue);
     assert_eq!(selection.apply(Action::Previous), Transition::Continue);
     assert_eq!(selection.current(), 0, "there is no row to move onto");
@@ -248,16 +269,26 @@ fn strip_ansi(text: &str) -> String {
 
 #[test]
 fn the_operation_guide_pairs_every_key_with_what_it_does() {
-    let single = painter(StreamPolicy::plain()).keys(false);
+    let single = painter(StreamPolicy::plain()).keys(false, Filter::None);
     assert!(single.contains("Enter Confirm"), "{single}");
     assert!(single.contains("Esc Cancel"), "{single}");
     assert!(
         !single.contains("Space"),
         "a single selection has no toggle"
     );
+    assert!(
+        !single.contains("Type"),
+        "a list that cannot be narrowed does not invite typing"
+    );
 
-    let multi = painter(StreamPolicy::plain()).keys(true);
+    let multi = painter(StreamPolicy::plain()).keys(true, Filter::None);
     assert!(multi.contains("Space Toggle"), "{multi}");
+
+    let typed = painter(StreamPolicy::plain()).keys(true, Filter::Typed);
+    assert!(
+        typed.contains("Space Toggle   Type Filter   Enter Confirm"),
+        "{typed}"
+    );
 }
 
 #[test]
@@ -266,16 +297,17 @@ fn the_arrow_keys_fall_back_to_ascii() {
         characters: CharacterSet::Ascii,
         ..StreamPolicy::plain()
     };
-    let keys = painter(policy).keys(false);
+    let keys = painter(policy).keys(false, Filter::None);
     assert!(keys.starts_with("^/v Move"), "{keys}");
 }
 
 #[test]
 fn a_single_candidate_still_shows_its_state() -> Checked {
-    let selection = Selection::new(1, true, true);
+    let labels = ["owner/alpha".to_string()];
+    let selection = Selection::new(&labels, true, true, Filter::None);
     let drawn = painter(StreamPolicy::plain()).frame(
         &msg!("select-stop-heading"),
-        &["owner/alpha".to_string()],
+        &labels,
         &selection,
         None,
     );
@@ -314,15 +346,21 @@ fn the_viewport_keeps_the_current_row_visible() {
 
 #[test]
 fn a_height_that_cannot_be_read_is_not_a_limit_on_the_list() {
-    assert_eq!(viewport(None), None, "an unknown height shows every row");
-    // heading、操作説明、選択数、空行、結果の一行ぶんを残す。
-    assert_eq!(viewport(Some(24)), Some(18));
-    assert_eq!(viewport(Some(7)), Some(1));
     assert_eq!(
-        viewport(Some(2)),
+        viewport(None, Filter::None),
+        None,
+        "an unknown height shows every row"
+    );
+    // heading、操作説明、選択数、空行、結果の一行ぶんを残す。
+    assert_eq!(viewport(Some(24), Filter::None), Some(18));
+    assert_eq!(viewport(Some(7), Filter::None), Some(1));
+    assert_eq!(
+        viewport(Some(2), Filter::None),
         Some(1),
         "a screen too short for the frame still shows one candidate"
     );
+    // 絞り込める一覧は、入力の一行も残す。
+    assert_eq!(viewport(Some(24), Filter::Typed), Some(17));
 }
 
 #[test]
@@ -344,7 +382,7 @@ fn the_confirmed_value_is_left_as_its_own_line() {
 #[test]
 fn the_open_frame_reserves_exactly_the_rows_the_viewport_subtracts() {
     let labels = labels();
-    let selection = OpenSelection::new(labels.len(), &[Some(4); 3]);
+    let selection = OpenSelection::new(&labels, &[Some(4); 3]);
     let drawn = painter(StreamPolicy::plain()).open_frame(
         &msg!("select-open-heading"),
         &labels,
@@ -356,5 +394,207 @@ fn the_open_frame_reserves_exactly_the_rows_the_viewport_subtracts() {
         drawn.len() - labels.len(),
         OPEN_FRAME_FIXED_ROWS,
         "the list height is computed from this count: {drawn:?}"
+    );
+}
+
+#[test]
+fn the_filter_line_invites_typing_until_something_is_typed() {
+    let mut selection = typed(false);
+    let drawn = frame(&selection, StreamPolicy::plain());
+    assert_eq!(
+        drawn[2],
+        "  \u{2191}/\u{2193} Move   Type Filter   Enter Confirm   Esc Cancel"
+    );
+    assert_eq!(drawn[3], "  Filter: type to narrow the list");
+    assert_eq!(
+        drawn.len(),
+        8,
+        "heading, blank, keys, filter, blank and 3 rows: {drawn:?}"
+    );
+
+    type_text(&mut selection, "br");
+    let drawn = frame(&selection, StreamPolicy::plain());
+    assert_eq!(
+        drawn[3], "  Filter: br  1/3",
+        "what was typed and how many are left"
+    );
+    assert_eq!(
+        &drawn[drawn.len() - 1..],
+        ["\u{203a} owner/bravo  (current)"],
+        "only the matching candidate is drawn, and it takes the focus: {drawn:?}"
+    );
+    assert_eq!(selection.apply(Action::Confirm), Transition::Done(vec![1]));
+}
+
+#[test]
+fn the_focus_stays_on_its_candidate_while_it_matches_and_moves_to_the_first_match_otherwise() {
+    let mut selection = typed(false);
+    selection.apply(Action::Next);
+    type_text(&mut selection, "a");
+    assert_eq!(selection.visible(), vec![0, 1, 2], "every label has an a");
+    assert_eq!(
+        selection.current(),
+        1,
+        "the focus does not jump while bravo still matches"
+    );
+
+    type_text(&mut selection, "l");
+    assert_eq!(selection.visible(), vec![0]);
+    assert_eq!(
+        selection.current(),
+        0,
+        "bravo is hidden, so alpha takes the focus"
+    );
+
+    assert_eq!(selection.apply(Action::Erase), Transition::Continue);
+    assert_eq!(
+        selection.current(),
+        0,
+        "alpha is still visible and keeps the focus"
+    );
+    assert_eq!(selection.apply(Action::Next), Transition::Continue);
+    assert_eq!(selection.current(), 1, "the arrows move among the matches");
+}
+
+#[test]
+fn a_filter_that_matches_nothing_warns_instead_of_confirming_a_hidden_candidate() {
+    let mut selection = typed(true);
+    selection.apply(Action::Toggle);
+    type_text(&mut selection, "zz");
+    assert!(selection.visible().is_empty());
+    assert_eq!(
+        selection.apply(Action::Toggle),
+        Transition::Continue,
+        "a hidden candidate cannot be toggled"
+    );
+    assert_eq!(
+        selection.selected_count(),
+        1,
+        "the earlier selection is kept"
+    );
+    assert_eq!(selection.apply(Action::Confirm), Transition::Continue);
+    assert!(selection.warns_about_no_match());
+
+    let drawn = frame(&selection, StreamPolicy::plain());
+    assert_eq!(
+        drawn.last().map(String::as_str),
+        Some(""),
+        "no candidate row is drawn: {drawn:?}"
+    );
+    assert!(
+        drawn.contains(
+            &"! Warning: Nothing matches zz. Press Backspace to erase it, or Esc to cancel."
+                .to_string()
+        ),
+        "{drawn:?}"
+    );
+
+    assert_eq!(selection.apply(Action::Erase), Transition::Continue);
+    assert!(
+        !selection.warns_about_no_match(),
+        "erasing takes the warning back down"
+    );
+    assert_eq!(selection.apply(Action::Erase), Transition::Continue);
+    assert_eq!(selection.apply(Action::Confirm), Transition::Done(vec![0]));
+}
+
+#[test]
+fn checked_candidates_hidden_by_the_filter_are_counted_and_still_confirmed() {
+    let mut selection = typed(true);
+    selection.apply(Action::Toggle);
+    type_text(&mut selection, "br");
+    assert_eq!(selection.selected_count(), 1);
+    assert_eq!(selection.hidden_checked_count(), 1);
+
+    let drawn = frame(&selection, StreamPolicy::plain());
+    assert!(
+        drawn.contains(&"  Selected: 1 (1 hidden by the filter)".to_string()),
+        "a selection out of view is still announced: {drawn:?}"
+    );
+    assert_eq!(
+        selection.apply(Action::Confirm),
+        Transition::Done(vec![0]),
+        "the hidden selection is what gets confirmed"
+    );
+}
+
+#[test]
+fn the_matched_letters_are_underlined_and_nothing_else_changes() {
+    let mut selection = typed(true);
+    selection.apply(Action::Next);
+    type_text(&mut selection, "r/");
+    let plain = frame(&selection, StreamPolicy::plain());
+    let colored = frame(&selection, StreamPolicy::colored());
+
+    let stripped: Vec<String> = colored.iter().map(|line| strip_ansi(line)).collect();
+    assert_eq!(stripped, plain, "underline adds decoration, never text");
+
+    let rows = &colored[colored.len() - 3..];
+    assert!(
+        rows[0].contains("[ ] owne\u{1b}[4mr/\u{1b}[0malpha"),
+        "a row without focus underlines only the match: {rows:?}"
+    );
+    assert!(
+        rows[1].contains("\u{1b}[36m\u{1b}[1m\u{1b}[4mr/\u{1b}[0m"),
+        "the focused row keeps its weight and color under the line: {rows:?}"
+    );
+    assert!(
+        !plain.iter().any(|line| line.contains('\u{1b}')),
+        "without color the filter line is what says what matched: {plain:?}"
+    );
+}
+
+#[test]
+fn a_narrow_terminal_underlines_only_the_part_of_the_match_that_is_shown() {
+    let policy = StreamPolicy {
+        width: Some(20),
+        ..StreamPolicy::colored()
+    };
+    let mut selection = typed(false);
+    type_text(&mut selection, "r/");
+    let drawn = frame(&selection, policy);
+    let rows = &drawn[drawn.len() - 3..];
+
+    // 現在位置の行は`(current)`のぶん狭く、一致した部分が省略記号へ落ちる。
+    assert!(
+        rows[0].contains("owne\u{1b}[0m\u{1b}[36m\u{1b}[1m...\u{1b}[0m"),
+        "the cut-away match is not underlined and the ellipsis stays plain: {rows:?}"
+    );
+    assert!(!rows[0].contains("\u{1b}[4m"), "{rows:?}");
+    assert!(
+        rows[1].contains("owne\u{1b}[4mr/\u{1b}[0mbravo"),
+        "a row that fits underlines its match: {rows:?}"
+    );
+}
+
+#[test]
+fn the_open_frame_draws_the_filter_and_warns_when_nothing_matches() {
+    let labels = labels();
+    let mut selection = OpenSelection::new(&labels, &[Some(4); 3]);
+    for character in "zz".chars() {
+        selection.apply(Action::Type(character));
+    }
+    selection.apply(Action::Confirm);
+    let drawn = painter(StreamPolicy::plain()).open_frame(
+        &msg!("select-open-heading"),
+        &labels,
+        &selection,
+        None,
+    );
+
+    assert_eq!(
+        drawn[2],
+        "  \u{2191}/\u{2193} Move project   \u{2190}/\u{2192} Change index   Type Filter   Enter Confirm   Esc Cancel"
+    );
+    assert_eq!(drawn[4], "  Filter: zz  0/3");
+    assert_eq!(drawn[5], "  Worktree index: 0 (0-4)");
+    assert_eq!(
+        drawn[6],
+        "! Warning: Nothing matches zz. Press Backspace to erase it, or Esc to cancel."
+    );
+    assert_eq!(
+        drawn.len(),
+        OPEN_FRAME_FIXED_ROWS + 1,
+        "no project row: {drawn:?}"
     );
 }

@@ -3,7 +3,7 @@ use crate::design::policy::CharacterSet;
 use super::*;
 
 /// 実装が写像を持つrole。variantを足したらここへも足す。
-const ROLES: [Role; 11] = [
+const ROLES: [Role; 13] = [
     Role::Heading,
     Role::TableHeader,
     Role::ProgressMarker,
@@ -15,6 +15,8 @@ const ROLES: [Role; 11] = [
     Role::Muted,
     Role::PromptCurrent,
     Role::PromptChecked,
+    Role::PromptMatch,
+    Role::PromptCurrentMatch,
 ];
 
 const STATES: [VisualState; 4] = [
@@ -168,4 +170,27 @@ fn the_ascii_fallback_stays_inside_ascii() {
     for glyph in glyphs(CharacterSet::Ascii).all() {
         assert!(glyph.is_ascii(), "{glyph:?} is not an ASCII fallback");
     }
+}
+
+#[test]
+fn underline_marks_only_the_part_of_a_label_that_matched_the_filter() {
+    // underlineは一時的な照合対象にだけ使い、強調やseverityには付けない。
+    for role in ROLES {
+        assert_eq!(
+            role_style(role).underline,
+            matches!(role, Role::PromptMatch | Role::PromptCurrentMatch),
+            "{role:?}"
+        );
+    }
+    // 一致は色を持たず、色を消しても入力行から読める情報へ下線を重ねるだけである。
+    assert_eq!(role_style(Role::PromptMatch), StyleSpec::underlined());
+    // focusのある行の一致は、行の装飾を失わずに下線だけを重ねる。
+    let matched = role_style(Role::PromptCurrentMatch);
+    assert_eq!(
+        StyleSpec {
+            underline: false,
+            ..matched
+        },
+        role_style(Role::PromptCurrent)
+    );
 }

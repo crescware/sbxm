@@ -51,7 +51,7 @@ use paint::paint;
 use painter::Painter;
 pub use policy::{ColorMode, ColorSetting, RenderingPolicy, StreamPolicy};
 pub use progress_sink::ProgressSink;
-pub use prompt::PromptUi;
+pub use prompt::{Filter, PromptUi};
 use row::row;
 pub use section::Section;
 pub use section_body::SectionBody;
