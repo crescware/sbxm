@@ -120,7 +120,7 @@ coverageは繰り返し測っても同じ値になることを前提とする。
 
 一覧の読み直しは、待たずに済む形を持たない。一覧を読む経路は時計を受け取らず、`list_with_timeout`がOSの時計を束ねる。読めない一覧を返すtestは、読み直しのたびに決まった長さの実時間を待つ。待つ回数にも上限があり、結果は待ちに依らないため、これを受け入れる。読み直しの判断そのものは、`list_retrying`のtestが台本の時計で確かめる。
 
-testは実行可能fileを実行時に書かない。書いた直後のfileは、別threadのtestがforkした子が書き込み端を持つ間、`ETXTBSY`でexecできない。`PATH`から起動させるhost toolの代役は、`install_fake_tool`（`tests/fake_tool/mod.rs`、`src/testing/install_fake_tool.rs`）で置く。道具の名前で`tests/fixtures/fake_tool.sh`へのsymlinkを置き、振る舞いは実行bitを持たない`<名前>.sh`へ書く。testが自分で走らせるscriptは`sh <path>`で起動する。
+testは実行可能fileを実行時に書かない。書いた直後のfileは、別threadのtestがforkした子が書き込み端を持つ間、`ETXTBSY`でexecできない。`PATH`から起動させるhost toolの代役は、`install_fake_tool`（`tests/fake_tool/mod.rs`、`src/testing/install_fake_tool.rs`）で置く。道具の名前で`tests/fixtures/fake_tool.sh`へのsymlinkを置き、振る舞いは実行bitを持たない`<名前>.sh`へ書く。`scripts/release/release_test.sh`がrelease.shへ見せるfake commandも、同じfake_tool.shへのsymlinkで置く。testが自分で走らせるscriptは`sh <path>`で起動する。
 
 ## testの種類
 
