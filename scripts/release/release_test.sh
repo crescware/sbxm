@@ -12,6 +12,7 @@
 #   env -iでsubprocessの環境を作り直し、host側の環境変数を一切継がない。
 # - 各test caseは`( set -e; test_fn )`という形で個別のsubshellとして実行する。1つが
 #   落ちても他のtestは続ける。
+# - 全体と各caseの経過時間をms単位で常に表示する。release.shと同じくEPOCHREALTIMEを読む。
 #
 # formula candidateの値照合・非対象行のbyte比較といった、正しいcodeからは外部入力だけ
 # では再現できない防御 (release.sh内のverify_tap_formula_candidateのcandidate値照合、
@@ -36,6 +37,18 @@ FAKE_BIN_DIR="${RUN_TMP}/fake-bin"
 TESTS_RUN=0
 TESTS_FAILED=0
 FAILED_NAMES=""
+
+# 実行時間の計測。全体と各caseの経過時間をms単位で常に表示する。release.shと同じく
+# EPOCHREALTIMEだけを読み、外部commandもsubshellも使わない。
+NOW_MS=""
+SCRIPT_START_MS=""
+
+read_now_ms() {
+  # 小数点はlocaleによって','になる。
+  local t="${EPOCHREALTIME/,/.}"
+  NOW_MS="${t%.*}${t#*.}"
+  NOW_MS="${NOW_MS%???}"
+}
 
 # ---------------------------------------------------------------------------
 # fake command
@@ -940,18 +953,26 @@ run_case() {
   local name="$1"
   TESTS_RUN=$((TESTS_RUN + 1))
   printf -- '--- %s\n' "$name"
+  local start_ms status=0
+  read_now_ms
+  start_ms="$NOW_MS"
   # 各test関数は毎回mainからforkされる新しいsubshellで動く。FAKE_GH_*/FAKE_TAP_*の
   # toggleはtest関数の中でだけ設定されるため、他のtestへ漏れない。
-  if ( set -e; "$name" ); then
-    printf 'ok\n'
+  ( set -e; "$name" ) || status=$?
+  read_now_ms
+  if [ "$status" -eq 0 ]; then
+    printf 'ok (%d ms)\n' "$((NOW_MS - start_ms))"
   else
     TESTS_FAILED=$((TESTS_FAILED + 1))
     FAILED_NAMES="${FAILED_NAMES}  - ${name}"$'\n'
-    printf 'FAIL\n'
+    printf 'FAIL (%d ms)\n' "$((NOW_MS - start_ms))"
   fi
 }
 
 main() {
+  read_now_ms
+  SCRIPT_START_MS="$NOW_MS"
+
   bash -n "$RELEASE_SCRIPT"
   write_fake_bin
 
@@ -981,7 +1002,8 @@ main() {
   run_case test_tap_push_failure_recovery_message
   run_case test_tap_pr_create_failure_leaves_branch_and_shows_retry_command
 
-  printf '\n%d/%d tests passed\n' "$((TESTS_RUN - TESTS_FAILED))" "$TESTS_RUN"
+  read_now_ms
+  printf '\n%d/%d tests passed in %d ms\n' "$((TESTS_RUN - TESTS_FAILED))" "$TESTS_RUN" "$((NOW_MS - SCRIPT_START_MS))"
   if [ "$TESTS_FAILED" -gt 0 ]; then
     printf 'failed:\n%s' "$FAILED_NAMES"
     exit 1
