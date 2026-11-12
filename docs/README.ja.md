@@ -16,7 +16,7 @@ English: [README.md](../README.md)
 
 `sbxm status --global`を実行すると、これらの要件とDocker Sandboxes環境を確認できます。Docker Sandboxesを使うほかのcommandも、最初にCLIのversionを確認し、上記より古ければほかの処理を行わずに停止します。hostのGitを使うcommandも、同じようにGitのversionを確認します。一度確認が通った実行ファイルは`~/.sbxm/host-tools.yaml`に記録し、その実行ファイルが変わらない限り確認を省略します。実行ファイルが変われば確認し直します。`status`は既存の記録を再利用しますが、新規作成も更新も行いません。
 
-Docker Sandboxesがホスト復帰直後の認証更新の抑止期間を明示した場合、sbxmは追加の再試行を行わず、復帰後120秒間は更新が抑止されることと、復帰から2分ほど経ってから再実行することを短く案内して終了します。この案内には、関連するサインアウトの修正が記載された[v0.48.0リリースノート](https://github.com/docker/sbx-releases/releases/tag/v0.48.0)へのURLを添え、error IDや外部commandの出力を載せません。`sbx`自体の内部再試行により、この応答が返るまで約9秒かかる場合があります。
+ホストのスリープ復帰直後は、Docker Sandboxesの認証更新が抑止され、操作できないことがあります。この案内が表示された場合は、ホストの復帰から2分ほど経ってから、コマンドを再実行してください。関連情報は[Docker Sandboxes v0.48.0リリースノート](https://github.com/docker/sbx-releases/releases/tag/v0.48.0)を参照してください。
 
 ## インストール
 
