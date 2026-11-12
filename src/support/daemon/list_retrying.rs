@@ -1,11 +1,12 @@
 use std::time::Duration;
 
 use crate::boundary::host::protocol::{
-    SandboxEntry, is_listing_cut_short, is_login_unavailable, parse_sandbox_list,
+    SandboxEntry, is_listing_cut_short, is_login_resume_holdoff, is_login_unavailable,
+    parse_sandbox_list,
 };
 use crate::boundary::host::{CommandSpec, EnvPolicy, HostEnvironment, TimeoutClass};
 use crate::design::{Fact, ProgressSink};
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::time::Clock;
 
@@ -16,6 +17,7 @@ const WARMUP_RETRY_DELAY: Duration = Duration::from_millis(200);
 const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// 案件選択前のprobeは10秒ずつ最大3回、1秒・2秒の待機で再試行する。
+/// 復帰直後の更新抑止は、再試行せず短い案内で停止する。
 /// 一覧のJSON不全も同じ回数に含める。通常のlifecycle観測は従来どおりJSON不全だけを再試行する。
 pub(super) fn list_retrying(
     host: &dyn HostEnvironment,
@@ -85,6 +87,24 @@ fn attempt(
             (result, retry)
         }
         Err(error) => {
+            if error.contains_id(ErrorId::ExternalCommandFailed)
+                && let Some(external) = error
+                    .diagnostics()
+                    .iter()
+                    .filter_map(|diagnostic| diagnostic.external.as_ref())
+                    .find(|external| is_login_resume_holdoff(&external.stderr))
+            {
+                return (
+                    Err(Error::single(
+                        Diagnostic::notice(
+                            ErrorId::SbxLoginResumeHoldoff,
+                            msg!("notice-sbx-login-resume-holdoff"),
+                        )
+                        .external(external.clone()),
+                    )),
+                    None,
+                );
+            }
             let retry = if error.contains_id(ErrorId::ExternalCommandTimeout) {
                 Some(RetryReason::Timeout)
             } else if error.contains_id(ErrorId::ExternalCommandFailed)

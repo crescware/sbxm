@@ -1,8 +1,9 @@
-use super::{ErrorId, ExternalFailure, Msg};
+use super::{DiagnosticKind, ErrorId, ExternalFailure, Msg};
 
-/// 1件の失敗。
+/// 1件の停止理由。既知の一時状態は通知として説明だけを表示する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
+    pub kind: DiagnosticKind,
     pub id: ErrorId,
     pub description: Msg,
     /// 説明文から追い出した事実。
@@ -22,11 +23,20 @@ pub struct Diagnostic {
 impl Diagnostic {
     pub fn new(id: ErrorId, description: Msg) -> Self {
         Diagnostic {
+            kind: DiagnosticKind::Error,
             id,
             description,
             facts: Vec::new(),
             remediation: None,
             external: None,
+        }
+    }
+
+    /// errorの装飾や詳細を出さず、説明だけで停止を案内する。
+    pub fn notice(id: ErrorId, description: Msg) -> Self {
+        Diagnostic {
+            kind: DiagnosticKind::Notice,
+            ..Self::new(id, description)
         }
     }
 

@@ -389,6 +389,9 @@ error-daemon-unobservable = The Docker Sandboxes daemon state could not be read
 error-daemon-not-running = The Docker Sandboxes daemon is not running
 error-sbx-login-missing = This host is not signed in to Docker Sandboxes.
 error-sbx-login-unobservable = Docker Sandboxes sign-in could not be checked because the sandbox listing failed
+notice-sbx-login-resume-holdoff =
+    Docker Sandboxes pauses authentication refresh for 120 seconds after the host wakes up. Try again once two minutes have passed since waking.
+    Related fix (v0.48.0 release notes): https://github.com/docker/sbx-releases/releases/tag/v0.48.0
 error-remote-ssh-unconfigured = ssh has no proxy configuration for { $host }, so sbxm cannot reach a sandbox over SSH.
 error-remote-ssh-unobservable = The SSH configuration for sandboxes could not be read
 remediation-run-help = See the arguments this command accepts.

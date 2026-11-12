@@ -248,6 +248,75 @@ fn all_sandbox_commands_report_missing_login_before_any_prompt_or_mutation() -> 
 }
 
 #[test]
+fn all_sandbox_commands_explain_resume_holdoff_without_retries_or_error_details() -> Checked {
+    let clock = ScriptedClock::default();
+    let fixture = Fixture::new()?;
+    let project = fixture.register("owner/repo")?;
+    let before = std::fs::read(project.paths.metadata_file()).required()?;
+    for (locale, explanation, next_action) in [
+        (Locale::En, "120 seconds", "Try again"),
+        (Locale::Ja, "120秒間", "もう一度実行してください"),
+    ] {
+        for explicit in [false, true] {
+            for command in commands(explicit)? {
+                let host = RecordingHost {
+                    host: FakeHost::macos().failing(
+                        "sbx ls --json",
+                        "error: list sandboxes: 503 Service Unavailable: docker login service unavailable: within the post-resume hold-off window docker session could not be refreshed due to a network issue",
+                        1,
+                    ),
+                    calls: RefCell::new(Vec::new()),
+                };
+                let screen = RecordedScreen::new();
+                let policy = RenderingPolicy::plain();
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                let code = {
+                    let mut ui = Ui::capture(locale, policy, &mut stdout, &mut stderr);
+                    let mut prompt = PromptUi::new(
+                        locale,
+                        policy.stderr,
+                        Box::new(ScriptedKeys::canceling()),
+                        Box::new(screen.clone()),
+                    );
+                    let context = Context {
+                        location: &fixture.location,
+                        workspace_root: &fixture.workspace_root,
+                        clock: &clock,
+                        locale,
+                        can_prompt: !explicit,
+                    };
+                    execute(&command, &context, &host, &mut ui, &mut prompt)
+                };
+                let stderr = String::from_utf8(stderr).required()?;
+                assert_eq!(code, ExitCode::Failure, "{command:?}: {stderr}");
+                assert!(stderr.contains(explanation), "{command:?}: {stderr}");
+                assert!(stderr.contains(next_action), "{command:?}: {stderr}");
+                assert!(
+                    stderr.contains("https://github.com/docker/sbx-releases/releases/tag/v0.48.0"),
+                    "{command:?}: {stderr}"
+                );
+                for hidden in ["error:", "sbx-login-", "503", "hold-off", "Attempts:"] {
+                    assert!(!stderr.contains(hidden), "{command:?}: {stderr}");
+                }
+                assert!(stdout.is_empty(), "{command:?}: no result or plan");
+                assert!(screen.drawn().is_empty(), "{command:?}: no prompt");
+                assert_eq!(
+                    *host.calls.borrow(),
+                    ["sbx version", "sbx ls --json"],
+                    "{command:?}"
+                );
+                assert_eq!(
+                    std::fs::read(project.paths.metadata_file()).required()?,
+                    before
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn all_sandbox_commands_flush_the_login_phase_before_waiting_in_both_languages() -> Checked {
     use std::cell::Cell;
     use std::io::BufWriter;
