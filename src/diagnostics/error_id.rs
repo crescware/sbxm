@@ -157,6 +157,7 @@ error_ids! {
     UnmanagedWorktreePresent => "unmanaged-worktree-present",
     SbxLoginMissing => "sbx-login-missing",
     SbxLoginUnobservable => "sbx-login-unobservable",
+    SbxLoginResumeHoldoff => "sbx-login-resume-holdoff",
     RemoteSshUnconfigured => "remote-ssh-unconfigured",
     RemoteSshUnobservable => "remote-ssh-unobservable",
     RemoteSshDisabled => "remote-ssh-disabled",

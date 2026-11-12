@@ -22,6 +22,7 @@ pub fn require_signed_in(
 fn unobservable(error: Error) -> Error {
     if error == Error::Canceled
         || error.contains_id(ErrorId::SbxLoginMissing)
+        || error.contains_id(ErrorId::SbxLoginResumeHoldoff)
         || error.contains_id(ErrorId::ExternalOutputUnparseable)
     {
         return error;

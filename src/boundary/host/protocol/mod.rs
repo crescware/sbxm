@@ -27,7 +27,7 @@ pub use inside::{
     InsideRecord, inside_check_arguments, inside_text_check_arguments, parse_inside_check,
     split_inside_check,
 };
-pub use login::{is_login_missing, is_login_unavailable};
+pub use login::{is_login_missing, is_login_resume_holdoff, is_login_unavailable};
 pub use policy::{EXPECTED_NETWORK_POLICY, parse_network_policy};
 pub use sandbox::{SandboxEntry, SandboxState, is_listing_cut_short, parse_sandbox_list};
 pub use secret::{CustomSecret, parse_custom_secrets};
