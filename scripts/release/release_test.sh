@@ -11,9 +11,10 @@
 # - gh、cargo、codesign、file、sw_vers、rustc、uname、miseはfake commandに置き換える。
 #   env -iでsubprocessの環境を作り直し、host側の環境変数を一切継がない。
 # - fake commandは、Rustのtestと同じくtests/fixtures/fake_tool.shへのsymlinkとして
-#   置き、振る舞いは実行bitを持たない`<名前>.sh`へ書く。実行可能fileを実行時に書かない
-#   (docs/development.md)。macOSは新しい実行可能fileの初回execでsyspolicydの検査を
-#   挟み、1 fileあたり約100 ms (実測) を足す。symlink経由で実行済みのfileをexecし、
+#   置き、振る舞いは実行bitを持たない`<名前>.sh`へ書く。host commandの代役となる
+#   実行可能fileは実行時に書かない (docs/development.md)。macOSは新しい実行可能fileの
+#   初回execでsyspolicydの検査を挟み、1 fileあたり約100 ms (実測) を足す。
+#   symlink経由で実行済みのfileをexecし、
 #   新しく書くのは読み込まれるだけの台本に限ることで、この検査を避ける。
 # - 各test caseは`( set -e; test_fn )`という形で個別のsubshellとして、すべて同時に
 #   backgroundで実行する。1つが落ちても他のtestは続ける。caseが触る状態 (source/tap
@@ -70,7 +71,11 @@ stop_pending_cases() {
   for entry in $PENDING_CASES; do
     kill_tree "${entry#*=}"
   done
-  wait 2>/dev/null || true
+  # groupへSIGTERMが届いたEXIT trap内で引数なしのwaitを呼ぶと、Bash 5.3では
+  # 全jobが終わっていても戻らないことがある。起動したcaseのpidを個別に回収する。
+  for entry in $PENDING_CASES; do
+    wait "${entry#*=}" 2>/dev/null || true
+  done
 }
 
 trap 'stop_pending_cases; rm -rf "$RUN_TMP"' EXIT
@@ -241,14 +246,15 @@ case "${1:-}" in
       /^\[/ { in_package = ($0 == "[package]") }
       in_package && /^version[[:space:]]*=/ { print $2; exit }
     ' Cargo.toml)"
-    # 実binaryの代わりに、fake_tool.shへのsymlinkと、versionを埋めた台本を置く。
-    # release.shのcpはsymlinkを辿って中身を複製するため、archiveには通常fileが入る。
-    ln -sf "$FAKE_TOOL" target/release/sbxm
-    cat >target/release/sbxm.sh <<SBXM
+    # archiveへ入るbuild結果は、sidecarや元のbuild directoryへ依存しない通常fileに
+    # する。caseごとのprocess内で書き終え、cargoの終了後にだけrelease.shが起動する。
+    cat >target/release/sbxm <<SBXM
+#!/bin/sh
 if [ "\$1" = "--version" ]; then
   printf 'sbxm %s\n' "$version"
 fi
 SBXM
+    chmod +x target/release/sbxm
     ;;
   -V)
     printf 'cargo 1.89.0 (fake)\n'
@@ -481,7 +487,6 @@ run_release() {
       GIT_CONFIG_GLOBAL="$GIT_CONFIG_GLOBAL" \
       GIT_CONFIG_NOSYSTEM=1 \
       REAL_GIT="$REAL_GIT" \
-      FAKE_TOOL="$FAKE_TOOL" \
       FAKE_GH_STATE="$FAKE_GH_STATE" \
       FAKE_CALL_LOG="$FAKE_CALL_LOG" \
       FAKE_SOURCE_REPO_NAME="$FAKE_SOURCE_REPO_NAME" \
@@ -523,6 +528,20 @@ tap_origin_main_commit() {
   git -C "$TAP_ORIGIN_DIR" rev-parse main
 }
 
+# build環境を消し、空の環境と別のworking directoryで、archive内のfileだけからversionを
+# 読めることを確認する。展開したscriptは直接execせず、shへ渡す (docs/development.md)。
+assert_archive_is_self_contained() {
+  local label="$1" extracted="${SCRATCH}/extracted"
+  mkdir -p "$extracted"
+  tar -xzf "${SOURCE_DIR}/dist/${ARCHIVE_NAME}" -C "$extracted"
+  [ -f "${extracted}/sbxm" ] && [ ! -L "${extracted}/sbxm" ] && [ -x "${extracted}/sbxm" ] \
+    || { printf '%s: expected an executable regular file in the archive\n' "$label" >&2; exit 1; }
+  rm -rf "${SOURCE_DIR}/target"
+  local actual
+  actual="$(cd "$extracted" && env -i PATH=/usr/bin:/bin sh ./sbxm --version)"
+  assert_eq "sbxm ${TAG#v}" "$actual" "${label}: the archived binary works without the build environment"
+}
+
 # ---------------------------------------------------------------------------
 # 正常系
 # ---------------------------------------------------------------------------
@@ -534,6 +553,7 @@ test_fresh_clone_creates_pr() {
 
   run_release --stable "$TAG"
   assert_status 0 "fresh clone: release.sh"
+  assert_archive_is_self_contained "fresh clone"
 
   local branch="chore/bump-sbxm-to-${TAG}"
   tap_branch_exists_on_origin "$branch" \
@@ -620,6 +640,7 @@ test_existing_cache_fetches_and_uses_updated_main() {
 
   run_release --stable "$TAG"
   assert_status 0 "existing cache: release.sh"
+  assert_archive_is_self_contained "existing cache"
 
   local log
   log="$(cat "$FAKE_CALL_LOG")"
@@ -649,6 +670,7 @@ test_dry_run_official_repo_reports_plan_without_touching_tap() {
 
   run_release --dry-run --stable "$TAG"
   assert_status 0 "dry run: release.sh"
+  assert_archive_is_self_contained "dry run"
 
   local log
   log="$(cat "$FAKE_CALL_LOG")"
@@ -690,6 +712,7 @@ test_dry_run_fork_skips_tap_with_reason() {
 
   run_release --dry-run --stable "$TAG"
   assert_status 0 "fork dry run: release.sh"
+  assert_archive_is_self_contained "fork dry run"
 
   assert_contains "$RUN_STDERR" "tap update: skipped" "fork dry run: tap update is reported as skipped"
   assert_contains "$RUN_STDERR" "someone-else/sbxm" "fork dry run: skip reason names the actual source repository"

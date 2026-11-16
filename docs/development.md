@@ -122,6 +122,8 @@ coverageは繰り返し測っても同じ値になることを前提とする。
 
 testは実行可能fileを実行時に書かない。書いた直後のfileは、別threadのtestがforkした子が書き込み端を持つ間、`ETXTBSY`でexecできない。`PATH`から起動させるhost toolの代役は、`install_fake_tool`（`tests/fake_tool/mod.rs`、`src/testing/install_fake_tool.rs`）で置く。道具の名前で`tests/fixtures/fake_tool.sh`へのsymlinkを置き、振る舞いは実行bitを持たない`<名前>.sh`へ書く。`scripts/release/release_test.sh`がrelease.shへ見せるfake commandも、同じfake_tool.shへのsymlinkで置く。testが自分で走らせるscriptは`sh <path>`で起動する。
 
+release testがbuild結果として作る`sbxm`だけは、archiveへ含めるため、versionを埋めた自己完結する実行可能scriptとして書く。caseごとのprocess内で書き終え、fake cargoの終了を待ってからrelease.shが起動するため、ほかのcaseへ書き込み端は渡らない。archiveから展開したscriptは、build directoryを消したうえで`sh <path>`へ渡し、sidecarや元の環境に依存せず動くことを確認する。
+
 ## testの種類
 
 testは、要素を含むかどうかと、何を確かめるかで3種類に分ける。
