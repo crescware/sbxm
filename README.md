@@ -28,6 +28,8 @@ Run `sbxm status --global` to check these requirements and the Docker Sandboxes 
 
 Before project selection, the Docker Sandboxes sign-in check allows 10 seconds per attempt and makes at most three attempts when the Docker login service is temporarily unavailable, the command times out, or the listing JSON is incomplete. Retries wait one second, then two seconds, and show their reason and attempt number. These failures share the same three-attempt limit; three timeouts take about 33 seconds including the waits. An explicit sign-in requirement and other failures stop immediately. Ctrl-C also cancels the retry wait.
 
+Immediately after the host wakes from sleep, Docker Sandboxes may pause authentication refresh, preventing commands from running. If you see this notice, retry the command once about two minutes have passed since the host woke up. For related information, see the [Docker Sandboxes v0.48.0 release notes](https://github.com/docker/sbx-releases/releases/tag/v0.48.0).
+
 ## Installation
 
 ```sh

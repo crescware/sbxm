@@ -414,6 +414,28 @@ fn external_output_is_indented_and_closed_with_a_newline() -> Checked {
 }
 
 #[test]
+fn a_notice_shows_only_its_explanation_even_when_internal_details_are_retained() -> Checked {
+    let description = msg!("notice-sbx-login-resume-holdoff");
+    let expected = Catalog::new(Locale::En).format(&description).required()?;
+    let diagnostic = Diagnostic::notice(ErrorId::SbxLoginResumeHoldoff, description)
+        .fact(Fact::cause("internal cause"))
+        .remediation(msg!("remediation-sbx-login-unobservable"))
+        .external(ExternalFailure {
+            program: "sbx".to_string(),
+            safe_args: vec!["ls".to_string(), "--json".to_string()],
+            working_dir: None,
+            exit_status: Some("1".to_string()),
+            stderr: b"503 Service Unavailable: internal details\xff".to_vec(),
+            stderr_lossy: true,
+        });
+    let document = Document::new().diagnostic(diagnostic);
+    for drawn in [plain(&document)?, colored(&document)?] {
+        assert_eq!(drawn, format!("{expected}\n"));
+    }
+    Ok(())
+}
+
+#[test]
 fn external_output_is_bracketed_by_a_reset_when_the_stream_is_colored() -> Checked {
     // 外部が残したstyleを、sbxm自身の出力へ持ち越さない。
     let drawn = colored(&Document::new().diagnostic(failed(b"\x1b[31mred\n", &[])))?;

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crate::boundary::host::{CommandOutcome, CommandSpec, TimeoutClass};
 use crate::design::Fact;
-use crate::diagnostics::{Error, ErrorId, Result};
+use crate::diagnostics::{DiagnosticKind, Error, ErrorId, Result};
 use crate::i18n::{Catalog, Locale};
 use crate::msg;
 use crate::testing::command::{outcome, outcome_with_stderr};
@@ -16,7 +16,9 @@ use crate::time::{Clock, Moment};
 
 use super::list_retrying;
 
-const UNAVAILABLE: &str = "503 Service Unavailable: docker login service unavailable: within the post-resume hold-off window docker session could not be refreshed due to a network issue";
+const UNAVAILABLE: &str =
+    "503 Service Unavailable: docker login service unavailable: temporary network failure";
+const RESUME_HOLDOFF: &str = "503 Service Unavailable: docker login service unavailable: within the post-resume hold-off window docker session could not be refreshed due to a network issue";
 
 #[derive(Clone, Copy)]
 enum Reply {
@@ -85,6 +87,60 @@ fn probe(
     progress: &mut RecordedOutput,
 ) -> Result<Vec<crate::boundary::host::protocol::SandboxEntry>> {
     list_retrying(host, TimeoutClass::Probe, host.clock, progress, &|| false)
+}
+
+#[test]
+fn resume_holdoff_stops_after_one_call_without_waiting_for_a_later_success() -> Checked {
+    let clock = ScriptedClock::default();
+    let host = Host::new(
+        &clock,
+        &[Reply::Failed(RESUME_HOLDOFF), Reply::Listing("[]")],
+    );
+    let mut progress = RecordedOutput::new();
+    let error = probe(&host, &mut progress).refused_because("the host just woke up")?;
+    let diagnostic = error.diagnostics().first().required()?;
+    assert_eq!(diagnostic.id, ErrorId::SbxLoginResumeHoldoff);
+    assert_eq!(diagnostic.kind, DiagnosticKind::Notice);
+    assert_eq!(
+        diagnostic.external.as_ref().required()?.stderr,
+        RESUME_HOLDOFF.as_bytes()
+    );
+    assert_eq!(host.calls.borrow().len(), 1);
+    assert_eq!(host.replies.borrow().len(), 1);
+    assert!(clock.slept.borrow().is_empty());
+    assert!(progress.steps.is_empty());
+    Ok(())
+}
+
+#[test]
+fn resume_holdoff_also_stops_when_it_follows_another_transient_failure() -> Checked {
+    for first in [
+        Reply::Timeout,
+        Reply::Failed(UNAVAILABLE),
+        Reply::Listing("{"),
+    ] {
+        let clock = ScriptedClock::default();
+        let host = Host::new(
+            &clock,
+            &[first, Reply::Failed(RESUME_HOLDOFF), Reply::Listing("[]")],
+        );
+        let mut progress = RecordedOutput::new();
+        let error = probe(&host, &mut progress).refused_because("recovery requires time")?;
+        assert_eq!(error.first_id(), Some(ErrorId::SbxLoginResumeHoldoff));
+        assert_eq!(host.calls.borrow().len(), 2);
+        assert_eq!(host.replies.borrow().len(), 1);
+        assert_eq!(progress.steps.len(), 1);
+        let expected = if matches!(first, Reply::Timeout) {
+            11
+        } else {
+            1
+        };
+        assert_eq!(
+            clock.now(),
+            Moment::since_origin(Duration::from_secs(expected))
+        );
+    }
+    Ok(())
 }
 
 #[test]

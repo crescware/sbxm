@@ -350,7 +350,7 @@ commandは説明行へ混ぜず、専用のCommand blockにする。
 
 ### Diagnostic
 
-一つのdiagnosticは次の内部構造を持つ。
+通常の失敗は`DiagnosticKind::Error`とし、一つのdiagnosticは次の内部構造を持つ。
 
 1. error ID
 2. localized description
@@ -362,6 +362,8 @@ commandは説明行へ混ぜず、専用のCommand blockにする。
 error headingとdescriptionの間は詰める。事実の行もdescriptionへ続けて詰める。remediationとexternal outputは別の小blockとして一行空ける。複数diagnosticの間にも空行一行を置く。
 
 外部stderrはsbxm自身のdiagnosticと区別できるよう、四空白indentまたは罫線でまとめる。外部stderr全体を着色しない。外部outputの前後ではstyleをresetし、外部byte列がrendererのstyle stateへ侵入しないようにする。
+
+ホスト復帰直後の認証更新の抑止期間のように、対処が分かっている一時状態は`DiagnosticKind::Notice`で扱う。利用者にはlocalized descriptionだけを表示し、errorの印、ID、事実の行、remediation、外部outputを表示しない。内部では原因を保持できるが、画面へ詳細を流さず、短い説明と次の行動で案内する。要求された操作を完了していなければexit codeは1のままとする。
 
 #### 事実の行
 
