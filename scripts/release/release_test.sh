@@ -10,8 +10,17 @@
 #   保たれるようにする。
 # - gh、cargo、codesign、file、sw_vers、rustc、uname、miseはfake commandに置き換える。
 #   env -iでsubprocessの環境を作り直し、host側の環境変数を一切継がない。
-# - 各test caseは`( set -e; test_fn )`という形で個別のsubshellとして実行する。1つが
-#   落ちても他のtestは続ける。
+# - fake commandは、Rustのtestと同じくtests/fixtures/fake_tool.shへのsymlinkとして
+#   置き、振る舞いは実行bitを持たない`<名前>.sh`へ書く。host commandの代役となる
+#   実行可能fileは実行時に書かない (docs/development.md)。macOSは新しい実行可能fileの
+#   初回execでsyspolicydの検査を挟み、1 fileあたり約100 ms (実測) を足す。
+#   symlink経由で実行済みのfileをexecし、
+#   新しく書くのは読み込まれるだけの台本に限ることで、この検査を避ける。
+# - 各test caseは`( set -e; test_fn )`という形で個別のsubshellとして、すべて同時に
+#   backgroundで実行する。1つが落ちても他のtestは続ける。caseが触る状態 (source/tap
+#   repository、HOME、TMPDIR、XDG_CACHE_HOME、gitconfig、fake ghの状態、call log) は
+#   すべてsetup_scratchがcaseごとに作るSCRATCHの下にあり、caseをまたいで共有するのは
+#   読むだけのfake-binだけである。出力はcaseごとのfileへ溜め、起動した順に並べて出す。
 # - 全体と各caseの経過時間をms単位で常に表示する。release.shと同じくEPOCHREALTIMEを読む。
 #
 # formula candidateの値照合・非対象行のbyte比較といった、正しいcodeからは外部入力だけ
@@ -27,12 +36,49 @@ RELEASE_SCRIPT="${REPO_ROOT}/scripts/release/release.sh"
 ARCHIVE_NAME="sbxm-aarch64-apple-darwin.tar.gz"
 
 REAL_GIT="$(command -v git)"
+# macOSの/usr/bin/gitは、xcode-selectが指すgitへ転送するstubであり、1回の起動に約5 ms
+# (実測: stub経由7.58 ms、直接2.32 ms) を足す。1 caseでgitを30〜50回起動するため、転送先を
+# 一度だけ解決して直接起動する。xcrun --findはそのstubが転送する先と同じpathを返す。
+if [ "$REAL_GIT" = /usr/bin/git ] && [ "$(uname -s)" = Darwin ] && command -v xcrun >/dev/null 2>&1; then
+  REAL_GIT="$(xcrun --find git 2>/dev/null || printf '%s' /usr/bin/git)"
+fi
 export REAL_GIT
+# このscript自身のgitも同じ実体を使う。関数はrelease.shの子processへ継がれず、そちらは
+# PATHのfake gitを通る。
+git() { "$REAL_GIT" "$@"; }
+
+FAKE_TOOL="${REPO_ROOT}/tests/fixtures/fake_tool.sh"
 
 RUN_TMP="$(mktemp -d "${TMPDIR:-/tmp}/sbxm-release-test.XXXXXX")"
-trap 'rm -rf "$RUN_TMP"' EXIT
-
 FAKE_BIN_DIR="${RUN_TMP}/fake-bin"
+RESULT_DIR="${RUN_TMP}/results"
+
+# 動いているcaseの一覧。start_caseが`<name>=<pid>`を足し、collect_casesが回収した
+# ものを外す。backgroundで起動したsubshellはSIGINTを無視するため、中断されたときは
+# EXIT trapがここに残るcaseとその子 (release.sh、git) を止めてからRUN_TMPを消す。
+PENDING_CASES=""
+
+kill_tree() {
+  local pid="$1" child
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    kill_tree "$child"
+  done
+  kill -TERM "$pid" 2>/dev/null || true
+}
+
+stop_pending_cases() {
+  local entry
+  for entry in $PENDING_CASES; do
+    kill_tree "${entry#*=}"
+  done
+  # groupへSIGTERMが届いたEXIT trap内で引数なしのwaitを呼ぶと、Bash 5.3では
+  # 全jobが終わっていても戻らないことがある。起動したcaseのpidを個別に回収する。
+  for entry in $PENDING_CASES; do
+    wait "${entry#*=}" 2>/dev/null || true
+  done
+}
+
+trap 'stop_pending_cases; rm -rf "$RUN_TMP"' EXIT
 
 TESTS_RUN=0
 TESTS_FAILED=0
@@ -54,11 +100,16 @@ read_now_ms() {
 # fake command
 # ---------------------------------------------------------------------------
 
+# 道具の名前でfake_tool.shへのsymlinkを置き、振る舞いは`<名前>.sh`へ書く。fake_tool.shは
+# `$0.sh`を読み込むだけであり、`$0`と引数はそのまま台本へ渡る。台本は/bin/shで動く。
 write_fake_bin() {
   mkdir -p "$FAKE_BIN_DIR"
+  local name
+  for name in git gh cargo codesign file sw_vers rustc uname mise; do
+    ln -s "$FAKE_TOOL" "${FAKE_BIN_DIR}/${name}"
+  done
 
-  cat >"${FAKE_BIN_DIR}/git" <<'SCRIPT'
-#!/usr/bin/env bash
+  cat >"${FAKE_BIN_DIR}/git.sh" <<'SCRIPT'
 printf 'git %s\n' "$*" >>"$FAKE_CALL_LOG"
 
 if [ "${FAKE_TAP_FETCH_FAIL:-0}" = "1" ] && [ "${1:-}" = "-C" ] \
@@ -80,8 +131,7 @@ fi
 exec "$REAL_GIT" "$@"
 SCRIPT
 
-  cat >"${FAKE_BIN_DIR}/gh" <<'SCRIPT'
-#!/usr/bin/env bash
+  cat >"${FAKE_BIN_DIR}/gh.sh" <<'SCRIPT'
 printf 'gh %s\n' "$*" >>"$FAKE_CALL_LOG"
 
 subcommand="${1:-}"
@@ -187,8 +237,7 @@ case "$subcommand" in
 esac
 SCRIPT
 
-  cat >"${FAKE_BIN_DIR}/cargo" <<'SCRIPT'
-#!/usr/bin/env bash
+  cat >"${FAKE_BIN_DIR}/cargo.sh" <<'SCRIPT'
 printf 'cargo %s\n' "$*" >>"$FAKE_CALL_LOG"
 case "${1:-}" in
   build)
@@ -197,8 +246,10 @@ case "${1:-}" in
       /^\[/ { in_package = ($0 == "[package]") }
       in_package && /^version[[:space:]]*=/ { print $2; exit }
     ' Cargo.toml)"
+    # archiveへ入るbuild結果は、sidecarや元のbuild directoryへ依存しない通常fileに
+    # する。caseごとのprocess内で書き終え、cargoの終了後にだけrelease.shが起動する。
     cat >target/release/sbxm <<SBXM
-#!/usr/bin/env bash
+#!/bin/sh
 if [ "\$1" = "--version" ]; then
   printf 'sbxm %s\n' "$version"
 fi
@@ -211,31 +262,26 @@ SBXM
 esac
 SCRIPT
 
-  cat >"${FAKE_BIN_DIR}/codesign" <<'SCRIPT'
-#!/usr/bin/env bash
+  cat >"${FAKE_BIN_DIR}/codesign.sh" <<'SCRIPT'
 printf 'codesign %s\n' "$*" >>"$FAKE_CALL_LOG"
 [ "${1:-}" = "-dv" ] && printf 'Signature=adhoc\n'
 exit 0
 SCRIPT
 
-  cat >"${FAKE_BIN_DIR}/file" <<'SCRIPT'
-#!/usr/bin/env bash
+  cat >"${FAKE_BIN_DIR}/file.sh" <<'SCRIPT'
 printf 'file %s\n' "$*" >>"$FAKE_CALL_LOG"
 printf '%s: Mach-O 64-bit executable arm64\n' "$1"
 SCRIPT
 
-  cat >"${FAKE_BIN_DIR}/sw_vers" <<'SCRIPT'
-#!/usr/bin/env bash
+  cat >"${FAKE_BIN_DIR}/sw_vers.sh" <<'SCRIPT'
 printf 'ProductName:\t\tmacOS\nProductVersion:\t\t14.0\nBuildVersion:\t\tFAKE0000\n'
 SCRIPT
 
-  cat >"${FAKE_BIN_DIR}/rustc" <<'SCRIPT'
-#!/usr/bin/env bash
+  cat >"${FAKE_BIN_DIR}/rustc.sh" <<'SCRIPT'
 [ "${1:-}" = "-vV" ] && printf 'rustc 1.89.0 (fake)\nhost: aarch64-apple-darwin\n'
 SCRIPT
 
-  cat >"${FAKE_BIN_DIR}/uname" <<'SCRIPT'
-#!/usr/bin/env bash
+  cat >"${FAKE_BIN_DIR}/uname.sh" <<'SCRIPT'
 if [ "${1:-}" = "-m" ]; then
   printf 'arm64\n'
 else
@@ -243,13 +289,10 @@ else
 fi
 SCRIPT
 
-  cat >"${FAKE_BIN_DIR}/mise" <<'SCRIPT'
-#!/usr/bin/env bash
+  cat >"${FAKE_BIN_DIR}/mise.sh" <<'SCRIPT'
 printf 'mise %s\n' "$*" >>"$FAKE_CALL_LOG"
 exit 0
 SCRIPT
-
-  chmod +x "${FAKE_BIN_DIR}"/*
 }
 
 # ---------------------------------------------------------------------------
@@ -485,6 +528,20 @@ tap_origin_main_commit() {
   git -C "$TAP_ORIGIN_DIR" rev-parse main
 }
 
+# build環境を消し、空の環境と別のworking directoryで、archive内のfileだけからversionを
+# 読めることを確認する。展開したscriptは直接execせず、shへ渡す (docs/development.md)。
+assert_archive_is_self_contained() {
+  local label="$1" extracted="${SCRATCH}/extracted"
+  mkdir -p "$extracted"
+  tar -xzf "${SOURCE_DIR}/dist/${ARCHIVE_NAME}" -C "$extracted"
+  [ -f "${extracted}/sbxm" ] && [ ! -L "${extracted}/sbxm" ] && [ -x "${extracted}/sbxm" ] \
+    || { printf '%s: expected an executable regular file in the archive\n' "$label" >&2; exit 1; }
+  rm -rf "${SOURCE_DIR}/target"
+  local actual
+  actual="$(cd "$extracted" && env -i PATH=/usr/bin:/bin sh ./sbxm --version)"
+  assert_eq "sbxm ${TAG#v}" "$actual" "${label}: the archived binary works without the build environment"
+}
+
 # ---------------------------------------------------------------------------
 # 正常系
 # ---------------------------------------------------------------------------
@@ -496,6 +553,7 @@ test_fresh_clone_creates_pr() {
 
   run_release --stable "$TAG"
   assert_status 0 "fresh clone: release.sh"
+  assert_archive_is_self_contained "fresh clone"
 
   local branch="chore/bump-sbxm-to-${TAG}"
   tap_branch_exists_on_origin "$branch" \
@@ -582,6 +640,7 @@ test_existing_cache_fetches_and_uses_updated_main() {
 
   run_release --stable "$TAG"
   assert_status 0 "existing cache: release.sh"
+  assert_archive_is_self_contained "existing cache"
 
   local log
   log="$(cat "$FAKE_CALL_LOG")"
@@ -611,6 +670,7 @@ test_dry_run_official_repo_reports_plan_without_touching_tap() {
 
   run_release --dry-run --stable "$TAG"
   assert_status 0 "dry run: release.sh"
+  assert_archive_is_self_contained "dry run"
 
   local log
   log="$(cat "$FAKE_CALL_LOG")"
@@ -652,6 +712,7 @@ test_dry_run_fork_skips_tap_with_reason() {
 
   run_release --dry-run --stable "$TAG"
   assert_status 0 "fork dry run: release.sh"
+  assert_archive_is_self_contained "fork dry run"
 
   assert_contains "$RUN_STDERR" "tap update: skipped" "fork dry run: tap update is reported as skipped"
   assert_contains "$RUN_STDERR" "someone-else/sbxm" "fork dry run: skip reason names the actual source repository"
@@ -949,24 +1010,44 @@ test_tap_pr_create_failure_leaves_branch_and_shows_retry_command() {
 # runner
 # ---------------------------------------------------------------------------
 
-run_case() {
+# test caseをbackgroundのsubshellとして起動する。各test関数はmainからforkされる新しい
+# subshellで動く。FAKE_GH_*/FAKE_TAP_*のtoggleはtest関数の中でだけ設定されるため、
+# 他のtestへ漏れない。stdoutとstderrはcaseごとのfileへ溜め、collect_casesが出す。
+start_case() {
   local name="$1"
   TESTS_RUN=$((TESTS_RUN + 1))
-  printf -- '--- %s\n' "$name"
-  local start_ms status=0
-  read_now_ms
-  start_ms="$NOW_MS"
-  # 各test関数は毎回mainからforkされる新しいsubshellで動く。FAKE_GH_*/FAKE_TAP_*の
-  # toggleはtest関数の中でだけ設定されるため、他のtestへ漏れない。
-  ( set -e; "$name" ) || status=$?
-  read_now_ms
-  if [ "$status" -eq 0 ]; then
-    printf 'ok (%d ms)\n' "$((NOW_MS - start_ms))"
-  else
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-    FAILED_NAMES="${FAILED_NAMES}  - ${name}"$'\n'
-    printf 'FAIL (%d ms)\n' "$((NOW_MS - start_ms))"
-  fi
+  (
+    set -e
+    read_now_ms
+    local start_ms="$NOW_MS"
+    # 収集する順番に依らず、失敗したcaseも終了した時点までを測る。
+    trap 'read_now_ms; printf "%d\n" "$((NOW_MS - start_ms))" >"${RESULT_DIR}/${name}.ms"' EXIT
+    "$name"
+  ) >"${RESULT_DIR}/${name}.log" 2>&1 &
+  PENDING_CASES="${PENDING_CASES} ${name}=$!"
+}
+
+# 起動した順に終了を待ち、溜めた出力と結果を出す。終わったcaseはPENDING_CASESから外し、
+# EXIT trapが使い回されたpidへsignalを送らないようにする。
+collect_cases() {
+  local entries="$PENDING_CASES" entry name pid status elapsed_ms
+  for entry in $entries; do
+    name="${entry%%=*}"
+    pid="${entry#*=}"
+    status=0
+    wait "$pid" || status=$?
+    PENDING_CASES="${PENDING_CASES/ ${entry}/}"
+    read -r elapsed_ms <"${RESULT_DIR}/${name}.ms"
+    printf -- '--- %s\n' "$name"
+    cat "${RESULT_DIR}/${name}.log"
+    if [ "$status" -eq 0 ]; then
+      printf 'ok (%d ms)\n' "$elapsed_ms"
+    else
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+      FAILED_NAMES="${FAILED_NAMES}  - ${name}"$'\n'
+      printf 'FAIL (%d ms)\n' "$elapsed_ms"
+    fi
+  done
 }
 
 main() {
@@ -975,32 +1056,35 @@ main() {
 
   bash -n "$RELEASE_SCRIPT"
   write_fake_bin
+  mkdir -p "$RESULT_DIR"
 
-  run_case test_fresh_clone_creates_pr
-  run_case test_existing_cache_fetches_and_uses_updated_main
+  start_case test_fresh_clone_creates_pr
+  start_case test_existing_cache_fetches_and_uses_updated_main
 
-  run_case test_dry_run_official_repo_reports_plan_without_touching_tap
-  run_case test_dry_run_fork_skips_tap_with_reason
+  start_case test_dry_run_official_repo_reports_plan_without_touching_tap
+  start_case test_dry_run_fork_skips_tap_with_reason
 
-  run_case test_release_create_failure_skips_tap_entirely
-  run_case test_asset_mismatch_stops_before_tap_checkout
-  run_case test_asset_name_mismatch_stops_before_tap_checkout
-  run_case test_asset_wrong_state_stops_before_tap_checkout
+  start_case test_release_create_failure_skips_tap_entirely
+  start_case test_asset_mismatch_stops_before_tap_checkout
+  start_case test_asset_name_mismatch_stops_before_tap_checkout
+  start_case test_asset_wrong_state_stops_before_tap_checkout
 
-  run_case test_formula_missing_url_line_rejected
-  run_case test_formula_duplicate_sha256_line_rejected
-  run_case test_formula_malformed_existing_sha256_rejected
-  run_case test_formula_wrong_asset_basename_rejected
+  start_case test_formula_missing_url_line_rejected
+  start_case test_formula_duplicate_sha256_line_rejected
+  start_case test_formula_malformed_existing_sha256_rejected
+  start_case test_formula_wrong_asset_basename_rejected
 
-  run_case test_cache_non_git_directory_untouched
-  run_case test_cache_wrong_origin_untouched
-  run_case test_cache_dirty_untouched
-  run_case test_local_branch_collision_untouched
-  run_case test_remote_branch_collision_untouched
-  run_case test_tap_fetch_failure_recovery_message
-  run_case test_tap_commit_failure_recovery_message
-  run_case test_tap_push_failure_recovery_message
-  run_case test_tap_pr_create_failure_leaves_branch_and_shows_retry_command
+  start_case test_cache_non_git_directory_untouched
+  start_case test_cache_wrong_origin_untouched
+  start_case test_cache_dirty_untouched
+  start_case test_local_branch_collision_untouched
+  start_case test_remote_branch_collision_untouched
+  start_case test_tap_fetch_failure_recovery_message
+  start_case test_tap_commit_failure_recovery_message
+  start_case test_tap_push_failure_recovery_message
+  start_case test_tap_pr_create_failure_leaves_branch_and_shows_retry_command
+
+  collect_cases
 
   read_now_ms
   printf '\n%d/%d tests passed in %d ms\n' "$((TESTS_RUN - TESTS_FAILED))" "$TESTS_RUN" "$((NOW_MS - SCRIPT_START_MS))"
