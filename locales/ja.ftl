@@ -389,6 +389,9 @@ error-daemon-unobservable = Docker Sandboxes daemonの状態を読み取れま�
 error-daemon-not-running = Docker Sandboxes daemonが起動していません
 error-sbx-login-missing = このhostはDocker Sandboxesへloginしていません。
 error-sbx-login-unobservable = Sandbox一覧の取得に失敗したため、Docker Sandboxesへのloginを確認できません
+notice-sbx-login-resume-holdoff =
+    Docker Sandboxesはホスト復帰後120秒間、認証情報の更新を抑止します。復帰から2分ほど経ってから、もう一度実行してください。
+    関連する修正（v0.48.0リリースノート）: https://github.com/docker/sbx-releases/releases/tag/v0.48.0
 error-remote-ssh-unconfigured = sshに { $host } 向けのproxy設定がないため、SandboxへSSHで接続できません。
 error-remote-ssh-unobservable = Sandbox向けのSSH設定を読み取れません
 remediation-run-help = このcommandが受け付ける引数を確認します。

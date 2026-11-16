@@ -1,4 +1,4 @@
-use crate::diagnostics::{Diagnostic, ExternalFailure, Msg};
+use crate::diagnostics::{Diagnostic, DiagnosticKind, ExternalFailure, Msg};
 use crate::i18n::Catalog;
 use crate::msg;
 
@@ -317,6 +317,10 @@ impl Painter {
         diagnostic: &Diagnostic,
         out: &mut Vec<u8>,
     ) -> Trailing {
+        if diagnostic.kind == DiagnosticKind::Notice {
+            line(out, &Self::format(catalog, &diagnostic.description));
+            return Trailing::Normal;
+        }
         let marker = self.role(self.glyphs().error, Role::ErrorMarker);
         // error IDは翻訳しない安定した英語であり、prefixもrendererが付ける。
         let label = self.role("error:", Role::ErrorMarker);

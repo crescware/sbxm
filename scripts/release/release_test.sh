@@ -20,6 +20,7 @@
 #   repository、HOME、TMPDIR、XDG_CACHE_HOME、gitconfig、fake ghの状態、call log) は
 #   すべてsetup_scratchがcaseごとに作るSCRATCHの下にあり、caseをまたいで共有するのは
 #   読むだけのfake-binだけである。出力はcaseごとのfileへ溜め、起動した順に並べて出す。
+# - 全体と各caseの経過時間をms単位で常に表示する。release.shと同じくEPOCHREALTIMEを読む。
 #
 # formula candidateの値照合・非対象行のbyte比較といった、正しいcodeからは外部入力だけ
 # では再現できない防御 (release.sh内のverify_tap_formula_candidateのcandidate値照合、
@@ -77,6 +78,18 @@ trap 'stop_pending_cases; rm -rf "$RUN_TMP"' EXIT
 TESTS_RUN=0
 TESTS_FAILED=0
 FAILED_NAMES=""
+
+# 実行時間の計測。全体と各caseの経過時間をms単位で常に表示する。release.shと同じく
+# EPOCHREALTIMEだけを読み、外部commandもsubshellも使わない。
+NOW_MS=""
+SCRIPT_START_MS=""
+
+read_now_ms() {
+  # 小数点はlocaleによって','になる。
+  local t="${EPOCHREALTIME/,/.}"
+  NOW_MS="${t%.*}${t#*.}"
+  NOW_MS="${NOW_MS%???}"
+}
 
 # ---------------------------------------------------------------------------
 # fake command
@@ -315,6 +328,37 @@ assert_status() {
   assert_eq "$expected" "$RUN_STATUS" "$label (exit status)"
 }
 
+# release.shが全体とsectionごとの経過時間を表示したことを確かめる。値は実行環境で変わる
+# ため、行の形だけを見る。
+assert_elapsed_time_reported() {
+  local label="$1"
+  shift
+  assert_contains "$RUN_STDERR" "elapsed time:" "${label}: elapsed time summary is shown"
+  local section
+  for section in "$@"; do
+    assert_contains "$RUN_STDERR" "==> finished ${section} in " \
+      "${label}: section '${section}' reports its elapsed time when it finishes"
+    grep -Eq "^  ${section} +[0-9]+ ms$" <<<"$RUN_STDERR" \
+      || { printf 'assertion failed: %s: no elapsed time line for section %s\n  actual:\n%s\n' "$label" "$section" "$RUN_STDERR" >&2; exit 1; }
+  done
+  grep -Eq '^  total +[0-9]+ ms$' <<<"$RUN_STDERR" \
+    || { printf 'assertion failed: %s: no total elapsed time line\n  actual:\n%s\n' "$label" "$RUN_STDERR" >&2; exit 1; }
+}
+
+assert_elapsed_time_section_absent() {
+  local label="$1" section="$2"
+  if grep -Eq "^  ${section} +[0-9]+ ms" <<<"$RUN_STDERR"; then
+    printf 'assertion failed: %s: unexpected elapsed time line for section %s\n  actual:\n%s\n' "$label" "$section" "$RUN_STDERR" >&2
+    exit 1
+  fi
+}
+
+assert_elapsed_time_section_incomplete() {
+  local label="$1" section="$2"
+  grep -Eq "^  ${section} +[0-9]+ ms \(incomplete\)$" <<<"$RUN_STDERR" \
+    || { printf 'assertion failed: %s: section %s is not reported as incomplete\n  actual:\n%s\n' "$label" "$section" "$RUN_STDERR" >&2; exit 1; }
+}
+
 # ---------------------------------------------------------------------------
 # scratch environment
 # ---------------------------------------------------------------------------
@@ -427,6 +471,8 @@ run_release() {
   RUN_STATUS=0
   (
     cd "$SOURCE_DIR"
+    # release.shはこのtestを動かしているbashで実行する。env -iで作るPATHにはHomebrewの
+    # bashが入らないため、shebangの/usr/bin/env bashに任せると/bin/bashが選ばれる。
     env -i \
       PATH="${FAKE_BIN_DIR}:/usr/bin:/bin:/usr/local/bin" \
       HOME="$SCRATCH_HOME" \
@@ -450,7 +496,7 @@ run_release() {
       FAKE_TAP_FETCH_FAIL="${FAKE_TAP_FETCH_FAIL:-0}" \
       FAKE_TAP_COMMIT_FAIL="${FAKE_TAP_COMMIT_FAIL:-0}" \
       FAKE_TAP_PUSH_FAIL="${FAKE_TAP_PUSH_FAIL:-0}" \
-      "$RELEASE_SCRIPT" "$@" \
+      "$BASH" "$RELEASE_SCRIPT" "$@" \
       >"${SCRATCH}/stdout.log" 2>"${SCRATCH}/stderr.log"
   ) || RUN_STATUS=$?
   RUN_STDERR="$(cat "${SCRATCH}/stderr.log")"
@@ -541,6 +587,11 @@ test_fresh_clone_creates_pr() {
   local mise_calls
   mise_calls="$(grep -c '^mise run check' "$FAKE_CALL_LOG" || true)"
   assert_eq "1" "$mise_calls" "fresh clone: mise run check called exactly once"
+
+  # 全sectionと全体の経過時間が表示される。
+  assert_elapsed_time_reported "fresh clone" \
+    "preflight checks" "mise run check" "cargo build" "sign and verify binary" \
+    "package and provenance" "tag and release" "tap PR"
 }
 
 test_existing_cache_fetches_and_uses_updated_main() {
@@ -625,6 +676,12 @@ test_dry_run_official_repo_reports_plan_without_touching_tap() {
   local archive_sha256
   archive_sha256="$(awk '{print $1}' "${SCRATCH}/source/dist/release-notes.md" | grep -E '^[0-9a-f]{64}$')"
   assert_contains "$RUN_STDERR" "$archive_sha256" "dry run: report shows the real archive sha256"
+
+  # dry runはpublishとtap更新を行わないため、その2つのsectionは経過時間にも現れない。
+  assert_elapsed_time_reported "dry run" \
+    "preflight checks" "mise run check" "cargo build" "sign and verify binary" "package and provenance"
+  assert_elapsed_time_section_absent "dry run" "tag and release"
+  assert_elapsed_time_section_absent "dry run" "tap PR"
 }
 
 test_dry_run_fork_skips_tap_with_reason() {
@@ -660,6 +717,11 @@ test_release_create_failure_skips_tap_entirely() {
   assert_not_contains "$log" "--json assets" "release create failure: asset verification never runs"
   assert_not_contains "$log" "gh repo clone" "release create failure: tap is never cloned"
   assert_not_contains "$log" "gh pr create" "release create failure: no PR is created"
+
+  # 途中で落ちても経過時間は表示され、進行中だったsectionはincompleteと示される。
+  assert_elapsed_time_reported "release create failure" \
+    "preflight checks" "mise run check" "cargo build" "sign and verify binary" "package and provenance"
+  assert_elapsed_time_section_incomplete "release create failure" "tag and release"
 
   # tagはpush済みのまま残る (release.shの既存挙動)。
   git -C "$SOURCE_ORIGIN_DIR" rev-parse -q --verify "refs/tags/${TAG}" >/dev/null \
@@ -931,33 +993,44 @@ test_tap_pr_create_failure_leaves_branch_and_shows_retry_command() {
 start_case() {
   local name="$1"
   TESTS_RUN=$((TESTS_RUN + 1))
-  ( set -e; "$name" ) >"${RESULT_DIR}/${name}.log" 2>&1 &
+  (
+    set -e
+    read_now_ms
+    local start_ms="$NOW_MS"
+    # 収集する順番に依らず、失敗したcaseも終了した時点までを測る。
+    trap 'read_now_ms; printf "%d\n" "$((NOW_MS - start_ms))" >"${RESULT_DIR}/${name}.ms"' EXIT
+    "$name"
+  ) >"${RESULT_DIR}/${name}.log" 2>&1 &
   PENDING_CASES="${PENDING_CASES} ${name}=$!"
 }
 
 # 起動した順に終了を待ち、溜めた出力と結果を出す。終わったcaseはPENDING_CASESから外し、
 # EXIT trapが使い回されたpidへsignalを送らないようにする。
 collect_cases() {
-  local entries="$PENDING_CASES" entry name pid status
+  local entries="$PENDING_CASES" entry name pid status elapsed_ms
   for entry in $entries; do
     name="${entry%%=*}"
     pid="${entry#*=}"
     status=0
     wait "$pid" || status=$?
     PENDING_CASES="${PENDING_CASES/ ${entry}/}"
+    read -r elapsed_ms <"${RESULT_DIR}/${name}.ms"
     printf -- '--- %s\n' "$name"
     cat "${RESULT_DIR}/${name}.log"
     if [ "$status" -eq 0 ]; then
-      printf 'ok\n'
+      printf 'ok (%d ms)\n' "$elapsed_ms"
     else
       TESTS_FAILED=$((TESTS_FAILED + 1))
       FAILED_NAMES="${FAILED_NAMES}  - ${name}"$'\n'
-      printf 'FAIL\n'
+      printf 'FAIL (%d ms)\n' "$elapsed_ms"
     fi
   done
 }
 
 main() {
+  read_now_ms
+  SCRIPT_START_MS="$NOW_MS"
+
   bash -n "$RELEASE_SCRIPT"
   write_fake_bin
   mkdir -p "$RESULT_DIR"
@@ -990,7 +1063,8 @@ main() {
 
   collect_cases
 
-  printf '\n%d/%d tests passed\n' "$((TESTS_RUN - TESTS_FAILED))" "$TESTS_RUN"
+  read_now_ms
+  printf '\n%d/%d tests passed in %d ms\n' "$((TESTS_RUN - TESTS_FAILED))" "$TESTS_RUN" "$((NOW_MS - SCRIPT_START_MS))"
   if [ "$TESTS_FAILED" -gt 0 ]; then
     printf 'failed:\n%s' "$FAILED_NAMES"
     exit 1

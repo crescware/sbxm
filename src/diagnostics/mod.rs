@@ -4,6 +4,7 @@
 //! 対象、観測値、対処方法、必要な場合はredact済みの外部stderrで示す。
 
 mod diagnostic;
+mod diagnostic_kind;
 mod document_version;
 mod error;
 mod error_id;
@@ -15,6 +16,7 @@ mod result;
 mod unparseable;
 
 pub use diagnostic::Diagnostic;
+pub use diagnostic_kind::DiagnosticKind;
 pub use document_version::DocumentVersion;
 pub use error::Error;
 pub use error_id::ErrorId;

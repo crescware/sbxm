@@ -25,7 +25,7 @@ fn unrelated_failures_are_not_treated_as_missing_docker_login() {
 }
 
 #[test]
-fn only_a_temporary_docker_login_service_failure_is_retryable() {
+fn only_a_temporary_docker_login_service_failure_is_recognized() {
     for output in [
         "request failed: 503 Service Unavailable: docker login service unavailable: within the post-resume hold-off window docker session could not be refreshed due to a network issue",
         "503 SERVICE UNAVAILABLE: DOCKER LOGIN SERVICE UNAVAILABLE",
@@ -40,5 +40,24 @@ fn only_a_temporary_docker_login_service_failure_is_retryable() {
         "503 Service Unavailable: unrelated service unavailable",
     ] {
         assert!(!is_login_unavailable(output.as_bytes()), "{output}");
+    }
+}
+
+#[test]
+fn only_an_explicit_docker_login_resume_holdoff_is_recognized() {
+    for output in [
+        "request failed: 503 Service Unavailable: docker login service unavailable: within the post-resume hold-off window docker session could not be refreshed due to a network issue",
+        "503 SERVICE UNAVAILABLE: DOCKER LOGIN SERVICE UNAVAILABLE: WITHIN THE POST-RESUME HOLD-OFF WINDOW",
+    ] {
+        assert!(is_login_resume_holdoff(output.as_bytes()), "{output}");
+    }
+    for output in [
+        "",
+        "503 Service Unavailable: docker login service unavailable",
+        "within the post-resume hold-off window",
+        "503 Service Unavailable: another service: within the post-resume hold-off window",
+        "401 Unauthorized: docker login service unavailable: within the post-resume hold-off window",
+    ] {
+        assert!(!is_login_resume_holdoff(output.as_bytes()), "{output}");
     }
 }
