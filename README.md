@@ -26,9 +26,9 @@ The sandbox receives the Git identity and configuration files you choose, but no
 
 Run `sbxm status --global` to check these requirements and the Docker Sandboxes environment. Every other command that uses Docker Sandboxes checks the CLI version first and stops before doing anything else when it is older than the version above. Every command that uses Git on the host checks the Git version the same way. Once a check has passed, sbxm records that executable in `~/.sbxm/host-tools.yaml` and skips the check while the executable stays unchanged. A changed executable is checked again. `status` reuses existing records but does not create or update them.
 
-Before project selection, the Docker Sandboxes sign-in check allows 10 seconds per attempt and makes at most three attempts when the Docker login service is temporarily unavailable, the command times out, or the listing JSON is incomplete. Retries wait one second, then two seconds, and show their reason and attempt number. These failures share the same three-attempt limit; three timeouts take about 33 seconds including the waits. An explicit sign-in requirement and other failures stop immediately. Ctrl-C also cancels the retry wait.
+Before project selection, sbxm checks Docker Sandboxes sign-in and briefly retries temporary failures. You can cancel the check with Ctrl-C.
 
-When Docker Sandboxes reports its 120-second pause on authentication refresh after waking, sbxm reads the host's wake time to estimate when the pause ends. With less than 30 seconds remaining, it shows `Connecting…`, waits only the remaining time, and checks once more with a 10-second timeout. Ctrl-C cancels the wait. With 30 seconds or more remaining, it exits with a brief explanation and the approximate local time to try again. If the wake time or local time cannot be read reliably, it shows the explanation without guessing a retry time. A failed check after waiting never starts another retry cycle. For background, see the [Docker Sandboxes v0.48.0 release notes](https://github.com/docker/sbx-releases/releases/tag/v0.48.0).
+If Docker Sandboxes is temporarily unavailable after the host wakes, sbxm waits briefly when it expects to resume soon. Otherwise, it shows an approximate time to try again and exits.
 
 ## Installation
 
