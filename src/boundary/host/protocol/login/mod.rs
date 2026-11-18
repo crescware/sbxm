@@ -3,10 +3,12 @@
 mod is_login_missing;
 mod is_login_resume_holdoff;
 mod is_login_unavailable;
+mod parse_wake_time;
 
 pub use is_login_missing::is_login_missing;
 pub use is_login_resume_holdoff::is_login_resume_holdoff;
 pub use is_login_unavailable::is_login_unavailable;
+pub use parse_wake_time::parse_wake_time;
 
 #[cfg(test)]
 #[path = "login_test.rs"]

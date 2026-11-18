@@ -248,15 +248,13 @@ fn all_sandbox_commands_report_missing_login_before_any_prompt_or_mutation() -> 
 }
 
 #[test]
-fn all_sandbox_commands_explain_resume_holdoff_without_retries_or_error_details() -> Checked {
+fn all_sandbox_commands_explain_unobservable_resume_holdoff_without_retries_or_error_details()
+-> Checked {
     let clock = ScriptedClock::default();
     let fixture = Fixture::new()?;
     let project = fixture.register("owner/repo")?;
     let before = std::fs::read(project.paths.metadata_file()).required()?;
-    for (locale, explanation, next_action) in [
-        (Locale::En, "120 seconds", "Try again"),
-        (Locale::Ja, "120秒間", "もう一度実行してください"),
-    ] {
+    for (locale, explanation) in [(Locale::En, "120 seconds"), (Locale::Ja, "120秒")] {
         for explicit in [false, true] {
             for command in commands(explicit)? {
                 let host = RecordingHost {
@@ -291,19 +289,21 @@ fn all_sandbox_commands_explain_resume_holdoff_without_retries_or_error_details(
                 let stderr = String::from_utf8(stderr).required()?;
                 assert_eq!(code, ExitCode::Failure, "{command:?}: {stderr}");
                 assert!(stderr.contains(explanation), "{command:?}: {stderr}");
-                assert!(stderr.contains(next_action), "{command:?}: {stderr}");
-                assert!(
-                    stderr.contains("https://github.com/docker/sbx-releases/releases/tag/v0.48.0"),
-                    "{command:?}: {stderr}"
-                );
-                for hidden in ["error:", "sbx-login-", "503", "hold-off", "Attempts:"] {
+                for hidden in [
+                    "error:",
+                    "sbx-login-",
+                    "503",
+                    "hold-off",
+                    "Attempts:",
+                    "https://",
+                ] {
                     assert!(!stderr.contains(hidden), "{command:?}: {stderr}");
                 }
                 assert!(stdout.is_empty(), "{command:?}: no result or plan");
                 assert!(screen.drawn().is_empty(), "{command:?}: no prompt");
                 assert_eq!(
                     *host.calls.borrow(),
-                    ["sbx version", "sbx ls --json"],
+                    ["sbx version", "sbx ls --json", "sysctl -n kern.waketime"],
                     "{command:?}"
                 );
                 assert_eq!(

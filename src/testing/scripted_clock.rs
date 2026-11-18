@@ -3,12 +3,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::time::{Clock, Moment};
 
-/// 壁時計の起点。UNIX epochから数えて`20260923T101501Z`にあたる。
+/// 日時の起点。UNIX epochから数えて`20260923T101501Z`にあたる。
 const WALL_ORIGIN: Duration = Duration::from_secs(1_790_158_501);
 
 /// 待つたびに、待った分だけ進む時計。
 ///
-/// 実時間を待たずに期限へ達する。何をどれだけ待ったかは`slept`に残る。壁時計は
+/// 実時間を待たずに期限へ達する。何をどれだけ待ったかは`slept`に残る。現在の日時は
 /// `WALL_ORIGIN`から始まり、読みと同じだけ進む。
 #[derive(Debug, Default)]
 pub struct ScriptedClock {

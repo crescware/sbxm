@@ -294,7 +294,7 @@ total   4 external commands 2290.552ms, interactive 157707.950ms, sbxm 113.902ms
 - Sandboxの中でまとめて走らせた確認は、手順に所要時間を計らせ、commandごとに`inside`で示す。計らせるのは`--verbose`の実行だけである
 - promptは`prompt`として、答えを得たときに見出しのmessage IDと待った時間を示す。進行中の工程は閉じず、待った分だけ止めたことにする。答えたあとの処理はその工程に残る。取り消しでも待った時間は数え、候補が無く訊かなかったpromptは示さない
 - 端末そのものを渡す起動（SSH）は外部commandに数えない。渡す前に進行中の工程を閉じ、そこまでの`total`を並べてから`run`を示す。sessionのあいだは、裏で走る処理があっても1行も書かず、何も数えない。端末が戻ったら`session`として示す
-- `total`は壁時計の総時間を右端に、外部commandの回数と合計時間、対話の時間、残り（sbxm自身の時間）を本文に持つ。1行も並べなかった実行には出さない
+- `total`は実際に経過した総時間を右端に、外部commandの回数と合計時間、対話の時間、残り（sbxm自身の時間）を本文に持つ。1行も並べなかった実行には出さない
 
 traceは`Trace`が直接書き、`Renderer`のblock間隔の勘定に入らない。`Ui`は工程の始まりを、`PromptUi`は答えを待つ始まりと終わりを、hostのdecorator（`Traced`）は外部commandとsessionの始まりと終わりを、同じ1つの`Trace`へ知らせる。組み立てるのはcomposition root（`execute`）だけであり、commandはtraceの有無を知らない。
 

@@ -6,7 +6,7 @@ use crate::time::{Clock, Moment};
 /// processの時計の起点。最初に読んだ時点を0とする。
 static ORIGIN: LazyLock<Instant> = LazyLock::new(Instant::now);
 
-/// OSの単調な時計と、threadを止める待ちと、壁時計。
+/// OSによる経過時間の計測、threadを止める待機、現在の日時の取得。
 pub struct SystemClock;
 
 impl Clock for SystemClock {

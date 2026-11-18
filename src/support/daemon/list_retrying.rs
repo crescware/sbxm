@@ -10,14 +10,15 @@ use crate::diagnostics::{Diagnostic, Error, ErrorId, Result};
 use crate::msg;
 use crate::time::Clock;
 
-use super::RetryReason;
+use super::{ResumeHoldoff, RetryReason};
 
 const MAX_ATTEMPTS: u32 = 3;
 const WARMUP_RETRY_DELAY: Duration = Duration::from_millis(200);
 const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// 案件選択前のprobeは10秒ずつ最大3回、1秒・2秒の待機で再試行する。
-/// 復帰直後の更新抑止は、再試行せず短い案内で停止する。
+/// 復帰直後の更新抑止は、残り30秒未満なら待って1回だけ再確認する。
+/// 長く待つ場合は、取得できた復帰時刻から再実行の目安を案内して停止する。
 /// 一覧のJSON不全も同じ回数に含める。通常のlifecycle観測は従来どおりJSON不全だけを再試行する。
 pub(super) fn list_retrying(
     host: &dyn HostEnvironment,
@@ -40,6 +41,9 @@ pub(super) fn list_retrying(
         match result {
             Ok(entries) => return Ok(entries),
             Err(error) => {
+                if error.contains_id(ErrorId::SbxLoginResumeHoldoff) {
+                    return resume_after_holdoff(host, &spec, clock, progress, interrupted, error);
+                }
                 let retry =
                     retry.filter(|reason| probe || matches!(reason, RetryReason::Incomplete));
                 if let Some(reason) = retry
@@ -63,6 +67,34 @@ pub(super) fn list_retrying(
             }
         }
     }
+}
+
+fn resume_after_holdoff(
+    host: &dyn HostEnvironment,
+    spec: &CommandSpec,
+    clock: &dyn Clock,
+    progress: &mut dyn ProgressSink,
+    interrupted: &dyn Fn() -> bool,
+    error: Error,
+) -> Result<Vec<SandboxEntry>> {
+    if interrupted() {
+        return Err(Error::Canceled);
+    }
+    let holdoff = ResumeHoldoff::observe(host, clock)?;
+    if interrupted() {
+        return Err(Error::Canceled);
+    }
+    let Some(holdoff) = holdoff else {
+        return Err(error);
+    };
+    let remaining = holdoff.remaining(clock);
+    if remaining >= Duration::from_secs(30) {
+        return Err(holdoff.explain(host, error)?);
+    }
+    progress.step(msg!("progress-login-connecting"));
+    pause(clock, remaining, interrupted)?;
+    // 解除後は、失敗の種類を問わず1回で終える。通常のretry loopへは戻さない。
+    attempt(host, &spec.clone().timeout(TimeoutClass::Probe)).0
 }
 
 fn attempt(
