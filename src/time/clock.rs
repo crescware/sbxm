@@ -14,7 +14,7 @@ pub trait Clock {
     /// `duration`だけ待つ。
     fn sleep(&self, duration: Duration);
 
-    /// 壁時計の今。合わせ直せば戻りうるため、期限の判定には使わず、名前に刻む時刻にだけ
-    /// 使う。
+    /// 現在の日時。名前に刻む時刻やOSの復帰時刻との比較に使う。時刻設定の変更で前後するため、
+    /// 待機時間を求めたあとは`now`で経過を測る。
     fn wall(&self) -> SystemTime;
 }

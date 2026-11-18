@@ -1,6 +1,6 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use crate::boundary::host::{CommandOutcome, CommandSpec, TimeoutClass};
 use crate::design::Fact;
@@ -33,6 +33,8 @@ struct Host<'a> {
     clock: &'a ScriptedClock,
     replies: RefCell<VecDeque<Reply>>,
     calls: RefCell<Vec<(Moment, CommandSpec)>>,
+    wake: Option<String>,
+    helpers: RefCell<Vec<CommandSpec>>,
 }
 
 impl<'a> Host<'a> {
@@ -41,7 +43,20 @@ impl<'a> Host<'a> {
             clock,
             replies: RefCell::new(replies.iter().copied().collect()),
             calls: RefCell::new(Vec::new()),
+            wake: None,
+            helpers: RefCell::new(Vec::new()),
         }
+    }
+
+    fn with_remaining(mut self, remaining: Duration) -> Checked<Self> {
+        let wake = self.clock.wall() - (Duration::from_secs(120) - remaining);
+        let epoch = wake.duration_since(UNIX_EPOCH).required()?;
+        self.wake = Some(format!(
+            "{{ sec = {}, usec = {} }} Wed Sep 23 10:15:01 2026\n",
+            epoch.as_secs(),
+            epoch.subsec_micros()
+        ));
+        Ok(self)
     }
 }
 
@@ -51,6 +66,14 @@ impl AnsweredHost for Host<'_> {
     }
 
     fn answer(&self, spec: &CommandSpec) -> Result<CommandOutcome> {
+        if spec.program != "sbx" {
+            self.helpers.borrow_mut().push(spec.clone());
+            return Ok(match spec.program.as_str() {
+                "sysctl" => outcome(spec, 0, self.wake.as_deref().unwrap_or("")),
+                "date" => outcome(spec, 0, "19:16:01\n"),
+                _ => outcome(spec, 1, ""),
+            });
+        }
         self.calls
             .borrow_mut()
             .push((self.clock.now(), spec.clone()));
@@ -144,6 +167,232 @@ fn resume_holdoff_also_stops_when_it_follows_another_transient_failure() -> Chec
 }
 
 #[test]
+fn a_short_resume_holdoff_waits_only_the_remaining_time_and_continues() -> Checked {
+    for remaining in [
+        Duration::from_micros(1),
+        Duration::from_secs(18),
+        Duration::from_micros(29_999_999),
+    ] {
+        let clock = ScriptedClock::default();
+        let host = Host::new(
+            &clock,
+            &[Reply::Failed(RESUME_HOLDOFF), Reply::Listing("[]")],
+        )
+        .with_remaining(remaining)?;
+        let mut progress = RecordedOutput::new();
+        probe(&host, &mut progress).required()?;
+        assert_eq!(clock.now(), Moment::since_origin(remaining));
+        let calls = host.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1].0, clock.now());
+        assert_eq!(calls[1].1.timeout, TimeoutClass::Probe);
+        assert_eq!(host.helpers.borrow().len(), 1, "no date query when waiting");
+        assert_eq!(progress.steps.len(), 1);
+        for (locale, expected) in [(Locale::En, "Connecting…"), (Locale::Ja, "接続中…")] {
+            assert_eq!(
+                Catalog::new(locale).format(&progress.steps[0]).required()?,
+                expected
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn thirty_seconds_or_longer_returns_the_local_retry_time_without_waiting() -> Checked {
+    for remaining in [30, 75, 120] {
+        let clock = ScriptedClock::default();
+        let host = Host::new(
+            &clock,
+            &[Reply::Failed(RESUME_HOLDOFF), Reply::Listing("[]")],
+        )
+        .with_remaining(Duration::from_secs(remaining))?;
+        let mut progress = RecordedOutput::new();
+        let error = probe(&host, &mut progress).refused_because("the wait is too long")?;
+        let diagnostic = error.diagnostics().first().required()?;
+        assert_eq!(diagnostic.id, ErrorId::SbxLoginResumeHoldoff);
+        assert_eq!(diagnostic.kind, DiagnosticKind::Notice);
+        assert_eq!(host.calls.borrow().len(), 1);
+        assert!(clock.slept.borrow().is_empty());
+        assert!(progress.steps.is_empty());
+        for (locale, expected) in [
+            (
+                Locale::En,
+                "Docker Sandboxes pauses authentication refresh for 120 seconds after the host wakes up. Try again around 19:16:01.",
+            ),
+            (
+                Locale::Ja,
+                "Docker Sandboxesにはホスト復帰後120秒の制限があります。19:16:01頃に再実行してください。",
+            ),
+        ] {
+            assert_eq!(
+                Catalog::new(locale)
+                    .format(&diagnostic.description)
+                    .required()?,
+                expected
+            );
+        }
+        let helpers = host.helpers.borrow();
+        assert_eq!(helpers[0].args, ["-n", "kern.waketime"]);
+        let until = (clock.wall() + Duration::from_secs(remaining))
+            .duration_since(UNIX_EPOCH)
+            .required()?
+            .as_secs()
+            .to_string();
+        assert_eq!(helpers[1].args, ["-r", &until, "+%H:%M:%S"]);
+    }
+    Ok(())
+}
+
+#[test]
+fn the_post_resume_check_never_starts_another_retry_budget() -> Checked {
+    for (last, expected) in [
+        (
+            Reply::Failed(RESUME_HOLDOFF),
+            ErrorId::SbxLoginResumeHoldoff,
+        ),
+        (Reply::Failed(UNAVAILABLE), ErrorId::ExternalCommandFailed),
+        (Reply::Timeout, ErrorId::ExternalCommandTimeout),
+        (Reply::Listing("{"), ErrorId::ExternalOutputUnparseable),
+        (
+            Reply::Failed("user is not authenticated to Docker"),
+            ErrorId::SbxLoginMissing,
+        ),
+        (Reply::Missing, ErrorId::ExternalCommandNotFound),
+    ] {
+        let clock = ScriptedClock::default();
+        let host = Host::new(
+            &clock,
+            &[Reply::Failed(RESUME_HOLDOFF), last, Reply::Listing("[]")],
+        )
+        .with_remaining(Duration::from_secs(18))?;
+        let mut progress = RecordedOutput::new();
+        let error = probe(&host, &mut progress).refused_because("only one check after waiting")?;
+        assert_eq!(error.first_id(), Some(expected));
+        assert_eq!(host.calls.borrow().len(), 2);
+        assert_eq!(host.helpers.borrow().len(), 1);
+        assert_eq!(
+            clock.slept.borrow().iter().sum::<Duration>(),
+            Duration::from_secs(18)
+        );
+        assert_eq!(progress.steps.len(), 1);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_resume_holdoff_can_follow_the_third_ordinary_attempt_without_resetting_retries() -> Checked {
+    let clock = ScriptedClock::default();
+    let host = Host::new(
+        &clock,
+        &[
+            Reply::Failed(UNAVAILABLE),
+            Reply::Listing("{"),
+            Reply::Failed(RESUME_HOLDOFF),
+            Reply::Listing("[]"),
+        ],
+    )
+    .with_remaining(Duration::from_secs(18))?;
+    let mut progress = RecordedOutput::new();
+    probe(&host, &mut progress).required()?;
+    assert_eq!(host.calls.borrow().len(), 4);
+    assert_eq!(clock.now(), Moment::since_origin(Duration::from_secs(18)));
+    assert_eq!(progress.steps.len(), 3);
+    assert_eq!(progress.steps[2].id, "progress-login-connecting");
+    Ok(())
+}
+
+#[test]
+fn resume_wait_and_the_following_check_can_be_canceled() -> Checked {
+    for cancel_after in [
+        Duration::ZERO,
+        Duration::from_millis(100),
+        Duration::from_secs(18),
+    ] {
+        let clock = ScriptedClock::default();
+        let host = Host::new(
+            &clock,
+            &[Reply::Failed(RESUME_HOLDOFF), Reply::Listing("[]")],
+        )
+        .with_remaining(Duration::from_secs(18))?;
+        let error = list_retrying(
+            &host,
+            TimeoutClass::Probe,
+            &clock,
+            &mut RecordedOutput::new(),
+            &|| clock.now() >= Moment::since_origin(cancel_after),
+        )
+        .refused_because("the user canceled")?;
+        assert_eq!(error, Error::Canceled);
+        assert_eq!(
+            host.calls.borrow().len(),
+            usize::from(!cancel_after.is_zero())
+        );
+    }
+    let clock = ScriptedClock::default();
+    let host = Host::new(&clock, &[Reply::Failed(RESUME_HOLDOFF), Reply::Canceled])
+        .with_remaining(Duration::from_secs(18))?;
+    assert_eq!(
+        probe(&host, &mut RecordedOutput::new()).refused_because("the check was canceled")?,
+        Error::Canceled
+    );
+    assert_eq!(host.calls.borrow().len(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_lifecycle_resume_recheck_also_uses_the_short_probe_timeout() -> Checked {
+    let clock = ScriptedClock::default();
+    let host = Host::new(
+        &clock,
+        &[Reply::Failed(RESUME_HOLDOFF), Reply::Listing("[]")],
+    )
+    .with_remaining(Duration::from_secs(18))?;
+    list_retrying(
+        &host,
+        TimeoutClass::SandboxLifecycle,
+        &clock,
+        &mut RecordedOutput::new(),
+        &|| false,
+    )
+    .required()?;
+    let calls = host.calls.borrow();
+    assert_eq!(calls[0].1.timeout, TimeoutClass::SandboxLifecycle);
+    assert_eq!(calls[1].1.timeout, TimeoutClass::Probe);
+    Ok(())
+}
+
+#[test]
+fn cancellation_around_wake_observation_stops_even_when_the_wake_time_is_unknown() -> Checked {
+    for known in [false, true] {
+        for cancel_on in [2, 3] {
+            let clock = ScriptedClock::default();
+            let mut host = Host::new(&clock, &[Reply::Failed(RESUME_HOLDOFF)]);
+            if known {
+                host = host.with_remaining(Duration::from_secs(18))?;
+            }
+            let polls = Cell::new(0);
+            let error = list_retrying(
+                &host,
+                TimeoutClass::Probe,
+                &clock,
+                &mut RecordedOutput::new(),
+                &|| {
+                    polls.set(polls.get() + 1);
+                    polls.get() >= cancel_on
+                },
+            )
+            .refused_because("cancellation takes priority over optional observations")?;
+            assert_eq!(error, Error::Canceled);
+            assert_eq!(host.calls.borrow().len(), 1);
+            assert_eq!(host.helpers.borrow().len(), usize::from(cancel_on == 3));
+            assert!(clock.slept.borrow().is_empty());
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn transient_failures_and_truncated_json_share_three_attempts_with_exponential_backoff() -> Checked
 {
     for replies in [
@@ -186,6 +435,10 @@ fn transient_failures_and_truncated_json_share_three_attempts_with_exponential_b
                 .all(|(_, spec)| spec.timeout.duration() == Some(Duration::from_secs(10)))
         );
         assert_eq!(progress.steps.len(), 2);
+        assert!(
+            host.helpers.borrow().is_empty(),
+            "ordinary failures do not inspect wake time"
+        );
         assert!(progress.steps[0].args.contains(&("attempt", "2".into())));
         assert!(progress.steps[0].args.contains(&("seconds", "1".into())));
         assert!(progress.steps[1].args.contains(&("attempt", "3".into())));
