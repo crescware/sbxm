@@ -1,16 +1,16 @@
 # Template for a Docker Sandbox managed by sbxm.
 #
-# sbxm writes this file once, when a project is registered, and never edits it
-# again. Change it here and run `sbxm rebuild <owner>/<repository>` to apply the
-# change to the sandbox.
+# sbxm writes this file once, when a project is registered. To update an
+# existing sandbox, edit the project's .sbxm/Dockerfile and run
+# `sbxm rebuild <project-id>`.
 #
 # Rules this file has to keep:
 #   - the base image stays pinned by digest
-#   - every tool it installs names its version in an ARG and fetches that
+#   - gh, Claude Code, Codex, and mise use the versions pinned in their ARGs
 #   - no secret value is written into the image
 #   - no COPY or ADD: sbxm builds with an empty build context
 
-FROM docker.io/docker/sandbox-templates:shell-docker@sha256:39cf20eca861ec92747487af6197f6d916f774bdb98245d267dbd8dfd3debb05
+FROM docker.io/docker/sandbox-templates:shell-docker@sha256:b178ca62ec2e79af2a044e3ec321bdb72188690e1c15d573ea5524b397554d3d
 
 USER root
 
@@ -28,7 +28,7 @@ RUN apt-get update \
       wget \
  && rm -rf /var/lib/apt/lists/*
 
-ARG GH_VERSION=2.96.0
+ARG GH_VERSION=2.105.0
 RUN set -eux; \
     architecture="$(dpkg --print-architecture)"; \
     curl -fsSL -o /tmp/gh.tar.gz \
@@ -38,7 +38,7 @@ RUN set -eux; \
     rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_${architecture}"; \
     gh --version
 
-ARG CLAUDE_CODE_VERSION=2.1.220
+ARG CLAUDE_CODE_VERSION=2.1.330
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
       amd64) slice="linux-x64" ;; \
@@ -54,7 +54,7 @@ RUN set -eux; \
 
 # The release tag carries a `rust-` prefix that the version itself does not, and
 # the tarball holds the binary under its target triple rather than under `codex`.
-ARG CODEX_VERSION=0.145.0
+ARG CODEX_VERSION=0.171.0
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
       amd64) target="x86_64-unknown-linux-musl" ;; \
@@ -73,7 +73,7 @@ RUN install -d -o agent -g agent -m 0755 /home/agent/work
 
 USER agent
 
-ARG MISE_VERSION=v2026.7.15
+ARG MISE_VERSION=v2026.11.11
 RUN curl -fsSL https://mise.run | MISE_VERSION="${MISE_VERSION}" sh
 ENV PATH=/home/agent/.local/bin:/home/agent/.local/share/mise/shims:${PATH}
 
