@@ -18,6 +18,10 @@ tapの更新対象は`crescware/homebrew-tap`に固定してあり、任意のta
 
 ## 使い方
 
+リリース用のPRを作る前に、VM同梱ツールの固定版を上流のリリースと照合する。CodexとClaude Codeは最新の正式版を確認し、更新するときは`assets/Dockerfile`の`CODEX_VERSION`と`CLAUDE_CODE_VERSION`を変更する。両アーキテクチャ（`amd64`、`arm64`）の配布ファイルと、イメージ内で起動できることを確認する。 [同梱Dockerfile](../../assets/Dockerfile) · [Codex](https://github.com/openai/codex/releases/latest) · [Claude Code](https://github.com/anthropics/claude-code/releases/latest)
+
+`GH_VERSION`と`MISE_VERSION`、ベースイメージの`shell-docker`のdigestも見直す。ベースイメージを更新するときは、両アーキテクチャとSandboxの起動を確認する。aptで入れるOSパッケージの版とその依存は、ビルド時にベースイメージのaptリポジトリから解決される。 [GitHub CLI](https://github.com/cli/cli/releases/latest) · [mise](https://github.com/jdx/mise/releases/latest) · [Sandboxのベースイメージ](https://hub.docker.com/r/docker/sandbox-templates/tags?name=shell-docker)
+
 リリースするversionを`Cargo.toml`へ入れ、通常のPRとして`main`へ入れておく。scriptは`Cargo.toml`の`version`とtagのversionが一致することと、HEADが`main`に入っていることを要求する。
 
 ```sh

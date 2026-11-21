@@ -140,7 +140,7 @@ fn the_bundled_dockerfile_is_written_once_and_never_edited_again() -> Checked {
 fn the_bundled_dockerfile_meets_the_rules_it_ships_under() {
     assert!(
             BUNDLED_DOCKERFILE.contains(
-                "docker.io/docker/sandbox-templates:shell-docker@sha256:39cf20eca861ec92747487af6197f6d916f774bdb98245d267dbd8dfd3debb05"
+                "docker.io/docker/sandbox-templates:shell-docker@sha256:b178ca62ec2e79af2a044e3ec321bdb72188690e1c15d573ea5524b397554d3d"
             ),
             "the base image stays pinned by digest"
         );
